@@ -305,29 +305,43 @@ func KafkaAuthConfig(
 	user, password, mechanism *string,
 ) func() (*config.SCRAM, error) {
 	return func() (*config.SCRAM, error) {
-		if *user == "" && *password == "" {
+		u := *user
+		p := *password
+		m := *mechanism
+		// If the values are empty, check for env vars.
+		if u == "" {
+			u = os.Getenv("REDPANDA_SASL_USERNAME")
+		}
+		if p == "" {
+			p = os.Getenv("REDPANDA_SASL_PASSWORD")
+		}
+		if m == "" {
+			m = os.Getenv("REDPANDA_SASL_MECHANISM")
+		}
+
+		if u == "" && p == "" {
 			return nil, ErrNoCredentials
 		}
-		if *user == "" && *password != "" {
+		if u == "" && p != "" {
 			return nil, errors.New("empty user. Pass --user to set a value.")
 		}
-		if *user != "" && *password == "" {
+		if u != "" && p == "" {
 			return nil, errors.New("empty password. Pass --password to set a value.")
 		}
-		if *mechanism != sarama.SASLTypeSCRAMSHA256 && *mechanism != sarama.SASLTypeSCRAMSHA512 {
+		if m != sarama.SASLTypeSCRAMSHA256 && m != sarama.SASLTypeSCRAMSHA512 {
 			return nil, fmt.Errorf(
 				"unsupported mechanism '%s'. Pass --%s to set a value."+
 					" Supported: %s, %s.",
-				*mechanism,
+				m,
 				saslMechanismFlag,
 				sarama.SASLTypeSCRAMSHA256,
 				sarama.SASLTypeSCRAMSHA512,
 			)
 		}
 		return &config.SCRAM{
-			User:     *user,
-			Password: *password,
-			Type:     *mechanism,
+			User:     u,
+			Password: p,
+			Type:     m,
 		}, nil
 	}
 }
@@ -338,16 +352,30 @@ func BuildTLSConfig(
 	truststoreFile *string,
 ) func() (*config.TLS, error) {
 	return func() (*config.TLS, error) {
-		if *truststoreFile == "" && *certFile == "" && *keyFile == "" {
+		c := *certFile
+		k := *keyFile
+		t := *truststoreFile
+
+		if c == "" {
+			c = os.Getenv("REDPANDA_TLS_CERT")
+		}
+		if k == "" {
+			k = os.Getenv("REDPANDA_TLS_KEY")
+		}
+		if t == "" {
+			t = os.Getenv("REDPANDA_TLS_TRUSTSTORE")
+		}
+
+		if t == "" && c == "" && k == "" {
 			return nil, nil
 		}
-		if *truststoreFile == "" && (*certFile != "" || *keyFile != "") {
+		if t == "" && (c != "" || k != "") {
 			return nil, fmt.Errorf(
 				"--%s is required to enable TLS",
 				truststoreFileFlag,
 			)
 		}
-		if *certFile != "" && *keyFile == "" {
+		if c != "" && k == "" {
 			return nil, fmt.Errorf(
 				"if --%s is passed, then --%s must be passed to enable"+
 					" TLS authentication",
@@ -355,7 +383,7 @@ func BuildTLSConfig(
 				keyFileFlag,
 			)
 		}
-		if *keyFile != "" && *certFile == "" {
+		if k != "" && c == "" {
 			return nil, fmt.Errorf(
 				"if --%s is passed, then --%s must be passed to enable"+
 					" TLS authentication",
@@ -364,9 +392,9 @@ func BuildTLSConfig(
 			)
 		}
 		tls := &config.TLS{
-			KeyFile:        *keyFile,
-			CertFile:       *certFile,
-			TruststoreFile: *truststoreFile,
+			KeyFile:        k,
+			CertFile:       c,
+			TruststoreFile: t,
 		}
 		return tls, nil
 	}

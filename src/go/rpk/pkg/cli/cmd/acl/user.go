@@ -10,6 +10,8 @@
 package acl
 
 import (
+	"errors"
+
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/api/admin"
@@ -158,6 +160,10 @@ func NewListUsersCommand(
 }
 
 func printUsernames(usernames []string) {
+	if len(usernames) == 0 {
+		log.Info("\nNo usernames found.\n")
+		return
+	}
 	spacer := []string{""}
 	t := ui.NewRpkTable(log.StandardLogger().Out)
 	t.SetColWidth(80)
@@ -174,6 +180,9 @@ func buildAdminAPI(
 	apiUrls *[]string, tls func() (*config.TLS, error),
 ) func() (admin.AdminAPI, error) {
 	return func() (admin.AdminAPI, error) {
+		if len(*apiUrls) == 0 {
+			return nil, errors.New("--api-urls is required")
+		}
 		tlsConfig, err := tls()
 		if err != nil {
 			return nil, err

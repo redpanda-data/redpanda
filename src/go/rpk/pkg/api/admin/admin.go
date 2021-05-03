@@ -24,7 +24,7 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/hashicorp/go-multierror"
-	"github.com/prometheus/common/log"
+	log "github.com/sirupsen/logrus"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	vtls "github.com/vectorizedio/redpanda/src/go/rpk/pkg/tls"
 )
@@ -204,6 +204,17 @@ func send(
 	req.Header.Set("Content-Type", "application/json")
 
 	res, err := client.Do(req)
+
+	if err != nil {
+		// When the server expects a TLS connection, but the TLS config isn't
+		// set/ passed, The client returns an error like
+		// Get "http://localhost:9644/v1/security/users": EOF
+		// which doesn't make it obvious to the user what's going on.
+		if strings.Contains(err.Error(), "EOF") {
+			log.Debug(err)
+			return nil, errors.New("the server expected a TLS connection")
+		}
+	}
 
 	if res != nil && res.StatusCode >= 400 {
 		resBody, err := ioutil.ReadAll(res.Body)
