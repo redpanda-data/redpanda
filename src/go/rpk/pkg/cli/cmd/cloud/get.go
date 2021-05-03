@@ -22,6 +22,7 @@ func NewGetCommand(fs afero.Fs) *cobra.Command {
 	}
 
 	command.AddCommand(NewNamespacesCommand(fs))
+	command.AddCommand(NewClustersCommand(fs))
 
 	return command
 }
