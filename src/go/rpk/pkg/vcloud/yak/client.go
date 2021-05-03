@@ -43,33 +43,53 @@ func (yc *YakClient) GetNamespaces() ([]*Namespace, error) {
 		return nil, ErrLoginTokenMissing{err}
 	}
 	url := fmt.Sprintf("%s/%s", DefaultYakUrl, namespaceRoute)
-	req, err := http.NewRequest(http.MethodGet, url, bytes.NewBuffer([]byte{}))
-	if err != nil {
-		return nil, fmt.Errorf("error creating new request. %w", err)
-	}
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-	resp, err := http.DefaultClient.Do(req)
+	_, body, err := yc.get(token, url)
 	if err != nil {
 		return nil, fmt.Errorf("error calling api: %w", err)
 	}
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error reading response body: %w", err)
-	}
 
-	// targetting HTTP codes 401, 403 which are used by yak
-	if resp.StatusCode > 400 && resp.StatusCode < 404 {
-		log.Debug(body)
-		return nil, ErrNotAuthorized
-	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("error retrieving resource, http code %d. %s", resp.StatusCode, body)
-	}
 	var namespaces []*Namespace
 	err = json.Unmarshal(body, &namespaces)
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshaling response. %w", err)
 	}
 	return namespaces, nil
+}
+
+func (yc *YakClient) get(token, url string) (*http.Response, []byte, error) {
+	log.Debugf("Calling yak api on url %s", url)
+	req, err := http.NewRequest(http.MethodGet, url, bytes.NewBuffer(nil))
+	if err != nil {
+		return nil, nil, fmt.Errorf("error creating new request. %w", err)
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error reading response body: %w", err)
+	}
+	err = yc.handleErrResponseCodes(resp, body)
+	if err != nil {
+		return resp, body, err
+	}
+	return resp, body, nil
+}
+
+func (yc *YakClient) handleErrResponseCodes(
+	resp *http.Response, body []byte,
+) error {
+	// targetting HTTP codes 401, 403 which are used by yak
+	if resp.StatusCode > 400 && resp.StatusCode < 404 {
+		log.Debug(string(body))
+		return ErrNotAuthorized
+	}
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("error retrieving resource, http code %d. %s", resp.StatusCode, body)
+	}
+	return nil
 }

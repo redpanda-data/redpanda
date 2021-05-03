@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 )
+
 type CloudApiClient interface {
 	// GetNamespaces returns list of all namespaces available in the user's
 	// organization. Returns `ErrLoginTokenMissing` if token cannot be
