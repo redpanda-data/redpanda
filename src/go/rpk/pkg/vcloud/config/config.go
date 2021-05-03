@@ -22,6 +22,7 @@ import (
 
 const (
 	defaultConfigLocation = ".vcloud/config.yaml"
+	configVersion         = "v1"
 )
 
 var (
@@ -41,7 +42,14 @@ type vCloudReaderWriter struct {
 }
 
 type VCloudConfig struct {
-	Token string `yaml:"token,omitempty"`
+	Version string `yaml:"version"`
+	Token   string `yaml:"token,omitempty"`
+}
+
+func NewV1Config() *VCloudConfig {
+	return &VCloudConfig{
+		Version: configVersion,
+	}
 }
 
 func NewVCloudConfigReaderWriter(fs afero.Fs) ConfigReaderWriter {
@@ -96,7 +104,7 @@ func (rw *vCloudReaderWriter) getOrCreateConfigFile() (*VCloudConfig, error) {
 			return nil, err
 		}
 		log.Debugf("config file '%s' does not exist, going to create it", configLocation)
-		config := &VCloudConfig{}
+		config := NewV1Config()
 		err = rw.writeConfig(config)
 		return config, err
 	}
