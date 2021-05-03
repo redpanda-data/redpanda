@@ -9,8 +9,15 @@ metadata:
   namespace: system
 spec:
   endpoints:
-    - path: /metrics
-      port: https
+  - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    path: /metrics
+    port: https
+    scheme: https
+    tlsConfig:
+      insecureSkipVerify: true
+  namespaceSelector:
+    matchNames:
+      - redpanda-system
   selector:
     matchLabels:
       control-plane: controller-manager
