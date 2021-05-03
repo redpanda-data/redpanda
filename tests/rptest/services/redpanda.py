@@ -335,6 +335,9 @@ class RedpandaService(Service):
             map(lambda n: self.broker_address(n), self.nodes[:limit]))
         return brokers
 
+    def brokers_list(self, limit=None):
+        return [self.broker_address(n) for n in self.nodes[:limit]]
+
     def metrics(self, node):
         assert node in self.nodes
         url = f"http://{node.account.hostname}:9644/metrics"

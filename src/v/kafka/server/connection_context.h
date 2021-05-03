@@ -96,6 +96,8 @@ private:
     ss::future<> process_next_response();
     ss::future<> do_process(request_context);
 
+    ss::future<> handle_auth_v0(size_t);
+
 private:
     using sequence_id = named_type<uint64_t, struct kafka_protocol_sequence>;
     using map_t = absl::flat_hash_map<sequence_id, response_ptr>;

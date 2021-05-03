@@ -10,16 +10,21 @@
  */
 #include "kafka/server/connection_context.h"
 
+#include "bytes/iobuf.h"
 #include "config/configuration.h"
+#include "kafka/protocol/sasl_authenticate.h"
 #include "kafka/server/protocol.h"
 #include "kafka/server/protocol_utils.h"
 #include "kafka/server/quota_manager.h"
 #include "kafka/server/request_context.h"
+#include "units.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/scattered_message.hh>
 #include <seastar/core/sleep.hh>
 
 #include <chrono>
+using namespace std::chrono_literals;
 
 namespace kafka {
 
@@ -28,6 +33,23 @@ ss::future<> connection_context::process_one_request() {
       .then([this](std::optional<size_t> sz) mutable {
           if (!sz) {
               return ss::make_ready_future<>();
+          }
+          /*
+           * Intercept the wire protocol when:
+           *
+           * 1. sasl is enabled (implied by 2)
+           * 2. during auth phase
+           * 3. handshake was v0
+           */
+          if (unlikely(
+                sasl().state()
+                  == security::sasl_server::sasl_state::authenticate
+                && sasl().handshake_v0())) {
+              return handle_auth_v0(*sz).handle_exception(
+                [this](std::exception_ptr e) {
+                    vlog(klog.info, "Detected error processing request: {}", e);
+                    _rs.conn->shutdown_input();
+                });
           }
           return parse_header(_rs.conn->input())
             .then(
@@ -45,6 +67,77 @@ ss::future<> connection_context::process_one_request() {
                   return dispatch_method_once(std::move(h.value()), s);
               });
       });
+}
+
+/*
+ * The SASL authentication flow for a client using version 0 of SASL handshake
+ * doesn't use an envelope request for tokens. This method intercepts the
+ * authentication phase and builds an envelope request so that all of the normal
+ * request processing can be re-used.
+ *
+ * Even though we build and decode a request/response, the payload is a small
+ * authentication string. https://github.com/vectorizedio/redpanda/issues/1315.
+ * When this ticket is complete we'll be able to easily remove this extra
+ * serialization step and and easily operate on non-encoded requests/responses.
+ */
+ss::future<> connection_context::handle_auth_v0(const size_t size) {
+    vlog(klog.debug, "Processing simulated SASL authentication request");
+
+    /*
+     * very generous upper bound for some added safety. generally the size is
+     * small and corresponds to the representation of hashes being exchanged but
+     * there is some flexibility as usernames, nonces, etc... have no strict
+     * limits. future non-SCRAM mechanisms may have other size requirements.
+     */
+    if (unlikely(size > 256_KiB)) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format, "Auth (handshake_v0) message too large", size));
+    }
+
+    const api_version version(0);
+    iobuf request_buf;
+    {
+        auto data = co_await read_iobuf_exactly(_rs.conn->input(), size);
+        sasl_authenticate_request request;
+        request.data.auth_bytes = iobuf_to_bytes(data);
+        response_writer writer(request_buf);
+        request.encode(writer, version);
+    }
+
+    sasl_authenticate_response response;
+    {
+        auto ctx = request_context(
+          shared_from_this(),
+          request_header{
+            .key = sasl_authenticate_api::key,
+            .version = version,
+          },
+          std::move(request_buf),
+          0s);
+        auto resp = co_await kafka::process_request(
+          std::move(ctx), _proto.smp_group());
+        auto data = std::move(*resp).release();
+        response.decode(std::move(data), version);
+    }
+
+    if (response.data.error_code != error_code::none) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Auth (handshake v0) error {}: {}",
+          response.data.error_code,
+          response.data.error_message));
+    }
+
+    if (sasl().state() == security::sasl_server::sasl_state::failed) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format, "Auth (handshake v0) failed with unknown error"));
+    }
+
+    iobuf data;
+    response_writer writer(data);
+    writer.write(response.data.auth_bytes);
+    auto msg = iobuf_as_scattered(std::move(data));
+    co_await _rs.conn->write(std::move(msg));
 }
 
 bool connection_context::is_finished_parsing() const {
@@ -122,7 +215,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                     iobuf buf) mutable {
                 if (_rs.abort_requested()) {
                     // _proto._cntrl etc might not be alive
-                    return;
+                    return ss::now();
                 }
                 auto self = shared_from_this();
                 auto rctx = request_context(
@@ -130,8 +223,41 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                   std::move(hdr),
                   std::move(buf),
                   sres.backpressure_delay);
-                // background process this one full request
-                (void)ss::with_gate(
+                /*
+                 * until authentication is complete, process requests in order
+                 * since all subsequent requests are dependent on authentication
+                 * having completed.
+                 *
+                 * the other important reason for disabling pipeling before
+                 * authentication completes is because when a sasl handshake
+                 * with version=0 is processed, the next data on the wire is
+                 * _not_ another request: it is a size-prefixed authentication
+                 * payload without a request envelope, and requires special
+                 * handling.
+                 *
+                 * a well behaved client should implicitly provide a data stream
+                 * that invokes this behavior in the server: that is, it won't
+                 * send auth data (or any other requests) until handshake or the
+                 * full auth-process completes, etc... but representing these
+                 * nuances of the protocol _explicitly_ in the server makes its
+                 * behavior easier to understand and avoids misbehaving clients
+                 * creating server-side errors that will appear as a corrupted
+                 * stream at best and at worst some odd behavior.
+                 */
+
+                if (unlikely(!sasl().complete())) {
+                    return do_process(std::move(rctx))
+                      .handle_exception([self](std::exception_ptr e) {
+                          vlog(
+                            klog.info,
+                            "Detected error processing request: {}",
+                            e);
+                          self->_rs.conn->shutdown_input();
+                      })
+                      .finally([s = std::move(sres), self] {});
+                }
+
+                (void)ss::try_with_gate(
                   _rs.conn_gate(),
                   [this, rctx = std::move(rctx)]() mutable {
                       return do_process(std::move(rctx));
@@ -142,6 +268,8 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                       self->_rs.conn->shutdown_input();
                   })
                   .finally([s = std::move(sres), self] {});
+
+                return ss::now();
             });
       });
 }
