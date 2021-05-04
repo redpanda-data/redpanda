@@ -292,29 +292,32 @@ void controller_backend::housekeeping() {
 }
 
 ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
-    return ss::do_with(
-      bool{false},
-      deltas.cbegin(),
-      [this, &deltas](bool& stop, deltas_t::const_iterator& it) {
-          return ss::do_until(
-                   [&stop, &it, &deltas] {
-                       return stop || it == deltas.cend();
-                   },
-                   [this, &it, &stop] {
-                       return execute_partitition_op(*it).then(
-                         [&it, &stop](std::error_code ec) {
-                             if (ec) {
-                                 stop = true;
-                                 return;
-                             }
-                             it++;
-                         });
-                   })
-            .then([&deltas, &it] {
-                // remove finished tasks
-                deltas.erase(deltas.cbegin(), it);
-            });
-      });
+    bool stop = false;
+    auto it = deltas.begin();
+    while (!(stop || it == deltas.end())) {
+        try {
+            auto ec = co_await execute_partitition_op(*it);
+            if (ec) {
+                vlog(
+                  clusterlog.info,
+                  "partition operation error: {} - {}",
+                  *it,
+                  ec.message());
+                stop = true;
+                continue;
+            }
+        } catch (...) {
+            vlog(
+              clusterlog.error,
+              "exception while executing partiton operation: {} - {}",
+              *it,
+              std::current_exception());
+            stop = true;
+            continue;
+        }
+        ++it;
+    }
+    deltas.erase(deltas.begin(), it);
 }
 
 // caller must hold _topics_sem lock
