@@ -18,6 +18,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "kafka/server/rm_group_frontend.h"
 #include "model/metadata.h"
 #include "seastarx.h"
 

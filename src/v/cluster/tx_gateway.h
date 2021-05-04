@@ -18,6 +18,15 @@
 
 namespace cluster {
 
+// transaction manager (tx_gateway_frontend) uses tx_gateway to interact with
+// remote resource managers (partitions and consumer groups), it checks which
+// node is a resource's leader and sends a requests there. the receiver's side
+// (handlers invoked by tx_gateway) either processes the requests or fails them
+// in case it lost leadership but it doesn't redirect requests to new leader
+// to prevent infinite cross node message bouncing caused by stale metadata.
+// this is the reason why tx_gateway uses methods like begin_group_tx_locally
+// instead of begin_group_tx
+
 class tx_gateway final : public tx_gateway_service {
 public:
     tx_gateway(
@@ -57,7 +66,7 @@ public:
 private:
     [[maybe_unused]] ss::sharded<cluster::tx_gateway_frontend>&
       _tx_gateway_frontend;
-    [[maybe_unused]] rm_group_proxy* _rm_group_proxy;
+    rm_group_proxy* _rm_group_proxy;
     [[maybe_unused]] ss::sharded<cluster::rm_partition_frontend>&
       _rm_partition_frontend;
 };

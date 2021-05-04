@@ -14,16 +14,24 @@
 #include "cluster/controller.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/rm_group_proxy.h"
+#include "cluster/tm_stm.h"
 #include "cluster/topics_frontend.h"
+#include "cluster/tx_gateway.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/protocol/errors.h"
-#include "kafka/server/fwd.h"
+#include "kafka/server/coordinator_ntp_mapper.h"
+#include "kafka/server/group.h"
+#include "kafka/server/group_router.h"
 #include "kafka/types.h"
 #include "model/metadata.h"
 #include "seastarx.h"
 
 namespace kafka {
+
+ss::future<bool> try_create_consumer_group_topic(
+  kafka::coordinator_ntp_mapper& mapper,
+  cluster::topics_frontend& topics_frontend);
 
 class rm_group_frontend {
 public:
@@ -35,17 +43,80 @@ public:
       ss::sharded<kafka::coordinator_ntp_mapper>&,
       ss::sharded<kafka::group_router>&);
 
+    ss::future<cluster::begin_group_tx_reply> begin_group_tx(
+      kafka::group_id,
+      model::producer_identity,
+      model::timeout_clock::duration);
+    ss::future<cluster::begin_group_tx_reply> begin_group_tx_locally(
+      kafka::group_id,
+      model::producer_identity,
+      model::timeout_clock::duration);
+    ss::future<cluster::prepare_group_tx_reply> prepare_group_tx(
+      kafka::group_id,
+      model::term_id,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
+    ss::future<cluster::prepare_group_tx_reply> prepare_group_tx_locally(
+      kafka::group_id,
+      model::term_id,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
+    ss::future<cluster::commit_group_tx_reply> commit_group_tx(
+      kafka::group_id,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
+    ss::future<cluster::commit_group_tx_reply> commit_group_tx_locally(
+      kafka::group_id,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
+    ss::future<cluster::abort_group_tx_reply> abort_group_tx(
+      kafka::group_id,
+      model::producer_identity,
+      model::timeout_clock::duration);
+    ss::future<cluster::abort_group_tx_reply> abort_group_tx_locally(
+      kafka::group_id,
+      model::producer_identity,
+      model::timeout_clock::duration);
+
 private:
-    [[maybe_unused]] ss::sharded<cluster::metadata_cache>& _metadata_cache;
-    [[maybe_unused]] ss::sharded<rpc::connection_cache>& _connection_cache;
-    [[maybe_unused]] ss::sharded<cluster::partition_leaders_table>& _leaders;
-    [[maybe_unused]] cluster::controller* _controller;
-    [[maybe_unused]] ss::sharded<kafka::coordinator_ntp_mapper>&
-      _coordinator_mapper;
-    [[maybe_unused]] ss::sharded<kafka::group_router>& _group_router;
-    [[maybe_unused]] int16_t _metadata_dissemination_retries;
-    [[maybe_unused]] std::chrono::milliseconds
-      _metadata_dissemination_retry_delay_ms;
+    ss::sharded<cluster::metadata_cache>& _metadata_cache;
+    ss::sharded<rpc::connection_cache>& _connection_cache;
+    ss::sharded<cluster::partition_leaders_table>& _leaders;
+    cluster::controller* _controller;
+    ss::sharded<kafka::coordinator_ntp_mapper>& _coordinator_mapper;
+    ss::sharded<kafka::group_router>& _group_router;
+    int16_t _metadata_dissemination_retries;
+    std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
+
+    ss::future<cluster::begin_group_tx_reply> dispatch_begin_group_tx(
+      model::node_id,
+      kafka::group_id,
+      model::producer_identity,
+      model::timeout_clock::duration);
+    ss::future<cluster::prepare_group_tx_reply> dispatch_prepare_group_tx(
+      model::node_id,
+      kafka::group_id,
+      model::term_id,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
+    ss::future<cluster::commit_group_tx_reply> dispatch_commit_group_tx(
+      model::node_id,
+      kafka::group_id,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
+    ss::future<cluster::abort_group_tx_reply> dispatch_abort_group_tx(
+      model::node_id,
+      kafka::group_id,
+      model::producer_identity,
+      model::timeout_clock::duration);
+
+    friend cluster::tx_gateway;
 };
 
 class rm_group_proxy_impl final : public cluster::rm_group_proxy {
@@ -53,8 +124,73 @@ public:
     rm_group_proxy_impl(ss::sharded<rm_group_frontend>& target)
       : _target(target) {}
 
+    ss::future<cluster::begin_group_tx_reply> begin_group_tx(
+      kafka::group_id group_id,
+      model::producer_identity pid,
+      model::timeout_clock::duration timeout) override {
+        return _target.local().begin_group_tx(group_id, pid, timeout);
+    }
+
+    ss::future<cluster::begin_group_tx_reply> begin_group_tx_locally(
+      kafka::group_id group_id,
+      model::producer_identity pid,
+      model::timeout_clock::duration timeout) override {
+        return _target.local().begin_group_tx_locally(group_id, pid, timeout);
+    }
+
+    ss::future<cluster::prepare_group_tx_reply> prepare_group_tx(
+      kafka::group_id group_id,
+      model::term_id etag,
+      model::producer_identity pid,
+      model::tx_seq tx_seq,
+      model::timeout_clock::duration timeout) override {
+        return _target.local().prepare_group_tx(
+          group_id, etag, pid, tx_seq, timeout);
+    }
+
+    ss::future<cluster::prepare_group_tx_reply> prepare_group_tx_locally(
+      kafka::group_id group_id,
+      model::term_id etag,
+      model::producer_identity pid,
+      model::tx_seq tx_seq,
+      model::timeout_clock::duration timeout) override {
+        return _target.local().prepare_group_tx_locally(
+          group_id, etag, pid, tx_seq, timeout);
+    }
+
+    ss::future<cluster::commit_group_tx_reply> commit_group_tx(
+      kafka::group_id group_id,
+      model::producer_identity pid,
+      model::tx_seq tx_seq,
+      model::timeout_clock::duration timeout) override {
+        return _target.local().commit_group_tx(group_id, pid, tx_seq, timeout);
+    }
+
+    ss::future<cluster::commit_group_tx_reply> commit_group_tx_locally(
+      kafka::group_id group_id,
+      model::producer_identity pid,
+      model::tx_seq tx_seq,
+      model::timeout_clock::duration timeout) override {
+        return _target.local().commit_group_tx_locally(
+          group_id, pid, tx_seq, timeout);
+    }
+
+    ss::future<cluster::abort_group_tx_reply> abort_group_tx(
+      kafka::group_id group_id,
+      model::producer_identity pid,
+      model::timeout_clock::duration timeout) override {
+        return _target.local().abort_group_tx(group_id, pid, timeout);
+    }
+
+    ss::future<cluster::abort_group_tx_reply> abort_group_tx_locally(
+      kafka::group_id group_id,
+      model::producer_identity pid,
+      model::timeout_clock::duration timeout) override {
+        return _target.local().abort_group_tx_locally(group_id, pid, timeout);
+    }
+
 private:
-    [[maybe_unused]] ss::sharded<rm_group_frontend>& _target;
+    ss::sharded<rm_group_frontend>& _target;
 };
 
 } // namespace kafka

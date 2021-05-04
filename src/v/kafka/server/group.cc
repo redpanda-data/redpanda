@@ -1221,6 +1221,7 @@ group::commit_tx(cluster::commit_group_tx_request r) {
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
     auto e = co_await _partition->replicate(
+      _term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
@@ -1339,6 +1340,7 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
     auto e = co_await _partition->replicate(
+      _term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
@@ -1384,6 +1386,7 @@ group::abort_tx(cluster::abort_group_tx_request r) {
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
     auto e = co_await _partition->replicate(
+      _term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
 

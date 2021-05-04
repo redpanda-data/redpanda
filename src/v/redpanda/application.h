@@ -17,6 +17,7 @@
 #include "cluster/rm_partition_frontend.h"
 #include "coproc/event_listener.h"
 #include "coproc/pacemaker.h"
+#include "kafka/server/fwd.h"
 #include "kafka/server/rm_group_frontend.h"
 #include "pandaproxy/configuration.h"
 #include "pandaproxy/fwd.h"

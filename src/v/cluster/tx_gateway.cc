@@ -10,7 +10,6 @@
 #include "cluster/tx_gateway.h"
 
 #include "cluster/logger.h"
-#include "cluster/tx_gateway_frontend.h"
 #include "cluster/types.h"
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
@@ -56,24 +55,35 @@ tx_gateway::abort_tx(abort_tx_request&&, rpc::streaming_context&) {
     return ss::make_ready_future<abort_tx_reply>(abort_tx_reply());
 }
 
-ss::future<begin_group_tx_reply>
-tx_gateway::begin_group_tx(begin_group_tx_request&&, rpc::streaming_context&) {
-    co_return begin_group_tx_reply();
+ss::future<begin_group_tx_reply> tx_gateway::begin_group_tx(
+  begin_group_tx_request&& request, rpc::streaming_context&) {
+    return _rm_group_proxy->begin_group_tx_locally(
+      std::move(request.group_id), request.pid, request.timeout);
 };
 
 ss::future<prepare_group_tx_reply> tx_gateway::prepare_group_tx(
-  prepare_group_tx_request&&, rpc::streaming_context&) {
-    co_return prepare_group_tx_reply();
+  prepare_group_tx_request&& request, rpc::streaming_context&) {
+    return _rm_group_proxy->prepare_group_tx_locally(
+      std::move(request.group_id),
+      request.etag,
+      request.pid,
+      request.tx_seq,
+      request.timeout);
 };
 
 ss::future<commit_group_tx_reply> tx_gateway::commit_group_tx(
-  commit_group_tx_request&&, rpc::streaming_context&) {
-    co_return commit_group_tx_reply();
+  commit_group_tx_request&& request, rpc::streaming_context&) {
+    return _rm_group_proxy->commit_group_tx_locally(
+      std::move(request.group_id),
+      request.pid,
+      request.tx_seq,
+      request.timeout);
 };
 
-ss::future<abort_group_tx_reply>
-tx_gateway::abort_group_tx(abort_group_tx_request&&, rpc::streaming_context&) {
-    co_return abort_group_tx_reply();
+ss::future<abort_group_tx_reply> tx_gateway::abort_group_tx(
+  abort_group_tx_request&& request, rpc::streaming_context&) {
+    return _rm_group_proxy->abort_group_tx_locally(
+      std::move(request.group_id), request.pid, request.timeout);
 }
 
 } // namespace cluster
