@@ -16,6 +16,7 @@
 #include "cluster/fwd.h"
 #include "coproc/event_listener.h"
 #include "coproc/pacemaker.h"
+#include "kafka/server/rm_group_frontend.h"
 #include "pandaproxy/configuration.h"
 #include "pandaproxy/fwd.h"
 #include "raft/group_manager.h"
@@ -77,6 +78,7 @@ public:
     ss::sharded<kafka::quota_manager> quota_mgr;
     ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
     ss::sharded<archival::scheduler_service> archival_scheduler;
+    ss::sharded<kafka::rm_group_frontend> rm_group_frontend;
 
 private:
     using deferred_actions

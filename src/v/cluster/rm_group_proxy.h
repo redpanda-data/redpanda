@@ -11,14 +11,11 @@
 
 #pragma once
 
-namespace kafka {
+#include "cluster/types.h"
+#include "model/metadata.h"
+#include "seastarx.h"
 
-class coordinator_ntp_mapper;
-class fetch_session_cache;
-class group_manager;
-class group_router;
-class rm_group_frontend;
-class request_context;
-class quota_manager;
+namespace cluster {
 
-} // namespace kafka
+class rm_group_proxy {};
+} // namespace cluster

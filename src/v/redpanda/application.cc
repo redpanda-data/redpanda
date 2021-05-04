@@ -526,6 +526,18 @@ void application::wire_up_redpanda_services() {
       std::ref(controller))
       .get();
 
+    syschecks::systemd_message("Creating group resource manager frontend")
+      .get();
+    construct_service(
+      rm_group_frontend,
+      std::ref(metadata_cache),
+      std::ref(_raft_connection_cache),
+      std::ref(controller->get_partition_leaders()),
+      controller.get(),
+      std::ref(coordinator_ntp_mapper),
+      std::ref(group_router))
+      .get();
+
     ss::sharded<rpc::server_configuration> kafka_cfg;
     kafka_cfg.start(ss::sstring("kafka_rpc")).get();
     kafka_cfg
