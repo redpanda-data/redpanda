@@ -33,22 +33,6 @@ tasks:
     status:
     - test -f '{{.BUILD_ROOT}}/bin/docker-compose'
 
-  install-jdk-and-maven:
-    desc: install openjdk and maven
-    vars:
-      JDK_URL: https://github.com/AdoptOpenJDK/openjdk16-binaries/releases/download/jdk-16%2B36/OpenJDK16-jdk_x64_linux_hotspot_16_36.tar.gz
-      MAVEN_URL: https://downloads.apache.org/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz
-      JAVA_DIR: '{{.BUILD_ROOT}}/java'
-    cmds:
-    - mkdir -p '{{.JAVA_DIR}}'
-    - curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 '{{.JDK_URL}}' | tar --strip-components=1 -C '{{.JAVA_DIR}}' -xz
-    - curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 '{{.MAVEN_URL}}' | tar --strip-components=1 -C '{{.JAVA_DIR}}' -xz
-      # delete this (empty) folder; leaving it generates an error
-    - rm -r '{{.JAVA_DIR}}/lib/ext'
-    status:
-    - test -f '{{.JAVA_DIR}}/bin/java'
-    - test -f '{{.JAVA_DIR}}/bin/mvn'
-
   start-podman-socket-service:
     desc: start podman socket service (requires sudo)
     cmds:

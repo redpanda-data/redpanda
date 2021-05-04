@@ -16,8 +16,8 @@ class CompactedTopicVerifier:
     """
     def __init__(self, redpanda, topic='verifier_topic'):
         self._redpanda = redpanda
-        self.verifier_jar = f'{self._redpanda.v_build_dir}/java-build/compacted-log-verifier/kafka-compacted-topics-verifier.jar'
-        self.state_path = f'{self._redpanda.v_build_dir}/ducktape/verifier.state'
+        self.verifier_jar = f'/opt/compacted-log-verifier/kafka-compacted-topics-verifier.jar'
+        self.state_path = f'/tmp/ducktape/verifier.state'
         self.topic = topic
 
     def produce(self,

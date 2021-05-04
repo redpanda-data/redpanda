@@ -35,8 +35,7 @@ class KafkaCat:
             try:
                 res = subprocess.check_output(
                     ["kafkacat", "-b",
-                     self._redpanda.brokers(), "-J"] + cmd,
-                    stderr=subprocess.STDOUT)
+                     self._redpanda.brokers(), "-J"] + cmd)
                 res = json.loads(res)
                 self._redpanda.logger.debug(json.dumps(res, indent=2))
                 return res

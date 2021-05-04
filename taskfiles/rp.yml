@@ -83,29 +83,10 @@ tasks:
     cmds:
     - ctest {{if eq .CI "1"}}"--output-on-failure" -LE "disable_on_ci"{{end}} {{.CTEST_ARGS}}
 
-  build-java-test-programs:
-    desc: build java programs used in integrations tests
-    deps:
-    - :dev:install-jdk-and-maven
-    cmds:
-    - |
-      PATH="{{.BUILD_ROOT}}/java/bin:$PATH"
-      mvn -v
-      function build {
-        mvn clean package --batch-mode \
-          --file {{.SRC_DIR}}/tests/java/$1/ \
-          --define maven.repo.local={{.BUILD_ROOT}}/java/maven-repository \
-          --define buildDir={{.BUILD_ROOT}}/java/$1/
-      }
-      build kafka-verifier
-      build compacted-log-verifier
-    status:
-    - test -f '{{.BUILD_ROOT}}/java/kafka-verifier/kafka-verifier.jar'
-    - test -f '{{.BUILD_ROOT}}/java/compacted-log-verifier/kafka-compacted-topics-verifier.jar'
-
   build-test-docker-image:
     desc: build image used in integration tests
     cmds:
+    - cp '{{.SRC_DIR}}/tests/docker/Dockerfile.dockerignore' '{{.SRC_DIR}}/.dockerignore'
     - |
       if [ '{{.CI}}' == '1' ]; then
         chmod 644 '{{.SRC_DIR}}/tests/docker/ssh/'* '{{.SRC_DIR}}/tests/setup.py'
@@ -115,13 +96,14 @@ tasks:
           --tag vectorized/redpanda-test-node \
           --file '{{.SRC_DIR}}/tests/docker/Dockerfile' \
           --cache-from docker.io/vectorized/redpanda-test-node:cache \
-          '{{.SRC_DIR}}/tests/'
+          '{{.SRC_DIR}}'
       else
         docker build \
           --tag vectorized/redpanda-test-node \
           --file '{{.SRC_DIR}}/tests/docker/Dockerfile' \
-          '{{.SRC_DIR}}/tests/'
+          '{{.SRC_DIR}}'
       fi
+    - rm '{{.SRC_DIR}}/.dockerignore'
 
   start-compose-cluster:
     desc: deploy a cluster using docker-compose
@@ -142,7 +124,6 @@ tasks:
     deps:
     - set-aio-max
     - start-compose-cluster
-    - build-java-test-programs
     vars:
       DUCKTAPE_ARGS: '{{default "--exit-first tests/rptest/test_suite_quick.yml" .DUCKTAPE_ARGS}}'
       RP_INSTALL_DIR_DEFAULT: '{{.BUILD_DIR}}'
@@ -166,7 +147,7 @@ tasks:
           --cluster=ducktape.cluster.json.JsonCluster
           --cluster-file=/cluster.json
           --results-root=/build/tests/results
-          --globals='{"rp_install_path_root":"{{.RP_INSTALL_DIR}}","v_build_dir":"{{.BUILD_ROOT}}"}'
+          --globals='{"rp_install_path_root":"{{.RP_INSTALL_DIR}}"}'
           {{.DUCKTAPE_ARGS}}
 
   stop-compose-cluster:
