@@ -41,7 +41,8 @@ public:
         std::vector<unresolved_address> advertised_listeners;
         ss::semaphore mem_sem;
         ss::abort_source as;
-        kafka::client::client& client;
+        ss::smp_service_group smp_sg;
+        ss::sharded<kafka::client::client>& client;
         const configuration& config;
     };
 

@@ -52,6 +52,15 @@ namespace ppj = pandaproxy::json;
 
 namespace pandaproxy {
 
+namespace {
+
+ss::shard_id consumer_shard(const kafka::group_id& g_id) {
+    auto hash = xxhash_64(g_id().data(), g_id().length());
+    return jump_consistent_hash(hash, ss::smp::count);
+}
+
+} // namespace
+
 ss::future<server::reply_t>
 get_topics_names(server::request_t rq, server::reply_t rp) {
     parse::content_type_header(
@@ -64,7 +73,8 @@ get_topics_names(server::request_t rq, server::reply_t rp) {
     auto make_list_topics_req = []() {
         return kafka::metadata_request{.list_all_topics = true};
     };
-    return rq.ctx.client.dispatch(make_list_topics_req)
+    return rq.ctx.client.local()
+      .dispatch(make_list_topics_req)
       .then([res_fmt, rp = std::move(rp)](
               kafka::metadata_request::api_type::response_type res) mutable {
           std::vector<model::topic_view> names;
@@ -104,7 +114,7 @@ get_topics_records(server::request_t rq, server::reply_t rp) {
     int32_t max_bytes{parse::query_param<int32_t>(*rq.req, "max_bytes")};
 
     rq.req.reset();
-    return rq.ctx.client
+    return rq.ctx.client.local()
       .fetch_partition(std::move(tp), offset, max_bytes, timeout)
       .then([res_fmt, rp = std::move(rp)](kafka::fetch_response res) mutable {
           rapidjson::StringBuffer str_buf;
@@ -135,7 +145,7 @@ post_topics_name(server::request_t rq, server::reply_t rp) {
     auto records = ppj::rjson_parse(
       rq.req->content.data(), ppj::produce_request_handler(req_fmt));
 
-    auto res = co_await rq.ctx.client.produce_records(
+    auto res = co_await rq.ctx.client.local().produce_records(
       topic, std::move(records));
 
     auto json_rslt = ppj::rjson_serialize(res.data.responses[0]);
@@ -185,18 +195,26 @@ create_consumer(server::request_t rq, server::reply_t rp) {
           parse::error_code::invalid_param, "auto.commit must be false");
     }
 
-    return rq.ctx.client.create_consumer(group_id, req_data.name)
-      .then([group_id, res_fmt, rq{std::move(rq)}, rp{std::move(rp)}](
-              kafka::member_id name) mutable {
-          auto adv_addr = rq.ctx.config.advertised_pandaproxy_api();
-          json::create_consumer_response res{
-            .instance_id = name,
-            .base_uri = make_consumer_uri(rq, name, group_id)};
-          auto json_rslt = ppj::rjson_serialize(res);
-          rp.rep->write_body("json", json_rslt);
-          rp.mime_type = res_fmt;
-          return std::move(rp);
-      });
+    auto handler =
+      [group_id,
+       res_fmt,
+       req_data{std::move(req_data)},
+       rq{std::move(rq)},
+       rp{std::move(rp)}](
+        kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+        auto name = co_await client.create_consumer(group_id, req_data.name);
+        auto adv_addr = rq.ctx.config.advertised_pandaproxy_api();
+        json::create_consumer_response res{
+          .instance_id = name,
+          .base_uri = make_consumer_uri(rq, name, group_id)};
+        auto json_rslt = ppj::rjson_serialize(res);
+        rp.rep->write_body("json", json_rslt);
+        rp.mime_type = res_fmt;
+        co_return std::move(rp);
+    };
+
+    co_return co_await rq.ctx.client.invoke_on(
+      consumer_shard(group_id), rq.ctx.smp_sg, std::move(handler));
 }
 
 ss::future<server::reply_t>
@@ -211,9 +229,16 @@ remove_consumer(server::request_t rq, server::reply_t rp) {
     auto member_id = parse::request_param<kafka::member_id>(
       *rq.req, "instance");
 
-    co_await rq.ctx.client.remove_consumer(group_id, member_id);
-    rp.rep->set_status(ss::httpd::reply::status_type::no_content);
-    co_return rp;
+    auto handler =
+      [group_id, member_id, rq{std::move(rq)}, rp{std::move(rp)}](
+        kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+        co_await client.remove_consumer(group_id, member_id);
+        rp.rep->set_status(ss::httpd::reply::status_type::no_content);
+        co_return std::move(rp);
+    };
+
+    co_return co_await rq.ctx.client.invoke_on(
+      consumer_shard(group_id), rq.ctx.smp_sg, std::move(handler));
 }
 
 ss::future<server::reply_t>
@@ -231,13 +256,23 @@ subscribe_consumer(server::request_t rq, server::reply_t rp) {
     auto req_data = ppj::rjson_parse(
       rq.req->content.data(), ppj::subscribe_consumer_request_handler());
 
-    return rq.ctx.client
-      .subscribe_consumer(group_id, member_id, std::move(req_data.topics))
-      .then([res_fmt, rp{std::move(rp)}]() mutable {
-          rp.mime_type = res_fmt;
-          rp.rep->set_status(ss::httpd::reply::status_type::no_content);
-          return std::move(rp);
-      });
+    auto handler =
+      [group_id,
+       member_id,
+       res_fmt,
+       req_data{std::move(req_data)},
+       rq{std::move(rq)},
+       rp{std::move(rp)}](
+        kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+        co_await client.subscribe_consumer(
+          group_id, member_id, std::move(req_data.topics));
+        rp.mime_type = res_fmt;
+        rp.rep->set_status(ss::httpd::reply::status_type::no_content);
+        co_return std::move(rp);
+    };
+
+    co_return co_await rq.ctx.client.invoke_on(
+      consumer_shard(group_id), rq.ctx.smp_sg, std::move(handler));
 }
 
 ss::future<server::reply_t>
@@ -257,19 +292,31 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
     auto max_bytes{
       parse::query_param<std::optional<int32_t>>(*rq.req, "max_bytes")};
 
-    return rq.ctx.client.consumer_fetch(group_id, name, timeout, max_bytes)
-      .then([res_fmt, rp{std::move(rp)}](kafka::fetch_response res) mutable {
-          rapidjson::StringBuffer str_buf;
-          rapidjson::Writer<rapidjson::StringBuffer> w(str_buf);
+    auto handler =
+      [group_id,
+       name,
+       timeout,
+       max_bytes,
+       res_fmt,
+       rq{std::move(rq)},
+       rp{std::move(rp)}](
+        kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+        auto res = co_await client.consumer_fetch(
+          group_id, name, timeout, max_bytes);
+        rapidjson::StringBuffer str_buf;
+        rapidjson::Writer<rapidjson::StringBuffer> w(str_buf);
 
-          ppj::rjson_serialize_fmt(res_fmt)(w, std::move(res));
+        ppj::rjson_serialize_fmt(res_fmt)(w, std::move(res));
 
-          // TODO Ben: Prevent this linearization
-          ss::sstring json_rslt = str_buf.GetString();
-          rp.rep->write_body("json", json_rslt);
-          rp.mime_type = res_fmt;
-          return std::move(rp);
-      });
+        // TODO Ben: Prevent this linearization
+        ss::sstring json_rslt = str_buf.GetString();
+        rp.rep->write_body("json", json_rslt);
+        rp.mime_type = res_fmt;
+        co_return std::move(rp);
+    };
+
+    co_return co_await rq.ctx.client.invoke_on(
+      consumer_shard(group_id), rq.ctx.smp_sg, std::move(handler));
 }
 
 ss::future<server::reply_t>
@@ -285,15 +332,27 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp) {
     auto req_data = ppj::partitions_request_to_offset_request(ppj::rjson_parse(
       rq.req->content.data(), ppj::partitions_request_handler()));
 
-    auto res = co_await rq.ctx.client.consumer_offset_fetch(
-      group_id, member_id, std::move(req_data));
-    rapidjson::StringBuffer str_buf;
-    rapidjson::Writer<rapidjson::StringBuffer> w(str_buf);
-    ppj::rjson_serialize(w, res);
-    ss::sstring json_rslt = str_buf.GetString();
-    rp.rep->write_body("json", json_rslt);
-    rp.mime_type = res_fmt;
-    co_return rp;
+    auto handler =
+      [group_id,
+       member_id,
+       req_data{std::move(req_data)},
+       res_fmt,
+       rq{std::move(rq)},
+       rp{std::move(rp)}](
+        kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+        auto res = co_await client.consumer_offset_fetch(
+          group_id, member_id, std::move(req_data));
+        rapidjson::StringBuffer str_buf;
+        rapidjson::Writer<rapidjson::StringBuffer> w(str_buf);
+        ppj::rjson_serialize(w, res);
+        ss::sstring json_rslt = str_buf.GetString();
+        rp.rep->write_body("json", json_rslt);
+        rp.mime_type = res_fmt;
+        co_return std::move(rp);
+    };
+
+    co_return co_await rq.ctx.client.invoke_on(
+      consumer_shard(group_id), rq.ctx.smp_sg, std::move(handler));
 }
 
 ss::future<server::reply_t>
@@ -314,10 +373,21 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
                           rq.req->content.data(),
                           ppj::partition_offsets_request_handler()));
 
-    auto res = co_await rq.ctx.client.consumer_offset_commit(
-      group_id, member_id, std::move(req_data));
-    rp.rep->set_status(ss::httpd::reply::status_type::no_content);
-    co_return rp;
+    auto handler =
+      [group_id,
+       member_id,
+       req_data{std::move(req_data)},
+       rq{std::move(rq)},
+       rp{std::move(rp)}](
+        kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+        auto res = co_await client.consumer_offset_commit(
+          group_id, member_id, std::move(req_data));
+        rp.rep->set_status(ss::httpd::reply::status_type::no_content);
+        co_return std::move(rp);
+    };
+
+    co_return co_await rq.ctx.client.invoke_on(
+      consumer_shard(group_id), rq.ctx.smp_sg, std::move(handler));
 }
 
 } // namespace pandaproxy

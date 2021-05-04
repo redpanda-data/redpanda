@@ -126,6 +126,7 @@ server::server(
   , _ctx{
       .mem_sem = std::move(ctx.mem_sem),
       .as = std::move(ctx.as),
+      .smp_sg = ctx.smp_sg,
       .client = ctx.client,
       .config = ctx.config} {
     _api20.set_api_doc(_server._routes);

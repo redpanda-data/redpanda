@@ -147,10 +147,7 @@ class PandaProxyTest(RedpandaTest):
                 TopicSpec(name=name,
                           partition_count=partitions,
                           replication_factor=replicas))
-        wait_until(lambda: set(names).issubset(self._get_topics().json()),
-                   timeout_sec=30,
-                   backoff_sec=1,
-                   err_msg="Topics failed to settle")
+        assert set(names).issubset(self._get_topics().json())
         return names
 
     def _get_topics(self, headers=HTTP_GET_TOPICS_HEADERS):
@@ -711,7 +708,7 @@ class PandaProxyTest(RedpandaTest):
 
         # Set consumer offsets
         sco_req = dict(partitions=[
-            dict(topic=t, partition=p, offset=1) for t in topics
+            dict(topic=t, partition=p, offset=0) for t in topics
             for p in [0, 1, 2]
         ])
         self.logger.info(f"Set consumer offsets")
