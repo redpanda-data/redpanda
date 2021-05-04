@@ -9,6 +9,7 @@
 
 #include "kafka/client/broker.h"
 
+#include "cluster/cluster_utils.h"
 #include "kafka/client/logger.h"
 #include "kafka/client/sasl_client.h"
 #include "rpc/dns.h"
@@ -22,17 +23,24 @@ ss::future<shared_broker_t> make_broker(
   model::node_id node_id,
   unresolved_address addr,
   const configuration& config) {
-    auto client = ss::make_lw_shared<transport>(
-      rpc::base_transport::configuration{.server_addr = addr});
-    return client->connect()
-      .then([node_id, addr = std::move(addr), client] {
-          vlog(
-            kclog.info,
-            "connected to broker:{} - {}:{}",
-            node_id,
-            addr.host(),
-            addr.port());
-          return ss::make_lw_shared<broker>(node_id, std::move(*client));
+    return cluster::maybe_build_reloadable_certificate_credentials(
+             config.broker_tls())
+      .then([addr](ss::shared_ptr<ss::tls::certificate_credentials> creds) {
+          return ss::make_lw_shared<transport>(
+            rpc::base_transport::configuration{
+              .server_addr = addr, .credentials = std::move(creds)});
+      })
+      .then([node_id, addr](ss::lw_shared_ptr<transport> client) {
+          return client->connect().then(
+            [node_id, addr = std::move(addr), client] {
+                vlog(
+                  kclog.info,
+                  "connected to broker:{} - {}:{}",
+                  node_id,
+                  addr.host(),
+                  addr.port());
+                return ss::make_lw_shared<broker>(node_id, std::move(*client));
+            });
       })
       .handle_exception_type([node_id](const std::system_error& ex) {
           if (
