@@ -12,6 +12,7 @@
 
 #include "archival/logger.h"
 #include "archival/ntp_archiver_service.h"
+#include "archival/types.h"
 #include "cluster/partition_manager.h"
 #include "cluster/topic_table.h"
 #include "config/configuration.h"
@@ -154,12 +155,12 @@ scheduler_service_impl::scheduler_service_impl(
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<cluster::topic_table>& tt)
   : _conf(conf)
+  , _pool(conf.connection_limit(), conf.client_config)
   , _partition_manager(pm)
   , _topic_table(tt)
   , _storage_api(api)
   , _jitter(conf.interval, 1ms)
   , _gc_jitter(conf.gc_interval, 1ms)
-  , _conn_limit(conf.connection_limit())
   , _stop_limit(conf.connection_limit()) {}
 
 scheduler_service_impl::scheduler_service_impl(
@@ -193,18 +194,22 @@ ss::future<> scheduler_service_impl::start() {
 ss::future<> scheduler_service_impl::stop() {
     vlog(archival_log.info, "Scheduler service stop");
     _timer.cancel();
-    _as.request_abort();
-    std::vector<ss::future<>> outstanding;
-    for (auto& it : _queue) {
-        auto fut = ss::with_semaphore(
-          _stop_limit, 1, [it] { return it.second.archiver->stop(); });
-        outstanding.emplace_back(std::move(fut));
-    }
-    return ss::do_with(
-      std::move(outstanding), [this](std::vector<ss::future<>>& outstanding) {
-          return ss::when_all_succeed(outstanding.begin(), outstanding.end())
-            .then([this] { return _gate.close(); });
-      });
+    _as.request_abort(); // interrupt possible sleep
+    return _pool.stop().then([this] {
+        std::vector<ss::future<>> outstanding;
+        for (auto& it : _queue) {
+            auto fut = ss::with_semaphore(
+              _stop_limit, 1, [it] { return it.second.archiver->stop(); });
+            outstanding.emplace_back(std::move(fut));
+        }
+        return ss::do_with(
+          std::move(outstanding),
+          [this](std::vector<ss::future<>>& outstanding) {
+              return ss::when_all_succeed(
+                       outstanding.begin(), outstanding.end())
+                .then([this] { return _gate.close(); });
+          });
+    });
 }
 
 ss::lw_shared_ptr<ntp_archiver> scheduler_service_impl::get_upload_candidate() {
@@ -217,21 +222,19 @@ ss::future<> scheduler_service_impl::upload_topic_manifest(
     auto cfg = _topic_table.local().get_topic_cfg(view);
     if (cfg) {
         try {
-            auto units = co_await ss::get_units(_conn_limit, 1);
             vlog(archival_log.info, "Uploading topic manifest {}", view);
-            s3::client client(_conf.client_config, _as);
+            auto [client, deleter] = co_await _pool.acquire();
             topic_manifest tm(*cfg, rev);
             auto [istr, size_bytes] = tm.serialize();
             auto key = tm.get_manifest_path();
             vlog(archival_log.debug, "Topic manifest object key is '{}'", key);
             std::vector<s3::object_tag> tags = {{"rp-type", "topic-manifest"}};
-            co_await client.put_object(
+            co_await client->put_object(
               _conf.bucket_name,
               s3::object_key(key),
               size_bytes,
               std::move(istr),
               tags);
-            co_await client.shutdown();
         } catch (const s3::rest_error_response& err) {
             vlog(
               archival_log.error,
@@ -264,7 +267,7 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
                     return ss::now();
                 }
                 auto svc = ss::make_lw_shared<ntp_archiver>(
-                  log->config(), _conf);
+                  log->config(), _conf, _pool);
                 return ss::repeat([this, svc, ntp] {
                     return svc->download_manifest()
                       .then(
@@ -351,7 +354,7 @@ scheduler_service_impl::remove_archivers(std::vector<model::ntp> to_remove) {
           vlog(archival_log.info, "removing archiver for {}", ntp.path());
           auto archiver = _queue[ntp];
           return ss::with_semaphore(
-                   _conn_limit, 1, [archiver] { return archiver->stop(); })
+                   _stop_limit, 1, [archiver] { return archiver->stop(); })
             .finally([this, ntp] {
                 vlog(archival_log.info, "archiver stopped {}", ntp.path());
                 _queue.erase(ntp);
@@ -427,7 +430,7 @@ ss::future<> scheduler_service_impl::run_uploads() {
                     archival_log.debug,
                     "Checking {} for S3 upload candidates",
                     archiver->get_ntp());
-                  return archiver->upload_next_candidates(_conn_limit, lm);
+                  return archiver->upload_next_candidates(lm);
               });
 
             auto results = co_await ss::when_all_succeed(
