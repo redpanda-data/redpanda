@@ -107,9 +107,10 @@ func (r *CertificateResource) obj() (k8sclient.Object, error) {
 	}
 
 	if r.fqdn != "" {
-		name := "*." + strings.TrimSuffix(r.fqdn, ".")
+		name := strings.TrimSuffix(r.fqdn, ".")
+		wildname := "*." + name
 		cert.Spec.CommonName = string(r.commonName)
-		cert.Spec.DNSNames = []string{name}
+		cert.Spec.DNSNames = []string{name, wildname}
 	} else {
 		cert.Spec.CommonName = string(r.commonName)
 	}
