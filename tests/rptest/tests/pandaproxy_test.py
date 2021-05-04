@@ -828,7 +828,7 @@ class PandaProxySASLTest(RedpandaTest):
                 f"Listed {listed_topics} expected {expected_topics}")
             return listed_topics == expected_topics
 
-        wait_until(lambda: topics_appeared,
+        wait_until(topics_appeared,
                    timeout_sec=20,
                    backoff_sec=2,
                    err_msg="Timeout waiting for topics to appear.")
