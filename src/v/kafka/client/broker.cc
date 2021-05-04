@@ -10,12 +10,18 @@
 #include "kafka/client/broker.h"
 
 #include "kafka/client/logger.h"
+#include "kafka/client/sasl_client.h"
 #include "rpc/dns.h"
+
+#include <seastar/core/coroutine.hh>
+#include <seastar/core/std-coroutine.hh>
 
 namespace kafka::client {
 
-ss::future<shared_broker_t>
-make_broker(model::node_id node_id, unresolved_address addr) {
+ss::future<shared_broker_t> make_broker(
+  model::node_id node_id,
+  unresolved_address addr,
+  const configuration& config) {
     auto client = ss::make_lw_shared<transport>(
       rpc::base_transport::configuration{.server_addr = addr});
     return client->connect()
@@ -37,6 +43,10 @@ make_broker(model::node_id node_id, unresolved_address addr) {
           }
           vlog(kclog.warn, "std::system_error: ", ex.what());
           return ss::make_exception_future<shared_broker_t>(ex);
+      })
+      .then([&config](shared_broker_t broker) -> ss::future<shared_broker_t> {
+          co_await do_authenticate(broker, config);
+          co_return broker;
       });
 }
 

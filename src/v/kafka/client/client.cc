@@ -46,7 +46,7 @@ client::client(const YAML::Node& cfg)
   : _config{cfg}
   , _seeds{_config.brokers()}
   , _topic_cache{}
-  , _brokers{}
+  , _brokers{_config}
   , _wait_or_start_update_metadata{[this](wait_or_start::tag tag) {
       return update_metadata(tag);
   }}
@@ -56,15 +56,12 @@ client::client(const YAML::Node& cfg)
 
 ss::future<> client::do_connect(unresolved_address addr) {
     return ss::try_with_gate(_gate, [this, addr]() {
-        return make_broker(unknown_node_id, addr)
+        return make_broker(unknown_node_id, addr, _config)
           .then([this](shared_broker_t broker) {
-              return do_authenticate(broker, _config).then([this, broker] {
-                  return broker
-                    ->dispatch(metadata_request{.list_all_topics = true})
-                    .then([this, broker](metadata_response res) {
-                        return apply(std::move(res));
-                    });
-              });
+              return broker->dispatch(metadata_request{.list_all_topics = true})
+                .then([this, broker](metadata_response res) {
+                    return apply(std::move(res));
+                });
           });
     });
 }
@@ -283,9 +280,11 @@ client::create_consumer(const group_id& group_id, member_id name) {
         return find_coordinator_request(group_id);
     };
     return dispatch(build_request)
-      .then([](find_coordinator_response res) {
+      .then([this](find_coordinator_response res) {
           return make_broker(
-            res.data.node_id, unresolved_address(res.data.host, res.data.port));
+            res.data.node_id,
+            unresolved_address(res.data.host, res.data.port),
+            _config);
       })
       .then([this, group_id, name](shared_broker_t coordinator) mutable {
           return make_consumer(
