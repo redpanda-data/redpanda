@@ -123,6 +123,23 @@ func (r *ClusterReconciler) Reconcile(
 	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, headlessPorts, log)
 	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, nodeports, log)
 
+	clusterPorts := []resources.NamedServicePort{}
+	if proxyAPIExternal != nil {
+		clusterPorts = append(clusterPorts, resources.NamedServicePort{Name: resources.PandaproxyPortExternalName, Port: proxyAPIInternal.Port + 1})
+	}
+	clusterSvc := resources.NewClusterService(r.Client, &redpandaCluster, r.Scheme, clusterPorts, log)
+	subdomain := ""
+	if proxyAPIExternal != nil {
+		subdomain = proxyAPIExternal.External.Subdomain
+	}
+	ingress := resources.NewIngress(r.Client,
+		&redpandaCluster,
+		r.Scheme,
+		subdomain,
+		clusterSvc.Key().Name,
+		resources.PandaproxyPortExternalName,
+		log)
+
 	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(), r.Scheme, log)
 	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
 	sts := resources.NewStatefulSet(
@@ -142,7 +159,9 @@ func (r *ClusterReconciler) Reconcile(
 		log)
 	toApply := []resources.Reconciler{
 		headlessSvc,
+		clusterSvc,
 		nodeportSvc,
+		ingress,
 		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(), log),
 		pki,
 		sa,
