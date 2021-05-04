@@ -27,19 +27,22 @@ helm install \
 ### - Install latest redpanda operator
 
 ```
-kubectl apply -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/default
+VERSION=v21.4.15
+kubectl apply -k 'https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=$VERSION'
 helm repo add redpanda https://charts.vectorized.io/ && \
 helm repo update \
 helm install \
   --namespace redpanda-system \
   --create-namespace redpanda-operator \
+  --version $VERSION \
   redpanda/redpanda-operator
 ```
 
 ### - Install cluster with external connectivity
 
 ```
-kubectl apply -f config/samples/external_connectivity.yaml
+VERSION=v21.4.15
+kubectl apply -f https://raw.githubusercontent.com/vectorizedio/redpanda/$VERSION/src/go/k8s/config/samples/external_connectivity.yaml
 ```
 
 ### - Get broker addresses
