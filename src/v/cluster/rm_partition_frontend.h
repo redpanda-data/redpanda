@@ -15,6 +15,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/tm_stm.h"
 #include "cluster/topics_frontend.h"
+#include "cluster/tx_gateway.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
@@ -33,17 +34,77 @@ public:
       ss::sharded<partition_leaders_table>&,
       cluster::controller*);
 
+    ss::future<begin_tx_reply> begin_tx(
+      model::ntp, model::producer_identity, model::timeout_clock::duration);
+    ss::future<prepare_tx_reply> prepare_tx(
+      model::ntp,
+      model::term_id,
+      model::partition_id,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
+    ss::future<commit_tx_reply> commit_tx(
+      model::ntp,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
+    ss::future<abort_tx_reply> abort_tx(
+      model::ntp, model::producer_identity, model::timeout_clock::duration);
+
 private:
-    [[maybe_unused]] ss::smp_service_group _ssg;
-    [[maybe_unused]] ss::sharded<cluster::partition_manager>&
-      _partition_manager;
-    [[maybe_unused]] ss::sharded<cluster::shard_table>& _shard_table;
-    [[maybe_unused]] ss::sharded<cluster::metadata_cache>& _metadata_cache;
-    [[maybe_unused]] ss::sharded<rpc::connection_cache>& _connection_cache;
-    [[maybe_unused]] ss::sharded<partition_leaders_table>& _leaders;
-    [[maybe_unused]] cluster::controller* _controller;
-    [[maybe_unused]] int16_t _metadata_dissemination_retries;
-    [[maybe_unused]] std::chrono::milliseconds
-      _metadata_dissemination_retry_delay_ms;
+    ss::smp_service_group _ssg;
+    ss::sharded<cluster::partition_manager>& _partition_manager;
+    ss::sharded<cluster::shard_table>& _shard_table;
+    ss::sharded<cluster::metadata_cache>& _metadata_cache;
+    ss::sharded<rpc::connection_cache>& _connection_cache;
+    ss::sharded<partition_leaders_table>& _leaders;
+    cluster::controller* _controller;
+    int16_t _metadata_dissemination_retries;
+    std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
+
+    bool is_leader_of(const model::ntp&) const;
+
+    ss::future<begin_tx_reply> dispatch_begin_tx(
+      model::node_id,
+      model::ntp,
+      model::producer_identity,
+      model::timeout_clock::duration);
+    ss::future<begin_tx_reply>
+      do_begin_tx(model::ntp, model::producer_identity);
+    ss::future<prepare_tx_reply> dispatch_prepare_tx(
+      model::node_id,
+      model::ntp,
+      model::term_id,
+      model::partition_id,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
+    ss::future<prepare_tx_reply> do_prepare_tx(
+      model::ntp,
+      model::term_id,
+      model::partition_id,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
+    ss::future<commit_tx_reply> dispatch_commit_tx(
+      model::node_id,
+      model::ntp,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
+    ss::future<commit_tx_reply> do_commit_tx(
+      model::ntp,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
+    ss::future<abort_tx_reply> dispatch_abort_tx(
+      model::node_id,
+      model::ntp,
+      model::producer_identity,
+      model::timeout_clock::duration);
+    ss::future<abort_tx_reply> do_abort_tx(
+      model::ntp, model::producer_identity, model::timeout_clock::duration);
+
+    friend tx_gateway;
 };
 } // namespace cluster

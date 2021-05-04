@@ -148,7 +148,7 @@ public:
         return _raft->get_configuration_manager();
     }
 
-    ss::shared_ptr<cluster::rm_stm>& rm_stm() { return _rm_stm; }
+    ss::shared_ptr<cluster::rm_stm> rm_stm() { return _rm_stm; }
 
     size_t size_bytes() const { return _raft->log().size_bytes(); }
     ss::future<> update_configuration(topic_properties);

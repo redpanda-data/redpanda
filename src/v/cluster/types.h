@@ -106,14 +106,44 @@ inline std::error_code make_error_code(tx_errc e) noexcept {
 
 struct init_tm_tx_request {};
 struct init_tm_tx_reply {};
-struct begin_tx_request {};
-struct begin_tx_reply {};
-struct prepare_tx_request {};
-struct prepare_tx_reply {};
-struct commit_tx_request {};
-struct commit_tx_reply {};
-struct abort_tx_request {};
-struct abort_tx_reply {};
+struct begin_tx_request {
+    model::ntp ntp;
+    model::producer_identity pid;
+    model::tx_seq tx_seq;
+};
+struct begin_tx_reply {
+    model::ntp ntp;
+    model::term_id etag;
+    tx_errc ec;
+};
+struct prepare_tx_request {
+    model::ntp ntp;
+    model::term_id etag;
+    model::partition_id tm;
+    model::producer_identity pid;
+    model::tx_seq tx_seq;
+    model::timeout_clock::duration timeout;
+};
+struct prepare_tx_reply {
+    tx_errc ec;
+};
+struct commit_tx_request {
+    model::ntp ntp;
+    model::producer_identity pid;
+    model::tx_seq tx_seq;
+    model::timeout_clock::duration timeout;
+};
+struct commit_tx_reply {
+    tx_errc ec;
+};
+struct abort_tx_request {
+    model::ntp ntp;
+    model::producer_identity pid;
+    model::timeout_clock::duration timeout;
+};
+struct abort_tx_reply {
+    tx_errc ec;
+};
 struct begin_group_tx_request {
     model::ntp ntp;
     kafka::group_id group_id;
