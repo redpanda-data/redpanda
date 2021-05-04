@@ -61,6 +61,10 @@ func Name(nodeID uint) string {
 	return fmt.Sprintf("rp-node-%d", nodeID)
 }
 
+func DefaultImage() string {
+	return redpandaImageBase
+}
+
 func DefaultCtx() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), defaultDockerClientTimeout)
 }
@@ -200,7 +204,7 @@ func RemoveNetwork(c Client) error {
 func CreateNode(
 	c Client,
 	nodeID, kafkaPort, proxyPort, rpcPort, metricsPort uint,
-	netID string,
+	netID, image string,
 	args ...string,
 ) (*NodeState, error) {
 	rPort, err := nat.NewPort(
@@ -255,7 +259,7 @@ func CreateNode(
 		"--smp 1 --memory 1G --reserve-memory 0M",
 	}
 	containerConfig := container.Config{
-		Image:    redpandaImageBase,
+		Image:    image,
 		Hostname: hostname,
 		Cmd:      append(cmd, args...),
 		ExposedPorts: nat.PortSet{
@@ -314,9 +318,10 @@ func CreateNode(
 	}, nil
 }
 
-func PullImage(c Client) error {
+func PullImage(c Client, image string) error {
+	log.Debugf("Pulling image: %s", image)
 	ctx, _ := context.WithTimeout(context.Background(), 5*time.Minute)
-	res, err := c.ImagePull(ctx, redpandaImage, types.ImagePullOptions{})
+	res, err := c.ImagePull(ctx, image, types.ImagePullOptions{})
 	if res != nil {
 		defer res.Close()
 		buf := bytes.Buffer{}
@@ -329,7 +334,7 @@ func PullImage(c Client) error {
 	return ctx.Err()
 }
 
-func CheckIfImgPresent(c Client) (bool, error) {
+func CheckIfImgPresent(c Client, image string) (bool, error) {
 	ctx, _ := DefaultCtx()
 	filters := filters.NewArgs(
 		filters.Arg("reference", redpandaImageBase),
