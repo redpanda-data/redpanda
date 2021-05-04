@@ -132,21 +132,21 @@ func DeduceBrokers(
 			return []string{"127.0.0.1:9092"}
 		}
 
-		if len(conf.Redpanda.KafkaApi) == 0 {
+		if len(conf.Redpanda.AdvertisedKafkaApi) == 0 {
 			log.Trace(
-				"The config file contains no kafka listeners." +
-					" Empty redpanda.kafka_api.",
+				"The config file contains no advertised kafka listeners." +
+					" Empty redpanda.advertised_kafka_api.",
 			)
 			return []string{}
 		}
 
-		// Add the seed servers' Kafka addrs.
+		// Add the seed servers' advertised kafka addrs.
 		if len(conf.Redpanda.SeedServers) > 0 {
 			for _, b := range conf.Redpanda.SeedServers {
 				addr := fmt.Sprintf(
 					"%s:%d",
 					b.Host.Address,
-					conf.Redpanda.KafkaApi[0].Port,
+					conf.Redpanda.AdvertisedKafkaApi[0].Port,
 				)
 				bs = append(bs, addr)
 			}
@@ -154,8 +154,8 @@ func DeduceBrokers(
 		// Add the current node's Kafka addr.
 		selfAddr := fmt.Sprintf(
 			"%s:%d",
-			conf.Redpanda.KafkaApi[0].Address,
-			conf.Redpanda.KafkaApi[0].Port,
+			conf.Redpanda.AdvertisedKafkaApi[0].Address,
+			conf.Redpanda.AdvertisedKafkaApi[0].Port,
 		)
 		bs = append(bs, selfAddr)
 		log.Debugf(
