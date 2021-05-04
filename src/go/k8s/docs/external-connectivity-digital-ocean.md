@@ -27,7 +27,7 @@ helm install \
 ### - Install latest redpanda operator
 
 ```
-kubectl apply -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/default
+kubectl apply -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd
 helm repo add redpanda https://charts.vectorized.io/ && \
 helm repo update \
 helm install \
