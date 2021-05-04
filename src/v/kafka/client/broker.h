@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "kafka/client/configuration.h"
 #include "kafka/client/exceptions.h"
 #include "kafka/client/transport.h"
 #include "model/metadata.h"
@@ -84,8 +85,8 @@ private:
 
 using shared_broker_t = ss::lw_shared_ptr<broker>;
 
-ss::future<shared_broker_t>
-make_broker(model::node_id node_id, unresolved_address addr);
+ss::future<shared_broker_t> make_broker(
+  model::node_id node_id, unresolved_address addr, const configuration& config);
 
 struct broker_hash {
     using is_transparent = void;

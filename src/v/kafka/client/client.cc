@@ -46,7 +46,7 @@ client::client(const YAML::Node& cfg)
   : _config{cfg}
   , _seeds{_config.brokers()}
   , _topic_cache{}
-  , _brokers{}
+  , _brokers{_config}
   , _wait_or_start_update_metadata{[this](wait_or_start::tag tag) {
       return update_metadata(tag);
   }}
@@ -54,64 +54,14 @@ client::client(const YAML::Node& cfg)
                   return mitigate_error(std::move(ex));
               }} {}
 
-ss::future<> client::do_authenticate(shared_broker_t broker) {
-    if (_config.sasl_mechanism().empty()) {
-        vlog(kclog.debug, "Connecting to broker without authentication");
-        co_return;
-    }
-
-    auto mechanism = _config.sasl_mechanism();
-
-    if (
-      mechanism != security::scram_sha256_authenticator::name
-      && mechanism != security::scram_sha512_authenticator::name) {
-        throw broker_error{
-          broker->id(),
-          error_code::sasl_authentication_failed,
-          fmt_with_ctx(ssx::sformat, "Unknown mechanism: {}", mechanism)};
-    }
-
-    auto username = _config.scram_username();
-
-    vlog(
-      kclog.debug,
-      "Connecting to broker with authentication: {}:{}",
-      mechanism,
-      username);
-
-    // perform handshake
-    co_await do_sasl_handshake(broker, mechanism);
-
-    auto password = _config.scram_password();
-
-    if (username.empty() || password.empty()) {
-        throw broker_error{
-          broker->id(),
-          error_code::sasl_authentication_failed,
-          "Username or password is empty"};
-    }
-
-    if (mechanism == security::scram_sha256_authenticator::name) {
-        co_await do_authenticate_scram256(
-          broker, std::move(username), std::move(password));
-
-    } else if (mechanism == security::scram_sha512_authenticator::name) {
-        co_await do_authenticate_scram512(
-          broker, std::move(username), std::move(password));
-    }
-}
-
 ss::future<> client::do_connect(unresolved_address addr) {
     return ss::try_with_gate(_gate, [this, addr]() {
-        return make_broker(unknown_node_id, addr)
+        return make_broker(unknown_node_id, addr, _config)
           .then([this](shared_broker_t broker) {
-              return do_authenticate(broker).then([this, broker] {
-                  return broker
-                    ->dispatch(metadata_request{.list_all_topics = true})
-                    .then([this, broker](metadata_response res) {
-                        return apply(std::move(res));
-                    });
-              });
+              return broker->dispatch(metadata_request{.list_all_topics = true})
+                .then([this, broker](metadata_response res) {
+                    return apply(std::move(res));
+                });
           });
     });
 }
@@ -330,9 +280,11 @@ client::create_consumer(const group_id& group_id, member_id name) {
         return find_coordinator_request(group_id);
     };
     return dispatch(build_request)
-      .then([](find_coordinator_response res) {
+      .then([this](find_coordinator_response res) {
           return make_broker(
-            res.data.node_id, unresolved_address(res.data.host, res.data.port));
+            res.data.node_id,
+            unresolved_address(res.data.host, res.data.port),
+            _config);
       })
       .then([this, group_id, name](shared_broker_t coordinator) mutable {
           return make_consumer(

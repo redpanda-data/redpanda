@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "kafka/client/broker.h"
+#include "kafka/client/configuration.h"
 #include "kafka/protocol/sasl_authenticate.h"
 #include "kafka/protocol/sasl_handshake.h"
 #include "random/generators.h"
@@ -20,6 +21,7 @@
 
 namespace kafka::client {
 
+ss::future<> do_authenticate(shared_broker_t, const configuration& config);
 /*
  * SASL handshake negotiates mechanism. In this case that process is simple: if
  * the server doesn't support the requested mechanism there is no fallback.

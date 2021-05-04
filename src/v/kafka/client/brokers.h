@@ -12,6 +12,7 @@
 #pragma once
 
 #include "kafka/client/broker.h"
+#include "kafka/client/configuration.h"
 #include "kafka/protocol/metadata.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
@@ -31,7 +32,8 @@ class brokers {
       = absl::flat_hash_set<shared_broker_t, broker_hash, broker_eq>;
 
 public:
-    brokers() = default;
+    explicit brokers(const configuration& config)
+      : _config(config){};
     brokers(const brokers&) = delete;
     brokers(brokers&&) = default;
     brokers& operator=(brokers const&) = delete;
@@ -59,6 +61,7 @@ public:
     ss::future<bool> empty() const;
 
 private:
+    const configuration& _config;
     /// \brief Brokers map a model::node_id to a client.
     brokers_t _brokers;
     /// \brief Next broker to select with round-robin
