@@ -10,7 +10,57 @@
  */
 #include "kafka/client/sasl_client.h"
 
+#include "kafka/client/logger.h"
+
 namespace kafka::client {
+
+ss::future<>
+do_authenticate(shared_broker_t broker, const configuration& config) {
+    if (config.sasl_mechanism().empty()) {
+        vlog(kclog.debug, "Connecting to broker without authentication");
+        co_return;
+    }
+
+    auto mechanism = config.sasl_mechanism();
+
+    if (
+      mechanism != security::scram_sha256_authenticator::name
+      && mechanism != security::scram_sha512_authenticator::name) {
+        throw broker_error{
+          broker->id(),
+          error_code::sasl_authentication_failed,
+          fmt_with_ctx(ssx::sformat, "Unknown mechanism: {}", mechanism)};
+    }
+
+    auto username = config.scram_username();
+
+    vlog(
+      kclog.debug,
+      "Connecting to broker with authentication: {}:{}",
+      mechanism,
+      username);
+
+    // perform handshake
+    co_await do_sasl_handshake(broker, mechanism);
+
+    auto password = config.scram_password();
+
+    if (username.empty() || password.empty()) {
+        throw broker_error{
+          broker->id(),
+          error_code::sasl_authentication_failed,
+          "Username or password is empty"};
+    }
+
+    if (mechanism == security::scram_sha256_authenticator::name) {
+        co_await do_authenticate_scram256(
+          broker, std::move(username), std::move(password));
+
+    } else if (mechanism == security::scram_sha512_authenticator::name) {
+        co_await do_authenticate_scram512(
+          broker, std::move(username), std::move(password));
+    }
+}
 
 ss::future<> do_sasl_handshake(shared_broker_t broker, ss::sstring mechanism) {
     sasl_handshake_request req;

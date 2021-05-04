@@ -157,8 +157,6 @@ private:
     /// \brief Connect and update metdata.
     ss::future<> do_connect(unresolved_address addr);
 
-    ss::future<> do_authenticate(shared_broker_t);
-
     /// \brief Update metadata
     ///
     /// If an existing update is in progress, the future returned will be
