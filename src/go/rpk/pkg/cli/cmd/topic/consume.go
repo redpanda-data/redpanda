@@ -225,12 +225,14 @@ func consumeMessages(
 		case msg := <-msgs:
 			handleMessage(msg, mu, prettyPrint)
 		case err := <-errs:
-			log.Errorf(
-				"Got an error consuming topic '%s', partition %d: %v",
-				err.Topic,
-				err.Partition,
-				err.Err,
-			)
+			if err != nil {
+				log.Errorf(
+					"Got an error consuming topic '%s', partition %d: %v",
+					err.Topic,
+					err.Partition,
+					err.Err,
+				)
+			}
 		}
 	}
 }
