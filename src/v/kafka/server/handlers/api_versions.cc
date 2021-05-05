@@ -15,11 +15,6 @@
 
 namespace kafka {
 
-std::ostream& operator<<(std::ostream& os, const api_versions_response& r) {
-    os << r.data;
-    return os;
-}
-
 template<typename... Ts>
 struct type_list {};
 

@@ -53,6 +53,11 @@ struct find_coordinator_request final {
     }
 };
 
+inline std::ostream&
+operator<<(std::ostream& os, const find_coordinator_request& r) {
+    return os << r.data;
+}
+
 struct find_coordinator_response final {
     using api_type = find_coordinator_api;
 
