@@ -261,7 +261,7 @@ func (r *ClusterReconciler) reportStatus(
 		observedNodesInternal = append(observedNodesInternal, fmt.Sprintf("%s.%s", item.Name, internalFQDN))
 	}
 
-	observedNodesExternal, observedExternalAdmin, observedExternalProxy, err := r.createExternalNodesList(ctx, observedPods.Items, redpandaCluster, nodeportSvcName)
+	observedNodesExternal, observedExternalAdmin, observedExternalProxy, proxyIngress, err := r.createExternalNodesList(ctx, observedPods.Items, redpandaCluster, nodeportSvcName)
 	if err != nil {
 		return fmt.Errorf("failed to construct external node list: %w", err)
 	}
@@ -285,6 +285,9 @@ func (r *ClusterReconciler) reportStatus(
 			cluster.Status.Nodes.External = observedNodesExternal
 			cluster.Status.Nodes.ExternalAdmin = observedExternalAdmin
 			cluster.Status.Nodes.ExternalPandaproxy = observedExternalProxy
+			if len(proxyIngress) > 0 {
+				cluster.Status.Nodes.PandaproxyIngress = &proxyIngress
+			}
 			cluster.Status.Replicas = lastObservedSts.Status.ReadyReplicas
 
 			return r.Status().Update(ctx, &cluster)
@@ -320,22 +323,26 @@ func (r *ClusterReconciler) createExternalNodesList(
 	pods []corev1.Pod,
 	pandaCluster *redpandav1alpha1.Cluster,
 	nodePortName types.NamespacedName,
-) (external, externalAdmin, externalProxy []string, err error) {
+) (
+	external, externalAdmin, externalProxy []string,
+	proxyIngress string,
+	err error,
+) {
 	externalKafkaListener := pandaCluster.ExternalListener()
 	externalAdminListener := pandaCluster.AdminAPIExternal()
 	externalProxyListener := pandaCluster.PandaproxyAPIExternal()
 	if externalKafkaListener == nil && externalAdminListener == nil {
-		return []string{}, []string{}, []string{}, nil
+		return []string{}, []string{}, []string{}, "", nil
 	}
 
 	var nodePortSvc corev1.Service
 	if err := r.Get(ctx, nodePortName, &nodePortSvc); err != nil {
-		return []string{}, []string{}, []string{}, fmt.Errorf("failed to retrieve node port service %s: %w", nodePortName, err)
+		return []string{}, []string{}, []string{}, "", fmt.Errorf("failed to retrieve node port service %s: %w", nodePortName, err)
 	}
 
 	for _, port := range nodePortSvc.Spec.Ports {
 		if port.NodePort == 0 {
-			return []string{}, []string{}, []string{}, fmt.Errorf("node port service %s, port %s is 0: %w", nodePortName, port.Name, errNodePortMissing)
+			return []string{}, []string{}, []string{}, "", fmt.Errorf("node port service %s, port %s is 0: %w", nodePortName, port.Name, errNodePortMissing)
 		}
 	}
 
@@ -350,7 +357,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 		if externalKafkaListener != nil && needExternalIP(externalKafkaListener.External) ||
 			externalAdminListener != nil && needExternalIP(externalAdminListener.External) {
 			if err := r.Get(ctx, types.NamespacedName{Name: pods[i].Spec.NodeName}, &node); err != nil {
-				return []string{}, []string{}, []string{}, fmt.Errorf("failed to retrieve node %s: %w", pods[i].Spec.NodeName, err)
+				return []string{}, []string{}, []string{}, "", fmt.Errorf("failed to retrieve node %s: %w", pods[i].Spec.NodeName, err)
 			}
 		}
 
@@ -385,7 +392,12 @@ func (r *ClusterReconciler) createExternalNodesList(
 				))
 		}
 	}
-	return observedNodesExternal, observedNodesExternalAdmin, observedNodesExternalProxy, nil
+
+	if externalProxyListener != nil && len(externalProxyListener.External.Subdomain) > 0 {
+		proxyIngress = externalProxyListener.External.Subdomain
+	}
+
+	return observedNodesExternal, observedNodesExternalAdmin, observedNodesExternalProxy, proxyIngress, nil
 }
 
 func needExternalIP(external redpandav1alpha1.ExternalConnectivityConfig) bool {
