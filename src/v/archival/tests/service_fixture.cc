@@ -84,7 +84,7 @@ archival::configuration get_configuration() {
     archival::configuration conf;
     conf.client_config = s3conf;
     conf.bucket_name = s3::bucket_name("test-bucket");
-    conf.connection_limit = archival::s3_connection_limit(2);
+    conf.connection_limit = archival::s3_connection_limit(10);
     return conf;
 }
 
