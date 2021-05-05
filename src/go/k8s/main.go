@@ -37,6 +37,8 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
+// THIS CHANGE IS TO TEST k8s TEAM MERGE ABILITY ON GITHUB
+
 func main() {
 	var (
 		metricsAddr          string
