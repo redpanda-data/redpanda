@@ -320,6 +320,15 @@ func TestValidateUpdate_NoError(t *testing.T) {
 
 		assert.Error(t, err)
 	})
+
+	t.Run("pandaproxy tls disabled with client auth enabled", func(t *testing.T) {
+		tls := redpandaCluster.DeepCopy()
+		tls.Spec.Configuration.PandaproxyAPI = append(tls.Spec.Configuration.PandaproxyAPI,
+			v1alpha1.PandaproxyAPI{TLS: v1alpha1.PandaproxyAPITLS{Enabled: false, RequireClientAuth: true}})
+
+		err := tls.ValidateUpdate(redpandaCluster)
+		assert.Error(t, err)
+	})
 }
 
 //nolint:funlen // this is ok for a test
@@ -524,6 +533,15 @@ func TestCreation(t *testing.T) {
 			v1alpha1.PandaproxyAPI{Port: 321})
 		err := multiPort.ValidateCreate()
 
+		assert.Error(t, err)
+	})
+
+	t.Run("pandaproxy tls disabled but client auth enabled", func(t *testing.T) {
+		tls := redpandaCluster.DeepCopy()
+		tls.Spec.Configuration.PandaproxyAPI = append(tls.Spec.Configuration.PandaproxyAPI,
+			v1alpha1.PandaproxyAPI{TLS: v1alpha1.PandaproxyAPITLS{Enabled: false, RequireClientAuth: true}})
+
+		err := tls.ValidateCreate()
 		assert.Error(t, err)
 	})
 }
