@@ -47,12 +47,10 @@ std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
 }
 
 ntp_archiver::ntp_archiver(
-  const storage::ntp_config& ntp,
-  const configuration& conf,
-  s3::client_pool& pool)
+  const storage::ntp_config& ntp, const configuration& conf)
   : _ntp(ntp.ntp())
   , _rev(ntp.get_revision())
-  , _pool(pool)
+  , _client_conf(conf.client_config)
   , _policy(_ntp)
   , _bucket(conf.bucket_name)
   , _remote(_ntp, _rev)
@@ -78,10 +76,10 @@ ss::future<download_manifest_result> ntp_archiver::download_manifest() {
     auto key = _remote.get_manifest_path();
     vlog(archival_log.debug, "Download manifest {}", key());
     auto path = s3::object_key(key().string());
-    auto [client, deleter] = co_await _pool.acquire();
+    s3::client client(_client_conf, _as);
     auto result = download_manifest_result::success;
     try {
-        auto resp = co_await client->get_object(_bucket, path);
+        auto resp = co_await client.get_object(_bucket, path);
         vlog(archival_log.debug, "Receive OK response from {}", path);
         co_await _remote.update(resp->as_input_stream());
     } catch (const s3::rest_error_response& err) {
@@ -102,6 +100,7 @@ ss::future<download_manifest_result> ntp_archiver::download_manifest() {
             throw;
         }
     }
+    co_await client.shutdown();
     co_return result;
 }
 
@@ -116,11 +115,12 @@ ss::future<> ntp_archiver::upload_manifest() {
     std::vector<s3::object_tag> tags = {{"rp-type", "partition-manifest"}};
     while (!_gate.is_closed() && backoff_quota-- > 0) {
         bool slowdown = false;
-        auto [client, deleter] = co_await _pool.acquire();
+        s3::client client(_client_conf, _as);
         try {
             auto [is, size] = _remote.serialize();
-            co_await client->put_object(
+            co_await client.put_object(
               _bucket, path, size, std::move(is), tags);
+            co_await client.shutdown();
         } catch (const s3::rest_error_response& err) {
             vlog(
               archival_log.error,
@@ -172,7 +172,8 @@ ss::future<> ntp_archiver::upload_manifest() {
 
 const manifest& ntp_archiver::get_remote_manifest() const { return _remote; }
 
-ss::future<bool> ntp_archiver::upload_segment(upload_candidate candidate) {
+ss::future<bool> ntp_archiver::upload_segment(
+  ss::semaphore& req_limit, upload_candidate candidate) {
     gate_guard guard{_gate};
     vlog(
       archival_log.debug,
@@ -187,7 +188,8 @@ ss::future<bool> ntp_archiver::upload_segment(upload_candidate candidate) {
       segment_name(candidate.exposed_name));
     std::vector<s3::object_tag> tags = {{"rp-type", "segment"}};
     while (!_gate.is_closed() && backoff_quota-- > 0) {
-        auto [client, deleter] = co_await _pool.acquire();
+        auto units = co_await ss::get_units(req_limit, 1);
+        s3::client client(_client_conf, _as);
         auto stream = candidate.source->reader().data_stream(
           candidate.file_offset, ss::default_priority_class());
         bool slowdown = false;
@@ -198,12 +200,13 @@ ss::future<bool> ntp_archiver::upload_segment(upload_candidate candidate) {
           s3path);
         try {
             // Segment upload attempt
-            co_await client->put_object(
+            co_await client.put_object(
               _bucket,
               s3::object_key(s3path().string()),
               candidate.content_length,
               std::move(stream),
               tags);
+            co_await client.shutdown();
         } catch (const s3::rest_error_response& err) {
             vlog(
               archival_log.error,
@@ -243,16 +246,11 @@ ss::future<bool> ntp_archiver::upload_segment(upload_candidate candidate) {
         }
         break;
     }
-    vlog(
-      archival_log.debug,
-      "Finished segment upload for {}, path {}",
-      _ntp,
-      s3path);
     co_return true;
 }
 
-ss::future<ntp_archiver::batch_result>
-ntp_archiver::upload_next_candidates(storage::log_manager& lm) {
+ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
+  ss::semaphore& req_limit, storage::log_manager& lm) {
     vlog(archival_log.debug, "Uploading next candidates called for {}", _ntp);
     gate_guard guard{_gate};
     auto mlock = co_await ss::get_units(_mutex, 1);
@@ -295,7 +293,7 @@ ntp_archiver::upload_next_candidates(storage::log_manager& lm) {
             continue;
         }
         offset = upload.source->offsets().committed_offset + model::offset(1);
-        flist.emplace_back(upload_segment(upload));
+        flist.emplace_back(upload_segment(req_limit, upload));
         manifest::segment_meta m{
           .is_compacted = upload.source->is_compacted_segment(),
           .size_bytes = upload.content_length,

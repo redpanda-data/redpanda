@@ -11,22 +11,14 @@
 
 #include "bytes/details/io_iterator_consumer.h"
 #include "bytes/iobuf.h"
-#include "http/logger.h"
-#include "rpc/backoff_policy.h"
-#include "rpc/types.h"
-#include "utils/gate_guard.h"
 
-#include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
-#include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/loop.hh>
-#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
-#include <seastar/core/timed_out_error.hh>
 #include <seastar/core/timer.hh>
 #include <seastar/net/tls.hh>
 
@@ -66,76 +58,30 @@ void client::check() const {
     }
 }
 
-ss::future<client::request_response_t> client::make_request(
-  client::request_header&& header, ss::lowres_clock::duration timeout) {
+ss::future<client::request_response_t>
+client::make_request(client::request_header&& header) {
     vlog(http_log.trace, "client.make_request {}", header);
     auto verb = header.method();
-    auto target = header.target();
     auto req = ss::make_shared<request_stream>(this, std::move(header));
     auto res = ss::make_shared<response_stream>(this, verb);
     if (is_valid()) {
+        // already connected
         return ss::make_ready_future<request_response_t>(
           std::make_tuple(req, res));
     }
-    return get_connected(timeout)
-      .then([req, res, target](reconnect_result_t r) {
-          if (r == reconnect_result_t::timed_out) {
-              vlog(
-                http_log.warn,
-                "make_request timed-out connection attempt {}",
-                target);
-              ss::timed_out_error err;
-              return ss::make_exception_future<client::request_response_t>(err);
-          }
+    return connect()
+      .then([req, res] {
           return ss::make_ready_future<request_response_t>(
             std::make_tuple(req, res));
       })
-      .handle_exception_type([this](ss::tls::verification_error err) {
-          return stop().then([err = std::move(err)] {
+      .handle_exception_type([this](const ss::tls::verification_error& err) {
+          return shutdown().then([err] {
               return ss::make_exception_future<client::request_response_t>(err);
           });
       });
 }
 
-ss::future<reconnect_result_t>
-client::get_connected(ss::lowres_clock::duration timeout) {
-    vlog(
-      http_log.debug,
-      "about to start connecting, {}, is-closed {}",
-      is_valid(),
-      _dispatch_gate.is_closed());
-    auto current = ss::lowres_clock::now();
-    const auto deadline = current + timeout;
-    const auto interval = 100ms;
-    while (!_dispatch_gate.is_closed() && current < deadline) {
-        if (_as != nullptr) {
-            _as->check();
-        }
-        // Reconnect attempts have to stop if:
-        // - shutdown method was called
-        // - abort was requested
-        // - unrecoverable error occured
-        // - timeout reached
-        try {
-            co_await connect(current + interval);
-            break;
-        } catch (const std::system_error& err) {
-            vlog(http_log.trace, "connection refused {}", err);
-        } catch (const ss::timed_out_error&) {
-            vlog(http_log.trace, "connection timeout");
-        }
-        current = ss::lowres_clock::now();
-        // Any TLS error have to be propagated because it's not
-        // transient. It won't help to try once again.
-    }
-    vlog(http_log.debug, "connected, {}", is_valid());
-    co_return is_valid() ? reconnect_result_t::connected
-                         : reconnect_result_t::timed_out;
-}
-
-// ss::future<> client::shutdown() { return stop(); }
-
-void client::fail_outstanding_futures() noexcept { shutdown(); }
+ss::future<> client::shutdown() { return stop(); }
 
 ss::future<ss::temporary_buffer<char>> client::receive() {
     return _in.read()
@@ -207,7 +153,7 @@ iobuf_to_constbufseq(const iobuf& iobuf) {
     return seq;
 }
 
-ss::future<> client::response_stream::shutdown() { return _client->stop(); }
+ss::future<> client::response_stream::shutdown() { return _client->shutdown(); }
 
 /// Return failed future if ec is set, otherwise return future in ready state
 static ss::future<iobuf> fail_on_error(const boost::beast::error_code& ec) {
@@ -306,13 +252,8 @@ ss::future<iobuf> client::response_stream::recv_some() {
       })
       .handle_exception_type([this](const ss::tls::verification_error& err) {
           _client->_probe->register_transport_error();
-          return _client->stop().then(
+          return _client->shutdown().then(
             [err] { return ss::make_exception_future<iobuf>(err); });
-      })
-      .handle_exception_type([this](const std::system_error& ec) {
-          vlog(http_log.error, "receive error {}", ec);
-          _client->shutdown();
-          return ss::make_exception_future<iobuf>(ec);
       });
 }
 
@@ -383,14 +324,9 @@ ss::future<> client::request_stream::send_some(iobuf&& seq) {
             })
             .handle_exception_type(
               [this](const ss::tls::verification_error& err) {
-                  return _client->stop().then(
+                  return _client->shutdown().then(
                     [err] { return ss::make_exception_future<>(err); });
-              })
-            .handle_exception_type([this](const std::system_error& ec) {
-                vlog(http_log.error, "send error {}", ec);
-                _client->shutdown();
-                return ss::make_exception_future<>(ec);
-            });
+              });
       });
 }
 
@@ -486,10 +422,8 @@ struct request_data_sink final : ss::data_sink_impl {
 };
 
 ss::future<client::response_stream_ref> client::request(
-  client::request_header&& header,
-  ss::input_stream<char>& input,
-  ss::lowres_clock::duration timeout) {
-    return make_request(std::move(header), timeout)
+  client::request_header&& header, ss::input_stream<char>& input) {
+    return make_request(std::move(header))
       .then([&input](request_response_t reqresp) mutable {
           auto [request, response] = std::move(reqresp);
           auto fsend = ss::do_with(
@@ -505,9 +439,9 @@ ss::future<client::response_stream_ref> client::request(
       });
 }
 
-ss::future<client::response_stream_ref> client::request(
-  client::request_header&& header, ss::lowres_clock::duration timeout) {
-    return make_request(std::move(header), timeout)
+ss::future<client::response_stream_ref>
+client::request(client::request_header&& header) {
+    return make_request(std::move(header))
       .then([](request_response_t reqresp) mutable {
           auto [request, response] = std::move(reqresp);
           return request->send_some(iobuf())

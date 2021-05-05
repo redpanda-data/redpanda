@@ -154,7 +154,6 @@ private:
       model::topic_namespace_view view, model::revision_id rev);
 
     configuration _conf;
-    s3::client_pool _pool;
     ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<cluster::topic_table>& _topic_table;
     ss::sharded<storage::api>& _storage_api;
@@ -164,6 +163,7 @@ private:
     ss::timer<ss::lowres_clock> _gc_timer;
     ss::gate _gate;
     ss::abort_source _as;
+    ss::semaphore _conn_limit;
     ss::semaphore _stop_limit;
     ntp_upload_queue _queue;
     simple_time_jitter<ss::lowres_clock> _backoff{100ms};
