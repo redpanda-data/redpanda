@@ -36,7 +36,8 @@ const (
 	tlsDir   = "/etc/tls/certs"
 	tlsDirCA = "/etc/tls/certs/ca"
 
-	tlsAdminDir = "/etc/tls/certs/admin"
+	tlsAdminDir      = "/etc/tls/certs/admin"
+	tlsPandaproxyDir = "/etc/tls/certs/pandaproxy"
 
 	oneMB          = 1024 * 1024
 	logSegmentSize = 512 * oneMB
@@ -270,6 +271,7 @@ func (r *ConfigMapResource) createConfiguration(
 
 	r.preparePandaproxy(cfgRpk)
 	r.preparePandaproxyClient(cfgRpk)
+	r.preparePandaproxyTLS(cfgRpk)
 
 	return cfgRpk, nil
 }
@@ -353,6 +355,31 @@ func (r *ConfigMapResource) preparePandaproxyClient(cfgRpk *config.Config) {
 			Address: fmt.Sprintf("%s-%d.%s", r.pandaCluster.Name, i, r.serviceFQDN),
 			Port:    r.pandaCluster.InternalListener().Port,
 		})
+	}
+}
+
+func (r *ConfigMapResource) preparePandaproxyTLS(cfgRpk *config.Config) {
+	tlsListener := r.pandaCluster.PandaproxyAPITLS()
+	if tlsListener != nil {
+		// If external connectivity is enabled the TLS config will be applied to the external listener,
+		// otherwise TLS will be applied to the internal listener. // TODO support multiple TLS configs
+		// Pandaproxy uses Kafka's certificate.
+		name := PandaproxyPortInternalName
+		externalListener := r.pandaCluster.PandaproxyAPIExternal()
+		if externalListener != nil {
+			name = PandaproxyPortExternalName
+		}
+		tls := config.ServerTLS{
+			Name:              name,
+			KeyFile:           fmt.Sprintf("%s/%s", tlsPandaproxyDir, corev1.TLSPrivateKeyKey), // tls.key
+			CertFile:          fmt.Sprintf("%s/%s", tlsPandaproxyDir, corev1.TLSCertKey),       // tls.crt
+			Enabled:           true,
+			RequireClientAuth: tlsListener.TLS.RequireClientAuth,
+		}
+		if tlsListener.TLS.RequireClientAuth {
+			tls.TruststoreFile = fmt.Sprintf("%s/%s", tlsPandaproxyDir, cmetav1.TLSCAKey)
+		}
+		cfgRpk.Pandaproxy.PandaproxyAPITLS = []config.ServerTLS{tls}
 	}
 }
 
