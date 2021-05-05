@@ -387,3 +387,14 @@ func (r *Cluster) PandaproxyAPIExternal() *PandaproxyAPI {
 	}
 	return nil
 }
+
+// PandaproxyAPITLS returns a Pandaproxy listener that has TLS enabled.
+// It returns nil if no TLS is configured.
+func (r *Cluster) PandaproxyAPITLS() *PandaproxyAPI {
+	for i, el := range r.Spec.Configuration.PandaproxyAPI {
+		if el.TLS.Enabled {
+			return &r.Spec.Configuration.PandaproxyAPI[i]
+		}
+	}
+	return nil
+}
