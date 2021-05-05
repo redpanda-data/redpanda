@@ -186,11 +186,10 @@ func (r *ConfigMapResource) createConfiguration(
 	cr.Directory = dataDirectory
 	tlsListener := r.pandaCluster.KafkaTLSListener()
 	if tlsListener != nil {
-		// If external connectivity is enabled the TLS config will be applied to the external listener,
-		// otherwise TLS will be applied to the internal listener. // TODO support multiple TLS configs
+		// Only one TLS listener is supported (restricted by the webhook).
+		// Determine the listener name based on being internal or external.
 		name := InternalListenerName
-		externalListener := r.pandaCluster.ExternalListener()
-		if externalListener != nil {
+		if tlsListener.External.Enabled {
 			name = ExternalListenerName
 		}
 		tls := config.ServerTLS{
@@ -209,6 +208,8 @@ func (r *ConfigMapResource) createConfiguration(
 	}
 	adminAPITLSListener := r.pandaCluster.AdminAPITLS()
 	if adminAPITLSListener != nil {
+		// Only one TLS listener is supported (restricted by the webhook).
+		// Determine the listener name based on being internal or external.
 		name := AdminPortName
 		if adminAPITLSListener.External.Enabled {
 			name = AdminPortExternalName
@@ -427,12 +428,10 @@ func (r *ConfigMapResource) createBasicAuthSecret(
 func (r *ConfigMapResource) preparePandaproxyTLS(cfgRpk *config.Config) {
 	tlsListener := r.pandaCluster.PandaproxyAPITLS()
 	if tlsListener != nil {
-		// If external connectivity is enabled the TLS config will be applied to the external listener,
-		// otherwise TLS will be applied to the internal listener. // TODO support multiple TLS configs
-		// Pandaproxy uses Kafka's certificate.
+		// Only one TLS listener is supported (restricted by the webhook).
+		// Determine the listener name based on being internal or external.
 		name := PandaproxyPortInternalName
-		externalListener := r.pandaCluster.PandaproxyAPIExternal()
-		if externalListener != nil {
+		if tlsListener.External.Enabled {
 			name = PandaproxyPortExternalName
 		}
 		tls := config.ServerTLS{
