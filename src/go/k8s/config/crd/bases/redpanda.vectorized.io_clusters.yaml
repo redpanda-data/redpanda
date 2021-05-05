@@ -453,6 +453,8 @@ spec:
                     items:
                       type: string
                     type: array
+                  pandaproxyIngress:
+                    type: string
                 type: object
               replicas:
                 description: Replicas show how many nodes are working in the cluster
