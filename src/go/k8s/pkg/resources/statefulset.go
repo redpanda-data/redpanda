@@ -56,20 +56,21 @@ const (
 // focusing on the management of redpanda cluster
 type StatefulSetResource struct {
 	k8sclient.Client
-	scheme                      *runtime.Scheme
-	pandaCluster                *redpandav1alpha1.Cluster
-	serviceFQDN                 string
-	serviceName                 string
-	nodePortName                types.NamespacedName
-	nodePortSvc                 corev1.Service
-	redpandaCertSecretKey       types.NamespacedName
-	internalClientCertSecretKey types.NamespacedName
-	adminCertSecretKey          types.NamespacedName
-	adminAPINodeCertSecretKey   types.NamespacedName
-	adminAPIClientCertSecretKey types.NamespacedName
-	serviceAccountName          string
-	configuratorTag             string
-	logger                      logr.Logger
+	scheme                         *runtime.Scheme
+	pandaCluster                   *redpandav1alpha1.Cluster
+	serviceFQDN                    string
+	serviceName                    string
+	nodePortName                   types.NamespacedName
+	nodePortSvc                    corev1.Service
+	redpandaCertSecretKey          types.NamespacedName
+	internalClientCertSecretKey    types.NamespacedName
+	adminCertSecretKey             types.NamespacedName // TODO this is unused, can be removed
+	adminAPINodeCertSecretKey      types.NamespacedName
+	adminAPIClientCertSecretKey    types.NamespacedName // TODO this is unused, can be removed
+	pandaproxyAPINodeCertSecretKey types.NamespacedName
+	serviceAccountName             string
+	configuratorTag                string
+	logger                         logr.Logger
 
 	LastObservedState *appsv1.StatefulSet
 }
@@ -87,6 +88,7 @@ func NewStatefulSet(
 	adminCertSecretKey types.NamespacedName,
 	adminAPINodeCertSecretKey types.NamespacedName,
 	adminAPIClientCertSecretKey types.NamespacedName,
+	pandaproxyAPINodeCertSecretKey types.NamespacedName,
 	serviceAccountName string,
 	configuratorTag string,
 	logger logr.Logger,
@@ -104,6 +106,7 @@ func NewStatefulSet(
 		adminCertSecretKey,
 		adminAPINodeCertSecretKey,
 		adminAPIClientCertSecretKey,
+		pandaproxyAPINodeCertSecretKey,
 		serviceAccountName,
 		configuratorTag,
 		logger.WithValues("Kind", statefulSetKind()),
@@ -513,6 +516,12 @@ func (r *StatefulSetResource) secretVolumeMounts() []corev1.VolumeMount {
 			MountPath: tlsAdminDir,
 		})
 	}
+	if r.pandaCluster.PandaproxyAPITLS() != nil {
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      "tlspandaproxycert",
+			MountPath: tlsPandaproxyDir,
+		})
+	}
 	return mounts
 }
 
@@ -567,6 +576,32 @@ func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: r.adminAPINodeCertSecretKey.Name,
+					Items: []corev1.KeyToPath{
+						{
+							Key:  corev1.TLSPrivateKeyKey,
+							Path: corev1.TLSPrivateKeyKey,
+						},
+						{
+							Key:  corev1.TLSCertKey,
+							Path: corev1.TLSCertKey,
+						},
+						{
+							Key:  cmetav1.TLSCAKey,
+							Path: cmetav1.TLSCAKey,
+						},
+					},
+				},
+			},
+		})
+	}
+
+	// When Pandaproxy TLS is enabled, Redpanda needs a keypair certificate.
+	if r.pandaCluster.PandaproxyAPITLS() != nil {
+		vols = append(vols, corev1.Volume{
+			Name: "tlspandaproxycert",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: r.pandaproxyAPINodeCertSecretKey.Name,
 					Items: []corev1.KeyToPath{
 						{
 							Key:  corev1.TLSPrivateKeyKey,
