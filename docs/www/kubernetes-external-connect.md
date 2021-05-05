@@ -71,7 +71,7 @@ Create a 3-node cluster on the platform of your choice:
 
 The Redpanda cluster uses cert-manager to create TLS certificates for communication between the cluster nodes.
 
-We'll use Heml to install cert-manager:
+We'll use Helm to install cert-manager:
 
   ```bash
   helm repo add jetstack https://charts.jetstack.io && \
@@ -111,11 +111,11 @@ We'll use Heml to install cert-manager:
   
   a. Get the port number that Redpanda is listening on:
 
-      ```
-      kubectl get service external-connectivity-external -o=jsonpath='{.spec.ports[0].nodePort}'
-      ```
+    ```
+    kubectl get service external-connectivity-external -o=jsonpath='{.spec.ports[0].nodePort}'
+    ```
 
-      The port is shown in the command output.
+    The port is shown in the command output.
 
   b. Create a firewall rule that allows traffic to Redpanda on that port:
 
@@ -127,7 +127,7 @@ We'll use Heml to install cert-manager:
 
     `30249`
 
-6. Get the addresses of the brokers:
+4. Get the addresses of the brokers:
 
   ```
   kubectl get clusters external-connectivity -o=jsonpath='{.status.nodes.external}'
@@ -142,13 +142,15 @@ We'll use Heml to install cert-manager:
 1. From a remote machine that has `rpk` installed, get information about the cluster:
 
   ```
-  rpk --brokers 34.121.167.159:30249,34.71.125.54:30249,35.184.221.5:30249 cluster info
+  rpk --brokers 34.121.167.159:30249,34.71.125.54:30249,35.184.221.5:30249 \
+  cluster info
   ```
 
 2. Create a topic in your Redpanda cluster:
 
   ```
-  rpk --brokers 34.121.167.159:30249,34.71.125.54:30249,35.184.221.5:30249 topic create chat-rooms -p 5
+  rpk --brokers 34.121.167.159:30249,34.71.125.54:30249,35.184.221.5:30249 \
+  topic create chat-rooms -p 5
   ```
 
 Now you know how to set up a Kubernetes cluster in a cloud and access it from a remote machine.
