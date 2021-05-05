@@ -32,18 +32,18 @@ model::offset fetch_session::offset(model::topic_partition_view tpv) const {
 
 bool fetch_session::apply(fetch_response& res) {
     if (_id == invalid_fetch_session_id) {
-        _id = fetch_session_id{res.session_id};
+        _id = fetch_session_id{res.data.session_id};
     }
-    vassert(res.session_id == _id, "session mismatch: {}", *this);
+    vassert(res.data.session_id == _id, "session mismatch: {}", *this);
 
     ++_epoch;
     for (auto& part : res) {
-        if (part.partition_response->has_error()) {
+        if (part.partition_response->error_code != error_code::none) {
             continue;
         }
         const auto& topic = part.partition->name;
-        const auto p_id = part.partition_response->id;
-        auto& record_set = part.partition_response->record_set;
+        const auto p_id = part.partition_response->partition_index;
+        auto& record_set = part.partition_response->records;
         if (!record_set || record_set->empty()) {
             continue;
         }

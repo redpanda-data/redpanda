@@ -78,17 +78,18 @@ public:
       kafka::fetch_response&& res) {
         // Eager check for errors
         for (auto& v : res) {
-            if (v.partition_response->has_error()) {
-                throw serialize_error(v.partition_response->error);
+            if (v.partition_response->error_code != kafka::error_code::none) {
+                throw serialize_error(v.partition_response->error_code);
             }
         }
 
         w.StartArray();
         for (auto& v : res) {
             auto r = std::move(*v.partition_response);
-            model::topic_partition_view tpv(v.partition->name, r.id);
-            while (r.record_set && !r.record_set->empty()) {
-                auto adapter = r.record_set->consume_batch();
+            model::topic_partition_view tpv(
+              v.partition->name, r.partition_index);
+            while (r.records && !r.records->empty()) {
+                auto adapter = r.records->consume_batch();
                 if (
                   !adapter.batch
                   || adapter.batch->header().attrs.is_control()) {

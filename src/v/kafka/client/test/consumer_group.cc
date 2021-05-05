@@ -296,13 +296,13 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
           [&](kafka::member_id m_id) {
               auto res
                 = client.consumer_fetch(group_id, m_id, 200ms, 1_MiB).get();
-              BOOST_REQUIRE_EQUAL(res.error, kafka::error_code::none);
-              BOOST_REQUIRE_EQUAL(res.partitions.size(), 3);
-              for (const auto& p : res.partitions) {
-                  BOOST_REQUIRE_EQUAL(p.responses.size(), 1);
-                  const auto& res = p.responses[0];
-                  BOOST_REQUIRE_EQUAL(res.error, kafka::error_code::none);
-                  BOOST_REQUIRE(!!res.record_set);
+              BOOST_REQUIRE_EQUAL(res.data.error_code, kafka::error_code::none);
+              BOOST_REQUIRE_EQUAL(res.data.topics.size(), 3);
+              for (const auto& p : res.data.topics) {
+                  BOOST_REQUIRE_EQUAL(p.partitions.size(), 1);
+                  const auto& res = p.partitions[0];
+                  BOOST_REQUIRE_EQUAL(res.error_code, kafka::error_code::none);
+                  BOOST_REQUIRE(!!res.records);
               }
               return res;
           })
@@ -402,11 +402,12 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
                   fetch_responses[i].end(),
                   [&](const auto& res) {
                       return res.partition->name == t.name
-                             && res.partition_response->id == p.partition_index;
+                             && res.partition_response->partition_index
+                                  == p.partition_index;
                   });
                 BOOST_REQUIRE(part_it != fetch_responses[i].end());
                 auto expected_offset
-                  = part_it->partition_response->record_set->last_offset();
+                  = part_it->partition_response->records->last_offset();
                 BOOST_REQUIRE_EQUAL(p.committed_offset(), expected_offset);
             }
         }

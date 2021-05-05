@@ -73,11 +73,11 @@ struct partition_comp {
 
 fetch_response
 reduce_fetch_response(fetch_response result, fetch_response val) {
-    result.throttle_time += val.throttle_time;
-    result.partitions.insert(
-      result.partitions.end(),
-      std::make_move_iterator(val.partitions.begin()),
-      std::make_move_iterator(val.partitions.end()));
+    result.data.throttle_time_ms += val.data.throttle_time_ms;
+    result.data.topics.insert(
+      result.data.topics.end(),
+      std::make_move_iterator(val.data.topics.begin()),
+      std::make_move_iterator(val.data.topics.end()));
 
     return result;
 };
@@ -366,8 +366,8 @@ consumer::dispatch_fetch(broker_reqs_t::value_type br) {
     auto res = co_await broker->dispatch(std::move(req));
     kclog.trace("Consumer: {}, fetch_res: {}", *this, res);
 
-    if (res.error != error_code::none) {
-        throw broker_error(broker->id(), res.error);
+    if (res.data.error_code != error_code::none) {
+        throw broker_error(broker->id(), res.data.error_code);
     }
 
     _fetch_sessions[broker].apply(res);
@@ -389,26 +389,28 @@ ss::future<fetch_response> consumer::fetch(
                           .try_emplace(
                             broker,
                             fetch_request{
+                              .data = {
                               .replica_id = consumer_replica_id,
-                              .max_wait_time = timeout,
+                              .max_wait_ms = timeout,
                               .min_bytes = 1,
                               .max_bytes = max_bytes.value_or(
                                 _config.consumer_request_max_bytes),
                               .isolation_level = 0, // READ_UNCOMMITTED
                               .session_id = session.id(),
                               .session_epoch = session.epoch(),
-                            })
+                            }})
                           .first->second;
 
-            if (req.topics.empty() || req.topics.back().name != t) {
-                req.topics.push_back(fetch_request::topic{.name{t}});
+            if (req.data.topics.empty() || req.data.topics.back().name != t) {
+                req.data.topics.push_back(fetch_request::topic{.name{t}});
             }
 
-            req.topics.back().partitions.push_back(fetch_request::partition{
-              .id = p,
-              .fetch_offset = session.offset(tp),
-              .partition_max_bytes = max_bytes.value_or(
-                _config.consumer_request_max_bytes)});
+            req.data.topics.back().fetch_partitions.push_back(
+              fetch_request::partition{
+                .partition_index = p,
+                .fetch_offset = session.offset(tp),
+                .max_bytes = max_bytes.value_or(
+                  _config.consumer_request_max_bytes)});
         }
     }
 
@@ -419,9 +421,8 @@ ss::future<fetch_response> consumer::fetch(
           return dispatch_fetch(std::move(br));
       },
       fetch_response{
-        .throttle_time{},
-        .error = error_code::none,
-        .session_id = kafka::invalid_fetch_session_id},
+        .data
+        = {.throttle_time_ms{}, .error_code = error_code::none, .session_id = kafka::invalid_fetch_session_id}},
       detail::reduce_fetch_response);
 }
 

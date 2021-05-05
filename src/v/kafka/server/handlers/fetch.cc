@@ -40,262 +40,17 @@
 
 namespace kafka {
 
-void fetch_request::encode(response_writer& writer, api_version version) {
-    writer.write(replica_id());
-    writer.write(int32_t(max_wait_time.count()));
-    writer.write(min_bytes);
-    if (version >= api_version(3)) {
-        writer.write(max_bytes);
-    }
-    if (version >= api_version(4)) {
-        writer.write(isolation_level);
-    }
-    if (version >= api_version(7)) {
-        writer.write(session_id);
-        writer.write(session_epoch);
-    }
-    writer.write_array(
-      topics, [version](const topic& t, response_writer& writer) {
-          writer.write(t.name());
-          writer.write_array(
-            t.partitions,
-            [version](const partition& p, response_writer& writer) {
-                writer.write(p.id);
-                if (version >= api_version(9)) {
-                    writer.write(p.current_leader_epoch);
-                }
-                writer.write(int64_t(p.fetch_offset));
-                if (version >= api_version(5)) {
-                    writer.write(int64_t(p.log_start_offset));
-                }
-                writer.write(p.partition_max_bytes);
-            });
-      });
-    if (version >= api_version(7)) {
-        writer.write_array(
-          forgotten_topics,
-          [](const forgotten_topic& t, response_writer& writer) {
-              writer.write(t.name);
-              writer.write_array(
-                t.partitions,
-                [](int32_t p, response_writer& writer) { writer.write(p); });
-          });
-    }
-    if (version >= api_version(11)) {
-        writer.write(rack_id);
-    }
-}
-
-void fetch_request::decode(request_context& ctx) {
-    auto& reader = ctx.reader();
-    auto version = ctx.header().version;
-
-    replica_id = model::node_id(reader.read_int32());
-    max_wait_time = std::chrono::milliseconds(reader.read_int32());
-    min_bytes = reader.read_int32();
-    if (version >= api_version(3)) {
-        max_bytes = reader.read_int32();
-    }
-    if (version >= api_version(4)) {
-        isolation_level = reader.read_int8();
-    }
-
-    if (version >= api_version(7)) {
-        session_id = reader.read_int32();
-        session_epoch = reader.read_int32();
-    }
-    topics = reader.read_array([version](request_reader& reader) {
-        return topic{
-          .name = model::topic(reader.read_string()),
-          .partitions = reader.read_array([version](request_reader& reader) {
-              partition p;
-              p.id = model::partition_id(reader.read_int32());
-              if (version >= api_version(9)) {
-                  p.current_leader_epoch = reader.read_int32();
-              }
-              p.fetch_offset = model::offset(reader.read_int64());
-              if (version >= api_version(5)) {
-                  p.log_start_offset = model::offset(reader.read_int64());
-              }
-              p.partition_max_bytes = reader.read_int32();
-              return p;
-          }),
-        };
-    });
-    if (version >= api_version(7)) {
-        forgotten_topics = reader.read_array([](request_reader& reader) {
-            return forgotten_topic{
-              .name = model::topic(reader.read_string()),
-              .partitions = reader.read_array(
-                [](request_reader& reader) { return reader.read_int32(); }),
-            };
-        });
-    }
-    if (version >= api_version(11)) {
-        rack_id = reader.read_string();
-    }
-}
-
-std::ostream&
-operator<<(std::ostream& o, const fetch_request::forgotten_topic& t) {
-    fmt::print(o, "{{topic {} partitions {}}}", t.name, t.partitions);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const fetch_request::partition& p) {
-    fmt::print(
-      o,
-      "{{id {} off {} max {}}}",
-      p.id,
-      p.fetch_offset,
-      p.partition_max_bytes);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const fetch_request::topic& t) {
-    fmt::print(o, "{{name {} parts {}}}", t.name, t.partitions);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const fetch_request& r) {
-    fmt::print(
-      o,
-      "{{replica {} max_wait_time {} session_id {} session_epoch {} min_bytes "
-      "{} max_bytes {} isolation {} topics {} forgotten {}}}",
-      r.replica_id,
-      r.max_wait_time,
-      r.session_id,
-      r.session_epoch,
-      r.min_bytes,
-      r.max_bytes,
-      r.isolation_level,
-      r.topics,
-      r.forgotten_topics);
-    return o;
-}
-
-void fetch_response::encode(const request_context& ctx, response& resp) {
-    auto& writer = resp.writer();
-    auto version = ctx.header().version;
-
-    writer.write(int32_t(throttle_time.count())); // v1
-
-    if (version >= api_version(7)) {
-        writer.write(error);
-        writer.write(session_id);
-    }
-
-    writer.write_array(
-      partitions, [version](partition& p, response_writer& writer) {
-          writer.write(p.name);
-          writer.write_array(
-            p.responses,
-            [version](partition_response& r, response_writer& writer) {
-                writer.write(r.id);
-                writer.write(r.error);
-                writer.write(int64_t(r.high_watermark));
-                writer.write(int64_t(r.last_stable_offset)); // v4
-                if (version >= api_version(5)) {
-                    writer.write(int64_t(r.log_start_offset));
-                }
-                writer.write_array( // v4
-                  r.aborted_transactions,
-                  [](const aborted_transaction& t, response_writer& writer) {
-                      writer.write(t.producer_id);
-                      writer.write(int64_t(t.first_offset));
-                  });
-                if (version >= api_version(11)) {
-                    writer.write(r.preferred_read_replica);
-                }
-                writer.write(std::move(r.record_set));
-            });
-      });
-}
-
-void fetch_response::decode(iobuf buf, api_version version) {
-    request_reader reader(std::move(buf));
-
-    throttle_time = std::chrono::milliseconds(reader.read_int32()); // v1
-
-    error = version >= api_version(7) ? error_code(reader.read_int16())
-                                      : kafka::error_code::none;
-
-    session_id = version >= api_version(7) ? reader.read_int32() : 0;
-
-    partitions = reader.read_array([version](request_reader& reader) {
-        partition p(model::topic(reader.read_string()));
-        p.responses = reader.read_array([version](request_reader& reader) {
-            return partition_response{
-              .id = model::partition_id(reader.read_int32()),
-              .error = error_code(reader.read_int16()),
-              .high_watermark = model::offset(reader.read_int64()),
-              .last_stable_offset = model::offset(reader.read_int64()), // v4
-              .log_start_offset = model::offset(
-                version >= api_version(5) ? reader.read_int64() : -1),
-              .aborted_transactions = reader.read_array( // v4
-                [](request_reader& reader) {
-                    return aborted_transaction{
-                      .producer_id = reader.read_int64(),
-                      .first_offset = model::offset(reader.read_int64()),
-                    };
-                }),
-              .preferred_read_replica = version >= api_version(11)
-                                          ? model::node_id{reader.read_int32()}
-                                          : model::node_id{-1},
-              .record_set = reader.read_nullable_batch_reader()};
-        });
-        return p;
-    });
-}
-
-std::ostream&
-operator<<(std::ostream& o, const fetch_response::aborted_transaction& t) {
-    fmt::print(
-      o, "{{producer {} first_off {}}}", t.producer_id, t.first_offset);
-    return o;
-}
-
-std::ostream&
-operator<<(std::ostream& o, const fetch_response::partition_response& p) {
-    fmt::print(
-      o,
-      "{{id {} err {} high_water {} last_stable_off {} aborted {} "
-      "record_set_len {}}}",
-      p.id,
-      p.error,
-      p.high_watermark,
-      p.last_stable_offset,
-      p.aborted_transactions,
-      (p.record_set ? p.record_set->size_bytes() : -1));
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const fetch_response::partition& p) {
-    fmt::print(o, "{{name {} responses {}}}", p.name, p.responses);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const fetch_response& r) {
-    fmt::print(
-      o,
-      "{{session_id {} error {} partitions {}}}",
-      r.session_id,
-      r.error,
-      r.partitions);
-    return o;
-}
-
 /**
  * Make a partition response error.
  */
 static fetch_response::partition_response
 make_partition_response_error(model::partition_id p_id, error_code error) {
     return fetch_response::partition_response{
-      .id = p_id,
-      .error = error,
+      .partition_index = p_id,
+      .error_code = error,
       .high_watermark = model::offset(-1),
       .last_stable_offset = model::offset(-1),
-      .record_set = batch_reader(),
+      .records = batch_reader(),
     };
 }
 
@@ -493,9 +248,9 @@ static ss::future<> do_fill_fetch_responses(
              pid = res.partition,
              resp_it = resp_it](kafka_batch_serializer::result res) mutable {
                 fetch_response::partition_response resp{
-                  .id = pid,
-                  .error = error_code::none,
-                  .record_set = batch_reader(std::move(res.data)),
+                  .partition_index = pid,
+                  .error_code = error_code::none,
+                  .records = batch_reader(std::move(res.data)),
                 };
                 resp_it.set(std::move(resp));
                 resp_it->partition_response->log_start_offset = so;
@@ -605,15 +360,17 @@ static std::vector<shard_fetch> group_requests_by_shard(op_context& octx) {
      * group fetch requests by shard
      */
     octx.for_each_fetch_partition(
-      [&resp_it, &octx, &shard_fetches](const fetch_partition& fp) {
+      [&resp_it, &octx, &shard_fetches](const fetch_session_partition& fp) {
           // if this is not an initial fetch we are allowed to skip
           // partions that aleready have an error or we have enough data
           if (!octx.initial_fetch) {
               bool has_enough_data
-                = !resp_it->partition_response->record_set->empty()
+                = !resp_it->partition_response->records->empty()
                   && octx.over_min_bytes();
 
-              if (resp_it->partition_response->has_error() || has_enough_data) {
+              if (
+                resp_it->partition_response->error_code != error_code::none
+                || has_enough_data) {
                   ++resp_it;
                   return;
               }
@@ -697,7 +454,7 @@ static ss::future<> fetch_topic_partitions(op_context& octx) {
                 // debounce next read retry
                 return ss::sleep(std::min(
                   config::shard_local_cfg().fetch_reads_debounce_timeout(),
-                  octx.request.max_wait_time));
+                  octx.request.data.max_wait_ms));
             });
       });
 }
@@ -708,10 +465,10 @@ fetch_handler::handle(request_context rctx, ss::smp_service_group ssg) {
     return ss::do_with(op_context(std::move(rctx), ssg), [](op_context& octx) {
         // top-level error is used for session-level errors
         if (octx.session_ctx.has_error()) {
-            octx.response.error = octx.session_ctx.error();
+            octx.response.data.error_code = octx.session_ctx.error();
             return std::move(octx).send_response();
         }
-        octx.response.error = error_code::none;
+        octx.response.data.error_code = error_code::none;
         // first fetch, do not wait
         return fetch_topic_partitions(octx)
           .then([&octx] {
@@ -734,9 +491,9 @@ op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
     /*
      * decode request and prepare the inital response
      */
-    request.decode(rctx);
-    if (likely(!request.topics.empty())) {
-        response.partitions.reserve(request.topics.size());
+    request.decode(rctx.reader(), rctx.header().version);
+    if (likely(!request.data.topics.empty())) {
+        response.data.topics.reserve(request.data.topics.size());
     }
 
     if (auto delay = request.debounce_delay(); delay) {
@@ -749,25 +506,26 @@ op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
      * kafka server itself.
      */
     static constexpr size_t max_size = 128_KiB;
-    bytes_left = std::min(max_size, size_t(request.max_bytes));
+    bytes_left = std::min(max_size, size_t(request.data.max_bytes));
     session_ctx = rctx.fetch_sessions().maybe_get_session(request);
     create_response_placeholders();
 }
 
 // insert and reserve space for a new topic in the response
 void op_context::start_response_topic(const fetch_request::topic& topic) {
-    auto& p = response.partitions.emplace_back(topic.name);
-    p.responses.reserve(topic.partitions.size());
+    auto& p = response.data.topics.emplace_back(
+      fetchable_topic_response{.name = topic.name});
+    p.partitions.reserve(topic.fetch_partitions.size());
 }
 
 void op_context::start_response_partition(const fetch_request::partition& p) {
-    response.partitions.back().responses.push_back(
+    response.data.topics.back().partitions.push_back(
       fetch_response::partition_response{
-        .id = p.id,
-        .error = error_code::none,
+        .partition_index = p.partition_index,
+        .error_code = error_code::none,
         .high_watermark = model::offset(-1),
         .last_stable_offset = model::offset(-1),
-        .record_set = batch_reader()});
+        .records = batch_reader()});
 }
 
 void op_context::create_response_placeholders() {
@@ -786,27 +544,29 @@ void op_context::create_response_placeholders() {
         std::for_each(
           session_ctx.session()->partitions().cbegin_insertion_order(),
           session_ctx.session()->partitions().cend_insertion_order(),
-          [this, &last_topic](const fetch_partition& fp) {
+          [this, &last_topic](const fetch_session_partition& fp) {
               if (last_topic != fp.topic) {
-                  response.partitions.emplace_back(fp.topic);
+                  response.data.topics.emplace_back(
+                    fetchable_topic_response{.name = fp.topic});
                   last_topic = fp.topic;
               }
               fetch_response::partition_response p{
-                .id = fp.partition,
-                .error = error_code::none,
+                .partition_index = fp.partition,
+                .error_code = error_code::none,
                 .high_watermark = fp.high_watermark,
                 .last_stable_offset = fp.high_watermark,
-                .record_set = batch_reader()};
+                .records = batch_reader()};
 
-              response.partitions.back().responses.push_back(std::move(p));
+              response.data.topics.back().partitions.push_back(std::move(p));
           });
     }
 }
 
 bool update_fetch_partition(
-  const fetch_response::partition_response& resp, fetch_partition& partition) {
+  const fetch_response::partition_response& resp,
+  fetch_session_partition& partition) {
     bool include = false;
-    if (resp.record_set && resp.record_set->size_bytes() > 0) {
+    if (resp.records && resp.records->size_bytes() > 0) {
         // Partitions with new data are always included in the response.
         include = true;
     }
@@ -814,7 +574,7 @@ bool update_fetch_partition(
         partition.high_watermark = model::offset(resp.high_watermark);
         return true;
     }
-    if (resp.error != error_code::none) {
+    if (resp.error_code != error_code::none) {
         // Partitions with errors are always included in the response.
         // We also set the cached highWatermark to an invalid offset, -1.
         // This ensures that when the error goes away, we re-send the
@@ -828,38 +588,38 @@ bool update_fetch_partition(
 ss::future<response_ptr> op_context::send_response() && {
     // Sessionless fetch
     if (session_ctx.is_sessionless()) {
-        response.session_id = invalid_fetch_session_id;
+        response.data.session_id = invalid_fetch_session_id;
         return rctx.respond(std::move(response));
     }
     // bellow we handle incremental fetches, set response session id
-    response.session_id = session_ctx.session()->id();
+    response.data.session_id = session_ctx.session()->id();
     if (session_ctx.is_full_fetch()) {
         return rctx.respond(std::move(response));
     }
 
     fetch_response final_response;
-    final_response.error = response.error;
-    final_response.session_id = response.session_id;
-    final_response.throttle_time = response.throttle_time;
+    final_response.data.error_code = response.data.error_code;
+    final_response.data.session_id = response.data.session_id;
+    final_response.data.throttle_time_ms = response.data.throttle_time_ms;
 
     for (auto it = response.begin(true); it != response.end(); ++it) {
         if (it->is_new_topic) {
-            final_response.partitions.emplace_back(it->partition->name);
-            final_response.partitions.back().responses.reserve(
-              it->partition->responses.size());
+            final_response.data.topics.emplace_back(
+              fetchable_topic_response{.name = it->partition->name});
+            final_response.data.topics.back().partitions.reserve(
+              it->partition->partitions.size());
         }
 
         fetch_response::partition_response r{
-          .id = it->partition_response->id,
-          .error = it->partition_response->error,
+          .partition_index = it->partition_response->partition_index,
+          .error_code = it->partition_response->error_code,
           .high_watermark = it->partition_response->high_watermark,
           .last_stable_offset = it->partition_response->last_stable_offset,
           .log_start_offset = it->partition_response->log_start_offset,
-          .aborted_transactions = std::move(
-            it->partition_response->aborted_transactions),
-          .record_set = std::move(it->partition_response->record_set)};
+          .aborted = std::move(it->partition_response->aborted),
+          .records = std::move(it->partition_response->records)};
 
-        final_response.partitions.back().responses.push_back(std::move(r));
+        final_response.data.topics.back().partitions.push_back(std::move(r));
     }
 
     return rctx.respond(std::move(final_response));
@@ -873,24 +633,24 @@ op_context::response_iterator::response_iterator(
 void op_context::response_iterator::set(
   fetch_response::partition_response&& response) {
     vassert(
-      response.id == _it->partition_response->id,
+      response.partition_index == _it->partition_response->partition_index,
       "Response and current partition ids have to be the same. Current "
       "response {}, update {}",
-      _it->partition_response->id,
-      response.id);
+      _it->partition_response->partition_index,
+      response.partition_index);
 
-    if (response.has_error()) {
+    if (response.error_code != error_code::none) {
         _ctx->response_error = true;
     }
-    auto& current_resp_data = _it->partition_response->record_set;
+    auto& current_resp_data = _it->partition_response->records;
     if (current_resp_data) {
         auto sz = current_resp_data->size_bytes();
         _ctx->response_size -= sz;
         _ctx->bytes_left += sz;
     }
 
-    if (response.record_set) {
-        auto sz = response.record_set->size_bytes();
+    if (response.records) {
+        auto sz = response.records->size_bytes();
         _ctx->response_size += sz;
         _ctx->bytes_left -= std::min(_ctx->bytes_left, sz);
     }
@@ -900,7 +660,7 @@ void op_context::response_iterator::set(
     if (!_ctx->session_ctx.is_sessionless()) {
         auto& session_partitions = _ctx->session_ctx.session()->partitions();
         auto key = model::topic_partition_view(
-          _it->partition->name, _it->partition_response->id);
+          _it->partition->name, _it->partition_response->partition_index);
 
         if (auto it = session_partitions.find(key);
             it != session_partitions.end()) {

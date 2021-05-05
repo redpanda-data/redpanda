@@ -102,8 +102,8 @@ inline ss::future<Container> copy_range(
 template<typename Container, typename Range, typename AsyncAction>
 CONCEPT(requires requires(AsyncAction aa, Range r, Container c) {
     ss::futurize_invoke(aa, *r.begin());
-    requires ss::is_future<decltype(
-      ss::futurize_invoke(aa, *r.begin()))>::value;
+    requires ss::is_future<decltype(ss::futurize_invoke(
+      aa, *r.begin()))>::value;
     *std::inserter(c, c.end()) = ss::futurize_invoke(aa, *r.begin()).get0();
 })
 inline ss::future<Container> copy_range(Range& r, AsyncAction action) {

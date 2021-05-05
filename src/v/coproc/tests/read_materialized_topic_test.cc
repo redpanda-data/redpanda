@@ -91,13 +91,14 @@ FIXTURE_TEST(test_read_from_materialized_topic, router_test_fixture) {
 
     // Connect a kafka client to the expected output topic
     kafka::fetch_request req;
-    req.max_bytes = std::numeric_limits<int32_t>::max();
-    req.min_bytes = 1; // At LEAST 'bytes_written' in src topic
-    req.max_wait_time = 2s;
-    req.topics = {
+    req.data.max_bytes = std::numeric_limits<int32_t>::max();
+    req.data.min_bytes = 1; // At LEAST 'bytes_written' in src topic
+    req.data.max_wait_ms = 2s;
+    req.data.topics = {
       {.name = output_topic,
-       .partitions = {
-         {.id = model::partition_id(0), .fetch_offset = model::offset(0)}}}};
+       .fetch_partitions = {
+         {.partition_index = model::partition_id(0),
+          .fetch_offset = model::offset(0)}}}};
 
     // .. and read the same partition using a kafka client
     auto client = make_kafka_client().get0();
@@ -105,13 +106,14 @@ FIXTURE_TEST(test_read_from_materialized_topic, router_test_fixture) {
     auto resp = client.dispatch(req, kafka::api_version(4)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
 
-    BOOST_REQUIRE_EQUAL(resp.partitions.size(), 1);
-    BOOST_REQUIRE_EQUAL(resp.partitions[0].name, output_topic);
+    BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
+    BOOST_REQUIRE_EQUAL(resp.data.topics[0].name, output_topic);
     BOOST_REQUIRE_EQUAL(
-      resp.partitions[0].responses[0].error, kafka::error_code::none);
+      resp.data.topics[0].partitions[0].error_code, kafka::error_code::none);
     BOOST_REQUIRE_EQUAL(
-      resp.partitions[0].responses[0].id, model::partition_id(0));
-    BOOST_REQUIRE(resp.partitions[0].responses[0].record_set);
+      resp.data.topics[0].partitions[0].partition_index,
+      model::partition_id(0));
+    BOOST_REQUIRE(resp.data.topics[0].partitions[0].records);
     // TODO(rob) fix this assertion
     // BOOST_REQUIRE_EQUAL(
     //   std::move(*resp.partitions[0].responses[0].record_set).release(),

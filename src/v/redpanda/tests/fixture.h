@@ -285,7 +285,7 @@ public:
         iobuf buf;
         kafka::fetch_request request;
         // do not use incremental fetch requests
-        request.max_wait_time = std::chrono::milliseconds::zero();
+        request.data.max_wait_ms = std::chrono::milliseconds::zero();
         kafka::response_writer writer(buf);
         request.encode(writer, encoder_context.header().version);
 

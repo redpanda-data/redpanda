@@ -49,20 +49,21 @@ auto make_fetch_response(
     std::vector<kafka::fetch_response::partition> parts;
     for (const auto& tp : tps) {
         kafka::fetch_response::partition res{tp.topic};
-        res.responses.push_back(kafka::fetch_response::partition_response{
-          .id{tp.partition},
-          .error = kafka::error_code::none,
+        res.partitions.push_back(kafka::fetch_response::partition_response{
+          .partition_index{tp.partition},
+          .error_code = kafka::error_code::none,
           .high_watermark{model::offset{0}},
           .last_stable_offset{model::offset{1}},
           .log_start_offset{model::offset{0}},
-          .aborted_transactions{},
-          .record_set{make_record_set(offset, count)}});
+          .aborted{},
+          .records{make_record_set(offset, count)}});
         parts.push_back(std::move(res));
     }
     return kafka::fetch_response{
-      .error = kafka::error_code::none,
-      .partitions = std::move(parts),
-    };
+      .data = {
+        .error_code = kafka::error_code::none,
+        .topics = std::move(parts),
+      }};
 }
 
 SEASTAR_THREAD_TEST_CASE(test_produce_fetch_empty) {

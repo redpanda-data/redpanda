@@ -48,12 +48,13 @@ FIXTURE_TEST(fetch, kafka_client_fixture) {
           model::topic("unknown"), model::partition_id(0));
         auto res{
           client.fetch_partition(ntp.tp, model::offset(0), 1024, 1000ms).get()};
-        const auto& p = res.partitions[0];
+        const auto& p = res.data.topics[0];
         BOOST_REQUIRE_EQUAL(p.name, ntp.tp.topic);
-        BOOST_REQUIRE_EQUAL(p.responses.size(), 1);
-        BOOST_REQUIRE_EQUAL(p.responses[0].id, ntp.tp.partition);
+        BOOST_REQUIRE_EQUAL(p.partitions.size(), 1);
+        BOOST_REQUIRE_EQUAL(p.partitions[0].partition_index, ntp.tp.partition);
         BOOST_REQUIRE_EQUAL(
-          p.responses[0].error, kafka::error_code::unknown_topic_or_partition);
+          p.partitions[0].error_code,
+          kafka::error_code::unknown_topic_or_partition);
     }
 
     info("Adding known topic");
@@ -68,12 +69,12 @@ FIXTURE_TEST(fetch, kafka_client_fixture) {
         client.config().retries.set_value(size_t(3));
         auto res{
           client.fetch_partition(ntp.tp, model::offset(0), 1024, 1000ms).get()};
-        const auto& p = res.partitions[0];
+        const auto& p = res.data.topics[0];
         BOOST_REQUIRE_EQUAL(p.name, ntp.tp.topic);
-        BOOST_REQUIRE_EQUAL(p.responses.size(), 1);
-        auto const& r = p.responses[0];
-        BOOST_REQUIRE_EQUAL(r.id, ntp.tp.partition);
-        BOOST_REQUIRE_EQUAL(r.error, kafka::error_code::none);
+        BOOST_REQUIRE_EQUAL(p.partitions.size(), 1);
+        auto const& r = p.partitions[0];
+        BOOST_REQUIRE_EQUAL(r.partition_index, ntp.tp.partition);
+        BOOST_REQUIRE_EQUAL(r.error_code, kafka::error_code::none);
     }
 
     client.stop().get();

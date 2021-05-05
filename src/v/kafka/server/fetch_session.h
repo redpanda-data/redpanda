@@ -22,7 +22,7 @@
 
 namespace kafka {
 
-struct fetch_partition {
+struct fetch_session_partition {
     model::topic topic;
     model::partition_id partition;
     int32_t max_bytes;
@@ -41,10 +41,10 @@ struct fetch_partition {
 class fetch_partitions_linked_hash_map {
 private:
     struct entry {
-        explicit entry(kafka::fetch_partition partition)
+        explicit entry(kafka::fetch_session_partition partition)
           : partition(std::move(partition)) {}
 
-        kafka::fetch_partition partition;
+        kafka::fetch_session_partition partition;
         intrusive_list_hook _hook;
     };
 
@@ -112,7 +112,7 @@ public:
           "partitions map and insertion order list sizes are not equal.");
     }
 
-    void emplace(kafka::fetch_partition v) {
+    void emplace(kafka::fetch_session_partition v) {
         auto e = std::make_unique<entry>(std::move(v));
         auto [it, success] = partitions.emplace(
           model::topic_partition_view(
@@ -155,7 +155,7 @@ public:
         using debug = absl::container_internal::hashtable_debug_internal::
           HashtableDebugAccess<underlying_t>;
         return debug::AllocatedByteSize(partitions)
-               + partitions.size() * sizeof(fetch_partition);
+               + partitions.size() * sizeof(fetch_session_partition);
     }
 
     iterator begin() { return partitions.begin(); }

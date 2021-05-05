@@ -26,9 +26,9 @@
 
 using namespace std::chrono_literals; // NOLINT
 struct fixture {
-    static kafka::fetch_partition make_fetch_partition(
+    static kafka::fetch_session_partition make_fetch_partition(
       model::topic topic, model::partition_id p_id, model::offset offset) {
-        return kafka::fetch_partition{
+        return kafka::fetch_session_partition{
           .topic = std::move(topic),
           .partition = p_id,
           .max_bytes = 1_MiB,
@@ -40,15 +40,16 @@ struct fixture {
     make_fetch_request_topic(model::topic tp, int partitions_count) {
         kafka::fetch_request::topic fetch_topic{
           .name = std::move(tp),
-          .partitions = {},
+          .fetch_partitions = {},
         };
 
         for (int i = 0; i < partitions_count; ++i) {
-            fetch_topic.partitions.push_back(kafka::fetch_request::partition{
-              .id = model::partition_id(i),
-              .fetch_offset = model::offset(i * 10),
-              .partition_max_bytes = 100_KiB,
-            });
+            fetch_topic.fetch_partitions.push_back(
+              kafka::fetch_request::partition{
+                .partition_index = model::partition_id(i),
+                .fetch_offset = model::offset(i * 10),
+                .max_bytes = 100_KiB,
+              });
         }
         return fetch_topic;
     }
@@ -129,9 +130,9 @@ FIXTURE_TEST(test_fetch_session_basic_operations, fixture) {
 FIXTURE_TEST(test_session_operations, fixture) {
     kafka::fetch_session_cache cache(120s);
     kafka::fetch_request req;
-    req.session_epoch = kafka::initial_fetch_session_epoch;
-    req.session_id = kafka::invalid_fetch_session_id;
-    req.topics = {make_fetch_request_topic(model::topic("test"), 3)};
+    req.data.session_epoch = kafka::initial_fetch_session_epoch;
+    req.data.session_id = kafka::invalid_fetch_session_id;
+    req.data.topics = {make_fetch_request_topic(model::topic("test"), 3)};
     {
         BOOST_TEST_MESSAGE("create new session");
         auto ctx = cache.maybe_get_session(req);
@@ -148,28 +149,31 @@ FIXTURE_TEST(test_session_operations, fixture) {
         auto i = 0;
         BOOST_REQUIRE_EQUAL(ctx.session()->partitions().size(), 3);
         for (const auto& fp : rng) {
-            BOOST_REQUIRE_EQUAL(fp.topic, req.topics[0].name);
-            BOOST_REQUIRE_EQUAL(fp.partition, req.topics[0].partitions[i].id);
+            BOOST_REQUIRE_EQUAL(fp.topic, req.data.topics[0].name);
             BOOST_REQUIRE_EQUAL(
-              fp.fetch_offset, req.topics[0].partitions[i].fetch_offset);
+              fp.partition,
+              req.data.topics[0].fetch_partitions[i].partition_index);
             BOOST_REQUIRE_EQUAL(
-              fp.max_bytes, req.topics[0].partitions[i].partition_max_bytes);
+              fp.fetch_offset,
+              req.data.topics[0].fetch_partitions[i].fetch_offset);
+            BOOST_REQUIRE_EQUAL(
+              fp.max_bytes, req.data.topics[0].fetch_partitions[i].max_bytes);
             i++;
         }
 
-        req.session_id = ctx.session()->id();
-        req.session_epoch = ctx.session()->epoch();
+        req.data.session_id = ctx.session()->id();
+        req.data.session_epoch = ctx.session()->epoch();
     }
 
     BOOST_TEST_MESSAGE("test updating session");
     {
-        req.topics[0].partitions.erase(
-          std::next(req.topics[0].partitions.begin()));
+        req.data.topics[0].fetch_partitions.erase(
+          std::next(req.data.topics[0].fetch_partitions.begin()));
         // add 2 partitons from new topic, forget one from the first topic
-        req.topics.push_back(
+        req.data.topics.push_back(
           make_fetch_request_topic(model::topic("test-new"), 2));
-        req.forgotten_topics.push_back(kafka::fetch_request::forgotten_topic{
-          .name = model::topic("test"), .partitions = {1}});
+        req.data.forgotten.push_back(kafka::fetch_request::forgotten_topic{
+          .name = model::topic("test"), .forgotten_partition_indexes = {1}});
 
         auto ctx = cache.maybe_get_session(req);
 
@@ -191,22 +195,23 @@ FIXTURE_TEST(test_session_operations, fixture) {
             auto t_idx = i < 2 ? 0 : 1;
             auto p_idx = i < 2 ? i : i - 2;
 
-            BOOST_REQUIRE_EQUAL(fp.topic, req.topics[t_idx].name);
+            BOOST_REQUIRE_EQUAL(fp.topic, req.data.topics[t_idx].name);
             BOOST_REQUIRE_EQUAL(
-              fp.partition, req.topics[t_idx].partitions[p_idx].id);
+              fp.partition,
+              req.data.topics[t_idx].fetch_partitions[p_idx].partition_index);
             BOOST_REQUIRE_EQUAL(
               fp.fetch_offset,
-              req.topics[t_idx].partitions[p_idx].fetch_offset);
+              req.data.topics[t_idx].fetch_partitions[p_idx].fetch_offset);
             BOOST_REQUIRE_EQUAL(
               fp.max_bytes,
-              req.topics[t_idx].partitions[p_idx].partition_max_bytes);
+              req.data.topics[t_idx].fetch_partitions[p_idx].max_bytes);
             i++;
         }
     }
     BOOST_TEST_MESSAGE("removing session");
     {
-        req.session_epoch = kafka::final_fetch_session_epoch;
-        req.topics = {};
+        req.data.session_epoch = kafka::final_fetch_session_epoch;
+        req.data.topics = {};
 
         auto ctx = cache.maybe_get_session(req);
 

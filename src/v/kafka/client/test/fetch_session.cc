@@ -41,20 +41,21 @@ kafka::fetch_response make_fetch_response(
   model::topic_partition_view tpv,
   std::optional<kafka::batch_reader> record_set) {
     kafka::fetch_response res{
-      .throttle_time = std::chrono::milliseconds{0},
-      .error = kafka::error_code::none,
-      .session_id = s_id,
-      .partitions{}};
-    kafka::fetch_response::partition p(tpv.topic);
-    p.responses.push_back(kafka::fetch_response::partition_response{
-      .id = tpv.partition,
-      .error = kafka::error_code::none,
+      .data = {
+        .throttle_time_ms = std::chrono::milliseconds{0},
+        .error_code = kafka::error_code::none,
+        .session_id = s_id,
+        .topics{}}};
+    kafka::fetch_response::partition p{.name = tpv.topic};
+    p.partitions.push_back(kafka::fetch_response::partition_response{
+      .partition_index = tpv.partition,
+      .error_code = kafka::error_code::none,
       .high_watermark = model::offset{-1},
       .last_stable_offset = model::offset{-1},
       .log_start_offset = model::offset{-1},
-      .aborted_transactions = {},
-      .record_set{std::move(record_set)}});
-    res.partitions.push_back(std::move(p));
+      .aborted = {},
+      .records{std::move(record_set)}});
+    res.data.topics.push_back(std::move(p));
     return res;
 }
 
