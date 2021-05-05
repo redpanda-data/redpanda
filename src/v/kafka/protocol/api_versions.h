@@ -64,6 +64,4 @@ inline bool operator==(
            && a.max_version == b.max_version;
 }
 
-std::vector<api_versions_response_key> get_supported_apis();
-
 } // namespace kafka
