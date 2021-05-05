@@ -11,8 +11,8 @@ and be fully compatible with the [Kafka ecosystem](https://cwiki.apache.org/conf
 This quick start guide can help you get started with Redpanda for development and testing purposes.
 To get up and running you need to create a cluster and deploy the Redpanda operator on the cluster.
 
-- For production or benchmarking, setup a [production deployment](/docs/production-deployment).
-- You can also set up a [Kubernetes cluster with external access](/docs/kubernetes-external-connect)
+- For production or benchmarking, set up a [production deployment](/docs/production-deployment).
+- You can also set up a [Kubernetes cluster with external access](/docs/kubernetes-external-connect).
 
 > **_Note_** - Run a container inside the Kubernetes cluster to communicate with the Redpanda cluster.
 > Currently, a load balancer is not automatically created during deployment by default.
@@ -191,4 +191,4 @@ As you can see, the commands from the "rpk" pod created a 5 partition topic in f
 ## Next steps
 
 - Contact us in our [Slack](https://vectorized.io/slack) community so we can work together to implement your Kubernetes use cases.
-- Check out how to set up a Kubernetes cluster with [access from an external machine](kubernetes-external-connect.md).
+- Check out how to set up a Kubernetes cluster with [access from an external machine](kubernetes-external-connect).
