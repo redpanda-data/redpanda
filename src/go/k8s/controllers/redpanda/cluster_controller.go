@@ -55,7 +55,8 @@ type ClusterReconciler struct {
 //+kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
-//+kubebuilder:rbac:groups=cert-manager.io,resources=issuers;certificates;clusterissuers,verbs=create;get;list;watch;patch;delete;
+//+kubebuilder:rbac:groups=cert-manager.io,resources=issuers;certificates;clusterissuers,verbs=create;get;list;watch;patch;delete;update;
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=create;get;list;watch;patch;delete;update;
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -123,6 +124,23 @@ func (r *ClusterReconciler) Reconcile(
 	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, headlessPorts, log)
 	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, nodeports, log)
 
+	clusterPorts := []resources.NamedServicePort{}
+	if proxyAPIExternal != nil {
+		clusterPorts = append(clusterPorts, resources.NamedServicePort{Name: resources.PandaproxyPortExternalName, Port: proxyAPIInternal.Port + 1})
+	}
+	clusterSvc := resources.NewClusterService(r.Client, &redpandaCluster, r.Scheme, clusterPorts, log)
+	subdomain := ""
+	if proxyAPIExternal != nil {
+		subdomain = proxyAPIExternal.External.Subdomain
+	}
+	ingress := resources.NewIngress(r.Client,
+		&redpandaCluster,
+		r.Scheme,
+		subdomain,
+		clusterSvc.Key().Name,
+		resources.PandaproxyPortExternalName,
+		log)
+
 	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(), r.Scheme, log)
 	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
 	sts := resources.NewStatefulSet(
@@ -142,7 +160,9 @@ func (r *ClusterReconciler) Reconcile(
 		log)
 	toApply := []resources.Reconciler{
 		headlessSvc,
+		clusterSvc,
 		nodeportSvc,
+		ingress,
 		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(), log),
 		pki,
 		sa,
