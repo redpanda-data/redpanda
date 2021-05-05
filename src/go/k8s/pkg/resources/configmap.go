@@ -11,6 +11,7 @@ package resources
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 
@@ -41,6 +42,10 @@ const (
 
 	oneMB          = 1024 * 1024
 	logSegmentSize = 512 * oneMB
+
+	scramUsername       = "pandaproxy_client"
+	scramPasswordLength = 16
+	saslMechanism       = "SCRAM-SHA-256"
 )
 
 var errKeyDoesNotExistInSecretData = errors.New("cannot find key in secret data")
@@ -270,8 +275,11 @@ func (r *ConfigMapResource) createConfiguration(
 	}
 
 	r.preparePandaproxy(cfgRpk)
-	r.preparePandaproxyClient(cfgRpk)
 	r.preparePandaproxyTLS(cfgRpk)
+	err := r.preparePandaproxyClient(ctx, cfgRpk)
+	if err != nil {
+		return nil, err
+	}
 
 	return cfgRpk, nil
 }
@@ -343,9 +351,11 @@ func (r *ConfigMapResource) preparePandaproxy(cfgRpk *config.Config) {
 	}
 }
 
-func (r *ConfigMapResource) preparePandaproxyClient(cfgRpk *config.Config) {
+func (r *ConfigMapResource) preparePandaproxyClient(
+	ctx context.Context, cfgRpk *config.Config,
+) error {
 	if internal := r.pandaCluster.PandaproxyAPIInternal(); internal == nil {
-		return
+		return nil
 	}
 
 	replicas := *r.pandaCluster.Spec.Replicas
@@ -356,6 +366,62 @@ func (r *ConfigMapResource) preparePandaproxyClient(cfgRpk *config.Config) {
 			Port:    r.pandaCluster.InternalListener().Port,
 		})
 	}
+
+	if !r.pandaCluster.Spec.EnableSASL {
+		return nil
+	}
+
+	username := scramUsername
+	password, err := generatePassword(scramPasswordLength)
+	if err != nil {
+		return fmt.Errorf("could not generate SASL password: %w", err)
+	}
+
+	// Create secret with SCRAM credentials if it does not exist
+	err = r.createBasicAuthSecret(ctx, username, password)
+	if err != nil {
+		return err
+	}
+
+	// Retrieve SCRAM credentials
+	var secret corev1.Secret
+	err = r.Get(ctx, r.keySASL(), &secret)
+	if err != nil {
+		return err
+	}
+
+	// Populate configuration with SCRAM credentials
+	username = string(secret.Data[corev1.BasicAuthUsernameKey])
+	password = string(secret.Data[corev1.BasicAuthPasswordKey])
+	mechanism := saslMechanism
+	cfgRpk.PandaproxyClient.SCRAMUsername = &username
+	cfgRpk.PandaproxyClient.SCRAMPassword = &password
+	cfgRpk.PandaproxyClient.SASLMechanism = &mechanism
+
+	// Add username as superuser
+	cfgRpk.Redpanda.Superusers = append(cfgRpk.Redpanda.Superusers, username)
+
+	return nil
+}
+
+func (r *ConfigMapResource) createBasicAuthSecret(
+	ctx context.Context, username, password string,
+) error {
+	key := r.keySASL()
+	obj := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      key.Name,
+			Namespace: key.Namespace,
+		},
+		Type: corev1.SecretTypeBasicAuth,
+		Data: map[string][]byte{
+			corev1.BasicAuthUsernameKey: []byte(username),
+			corev1.BasicAuthPasswordKey: []byte(password),
+		},
+	}
+
+	_, err := CreateIfNotExists(ctx, r, obj, r.logger)
+	return err
 }
 
 func (r *ConfigMapResource) preparePandaproxyTLS(cfgRpk *config.Config) {
@@ -430,4 +496,21 @@ func ConfigMapKey(pandaCluster *redpandav1alpha1.Cluster) types.NamespacedName {
 func configMapKind() string {
 	var cfg corev1.ConfigMap
 	return cfg.Kind
+}
+
+// TODO move to utilities
+var letters = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+func generatePassword(length int) (string, error) {
+	bytes := make([]byte, length)
+
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+
+	for i, b := range bytes {
+		bytes[i] = letters[b%byte(len(letters))]
+	}
+
+	return string(bytes), nil
 }
