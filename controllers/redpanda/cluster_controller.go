@@ -15,12 +15,15 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources/certmanager"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/api/admin"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -184,6 +187,37 @@ func (r *ClusterReconciler) Reconcile(
 		if err != nil {
 			log.Error(err, "Failed to reconcile resource")
 			return ctrl.Result{}, err
+		}
+	}
+
+	// When pandaproxy and SASL are enabled we need to create a user for the
+	// pandaproxy client. We use the superuser usename added to the configuration
+	// by the operator to create a user.
+	if internal := redpandaCluster.PandaproxyAPIInternal(); internal != nil && redpandaCluster.Spec.EnableSASL {
+		var secret corev1.Secret
+		err := r.Get(ctx, resources.KeySASL(&redpandaCluster), &secret)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		username := string(secret.Data[corev1.BasicAuthUsernameKey])
+		password := string(secret.Data[corev1.BasicAuthPasswordKey])
+
+		var urls []string
+		replicas := *redpandaCluster.Spec.Replicas
+		for i := int32(0); i < replicas; i++ {
+			urls = append(urls, fmt.Sprintf("%s-%d.%s:%d", redpandaCluster.Name, i, headlessSvc.HeadlessServiceFQDN(), redpandaCluster.AdminAPIInternal().Port))
+		}
+
+		adminAPI, err := admin.NewAdminAPI(urls, nil)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		err = adminAPI.CreateUser(username, password)
+		// {"message": "Creating user: User already exists", "code": 400}
+		if err != nil && !strings.Contains(err.Error(), "already exists") { // TODO if user already exists, we only receive "400". Check for specific error code when available.
+			log.Info("Could not create user: " + err.Error())
+			return ctrl.Result{RequeueAfter: time.Second * 10}, nil
 		}
 	}
 

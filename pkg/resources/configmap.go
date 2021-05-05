@@ -413,6 +413,15 @@ func (r *ConfigMapResource) Key() types.NamespacedName {
 	return ConfigMapKey(r.pandaCluster)
 }
 
+// KeySASL returns namespace/name used for the SASL secret of superuser
+func KeySASL(pandaCluster *redpandav1alpha1.Cluster) types.NamespacedName {
+	return types.NamespacedName{Name: pandaCluster.Name + "-sasl", Namespace: pandaCluster.Namespace}
+}
+
+func (r *ConfigMapResource) keySASL() types.NamespacedName {
+	return KeySASL(r.pandaCluster)
+}
+
 // ConfigMapKey provides config map name that derived from redpanda.vectorized.io CR
 func ConfigMapKey(pandaCluster *redpandav1alpha1.Cluster) types.NamespacedName {
 	return types.NamespacedName{Name: pandaCluster.Name + baseSuffix, Namespace: pandaCluster.Namespace}
