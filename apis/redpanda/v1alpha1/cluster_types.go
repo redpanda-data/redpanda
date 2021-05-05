@@ -142,6 +142,7 @@ type NodesList struct {
 	External           []string `json:"external,omitempty"`
 	ExternalAdmin      []string `json:"externalAdmin,omitempty"`
 	ExternalPandaproxy []string `json:"externalPandaproxy,omitempty"`
+	PandaproxyIngress  *string  `json:"pandaproxyIngress,omitempty"`
 }
 
 //+kubebuilder:object:root=true
