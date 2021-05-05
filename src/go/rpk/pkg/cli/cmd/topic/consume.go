@@ -189,14 +189,13 @@ func withoutConsumerGroup(
 	mu := sync.Mutex{} // Synchronizes stdout.
 	for _, partition := range partitions {
 		p := partition
-		offset = offset
 		grp.Go(func() error {
 			pc, err := consumer.ConsumePartition(topic, p, offset)
 			if err != nil {
 				log.Errorf(
 					"Unable to consume topic '%s', partition %d at offset %d",
 					topic,
-					partition,
+					p,
 					offset,
 				)
 				return err
