@@ -40,9 +40,20 @@ append_entries_buffer::enqueue(append_entries_request&& r) {
 }
 
 ss::future<> append_entries_buffer::stop() {
+    auto f = _gate.close();
     _enqueued.broken();
     _flushed.broken();
-    return _gate.close();
+    auto response_promises = std::exchange(_responses, {});
+    // set errors
+    for (auto& p : response_promises) {
+        p.set_exception(ss::gate_closed_exception());
+    }
+    vassert(
+      _responses.empty(),
+      "response promises queue should be empty when append entries buffer is "
+      "about to stop");
+
+    return f;
 }
 
 void append_entries_buffer::start() {
