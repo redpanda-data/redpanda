@@ -32,7 +32,7 @@ func NewLoginCommand(fs afero.Fs) *cobra.Command {
 				return fmt.Errorf("error reading token from config file: %w", err)
 			}
 			auth0Client := vcloud.NewDefaultAuth0Client()
-			if err == config.ErrConfigFileDoesNotExist {
+			if err == config.ErrConfigFileDoesNotExist || token == "" {
 				// no config file, have to log in
 				return login(auth0Client, configRW)
 			}
