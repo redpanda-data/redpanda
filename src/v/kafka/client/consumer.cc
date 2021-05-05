@@ -405,11 +405,12 @@ ss::future<fetch_response> consumer::fetch(
                 req.data.topics.push_back(fetch_request::topic{.name{t}});
             }
 
-            req.data.topics.back().fetch_partitions.push_back(fetch_request::partition{
-              .partition_index = p,
-              .fetch_offset = session.offset(tp),
-              .max_bytes = max_bytes.value_or(
-                _config.consumer_request_max_bytes)});
+            req.data.topics.back().fetch_partitions.push_back(
+              fetch_request::partition{
+                .partition_index = p,
+                .fetch_offset = session.offset(tp),
+                .max_bytes = max_bytes.value_or(
+                  _config.consumer_request_max_bytes)});
         }
     }
 
@@ -420,10 +421,8 @@ ss::future<fetch_response> consumer::fetch(
           return dispatch_fetch(std::move(br));
       },
       fetch_response{
-        .data = {
-        .throttle_time_ms{},
-        .error_code = error_code::none,
-        .session_id = kafka::invalid_fetch_session_id}},
+        .data
+        = {.throttle_time_ms{}, .error_code = error_code::none, .session_id = kafka::invalid_fetch_session_id}},
       detail::reduce_fetch_response);
 }
 

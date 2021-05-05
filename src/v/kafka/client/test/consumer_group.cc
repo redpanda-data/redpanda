@@ -402,7 +402,8 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
                   fetch_responses[i].end(),
                   [&](const auto& res) {
                       return res.partition->name == t.name
-                             && res.partition_response->partition_index == p.partition_index;
+                             && res.partition_response->partition_index
+                                  == p.partition_index;
                   });
                 BOOST_REQUIRE(part_it != fetch_responses[i].end());
                 auto expected_offset

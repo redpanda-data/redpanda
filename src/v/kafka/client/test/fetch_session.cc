@@ -42,11 +42,11 @@ kafka::fetch_response make_fetch_response(
   std::optional<kafka::batch_reader> record_set) {
     kafka::fetch_response res{
       .data = {
-      .throttle_time_ms = std::chrono::milliseconds{0},
-      .error_code = kafka::error_code::none,
-      .session_id = s_id,
-      .topics{}}};
-    kafka::fetch_response::partition p{.name=tpv.topic};
+        .throttle_time_ms = std::chrono::milliseconds{0},
+        .error_code = kafka::error_code::none,
+        .session_id = s_id,
+        .topics{}}};
+    kafka::fetch_response::partition p{.name = tpv.topic};
     p.partitions.push_back(kafka::fetch_response::partition_response{
       .partition_index = tpv.partition,
       .error_code = kafka::error_code::none,

@@ -12,9 +12,9 @@
 #pragma once
 
 #include "cluster/partition.h"
+#include "kafka/protocol/batch_reader.h"
 #include "kafka/protocol/schemata/fetch_request.h"
 #include "kafka/protocol/schemata/fetch_response.h"
-#include "kafka/protocol/batch_reader.h"
 #include "kafka/server/fetch_session.h"
 #include "kafka/server/partition_proxy.h"
 #include "kafka/server/request_context.h"
@@ -242,7 +242,8 @@ struct fetch_response final {
           , t_end_(end)
           , filter_(enable_filtering) {
             if (likely(state_.partition != t_end_)) {
-                state_.partition_response = state_.partition->partitions.begin();
+                state_.partition_response
+                  = state_.partition->partitions.begin();
                 state_.is_new_topic = true;
                 normalize();
             }
@@ -309,7 +310,8 @@ struct fetch_response final {
     };
 
     iterator begin(bool enable_filtering = false) {
-        return iterator(data.topics.begin(), data.topics.end(), enable_filtering);
+        return iterator(
+          data.topics.begin(), data.topics.end(), enable_filtering);
     }
 
     iterator end() { return iterator(data.topics.end(), data.topics.end()); }

@@ -368,7 +368,9 @@ static std::vector<shard_fetch> group_requests_by_shard(op_context& octx) {
                 = !resp_it->partition_response->records->empty()
                   && octx.over_min_bytes();
 
-              if (resp_it->partition_response->error_code != error_code::none || has_enough_data) {
+              if (
+                resp_it->partition_response->error_code != error_code::none
+                || has_enough_data) {
                   ++resp_it;
                   return;
               }
@@ -511,7 +513,8 @@ op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
 
 // insert and reserve space for a new topic in the response
 void op_context::start_response_topic(const fetch_request::topic& topic) {
-    auto& p = response.data.topics.emplace_back(fetchable_topic_response{.name=topic.name});
+    auto& p = response.data.topics.emplace_back(
+      fetchable_topic_response{.name = topic.name});
     p.partitions.reserve(topic.fetch_partitions.size());
 }
 
@@ -543,7 +546,8 @@ void op_context::create_response_placeholders() {
           session_ctx.session()->partitions().cend_insertion_order(),
           [this, &last_topic](const fetch_session_partition& fp) {
               if (last_topic != fp.topic) {
-                  response.data.topics.emplace_back(fetchable_topic_response{.name=fp.topic});
+                  response.data.topics.emplace_back(
+                    fetchable_topic_response{.name = fp.topic});
                   last_topic = fp.topic;
               }
               fetch_response::partition_response p{
@@ -559,7 +563,8 @@ void op_context::create_response_placeholders() {
 }
 
 bool update_fetch_partition(
-  const fetch_response::partition_response& resp, fetch_session_partition& partition) {
+  const fetch_response::partition_response& resp,
+  fetch_session_partition& partition) {
     bool include = false;
     if (resp.records && resp.records->size_bytes() > 0) {
         // Partitions with new data are always included in the response.
@@ -599,7 +604,8 @@ ss::future<response_ptr> op_context::send_response() && {
 
     for (auto it = response.begin(true); it != response.end(); ++it) {
         if (it->is_new_topic) {
-            final_response.data.topics.emplace_back(fetchable_topic_response{.name=it->partition->name});
+            final_response.data.topics.emplace_back(
+              fetchable_topic_response{.name = it->partition->name});
             final_response.data.topics.back().partitions.reserve(
               it->partition->partitions.size());
         }
@@ -610,8 +616,7 @@ ss::future<response_ptr> op_context::send_response() && {
           .high_watermark = it->partition_response->high_watermark,
           .last_stable_offset = it->partition_response->last_stable_offset,
           .log_start_offset = it->partition_response->log_start_offset,
-          .aborted = std::move(
-            it->partition_response->aborted),
+          .aborted = std::move(it->partition_response->aborted),
           .records = std::move(it->partition_response->records)};
 
         final_response.data.topics.back().partitions.push_back(std::move(r));

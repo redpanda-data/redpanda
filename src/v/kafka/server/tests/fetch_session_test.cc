@@ -44,11 +44,12 @@ struct fixture {
         };
 
         for (int i = 0; i < partitions_count; ++i) {
-            fetch_topic.fetch_partitions.push_back(kafka::fetch_request::partition{
-              .partition_index = model::partition_id(i),
-              .fetch_offset = model::offset(i * 10),
-              .max_bytes = 100_KiB,
-            });
+            fetch_topic.fetch_partitions.push_back(
+              kafka::fetch_request::partition{
+                .partition_index = model::partition_id(i),
+                .fetch_offset = model::offset(i * 10),
+                .max_bytes = 100_KiB,
+              });
         }
         return fetch_topic;
     }
@@ -149,9 +150,12 @@ FIXTURE_TEST(test_session_operations, fixture) {
         BOOST_REQUIRE_EQUAL(ctx.session()->partitions().size(), 3);
         for (const auto& fp : rng) {
             BOOST_REQUIRE_EQUAL(fp.topic, req.data.topics[0].name);
-            BOOST_REQUIRE_EQUAL(fp.partition, req.data.topics[0].fetch_partitions[i].partition_index);
             BOOST_REQUIRE_EQUAL(
-              fp.fetch_offset, req.data.topics[0].fetch_partitions[i].fetch_offset);
+              fp.partition,
+              req.data.topics[0].fetch_partitions[i].partition_index);
+            BOOST_REQUIRE_EQUAL(
+              fp.fetch_offset,
+              req.data.topics[0].fetch_partitions[i].fetch_offset);
             BOOST_REQUIRE_EQUAL(
               fp.max_bytes, req.data.topics[0].fetch_partitions[i].max_bytes);
             i++;
@@ -193,7 +197,8 @@ FIXTURE_TEST(test_session_operations, fixture) {
 
             BOOST_REQUIRE_EQUAL(fp.topic, req.data.topics[t_idx].name);
             BOOST_REQUIRE_EQUAL(
-              fp.partition, req.data.topics[t_idx].fetch_partitions[p_idx].partition_index);
+              fp.partition,
+              req.data.topics[t_idx].fetch_partitions[p_idx].partition_index);
             BOOST_REQUIRE_EQUAL(
               fp.fetch_offset,
               req.data.topics[t_idx].fetch_partitions[p_idx].fetch_offset);

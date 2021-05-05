@@ -97,7 +97,8 @@ FIXTURE_TEST(test_read_from_materialized_topic, router_test_fixture) {
     req.data.topics = {
       {.name = output_topic,
        .fetch_partitions = {
-         {.partition_index = model::partition_id(0), .fetch_offset = model::offset(0)}}}};
+         {.partition_index = model::partition_id(0),
+          .fetch_offset = model::offset(0)}}}};
 
     // .. and read the same partition using a kafka client
     auto client = make_kafka_client().get0();
@@ -110,7 +111,8 @@ FIXTURE_TEST(test_read_from_materialized_topic, router_test_fixture) {
     BOOST_REQUIRE_EQUAL(
       resp.data.topics[0].partitions[0].error_code, kafka::error_code::none);
     BOOST_REQUIRE_EQUAL(
-      resp.data.topics[0].partitions[0].partition_index, model::partition_id(0));
+      resp.data.topics[0].partitions[0].partition_index,
+      model::partition_id(0));
     BOOST_REQUIRE(resp.data.topics[0].partitions[0].records);
     // TODO(rob) fix this assertion
     // BOOST_REQUIRE_EQUAL(

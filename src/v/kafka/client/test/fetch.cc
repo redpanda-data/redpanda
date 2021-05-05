@@ -53,7 +53,8 @@ FIXTURE_TEST(fetch, kafka_client_fixture) {
         BOOST_REQUIRE_EQUAL(p.partitions.size(), 1);
         BOOST_REQUIRE_EQUAL(p.partitions[0].partition_index, ntp.tp.partition);
         BOOST_REQUIRE_EQUAL(
-          p.partitions[0].error_code, kafka::error_code::unknown_topic_or_partition);
+          p.partitions[0].error_code,
+          kafka::error_code::unknown_topic_or_partition);
     }
 
     info("Adding known topic");

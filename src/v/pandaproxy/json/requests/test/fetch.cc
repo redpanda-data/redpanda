@@ -61,9 +61,9 @@ auto make_fetch_response(
     }
     return kafka::fetch_response{
       .data = {
-      .error_code = kafka::error_code::none,
-      .topics = std::move(parts),
-    }};
+        .error_code = kafka::error_code::none,
+        .topics = std::move(parts),
+      }};
 }
 
 SEASTAR_THREAD_TEST_CASE(test_produce_fetch_empty) {

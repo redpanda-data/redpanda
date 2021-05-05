@@ -205,8 +205,8 @@ CONCEPT(requires requires(Func f, Iterator i) {
 // clang-format on
 inline auto parallel_transform(Iterator begin, Iterator end, Func func) {
     using value_type = typename std::iterator_traits<Iterator>::value_type;
-    using future = decltype(
-      seastar::futurize_invoke(std::move(func), std::move(*begin)));
+    using future = decltype(seastar::futurize_invoke(
+      std::move(func), std::move(*begin)));
     std::vector<future> res;
     res.reserve(std::distance(begin, end));
     std::transform(
