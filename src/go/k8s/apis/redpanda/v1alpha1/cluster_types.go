@@ -207,6 +207,8 @@ type PandaproxyAPI struct {
 	// nodes outside of a Kubernetes cluster. For more
 	// information please go to ExternalConnectivityConfig
 	External ExternalConnectivityConfig `json:"external,omitempty"`
+	// Configuration of TLS for Pandaproxy API
+	TLS PandaproxyAPITLS `json:"tls,omitempty"`
 }
 
 // KafkaAPITLS configures TLS for redpanda Kafka API
@@ -265,6 +267,24 @@ type KafkaAPITLS struct {
 //
 // All TLS secrets are stored in the same namespace as the Redpanda cluster.
 type AdminAPITLS struct {
+	Enabled           bool `json:"enabled,omitempty"`
+	RequireClientAuth bool `json:"requireClientAuth,omitempty"`
+}
+
+// PandaproxyAPITLS configures the TLS of the Pandaproxy API
+//
+// If Enabled is set to true, one-way TLS verification is enabled.
+// In that case, a key pair ('tls.crt', 'tls.key') and CA certificate 'ca.crt'
+// are generated and stored in a Secret named '<redpanda-cluster-name>-proxy-api-node'
+// and namespace as the Redpanda cluster. 'ca.crt' must be used by a client as a
+// truststore when communicating with Redpanda.
+//
+// If RequireClientAuth is set to true, two-way TLS verification is enabled.
+// In that case, a client certificate is generated, which can be retrieved from
+// the Secret named '<redpanda-cluster-name>-proxy-api-client'.
+//
+// All TLS secrets are stored in the same namespace as the Redpanda cluster.
+type PandaproxyAPITLS struct {
 	Enabled           bool `json:"enabled,omitempty"`
 	RequireClientAuth bool `json:"requireClientAuth,omitempty"`
 }
@@ -363,6 +383,17 @@ func (r *Cluster) PandaproxyAPIExternal() *PandaproxyAPI {
 	for _, el := range r.Spec.Configuration.PandaproxyAPI {
 		if el.External.Enabled {
 			return &el
+		}
+	}
+	return nil
+}
+
+// PandaproxyAPITLS returns a Pandaproxy listener that has TLS enabled.
+// It returns nil if no TLS is configured.
+func (r *Cluster) PandaproxyAPITLS() *PandaproxyAPI {
+	for i, el := range r.Spec.Configuration.PandaproxyAPI {
+		if el.TLS.Enabled {
+			return &r.Spec.Configuration.PandaproxyAPI[i]
 		}
 	}
 	return nil

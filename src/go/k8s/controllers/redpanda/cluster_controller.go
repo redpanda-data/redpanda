@@ -155,6 +155,7 @@ func (r *ClusterReconciler) Reconcile(
 		pki.AdminCert(),
 		pki.AdminAPINodeCert(),
 		pki.AdminAPIClientCert(),
+		pki.PandaproxyAPINodeCert(),
 		sa.Key().Name,
 		r.configuratorTag,
 		log)

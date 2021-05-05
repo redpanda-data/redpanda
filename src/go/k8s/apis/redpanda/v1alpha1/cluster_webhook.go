@@ -248,6 +248,21 @@ func (r *Cluster) validatePandaproxyListeners() field.ErrorList {
 		}
 	}
 
+	// for now only one listener can have TLS to be backward compatible with v1alpha1 API
+	foundListenerWithTLS := false
+	for i, p := range r.Spec.Configuration.PandaproxyAPI {
+		if p.TLS.Enabled {
+			if foundListenerWithTLS {
+				allErrs = append(allErrs,
+					field.Invalid(field.NewPath("spec").Child("configuration").Child("pandaproxyApi").Index(i).Child("tls"),
+						r.Spec.Configuration.PandaproxyAPI[i].TLS,
+						"only one pandaproxy listener can have TLS enabled"))
+			}
+			foundListenerWithTLS = true
+		}
+		allErrs = append(allErrs, validatePandaproxyTLS(p.TLS, field.NewPath("spec").Child("configuration").Child("pandaproxyApi").Index(i).Child("tls"))...)
+	}
+
 	// If we have an external proxy listener and no other listeners, we're missing an internal one
 	if proxyExternal != nil && len(r.Spec.Configuration.PandaproxyAPI) == 1 {
 		allErrs = append(allErrs,
@@ -308,6 +323,20 @@ func validateTLS(tlsConfig KafkaAPITLS, path *field.Path) field.ErrorList {
 				path.Child("nodeSecretRef"),
 				tlsConfig.NodeSecretRef,
 				"Cannot provide both IssuerRef and NodeSecretRef"))
+	}
+	return allErrs
+}
+
+func validatePandaproxyTLS(
+	tlsConfig PandaproxyAPITLS, path *field.Path,
+) field.ErrorList {
+	var allErrs field.ErrorList
+	if tlsConfig.RequireClientAuth && !tlsConfig.Enabled {
+		allErrs = append(allErrs,
+			field.Invalid(
+				path.Child("requireclientauth"),
+				tlsConfig.RequireClientAuth,
+				"Enabled has to be set to true for RequireClientAuth to be allowed to be true"))
 	}
 	return allErrs
 }
