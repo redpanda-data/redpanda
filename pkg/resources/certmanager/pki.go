@@ -106,6 +106,12 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 		toApply = append(toApply, r.prepareAdminAPI(adminIssuerRef)...)
 	}
 
+	if r.pandaCluster.PandaproxyAPITLS() != nil {
+		toApplyRootPandaproxy, pandaproxyIssuerRef := r.prepareRoot(pandaproxyAPI)
+		toApply = append(toApply, toApplyRootPandaproxy...)
+		toApply = append(toApply, r.preparePandaproxyAPI(pandaproxyIssuerRef)...)
+	}
+
 	for _, res := range toApply {
 		err := res.Ensure(ctx)
 		if err != nil {
