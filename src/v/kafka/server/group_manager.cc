@@ -18,6 +18,7 @@
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
+#include "kafka/protocol/request_reader.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/record.h"
