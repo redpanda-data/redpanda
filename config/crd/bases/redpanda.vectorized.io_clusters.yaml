@@ -298,6 +298,14 @@ spec:
                           type: object
                         port:
                           type: integer
+                        tls:
+                          description: Configuration of TLS for Pandaproxy API
+                          properties:
+                            enabled:
+                              type: boolean
+                            requireClientAuth:
+                              type: boolean
+                          type: object
                       type: object
                     type: array
                   rpcServer:
