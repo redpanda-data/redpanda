@@ -61,7 +61,6 @@ struct leave_group_response final {
 
     explicit leave_group_response(error_code error)
       : data({
-        .throttle_time_ms = std::chrono::milliseconds(0),
         .error_code = error,
       }) {}
 

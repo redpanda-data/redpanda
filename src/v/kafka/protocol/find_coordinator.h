@@ -63,13 +63,11 @@ struct find_coordinator_response final {
 
     find_coordinator_response_data data;
 
-    find_coordinator_response()
-      : data({.throttle_time_ms = std::chrono::milliseconds(0)}) {}
+    find_coordinator_response() = default;
 
     find_coordinator_response(
       error_code error, model::node_id node, ss::sstring host, int32_t port)
       : data({
-        .throttle_time_ms = std::chrono::milliseconds(0),
         .error_code = error,
         .node_id = node,
         .host = std::move(host),

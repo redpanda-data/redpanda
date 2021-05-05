@@ -60,7 +60,6 @@ struct heartbeat_response final {
 
     explicit heartbeat_response(error_code error)
       : data({
-        .throttle_time_ms = std::chrono::milliseconds(0),
         .error_code = error,
       }) {}
 

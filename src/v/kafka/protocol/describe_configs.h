@@ -57,9 +57,6 @@ struct describe_configs_response final {
 
     describe_configs_response_data data;
 
-    describe_configs_response()
-      : data({.throttle_time_ms = std::chrono::milliseconds(0)}) {}
-
     void encode(response_writer& writer, api_version version) {
         data.encode(writer, version);
     }

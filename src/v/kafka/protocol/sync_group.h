@@ -74,7 +74,6 @@ struct sync_group_response final {
 
     sync_group_response(error_code error, bytes assignment)
       : data({
-        .throttle_time_ms = std::chrono::milliseconds(0),
         .error_code = error,
         .assignment = std::move(assignment),
       }) {}
