@@ -16,7 +16,7 @@ Let's get started...
 
 ## Create a Kubernetes cluster
 
-1. Create a 3-node cluster:
+Create a 3-node cluster on the platform of your choice:
 
 <tabs>
 
@@ -67,7 +67,11 @@ Let's get started...
   </tab>
 </tabs>
 
-2. Install cert-manager:
+## Prepare TLS certificate infrastructure
+
+The Redpanda cluster uses cert-manager to create TLS certificates for communication between the cluster nodes.
+
+We'll use Heml to install cert-manager:
 
   ```bash
   helm repo add jetstack https://charts.jetstack.io && \
@@ -80,7 +84,9 @@ Let's get started...
     --set installCRDs=true
   ```
 
-3. Install the latest redpanda operator:
+## Install the Redpanda operator and cluster
+
+1. Install the latest redpanda operator:
 
   ```
   VERSION=v21.4.15
@@ -94,14 +100,14 @@ Let's get started...
     redpanda/redpanda-operator
   ```
 
-4. Install a cluster with external connectivity:
+2. Install a cluster with external connectivity:
 
   ```
   VERSION=v21.4.15
   kubectl apply -f https://raw.githubusercontent.com/vectorizedio/redpanda/$VERSION/src/go/k8s/config/samples/external_connectivity.yaml
   ```
 
-5. For GKE only, open the firewall for access to the cluster:
+3. For GKE only, open the firewall for access to the cluster:
   
   a. Get the port number that Redpanda is listening on:
 
@@ -131,13 +137,15 @@ Let's get started...
 
   `["34.121.167.159:30249","34.71.125.54:30249","35.184.221.5:30249"]`
 
-7. From a remote machine that has `rpk` installed, get information about the cluster:
+## Verify the connection
+
+1. From a remote machine that has `rpk` installed, get information about the cluster:
 
   ```
   rpk --brokers 34.121.167.159:30249,34.71.125.54:30249,35.184.221.5:30249 cluster info
   ```
 
-8. Create a topic in your Redpanda cluster:
+2. Create a topic in your Redpanda cluster:
 
   ```
   rpk --brokers 34.121.167.159:30249,34.71.125.54:30249,35.184.221.5:30249 topic create chat-rooms -p 5
