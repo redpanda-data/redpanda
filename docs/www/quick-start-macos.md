@@ -9,7 +9,7 @@ With Redpanda you can get up and running with streaming quickly
 and be fully compatible with the [Kafka ecosystem](https://cwiki.apache.org/confluence/display/KAFKA/Ecosystem).
 
 This quick start guide can help you get started with Redpanda for development and testing purposes.
-For production or benchmarking, set up a [production deployment](production-deployment).
+For production or benchmarking, set up a [production deployment](/docs/production-deployment).
 
 ## Getting Redpanda running
 
