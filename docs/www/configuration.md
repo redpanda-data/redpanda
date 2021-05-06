@@ -558,12 +558,12 @@ Here is a more comprehensive view of the configration so that you can see all of
 
 | Parameter | Description | Default |
 | --- | --- | --- |
-| `_advertised_kafka_api` | Address of Kafka API published to the clients | None |
-| `_advertised_rpc_api` | Address of RPC endpoint published to other cluster members | None |
 | `admin` | Address and port of admin server | 127.0.0.1:9644 |
 | `admin_api_doc_dir` | Admin API doc directory | /usr/share/redpanda/admin-api-doc |
 | `admin_api_tls` | TLS configuration for admin HTTP server | validate_many |
+| `advertised_kafka_api` | Address of Kafka API published to the clients | None |
 | `advertised_pandaproxy_api` | Rest API address and port to publish to client | None |
+| `advertised_rpc_api` | Address of RPC endpoint published to other cluster members | None |
 | `alter_topic_cfg_timeout_ms` | Time to wait for entries replication in controller log when executing alter configuration requst | 5s |
 | `api_doc_dir` | API doc directory | /usr/share/redpanda/proxy-api-doc |
 | `auto_create_topics_enabled` | Allow topic auto creation | false |

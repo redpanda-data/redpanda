@@ -5,7 +5,7 @@ order: 0
 
 # Connect to a Kubernetes cluster from an external client
 
-The [Kubernetes Quick Start guide](quick-start-kubernetes.md) describes how to quickly get up and running with a Kubernetes cluster.
+The [Kubernetes Quick Start guide](/docs/quick-start-kubernetes) describes how to quickly get up and running with a Kubernetes cluster.
 Those instructions only provide access to the cluster from within the Kuberenetes network.
 
 Here we'll show you an example of how to set up Kubernetes in

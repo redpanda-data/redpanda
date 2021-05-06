@@ -191,4 +191,4 @@ As you can see, the commands from the "rpk" pod created a 5 partition topic in f
 ## Next steps
 
 - Contact us in our [Slack](https://vectorized.io/slack) community so we can work together to implement your Kubernetes use cases.
-- Check out how to set up a Kubernetes cluster with [access from an external machine](kubernetes-external-connect).
+- Check out how to set up a Kubernetes cluster with [access from an external machine](/docs/kubernetes-external-connect).
