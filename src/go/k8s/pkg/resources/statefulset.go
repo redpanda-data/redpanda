@@ -210,8 +210,6 @@ func preparePVCResource(
 // obj returns resource managed client.Object
 // nolint:funlen // The complexity of obj function will be address in the next version TODO
 func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
-	var configMapDefaultMode int32 = 0754
-
 	var clusterLabels = labels.ForCluster(r.pandaCluster)
 
 	pvc := preparePVCResource(datadirName, r.pandaCluster.Namespace, r.pandaCluster.Spec.Storage, clusterLabels)
@@ -276,7 +274,6 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 									LocalObjectReference: corev1.LocalObjectReference{
 										Name: ConfigMapKey(r.pandaCluster).Name,
 									},
-									DefaultMode: &configMapDefaultMode,
 								},
 							},
 						},
