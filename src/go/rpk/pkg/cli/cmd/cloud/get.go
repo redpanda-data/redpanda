@@ -7,24 +7,22 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package cmd
+package cloud
 
 import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/cloud"
 )
 
-func NewCloudCommand(fs afero.Fs) *cobra.Command {
+func NewGetCommand(fs afero.Fs) *cobra.Command {
 	command := &cobra.Command{
-		Use:    "cloud",
-		Short:  "Interact with Vectorized Cloud",
+		Use:    "get",
+		Short:  "Get resource from Vectorized cloud",
 		Hidden: true,
 	}
 
-	command.AddCommand(cloud.NewLoginCommand(fs))
-	command.AddCommand(cloud.NewLogoutCommand(fs))
-	command.AddCommand(cloud.NewGetCommand(fs))
+	command.AddCommand(NewNamespacesCommand(fs))
+	command.AddCommand(NewClustersCommand(fs))
 
 	return command
 }
