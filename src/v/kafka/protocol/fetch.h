@@ -453,6 +453,21 @@ struct fetch_config {
     bool strict_max_bytes{false};
 };
 
+struct ntp_fetch_config {
+    ntp_fetch_config(
+      model::ntp ntp,
+      fetch_config cfg,
+      std::optional<model::ntp> materialized_ntp = std::nullopt)
+      : ntp(std::move(ntp))
+      , cfg(cfg)
+      , materialized_ntp(std::move(materialized_ntp)) {}
+    model::ntp ntp;
+    fetch_config cfg;
+    std::optional<model::ntp> materialized_ntp;
+
+    bool is_materialized() const { return materialized_ntp.has_value(); }
+};
+
 /**
  * Simple type aggregating either data or an error
  */
@@ -516,16 +531,11 @@ struct read_result {
     model::partition_id partition;
     std::vector<cluster::rm_stm::tx_range> aborted_transactions;
 };
-
-using ntp_fetch_config = std::pair<model::materialized_ntp, fetch_config>;
 // struct aggregating fetch requests and corresponding response iterators for
 // the same shard
 struct shard_fetch {
-    void push_back(
-      model::materialized_ntp ntp,
-      fetch_config config,
-      op_context::response_iterator it) {
-        requests.emplace_back(std::move(ntp), config);
+    void push_back(ntp_fetch_config config, op_context::response_iterator it) {
+        requests.push_back(std::move(config));
         responses.push_back(it);
     }
 
