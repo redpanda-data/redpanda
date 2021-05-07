@@ -35,7 +35,7 @@ private:
       , _controller_priority(
           ss::engine().register_one_priority_class("controller", 1000))
       , _kafka_read_priority(
-          ss::engine().register_one_priority_class("kafka_read", 200))
+          ss::engine().register_one_priority_class("kafka_read", 1000))
       , _compaction_priority(
           ss::engine().register_one_priority_class("compaction", 200)) {}
 
