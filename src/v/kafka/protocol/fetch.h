@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/partition.h"
+#include "cluster/rm_stm.h"
 #include "kafka/protocol/batch_reader.h"
 #include "kafka/protocol/schemata/fetch_request.h"
 #include "kafka/protocol/schemata/fetch_response.h"
@@ -451,40 +452,29 @@ struct fetch_config {
     model::timeout_clock::time_point timeout;
     bool strict_max_bytes{false};
 };
-struct fetched_offset_range {
-    model::offset base_offset;
-    model::offset last_offset;
-};
+
 /**
- * Simple type aggregating either reader and offsets or an error
+ * Simple type aggregating either data or an error
  */
 struct read_result {
+    using foreign_data_t = ss::foreign_ptr<std::unique_ptr<iobuf>>;
+    using data_t = std::unique_ptr<iobuf>;
+    using variant_t = std::variant<data_t, foreign_data_t>;
     explicit read_result(error_code e)
       : error(e) {}
 
     read_result(
-      model::record_batch_reader rdr,
-      model::offset start_offset,
-      model::offset hw,
-      model::offset lso)
-      : reader(std::move(rdr))
-      , start_offset(start_offset)
-      , high_watermark(hw)
-      , last_stable_offset(lso)
-      , error(error_code::none) {}
-
-    read_result(
-      model::record_batch_reader rdr,
+      variant_t data,
       model::offset start_offset,
       model::offset hw,
       model::offset lso,
-      fetched_offset_range fr)
-      : reader(std::move(rdr))
+      std::vector<cluster::rm_stm::tx_range> aborted_transactions)
+      : data(std::move(data))
       , start_offset(start_offset)
       , high_watermark(hw)
       , last_stable_offset(lso)
-      , fetched_range(fr)
-      , error(error_code::none) {}
+      , error(error_code::none)
+      , aborted_transactions(std::move(aborted_transactions)) {}
 
     read_result(model::offset start_offset, model::offset hw, model::offset lso)
       : start_offset(start_offset)
@@ -492,14 +482,39 @@ struct read_result {
       , last_stable_offset(lso)
       , error(error_code::none) {}
 
-    std::optional<model::record_batch_reader> reader;
+    bool has_data() const {
+        return ss::visit(
+          data,
+          [](const data_t& d) { return d != nullptr; },
+          [](const foreign_data_t& d) { return !d->empty(); });
+    }
+
+    const iobuf& get_data() const {
+        if (std::holds_alternative<data_t>(data)) {
+            return *std::get<data_t>(data);
+        } else {
+            return *std::get<foreign_data_t>(data);
+        }
+    }
+
+    iobuf release_data() && {
+        return ss::visit(
+          data,
+          [](data_t& d) { return std::move(*d); },
+          [](foreign_data_t& d) {
+              auto ret = d->copy();
+              d.reset();
+              return ret;
+          });
+    }
+
+    variant_t data;
     model::offset start_offset;
     model::offset high_watermark;
     model::offset last_stable_offset;
-    fetched_offset_range fetched_range;
     error_code error;
     model::partition_id partition;
-    std::vector<fetch_response::aborted_transaction> aborted_transactions;
+    std::vector<cluster::rm_stm::tx_range> aborted_transactions;
 };
 
 using ntp_fetch_config = std::pair<model::materialized_ntp, fetch_config>;

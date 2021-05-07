@@ -121,7 +121,7 @@ model::record_batch adapt_fetch_batch(model::record_batch&& batch) {
  * Low-level handler for reading from an ntp. Runs on ntp's home core.
  */
 static ss::future<read_result> read_from_partition(
-  kafka::partition_proxy& part,
+  kafka::partition_proxy part,
   fetch_config config,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
@@ -130,7 +130,7 @@ static ss::future<read_result> read_from_partition(
     auto start_o = part.start_offset();
     // if we have no data read, return fast
     if (hw < config.start_offset) {
-        return ss::make_ready_future<read_result>(start_o, hw, lso);
+        co_return read_result(start_o, hw, lso);
     }
 
     storage::log_reader_config reader_config(
@@ -144,44 +144,26 @@ static ss::future<read_result> read_from_partition(
       std::nullopt);
 
     reader_config.strict_max_bytes = config.strict_max_bytes;
-    fetched_offset_range fr{
-      .base_offset = model::model_limits<model::offset>::max(),
-      .last_offset = model::offset(0)};
+    auto rdr = co_await part.make_reader(reader_config);
+    auto result = co_await std::move(rdr).consume(
+      kafka_batch_serializer(), deadline ? *deadline : model::no_timeout);
+    auto data = std::make_unique<iobuf>(std::move(result.data));
+    std::vector<cluster::rm_stm::tx_range> aborted_transactions;
+    if (result.record_count > 0) {
+        aborted_transactions = co_await part.aborted_transactions(
+          result.base_offset, result.last_offset);
+    }
 
-    return ss::do_with(
-      std::move(fr),
-      [&part, start_o, hw, lso, foreign_read, deadline, reader_config](
-        fetched_offset_range& fr) {
-          return part.make_reader(reader_config)
-            .then([&fr, start_o, hw, lso, foreign_read, deadline](
-                    model::record_batch_reader rdr) {
-                return model::transform_reader_to_memory(
-                         std::move(rdr),
-                         deadline.value_or(model::no_timeout),
-                         [&fr](model::record_batch&& batch) {
-                             fr.base_offset = std::min(
-                               fr.base_offset, batch.base_offset());
-                             fr.last_offset = std::max(
-                               fr.last_offset, batch.last_offset());
-                             return adapt_fetch_batch(std::move(batch));
-                         })
-                  .then([foreign_read](
-                          ss::circular_buffer<model::record_batch> data) {
-                      // if we are on remote core, we MUST use foreign record
-                      // batch reader.
-                      if (foreign_read) {
-                          return model::make_foreign_memory_record_batch_reader(
-                            std::move(data));
-                      }
-                      return model::make_memory_record_batch_reader(
-                        std::move(data));
-                  })
-                  .then([&fr, start_o, hw, lso](
-                          model::record_batch_reader rdr) {
-                      return read_result(std::move(rdr), start_o, hw, lso, fr);
-                  });
-            });
-      });
+    if (foreign_read) {
+        co_return read_result(
+          ss::make_foreign<read_result::data_t>(std::move(data)),
+          start_o,
+          hw,
+          lso,
+          std::move(aborted_transactions));
+    }
+    co_return read_result(
+      std::move(data), start_o, hw, lso, std::move(aborted_transactions));
 }
 
 std::optional<partition_proxy> make_partition_proxy(
@@ -244,99 +226,51 @@ ss::future<read_result> read_from_ntp(
           error_code::offset_out_of_range);
     }
 
-    return ss::do_with(
-      std::move(*kafka_partition),
-      [config, foreign_read, deadline](kafka::partition_proxy& part) {
-          return read_from_partition(part, config, foreign_read, deadline)
-            .then([&part](read_result result) {
-                // TODO(rystsov): use kafka_partition
-                auto aborted_f = part.aborted_transactions(
-                  result.fetched_range.base_offset,
-                  result.fetched_range.last_offset);
-                return aborted_f.then(
-                  [result = std::move(result)](
-                    std::vector<cluster::rm_stm::tx_range> txes) mutable {
-                      for (auto& tx : txes) {
-                          result.aborted_transactions.push_back(
-                            fetch_response::aborted_transaction{
-                              .producer_id = kafka::producer_id(tx.pid.id),
-                              .first_offset = tx.first});
-                      }
-                      return std::move(result);
-                  });
-            });
-      });
+    return read_from_partition(
+      std::move(*kafka_partition), config, foreign_read, deadline);
 }
 
-static ss::future<> do_fill_fetch_responses(
-  std::vector<read_result>& results,
-  std::vector<op_context::response_iterator>& responses) {
-    auto range = boost::irange<size_t>(0, results.size());
-    return ss::parallel_for_each(range, [&results, &responses](size_t idx) {
-        auto& res = results[idx];
-        auto& resp_it = responses[idx];
-        // error case
-        if (!res.reader) {
-            resp_it.set(
-              make_partition_response_error(res.partition, res.error));
-            resp_it->partition_response->log_start_offset = res.start_offset;
-            resp_it->partition_response->high_watermark = res.high_watermark;
-            resp_it->partition_response->last_stable_offset
-              = res.last_stable_offset;
-            return ss::now();
-        }
-        return std::move(*res.reader)
-          .consume(kafka_batch_serializer(), model::no_timeout)
-          .then([so = res.start_offset,
-                 hw = res.high_watermark,
-                 lso = res.last_stable_offset,
-                 pid = res.partition,
-                 &rres = res,
-                 resp_it = resp_it](
-                  kafka_batch_serializer::result res) mutable {
-              fetch_response::partition_response resp{
-                .partition_index = pid,
-                .error_code = error_code::none,
-                .records = batch_reader(std::move(res.data)),
-              };
-              resp_it.set(std::move(resp));
-              resp_it->partition_response->log_start_offset = so;
-              resp_it->partition_response->high_watermark = hw;
-              resp_it->partition_response->last_stable_offset = lso;
-              resp_it->partition_response->aborted = rres.aborted_transactions;
-          })
-          .handle_exception(
-            [so = res.start_offset,
-             hw = res.high_watermark,
-             lso = res.last_stable_offset,
-             pid = res.partition,
-             resp_it = resp_it](const std::exception_ptr&) mutable {
-                /*
-                 * TODO: this is where we will want to
-                 * handle any storage specific errors and
-                 * translate them into kafka response
-                 * error codes.
-                 */
-                resp_it.set(make_partition_response_error(
-                  pid, error_code::unknown_server_error));
-                resp_it->partition_response->log_start_offset = so;
-                resp_it->partition_response->high_watermark = hw;
-                resp_it->partition_response->last_stable_offset = lso;
-            });
-    });
-}
-
-static ss::future<> fill_fetch_responsens(
+static void fill_fetch_responses(
   std::vector<read_result> results,
   std::vector<op_context::response_iterator> responses) {
-    return ss::do_with(
-      std::move(responses),
-      std::move(results),
-      [](
-        std::vector<op_context::response_iterator>& responses,
-        std::vector<read_result>& results) {
-          return do_fill_fetch_responses(results, responses);
-      });
+    auto range = boost::irange<size_t>(0, results.size());
+    for (auto idx : range) {
+        auto& res = results[idx];
+        auto& resp_it = responses[idx];
+
+        // error case
+        if (!res.has_data()) {
+            resp_it.set(
+              make_partition_response_error(res.partition, res.error));
+            continue;
+        }
+        fetch_response::partition_response resp;
+        resp.partition_index = res.partition;
+        resp.error_code = error_code::none;
+        resp.log_start_offset = res.start_offset;
+        resp.high_watermark = res.high_watermark;
+        resp.last_stable_offset = res.last_stable_offset;
+
+        /**
+         * set aborted transactions if present
+         */
+        if (!res.aborted_transactions.empty()) {
+            std::vector<fetch_response::aborted_transaction> aborted;
+            aborted.reserve(res.aborted_transactions.size());
+            std::transform(
+              res.aborted_transactions.begin(),
+              res.aborted_transactions.end(),
+              std::back_inserter(aborted),
+              [](cluster::rm_stm::tx_range range) {
+                  return fetch_response::aborted_transaction{
+                    .producer_id = kafka::producer_id(range.pid.id),
+                    .first_offset = range.first};
+              });
+            resp.aborted = std::move(aborted);
+        }
+        resp.records = batch_reader(std::move(res).release_data());
+        resp_it.set(std::move(resp));
+    }
 }
 
 static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
@@ -396,8 +330,7 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
         })
       .then([responses = std::move(fetch.responses)](
               std::vector<read_result> results) mutable {
-          return fill_fetch_responsens(
-            std::move(results), std::move(responses));
+          fill_fetch_responses(std::move(results), std::move(responses));
       });
 }
 
