@@ -16,6 +16,10 @@ webhook of cert-manager will prevent from creating mentioned
 resources. To verify that cert manager is ready please follow
 [the verifying the installation](https://cert-manager.io/docs/installation/kubernetes/#verifying-the-installation)
 
+The operator by default exposes metrics endpoint. By leveraging prometheus
+operator ServiceMonitor custom resource metrics can be automatically
+discovered.
+
 1. Install Redpanda operator CRDs:
 
 ```sh
@@ -35,6 +39,14 @@ kubectl apply -k 'https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd
 
 ```sh
 helm install --namespace redpanda-system --create-namespace redpanda-operator ./redpanda-operator
+```
+
+Alternative installation with kube-prometheus-stack that includes prometheus operator CRD
+```sh
+helm install --dependency-update \
+--namespace redpanda-system \
+--set monitoring.enabled=true \
+--create-namespace redpanda-operator ./redpanda-operator
 ```
 
 Other instruction will be visible after installation.

@@ -72,6 +72,10 @@ jobs:
       with:
         version: v3.3.1
 
+    - name: Adding prometheus helm repository
+      working-directory: src/go/k8s/helm-chart/charts
+      run: helm repo add prom https://prometheus-community.github.io/helm-charts
+
     - name: Run chart-testing (lint)
       working-directory: src/go/k8s/helm-chart/charts
       run: ct lint --debug --config ci/ct.yaml
