@@ -16,3 +16,9 @@ sources:
 maintainers:
   - name: Vectorizedio
     email: support@vectorized.io
+
+dependencies:
+- name: kube-prometheus-stack
+  condition: monitoring.enabled
+  version: 13.13.1
+  repository: https://prometheus-community.github.io/helm-charts
