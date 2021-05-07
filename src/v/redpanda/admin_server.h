@@ -42,6 +42,8 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
+    void set_ready() { _ready = true; }
+
 private:
     /**
      * Prepend a / to the path component. This handles the case where path is an
@@ -81,4 +83,5 @@ private:
     ss::sharded<cluster::shard_table>& _shard_table;
     std::unique_ptr<dashboard_handler> _dashboard_handler;
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
+    bool _ready{false};
 };

@@ -727,6 +727,8 @@ void application::start() {
           _schema_reg_config->schema_registry_api());
     }
 
+    _admin.invoke_on_all([](admin_server& admin) { admin.set_ready(); }).get();
+
     vlog(_log.info, "Successfully started Redpanda!");
     syschecks::systemd_notify_ready().get();
 }
