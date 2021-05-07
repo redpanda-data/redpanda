@@ -385,6 +385,28 @@ class RedpandaService(Service):
             shards_per_node[self.idx(node)] = num_shards
         return shards_per_node
 
+    def describe_topics(self, topics=None):
+        """
+        Describe topics. Pass topics=None to describe all topics, or a pass a
+        list of topic names to restrict the call to a set of specific topics.
+
+        Sample return value:
+            [
+              {'error_code': 0,
+               'topic': 'topic-kabn',
+               'is_internal': False,
+               'partitions': [
+                 {'error_code': 0,
+                  'partition': 0,
+                  'leader': 1,
+                  'replicas': [1],
+                  'isr': [1],
+                  'offline_replicas': []}
+               }
+            ]
+        """
+        return self._client.describe_topics(topics)
+
     def partitions(self, topic):
         """
         Return partition metadata for the topic.
