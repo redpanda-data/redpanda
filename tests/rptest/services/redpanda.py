@@ -39,7 +39,7 @@ class RedpandaService(Service):
     WASM_STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT,
                                               "wasm_engine.log")
     CLUSTER_NAME = "my_cluster"
-    READY_TIMEOUT_SEC = 20
+    READY_TIMEOUT_SEC = 5
 
     SUPERUSER_CREDENTIALS = ("admin", "admin", "SCRAM-SHA-256")
 
@@ -108,6 +108,12 @@ class RedpandaService(Service):
             client.create_topic(spec)
 
     def start_node(self, node, override_cfg_params=None):
+        """
+        Start a single instance of redpanda. This function will not return until
+        redpanda appears to have started successfully. If redpanda does not
+        start within a timeout period the service will fail to start. Thus this
+        function also acts as an implicit test that redpanda starts quickly.
+        """
         node.account.mkdirs(RedpandaService.DATA_DIR)
         node.account.mkdirs(os.path.dirname(RedpandaService.CONFIG_FILE))
 
@@ -130,17 +136,13 @@ class RedpandaService(Service):
         self.logger.info(
             f"Starting Redpanda service on {node.account} with command: {cmd}")
 
-        # wait until redpanda has finished booting up
-        with node.account.monitor_log(
-                RedpandaService.STDOUT_STDERR_CAPTURE) as mon:
-            node.account.ssh(cmd)
-            mon.wait_until(
-                "Successfully started Redpanda!",
-                timeout_sec=RedpandaService.READY_TIMEOUT_SEC,
-                backoff_sec=0.5,
-                err_msg=
-                f"Redpanda didn't finish startup in {RedpandaService.READY_TIMEOUT_SEC} seconds",
-            )
+        node.account.ssh(cmd)
+
+        wait_until(
+            lambda: Admin.ready(node).get("status") == "ready",
+            timeout_sec=RedpandaService.READY_TIMEOUT_SEC,
+            err_msg=f"Redpanda service {node.account.hostname} failed to start",
+            retry_on_exc=True)
 
     def coproc_enabled(self):
         coproc = self._extra_rp_conf.get('enable_coproc')
