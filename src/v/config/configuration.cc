@@ -319,6 +319,12 @@ configuration::configuration()
       "Default topic compression type",
       required::no,
       model::compression::producer)
+  , fetch_max_bytes(
+      *this,
+      "fetch_max_bytes",
+      "Maximum number of bytes returned in fetch request",
+      required::no,
+      55_MiB)
   , transactional_id_expiration_ms(
       *this,
       "transactional_id_expiration_ms",

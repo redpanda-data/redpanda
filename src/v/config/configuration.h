@@ -96,6 +96,7 @@ struct configuration final : public config_store {
     property<model::cleanup_policy_bitflags> log_cleanup_policy;
     property<model::timestamp_type> log_message_timestamp_type;
     property<model::compression> log_compression_type;
+    property<size_t> fetch_max_bytes;
     // same as transactional.id.expiration.ms in kafka
     property<std::chrono::milliseconds> transactional_id_expiration_ms;
     property<bool> enable_idempotence;
