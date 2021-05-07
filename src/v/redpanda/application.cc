@@ -243,14 +243,14 @@ void application::hydrate_config(const po::variables_map& cfg) {
               std::vector<unresolved_address>{kafka_api[0].address});
             const auto& kafka_api_tls
               = config::shard_local_cfg().kafka_api_tls.value();
-            if (!kafka_api_tls.empty()) {
-                vassert(
-                  kafka_api[0].name == kafka_api_tls[0].name,
-                  "pandaproxy_client.broker_tls could not be inferred from "
-                  "kafka_api_tls: {}",
-                  kafka_api_tls);
-                _proxy_client_config->broker_tls.set_value(
-                  kafka_api_tls[0].config);
+            auto tls_it = std::find_if(
+              kafka_api_tls.begin(),
+              kafka_api_tls.end(),
+              [&kafka_api](const config::endpoint_tls_config& tls) {
+                  return tls.name == kafka_api[0].name;
+              });
+            if (tls_it != kafka_api_tls.end()) {
+                _proxy_client_config->broker_tls.set_value(tls_it->config);
             }
         }
         _proxy_config->for_each(config_printer("pandaproxy"));
