@@ -41,7 +41,7 @@ fetch_request make_fetch_request(
         .max_wait_ms{timeout},
         .min_bytes = 0,
         .max_bytes = max_bytes,
-        .isolation_level = 0,
+        .isolation_level = model::isolation_level::read_uncommitted,
         .topics{std::move(topics)}}};
 }
 

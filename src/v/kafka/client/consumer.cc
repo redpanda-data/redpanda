@@ -395,7 +395,8 @@ ss::future<fetch_response> consumer::fetch(
                               .min_bytes = 1,
                               .max_bytes = max_bytes.value_or(
                                 _config.consumer_request_max_bytes),
-                              .isolation_level = 0, // READ_UNCOMMITTED
+                              .isolation_level = model::isolation_level::
+                                read_uncommitted, // READ_UNCOMMITTED
                               .session_id = session.id(),
                               .session_epoch = session.epoch(),
                             }})

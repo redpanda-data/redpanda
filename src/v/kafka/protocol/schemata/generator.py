@@ -214,6 +214,7 @@ path_type_map = {
     },
     "FetchRequestData": {
         "MaxWaitMs": ("std::chrono::milliseconds", "int32"),
+        "IsolationLevel": ("model::isolation_level", "int8"),
         "Topics": {
             "FetchPartitions": {
                 "PartitionIndex": ("model::partition_id", "int32"),
