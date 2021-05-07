@@ -26,6 +26,7 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.storage import ClusterStorage, NodeStorage
 from rptest.services.admin import Admin
 from rptest.clients.python_librdkafka import PythonLibrdkafka
+from kafka import KafkaAdminClient
 
 Partition = collections.namedtuple('Partition',
                                    ['index', 'leader', 'replicas'])
@@ -75,6 +76,9 @@ class RedpandaService(Service):
         self._topics = topics or ()
         self._admin = Admin(self)
 
+        # client is intiialized after service starts
+        self._client = None
+
     def sasl_enabled(self):
         return self._extra_rp_conf and self._extra_rp_conf.get(
             "enable_sasl", False)
@@ -93,13 +97,25 @@ class RedpandaService(Service):
                    backoff_sec=1,
                    err_msg="Cluster membership did not stabilize")
 
-        # verify storage is in an expected initial state
+        self.logger.info("Verifying storage is in expected state")
         storage = self.storage()
         for node in storage.nodes:
             assert set(node.ns) == {"redpanda"}
             assert set(node.ns["redpanda"].topics) == {"controller", "kvstore"}
 
         self._create_initial_topics()
+
+        security_settings = dict()
+        if self.sasl_enabled():
+            username, password, algorithm = self.SUPERUSER_CREDENTIALS
+            security_settings = dict(security_protocol='SASL_PLAINTEXT',
+                                     sasl_mechanism=algorithm,
+                                     sasl_plain_username=username,
+                                     sasl_plain_password=password,
+                                     request_timeout_ms=30000,
+                                     api_version_auto_timeout_ms=3000)
+        self._client = KafkaAdminClient(bootstrap_servers=self.brokers_list(),
+                                        **security_settings)
 
     def _create_initial_topics(self):
         client = self._client_type(self)
