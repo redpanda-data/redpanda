@@ -64,7 +64,8 @@ class RedpandaService(Service):
                  enable_pp=False,
                  enable_sr=False,
                  topics=None,
-                 log_level='info'):
+                 log_level='info',
+                 num_cores=3):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._client_type = client_type
@@ -74,6 +75,7 @@ class RedpandaService(Service):
         self._enable_sr = enable_sr
         self._log_level = log_level
         self._topics = topics or ()
+        self._num_cores = num_cores
         self._admin = Admin(self)
 
         # client is intiialized after service starts
@@ -144,7 +146,7 @@ class RedpandaService(Service):
                f" --logger-log-level=exception=debug:archival=debug "
                f" --kernel-page-cache=true "
                f" --overprovisioned "
-               f" --smp 3 "
+               f" --smp {self._num_cores} "
                f" --memory 6G "
                f" --reserve-memory 0M "
                f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
