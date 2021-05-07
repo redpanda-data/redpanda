@@ -62,8 +62,11 @@ public:
     ///
     /// \param ntp is an ntp that archiver is responsible for
     /// \param conf is an S3 client configuration
-    /// \param bucket is an S3 bucket that should be used to store the data
-    ntp_archiver(const storage::ntp_config& ntp, const configuration& conf);
+    /// \param pool is a connection pool that should be used to send/recv data
+    ntp_archiver(
+      const storage::ntp_config& ntp,
+      const configuration& conf,
+      s3::client_pool& pool);
 
     /// Stop archiver.
     ///
@@ -100,22 +103,19 @@ public:
     /// will pick not more than '_concurrency' candidates and start
     /// uploading them.
     ///
-    /// \param req_limit is used to limit number of parallel uploads
     /// \param lm is a log manager instance
     /// \return future that returns number of uploaded/failed segments
-    ss::future<batch_result>
-    upload_next_candidates(ss::semaphore& req_limit, storage::log_manager& lm);
+    ss::future<batch_result> upload_next_candidates(storage::log_manager& lm);
 
 private:
     /// Upload individual segment to S3.
     ///
     /// \return true on success and false otherwise
-    ss::future<bool>
-    upload_segment(ss::semaphore& req_limit, upload_candidate candidate);
+    ss::future<bool> upload_segment(upload_candidate candidate);
 
     model::ntp _ntp;
     model::revision_id _rev;
-    s3::configuration _client_conf;
+    s3::client_pool& _pool;
     archival_policy _policy;
     s3::bucket_name _bucket;
     /// Remote manifest contains representation of the data stored in S3 (it
