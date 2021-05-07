@@ -58,6 +58,7 @@ Other instruction will be visible after installation.
 | imagePullSecrets | list | `[]` | Redpanda Operator container registry pullSecret (ex: specify docker registry credentials) |
 | labels | string | `nil` | Allows to assign labels to the resources created by this helm chart |
 | logLevel | string | `"info"` | Set Redpanda Operator log level (debug, info, error, panic, fatal) |
+| monitoring | object | `{"enabled":false}` | Add service monitor to the deployment |
 | nameOverride | string | `""` | Override name of app |
 | nodeSelector | object | `{}` | Allows to schedule Redpanda Operator on specific nodes |
 | podAnnotations | object | `{}` | Allows setting additional annotations for Redpanda Operator PODs |
