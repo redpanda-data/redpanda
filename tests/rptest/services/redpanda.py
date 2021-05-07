@@ -133,9 +133,6 @@ class RedpandaService(Service):
                f" --reserve-memory 0M "
                f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
 
-        self.logger.info(
-            f"Starting Redpanda service on {node.account} with command: {cmd}")
-
         node.account.ssh(cmd)
 
         wait_until(
