@@ -10,7 +10,7 @@ spec:
         persistentVolumeClaim:
           claimName: datadir
       - configMap:
-          defaultMode: 492
+          defaultMode: 420
           name: update-cluster-base
         name: configmap-dir
       - emptyDir: {}
