@@ -124,7 +124,7 @@ static inline ostream& operator<<(ostream& o, const config::key_cert& c) {
 }
 static inline ostream& operator<<(ostream& o, const config::tls_config& c) {
     o << "{ "
-      << "enabled: " << c.is_enabled()
+      << "enabled: " << c.is_enabled() << " "
       << "key/cert files: " << c.get_key_cert_files() << " "
       << "ca file: " << c.get_truststore_file() << " "
       << "client_auth_required: " << c.get_require_client_auth() << " }";
