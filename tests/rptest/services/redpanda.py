@@ -42,6 +42,9 @@ class RedpandaService(Service):
     CLUSTER_NAME = "my_cluster"
     READY_TIMEOUT_SEC = 5
 
+    LOG_LEVEL_KEY = "redpanda_log_level"
+    DEFAULT_LOG_LEVEL = "info"
+
     SUPERUSER_CREDENTIALS = ("admin", "admin", "SCRAM-SHA-256")
 
     logs = {
@@ -64,7 +67,6 @@ class RedpandaService(Service):
                  enable_pp=False,
                  enable_sr=False,
                  topics=None,
-                 log_level='info',
                  num_cores=3):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
@@ -73,7 +75,8 @@ class RedpandaService(Service):
         self._extra_rp_conf = extra_rp_conf
         self._enable_pp = enable_pp
         self._enable_sr = enable_sr
-        self._log_level = log_level
+        self._log_level = self._context.globals.get(self.LOG_LEVEL_KEY,
+                                                    self.DEFAULT_LOG_LEVEL)
         self._topics = topics or ()
         self._num_cores = num_cores
         self._admin = Admin(self)

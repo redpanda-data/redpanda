@@ -130,6 +130,7 @@ tasks:
       DUCKTAPE_ARGS: '{{default "--exit-first tests/rptest/test_suite_quick.yml" .DUCKTAPE_ARGS}}'
       RP_INSTALL_DIR_DEFAULT: '{{.BUILD_DIR}}'
       RP_INSTALL_DIR: '{{default .RP_INSTALL_DIR_DEFAULT .RP_INSTALL_DIR}}'
+      REDPANDA_LOG_LEVEL: '{{default "info" .REDPANDA_LOG_LEVEL}}'
     env:
       CI: "1"
     ignore_error: true
@@ -149,7 +150,7 @@ tasks:
           --cluster=ducktape.cluster.json.JsonCluster
           --cluster-file=/cluster.json
           --results-root=/build/tests/results
-          --globals='{"rp_install_path_root":"{{.RP_INSTALL_DIR}}"}'
+          --globals='{"rp_install_path_root":"{{.RP_INSTALL_DIR}}","redpanda_log_level":"{{.REDPANDA_LOG_LEVEL}}"}'
           {{.DUCKTAPE_ARGS}}
 
   stop-compose-cluster:
