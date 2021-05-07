@@ -16,6 +16,11 @@ class Admin:
         self.redpanda = redpanda
 
     @staticmethod
+    def ready(node):
+        url = f"http://{node.account.hostname}:9644/v1/status/ready"
+        return requests.get(url).json()
+
+    @staticmethod
     def _url(node, path):
         return f"http://{node.account.hostname}:9644/v1/{path}"
 
