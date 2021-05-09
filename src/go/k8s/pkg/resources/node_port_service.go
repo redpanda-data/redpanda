@@ -73,7 +73,20 @@ func (r *NodePortServiceResource) Ensure(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error while fetching Service resource: %w", err)
 	}
+
+	copyPorts(obj.(*corev1.Service), &svc)
 	return Update(ctx, &svc, obj, r.Client, r.logger)
+}
+
+func copyPorts(newSvc, currentSvc *corev1.Service) {
+	for i := range currentSvc.Spec.Ports {
+		for j := range newSvc.Spec.Ports {
+			if newSvc.Spec.Ports[j].Port == currentSvc.Spec.Ports[i].Port {
+				newSvc.Spec.Ports[j].NodePort = currentSvc.Spec.Ports[i].NodePort
+				break
+			}
+		}
+	}
 }
 
 // obj returns resource managed client.Object
