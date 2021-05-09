@@ -47,6 +47,8 @@ public:
 
     void set_control_type() { _is_control_type = true; }
 
+    void set_transactional_type() { _transactional_type = true; }
+
 private:
     static constexpr int64_t zero_vint_size = vint::vint_size(0);
     struct serialized_record {
@@ -78,6 +80,7 @@ private:
     int64_t _producer_id{-1};
     int16_t _producer_epoch{-1};
     bool _is_control_type{false};
+    bool _transactional_type{false};
     std::vector<serialized_record> _records;
 };
 } // namespace storage

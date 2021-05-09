@@ -49,6 +49,10 @@ model::record_batch record_batch_builder::build() && {
         header.attrs.set_control_type();
     }
 
+    if (_transactional_type) {
+        header.attrs.set_transactional_type();
+    }
+
     iobuf records;
     for (auto& sr : _records) {
         auto rec_sz = record_size(offset_delta, sr);

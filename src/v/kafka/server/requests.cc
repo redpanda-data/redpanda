@@ -258,8 +258,14 @@ process_request(request_context&& ctx, ss::smp_service_group g) {
         return do_process<create_acls_handler>(std::move(ctx), g);
     case delete_acls_handler::api::key:
         return do_process<delete_acls_handler>(std::move(ctx), g);
+    case add_partitions_to_txn_handler::api::key:
+        return do_process<add_partitions_to_txn_handler>(std::move(ctx), g);
     case txn_offset_commit_handler::api::key:
         return do_process<txn_offset_commit_handler>(std::move(ctx), g);
+    case add_offsets_to_txn_handler::api::key:
+        return do_process<add_offsets_to_txn_handler>(std::move(ctx), g);
+    case end_txn_handler::api::key:
+        return do_process<end_txn_handler>(std::move(ctx), g);
     };
     return ss::make_exception_future<response_ptr>(
       std::runtime_error(fmt::format("Unsupported API {}", ctx.header().key)));

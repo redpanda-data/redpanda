@@ -17,6 +17,8 @@ class controller;
 class controller_backend;
 class controller_service;
 class id_allocator_frontend;
+class rm_partition_frontend;
+class tx_gateway_frontend;
 class partition_leaders_table;
 class partition_allocator;
 class partition_manager;

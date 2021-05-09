@@ -14,8 +14,11 @@
 #include "archival/service.h"
 #include "cluster/controller.h"
 #include "cluster/fwd.h"
+#include "cluster/rm_partition_frontend.h"
 #include "coproc/event_listener.h"
 #include "coproc/pacemaker.h"
+#include "kafka/server/fwd.h"
+#include "kafka/server/rm_group_frontend.h"
 #include "pandaproxy/configuration.h"
 #include "pandaproxy/fwd.h"
 #include "raft/group_manager.h"
@@ -77,6 +80,9 @@ public:
     ss::sharded<kafka::quota_manager> quota_mgr;
     ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
     ss::sharded<archival::scheduler_service> archival_scheduler;
+    ss::sharded<kafka::rm_group_frontend> rm_group_frontend;
+    ss::sharded<cluster::rm_partition_frontend> rm_partition_frontend;
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
 
 private:
     using deferred_actions
@@ -124,6 +130,7 @@ private:
     ss::sharded<kafka::client::client> _proxy_client;
     ss::sharded<pandaproxy::proxy> _proxy;
     ss::metrics::metric_groups _metrics;
+    kafka::rm_group_proxy_impl _rm_group_proxy;
     // run these first on destruction
     deferred_actions _deferred;
 };

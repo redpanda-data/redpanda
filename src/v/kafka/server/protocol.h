@@ -42,8 +42,9 @@ public:
       ss::sharded<security::credential_store>&,
       ss::sharded<security::authorizer>&,
       ss::sharded<cluster::security_frontend>&,
-      std::optional<qdc_monitor::config>,
-      ss::sharded<cluster::controller_api>&) noexcept;
+      ss::sharded<cluster::controller_api>&,
+      ss::sharded<cluster::tx_gateway_frontend>&,
+      std::optional<qdc_monitor::config>) noexcept;
 
     ~protocol() noexcept override = default;
     protocol(const protocol&) = delete;
@@ -66,6 +67,9 @@ public:
     cluster::id_allocator_frontend& id_allocator_frontend() {
         return _id_allocator_frontend.local();
     }
+    cluster::tx_gateway_frontend& tx_gateway_frontend() {
+        return _tx_gateway_frontend.local();
+    }
     kafka::group_router& group_router() { return _group_router.local(); }
     cluster::shard_table& shard_table() { return _shard_table.local(); }
     ss::sharded<cluster::partition_manager>& partition_manager() {
@@ -78,7 +82,8 @@ public:
         return _fetch_session_cache.local();
     }
     quota_manager& quota_mgr() { return _quota_mgr.local(); }
-    bool is_idempotence_enabled() { return _is_idempotence_enabled; }
+    bool is_idempotence_enabled() const { return _is_idempotence_enabled; }
+    bool are_transactions_enabled() const { return _are_transactions_enabled; }
 
     security::credential_store& credentials() { return _credentials.local(); }
 
@@ -118,11 +123,13 @@ private:
     ss::sharded<kafka::fetch_session_cache>& _fetch_session_cache;
     ss::sharded<cluster::id_allocator_frontend>& _id_allocator_frontend;
     bool _is_idempotence_enabled{false};
+    bool _are_transactions_enabled{false};
     ss::sharded<security::credential_store>& _credentials;
     ss::sharded<security::authorizer>& _authorizer;
     ss::sharded<cluster::security_frontend>& _security_frontend;
-    std::optional<qdc_monitor> _qdc_mon;
     ss::sharded<cluster::controller_api>& _controller_api;
+    ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
+    std::optional<qdc_monitor> _qdc_mon;
 };
 
 } // namespace kafka

@@ -13,6 +13,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
+#include "config/configuration.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
 #include "kafka/server/replicated_partition.h"
@@ -354,9 +355,10 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
      * authorization failed.
      */
     if (request.has_transactional) {
-        // will be removed when all of transactions are implemented
-        return ctx.respond(request.make_error_response(
-          error_code::transactional_id_authorization_failed));
+        if (!ctx.are_transactions_enabled()) {
+            return ctx.respond(request.make_error_response(
+              error_code::transactional_id_authorization_failed));
+        }
 
         if (
           !request.data.transactional_id

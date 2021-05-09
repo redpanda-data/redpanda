@@ -13,6 +13,7 @@
 
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
+#include "kafka/types.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
@@ -64,7 +65,8 @@ enum class tx_errc {
     coordinator_not_available,
     preparing_rebalance,
     rebalance_in_progress,
-    coordinator_load_in_progress
+    coordinator_load_in_progress,
+    unknown_server_error
 };
 struct tx_errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::tx_errc"; }
@@ -104,6 +106,92 @@ inline std::error_code make_error_code(tx_errc e) noexcept {
     return std::error_code(static_cast<int>(e), tx_error_category());
 }
 
+struct init_tm_tx_request {
+    kafka::transactional_id tx_id;
+    model::timeout_clock::duration timeout;
+};
+struct init_tm_tx_reply {
+    // partition_not_exists, not_leader, topic_not_exists
+    model::producer_identity pid;
+    tx_errc ec;
+};
+struct add_paritions_tx_request {
+    struct topic {
+        model::topic name{};
+        std::vector<model::partition_id> partitions{};
+    };
+    kafka::transactional_id transactional_id{};
+    kafka::producer_id producer_id{};
+    int16_t producer_epoch{};
+    std::vector<topic> topics{};
+};
+struct add_paritions_tx_reply {
+    struct partition_result {
+        model::partition_id partition_index{};
+        tx_errc error_code{};
+    };
+    struct topic_result {
+        model::topic name{};
+        std::vector<add_paritions_tx_reply::partition_result> results{};
+    };
+    std::vector<add_paritions_tx_reply::topic_result> results{};
+};
+struct add_offsets_tx_request {
+    kafka::transactional_id transactional_id{};
+    kafka::producer_id producer_id{};
+    int16_t producer_epoch{};
+    kafka::group_id group_id{};
+};
+struct add_offsets_tx_reply {
+    tx_errc error_code{};
+};
+struct end_tx_request {
+    kafka::transactional_id transactional_id{};
+    kafka::producer_id producer_id{};
+    int16_t producer_epoch{};
+    bool committed{};
+};
+struct end_tx_reply {
+    tx_errc error_code{};
+};
+struct begin_tx_request {
+    model::ntp ntp;
+    model::producer_identity pid;
+    model::tx_seq tx_seq;
+};
+struct begin_tx_reply {
+    model::ntp ntp;
+    model::term_id etag;
+    tx_errc ec;
+};
+struct prepare_tx_request {
+    model::ntp ntp;
+    model::term_id etag;
+    model::partition_id tm;
+    model::producer_identity pid;
+    model::tx_seq tx_seq;
+    model::timeout_clock::duration timeout;
+};
+struct prepare_tx_reply {
+    tx_errc ec;
+};
+struct commit_tx_request {
+    model::ntp ntp;
+    model::producer_identity pid;
+    model::tx_seq tx_seq;
+    model::timeout_clock::duration timeout;
+};
+struct commit_tx_reply {
+    tx_errc ec;
+};
+struct abort_tx_request {
+    model::ntp ntp;
+    model::producer_identity pid;
+    model::timeout_clock::duration timeout;
+};
+struct abort_tx_reply {
+    tx_errc ec;
+};
 struct begin_group_tx_request {
     model::ntp ntp;
     kafka::group_id group_id;

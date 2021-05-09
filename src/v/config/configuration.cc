@@ -246,14 +246,14 @@ configuration::configuration()
       "metadata_dissemination_retry_delay_ms",
       "Delay before retry a topic lookup in a shard or other meta tables",
       required::no,
-      0'100ms)
+      0'500ms)
   , metadata_dissemination_retries(
       *this,
       "metadata_dissemination_retries",
       "Number of attempts of looking up a topic's meta data like shard before "
       "failing a request",
       required::no,
-      10)
+      30)
   , stm_snapshot_recovery_policy(
       *this,
       "stm_snapshot_recovery_policy",

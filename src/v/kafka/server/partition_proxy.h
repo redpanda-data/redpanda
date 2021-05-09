@@ -35,6 +35,8 @@ public:
           = 0;
         virtual ss::future<std::optional<storage::timequery_result>>
           timequery(model::timestamp, ss::io_priority_class) = 0;
+        virtual ss::future<std::vector<cluster::rm_stm::tx_range>>
+          aborted_transactions(model::offset, model::offset) = 0;
         virtual ~impl() noexcept = default;
     };
 
@@ -50,6 +52,11 @@ public:
     }
 
     const model::ntp& ntp() const { return _impl->ntp(); }
+
+    ss::future<std::vector<cluster::rm_stm::tx_range>>
+    aborted_transactions(model::offset base, model::offset last) {
+        return _impl->aborted_transactions(base, last);
+    }
 
     ss::future<model::record_batch_reader> make_reader(
       storage::log_reader_config cfg,

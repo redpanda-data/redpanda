@@ -14,6 +14,7 @@
 #include "cluster/id_allocator_stm.h"
 #include "cluster/partition_probe.h"
 #include "cluster/rm_stm.h"
+#include "cluster/tm_stm.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -91,6 +92,10 @@ public:
      * kafka clients, simply report the next offset.
      */
     model::offset last_stable_offset() const {
+        if (_rm_stm) {
+            return _rm_stm->last_stable_offset();
+        }
+
         return raft::details::next_offset(_raft->last_stable_offset());
     }
 
@@ -148,13 +153,24 @@ public:
         return _raft->get_configuration_manager();
     }
 
-    ss::shared_ptr<cluster::rm_stm>& rm_stm() { return _rm_stm; }
+    ss::shared_ptr<cluster::rm_stm> rm_stm() { return _rm_stm; }
 
     size_t size_bytes() const { return _raft->log().size_bytes(); }
     ss::future<> update_configuration(topic_properties);
 
     const storage::ntp_config& get_ntp_config() const {
         return _raft->log().config();
+    }
+
+    ss::shared_ptr<cluster::tm_stm> tm_stm() { return _tm_stm; }
+
+    ss::future<std::vector<rm_stm::tx_range>>
+    aborted_transactions(model::offset from, model::offset to) {
+        if (!_rm_stm) {
+            return ss::make_ready_future<std::vector<rm_stm::tx_range>>(
+              std::vector<rm_stm::tx_range>());
+        }
+        return _rm_stm->aborted_transactions(from, to);
     }
 
 private:
@@ -168,6 +184,7 @@ private:
     ss::lw_shared_ptr<raft::log_eviction_stm> _nop_stm;
     ss::lw_shared_ptr<cluster::id_allocator_stm> _id_allocator_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
+    ss::shared_ptr<cluster::tm_stm> _tm_stm;
     ss::abort_source _as;
     partition_probe _probe;
 

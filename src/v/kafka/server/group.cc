@@ -1193,12 +1193,11 @@ group::commit_tx(cluster::commit_group_tx_request r) {
     // TODO: https://app.clubhouse.io/vectorized/story/2219
     // (check for tx_seq to prevent old commit requests committing
     // ongoing transactions in the same session)
-    cluster::commit_group_tx_reply reply;
 
     auto ongoing_it = _prepared_txs.find(r.pid);
     if (ongoing_it == _prepared_txs.end()) {
         vlog(klog.warn, "can't find a tx {}, probably already comitted", r.pid);
-        co_return reply;
+        co_return make_commit_tx_reply(cluster::tx_errc::none);
     }
 
     iobuf key;
@@ -1221,17 +1220,17 @@ group::commit_tx(cluster::commit_group_tx_request r) {
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
     auto e = co_await _partition->replicate(
+      _term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
     if (!e) {
-        reply.ec = cluster::tx_errc::timeout;
-        co_return reply;
+        co_return make_commit_tx_reply(cluster::tx_errc::timeout);
     }
 
     ongoing_it = _prepared_txs.find(r.pid);
     if (ongoing_it == _prepared_txs.end()) {
-        co_return reply;
+        co_return make_commit_tx_reply(cluster::tx_errc::none);
     }
 
     for (const auto& [tp, md] : ongoing_it->second.offsets) {
@@ -1243,7 +1242,7 @@ group::commit_tx(cluster::commit_group_tx_request r) {
 
     _prepared_txs.erase(ongoing_it);
 
-    co_return reply;
+    co_return make_commit_tx_reply(cluster::tx_errc::none);
 }
 
 cluster::begin_group_tx_reply make_begin_tx_reply(cluster::tx_errc ec) {
@@ -1339,6 +1338,7 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
     auto e = co_await _partition->replicate(
+      _term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
@@ -1355,7 +1355,7 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
         ptx.offsets[tp] = md;
     }
     _prepared_txs.try_emplace(r.pid, ptx);
-    co_return cluster::prepare_group_tx_reply();
+    co_return make_prepare_tx_reply(cluster::tx_errc::none);
 }
 
 ss::future<cluster::abort_group_tx_reply>
@@ -1384,6 +1384,7 @@ group::abort_tx(cluster::abort_group_tx_request r) {
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
     auto e = co_await _partition->replicate(
+      _term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
@@ -1394,7 +1395,7 @@ group::abort_tx(cluster::abort_group_tx_request r) {
     _volatile_txs.erase(r.pid);
     _prepared_txs.erase(r.pid);
 
-    co_return cluster::abort_group_tx_reply();
+    co_return make_abort_tx_reply(cluster::tx_errc::none);
 }
 
 ss::future<txn_offset_commit_response>

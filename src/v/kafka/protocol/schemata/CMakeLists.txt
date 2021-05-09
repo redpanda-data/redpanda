@@ -53,10 +53,16 @@ set(schemata
   produce_response.json
   metadata_request.json
   metadata_response.json
+  add_partitions_to_txn_request.json
+  add_partitions_to_txn_response.json
   txn_offset_commit_request.json
   txn_offset_commit_response.json
   fetch_request.json
-  fetch_response.json)
+  fetch_response.json
+  end_txn_request.json
+  end_txn_response.json
+  add_offsets_to_txn_request.json
+  add_offsets_to_txn_response.json)
 
 set(srcs)
 foreach(schema ${schemata})

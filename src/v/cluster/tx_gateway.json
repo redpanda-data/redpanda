@@ -1,0 +1,54 @@
+{
+    "namespace": "cluster",
+    "service_name": "tx_gateway",
+    "includes": [
+        "cluster/types.h"
+    ],
+    "methods": [
+        {
+            "name": "init_tm_tx",
+            "input_type": "init_tm_tx_request",
+            "output_type": "init_tm_tx_reply"
+        },
+        {
+            "name": "begin_tx",
+            "input_type": "begin_tx_request",
+            "output_type": "begin_tx_reply"
+        },
+        {
+            "name": "prepare_tx",
+            "input_type": "prepare_tx_request",
+            "output_type": "prepare_tx_reply"
+        },
+        {
+            "name": "commit_tx",
+            "input_type": "commit_tx_request",
+            "output_type": "commit_tx_reply"
+        },
+        {
+            "name": "abort_tx",
+            "input_type": "abort_tx_request",
+            "output_type": "abort_tx_reply"
+        },
+        {
+            "name": "begin_group_tx",
+            "input_type": "begin_group_tx_request",
+            "output_type": "begin_group_tx_reply"
+        },
+        {
+            "name": "prepare_group_tx",
+            "input_type": "prepare_group_tx_request",
+            "output_type": "prepare_group_tx_reply"
+        },
+        {
+            "name": "commit_group_tx",
+            "input_type": "commit_group_tx_request",
+            "output_type": "commit_group_tx_reply"
+        },
+        {
+            "name": "abort_group_tx",
+            "input_type": "abort_group_tx_request",
+            "output_type": "abort_group_tx_reply"
+        }
+    ]
+}

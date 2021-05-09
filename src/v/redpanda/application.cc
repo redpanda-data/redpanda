@@ -20,6 +20,8 @@
 #include "cluster/security_frontend.h"
 #include "cluster/service.h"
 #include "cluster/topics_frontend.h"
+#include "cluster/tx_gateway.h"
+#include "cluster/tx_gateway_frontend.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "config/seed_server.h"
@@ -63,9 +65,10 @@
 #include <vector>
 
 application::application(ss::sstring logger_name)
-  : _log(std::move(logger_name)){
+  : _log(std::move(logger_name))
+  , _rm_group_proxy(std::ref(rm_group_frontend)){
 
-  };
+    };
 
 static void log_system_resources(
   ss::logger& log, const boost::program_options::variables_map& cfg) {
@@ -526,6 +529,52 @@ void application::wire_up_redpanda_services() {
       std::ref(controller))
       .get();
 
+    syschecks::systemd_message("Creating group resource manager frontend")
+      .get();
+    construct_service(
+      rm_group_frontend,
+      std::ref(metadata_cache),
+      std::ref(_raft_connection_cache),
+      std::ref(controller->get_partition_leaders()),
+      controller.get(),
+      std::ref(coordinator_ntp_mapper),
+      std::ref(group_router))
+      .get();
+
+    syschecks::systemd_message("Creating partition resource manager frontend")
+      .get();
+    construct_service(
+      rm_partition_frontend,
+      smp_service_groups.raft_smp_sg(),
+      std::ref(partition_manager),
+      std::ref(shard_table),
+      std::ref(metadata_cache),
+      std::ref(_raft_connection_cache),
+      std::ref(controller->get_partition_leaders()),
+      controller.get())
+      .get();
+
+    syschecks::systemd_message("Creating tx coordinator frontend").get();
+    // usually it'a an anti-pattern to let the same object be accessed
+    // from different cores without precautionary measures like foreign
+    // ptr. we treat exceptions on the case by case basis validating the
+    // access patterns, sharing sharded service with only `.local()' uses
+    // is a safe bet, sharing _rm_group_proxy is fine because it wraps
+    // sharded service with only `.local()' access
+    construct_service(
+      tx_gateway_frontend,
+      smp_service_groups.raft_smp_sg(),
+      std::ref(partition_manager),
+      std::ref(shard_table),
+      std::ref(metadata_cache),
+      std::ref(_raft_connection_cache),
+      std::ref(controller->get_partition_leaders()),
+      controller.get(),
+      std::ref(id_allocator_frontend),
+      &_rm_group_proxy,
+      std::ref(rm_partition_frontend))
+      .get();
+
     ss::sharded<rpc::server_configuration> kafka_cfg;
     kafka_cfg.start(ss::sstring("kafka_rpc")).get();
     kafka_cfg
@@ -663,6 +712,14 @@ void application::start_redpanda() {
             _scheduling_groups.raft_sg(),
             smp_service_groups.raft_smp_sg(),
             std::ref(id_allocator_frontend));
+          // _rm_group_proxy is wrap around a sharded service with only
+          // `.local()' access so it's ok to share without foreign_ptr
+          proto->register_service<cluster::tx_gateway>(
+            _scheduling_groups.raft_sg(),
+            smp_service_groups.raft_smp_sg(),
+            std::ref(tx_gateway_frontend),
+            &_rm_group_proxy,
+            std::ref(rm_partition_frontend));
           proto->register_service<
             raft::service<cluster::partition_manager, cluster::shard_table>>(
             _scheduling_groups.raft_sg(),
@@ -728,13 +785,13 @@ void application::start_redpanda() {
             partition_manager,
             coordinator_ntp_mapper,
             fetch_session_cache,
-            std::ref(id_allocator_frontend),
+            id_allocator_frontend,
             controller->get_credential_store(),
             controller->get_authorizer(),
             controller->get_security_frontend(),
-            qdc_config,
-            controller->get_api());
-
+            controller->get_api(),
+            tx_gateway_frontend,
+            qdc_config);
           s.set_protocol(std::move(proto));
       })
       .get();
