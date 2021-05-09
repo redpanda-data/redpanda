@@ -51,7 +51,6 @@ struct find_coordinator_request final {
     }
 
     void decode(request_reader& reader, api_version version) {
-        data.key_type = coordinator_type::group;
         data.decode(reader, version);
     }
 };
