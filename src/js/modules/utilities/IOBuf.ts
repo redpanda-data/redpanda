@@ -18,21 +18,8 @@ type ReadInt = (buf: Buffer, offset?: number) => number | bigint;
  * Fragment sizes is an array how demonstrate how fragments should be grown
  */
 export const fragmentSizes = [
-  512,
-  768,
-  1152,
-  1728,
-  2592,
-  3888,
-  5832,
-  8748,
-  13122,
-  19683,
-  29525,
-  44288,
-  66432,
-  99648,
-  131072,
+  512, 768, 1152, 1728, 2592, 3888, 5832, 8748, 13122, 19683, 29525, 44288,
+  66432, 99648, 131072,
 ];
 
 const getNextSize = (currentSize: number) => {
