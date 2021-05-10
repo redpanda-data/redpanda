@@ -80,3 +80,7 @@ podLabels: {}
 
 # labels -- Allows to assign labels to the resources created by this helm chart
 labels:
+
+# monitoring -- Add service monitor to the deployment
+monitoring:
+  enabled: false
