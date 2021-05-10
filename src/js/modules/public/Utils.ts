@@ -78,11 +78,11 @@ interface RecordBatchFunctor extends RecordBatch {
 export const createRecordBatch = (
   record?: PartialRecordBatch
 ): RecordBatchFunctor => {
-  const map = (record: RecordBatch) => (
-    fn: (record) => RecordBatch
-  ): RecordBatch => {
-    return fn(record);
-  };
+  const map =
+    (record: RecordBatch) =>
+    (fn: (record) => RecordBatch): RecordBatch => {
+      return fn(record);
+    };
   const records = record?.records || [];
   const resultRecord = {
     header: createHeader(record?.header || {}),

@@ -70,12 +70,13 @@ const createResponseSuccess: HandleEnableResponse = (handle: Handle) => ({
   enableResponseCode: EnableResponseCodes.success,
   scriptMetadata: {
     id: handle.coprocessor.globalId,
-    inputTopic: handle.coprocessor.inputTopics.map<EnableCoprocessorMetadataItem>(
-      (topic) => ({
-        topic,
-        ingestion_policy: PolicyInjection.LastOffset,
-      })
-    ),
+    inputTopic:
+      handle.coprocessor.inputTopics.map<EnableCoprocessorMetadataItem>(
+        (topic) => ({
+          topic,
+          ingestion_policy: PolicyInjection.LastOffset,
+        })
+      ),
   },
 });
 
@@ -88,12 +89,13 @@ const createResponseScriptIdAlreadyExists: HandleEnableResponse = (handle) => ({
   enableResponseCode: EnableResponseCodes.scriptIdAlreadyExists,
   scriptMetadata: {
     id: handle.coprocessor.globalId,
-    inputTopic: handle.coprocessor.inputTopics.map<EnableCoprocessorMetadataItem>(
-      (topic) => ({
-        topic,
-        ingestion_policy: PolicyInjection.LastOffset,
-      })
-    ),
+    inputTopic:
+      handle.coprocessor.inputTopics.map<EnableCoprocessorMetadataItem>(
+        (topic) => ({
+          topic,
+          ingestion_policy: PolicyInjection.LastOffset,
+        })
+      ),
   },
 });
 

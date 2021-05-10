@@ -35,7 +35,7 @@ let client: SupervisorClient;
 
 const createStubs = (sandbox: SinonSandbox) => {
   const watchMock = sandbox.stub(chokidar, "watch");
-  watchMock.returns(({ on: sandbox.stub() } as unknown) as chokidar.FSWatcher);
+  watchMock.returns({ on: sandbox.stub() } as unknown as chokidar.FSWatcher);
   const spyFireExceptionServer = sandbox.stub(
     ProcessBatchServer.prototype,
     "fireException"
@@ -133,9 +133,8 @@ describe("Server", function () {
     );
 
     it("should fail if there isn't coprocessor that processBatch contain", function (done) {
-      const { spyFireExceptionServer, spyGetHandles } = createStubs(
-        sinonInstance
-      );
+      const { spyFireExceptionServer, spyGetHandles } =
+        createStubs(sinonInstance);
       spyGetHandles.returns([]);
       spyFireExceptionServer.returns(
         /* FireException should throw an exception but there isn't way to

@@ -99,9 +99,9 @@ export class ProcessBatchServer extends SupervisorServer {
     if (failRequest) {
       return this.fireException("Bad request: request without coprocessor ids");
     } else {
-      return Promise.all(
-        input.requests.map(this.applyCoprocessor)
-      ).then((result) => ({ result: result.flat() }));
+      return Promise.all(input.requests.map(this.applyCoprocessor)).then(
+        (result) => ({ result: result.flat() })
+      );
     }
   }
 
