@@ -115,7 +115,7 @@ class RpkTool:
     def _run_topic(self, cmd, stdin=None, timeout=30):
         cmd = [
             self._rpk_binary(), "topic", "--brokers",
-            self._redpanda.brokers(1)
+            self._redpanda.brokers()
         ] + cmd
         return self._execute(cmd, stdin=stdin, timeout=timeout)
 
