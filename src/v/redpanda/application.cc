@@ -23,6 +23,7 @@
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "config/seed_server.h"
+#include "coproc/v8-init.h"
 #include "kafka/client/configuration.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
@@ -363,6 +364,9 @@ void application::wire_up_redpanda_services() {
           std::ref(storage))
           .get();
     }
+
+    auto t = coproc::init_v8_platform();
+    coproc::stop_v8_platform();
 
     syschecks::systemd_message("Intializing raft group manager").get();
     construct_service(
