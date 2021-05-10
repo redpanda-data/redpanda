@@ -1,0 +1,18 @@
+adamk@chromium.org
+cbruni@chromium.org
+leszeks@chromium.org
+mlippautz@chromium.org
+ulan@chromium.org
+verwaest@chromium.org
+yangguo@chromium.org
+
+per-file *DEPS=file:../COMMON_OWNERS
+per-file v8-internal.h=file:../COMMON_OWNERS
+per-file v8-inspector.h=file:../src/inspector/OWNERS
+per-file v8-inspector-protocol.h=file:../src/inspector/OWNERS
+per-file js_protocol.pdl=file:../src/inspector/OWNERS
+
+# For branch updates:
+per-file v8-version.h=file:../INFRA_OWNERS
+per-file v8-version.h=hablich@chromium.org
+per-file v8-version.h=vahl@chromium.org

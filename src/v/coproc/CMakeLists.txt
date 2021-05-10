@@ -6,6 +6,8 @@ rpcgen(
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
   )
 
+file(GLOB V8_LIB_MONOLIT "v8-libs/lib/libv8_monolith.a")
+
 v_cc_library(
   NAME coproc
   SRCS
@@ -17,6 +19,7 @@ v_cc_library(
     wasm_event.cc
     event_listener.cc
     script_dispatcher.cc
+    v8-init.cc
   DEPS
     v::rpc
     v::model
@@ -24,6 +27,10 @@ v_cc_library(
     v::reflection
     v::kafka_client
     coproc_gen
+    ${V8_LIB_MONOLIT}
+    PUBLIC
   )
+
+target_include_directories(v_coproc PUBLIC v8-libs/include)
 
 add_subdirectory(tests)
