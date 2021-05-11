@@ -1,9 +1,9 @@
 ---
-title: Authorization & Authentication
+title: Authorization & authentication
 order: 1
 ---
 
-# Authorization & Authentication
+# Authorization & authentication
 
 Security should be at the heart of the design of any software project, and Redpanda is not an exception. Today, I wanna introduce the different built-in mechanisms by which you will be able to make your Redpanda cluster more secure. By following this guide, you will familiarize yourself with the available authorization and authentication methods that Redpanda support, both at a conceptual level and at a technical level through hands-on examples.
 
@@ -74,7 +74,7 @@ rpk topic describe 'test-topic'
 
 ### SASL/ SCRAM
 
-Redpanda also supports client authentication via SASL/ SCRAM (that is, the Simple Authentication and Security Layer protocol, using the Salted Challenge Response Authentication Mechanism), which is based on usernames & passwords.
+Redpanda also supports client authentication via SASL/SCRAM (that is, the Simple Authentication and Security Layer protocol, using the Salted Challenge Response Authentication Mechanism), which is based on usernames & passwords.
 
 To enable it, set `redpanda.enable_sasl` to `true` in the configuration file, as well as list at least one "superuser" which after created will have permissions for all operations on the clusters.
 
@@ -98,11 +98,11 @@ $ rpk acl user create \
 Created user 'admin'
 ```
 
-> Refer to the next section, _Managing users_, for more details on `rpk acl user`.
+Refer to the next section, _Managing users_, for more details on `rpk acl user`.
 
 You're now able to use the created identity to interact with the Kafka API. For example:
 
-**Note**: If you still have the TLS config from the previous section, you'll also need to pass the TLS flags.
+> **Note**: If you still have the TLS config from the previous section, you'll also need to pass the TLS flags.
 
 ```cmd
 $ rpk topic describe test-topic \
@@ -124,7 +124,7 @@ $ rpk topic describe test-topic \
   0                   1               [1]        [1]               0               
 ```
 
-#### **Managing users**
+#### Managing users
 
 While having a superuser is a must to get started, it's not really a good idea to either share the superuser's credentials everywhere or to make everyone a superuser.
 
