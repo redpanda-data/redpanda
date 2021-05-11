@@ -19,7 +19,7 @@
 #include <seastar/net/ip.hh>
 #include <seastar/net/socket_defs.hh>
 
-namespace pandaproxy {
+namespace pandaproxy::rest {
 
 /// Pandaproxy configuration
 ///
@@ -39,4 +39,4 @@ struct configuration final : public config::config_store {
 
 using conf_ref = typename std::reference_wrapper<configuration>;
 
-} // namespace pandaproxy
+} // namespace pandaproxy::rest

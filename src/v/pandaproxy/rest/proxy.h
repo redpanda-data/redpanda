@@ -23,7 +23,7 @@
 
 #include <vector>
 
-namespace pandaproxy {
+namespace pandaproxy::rest {
 
 class proxy {
 public:
@@ -46,4 +46,4 @@ private:
     server _server;
 };
 
-} // namespace pandaproxy
+} // namespace pandaproxy::rest

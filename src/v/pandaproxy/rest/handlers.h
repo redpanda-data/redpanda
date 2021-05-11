@@ -16,7 +16,7 @@
 
 #include <seastar/core/future.hh>
 
-namespace pandaproxy {
+namespace pandaproxy::rest {
 
 ss::future<server::reply_t>
 get_topics_names(server::request_t rq, server::reply_t rp);
@@ -45,4 +45,4 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp);
 ss::future<server::reply_t>
 post_consumer_offsets(server::request_t rq, server::reply_t rp);
 
-} // namespace pandaproxy
+} // namespace pandaproxy::rest

@@ -18,7 +18,7 @@
 #include <seastar/core/memory.hh>
 #include <seastar/http/api_docs.hh>
 
-namespace pandaproxy {
+namespace pandaproxy::rest {
 
 server::routes_t get_proxy_routes() {
     server::routes_t routes;
@@ -91,10 +91,10 @@ ss::future<> proxy::start() {
 
 ss::future<> proxy::stop() { return _server.stop(); }
 
-pandaproxy::configuration& proxy::config() { return _config; }
+configuration& proxy::config() { return _config; }
 
 kafka::client::configuration& proxy::client_config() {
     return _client.local().config();
 }
 
-} // namespace pandaproxy
+} // namespace pandaproxy::rest

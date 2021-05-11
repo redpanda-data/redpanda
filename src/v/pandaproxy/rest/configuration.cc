@@ -14,7 +14,7 @@
 #include "model/metadata.h"
 #include "units.h"
 
-namespace pandaproxy {
+namespace pandaproxy::rest {
 using namespace std::chrono_literals;
 
 configuration::configuration(const YAML::Node& cfg)
@@ -49,4 +49,4 @@ configuration::configuration()
       config::required::no,
       "/usr/share/redpanda/proxy-api-doc") {}
 
-} // namespace pandaproxy
+} // namespace pandaproxy::rest

@@ -50,7 +50,7 @@
 
 namespace ppj = pandaproxy::json;
 
-namespace pandaproxy {
+namespace pandaproxy::rest {
 
 namespace {
 
@@ -389,4 +389,4 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
       consumer_shard(group_id), rq.ctx.smp_sg, std::move(handler));
 }
 
-} // namespace pandaproxy
+} // namespace pandaproxy::rest

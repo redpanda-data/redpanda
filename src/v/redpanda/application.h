@@ -116,7 +116,7 @@ private:
     void setup_metrics();
     std::unique_ptr<ss::app_template> _app;
     bool _redpanda_enabled{true};
-    std::optional<pandaproxy::configuration> _proxy_config;
+    std::optional<pandaproxy::rest::configuration> _proxy_config;
     std::optional<kafka::client::configuration> _proxy_client_config;
     scheduling_groups _scheduling_groups;
     ss::logger _log;
@@ -128,7 +128,7 @@ private:
     ss::sharded<admin_server> _admin;
     ss::sharded<rpc::server> _kafka_server;
     ss::sharded<kafka::client::client> _proxy_client;
-    ss::sharded<pandaproxy::proxy> _proxy;
+    ss::sharded<pandaproxy::rest::proxy> _proxy;
     ss::metrics::metric_groups _metrics;
     kafka::rm_group_proxy_impl _rm_group_proxy;
     // run these first on destruction

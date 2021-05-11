@@ -11,9 +11,9 @@
 
 #pragma once
 
-namespace pandaproxy {
+namespace pandaproxy::rest {
 
 struct configuration;
 class proxy;
 
-} // namespace pandaproxy
+} // namespace pandaproxy::rest

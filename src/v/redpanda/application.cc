@@ -637,7 +637,7 @@ void application::wire_up_redpanda_services() {
 
 ss::future<> application::set_proxy_config(ss::sstring name, std::any val) {
     return _proxy.invoke_on_all(
-      [name{std::move(name)}, val{std::move(val)}](pandaproxy::proxy& p) {
+      [name{std::move(name)}, val{std::move(val)}](pandaproxy::rest::proxy& p) {
           p.config().get(name).set_value(val);
       });
 }
@@ -650,7 +650,7 @@ bool application::archival_storage_enabled() {
 ss::future<>
 application::set_proxy_client_config(ss::sstring name, std::any val) {
     return _proxy.invoke_on_all(
-      [name{std::move(name)}, val{std::move(val)}](pandaproxy::proxy& p) {
+      [name{std::move(name)}, val{std::move(val)}](pandaproxy::rest::proxy& p) {
           p.client_config().get(name).set_value(val);
       });
 }
@@ -661,7 +661,7 @@ void application::start() {
     }
 
     if (_proxy_config) {
-        _proxy.invoke_on_all(&pandaproxy::proxy::start).get();
+        _proxy.invoke_on_all(&pandaproxy::rest::proxy::start).get();
         vlog(
           _log.info,
           "Started Pandaproxy listening at {}",
