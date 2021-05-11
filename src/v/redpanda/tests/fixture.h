@@ -22,6 +22,7 @@
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
 #include "pandaproxy/rest/configuration.h"
+#include "pandaproxy/schema_registry/configuration.h"
 #include "redpanda/application.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "rpc/dns.h"
@@ -48,6 +49,7 @@ public:
       int32_t kafka_port,
       int32_t rpc_port,
       int32_t proxy_port,
+      int32_t schema_reg_port,
       int32_t coproc_supervisor_port,
       std::vector<config::seed_server> seed_servers,
       ss::sstring base_dir,
@@ -64,6 +66,8 @@ public:
           std::move(seed_servers));
         app.initialize(
           proxy_config(proxy_port),
+          proxy_client_config(kafka_port),
+          schema_reg_config(schema_reg_port),
           proxy_client_config(kafka_port),
           sch_groups);
         app.check_environment();
@@ -98,6 +102,7 @@ public:
         9092,
         33145,
         8082,
+        8081,
         43189,
         {},
         ssx::sformat("test.dir_{}", time(0)),
@@ -167,6 +172,14 @@ public:
           config::shard_local_cfg().kafka_api()[0].address.host(),
           kafka_api_port};
         cfg.brokers.set_value(std::vector<unresolved_address>({kafka_api}));
+        return to_yaml(cfg);
+    }
+
+    YAML::Node schema_reg_config(uint16_t listen_port = 8081) {
+        pandaproxy::schema_registry::configuration cfg;
+        cfg.get("schema_registry_api")
+          .set_value(std::vector<model::broker_endpoint>{model::broker_endpoint(
+            unresolved_address("127.0.0.1", listen_port))});
         return to_yaml(cfg);
     }
 

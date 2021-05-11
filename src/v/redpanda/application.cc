@@ -35,6 +35,8 @@
 #include "model/metadata.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/proxy.h"
+#include "pandaproxy/schema_registry/configuration.h"
+#include "pandaproxy/schema_registry/service.h"
 #include "platform/stop_signal.h"
 #include "raft/service.h"
 #include "redpanda/admin_server.h"
@@ -163,6 +165,8 @@ int application::run(int ac, char** av) {
 void application::initialize(
   std::optional<YAML::Node> proxy_cfg,
   std::optional<YAML::Node> proxy_client_cfg,
+  std::optional<YAML::Node> schema_reg_cfg,
+  std::optional<YAML::Node> schema_reg_client_cfg,
   std::optional<scheduling_groups> groups) {
     if (config::shard_local_cfg().enable_pid_file()) {
         syschecks::pidfile_create(config::shard_local_cfg().pidfile_path());
@@ -187,6 +191,13 @@ void application::initialize(
 
     if (proxy_client_cfg) {
         _proxy_client_config.emplace(*proxy_client_cfg);
+    }
+    if (schema_reg_cfg) {
+        _schema_reg_config.emplace(*schema_reg_cfg);
+    }
+
+    if (schema_reg_client_cfg) {
+        _schema_reg_client_config.emplace(*schema_reg_client_cfg);
     }
 }
 
@@ -264,6 +275,18 @@ void application::hydrate_config(const po::variables_map& cfg) {
         }
         _proxy_config->for_each(config_printer("pandaproxy"));
         _proxy_client_config->for_each(config_printer("pandaproxy_client"));
+    }
+    if (config["schema_registry"]) {
+        _schema_reg_config.emplace(config["schema_registry"]);
+        if (config["schema_registry_client"]) {
+            _schema_reg_client_config.emplace(config["schema_registry_client"]);
+        } else {
+            set_local_kafka_client_config(
+              _schema_reg_client_config, config::shard_local_cfg());
+        }
+        _schema_reg_config->for_each(config_printer("schema_registry"));
+        _schema_reg_client_config->for_each(
+          config_printer("schema_registry_client"));
     }
 }
 
@@ -360,6 +383,20 @@ void application::wire_up_services() {
           // https://github.com/vectorizedio/redpanda/issues/1392
           memory_groups::kafka_total_memory(),
           std::reference_wrapper(_proxy_client))
+          .get();
+    }
+    if (_schema_reg_config) {
+        construct_service(
+          _schema_registry_client, to_yaml(*_schema_reg_client_config))
+          .get();
+        construct_service(
+          _schema_registry,
+          to_yaml(*_schema_reg_config),
+          smp_service_groups.proxy_smp_sg(),
+          // TODO: Improve memory budget for services
+          // https://github.com/vectorizedio/redpanda/issues/1392
+          memory_groups::kafka_total_memory(),
+          std::reference_wrapper(_schema_registry_client))
           .get();
     }
 }
@@ -675,6 +712,16 @@ void application::start() {
           _log.info,
           "Started Pandaproxy listening at {}",
           _proxy_config->pandaproxy_api());
+    }
+
+    if (_schema_reg_config) {
+        _schema_registry
+          .invoke_on_all(&pandaproxy::schema_registry::service::start)
+          .get();
+        vlog(
+          _log.info,
+          "Started Schema Registry listening at {}",
+          _schema_reg_config->schema_registry_api());
     }
 
     vlog(_log.info, "Successfully started Redpanda!");

@@ -21,6 +21,8 @@
 #include "kafka/server/rm_group_frontend.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/fwd.h"
+#include "pandaproxy/schema_registry/configuration.h"
+#include "pandaproxy/schema_registry/fwd.h"
 #include "raft/group_manager.h"
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/cpu_scheduling.h"
@@ -45,6 +47,8 @@ public:
     void initialize(
       std::optional<YAML::Node> proxy_cfg = std::nullopt,
       std::optional<YAML::Node> proxy_client_cfg = std::nullopt,
+      std::optional<YAML::Node> schema_reg_cfg = std::nullopt,
+      std::optional<YAML::Node> schema_reg_client_cfg = std::nullopt,
       std::optional<scheduling_groups> = std::nullopt);
     void check_environment();
     void configure_admin_server();
@@ -118,6 +122,9 @@ private:
     bool _redpanda_enabled{true};
     std::optional<pandaproxy::rest::configuration> _proxy_config;
     std::optional<kafka::client::configuration> _proxy_client_config;
+    std::optional<pandaproxy::schema_registry::configuration>
+      _schema_reg_config;
+    std::optional<kafka::client::configuration> _schema_reg_client_config;
     scheduling_groups _scheduling_groups;
     ss::logger _log;
 
@@ -129,6 +136,8 @@ private:
     ss::sharded<rpc::server> _kafka_server;
     ss::sharded<kafka::client::client> _proxy_client;
     ss::sharded<pandaproxy::rest::proxy> _proxy;
+    ss::sharded<kafka::client::client> _schema_registry_client;
+    ss::sharded<pandaproxy::schema_registry::service> _schema_registry;
     ss::metrics::metric_groups _metrics;
     kafka::rm_group_proxy_impl _rm_group_proxy;
     // run these first on destruction
