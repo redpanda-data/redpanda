@@ -271,6 +271,16 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
             continue;
         }
 
+        // an error occured handling legacy messages (magic 0 or 1)
+        if (unlikely(part.records->adapter.legacy_error)) {
+            partitions.push_back(
+              ss::make_ready_future<produce_response::partition>(
+                produce_response::partition{
+                  .partition_index = part.partition_index,
+                  .error_code = error_code::invalid_record}));
+            continue;
+        }
+
         if (unlikely(!part.records->adapter.valid_crc)) {
             partitions.push_back(
               ss::make_ready_future<produce_response::partition>(
@@ -283,6 +293,10 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
         // produce version >= 3 (enforced for all produce requests)
         // requires exactly one record batch per request and it must use
         // the v2 format.
+        //
+        // NOTE: for produce version 0 and 1 the adapter transparently converts
+        // the batch into an v2 batch and sets the v2_format flag. conversion
+        // also produces a single record batch by accumulating legacy messages.
         if (unlikely(
               !part.records->adapter.v2_format
               || !part.records->adapter.batch)) {

@@ -10,7 +10,9 @@
 #include "kafka/protocol/kafka_batch_adapter.h"
 
 #include "bytes/iobuf.h"
+#include "compression/compression.h"
 #include "hashing/crc32c.h"
+#include "kafka/protocol/legacy_message.h"
 #include "kafka/protocol/request_reader.h"
 #include "kafka/server/request_context.h"
 #include "likely.h"
@@ -20,6 +22,8 @@
 #include "vassert.h"
 
 #include <seastar/core/smp.hh>
+
+#include <fmt/ostream.h>
 
 #include <stdexcept>
 
@@ -183,8 +187,107 @@ iobuf kafka_batch_adapter::adapt(iobuf&& kbatch) {
     return remainder;
 }
 
-void kafka_batch_adapter::adapt_with_version(iobuf kbatch, api_version) {
-    adapt(std::move(kbatch));
+/*
+ * Handle a MessageSet. For each uncompressed message the message data is
+ * accumulated in the new-style redpanda batch format. Compressed messages
+ * contain a nested MessageSet which is handled recursively (nesting should not
+ * exceed one level).
+ *
+ * The resulting record batch is compressed if any of the individual message
+ * sets are compressed.  In this case the compression type used is the last
+ * compression type encountered.
+ *
+ * The last message determines the timestamp used on the resulting record batch.
+ *
+ * TODO
+ *   - https://github.com/vectorizedio/redpanda/issues/1396
+ */
+void kafka_batch_adapter::convert_message_set(
+  storage::record_batch_builder& builder,
+  iobuf kbatch,
+  bool expect_uncompressed) {
+    auto parser = iobuf_parser(std::move(kbatch));
+    while (parser.bytes_left()) {
+        auto batch = decode_legacy_batch(parser);
+        if (!batch) {
+            // decoder logs more detail
+            legacy_error = true;
+            return;
+        }
+
+        if (batch->timestamp) {
+            builder.set_timestamp(*batch->timestamp);
+        }
+
+        /*
+         * if no compression then take the key/value and move on
+         */
+        if (batch->compression() == model::compression::none) {
+            builder.add_raw_kv(std::move(batch->key), std::move(batch->value));
+            continue;
+        }
+
+        /*
+         * lz4 with magic_0 was implemented in kafka with a bug and requires
+         * special handling of the encoding/decoding step. we can build a
+         * variant that is compliant if needed, but at least one client (sarama)
+         * simply disallow lz4 for versions that require magic_0.
+         */
+        if (
+          batch->magic == 0
+          && batch->compression() == model::compression::lz4) {
+            vlog(
+              klog.error,
+              "Producing with magic=0 and lz4 compression is not supported");
+            legacy_error = true;
+            return;
+        }
+
+        builder.set_compression(batch->compression());
+        if (expect_uncompressed) {
+            vlog(klog.error, "MessageSet contains more than one nesting level");
+            legacy_error = true;
+            return;
+        }
+
+        if (!batch->value) {
+            vlog(klog.error, "Compressed legacy does not contain a value");
+            legacy_error = true;
+            return;
+        }
+
+        auto batch_data = compression::compressor::uncompress(
+          *batch->value, batch->compression());
+
+        convert_message_set(builder, std::move(batch_data), true);
+    }
+}
+
+void kafka_batch_adapter::adapt_with_version(
+  iobuf kbatch, api_version version) {
+    if (version >= api_version(3)) {
+        adapt(std::move(kbatch));
+        return;
+    }
+
+    // accumulates records from legacy message set
+    storage::record_batch_builder builder(
+      raft::data_batch_type, model::offset(0));
+
+    convert_message_set(builder, std::move(kbatch), false);
+
+    if (legacy_error) {
+        return;
+    }
+
+    // make produce handler happy: it validates that it is receiving a v2
+    // formatted batch. since we are translating transparently we'll lie.
+    v2_format = true;
+
+    // trivially true since we computed it
+    valid_crc = true;
+
+    batch = std::move(builder).build();
 }
 
 } // namespace kafka

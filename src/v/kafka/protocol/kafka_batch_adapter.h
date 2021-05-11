@@ -15,6 +15,7 @@
 #include "kafka/types.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
+#include "storage/record_batch_builder.h"
 #include "utils/vint.h"
 
 namespace kafka {
@@ -62,6 +63,7 @@ public:
 
     bool v2_format;
     bool valid_crc;
+    bool legacy_error{false};
 
     std::optional<model::record_batch> batch;
 
@@ -70,6 +72,7 @@ public:
 private:
     void verify_crc(int32_t, iobuf_parser);
     model::record_batch_header read_header(iobuf_parser&);
+    void convert_message_set(storage::record_batch_builder&, iobuf, bool);
 };
 
 /*

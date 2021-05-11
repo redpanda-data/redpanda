@@ -14,6 +14,6 @@
 
 namespace kafka {
 
-using produce_handler = handler<produce_api, 3, 7>;
+using produce_handler = handler<produce_api, 0, 7>;
 
 }
