@@ -1,0 +1,45 @@
+{
+    "apiVersion": "0.0.1",
+    "swaggerVersion": "1.2",
+    "basePath": "/v1",
+    "resourcePath": "/brokers",
+    "produces": [
+        "application/json"
+    ],
+    "apis": [
+        {
+            "path": "/v1/brokers",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get a list of brokers",
+                    "type": "array",
+                    "items": {
+                        "type": "broker"
+                    },
+                    "nickname": "get_brokers",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        }
+    ],
+    "models": {
+        "broker": {
+            "id": "broker",
+            "description": "Broker information",
+            "properties": {
+                "node_id": {
+                    "type": "long",
+                    "description": "node id"
+                },
+                "num_cores": {
+                    "type": "long",
+                    "description": "cores"
+                }
+            }
+        }
+    }
+}

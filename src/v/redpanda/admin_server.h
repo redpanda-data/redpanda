@@ -36,7 +36,8 @@ public:
       admin_server_cfg,
       ss::sharded<cluster::partition_manager>&,
       cluster::controller*,
-      ss::sharded<cluster::shard_table>&);
+      ss::sharded<cluster::shard_table>&,
+      ss::sharded<cluster::metadata_cache>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -70,6 +71,7 @@ private:
     void register_kafka_routes();
     void register_security_routes();
     void register_status_routes();
+    void register_broker_routes();
 
     ss::http_server _server;
     admin_server_cfg _cfg;
@@ -77,4 +79,5 @@ private:
     cluster::controller* _controller;
     ss::sharded<cluster::shard_table>& _shard_table;
     std::unique_ptr<dashboard_handler> _dashboard_handler;
+    ss::sharded<cluster::metadata_cache>& _metadata_cache;
 };

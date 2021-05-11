@@ -324,7 +324,8 @@ void application::configure_admin_server() {
       admin_server_cfg_from_global_cfg(_scheduling_groups),
       std::ref(partition_manager),
       controller.get(),
-      std::ref(shard_table))
+      std::ref(shard_table),
+      std::ref(metadata_cache))
       .get();
 }
 

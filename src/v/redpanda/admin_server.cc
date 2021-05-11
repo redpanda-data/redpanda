@@ -14,6 +14,7 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/controller.h"
 #include "cluster/fwd.h"
+#include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/security_frontend.h"
 #include "cluster/shard_table.h"
@@ -21,6 +22,7 @@
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "raft/types.h"
+#include "redpanda/admin/api-doc/broker.json.h"
 #include "redpanda/admin/api-doc/config.json.h"
 #include "redpanda/admin/api-doc/kafka.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
@@ -57,12 +59,14 @@ admin_server::admin_server(
   admin_server_cfg cfg,
   ss::sharded<cluster::partition_manager>& pm,
   cluster::controller* controller,
-  ss::sharded<cluster::shard_table>& st)
+  ss::sharded<cluster::shard_table>& st,
+  ss::sharded<cluster::metadata_cache>& metadata_cache)
   : _server("admin")
   , _cfg(std::move(cfg))
   , _partition_manager(pm)
   , _controller(controller)
-  , _shard_table(st) {}
+  , _shard_table(st)
+  , _metadata_cache(metadata_cache) {}
 
 ss::future<> admin_server::start() {
     configure_metrics_route();
@@ -110,6 +114,7 @@ void admin_server::configure_admin_routes() {
     register_kafka_routes();
     register_security_routes();
     register_status_routes();
+    register_broker_routes();
 }
 
 void admin_server::configure_dashboard() {
@@ -421,5 +426,19 @@ void admin_server::register_status_routes() {
           const static std::unordered_map<ss::sstring, ss::sstring> status_map{
             {"status", "ready"}};
           return ss::make_ready_future<ss::json::json_return_type>(status_map);
+      });
+}
+
+void admin_server::register_broker_routes() {
+    ss::httpd::broker_json::get_brokers.set(
+      _server._routes, [this](std::unique_ptr<ss::httpd::request>) {
+          std::vector<ss::httpd::broker_json::broker> res;
+          for (const auto& broker : _metadata_cache.local().all_brokers()) {
+              auto& b = res.emplace_back();
+              b.node_id = broker->id();
+              b.num_cores = broker->properties().cores;
+          }
+          return ss::make_ready_future<ss::json::json_return_type>(
+            std::move(res));
       });
 }
