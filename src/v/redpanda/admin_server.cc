@@ -23,7 +23,6 @@
 #include "raft/types.h"
 #include "redpanda/admin/api-doc/config.json.h"
 #include "redpanda/admin/api-doc/kafka.json.h"
-#include "redpanda/admin/api-doc/partition.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
 #include "redpanda/admin/api-doc/security.json.h"
 #include "redpanda/admin/api-doc/status.json.h"
@@ -223,40 +222,6 @@ void admin_server::register_raft_routes() {
       });
 }
 
-/*
- * Parse integer pairs from: ?target={\d,\d}* where each pair represent a
- * node-id and a shard-id, repsectively.
- */
-static std::vector<model::broker_shard>
-parse_target_broker_shards(const ss::sstring& param) {
-    std::vector<ss::sstring> parts;
-    boost::split(parts, param, boost::is_any_of(","));
-
-    if (parts.size() % 2 != 0) {
-        throw ss::httpd::bad_param_exception(
-          fmt::format("Invalid target parameter format: {}", param));
-    }
-
-    std::vector<model::broker_shard> replicas;
-
-    for (auto i = 0u; i < parts.size(); i += 2) {
-        auto node = std::stoi(parts[i]);
-        auto shard = std::stoi(parts[i + 1]);
-
-        if (node < 0 || shard < 0) {
-            throw ss::httpd::bad_param_exception(
-              fmt::format("Invalid target {}:{}", node, shard));
-        }
-
-        replicas.push_back(model::broker_shard{
-          .node_id = model::node_id(node),
-          .shard = static_cast<uint32_t>(shard),
-        });
-    }
-
-    return replicas;
-}
-
 // TODO: factor out generic serialization from seastar http exceptions
 static security::scram_credential
 parse_scram_credential(const rapidjson::Document& doc) {
@@ -446,73 +411,6 @@ void admin_server::register_kafka_routes() {
                       }
                       return ss::json::json_return_type(ss::json::json_void());
                   });
-            });
-      });
-
-    ss::httpd::partition_json::kafka_move_partition.set(
-      _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
-          auto topic = model::topic(req->param["topic"]);
-
-          model::partition_id partition;
-          try {
-              partition = model::partition_id(
-                std::stoll(req->param["partition"]));
-          } catch (...) {
-              throw ss::httpd::bad_param_exception(fmt::format(
-                "Partition id must be an integer: {}",
-                req->param["partition"]));
-          }
-
-          if (partition() < 0) {
-              throw ss::httpd::bad_param_exception(
-                fmt::format("Invalid partition id {}", partition));
-          }
-
-          std::optional<std::vector<model::broker_shard>> replicas;
-          if (auto node = req->get_query_param("target"); !node.empty()) {
-              try {
-                  replicas = parse_target_broker_shards(node);
-              } catch (...) {
-                  throw ss::httpd::bad_param_exception(fmt::format(
-                    "Invalid target format {}: {}",
-                    node,
-                    std::current_exception()));
-              }
-          }
-
-          // this can be removed when we have more sophisticated machinary in
-          // redpanda itself for automatically selecting target node/shard.
-          if (!replicas || replicas->empty()) {
-              throw ss::httpd::bad_request_exception(
-                "Partition movement requires target replica set");
-          }
-
-          model::ntp ntp(model::kafka_namespace, topic, partition);
-
-          vlog(
-            logger.debug,
-            "Request to change ntp {} replica set to {}",
-            ntp,
-            replicas);
-
-          return _controller->get_topics_frontend()
-            .local()
-            .move_partition_replicas(
-              ntp, *replicas, model::timeout_clock::now() + 5s)
-            .then([ntp, replicas](std::error_code err) {
-                vlog(
-                  logger.debug,
-                  "Result changing ntp {} replica set to {}: {}:{}",
-                  ntp,
-                  replicas,
-                  err,
-                  err.message());
-                if (err) {
-                    throw ss::httpd::bad_request_exception(
-                      fmt::format("Error moving partition: {}", err.message()));
-                }
-                return ss::make_ready_future<ss::json::json_return_type>(
-                  ss::json::json_return_type(ss::json::json_void()));
             });
       });
 }
