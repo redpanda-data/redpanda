@@ -22,7 +22,8 @@ In this tutorial, we'll use Redpanda installed on Linux to transform data and se
 For this tutorial you need:
 
 - Redpanda v21.4.14 or higher on [Linux](https://vectorized.io/docs/quick-start-linux)
-- Elasticsearch 7.10.2 or higher in a [docker image](https://www.elastic.co/guide/en/elasticsearch/reference/current/docker.html)
+- Elasticsearch 7.10.2 or higher [running in a docker image](https://www.elastic.co/guide/en/elasticsearch/reference/current/docker.html#docker-cli-run-dev-mode)
+- [NodeJS](https://nodejs.org/en/download/) 12.x or higher
 
 ## Enable Wasm engine on Redpanda
 
@@ -36,8 +37,6 @@ To enable the Wasm engine:
     sudo rpk redpanda config set 'redpanda.enable_coproc' true
     ```
 
-    If redpanda is running, please restart it for the changes to take effect.
-
 2. Set the `developer_mode` to `true`:
 
     ```bash
@@ -47,7 +46,7 @@ To enable the Wasm engine:
 3. Make sure that those changes are shown in the configuration file in `/etc/redpanda/redpanda.yaml`:
 
     ```bash
-    cat /etc/redpanda/redpanda.yaml | grep developer_mode
+    cat /etc/redpanda/redpanda.yaml | grep developer_mode && \
     cat /etc/redpanda/redpanda.yaml | grep enable_coproc
     ```
 
@@ -59,6 +58,12 @@ To enable the Wasm engine:
 
     $ cat /etc/redpanda/redpanda.yaml | grep enable_coproc
     coproc_enable: true
+    ```
+
+4. Restart Redpanda with:
+
+    ```
+    sudo systemctl restart redpanda
     ```
 
 ## Create the Wasm script
@@ -76,7 +81,7 @@ This command creates a directory with a template that gives us a simple build sy
     Let's move to the `hello-elastic` directory and see what's there.
 
     ```bash
-    cd hello-elastic
+    cd hello-elastic && \
     tree .
     ```
 
@@ -101,7 +106,7 @@ This command creates a directory with a template that gives us a simple build sy
 4. Add Elasticsearch to your install dependencies:
 
     ```bash
-    $ npm install @elastic/elasticsearch
+    npm install @elastic/elasticsearch
     ```
 
 5. In your editor of choice, put the javascript code for the transform into the `src/elastic.js` file:
@@ -173,14 +178,14 @@ This command creates a directory with a template that gives us a simple build sy
 
     ```bash
     #this command installs all nodejs dependecies
-    $ npm install
+    npm install && \
     #this command generate the `dist/elastic.js` file.
-    $ npm run build
+    npm run build
     ```
 
 ## Deploy the Wasm function to Redpanda
 
-Now we need to deploy the Wasm script so that it can process the transforms.
+Now we'll deploy a Wasm script to receive events to a specifc topic and process the transforms.
 
 1. Create a topic to use for the transform:
 
@@ -200,14 +205,7 @@ Now we need to deploy the Wasm script so that it can process the transforms.
     Sent record to partition 0 at offset 1 with timestamp 2021-02-01 18:18:15.734185538 -0500 -05 m=+0.053943881.
     ```    
 
-    To verify that the Wasm script was successfully deployed, 
-    you can run `redpanda logs` to look through the redpanda logs for a log line that looks like:
-
-    ```bash
-    INFO [shard 0] coproc - service.cc:101 - Request recieved to register coprocessor with id: 14103244480447969041
-    ```
-
-    The Wasm engine itself also has a log file that is located by default in `/var/lib/redpanda/coprocessor/logs/wasm`.
+    The Wasm engine has a log file located by default in `/var/lib/redpanda/coprocessor/logs/wasm`.
     To see the status of your function as reported by the Wasm engine look for log lines like:
 
     ```bash
@@ -219,10 +217,10 @@ Now we need to deploy the Wasm script so that it can process the transforms.
 
 Here's the real fun -- seeing the transform work.
 
-1. To transform data, produce records to the `origin` topic.
+1. To transform data, produce records to the `origin` topic:
 
     ```bash
-    $ rpk topic produce origin -H logService:elastic -n 5
+    rpk topic produce origin -H logService:elastic -n 5
     ```
 
     We publish the records with `logService:elastic`
@@ -250,6 +248,7 @@ To do this, we'll create a query to Elasticsearch that returns every hit that ha
 
     client.search({
       index: 'result_wasm'
+      size: 1000
     }).then((elasticResult) => {
       const results = elasticResult.body.hits.hits.map(record => record._source)
       console.log(results)
