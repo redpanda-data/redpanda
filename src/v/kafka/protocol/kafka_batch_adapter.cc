@@ -87,7 +87,7 @@ model::record_batch_header kafka_batch_adapter::read_header(iobuf_parser& in) {
 }
 
 void kafka_batch_adapter::verify_crc(int32_t expected_crc, iobuf_parser in) {
-    auto crc = crc32();
+    auto crc = crc::crc32c();
 
     // 1. move the cursor to correct endpoint
     //   - 8 base offset

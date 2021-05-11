@@ -56,7 +56,7 @@ public:
         model::term_id term{0};
 
         uint32_t crc() const {
-            crc32 c;
+            crc::crc32c c;
             c.extend(voted_for());
             c.extend(term());
             return c.value();
@@ -68,7 +68,7 @@ public:
         model::term_id term{0};
 
         uint32_t crc() const {
-            crc32 c;
+            crc::crc32c c;
             c.extend(voted_for.id()());
             c.extend(voted_for.revision()());
             c.extend(term());

@@ -84,7 +84,7 @@ private:
     size_t _max_mem;
     size_t _keys_mem_usage{0};
     compacted_index::footer _footer;
-    crc32 _crc;
+    crc::crc32c _crc;
 
     friend std::ostream& operator<<(std::ostream&, const spill_key_index&);
 };

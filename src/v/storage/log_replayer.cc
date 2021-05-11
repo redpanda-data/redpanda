@@ -53,7 +53,7 @@ public:
       size_t size_on_disk) override {
         _header = header;
         _file_pos_to_end_of_batch = size_on_disk + physical_base_offset;
-        _crc = crc32();
+        _crc = crc::crc32c();
         model::crc_record_batch_header(_crc, header);
     }
 
@@ -88,7 +88,7 @@ private:
     model::record_batch_header _header;
     segment* _seg;
     log_replayer::checkpoint& _cfg;
-    crc32 _crc;
+    crc::crc32c _crc;
     size_t _file_pos_to_end_of_batch{0};
 };
 

@@ -20,7 +20,7 @@ struct record_batch_header;
 class record_batch;
 class record;
 
-void crc_record_batch_header(crc32&, const record_batch_header&);
+void crc_record_batch_header(crc::crc32c&, const record_batch_header&);
 
 /// \brief int32_t because that's what kafka uses
 int32_t crc_record_batch(const record_batch& b);

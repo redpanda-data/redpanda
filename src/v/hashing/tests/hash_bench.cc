@@ -49,7 +49,7 @@ PERF_TEST(fnv32_fn, header_hash) {
 }
 PERF_TEST(crc32_fn, header_hash) {
     auto buffer = random_generators::gen_alphanum_string(step_bytes);
-    crc32 crc;
+    crc::crc32c crc;
     perf_tests::start_measuring_time();
     crc.extend(buffer.data(), buffer.size());
     auto o = crc.value();

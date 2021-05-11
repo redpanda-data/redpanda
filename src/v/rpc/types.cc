@@ -21,13 +21,13 @@
 
 namespace rpc {
 template<typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
-void crc_one(crc32& crc, T t) {
+void crc_one(crc::crc32c& crc, T t) {
     T args_le = ss::cpu_to_le(t);
     crc.extend(args_le);
 }
 
 uint32_t checksum_header_only(const header& h) {
-    auto crc = crc32();
+    auto crc = crc::crc32c();
     crc_one(
       crc,
       static_cast<std::underlying_type_t<compression_type>>(h.compression));
