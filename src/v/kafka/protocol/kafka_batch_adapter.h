@@ -69,4 +69,36 @@ private:
     model::record_batch_header read_header(iobuf_parser&);
 };
 
+/*
+ * Helper wrapper type that handles conversion when encoding/decoding produce
+ * requests. This type replaces iobuf in the generated code for kafka request
+ * types.
+ */
+struct produce_request_record_data {
+    explicit produce_request_record_data(std::optional<iobuf>&& data) {
+        if (data) {
+            adapter.adapt(std::move(*data));
+        }
+    }
+
+    explicit produce_request_record_data(model::record_batch&& batch) {
+        adapter.v2_format = true;
+        adapter.valid_crc = true;
+        adapter.batch = std::move(batch);
+    }
+
+    kafka_batch_adapter adapter;
+};
+
+inline std::ostream&
+operator<<(std::ostream& os, const produce_request_record_data& data) {
+    fmt::print(
+      os,
+      "batch {} v2_format {} valid_crc {}",
+      data.adapter.batch ? data.adapter.batch->size_bytes() : -1,
+      data.adapter.v2_format,
+      data.adapter.valid_crc);
+    return os;
+}
+
 } // namespace kafka
