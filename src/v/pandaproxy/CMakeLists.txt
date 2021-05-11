@@ -17,5 +17,6 @@ v_cc_library(
 
 
 add_subdirectory(rest)
+add_subdirectory(schema_registry)
 add_subdirectory(json)
 add_subdirectory(parsing)
