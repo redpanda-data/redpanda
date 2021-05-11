@@ -189,14 +189,13 @@ func withoutConsumerGroup(
 	mu := sync.Mutex{} // Synchronizes stdout.
 	for _, partition := range partitions {
 		p := partition
-		offset = offset
 		grp.Go(func() error {
 			pc, err := consumer.ConsumePartition(topic, p, offset)
 			if err != nil {
 				log.Errorf(
 					"Unable to consume topic '%s', partition %d at offset %d",
 					topic,
-					partition,
+					p,
 					offset,
 				)
 				return err
@@ -225,12 +224,14 @@ func consumeMessages(
 		case msg := <-msgs:
 			handleMessage(msg, mu, prettyPrint)
 		case err := <-errs:
-			log.Errorf(
-				"Got an error consuming topic '%s', partition %d: %v",
-				err.Topic,
-				err.Partition,
-				err.Err,
-			)
+			if err != nil {
+				log.Errorf(
+					"Got an error consuming topic '%s', partition %d: %v",
+					err.Topic,
+					err.Partition,
+					err.Err,
+				)
+			}
 		}
 	}
 }
