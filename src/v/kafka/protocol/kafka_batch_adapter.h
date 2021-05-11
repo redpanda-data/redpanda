@@ -12,6 +12,7 @@
 #pragma once
 
 #include "bytes/iobuf_parser.h"
+#include "kafka/types.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "utils/vint.h"
@@ -64,6 +65,8 @@ public:
 
     std::optional<model::record_batch> batch;
 
+    void adapt_with_version(iobuf, api_version);
+
 private:
     void verify_crc(int32_t, iobuf_parser);
     model::record_batch_header read_header(iobuf_parser&);
@@ -75,9 +78,10 @@ private:
  * types.
  */
 struct produce_request_record_data {
-    explicit produce_request_record_data(std::optional<iobuf>&& data) {
+    explicit produce_request_record_data(
+      std::optional<iobuf>&& data, api_version version) {
         if (data) {
-            adapter.adapt(std::move(*data));
+            adapter.adapt_with_version(std::move(*data), version);
         }
     }
 

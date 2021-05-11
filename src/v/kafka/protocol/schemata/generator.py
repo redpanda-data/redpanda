@@ -842,7 +842,11 @@ writer.write({{ fname }});
 {
     auto tmp = reader.{{ decoder }};
     if (tmp) {
+{%- if named_type == "kafka::produce_request_record_data" %}
+        {{ fname }} = {{ named_type }}(std::move(*tmp), version);
+{%- else %}
         {{ fname }} = {{ named_type }}(std::move(*tmp));
+{%- endif %}
     }
 }
 {%- else %}

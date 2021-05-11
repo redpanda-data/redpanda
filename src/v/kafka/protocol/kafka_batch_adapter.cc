@@ -183,4 +183,8 @@ iobuf kafka_batch_adapter::adapt(iobuf&& kbatch) {
     return remainder;
 }
 
+void kafka_batch_adapter::adapt_with_version(iobuf kbatch, api_version) {
+    adapt(std::move(kbatch));
+}
+
 } // namespace kafka
