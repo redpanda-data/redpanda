@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "config/config_store.h"
 #include "kafka/client/client.h"
-#include "pandaproxy/fwd.h"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
@@ -25,7 +25,7 @@ struct context_t {
     ss::abort_source as;
     ss::smp_service_group smp_sg;
     ss::sharded<kafka::client::client>& client;
-    const configuration& config;
+    const config::config_store& config;
 };
 
 } // namespace pandaproxy

@@ -81,7 +81,10 @@ proxy::proxy(
 
 ss::future<> proxy::start() {
     _server.routes(get_proxy_routes());
-    return _server.start();
+    return _server.start(
+      _config.pandaproxy_api(),
+      _config.pandaproxy_api_tls(),
+      _config.advertised_pandaproxy_api());
 }
 
 ss::future<> proxy::stop() { return _server.stop(); }

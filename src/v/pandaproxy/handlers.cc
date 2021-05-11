@@ -203,7 +203,6 @@ create_consumer(server::request_t rq, server::reply_t rp) {
        rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
         auto name = co_await client.create_consumer(group_id, req_data.name);
-        auto adv_addr = rq.ctx.config.advertised_pandaproxy_api();
         json::create_consumer_response res{
           .instance_id = name,
           .base_uri = make_consumer_uri(rq, name, group_id)};

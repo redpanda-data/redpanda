@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "config/config_store.h"
 #include "pandaproxy/context.h"
 #include "pandaproxy/json/types.h"
 #include "seastarx.h"
@@ -43,7 +44,7 @@ public:
         ss::abort_source as;
         ss::smp_service_group smp_sg;
         ss::sharded<kafka::client::client>& client;
-        const configuration& config;
+        const config::config_store& config;
     };
 
     struct request_t {
@@ -86,7 +87,10 @@ public:
     void route(route_t route);
     void routes(routes_t&& routes);
 
-    ss::future<> start();
+    ss::future<> start(
+      const std::vector<model::broker_endpoint>& endpoints,
+      const std::vector<config::endpoint_tls_config>& endpoints_tls,
+      const std::vector<model::broker_endpoint>& advertised);
     ss::future<> stop();
 
 private:

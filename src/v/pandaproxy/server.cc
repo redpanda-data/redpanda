@@ -161,11 +161,11 @@ void server::routes(server::routes_t&& rts) {
     }
 }
 
-ss::future<> server::start() {
+ss::future<> server::start(
+  const std::vector<model::broker_endpoint>& endpoints,
+  const std::vector<config::endpoint_tls_config>& endpoints_tls,
+  const std::vector<model::broker_endpoint>& advertised) {
     _server._routes.register_exeption_handler(exception_reply);
-    auto& endpoints = _ctx.config.pandaproxy_api();
-    auto& endpoints_tls = _ctx.config.pandaproxy_api_tls.value();
-    auto& advertised = _ctx.config.advertised_pandaproxy_api.value();
     _ctx.advertised_listeners.reserve(endpoints.size());
     for (auto& server_endpoint : endpoints) {
         auto addr = co_await rpc::resolve_dns(server_endpoint.address);
