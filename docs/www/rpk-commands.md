@@ -11,6 +11,15 @@ The global flags for the `rpk` command are:
   -h, --help      help for info
 ```
 
+## version
+
+Check the current version.
+
+```cmd
+Usage:
+  rpk version
+```
+
 ## redpanda
 
 ### redpanda tune
