@@ -32,32 +32,23 @@ func TestFindConfig(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "should return config file from parent directory",
+			name: "should return config file from home directory",
 			before: func(fs afero.Fs) {
-				currentDir := currentDir()
-				fs.MkdirAll(currentDir, 0755)
-				createConfigIn(fs, filepath.Dir(currentDir))
+				createConfigIn(fs, homeDir())
 			},
-			want: filepath.Join(filepath.Dir(currentDir()), "redpanda.yaml"),
+			want: filepath.Join(homeDir(), "redpanda.yaml"),
 		},
 		{
 			name: "should return config file from 'etc' directory",
 			before: func(fs afero.Fs) {
-				createConfigIn(fs, "/etc/redpanda")
-				currentDir := currentDir()
-				fs.MkdirAll(currentDir, 0755)
-				createConfigIn(fs, filepath.Dir(currentDir))
+				createConfigIn(fs, filepath.Join("/", "etc", "redpanda"))
 			},
-			want: "/etc/redpanda/redpanda.yaml",
+			want: filepath.Join("/", "etc", "redpanda", "redpanda.yaml"),
 		},
 		{
 			name: "should return config file from current directory",
 			before: func(fs afero.Fs) {
-				createConfigIn(fs, "/etc/redpanda")
-				currentDir := currentDir()
-				fs.MkdirAll(currentDir, 0755)
-				createConfigIn(fs, filepath.Dir(currentDir))
-				createConfigIn(fs, currentDir)
+				createConfigIn(fs, currentDir())
 			},
 			want: filepath.Join(currentDir(), "redpanda.yaml"),
 		},
@@ -83,5 +74,10 @@ func createConfigIn(fs afero.Fs, path string) {
 
 func currentDir() string {
 	d, _ := os.Getwd()
+	return d
+}
+
+func homeDir() string {
+	d, _ := os.UserHomeDir()
 	return d
 }
