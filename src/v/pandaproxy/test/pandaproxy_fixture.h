@@ -16,7 +16,7 @@
 #include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
 #include "kafka/protocol/metadata.h"
-#include "pandaproxy/configuration.h"
+#include "pandaproxy/rest/configuration.h"
 #include "redpanda/tests/fixture.h"
 
 class pandaproxy_test_fixture : public redpanda_thread_fixture {

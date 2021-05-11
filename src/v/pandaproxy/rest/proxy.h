@@ -12,7 +12,7 @@
 #pragma once
 
 #include "kafka/client/client.h"
-#include "pandaproxy/configuration.h"
+#include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/server.h"
 #include "seastarx.h"
 

@@ -1,6 +1,6 @@
 rp_test(
   UNIT_TEST
-  BINARY_NAME pandaproxy_fixture
+  BINARY_NAME pandaproxy_rest_fixture
   SOURCES
     fetch.cc
     list_topics.cc

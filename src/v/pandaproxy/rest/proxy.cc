@@ -7,12 +7,12 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "pandaproxy/proxy.h"
+#include "pandaproxy/rest/proxy.h"
 
-#include "pandaproxy/api/api-doc/v1.json.h"
-#include "pandaproxy/configuration.h"
-#include "pandaproxy/handlers.h"
+#include "pandaproxy/api/api-doc/rest.json.h"
 #include "pandaproxy/logger.h"
+#include "pandaproxy/rest/configuration.h"
+#include "pandaproxy/rest/handlers.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/memory.hh>
@@ -22,34 +22,34 @@ namespace pandaproxy {
 
 server::routes_t get_proxy_routes() {
     server::routes_t routes;
-    routes.api = ss::httpd::v1_json::name;
-
-    routes.routes.emplace_back(
-      server::route_t{ss::httpd::v1_json::get_topics_names, get_topics_names});
+    routes.api = ss::httpd::rest_json::name;
 
     routes.routes.emplace_back(server::route_t{
-      ss::httpd::v1_json::get_topics_records, get_topics_records});
-
-    routes.routes.emplace_back(
-      server::route_t{ss::httpd::v1_json::post_topics_name, post_topics_name});
-
-    routes.routes.emplace_back(
-      server::route_t{ss::httpd::v1_json::create_consumer, create_consumer});
-
-    routes.routes.emplace_back(
-      server::route_t{ss::httpd::v1_json::remove_consumer, remove_consumer});
+      ss::httpd::rest_json::get_topics_names, get_topics_names});
 
     routes.routes.emplace_back(server::route_t{
-      ss::httpd::v1_json::subscribe_consumer, subscribe_consumer});
+      ss::httpd::rest_json::get_topics_records, get_topics_records});
+
+    routes.routes.emplace_back(server::route_t{
+      ss::httpd::rest_json::post_topics_name, post_topics_name});
 
     routes.routes.emplace_back(
-      server::route_t{ss::httpd::v1_json::consumer_fetch, consumer_fetch});
+      server::route_t{ss::httpd::rest_json::create_consumer, create_consumer});
+
+    routes.routes.emplace_back(
+      server::route_t{ss::httpd::rest_json::remove_consumer, remove_consumer});
 
     routes.routes.emplace_back(server::route_t{
-      ss::httpd::v1_json::get_consumer_offsets, get_consumer_offsets});
+      ss::httpd::rest_json::subscribe_consumer, subscribe_consumer});
+
+    routes.routes.emplace_back(
+      server::route_t{ss::httpd::rest_json::consumer_fetch, consumer_fetch});
 
     routes.routes.emplace_back(server::route_t{
-      ss::httpd::v1_json::post_consumer_offsets, post_consumer_offsets});
+      ss::httpd::rest_json::get_consumer_offsets, get_consumer_offsets});
+
+    routes.routes.emplace_back(server::route_t{
+      ss::httpd::rest_json::post_consumer_offsets, post_consumer_offsets});
 
     return routes;
 }

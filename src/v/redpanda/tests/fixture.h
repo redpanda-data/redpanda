@@ -21,7 +21,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
-#include "pandaproxy/configuration.h"
+#include "pandaproxy/rest/configuration.h"
 #include "redpanda/application.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "rpc/dns.h"
