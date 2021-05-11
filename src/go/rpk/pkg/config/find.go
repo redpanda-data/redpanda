@@ -23,7 +23,7 @@ func FindConfigFile(fs afero.Fs) (string, error) {
 	var configPathProviders = []func() ([]string, error){
 		currentDirectory,
 		sysConfDirectory,
-		currentDirectoryParents,
+		homeDirectory,
 	}
 
 	lookedUpPaths := []string{}
@@ -62,21 +62,17 @@ func getCurrentDirectory() (string, error) {
 }
 
 func currentDirectory() ([]string, error) {
-	currentDir, err := getCurrentDirectory()
+	currentDir, err := os.Getwd()
 	if err != nil {
 		return nil, err
 	}
 	return []string{currentDir}, nil
 }
 
-func currentDirectoryParents() ([]string, error) {
-	currentDir, err := getCurrentDirectory()
+func homeDirectory() ([]string, error) {
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
-	var result []string
-	for dir := filepath.Dir(currentDir); dir != string(filepath.Separator); dir = filepath.Dir(dir) {
-		result = append(result, dir)
-	}
-	return result, nil
+	return []string{homeDir}, nil
 }

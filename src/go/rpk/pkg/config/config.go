@@ -12,7 +12,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"os"
 	fp "path/filepath"
 	"strings"
 
@@ -45,14 +44,6 @@ func addConfigPaths(v *viper.Viper) {
 	v.AddConfigPath("$HOME")
 	v.AddConfigPath(fp.Join("etc", "redpanda"))
 	v.AddConfigPath(".")
-	path, err := os.Getwd()
-	if err != nil {
-		log.Warnf("Error getting the current dir: %v", err)
-	} else {
-		for dir := fp.Dir(path); dir != string(fp.Separator); dir = fp.Dir(dir) {
-			v.AddConfigPath(dir)
-		}
-	}
 }
 
 func setDefaults(v *viper.Viper) {
