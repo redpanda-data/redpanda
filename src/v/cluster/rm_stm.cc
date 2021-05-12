@@ -164,11 +164,11 @@ rm_stm::begin_tx(model::producer_identity pid, model::tx_seq tx_seq) {
               "Error \"{}\" on replicating pid:{} fencing batch",
               r.error(),
               pid);
-            co_return tx_errc::timeout;
+            co_return tx_errc::unknown_server_error;
         }
         if (!co_await wait_no_throw(
               model::offset(r.value().last_offset()), _sync_timeout)) {
-            co_return tx_errc::timeout;
+            co_return tx_errc::unknown_server_error;
         }
         fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
         if (fence_it == _log_state.fence_pid_epoch.end()) {
@@ -177,7 +177,7 @@ rm_stm::begin_tx(model::producer_identity pid, model::tx_seq tx_seq) {
               "Unexpected state: can't find fencing token by id after "
               "replicating {}",
               pid);
-            co_return tx_errc::timeout;
+            co_return tx_errc::unknown_server_error;
         }
     }
     if (pid.get_epoch() != fence_it->second) {
@@ -191,6 +191,7 @@ rm_stm::begin_tx(model::producer_identity pid, model::tx_seq tx_seq) {
 
     auto [_, inserted] = _mem_state.expected.emplace(pid, tx_seq);
     if (!inserted) {
+        // TODO: https://app.clubhouse.io/vectorized/story/2194
         // tm_stm forgot that it had already begun a transaction
         // (it may happen when it crashes)
         // it's ok we fail this request, a client will abort a
@@ -199,7 +200,7 @@ rm_stm::begin_tx(model::producer_identity pid, model::tx_seq tx_seq) {
           clusterlog.error,
           "there is already an ongoing transaction within {} session",
           pid);
-        co_return tx_errc::timeout;
+        co_return tx_errc::unknown_server_error;
     }
 
     co_return _mem_state.term;
@@ -253,7 +254,7 @@ ss::future<tx_errc> rm_stm::prepare_tx(
         // current partition changed leadership since a transaction started
         // there is a chance that not all writes were replicated
         // rejecting a tx to prevent data loss
-        co_return tx_errc::timeout;
+        co_return tx_errc::request_rejected;
     }
 
     auto expected_it = _mem_state.expected.find(pid);
@@ -261,7 +262,7 @@ ss::future<tx_errc> rm_stm::prepare_tx(
         // impossible situation, a transaction coordinator tries
         // to prepare a transaction which wasn't started
         vlog(clusterlog.error, "Can't prepare pid:{} - unknown session", pid);
-        co_return tx_errc::timeout;
+        co_return tx_errc::request_rejected;
     }
 
     if (expected_it->second != tx_seq) {
@@ -293,12 +294,12 @@ ss::future<tx_errc> rm_stm::prepare_tx(
           "Error \"{}\" on replicating pid:{} prepare batch",
           r.error(),
           pid);
-        co_return tx_errc::timeout;
+        co_return tx_errc::unknown_server_error;
     }
 
     if (!co_await wait_no_throw(
           model::offset(r.value().last_offset()), timeout)) {
-        co_return tx_errc::timeout;
+        co_return tx_errc::unknown_server_error;
     }
 
     auto preparing_it = _mem_state.preparing.find(pid);
@@ -308,7 +309,7 @@ ss::future<tx_errc> rm_stm::prepare_tx(
           "Can't prepare pid:{} - already aborted or it's an invariant "
           "violation",
           pid);
-        co_return tx_errc::timeout;
+        co_return tx_errc::unknown_server_error;
     }
     auto applied = preparing_it->second.has_applied;
     _mem_state.preparing.erase(pid);
@@ -386,7 +387,7 @@ ss::future<tx_errc> rm_stm::commit_tx(
               "tx_seq:{} exists",
               tx_seq,
               prepare_it->second.tx_seq);
-            co_return tx_errc::timeout;
+            co_return tx_errc::request_rejected;
         } else {
             vassert(
               false,
@@ -413,11 +414,11 @@ ss::future<tx_errc> rm_stm::commit_tx(
           "Error \"{}\" on replicating pid:{} commit batch",
           r.error(),
           pid);
-        co_return tx_errc::timeout;
+        co_return tx_errc::unknown_server_error;
     }
     if (!co_await wait_no_throw(
           model::offset(r.value().last_offset()), timeout)) {
-        co_return tx_errc::timeout;
+        co_return tx_errc::unknown_server_error;
     }
 
     co_return tx_errc::none;
@@ -470,7 +471,7 @@ ss::future<tx_errc> rm_stm::abort_tx(
 
     auto is_ready = co_await sync(timeout);
     if (!is_ready) {
-        co_return tx_errc::timeout;
+        co_return tx_errc::stale;
     }
     if (_mem_state.term != _insync_term) {
         _mem_state = mem_state{.term = _insync_term};
@@ -513,7 +514,7 @@ ss::future<tx_errc> rm_stm::abort_tx(
           "Error \"{}\" on replicating pid:{} abort batch",
           r.error(),
           pid);
-        co_return tx_errc::timeout;
+        co_return tx_errc::unknown_server_error;
     }
 
     // don't need to wait for apply because tx is already aborted on the
