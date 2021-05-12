@@ -64,6 +64,26 @@
 #include <exception>
 #include <vector>
 
+static void set_local_kafka_client_config(
+  std::optional<kafka::client::configuration>& client_config,
+  const config::configuration& config) {
+    client_config.emplace();
+    const auto& kafka_api = config.kafka_api.value();
+    vassert(!kafka_api.empty(), "There are no kafka_api listeners");
+    client_config->brokers.set_value(
+      std::vector<unresolved_address>{kafka_api[0].address});
+    const auto& kafka_api_tls = config::shard_local_cfg().kafka_api_tls.value();
+    auto tls_it = std::find_if(
+      kafka_api_tls.begin(),
+      kafka_api_tls.end(),
+      [&kafka_api](const config::endpoint_tls_config& tls) {
+          return tls.name == kafka_api[0].name;
+      });
+    if (tls_it != kafka_api_tls.end()) {
+        client_config->broker_tls.set_value(tls_it->config);
+    }
+}
+
 application::application(ss::sstring logger_name)
   : _log(std::move(logger_name))
   , _rm_group_proxy(std::ref(rm_group_frontend)){
@@ -239,22 +259,8 @@ void application::hydrate_config(const po::variables_map& cfg) {
         if (config["pandaproxy_client"]) {
             _proxy_client_config.emplace(config["pandaproxy_client"]);
         } else {
-            _proxy_client_config.emplace();
-            const auto& kafka_api = config::shard_local_cfg().kafka_api.value();
-            vassert(!kafka_api.empty(), "There are no kafka_api listeners");
-            _proxy_client_config->brokers.set_value(
-              std::vector<unresolved_address>{kafka_api[0].address});
-            const auto& kafka_api_tls
-              = config::shard_local_cfg().kafka_api_tls.value();
-            auto tls_it = std::find_if(
-              kafka_api_tls.begin(),
-              kafka_api_tls.end(),
-              [&kafka_api](const config::endpoint_tls_config& tls) {
-                  return tls.name == kafka_api[0].name;
-              });
-            if (tls_it != kafka_api_tls.end()) {
-                _proxy_client_config->broker_tls.set_value(tls_it->config);
-            }
+            set_local_kafka_client_config(
+              _proxy_client_config, config::shard_local_cfg());
         }
         _proxy_config->for_each(config_printer("pandaproxy"));
         _proxy_client_config->for_each(config_printer("pandaproxy_client"));
