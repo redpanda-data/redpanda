@@ -52,7 +52,10 @@ public:
       model::tx_seq,
       model::timeout_clock::duration);
     ss::future<abort_tx_reply> abort_tx(
-      model::ntp, model::producer_identity, model::timeout_clock::duration);
+      model::ntp,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
 
 private:
     ss::smp_service_group _ssg;
@@ -105,9 +108,13 @@ private:
       model::node_id,
       model::ntp,
       model::producer_identity,
+      model::tx_seq,
       model::timeout_clock::duration);
     ss::future<abort_tx_reply> do_abort_tx(
-      model::ntp, model::producer_identity, model::timeout_clock::duration);
+      model::ntp,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
 
     friend tx_gateway;
 };

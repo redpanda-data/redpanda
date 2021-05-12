@@ -64,7 +64,7 @@ tx_gateway::commit_tx(commit_tx_request&& request, rpc::streaming_context&) {
 ss::future<abort_tx_reply>
 tx_gateway::abort_tx(abort_tx_request&& request, rpc::streaming_context&) {
     return _rm_partition_frontend.local().do_abort_tx(
-      request.ntp, request.pid, request.timeout);
+      request.ntp, request.pid, request.tx_seq, request.timeout);
 }
 
 ss::future<begin_group_tx_reply> tx_gateway::begin_group_tx(

@@ -423,11 +423,48 @@ ss::future<tx_errc> rm_stm::commit_tx(
     co_return tx_errc::none;
 }
 
+rm_stm::abort_origin rm_stm::get_abort_origin(
+  const model::producer_identity& pid, model::tx_seq tx_seq) const {
+    auto expected_it = _mem_state.expected.find(pid);
+    if (expected_it != _mem_state.expected.end()) {
+        if (tx_seq < expected_it->second) {
+            return abort_origin::past;
+        }
+        if (expected_it->second < tx_seq) {
+            return abort_origin::future;
+        }
+    }
+
+    auto preparing_it = _mem_state.preparing.find(pid);
+    if (preparing_it != _mem_state.preparing.end()) {
+        if (tx_seq < preparing_it->second.tx_seq) {
+            return abort_origin::past;
+        }
+        if (preparing_it->second.tx_seq < tx_seq) {
+            return abort_origin::future;
+        }
+    }
+
+    auto prepared_it = _log_state.prepared.find(pid);
+    if (prepared_it != _log_state.prepared.end()) {
+        if (tx_seq < prepared_it->second.tx_seq) {
+            return abort_origin::past;
+        }
+        if (prepared_it->second.tx_seq < tx_seq) {
+            return abort_origin::future;
+        }
+    }
+
+    return abort_origin::present;
+}
+
 // abort_tx is invoked strictly after a tx is canceled on the tm_stm
 // the purpose of abort is to put tx_range into the list of aborted txes
 // and to fence off the old epoch
 ss::future<tx_errc> rm_stm::abort_tx(
-  model::producer_identity pid, model::timeout_clock::duration timeout) {
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  model::timeout_clock::duration timeout) {
     // doesn't make sense to fence off an abort because transaction
     // manager has already decided to abort and acked to a client
 
@@ -437,6 +474,25 @@ ss::future<tx_errc> rm_stm::abort_tx(
     }
     if (_mem_state.term != _insync_term) {
         _mem_state = mem_state{.term = _insync_term};
+    }
+
+    auto origin = get_abort_origin(pid, tx_seq);
+    if (origin == abort_origin::past) {
+        // rejecting a delayed abort command to prevent aborting
+        // a wrong transaction
+        co_return tx_errc::request_rejected;
+    }
+    if (origin == abort_origin::future) {
+        // impossible situation: before transactional coordinator may issue
+        // abort of the current transaction it should begin it and abort all
+        // previous transactions with the same pid
+        vlog(
+          clusterlog.error,
+          "Rejecting abort (pid:{}, tx_seq: {}) because it isn't consistent "
+          "with the current ongoing transaction",
+          pid,
+          tx_seq);
+        co_return tx_errc::request_rejected;
     }
 
     // preventing prepare and replicte once we

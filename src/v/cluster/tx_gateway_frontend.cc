@@ -683,8 +683,8 @@ tx_gateway_frontend::do_abort_tm_tx(
     tx = changed_tx.value();
     std::vector<ss::future<abort_tx_reply>> pfs;
     for (auto rm : tx.partitions) {
-        pfs.push_back(
-          _rm_partition_frontend.local().abort_tx(rm.ntp, tx.pid, timeout));
+        pfs.push_back(_rm_partition_frontend.local().abort_tx(
+          rm.ntp, tx.pid, tx.tx_seq, timeout));
     }
     std::vector<ss::future<abort_group_tx_reply>> gfs;
     for (auto group : tx.groups) {
@@ -843,8 +843,8 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::reabort_tm_tx(
   tm_transaction tx, model::timeout_clock::duration timeout) {
     std::vector<ss::future<abort_tx_reply>> pfs;
     for (auto rm : tx.partitions) {
-        pfs.push_back(
-          _rm_partition_frontend.local().abort_tx(rm.ntp, tx.pid, timeout));
+        pfs.push_back(_rm_partition_frontend.local().abort_tx(
+          rm.ntp, tx.pid, tx.tx_seq, timeout));
     }
     std::vector<ss::future<abort_group_tx_reply>> gfs;
     for (auto group : tx.groups) {

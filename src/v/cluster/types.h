@@ -209,6 +209,7 @@ struct commit_tx_reply {
 struct abort_tx_request {
     model::ntp ntp;
     model::producer_identity pid;
+    model::tx_seq tx_seq;
     model::timeout_clock::duration timeout;
 };
 struct abort_tx_reply {

@@ -93,8 +93,8 @@ public:
       model::timeout_clock::duration);
     ss::future<tx_errc> commit_tx(
       model::producer_identity, model::tx_seq, model::timeout_clock::duration);
-    ss::future<tx_errc>
-      abort_tx(model::producer_identity, model::timeout_clock::duration);
+    ss::future<tx_errc> abort_tx(
+      model::producer_identity, model::tx_seq, model::timeout_clock::duration);
 
     model::offset last_stable_offset();
     ss::future<std::vector<rm_stm::tx_range>>
@@ -121,6 +121,11 @@ private:
         raft::replicate_options);
 
     void compact_snapshot();
+
+    enum abort_origin { present, past, future };
+
+    abort_origin
+    get_abort_origin(const model::producer_identity&, model::tx_seq) const;
 
     ss::future<> apply(model::record_batch) override;
     void apply_prepare(rm_stm::prepare_marker);
