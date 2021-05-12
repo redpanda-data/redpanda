@@ -31,7 +31,7 @@ namespace storage::internal {
 
 /// \brief, this method will acquire it's own locks on the segment
 ///
-ss::future<> self_compact_segment(
+ss::future<compaction_result> self_compact_segment(
   ss::lw_shared_ptr<storage::segment>,
   storage::compaction_config,
   storage::probe&,

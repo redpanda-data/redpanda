@@ -392,7 +392,10 @@ ss::future<> do_swap_data_file_handles(
       });
 }
 
-ss::future<> do_self_compact_segment(
+/**
+ * Executes segment compaction, returns size of compacted segment
+ */
+ss::future<size_t> do_self_compact_segment(
   ss::lw_shared_ptr<segment> s,
   compaction_config cfg,
   storage::probe& pb,
@@ -439,7 +442,10 @@ ss::future<> do_self_compact_segment(
                 s->index().swap_index_state(std::move(idx));
                 s->force_set_commit_offset_from_index();
                 s->release_batch_cache_index();
-                return s->index().flush().finally([l = std::move(lock)] {});
+                return s->index()
+                  .flush()
+                  .then([s] { return s->size_bytes(); })
+                  .finally([l = std::move(lock)] {});
             });
       });
 }
@@ -466,17 +472,18 @@ ss::future<> rebuild_compaction_index(
       });
 }
 
-ss::future<> self_compact_segment(
+ss::future<compaction_result> self_compact_segment(
   ss::lw_shared_ptr<segment> s,
   compaction_config cfg,
   storage::probe& pb,
   storage::readers_cache& readers_cache) {
     if (s->has_appender()) {
-        return ss::make_exception_future<>(std::runtime_error(fmt::format(
-          "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s)));
+        return ss::make_exception_future<compaction_result>(
+          std::runtime_error(fmt::format(
+            "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s)));
     }
     if (s->finished_self_compaction()) {
-        return ss::now();
+        return ss::make_ready_future<compaction_result>(s->size_bytes());
     }
     auto idx_path = std::filesystem::path(s->reader().filename());
     idx_path.replace_extension(".compaction_index");
@@ -485,11 +492,15 @@ ss::future<> self_compact_segment(
               compacted_index::recovery_state state) mutable {
           switch (state) {
           case compacted_index::recovery_state::recovered: {
-              vlog(stlog.info, "detected {} is already compacted", idx_path);
-              return ss::now();
+              vlog(stlog.debug, "detected {} is already compacted", idx_path);
+              return ss::make_ready_future<compaction_result>(s->size_bytes());
           }
           case compacted_index::recovery_state::nonrecovered:
-              return do_self_compact_segment(s, cfg, pb, readers_cache);
+              return do_self_compact_segment(s, cfg, pb, readers_cache)
+                .then([before = s->size_bytes(), &pb](size_t sz_after) {
+                    pb.segment_compacted();
+                    return compaction_result(before, sz_after);
+                });
           case compacted_index::recovery_state::missing:
               [[fallthrough]];
           case compacted_index::recovery_state::needsrebuild: {
@@ -516,8 +527,10 @@ ss::future<> self_compact_segment(
           }
           __builtin_unreachable();
       })
-      .then([s] { s->mark_as_finished_self_compaction(); })
-      .finally([&pb] { pb.segment_compacted(); });
+      .then([s](compaction_result r) {
+          s->mark_as_finished_self_compaction();
+          return r;
+      });
 }
 
 ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
@@ -539,7 +552,9 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
               "Aborting compaction of closed segment: {}", *segment));
         }
     }
-    co_await write_concatenated_compacted_index(path, segments, cfg);
+    auto compacted_idx_path = compacted_index_path(path);
+    co_await write_concatenated_compacted_index(
+      compacted_idx_path, segments, cfg);
     // concatenation process
     auto writer = co_await make_writer_handle(path, cfg.sanitize);
     auto output = co_await ss::make_file_output_stream(std::move(writer));
@@ -601,11 +616,17 @@ ss::future<std::vector<compacted_index_reader>> make_indices_readers(
       [io_pc, sanitize](ss::lw_shared_ptr<segment>& seg) {
           const auto path = compacted_index_path(
             seg->reader().filename().c_str());
-          return make_reader_handle(path, sanitize)
-            .then([path, io_pc](auto reader_fd) {
-                return make_file_backed_compacted_reader(
-                  path.string(), reader_fd, io_pc, 64_KiB);
-            });
+          auto f = ss::now();
+          if (seg->has_compaction_index()) {
+              f = seg->compaction_index().close();
+          }
+          return f.then([io_pc, sanitize, path]() {
+              return make_reader_handle(path, sanitize)
+                .then([path, io_pc](auto reader_fd) {
+                    return make_file_backed_compacted_reader(
+                      path.string(), reader_fd, io_pc, 64_KiB);
+                });
+          });
       });
 }
 

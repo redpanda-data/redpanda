@@ -30,6 +30,8 @@ public:
         _coproc = co_await ss::create_scheduling_group("coproc", 100);
         _cache_background_reclaim = co_await ss::create_scheduling_group(
           "cache_background_reclaim", 200);
+        _compaction = co_await ss::create_scheduling_group(
+          "log_compaction", 100);
     }
 
     ss::future<> destroy_groups() {
@@ -39,6 +41,7 @@ public:
         co_await destroy_scheduling_group(_cluster);
         co_await destroy_scheduling_group(_coproc);
         co_await destroy_scheduling_group(_cache_background_reclaim);
+        co_await destroy_scheduling_group(_compaction);
         co_return;
     }
 
@@ -50,6 +53,7 @@ public:
     ss::scheduling_group cache_background_reclaim_sg() {
         return _cache_background_reclaim;
     }
+    ss::scheduling_group compaction_sg() { return _compaction; }
 
 private:
     ss::scheduling_group _admin;
@@ -58,4 +62,5 @@ private:
     ss::scheduling_group _cluster;
     ss::scheduling_group _coproc;
     ss::scheduling_group _cache_background_reclaim;
+    ss::scheduling_group _compaction;
 };

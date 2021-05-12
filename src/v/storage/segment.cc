@@ -107,6 +107,14 @@ ss::future<> segment::remove_persistent_state() {
           return ss::do_for_each(
             to_remove, [](const std::filesystem::path& name) {
                 return ss::remove_file(name.c_str())
+                  .handle_exception_type(
+                    [name](std::filesystem::filesystem_error& e) {
+                        if (e.code() == std::errc::no_such_file_or_directory) {
+                            // ignore, we want to make deletes idempotent
+                            return;
+                        }
+                        vlog(stlog.info, "error removing {}: {}", name, e);
+                    })
                   .handle_exception([name](std::exception_ptr e) {
                       vlog(stlog.info, "error removing {}: {}", name, e);
                   });

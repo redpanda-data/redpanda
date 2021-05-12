@@ -317,7 +317,8 @@ static storage::kvstore_config kvstore_config_from_global_config() {
       storage::debug_sanitize_files::no);
 }
 
-static storage::log_config manager_config_from_global_config() {
+static storage::log_config
+manager_config_from_global_config(scheduling_groups& sgs) {
     return storage::log_config(
       storage::log_config::storage_type::disk,
       config::shard_local_cfg().data_directory().as_sstring(),
@@ -336,7 +337,8 @@ static storage::log_config manager_config_from_global_config() {
         .min_size = config::shard_local_cfg().reclaim_min_size(),
         .max_size = config::shard_local_cfg().reclaim_max_size(),
       },
-      config::shard_local_cfg().readers_cache_eviction_timeout_ms());
+      config::shard_local_cfg().readers_cache_eviction_timeout_ms(),
+      sgs.compaction_sg());
 }
 
 // add additional services in here
@@ -367,7 +369,7 @@ void application::wire_up_redpanda_services() {
     construct_service(shard_table).get();
 
     syschecks::systemd_message("Intializing storage services").get();
-    auto log_cfg = manager_config_from_global_config();
+    auto log_cfg = manager_config_from_global_config(_scheduling_groups);
     log_cfg.reclaim_opts.background_reclaimer_sg
       = _scheduling_groups.cache_background_reclaim_sg();
     construct_service(storage, kvstore_config_from_global_config(), log_cfg)

@@ -302,4 +302,23 @@ struct compaction_config {
 
     friend std::ostream& operator<<(std::ostream&, const compaction_config&);
 };
+
+struct compaction_result {
+    explicit compaction_result(size_t sz)
+      : executed_compaction(false)
+      , size_before(sz)
+      , size_after(sz) {}
+
+    compaction_result(size_t before, size_t after)
+      : executed_compaction(true)
+      , size_before(before)
+      , size_after(after) {}
+
+    bool did_compact() const { return executed_compaction; }
+
+    bool executed_compaction;
+    size_t size_before;
+    size_t size_after;
+    friend std::ostream& operator<<(std::ostream&, const compaction_result&);
+};
 } // namespace storage
