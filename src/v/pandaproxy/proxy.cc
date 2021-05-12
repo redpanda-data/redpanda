@@ -77,6 +77,8 @@ proxy::proxy(
   , _server(
       "pandaproxy",
       ss::api_registry_builder20(_config.api_doc_dir(), "/v1"),
+      "header",
+      "/definitions",
       make_context(_config, _smp_sg, _client)) {}
 
 ss::future<> proxy::start() {

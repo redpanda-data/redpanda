@@ -118,6 +118,8 @@ struct handler_adaptor : ss::httpd::handler_base {
 server::server(
   const ss::sstring& server_name,
   ss::api_registry_builder20&& api20,
+  const ss::sstring& header,
+  const ss::sstring& definitions,
   pandaproxy::context_t ctx)
   : _server(server_name)
   , _pending_reqs()
@@ -130,8 +132,8 @@ server::server(
       .client = ctx.client,
       .config = ctx.config} {
     _api20.set_api_doc(_server._routes);
-    _api20.register_api_file(_server._routes, "header");
-    _api20.add_definitions_file(_server._routes, "/definitions");
+    _api20.register_api_file(_server._routes, header);
+    _api20.add_definitions_file(_server._routes, definitions);
 }
 
 /*
