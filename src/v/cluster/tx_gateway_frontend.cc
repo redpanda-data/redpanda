@@ -424,7 +424,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
                 res_topic.results.push_back(res_partition);
             } else {
                 bfs.push_back(_rm_partition_frontend.local().begin_tx(
-                  ntp, tx.pid, timeout));
+                  ntp, tx.pid, tx.tx_seq, timeout));
             }
         }
         response.results.push_back(res_topic);

@@ -137,7 +137,7 @@ rm_stm::rm_stm(ss::logger& logger, raft::consensus* c)
 }
 
 ss::future<checked<model::term_id, tx_errc>>
-rm_stm::begin_tx(model::producer_identity pid) {
+rm_stm::begin_tx(model::producer_identity pid, model::tx_seq tx_seq) {
     auto is_ready = co_await sync(_sync_timeout);
     if (!is_ready) {
         co_return tx_errc::stale;
@@ -189,7 +189,7 @@ rm_stm::begin_tx(model::producer_identity pid) {
         co_return tx_errc::fenced;
     }
 
-    auto [_, inserted] = _mem_state.expected.insert(pid);
+    auto [_, inserted] = _mem_state.expected.emplace(pid, tx_seq);
     if (!inserted) {
         // tm_stm forgot that it had already begun a transaction
         // (it may happen when it crashes)
@@ -219,8 +219,13 @@ ss::future<tx_errc> rm_stm::prepare_tx(
         _mem_state = mem_state{.term = _insync_term};
     }
 
-    if (_log_state.prepared.contains(pid)) {
-        // a local tx was already prepared
+    auto prepared_it = _log_state.prepared.find(pid);
+    if (prepared_it != _log_state.prepared.end()) {
+        if (prepared_it->second.tx_seq != tx_seq) {
+            // current prepare_tx call is stale, rejecting
+            co_return tx_errc::request_rejected;
+        }
+        // a tx was already prepared
         co_return tx_errc::none;
     }
 
@@ -251,14 +256,21 @@ ss::future<tx_errc> rm_stm::prepare_tx(
         co_return tx_errc::timeout;
     }
 
-    if (!_mem_state.expected.contains(pid)) {
+    auto expected_it = _mem_state.expected.find(pid);
+    if (expected_it == _mem_state.expected.end()) {
         // impossible situation, a transaction coordinator tries
-        // to prepare a transaction whic wasn't started
+        // to prepare a transaction which wasn't started
         vlog(clusterlog.error, "Can't prepare pid:{} - unknown session", pid);
         co_return tx_errc::timeout;
     }
 
-    auto [_, inserted] = _mem_state.has_prepare_applied.try_emplace(pid, false);
+    if (expected_it->second != tx_seq) {
+        // current prepare_tx call is stale, rejecting
+        co_return tx_errc::request_rejected;
+    }
+
+    auto [_, inserted] = _mem_state.preparing.try_emplace(
+      pid, preparing_info{.has_applied = false, .tx_seq = tx_seq});
     if (!inserted) {
         vlog(
           clusterlog.error,
@@ -289,8 +301,8 @@ ss::future<tx_errc> rm_stm::prepare_tx(
         co_return tx_errc::timeout;
     }
 
-    auto has_applied_it = _mem_state.has_prepare_applied.find(pid);
-    if (has_applied_it == _mem_state.has_prepare_applied.end()) {
+    auto preparing_it = _mem_state.preparing.find(pid);
+    if (preparing_it == _mem_state.preparing.end()) {
         vlog(
           clusterlog.warn,
           "Can't prepare pid:{} - already aborted or it's an invariant "
@@ -298,8 +310,8 @@ ss::future<tx_errc> rm_stm::prepare_tx(
           pid);
         co_return tx_errc::timeout;
     }
-    auto applied = has_applied_it->second;
-    _mem_state.has_prepare_applied.erase(pid);
+    auto applied = preparing_it->second.has_applied;
+    _mem_state.preparing.erase(pid);
 
     if (!applied) {
         vlog(
@@ -328,7 +340,7 @@ ss::future<tx_errc> rm_stm::commit_tx(
         _mem_state = mem_state{.term = _insync_term};
     }
 
-    if (_mem_state.has_prepare_applied.contains(pid)) {
+    if (_mem_state.preparing.contains(pid)) {
         // it looks like a violation since tm_stm commits only after
         // prepare succeeds but it's a legit rare situation:
         //   * tm_stm failed during prepare
@@ -366,9 +378,7 @@ ss::future<tx_errc> rm_stm::commit_tx(
           prepare_it->second.tx_seq,
           tx_seq);
         co_return tx_errc::none;
-    }
-
-    if (prepare_it->second.tx_seq < tx_seq) {
+    } else if (prepare_it->second.tx_seq < tx_seq) {
         if (_recovery_policy == best_effort) {
             vlog(
               clusterlog.error,
@@ -386,6 +396,8 @@ ss::future<tx_errc> rm_stm::commit_tx(
               prepare_it->second.tx_seq);
         }
     }
+
+    // we commit only if a provided tx_seq matches prepared tx_seq
 
     auto batch = make_tx_control_batch(
       pid, model::control_record_type::tx_commit);
@@ -529,7 +541,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         co_return kafka::error_code::invalid_producer_epoch;
     }
 
-    if (_mem_state.has_prepare_applied.contains(bid.pid)) {
+    if (_mem_state.preparing.contains(bid.pid)) {
         vlog(
           clusterlog.warn,
           "Client keeps producing after initiating a prepare for pid:{}",
@@ -762,11 +774,11 @@ void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
     _log_state.prepared.try_emplace(pid, prepare);
     _mem_state.expected.erase(pid);
 
-    auto has_applied_it = _mem_state.has_prepare_applied.find(pid);
-    if (has_applied_it != _mem_state.has_prepare_applied.end()) {
-        // _mem_state.has_prepare_applied may lack pid if
-        // this is processing og the historic prepare
-        has_applied_it->second = true;
+    auto preparing_it = _mem_state.preparing.find(pid);
+    if (preparing_it != _mem_state.preparing.end()) {
+        // _mem_state.preparing may lack pid if
+        // this is processing of the historic prepare
+        preparing_it->second.has_applied = true;
     }
 }
 
