@@ -530,6 +530,7 @@ private:
     };
 
     struct volatile_tx {
+        model::tx_seq tx_seq;
         absl::node_hash_map<model::topic_partition, volatile_offset> offsets;
     };
 

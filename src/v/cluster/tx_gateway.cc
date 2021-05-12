@@ -70,7 +70,10 @@ tx_gateway::abort_tx(abort_tx_request&& request, rpc::streaming_context&) {
 ss::future<begin_group_tx_reply> tx_gateway::begin_group_tx(
   begin_group_tx_request&& request, rpc::streaming_context&) {
     return _rm_group_proxy->begin_group_tx_locally(
-      std::move(request.group_id), request.pid, request.timeout);
+      std::move(request.group_id),
+      request.pid,
+      request.tx_seq,
+      request.timeout);
 };
 
 ss::future<prepare_group_tx_reply> tx_gateway::prepare_group_tx(

@@ -46,10 +46,12 @@ public:
     ss::future<cluster::begin_group_tx_reply> begin_group_tx(
       kafka::group_id,
       model::producer_identity,
+      model::tx_seq,
       model::timeout_clock::duration);
     ss::future<cluster::begin_group_tx_reply> begin_group_tx_locally(
       kafka::group_id,
       model::producer_identity,
+      model::tx_seq,
       model::timeout_clock::duration);
     ss::future<cluster::prepare_group_tx_reply> prepare_group_tx(
       kafka::group_id,
@@ -96,6 +98,7 @@ private:
       model::node_id,
       kafka::group_id,
       model::producer_identity,
+      model::tx_seq,
       model::timeout_clock::duration);
     ss::future<cluster::prepare_group_tx_reply> dispatch_prepare_group_tx(
       model::node_id,
@@ -127,15 +130,18 @@ public:
     ss::future<cluster::begin_group_tx_reply> begin_group_tx(
       kafka::group_id group_id,
       model::producer_identity pid,
+      model::tx_seq tx_seq,
       model::timeout_clock::duration timeout) override {
-        return _target.local().begin_group_tx(group_id, pid, timeout);
+        return _target.local().begin_group_tx(group_id, pid, tx_seq, timeout);
     }
 
     ss::future<cluster::begin_group_tx_reply> begin_group_tx_locally(
       kafka::group_id group_id,
       model::producer_identity pid,
+      model::tx_seq tx_seq,
       model::timeout_clock::duration timeout) override {
-        return _target.local().begin_group_tx_locally(group_id, pid, timeout);
+        return _target.local().begin_group_tx_locally(
+          group_id, pid, tx_seq, timeout);
     }
 
     ss::future<cluster::prepare_group_tx_reply> prepare_group_tx(

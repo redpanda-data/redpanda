@@ -1330,10 +1330,13 @@ group::begin_tx(cluster::begin_group_tx_request r) {
 
     // TODO: https://app.clubhouse.io/vectorized/story/2194
     // (auto-abort txes with the the same producer_id but older epoch)
-    auto [_, inserted] = _volatile_txs.try_emplace(r.pid, volatile_tx());
+    auto [_, inserted] = _volatile_txs.try_emplace(
+      r.pid, volatile_tx{.tx_seq = r.tx_seq});
 
     if (!inserted) {
-        co_return make_begin_tx_reply(cluster::tx_errc::timeout);
+        // TODO: https://app.clubhouse.io/vectorized/story/2194
+        // (auto-abort txes with the the same producer_id but older epoch)
+        co_return make_begin_tx_reply(cluster::tx_errc::request_rejected);
     }
 
     cluster::begin_group_tx_reply reply;
