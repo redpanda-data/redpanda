@@ -56,7 +56,7 @@ model::record_batch record_batch_builder::build() && {
     iobuf records;
     for (auto& sr : _records) {
         auto rec_sz = record_size(offset_delta, sr);
-        auto kz = sr.key.size_bytes();
+        auto kz = sr.encoded_key_size;
         auto vz = sr.encoded_value_size;
         auto r = model::record(
           rec_sz,
@@ -82,7 +82,7 @@ uint32_t record_batch_builder::record_size(
     uint32_t size = sizeof(model::record_attributes::type)  // attributes
                     + zero_vint_size                        // timestamp delta
                     + vint::vint_size(offset_delta)         // offset_delta
-                    + vint::vint_size(r.key.size_bytes())   // key size
+                    + vint::vint_size(r.encoded_key_size)   // key size
                     + r.key.size_bytes()                    // key
                     + vint::vint_size(r.encoded_value_size) // value size
                     + r.value.size_bytes()                  // value
