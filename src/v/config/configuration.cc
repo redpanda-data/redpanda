@@ -345,7 +345,7 @@ configuration::configuration()
       "log_compaction_interval_ms",
       "How often do we trigger background compaction",
       required::no,
-      5min)
+      10s)
   , retention_bytes(
       *this,
       "retention_bytes",
