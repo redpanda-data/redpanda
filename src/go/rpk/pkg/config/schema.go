@@ -35,6 +35,7 @@ type RedpandaConfig struct {
 	AdminApiTLS                          []ServerTLS            `yaml:"admin_api_tls,omitempty" mapstructure:"admin_api_tls,omitempty" json:"adminApiTls"`
 	Id                                   int                    `yaml:"node_id" mapstructure:"node_id" json:"id"`
 	SeedServers                          []SeedServer           `yaml:"seed_servers" mapstructure:"seed_servers" json:"seedServers"`
+	EnableCoproc                         bool                   `yaml:"enable_coproc" mapstructure:"enable_coproc" json:"enableCoproc"`
 	DeveloperMode                        bool                   `yaml:"developer_mode" mapstructure:"developer_mode" json:"developerMode"`
 	CloudStorageApiEndpoint              *string                `yaml:"cloud_storage_api_endpoint,omitempty" mapstructure:"cloud_storage_api_endpoint,omitempty" json:"cloudStorageApiEndpoint,omitempty"`
 	CloudStorageEnabled                  *bool                  `yaml:"cloud_storage_enabled,omitempty" mapstructure:"cloud_storage_enabled,omitempty" json:"cloudStorageEnabled,omitempty"`

@@ -37,6 +37,7 @@ func Start() *cobra.Command {
 	var (
 		nodes   uint
 		retries uint
+		wasm    bool
 		image   string
 	)
 	command := &cobra.Command{
@@ -59,6 +60,7 @@ func Start() *cobra.Command {
 				nodes,
 				checkBrokers,
 				retries,
+				wasm,
 				image,
 			))
 		},
@@ -79,6 +81,14 @@ func Start() *cobra.Command {
 		"The amount of times to check for the cluster before"+
 			" considering it unstable and exiting.",
 	)
+
+	command.Flags().BoolVar(
+		&wasm,
+		"enable-wasm",
+		false,
+		"Enable the wasm coprocessor engine",
+	)
+
 	imageFlag := "image"
 	command.Flags().StringVar(
 		&image,
@@ -96,6 +106,7 @@ func startCluster(
 	n uint,
 	check func([]node) func() error,
 	retries uint,
+	enableWasm bool,
 	image string,
 ) error {
 	// Check if cluster exists and start it again.
@@ -117,7 +128,7 @@ func startCluster(
 		return nil
 	}
 
-	log.Debug("Checking for a local image.")
+	log.Debugf("Checking for a local image: %s.", image)
 	present, checkErr := common.CheckIfImgPresent(c, image)
 	if checkErr != nil {
 		log.Debugf("Error trying to list local images: %v", err)
@@ -174,6 +185,7 @@ func startCluster(
 		seedRPCPort,
 		seedMetricsPort,
 		netID,
+		enableWasm,
 		image,
 	)
 	if err != nil {
@@ -235,6 +247,7 @@ func startCluster(
 				rpcPort,
 				metricsPort,
 				netID,
+				enableWasm,
 				image,
 				args...,
 			)

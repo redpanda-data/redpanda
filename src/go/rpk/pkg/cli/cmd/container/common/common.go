@@ -204,7 +204,9 @@ func RemoveNetwork(c Client) error {
 func CreateNode(
 	c Client,
 	nodeID, kafkaPort, proxyPort, rpcPort, metricsPort uint,
-	netID, image string,
+	netID string,
+	enableWasm bool,
+	image string,
 	args ...string,
 ) (*NodeState, error) {
 	rPort, err := nat.NewPort(
@@ -256,6 +258,7 @@ func CreateNode(
 		HostAddr(proxyPort),
 		"--advertise-rpc-addr",
 		fmt.Sprintf("%s:%d", ip, config.Default().Redpanda.RPCServer.Port),
+		fmt.Sprintf("--set redpanda.enable_coproc=%t", enableWasm),
 		"--smp 1 --memory 1G --reserve-memory 0M",
 	}
 	containerConfig := container.Config{
