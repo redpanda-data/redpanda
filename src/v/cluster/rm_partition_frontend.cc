@@ -55,6 +55,7 @@ bool rm_partition_frontend::is_leader_of(const model::ntp& ntp) const {
 ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
   model::ntp ntp,
   model::producer_identity pid,
+  model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
     auto nt = model::topic_namespace_view(ntp.ns, ntp.tp.topic);
 
@@ -73,18 +74,19 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
     auto _self = _controller->self();
 
     if (leader == _self) {
-        return do_begin_tx(ntp, pid);
+        return do_begin_tx(ntp, pid, tx_seq);
     }
 
     vlog(clusterlog.trace, "dispatching begin tx to {} from {}", leader, _self);
 
-    return dispatch_begin_tx(leader.value(), ntp, pid, timeout);
+    return dispatch_begin_tx(leader.value(), ntp, pid, tx_seq, timeout);
 }
 
 ss::future<begin_tx_reply> rm_partition_frontend::dispatch_begin_tx(
   model::node_id leader,
   model::ntp ntp,
   model::producer_identity pid,
+  model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
     return _connection_cache.local()
       .with_node_client<cluster::tx_gateway_client_protocol>(
@@ -92,9 +94,9 @@ ss::future<begin_tx_reply> rm_partition_frontend::dispatch_begin_tx(
         ss::this_shard_id(),
         leader,
         timeout,
-        [ntp, pid, timeout](tx_gateway_client_protocol cp) {
+        [ntp, pid, tx_seq, timeout](tx_gateway_client_protocol cp) {
             return cp.begin_tx(
-              begin_tx_request{.ntp = ntp, .pid = pid},
+              begin_tx_request{.ntp = ntp, .pid = pid, .tx_seq = tx_seq},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<begin_tx_reply>)
@@ -110,7 +112,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::dispatch_begin_tx(
 }
 
 ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
-  model::ntp ntp, model::producer_identity pid) {
+  model::ntp ntp, model::producer_identity pid, model::tx_seq tx_seq) {
     if (!is_leader_of(ntp)) {
         vlog(clusterlog.warn, "current node isn't the leader for {}", ntp);
         return ss::make_ready_future<begin_tx_reply>(
@@ -126,7 +128,9 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
     }
 
     return _partition_manager.invoke_on(
-      *shard, _ssg, [ntp, pid](cluster::partition_manager& mgr) mutable {
+      *shard,
+      _ssg,
+      [ntp, pid, tx_seq](cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(ntp);
           if (!partition) {
               vlog(clusterlog.warn, "can't get partition by {} ntp", ntp);
@@ -143,8 +147,8 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
                 begin_tx_reply{.ntp = ntp, .ec = tx_errc::stm_not_found});
           }
 
-          return stm->begin_tx(pid).then(
-            [ntp](checked<model::term_id, tx_errc> etag) {
+          return stm->begin_tx(pid, tx_seq)
+            .then([ntp](checked<model::term_id, tx_errc> etag) {
                 if (!etag) {
                     return begin_tx_reply{
                       .ntp = ntp, .ec = tx_errc::leader_not_found};
@@ -385,6 +389,7 @@ ss::future<commit_tx_reply> rm_partition_frontend::do_commit_tx(
 ss::future<abort_tx_reply> rm_partition_frontend::abort_tx(
   model::ntp ntp,
   model::producer_identity pid,
+  model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
     auto nt = model::topic_namespace(ntp.ns, ntp.tp.topic);
 
@@ -403,18 +408,19 @@ ss::future<abort_tx_reply> rm_partition_frontend::abort_tx(
     auto _self = _controller->self();
 
     if (leader == _self) {
-        return do_abort_tx(ntp, pid, timeout);
+        return do_abort_tx(ntp, pid, tx_seq, timeout);
     }
 
     vlog(clusterlog.trace, "dispatching abort tx to {} from {}", leader, _self);
 
-    return dispatch_abort_tx(leader.value(), ntp, pid, timeout);
+    return dispatch_abort_tx(leader.value(), ntp, pid, tx_seq, timeout);
 }
 
 ss::future<abort_tx_reply> rm_partition_frontend::dispatch_abort_tx(
   model::node_id leader,
   model::ntp ntp,
   model::producer_identity pid,
+  model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
     return _connection_cache.local()
       .with_node_client<cluster::tx_gateway_client_protocol>(
@@ -422,9 +428,10 @@ ss::future<abort_tx_reply> rm_partition_frontend::dispatch_abort_tx(
         ss::this_shard_id(),
         leader,
         timeout,
-        [ntp, pid, timeout](tx_gateway_client_protocol cp) {
+        [ntp, pid, tx_seq, timeout](tx_gateway_client_protocol cp) {
             return cp.abort_tx(
-              abort_tx_request{.ntp = ntp, .pid = pid, .timeout = timeout},
+              abort_tx_request{
+                .ntp = ntp, .pid = pid, .tx_seq = tx_seq, .timeout = timeout},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<abort_tx_reply>)
@@ -442,6 +449,7 @@ ss::future<abort_tx_reply> rm_partition_frontend::dispatch_abort_tx(
 ss::future<abort_tx_reply> rm_partition_frontend::do_abort_tx(
   model::ntp ntp,
   model::producer_identity pid,
+  model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
     if (!is_leader_of(ntp)) {
         vlog(clusterlog.warn, "current node isn't the leader for {}", ntp);
@@ -460,7 +468,7 @@ ss::future<abort_tx_reply> rm_partition_frontend::do_abort_tx(
     return _partition_manager.invoke_on(
       *shard,
       _ssg,
-      [pid, ntp, timeout](cluster::partition_manager& mgr) mutable {
+      [pid, ntp, tx_seq, timeout](cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(ntp);
           if (!partition) {
               vlog(clusterlog.warn, "can't get partition by {} ntp", ntp);
@@ -477,7 +485,7 @@ ss::future<abort_tx_reply> rm_partition_frontend::do_abort_tx(
                 abort_tx_reply{.ec = tx_errc::stm_not_found});
           }
 
-          return stm->abort_tx(pid, timeout).then([](tx_errc ec) {
+          return stm->abort_tx(pid, tx_seq, timeout).then([](tx_errc ec) {
               return cluster::abort_tx_reply{.ec = ec};
           });
       });

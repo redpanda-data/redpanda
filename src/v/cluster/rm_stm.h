@@ -84,7 +84,7 @@ public:
     explicit rm_stm(ss::logger&, raft::consensus*);
 
     ss::future<checked<model::term_id, tx_errc>>
-      begin_tx(model::producer_identity);
+      begin_tx(model::producer_identity, model::tx_seq);
     ss::future<tx_errc> prepare_tx(
       model::term_id,
       model::partition_id,
@@ -93,8 +93,8 @@ public:
       model::timeout_clock::duration);
     ss::future<tx_errc> commit_tx(
       model::producer_identity, model::tx_seq, model::timeout_clock::duration);
-    ss::future<tx_errc>
-      abort_tx(model::producer_identity, model::timeout_clock::duration);
+    ss::future<tx_errc> abort_tx(
+      model::producer_identity, model::tx_seq, model::timeout_clock::duration);
 
     model::offset last_stable_offset();
     ss::future<std::vector<rm_stm::tx_range>>
@@ -121,6 +121,11 @@ private:
         raft::replicate_options);
 
     void compact_snapshot();
+
+    enum abort_origin { present, past, future };
+
+    abort_origin
+    get_abort_origin(const model::producer_identity&, model::tx_seq) const;
 
     ss::future<> apply(model::record_batch) override;
     void apply_prepare(rm_stm::prepare_marker);
@@ -162,6 +167,11 @@ private:
         absl::flat_hash_map<model::producer_identity, seq_entry> seq_table;
     };
 
+    struct preparing_info {
+        bool has_applied;
+        model::tx_seq tx_seq;
+    };
+
     struct mem_state {
         // once raft's term has passed mem_state::term we wipe mem_state
         // and wait until log_state catches up with current committed index.
@@ -179,17 +189,17 @@ private:
         absl::flat_hash_map<model::producer_identity, model::offset> estimated;
         // a set of ongoing sessions. we use it  to prevent some client protocol
         // errors like the transactional writes outside of a transaction
-        absl::btree_set<model::producer_identity> expected;
+        absl::flat_hash_map<model::producer_identity, model::tx_seq> expected;
         // 'prepare' command may be replicated but reject during the apply phase
         // because of the fencing and race with abort. we use this field to
         // let a 'prepare' initator know the status of the 'prepare' command
         // once state_machine::apply catches up with the prepare's offset
-        absl::flat_hash_map<model::producer_identity, bool> has_prepare_applied;
+        absl::flat_hash_map<model::producer_identity, preparing_info> preparing;
 
         void forget(model::producer_identity pid) {
             expected.erase(pid);
             estimated.erase(pid);
-            has_prepare_applied.erase(pid);
+            preparing.erase(pid);
             auto tx_start_it = tx_start.find(pid);
             if (tx_start_it != tx_start.end()) {
                 tx_starts.erase(tx_start_it->second);

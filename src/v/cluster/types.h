@@ -57,6 +57,9 @@ enum class tx_errc {
     partition_not_found,
     stm_not_found,
     partition_not_exists,
+    // when a request times out a client should not do any assumptions about its
+    // effect. the request may time out before reaching the server, the request
+    // may be successuly processed or may fail and the reply times out
     timeout,
     conflict,
     fenced,
@@ -66,19 +69,18 @@ enum class tx_errc {
     preparing_rebalance,
     rebalance_in_progress,
     coordinator_load_in_progress,
-    unknown_server_error
+    // an unspecified error happened, the effect of the request is unknown
+    // the error code is very similar to timeout
+    unknown_server_error,
+    // an unspecified error happened, a client may assume it had zero effect on
+    // the target node
+    request_rejected
 };
 struct tx_errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::tx_errc"; }
 
     std::string message(int c) const final {
         switch (static_cast<tx_errc>(c)) {
-        case tx_errc::stale:
-            return "Stale";
-        case tx_errc::fenced:
-            return "Fenced";
-        case tx_errc::conflict:
-            return "Conflict";
         case tx_errc::none:
             return "None";
         case tx_errc::leader_not_found:
@@ -93,6 +95,26 @@ struct tx_errc_category final : public std::error_category {
             return "Partition not exists";
         case tx_errc::timeout:
             return "Timeout";
+        case tx_errc::conflict:
+            return "Conflict";
+        case tx_errc::fenced:
+            return "Fenced";
+        case tx_errc::stale:
+            return "Stale";
+        case tx_errc::not_coordinator:
+            return "Not coordinator";
+        case tx_errc::coordinator_not_available:
+            return "Coordinator not available";
+        case tx_errc::preparing_rebalance:
+            return "Preparing rebalance";
+        case tx_errc::rebalance_in_progress:
+            return "Rebalance in progress";
+        case tx_errc::coordinator_load_in_progress:
+            return "Coordinator load in progress";
+        case tx_errc::unknown_server_error:
+            return "Unknown server error";
+        case tx_errc::request_rejected:
+            return "Request rejected";
         default:
             return "cluster::tx_errc::unknown";
         }
@@ -187,6 +209,7 @@ struct commit_tx_reply {
 struct abort_tx_request {
     model::ntp ntp;
     model::producer_identity pid;
+    model::tx_seq tx_seq;
     model::timeout_clock::duration timeout;
 };
 struct abort_tx_reply {

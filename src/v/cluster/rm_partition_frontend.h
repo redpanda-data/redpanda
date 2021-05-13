@@ -35,7 +35,10 @@ public:
       cluster::controller*);
 
     ss::future<begin_tx_reply> begin_tx(
-      model::ntp, model::producer_identity, model::timeout_clock::duration);
+      model::ntp,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
     ss::future<prepare_tx_reply> prepare_tx(
       model::ntp,
       model::term_id,
@@ -49,7 +52,10 @@ public:
       model::tx_seq,
       model::timeout_clock::duration);
     ss::future<abort_tx_reply> abort_tx(
-      model::ntp, model::producer_identity, model::timeout_clock::duration);
+      model::ntp,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
 
 private:
     ss::smp_service_group _ssg;
@@ -68,9 +74,10 @@ private:
       model::node_id,
       model::ntp,
       model::producer_identity,
+      model::tx_seq,
       model::timeout_clock::duration);
     ss::future<begin_tx_reply>
-      do_begin_tx(model::ntp, model::producer_identity);
+      do_begin_tx(model::ntp, model::producer_identity, model::tx_seq);
     ss::future<prepare_tx_reply> dispatch_prepare_tx(
       model::node_id,
       model::ntp,
@@ -101,9 +108,13 @@ private:
       model::node_id,
       model::ntp,
       model::producer_identity,
+      model::tx_seq,
       model::timeout_clock::duration);
     ss::future<abort_tx_reply> do_abort_tx(
-      model::ntp, model::producer_identity, model::timeout_clock::duration);
+      model::ntp,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
 
     friend tx_gateway;
 };

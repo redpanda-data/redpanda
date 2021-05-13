@@ -67,6 +67,7 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
+    auto tx_seq = model::tx_seq(0);
 
     wait_for_leader();
     wait_for_meta_initialized();
@@ -90,7 +91,7 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
     BOOST_REQUIRE_LT(first_offset, stm.last_stable_offset());
 
     auto pid2 = model::producer_identity{.id = 2, .epoch = 0};
-    auto term_op = stm.begin_tx(pid2).get0();
+    auto term_op = stm.begin_tx(pid2, tx_seq).get0();
     BOOST_REQUIRE((bool)term_op);
 
     rreader = make_rreader(pid2, 0, 5, true);
@@ -109,11 +110,10 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
 
     auto term = term_op.value();
     auto op = stm
-                .prepare_tx(
-                  term, model::partition_id(0), pid2, model::tx_seq(0), 2'000ms)
+                .prepare_tx(term, model::partition_id(0), pid2, tx_seq, 2'000ms)
                 .get0();
     BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
-    op = stm.commit_tx(pid2, model::tx_seq(0), 2'000ms).get0();
+    op = stm.commit_tx(pid2, tx_seq, 2'000ms).get0();
     BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
     aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
@@ -131,6 +131,7 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
+    auto tx_seq = model::tx_seq(0);
 
     wait_for_leader();
     wait_for_meta_initialized();
@@ -154,7 +155,7 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
     BOOST_REQUIRE_LT(first_offset, stm.last_stable_offset());
 
     auto pid2 = model::producer_identity{.id = 2, .epoch = 0};
-    auto term_op = stm.begin_tx(pid2).get0();
+    auto term_op = stm.begin_tx(pid2, tx_seq).get0();
     BOOST_REQUIRE((bool)term_op);
 
     rreader = make_rreader(pid2, 0, 5, true);
@@ -171,7 +172,7 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
     aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
 
-    auto op = stm.abort_tx(pid2, 2'000ms).get0();
+    auto op = stm.abort_tx(pid2, tx_seq, 2'000ms).get0();
     BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
     BOOST_REQUIRE(
       stm.wait_no_throw(_raft.get()->committed_offset(), 2'000ms).get0());
@@ -196,6 +197,7 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
+    auto tx_seq = model::tx_seq(0);
 
     wait_for_leader();
     wait_for_meta_initialized();
@@ -219,7 +221,7 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
     BOOST_REQUIRE_LT(first_offset, stm.last_stable_offset());
 
     auto pid2 = model::producer_identity{.id = 2, .epoch = 0};
-    auto term_op = stm.begin_tx(pid2).get0();
+    auto term_op = stm.begin_tx(pid2, tx_seq).get0();
     BOOST_REQUIRE((bool)term_op);
 
     rreader = make_rreader(pid2, 0, 5, true);
@@ -238,12 +240,11 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
 
     auto term = term_op.value();
     auto op = stm
-                .prepare_tx(
-                  term, model::partition_id(0), pid2, model::tx_seq(0), 2'000ms)
+                .prepare_tx(term, model::partition_id(0), pid2, tx_seq, 2'000ms)
                 .get0();
     BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
 
-    op = stm.abort_tx(pid2, 2'000ms).get0();
+    op = stm.abort_tx(pid2, tx_seq, 2'000ms).get0();
     BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
     BOOST_REQUIRE(
       stm.wait_no_throw(_raft.get()->committed_offset(), 2'000ms).get0());
@@ -300,6 +301,7 @@ FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
+    auto tx_seq = model::tx_seq(0);
 
     wait_for_leader();
     wait_for_meta_initialized();
@@ -316,11 +318,11 @@ FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
     BOOST_REQUIRE((bool)offset_r);
 
     auto pid20 = model::producer_identity{.id = 2, .epoch = 0};
-    auto term_op = stm.begin_tx(pid20).get0();
+    auto term_op = stm.begin_tx(pid20, tx_seq).get0();
     BOOST_REQUIRE((bool)term_op);
 
     auto pid21 = model::producer_identity{.id = 2, .epoch = 1};
-    term_op = stm.begin_tx(pid21).get0();
+    term_op = stm.begin_tx(pid21, tx_seq).get0();
     BOOST_REQUIRE((bool)term_op);
 
     rreader = make_rreader(pid20, 0, 5, true);
@@ -341,6 +343,7 @@ FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
+    auto tx_seq = model::tx_seq(0);
 
     wait_for_leader();
     wait_for_meta_initialized();
@@ -357,7 +360,7 @@ FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
     BOOST_REQUIRE((bool)offset_r);
 
     auto pid20 = model::producer_identity{.id = 2, .epoch = 0};
-    auto term_op = stm.begin_tx(pid20).get0();
+    auto term_op = stm.begin_tx(pid20, tx_seq).get0();
     BOOST_REQUIRE((bool)term_op);
 
     rreader = make_rreader(pid20, 0, 5, true);
@@ -369,7 +372,7 @@ FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
                  .get0();
     BOOST_REQUIRE((bool)offset_r);
 
-    auto op = stm.abort_tx(pid20, 2'000ms).get0();
+    auto op = stm.abort_tx(pid20, tx_seq, 2'000ms).get0();
     BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
 
     rreader = make_rreader(pid20, 0, 5, true);
