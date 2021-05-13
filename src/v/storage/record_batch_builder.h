@@ -51,6 +51,8 @@ public:
 
     void set_compression(model::compression c) { _compression = c; }
 
+    void set_timestamp(model::timestamp ts) { _timestamp = ts; }
+
 private:
     static constexpr int64_t zero_vint_size = vint::vint_size(0);
     struct serialized_record {
@@ -91,5 +93,6 @@ private:
     bool _transactional_type{false};
     std::vector<serialized_record> _records;
     model::compression _compression{model::compression::none};
+    std::optional<model::timestamp> _timestamp;
 };
 } // namespace storage

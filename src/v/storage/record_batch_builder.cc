@@ -28,7 +28,9 @@ record_batch_builder::~record_batch_builder() {}
 
 model::record_batch record_batch_builder::build() && {
     int32_t offset_delta = 0;
-    auto now_ts = model::timestamp::now();
+    if (!_timestamp) {
+        _timestamp = model::timestamp::now();
+    }
 
     model::record_batch_header header = {
       .size_bytes = 0,
@@ -37,8 +39,8 @@ model::record_batch record_batch_builder::build() && {
       .crc = 0, // crc computed later
       .attrs = model::record_batch_attributes{} |= _compression,
       .last_offset_delta = static_cast<int32_t>(_records.size() - 1),
-      .first_timestamp = now_ts,
-      .max_timestamp = now_ts,
+      .first_timestamp = *_timestamp,
+      .max_timestamp = *_timestamp,
       .producer_id = _producer_id,
       .producer_epoch = _producer_epoch,
       .base_sequence = -1,
