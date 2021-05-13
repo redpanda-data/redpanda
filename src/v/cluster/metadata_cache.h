@@ -92,6 +92,10 @@ public:
 
     bool contains(model::topic_namespace_view, model::partition_id) const;
 
+    bool contains(const model::ntp& ntp) const {
+        return contains(model::topic_namespace_view(ntp), ntp.tp.partition);
+    }
+
     /// Returns metadata of all topics in cache internal format
     // const cache_t& all_metadata() const { return _cache; }
 
