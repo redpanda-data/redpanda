@@ -1,0 +1,53 @@
+{
+    "apiVersion": "0.0.1",
+    "swaggerVersion": "1.2",
+    "basePath": "/v1",
+    "resourcePath": "/partitions",
+    "produces": [
+        "application/json"
+    ],
+    "apis": [
+        {
+            "path": "/v1/partitions",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get a list of partitions",
+                    "type": "array",
+                    "items": {
+                        "type": "partition_summary"
+                    },
+                    "nickname": "get_partitions",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        }
+    ],
+    "models": {
+        "partition_summary": {
+            "id": "partition_summary",
+            "description": "Partition information",
+            "properties": {
+                "ns": {
+                    "type": "string",
+                    "description": "namespace"
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "topic"
+                },
+                "partition_id": {
+                    "type": "long",
+                    "description": "partition"
+                },
+                "core": {
+                    "type": "long",
+                    "description": "core"
+                }
+            }
+        }
+    }
+}

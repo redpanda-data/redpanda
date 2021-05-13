@@ -72,6 +72,7 @@ private:
     void register_security_routes();
     void register_status_routes();
     void register_broker_routes();
+    void register_partition_routes();
 
     ss::http_server _server;
     admin_server_cfg _cfg;

@@ -25,6 +25,7 @@
 #include "redpanda/admin/api-doc/broker.json.h"
 #include "redpanda/admin/api-doc/config.json.h"
 #include "redpanda/admin/api-doc/kafka.json.h"
+#include "redpanda/admin/api-doc/partition.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
 #include "redpanda/admin/api-doc/security.json.h"
 #include "redpanda/admin/api-doc/status.json.h"
@@ -115,6 +116,7 @@ void admin_server::configure_admin_routes() {
     register_security_routes();
     register_status_routes();
     register_broker_routes();
+    register_partition_routes();
 }
 
 void admin_server::configure_dashboard() {
@@ -440,5 +442,39 @@ void admin_server::register_broker_routes() {
           }
           return ss::make_ready_future<ss::json::json_return_type>(
             std::move(res));
+      });
+}
+
+void admin_server::register_partition_routes() {
+    /*
+     * Get a list of partition summaries.
+     */
+    ss::httpd::partition_json::get_partitions.set(
+      _server._routes, [this](std::unique_ptr<ss::httpd::request>) {
+          using summary = ss::httpd::partition_json::partition_summary;
+          return _partition_manager
+            .map_reduce0(
+              [](cluster::partition_manager& pm) {
+                  std::vector<summary> partitions;
+                  partitions.reserve(pm.partitions().size());
+                  for (const auto& it : pm.partitions()) {
+                      summary p;
+                      p.ns = it.first.ns;
+                      p.topic = it.first.tp.topic;
+                      p.partition_id = it.first.tp.partition;
+                      p.core = ss::this_shard_id();
+                      partitions.push_back(std::move(p));
+                  }
+                  return partitions;
+              },
+              std::vector<summary>{},
+              [](std::vector<summary> acc, std::vector<summary> update) {
+                  acc.insert(acc.end(), update.begin(), update.end());
+                  return acc;
+              })
+            .then([](std::vector<summary> partitions) {
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  std::move(partitions));
+            });
       });
 }
