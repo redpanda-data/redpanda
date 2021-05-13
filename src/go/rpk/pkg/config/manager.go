@@ -318,9 +318,33 @@ func write(v *viper.Viper, path string) error {
 	return nil
 }
 
+func (m *manager) setDeduceFormat(key, value string) error {
+	replace := func(key string, newValue interface{}) error {
+		newV := viper.New()
+		newV.Set(key, newValue)
+		return m.v.MergeConfigMap(newV.AllSettings())
+	}
+
+	var newVal interface{}
+	switch {
+	case json.Unmarshal([]byte(value), &newVal) == nil: // Try JSON
+		return replace(key, newVal)
+
+	case yaml.Unmarshal([]byte(value), &newVal) == nil: // Try YAML
+		return replace(key, newVal)
+
+	default: // Treat the value as a "single"
+		m.v.Set(key, parse(value))
+		return nil
+	}
+}
+
 func (m *manager) Set(key, value, format string) error {
 	if key == "" {
 		return errors.New("empty config field key")
+	}
+	if format == "" {
+		return m.setDeduceFormat(key, value)
 	}
 	var newConfValue interface{}
 	switch strings.ToLower(format) {

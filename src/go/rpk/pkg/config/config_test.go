@@ -80,10 +80,27 @@ func TestSet(t *testing.T) {
 			},
 		},
 		{
+			name:  "it should detect single integer fields if format isn't passed",
+			key:   "redpanda.node_id",
+			value: "54312",
+			check: func(st *testing.T, c *Config, _ *manager) {
+				require.Exactly(st, 54312, c.Redpanda.Id)
+			},
+		},
+		{
 			name:   "it should set single float fields",
 			key:    "redpanda.float_field",
 			value:  "42.3",
 			format: "single",
+			check: func(st *testing.T, _ *Config, mgr *manager) {
+				//require.True(st, ok, "Config map is of the wrong type")
+				require.Exactly(st, 42.3, mgr.v.Get("redpanda.float_field"))
+			},
+		},
+		{
+			name:  "it should detect single float fields if format isn't passed",
+			key:   "redpanda.float_field",
+			value: "42.3",
 			check: func(st *testing.T, _ *Config, mgr *manager) {
 				//require.True(st, ok, "Config map is of the wrong type")
 				require.Exactly(st, 42.3, mgr.v.Get("redpanda.float_field"))
@@ -99,10 +116,26 @@ func TestSet(t *testing.T) {
 			},
 		},
 		{
+			name:  "it should detect single string fields if format isn't passed",
+			key:   "redpanda.data_directory",
+			value: "/var/lib/differentdir",
+			check: func(st *testing.T, c *Config, _ *manager) {
+				require.Exactly(st, "/var/lib/differentdir", c.Redpanda.Directory)
+			},
+		},
+		{
 			name:   "it should set single bool fields",
 			key:    "rpk.enable_usage_stats",
 			value:  "true",
 			format: "single",
+			check: func(st *testing.T, c *Config, _ *manager) {
+				require.Exactly(st, true, c.Rpk.EnableUsageStats)
+			},
+		},
+		{
+			name:  "it should detect single bool fields if format isn't passed",
+			key:   "rpk.enable_usage_stats",
+			value: "true",
 			check: func(st *testing.T, c *Config, _ *manager) {
 				require.Exactly(st, true, c.Rpk.EnableUsageStats)
 			},
@@ -135,6 +168,33 @@ func TestSet(t *testing.T) {
 			},
 		},
 		{
+			name: "it should detect yaml-formatted values if format isn't passed",
+			key:  "redpanda.kafka_api",
+			value: `- name: external
+  address: 192.168.73.45
+  port: 9092
+- name: internal
+  address: 10.21.34.58
+  port: 9092
+`,
+			check: func(st *testing.T, c *Config, _ *manager) {
+				expected := []NamedSocketAddress{{
+					Name: "external",
+					SocketAddress: SocketAddress{
+						Address: "192.168.73.45",
+						Port:    9092,
+					},
+				}, {
+					Name: "internal",
+					SocketAddress: SocketAddress{
+						Address: "10.21.34.58",
+						Port:    9092,
+					},
+				}}
+				require.Exactly(st, expected, c.Redpanda.KafkaApi)
+			},
+		},
+		{
 			name: "it should partially set map fields (json)",
 			key:  "redpanda.kafka_api",
 			value: `[{
@@ -150,6 +210,23 @@ func TestSet(t *testing.T) {
 					},
 				}}
 				require.Exactly(st, expected, c.Redpanda.KafkaApi)
+			},
+		},
+		{
+			name: "it should detect json-formatted values if format isn't passed",
+			key:  "redpanda.advertised_kafka_api",
+			value: `[{
+		  "address": "192.168.54.2",
+		  "port": 9092
+		}]`,
+			check: func(st *testing.T, c *Config, _ *manager) {
+				expected := []NamedSocketAddress{{
+					SocketAddress: SocketAddress{
+						Port:    9092,
+						Address: "192.168.54.2",
+					},
+				}}
+				require.Exactly(st, expected, c.Redpanda.AdvertisedKafkaApi)
 			},
 		},
 		{
