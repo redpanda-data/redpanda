@@ -15,6 +15,20 @@ class Admin:
     def __init__(self, redpanda):
         self.redpanda = redpanda
 
+    @staticmethod
+    def _url(node, path):
+        return f"http://{node.account.hostname}:9644/v1/{path}"
+
+    def get_brokers(self, node=None):
+        """
+        Return metadata about brokers.
+        """
+        node = node or self.redpanda.controller()
+        url = self._url(node, f"brokers")
+        ret = requests.get(url).json()
+        self.redpanda.logger.debug(ret)
+        return ret
+
     def create_user(self, username, password, algorithm):
         self.redpanda.logger.info(
             f"Creating user {username}:{password}:{algorithm}")
