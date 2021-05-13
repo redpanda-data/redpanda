@@ -31,6 +31,7 @@ rp_test(
     half_page_concurrent_dispatch.cc
     timequery_test.cc
     kvstore_test.cc
+    backlog_controller_test.cc
   LIBRARIES v::seastar_testing_main v::storage_test_utils
   LABELS storage
   ARGS "-- -c 1"

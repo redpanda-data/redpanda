@@ -30,6 +30,7 @@ v_cc_library(
     compaction_reducers.cc
     parser_utils.cc
     readers_cache.cc
+    backlog_controller.cc
   DEPS
     Seastar::seastar
     v::bytes
