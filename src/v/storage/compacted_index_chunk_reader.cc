@@ -81,7 +81,9 @@ ss::future<> compacted_index_chunk_reader::verify_integrity() {
                    _file_size.value() - compacted_index::footer_size,
                    std::move(options)),
                  [](
-                   int32_t& max_bytes, crc::crc32c& crc, ss::input_stream<char>& in) {
+                   int32_t& max_bytes,
+                   crc::crc32c& crc,
+                   ss::input_stream<char>& in) {
                      return ss::do_until(
                               [&in, &max_bytes] {
                                   // stop condition

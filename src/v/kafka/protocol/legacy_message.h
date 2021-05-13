@@ -69,8 +69,7 @@ struct legacy_message {
     }
 };
 
-inline std::ostream&
-operator<<(std::ostream& os, const legacy_message& m) {
+inline std::ostream& operator<<(std::ostream& os, const legacy_message& m) {
     fmt::print(
       os,
       "{{offset {} length {} crc {} magic {} attrs {}:{} ts {} key {} value "
@@ -87,8 +86,7 @@ operator<<(std::ostream& os, const legacy_message& m) {
     return os;
 }
 
-inline std::optional<legacy_message>
-decode_legacy_batch(iobuf_parser& parser) {
+inline std::optional<legacy_message> decode_legacy_batch(iobuf_parser& parser) {
     auto base_offset = model::offset(parser.consume_be_type<int64_t>());
     auto batch_length = parser.consume_be_type<int32_t>();
     auto expected_crc = parser.consume_be_type<int32_t>();

@@ -63,7 +63,8 @@ void crc_extend_all_cpu_to_be(crc::crc32c& crc, T... t) {
     ((crc_extend_cpu_to_be(crc, t)), ...);
 }
 
-void crc_record_batch_header(crc::crc32c& crc, const record_batch_header& header) {
+void crc_record_batch_header(
+  crc::crc32c& crc, const record_batch_header& header) {
     crc_extend_all_cpu_to_be(
       crc,
       header.attrs.value(),
