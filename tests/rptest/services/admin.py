@@ -29,6 +29,26 @@ class Admin:
         self.redpanda.logger.debug(ret)
         return ret
 
+    def get_partitions(self,
+                       topic=None,
+                       partition=None,
+                       *,
+                       namespace=None,
+                       node=None):
+        """
+        Return partition metadata from controller. This includes low-level
+        information like replica set assignments with core affinities.
+        """
+        assert (topic is None and partition is None) or \
+                (topic is not None and partition is not None)
+        assert topic or namespace is None
+        namespace = namespace or "kafka"
+        node = node or self.redpanda.controller()
+        url = self._url(node, f"partitions")
+        if topic:
+            url = f"{url}/{namespace}/{topic}/{partition}"
+        return requests.get(url).json()
+
     def create_user(self, username, password, algorithm):
         self.redpanda.logger.info(
             f"Creating user {username}:{password}:{algorithm}")
