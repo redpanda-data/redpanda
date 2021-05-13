@@ -39,6 +39,8 @@ type Manager interface {
 	Read(path string) (*Config, error)
 	// Writes the config to Config.ConfigFile
 	Write(conf *Config) error
+	// Writes the currently-loaded config to redpanda.config_file
+	WriteLoaded() error
 	// Get the currently-loaded config
 	Get() (*Config, error)
 	// Reads the config from path, sets key to the given value (parsing it
@@ -298,6 +300,11 @@ func (m *manager) Write(conf *Config) error {
 	v.MergeConfigMap(currentMap)
 	v.MergeConfigMap(confMap)
 	return checkAndWrite(m.fs, v, conf.ConfigFile)
+}
+
+// Writes the currently loaded config.
+func (m *manager) WriteLoaded() error {
+	return checkAndWrite(m.fs, m.v, m.v.GetString("config_file"))
 }
 
 func write(v *viper.Viper, path string) error {
