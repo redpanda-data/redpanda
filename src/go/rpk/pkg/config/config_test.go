@@ -2072,3 +2072,10 @@ func TestWriteAndGenerateNodeUuid(t *testing.T) {
 	require.NoError(t, err)
 	require.Exactly(t, conf, readConf)
 }
+
+func TestGet(t *testing.T) {
+	mgr := NewManager(afero.NewMemMapFs())
+	conf, err := mgr.Get()
+	require.NoError(t, err)
+	require.Exactly(t, Default(), conf)
+}

@@ -39,6 +39,8 @@ type Manager interface {
 	Read(path string) (*Config, error)
 	// Writes the config to Config.ConfigFile
 	Write(conf *Config) error
+	// Get the currently-loaded config
+	Get() (*Config, error)
 	// Reads the config from path, sets key to the given value (parsing it
 	// according to the format), and writes the config back
 	Set(key, value, format, path string) error
@@ -270,6 +272,10 @@ func (m *manager) WriteNodeUUID(conf *Config) error {
 	}
 	conf.NodeUuid = base58Encode(id.String())
 	return m.Write(conf)
+}
+
+func (m *manager) Get() (*Config, error) {
+	return unmarshal(m.v)
 }
 
 // Checks config and writes it to the given path.
