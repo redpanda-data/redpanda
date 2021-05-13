@@ -61,6 +61,40 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/partitions/{namespace}/{topic}/{partition}/replicas",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Update a partitions replicas",
+                    "type": "void",
+                    "nickname": "set_partition_replicas",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {

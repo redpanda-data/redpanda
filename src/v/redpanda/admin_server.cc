@@ -23,6 +23,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
+#include "model/namespace.h"
 #include "raft/types.h"
 #include "redpanda/admin/api-doc/broker.json.h"
 #include "redpanda/admin/api-doc/config.json.h"
@@ -49,6 +50,7 @@
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <rapidjson/document.h>
+#include <rapidjson/schema.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
@@ -447,6 +449,50 @@ void admin_server::register_broker_routes() {
       });
 }
 
+struct json_validator {
+    explicit json_validator(const std::string& schema_text)
+      : schema(make_schema_document(schema_text))
+      , validator(schema) {}
+
+    static rapidjson::SchemaDocument
+    make_schema_document(const std::string& schema) {
+        rapidjson::Document doc;
+        if (doc.Parse(schema).HasParseError()) {
+            throw std::runtime_error(
+              fmt::format("Invalid schema document: {}", schema));
+        }
+        return rapidjson::SchemaDocument(doc);
+    }
+
+    const rapidjson::SchemaDocument schema;
+    rapidjson::SchemaValidator validator;
+};
+
+static json_validator make_set_replicas_validator() {
+    const std::string schema = R"(
+{
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "node_id": {
+                "type": "number"
+            },
+            "core": {
+                "type": "number"
+            }
+        },
+        "required": [
+            "node_id",
+            "core"
+        ],
+        "additionalProperties": false
+    }
+}
+)";
+    return json_validator(schema);
+}
+
 void admin_server::register_partition_routes() {
     /*
      * Get a list of partition summaries.
@@ -536,5 +582,87 @@ void admin_server::register_partition_routes() {
                 return ss::make_ready_future<ss::json::json_return_type>(
                   std::move(p));
             });
+      });
+
+    // make sure to call reset() before each use
+    static thread_local json_validator set_replicas_validator(
+      make_set_replicas_validator());
+
+    ss::httpd::partition_json::set_partition_replicas.set(
+      _server._routes,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          auto ns = model::ns(req->param["namespace"]);
+          auto topic = model::topic(req->param["topic"]);
+
+          model::partition_id partition;
+          try {
+              partition = model::partition_id(
+                std::stoi(req->param["partition"]));
+          } catch (...) {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Partition id must be an integer: {}",
+                req->param["partition"]));
+          }
+
+          if (partition() < 0) {
+              throw ss::httpd::bad_param_exception(
+                fmt::format("Invalid partition id {}", partition));
+          }
+
+          if (ns != model::kafka_namespace) {
+              throw ss::httpd::bad_request_exception(
+                fmt::format("Unsupported namespace: {}", ns));
+          }
+
+          rapidjson::Document doc;
+          if (doc.Parse(req->content.data()).HasParseError()) {
+              throw ss::httpd::bad_request_exception(
+                "Could not replica set json");
+          }
+
+          set_replicas_validator.validator.Reset();
+          if (!doc.Accept(set_replicas_validator.validator)) {
+              throw ss::httpd::bad_request_exception(
+                "Replica set json is invalid");
+          }
+
+          std::vector<model::broker_shard> replicas;
+          for (auto& r : doc.GetArray()) {
+              replicas.push_back(model::broker_shard{
+                .node_id = model::node_id(r["node_id"].GetInt()),
+                .shard = static_cast<uint32_t>(r["core"].GetInt()),
+              });
+          }
+
+          const model::ntp ntp(std::move(ns), std::move(topic), partition);
+
+          vlog(
+            logger.info,
+            "Request to change ntp {} replica set to {}",
+            ntp,
+            replicas);
+
+          auto err
+            = co_await _controller->get_topics_frontend()
+                .local()
+                .move_partition_replicas(
+                  ntp,
+                  replicas,
+                  model::timeout_clock::now()
+                    + 10s); // NOLINT(cppcoreguidelines-avoid-magic-numbers)
+
+          if (err) {
+              vlog(
+                logger.error,
+                "Error changing ntp {} replicas: {}:{}",
+                ntp,
+                err,
+                err.message());
+              throw ss::httpd::bad_request_exception(
+                fmt::format("Error moving partition: {}", err.message()));
+          }
+
+          co_return ss::json::json_void();
       });
 }
