@@ -351,6 +351,30 @@ ss::future<> group_manager::recover_partition(
     return ss::make_ready_future<>();
 }
 
+template<typename T>
+static group_tx_cmd<T> parse_tx_batch(
+  const model::record_batch& batch, model::control_record_version version) {
+    vassert(batch.record_count() == 1, "tx batch must contain a single record");
+    auto r = batch.copy_records();
+    auto& record = *r.begin();
+    auto key_buf = record.release_key();
+    kafka::request_reader buf_reader(std::move(key_buf));
+    auto tx_version = model::control_record_version(buf_reader.read_int16());
+
+    vassert(
+      tx_version == version,
+      "unknown group inflight tx record version: {} expected: {}",
+      tx_version,
+      version);
+
+    const auto& hdr = batch.header();
+    auto bid = model::batch_identity::from(hdr);
+
+    auto val_buf = record.release_value();
+    return group_tx_cmd<T>{
+      .pid = bid.pid, .cmd = reflection::from_iobuf<T>(std::move(val_buf))};
+}
+
 ss::future<ss::stop_iteration>
 recovery_batch_consumer::operator()(model::record_batch batch) {
     if (as.abort_requested()) {
@@ -370,24 +394,9 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
                  })
           .then([] { return ss::stop_iteration::no; });
     } else if (batch.header().type == cluster::group_prepare_tx_batch_type) {
-        vassert(
-          batch.record_count() == 1,
-          "prepare batch must contain a single record");
-        auto r = batch.copy_records();
-        auto& record = *r.begin();
-        auto key_buf = record.release_key();
-        kafka::request_reader buf_reader(std::move(key_buf));
-        auto version = model::control_record_version(buf_reader.read_int16());
-
-        vassert(
-          version == group::prepared_tx_record_version,
-          "unknown group prepared tx record version: {} expected: {}",
-          version,
-          group::prepared_tx_record_version);
-
-        auto val_buf = record.release_value();
-        auto val = reflection::from_iobuf<group_log_prepared_tx>(
-          std::move(val_buf));
+        auto val = parse_tx_batch<group_log_prepared_tx>(
+                     batch, group::prepared_tx_record_version)
+                     .cmd;
 
         auto [group_it, _] = st.groups.try_emplace(val.group_id, group_stm());
         group_it->second.update_prepared(batch.last_offset(), val);
@@ -395,86 +404,32 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
     } else if (batch.header().type == cluster::group_commit_tx_batch_type) {
-        vassert(
-          batch.record_count() == 1,
-          "commit batch must contain a single record");
-        auto r = batch.copy_records();
-        auto& record = *r.begin();
-        auto key_buf = record.release_key();
-        kafka::request_reader buf_reader(std::move(key_buf));
-        auto version = model::control_record_version(buf_reader.read_int16());
+        auto cmd = parse_tx_batch<group_log_commit_tx>(
+          batch, group::commit_tx_record_version);
 
-        vassert(
-          version == group::commit_tx_record_version,
-          "unknown group inflight tx record version: {} expected: {}",
-          version,
-          group::commit_tx_record_version);
-
-        const auto& hdr = batch.header();
-        auto bid = model::batch_identity::from(hdr);
-
-        auto val_buf = record.release_value();
-        auto val = reflection::from_iobuf<group_log_commit_tx>(
-          std::move(val_buf));
-
-        auto [group_it, _] = st.groups.try_emplace(val.group_id, group_stm());
-        group_it->second.commit(bid.pid);
+        auto [group_it, _] = st.groups.try_emplace(
+          cmd.cmd.group_id, group_stm());
+        group_it->second.commit(cmd.pid);
 
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
     } else if (batch.header().type == cluster::group_abort_tx_batch_type) {
-        vassert(
-          batch.record_count() == 1,
-          "abort batch must contain a single record");
-        auto r = batch.copy_records();
-        auto& record = *r.begin();
-        auto key_buf = record.release_key();
-        kafka::request_reader buf_reader(std::move(key_buf));
-        auto version = model::control_record_version(buf_reader.read_int16());
+        auto cmd = parse_tx_batch<group_log_aborted_tx>(
+          batch, group::aborted_tx_record_version);
 
-        vassert(
-          version == group::aborted_tx_record_version,
-          "unknown group abort tx record version: {} expected: {}",
-          version,
-          group::aborted_tx_record_version);
-
-        const auto& hdr = batch.header();
-        auto bid = model::batch_identity::from(hdr);
-
-        auto val_buf = record.release_value();
-        auto val = reflection::from_iobuf<group_log_aborted_tx>(
-          std::move(val_buf));
-
-        auto [group_it, _] = st.groups.try_emplace(val.group_id, group_stm());
-        group_it->second.abort(bid.pid, val.tx_seq);
+        auto [group_it, _] = st.groups.try_emplace(
+          cmd.cmd.group_id, group_stm());
+        group_it->second.abort(cmd.pid, cmd.cmd.tx_seq);
 
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
     } else if (batch.header().type == cluster::tx_fence_batch_type) {
-        vassert(
-          batch.record_count() == 1,
-          "fence batch must contain a single record");
-        auto r = batch.copy_records();
-        auto& record = *r.begin();
-        auto key_buf = record.release_key();
-        kafka::request_reader buf_reader(std::move(key_buf));
-        auto version = model::control_record_version(buf_reader.read_int16());
+        auto cmd = parse_tx_batch<group_log_fencing>(
+          batch, group::fence_control_record_version);
 
-        vassert(
-          version == group::fence_control_record_version,
-          "unknown group abort tx record version: {} expected: {}",
-          version,
-          group::fence_control_record_version);
-
-        const auto& hdr = batch.header();
-        auto bid = model::batch_identity::from(hdr);
-
-        auto val_buf = record.release_value();
-        auto val = reflection::from_iobuf<group_log_fencing>(
-          std::move(val_buf));
-
-        auto [group_it, _] = st.groups.try_emplace(val.group_id, group_stm());
-        group_it->second.try_set_fence(bid.pid.get_id(), bid.pid.get_epoch());
+        auto [group_it, _] = st.groups.try_emplace(
+          cmd.cmd.group_id, group_stm());
+        group_it->second.try_set_fence(cmd.pid.get_id(), cmd.pid.get_epoch());
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
     } else {

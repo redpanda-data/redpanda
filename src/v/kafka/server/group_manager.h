@@ -246,6 +246,12 @@ private:
     model::broker _self;
 };
 
+template<typename T>
+struct group_tx_cmd {
+    model::producer_identity pid;
+    T cmd;
+};
+
 /**
  * the key type for group membership log records.
  *
