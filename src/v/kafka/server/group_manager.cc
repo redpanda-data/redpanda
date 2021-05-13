@@ -398,7 +398,7 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
                      batch, group::prepared_tx_record_version)
                      .cmd;
 
-        auto [group_it, _] = st.groups.try_emplace(val.group_id, group_stm());
+        auto [group_it, _] = st.groups.try_emplace(val.group_id);
         group_it->second.update_prepared(batch.last_offset(), val);
 
         return ss::make_ready_future<ss::stop_iteration>(
@@ -407,8 +407,7 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
         auto cmd = parse_tx_batch<group_log_commit_tx>(
           batch, group::commit_tx_record_version);
 
-        auto [group_it, _] = st.groups.try_emplace(
-          cmd.cmd.group_id, group_stm());
+        auto [group_it, _] = st.groups.try_emplace(cmd.cmd.group_id);
         group_it->second.commit(cmd.pid);
 
         return ss::make_ready_future<ss::stop_iteration>(
@@ -417,8 +416,7 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
         auto cmd = parse_tx_batch<group_log_aborted_tx>(
           batch, group::aborted_tx_record_version);
 
-        auto [group_it, _] = st.groups.try_emplace(
-          cmd.cmd.group_id, group_stm());
+        auto [group_it, _] = st.groups.try_emplace(cmd.cmd.group_id);
         group_it->second.abort(cmd.pid, cmd.cmd.tx_seq);
 
         return ss::make_ready_future<ss::stop_iteration>(
@@ -427,8 +425,7 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
         auto cmd = parse_tx_batch<group_log_fencing>(
           batch, group::fence_control_record_version);
 
-        auto [group_it, _] = st.groups.try_emplace(
-          cmd.cmd.group_id, group_stm());
+        auto [group_it, _] = st.groups.try_emplace(cmd.cmd.group_id);
         group_it->second.try_set_fence(cmd.pid.get_id(), cmd.pid.get_epoch());
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
