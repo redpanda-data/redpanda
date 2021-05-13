@@ -125,6 +125,7 @@ public:
 
     struct group_prepared_tx {
         model::producer_identity pid;
+        model::tx_seq tx_seq;
         kafka::group_id group_id;
         absl::node_hash_map<model::topic_partition, offset_metadata> offsets;
     };
@@ -535,6 +536,7 @@ private:
     };
 
     struct prepared_tx {
+        model::tx_seq tx_seq;
         absl::node_hash_map<model::topic_partition, offset_metadata> offsets;
     };
 

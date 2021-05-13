@@ -76,6 +76,7 @@ struct group_log_prepared_tx {
     kafka::group_id group_id;
     // TODO: get rid of pid, we have it in the headers
     model::producer_identity pid;
+    model::tx_seq tx_seq;
     std::vector<group_log_prepared_tx_offset> offsets;
 };
 

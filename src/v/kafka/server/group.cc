@@ -1198,12 +1198,8 @@ void group::fail_offset_commit(
 void group::reset_tx_state(model::term_id term) { _term = term; }
 
 void group::insert_prepared(group_prepared_tx tx) {
-    auto [pending_it, inserted] = _prepared_txs.try_emplace(
-      tx.pid, prepared_tx{.offsets = tx.offsets});
-
-    for (const auto& [tp, md] : tx.offsets) {
-        pending_it->second.offsets[tp] = md;
-    }
+    _prepared_txs[tx.pid] = prepared_tx{
+      .tx_seq = tx.tx_seq, .offsets = std::move(tx.offsets)};
 }
 
 ss::future<cluster::commit_group_tx_reply>
@@ -1214,7 +1210,8 @@ group::commit_tx(cluster::commit_group_tx_request r) {
 
     auto ongoing_it = _prepared_txs.find(r.pid);
     if (ongoing_it == _prepared_txs.end()) {
-        vlog(klog.warn, "can't find a tx {}, probably already comitted", r.pid);
+        vlog(
+          klog.trace, "can't find a tx {}, probably already comitted", r.pid);
         co_return make_commit_tx_reply(cluster::tx_errc::none);
     }
 
@@ -1351,6 +1348,16 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
         co_return make_prepare_tx_reply(cluster::tx_errc::timeout);
     }
 
+    auto prepared_it = _prepared_txs.find(r.pid);
+    if (prepared_it != _prepared_txs.end()) {
+        if (prepared_it->second.tx_seq != r.tx_seq) {
+            // current prepare_tx call is stale, rejecting
+            co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
+        }
+        // a tx was already prepared
+        co_return make_prepare_tx_reply(cluster::tx_errc::none);
+    }
+
     // checking fencing
     auto fence_it = _fence_pid_epoch.find(r.pid.get_id());
     if (fence_it != _fence_pid_epoch.end()) {
@@ -1370,10 +1377,19 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
 
     auto tx_it = _volatile_txs.find(r.pid);
     if (tx_it == _volatile_txs.end()) {
-        co_return make_prepare_tx_reply(cluster::tx_errc::timeout);
+        // impossible situation, a transaction coordinator tries
+        // to prepare a transaction which wasn't started
+        vlog(klog.error, "Can't prepare pid:{} - unknown session", r.pid);
+        co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
     }
 
-    auto tx_entry = group_log_prepared_tx{.group_id = r.group_id, .pid = r.pid};
+    if (tx_it->second.tx_seq != r.tx_seq) {
+        // current prepare_tx call is stale, rejecting
+        co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
+    }
+
+    auto tx_entry = group_log_prepared_tx{
+      .group_id = r.group_id, .pid = r.pid, .tx_seq = r.tx_seq};
 
     for (const auto& [tp, offset] : tx_it->second.offsets) {
         group_log_prepared_tx_offset tx_offset;
@@ -1408,6 +1424,7 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
     }
 
     prepared_tx ptx;
+    ptx.tx_seq = r.tx_seq;
     for (const auto& [tp, offset] : tx.offsets) {
         offset_metadata md{
           .log_offset = e.value().last_offset,

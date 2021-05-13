@@ -22,7 +22,7 @@ void group_stm::update_offset(
 void group_stm::update_prepared(
   model::offset offset, group_log_prepared_tx val) {
     auto tx = group::group_prepared_tx{
-      .pid = val.pid, .group_id = val.group_id};
+      .pid = val.pid, .tx_seq = val.tx_seq, .group_id = val.group_id};
 
     auto [prepared_it, inserted] = _prepared_txs.try_emplace(
       tx.pid.get_id(), tx);
