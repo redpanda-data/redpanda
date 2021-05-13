@@ -49,6 +49,23 @@ class Admin:
             url = f"{url}/{namespace}/{topic}/{partition}"
         return requests.get(url).json()
 
+    def set_partition_replicas(self,
+                               topic,
+                               partition,
+                               replicas,
+                               *,
+                               namespace="kafka",
+                               node=None):
+        """
+        [ {"node_id": 0, "core": 1}, ... ]
+        """
+        node = node or self.redpanda.controller()
+        url = self._url(
+            node, f"partitions/{namespace}/{topic}/{partition}/replicas")
+        ret = requests.post(url, json=replicas)
+        self.redpanda.logger.debug(ret)
+        return ret
+
     def create_user(self, username, password, algorithm):
         self.redpanda.logger.info(
             f"Creating user {username}:{password}:{algorithm}")
