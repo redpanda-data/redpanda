@@ -411,9 +411,11 @@ func unmarshal(v *viper.Viper) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	result.ConfigFile, err = absPath(v.ConfigFileUsed())
-	if err != nil {
-		return nil, err
+	if result.ConfigFile == "" {
+		result.ConfigFile, err = absPath(v.ConfigFileUsed())
+		if err != nil {
+			return nil, err
+		}
 	}
 	return result, nil
 }
