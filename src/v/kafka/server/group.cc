@@ -1415,7 +1415,7 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
           .metadata = offset.metadata.value_or("")};
         ptx.offsets[tp] = md;
     }
-    _prepared_txs.try_emplace(r.pid, ptx);
+    _prepared_txs[r.pid] = ptx;
     co_return make_prepare_tx_reply(cluster::tx_errc::none);
 }
 
