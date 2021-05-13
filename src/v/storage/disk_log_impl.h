@@ -81,6 +81,8 @@ public:
     size_t size_bytes() const override { return _probe.partition_size(); }
     ss::future<> update_configuration(ntp_config::default_overrides) final;
 
+    int64_t compaction_backlog() const final;
+
 private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests

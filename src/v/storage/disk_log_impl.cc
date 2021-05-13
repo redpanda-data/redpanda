@@ -1104,6 +1104,117 @@ disk_log_impl::update_configuration(ntp_config::default_overrides o) {
 
     return ss::now();
 }
+/**
+ * We express compaction backlog as the size of a data that have to be read to
+ * perform full compaction.
+ *
+ * According to this assumption compaction backlog consist of two components
+ *
+ * 1) size of not yet self compacted segments
+ * 2) size of all possible adjacent segments compactions
+ *
+ * Component 1. of a compaction backlog is simply a sum of sizes of all not self
+ * compacted segments.
+ *
+ * Calculation of 2nd part of compaction backlog is based on the observation
+ * that adjacent segment compactions can be presented as a tree
+ * (each leaf represents a log segment)
+ *                              ┌────┐
+ *                        ┌────►│ s5 │◄┐
+ *                        │     └────┘ │
+ *                        │            │
+ *                        │            │
+ *                        │            │
+ *                      ┌─┴──┐         │
+ *                    ┌►│ s4 │◄┐       │
+ *                    │ └────┘ │       │
+ *                    │        │       │
+ *                    │        │       │
+ *                    │        │       │
+ *                    │        │       │
+ *                  ┌─┴──┐  ┌──┴─┐  ┌──┴─┐
+ *                  │ s1 │  │ s2 │  │ s3 │
+ *                  └────┘  └────┘  └────┘
+ *
+ * To create segment from upper tree level two self compacted adjacent segments
+ * from level below are concatenated and then resulting segment is self
+ * compacted.
+ *
+ * In presented example size of s4:
+ *
+ *          sizeof(s4) = sizeof(s1) + sizeof(s2)
+ *
+ * Estimation of an s4 size after it will be self compacted is based on the
+ * average compaction factor - `cf`. After self compaction size of
+ * s4 will be estimated as
+ *
+ *         sizeof(s4) = cf * s4
+ *
+ * This allows calculating next compaction step which would be:
+ *
+ *         sizeof(s5) = cf * sizeof(s4) + s3 = cf * (sizeof(s1) + sizeof(s2))
+ *
+ * In order to calculate the backlog we have to sum both terms.
+ *
+ * Continuing those operation for upper tree levels we can obtain an equation
+ * describing adjacent segments compaction backlog:
+ *
+ * cnt - segments count
+ *
+ *  backlog = sum(n=1,cnt) [sum(k=0, cnt - n + 1)][cf^k * sizeof(sn)] -
+ *  cf^(cnt-1) * s1
+ */
+int64_t disk_log_impl::compaction_backlog() const {
+    if (!config().is_compacted() || _segs.empty()) {
+        return 0;
+    }
+
+    std::vector<std::vector<ss::lw_shared_ptr<segment>>> segments_per_term;
+    auto current_term = _segs.front()->offsets().term;
+    segments_per_term.emplace_back();
+    auto idx = 0;
+    int64_t backlog = 0;
+    for (auto& s : _segs) {
+        if (!s->finished_self_compaction()) {
+            backlog += static_cast<int64_t>(s->size_bytes());
+        }
+        // if has appender do not include into adjacent segments calculation
+        if (s->has_appender()) {
+            continue;
+        }
+
+        if (current_term != s->offsets().term) {
+            ++idx;
+            segments_per_term.emplace_back();
+        }
+        segments_per_term[idx].push_back(s);
+    }
+    auto cf = _compaction_ratio.get();
+
+    for (const auto& segs : segments_per_term) {
+        auto segment_count = segs.size();
+        if (segment_count == 1) {
+            continue;
+        }
+        for (size_t n = 1; n <= segment_count; ++n) {
+            auto& s = segs[n - 1];
+            auto sz = s->finished_self_compaction() ? s->size_bytes()
+                                                    : s->size_bytes() * cf;
+            for (size_t k = 0; k <= segment_count - n; ++k) {
+                if (k == segment_count - 1) {
+                    continue;
+                }
+                if (k == 0) {
+                    backlog += static_cast<int64_t>(sz);
+                } else {
+                    backlog += static_cast<int64_t>(std::pow(cf, k) * sz);
+                }
+            }
+        }
+    }
+
+    return backlog;
+}
 
 std::ostream& disk_log_impl::print(std::ostream& o) const {
     return o << "{offsets:" << offsets()
