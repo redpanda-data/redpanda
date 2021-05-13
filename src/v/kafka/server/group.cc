@@ -1369,7 +1369,7 @@ group::abort_tx(cluster::abort_group_tx_request r) {
     // (check for tx_seq to prevent old abort requests aborting
     // new transactions in the same session)
 
-    auto tx = aborted_tx{.group_id = r.group_id, .tx_seq = r.tx_seq};
+    auto tx = group_log_aborted_tx{.group_id = r.group_id, .tx_seq = r.tx_seq};
 
     // TODO: https://app.clubhouse.io/vectorized/story/2200
     // include producer_id+type into key to make it unique-ish

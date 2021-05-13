@@ -436,7 +436,7 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
         auto bid = model::batch_identity::from(hdr);
 
         auto val_buf = record.release_value();
-        auto val = reflection::from_iobuf<group::aborted_tx>(
+        auto val = reflection::from_iobuf<group_log_aborted_tx>(
           std::move(val_buf));
 
         auto [group_it, _] = st.groups.try_emplace(val.group_id, group_stm());

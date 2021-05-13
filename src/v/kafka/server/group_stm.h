@@ -79,6 +79,11 @@ struct group_log_commit_tx {
     kafka::group_id group_id;
 };
 
+struct group_log_aborted_tx {
+    kafka::group_id group_id;
+    model::tx_seq tx_seq;
+};
+
 } // namespace kafka
 
 namespace std {

@@ -128,11 +128,6 @@ public:
         absl::node_hash_map<model::topic_partition, offset_metadata> offsets;
     };
 
-    struct aborted_tx {
-        kafka::group_id group_id;
-        model::tx_seq tx_seq;
-    };
-
     group(
       kafka::group_id id,
       group_state s,
