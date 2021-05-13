@@ -132,10 +132,10 @@ class Repository {
     const results: ProcessBatchReplyItem[] = [];
     if (resultRecordBatch.size === 0) {
       /*
-       Coprocessor returns a empty Map, in this case, it responses to
-       empty process batch replay to Redpanda in order to avoid, send this
-       request again.
-      */
+             Coprocessor returns a empty Map, in this case, it responses to
+             empty process batch replay to Redpanda in order to avoid, send this
+             request again.
+            */
 
       results.push(this.createEmptyProcessBatchReplay(handle, requestItem));
     } else {
