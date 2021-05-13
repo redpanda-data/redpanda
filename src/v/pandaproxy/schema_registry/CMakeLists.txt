@@ -25,3 +25,4 @@ v_cc_library(
 add_dependencies(v_pandaproxy_schema_registry schema_registry_swagger)
 
 add_subdirectory(test)
+add_subdirectory(requests)
