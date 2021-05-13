@@ -13,12 +13,14 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/controller.h"
+#include "cluster/controller_api.h"
 #include "cluster/fwd.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/security_frontend.h"
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "raft/types.h"
@@ -475,6 +477,64 @@ void admin_server::register_partition_routes() {
             .then([](std::vector<summary> partitions) {
                 return ss::make_ready_future<ss::json::json_return_type>(
                   std::move(partitions));
+            });
+      });
+
+    /*
+     * Get detailed information about a partition.
+     */
+    ss::httpd::partition_json::get_partition.set(
+      _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+          auto ns = model::ns(req->param["namespace"]);
+          auto topic = model::topic(req->param["topic"]);
+
+          model::partition_id partition;
+          try {
+              partition = model::partition_id(
+                std::stoi(req->param["partition"]));
+          } catch (...) {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Partition id must be an integer: {}",
+                req->param["partition"]));
+          }
+
+          if (partition() < 0) {
+              throw ss::httpd::bad_param_exception(
+                fmt::format("Invalid partition id {}", partition));
+          }
+
+          const model::ntp ntp(std::move(ns), std::move(topic), partition);
+
+          if (!_metadata_cache.local().contains(ntp)) {
+              throw ss::httpd::not_found_exception(
+                fmt::format("Could not find ntp: {}", ntp));
+          }
+
+          ss::httpd::partition_json::partition p;
+          p.ns = ntp.ns;
+          p.topic = ntp.tp.topic;
+          p.partition_id = ntp.tp.partition;
+
+          auto assignment
+            = _controller->get_topics_state().local().get_partition_assignment(
+              ntp);
+
+          if (assignment) {
+              for (auto& r : assignment->replicas) {
+                  ss::httpd::partition_json::assignment a;
+                  a.node_id = r.node_id;
+                  a.core = r.shard;
+                  p.replicas.push(a);
+              }
+          }
+
+          return _controller->get_api()
+            .local()
+            .get_reconciliation_state(ntp)
+            .then([p](const cluster::ntp_reconciliation_state& state) mutable {
+                p.status = ssx::sformat("{}", state.status());
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  std::move(p));
             });
       });
 }

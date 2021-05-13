@@ -24,12 +24,49 @@
                     "parameters": []
                 }
             ]
+        },
+        {
+            "path": "/v1/partitions/{namespace}/{topic}/{partition}",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get detailed partition information",
+                    "type": "array",
+                    "items": {
+                        "type": "partition"
+                    },
+                    "nickname": "get_partition",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {
         "partition_summary": {
             "id": "partition_summary",
-            "description": "Partition information",
+            "description": "Partition summary",
             "properties": {
                 "ns": {
                     "type": "string",
@@ -46,6 +83,49 @@
                 "core": {
                     "type": "long",
                     "description": "core"
+                }
+            }
+        },
+        "assignment": {
+            "id": "assignment",
+            "description": "Replica assignment",
+            "properties": {
+                "node_id": {
+                    "type": "long",
+                    "description": "node id"
+                },
+                "core": {
+                    "type": "long",
+                    "description": "core"
+                }
+            }
+        },
+        "partition": {
+            "id": "partition",
+            "description": "Partition details",
+            "properties": {
+                "ns": {
+                    "type": "string",
+                    "description": "namespace"
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "topic"
+                },
+                "partition_id": {
+                    "type": "long",
+                    "description": "partition"
+                },
+                "status": {
+                    "type": "string",
+                    "description": "status"
+                },
+                "replicas": {
+                    "type": "array",
+                    "items": {
+                        "type": "assignment"
+                    },
+                    "description": "Replica assignments"
                 }
             }
         }
