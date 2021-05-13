@@ -287,6 +287,7 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
           "segment {} compaction result: {}",
           seg->reader().filename(),
           result);
+        _compaction_ratio.update(result.compaction_ratio());
         // if we compacted segment return, otherwise loop
         if (result.did_compact()) {
             co_return;
@@ -300,6 +301,7 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
           "adjejcent segments of {}, compaction result: {}",
           config().ntp(),
           r);
+        _compaction_ratio.update(r.compaction_ratio());
     }
 }
 

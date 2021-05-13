@@ -316,6 +316,11 @@ struct compaction_result {
 
     bool did_compact() const { return executed_compaction; }
 
+    double compaction_ratio() const {
+        return static_cast<double>(size_after)
+               / static_cast<double>(size_before);
+    }
+
     bool executed_compaction;
     size_t size_before;
     size_t size_after;
