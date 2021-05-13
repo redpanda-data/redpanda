@@ -1348,6 +1348,19 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
         co_return make_prepare_tx_reply(cluster::tx_errc::timeout);
     }
 
+    // checking fencing
+    auto fence_it = _fence_pid_epoch.find(r.pid.get_id());
+    if (fence_it != _fence_pid_epoch.end()) {
+        if (r.pid.get_epoch() < fence_it->second) {
+            vlog(
+              klog.trace,
+              "Can't prepare pid:{} - fenced out by epoch {}",
+              r.pid,
+              fence_it->second);
+            co_return make_prepare_tx_reply(cluster::tx_errc::fenced);
+        }
+    }
+
     if (r.etag != _term) {
         co_return make_prepare_tx_reply(cluster::tx_errc::timeout);
     }
