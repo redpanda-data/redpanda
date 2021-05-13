@@ -469,6 +469,13 @@ public:
 
     void insert_prepared(group_prepared_tx);
 
+    void try_set_fence(model::producer_id id, model::producer_epoch epoch) {
+        auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);
+        if (fence_it->second < epoch) {
+            fence_it->second = epoch;
+        }
+    }
+
     // helper for the kafka api: describe groups
     described_group describe() const;
 
@@ -511,6 +518,8 @@ private:
 
     mutex _tx_mutex;
     model::term_id _term;
+    absl::node_hash_map<model::producer_id, model::producer_epoch>
+      _fence_pid_epoch;
     absl::node_hash_map<model::topic_partition, offset_metadata>
       _pending_offset_commits;
 

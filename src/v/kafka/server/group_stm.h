@@ -68,6 +68,10 @@ struct group_log_prepared_tx_offset {
     std::optional<ss::sstring> metadata;
 };
 
+struct group_log_fencing {
+    kafka::group_id group_id;
+};
+
 struct group_log_prepared_tx {
     kafka::group_id group_id;
     // TODO: get rid of pid, we have it in the headers
@@ -121,6 +125,12 @@ public:
     void update_prepared(model::offset, group_log_prepared_tx);
     void commit(model::producer_identity);
     void abort(model::producer_identity, model::tx_seq);
+    void try_set_fence(model::producer_id id, model::producer_epoch epoch) {
+        auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);
+        if (fence_it->second < epoch) {
+            fence_it->second = epoch;
+        }
+    }
     bool has_data() const {
         return !_is_removed && (_is_loaded || _offsets.size() > 0);
     }
@@ -136,10 +146,17 @@ public:
         return _offsets;
     }
 
+    const absl::node_hash_map<model::producer_id, model::producer_epoch>&
+    fences() const {
+        return _fence_pid_epoch;
+    }
+
 private:
     absl::node_hash_map<model::topic_partition, logged_metadata> _offsets;
     absl::node_hash_map<model::producer_id, group::group_prepared_tx>
       _prepared_txs;
+    absl::node_hash_map<model::producer_id, model::producer_epoch>
+      _fence_pid_epoch;
     group_log_group_metadata _metadata;
     bool _is_loaded{false};
     bool _is_removed{false};

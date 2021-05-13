@@ -1287,9 +1287,49 @@ group::begin_tx(cluster::begin_group_tx_request r) {
         co_return make_begin_tx_reply(cluster::tx_errc::timeout);
     }
 
+    auto fence_it = _fence_pid_epoch.find(r.pid.get_id());
+    if (
+      fence_it == _fence_pid_epoch.end()
+      || r.pid.get_epoch() > fence_it->second) {
+        group_log_fencing fence{.group_id = id()};
+
+        // TODO: https://app.clubhouse.io/vectorized/story/2200
+        // include producer_id into key to make it unique-ish
+        // to prevent being GCed by the compaction
+        auto batch = make_tx_batch(
+          cluster::tx_fence_batch_type,
+          fence_control_record_version,
+          r.pid,
+          std::move(fence));
+        auto reader = model::make_memory_record_batch_reader(std::move(batch));
+        auto e = co_await _partition->replicate(
+          _term,
+          std::move(reader),
+          raft::replicate_options(raft::consistency_level::quorum_ack));
+
+        if (!e) {
+            vlog(
+              klog.error,
+              "Error \"{}\" on replicating pid:{} fencing batch",
+              e.error(),
+              r.pid);
+            co_return make_begin_tx_reply(
+              cluster::tx_errc::unknown_server_error);
+        }
+    }
+
+    if (fence_it == _fence_pid_epoch.end()) {
+        _fence_pid_epoch.emplace(r.pid.get_id(), r.pid.get_epoch());
+    } else if (r.pid.get_epoch() >= fence_it->second) {
+        fence_it->second = r.pid.get_epoch();
+    } else {
+        vlog(
+          klog.error, "pid {} fenced out by epoch {}", r.pid, fence_it->second);
+        co_return make_begin_tx_reply(cluster::tx_errc::fenced);
+    }
+
     // TODO: https://app.clubhouse.io/vectorized/story/2194
     // (auto-abort txes with the the same producer_id but older epoch)
-
     auto [_, inserted] = _volatile_txs.try_emplace(r.pid, volatile_tx());
 
     if (!inserted) {

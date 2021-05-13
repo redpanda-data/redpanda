@@ -112,9 +112,6 @@ struct recovery_batch_consumer_state;
  */
 class group_manager {
 public:
-    static constexpr model::control_record_version fence_control_record_version{
-      0};
-
     group_manager(
       ss::sharded<raft::group_manager>& gm,
       ss::sharded<cluster::partition_manager>& pm,
@@ -195,8 +192,6 @@ private:
         ss::lw_shared_ptr<cluster::partition> partition;
         ss::basic_rwlock<> catchup_lock;
         model::term_id term{-1};
-        absl::flat_hash_map<model::producer_id, model::producer_epoch>
-          fence_pid_epoch;
 
         explicit attached_partition(ss::lw_shared_ptr<cluster::partition> p)
           : loading(true)
@@ -205,9 +200,6 @@ private:
 
     cluster::notification_id_type _leader_notify_handle;
     cluster::notification_id_type _topic_table_notify_handle;
-
-    ss::future<cluster::begin_group_tx_reply> do_begin_tx(
-      ss::lw_shared_ptr<attached_partition>, cluster::begin_group_tx_request&&);
 
     void handle_leader_change(
       model::term_id,
@@ -277,8 +269,6 @@ struct group_log_record_key {
  */
 struct recovery_batch_consumer_state {
     absl::node_hash_map<kafka::group_id, group_stm> groups;
-    absl::flat_hash_map<model::producer_id, model::producer_epoch>
-      fence_pid_epoch;
 };
 
 struct recovery_batch_consumer {

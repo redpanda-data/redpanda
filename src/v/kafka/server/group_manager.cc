@@ -286,7 +286,6 @@ ss::future<> group_manager::recover_partition(
         }
     }
     p->term = term;
-    p->fence_pid_epoch = std::move(ctx.fence_pid_epoch);
 
     for (auto& [group_id, group_stm] : ctx.groups) {
         if (group_stm.has_data()) {
@@ -307,6 +306,10 @@ ss::future<> group_manager::recover_partition(
                     meta.metadata.metadata.value_or(""),
                   });
             }
+
+            for (auto& [id, epoch] : group_stm.fences()) {
+                group->try_set_fence(id, epoch);
+            }
         }
     }
 
@@ -322,6 +325,9 @@ ss::future<> group_manager::recover_partition(
         }
         for (const auto& [_, tx] : group_stm.prepared_txs()) {
             group->insert_prepared(tx);
+        }
+        for (auto& [id, epoch] : group_stm.fences()) {
+            group->try_set_fence(id, epoch);
         }
     }
 
@@ -445,12 +451,30 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
     } else if (batch.header().type == cluster::tx_fence_batch_type) {
-        auto bid = model::batch_identity::from(batch.header());
-        auto [fence_it, _] = st.fence_pid_epoch.try_emplace(
-          bid.pid.get_id(), bid.pid.get_epoch());
-        if (bid.pid.get_epoch() >= fence_it->second) {
-            fence_it->second = bid.pid.get_epoch();
-        }
+        vassert(
+          batch.record_count() == 1,
+          "fence batch must contain a single record");
+        auto r = batch.copy_records();
+        auto& record = *r.begin();
+        auto key_buf = record.release_key();
+        kafka::request_reader buf_reader(std::move(key_buf));
+        auto version = model::control_record_version(buf_reader.read_int16());
+
+        vassert(
+          version == group::fence_control_record_version,
+          "unknown group abort tx record version: {} expected: {}",
+          version,
+          group::fence_control_record_version);
+
+        const auto& hdr = batch.header();
+        auto bid = model::batch_identity::from(hdr);
+
+        auto val_buf = record.release_value();
+        auto val = reflection::from_iobuf<group_log_fencing>(
+          std::move(val_buf));
+
+        auto [group_it, _] = st.groups.try_emplace(val.group_id, group_stm());
+        group_it->second.try_set_fence(bid.pid.get_id(), bid.pid.get_epoch());
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
     } else {
@@ -762,83 +786,32 @@ group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
         return ss::make_ready_future<cluster::begin_group_tx_reply>(
           make_begin_tx_reply(cluster::tx_errc::coordinator_load_in_progress));
     }
+    p->catchup_lock.read_unlock();
 
-    return do_begin_tx(p, std::move(r)).finally([p] {
-        p->catchup_lock.read_unlock();
-    });
-}
+    return p->catchup_lock.hold_read_lock().then(
+      [this, p, r = std::move(r)](ss::basic_rwlock<>::holder unit) mutable {
+          auto error = validate_group_status(
+            r.ntp, r.group_id, offset_commit_api::key);
+          if (error != error_code::none) {
+              auto ec = error == error_code::not_coordinator
+                          ? cluster::tx_errc::not_coordinator
+                          : cluster::tx_errc::timeout;
+              return ss::make_ready_future<cluster::begin_group_tx_reply>(
+                make_begin_tx_reply(ec));
+          }
 
-ss::future<cluster::begin_group_tx_reply> group_manager::do_begin_tx(
-  ss::lw_shared_ptr<attached_partition> partition,
-  cluster::begin_group_tx_request&& r) {
-    auto error = validate_group_status(
-      r.ntp, r.group_id, offset_commit_api::key);
-    if (error != error_code::none) {
-        if (error == error_code::not_coordinator) {
-            co_return make_begin_tx_reply(cluster::tx_errc::not_coordinator);
-        } else {
-            co_return make_begin_tx_reply(cluster::tx_errc::timeout);
-        }
-    }
+          auto group = get_group(r.group_id);
+          if (!group) {
+              group = ss::make_lw_shared<kafka::group>(
+                r.group_id, group_state::empty, _conf, p->partition);
+              group->reset_tx_state(p->term);
+              _groups.emplace(r.group_id, group);
+              _groups.rehash(0);
+          }
 
-    if (partition->partition->term() != partition->term) {
-        co_return make_begin_tx_reply(cluster::tx_errc::not_coordinator);
-    }
-
-    auto fence_it = partition->fence_pid_epoch.find(r.pid.get_id());
-    if (
-      fence_it == partition->fence_pid_epoch.end()
-      || r.pid.get_epoch() > fence_it->second) {
-        // TODO: https://app.clubhouse.io/vectorized/story/2200
-        // include producer_id into key to make it unique-ish
-        // to prevent being GCed by the compaction
-        auto batch = cluster::make_fence_batch(
-          fence_control_record_version, r.pid);
-        auto reader = model::make_memory_record_batch_reader(std::move(batch));
-        auto e = co_await partition->partition->replicate(
-          partition->term,
-          std::move(reader),
-          raft::replicate_options(raft::consistency_level::quorum_ack));
-
-        if (!e) {
-            vlog(
-              klog.error,
-              "Error \"{}\" on replicating pid:{} fencing batch",
-              e.error(),
-              r.pid);
-            co_return make_begin_tx_reply(cluster::tx_errc::timeout);
-        }
-
-        // we need to re-look up the current fencing token for
-        // current producer id because it might have been updated
-        // by a concurrent request while this fiber was waiting
-        // on partition->replicate
-        fence_it = partition->fence_pid_epoch.find(r.pid.get_id());
-    }
-
-    if (fence_it == partition->fence_pid_epoch.end()) {
-        partition->fence_pid_epoch.emplace(r.pid.get_id(), r.pid.get_epoch());
-    } else if (r.pid.get_epoch() >= fence_it->second) {
-        fence_it->second = r.pid.get_epoch();
-    } else {
-        vlog(
-          klog.error, "pid {} fenced out by epoch {}", r.pid, fence_it->second);
-        co_return make_begin_tx_reply(cluster::tx_errc::fenced);
-    }
-
-    auto group = get_group(r.group_id);
-    if (!group) {
-        // <kafka>the group is not relying on Kafka for group management, so
-        // allow the commit</kafka>
-        group = ss::make_lw_shared<kafka::group>(
-          r.group_id, group_state::empty, _conf, partition->partition);
-        group->reset_tx_state(partition->term);
-        _groups.emplace(r.group_id, group);
-        _groups.rehash(0);
-    }
-
-    auto reply = co_await group->handle_begin_tx(std::move(r));
-    co_return reply;
+          return group->handle_begin_tx(std::move(r))
+            .finally([unit = std::move(unit)] {});
+      });
 }
 
 ss::future<cluster::prepare_group_tx_reply>
