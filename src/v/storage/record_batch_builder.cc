@@ -9,6 +9,7 @@
 
 #include "storage/record_batch_builder.h"
 
+#include "compression/compression.h"
 #include "model/record.h"
 #include "model/record_utils.h"
 #include "model/timeout_clock.h"
@@ -34,7 +35,7 @@ model::record_batch record_batch_builder::build() && {
       .base_offset = _base_offset,
       .type = _batch_type,
       .crc = 0, // crc computed later
-      .attrs = model::record_batch_attributes{} |= model::compression::none,
+      .attrs = model::record_batch_attributes{} |= _compression,
       .last_offset_delta = static_cast<int32_t>(_records.size() - 1),
       .first_timestamp = now_ts,
       .max_timestamp = now_ts,
@@ -70,6 +71,10 @@ model::record_batch record_batch_builder::build() && {
           std::move(sr.headers));
         ++offset_delta;
         model::append_record_to_buffer(records, r);
+    }
+
+    if (_compression != model::compression::none) {
+        records = compression::compressor::compress(records, _compression);
     }
 
     internal::reset_size_checksum_metadata(header, records);

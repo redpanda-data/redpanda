@@ -49,6 +49,8 @@ public:
 
     void set_transactional_type() { _transactional_type = true; }
 
+    void set_compression(model::compression c) { _compression = c; }
+
 private:
     static constexpr int64_t zero_vint_size = vint::vint_size(0);
     struct serialized_record {
@@ -88,5 +90,6 @@ private:
     bool _is_control_type{false};
     bool _transactional_type{false};
     std::vector<serialized_record> _records;
+    model::compression _compression{model::compression::none};
 };
 } // namespace storage
