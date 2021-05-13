@@ -137,7 +137,7 @@ public:
     }
     bool is_removed() const { return _is_removed; }
 
-    const absl::node_hash_map<model::producer_id, group::group_prepared_tx>&
+    const absl::node_hash_map<model::producer_id, group::prepared_tx>&
     prepared_txs() const {
         return _prepared_txs;
     }
@@ -154,8 +154,7 @@ public:
 
 private:
     absl::node_hash_map<model::topic_partition, logged_metadata> _offsets;
-    absl::node_hash_map<model::producer_id, group::group_prepared_tx>
-      _prepared_txs;
+    absl::node_hash_map<model::producer_id, group::prepared_tx> _prepared_txs;
     absl::node_hash_map<model::producer_id, model::producer_epoch>
       _fence_pid_epoch;
     group_log_group_metadata _metadata;

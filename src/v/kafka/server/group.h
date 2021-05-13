@@ -123,10 +123,9 @@ public:
         // https://github.com/vectorizedio/redpanda/issues/1181
     };
 
-    struct group_prepared_tx {
+    struct prepared_tx {
         model::producer_identity pid;
         model::tx_seq tx_seq;
-        kafka::group_id group_id;
         absl::node_hash_map<model::topic_partition, offset_metadata> offsets;
     };
 
@@ -468,7 +467,7 @@ public:
         return inserted;
     }
 
-    void insert_prepared(group_prepared_tx);
+    void insert_prepared(prepared_tx);
 
     void try_set_fence(model::producer_id id, model::producer_epoch epoch) {
         auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);
@@ -533,11 +532,6 @@ private:
     struct volatile_tx {
         model::tx_seq tx_seq;
         absl::node_hash_map<model::topic_partition, volatile_offset> offsets;
-    };
-
-    struct prepared_tx {
-        model::tx_seq tx_seq;
-        absl::node_hash_map<model::topic_partition, offset_metadata> offsets;
     };
 
     absl::node_hash_map<model::producer_identity, volatile_tx> _volatile_txs;

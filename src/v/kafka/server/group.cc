@@ -1197,9 +1197,9 @@ void group::fail_offset_commit(
 
 void group::reset_tx_state(model::term_id term) { _term = term; }
 
-void group::insert_prepared(group_prepared_tx tx) {
-    _prepared_txs[tx.pid] = prepared_tx{
-      .tx_seq = tx.tx_seq, .offsets = std::move(tx.offsets)};
+void group::insert_prepared(prepared_tx tx) {
+    auto pid = tx.pid;
+    _prepared_txs[pid] = std::move(tx);
 }
 
 ss::future<cluster::commit_group_tx_reply>
