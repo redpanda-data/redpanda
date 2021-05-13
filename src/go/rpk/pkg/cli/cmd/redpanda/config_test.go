@@ -21,7 +21,7 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 )
 
-func TestSet(t *testing.T) {
+func TestSetCmd(t *testing.T) {
 	tests := []struct {
 		name      string
 		key       string

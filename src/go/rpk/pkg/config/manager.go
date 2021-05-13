@@ -43,9 +43,8 @@ type Manager interface {
 	WriteLoaded() error
 	// Get the currently-loaded config
 	Get() (*Config, error)
-	// Reads the config from path, sets key to the given value (parsing it
-	// according to the format), and writes the config back
-	Set(key, value, format, path string) error
+	// Sets key to the given value (parsing it according to the format)
+	Set(key, value, format string) error
 	// If path is empty, tries to find the file in the default locations.
 	// Otherwise, it tries to read the file and load it. If the file doesn't
 	// exist, it tries to create it with the default configuration.
@@ -319,21 +318,15 @@ func write(v *viper.Viper, path string) error {
 	return nil
 }
 
-func (m *manager) Set(key, value, format, path string) error {
-	confMap, err := m.readMap(path)
-	if err != nil {
-		return err
+func (m *manager) Set(key, value, format string) error {
+	if key == "" {
+		return errors.New("empty config field key")
 	}
-	m.v.MergeConfigMap(confMap)
 	var newConfValue interface{}
 	switch strings.ToLower(format) {
 	case "single":
 		m.v.Set(key, parse(value))
-		err = checkAndWrite(m.fs, m.v, path)
-		if err == nil {
-			checkAndPrintRestartWarning(key)
-		}
-		return err
+		return nil
 	case "yaml":
 		err := yaml.Unmarshal([]byte(value), &newConfValue)
 		if err != nil {
@@ -349,12 +342,7 @@ func (m *manager) Set(key, value, format, path string) error {
 	}
 	newV := viper.New()
 	newV.Set(key, newConfValue)
-	m.v.MergeConfigMap(newV.AllSettings())
-	err = checkAndWrite(m.fs, m.v, path)
-	if err == nil {
-		checkAndPrintRestartWarning(key)
-	}
-	return err
+	return m.v.MergeConfigMap(newV.AllSettings())
 }
 
 func checkAndWrite(fs afero.Fs, v *viper.Viper, path string) error {

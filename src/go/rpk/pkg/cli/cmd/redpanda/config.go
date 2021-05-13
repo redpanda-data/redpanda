@@ -52,7 +52,15 @@ func set(fs afero.Fs, mgr config.Manager) *cobra.Command {
 					return err
 				}
 			}
-			return mgr.Set(key, value, format, configPath)
+			_, err = mgr.Read(configPath)
+			if err != nil {
+				return err
+			}
+			err = mgr.Set(key, value, format)
+			if err != nil {
+				return err
+			}
+			return mgr.WriteLoaded()
 		},
 	}
 	c.Flags().StringVar(&format,

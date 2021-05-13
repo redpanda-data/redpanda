@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 	vyaml "github.com/vectorizedio/redpanda/src/go/rpk/pkg/yaml"
@@ -53,72 +52,86 @@ func getValidConfig() *Config {
 	return conf
 }
 
-func TestSeto(t *testing.T) {
+func TestSet(t *testing.T) {
 	tests := []struct {
 		name      string
 		key       string
 		value     string
 		format    string
-		expected  interface{}
+		check     func(st *testing.T, c *Config, mgr *manager)
 		expectErr bool
 	}{
 		{
-			name:     "it should parse '1' as an int and not as bool (true)",
-			key:      "redpanda.node_id",
-			value:    "1",
-			format:   "single",
-			expected: 1,
+			name:   "it should parse '1' as an int and not as bool (true)",
+			key:    "redpanda.node_id",
+			value:  "1",
+			format: "single",
+			check: func(st *testing.T, c *Config, _ *manager) {
+				require.Exactly(st, 1, c.Redpanda.Id)
+			},
 		},
 		{
-			name:     "it should set single integer fields",
-			key:      "redpanda.node_id",
-			value:    "54312",
-			format:   "single",
-			expected: 54312,
+			name:   "it should set single integer fields",
+			key:    "redpanda.node_id",
+			value:  "54312",
+			format: "single",
+			check: func(st *testing.T, c *Config, _ *manager) {
+				require.Exactly(st, 54312, c.Redpanda.Id)
+			},
 		},
 		{
-			name:     "it should set single float fields",
-			key:      "redpanda.float_field",
-			value:    "42.3",
-			format:   "single",
-			expected: 42.3,
+			name:   "it should set single float fields",
+			key:    "redpanda.float_field",
+			value:  "42.3",
+			format: "single",
+			check: func(st *testing.T, _ *Config, mgr *manager) {
+				//require.True(st, ok, "Config map is of the wrong type")
+				require.Exactly(st, 42.3, mgr.v.Get("redpanda.float_field"))
+			},
 		},
 		{
-			name:     "it should set single string fields",
-			key:      "redpanda.data_directory",
-			value:    "'/var/lib/differentdir'",
-			format:   "single",
-			expected: "'/var/lib/differentdir'",
+			name:   "it should set single string fields",
+			key:    "redpanda.data_directory",
+			value:  "'/var/lib/differentdir'",
+			format: "single",
+			check: func(st *testing.T, c *Config, _ *manager) {
+				require.Exactly(st, "'/var/lib/differentdir'", c.Redpanda.Directory)
+			},
 		},
 		{
-			name:     "it should set single bool fields",
-			key:      "rpk.enable_usage_stats",
-			value:    "true",
-			format:   "single",
-			expected: true,
+			name:   "it should set single bool fields",
+			key:    "rpk.enable_usage_stats",
+			value:  "true",
+			format: "single",
+			check: func(st *testing.T, c *Config, _ *manager) {
+				require.Exactly(st, true, c.Rpk.EnableUsageStats)
+			},
 		},
 		{
 			name:   "it should partially set map fields (yaml)",
 			key:    "rpk",
 			value:  `tune_disk_irq: true`,
 			format: "yaml",
-			expected: map[string]interface{}{
-				"enable_usage_stats":         false,
-				"overprovisioned":            false,
-				"tune_network":               false,
-				"tune_disk_scheduler":        false,
-				"tune_disk_nomerges":         false,
-				"tune_disk_irq":              true,
-				"tune_cpu":                   false,
-				"tune_aio_events":            false,
-				"tune_clocksource":           false,
-				"tune_swappiness":            false,
-				"tune_transparent_hugepages": false,
-				"enable_memory_locking":      false,
-				"tune_fstrim":                false,
-				"tune_coredump":              false,
-				"tune_disk_write_cache":      false,
-				"coredump_dir":               "/var/lib/redpanda/coredump",
+			check: func(st *testing.T, c *Config, _ *manager) {
+				expected := RpkConfig{
+					EnableUsageStats:         false,
+					Overprovisioned:          false,
+					TuneNetwork:              false,
+					TuneDiskScheduler:        false,
+					TuneNomerges:             false,
+					TuneDiskIrq:              true,
+					TuneCpu:                  false,
+					TuneAioEvents:            false,
+					TuneClocksource:          false,
+					TuneSwappiness:           false,
+					TuneTransparentHugePages: false,
+					EnableMemoryLocking:      false,
+					TuneFstrim:               false,
+					TuneCoredump:             false,
+					TuneDiskWriteCache:       false,
+					CoredumpDir:              "/var/lib/redpanda/coredump",
+				}
+				require.Exactly(st, expected, c.Rpk)
 			},
 		},
 		{
@@ -129,19 +142,15 @@ func TestSeto(t *testing.T) {
 		  "port": 9092
 		}]`,
 			format: "json",
-			expected: []interface{}{
-				map[interface{}]interface{}{
-					"port":    9092,
-					"address": "192.168.54.2",
-				},
+			check: func(st *testing.T, c *Config, _ *manager) {
+				expected := []NamedSocketAddress{{
+					SocketAddress: SocketAddress{
+						Port:    9092,
+						Address: "192.168.54.2",
+					},
+				}}
+				require.Exactly(st, expected, c.Redpanda.KafkaApi)
 			},
-		},
-		{
-			name:      "it should fail if the new value is invalid",
-			key:       "redpanda",
-			value:     `{"data_directory": ""}`,
-			format:    "json",
-			expectErr: true,
 		},
 		{
 			name:      "it should fail if the value isn't well formatted (json)",
@@ -178,21 +187,18 @@ func TestSeto(t *testing.T) {
 			fs := afero.NewMemMapFs()
 			mgr := NewManager(fs)
 			conf := Default()
-			err := mgr.Write(conf)
-			require.NoError(t, err)
-			err = mgr.Set(tt.key, tt.value, tt.format, conf.ConfigFile)
+			err := mgr.Set(tt.key, tt.value, tt.format)
 			if tt.expectErr {
 				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
-			v := viper.New()
-			v.SetFs(fs)
-			v.SetConfigFile(conf.ConfigFile)
-			err = v.ReadInConfig()
-			require.NoError(t, err)
-			val := v.Get(tt.key)
-			require.Exactly(t, tt.expected, val)
+			if tt.check != nil {
+				conf, err = mgr.Get()
+				require.NoError(t, err)
+				m, _ := mgr.(*manager)
+				tt.check(t, conf, m)
+			}
 		})
 	}
 }
@@ -1613,6 +1619,27 @@ rpk:
 			require.NoError(t, err)
 		})
 	}
+}
+
+func TestWriteLoaded(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	mgr := NewManager(fs)
+	err := mgr.Set(
+		"rpk.admin",
+		`[{"address": "192.168.54.2","port": 9092}]`,
+		"json",
+	)
+	require.NoError(t, err)
+
+	mgr.WriteLoaded()
+	conf, err := mgr.Get()
+	require.NoError(t, err)
+
+	newMgr := NewManager(fs)
+	newConf, err := newMgr.Read(Default().ConfigFile)
+	require.NoError(t, err)
+
+	require.Exactly(t, conf, newConf)
 }
 
 func TestReadOrGenerate(t *testing.T) {
