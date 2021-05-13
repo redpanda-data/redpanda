@@ -428,3 +428,8 @@ class RedpandaService(Service):
             return Partition(index, leader, replicas)
 
         return [make_partition(p) for p in topic["partitions"]]
+
+    def create_topic(self, spec):
+        client = self._client_type(self)
+        self.logger.debug(f"Creating topic {spec}")
+        client.create_topic(spec)
