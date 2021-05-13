@@ -310,6 +310,15 @@ absl::flat_hash_set<model::ntp> log_manager::get_all_ntps() const {
     }
     return r;
 }
+int64_t log_manager::compaction_backlog() const {
+    return std::accumulate(
+      _logs.begin(),
+      _logs.end(),
+      int64_t(0),
+      [](int64_t acc, const logs_type::value_type& p) {
+          return acc + p.second.handle.compaction_backlog();
+      });
+}
 
 std::ostream& operator<<(std::ostream& o, log_config::storage_type t) {
     switch (t) {
