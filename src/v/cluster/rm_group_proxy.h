@@ -26,12 +26,8 @@ public:
       model::timeout_clock::duration)
       = 0;
 
-    virtual ss::future<begin_group_tx_reply> begin_group_tx_locally(
-      kafka::group_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration)
-      = 0;
+    virtual ss::future<begin_group_tx_reply>
+      begin_group_tx_locally(begin_group_tx_request) = 0;
 
     virtual ss::future<prepare_group_tx_reply> prepare_group_tx(
       kafka::group_id,
@@ -41,13 +37,8 @@ public:
       model::timeout_clock::duration)
       = 0;
 
-    virtual ss::future<prepare_group_tx_reply> prepare_group_tx_locally(
-      kafka::group_id,
-      model::term_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration)
-      = 0;
+    virtual ss::future<prepare_group_tx_reply>
+      prepare_group_tx_locally(prepare_group_tx_request) = 0;
 
     virtual ss::future<commit_group_tx_reply> commit_group_tx(
       kafka::group_id,
@@ -56,19 +47,14 @@ public:
       model::timeout_clock::duration)
       = 0;
 
-    virtual ss::future<commit_group_tx_reply> commit_group_tx_locally(
-      kafka::group_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration)
-      = 0;
+    virtual ss::future<commit_group_tx_reply>
+      commit_group_tx_locally(commit_group_tx_request) = 0;
 
     virtual ss::future<abort_group_tx_reply> abort_group_tx(
       kafka::group_id, model::producer_identity, model::timeout_clock::duration)
       = 0;
 
-    virtual ss::future<abort_group_tx_reply> abort_group_tx_locally(
-      kafka::group_id, model::producer_identity, model::timeout_clock::duration)
-      = 0;
+    virtual ss::future<abort_group_tx_reply>
+      abort_group_tx_locally(abort_group_tx_request) = 0;
 };
 } // namespace cluster

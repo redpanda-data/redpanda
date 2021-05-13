@@ -136,8 +136,12 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
     auto _self = _controller->self();
 
     if (leader == _self) {
-        co_return co_await begin_group_tx_locally(
-          group_id, pid, tx_seq, timeout);
+        cluster::begin_group_tx_request req;
+        req.group_id = group_id;
+        req.pid = pid;
+        req.tx_seq = tx_seq;
+        req.timeout = timeout;
+        co_return co_await begin_group_tx_locally(std::move(req));
     }
 
     vlog(klog.trace, "dispatching begin group tx to {} from {}", leader, _self);
@@ -182,17 +186,8 @@ rm_group_frontend::dispatch_begin_group_tx(
 }
 
 ss::future<cluster::begin_group_tx_reply>
-rm_group_frontend::begin_group_tx_locally(
-  kafka::group_id group_id,
-  model::producer_identity pid,
-  model::tx_seq tx_seq,
-  model::timeout_clock::duration timeout) {
-    cluster::begin_group_tx_request req;
-    req.group_id = group_id;
-    req.pid = pid;
-    req.tx_seq = tx_seq;
-    req.timeout = timeout;
-    co_return co_await _group_router.local().begin_tx(std::move(req));
+rm_group_frontend::begin_group_tx_locally(cluster::begin_group_tx_request req) {
+    return _group_router.local().begin_tx(std::move(req));
 }
 
 ss::future<cluster::prepare_group_tx_reply> rm_group_frontend::prepare_group_tx(
@@ -226,8 +221,13 @@ ss::future<cluster::prepare_group_tx_reply> rm_group_frontend::prepare_group_tx(
     auto _self = _controller->self();
 
     if (leader == _self) {
-        co_return co_await prepare_group_tx_locally(
-          group_id, etag, pid, tx_seq, timeout);
+        cluster::prepare_group_tx_request req;
+        req.group_id = group_id;
+        req.etag = etag;
+        req.pid = pid;
+        req.tx_seq = tx_seq;
+        req.timeout = timeout;
+        co_return co_await prepare_group_tx_locally(std::move(req));
     }
 
     vlog(klog.trace, "dispatching begin group tx to {} from {}", leader, _self);
@@ -277,19 +277,8 @@ rm_group_frontend::dispatch_prepare_group_tx(
 
 ss::future<cluster::prepare_group_tx_reply>
 rm_group_frontend::prepare_group_tx_locally(
-  kafka::group_id group_id,
-  model::term_id etag,
-  model::producer_identity pid,
-  model::tx_seq tx_seq,
-  model::timeout_clock::duration timeout) {
-    cluster::prepare_group_tx_request req;
-    req.group_id = group_id;
-    req.etag = etag;
-    req.pid = pid;
-    req.tx_seq = tx_seq;
-    req.timeout = timeout;
-
-    co_return co_await _group_router.local().prepare_tx(std::move(req));
+  cluster::prepare_group_tx_request req) {
+    return _group_router.local().prepare_tx(std::move(req));
 }
 
 ss::future<cluster::commit_group_tx_reply> rm_group_frontend::commit_group_tx(
@@ -323,8 +312,12 @@ ss::future<cluster::commit_group_tx_reply> rm_group_frontend::commit_group_tx(
     auto _self = _controller->self();
 
     if (leader == _self) {
-        co_return co_await commit_group_tx_locally(
-          group_id, pid, tx_seq, timeout);
+        cluster::commit_group_tx_request req;
+        req.group_id = group_id;
+        req.pid = pid;
+        req.tx_seq = tx_seq;
+        req.timeout = timeout;
+        co_return co_await commit_group_tx_locally(std::move(req));
     }
 
     vlog(
@@ -370,17 +363,8 @@ rm_group_frontend::dispatch_commit_group_tx(
 
 ss::future<cluster::commit_group_tx_reply>
 rm_group_frontend::commit_group_tx_locally(
-  kafka::group_id group_id,
-  model::producer_identity pid,
-  model::tx_seq tx_seq,
-  model::timeout_clock::duration timeout) {
-    cluster::commit_group_tx_request req;
-    req.group_id = group_id;
-    req.pid = pid;
-    req.tx_seq = tx_seq;
-    req.timeout = timeout;
-
-    co_return co_await _group_router.local().commit_tx(std::move(req));
+  cluster::commit_group_tx_request req) {
+    return _group_router.local().commit_tx(std::move(req));
 }
 
 ss::future<cluster::abort_group_tx_reply> rm_group_frontend::abort_group_tx(
@@ -412,7 +396,11 @@ ss::future<cluster::abort_group_tx_reply> rm_group_frontend::abort_group_tx(
     auto _self = _controller->self();
 
     if (leader == _self) {
-        co_return co_await abort_group_tx_locally(group_id, pid, timeout);
+        cluster::abort_group_tx_request req;
+        req.group_id = group_id;
+        req.pid = pid;
+        req.timeout = timeout;
+        co_return co_await abort_group_tx_locally(std::move(req));
     }
 
     vlog(klog.trace, "dispatching begin group tx to {} from {}", leader, _self);
@@ -451,16 +439,8 @@ rm_group_frontend::dispatch_abort_group_tx(
 }
 
 ss::future<cluster::abort_group_tx_reply>
-rm_group_frontend::abort_group_tx_locally(
-  kafka::group_id group_id,
-  model::producer_identity pid,
-  model::timeout_clock::duration timeout) {
-    cluster::abort_group_tx_request req;
-    req.group_id = group_id;
-    req.pid = pid;
-    req.timeout = timeout;
-
-    co_return co_await _group_router.local().abort_tx(std::move(req));
+rm_group_frontend::abort_group_tx_locally(cluster::abort_group_tx_request req) {
+    return _group_router.local().abort_tx(std::move(req));
 }
 
 } // namespace kafka
