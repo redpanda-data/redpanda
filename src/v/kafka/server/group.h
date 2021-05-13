@@ -19,6 +19,7 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "seastarx.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -508,6 +509,7 @@ private:
     ss::lw_shared_ptr<cluster::partition> _partition;
     absl::node_hash_map<model::topic_partition, offset_metadata> _offsets;
 
+    mutex _tx_mutex;
     model::term_id _term;
     absl::node_hash_map<model::topic_partition, offset_metadata>
       _pending_offset_commits;
