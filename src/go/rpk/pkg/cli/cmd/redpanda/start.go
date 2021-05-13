@@ -76,6 +76,7 @@ const (
 	mbindFlag            = "mbind"
 	overprovisionedFlag  = "overprovisioned"
 	nodeIDFlag           = "node-id"
+	setConfigFlag        = "set"
 )
 
 func updateConfigWithFlags(conf *config.Config, flags *pflag.FlagSet) {
@@ -94,6 +95,21 @@ func updateConfigWithFlags(conf *config.Config, flags *pflag.FlagSet) {
 	if flags.Changed(nodeIDFlag) {
 		conf.Redpanda.Id, _ = flags.GetInt(nodeIDFlag)
 	}
+}
+
+func parseConfigKvs(args []string) ([]string, []string) {
+	setFlag := fmt.Sprintf("--%s", setConfigFlag)
+	kvs := []string{}
+	i := 0
+	for i < len(args)-1 {
+		if args[i] == setFlag {
+			kvs = append(kvs, args[i+1])
+			args = append(args[:i], args[i+2:]...)
+			continue
+		}
+		i++
+	}
+	return kvs, args
 }
 
 func NewStartCommand(
@@ -126,6 +142,11 @@ func NewStartCommand(
 			UnknownFlags: true,
 		},
 		RunE: func(ccmd *cobra.Command, args []string) error {
+			// --set flags have to be parsed by hand because pflag (the
+			// underlying flag-parsing lib used by cobra) uses a CSV parser
+			// for list flags, and since JSON often contains commas, it
+			// blows up when there's a JSON object.
+			configKvs, filteredArgs := parseConfigKvs(os.Args)
 			conf, err := mgr.FindOrGenerate(configFile)
 			if err != nil {
 				return err
@@ -272,9 +293,16 @@ func NewStartCommand(
 				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
+			if len(configKvs) > 0 {
+				conf, err = setConfig(mgr, configKvs)
+				if err != nil {
+					return err
+				}
+			}
 			rpArgs, err := buildRedpandaFlags(
 				fs,
 				conf,
+				filteredArgs,
 				sFlags,
 				ccmd.Flags(),
 				!prestartCfg.checkEnabled,
@@ -478,6 +506,7 @@ func prestart(
 func buildRedpandaFlags(
 	fs afero.Fs,
 	conf *config.Config,
+	args []string,
 	sFlags seastarFlags,
 	flags *pflag.FlagSet,
 	skipChecks bool,
@@ -524,7 +553,7 @@ func buildRedpandaFlags(
 	flagsMap = flagsFromConf(conf, flagsMap, flags)
 	finalFlags := mergeMaps(
 		parseFlags(conf.Rpk.AdditionalStartFlags),
-		extraFlags(flags, os.Args),
+		extraFlags(flags, args),
 	)
 	for n, v := range flagsMap {
 		if _, alreadyPresent := finalFlags[n]; alreadyPresent {
@@ -578,6 +607,23 @@ func mergeFlags(
 		current[k] = v
 	}
 	return current
+}
+
+func setConfig(mgr config.Manager, configKvs []string) (*config.Config, error) {
+	for _, rawKv := range configKvs {
+		parts := strings.SplitN(rawKv, "=", 2)
+		if len(parts) < 2 {
+			return nil, fmt.Errorf(
+				"key-value pair '%s' is not formatted as expected (k=v)",
+				rawKv,
+			)
+		}
+		err := mgr.Set(parts[0], parts[1], "")
+		if err != nil {
+			return nil, err
+		}
+	}
+	return mgr.Get()
 }
 
 func resolveWellKnownIo(
