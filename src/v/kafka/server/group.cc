@@ -105,6 +105,24 @@ bool group::valid_previous_state(group_state s) const {
     }
 }
 
+template<typename T>
+static model::record_batch make_tx_batch(
+  model::record_batch_type type,
+  model::control_record_version version,
+  const model::producer_identity& pid,
+  T cmd) {
+    iobuf key;
+    kafka::response_writer w(key);
+    w.write(version);
+
+    storage::record_batch_builder builder(type, model::offset(0));
+    builder.set_producer_identity(pid.id, pid.epoch);
+    builder.set_control_type();
+    builder.add_raw_kv(std::move(key), reflection::to_iobuf(std::move(cmd)));
+
+    return std::move(builder).build();
+}
+
 group_state group::set_state(group_state s) {
     klog.trace("group state transition {} -> {}", _state, s);
     if (!valid_previous_state(s)) {
@@ -1200,23 +1218,17 @@ group::commit_tx(cluster::commit_group_tx_request r) {
         co_return make_commit_tx_reply(cluster::tx_errc::none);
     }
 
-    iobuf key;
+    group_log_commit_tx commit_tx;
+    commit_tx.group_id = r.group_id;
     // TODO: https://app.clubhouse.io/vectorized/story/2200
     // include producer_id+type into key to make it unique-ish
     // to prevent being GCed by the compaction
-    kafka::response_writer w(key);
-    w.write(commit_tx_record_version());
-    storage::record_batch_builder builder(
-      cluster::group_commit_tx_batch_type, model::offset(0));
-    builder.set_producer_identity(r.pid.id, r.pid.epoch);
-    builder.set_control_type();
-    group_log_commit_tx commit_tx;
-    commit_tx.group_id = r.group_id;
-    builder.add_raw_kw(
-      std::move(key),
-      reflection::to_iobuf(std::move(commit_tx)),
-      std::vector<model::record_header>());
-    auto batch = std::move(builder).build();
+    auto batch = make_tx_batch(
+      cluster::group_commit_tx_batch_type,
+      commit_tx_record_version,
+      r.pid,
+      std::move(commit_tx));
+
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
     auto e = co_await _partition->replicate(
@@ -1320,21 +1332,14 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
     volatile_tx tx = tx_it->second;
     _volatile_txs.erase(tx_it);
 
-    iobuf key;
-    kafka::response_writer w(key);
     // TODO: https://app.clubhouse.io/vectorized/story/2200
     // include producer_id+type into key to make it unique-ish
     // to prevent being GCed by the compaction
-    w.write(prepared_tx_record_version());
-    storage::record_batch_builder builder(
-      cluster::group_prepare_tx_batch_type, model::offset(0));
-    builder.set_producer_identity(r.pid.id, r.pid.epoch);
-    builder.set_control_type();
-    builder.add_raw_kw(
-      std::move(key),
-      reflection::to_iobuf(std::move(tx_entry)),
-      std::vector<model::record_header>());
-    auto batch = std::move(builder).build();
+    auto batch = make_tx_batch(
+      cluster::group_prepare_tx_batch_type,
+      prepared_tx_record_version,
+      r.pid,
+      std::move(tx_entry));
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
     auto e = co_await _partition->replicate(
@@ -1366,21 +1371,14 @@ group::abort_tx(cluster::abort_group_tx_request r) {
 
     auto tx = aborted_tx{.group_id = r.group_id, .tx_seq = r.tx_seq};
 
-    iobuf key;
-    kafka::response_writer w(key);
     // TODO: https://app.clubhouse.io/vectorized/story/2200
     // include producer_id+type into key to make it unique-ish
     // to prevent being GCed by the compaction
-    w.write(aborted_tx_record_version());
-    storage::record_batch_builder builder(
-      cluster::group_abort_tx_batch_type, model::offset(0));
-    builder.set_producer_identity(r.pid.id, r.pid.epoch);
-    builder.set_control_type();
-    builder.add_raw_kw(
-      std::move(key),
-      reflection::to_iobuf(std::move(tx)),
-      std::vector<model::record_header>());
-    auto batch = std::move(builder).build();
+    auto batch = make_tx_batch(
+      cluster::group_abort_tx_batch_type,
+      aborted_tx_record_version,
+      r.pid,
+      std::move(tx));
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
     auto e = co_await _partition->replicate(
