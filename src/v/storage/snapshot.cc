@@ -147,7 +147,7 @@ ss::future<snapshot_header> snapshot_reader::read_header() {
             "Invalid metadata size {}",
             hdr.metadata_size);
 
-          crc32 crc;
+          crc::crc32c crc;
           crc.extend(ss::cpu_to_le(hdr.metadata_crc));
           crc.extend(ss::cpu_to_le(hdr.version));
           crc.extend(ss::cpu_to_le(hdr.metadata_size));
@@ -184,7 +184,7 @@ ss::future<iobuf> snapshot_reader::read_metadata() {
                       "Corrupt snapshot. Failed to read metadata: {}", _path)));
               }
 
-              crc32 crc;
+              crc::crc32c crc;
               crc_extend_iobuf(crc, buf);
 
               if (header.metadata_crc != crc.value()) {
@@ -238,11 +238,11 @@ ss::future<> snapshot_writer::write_metadata(iobuf buf) {
     header.version = snapshot_header::supported_version;
     header.metadata_size = buf.size_bytes();
 
-    crc32 meta_crc;
+    crc::crc32c meta_crc;
     crc_extend_iobuf(meta_crc, buf);
     header.metadata_crc = meta_crc.value();
 
-    crc32 header_crc;
+    crc::crc32c header_crc;
     header_crc.extend(ss::cpu_to_le(header.metadata_crc));
     header_crc.extend(ss::cpu_to_le(header.version));
     header_crc.extend(ss::cpu_to_le(header.metadata_size));

@@ -13,7 +13,7 @@
 #include "bytes/iobuf.h"
 #include "hashing/crc32c.h"
 
-inline void crc_extend_iobuf(crc32& crc, const iobuf& buf) {
+inline void crc_extend_iobuf(crc::crc32c& crc, const iobuf& buf) {
     auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
     (void)in.consume(buf.size_bytes(), [&crc](const char* src, size_t sz) {
         // NOLINTNEXTLINE

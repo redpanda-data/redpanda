@@ -124,6 +124,10 @@ public:
         skip(len);
         return ret;
     }
+
+    iobuf share_no_consume(size_t len) {
+        return ref().share(bytes_consumed(), len);
+    }
 };
 
 inline std::ostream& operator<<(std::ostream& o, const iobuf_parser& p) {

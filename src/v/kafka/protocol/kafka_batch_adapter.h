@@ -12,8 +12,10 @@
 #pragma once
 
 #include "bytes/iobuf_parser.h"
+#include "kafka/types.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
+#include "storage/record_batch_builder.h"
 #include "utils/vint.h"
 
 namespace kafka {
@@ -61,12 +63,49 @@ public:
 
     bool v2_format;
     bool valid_crc;
+    bool legacy_error{false};
 
     std::optional<model::record_batch> batch;
+
+    void adapt_with_version(iobuf, api_version);
 
 private:
     void verify_crc(int32_t, iobuf_parser);
     model::record_batch_header read_header(iobuf_parser&);
+    void convert_message_set(storage::record_batch_builder&, iobuf, bool);
 };
+
+/*
+ * Helper wrapper type that handles conversion when encoding/decoding produce
+ * requests. This type replaces iobuf in the generated code for kafka request
+ * types.
+ */
+struct produce_request_record_data {
+    explicit produce_request_record_data(
+      std::optional<iobuf>&& data, api_version version) {
+        if (data) {
+            adapter.adapt_with_version(std::move(*data), version);
+        }
+    }
+
+    explicit produce_request_record_data(model::record_batch&& batch) {
+        adapter.v2_format = true;
+        adapter.valid_crc = true;
+        adapter.batch = std::move(batch);
+    }
+
+    kafka_batch_adapter adapter;
+};
+
+inline std::ostream&
+operator<<(std::ostream& os, const produce_request_record_data& data) {
+    fmt::print(
+      os,
+      "batch {} v2_format {} valid_crc {}",
+      data.adapter.batch ? data.adapter.batch->size_bytes() : -1,
+      data.adapter.v2_format,
+      data.adapter.valid_crc);
+    return os;
+}
 
 } // namespace kafka

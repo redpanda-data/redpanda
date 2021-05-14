@@ -17,20 +17,20 @@
 namespace model {
 
 template<typename T, typename = std::enable_if_t<std::is_integral_v<T>, T>>
-void crc_extend_cpu_to_le(crc32& crc, T i) {
+void crc_extend_cpu_to_le(crc::crc32c& crc, T i) {
     auto j = ss::cpu_to_le(i);
     crc.extend(j);
 }
 
 template<typename... T>
-void crc_extend_all_cpu_to_le(crc32& crc, T... t) {
+void crc_extend_all_cpu_to_le(crc::crc32c& crc, T... t) {
     ((crc_extend_cpu_to_le(crc, t)), ...);
 }
 
 /// \brief uint32_t because that's what crc32c uses
 /// it is *only* record_batch_header.header_crc;
 uint32_t internal_header_only_crc(const record_batch_header& header) {
-    auto c = crc32();
+    auto c = crc::crc32c();
     crc_extend_all_cpu_to_le(
       c,
       /*Additional fields*/
@@ -53,17 +53,18 @@ uint32_t internal_header_only_crc(const record_batch_header& header) {
 }
 
 template<typename T, typename = std::enable_if_t<std::is_integral_v<T>, T>>
-void crc_extend_cpu_to_be(crc32& crc, T i) {
+void crc_extend_cpu_to_be(crc::crc32c& crc, T i) {
     auto j = ss::cpu_to_be(i);
     crc.extend(j);
 }
 
 template<typename... T>
-void crc_extend_all_cpu_to_be(crc32& crc, T... t) {
+void crc_extend_all_cpu_to_be(crc::crc32c& crc, T... t) {
     ((crc_extend_cpu_to_be(crc, t)), ...);
 }
 
-void crc_record_batch_header(crc32& crc, const record_batch_header& header) {
+void crc_record_batch_header(
+  crc::crc32c& crc, const record_batch_header& header) {
     crc_extend_all_cpu_to_be(
       crc,
       header.attrs.value(),
@@ -77,7 +78,7 @@ void crc_record_batch_header(crc32& crc, const record_batch_header& header) {
 }
 
 int32_t crc_record_batch(const record_batch_header& hdr, const iobuf& records) {
-    auto crc = crc32();
+    auto crc = crc::crc32c();
     crc_record_batch_header(crc, hdr);
     crc_extend_iobuf(crc, records);
     return crc.value();
