@@ -1201,7 +1201,10 @@ void group::fail_offset_commit(
     }
 }
 
-void group::reset_tx_state(model::term_id term) { _term = term; }
+void group::reset_tx_state(model::term_id term) {
+    _term = term;
+    _volatile_txs.clear();
+}
 
 void group::insert_prepared(prepared_tx tx) {
     auto pid = tx.pid;
