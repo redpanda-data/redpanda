@@ -1,4 +1,4 @@
-// Copyright 2020 Vectorized, Inc.
+// Copyright 2021 Vectorized, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -7,15 +7,9 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "configuration.h"
+#include "pandaproxy/schema_registry/configuration.h"
 
-#include "config/configuration.h"
-#include "config/endpoint_tls_config.h"
-#include "model/metadata.h"
-#include "units.h"
-
-namespace pandaproxy {
-using namespace std::chrono_literals;
+namespace pandaproxy::schema_registry {
 
 configuration::configuration(const YAML::Node& cfg)
   : configuration() {
@@ -23,25 +17,19 @@ configuration::configuration(const YAML::Node& cfg)
 }
 
 configuration::configuration()
-  : pandaproxy_api(
+  : schema_registry_api(
     *this,
-    "pandaproxy_api",
-    "Rest API listen address and port",
+    "schema_registry_api",
+    "Schema Registry API listen address and port",
     config::required::no,
-    {model::broker_endpoint(unresolved_address("0.0.0.0", 8082))})
-  , pandaproxy_api_tls(
+    {model::broker_endpoint(unresolved_address("0.0.0.0", 8081))})
+  , schema_registry_api_tls(
       *this,
-      "pandaproxy_api_tls",
-      "TLS configuration for Pandaproxy api",
+      "schema_registry_api_tls",
+      "TLS configuration for Schema Registry API",
       config::required::no,
       {},
       config::endpoint_tls_config::validate_many)
-  , advertised_pandaproxy_api(
-      *this,
-      "advertised_pandaproxy_api",
-      "Rest API address and port to publish to client",
-      config::required::no,
-      {})
   , api_doc_dir(
       *this,
       "api_doc_dir",
@@ -49,4 +37,4 @@ configuration::configuration()
       config::required::no,
       "/usr/share/redpanda/proxy-api-doc") {}
 
-} // namespace pandaproxy
+} // namespace pandaproxy::schema_registry

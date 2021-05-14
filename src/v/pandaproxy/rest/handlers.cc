@@ -18,7 +18,6 @@
 #include "kafka/protocol/schemata/offset_commit_request.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
-#include "pandaproxy/configuration.h"
 #include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/requests/create_consumer.h"
 #include "pandaproxy/json/requests/fetch.h"
@@ -31,6 +30,7 @@
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/parsing/httpd.h"
 #include "pandaproxy/reply.h"
+#include "pandaproxy/rest/configuration.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
@@ -50,7 +50,7 @@
 
 namespace ppj = pandaproxy::json;
 
-namespace pandaproxy {
+namespace pandaproxy::rest {
 
 namespace {
 
@@ -203,7 +203,6 @@ create_consumer(server::request_t rq, server::reply_t rp) {
        rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
         auto name = co_await client.create_consumer(group_id, req_data.name);
-        auto adv_addr = rq.ctx.config.advertised_pandaproxy_api();
         json::create_consumer_response res{
           .instance_id = name,
           .base_uri = make_consumer_uri(rq, name, group_id)};
@@ -390,4 +389,4 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
       consumer_shard(group_id), rq.ctx.smp_sg, std::move(handler));
 }
 
-} // namespace pandaproxy
+} // namespace pandaproxy::rest

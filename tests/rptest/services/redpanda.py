@@ -61,6 +61,7 @@ class RedpandaService(Service):
                  enable_rp=True,
                  extra_rp_conf=None,
                  enable_pp=False,
+                 enable_sr=False,
                  topics=None,
                  log_level='info'):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
@@ -69,6 +70,7 @@ class RedpandaService(Service):
         self._enable_rp = enable_rp
         self._extra_rp_conf = extra_rp_conf
         self._enable_pp = enable_pp
+        self._enable_sr = enable_sr
         self._log_level = log_level
         self._topics = topics or ()
         self._admin = Admin(self)
@@ -221,6 +223,7 @@ class RedpandaService(Service):
                            node_id=self.idx(node),
                            enable_rp=self._enable_rp,
                            enable_pp=self._enable_pp,
+                           enable_sr=self._enable_sr,
                            superuser=self.SUPERUSER_CREDENTIALS,
                            sasl_enabled=self.sasl_enabled())
 

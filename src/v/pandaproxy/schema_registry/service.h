@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Vectorized, Inc.
+ * Copyright 2021 Vectorized, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -12,7 +12,7 @@
 #pragma once
 
 #include "kafka/client/client.h"
-#include "pandaproxy/configuration.h"
+#include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/server.h"
 #include "seastarx.h"
 
@@ -23,13 +23,14 @@
 
 #include <vector>
 
-namespace pandaproxy {
+namespace pandaproxy::schema_registry {
 
-class proxy {
+class service {
 public:
-    proxy(
+    service(
       const YAML::Node& config,
       ss::smp_service_group smp_sg,
+      size_t max_memory,
       ss::sharded<kafka::client::client>& client);
 
     ss::future<> start();
@@ -41,9 +42,10 @@ public:
 private:
     configuration _config;
     ss::smp_service_group _smp_sg;
+    ss::semaphore _mem_sem;
     ss::sharded<kafka::client::client>& _client;
     context_t _ctx;
     server _server;
 };
 
-} // namespace pandaproxy
+} // namespace pandaproxy::schema_registry

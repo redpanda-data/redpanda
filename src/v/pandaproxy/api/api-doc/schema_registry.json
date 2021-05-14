@@ -1,0 +1,30 @@
+"/schemas/types": {
+        "get": {
+          "summary": "Get the supported schema types.",
+          "operationId": "get_schemas_types",
+          "consumes": [
+            "application/vnd.schemaregistry.v1+json",
+            "application/vnd.schemaregistry+json",
+            "application/json"
+          ],
+          "parameters": [],
+          "produces": ["application/vnd.schemaregistry.v1+json"],
+          "responses": {
+            "200": {
+              "description": "OK",
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "500": {
+              "description": "Internal Server error",
+              "schema": {
+                "$ref": "#/definitions/error_body"
+              }
+          }
+        }
+      }
+    }

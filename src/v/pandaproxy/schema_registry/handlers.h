@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Vectorized, Inc.
+ * Copyright 2021 Vectorized, Inc.
  *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
@@ -11,9 +11,14 @@
 
 #pragma once
 
-namespace pandaproxy {
+#include "pandaproxy/server.h"
+#include "seastarx.h"
 
-struct configuration;
-class proxy;
+#include <seastar/core/future.hh>
 
-} // namespace pandaproxy
+namespace pandaproxy::schema_registry {
+
+ss::future<server::reply_t>
+get_schemas_types(server::request_t rq, server::reply_t rp);
+
+} // namespace pandaproxy::schema_registry

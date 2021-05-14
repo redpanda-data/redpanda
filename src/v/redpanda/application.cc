@@ -33,8 +33,10 @@
 #include "kafka/server/queue_depth_monitor.h"
 #include "kafka/server/quota_manager.h"
 #include "model/metadata.h"
-#include "pandaproxy/configuration.h"
-#include "pandaproxy/proxy.h"
+#include "pandaproxy/rest/configuration.h"
+#include "pandaproxy/rest/proxy.h"
+#include "pandaproxy/schema_registry/configuration.h"
+#include "pandaproxy/schema_registry/service.h"
 #include "platform/stop_signal.h"
 #include "raft/service.h"
 #include "redpanda/admin_server.h"
@@ -63,6 +65,26 @@
 #include <chrono>
 #include <exception>
 #include <vector>
+
+static void set_local_kafka_client_config(
+  std::optional<kafka::client::configuration>& client_config,
+  const config::configuration& config) {
+    client_config.emplace();
+    const auto& kafka_api = config.kafka_api.value();
+    vassert(!kafka_api.empty(), "There are no kafka_api listeners");
+    client_config->brokers.set_value(
+      std::vector<unresolved_address>{kafka_api[0].address});
+    const auto& kafka_api_tls = config::shard_local_cfg().kafka_api_tls.value();
+    auto tls_it = std::find_if(
+      kafka_api_tls.begin(),
+      kafka_api_tls.end(),
+      [&kafka_api](const config::endpoint_tls_config& tls) {
+          return tls.name == kafka_api[0].name;
+      });
+    if (tls_it != kafka_api_tls.end()) {
+        client_config->broker_tls.set_value(tls_it->config);
+    }
+}
 
 application::application(ss::sstring logger_name)
   : _log(std::move(logger_name))
@@ -143,6 +165,8 @@ int application::run(int ac, char** av) {
 void application::initialize(
   std::optional<YAML::Node> proxy_cfg,
   std::optional<YAML::Node> proxy_client_cfg,
+  std::optional<YAML::Node> schema_reg_cfg,
+  std::optional<YAML::Node> schema_reg_client_cfg,
   std::optional<scheduling_groups> groups) {
     if (config::shard_local_cfg().enable_pid_file()) {
         syschecks::pidfile_create(config::shard_local_cfg().pidfile_path());
@@ -167,6 +191,13 @@ void application::initialize(
 
     if (proxy_client_cfg) {
         _proxy_client_config.emplace(*proxy_client_cfg);
+    }
+    if (schema_reg_cfg) {
+        _schema_reg_config.emplace(*schema_reg_cfg);
+    }
+
+    if (schema_reg_client_cfg) {
+        _schema_reg_client_config.emplace(*schema_reg_client_cfg);
     }
 }
 
@@ -239,25 +270,23 @@ void application::hydrate_config(const po::variables_map& cfg) {
         if (config["pandaproxy_client"]) {
             _proxy_client_config.emplace(config["pandaproxy_client"]);
         } else {
-            _proxy_client_config.emplace();
-            const auto& kafka_api = config::shard_local_cfg().kafka_api.value();
-            vassert(!kafka_api.empty(), "There are no kafka_api listeners");
-            _proxy_client_config->brokers.set_value(
-              std::vector<unresolved_address>{kafka_api[0].address});
-            const auto& kafka_api_tls
-              = config::shard_local_cfg().kafka_api_tls.value();
-            auto tls_it = std::find_if(
-              kafka_api_tls.begin(),
-              kafka_api_tls.end(),
-              [&kafka_api](const config::endpoint_tls_config& tls) {
-                  return tls.name == kafka_api[0].name;
-              });
-            if (tls_it != kafka_api_tls.end()) {
-                _proxy_client_config->broker_tls.set_value(tls_it->config);
-            }
+            set_local_kafka_client_config(
+              _proxy_client_config, config::shard_local_cfg());
         }
         _proxy_config->for_each(config_printer("pandaproxy"));
         _proxy_client_config->for_each(config_printer("pandaproxy_client"));
+    }
+    if (config["schema_registry"]) {
+        _schema_reg_config.emplace(config["schema_registry"]);
+        if (config["schema_registry_client"]) {
+            _schema_reg_client_config.emplace(config["schema_registry_client"]);
+        } else {
+            set_local_kafka_client_config(
+              _schema_reg_client_config, config::shard_local_cfg());
+        }
+        _schema_reg_config->for_each(config_printer("schema_registry"));
+        _schema_reg_client_config->for_each(
+          config_printer("schema_registry_client"));
     }
 }
 
@@ -352,7 +381,24 @@ void application::wire_up_services() {
           _proxy,
           to_yaml(*_proxy_config),
           smp_service_groups.proxy_smp_sg(),
+          // TODO: Improve memory budget for services
+          // https://github.com/vectorizedio/redpanda/issues/1392
+          memory_groups::kafka_total_memory(),
           std::reference_wrapper(_proxy_client))
+          .get();
+    }
+    if (_schema_reg_config) {
+        construct_service(
+          _schema_registry_client, to_yaml(*_schema_reg_client_config))
+          .get();
+        construct_service(
+          _schema_registry,
+          to_yaml(*_schema_reg_config),
+          smp_service_groups.proxy_smp_sg(),
+          // TODO: Improve memory budget for services
+          // https://github.com/vectorizedio/redpanda/issues/1392
+          memory_groups::kafka_total_memory(),
+          std::reference_wrapper(_schema_registry_client))
           .get();
     }
 }
@@ -639,7 +685,7 @@ void application::wire_up_redpanda_services() {
 
 ss::future<> application::set_proxy_config(ss::sstring name, std::any val) {
     return _proxy.invoke_on_all(
-      [name{std::move(name)}, val{std::move(val)}](pandaproxy::proxy& p) {
+      [name{std::move(name)}, val{std::move(val)}](pandaproxy::rest::proxy& p) {
           p.config().get(name).set_value(val);
       });
 }
@@ -652,7 +698,7 @@ bool application::archival_storage_enabled() {
 ss::future<>
 application::set_proxy_client_config(ss::sstring name, std::any val) {
     return _proxy.invoke_on_all(
-      [name{std::move(name)}, val{std::move(val)}](pandaproxy::proxy& p) {
+      [name{std::move(name)}, val{std::move(val)}](pandaproxy::rest::proxy& p) {
           p.client_config().get(name).set_value(val);
       });
 }
@@ -663,11 +709,21 @@ void application::start() {
     }
 
     if (_proxy_config) {
-        _proxy.invoke_on_all(&pandaproxy::proxy::start).get();
+        _proxy.invoke_on_all(&pandaproxy::rest::proxy::start).get();
         vlog(
           _log.info,
           "Started Pandaproxy listening at {}",
           _proxy_config->pandaproxy_api());
+    }
+
+    if (_schema_reg_config) {
+        _schema_registry
+          .invoke_on_all(&pandaproxy::schema_registry::service::start)
+          .get();
+        vlog(
+          _log.info,
+          "Started Schema Registry listening at {}",
+          _schema_reg_config->schema_registry_api());
     }
 
     vlog(_log.info, "Successfully started Redpanda!");

@@ -51,7 +51,8 @@ v_cc_library(
     v::syschecks
     v::kafka
     v::coproc
-    v::pandaproxy
+    v::pandaproxy_rest
+    v::pandaproxy_schema_registry
     v::archival
   )
 

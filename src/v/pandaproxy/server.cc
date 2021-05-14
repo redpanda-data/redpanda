@@ -11,11 +11,11 @@
 
 #include "cluster/cluster_utils.h"
 #include "model/metadata.h"
-#include "pandaproxy/configuration.h"
 #include "pandaproxy/json/types.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/probe.h"
 #include "pandaproxy/reply.h"
+#include "pandaproxy/rest/configuration.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/std-coroutine.hh>
@@ -118,6 +118,8 @@ struct handler_adaptor : ss::httpd::handler_base {
 server::server(
   const ss::sstring& server_name,
   ss::api_registry_builder20&& api20,
+  const ss::sstring& header,
+  const ss::sstring& definitions,
   pandaproxy::context_t ctx)
   : _server(server_name)
   , _pending_reqs()
@@ -130,8 +132,8 @@ server::server(
       .client = ctx.client,
       .config = ctx.config} {
     _api20.set_api_doc(_server._routes);
-    _api20.register_api_file(_server._routes, "header");
-    _api20.add_definitions_file(_server._routes, "/definitions");
+    _api20.register_api_file(_server._routes, header);
+    _api20.add_definitions_file(_server._routes, definitions);
 }
 
 /*
@@ -161,11 +163,11 @@ void server::routes(server::routes_t&& rts) {
     }
 }
 
-ss::future<> server::start() {
+ss::future<> server::start(
+  const std::vector<model::broker_endpoint>& endpoints,
+  const std::vector<config::endpoint_tls_config>& endpoints_tls,
+  const std::vector<model::broker_endpoint>& advertised) {
     _server._routes.register_exeption_handler(exception_reply);
-    auto& endpoints = _ctx.config.pandaproxy_api();
-    auto& endpoints_tls = _ctx.config.pandaproxy_api_tls.value();
-    auto& advertised = _ctx.config.advertised_pandaproxy_api.value();
     _ctx.advertised_listeners.reserve(endpoints.size());
     for (auto& server_endpoint : endpoints) {
         auto addr = co_await rpc::resolve_dns(server_endpoint.address);
