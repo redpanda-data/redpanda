@@ -1475,8 +1475,63 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
     co_return make_prepare_tx_reply(cluster::tx_errc::none);
 }
 
+cluster::abort_origin group::get_abort_origin(
+  const model::producer_identity& pid, model::tx_seq tx_seq) const {
+    auto expected_it = _volatile_txs.find(pid);
+    if (expected_it != _volatile_txs.end()) {
+        if (tx_seq < expected_it->second.tx_seq) {
+            return cluster::abort_origin::past;
+        }
+        if (expected_it->second.tx_seq < tx_seq) {
+            return cluster::abort_origin::future;
+        }
+    }
+
+    auto prepared_it = _prepared_txs.find(pid);
+    if (prepared_it != _prepared_txs.end()) {
+        if (tx_seq < prepared_it->second.tx_seq) {
+            return cluster::abort_origin::past;
+        }
+        if (prepared_it->second.tx_seq < tx_seq) {
+            return cluster::abort_origin::future;
+        }
+    }
+
+    return cluster::abort_origin::present;
+}
+
 ss::future<cluster::abort_group_tx_reply>
 group::abort_tx(cluster::abort_group_tx_request r) {
+    // doesn't make sense to fence off an abort because transaction
+    // manager has already decided to abort and acked to a client
+
+    if (_partition->term() != _term) {
+        co_return make_abort_tx_reply(cluster::tx_errc::timeout);
+    }
+
+    auto origin = get_abort_origin(r.pid, r.tx_seq);
+    if (origin == cluster::abort_origin::past) {
+        // rejecting a delayed abort command to prevent aborting
+        // a wrong transaction
+        co_return make_abort_tx_reply(cluster::tx_errc::request_rejected);
+    }
+    if (origin == cluster::abort_origin::future) {
+        // impossible situation: before transactional coordinator may issue
+        // abort of the current transaction it should begin it and abort all
+        // previous transactions with the same pid
+        vlog(
+          klog.error,
+          "Rejecting abort (pid:{}, tx_seq: {}) because it isn't consistent "
+          "with the current ongoing transaction",
+          r.pid,
+          r.tx_seq);
+        co_return make_abort_tx_reply(cluster::tx_errc::request_rejected);
+    }
+
+    // preventing prepare and replicte once we
+    // know we're going to abort tx and abandon pid
+    _volatile_txs.erase(r.pid);
+
     // TODO: https://app.clubhouse.io/vectorized/story/2197
     // (check for tx_seq to prevent old abort requests aborting
     // new transactions in the same session)
@@ -1502,7 +1557,6 @@ group::abort_tx(cluster::abort_group_tx_request r) {
         co_return make_abort_tx_reply(cluster::tx_errc::timeout);
     }
 
-    _volatile_txs.erase(r.pid);
     _prepared_txs.erase(r.pid);
 
     co_return make_abort_tx_reply(cluster::tx_errc::none);

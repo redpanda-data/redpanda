@@ -12,6 +12,7 @@
 #pragma once
 #include "cluster/fwd.h"
 #include "cluster/partition.h"
+#include "cluster/tx_utils.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/server/logger.h"
 #include "kafka/server/member.h"
@@ -498,6 +499,9 @@ private:
     friend std::ostream& operator<<(std::ostream&, const group&);
 
     model::record_batch checkpoint(const assignments_type& assignments);
+
+    cluster::abort_origin
+    get_abort_origin(const model::producer_identity&, model::tx_seq) const;
 
     kafka::group_id _id;
     group_state _state;
