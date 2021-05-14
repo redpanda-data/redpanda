@@ -1217,7 +1217,7 @@ group::commit_tx(cluster::commit_group_tx_request r) {
     // manager has already decided to commit and acked to a client
 
     if (_partition->term() != _term) {
-        co_return make_commit_tx_reply(cluster::tx_errc::timeout);
+        co_return make_commit_tx_reply(cluster::tx_errc::stale);
     }
 
     auto prepare_it = _prepared_txs.find(r.pid);
@@ -1281,7 +1281,7 @@ group::commit_tx(cluster::commit_group_tx_request r) {
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
     if (!e) {
-        co_return make_commit_tx_reply(cluster::tx_errc::timeout);
+        co_return make_commit_tx_reply(cluster::tx_errc::unknown_server_error);
     }
 
     for (const auto& [tp, md] : prepare_it->second.offsets) {
@@ -1323,7 +1323,7 @@ cluster::abort_group_tx_reply make_abort_tx_reply(cluster::tx_errc ec) {
 ss::future<cluster::begin_group_tx_reply>
 group::begin_tx(cluster::begin_group_tx_request r) {
     if (_partition->term() != _term) {
-        co_return make_begin_tx_reply(cluster::tx_errc::timeout);
+        co_return make_begin_tx_reply(cluster::tx_errc::stale);
     }
 
     auto fence_it = _fence_pid_epoch.find(r.pid.get_id());
@@ -1387,7 +1387,7 @@ group::begin_tx(cluster::begin_group_tx_request r) {
 ss::future<cluster::prepare_group_tx_reply>
 group::prepare_tx(cluster::prepare_group_tx_request r) {
     if (_partition->term() != _term) {
-        co_return make_prepare_tx_reply(cluster::tx_errc::timeout);
+        co_return make_prepare_tx_reply(cluster::tx_errc::stale);
     }
 
     auto prepared_it = _prepared_txs.find(r.pid);
@@ -1414,7 +1414,7 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
     }
 
     if (r.etag != _term) {
-        co_return make_prepare_tx_reply(cluster::tx_errc::timeout);
+        co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
     }
 
     auto tx_it = _volatile_txs.find(r.pid);
@@ -1462,7 +1462,7 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
     if (!e) {
-        co_return make_prepare_tx_reply(cluster::tx_errc::timeout);
+        co_return make_prepare_tx_reply(cluster::tx_errc::unknown_server_error);
     }
 
     prepared_tx ptx;
@@ -1509,7 +1509,7 @@ group::abort_tx(cluster::abort_group_tx_request r) {
     // manager has already decided to abort and acked to a client
 
     if (_partition->term() != _term) {
-        co_return make_abort_tx_reply(cluster::tx_errc::timeout);
+        co_return make_abort_tx_reply(cluster::tx_errc::stale);
     }
 
     auto origin = get_abort_origin(r.pid, r.tx_seq);
@@ -1557,7 +1557,7 @@ group::abort_tx(cluster::abort_group_tx_request r) {
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
     if (!e) {
-        co_return make_abort_tx_reply(cluster::tx_errc::timeout);
+        co_return make_abort_tx_reply(cluster::tx_errc::unknown_server_error);
     }
 
     _prepared_txs.erase(r.pid);
