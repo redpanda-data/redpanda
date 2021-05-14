@@ -515,6 +515,7 @@ private:
     config::configuration& _conf;
     ss::lw_shared_ptr<cluster::partition> _partition;
     absl::node_hash_map<model::topic_partition, offset_metadata> _offsets;
+    model::violation_recovery_policy _recovery_policy;
 
     mutex _tx_mutex;
     model::term_id _term;

@@ -47,6 +47,8 @@ namespace kafka {
 
 using member_config = join_group_response_member;
 
+using violation_recovery_policy = model::violation_recovery_policy;
+
 group::group(
   kafka::group_id id,
   group_state s,
@@ -59,7 +61,9 @@ group::group(
   , _num_members_joining(0)
   , _new_member_added(false)
   , _conf(conf)
-  , _partition(std::move(partition)) {}
+  , _partition(std::move(partition))
+  , _recovery_policy(
+      config::shard_local_cfg().rm_violation_recovery_policy.value()) {}
 
 group::group(
   kafka::group_id id,
@@ -70,7 +74,9 @@ group::group(
   , _num_members_joining(0)
   , _new_member_added(false)
   , _conf(conf)
-  , _partition(std::move(partition)) {
+  , _partition(std::move(partition))
+  , _recovery_policy(
+      config::shard_local_cfg().rm_violation_recovery_policy.value()) {
     _state = md.members.empty() ? group_state::empty : group_state::stable;
     _generation = md.generation;
     _protocol_type = md.protocol_type;
@@ -1204,16 +1210,54 @@ void group::insert_prepared(prepared_tx tx) {
 
 ss::future<cluster::commit_group_tx_reply>
 group::commit_tx(cluster::commit_group_tx_request r) {
-    // TODO: https://app.clubhouse.io/vectorized/story/2219
-    // (check for tx_seq to prevent old commit requests committing
-    // ongoing transactions in the same session)
+    // doesn't make sense to fence off a commit because transaction
+    // manager has already decided to commit and acked to a client
 
-    auto ongoing_it = _prepared_txs.find(r.pid);
-    if (ongoing_it == _prepared_txs.end()) {
+    if (_partition->term() != _term) {
+        co_return make_commit_tx_reply(cluster::tx_errc::timeout);
+    }
+
+    auto prepare_it = _prepared_txs.find(r.pid);
+    if (prepare_it == _prepared_txs.end()) {
         vlog(
           klog.trace, "can't find a tx {}, probably already comitted", r.pid);
         co_return make_commit_tx_reply(cluster::tx_errc::none);
     }
+
+    if (prepare_it->second.tx_seq > r.tx_seq) {
+        // rare situation:
+        //   * tm_stm prepares (tx_seq+1)
+        //   * prepare on this group passed but tm_stm failed to write to disk
+        //   * during recovery tm_stm recommits (tx_seq)
+        // existence of {pid, tx_seq+1} implies {pid, tx_seq} is committed
+        vlog(
+          klog.trace,
+          "prepare for pid:{} has higher tx_seq:{} than given: {} => replaying "
+          "already comitted commit",
+          r.pid,
+          prepare_it->second.tx_seq,
+          r.tx_seq);
+        co_return make_commit_tx_reply(cluster::tx_errc::none);
+    } else if (prepare_it->second.tx_seq < r.tx_seq) {
+        if (_recovery_policy == violation_recovery_policy::best_effort) {
+            vlog(
+              klog.error,
+              "Rejecting commit with tx_seq:{} since prepare with lesser "
+              "tx_seq:{} exists",
+              r.tx_seq,
+              prepare_it->second.tx_seq);
+            co_return make_commit_tx_reply(cluster::tx_errc::request_rejected);
+        } else {
+            vassert(
+              false,
+              "Received commit with tx_seq:{} while prepare with lesser "
+              "tx_seq:{} exists",
+              r.tx_seq,
+              prepare_it->second.tx_seq);
+        }
+    }
+
+    // we commit only if a provided tx_seq matches prepared tx_seq
 
     group_log_commit_tx commit_tx;
     commit_tx.group_id = r.group_id;
@@ -1237,19 +1281,14 @@ group::commit_tx(cluster::commit_group_tx_request r) {
         co_return make_commit_tx_reply(cluster::tx_errc::timeout);
     }
 
-    ongoing_it = _prepared_txs.find(r.pid);
-    if (ongoing_it == _prepared_txs.end()) {
-        co_return make_commit_tx_reply(cluster::tx_errc::none);
-    }
-
-    for (const auto& [tp, md] : ongoing_it->second.offsets) {
+    for (const auto& [tp, md] : prepare_it->second.offsets) {
         auto o_it = _offsets.find(tp);
         if (o_it == _offsets.end() || o_it->second.log_offset < md.log_offset) {
             _offsets[tp] = md;
         }
     }
 
-    _prepared_txs.erase(ongoing_it);
+    _prepared_txs.erase(prepare_it);
 
     co_return make_commit_tx_reply(cluster::tx_errc::none);
 }
