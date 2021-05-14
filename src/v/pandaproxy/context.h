@@ -21,7 +21,7 @@
 namespace pandaproxy {
 
 struct context_t {
-    ss::semaphore mem_sem;
+    ss::semaphore& mem_sem;
     ss::abort_source as;
     ss::smp_service_group smp_sg;
     ss::sharded<kafka::client::client>& client;

@@ -30,6 +30,7 @@ public:
     proxy(
       const YAML::Node& config,
       ss::smp_service_group smp_sg,
+      size_t max_memory,
       ss::sharded<kafka::client::client>& client);
 
     ss::future<> start();
@@ -41,6 +42,7 @@ public:
 private:
     configuration _config;
     ss::smp_service_group _smp_sg;
+    ss::semaphore _mem_sem;
     ss::sharded<kafka::client::client>& _client;
     context_t _ctx;
     server _server;
