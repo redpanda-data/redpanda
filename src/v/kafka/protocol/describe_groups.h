@@ -14,7 +14,6 @@
 #include "kafka/protocol/schemata/describe_groups_request.h"
 #include "kafka/protocol/schemata/describe_groups_response.h"
 #include "kafka/server/group.h"
-#include "kafka/server/response.h"
 #include "kafka/types.h"
 
 #include <seastar/core/future.hh>
@@ -55,7 +54,9 @@ struct describe_groups_response final {
 
     describe_groups_response_data data;
 
-    void encode(const request_context& ctx, response& resp);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
 
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);

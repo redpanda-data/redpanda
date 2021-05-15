@@ -15,8 +15,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/init_producer_id_request.h"
 #include "kafka/protocol/schemata/init_producer_id_response.h"
-#include "kafka/server/request_context.h"
-#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
@@ -59,8 +57,8 @@ struct init_producer_id_response final {
 
     init_producer_id_response_data data;
 
-    void encode(const request_context& ctx, response& resp) {
-        data.encode(resp.writer(), ctx.header().version);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
     }
 
     void decode(iobuf buf, api_version version) {

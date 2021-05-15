@@ -21,4 +21,6 @@ struct api_versions_handler : public handler<api_versions_api, 0, 2> {
     static api_versions_response handle_raw(request_context& ctx);
 };
 
+std::vector<api_versions_response_key> get_supported_apis();
+
 } // namespace kafka

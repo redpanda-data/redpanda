@@ -24,24 +24,21 @@ std::ostream& operator<<(std::ostream& o, const member_protocol& p) {
     return ss::fmt_print(o, "{}:{}", p.name, p.metadata.size());
 }
 
-void join_group_request::decode(request_context& ctx) {
-    data.decode(ctx.reader(), ctx.header().version);
-    version = ctx.header().version;
+static void decode_request(request_context& ctx, join_group_request& req) {
+    req.decode(ctx.reader(), ctx.header().version);
+    req.version = ctx.header().version;
     if (ctx.header().client_id) {
-        client_id = kafka::client_id(ss::sstring(*ctx.header().client_id));
+        req.client_id = kafka::client_id(ss::sstring(*ctx.header().client_id));
     }
-    client_host = kafka::client_host(
+    req.client_host = kafka::client_host(
       fmt::format("{}", ctx.connection()->client_host()));
-}
-
-void join_group_response::encode(const request_context& ctx, response& resp) {
-    data.encode(resp.writer(), ctx.header().version);
 }
 
 template<>
 ss::future<response_ptr> join_group_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
-    join_group_request request(ctx);
+    join_group_request request;
+    decode_request(ctx, request);
 
     if (request.data.group_instance_id) {
         co_return co_await ctx.respond(

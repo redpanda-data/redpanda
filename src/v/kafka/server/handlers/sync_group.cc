@@ -21,10 +21,6 @@
 
 namespace kafka {
 
-void sync_group_response::encode(const request_context& ctx, response& resp) {
-    data.encode(resp.writer(), ctx.header().version);
-}
-
 template<>
 ss::future<response_ptr> sync_group_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {

@@ -15,8 +15,6 @@
 #include "kafka/protocol/kafka_batch_adapter.h"
 #include "kafka/protocol/schemata/produce_request.h"
 #include "kafka/protocol/schemata/produce_response.h"
-#include "kafka/server/request_context.h"
-#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "model/timestamp.h"
 #include "seastarx.h"
@@ -92,7 +90,7 @@ struct produce_response final {
 
     produce_response_data data;
 
-    void encode(const request_context& ctx, response& resp) {
+    void encode(response_writer& writer, api_version version) {
         // normalize errors
         for (auto& r : data.responses) {
             for (auto& p : r.partitions) {
@@ -103,7 +101,7 @@ struct produce_response final {
                 }
             }
         }
-        data.encode(resp.writer(), ctx.header().version);
+        data.encode(writer, version);
     }
 
     void decode(iobuf buf, api_version version) {

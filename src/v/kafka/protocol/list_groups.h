@@ -12,7 +12,6 @@
 #pragma once
 #include "kafka/protocol/schemata/list_groups_request.h"
 #include "kafka/protocol/schemata/list_groups_response.h"
-#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "seastarx.h"
 
@@ -54,7 +53,9 @@ struct list_groups_response final {
 
     list_groups_response_data data;
 
-    void encode(const request_context& ctx, response& resp);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
 
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);

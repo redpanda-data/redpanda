@@ -13,8 +13,6 @@
 
 #include "kafka/protocol/schemata/metadata_request.h"
 #include "kafka/protocol/schemata/metadata_response.h"
-#include "kafka/server/request_context.h"
-#include "kafka/server/response.h"
 #include "model/metadata.h"
 #include "seastarx.h"
 
@@ -72,8 +70,8 @@ struct metadata_response {
 
     metadata_response_data data;
 
-    void encode(const request_context& ctx, response& resp) {
-        data.encode(resp.writer(), ctx.header().version);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
     }
 
     void decode(iobuf buf, api_version version) {

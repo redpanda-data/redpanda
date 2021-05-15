@@ -9,6 +9,9 @@
 
 #include "kafka/client/assignment_plans.h"
 
+#include "kafka/protocol/request_reader.h"
+#include "kafka/protocol/response_writer.h"
+
 namespace kafka::client {
 
 sync_group_request_assignment

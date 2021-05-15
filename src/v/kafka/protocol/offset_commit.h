@@ -15,7 +15,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/offset_commit_request.h"
 #include "kafka/protocol/schemata/offset_commit_response.h"
-#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
@@ -77,7 +76,9 @@ struct offset_commit_response final {
         }
     }
 
-    void encode(const request_context&, response&);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
 
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);

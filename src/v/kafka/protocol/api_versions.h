@@ -13,8 +13,6 @@
 
 #include "kafka/protocol/schemata/api_versions_request.h"
 #include "kafka/protocol/schemata/api_versions_response.h"
-#include "kafka/server/request_context.h"
-#include "kafka/server/response.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -44,13 +42,18 @@ struct api_versions_request final {
     }
 };
 
+inline std::ostream&
+operator<<(std::ostream& os, const api_versions_request& r) {
+    return os << r.data;
+}
+
 struct api_versions_response final {
     using api_type = api_versions_api;
 
     api_versions_response_data data;
 
-    void encode(const request_context& ctx, response& resp) {
-        data.encode(resp.writer(), ctx.header().version);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
     }
 
     void decode(iobuf buf, api_version version) {
@@ -58,14 +61,15 @@ struct api_versions_response final {
     }
 };
 
-std::ostream& operator<<(std::ostream&, const api_versions_response&);
+inline std::ostream&
+operator<<(std::ostream& os, const api_versions_response& r) {
+    return os << r.data;
+}
 
 inline bool operator==(
   const api_versions_response_key& a, const api_versions_response_key& b) {
     return a.api_key == b.api_key && a.min_version == b.min_version
            && a.max_version == b.max_version;
 }
-
-std::vector<api_versions_response_key> get_supported_apis();
 
 } // namespace kafka

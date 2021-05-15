@@ -14,6 +14,7 @@
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tx_utils.h"
 #include "config/configuration.h"
+#include "kafka/protocol/response_writer.h"
 #include "kafka/protocol/schemata/describe_groups_response.h"
 #include "kafka/protocol/sync_group.h"
 #include "kafka/server/group_manager.h"

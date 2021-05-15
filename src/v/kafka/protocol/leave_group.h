@@ -13,7 +13,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/leave_group_request.h"
 #include "kafka/protocol/schemata/leave_group_response.h"
-#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
@@ -62,14 +61,15 @@ struct leave_group_response final {
 
     explicit leave_group_response(error_code error)
       : data({
-        .throttle_time_ms = std::chrono::milliseconds(0),
         .error_code = error,
       }) {}
 
     leave_group_response(const leave_group_request&, error_code error)
       : leave_group_response(error) {}
 
-    void encode(const request_context&, response&);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
 
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);

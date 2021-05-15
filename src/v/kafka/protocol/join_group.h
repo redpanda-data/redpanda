@@ -13,7 +13,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/join_group_request.h"
 #include "kafka/protocol/schemata/join_group_response.h"
-#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
@@ -39,7 +38,6 @@ struct join_group_request final {
     join_group_request_data data;
 
     join_group_request() = default;
-    explicit join_group_request(request_context& ctx) { decode(ctx); }
     join_group_request(const join_group_request&) = delete;
     join_group_request& operator=(const join_group_request&) = delete;
     join_group_request(join_group_request&&) = default;
@@ -75,7 +73,9 @@ struct join_group_request final {
         data.encode(writer, version);
     }
 
-    void decode(request_context& ctx);
+    void decode(request_reader& reader, api_version version) {
+        data.decode(reader, version);
+    }
 };
 
 inline std::ostream& operator<<(std::ostream& os, const join_group_request& r) {
@@ -120,7 +120,9 @@ struct join_group_response final {
         data.members = std::move(members);
     }
 
-    void encode(const request_context&, response&);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
 
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);

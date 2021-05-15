@@ -195,8 +195,8 @@ struct fetch_response final {
 
     fetch_response_data data;
 
-    void encode(const request_context& ctx, response& resp) {
-        data.encode(resp.writer(), ctx.header().version);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
     }
 
     void decode(iobuf buf, api_version version) {

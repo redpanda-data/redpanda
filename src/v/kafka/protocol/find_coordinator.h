@@ -13,8 +13,6 @@
 
 #include "kafka/protocol/schemata/find_coordinator_request.h"
 #include "kafka/protocol/schemata/find_coordinator_response.h"
-#include "kafka/server/request_context.h"
-#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "seastarx.h"
 
@@ -55,18 +53,21 @@ struct find_coordinator_request final {
     }
 };
 
+inline std::ostream&
+operator<<(std::ostream& os, const find_coordinator_request& r) {
+    return os << r.data;
+}
+
 struct find_coordinator_response final {
     using api_type = find_coordinator_api;
 
     find_coordinator_response_data data;
 
-    find_coordinator_response()
-      : data({.throttle_time_ms = std::chrono::milliseconds(0)}) {}
+    find_coordinator_response() = default;
 
     find_coordinator_response(
       error_code error, model::node_id node, ss::sstring host, int32_t port)
       : data({
-        .throttle_time_ms = std::chrono::milliseconds(0),
         .error_code = error,
         .node_id = node,
         .host = std::move(host),
@@ -81,8 +82,8 @@ struct find_coordinator_response final {
     explicit find_coordinator_response(error_code error)
       : find_coordinator_response(error, model::node_id(-1), "", -1) {}
 
-    void encode(const request_context& ctx, response& resp) {
-        data.encode(resp.writer(), ctx.header().version);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
     }
 
     void decode(iobuf buf, api_version version) {
