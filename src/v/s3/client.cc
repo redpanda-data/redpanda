@@ -99,7 +99,9 @@ ss::future<configuration> configuration::make_configuration(
     }
     constexpr uint16_t default_port = 443;
     client_cfg.server_addr = unresolved_address(
-      client_cfg.uri(), overrides.port ? *overrides.port : default_port);
+      client_cfg.uri(),
+      overrides.port ? *overrides.port : default_port,
+      ss::net::inet_address::family::INET);
     client_cfg.disable_metrics = disable_metrics;
     client_cfg._probe = ss::make_lw_shared<client_probe>(
       disable_metrics, region(), endpoint_uri);
