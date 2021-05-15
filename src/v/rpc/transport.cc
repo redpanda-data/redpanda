@@ -68,15 +68,7 @@ transport::transport(
 ss::future<ss::connected_socket> connect_with_timeout(
   const seastar::socket_address& address, rpc::clock_type::time_point timeout) {
     auto socket = ss::make_lw_shared<ss::socket>(ss::engine().net().socket());
-
-    auto f = socket
-               ->connect(
-                 address,
-                 ss::socket_address(sockaddr_in{AF_INET, INADDR_ANY, {0}}),
-                 ss::transport::TCP)
-               .finally([socket] {
-
-               });
+    auto f = socket->connect(address).finally([socket] {});
     return ss::with_timeout(timeout, std::move(f))
       .handle_exception([socket, address](const std::exception_ptr& e) {
           rpclog.warn("error connecting to {} - {}", address, e);
