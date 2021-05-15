@@ -20,8 +20,8 @@
 
 #include <seastar/core/future.hh>
 
-#include <absl/container/flat_hash_set.h>
-#include <absl/container/node_hash_set.h>
+#include <absl/container/flat_hash_map.h>
+#include <absl/container/node_hash_map.h>
 
 namespace kafka::client {
 
