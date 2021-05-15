@@ -54,7 +54,9 @@ struct delete_groups_response final {
         data.results = std::move(results);
     }
 
-    void encode(const request_context&, response&);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
 
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);

@@ -14,7 +14,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/list_offset_request.h"
 #include "kafka/protocol/schemata/list_offset_response.h"
-#include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
@@ -99,17 +98,17 @@ struct list_offsets_response final {
           id, error, model::timestamp(-1), model::offset(-1));
     }
 
-    void encode(const request_context& ctx, response& resp) {
+    void encode(response_writer& writer, api_version version) {
         // convert to version zero in which the data model supported returning
         // multiple offsets instead of just one
-        if (ctx.header().version == api_version(0)) {
+        if (version == api_version(0)) {
             for (auto& topic : data.topics) {
                 for (auto& partition : topic.partitions) {
                     partition.old_style_offsets.push_back(partition.offset());
                 }
             }
         }
-        data.encode(resp.writer(), ctx.header().version);
+        data.encode(writer, version);
     }
 
     void decode(iobuf buf, api_version version) {

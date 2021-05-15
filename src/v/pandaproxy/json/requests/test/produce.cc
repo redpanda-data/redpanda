@@ -15,6 +15,7 @@
 #include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "seastarx.h"
+#include "utils/to_string.h"
 
 #include <seastar/testing/thread_test_case.hh>
 

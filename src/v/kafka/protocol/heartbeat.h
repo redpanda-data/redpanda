@@ -13,7 +13,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/heartbeat_request.h"
 #include "kafka/protocol/schemata/heartbeat_response.h"
-#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
@@ -68,7 +67,9 @@ struct heartbeat_response final {
     heartbeat_response(const heartbeat_request&, error_code error)
       : heartbeat_response(error) {}
 
-    void encode(const request_context&, response&);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
 
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);

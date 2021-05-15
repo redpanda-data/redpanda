@@ -13,8 +13,6 @@
 
 #include "kafka/protocol/schemata/find_coordinator_request.h"
 #include "kafka/protocol/schemata/find_coordinator_response.h"
-#include "kafka/server/request_context.h"
-#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "seastarx.h"
 
@@ -81,8 +79,8 @@ struct find_coordinator_response final {
     explicit find_coordinator_response(error_code error)
       : find_coordinator_response(error, model::node_id(-1), "", -1) {}
 
-    void encode(const request_context& ctx, response& resp) {
-        data.encode(resp.writer(), ctx.header().version);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
     }
 
     void decode(iobuf buf, api_version version) {

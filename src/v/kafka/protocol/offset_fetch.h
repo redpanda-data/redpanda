@@ -15,7 +15,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/offset_fetch_request.h"
 #include "kafka/protocol/schemata/offset_fetch_response.h"
-#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
@@ -89,7 +88,9 @@ struct offset_fetch_response final {
         }
     }
 
-    void encode(const request_context&, response&);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
 
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);

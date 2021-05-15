@@ -732,7 +732,6 @@ namespace kafka {
 
 class request_reader;
 class response_writer;
-class request_context;
 class response;
 
 {% for struct in struct.structs() %}
@@ -886,7 +885,7 @@ void {{ struct.name }}::decode(iobuf buf, [[maybe_unused]] api_version version) 
 void {{ struct.name }}::encode(response_writer&, api_version) {}
 void {{ struct.name }}::decode(request_reader&, api_version) {}
 {%- else %}
-void {{ struct.name }}::encode(const request_context&, response&) {}
+void {{ struct.name }}::encode(response_writer&, api_version&) {}
 void {{ struct.name }}::decode(iobuf, api_version) {}
 {%- endif %}
 {%- endif %}

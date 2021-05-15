@@ -37,10 +37,6 @@ std::ostream& operator<<(std::ostream& os, const offset_fetch_response& r) {
     return os;
 }
 
-void offset_fetch_response::encode(const request_context& ctx, response& resp) {
-    data.encode(resp.writer(), ctx.header().version);
-}
-
 template<>
 ss::future<response_ptr>
 offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {

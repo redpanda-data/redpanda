@@ -34,10 +34,6 @@ void join_group_request::decode(request_context& ctx) {
       fmt::format("{}", ctx.connection()->client_host()));
 }
 
-void join_group_response::encode(const request_context& ctx, response& resp) {
-    data.encode(resp.writer(), ctx.header().version);
-}
-
 template<>
 ss::future<response_ptr> join_group_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {

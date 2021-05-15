@@ -13,7 +13,7 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/join_group_request.h"
 #include "kafka/protocol/schemata/join_group_response.h"
-#include "kafka/server/response.h"
+#include "kafka/server/request_context.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
@@ -120,7 +120,9 @@ struct join_group_response final {
         data.members = std::move(members);
     }
 
-    void encode(const request_context&, response&);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
 
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
