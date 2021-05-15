@@ -23,7 +23,7 @@ ss::future<ss::socket_address> resolve_dns(unresolved_address address) {
     // lock
     auto units = co_await m.get_units();
     // resolve
-    auto i_a = co_await resolver.resolve_name(address.host(), {});
+    auto i_a = co_await resolver.resolve_name(address.host(), address.family());
 
     co_return ss::socket_address(i_a, address.port());
 };

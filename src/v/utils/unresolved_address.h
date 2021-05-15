@@ -24,13 +24,20 @@
 /// tuple
 class unresolved_address {
 public:
+    using inet_family = std::optional<ss::net::inet_address::family>;
+
     unresolved_address() = default;
-    unresolved_address(ss::sstring host, uint16_t port)
+    unresolved_address(
+      ss::sstring host,
+      uint16_t port,
+      inet_family family = ss::net::inet_address::family::INET)
       : _host(std::move(host))
-      , _port(port) {}
+      , _port(port)
+      , _family(family) {}
 
     const ss::sstring& host() const { return _host; }
     uint16_t port() const { return _port; }
+    inet_family family() const { return _family; }
 
     bool operator==(const unresolved_address& other) const = default;
 
@@ -39,6 +46,7 @@ private:
 
     ss::sstring _host;
     uint16_t _port{0};
+    inet_family _family;
 };
 
 inline std::ostream& operator<<(std::ostream& o, const unresolved_address& s) {
