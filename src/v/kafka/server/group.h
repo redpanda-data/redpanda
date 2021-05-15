@@ -109,12 +109,10 @@ public:
     using clock_type = ss::lowres_clock;
     using duration_type = clock_type::duration;
 
-    static constexpr model::control_record_version fence_control_record_version{
-      0};
-    static constexpr model::control_record_version prepared_tx_record_version{
-      0};
-    static constexpr model::control_record_version commit_tx_record_version{0};
-    static constexpr model::control_record_version aborted_tx_record_version{0};
+    static constexpr int8_t fence_control_record_version{0};
+    static constexpr int8_t prepared_tx_record_version{0};
+    static constexpr int8_t commit_tx_record_version{0};
+    static constexpr int8_t aborted_tx_record_version{0};
 
     struct offset_metadata {
         model::offset log_offset;
