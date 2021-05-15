@@ -40,19 +40,6 @@ void list_offsets_request::compute_duplicate_topics() {
     }
 }
 
-void list_offsets_response::encode(const request_context& ctx, response& resp) {
-    // convert to version zero in which the data model supported returning
-    // multiple offsets instead of just one
-    if (ctx.header().version == api_version(0)) {
-        for (auto& topic : data.topics) {
-            for (auto& partition : topic.partitions) {
-                partition.old_style_offsets.push_back(partition.offset());
-            }
-        }
-    }
-    data.encode(resp.writer(), ctx.header().version);
-}
-
 struct list_offsets_ctx {
     request_context rctx;
     list_offsets_request request;
