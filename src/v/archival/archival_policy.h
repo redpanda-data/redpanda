@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "archival/probe.h"
 #include "archival/types.h"
 #include "model/fundamental.h"
 #include "storage/log_manager.h"
@@ -35,7 +36,8 @@ std::ostream& operator<<(std::ostream& s, const upload_candidate& c);
 /// but uses ntp as a key to extract the data when needed.
 class archival_policy {
 public:
-    explicit archival_policy(model::ntp ntp);
+    explicit archival_policy(
+      model::ntp ntp, service_probe& svc_probe, ntp_level_probe& ntp_probe);
 
     /// \brief regurn next upload candidate
     ///
@@ -59,6 +61,8 @@ private:
     find_segment(model::offset last_offset, storage::log_manager& lm);
 
     model::ntp _ntp;
+    service_probe& _svc_probe;
+    ntp_level_probe& _ntp_probe;
 };
 
 } // namespace archival

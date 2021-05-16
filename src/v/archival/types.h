@@ -11,6 +11,7 @@
 #pragma once
 
 #include "seastar/core/sstring.hh"
+#include "seastar/util/bool_class.hh"
 #include "seastarx.h"
 #include "utils/named_type.h"
 
@@ -48,5 +49,10 @@ enum class manifest_version : int32_t {
 enum class topic_manifest_version : int32_t {
     v1 = 1,
 };
+
+using service_metrics_disabled
+  = ss::bool_class<struct service_metrics_disabled_tag>;
+using per_ntp_metrics_disabled
+  = ss::bool_class<struct per_ntp_metrics_disabled_tag>;
 
 } // namespace archival

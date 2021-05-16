@@ -11,6 +11,7 @@
 #pragma once
 #include "archival/manifest.h"
 #include "archival/ntp_archiver_service.h"
+#include "archival/probe.h"
 #include "cluster/partition_manager.h"
 #include "model/fundamental.h"
 #include "s3/client.h"
@@ -167,6 +168,7 @@ private:
     ss::semaphore _stop_limit;
     ntp_upload_queue _queue;
     simple_time_jitter<ss::lowres_clock> _backoff{100ms};
+    service_probe _probe;
 };
 
 } // namespace internal

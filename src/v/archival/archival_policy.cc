@@ -29,8 +29,11 @@ std::ostream& operator<<(std::ostream& s, const upload_candidate& c) {
     return s;
 }
 
-archival_policy::archival_policy(model::ntp ntp)
-  : _ntp(std::move(ntp)) {}
+archival_policy::archival_policy(
+  model::ntp ntp, service_probe& svc_probe, ntp_level_probe& ntp_probe)
+  : _ntp(std::move(ntp))
+  , _svc_probe(svc_probe)
+  , _ntp_probe(ntp_probe) {}
 
 archival_policy::lookup_result archival_policy::find_segment(
   model::offset last_offset, storage::log_manager& lm) {
@@ -56,6 +59,12 @@ archival_policy::lookup_result archival_policy::find_segment(
         return {};
     }
     const auto& set = plog->segments();
+    if (!set.empty()) {
+        auto max_offset = set.back()->offsets().committed_offset;
+        if (last_offset < max_offset) {
+            _ntp_probe.upload_lag(max_offset - last_offset);
+        }
+    }
     const auto& ntp_conf = plog->config();
     auto it = set.lower_bound(last_offset);
     if (it == set.end() || (*it)->is_compacted_segment()) {
@@ -65,7 +74,11 @@ archival_policy::lookup_result archival_policy::find_segment(
             if (last_offset < sg->offsets().base_offset) {
                 // Move last offset forward
                 it = i;
-                last_offset = sg->offsets().base_offset;
+                auto offset = sg->offsets().base_offset;
+                auto delta = offset - last_offset;
+                last_offset = offset;
+                _svc_probe.add_gap();
+                _ntp_probe.gap_detected(delta);
                 break;
             }
         }
