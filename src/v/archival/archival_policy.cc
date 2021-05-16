@@ -175,11 +175,7 @@ upload_candidate archival_policy::get_next_candidate(
     }
     // Invariant: segment is not compacted (segment->is_compacted_segment() ==
     // false)
-    auto end = segment->offsets().committed_offset;
-    if (end > last_offset) {
-        return create_upload_candidate(last_offset, segment, ntp_conf);
-    }
-    return {};
+    return create_upload_candidate(last_offset, segment, ntp_conf);
 }
 
 } // namespace archival
