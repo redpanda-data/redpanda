@@ -3,6 +3,8 @@ title: Migrating data to Redpanda
 order: 2
 ---
 
+# Migrating data to Redpanda
+
 One of the more elegant aspects of Redpanda is that it is compatible with the [Kafka API and ecosystem](/docs/www/faq.md).
 So, when you want to migrate data from Kafka or replicate data between Redpanda clusters,
 MirrorMaker 2 tool, bundled in the [Kafka download package](https://kafka.apache.org/downloads), is a natural solution.
