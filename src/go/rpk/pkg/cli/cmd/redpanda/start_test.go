@@ -204,6 +204,75 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(st, path, conf.ConfigFile)
 		},
 	}, {
+		name: "it should allow passing arbitrary config values and write them to the config file",
+		args: []string{
+			"--config", "/arbitrary/path/redpanda.yaml",
+			"--install-dir", "/var/lib/redpanda",
+		},
+		before: func(fs afero.Fs) error {
+			// --set flags are parsed "outside" of Cobra, directly from
+			// os.Args, due to Cobra (or especifically, pflag) parsing
+			// list flags (flags that can be passed multiple times) with
+			// a CSV parser. Since JSON-formatted values contain commas,
+			// the parser doesn't support them.
+			os.Args = append(
+				os.Args,
+				// A single int value
+				"--set", "redpanda.node_id=39",
+				// A single bool value
+				"--set", "rpk.enable_usage_stats=true",
+				// A single string value
+				"--set", "node_uuid=helloimauuid1337",
+				// A JSON object
+				"--set", `redpanda.admin=[{"address": "192.168.54.2","port": 9643}]`,
+				// A YAML object
+				"--set", `redpanda.kafka_api=- name: external
+  address: 192.168.73.45
+  port: 9092
+- name: internal
+  address: 10.21.34.58
+  port: 9092
+`,
+			)
+			return fs.MkdirAll("/arbitrary/path", 0755)
+		},
+		after: func() {
+			for i, a := range os.Args {
+				if a == "--set" {
+					os.Args = os.Args[:i]
+					return
+				}
+			}
+		},
+		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+			path := "/arbitrary/path/redpanda.yaml"
+			mgr := config.NewManager(fs)
+			conf, err := mgr.Read(path)
+			require.NoError(st, err)
+			expectedAdmin := []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address: "192.168.54.2",
+					Port:    9643,
+				},
+			}}
+			expectedKafkaApi := []config.NamedSocketAddress{{
+				Name: "external",
+				SocketAddress: config.SocketAddress{
+					Address: "192.168.73.45",
+					Port:    9092,
+				},
+			}, {
+				Name: "internal",
+				SocketAddress: config.SocketAddress{
+					Address: "10.21.34.58",
+					Port:    9092,
+				},
+			}}
+			require.Exactly(st, 39, conf.Redpanda.Id)
+			require.Exactly(st, expectedAdmin, conf.Redpanda.AdminApi)
+			require.Exactly(st, expectedKafkaApi, conf.Redpanda.KafkaApi)
+		},
+	}, {
 		name: "it should write the default config file path if --config" +
 			" isn't passed and the config file doesn't exist",
 		args: []string{

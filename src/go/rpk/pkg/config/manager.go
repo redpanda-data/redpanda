@@ -39,9 +39,12 @@ type Manager interface {
 	Read(path string) (*Config, error)
 	// Writes the config to Config.ConfigFile
 	Write(conf *Config) error
-	// Reads the config from path, sets key to the given value (parsing it
-	// according to the format), and writes the config back
-	Set(key, value, format, path string) error
+	// Writes the currently-loaded config to redpanda.config_file
+	WriteLoaded() error
+	// Get the currently-loaded config
+	Get() (*Config, error)
+	// Sets key to the given value (parsing it according to the format)
+	Set(key, value, format string) error
 	// If path is empty, tries to find the file in the default locations.
 	// Otherwise, it tries to read the file and load it. If the file doesn't
 	// exist, it tries to create it with the default configuration.
@@ -272,6 +275,10 @@ func (m *manager) WriteNodeUUID(conf *Config) error {
 	return m.Write(conf)
 }
 
+func (m *manager) Get() (*Config, error) {
+	return unmarshal(m.v)
+}
+
 // Checks config and writes it to the given path.
 func (m *manager) Write(conf *Config) error {
 	confMap, err := toMap(conf)
@@ -294,6 +301,11 @@ func (m *manager) Write(conf *Config) error {
 	return checkAndWrite(m.fs, v, conf.ConfigFile)
 }
 
+// Writes the currently loaded config.
+func (m *manager) WriteLoaded() error {
+	return checkAndWrite(m.fs, m.v, m.v.GetString("config_file"))
+}
+
 func write(v *viper.Viper, path string) error {
 	err := v.WriteConfigAs(path)
 	if err != nil {
@@ -306,21 +318,39 @@ func write(v *viper.Viper, path string) error {
 	return nil
 }
 
-func (m *manager) Set(key, value, format, path string) error {
-	confMap, err := m.readMap(path)
-	if err != nil {
-		return err
+func (m *manager) setDeduceFormat(key, value string) error {
+	replace := func(key string, newValue interface{}) error {
+		newV := viper.New()
+		newV.Set(key, newValue)
+		return m.v.MergeConfigMap(newV.AllSettings())
 	}
-	m.v.MergeConfigMap(confMap)
+
+	var newVal interface{}
+	switch {
+	case json.Unmarshal([]byte(value), &newVal) == nil: // Try JSON
+		return replace(key, newVal)
+
+	case yaml.Unmarshal([]byte(value), &newVal) == nil: // Try YAML
+		return replace(key, newVal)
+
+	default: // Treat the value as a "single"
+		m.v.Set(key, parse(value))
+		return nil
+	}
+}
+
+func (m *manager) Set(key, value, format string) error {
+	if key == "" {
+		return errors.New("empty config field key")
+	}
+	if format == "" {
+		return m.setDeduceFormat(key, value)
+	}
 	var newConfValue interface{}
 	switch strings.ToLower(format) {
 	case "single":
 		m.v.Set(key, parse(value))
-		err = checkAndWrite(m.fs, m.v, path)
-		if err == nil {
-			checkAndPrintRestartWarning(key)
-		}
-		return err
+		return nil
 	case "yaml":
 		err := yaml.Unmarshal([]byte(value), &newConfValue)
 		if err != nil {
@@ -336,12 +366,7 @@ func (m *manager) Set(key, value, format, path string) error {
 	}
 	newV := viper.New()
 	newV.Set(key, newConfValue)
-	m.v.MergeConfigMap(newV.AllSettings())
-	err = checkAndWrite(m.fs, m.v, path)
-	if err == nil {
-		checkAndPrintRestartWarning(key)
-	}
-	return err
+	return m.v.MergeConfigMap(newV.AllSettings())
 }
 
 func checkAndWrite(fs afero.Fs, v *viper.Viper, path string) error {
@@ -411,9 +436,11 @@ func unmarshal(v *viper.Viper) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	result.ConfigFile, err = absPath(v.ConfigFileUsed())
-	if err != nil {
-		return nil, err
+	if result.ConfigFile == "" {
+		result.ConfigFile, err = absPath(v.ConfigFileUsed())
+		if err != nil {
+			return nil, err
+		}
 	}
 	return result, nil
 }
