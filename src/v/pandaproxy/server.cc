@@ -15,7 +15,6 @@
 #include "pandaproxy/logger.h"
 #include "pandaproxy/probe.h"
 #include "pandaproxy/reply.h"
-#include "pandaproxy/rest/configuration.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/std-coroutine.hh>
