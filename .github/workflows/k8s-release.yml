@@ -67,7 +67,7 @@ jobs:
 
     - name: Package helm chart
       working-directory: src/go/k8s/helm-chart/charts
-      run: helm package --version ${{ github.event.release.tag_name }} --app-version ${{ github.event.release.tag_name }} redpanda-operator
+      run: helm package -u --version ${{ github.event.release.tag_name }} --app-version ${{ github.event.release.tag_name }} redpanda-operator
 
     - name: Upload helm package to release
       uses: svenstaro/upload-release-action@2.2.1
