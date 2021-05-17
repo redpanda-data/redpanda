@@ -14,7 +14,10 @@
 #include "config/configuration.h"
 #include "kafka/protocol/batch_consumer.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/fetch.h"
 #include "kafka/server/fetch_session.h"
+#include "kafka/server/handlers/fetch/fetch_plan_executor.h"
+#include "kafka/server/handlers/fetch/fetch_planner.h"
 #include "kafka/server/materialized_partition.h"
 #include "kafka/server/partition_proxy.h"
 #include "kafka/server/replicated_partition.h"
@@ -23,6 +26,7 @@
 #include "model/namespace.h"
 #include "model/record_utils.h"
 #include "model/timeout_clock.h"
+#include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/parser_utils.h"
 #include "utils/to_string.h"
@@ -129,7 +133,7 @@ static ss::future<read_result> read_from_partition(
     auto lso = part.last_stable_offset();
     auto start_o = part.start_offset();
     // if we have no data read, return fast
-    if (hw < config.start_offset) {
+    if (hw < config.start_offset || config.skip_read) {
         co_return read_result(start_o, hw, lso);
     }
 
@@ -319,33 +323,20 @@ static void fill_fetch_responses(
     }
 }
 
-static ss::future<std::vector<read_result>> do_fetch_ntps_in_parallel(
-  cluster::partition_manager& mgr,
-  std::vector<ntp_fetch_config>& ntp_fetch_configs,
-  bool foreign_read,
-  std::optional<model::timeout_clock::time_point> deadline) {
-    return ssx::async_transform(
-      ntp_fetch_configs, [&mgr, deadline, foreign_read](ntp_fetch_config& cfg) {
-          auto p_id = cfg.ntp.tp.partition;
-          return do_read_from_ntp(mgr, std::move(cfg), foreign_read, deadline)
-            .then([p_id](read_result res) {
-                res.partition = p_id;
-                return res;
-            });
-      });
-}
-
 static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
   cluster::partition_manager& mgr,
   std::vector<ntp_fetch_config> ntp_fetch_configs,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
-    return ss::do_with(
+    return ssx::parallel_transform(
       std::move(ntp_fetch_configs),
-      [&mgr, deadline, foreign_read](
-        std::vector<ntp_fetch_config>& ntp_fetch_configs) {
-          return do_fetch_ntps_in_parallel(
-            mgr, ntp_fetch_configs, foreign_read, deadline);
+      [&mgr, deadline, foreign_read](const ntp_fetch_config& ntp_cfg) {
+          auto p_id = ntp_cfg.ntp.tp.partition;
+          return do_read_from_ntp(mgr, ntp_cfg, foreign_read, deadline)
+            .then([p_id](read_result res) {
+                res.partition = p_id;
+                return res;
+            });
       });
 }
 
@@ -387,64 +378,104 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
       });
 }
 
-static std::vector<shard_fetch> group_requests_by_shard(op_context& octx) {
-    std::vector<shard_fetch> shard_fetches(ss::smp::count);
-    auto resp_it = octx.response_begin();
-    /**
-     * group fetch requests by shard
-     */
-    octx.for_each_fetch_partition(
-      [&resp_it, &octx, &shard_fetches](const fetch_session_partition& fp) {
-          // if this is not an initial fetch we are allowed to skip
-          // partions that aleready have an error or we have enough data
-          if (!octx.initial_fetch) {
-              bool has_enough_data
-                = !resp_it->partition_response->records->empty()
-                  && octx.over_min_bytes();
+class parallel_fetch_plan_executor final : public fetch_plan_executor::impl {
+    ss::future<> execute_plan(op_context& octx, fetch_plan plan) final {
+        std::vector<ss::future<>> fetches;
+        fetches.reserve(ss::smp::count);
 
-              if (
-                resp_it->partition_response->error_code != error_code::none
-                || has_enough_data) {
+        // start fetching from random shard to make sure that we fetch data from
+        // all the partition even if we reach fetch message size limit
+        const ss::shard_id start_shard_idx = random_generators::get_int(
+          ss::smp::count - 1);
+        for (size_t i = 0; i < ss::smp::count; ++i) {
+            auto shard = (start_shard_idx + i) % ss::smp::count;
+
+            fetches.push_back(
+              handle_shard_fetch(shard, octx, plan.fetches_per_shard[shard]));
+        }
+
+        return ss::when_all_succeed(fetches.begin(), fetches.end());
+    }
+};
+
+class simple_fetch_planner final : public fetch_planner::impl {
+    fetch_plan create_plan(op_context& octx) final {
+        fetch_plan plan(ss::smp::count);
+        auto resp_it = octx.response_begin();
+        auto bytes_left_in_plan = octx.bytes_left;
+        /**
+         * group fetch requests by shard
+         */
+        octx.for_each_fetch_partition(
+          [&resp_it, &octx, &plan, &bytes_left_in_plan](
+            const fetch_session_partition& fp) {
+              // if this is not an initial fetch we are allowed to skip
+              // partions that aleready have an error or we have enough data
+              if (!octx.initial_fetch) {
+                  bool has_enough_data
+                    = !resp_it->partition_response->records->empty()
+                      && octx.over_min_bytes();
+
+                  if (
+                    resp_it->partition_response->error_code != error_code::none
+                    || has_enough_data) {
+                      ++resp_it;
+                      return;
+                  }
+              }
+              /**
+               * if not authorized do not include into a plan
+               */
+              if (!octx.rctx.authorized(
+                    security::acl_operation::read, fp.topic)) {
+                  (resp_it).set(make_partition_response_error(
+                    fp.partition, error_code::topic_authorization_failed));
                   ++resp_it;
                   return;
               }
-          }
 
-          if (!octx.rctx.authorized(security::acl_operation::read, fp.topic)) {
-              (resp_it).set(make_partition_response_error(
-                fp.partition, error_code::topic_authorization_failed));
-              ++resp_it;
-              return;
-          }
+              auto ntp = model::ntp(
+                model::kafka_namespace, fp.topic, fp.partition);
 
-          auto ntp = model::ntp(model::kafka_namespace, fp.topic, fp.partition);
-          auto materialized_ntp = model::materialized_ntp(std::move(ntp));
+              auto materialized_ntp = model::materialized_ntp(ntp);
 
-          auto shard = octx.rctx.shards().shard_for(
-            materialized_ntp.source_ntp());
-          if (!shard) {
-              // no shard found, set error
-              (resp_it).set(make_partition_response_error(
-                fp.partition, error_code::unknown_topic_or_partition));
-              ++resp_it;
-              return;
-          }
+              auto shard = octx.rctx.shards().shard_for(
+                materialized_ntp.source_ntp());
+              if (!shard) {
+                  // no shard found, set error, do not include into a plan
+                  (resp_it).set(make_partition_response_error(
+                    fp.partition, error_code::unknown_topic_or_partition));
+                  ++resp_it;
+                  return;
+              }
 
-          fetch_config config{
-            .start_offset = fp.fetch_offset,
-            .max_offset = model::model_limits<model::offset>::max(),
-            .isolation_level = octx.request.data.isolation_level,
-            .max_bytes = std::min(octx.bytes_left, size_t(fp.max_bytes)),
-            .timeout = octx.deadline.value_or(model::no_timeout),
-            .strict_max_bytes = octx.response_size > 0,
-          };
+              auto fetch_md = octx.rctx.get_fetch_metadata_cache().get(ntp);
+              auto max_bytes = std::min(
+                bytes_left_in_plan, size_t(fp.max_bytes));
+              /**
+               * If offset is greater, assume that fetch will read max_bytes
+               */
+              if (fetch_md && fetch_md->high_watermark > fp.fetch_offset) {
+                  bytes_left_in_plan -= max_bytes;
+              }
 
-          shard_fetches[*shard].push_back(
-            make_ntp_fetch_config(materialized_ntp, config), resp_it++);
-      });
+              fetch_config config{
+                .start_offset = fp.fetch_offset,
+                .max_offset = model::model_limits<model::offset>::max(),
+                .isolation_level = octx.request.data.isolation_level,
+                .max_bytes = max_bytes,
+                .timeout = octx.deadline.value_or(model::no_timeout),
+                .strict_max_bytes = octx.response_size > 0,
+                .skip_read = bytes_left_in_plan == 0 && max_bytes == 0,
+              };
 
-    return shard_fetches;
-}
+              plan.fetches_per_shard[*shard].push_back(
+                make_ntp_fetch_config(materialized_ntp, config), resp_it++);
+          });
+
+        return plan;
+    }
+};
 
 /**
  * Process partition fetch requests.
@@ -471,29 +502,23 @@ static std::vector<shard_fetch> group_requests_by_shard(op_context& octx) {
  */
 
 static ss::future<> fetch_topic_partitions(op_context& octx) {
-    std::vector<ss::future<>> fetches;
-    fetches.reserve(ss::smp::count);
+    auto planner = make_fetch_planner<simple_fetch_planner>();
 
-    ss::shard_id shard = 0;
-    for (auto& shard_fetch : group_requests_by_shard(octx)) {
-        fetches.push_back(
-          handle_shard_fetch(shard++, octx, std::move(shard_fetch)));
+    auto fetch_plan = planner.create_plan(octx);
+
+    fetch_plan_executor executor
+      = make_fetch_plan_executor<parallel_fetch_plan_executor>();
+    co_await executor.execute_plan(octx, std::move(fetch_plan));
+
+    if (octx.should_stop_fetch()) {
+        co_return;
     }
 
-    return ss::do_with(
-      std::move(fetches), [&octx](std::vector<ss::future<>>& fetches) {
-          return ss::when_all_succeed(fetches.begin(), fetches.end())
-            .then([&octx] {
-                if (octx.should_stop_fetch()) {
-                    return ss::now();
-                }
-                octx.reset_context();
-                // debounce next read retry
-                return ss::sleep(std::min(
-                  config::shard_local_cfg().fetch_reads_debounce_timeout(),
-                  octx.request.data.max_wait_ms));
-            });
-      });
+    octx.reset_context();
+    // debounce next read retry
+    co_await ss::sleep(std::min(
+      config::shard_local_cfg().fetch_reads_debounce_timeout(),
+      octx.request.data.max_wait_ms));
 }
 
 template<>
@@ -542,8 +567,9 @@ op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
      * integrate with other resource contraints that are dynamic within the
      * kafka server itself.
      */
-    static constexpr size_t max_size = 128_KiB;
-    bytes_left = std::min(max_size, size_t(request.data.max_bytes));
+    bytes_left = std::min(
+      config::shard_local_cfg().fetch_max_bytes(),
+      size_t(request.data.max_bytes));
     session_ctx = rctx.fetch_sessions().maybe_get_session(request);
     create_response_placeholders();
 }

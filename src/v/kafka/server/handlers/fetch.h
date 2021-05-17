@@ -145,6 +145,7 @@ struct fetch_config {
     size_t max_bytes;
     model::timeout_clock::time_point timeout;
     bool strict_max_bytes{false};
+    bool skip_read{false};
 
     friend std::ostream& operator<<(std::ostream& o, const fetch_config& cfg) {
         fmt::print(
