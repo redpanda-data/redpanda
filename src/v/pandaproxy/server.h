@@ -41,7 +41,7 @@ class server {
 public:
     struct context_t {
         std::vector<unresolved_address> advertised_listeners;
-        ss::semaphore mem_sem;
+        ss::semaphore& mem_sem;
         ss::abort_source as;
         ss::smp_service_group smp_sg;
         ss::sharded<kafka::client::client>& client;
@@ -76,7 +76,7 @@ public:
     server() = delete;
     ~server() = default;
     server(const server&) = delete;
-    server(server&&) = default;
+    server(server&&) noexcept = default;
     server& operator=(const server&) = delete;
     server& operator=(server&&) = delete;
 
