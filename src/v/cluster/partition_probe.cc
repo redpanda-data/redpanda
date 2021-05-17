@@ -17,7 +17,12 @@
 #include <seastar/core/metrics.hh>
 
 namespace cluster {
-void partition_probe::setup_metrics(const model::ntp& ntp) {
+
+replicated_partition_probe::replicated_partition_probe(
+  const partition& p) noexcept
+  : _partition(p) {}
+
+void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
     namespace sm = ss::metrics;
 
     if (config::shard_local_cfg().disable_metrics()) {
