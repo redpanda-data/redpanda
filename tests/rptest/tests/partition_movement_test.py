@@ -17,135 +17,201 @@ import requests
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.admin import Admin
+from kafka import KafkaProducer
+from kafka import KafkaConsumer
 
 
 class PartitionMovementTest(RedpandaTest):
     """
-    Change a partition's replica set.
+    Basic partition movement tests. Each test builds a number of topics and then
+    performs a series of random replica set changes. After each change a
+    verification step is performed.
+
+    TODO
+    - Add tests with node failures
+    - Add tests with active producer/consumer
+    - Add settings for scaling up tests
+    - Add tests guarnateeing multiple segments
     """
-    topics = (TopicSpec(partition_count=1, replication_factor=1), )
+    @staticmethod
+    def _random_partition(metadata):
+        topic = random.choice(metadata)
+        partition = random.choice(topic["partitions"])
+        return topic["topic"], partition["partition"]
 
-    # TODO: the movement api currently accepts requests for any core and any
-    # node so we cannot yet test for invalid target node and partition.
-    @cluster(num_nodes=3)
-    def test_bad_requests(self):
-        controller = self.redpanda.controller()
-        topic = self.topics[0].name
-        partition = 0
-
-        # verify that we get an error if we attempt to move a partition without
-        # specifying a target replica set. this will be removed later when we
-        # add functionality that can choose automatically.
-        for node in self.redpanda.nodes:
-            host = node.account.hostname
-            base_url = f"http://{host}:9644/v1/kafka/{topic}/{partition}/move_partition"
-            for params in ["", "?", "?target="]:
-                url = f"{base_url}{params}"
-                res = requests.post(url)
-                assert res.status_code == 400
-                assert "Partition movement requires target replica set" in res.text
-
-        # check that errors are returned for invalid target formats
-        for node in self.redpanda.nodes:
-            host = node.account.hostname
-            base_url = f"http://{host}:9644/v1/kafka/{topic}/{partition}/move_partition"
-            for params in [
-                    "1", "a", "1,", "a,", "1,a", "a,1", "1,1,1", "1,1,a",
-                    "a,1,1", "a,1,1,", "1,1,1,a"
-            ]:
-                url = f"{base_url}?target={params}"
-                res = requests.post(url)
-                assert res.status_code == 400
-                assert "Invalid target format" in res.text
-
-        # check for reject request for source partition that does not exist
-        for node in self.redpanda.nodes:
-            host = node.account.hostname
-            url = f"http://{host}:9644/v1/kafka/{topic}/9999/move_partition?target=1,0"
-            res = requests.post(url)
-            assert res.status_code == 400
-            if node == controller:
-                assert "Requested partition does not exist" in res.text
-            else:
-                assert "raft::errc::not_leader" in res.text
-
-        # check for reject request for source topic that does not exist
-        for node in self.redpanda.nodes:
-            host = node.account.hostname
-            url = f"http://{host}:9644/v1/kafka/topic-dne/{partition}/move_partition?target=1,0"
-            res = requests.post(url)
-            assert res.status_code == 400
-            if node == controller:
-                assert "Topic does not exist" in res.text
-            else:
-                assert "raft::errc::not_leader" in res.text
-
-    @cluster(num_nodes=3)
-    def test_cycle_simple(self, rounds=4):
+    @staticmethod
+    def _choose_replacement(admin, assignments):
         """
-        Verifies that an empty partition with one replica can be moved around
-        between random brokers in serveral rounds.
-
-        TODO: when picking the set of eligible nodes we filter out the current
-        node because move-to-self is not yet supported.
+        Does not produce assignments that contain duplicate nodes. This is a
+        limitation in redpanda raft implementation.
         """
-        controller = self.redpanda.controller()
-        base_url = f"http://{controller.account.hostname}:9644"
-        base_url = f"{base_url}/v1/kafka/{self.topics[0].name}/0/move_partition"
+        replication_factor = len(assignments)
+        node_ids = lambda x: set([a["node_id"] for a in x])
 
-        # shards per node for this cluster
-        shards = self.redpanda.shards()
+        assert replication_factor >= 1
+        assert len(node_ids(assignments)) == replication_factor
 
-        def get_partition_shard(node):
-            metrics = self.redpanda.metrics(node)
-            for family in metrics:
-                for sample in family.samples:
-                    if sample.name == "vectorized_storage_log_partition_size" and \
-                            sample.labels["namespace"] == "kafka" and \
-                            sample.labels["topic"] == self.topics[0].name and \
-                            sample.labels["partition"] == "0":
-                        return int(sample.labels["shard"])
-            return None
+        # remove random assignment(s). we allow no changes to be made to
+        # exercise the code paths responsible for dealing with no-ops.
+        num_replacements = random.randint(0, replication_factor)
+        selected = random.sample(assignments, num_replacements)
+        for assignment in selected:
+            assignments.remove(assignment)
 
-        def partition_moved(to_node_id, to_shard):
-            partitions = self.redpanda.partitions(self.topics[0].name)
-            if not partitions:
-                return False
-            partition = partitions[0]
-            node_id = self.redpanda.idx(partition.replicas[0])
-            shard = get_partition_shard(partition.replicas[0])
-            self.logger.debug(
-                f"Waiting for partition {to_node_id}:{to_shard} current {node_id}:{shard}"
-            )
-            return to_node_id == node_id and to_shard == shard
+        # choose a valid random replacement
+        replacements = []
+        brokers = admin.get_brokers()
+        while len(assignments) != replication_factor:
+            broker = random.choice(brokers)
+            node_id = broker["node_id"]
+            if node_id in node_ids(assignments):
+                continue
+            core = random.randint(0, broker["num_cores"] - 1)
+            replacement = dict(node_id=node_id, core=core)
+            assignments.append(replacement)
+            replacements.append(replacement)
 
-        def move_partition(to_node_id, to_shard):
-            url = f"{base_url}?target={to_node_id},{to_shard}"
-            res = requests.post(url)
-            self.logger.debug(
-                f"Requesting partition move {url}: {res.status_code} {res.text}"
-            )
-            return res.status_code == 200
+        return selected, replacements
 
-        for round in range(rounds):
-            partition = self.redpanda.partitions(self.topics[0].name)[0]
-            eligible = set(self.redpanda.nodes) - set(partition.replicas)
-            target = random.choice(list(eligible))
+    @staticmethod
+    def _get_assignments(admin, topic, partition):
+        res = admin.get_partitions(topic, partition)
 
-            from_node_id = self.redpanda.idx(partition.replicas[0])
-            to_node_id = self.redpanda.idx(target)
-            to_shard = random.randint(0, shards[to_node_id])
+        def normalize(a):
+            return dict(node_id=a["node_id"], core=a["core"])
 
-            self.logger.debug(
-                f"Moving partition round {round}: from node {from_node_id} to {to_node_id}:{to_shard}"
-            )
+        return [normalize(a) for a in res["replicas"]]
 
-            wait_until(lambda: move_partition(to_node_id, to_shard),
-                       timeout_sec=10,
-                       backoff_sec=2,
-                       err_msg="Previous move haven't finished")
+    @staticmethod
+    def _equal_assignments(r0, r1):
+        def to_tuple(a):
+            return a["node_id"], a["core"]
 
-            wait_until(lambda: partition_moved(to_node_id, to_shard),
-                       timeout_sec=20,
-                       backoff_sec=5,
-                       err_msg="Partition move did not complete")
+        r0 = [to_tuple(a) for a in r0]
+        r1 = [to_tuple(a) for a in r1]
+        return set(r0) == set(r1)
+
+    def _get_current_partitions(self, admin, topic, partition_id):
+        def keep(p):
+            return p["ns"] == "kafka" and p["topic"] == topic and p[
+                "partition_id"] == partition_id
+
+        result = []
+        for node in self.redpanda.nodes:
+            node_id = self.redpanda.idx(node)
+            partitions = admin.get_partitions(node=node)
+            partitions = filter(keep, partitions)
+            for partition in partitions:
+                result.append(dict(node_id=node_id, core=partition["core"]))
+        return result
+
+    def _move_and_verify(self):
+        admin = Admin(self.redpanda)
+
+        # choose a random topic-partition
+        metadata = self.redpanda.describe_topics()
+        topic, partition = self._random_partition(metadata)
+        self.logger.info(f"selected topic-partition: {topic}-{partition}")
+
+        # get the partition's replica set, including core assignments. the kafka
+        # api doesn't expose core information, so we use the redpanda admin api.
+        assignments = self._get_assignments(admin, topic, partition)
+        self.logger.info(f"assignments for {topic}-{partition}: {assignments}")
+
+        # build new replica set by replacing a random assignment
+        selected, replacements = self._choose_replacement(admin, assignments)
+        self.logger.info(
+            f"replacement for {topic}-{partition}:{len(selected)}: {selected} -> {replacements}"
+        )
+        self.logger.info(
+            f"new assignments for {topic}-{partition}: {assignments}")
+
+        admin.set_partition_replicas(topic, partition, assignments)
+
+        def status_done():
+            info = admin.get_partitions(topic, partition)
+            self.logger.info(
+                f"current assignments for {topic}-{partition}: {info}")
+            converged = self._equal_assignments(info["replicas"], assignments)
+            return converged and info["status"] == "done"
+
+        # wait until redpanda reports complete
+        wait_until(status_done, timeout_sec=30, backoff_sec=1)
+
+        def derived_done():
+            info = self._get_current_partitions(admin, topic, partition)
+            self.logger.info(
+                f"derived assignments for {topic}-{partition}: {info}")
+            return self._equal_assignments(info, assignments)
+
+        wait_until(derived_done, timeout_sec=30, backoff_sec=1)
+
+    @cluster(num_nodes=3)
+    def test_empty(self):
+        """
+        Move empty partitions.
+        """
+        topics = []
+        for partition_count in range(1, 5):
+            for replication_factor in (3, 3):
+                name = f"topic{len(topics)}"
+                spec = TopicSpec(name=name,
+                                 partition_count=partition_count,
+                                 replication_factor=replication_factor)
+                topics.append(spec)
+
+        for spec in topics:
+            self.redpanda.create_topic(spec)
+
+        for _ in range(25):
+            self._move_and_verify()
+
+    @cluster(num_nodes=3)
+    def test_static(self):
+        """
+        Move partitions with data, but no active producers or consumers.
+        """
+        topics = []
+        for partition_count in range(1, 5):
+            for replication_factor in (3, 3):
+                name = f"topic{len(topics)}"
+                spec = TopicSpec(name=name,
+                                 partition_count=partition_count,
+                                 replication_factor=replication_factor)
+                topics.append(spec)
+
+        for spec in topics:
+            self.redpanda.create_topic(spec)
+
+        num_records = 1000
+        produced = set(((f"key-{i}".encode(), f"value-{i}".encode())
+                        for i in range(num_records)))
+
+        for spec in topics:
+            self.logger.info(f"Producing to {spec}")
+            producer = KafkaProducer(
+                batch_size=4096,
+                bootstrap_servers=self.redpanda.brokers_list())
+            for key, value in produced:
+                producer.send(spec.name, key=key, value=value)
+            producer.flush()
+            self.logger.info(f"Finished producing to {spec}")
+
+        for _ in range(25):
+            self._move_and_verify()
+
+        for spec in topics:
+            self.logger.info(f"Verifying records in {spec}")
+            consumer = KafkaConsumer(
+                spec.name,
+                bootstrap_servers=self.redpanda.brokers_list(),
+                group_id=None,
+                auto_offset_reset='earliest',
+                request_timeout_ms=5000,
+                consumer_timeout_ms=10000)
+            consumed = []
+            for msg in consumer:
+                consumed.append((msg.key, msg.value))
+            self.logger.info(f"Finished verifying records in {spec}")
+            assert set(consumed) == produced

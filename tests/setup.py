@@ -13,7 +13,7 @@ setup(
     package_data={'': ['*.md']},
     include_package_data=True,
     install_requires=[
-        'ducktape==0.8.0',
+        'ducktape==0.8.8',
         'prometheus-client==0.9.0',
         'pyyaml==5.3.1',
         'kafka-python==2.0.2',

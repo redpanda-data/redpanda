@@ -28,8 +28,7 @@ class RedpandaTest(Test):
                  extra_rp_conf=dict(),
                  topics=None,
                  enable_pp=False,
-                 enable_sr=False,
-                 log_level='info'):
+                 enable_sr=False):
         super(RedpandaTest, self).__init__(test_context)
 
         self.redpanda = RedpandaService(test_context,
@@ -38,8 +37,7 @@ class RedpandaTest(Test):
                                         extra_rp_conf=extra_rp_conf,
                                         enable_pp=enable_pp,
                                         enable_sr=enable_sr,
-                                        topics=self.topics,
-                                        log_level=log_level)
+                                        topics=self.topics)
 
     @property
     def topic(self):

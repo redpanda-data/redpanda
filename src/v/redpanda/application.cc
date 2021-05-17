@@ -324,7 +324,8 @@ void application::configure_admin_server() {
       admin_server_cfg_from_global_cfg(_scheduling_groups),
       std::ref(partition_manager),
       controller.get(),
-      std::ref(shard_table))
+      std::ref(shard_table),
+      std::ref(metadata_cache))
       .get();
 }
 
@@ -725,6 +726,8 @@ void application::start() {
           "Started Schema Registry listening at {}",
           _schema_reg_config->schema_registry_api());
     }
+
+    _admin.invoke_on_all([](admin_server& admin) { admin.set_ready(); }).get();
 
     vlog(_log.info, "Successfully started Redpanda!");
     syschecks::systemd_notify_ready().get();

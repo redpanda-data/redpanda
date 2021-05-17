@@ -25,14 +25,12 @@ class AlterTopicConfiguration(RedpandaTest):
     Change a partition's replica set.
     """
     topics = (TopicSpec(partition_count=1, replication_factor=3), )
-    log_level = 'trace'
 
     def __init__(self, test_context):
         super(AlterTopicConfiguration,
               self).__init__(test_context=test_context,
                              num_brokers=3,
-                             topics=self.topics,
-                             log_level='trace')
+                             topics=self.topics)
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
 
