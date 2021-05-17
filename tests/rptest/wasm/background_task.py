@@ -19,7 +19,7 @@ class BackgroundTask:
     def __init__(self):
         self._done = False
         self._error = None
-        self._lock = threading.RLock()
+        self._lock = threading.Lock()
         self._worker = threading.Thread(name=self.task_name(),
                                         target=self._run_protected,
                                         daemon=True,

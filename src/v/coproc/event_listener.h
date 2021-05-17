@@ -70,8 +70,6 @@ private:
     /// Set of known script ids to be active
     absl::btree_set<script_id> _active_ids;
 
-    ss::sharded<coproc::pacemaker>& _pacemaker;
-
     /// Used to make requests to the wasm engine
     script_dispatcher _dispatcher;
 };

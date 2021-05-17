@@ -114,7 +114,9 @@ static bool should_immediately_deregister(
         /// acks correspond to what topics
         results.push_back(fold_enable_codes(cross_shard_codes));
     }
-    return std::any_of(results.cbegin(), results.cend(), xform::identity());
+    /// Only if 100% of the subscribtions are invalid should the
+    /// coprocessor be deregistered.
+    return std::all_of(results.cbegin(), results.cend(), xform::identity());
 }
 
 static disable_response_code
@@ -277,8 +279,7 @@ script_dispatcher::disable_coprocessors(disable_copros_request req) {
 }
 
 ss::future<> script_dispatcher::remove_all_sources() {
-    return _pacemaker.map([](pacemaker& p) { return p.remove_all_sources(); })
-      .discard_result();
+    return _pacemaker.invoke_on_all([](pacemaker& p) { return p.reset(); });
 }
 
 ss::future<std::error_code> script_dispatcher::disable_all_coprocessors() {

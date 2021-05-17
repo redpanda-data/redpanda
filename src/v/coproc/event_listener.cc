@@ -55,10 +55,6 @@ static wasm::event_action query_action(const iobuf& source_code) {
                                : wasm::event_action::deploy;
 }
 
-static ss::future<> remove_copro_state(ss::sharded<pacemaker>& svc) {
-    return svc.invoke_on_all([](pacemaker& p) { return p.reset(); });
-}
-
 ss::future<> event_listener::stop() {
     vlog(coproclog.info, "Stopping coproc::wasm::event_listener");
     _abort_source.request_abort();
@@ -135,7 +131,6 @@ ss::future<> event_listener::persist_actions(
 
 event_listener::event_listener(ss::sharded<pacemaker>& pacemaker)
   : _client(make_client())
-  , _pacemaker(pacemaker)
   , _dispatcher(pacemaker, _abort_source) {}
 
 ss::future<> event_listener::start() {
@@ -193,12 +188,13 @@ ss::future<> event_listener::do_start() {
         /// There is a discrepency between the number of registered coprocs
         /// according to redpanda and according to the wasm engine.
         /// Reconcile all state from offset 0.
+        vlog(coproclog.info, "Replaying coprocessor state...");
         if (co_await _dispatcher.disable_all_coprocessors()) {
             vlog(
               coproclog.error,
               "Failed to reset wasm_engine state, will keep retrying...");
         } else {
-            co_await remove_copro_state(_pacemaker);
+            _active_ids.clear();
             _offset = model::offset(0);
         }
     }

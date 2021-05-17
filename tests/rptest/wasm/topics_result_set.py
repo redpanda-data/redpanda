@@ -15,11 +15,17 @@ from kafka import TopicPartition
 
 
 class BasicKafkaRecord:
-    def __init__(self, topic=None, partition=None, key=None, value=None):
+    def __init__(self,
+                 topic=None,
+                 partition=None,
+                 key=None,
+                 value=None,
+                 offset=0):
         self.topic = topic
         self.partition = partition
         self.key = key
         self.value = value
+        self.offset = offset
 
     def __eq__(self, o):
         return self.topic == o.topic and self.partition == o.partition \
@@ -64,8 +70,8 @@ class TopicsResultSet:
 
         def to_basic_records(records):
             return list([
-                BasicKafkaRecord(x.topic, x.partition, x.key, x.value)
-                for x in records
+                BasicKafkaRecord(x.topic, x.partition, x.key, x.value,
+                                 x.offset) for x in records
             ])
 
         # Filter out control records and unwanted data

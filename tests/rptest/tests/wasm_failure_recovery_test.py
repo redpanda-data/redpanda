@@ -10,7 +10,7 @@
 import random
 from rptest.clients.types import TopicSpec
 from rptest.tests.wasm_identity_test import WasmIdentityTest
-from rptest.wasm.topics_result_set import materialized_at_least_once_compare
+from rptest.wasm.topics_result_set import materialized_result_set_compare
 
 
 class WasmFailureRecoveryTest(WasmIdentityTest):
@@ -38,7 +38,7 @@ class WasmBasicFailureRecoveryTest(WasmFailureRecoveryTest):
         return [["sole_output_a"]]
 
     def verify_results(self):
-        return materialized_at_least_once_compare
+        return materialized_result_set_compare
 
 
 class WasmMultiScriptFailureRecoveryTest(WasmFailureRecoveryTest):
@@ -52,7 +52,7 @@ class WasmMultiScriptFailureRecoveryTest(WasmFailureRecoveryTest):
         return [["aaa"], ["bbb"], ["ccc"]]
 
     def verify_results(self):
-        return materialized_at_least_once_compare
+        return materialized_result_set_compare
 
 
 class WasmMultiInputTopicFailureRecoveryTest(WasmFailureRecoveryTest):
@@ -78,7 +78,7 @@ class WasmMultiInputTopicFailureRecoveryTest(WasmFailureRecoveryTest):
         return [["first_topic"], ["second_topic"], ["third_topic"]]
 
     def verify_results(self):
-        return materialized_at_least_once_compare
+        return materialized_result_set_compare
 
 
 class WasmMeshFailureRecoveryTest(WasmFailureRecoveryTest):
@@ -111,4 +111,4 @@ class WasmMeshFailureRecoveryTest(WasmFailureRecoveryTest):
                 [otopic_a, otopic_b, otopic_c]]
 
     def verify_results(self):
-        return materialized_at_least_once_compare
+        return materialized_result_set_compare
