@@ -104,4 +104,10 @@ private:
     context_t& _ctx;
 };
 
+template<typename service_t>
+class ctx_server : public server {
+public:
+    using server::server;
+};
+
 } // namespace pandaproxy
