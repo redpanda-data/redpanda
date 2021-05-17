@@ -40,7 +40,7 @@ service::service(
   : _config(config)
   , _mem_sem(max_memory)
   , _client(client)
-  , _ctx{{}, _mem_sem, {}, smp_sg, _client, _config}
+  , _ctx{{{}, _mem_sem, {}, smp_sg}, *this}
   , _server(
       "schema_registry",
       ss::api_registry_builder20(_config.api_doc_dir(), "/v1"),

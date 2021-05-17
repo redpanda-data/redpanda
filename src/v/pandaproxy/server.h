@@ -44,8 +44,6 @@ public:
         ss::semaphore& mem_sem;
         ss::abort_source as;
         ss::smp_service_group smp_sg;
-        ss::sharded<kafka::client::client>& client;
-        const config::config_store& config;
     };
 
     struct request_t {
@@ -108,6 +106,23 @@ template<typename service_t>
 class ctx_server : public server {
 public:
     using server::server;
+
+    struct context_t : server::context_t {
+        service_t& service;
+    };
+
+    // request_t restores the type of the context passed in.
+    struct request_t final : server::request_t {
+        // Implicit constructor from type-erased server::request_t.
+        request_t(server::request_t&& impl) // NOLINT
+          : server::request_t(std::move(impl)) {}
+        // Type-restored context
+        context_t& context() const {
+            return static_cast<context_t&>(server::request_t::ctx);
+        };
+        // The service
+        service_t& service() const { return context().service; };
+    };
 };
 
 } // namespace pandaproxy
