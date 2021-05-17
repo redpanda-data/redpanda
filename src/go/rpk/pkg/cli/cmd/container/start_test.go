@@ -495,7 +495,7 @@ Please check your internet connection and try again.`,
 				check = tt.check
 			}
 			retries := uint(10)
-			err = startCluster(c, tt.nodes, check, retries, common.DefaultImage())
+			err = startCluster(c, tt.nodes, check, retries, true, common.DefaultImage())
 			if tt.expectedErrMsg != "" {
 				require.EqualError(st, err, tt.expectedErrMsg)
 			} else {

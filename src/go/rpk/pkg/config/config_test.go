@@ -381,6 +381,7 @@ redpanda:
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
+  enable_coproc: false
   kafka_api:
   - address: 0.0.0.0
     port: 9092
@@ -427,6 +428,7 @@ redpanda:
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
+  enable_coproc: false
   kafka_api:
   - address: 0.0.0.0
     port: 9092
@@ -483,6 +485,7 @@ redpanda:
     port: 33145
   data_directory: /var/lib/redpanda/data
   developer_mode: false
+  enable_coproc: false
   kafka_api:
   - address: 0.0.0.0
     port: 9092
@@ -541,6 +544,7 @@ redpanda:
     port: 9092
   data_directory: /var/lib/redpanda/data
   developer_mode: false
+  enable_coproc: false
   kafka_api:
   - address: 0.0.0.0
     port: 9092
@@ -591,6 +595,7 @@ redpanda:
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
+  enable_coproc: false
   kafka_api:
   - address: 0.0.0.0
     port: 9092
@@ -645,6 +650,7 @@ redpanda:
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
+  enable_coproc: false
   kafka_api:
   - address: 0.0.0.0
     port: 9092
@@ -722,6 +728,7 @@ redpanda:
   data_directory: /var/lib/redpanda/data
   default_window_sec: 100
   developer_mode: false
+  enable_coproc: false
   kafka_api:
   - address: 0.0.0.0
     port: 9092
@@ -798,6 +805,7 @@ redpanda:
   data_directory: /different/path
   default_window_sec: 100
   developer_mode: false
+  enable_coproc: false
   kafka_api:
   - address: 0.0.0.0
     port: 9092
@@ -851,6 +859,7 @@ redpanda:
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
+  enable_coproc: false
   kafka_api:
   - address: 0.0.0.0
     name: outside
@@ -921,6 +930,7 @@ redpanda:
     truststore_file: /etc/certs/admin/ca.crt
   data_directory: /var/lib/redpanda/data
   developer_mode: false
+  enable_coproc: false
   kafka_api:
   - address: 0.0.0.0
     port: 9092
@@ -972,6 +982,7 @@ redpanda:
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
+  enable_coproc: false
   kafka_api:
   - address: 0.0.0.0
     port: 9092
@@ -1063,6 +1074,7 @@ redpanda:
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
+  enable_coproc: false
   kafka_api:
   - address: 0.0.0.0
     port: 9092
@@ -1127,6 +1139,7 @@ redpanda:
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
+  enable_coproc: false
   kafka_api:
   - address: 0.0.0.0
     port: 9092
@@ -1201,6 +1214,7 @@ redpanda:
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
+  enable_coproc: false
   kafka_api:
   - address: 0.0.0.0
     port: 9092
@@ -1252,6 +1266,7 @@ redpanda:
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
+  enable_coproc: false
   group_topic_partitions: 16
   kafka_api:
   - address: 0.0.0.0
@@ -1304,6 +1319,7 @@ redpanda:
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
+  enable_coproc: false
   enable_sasl: true
   kafka_api:
   - address: 0.0.0.0
@@ -1366,6 +1382,7 @@ redpanda:
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
+  enable_coproc: false
   kafka_api:
   - address: 0.0.0.0
     port: 9092
@@ -1448,6 +1465,7 @@ redpanda:
   cloud_storage_trust_file: trust
   data_directory: /var/lib/redpanda/data
   developer_mode: false
+  enable_coproc: false
   kafka_api:
   - address: 0.0.0.0
     port: 9092
@@ -1501,6 +1519,7 @@ redpanda:
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
+  enable_coproc: false
   kafka_api:
   - address: 0.0.0.0
     port: 9092
@@ -1556,6 +1575,7 @@ redpanda:
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
+  enable_coproc: false
   kafka_api:
   - address: 0.0.0.0
     port: 9092
@@ -1634,6 +1654,7 @@ redpanda:
   data_directory: /var/lib/redpanda/data
   default_window_sec: 100
   developer_mode: true
+  enable_coproc: false
   kafka_api:
   - address: 0.0.0.0
     port: 9092
@@ -1995,7 +2016,7 @@ func TestReadAsJSON(t *testing.T) {
 				return mgr.Write(conf)
 			},
 			path:     Default().ConfigFile,
-			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","pandaproxy":{},"redpanda":{"admin":[{"address":"0.0.0.0","port":9644}],"data_directory":"/var/lib/redpanda/data","developer_mode":true,"kafka_api":[{"address":"0.0.0.0","name":"internal","port":9092}],"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_disk_write_cache":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
+			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","pandaproxy":{},"redpanda":{"admin":[{"address":"0.0.0.0","port":9644}],"data_directory":"/var/lib/redpanda/data","developer_mode":true,"enable_coproc":false,"kafka_api":[{"address":"0.0.0.0","name":"internal","port":9092}],"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_disk_write_cache":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
 		},
 		{
 			name:           "it should fail if the the config isn't found",
@@ -2054,6 +2075,7 @@ func TestReadFlat(t *testing.T) {
 		"redpanda.rpc_server":                          "0.0.0.0:33145",
 		"redpanda.seed_servers.0":                      "192.168.167.0:1337",
 		"redpanda.seed_servers.1":                      "192.168.167.1:1337",
+		"redpanda.enable_coproc":                       "false",
 		"redpanda.developer_mode":                      "true",
 		"rpk.coredump_dir":                             "/var/lib/redpanda/coredump",
 		"rpk.enable_memory_locking":                    "false",
