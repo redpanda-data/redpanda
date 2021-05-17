@@ -13,6 +13,7 @@
 
 #include "cluster/fwd.h"
 #include "config/configuration.h"
+#include "kafka/server/fetch_metadata_cache.hh"
 #include "kafka/server/fwd.h"
 #include "kafka/server/queue_depth_monitor.h"
 #include "rpc/server.h"
@@ -111,6 +112,10 @@ public:
         return _controller_api.local();
     }
 
+    kafka::fetch_metadata_cache& get_fetch_metadata_cache() {
+        return _fetch_metadata_cache;
+    }
+
 private:
     ss::smp_service_group _smp_group;
     ss::sharded<cluster::topics_frontend>& _topics_frontend;
@@ -130,6 +135,7 @@ private:
     ss::sharded<cluster::controller_api>& _controller_api;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     std::optional<qdc_monitor> _qdc_mon;
+    kafka::fetch_metadata_cache _fetch_metadata_cache;
 };
 
 } // namespace kafka
