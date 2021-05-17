@@ -38,6 +38,7 @@ public:
 
     configuration& config();
     kafka::client::configuration& client_config();
+    ss::sharded<kafka::client::client>& client() { return _client; }
 
 private:
     configuration _config;
