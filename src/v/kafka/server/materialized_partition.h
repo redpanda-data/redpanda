@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "cluster/partition_probe.h"
 #include "kafka/server/partition_proxy.h"
 #include "storage/log.h"
 
@@ -16,7 +17,8 @@ namespace kafka {
 class materialized_partition final : public kafka::partition_proxy::impl {
 public:
     explicit materialized_partition(storage::log log)
-      : _log(log) {}
+      : _log(log)
+      , _probe(cluster::make_materialized_partition_probe()) {}
 
     const model::ntp& ntp() const final { return _log.config().ntp(); }
     model::offset start_offset() const final {
@@ -49,8 +51,11 @@ public:
           std::vector<cluster::rm_stm::tx_range>());
     }
 
+    cluster::partition_probe& probe() final { return _probe; }
+
 private:
     storage::log _log;
+    cluster::partition_probe _probe;
 };
 
 } // namespace kafka

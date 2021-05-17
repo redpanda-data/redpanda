@@ -63,4 +63,6 @@ private:
     uint64_t _records_fetched{0};
     ss::metrics::metric_groups _metrics;
 };
+
+partition_probe make_materialized_partition_probe();
 } // namespace cluster
