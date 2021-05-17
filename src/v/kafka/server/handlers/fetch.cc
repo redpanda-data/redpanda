@@ -253,6 +253,7 @@ ss::future<read_result> read_from_ntp(
 }
 
 static void fill_fetch_responses(
+  op_context& octx,
   std::vector<read_result> results,
   std::vector<op_context::response_iterator> responses) {
     auto range = boost::irange<size_t>(0, results.size());
@@ -261,11 +262,28 @@ static void fill_fetch_responses(
         auto& resp_it = responses[idx];
 
         // error case
-        if (!res.has_data()) {
+        if (unlikely(res.error != error_code::none)) {
             resp_it.set(
               make_partition_response_error(res.partition, res.error));
             continue;
         }
+
+        model::ntp ntp(
+          model::kafka_namespace,
+          resp_it->partition->name,
+          resp_it->partition_response->partition_index);
+        /**
+         * Cache fetch metadata
+         */
+        octx.rctx.get_fetch_metadata_cache().insert_or_assign(
+          std::move(ntp),
+          res.start_offset,
+          res.high_watermark,
+          res.last_stable_offset);
+        /**
+         * Over response budget, we will just waste this read, it will cause
+         * data to be stored in the cache so next read is fast
+         */
         fetch_response::partition_response resp;
         resp.partition_index = res.partition;
         resp.error_code = error_code::none;
@@ -273,24 +291,30 @@ static void fill_fetch_responses(
         resp.high_watermark = res.high_watermark;
         resp.last_stable_offset = res.last_stable_offset;
 
-        /**
-         * set aborted transactions if present
-         */
-        if (!res.aborted_transactions.empty()) {
-            std::vector<fetch_response::aborted_transaction> aborted;
-            aborted.reserve(res.aborted_transactions.size());
-            std::transform(
-              res.aborted_transactions.begin(),
-              res.aborted_transactions.end(),
-              std::back_inserter(aborted),
-              [](cluster::rm_stm::tx_range range) {
-                  return fetch_response::aborted_transaction{
-                    .producer_id = kafka::producer_id(range.pid.id),
-                    .first_offset = range.first};
-              });
-            resp.aborted = std::move(aborted);
+        if (res.has_data() && octx.bytes_left >= res.data_size_bytes()) {
+            /**
+             * set aborted transactions if present
+             */
+            if (!res.aborted_transactions.empty()) {
+                std::vector<fetch_response::aborted_transaction> aborted;
+                aborted.reserve(res.aborted_transactions.size());
+                std::transform(
+                  res.aborted_transactions.begin(),
+                  res.aborted_transactions.end(),
+                  std::back_inserter(aborted),
+                  [](cluster::rm_stm::tx_range range) {
+                      return fetch_response::aborted_transaction{
+                        .producer_id = kafka::producer_id(range.pid.id),
+                        .first_offset = range.first};
+                  });
+                resp.aborted = std::move(aborted);
+            }
+            resp.records = batch_reader(std::move(res).release_data());
+        } else {
+            // TODO: add probe to measure how much of read data is discarded
+            resp.records = batch_reader();
         }
-        resp.records = batch_reader(std::move(res).release_data());
+
         resp_it.set(std::move(resp));
     }
 }
@@ -357,9 +381,9 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
             return fetch_ntps_in_parallel(
               mgr, std::move(configs), foreign_read, deadline);
         })
-      .then([responses = std::move(fetch.responses)](
-              std::vector<read_result> results) mutable {
-          fill_fetch_responses(std::move(results), std::move(responses));
+      .then([responses = std::move(fetch.responses),
+             &octx](std::vector<read_result> results) mutable {
+          fill_fetch_responses(octx, std::move(results), std::move(responses));
       });
 }
 
