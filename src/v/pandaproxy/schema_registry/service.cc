@@ -20,6 +20,8 @@
 
 namespace pandaproxy::schema_registry {
 
+using server = ctx_server<service>;
+
 server::routes_t get_schema_registry_routes() {
     server::routes_t routes;
     routes.api = ss::httpd::schema_registry_json::name;

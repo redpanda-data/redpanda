@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "pandaproxy/schema_registry/service.h"
 #include "pandaproxy/server.h"
 #include "seastarx.h"
 
@@ -18,7 +19,7 @@
 
 namespace pandaproxy::schema_registry {
 
-ss::future<server::reply_t>
-get_schemas_types(server::request_t rq, server::reply_t rp);
+ss::future<ctx_server<service>::reply_t> get_schemas_types(
+  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
 
 } // namespace pandaproxy::schema_registry

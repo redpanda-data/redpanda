@@ -20,6 +20,8 @@
 
 namespace pandaproxy::rest {
 
+using server = ctx_server<proxy>;
+
 server::routes_t get_proxy_routes() {
     server::routes_t routes;
     routes.api = ss::httpd::rest_json::name;
