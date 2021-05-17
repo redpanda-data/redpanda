@@ -12,10 +12,11 @@
 #pragma once
 
 #include "config/config_store.h"
-#include "pandaproxy/context.h"
+#include "kafka/client/client.h"
 #include "pandaproxy/json/types.h"
 #include "seastarx.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/http/api_docs.hh>
@@ -84,7 +85,7 @@ public:
       ss::api_registry_builder20&& api20,
       const ss::sstring& header,
       const ss::sstring& definitions,
-      pandaproxy::context_t ctx);
+      context_t& ctx);
 
     void route(route_t route);
     void routes(routes_t&& routes);
@@ -100,7 +101,7 @@ private:
     ss::gate _pending_reqs;
     ss::api_registry_builder20 _api20;
     bool _has_routes;
-    context_t _ctx;
+    context_t& _ctx;
 };
 
 } // namespace pandaproxy

@@ -41,10 +41,9 @@ public:
 
 private:
     configuration _config;
-    ss::smp_service_group _smp_sg;
     ss::semaphore _mem_sem;
     ss::sharded<kafka::client::client>& _client;
-    context_t _ctx;
+    server::context_t _ctx;
     server _server;
 };
 

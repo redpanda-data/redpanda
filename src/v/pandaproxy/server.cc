@@ -120,17 +120,12 @@ server::server(
   ss::api_registry_builder20&& api20,
   const ss::sstring& header,
   const ss::sstring& definitions,
-  pandaproxy::context_t ctx)
+  context_t& ctx)
   : _server(server_name)
   , _pending_reqs()
   , _api20(std::move(api20))
   , _has_routes(false)
-  , _ctx{
-      .mem_sem = std::move(ctx.mem_sem),
-      .as = std::move(ctx.as),
-      .smp_sg = ctx.smp_sg,
-      .client = ctx.client,
-      .config = ctx.config} {
+  , _ctx(ctx) {
     _api20.set_api_doc(_server._routes);
     _api20.register_api_file(_server._routes, header);
     _api20.add_definitions_file(_server._routes, definitions);
