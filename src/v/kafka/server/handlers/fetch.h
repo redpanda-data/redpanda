@@ -224,6 +224,15 @@ struct read_result {
         }
     }
 
+    size_t data_size_bytes() const {
+        return ss::visit(
+          data,
+          [](const data_t& d) { return d == nullptr ? 0 : d->size_bytes(); },
+          [](const foreign_data_t& d) {
+              return d->empty() ? 0 : d->size_bytes();
+          });
+    }
+
     iobuf release_data() && {
         return ss::visit(
           data,
