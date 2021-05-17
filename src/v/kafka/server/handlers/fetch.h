@@ -248,6 +248,13 @@ struct shard_fetch {
     std::vector<op_context::response_iterator> responses;
 };
 
+struct fetch_plan {
+    explicit fetch_plan(size_t shards)
+      : fetches_per_shard(shards) {}
+
+    std::vector<shard_fetch> fetches_per_shard;
+};
+
 std::optional<partition_proxy> make_partition_proxy(
   const model::materialized_ntp&,
   ss::lw_shared_ptr<cluster::partition>,
