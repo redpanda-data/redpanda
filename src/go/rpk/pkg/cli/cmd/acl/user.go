@@ -17,6 +17,7 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/ui"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	vtls "github.com/vectorizedio/redpanda/src/go/rpk/pkg/tls"
 )
 
 const (
@@ -183,10 +184,23 @@ func buildAdminAPI(
 		if len(*apiUrls) == 0 {
 			return nil, errors.New("--api-urls is required")
 		}
-		tlsConfig, err := tls()
+		tlsFiles, err := tls()
 		if err != nil {
 			return nil, err
 		}
+		if tlsFiles == nil {
+			return admin.NewAdminAPI(*apiUrls, nil)
+		}
+
+		tlsConfig, err := vtls.BuildTLSConfig(
+			tlsFiles.CertFile,
+			tlsFiles.KeyFile,
+			tlsFiles.TruststoreFile,
+		)
+		if err != nil {
+			return nil, err
+		}
+
 		return admin.NewAdminAPI(*apiUrls, tlsConfig)
 	}
 }

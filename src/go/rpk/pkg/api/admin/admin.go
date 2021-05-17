@@ -25,8 +25,6 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/hashicorp/go-multierror"
 	log "github.com/sirupsen/logrus"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
-	vtls "github.com/vectorizedio/redpanda/src/go/rpk/pkg/tls"
 )
 
 const (
@@ -52,9 +50,7 @@ type newUser struct {
 	Algorithm string `json:"algorithm"`
 }
 
-func NewAdminAPI(urls []string, tlsConf *config.TLS) (AdminAPI, error) {
-	var err error
-
+func NewAdminAPI(urls []string, tlsConfig *tls.Config) (AdminAPI, error) {
 	for i := 0; i < len(urls); i++ {
 		url := urls[i]
 		// Go's http library requires that the URL have a protocol.
@@ -63,25 +59,13 @@ func NewAdminAPI(urls []string, tlsConf *config.TLS) (AdminAPI, error) {
 
 			prefix := httpPrefix
 
-			if tlsConf != nil {
+			if tlsConfig != nil {
 				// If TLS will be enabled, use HTTPS as the protocol
 				prefix = httpsPrefix
 			}
 
 			url = strings.TrimRight(url, "/")
 			urls[i] = fmt.Sprintf("%s%s", prefix, url)
-		}
-	}
-
-	var tlsConfig *tls.Config
-	if tlsConf != nil {
-		tlsConfig, err = vtls.BuildTLSConfig(
-			tlsConf.CertFile,
-			tlsConf.KeyFile,
-			tlsConf.TruststoreFile,
-		)
-		if err != nil {
-			return nil, err
 		}
 	}
 
