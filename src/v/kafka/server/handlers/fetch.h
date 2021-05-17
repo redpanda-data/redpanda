@@ -145,6 +145,18 @@ struct fetch_config {
     size_t max_bytes;
     model::timeout_clock::time_point timeout;
     bool strict_max_bytes{false};
+
+    friend std::ostream& operator<<(std::ostream& o, const fetch_config& cfg) {
+        fmt::print(
+          o,
+          R"({{"start_offset": {}, "max_offset": {}, "isolation_lvl": {}, "max_bytes": {}, "strict_max_bytes": {}}})",
+          cfg.start_offset,
+          cfg.max_offset,
+          cfg.isolation_level,
+          cfg.max_bytes,
+          cfg.strict_max_bytes);
+        return o;
+    }
 };
 
 struct ntp_fetch_config {
@@ -160,6 +172,12 @@ struct ntp_fetch_config {
     std::optional<model::ntp> materialized_ntp;
 
     bool is_materialized() const { return materialized_ntp.has_value(); }
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const ntp_fetch_config& ntp_fetch) {
+        fmt::print(o, R"({{"{}": {}}})", ntp_fetch.ntp, ntp_fetch.cfg);
+        return o;
+    }
 };
 
 /**
@@ -243,9 +261,14 @@ struct shard_fetch {
 
         return requests.empty();
     }
-
+    ss::shard_id shard;
     std::vector<ntp_fetch_config> requests;
     std::vector<op_context::response_iterator> responses;
+
+    friend std::ostream& operator<<(std::ostream& o, const shard_fetch& sf) {
+        fmt::print(o, "{}", sf.requests);
+        return o;
+    }
 };
 
 struct fetch_plan {
@@ -253,6 +276,25 @@ struct fetch_plan {
       : fetches_per_shard(shards) {}
 
     std::vector<shard_fetch> fetches_per_shard;
+
+    friend std::ostream& operator<<(std::ostream& o, const fetch_plan& plan) {
+        fmt::print(o, "{{[");
+        if (!plan.fetches_per_shard.empty()) {
+            fmt::print(
+              o,
+              R"({{"shard": 0, "requests": [{}]}})",
+              plan.fetches_per_shard[0]);
+            for (size_t i = 1; i < plan.fetches_per_shard.size(); ++i) {
+                fmt::print(
+                  o,
+                  R"(, {{"shard": {}, "requests": [{}]}})",
+                  i,
+                  plan.fetches_per_shard[i]);
+            }
+        }
+        fmt::print(o, "]}}");
+        return o;
+    }
 };
 
 std::optional<partition_proxy> make_partition_proxy(
