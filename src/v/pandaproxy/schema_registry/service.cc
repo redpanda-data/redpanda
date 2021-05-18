@@ -20,6 +20,8 @@
 
 namespace pandaproxy::schema_registry {
 
+using server = ctx_server<service>;
+
 server::routes_t get_schema_registry_routes() {
     server::routes_t routes;
     routes.api = ss::httpd::schema_registry_json::name;
@@ -30,35 +32,21 @@ server::routes_t get_schema_registry_routes() {
     return routes;
 }
 
-static context_t make_context(
-  const config::config_store& cfg,
-  ss::smp_service_group smp_sg,
-  ss::semaphore& mem_sem,
-  ss::sharded<kafka::client::client>& client) {
-    return context_t{
-      .mem_sem{mem_sem},
-      .as{},
-      .smp_sg = smp_sg,
-      .client{client},
-      .config{cfg}};
-}
-
 service::service(
   const YAML::Node& config,
   ss::smp_service_group smp_sg,
   size_t max_memory,
   ss::sharded<kafka::client::client>& client)
   : _config(config)
-  , _smp_sg(smp_sg)
   , _mem_sem(max_memory)
   , _client(client)
-  , _ctx(make_context(_config, _smp_sg, _mem_sem, _client))
+  , _ctx{{{}, _mem_sem, {}, smp_sg}, *this}
   , _server(
       "schema_registry",
       ss::api_registry_builder20(_config.api_doc_dir(), "/v1"),
       "schema_registry_header",
       "/definitions",
-      make_context(_config, _smp_sg, _mem_sem, _client)) {}
+      _ctx) {}
 
 ss::future<> service::start() {
     static std::vector<model::broker_endpoint> not_advertised{};

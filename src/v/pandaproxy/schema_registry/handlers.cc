@@ -20,6 +20,8 @@ namespace ppj = pandaproxy::json;
 
 namespace pandaproxy::schema_registry {
 
+using server = ctx_server<service>;
+
 ss::future<server::reply_t>
 get_schemas_types(server::request_t rq, server::reply_t rp) {
     auto res_fmt = parse::accept_header(

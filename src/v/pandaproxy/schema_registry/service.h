@@ -38,14 +38,14 @@ public:
 
     configuration& config();
     kafka::client::configuration& client_config();
+    ss::sharded<kafka::client::client>& client() { return _client; }
 
 private:
     configuration _config;
-    ss::smp_service_group _smp_sg;
     ss::semaphore _mem_sem;
     ss::sharded<kafka::client::client>& _client;
-    context_t _ctx;
-    server _server;
+    ctx_server<service>::context_t _ctx;
+    ctx_server<service> _server;
 };
 
 } // namespace pandaproxy::schema_registry

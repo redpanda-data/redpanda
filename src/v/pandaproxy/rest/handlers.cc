@@ -54,6 +54,8 @@ namespace pandaproxy::rest {
 
 namespace {
 
+using server = ctx_server<proxy>;
+
 ss::shard_id consumer_shard(const kafka::group_id& g_id) {
     auto hash = xxhash_64(g_id().data(), g_id().length());
     return jump_consistent_hash(hash, ss::smp::count);
@@ -73,7 +75,9 @@ get_topics_names(server::request_t rq, server::reply_t rp) {
     auto make_list_topics_req = []() {
         return kafka::metadata_request{.list_all_topics = true};
     };
-    return rq.ctx.client.local()
+    return rq.service()
+      .client()
+      .local()
       .dispatch(make_list_topics_req)
       .then([res_fmt, rp = std::move(rp)](
               kafka::metadata_request::api_type::response_type res) mutable {
@@ -114,7 +118,9 @@ get_topics_records(server::request_t rq, server::reply_t rp) {
     int32_t max_bytes{parse::query_param<int32_t>(*rq.req, "max_bytes")};
 
     rq.req.reset();
-    return rq.ctx.client.local()
+    return rq.service()
+      .client()
+      .local()
       .fetch_partition(std::move(tp), offset, max_bytes, timeout)
       .then([res_fmt, rp = std::move(rp)](kafka::fetch_response res) mutable {
           rapidjson::StringBuffer str_buf;
@@ -145,7 +151,7 @@ post_topics_name(server::request_t rq, server::reply_t rp) {
     auto records = ppj::rjson_parse(
       rq.req->content.data(), ppj::produce_request_handler(req_fmt));
 
-    auto res = co_await rq.ctx.client.local().produce_records(
+    auto res = co_await rq.service().client().local().produce_records(
       topic, std::move(records));
 
     auto json_rslt = ppj::rjson_serialize(res.data.responses[0]);
@@ -212,8 +218,8 @@ create_consumer(server::request_t rq, server::reply_t rp) {
         co_return std::move(rp);
     };
 
-    co_return co_await rq.ctx.client.invoke_on(
-      consumer_shard(group_id), rq.ctx.smp_sg, std::move(handler));
+    co_return co_await rq.service().client().invoke_on(
+      consumer_shard(group_id), rq.context().smp_sg, std::move(handler));
 }
 
 ss::future<server::reply_t>
@@ -236,8 +242,8 @@ remove_consumer(server::request_t rq, server::reply_t rp) {
         co_return std::move(rp);
     };
 
-    co_return co_await rq.ctx.client.invoke_on(
-      consumer_shard(group_id), rq.ctx.smp_sg, std::move(handler));
+    co_return co_await rq.service().client().invoke_on(
+      consumer_shard(group_id), rq.context().smp_sg, std::move(handler));
 }
 
 ss::future<server::reply_t>
@@ -270,8 +276,8 @@ subscribe_consumer(server::request_t rq, server::reply_t rp) {
         co_return std::move(rp);
     };
 
-    co_return co_await rq.ctx.client.invoke_on(
-      consumer_shard(group_id), rq.ctx.smp_sg, std::move(handler));
+    co_return co_await rq.service().client().invoke_on(
+      consumer_shard(group_id), rq.context().smp_sg, std::move(handler));
 }
 
 ss::future<server::reply_t>
@@ -314,8 +320,8 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
         co_return std::move(rp);
     };
 
-    co_return co_await rq.ctx.client.invoke_on(
-      consumer_shard(group_id), rq.ctx.smp_sg, std::move(handler));
+    co_return co_await rq.service().client().invoke_on(
+      consumer_shard(group_id), rq.context().smp_sg, std::move(handler));
 }
 
 ss::future<server::reply_t>
@@ -350,8 +356,8 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp) {
         co_return std::move(rp);
     };
 
-    co_return co_await rq.ctx.client.invoke_on(
-      consumer_shard(group_id), rq.ctx.smp_sg, std::move(handler));
+    co_return co_await rq.service().client().invoke_on(
+      consumer_shard(group_id), rq.context().smp_sg, std::move(handler));
 }
 
 ss::future<server::reply_t>
@@ -385,8 +391,8 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
         co_return std::move(rp);
     };
 
-    co_return co_await rq.ctx.client.invoke_on(
-      consumer_shard(group_id), rq.ctx.smp_sg, std::move(handler));
+    co_return co_await rq.service().client().invoke_on(
+      consumer_shard(group_id), rq.context().smp_sg, std::move(handler));
 }
 
 } // namespace pandaproxy::rest
