@@ -10,6 +10,8 @@
 #include "cluster/controller_backend.h"
 
 #include "cluster/cluster_utils.h"
+#include "cluster/errc.h"
+#include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/partition.h"
@@ -422,18 +424,20 @@ controller_backend::execute_partitition_op(const topic_table::delta& delta) {
     __builtin_unreachable();
 }
 
-ss::future<std::optional<model::revision_id>>
+ss::future<std::optional<controller_backend::cross_shard_move_request>>
 controller_backend::ask_remote_shard_for_initail_rev(
   model::ntp ntp, ss::shard_id shard) {
-    return container().invoke_on(shard, [ntp](controller_backend& remote) {
-        if (auto it = remote._cross_shard_requests.find(ntp);
-            it != remote._cross_shard_requests.end()) {
-            std::optional<model::revision_id> ret{it->second};
-            remote._cross_shard_requests.erase(it);
-            return ret;
-        }
-        return std::optional<model::revision_id>{};
-    });
+    using ret_t = std::optional<controller_backend::cross_shard_move_request>;
+    return container().invoke_on(
+      shard, [ntp = std::move(ntp)](controller_backend& remote) {
+          if (auto it = remote._cross_shard_requests.find(ntp);
+              it != remote._cross_shard_requests.end()) {
+              ret_t ret{std::move(it->second)};
+              remote._cross_shard_requests.erase(it);
+              return ret;
+          }
+          return ret_t{};
+      });
 }
 
 ss::future<std::error_code> controller_backend::process_partition_update(
@@ -549,17 +553,20 @@ ss::future<std::error_code> controller_backend::process_partition_update(
     if (contains_node(_self, previous.replicas)) {
         auto previous_shard = get_target_shard(_self, previous.replicas);
         // ask previous controller for partition initial revision
-        auto initial_revision = co_await ask_remote_shard_for_initail_rev(
+        auto x_core_move_req = co_await ask_remote_shard_for_initail_rev(
           ntp, *previous_shard);
 
-        if (initial_revision) {
+        if (x_core_move_req) {
             vlog(
               clusterlog.trace,
               "creating partition {} from shard {}",
               ntp,
               previous_shard);
             auto ec = co_await create_partition(
-              std::move(ntp), requested.group, *initial_revision, {});
+              std::move(ntp),
+              requested.group,
+              x_core_move_req->revision,
+              x_core_move_req->initial_configuration.brokers());
             if (ec) {
                 co_return ec;
             }
@@ -772,6 +779,10 @@ ss::future<std::error_code> controller_backend::create_partition(
       })
       .then([] { return make_error_code(errc::success); });
 }
+controller_backend::cross_shard_move_request::cross_shard_move_request(
+  model::revision_id rev, raft::group_configuration cfg)
+  : revision(rev)
+  , initial_configuration(std::move(cfg)) {}
 
 ss::future<std::error_code> controller_backend::shutdown_on_current_shard(
   model::ntp ntp, model::revision_id rev) {
@@ -783,18 +794,22 @@ ss::future<std::error_code> controller_backend::shutdown_on_current_shard(
     }
     auto gr = partition->group();
     auto init_rev = partition->get_ntp_config().get_revision();
+
     try {
         // remove from shard table
         co_await remove_from_shard_table(ntp, gr, rev);
         // shutdown partition
         co_await _partition_manager.local().shutdown(ntp);
         // after partition is stopped emplace cross shard request.
-        auto [_, success] = _cross_shard_requests.emplace(ntp, init_rev);
+        auto [it, success] = _cross_shard_requests.emplace(
+          ntp,
+          cross_shard_move_request(init_rev, partition->group_configuration()));
+
         vassert(
           success,
           "only one cross shard request is allowed to be pending for single "
           "ntp, current request: {}, ntp: {}, revision: {}",
-          _cross_shard_requests[ntp],
+          it->second,
           ntp,
           rev);
         co_return errc::success;
