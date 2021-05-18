@@ -12,7 +12,7 @@
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "random/generators.h"
-#include "reflection/async_adl.h"
+#include "reflection/std/vector.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
@@ -43,13 +43,14 @@ SEASTAR_THREAD_TEST_CASE(test_async_adl_collection) {
     // Serialize
     iobuf out;
     auto original_vec = make_random_collection();
-    reflection::async_adl<ntp_vec>{}.to(out, original_vec).get();
+    auto ovec_copy = original_vec;
+    reflection::async_adl<ntp_vec>{}.to(out, std::move(original_vec)).get();
     const auto originals_hash = std::hash<iobuf>{}(out);
 
     // Deserialize
     iobuf_parser in(std::move(out));
     auto result = reflection::async_adl<ntp_vec>{}.from(in).get0();
-    BOOST_REQUIRE_EQUAL(original_vec, result);
+    BOOST_REQUIRE_EQUAL(ovec_copy, result);
 
     // Reserialize
     iobuf second_out;
