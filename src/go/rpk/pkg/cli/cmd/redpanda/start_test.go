@@ -273,6 +273,129 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(st, expectedKafkaApi, conf.Redpanda.KafkaApi)
 		},
 	}, {
+		name: "it should still save values passed through field-specific flags, and prioritize them if they overlap with values set with --set",
+		args: []string{
+			"--config", "/arbitrary/path/redpanda.yaml",
+			"--install-dir", "/var/lib/redpanda",
+			// Field-specific flags
+			"--advertise-kafka-addr", "plaintext://192.168.34.32:9092",
+			"--node-id", "42",
+		},
+		before: func(fs afero.Fs) error {
+			// --set flags are parsed "outside" of Cobra, directly from
+			// os.Args, due to Cobra (or especifically, pflag) parsing
+			// list flags (flags that can be passed multiple times) with
+			// a CSV parser. Since JSON-formatted values contain commas,
+			// the parser doesn't support them.
+			os.Args = append(
+				os.Args,
+				// A single int value
+				"--set", "redpanda.node_id=39",
+				// A single bool value
+				"--set", "rpk.enable_usage_stats=true",
+				// A single string value
+				"--set", "node_uuid=helloimauuid1337",
+				// A JSON object
+				"--set", `redpanda.admin=[{"address": "192.168.54.2","port": 9643}]`,
+				// A YAML object
+				"--set", `redpanda.kafka_api=- name: external
+  address: 192.168.73.45
+  port: 9092
+- name: internal
+  address: 10.21.34.58
+  port: 9092
+`,
+			)
+			return fs.MkdirAll("/arbitrary/path", 0755)
+		},
+		after: func() {
+			for i, a := range os.Args {
+				if a == "--set" {
+					os.Args = os.Args[:i]
+					return
+				}
+			}
+		},
+		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+			path := "/arbitrary/path/redpanda.yaml"
+			mgr := config.NewManager(fs)
+			conf, err := mgr.Read(path)
+			require.NoError(st, err)
+			expectedAdmin := []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address: "192.168.54.2",
+					Port:    9643,
+				},
+			}}
+			expectedKafkaApi := []config.NamedSocketAddress{{
+				Name: "external",
+				SocketAddress: config.SocketAddress{
+					Address: "192.168.73.45",
+					Port:    9092,
+				},
+			}, {
+				Name: "internal",
+				SocketAddress: config.SocketAddress{
+					Address: "10.21.34.58",
+					Port:    9092,
+				},
+			}}
+			expectedAdvKafkaApi := []config.NamedSocketAddress{{
+				Name: "plaintext",
+				SocketAddress: config.SocketAddress{
+					Address: "192.168.34.32",
+					Port:    9092,
+				},
+			}}
+			// The value set with --node-id should have been prioritized
+			require.Exactly(st, 42, conf.Redpanda.Id)
+			require.Exactly(st, expectedAdmin, conf.Redpanda.AdminApi)
+			require.Exactly(st, expectedKafkaApi, conf.Redpanda.KafkaApi)
+			require.Exactly(st, expectedAdvKafkaApi, conf.Redpanda.AdvertisedKafkaApi)
+		},
+	}, {
+		name: "it should evaluate config sources in this order: 1. config file, 2. key-value pairs passed with --set, 3. env vars, 4. specific flags",
+		args: []string{
+			"--config", "/arbitrary/path/redpanda.yaml",
+			"--install-dir", "/var/lib/redpanda",
+			"--kafka-addr", "flag://192.168.34.3:9093",
+		},
+		before: func(fs afero.Fs) error {
+			os.Args = append(
+				os.Args,
+				"--set", `redpanda.kafka_api=- name: set
+  address: 192.168.34.2
+  port: 9092
+`,
+			)
+			return os.Setenv("REDPANDA_KAFKA_ADDRESS", "env://192.168.34.1:9091")
+		},
+		after: func() {
+			for i, a := range os.Args {
+				if a == "--set" {
+					os.Args = os.Args[:i]
+					return
+				}
+			}
+		},
+		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+			path := "/arbitrary/path/redpanda.yaml"
+			mgr := config.NewManager(fs)
+			conf, err := mgr.Read(path)
+			require.NoError(st, err)
+			// The value set through the --kafka-addr flag should
+			// have been picked.
+			expectedKafkaApi := []config.NamedSocketAddress{{
+				Name: "flag",
+				SocketAddress: config.SocketAddress{
+					Address: "192.168.34.3",
+					Port:    9093,
+				},
+			}}
+			// The value set with --kafka-addr should have been prioritized
+			require.Exactly(st, expectedKafkaApi, conf.Redpanda.KafkaApi)
+		},
+	}, {
 		name: "it should write the default config file path if --config" +
 			" isn't passed and the config file doesn't exist",
 		args: []string{
