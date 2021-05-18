@@ -12,29 +12,64 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# Modifications copyright (C) 2021 Vectorized
+# - Reformatted code
+# - Replaced dependency on Kafka with Redpanda
+# - Imported a is_int_* helper functions from ducktape test suite
 
 import json
 import os
-
 import time
+import signal
+from collections import namedtuple
+
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.background_thread import BackgroundThreadService
-from kafkatest.directory_layout.kafka_path import KafkaPathResolverMixin
-from kafkatest.services.kafka import TopicPartition
-from kafkatest.services.verifiable_client import VerifiableClientMixin
-from kafkatest.utils import is_int, is_int_with_prefix
-from kafkatest.version import DEV_BRANCH
-from kafkatest.services.kafka.util import fix_opts_for_new_jvm
+
+TopicPartition = namedtuple('TopicPartition', ['topic', 'partition'])
 
 
-class VerifiableProducer(KafkaPathResolverMixin, VerifiableClientMixin,
-                         BackgroundThreadService):
-    """This service wraps org.apache.kafka.tools.VerifiableProducer for use in
+def is_int(msg):
+    """Method used to check whether the given message is an integer
+
+    return int or raises an exception if message is not an integer
+    """
+    try:
+        return int(msg)
+    except ValueError:
+        raise Exception(
+            "Unexpected message format (expected an integer). Message: %s" %
+            (msg))
+
+
+def is_int_with_prefix(msg):
+    """
+    Method used check whether the given message is of format 'integer_prefix'.'integer_value'
+
+    :param msg: message to validate
+    :return: msg or raises an exception is a message is of wrong format
+    """
+    try:
+        parts = msg.split(".")
+        if len(parts) != 2:
+            raise Exception(
+                "Unexpected message format. Message should be of format: integer "
+                "prefix dot integer value. Message: %s" % (msg))
+        int(parts[0])
+        int(parts[1])
+        return msg
+    except ValueError:
+        raise Exception(
+            "Unexpected message format. Message should be of format: integer "
+            "prefix dot integer value, but one of the two parts (before or after dot) "
+            "are not integers. Message: %s" % (msg))
+
+
+class VerifiableProducer(BackgroundThreadService):
+    """
+    This service wraps org.apache.kafka.tools.VerifiableProducer for use in
     system testing.
-
-    NOTE: this class should be treated as a PUBLIC API. Downstream users use
-    this service both directly and through class extension, so care must be
-    taken to ensure compatibility.
     """
 
     PERSISTENT_ROOT = "/mnt/verifiable_producer"
@@ -66,24 +101,19 @@ class VerifiableProducer(KafkaPathResolverMixin, VerifiableClientMixin,
     def __init__(self,
                  context,
                  num_nodes,
-                 kafka,
+                 redpanda,
                  topic,
                  max_messages=-1,
                  throughput=100000,
                  message_validator=is_int,
                  compression_types=None,
-                 version=DEV_BRANCH,
                  acks=None,
                  stop_timeout_sec=150,
                  request_timeout_sec=30,
                  log_level="INFO",
                  enable_idempotence=False,
-                 offline_nodes=[],
                  create_time=-1,
                  repeating_keys=None,
-                 jaas_override_variables=None,
-                 kafka_opts_override="",
-                 client_prop_file_override="",
                  retries=None):
         """
         Args:
@@ -96,14 +126,11 @@ class VerifiableProducer(KafkaPathResolverMixin, VerifiableClientMixin,
                                                  will produce exactly same messages, and validation may miss missing messages.
             :param compression_types           If None, all producers will not use compression; or a list of compression types,
                                                one per producer (could be "none").
-            :param jaas_override_variables     A dict of variables to be used in the jaas.conf template file
-            :param kafka_opts_override         Override parameters of the KAFKA_OPTS environment variable
-            :param client_prop_file_override   Override client.properties file used by the consumer
         """
         super(VerifiableProducer, self).__init__(context, num_nodes)
         self.log_level = log_level
 
-        self.kafka = kafka
+        self.redpanda = redpanda
         self.topic = topic
         self.max_messages = max_messages
         self.throughput = throughput
@@ -113,8 +140,6 @@ class VerifiableProducer(KafkaPathResolverMixin, VerifiableClientMixin,
             assert len(self.compression_types
                        ) == num_nodes, "Specify one compression type per node"
 
-        for node in self.nodes:
-            node.version = version
         self.acked_values = []
         self.acked_values_by_partition = {}
         self._last_acked_offsets = {}
@@ -125,23 +150,15 @@ class VerifiableProducer(KafkaPathResolverMixin, VerifiableClientMixin,
         self.stop_timeout_sec = stop_timeout_sec
         self.request_timeout_sec = request_timeout_sec
         self.enable_idempotence = enable_idempotence
-        self.offline_nodes = offline_nodes
         self.create_time = create_time
         self.repeating_keys = repeating_keys
-        self.jaas_override_variables = jaas_override_variables or {}
-        self.kafka_opts_override = kafka_opts_override
-        self.client_prop_file_override = client_prop_file_override
         self.retries = retries
-
-    def java_class_name(self):
-        return "VerifiableProducer"
 
     def prop_file(self, node):
         idx = self.idx(node)
         prop_file = self.render('producer.properties',
                                 request_timeout_ms=(self.request_timeout_sec *
                                                     1000))
-        prop_file += "\n{}".format(str(self.security_config))
         if self.compression_types is not None:
             compression_index = idx - 1
             self.logger.info(
@@ -160,16 +177,8 @@ class VerifiableProducer(KafkaPathResolverMixin, VerifiableClientMixin,
                                  log_file=VerifiableProducer.LOG_FILE)
         node.account.create_file(VerifiableProducer.LOG4J_CONFIG, log_config)
 
-        # Configure security
-        self.security_config = self.kafka.security_config.client_config(
-            node=node, jaas_override_variables=self.jaas_override_variables)
-        self.security_config.setup_node(node)
-
         # Create and upload config file
-        if self.client_prop_file_override:
-            producer_prop_file = self.client_prop_file_override
-        else:
-            producer_prop_file = self.prop_file(node)
+        producer_prop_file = self.prop_file(node)
 
         if self.acks is not None:
             self.logger.info(
@@ -195,7 +204,7 @@ class VerifiableProducer(KafkaPathResolverMixin, VerifiableClientMixin,
         node.account.create_file(VerifiableProducer.CONFIG_FILE,
                                  producer_prop_file)
 
-        cmd = self.start_cmd(node, idx)
+        cmd = self.start_cmd(idx)
         self.logger.debug("VerifiableProducer %d command: %s" % (idx, cmd))
 
         self.produced_count[idx] = 0
@@ -249,31 +258,12 @@ class VerifiableProducer(KafkaPathResolverMixin, VerifiableClientMixin,
                                 % idx)
                         self.clean_shutdown_nodes.add(node)
 
-    def _has_output(self, node):
-        """Helper used as a proxy to determine whether jmx is running by that jmx_tool_log contains output."""
-        try:
-            node.account.ssh("test -z \"$(cat %s)\"" %
-                             VerifiableProducer.STDOUT_CAPTURE,
-                             allow_fail=False)
-            return False
-        except RemoteCommandError:
-            return True
-
-    def start_cmd(self, node, idx):
+    def start_cmd(self, idx):
         cmd = "export LOG_DIR=%s;" % VerifiableProducer.LOG_DIR
-        if self.kafka_opts_override:
-            cmd += " export KAFKA_OPTS=\"%s\";" % self.kafka_opts_override
-        else:
-            cmd += " export KAFKA_OPTS=%s;" % self.security_config.kafka_opts
-
-        cmd += fix_opts_for_new_jvm(node)
         cmd += " export KAFKA_LOG4J_OPTS=\"-Dlog4j.configuration=file:%s\"; " % VerifiableProducer.LOG4J_CONFIG
-        cmd += self.impl.exec_cmd(node)
-        cmd += " --topic %s --broker-list %s" % (
-            self.topic,
-            self.kafka.bootstrap_servers(
-                self.security_config.security_protocol, True,
-                self.offline_nodes))
+        cmd += "/opt/kafka-2.7.0/bin/kafka-run-class.sh org.apache.kafka.tools.VerifiableProducer"
+        cmd += " --topic %s --broker-list %s" % (self.topic,
+                                                 self.redpanda.brokers())
         if self.max_messages > 0:
             cmd += " --max-messages %s" % str(self.max_messages)
         if self.throughput > 0:
@@ -294,12 +284,22 @@ class VerifiableProducer(KafkaPathResolverMixin, VerifiableClientMixin,
         return cmd
 
     def kill_node(self, node, clean_shutdown=True, allow_fail=False):
-        sig = self.impl.kill_signal(clean_shutdown)
+        sig = signal.SIGTERM
+        if not clean_shutdown:
+            sig = signal.SIGKILL
         for pid in self.pids(node):
             node.account.signal(pid, sig, allow_fail)
 
     def pids(self, node):
-        return self.impl.pids(node)
+        try:
+            cmd = "jps | grep -i VerifiableProducer | awk '{print $1}'"
+            pid_arr = [
+                pid for pid in node.account.ssh_capture(
+                    cmd, allow_fail=True, callback=int)
+            ]
+            return pid_arr
+        except (RemoteCommandError, ValueError):
+            return []
 
     def alive(self, node):
         return len(self.pids(node)) > 0
@@ -348,7 +348,6 @@ class VerifiableProducer(KafkaPathResolverMixin, VerifiableClientMixin,
         # written. In this case, the process will be gone and the signal will fail.
         allow_fail = self.max_messages > 0
         self.kill_node(node, clean_shutdown=True, allow_fail=allow_fail)
-
         stopped = self.wait_node(node, timeout_sec=self.stop_timeout_sec)
         assert stopped, "Node %s: did not stop within the specified timeout of %s seconds" % \
                         (str(node.account), str(self.stop_timeout_sec))
@@ -356,7 +355,6 @@ class VerifiableProducer(KafkaPathResolverMixin, VerifiableClientMixin,
     def clean_node(self, node):
         self.kill_node(node, clean_shutdown=False, allow_fail=False)
         node.account.ssh("rm -rf " + self.PERSISTENT_ROOT, allow_fail=False)
-        self.security_config.clean_node(node)
 
     def try_parse_json(self, string):
         """Try to parse a string as json. Return None if not parseable."""
