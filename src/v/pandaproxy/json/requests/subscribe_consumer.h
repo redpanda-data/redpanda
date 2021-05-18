@@ -16,6 +16,7 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/types.h"
 #include "pandaproxy/json/iobuf.h"
+#include "pandaproxy/json/rjson_parse.h"
 #include "seastarx.h"
 #include "utils/string_switch.h"
 
@@ -34,7 +35,7 @@ struct subscribe_consumer_request {
 };
 
 template<typename Encoding = rapidjson::UTF8<>>
-class subscribe_consumer_request_handler {
+class subscribe_consumer_request_handler final : public base_handler<Encoding> {
 private:
     enum class state {
         empty = 0,
@@ -48,15 +49,6 @@ public:
     using Ch = typename Encoding::Ch;
     using rjson_parse_result = subscribe_consumer_request;
     rjson_parse_result result;
-
-    bool Null() { return false; }
-    bool Bool(bool) { return false; }
-    bool Int64(int64_t) { return false; }
-    bool Uint64(uint64_t) { return false; }
-    bool Double(double) { return false; }
-    bool RawNumber(const Ch*, rapidjson::SizeType, bool) { return false; }
-    bool Int(int) { return false; }
-    bool Uint(unsigned) { return false; }
 
     bool String(const Ch* str, rapidjson::SizeType len, bool) {
         if (_state != state::topic_name) {
