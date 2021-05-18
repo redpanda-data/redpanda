@@ -13,6 +13,7 @@
 
 #include "json/json.h"
 #include "model/fundamental.h"
+#include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/types.h"
 #include "seastarx.h"
 
@@ -33,7 +34,7 @@ struct topic_partition_offset {
 };
 
 template<typename Encoding = rapidjson::UTF8<>>
-class partition_offsets_request_handler {
+class partition_offsets_request_handler final : public base_handler<Encoding> {
 private:
     enum class state {
         empty = 0,
@@ -44,20 +45,12 @@ private:
         offset,
     };
 
-    serialization_format _fmt = serialization_format::none;
     state state = state::empty;
 
 public:
     using Ch = typename Encoding::Ch;
     using rjson_parse_result = std::vector<topic_partition_offset>;
     rjson_parse_result result;
-
-    bool Null() { return false; }
-    bool Bool(bool) { return false; }
-    bool Int64(int64_t) { return false; }
-    bool Uint64(uint64_t) { return false; }
-    bool Double(double) { return false; }
-    bool RawNumber(const Ch*, rapidjson::SizeType, bool) { return false; }
 
     bool Int(int i) {
         switch (state) {

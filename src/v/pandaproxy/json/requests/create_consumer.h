@@ -17,6 +17,7 @@
 #include "kafka/protocol/produce.h"
 #include "kafka/types.h"
 #include "pandaproxy/json/iobuf.h"
+#include "pandaproxy/json/rjson_parse.h"
 #include "seastarx.h"
 #include "utils/string_switch.h"
 
@@ -40,7 +41,7 @@ struct create_consumer_request {
 };
 
 template<typename Encoding = rapidjson::UTF8<>>
-class create_consumer_request_handler {
+class create_consumer_request_handler final : public base_handler<Encoding> {
 private:
     enum class state {
         empty = 0,
@@ -58,17 +59,6 @@ public:
     using Ch = typename Encoding::Ch;
     using rjson_parse_result = create_consumer_request;
     rjson_parse_result result;
-
-    bool Null() { return false; }
-    bool Bool(bool) { return false; }
-    bool Int64(int64_t) { return false; }
-    bool Uint64(uint64_t) { return false; }
-    bool Double(double) { return false; }
-    bool RawNumber(const Ch*, rapidjson::SizeType, bool) { return false; }
-    bool Int(int) { return false; }
-    bool Uint(unsigned) { return false; }
-    bool StartArray() { return false; }
-    bool EndArray(rapidjson::SizeType) { return false; }
 
     bool String(const Ch* str, rapidjson::SizeType len, bool) {
         switch (_state) {
@@ -131,7 +121,7 @@ inline void rjson_serialize(
 }
 
 template<typename Encoding = rapidjson::UTF8<>>
-class create_consumer_response_handler {
+class create_consumer_response_handler final : public base_handler<Encoding> {
 private:
     enum class state { empty = 0, instance_id, base_uri };
 
@@ -141,17 +131,6 @@ public:
     using Ch = typename Encoding::Ch;
     using rjson_parse_result = create_consumer_response;
     rjson_parse_result result;
-
-    bool Null() { return false; }
-    bool Bool(bool) { return false; }
-    bool Int64(int64_t) { return false; }
-    bool Uint64(uint64_t) { return false; }
-    bool Double(double) { return false; }
-    bool RawNumber(const Ch*, rapidjson::SizeType, bool) { return false; }
-    bool Int(int) { return false; }
-    bool Uint(unsigned) { return false; }
-    bool StartArray() { return false; }
-    bool EndArray(rapidjson::SizeType) { return false; }
 
     bool String(const Ch* str, rapidjson::SizeType len, bool) {
         auto str_view{std::string_view{str, len}};
