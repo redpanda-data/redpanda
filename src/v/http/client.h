@@ -84,6 +84,10 @@ public:
     client(
       const rpc::base_transport::configuration& cfg,
       const ss::abort_source& as);
+    client(
+      const rpc::base_transport::configuration& cfg,
+      const ss::abort_source* as,
+      ss::shared_ptr<client_probe> probe);
 
     ss::future<> stop();
     using rpc::base_transport::shutdown;
@@ -219,12 +223,6 @@ public:
       ss::lowres_clock::duration timeout = default_connect_timeout);
 
 private:
-    /// Do it all private c-tor
-    client(
-      const rpc::base_transport::configuration& cfg,
-      const ss::abort_source* as,
-      ss::lw_shared_ptr<client_probe> probe);
-
     template<class BufferSeq>
     static ss::future<> forward(client* client, BufferSeq&& seq);
 
@@ -238,7 +236,7 @@ private:
 
     ss::gate _connect_gate;
     const ss::abort_source* _as;
-    ss::lw_shared_ptr<http::client_probe> _probe;
+    ss::shared_ptr<http::client_probe> _probe;
 };
 
 template<class BufferSeq>

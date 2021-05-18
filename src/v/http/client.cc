@@ -54,13 +54,13 @@ client::client(
 client::client(
   const rpc::base_transport::configuration& cfg,
   const ss::abort_source* as,
-  ss::lw_shared_ptr<client_probe> probe)
+  ss::shared_ptr<client_probe> probe)
   : rpc::base_transport(cfg)
   , _connect_gate()
   , _as(as)
   , _probe(std::move(probe)) {
     if (!_probe) {
-        _probe = ss::make_lw_shared<client_probe>();
+        _probe = ss::make_shared<client_probe>();
     }
 }
 

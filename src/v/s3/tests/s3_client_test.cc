@@ -166,7 +166,7 @@ s3::configuration transport_configuration() {
       .region = s3::aws_region_name("us-east-1"),
     };
     conf.server_addr = server_addr;
-    conf._probe = ss::make_lw_shared<s3::client_probe>(
+    conf._probe = ss::make_shared<s3::client_probe>(
       rpc::metrics_disabled::yes, "region", "endpoint");
     return conf;
 }

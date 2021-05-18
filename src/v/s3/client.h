@@ -64,7 +64,7 @@ struct configuration : rpc::base_transport::configuration {
     /// AWS region
     aws_region_name region;
     /// Metrics probe (should be created for every aws account on every shard)
-    ss::lw_shared_ptr<client_probe> _probe;
+    ss::shared_ptr<client_probe> _probe;
 
     /// \brief opinionated configuraiton initialization
     /// Generates uri field from region, initializes credentials for the
@@ -196,7 +196,7 @@ public:
 private:
     request_creator _requestor;
     http::client _client;
-    ss::lw_shared_ptr<client_probe> _probe;
+    ss::shared_ptr<client_probe> _probe;
 };
 
 /// Policy that controls behaviour of the client pool

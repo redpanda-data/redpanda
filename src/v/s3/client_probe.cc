@@ -32,12 +32,9 @@ client_probe::client_probe(
 
     auto endpoint_label = sm::label("endpoint");
     auto region_label = sm::label("region");
-    auto shard_label = sm::label("shard");
 
     const std::vector<sm::label_instance> labels = {
-      endpoint_label(std::move(endpoint)),
-      region_label(std::move(region)),
-      shard_label(ss::this_shard_id())};
+      endpoint_label(std::move(endpoint)), region_label(std::move(region))};
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("s3:client"),
