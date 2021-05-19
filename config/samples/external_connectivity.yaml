@@ -20,6 +20,10 @@ spec:
      - port: 9092
      - external:
          enabled: true
+    pandaproxyApi:
+     - port: 8082
+     - external:
+         enabled: true
     adminApi:
     - port: 9644
     developerMode: true
