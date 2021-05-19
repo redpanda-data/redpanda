@@ -40,6 +40,15 @@ public:
         return {version, id, inserted};
     }
 
+    ///\brief Return a schema by id.
+    result<schema> get_schema(const schema_id& id) const {
+        auto it = _schemas.find(id);
+        if (it == _schemas.end()) {
+            return error_code::schema_id_not_found;
+        }
+        return {it->first, it->second.type, it->second.definition};
+    }
+
 private:
     struct insert_schema_result {
         schema_id id;
