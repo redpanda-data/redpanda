@@ -337,7 +337,7 @@ func PullImage(c Client, image string) error {
 func CheckIfImgPresent(c Client, image string) (bool, error) {
 	ctx, _ := DefaultCtx()
 	filters := filters.NewArgs(
-		filters.Arg("reference", redpandaImageBase),
+		filters.Arg("reference", image),
 	)
 	imgs, err := c.ImageList(ctx, types.ImageListOptions{
 		Filters: filters,
