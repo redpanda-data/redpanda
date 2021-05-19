@@ -237,7 +237,7 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
                 init_tm_tx_reply{.ec = tx_errc::stm_not_found});
           }
 
-          return stm->get_end_lock(tx_id)->with([&self, stm, tx_id, timeout]() {
+          return stm->get_tx_lock(tx_id)->with([&self, stm, tx_id, timeout]() {
               return self.do_init_tm_tx(stm, tx_id, timeout);
           });
       });
@@ -370,7 +370,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
                   request, tx_errc::unknown_server_error));
           }
 
-          return stm->get_end_lock(request.transactional_id)
+          return stm->get_tx_lock(request.transactional_id)
             ->with([&self, stm, request, timeout]() {
                 return self.do_add_partition_to_tx(stm, request, timeout);
             });
@@ -527,7 +527,7 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
                   .error_code = tx_errc::unknown_server_error});
           }
 
-          return stm->get_end_lock(request.transactional_id)
+          return stm->get_tx_lock(request.transactional_id)
             ->with([&self, stm, request, timeout]() {
                 return self.do_add_offsets_to_tx(stm, request, timeout);
             });
@@ -667,7 +667,7 @@ tx_gateway_frontend::abort_tm_tx(
   cluster::tm_transaction tx,
   model::timeout_clock::duration timeout,
   ss::promise<tx_errc> outcome) {
-    return stm->get_end_lock(tx.id)->with(
+    return stm->get_tx_lock(tx.id)->with(
       [this, stm, timeout, tx, outcome = std::move(outcome)]() mutable {
           return do_abort_tm_tx(stm, tx, timeout, std::move(outcome));
       });
@@ -724,7 +724,7 @@ tx_gateway_frontend::commit_tm_tx(
   cluster::tm_transaction tx,
   model::timeout_clock::duration timeout,
   ss::promise<tx_errc> outcome) {
-    return stm->get_end_lock(tx.id)->with(
+    return stm->get_tx_lock(tx.id)->with(
       [this, stm, timeout, tx, outcome = std::move(outcome)]() mutable {
           return do_commit_tm_tx(stm, tx, timeout, std::move(outcome));
       });
@@ -873,7 +873,7 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::reabort_tm_tx(
     co_return checked<tm_transaction, tx_errc>(tx_errc::timeout);
 }
 
-// get_tx must be called under stm->get_end_lock
+// get_tx must be called under stm->get_tx_lock
 ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::get_tx(
   ss::shared_ptr<tm_stm> stm,
   model::producer_identity pid,

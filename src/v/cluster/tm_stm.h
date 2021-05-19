@@ -133,13 +133,10 @@ public:
     bool add_group(
       kafka::transactional_id, tm_etag, kafka::group_id, model::term_id);
 
-    // redpanda acks a transaction after a decision to commit / abort
-    // is persisted but before tx is executed; without a coordination
-    // so producer's new transaction may conflict with its previous tx
-    // get_end_lock method returns a mutex used to coordinate start
-    // and end of a transaction
-    ss::lw_shared_ptr<mutex> get_end_lock(kafka::transactional_id tid) {
-        auto [lock_it, inserted] = _end_locks.try_emplace(tid, nullptr);
+    // before calling a tm_stm modifying operation a caller should
+    // take get_tx_lock mutex
+    ss::lw_shared_ptr<mutex> get_tx_lock(kafka::transactional_id tid) {
+        auto [lock_it, inserted] = _tx_locks.try_emplace(tid, nullptr);
         if (inserted) {
             lock_it->second = ss::make_lw_shared<mutex>();
         }
@@ -162,7 +159,7 @@ private:
     model::violation_recovery_policy _recovery_policy;
     absl::flat_hash_map<kafka::transactional_id, tm_transaction> _tx_table;
     absl::flat_hash_map<kafka::transactional_id, ss::lw_shared_ptr<mutex>>
-      _end_locks;
+      _tx_locks;
     ss::future<> apply(model::record_batch b) override;
 
     ss::future<tm_stm::op_status> register_new_producer(
