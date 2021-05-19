@@ -139,7 +139,11 @@ public:
     // get_end_lock method returns a mutex used to coordinate start
     // and end of a transaction
     ss::lw_shared_ptr<mutex> get_end_lock(kafka::transactional_id tid) {
-        return _end_locks.find(tid)->second;
+        auto [lock_it, inserted] = _end_locks.try_emplace(tid, nullptr);
+        if (inserted) {
+            lock_it->second = ss::make_lw_shared<mutex>();
+        }
+        return lock_it->second;
     }
 
 private:

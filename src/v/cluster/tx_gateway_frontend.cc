@@ -209,37 +209,44 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::dispatch_init_tm_tx(
       });
 }
 
-ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
+ss::future<init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
   ss::shard_id shard,
   kafka::transactional_id tx_id,
   model::timeout_clock::duration timeout) {
     return container().invoke_on(
       shard, _ssg, [tx_id, timeout](tx_gateway_frontend& self) {
-          return self.do_init_tm_tx(tx_id, timeout);
+          auto partition = self._partition_manager.local().get(
+            model::tx_manager_ntp);
+          if (!partition) {
+              vlog(
+                clusterlog.warn,
+                "can't get partition by {} ntp",
+                model::tx_manager_ntp);
+              return ss::make_ready_future<init_tm_tx_reply>(
+                init_tm_tx_reply{.ec = tx_errc::partition_not_found});
+          }
+
+          auto stm = partition->tm_stm();
+
+          if (!stm) {
+              vlog(
+                clusterlog.warn,
+                "can't get tm stm of the {}' partition",
+                model::tx_manager_ntp);
+              return ss::make_ready_future<init_tm_tx_reply>(
+                init_tm_tx_reply{.ec = tx_errc::stm_not_found});
+          }
+
+          return stm->get_end_lock(tx_id)->with([&self, stm, tx_id, timeout]() {
+              return self.do_init_tm_tx(stm, tx_id, timeout);
+          });
       });
 }
 
 ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
-  kafka::transactional_id tx_id, model::timeout_clock::duration timeout) {
-    auto partition = _partition_manager.local().get(model::tx_manager_ntp);
-    if (!partition) {
-        vlog(
-          clusterlog.warn,
-          "can't get partition by {} ntp",
-          model::tx_manager_ntp);
-        co_return cluster::init_tm_tx_reply{.ec = tx_errc::partition_not_found};
-    }
-
-    auto stm = partition->tm_stm();
-
-    if (!stm) {
-        vlog(
-          clusterlog.warn,
-          "can't get tm stm of the {}' partition",
-          model::tx_manager_ntp);
-        co_return init_tm_tx_reply{.ec = tx_errc::stm_not_found};
-    }
-
+  ss::shared_ptr<tm_stm> stm,
+  kafka::transactional_id tx_id,
+  model::timeout_clock::duration timeout) {
     auto maybe_tx = stm->get_tx(tx_id);
 
     if (!maybe_tx) {
@@ -277,9 +284,9 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     checked<tm_transaction, tx_errc> r(tx);
 
     if (tx.status == tm_transaction::tx_status::ongoing) {
-        r = co_await abort_tm_tx(stm, tx, timeout, ss::promise<tx_errc>());
+        r = co_await do_abort_tm_tx(stm, tx, timeout, ss::promise<tx_errc>());
     } else if (tx.status == tm_transaction::tx_status::preparing) {
-        r = co_await commit_tm_tx(stm, tx, timeout, ss::promise<tx_errc>());
+        r = co_await do_commit_tm_tx(stm, tx, timeout, ss::promise<tx_errc>());
     } else if (tx.status == tm_transaction::tx_status::prepared) {
         r = co_await recommit_tm_tx(tx, timeout);
     } else if (tx.status == tm_transaction::tx_status::aborting) {
@@ -866,6 +873,7 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::reabort_tm_tx(
     co_return checked<tm_transaction, tx_errc>(tx_errc::timeout);
 }
 
+// get_tx must be called under stm->get_end_lock
 ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::get_tx(
   ss::shared_ptr<tm_stm> stm,
   model::producer_identity pid,
@@ -893,7 +901,7 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::get_tx(
 
     if (tx.status != tm_transaction::tx_status::ongoing) {
         if (tx.status == tm_transaction::tx_status::preparing) {
-            f = commit_tm_tx(stm, tx, timeout, ss::promise<tx_errc>());
+            f = do_commit_tm_tx(stm, tx, timeout, ss::promise<tx_errc>());
         } else if (tx.status == tm_transaction::tx_status::prepared) {
             f = recommit_tm_tx(tx, timeout);
         } else {

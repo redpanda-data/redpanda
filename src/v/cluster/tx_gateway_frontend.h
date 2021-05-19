@@ -80,8 +80,10 @@ private:
       model::node_id, kafka::transactional_id, model::timeout_clock::duration);
     ss::future<cluster::init_tm_tx_reply> do_init_tm_tx(
       ss::shard_id, kafka::transactional_id, model::timeout_clock::duration);
-    ss::future<cluster::init_tm_tx_reply>
-      do_init_tm_tx(kafka::transactional_id, model::timeout_clock::duration);
+    ss::future<cluster::init_tm_tx_reply> do_init_tm_tx(
+      ss::shared_ptr<tm_stm>,
+      kafka::transactional_id,
+      model::timeout_clock::duration);
 
     ss::future<checked<cluster::tm_transaction, tx_errc>> abort_tm_tx(
       ss::shared_ptr<cluster::tm_stm>,
