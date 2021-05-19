@@ -69,33 +69,22 @@ tx_gateway::abort_tx(abort_tx_request&& request, rpc::streaming_context&) {
 
 ss::future<begin_group_tx_reply> tx_gateway::begin_group_tx(
   begin_group_tx_request&& request, rpc::streaming_context&) {
-    return _rm_group_proxy->begin_group_tx_locally(
-      std::move(request.group_id), request.pid, request.timeout);
+    return _rm_group_proxy->begin_group_tx_locally(std::move(request));
 };
 
 ss::future<prepare_group_tx_reply> tx_gateway::prepare_group_tx(
   prepare_group_tx_request&& request, rpc::streaming_context&) {
-    return _rm_group_proxy->prepare_group_tx_locally(
-      std::move(request.group_id),
-      request.etag,
-      request.pid,
-      request.tx_seq,
-      request.timeout);
+    return _rm_group_proxy->prepare_group_tx_locally(std::move(request));
 };
 
 ss::future<commit_group_tx_reply> tx_gateway::commit_group_tx(
   commit_group_tx_request&& request, rpc::streaming_context&) {
-    return _rm_group_proxy->commit_group_tx_locally(
-      std::move(request.group_id),
-      request.pid,
-      request.tx_seq,
-      request.timeout);
+    return _rm_group_proxy->commit_group_tx_locally(std::move(request));
 };
 
 ss::future<abort_group_tx_reply> tx_gateway::abort_group_tx(
   abort_group_tx_request&& request, rpc::streaming_context&) {
-    return _rm_group_proxy->abort_group_tx_locally(
-      std::move(request.group_id), request.pid, request.timeout);
+    return _rm_group_proxy->abort_group_tx_locally(std::move(request));
 }
 
 } // namespace cluster

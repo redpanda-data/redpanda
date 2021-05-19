@@ -539,15 +539,15 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
         co_return add_offsets_tx_reply{
           .error_code = tx_errc::unknown_server_error};
     }
+    auto tx = tx_opt.value();
 
     auto group_info = co_await _rm_group_proxy->begin_group_tx(
-      request.group_id, pid, timeout);
+      request.group_id, pid, tx.tx_seq, timeout);
     if (group_info.ec != tx_errc::none) {
         vlog(clusterlog.warn, "error on begining group tx: {}", group_info.ec);
         co_return add_offsets_tx_reply{.error_code = group_info.ec};
     }
 
-    auto tx = tx_opt.value();
     auto has_added = stm->add_group(
       tx.id, tx.etag, request.group_id, group_info.etag);
     if (!has_added) {

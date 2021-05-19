@@ -12,6 +12,7 @@
 #pragma once
 #include "cluster/fwd.h"
 #include "cluster/partition.h"
+#include "cluster/tx_utils.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/server/logger.h"
 #include "kafka/server/member.h"
@@ -19,6 +20,7 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "seastarx.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -122,15 +124,10 @@ public:
         // https://github.com/vectorizedio/redpanda/issues/1181
     };
 
-    struct group_prepared_tx {
+    struct prepared_tx {
         model::producer_identity pid;
-        kafka::group_id group_id;
-        absl::node_hash_map<model::topic_partition, offset_metadata> offsets;
-    };
-
-    struct aborted_tx {
-        kafka::group_id group_id;
         model::tx_seq tx_seq;
+        absl::node_hash_map<model::topic_partition, offset_metadata> offsets;
     };
 
     group(
@@ -471,7 +468,14 @@ public:
         return inserted;
     }
 
-    void insert_prepared(group_prepared_tx);
+    void insert_prepared(prepared_tx);
+
+    void try_set_fence(model::producer_id id, model::producer_epoch epoch) {
+        auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);
+        if (fence_it->second < epoch) {
+            fence_it->second = epoch;
+        }
+    }
 
     // helper for the kafka api: describe groups
     described_group describe() const;
@@ -496,6 +500,9 @@ private:
 
     model::record_batch checkpoint(const assignments_type& assignments);
 
+    cluster::abort_origin
+    get_abort_origin(const model::producer_identity&, model::tx_seq) const;
+
     kafka::group_id _id;
     group_state _state;
     clock_type::time_point _state_timestamp;
@@ -512,8 +519,12 @@ private:
     config::configuration& _conf;
     ss::lw_shared_ptr<cluster::partition> _partition;
     absl::node_hash_map<model::topic_partition, offset_metadata> _offsets;
+    model::violation_recovery_policy _recovery_policy;
 
+    mutex _tx_mutex;
     model::term_id _term;
+    absl::node_hash_map<model::producer_id, model::producer_epoch>
+      _fence_pid_epoch;
     absl::node_hash_map<model::topic_partition, offset_metadata>
       _pending_offset_commits;
 
@@ -524,11 +535,8 @@ private:
     };
 
     struct volatile_tx {
+        model::tx_seq tx_seq;
         absl::node_hash_map<model::topic_partition, volatile_offset> offsets;
-    };
-
-    struct prepared_tx {
-        absl::node_hash_map<model::topic_partition, offset_metadata> offsets;
     };
 
     absl::node_hash_map<model::producer_identity, volatile_tx> _volatile_txs;

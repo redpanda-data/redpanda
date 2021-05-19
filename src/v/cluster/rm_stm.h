@@ -122,8 +122,6 @@ private:
 
     void compact_snapshot();
 
-    enum abort_origin { present, past, future };
-
     abort_origin
     get_abort_origin(const model::producer_identity&, model::tx_seq) const;
 

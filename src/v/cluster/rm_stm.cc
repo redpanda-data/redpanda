@@ -424,7 +424,7 @@ ss::future<tx_errc> rm_stm::commit_tx(
     co_return tx_errc::none;
 }
 
-rm_stm::abort_origin rm_stm::get_abort_origin(
+abort_origin rm_stm::get_abort_origin(
   const model::producer_identity& pid, model::tx_seq tx_seq) const {
     auto expected_it = _mem_state.expected.find(pid);
     if (expected_it != _mem_state.expected.end()) {
