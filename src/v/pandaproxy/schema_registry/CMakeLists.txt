@@ -10,6 +10,7 @@ v_cc_library(
   SRCS
     configuration.cc
     handlers.cc
+    error.cc
     service.cc
   DEPS
     v::pandaproxy_common
