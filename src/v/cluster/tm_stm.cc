@@ -116,16 +116,7 @@ tm_stm::try_change_status(
     }
     auto tx = ptx->second;
     tx.status = status;
-    auto lock_it = _tx_locks.find(tx_id);
-    vassert(
-      lock_it != _tx_locks.end(),
-      "Existence of _tx_table[{}] must emply existence of _tx_locks[{}]",
-      tx_id,
-      tx_id);
-
-    // hack: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95599
-    auto func = [this, term, tx]() { return save_tx(term, tx); };
-    co_return co_await lock_it->second->with(func);
+    co_return co_await save_tx(term, tx);
 }
 
 checked<tm_transaction, tm_stm::op_status>
@@ -190,9 +181,7 @@ ss::future<tm_stm::op_status> tm_stm::re_register_producer(
     tx.partitions.clear();
     tx.groups.clear();
 
-    // hack: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95599
-    auto func = [this, term, tx]() { return save_tx(term, tx); };
-    auto r = co_await _tx_locks.find(tx_id)->second->with(func);
+    auto r = co_await save_tx(term, tx);
 
     if (!r.has_value()) {
         co_return tm_stm::op_status::unknown;
@@ -214,15 +203,7 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
     if (ptx != _tx_table.end()) {
         co_return tm_stm::op_status::conflict;
     }
-    _end_locks.try_emplace(tx_id, ss::make_lw_shared<mutex>());
-    auto [lock_it, _] = _tx_locks.try_emplace(
-      tx_id, ss::make_lw_shared<mutex>());
-
-    // hack: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95599
-    auto func = [this, term, tx_id, pid]() {
-        return register_new_producer(term, tx_id, pid);
-    };
-    co_return co_await lock_it->second->with(func);
+    co_return co_await register_new_producer(term, tx_id, pid);
 }
 
 ss::future<tm_stm::op_status> tm_stm::register_new_producer(
@@ -314,8 +295,6 @@ void tm_stm::load_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
 
     for (auto& entry : data.transactions) {
         _tx_table.try_emplace(entry.id, entry);
-        _tx_locks.try_emplace(entry.id, ss::make_lw_shared<mutex>());
-        _end_locks.try_emplace(entry.id, ss::make_lw_shared<mutex>());
     }
     _last_snapshot_offset = data.offset;
     _insync_offset = data.offset;
@@ -387,8 +366,6 @@ ss::future<> tm_stm::apply(model::record_batch b) {
             }
         }
         _tx_table.try_emplace(cmd.tx.id, cmd.tx);
-        _end_locks.try_emplace(cmd.tx.id, ss::make_lw_shared<mutex>());
-        _tx_locks.try_emplace(cmd.tx.id, ss::make_lw_shared<mutex>());
     } else {
         if (ptx->second.etag.log_etag == cmd.prev_etag.log_etag) {
             ptx->second = cmd.tx;

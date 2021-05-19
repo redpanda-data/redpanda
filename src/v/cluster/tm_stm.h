@@ -162,8 +162,6 @@ private:
     model::violation_recovery_policy _recovery_policy;
     absl::flat_hash_map<kafka::transactional_id, tm_transaction> _tx_table;
     absl::flat_hash_map<kafka::transactional_id, ss::lw_shared_ptr<mutex>>
-      _tx_locks;
-    absl::flat_hash_map<kafka::transactional_id, ss::lw_shared_ptr<mutex>>
       _end_locks;
     ss::future<> apply(model::record_batch b) override;
 
