@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -33,6 +34,18 @@ type node struct {
 	addr string
 }
 
+func collectFlags(args []string, flag string) []string {
+	flags := []string{}
+	i := 0
+	for i < len(args)-1 {
+		if args[i] == flag {
+			flags = append(flags, args[i], args[i+1])
+		}
+		i++
+	}
+	return flags
+}
+
 func Start() *cobra.Command {
 	var (
 		nodes   uint
@@ -42,6 +55,12 @@ func Start() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "start",
 		Short: "Start a local container cluster",
+		FParseErrWhitelist: cobra.FParseErrWhitelist{
+			// Allow unknown flags so that arbitrary flags can be passed
+			// through to the containers without the need to pass '--'
+			// (POSIX standard)
+			UnknownFlags: true,
+		},
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if nodes < 1 {
 				return errors.New(
@@ -54,12 +73,15 @@ func Start() *cobra.Command {
 			}
 			defer c.Close()
 
+			configKvs := collectFlags(os.Args, "--set")
+
 			return common.WrapIfConnErr(startCluster(
 				c,
 				nodes,
 				checkBrokers,
 				retries,
 				image,
+				configKvs,
 			))
 		},
 	}
@@ -97,6 +119,7 @@ func startCluster(
 	check func([]node) func() error,
 	retries uint,
 	image string,
+	extraArgs []string,
 ) error {
 	// Check if cluster exists and start it again.
 	restarted, err := restartCluster(c, check, retries)
@@ -175,6 +198,7 @@ func startCluster(
 		seedMetricsPort,
 		netID,
 		image,
+		extraArgs...,
 	)
 	if err != nil {
 		return err
@@ -236,7 +260,7 @@ func startCluster(
 				metricsPort,
 				netID,
 				image,
-				args...,
+				append(args, extraArgs...)...,
 			)
 			if err != nil {
 				return err
