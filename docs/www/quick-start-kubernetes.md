@@ -104,7 +104,7 @@ helm install \
 We recommend that you use [the verification procedure](https://cert-manager.io/docs/installation/kubernetes/#verifying-the-installation) in the cert-manager docs
 to verify that cert-manager is working correcly.
 
-## Use Helm to install Redpanda
+## Use Helm to install Redpanda operator
 
 1. Using Helm, add the Redpanda chart repository and update it:
 
@@ -138,7 +138,7 @@ to verify that cert-manager is working correcly.
     redpanda/redpanda-operator
     ```
 
-## Connect to the Redpanda cluster
+## Install and connect to a Redpanda cluster
 
 After you set up Redpanda in your Kubernetes cluster, you can use our samples to install a cluster and see Redpanda in action.
 
