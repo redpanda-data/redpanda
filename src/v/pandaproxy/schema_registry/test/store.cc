@@ -127,3 +127,32 @@ BOOST_AUTO_TEST_CASE(test_store_get_subject_schema) {
     err = std::move(res).assume_error();
     BOOST_REQUIRE(err == pps::error_code::subject_version_not_found);
 }
+
+BOOST_AUTO_TEST_CASE(test_store_get_versions) {
+    pps::store s;
+
+    // First insert, expect id{1}, version{1}
+    s.insert(subject0, string_def0, pps::schema_type::avro);
+
+    auto versions = s.get_versions(subject0);
+    BOOST_REQUIRE(versions.has_value());
+    BOOST_REQUIRE_EQUAL(versions.value().size(), 1);
+    BOOST_REQUIRE_EQUAL(versions.value().front(), pps::schema_version{1});
+
+    // Insert duplicate, expect id{1}, versions{1}
+    s.insert(subject0, string_def0, pps::schema_type::avro);
+
+    versions = s.get_versions(subject0);
+    BOOST_REQUIRE(versions.has_value());
+    BOOST_REQUIRE_EQUAL(versions.value().size(), 1);
+    BOOST_REQUIRE_EQUAL(versions.value().front(), pps::schema_version{1});
+
+    // Insert different schema, expect id{2}, version{2}
+    s.insert(subject0, int_def0, pps::schema_type::avro);
+
+    versions = s.get_versions(subject0);
+    BOOST_REQUIRE(versions.has_value());
+    BOOST_REQUIRE_EQUAL(versions.value().size(), 2);
+    BOOST_REQUIRE_EQUAL(versions.value().front(), pps::schema_version{1});
+    BOOST_REQUIRE_EQUAL(versions.value().back(), pps::schema_version{2});
+}

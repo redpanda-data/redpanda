@@ -83,6 +83,23 @@ public:
           .deleted = v_it->deleted};
     }
 
+    ///\brief Return a list of versions and associated schema_id.
+    result<std::vector<schema_version>> get_versions(const subject& sub) const {
+        auto sub_it = _subjects.find(sub);
+        if (sub_it == _subjects.end()) {
+            return error_code::subject_not_found;
+        }
+        const auto& versions = sub_it->second;
+        std::vector<schema_version> res;
+        res.reserve(versions.size());
+        std::transform(
+          versions.begin(),
+          versions.end(),
+          std::back_inserter(res),
+          [](const auto& v) { return v.version; });
+        return res;
+    }
+
 private:
     struct insert_schema_result {
         schema_id id;
