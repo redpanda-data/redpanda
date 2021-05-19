@@ -18,6 +18,8 @@ spec:
       port: 33145
     kafkaApi:
     - port: 9092
+    pandaproxyApi:
+    - port: 8082
     adminApi:
     - port: 9644
     developerMode: true
