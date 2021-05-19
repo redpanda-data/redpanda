@@ -152,6 +152,13 @@ func NewStartCommand(
 				return err
 			}
 
+			if len(configKvs) > 0 {
+				conf, err = setConfig(mgr, configKvs)
+				if err != nil {
+					return err
+				}
+			}
+
 			updateConfigWithFlags(conf, ccmd.Flags())
 
 			env := api.EnvironmentPayload{}
@@ -292,12 +299,6 @@ func NewStartCommand(
 			if err != nil {
 				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
 				return err
-			}
-			if len(configKvs) > 0 {
-				conf, err = setConfig(mgr, configKvs)
-				if err != nil {
-					return err
-				}
 			}
 			rpArgs, err := buildRedpandaFlags(
 				fs,
