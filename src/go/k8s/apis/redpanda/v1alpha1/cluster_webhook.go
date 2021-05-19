@@ -66,6 +66,8 @@ func (r *Cluster) ValidateCreate() error {
 
 	allErrs = append(allErrs, r.validateMemory()...)
 
+	allErrs = append(allErrs, r.validateCPU()...)
+
 	allErrs = append(allErrs, r.validateArchivalStorage()...)
 
 	if len(allErrs) == 0 {
@@ -99,6 +101,8 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 	allErrs = append(allErrs, r.checkCollidingPorts()...)
 
 	allErrs = append(allErrs, r.validateMemory()...)
+
+	allErrs = append(allErrs, r.validateCPU()...)
 
 	allErrs = append(allErrs, r.validateArchivalStorage()...)
 
@@ -281,19 +285,59 @@ func (r *Cluster) validatePandaproxyListeners() field.ErrorList {
 	return allErrs
 }
 
-// validateMemory verifies that memory limits are aligned with the minimal requirement of redpanda
-// which is 1GB per core
-// to verify this, we need to subtract the 1M we reserve currently for other processes
-func (r *Cluster) validateMemory() field.ErrorList {
+func (r *Cluster) validateCPU() field.ErrorList {
 	var allErrs field.ErrorList
-	quantity := resource.MustParse(ReserveMemoryString)
-	if !r.Spec.Configuration.DeveloperMode && (r.Spec.Resources.Limits.Memory().Value()-quantity.Value()) < gb {
+
+	// CPU limit (if set) cannot be lower than the requested
+	if !r.Spec.Resources.Requests.Cpu().IsZero() && !r.Spec.Resources.Limits.Cpu().IsZero() &&
+		r.Spec.Resources.Limits.Cpu().Cmp(*r.Spec.Resources.Requests.Cpu()) == -1 {
 		allErrs = append(allErrs,
 			field.Invalid(
-				field.NewPath("spec").Child("resources").Child("limits").Child("memory"),
-				r.Spec.Resources.Limits.Memory(),
-				"need minimum of 1GB + 1MB of memory per node"))
+				field.NewPath("spec").Child("resources").Child("requests").Child("cpu"),
+				r.Spec.Resources.Requests.Cpu(),
+				"CPU limit cannot be lower than the request, either increase the limit or remove it"))
 	}
+
+	return allErrs
+}
+
+// validateMemory verifies that memory limits are aligned with the minimal requirement of redpanda
+// which is 1GB per core. To verify this, we need to subtract the 1M we reserve currently for other processes
+func (r *Cluster) validateMemory() field.ErrorList {
+	var allErrs field.ErrorList
+
+	// Ensure spare memory for other processes
+	quantity := resource.MustParse(ReserveMemoryString)
+	if !r.Spec.Configuration.DeveloperMode && (r.Spec.Resources.Requests.Memory().Value()-quantity.Value()) < gb {
+		allErrs = append(allErrs,
+			field.Invalid(
+				field.NewPath("spec").Child("resources").Child("requests").Child("memory"),
+				r.Spec.Resources.Limits.Memory(),
+				"need minimum request of 1GB + 1MB of memory"))
+	}
+
+	// Ensure a requested 2GB of memory per core
+	requests := r.Spec.Resources.Requests.DeepCopy()
+	requests.Cpu().RoundUp(0)
+	requestedCores := requests.Cpu().Value()
+	if !r.Spec.Configuration.DeveloperMode && r.Spec.Resources.Requests.Memory().Value() < requestedCores*MinimumMemoryPerCore {
+		allErrs = append(allErrs,
+			field.Invalid(
+				field.NewPath("spec").Child("resources").Child("requests").Child("memory"),
+				r.Spec.Resources.Requests.Memory(),
+				"need 2GB of memory per core; need to decrease the requested CPU or increase the memory request"))
+	}
+
+	// Memory limit (if set) cannot be lower than the requested
+	if !r.Spec.Configuration.DeveloperMode &&
+		!r.Spec.Resources.Limits.Memory().IsZero() && r.Spec.Resources.Limits.Memory().Cmp(*r.Spec.Resources.Requests.Memory()) == -1 {
+		allErrs = append(allErrs,
+			field.Invalid(
+				field.NewPath("spec").Child("resources").Child("requests").Child("memory"),
+				r.Spec.Resources.Requests.Memory(),
+				"Memory limit cannot be lower than the request, either increase the limit or remove it"))
+	}
+
 	return allErrs
 }
 
