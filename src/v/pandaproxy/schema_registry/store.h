@@ -1,0 +1,107 @@
+/*
+ * Copyright 2021 Vectorized, Inc.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file licenses/BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+
+#pragma once
+
+#include "outcome.h"
+#include "pandaproxy/schema_registry/error.h"
+#include "pandaproxy/schema_registry/types.h"
+
+#include <absl/container/btree_map.h>
+#include <absl/container/node_hash_map.h>
+
+namespace pandaproxy::schema_registry {
+
+class store {
+public:
+    struct insert_result {
+        schema_version version;
+        schema_id id;
+        bool inserted;
+    };
+    ///\brief Insert a schema for a given subject.
+    ///
+    /// If the schema is not registered, register it.
+    /// If the subject does not have this schema at any version, register a new
+    /// version.
+    ///
+    /// return the schema_version and schema_id, and whether it's new.
+    insert_result insert(subject sub, schema_definition def, schema_type type) {
+        auto id = insert_schema(std::move(def), type).id;
+        auto [version, inserted] = insert_subject(std::move(sub), id);
+        return {version, id, inserted};
+    }
+
+private:
+    struct insert_schema_result {
+        schema_id id;
+        bool inserted;
+    };
+    insert_schema_result
+    insert_schema(schema_definition def, schema_type type) {
+        const auto s_it = std::find_if(
+          _schemas.begin(), _schemas.end(), [&](const auto& s) {
+              const auto& entry = s.second;
+              return type == entry.type && def == entry.definition;
+          });
+        if (s_it != _schemas.end()) {
+            return {s_it->first, false};
+        }
+
+        const auto id = _schemas.empty() ? schema_id{1}
+                                         : std::prev(_schemas.end())->first + 1;
+        auto [_, inserted] = _schemas.try_emplace(id, type, std::move(def));
+        return {id, inserted};
+    }
+
+    struct insert_subject_result {
+        schema_version version;
+        bool inserted;
+    };
+    insert_subject_result insert_subject(subject sub, schema_id id) {
+        auto& versions = _subjects[std::move(sub)];
+        const auto v_it = std::find_if(
+          versions.cbegin(), versions.cend(), [id](auto v) {
+              return v.id == id;
+          });
+        if (v_it != versions.cend()) {
+            return {v_it->version, false};
+        }
+
+        const auto version = versions.empty() ? schema_version{1}
+                                              : versions.back().version + 1;
+        versions.emplace_back(version, id);
+        return {version, true};
+    }
+
+    struct schema_entry {
+        schema_entry(schema_type type, schema_definition definition)
+          : type{type}
+          , definition{std::move(definition)} {}
+
+        schema_type type;
+        schema_definition definition;
+    };
+
+    struct subject_entry {
+        explicit subject_entry(subject sub)
+          : sub{std::move(sub)}
+          , versions{} {}
+
+        subject sub;
+        std::vector<subject_version_id> versions;
+    };
+
+    absl::btree_map<schema_id, schema_entry> _schemas;
+    absl::node_hash_map<subject, subject_versions> _subjects;
+};
+
+} // namespace pandaproxy::schema_registry
