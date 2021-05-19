@@ -49,6 +49,40 @@ public:
         return {it->first, it->second.type, it->second.definition};
     }
 
+    ///\brief Return a schema by subject and version.
+    result<subject_schema>
+    get_subject_schema(const subject& sub, schema_version version) const {
+        auto sub_it = _subjects.find(sub);
+        if (sub_it == _subjects.end()) {
+            return error_code::subject_not_found;
+        }
+
+        const auto& versions = sub_it->second;
+        auto v_it = std::lower_bound(
+          versions.begin(),
+          versions.end(),
+          version,
+          [](const subject_version_id& lhs, schema_version rhs) {
+              return lhs.version < rhs;
+          });
+        if (v_it == versions.end() || v_it->version != version) {
+            return error_code::subject_version_not_found;
+        }
+
+        auto s = get_schema(v_it->id);
+        if (!s) {
+            return s.as_failure();
+        }
+
+        return subject_schema{
+          .sub = sub,
+          .version = v_it->version,
+          .id = v_it->id,
+          .type = s.value().type,
+          .definition = std::move(s).value().definition,
+          .deleted = v_it->deleted};
+    }
+
 private:
     struct insert_schema_result {
         schema_id id;

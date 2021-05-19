@@ -83,3 +83,47 @@ BOOST_AUTO_TEST_CASE(test_store_get_schema) {
     BOOST_REQUIRE_EQUAL(val.definition(), string_def0());
     BOOST_REQUIRE(val.type == pps::schema_type::avro);
 }
+
+BOOST_AUTO_TEST_CASE(test_store_get_subject_schema) {
+    pps::store s;
+
+    auto res = s.get_subject_schema(subject0, pps::schema_version{1});
+    BOOST_REQUIRE(res.has_error());
+    auto err = std::move(res).assume_error();
+    BOOST_REQUIRE(err == pps::error_code::subject_not_found);
+
+    // First insert, expect id{1}, version{1}
+    auto ins_res = s.insert(subject0, string_def0, pps::schema_type::avro);
+    BOOST_REQUIRE(ins_res.inserted);
+    BOOST_REQUIRE_EQUAL(ins_res.id, pps::schema_id{1});
+    BOOST_REQUIRE_EQUAL(ins_res.version, pps::schema_version{1});
+
+    // Request good version
+    res = s.get_subject_schema(subject0, pps::schema_version{1});
+    BOOST_REQUIRE(res.has_value());
+    auto val = std::move(res).assume_value();
+    BOOST_REQUIRE_EQUAL(val.id, pps::schema_id{1});
+    BOOST_REQUIRE_EQUAL(val.version, pps::schema_version{1});
+    BOOST_REQUIRE_EQUAL(val.deleted, false);
+    BOOST_REQUIRE_EQUAL(val.definition, string_def0);
+
+    // Second insert, expect id{1}, version{1}
+    ins_res = s.insert(subject0, string_def0, pps::schema_type::avro);
+    BOOST_REQUIRE(!ins_res.inserted);
+    BOOST_REQUIRE_EQUAL(ins_res.id, pps::schema_id{1});
+
+    // Request good version
+    res = s.get_subject_schema(subject0, pps::schema_version{1});
+    BOOST_REQUIRE(res.has_value());
+    val = std::move(res).assume_value();
+    BOOST_REQUIRE_EQUAL(val.id, pps::schema_id{1});
+    BOOST_REQUIRE_EQUAL(val.version, pps::schema_version{1});
+    BOOST_REQUIRE_EQUAL(val.deleted, false);
+    BOOST_REQUIRE_EQUAL(val.definition, string_def0);
+
+    // Request bad version
+    res = s.get_subject_schema(subject0, pps::schema_version{2});
+    BOOST_REQUIRE(res.has_error());
+    err = std::move(res).assume_error();
+    BOOST_REQUIRE(err == pps::error_code::subject_version_not_found);
+}
