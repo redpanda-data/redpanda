@@ -106,6 +106,11 @@ void probe::setup_metrics(const model::ntp& ntp) {
           [this] { return _partition_bytes; },
           sm::description("Current size of partition in bytes"),
           labels),
+        sm::make_total_bytes(
+          "compaction_ratio",
+          [this] { return _compaction_ratio; },
+          sm::description("Average segment compaction ratio"),
+          labels),
       });
 }
 

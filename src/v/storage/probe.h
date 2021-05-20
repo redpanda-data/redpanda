@@ -67,6 +67,7 @@ public:
     size_t partition_size() const { return _partition_bytes; }
     void add_initial_segment(const segment&);
     void remove_partition_bytes(size_t remove) { _partition_bytes -= remove; }
+    void set_compaction_ration(double r) { _compaction_ratio = r; }
 
 private:
     uint64_t _partition_bytes = 0;
@@ -85,6 +86,7 @@ private:
     uint32_t _log_segments_active = 0;
     uint32_t _batch_parse_errors = 0;
     uint32_t _batch_write_errors = 0;
+    double _compaction_ratio = 1.0;
     ss::metrics::metric_groups _metrics;
 };
 } // namespace storage

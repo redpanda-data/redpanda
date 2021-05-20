@@ -512,7 +512,8 @@ ss::future<> disk_log_impl::compact(compaction_config cfg) {
     if (config().is_compacted() && !_segs.empty()) {
         f = f.then([this, cfg] { return do_compact(cfg); });
     }
-    return f;
+    return f.then(
+      [this] { _probe.set_compaction_ration(_compaction_ratio.get()); });
 }
 
 ss::future<> disk_log_impl::gc(compaction_config cfg) {
