@@ -153,16 +153,18 @@ static ss::future<read_result> read_from_partition(
       [&part, start_o, hw, lso, foreign_read, deadline, reader_config](
         fetched_offset_range& fr) {
           return part.make_reader(reader_config)
-            .then([&fr, start_o, hw, lso, foreign_read, deadline](
+            .then([&part, &fr, start_o, hw, lso, foreign_read, deadline](
                     model::record_batch_reader rdr) {
                 return model::transform_reader_to_memory(
                          std::move(rdr),
                          deadline.value_or(model::no_timeout),
-                         [&fr](model::record_batch&& batch) {
+                         [&part, &fr](model::record_batch&& batch) {
                              fr.base_offset = std::min(
                                fr.base_offset, batch.base_offset());
                              fr.last_offset = std::max(
                                fr.last_offset, batch.last_offset());
+                             part.probe().add_records_fetched(
+                               batch.record_count());
                              return adapt_fetch_batch(std::move(batch));
                          })
                   .then([foreign_read](
