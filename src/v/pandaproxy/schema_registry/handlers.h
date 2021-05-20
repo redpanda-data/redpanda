@@ -22,6 +22,9 @@ namespace pandaproxy::schema_registry {
 ss::future<ctx_server<service>::reply_t> get_schemas_types(
   ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
 
+ss::future<ctx_server<service>::reply_t> get_subject_versions(
+  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
+
 ss::future<ctx_server<service>::reply_t> post_subject_versions(
   ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
 
