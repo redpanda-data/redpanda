@@ -17,6 +17,7 @@
 #include "pandaproxy/parsing/httpd.h"
 #include "pandaproxy/reply.h"
 #include "pandaproxy/schema_registry/error.h"
+#include "pandaproxy/schema_registry/requests/get_schemas_ids_id.h"
 #include "pandaproxy/schema_registry/requests/get_subject_versions_version.h"
 #include "pandaproxy/schema_registry/requests/post_subject_versions.h"
 #include "pandaproxy/schema_registry/types.h"
@@ -62,6 +63,24 @@ get_schemas_types(server::request_t rq, server::reply_t rp) {
     auto json_rslt = ppj::rjson_serialize(schemas_types);
     rp.rep->write_body("json", json_rslt);
     return ss::make_ready_future<server::reply_t>(std::move(rp));
+}
+
+ss::future<server::reply_t>
+get_schemas_ids_id(server::request_t rq, server::reply_t rp) {
+    parse_accept_header(rq, rp);
+    auto id = parse::request_param<schema_id>(*rq.req, "id");
+    rq.req.reset();
+
+    auto schema = rq.service().schema_store().get_schema(id);
+    if (schema.has_error()) {
+        rp.rep = make_errored_body(schema.error());
+        co_return rp;
+    }
+
+    auto json_rslt = ppj::rjson_serialize(
+      get_schemas_ids_id_response{.definition = schema.value().definition});
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
 }
 
 ss::future<server::reply_t>
