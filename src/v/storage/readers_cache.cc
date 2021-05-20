@@ -66,13 +66,12 @@ readers_cache::put(std::unique_ptr<log_reader> reader) {
         return model::record_batch_reader(std::move(reader));
     }
 
-    if (reader->lease_range_base_offset())
-        vlog(
-          stlog.trace,
-          "{} - adding reader [{},{}]",
-          _ntp,
-          reader->lease_range_base_offset(),
-          reader->lease_range_end_offset());
+    vlog(
+      stlog.trace,
+      "{} - adding reader [{},{}]",
+      _ntp,
+      reader->lease_range_base_offset(),
+      reader->lease_range_end_offset());
 
     auto ptr = new entry{.reader = std::move(reader)}; // NOLINT
     _in_use.push_back(*ptr);
