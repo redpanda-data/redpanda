@@ -35,16 +35,11 @@ static model::record_batch serialize_cmd(T t, model::record_batch_type type) {
     return std::move(b).build();
 }
 
-std::ostream& operator<<(std::ostream& o, const tm_etag& etag) {
-    return o << "{tm_etag: log_etag=" << etag.log_etag
-             << ", mem_etag=" << etag.mem_etag << "}";
-}
-
 std::ostream& operator<<(std::ostream& o, const tm_transaction& tx) {
     return o << "{tm_transaction: id=" << tx.id << ", status=" << tx.status
              << ", pid=" << tx.pid
              << ", size(partitions)=" << tx.partitions.size()
-             << ", etag=" << tx.etag << ", tx_seq=" << tx.tx_seq << "}";
+             << ", tx_seq=" << tx.tx_seq << "}";
 }
 
 tm_stm::tm_stm(ss::logger& logger, raft::consensus* c)
@@ -67,11 +62,7 @@ tm_stm::save_tx(model::term_id term, tm_transaction tx) {
     if (ptx == _tx_table.end()) {
         co_return tm_stm::op_status::not_found;
     }
-    if (ptx->second.etag != tx.etag) {
-        co_return tm_stm::op_status::conflict;
-    }
 
-    tx.etag = tx.etag.inc_log();
     tx_updated_cmd cmd{.tx = tx};
     auto batch = serialize_cmd(cmd, tm_update_batch_type);
 
@@ -89,17 +80,12 @@ tm_stm::save_tx(model::term_id term, tm_transaction tx) {
     if (ptx == _tx_table.end()) {
         co_return tm_stm::op_status::conflict;
     }
-    if (ptx->second.etag != tx.etag) {
-        co_return tm_stm::op_status::conflict;
-    }
     co_return ptx->second;
 }
 
 ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::try_change_status(
-  kafka::transactional_id tx_id,
-  tm_etag etag,
-  tm_transaction::tx_status status) {
+  kafka::transactional_id tx_id, tm_transaction::tx_status status) {
     auto is_ready = co_await sync(_sync_timeout);
     if (!is_ready) {
         co_return tm_stm::op_status::unknown;
@@ -109,9 +95,6 @@ tm_stm::try_change_status(
     auto ptx = _tx_table.find(tx_id);
     if (ptx == _tx_table.end()) {
         co_return tm_stm::op_status::not_found;
-    }
-    if (ptx->second.etag != etag) {
-        co_return tm_stm::op_status::conflict;
     }
     auto tx = ptx->second;
     tx.status = status;
@@ -119,32 +102,24 @@ tm_stm::try_change_status(
 }
 
 checked<tm_transaction, tm_stm::op_status>
-tm_stm::mark_tx_finished(kafka::transactional_id tx_id, tm_etag etag) {
+tm_stm::mark_tx_finished(kafka::transactional_id tx_id) {
     auto ptx = _tx_table.find(tx_id);
     if (ptx == _tx_table.end()) {
         return tm_stm::op_status::not_found;
     }
-    if (ptx->second.etag != etag) {
-        return tm_stm::op_status::conflict;
-    }
     ptx->second.status = tm_transaction::tx_status::finished;
-    ptx->second.etag = etag.inc_mem();
     ptx->second.partitions.clear();
     ptx->second.groups.clear();
     return ptx->second;
 }
 
 checked<tm_transaction, tm_stm::op_status>
-tm_stm::mark_tx_ongoing(kafka::transactional_id tx_id, tm_etag etag) {
+tm_stm::mark_tx_ongoing(kafka::transactional_id tx_id) {
     auto ptx = _tx_table.find(tx_id);
     if (ptx == _tx_table.end()) {
         return tm_stm::op_status::not_found;
     }
-    if (ptx->second.etag != etag) {
-        return tm_stm::op_status::conflict;
-    }
     ptx->second.status = tm_transaction::tx_status::ongoing;
-    ptx->second.etag = etag.inc_mem();
     ptx->second.tx_seq += 1;
     ptx->second.partitions.clear();
     ptx->second.groups.clear();
@@ -152,26 +127,19 @@ tm_stm::mark_tx_ongoing(kafka::transactional_id tx_id, tm_etag etag) {
 }
 
 ss::future<tm_stm::op_status> tm_stm::re_register_producer(
-  kafka::transactional_id tx_id, tm_etag etag, model::producer_identity pid) {
+  kafka::transactional_id tx_id, model::producer_identity pid) {
     auto is_ready = co_await sync(_sync_timeout);
     if (!is_ready) {
         co_return tm_stm::op_status::unknown;
     }
 
     vlog(
-      clusterlog.trace,
-      "Registering existing tx: id={}, pid={}, etag={}",
-      tx_id,
-      pid,
-      etag);
+      clusterlog.trace, "Registering existing tx: id={}, pid={}", tx_id, pid);
 
     auto term = _insync_term;
     auto ptx = _tx_table.find(tx_id);
     if (ptx == _tx_table.end()) {
         co_return tm_stm::op_status::not_found;
-    }
-    if (ptx->second.etag != etag) {
-        co_return tm_stm::op_status::conflict;
     }
     tm_transaction tx = ptx->second;
     tx.status = tm_transaction::tx_status::ongoing;
@@ -234,28 +202,16 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
         co_return tm_stm::op_status::unknown;
     }
 
-    ptx = _tx_table.find(tx_id);
-    if (ptx == _tx_table.end()) {
-        co_return tm_stm::op_status::unknown;
-    }
-    if (ptx->second.etag != tx.etag) {
-        co_return tm_stm::op_status::conflict;
-    }
     co_return tm_stm::op_status::success;
 }
 
 bool tm_stm::add_partitions(
   kafka::transactional_id tx_id,
-  tm_etag etag,
   std::vector<tm_transaction::tx_partition> partitions) {
     auto ptx = _tx_table.find(tx_id);
     if (ptx == _tx_table.end()) {
         return false;
     }
-    if (ptx->second.etag != etag) {
-        return false;
-    }
-    ptx->second.etag = etag.inc_mem();
     for (auto& partition : partitions) {
         ptx->second.partitions.push_back(partition);
     }
@@ -264,17 +220,12 @@ bool tm_stm::add_partitions(
 
 bool tm_stm::add_group(
   kafka::transactional_id tx_id,
-  tm_etag etag,
   kafka::group_id group_id,
   model::term_id term) {
     auto ptx = _tx_table.find(tx_id);
     if (ptx == _tx_table.end()) {
         return false;
     }
-    if (ptx->second.etag != etag) {
-        return false;
-    }
-    ptx->second.etag = etag.inc_mem();
     ptx->second.groups.push_back(
       tm_transaction::tx_group{.group_id = group_id, .etag = term});
     return true;

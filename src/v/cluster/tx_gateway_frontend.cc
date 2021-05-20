@@ -313,8 +313,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
         reply.pid = model::producer_identity{.id = pid_reply.id, .epoch = 0};
     }
 
-    auto op_status = co_await stm->re_register_producer(
-      tx.id, tx.etag, reply.pid);
+    auto op_status = co_await stm->re_register_producer(tx.id, reply.pid);
     if (op_status == tm_stm::op_status::success) {
         reply.ec = tx_errc::none;
     } else if (op_status == tm_stm::op_status::conflict) {
@@ -463,7 +462,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
                     .ntp = br.ntp, .etag = br.etag});
               }
           }
-          auto has_added = stm->add_partitions(tx.id, tx.etag, partitions);
+          auto has_added = stm->add_partitions(tx.id, partitions);
           for (auto& br : brs) {
               auto topic_it = std::find_if(
                 response.results.begin(),
@@ -555,8 +554,7 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
         co_return add_offsets_tx_reply{.error_code = group_info.ec};
     }
 
-    auto has_added = stm->add_group(
-      tx.id, tx.etag, request.group_id, group_info.etag);
+    auto has_added = stm->add_group(tx.id, request.group_id, group_info.etag);
     if (!has_added) {
         vlog(clusterlog.warn, "can't add group to tm_stm");
         co_return add_offsets_tx_reply{
@@ -680,7 +678,7 @@ tx_gateway_frontend::do_abort_tm_tx(
   model::timeout_clock::duration timeout,
   ss::promise<tx_errc> outcome) {
     auto changed_tx = co_await stm->try_change_status(
-      tx.id, tx.etag, cluster::tm_transaction::tx_status::aborting);
+      tx.id, cluster::tm_transaction::tx_status::aborting);
     if (!changed_tx.has_value()) {
         outcome.set_value(tx_errc::timeout);
         co_return checked<cluster::tm_transaction, tx_errc>(tx_errc::timeout);
@@ -710,7 +708,7 @@ tx_gateway_frontend::do_abort_tm_tx(
     if (!ok) {
         co_return checked<cluster::tm_transaction, tx_errc>(tx_errc::timeout);
     }
-    changed_tx = stm->mark_tx_finished(tx.id, tx.etag);
+    changed_tx = stm->mark_tx_finished(tx.id);
     if (!changed_tx.has_value()) {
         co_return checked<cluster::tm_transaction, tx_errc>(tx_errc::timeout);
     }
@@ -755,7 +753,7 @@ tx_gateway_frontend::do_commit_tm_tx(
 
     if (tx.status == tm_transaction::tx_status::ongoing) {
         auto became_preparing_tx = co_await stm->try_change_status(
-          tx.id, tx.etag, cluster::tm_transaction::tx_status::preparing);
+          tx.id, cluster::tm_transaction::tx_status::preparing);
         if (!became_preparing_tx.has_value()) {
             outcome.set_value(tx_errc::timeout);
             co_return checked<cluster::tm_transaction, tx_errc>(
@@ -780,7 +778,7 @@ tx_gateway_frontend::do_commit_tm_tx(
     outcome.set_value(tx_errc::none);
 
     auto changed_tx = co_await stm->try_change_status(
-      tx.id, tx.etag, cluster::tm_transaction::tx_status::prepared);
+      tx.id, cluster::tm_transaction::tx_status::prepared);
     if (!changed_tx.has_value()) {
         co_return checked<cluster::tm_transaction, tx_errc>(tx_errc::timeout);
     }
@@ -808,7 +806,7 @@ tx_gateway_frontend::do_commit_tm_tx(
     if (!ok) {
         co_return checked<cluster::tm_transaction, tx_errc>(tx_errc::timeout);
     }
-    changed_tx = stm->mark_tx_finished(tx.id, tx.etag);
+    changed_tx = stm->mark_tx_finished(tx.id);
     if (!changed_tx.has_value()) {
         co_return checked<cluster::tm_transaction, tx_errc>(tx_errc::timeout);
     }
@@ -918,7 +916,7 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::get_tx(
 
             auto tx = r.value();
 
-            auto changed_tx = stm->mark_tx_ongoing(tx.id, tx.etag);
+            auto changed_tx = stm->mark_tx_ongoing(tx.id);
             if (!changed_tx.has_value()) {
                 return checked<cluster::tm_transaction, tx_errc>(
                   tx_errc::timeout);
