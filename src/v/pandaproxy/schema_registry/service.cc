@@ -30,6 +30,10 @@ server::routes_t get_schema_registry_routes() {
       ss::httpd::schema_registry_json::get_schemas_types, get_schemas_types});
 
     routes.routes.emplace_back(server::route_t{
+      ss::httpd::schema_registry_json::get_subject_versions,
+      get_subject_versions});
+
+    routes.routes.emplace_back(server::route_t{
       ss::httpd::schema_registry_json::post_subject_versions,
       post_subject_versions});
 
