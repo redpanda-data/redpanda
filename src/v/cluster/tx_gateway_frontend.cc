@@ -600,30 +600,6 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
                 end_tx_reply{.error_code = tx_errc::unknown_server_error});
           }
 
-          auto maybe_tx = stm->get_tx(request.transactional_id);
-          if (!maybe_tx) {
-              return ss::make_ready_future<end_tx_reply>(
-                end_tx_reply{.error_code = tx_errc::unknown_server_error});
-          }
-
-          auto tx = maybe_tx.value();
-          if (tx.status != tm_transaction::tx_status::ongoing) {
-              return ss::make_ready_future<end_tx_reply>(
-                end_tx_reply{.error_code = tx_errc::unknown_server_error});
-          }
-
-          model::producer_identity pid{
-            .id = request.producer_id, .epoch = request.producer_epoch};
-          if (tx.pid != pid) {
-              if (tx.pid.id == pid.id && tx.pid.epoch > pid.epoch) {
-                  return ss::make_ready_future<end_tx_reply>(
-                    end_tx_reply{.error_code = tx_errc::fenced});
-              }
-
-              return ss::make_ready_future<end_tx_reply>(
-                end_tx_reply{.error_code = tx_errc::unknown_server_error});
-          }
-
           ss::promise<tx_errc> outcome;
           // commit_tm_tx and abort_tm_tx remove transient data during its
           // execution. however the outcome of the commit/abort operation
@@ -634,41 +610,63 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
 
           (void)ss::with_gate(
             self._gate,
-            [committed = request.committed,
+            [request = std::move(request),
              &self,
              stm,
-             tx = std::move(tx),
              timeout,
              outcome = std::move(outcome)]() mutable {
-                if (committed) {
-                    return self.commit_tm_tx(
-                      stm, tx, timeout, std::move(outcome));
-                } else {
-                    return self.abort_tm_tx(
-                      stm, tx, timeout, std::move(outcome));
-                }
+                return stm->get_tx_lock(request.transactional_id)
+                  ->with([request = std::move(request),
+                          &self,
+                          stm,
+                          timeout,
+                          outcome = std::move(outcome)]() mutable {
+                      return self.do_end_txn(
+                        std::move(request), stm, timeout, std::move(outcome));
+                  });
             });
 
-          return decided.then([](tx_errc ec) {
-              if (ec == tx_errc::none) {
-                  return end_tx_reply{.error_code = tx_errc::none};
-              }
-
-              return end_tx_reply{.error_code = tx_errc::unknown_server_error};
-          });
+          return decided.then(
+            [](tx_errc ec) { return end_tx_reply{.error_code = ec}; });
       });
 }
 
 ss::future<checked<cluster::tm_transaction, tx_errc>>
-tx_gateway_frontend::abort_tm_tx(
+tx_gateway_frontend::do_end_txn(
+  end_tx_request request,
   ss::shared_ptr<cluster::tm_stm> stm,
-  cluster::tm_transaction tx,
   model::timeout_clock::duration timeout,
   ss::promise<tx_errc> outcome) {
-    return stm->get_tx_lock(tx.id)->with(
-      [this, stm, timeout, tx, outcome = std::move(outcome)]() mutable {
-          return do_abort_tm_tx(stm, tx, timeout, std::move(outcome));
-      });
+    auto maybe_tx = stm->get_tx(request.transactional_id);
+    if (!maybe_tx) {
+        outcome.set_value(tx_errc::unknown_server_error);
+        co_return tx_errc::timeout;
+    }
+
+    auto tx = maybe_tx.value();
+    if (tx.status != tm_transaction::tx_status::ongoing) {
+        outcome.set_value(tx_errc::unknown_server_error);
+        co_return tx_errc::timeout;
+    }
+
+    model::producer_identity pid{
+      .id = request.producer_id, .epoch = request.producer_epoch};
+    if (tx.pid != pid) {
+        if (tx.pid.id == pid.id && tx.pid.epoch > pid.epoch) {
+            outcome.set_value(tx_errc::fenced);
+            co_return tx_errc::fenced;
+        }
+
+        outcome.set_value(tx_errc::unknown_server_error);
+        co_return tx_errc::timeout;
+    }
+
+    if (request.committed) {
+        co_return co_await do_commit_tm_tx(
+          stm, tx, timeout, std::move(outcome));
+    } else {
+        co_return co_await do_abort_tm_tx(stm, tx, timeout, std::move(outcome));
+    }
 }
 
 ss::future<checked<cluster::tm_transaction, tx_errc>>
@@ -714,18 +712,6 @@ tx_gateway_frontend::do_abort_tm_tx(
     }
     tx = changed_tx.value();
     co_return checked<cluster::tm_transaction, tx_errc>(tx);
-}
-
-ss::future<checked<cluster::tm_transaction, tx_errc>>
-tx_gateway_frontend::commit_tm_tx(
-  ss::shared_ptr<cluster::tm_stm> stm,
-  cluster::tm_transaction tx,
-  model::timeout_clock::duration timeout,
-  ss::promise<tx_errc> outcome) {
-    return stm->get_tx_lock(tx.id)->with(
-      [this, stm, timeout, tx, outcome = std::move(outcome)]() mutable {
-          return do_commit_tm_tx(stm, tx, timeout, std::move(outcome));
-      });
 }
 
 ss::future<checked<cluster::tm_transaction, tx_errc>>

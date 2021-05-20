@@ -85,17 +85,12 @@ private:
       kafka::transactional_id,
       model::timeout_clock::duration);
 
-    ss::future<checked<cluster::tm_transaction, tx_errc>> abort_tm_tx(
-      ss::shared_ptr<cluster::tm_stm>,
-      cluster::tm_transaction,
-      model::timeout_clock::duration,
-      ss::promise<tx_errc>);
+    ss::future<checked<cluster::tm_transaction, tx_errc>> do_end_txn(
+      end_tx_request request,
+      ss::shared_ptr<cluster::tm_stm> stm,
+      model::timeout_clock::duration timeout,
+      ss::promise<tx_errc> outcome);
     ss::future<checked<cluster::tm_transaction, tx_errc>> do_abort_tm_tx(
-      ss::shared_ptr<cluster::tm_stm>,
-      cluster::tm_transaction,
-      model::timeout_clock::duration,
-      ss::promise<tx_errc>);
-    ss::future<checked<cluster::tm_transaction, tx_errc>> commit_tm_tx(
       ss::shared_ptr<cluster::tm_stm>,
       cluster::tm_transaction,
       model::timeout_clock::duration,
