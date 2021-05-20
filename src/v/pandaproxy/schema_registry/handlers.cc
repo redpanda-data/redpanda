@@ -16,6 +16,8 @@
 #include "pandaproxy/json/types.h"
 #include "pandaproxy/parsing/httpd.h"
 #include "pandaproxy/reply.h"
+#include "pandaproxy/schema_registry/error.h"
+#include "pandaproxy/schema_registry/requests/get_subject_versions_version.h"
 #include "pandaproxy/schema_registry/requests/post_subject_versions.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/server.h"
@@ -50,8 +52,6 @@ get_schemas_types(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 post_subject_versions(server::request_t rq, server::reply_t rp) {
-    // {"keytype":"SCHEMA","subject":"Kafka-key","version":1,"magic":1}
-    // {"subject":"Kafka-key","version":1,"id":1,"schema":"\"string\"","deleted":false}
     parse::content_type_header(
       *rq.req,
       {ppj::serialization_format::schema_registry_v1_json,
@@ -93,6 +93,60 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
 
     auto json_rslt{
       json::rjson_serialize(post_subject_versions_response{.id{ins_res.id}})};
+    rp.rep->write_body("json", json_rslt);
+    rp.mime_type = json::serialization_format::schema_registry_v1_json;
+
+    co_return rp;
+}
+
+ss::future<ctx_server<service>::reply_t> get_subject_versions_version(
+  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp) {
+    parse::accept_header(
+      *rq.req,
+      {ppj::serialization_format::schema_registry_v1_json,
+       ppj::serialization_format::schema_registry_json,
+       ppj::serialization_format::none});
+
+    auto sub = parse::request_param<subject>(*rq.req, "subject");
+    auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
+
+    auto version = invalid_schema_version;
+    if (ver == "latest") {
+        auto versions = rq.service().schema_store().get_versions(sub);
+        if (versions.has_error()) {
+            rp.rep = pandaproxy::errored_body(
+              versions.error(), versions.error().message());
+            co_return rp;
+        }
+        if (versions.value().empty()) {
+            auto code = make_error_code(error_code::subject_version_not_found);
+            rp.rep = pandaproxy::errored_body(code, code.message());
+            co_return rp;
+        }
+        version = versions.value().back();
+    } else {
+        auto res = parse::from_chars<schema_version>{}(ver);
+        if (res.has_error()) {
+            rp.rep = pandaproxy::errored_body(
+              res.error(), res.error().message());
+            co_return rp;
+        }
+        version = res.value();
+    }
+
+    rq.req.reset();
+
+    auto get_res = rq.service().schema_store().get_subject_schema(sub, version);
+    if (get_res.has_error()) {
+        rp.rep = pandaproxy::errored_body(
+          get_res.error(), get_res.error().message());
+        co_return rp;
+    }
+
+    auto json_rslt{json::rjson_serialize(post_subject_versions_version_response{
+      .sub = sub,
+      .version = version,
+      .definition = std::move(get_res).value().definition})};
     rp.rep->write_body("json", json_rslt);
     rp.mime_type = json::serialization_format::schema_registry_v1_json;
 
