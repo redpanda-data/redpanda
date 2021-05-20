@@ -28,6 +28,34 @@
         }
       }
     },
+    "/subjects": {
+      "get": {
+        "summary": "Retrieve a list of subjects.",
+        "operationId": "get_subjects",
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                  "type": "string"
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
+    },
     "/subjects/{subject}/versions": {
       "get": {
         "summary": "Retrieve a list of versions for a subject.",
