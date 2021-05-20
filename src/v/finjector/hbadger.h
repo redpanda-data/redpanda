@@ -65,6 +65,16 @@ public:
     void register_probe(std::string_view, probe* p);
     void deregister_probe(std::string_view);
 
+    static constexpr bool is_enabled() {
+#ifndef NDEBUG
+        // debug
+        return true;
+#else
+        // production
+        return false;
+#endif
+    }
+
     void set_exception(std::string_view module, std::string_view point);
     void set_delay(std::string_view module, std::string_view point);
     void set_termination(std::string_view module, std::string_view point);
