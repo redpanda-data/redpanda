@@ -10,6 +10,7 @@ v_cc_library(
   SRCS
     configuration.cc
     handlers.cc
+    error.cc
     service.cc
   DEPS
     v::pandaproxy_common
@@ -22,3 +23,5 @@ v_cc_library(
   )
 
 add_dependencies(v_pandaproxy_schema_registry schema_registry_swagger)
+
+add_subdirectory(test)
