@@ -37,6 +37,7 @@ public:
           timequery(model::timestamp, ss::io_priority_class) = 0;
         virtual ss::future<std::vector<cluster::rm_stm::tx_range>>
           aborted_transactions(model::offset, model::offset) = 0;
+        virtual cluster::partition_probe& probe() = 0;
         virtual ~impl() noexcept = default;
     };
 
@@ -68,6 +69,8 @@ public:
     timequery(model::timestamp ts, ss::io_priority_class io_pc) {
         return _impl->timequery(ts, io_pc);
     }
+
+    cluster::partition_probe& probe() { return _impl->probe(); }
 
 private:
     std::unique_ptr<impl> _impl;

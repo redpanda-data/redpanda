@@ -75,7 +75,7 @@ public:
         co_return target;
     }
 
-    cluster::partition_probe& probe() { return _partition->probe(); }
+    cluster::partition_probe& probe() final { return _partition->probe(); }
 
 private:
     ss::lw_shared_ptr<cluster::partition> _partition;

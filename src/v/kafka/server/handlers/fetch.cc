@@ -192,7 +192,7 @@ std::optional<partition_proxy> make_partition_proxy(
         return make_partition_proxy<replicated_partition>(partition);
     }
     if (auto log = pm.log(mntp.input_ntp()); log) {
-        return make_partition_proxy<materialized_partition>(*log);
+        return make_partition_proxy<materialized_partition>(partition, *log);
     }
     return std::nullopt;
 }

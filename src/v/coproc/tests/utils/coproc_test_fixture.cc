@@ -131,7 +131,7 @@ ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
                 }
                 auto p = ss::make_lw_shared<kafka::partition_proxy>(
                   kafka::make_partition_proxy<kafka::materialized_partition>(
-                    *log));
+                    partition, *log));
                 return do_drain(p, offset, limit, timeout).then([](auto rval) {
                     return opt_reader_data_t(std::move(rval));
                 });
