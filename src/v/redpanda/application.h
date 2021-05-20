@@ -31,6 +31,7 @@
 #include "rpc/server.h"
 #include "seastarx.h"
 #include "security/credential_store.h"
+#include "storage/compaction_controller.h"
 #include "storage/fwd.h"
 
 #include <seastar/core/app-template.hh>
@@ -138,6 +139,8 @@ private:
     ss::sharded<pandaproxy::rest::proxy> _proxy;
     ss::sharded<kafka::client::client> _schema_registry_client;
     ss::sharded<pandaproxy::schema_registry::service> _schema_registry;
+    ss::sharded<storage::compaction_controller> _compaction_controller;
+
     ss::metrics::metric_groups _metrics;
     kafka::rm_group_proxy_impl _rm_group_proxy;
     // run these first on destruction

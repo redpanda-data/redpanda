@@ -22,6 +22,7 @@
 #include "storage/segment_appender.h"
 #include "storage/segment_reader.h"
 #include "storage/types.h"
+#include "utils/moving_average.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -79,6 +80,8 @@ public:
 
     size_t size_bytes() const override { return _probe.partition_size(); }
     ss::future<> update_configuration(ntp_config::default_overrides) final;
+
+    int64_t compaction_backlog() const final;
 
 private:
     friend class disk_log_appender; // for multi-term appends
@@ -149,6 +152,8 @@ private:
     model::offset _max_collectible_offset;
     size_t _max_segment_size;
     std::unique_ptr<readers_cache> _readers_cache;
+    // average ratio of segment sizes after segment size before compaction
+    moving_average<double, 5> _compaction_ratio{1.0};
 };
 
 } // namespace storage

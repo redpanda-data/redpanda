@@ -345,7 +345,7 @@ configuration::configuration()
       "log_compaction_interval_ms",
       "How often do we trigger background compaction",
       required::no,
-      5min)
+      10s)
   , retention_bytes(
       *this,
       "retention_bytes",
@@ -547,6 +547,47 @@ configuration::configuration()
       "Interval between iterations of controller backend housekeeping loop",
       required::no,
       1s)
+  , compaction_ctrl_update_interval_ms(
+      *this, "compaction_ctrl_update_interval_ms", "", required::no, 30s)
+  , compaction_ctrl_p_coeff(
+      *this,
+      "compaction_ctrl_p_coeff",
+      "proportional coefficient for compaction PID controller. This has to be "
+      "negative since compaction backlog should decrease when number of "
+      "compaction shares increases",
+      required::no,
+      -12.5)
+  , compaction_ctrl_i_coeff(
+      *this,
+      "compaction_ctrl_i_coeff",
+      "integral coefficient for compaction PID controller.",
+      required::no,
+      0.0)
+  , compaction_ctrl_d_coeff(
+      *this,
+      "compaction_ctrl_d_coeff",
+      "derivative coefficient for compaction PID controller.",
+      required::no,
+      0.2)
+  , compaction_ctrl_min_shares(
+      *this,
+      "compaction_ctrl_min_shares",
+      "minimum number of IO and CPU shares that compaction process can use",
+      required::no,
+      10)
+  , compaction_ctrl_max_shares(
+      *this,
+      "compaction_ctrl_max_shares",
+      "maximum number of IO and CPU shares that compaction process can use",
+      required::no,
+      1000)
+  , compaction_ctrl_backlog_size(
+      *this,
+      "compaction_ctrl_backlog_size",
+      "target backlog size for compaction controller. if not set compaction "
+      "target compaction backlog would be equal to ",
+      required::no,
+      std::nullopt)
   , cloud_storage_enabled(
       *this,
       "cloud_storage_enabled",

@@ -216,6 +216,8 @@ public:
     /// Returns all ntp's managed by this instance
     absl::flat_hash_set<model::ntp> get_all_ntps() const;
 
+    int64_t compaction_backlog() const;
+
 private:
     using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;
 

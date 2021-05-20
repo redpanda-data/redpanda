@@ -1404,3 +1404,127 @@ FIXTURE_TEST(reader_reusability_test_parser_header, storage_test_fixture) {
         BOOST_REQUIRE_EQUAL(rec.size(), 1);
     }
 }
+
+FIXTURE_TEST(compaction_backlog_calculation, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.max_compacted_segment_size = 100_MiB;
+    cfg.stype = storage::log_config::storage_type::disk;
+    cfg.cache = storage::with_cache::yes;
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp,
+                   mgr.config().base_dir,
+                   std::make_unique<storage::ntp_config::default_overrides>(
+                     overrides)))
+                 .get0();
+
+    auto disk_log = get_disk_log(log);
+
+    // add a segment with random keys until a certain size
+    auto add_segment = [&log, disk_log](size_t size, model::term_id term) {
+        do {
+            append_single_record_batch(log, 1, term, 16_KiB, true);
+        } while (disk_log->segments().back()->size_bytes() < size);
+    };
+
+    add_segment(2_MiB, model::term_id(1));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    add_segment(2_MiB, model::term_id(1));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    add_segment(5_MiB, model::term_id(1));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    add_segment(16_KiB, model::term_id(1));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    add_segment(16_KiB, model::term_id(1));
+    log.flush().get0();
+
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 5);
+
+    storage::compaction_config c_cfg(
+      model::timestamp::min(), std::nullopt, ss::default_priority_class(), as);
+    /**
+     * Initially all compaction rations are equal to 1.0 so it is easy to
+     * calculate backlog size.
+     */
+    auto& segments = disk_log->segments();
+    auto backlog_size = log.compaction_backlog();
+    size_t self_seg_compaction_sz = 0;
+    for (auto& s : segments) {
+        self_seg_compaction_sz += s->size_bytes();
+    }
+    BOOST_REQUIRE_EQUAL(
+      backlog_size,
+      3 * segments[0]->size_bytes() + 3 * segments[1]->size_bytes()
+        + 2 * segments[2]->size_bytes() + segments[3]->size_bytes()
+        + self_seg_compaction_sz);
+    // self compaction steps
+    log.compact(c_cfg).get0();
+    log.compact(c_cfg).get0();
+    log.compact(c_cfg).get0();
+    log.compact(c_cfg).get0();
+
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 5);
+    auto new_backlog_size = log.compaction_backlog();
+    /**
+     * after all self segments are compacted they shouldn't be included into the
+     * backlog (only last segment is since it has appender and isn't self
+     * compacted)
+     */
+    BOOST_REQUIRE_EQUAL(
+      new_backlog_size,
+      backlog_size - self_seg_compaction_sz + segments[4]->size_bytes());
+}
+
+FIXTURE_TEST(not_compacted_log_backlog, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.max_compacted_segment_size = 100_MiB;
+    cfg.stype = storage::log_config::storage_type::disk;
+    cfg.cache = storage::with_cache::yes;
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::deletion;
+
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp,
+                   mgr.config().base_dir,
+                   std::make_unique<storage::ntp_config::default_overrides>(
+                     overrides)))
+                 .get0();
+
+    auto disk_log = get_disk_log(log);
+
+    // add a segment with random keys until a certain size
+    auto add_segment = [&log, disk_log](size_t size, model::term_id term) {
+        do {
+            append_single_record_batch(log, 1, term, 16_KiB, true);
+        } while (disk_log->segments().back()->size_bytes() < size);
+    };
+
+    add_segment(2_MiB, model::term_id(1));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    add_segment(2_MiB, model::term_id(1));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    add_segment(5_MiB, model::term_id(1));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    add_segment(16_KiB, model::term_id(1));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    add_segment(16_KiB, model::term_id(1));
+    log.flush().get0();
+
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 5);
+
+    BOOST_REQUIRE_EQUAL(log.compaction_backlog(), 0);
+}

@@ -141,6 +141,15 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds>
       controller_backend_housekeeping_interval_ms;
 
+    // Compaction controller
+    property<std::chrono::milliseconds> compaction_ctrl_update_interval_ms;
+    property<double> compaction_ctrl_p_coeff;
+    property<double> compaction_ctrl_i_coeff;
+    property<double> compaction_ctrl_d_coeff;
+    property<int16_t> compaction_ctrl_min_shares;
+    property<int16_t> compaction_ctrl_max_shares;
+    property<std::optional<size_t>> compaction_ctrl_backlog_size;
+
     // Archival storage
     property<bool> cloud_storage_enabled;
     property<std::optional<ss::sstring>> cloud_storage_access_key;

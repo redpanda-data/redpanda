@@ -84,6 +84,8 @@ public:
         virtual ss::future<>
           update_configuration(ntp_config::default_overrides) = 0;
 
+        virtual int64_t compaction_backlog() const = 0;
+
     private:
         ntp_config _config;
 
@@ -176,6 +178,8 @@ public:
     ss::future<> update_configuration(ntp_config::default_overrides o) {
         return _impl->update_configuration(o);
     }
+
+    int64_t compaction_backlog() const { return _impl->compaction_backlog(); }
 
     std::ostream& print(std::ostream& o) const { return _impl->print(o); }
 

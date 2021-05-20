@@ -312,6 +312,8 @@ struct mem_log_impl final : log::impl {
         return ss::now();
     }
 
+    int64_t compaction_backlog() const final { return 0; }
+
     ss::future<model::record_batch_reader>
     make_reader(log_reader_config cfg) final {
         auto it = std::lower_bound(

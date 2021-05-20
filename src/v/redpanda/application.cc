@@ -43,6 +43,7 @@
 #include "resource_mgmt/io_priority.h"
 #include "rpc/simple_protocol.h"
 #include "storage/chunk_cache.h"
+#include "storage/compaction_controller.h"
 #include "storage/directories.h"
 #include "syschecks/syschecks.h"
 #include "test_utils/logs.h"
@@ -371,6 +372,52 @@ manager_config_from_global_config(scheduling_groups& sgs) {
       sgs.compaction_sg());
 }
 
+static storage::backlog_controller_config compaction_controller_config(
+  ss::scheduling_group sg, const ss::io_priority_class& iopc) {
+    auto space_info = std::filesystem::space(
+      config::shard_local_cfg().data_directory().path);
+    /**
+     * By default we set desired compaction backlog size to 10% of disk
+     * capacity.
+     */
+    static const int64_t backlog_capacity_percents = 10;
+    int64_t backlog_size
+      = config::shard_local_cfg().compaction_ctrl_backlog_size().value_or(
+        (space_info.capacity / 100) * backlog_capacity_percents
+        / ss::smp::count);
+
+    /**
+     * We normalize internals using disk capacity to make controller settings
+     * independent from disk space. After normalization all values equal to disk
+     * capacity will be represented in the controller with value equal 1000.
+     *
+     * Set point = 10% of disk capacity will always be equal to 100.
+     *
+     * This way we can calculate proportional coefficient.
+     *
+     * We assume that when error is greater than 80% of setpoint we should be
+     * running compaction with maximum allowed shares.
+     * This way we can calculate proportional coefficient as
+     *
+     *  k_p = 1000 / 80 = 12.5
+     *
+     */
+    auto normalization = space_info.capacity / (1000 * ss::smp::count);
+
+    return storage::backlog_controller_config(
+      config::shard_local_cfg().compaction_ctrl_p_coeff(),
+      config::shard_local_cfg().compaction_ctrl_i_coeff(),
+      config::shard_local_cfg().compaction_ctrl_d_coeff(),
+      normalization,
+      backlog_size,
+      200,
+      config::shard_local_cfg().compaction_ctrl_update_interval_ms(),
+      sg,
+      iopc,
+      config::shard_local_cfg().compaction_ctrl_min_shares(),
+      config::shard_local_cfg().compaction_ctrl_max_shares());
+}
+
 // add additional services in here
 void application::wire_up_services() {
     if (_redpanda_enabled) {
@@ -682,6 +729,13 @@ void application::wire_up_redpanda_services() {
       fetch_session_cache,
       config::shard_local_cfg().fetch_session_eviction_timeout_ms())
       .get();
+    construct_service(
+      _compaction_controller,
+      std::ref(storage),
+      compaction_controller_config(
+        _scheduling_groups.compaction_sg(),
+        priority_manager::local().compaction_priority()))
+      .get();
 }
 
 ss::future<> application::set_proxy_config(ss::sstring name, std::any val) {
@@ -868,4 +922,7 @@ void application::start_redpanda() {
     if (config::shard_local_cfg().enable_admin_api()) {
         _admin.invoke_on_all(&admin_server::start).get0();
     }
+
+    _compaction_controller.invoke_on_all(&storage::compaction_controller::start)
+      .get();
 }

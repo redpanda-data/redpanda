@@ -32,6 +32,7 @@ rp_test(
     constexpr_string_switch.cc
     named_type_tests.cc
     tristate_test.cc
+    moving_average_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::utils
   LABELS utils
