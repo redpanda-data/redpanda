@@ -202,18 +202,38 @@ void application::initialize(
 }
 
 void application::setup_metrics() {
-    if (!config::shard_local_cfg().disable_metrics()) {
-        _metrics.add_group(
-          "application",
-          {ss::metrics::make_gauge(
-            "uptime",
-            [] {
-                return std::chrono::duration_cast<std::chrono::milliseconds>(
-                         ss::engine().uptime())
-                  .count();
-            },
-            ss::metrics::description("Redpanda uptime in milliseconds"))});
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
     }
+
+    namespace sm = ss::metrics;
+
+    // build info
+    auto version_label = sm::label("version");
+    auto revision_label = sm::label("revision");
+    std::vector<sm::label_instance> build_labels{
+      version_label(redpanda_git_version()),
+      revision_label(redpanda_git_revision()),
+    };
+
+    _metrics.add_group(
+      "application",
+      {
+        sm::make_gauge(
+          "uptime",
+          [] {
+              return std::chrono::duration_cast<std::chrono::milliseconds>(
+                       ss::engine().uptime())
+                .count();
+          },
+          sm::description("Redpanda uptime in milliseconds")),
+
+        sm::make_gauge(
+          "build",
+          [] { return 1; },
+          sm::description("Redpanda build information"),
+          build_labels),
+      });
 }
 
 void application::validate_arguments(const po::variables_map& cfg) {
