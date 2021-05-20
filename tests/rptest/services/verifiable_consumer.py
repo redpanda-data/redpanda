@@ -12,16 +12,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# Modifications copyright (C) 2021 Vectorized
+# - Reformatted code
+# - Replaced dependency on Kafka with Redpanda
 
 import json
 import os
+import signal
+from collections import namedtuple
 
+from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.background_thread import BackgroundThreadService
 
-from kafkatest.directory_layout.kafka_path import KafkaPathResolverMixin
-from kafkatest.services.kafka import TopicPartition
-from kafkatest.services.verifiable_client import VerifiableClientMixin
-from kafkatest.version import DEV_BRANCH, V_2_3_0, V_2_3_1, V_0_10_0_0
+TopicPartition = namedtuple('TopicPartition', ['topic', 'partition'])
 
 
 class ConsumerState:
@@ -137,14 +141,10 @@ class ConsumerEventHandler(object):
             return None
 
 
-class VerifiableConsumer(KafkaPathResolverMixin, VerifiableClientMixin,
-                         BackgroundThreadService):
-    """This service wraps org.apache.kafka.tools.VerifiableConsumer for use in
+class VerifiableConsumer(BackgroundThreadService):
+    """
+    This service wraps org.apache.kafka.tools.VerifiableConsumer for use in
     system testing. 
-    
-    NOTE: this class should be treated as a PUBLIC API. Downstream users use
-    this service both directly and through class extension, so care must be 
-    taken to ensure compatibility.
     """
 
     PERSISTENT_ROOT = "/mnt/verifiable_consumer"
@@ -176,7 +176,7 @@ class VerifiableConsumer(KafkaPathResolverMixin, VerifiableClientMixin,
     def __init__(self,
                  context,
                  num_nodes,
-                 kafka,
+                 redpanda,
                  topic,
                  group_id,
                  static_membership=False,
@@ -184,19 +184,12 @@ class VerifiableConsumer(KafkaPathResolverMixin, VerifiableClientMixin,
                  session_timeout_sec=30,
                  enable_autocommit=False,
                  assignment_strategy=None,
-                 version=DEV_BRANCH,
                  stop_timeout_sec=30,
-                 log_level="INFO",
-                 jaas_override_variables=None,
                  on_record_consumed=None,
                  reset_policy="earliest",
                  verify_offsets=True):
-        """
-        :param jaas_override_variables: A dict of variables to be used in the jaas.conf template file
-        """
         super(VerifiableConsumer, self).__init__(context, num_nodes)
-        self.log_level = log_level
-        self.kafka = kafka
+        self.redpanda = redpanda
         self.topic = topic
         self.group_id = group_id
         self.reset_policy = reset_policy
@@ -213,13 +206,6 @@ class VerifiableConsumer(KafkaPathResolverMixin, VerifiableClientMixin,
         self.event_handlers = {}
         self.global_position = {}
         self.global_committed = {}
-        self.jaas_override_variables = jaas_override_variables or {}
-
-        for node in self.nodes:
-            node.version = version
-
-    def java_class_name(self):
-        return "VerifiableConsumer"
 
     def _worker(self, idx, node):
         with self.lock:
@@ -237,25 +223,15 @@ class VerifiableConsumer(KafkaPathResolverMixin, VerifiableClientMixin,
         node.account.create_file(VerifiableConsumer.LOG4J_CONFIG, log_config)
 
         # Create and upload config file
-        self.security_config = self.kafka.security_config.client_config(
-            self.prop_file, node, self.jaas_override_variables)
-        self.security_config.setup_node(node)
-        self.prop_file += str(self.security_config)
         self.logger.info("verifiable_consumer.properties:")
         self.logger.info(self.prop_file)
         node.account.create_file(VerifiableConsumer.CONFIG_FILE,
                                  self.prop_file)
-        self.security_config.setup_node(node)
+
         # apply group.instance.id to the node for static membership validation
         node.group_instance_id = None
         if self.static_membership:
-            assert node.version >= V_2_3_0, \
-                "Version %s does not support static membership (must be 2.3 or higher)" % str(node.version)
             node.group_instance_id = self.group_id + "-instance-" + str(idx)
-
-        if self.assignment_strategy:
-            assert node.version >= V_0_10_0_0, \
-                "Version %s does not setting an assignment strategy (must be 0.10.0 or higher)" % str(node.version)
 
         cmd = self.start_cmd(node)
         self.logger.debug("VerifiableConsumer %d command: %s" % (idx, cmd))
@@ -325,18 +301,13 @@ class VerifiableConsumer(KafkaPathResolverMixin, VerifiableClientMixin,
     def start_cmd(self, node):
         cmd = ""
         cmd += "export LOG_DIR=%s;" % VerifiableConsumer.LOG_DIR
-        cmd += " export KAFKA_OPTS=%s;" % self.security_config.kafka_opts
         cmd += " export KAFKA_LOG4J_OPTS=\"-Dlog4j.configuration=file:%s\"; " % VerifiableConsumer.LOG4J_CONFIG
-        cmd += self.impl.exec_cmd(node)
+        cmd += "/opt/kafka-2.7.0/bin/kafka-run-class.sh org.apache.kafka.tools.VerifiableConsumer"
         if self.on_record_consumed:
             cmd += " --verbose"
 
         if node.group_instance_id:
             cmd += " --group-instance-id %s" % node.group_instance_id
-        elif node.version == V_2_3_0 or node.version == V_2_3_1:
-            # In 2.3, --group-instance-id was required, but would be left empty
-            # if `None` is passed as the argument value
-            cmd += " --group-instance-id None"
 
         if self.assignment_strategy:
             cmd += " --assignment-strategy %s" % self.assignment_strategy
@@ -346,7 +317,7 @@ class VerifiableConsumer(KafkaPathResolverMixin, VerifiableClientMixin,
 
         cmd += " --reset-policy %s --group-id %s --topic %s --broker-list %s --session-timeout %s" % \
                (self.reset_policy, self.group_id, self.topic,
-                self.kafka.bootstrap_servers(self.security_config.security_protocol),
+                self.redpanda.brokers(),
                 self.session_timeout_sec*1000)
 
         if self.max_messages > 0:
@@ -358,7 +329,15 @@ class VerifiableConsumer(KafkaPathResolverMixin, VerifiableClientMixin,
         return cmd
 
     def pids(self, node):
-        return self.impl.pids(node)
+        try:
+            cmd = "jps | grep -i VerifiableConsumer | awk '{print $1}'"
+            pid_arr = [
+                pid for pid in node.account.ssh_capture(
+                    cmd, allow_fail=True, callback=int)
+            ]
+            return pid_arr
+        except (RemoteCommandError, ValueError):
+            return []
 
     def try_parse_json(self, node, string):
         """Try to parse a string as json. Return None if not parseable."""
@@ -374,7 +353,9 @@ class VerifiableConsumer(KafkaPathResolverMixin, VerifiableClientMixin,
             self.stop_node(node)
 
     def kill_node(self, node, clean_shutdown=True, allow_fail=False):
-        sig = self.impl.kill_signal(clean_shutdown)
+        sig = signal.SIGTERM
+        if not clean_shutdown:
+            sig = signal.SIGKILL
         for pid in self.pids(node):
             node.account.signal(pid, sig, allow_fail)
 
@@ -391,7 +372,6 @@ class VerifiableConsumer(KafkaPathResolverMixin, VerifiableClientMixin,
     def clean_node(self, node):
         self.kill_node(node, clean_shutdown=False)
         node.account.ssh("rm -rf " + self.PERSISTENT_ROOT, allow_fail=False)
-        self.security_config.clean_node(node)
 
     def current_assignment(self):
         with self.lock:
