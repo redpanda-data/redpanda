@@ -51,6 +51,24 @@ get_schemas_types(server::request_t rq, server::reply_t rp) {
 }
 
 ss::future<server::reply_t>
+get_subjects(server::request_t rq, server::reply_t rp) {
+    parse::accept_header(
+      *rq.req,
+      {ppj::serialization_format::schema_registry_v1_json,
+       ppj::serialization_format::schema_registry_json,
+       ppj::serialization_format::none});
+
+    rq.req.reset();
+
+    auto subjects = rq.service().schema_store().get_subjects();
+    auto json_rslt{json::rjson_serialize(subjects)};
+    rp.rep->write_body("json", json_rslt);
+    rp.mime_type = json::serialization_format::schema_registry_v1_json;
+
+    co_return rp;
+}
+
+ss::future<server::reply_t>
 get_subject_versions(server::request_t rq, server::reply_t rp) {
     parse::accept_header(
       *rq.req,
