@@ -51,6 +51,31 @@ get_schemas_types(server::request_t rq, server::reply_t rp) {
 }
 
 ss::future<server::reply_t>
+get_subject_versions(server::request_t rq, server::reply_t rp) {
+    parse::accept_header(
+      *rq.req,
+      {ppj::serialization_format::schema_registry_v1_json,
+       ppj::serialization_format::schema_registry_json,
+       ppj::serialization_format::none});
+
+    auto sub = parse::request_param<subject>(*rq.req, "subject");
+    rq.req.reset();
+
+    auto versions = rq.service().schema_store().get_versions(sub);
+    if (versions.has_error()) {
+        rp.rep = pandaproxy::errored_body(
+          versions.error(), versions.error().message());
+        co_return rp;
+    }
+
+    auto json_rslt{json::rjson_serialize(versions.value())};
+    rp.rep->write_body("json", json_rslt);
+    rp.mime_type = json::serialization_format::schema_registry_v1_json;
+
+    co_return rp;
+}
+
+ss::future<server::reply_t>
 post_subject_versions(server::request_t rq, server::reply_t rp) {
     parse::content_type_header(
       *rq.req,
