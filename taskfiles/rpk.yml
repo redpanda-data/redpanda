@@ -6,8 +6,7 @@ tasks:
     vars:
       RPK_VERSION: '{{default "latest" .TAG_NAME}}'
     env:
-      GOOS: '{{default "linux" .GOOS}}'
-      GOARCH: '{{default "amd64" .GOARCH}}'
+      GOOS: '{{OS | lower}}'
       GOPATH: '{{.BUILD_ROOT}}/go'
       CGO_ENABLED: "0"
     dir: "{{.SRC_DIR}}/src/go/rpk"
