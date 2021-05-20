@@ -65,6 +65,17 @@ get_schemas_types(server::request_t rq, server::reply_t rp) {
 }
 
 ss::future<server::reply_t>
+get_subjects(server::request_t rq, server::reply_t rp) {
+    parse_accept_header(rq, rp);
+    rq.req.reset();
+
+    auto subjects = rq.service().schema_store().get_subjects();
+    auto json_rslt{json::rjson_serialize(subjects)};
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
+ss::future<server::reply_t>
 get_subject_versions(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto sub = parse::request_param<subject>(*rq.req, "subject");
