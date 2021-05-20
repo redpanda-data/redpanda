@@ -34,13 +34,19 @@ public:
     io_fragment& operator=(io_fragment&& o) noexcept = delete;
     io_fragment(const io_fragment& o) = delete;
     io_fragment& operator=(const io_fragment& o) = delete;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
     ~io_fragment() noexcept = default;
+#pragma GCC diagnostic pop
 
     bool operator==(const io_fragment& o) const {
         return _used_bytes == o._used_bytes && _buf == o._buf;
     }
     bool operator!=(const io_fragment& o) const { return !(*this == o); }
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
     bool is_empty() const { return _used_bytes == 0; }
+#pragma GCC diagnostic pop
     size_t available_bytes() const { return _buf.size() - _used_bytes; }
     void reserve(size_t reservation) {
         check_out_of_range(reservation, available_bytes());
@@ -109,5 +115,12 @@ private:
     ss::temporary_buffer<char> _buf;
     size_t _used_bytes;
 };
+
+inline void __attribute__((noinline)) dispose_io_fragment(io_fragment* f) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfree-nonheap-object"
+    delete f; // NOLINT
+#pragma GCC diagnostic pop
+}
 
 } // namespace details
