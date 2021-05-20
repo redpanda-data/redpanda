@@ -16,6 +16,8 @@
 #include "pandaproxy/json/types.h"
 #include "pandaproxy/parsing/httpd.h"
 #include "pandaproxy/reply.h"
+#include "pandaproxy/schema_registry/error.h"
+#include "pandaproxy/schema_registry/requests/get_subject_versions_version.h"
 #include "pandaproxy/schema_registry/requests/post_subject_versions.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/server.h"
@@ -45,6 +47,10 @@ void parse_content_type_header(const server::request_t& rq) {
       ppj::serialization_format::schema_registry_v1_json,
       ppj::serialization_format::schema_registry_json};
     parse::content_type_header(*rq.req, headers);
+}
+
+auto make_errored_body(std::error_code ec) {
+    return pandaproxy::errored_body(ec, ec.message());
 }
 
 ss::future<server::reply_t>
@@ -77,6 +83,49 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
 
     auto json_rslt{
       json::rjson_serialize(post_subject_versions_response{.id{ins_res.id}})};
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
+ss::future<ctx_server<service>::reply_t> get_subject_versions_version(
+  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp) {
+    parse_accept_header(rq, rp);
+    auto sub = parse::request_param<subject>(*rq.req, "subject");
+    auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
+    rq.req.reset();
+
+    auto version = invalid_schema_version;
+    if (ver == "latest") {
+        auto versions = rq.service().schema_store().get_versions(sub);
+        if (versions.has_error()) {
+            rp.rep = make_errored_body(versions.error());
+            co_return rp;
+        }
+        if (versions.value().empty()) {
+            auto code = make_error_code(error_code::subject_version_not_found);
+            rp.rep = make_errored_body(code);
+            co_return rp;
+        }
+        version = versions.value().back();
+    } else {
+        auto res = parse::from_chars<schema_version>{}(ver);
+        if (res.has_error()) {
+            rp.rep = make_errored_body(res.error());
+            co_return rp;
+        }
+        version = res.value();
+    }
+
+    auto get_res = rq.service().schema_store().get_subject_schema(sub, version);
+    if (get_res.has_error()) {
+        rp.rep = make_errored_body(get_res.error());
+        co_return rp;
+    }
+
+    auto json_rslt{json::rjson_serialize(post_subject_versions_version_response{
+      .sub = sub,
+      .version = version,
+      .definition = std::move(get_res).value().definition})};
     rp.rep->write_body("json", json_rslt);
     co_return rp;
 }
