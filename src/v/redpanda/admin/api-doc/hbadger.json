@@ -1,0 +1,127 @@
+{
+    "apiVersion": "0.0.1",
+    "swaggerVersion": "1.2",
+    "basePath": "/v1",
+    "resourcePath": "/failure-probes",
+    "produces": [
+        "application/json"
+    ],
+    "apis": [
+        {
+            "path": "/v1/failure-probes",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get a list of available failure probes",
+                    "type": "failure_injector_status",
+                    "nickname": "get_failure_probes",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
+            "path": "/v1/failure-probes/{module}/{point}",
+            "operations": [
+                {
+                    "method": "DELETE",
+                    "summary": "Delete all failure injectors at given point",
+                    "type": "void",
+                    "nickname": "delete_failure_probe",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "module",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "point",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/failure-probes/{module}/{point}/{type}",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Enable failure injection of given type",
+                    "type": "void",
+                    "nickname": "set_failure_probe",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "module",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "point",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "type",
+                            "in": "path",
+                            "required": true,
+                            "type": "string",
+                            "enum": [
+                                "exception",
+                                "delay",
+                                "terminate"
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "models": {
+        "failure_probes": {
+            "id": "failure_probes",
+            "description": "Group of failure probes related with single resource",
+            "properties": {
+                "module": {
+                    "type": "string",
+                    "description": "failure probes module name"
+                },
+                "points": {
+                    "type": "array",
+                    "description": "list of failure points",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "failure_injector_status": {
+            "id": "failure_injector_status",
+            "description": "Status of failure injector with list of available probes",
+            "properties": {
+                "probes": {
+                    "type": "array",
+                    "items": {
+                        "type": "failure_probes"
+                    }
+                },
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
+        }
+    }
+}
