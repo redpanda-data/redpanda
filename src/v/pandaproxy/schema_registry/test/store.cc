@@ -11,6 +11,7 @@
 
 #include "pandaproxy/schema_registry/util.h"
 
+#include <absl/algorithm/container.h>
 #include <boost/test/unit_test.hpp>
 
 namespace pps = pandaproxy::schema_registry;
@@ -155,4 +156,28 @@ BOOST_AUTO_TEST_CASE(test_store_get_versions) {
     BOOST_REQUIRE_EQUAL(versions.value().size(), 2);
     BOOST_REQUIRE_EQUAL(versions.value().front(), pps::schema_version{1});
     BOOST_REQUIRE_EQUAL(versions.value().back(), pps::schema_version{2});
+}
+
+BOOST_AUTO_TEST_CASE(test_store_get_subjects) {
+    auto is_equal = [](auto lhs) {
+        return [lhs](auto rhs) { return lhs == rhs; };
+    };
+
+    pps::store s;
+
+    auto subjects = s.get_subjects();
+    BOOST_REQUIRE(subjects.empty());
+
+    // First insert
+    s.insert(subject0, string_def0, pps::schema_type::avro);
+    subjects = s.get_subjects();
+    BOOST_REQUIRE_EQUAL(subjects.size(), 1);
+    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject0)), 1);
+
+    // second insert
+    s.insert(subject1, string_def0, pps::schema_type::avro);
+    subjects = s.get_subjects();
+    BOOST_REQUIRE(subjects.size() == 2);
+    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject0)), 1);
+    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject1)), 1);
 }
