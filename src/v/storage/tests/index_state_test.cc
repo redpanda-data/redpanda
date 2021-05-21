@@ -73,9 +73,19 @@ BOOST_AUTO_TEST_CASE(encode_decode_v1) {
     set_version(src_buf, 1);
     set_size(src_buf, src.size - 4);
 
-    // version 1 is still supported
+    // version 1 is fully deprecated
     auto dst = storage::index_state::hydrate_from_buffer(src_buf.copy());
-    BOOST_REQUIRE(dst);
+    BOOST_REQUIRE(!dst);
+}
+
+BOOST_AUTO_TEST_CASE(encode_decode_v2) {
+    auto src = make_random_index_state();
+    auto src_buf = src.checksum_and_serialize();
+    set_version(src_buf, 2);
+
+    // version 2 is fully deprecated
+    auto dst = storage::index_state::hydrate_from_buffer(src_buf.copy());
+    BOOST_REQUIRE(!dst);
 }
 
 BOOST_AUTO_TEST_CASE(encode_decode_future_version) {

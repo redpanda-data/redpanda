@@ -101,22 +101,27 @@ std::optional<index_state> index_state::hydrate_from_buffer(iobuf b) {
     iobuf_parser parser(std::move(b));
     index_state retval;
 
-    size_t expected_size_adjustment = 0;
     auto version = reflection::adl<int8_t>{}.from(parser);
     switch (version) {
     case index_state::ondisk_version:
         break;
-    case 1:
-        /*
-         * version 1 code stored an on disk size that was calculated as 4 bytes
-         * too small, and the decoder did not check the size. instead of
-         * rebuilding indexes for version 1 we'll adjust the size because the
-         * checksums are still verified.
-         */
-        expected_size_adjustment = 4;
-        break;
+
     default:
         /*
+         * v3: changed the on-disk format to use 64-bit values for physical
+         * offsets to avoid overflow for segments larger than 4gb. backwards
+         * compat would require converting the overflowed values. instead, we
+         * fully deprecate old versions and rebuild the offset indexes.
+         *
+         * v2: fully deprecated
+         *
+         * v1: fully deprecated
+         *
+         *     version 1 code stored an on disk size that was calculated as 4
+         *     bytes too small, and the decoder did not check the size. instead
+         *     of rebuilding indexes for version 1 we'll adjust the size because
+         *     the checksums are still verified.
+         *
          * v0: fully deprecated
          */
         vlog(
@@ -127,13 +132,12 @@ std::optional<index_state> index_state::hydrate_from_buffer(iobuf b) {
     }
 
     retval.size = reflection::adl<uint32_t>{}.from(parser);
-    const auto expected_size = retval.size + expected_size_adjustment;
-    if (unlikely(parser.bytes_left() != expected_size)) {
+    if (unlikely(parser.bytes_left() != retval.size)) {
         vlog(
           stlog.debug,
           "Index size does not match header size. Got:{}, expected:{}",
           parser.bytes_left(),
-          expected_size);
+          retval.size);
         return std::nullopt;
     }
 
@@ -163,7 +167,7 @@ std::optional<index_state> index_state::hydrate_from_buffer(iobuf b) {
     }
     for (auto i = 0U; i < vsize; ++i) {
         retval.position_index.push_back(
-          reflection::adl<uint32_t>{}.from(parser));
+          reflection::adl<uint64_t>{}.from(parser));
     }
     const auto computed_checksum = storage::index_state::checksum_state(retval);
     if (unlikely(retval.checksum != computed_checksum)) {
@@ -192,7 +196,7 @@ iobuf index_state::checksum_and_serialize() {
         + sizeof(storage::index_state::base_timestamp)
         + sizeof(storage::index_state::max_timestamp)
         + sizeof(uint32_t) // index size
-        + (relative_offset_index.size() * (sizeof(uint32_t) * 3));
+        + (relative_offset_index.size() * (sizeof(uint32_t) * 2 + sizeof(uint64_t)));
     size = final_size;
     checksum = storage::index_state::checksum_state(*this);
     reflection::serialize(
@@ -214,7 +218,7 @@ iobuf index_state::checksum_and_serialize() {
         reflection::adl<uint32_t>{}.to(out, relative_time_index[i]);
     }
     for (auto i = 0U; i < vsize; ++i) {
-        reflection::adl<uint32_t>{}.to(out, position_index[i]);
+        reflection::adl<uint64_t>{}.to(out, position_index[i]);
     }
     // add back the version and size field
     const auto expected_size = size + sizeof(int8_t) + sizeof(uint32_t);
