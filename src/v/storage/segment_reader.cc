@@ -40,7 +40,6 @@ segment_reader::data_stream(size_t pos, const ss::io_priority_class& pc) {
     options.buffer_size = _buffer_size;
     options.io_priority_class = pc;
     options.read_ahead = 10;
-    options.dynamic_adjustments = _history;
     return make_file_input_stream(
       _data_file, pos, _file_size - pos, std::move(options));
 }
