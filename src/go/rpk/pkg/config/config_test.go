@@ -1763,7 +1763,7 @@ func TestReadOrGenerate(t *testing.T) {
 				err := tt.setup(fs)
 				require.NoError(t, err)
 			}
-			_, err := readOrGenerate(InitViper(fs), tt.configFile)
+			_, err := readOrGenerate(fs, InitViper(fs), tt.configFile)
 			if tt.expectError {
 				require.Error(t, err)
 				return
