@@ -83,6 +83,11 @@ class SchemaRegistryTest(RedpandaTest):
         """
         Verify the schema registry returns the supported types
         """
+        self.logger.debug(f"Request schema types with no accept header")
+        result_raw = self._get_schemas_types(headers={})
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug(f"Request schema types with defautl accept header")
         result_raw = self._get_schemas_types()
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
