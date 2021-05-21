@@ -138,8 +138,6 @@ private:
       _tx_locks;
     ss::future<> apply(model::record_batch b) override;
 
-    ss::future<tm_stm::op_status> register_new_producer(
-      model::term_id, kafka::transactional_id, model::producer_identity);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       save_tx(model::term_id, tm_transaction);
     ss::future<result<raft::replicate_result>>

@@ -170,17 +170,6 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
     if (ptx != _tx_table.end()) {
         co_return tm_stm::op_status::conflict;
     }
-    co_return co_await register_new_producer(term, tx_id, pid);
-}
-
-ss::future<tm_stm::op_status> tm_stm::register_new_producer(
-  model::term_id term,
-  kafka::transactional_id tx_id,
-  model::producer_identity pid) {
-    auto ptx = _tx_table.find(tx_id);
-    if (ptx != _tx_table.end()) {
-        co_return tm_stm::op_status::conflict;
-    }
 
     auto tx = tm_transaction{
       .id = tx_id,
