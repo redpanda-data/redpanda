@@ -101,7 +101,6 @@ std::optional<index_state> index_state::hydrate_from_buffer(iobuf b) {
     iobuf_parser parser(std::move(b));
     index_state retval;
 
-    size_t expected_size_adjustment = 0;
     auto version = reflection::adl<int8_t>{}.from(parser);
     switch (version) {
     case index_state::ondisk_version:
@@ -133,13 +132,12 @@ std::optional<index_state> index_state::hydrate_from_buffer(iobuf b) {
     }
 
     retval.size = reflection::adl<uint32_t>{}.from(parser);
-    const auto expected_size = retval.size + expected_size_adjustment;
-    if (unlikely(parser.bytes_left() != expected_size)) {
+    if (unlikely(parser.bytes_left() != retval.size)) {
         vlog(
           stlog.debug,
           "Index size does not match header size. Got:{}, expected:{}",
           parser.bytes_left(),
-          expected_size);
+          retval.size);
         return std::nullopt;
     }
 
