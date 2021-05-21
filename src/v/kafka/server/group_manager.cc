@@ -294,6 +294,7 @@ ss::future<> group_manager::recover_partition(
             if (!group) {
                 group = ss::make_lw_shared<kafka::group>(
                   group_id, group_state::empty, _conf, p->partition);
+                group->reset_tx_state(term);
                 _groups.emplace(group_id, group);
                 group->reschedule_all_member_heartbeats();
             }
@@ -353,27 +354,41 @@ ss::future<> group_manager::recover_partition(
 }
 
 template<typename T>
-static group_tx_cmd<T> parse_tx_batch(
-  const model::record_batch& batch, model::control_record_version version) {
+static group_tx_cmd<T>
+parse_tx_batch(const model::record_batch& batch, int8_t version) {
     vassert(batch.record_count() == 1, "tx batch must contain a single record");
     auto r = batch.copy_records();
     auto& record = *r.begin();
     auto key_buf = record.release_key();
-    kafka::request_reader buf_reader(std::move(key_buf));
-    auto tx_version = model::control_record_version(buf_reader.read_int16());
+    auto val_buf = record.release_value();
 
+    iobuf_parser val_reader(std::move(val_buf));
+    auto tx_version = reflection::adl<int8_t>{}.from(val_reader);
     vassert(
       tx_version == version,
       "unknown group inflight tx record version: {} expected: {}",
       tx_version,
       version);
+    auto cmd = reflection::adl<T>{}.from(val_reader);
 
+    iobuf_parser key_reader(std::move(key_buf));
+    auto batch_type = model::record_batch_type(
+      reflection::adl<int8_t>{}.from(key_reader));
     const auto& hdr = batch.header();
+    vassert(
+      hdr.type == batch_type,
+      "broken tx group message. expected batch type {} got: {}",
+      hdr.type,
+      batch_type);
+    auto p_id = model::producer_id(reflection::adl<int64_t>{}.from(key_reader));
     auto bid = model::batch_identity::from(hdr);
+    vassert(
+      p_id == bid.pid.id,
+      "broken tx group message. expected pid/id {} got: {}",
+      bid.pid.id,
+      p_id);
 
-    auto val_buf = record.release_value();
-    return group_tx_cmd<T>{
-      .pid = bid.pid, .cmd = reflection::from_iobuf<T>(std::move(val_buf))};
+    return group_tx_cmd<T>{.pid = bid.pid, .cmd = std::move(cmd)};
 }
 
 ss::future<ss::stop_iteration>

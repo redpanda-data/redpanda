@@ -115,17 +115,20 @@ bool group::valid_previous_state(group_state s) const {
 template<typename T>
 static model::record_batch make_tx_batch(
   model::record_batch_type type,
-  model::control_record_version version,
+  int8_t version,
   const model::producer_identity& pid,
   T cmd) {
     iobuf key;
-    kafka::response_writer w(key);
-    w.write(version);
+    reflection::serialize(key, type(), pid.id);
+
+    iobuf value;
+    reflection::serialize(value, version);
+    reflection::serialize(value, std::move(cmd));
 
     storage::record_batch_builder builder(type, model::offset(0));
     builder.set_producer_identity(pid.id, pid.epoch);
     builder.set_control_type();
-    builder.add_raw_kv(std::move(key), reflection::to_iobuf(std::move(cmd)));
+    builder.add_raw_kv(std::move(key), std::move(value));
 
     return std::move(builder).build();
 }
