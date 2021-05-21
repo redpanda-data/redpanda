@@ -80,6 +80,9 @@ class SchemaRegistryTest(RedpandaTest):
         return requests.get(f"{self._base_uri()}/schemas/types",
                             headers=headers)
 
+    def _get_subjects(self, headers=HTTP_GET_HEADERS):
+        return requests.get(f"{self._base_uri()}/subjects", headers=headers)
+
     def _post_subjects_subject_versions(self,
                                         subject,
                                         data,
@@ -154,6 +157,10 @@ class SchemaRegistryTest(RedpandaTest):
 
         schema_1_data = json.dumps({"schema": json.dumps(schema_def)})
 
+        self.logger.debug("Get empty subjects")
+        result_raw = self._get_subjects()
+        assert result_raw.json() == []
+
         self.logger.debug("Posting schema 1 as a subject key")
         result_raw = self._post_subjects_subject_versions(
             subject=f"{topic}-key", data=schema_1_data)
@@ -174,6 +181,10 @@ class SchemaRegistryTest(RedpandaTest):
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json()["id"] == 1
+
+        self.logger.debug("Get subjects")
+        result_raw = self._get_subjects()
+        assert result_raw.json() == [f"{topic}-key", f"{topic}-value"]
 
         self.logger.debug("Get schema versions for invalid subject")
         result_raw = self._get_subjects_subject_versions(
