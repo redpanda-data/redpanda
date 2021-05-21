@@ -110,12 +110,8 @@ record_batch_reader make_memory_record_batch_reader(storage_t batches) {
 
 record_batch_reader
 make_foreign_memory_record_batch_reader(record_batch_reader::data_t data) {
-    auto batches = std::make_unique<record_batch_reader::data_t>(
-      std::move(data));
-    return make_memory_record_batch_reader(record_batch_reader::foreign_data_t{
-      .buffer = ss::make_foreign(std::move(batches)),
-      .index = 0,
-    });
+    return make_foreign_record_batch_reader(
+      make_memory_record_batch_reader(std::move(data)));
 }
 
 record_batch_reader make_foreign_memory_record_batch_reader(record_batch b) {
