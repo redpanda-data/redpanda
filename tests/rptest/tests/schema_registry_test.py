@@ -86,6 +86,14 @@ class SchemaRegistryTest(RedpandaTest):
                              headers=headers,
                              data=data)
 
+    def _get_subjects_subject_versions_version(self,
+                                               subject,
+                                               version,
+                                               headers=HTTP_GET_HEADERS):
+        return requests.get(
+            f"{self._base_uri()}/subjects/{subject}/versions/{version}",
+            headers=headers)
+
     @cluster(num_nodes=3)
     def test_schemas_types(self):
         """
@@ -157,3 +165,37 @@ class SchemaRegistryTest(RedpandaTest):
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json()["id"] == 1
+
+        self.logger.debug("Get schema version 1 for invalid subject")
+        result_raw = self._get_subjects_subject_versions_version(
+            subject=f"{topic}-invalid", version=1)
+        assert result_raw.status_code == requests.codes.not_found
+        result = result_raw.json()
+        assert result["error_code"] == 40401
+        assert result["message"] == "Subject not found"
+
+        self.logger.debug("Get invalid schema version for subject")
+        result_raw = self._get_subjects_subject_versions_version(
+            subject=f"{topic}-key", version=2)
+        assert result_raw.status_code == requests.codes.not_found
+        result = result_raw.json()
+        assert result["error_code"] == 40401
+        assert result["message"] == "Subject version not found"
+
+        self.logger.debug("Get schema version 1 for subject key")
+        result_raw = self._get_subjects_subject_versions_version(
+            subject=f"{topic}-key", version=1)
+        assert result_raw.status_code == requests.codes.ok
+        result = result_raw.json()
+        assert result["name"] == f"{topic}-key"
+        assert result["version"] == 1
+        # assert result["schema"] == json.dumps(schema_def)
+
+        self.logger.debug("Get latest schema version for subject key")
+        result_raw = self._get_subjects_subject_versions_version(
+            subject=f"{topic}-key", version="latest")
+        assert result_raw.status_code == requests.codes.ok
+        result = result_raw.json()
+        assert result["name"] == f"{topic}-key"
+        assert result["version"] == 1
+        # assert result["schema"] == json.dumps(schema_def)
