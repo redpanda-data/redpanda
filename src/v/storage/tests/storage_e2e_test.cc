@@ -23,6 +23,7 @@
 #include "storage/tests/utils/random_batch.h"
 #include "storage/types.h"
 
+#include <seastar/core/io_priority_class.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/util/defer.hh>
@@ -1527,4 +1528,78 @@ FIXTURE_TEST(not_compacted_log_backlog, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 5);
 
     BOOST_REQUIRE_EQUAL(log.compaction_backlog(), 0);
+}
+
+ss::future<model::record_batch_reader::data_t> copy_reader_to_memory(
+  model::record_batch_reader& reader,
+  model::timeout_clock::time_point timeout) {
+    using data_t = model::record_batch_reader::data_t;
+    class memory_batch_consumer {
+    public:
+        ss::future<ss::stop_iteration> operator()(model::record_batch& b) {
+            _result.push_back(b.copy());
+            return ss::make_ready_future<ss::stop_iteration>(
+              ss::stop_iteration::no);
+        }
+        data_t end_of_stream() { return std::move(_result); }
+
+    private:
+        data_t _result;
+    };
+    return reader.for_each_ref(memory_batch_consumer{}, timeout);
+}
+
+FIXTURE_TEST(disposing_in_use_reader, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    cfg.cache = storage::with_cache::no;
+    cfg.max_segment_size = 100_MiB;
+    storage::ntp_config::default_overrides overrides;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    info("config: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp,
+                   mgr.config().base_dir,
+                   std::make_unique<storage::ntp_config::default_overrides>(
+                     overrides)))
+                 .get0();
+    for (auto i = 1; i < 100; ++i) {
+        append_single_record_batch(log, 1, model::term_id(1), 128, true);
+    }
+    log.flush().get();
+    // read only up to 4096 bytes, this way a reader will still be in a cache
+    storage::log_reader_config reader_cfg(
+      model::offset(0),
+      model::offset::max(),
+      0,
+      4096,
+      ss::default_priority_class(),
+      std::nullopt,
+      std::nullopt,
+      std::nullopt);
+
+    model::offset next_to_read;
+    auto truncate_f = ss::now();
+    {
+        auto reader = log.make_reader(reader_cfg).get();
+
+        auto rec = copy_reader_to_memory(reader, model::no_timeout).get();
+
+        BOOST_REQUIRE_EQUAL(rec.back().last_offset(), model::offset(17));
+        truncate_f = log.truncate(storage::truncate_config(
+          model::offset(5), ss::default_priority_class()));
+        // yield to allow truncate fiber to reach waiting for a lock
+        ss::sleep(200ms).get();
+    }
+    // yield again to allow truncate fiber to finish
+    ss::sleep(200ms).get();
+
+    // we should be able to finish truncate immediately since reader was
+    // destroyed
+    BOOST_REQUIRE(truncate_f.available());
+    truncate_f.get();
 }

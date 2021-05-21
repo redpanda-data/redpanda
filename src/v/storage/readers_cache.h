@@ -116,7 +116,11 @@ private:
 
         ~entry_guard() noexcept {
             _e->_hook.unlink();
-            if (_e->reader->is_reusable()) {
+            /**
+             * we only return reader to cache if it is reusable and wasn't
+             * requested to be evicted
+             */
+            if (_e->reader->is_reusable() && _e->valid) {
                 _cache->_readers.push_back(*_e);
             } else {
                 _cache->dispose_in_background(_e);
