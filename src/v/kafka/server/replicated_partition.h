@@ -65,6 +65,7 @@ public:
           _translator->from_kafka_offset(last));
 
         std::vector<cluster::rm_stm::tx_range> target;
+        target.reserve(source.size());
         for (const auto& range : source) {
             target.push_back(cluster::rm_stm::tx_range{
               .pid = range.pid,

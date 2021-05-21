@@ -128,6 +128,10 @@ public:
         return _conn->server().fetch_sessions_cache();
     }
 
+    fetch_metadata_cache& get_fetch_metadata_cache() {
+        return _conn->server().get_fetch_metadata_cache();
+    }
+
     // clang-format off
     template<typename ResponseType>
     CONCEPT(requires requires (

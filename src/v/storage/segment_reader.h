@@ -70,8 +70,6 @@ private:
     ss::file _data_file;
     size_t _file_size{0};
     size_t _buffer_size{0};
-    ss::lw_shared_ptr<ss::file_input_stream_history> _history
-      = ss::make_lw_shared<ss::file_input_stream_history>();
 
     friend std::ostream& operator<<(std::ostream&, const segment_reader&);
 };

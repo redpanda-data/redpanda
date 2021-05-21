@@ -14,7 +14,10 @@
 #include "config/configuration.h"
 #include "kafka/protocol/batch_consumer.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/fetch.h"
 #include "kafka/server/fetch_session.h"
+#include "kafka/server/handlers/fetch/fetch_plan_executor.h"
+#include "kafka/server/handlers/fetch/fetch_planner.h"
 #include "kafka/server/materialized_partition.h"
 #include "kafka/server/partition_proxy.h"
 #include "kafka/server/replicated_partition.h"
@@ -23,6 +26,7 @@
 #include "model/namespace.h"
 #include "model/record_utils.h"
 #include "model/timeout_clock.h"
+#include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/parser_utils.h"
 #include "utils/to_string.h"
@@ -121,7 +125,7 @@ model::record_batch adapt_fetch_batch(model::record_batch&& batch) {
  * Low-level handler for reading from an ntp. Runs on ntp's home core.
  */
 static ss::future<read_result> read_from_partition(
-  kafka::partition_proxy& part,
+  kafka::partition_proxy part,
   fetch_config config,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
@@ -129,8 +133,8 @@ static ss::future<read_result> read_from_partition(
     auto lso = part.last_stable_offset();
     auto start_o = part.start_offset();
     // if we have no data read, return fast
-    if (hw < config.start_offset) {
-        return ss::make_ready_future<read_result>(start_o, hw, lso);
+    if (hw < config.start_offset || config.skip_read) {
+        co_return read_result(start_o, hw, lso);
     }
 
     storage::log_reader_config reader_config(
@@ -144,54 +148,36 @@ static ss::future<read_result> read_from_partition(
       std::nullopt);
 
     reader_config.strict_max_bytes = config.strict_max_bytes;
-    fetched_offset_range fr{
-      .base_offset = model::model_limits<model::offset>::max(),
-      .last_offset = model::offset(0)};
+    auto rdr = co_await part.make_reader(reader_config);
+    auto result = co_await std::move(rdr).consume(
+      kafka_batch_serializer(), deadline ? *deadline : model::no_timeout);
+    auto data = std::make_unique<iobuf>(std::move(result.data));
+    std::vector<cluster::rm_stm::tx_range> aborted_transactions;
+    if (result.record_count > 0) {
+        aborted_transactions = co_await part.aborted_transactions(
+          result.base_offset, result.last_offset);
+    }
 
-    return ss::do_with(
-      std::move(fr),
-      [&part, start_o, hw, lso, foreign_read, deadline, reader_config](
-        fetched_offset_range& fr) {
-          return part.make_reader(reader_config)
-            .then([&fr, start_o, hw, lso, foreign_read, deadline](
-                    model::record_batch_reader rdr) {
-                return model::transform_reader_to_memory(
-                         std::move(rdr),
-                         deadline.value_or(model::no_timeout),
-                         [&fr](model::record_batch&& batch) {
-                             fr.base_offset = std::min(
-                               fr.base_offset, batch.base_offset());
-                             fr.last_offset = std::max(
-                               fr.last_offset, batch.last_offset());
-                             return adapt_fetch_batch(std::move(batch));
-                         })
-                  .then([foreign_read](
-                          ss::circular_buffer<model::record_batch> data) {
-                      // if we are on remote core, we MUST use foreign record
-                      // batch reader.
-                      if (foreign_read) {
-                          return model::make_foreign_memory_record_batch_reader(
-                            std::move(data));
-                      }
-                      return model::make_memory_record_batch_reader(
-                        std::move(data));
-                  })
-                  .then([&fr, start_o, hw, lso](
-                          model::record_batch_reader rdr) {
-                      return read_result(std::move(rdr), start_o, hw, lso, fr);
-                  });
-            });
-      });
+    if (foreign_read) {
+        co_return read_result(
+          ss::make_foreign<read_result::data_t>(std::move(data)),
+          start_o,
+          hw,
+          lso,
+          std::move(aborted_transactions));
+    }
+    co_return read_result(
+      std::move(data), start_o, hw, lso, std::move(aborted_transactions));
 }
 
 std::optional<partition_proxy> make_partition_proxy(
-  const model::materialized_ntp& mntp,
+  const ntp_fetch_config& fetch_cfg,
   ss::lw_shared_ptr<cluster::partition> partition,
   cluster::partition_manager& pm) {
-    if (!mntp.is_materialized()) {
+    if (!fetch_cfg.is_materialized()) {
         return make_partition_proxy<replicated_partition>(partition);
     }
-    if (auto log = pm.log(mntp.input_ntp()); log) {
+    if (auto log = pm.log(*fetch_cfg.materialized_ntp); log) {
         return make_partition_proxy<materialized_partition>(*log);
     }
     return std::nullopt;
@@ -201,16 +187,15 @@ std::optional<partition_proxy> make_partition_proxy(
  * Entry point for reading from an ntp. This is executed on NTP home core and
  * build error responses if anything goes wrong.
  */
-ss::future<read_result> read_from_ntp(
+static ss::future<read_result> do_read_from_ntp(
   cluster::partition_manager& mgr,
-  const model::materialized_ntp& ntp,
-  fetch_config config,
+  ntp_fetch_config ntp_config,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
     /*
      * lookup the ntp's partition
      */
-    auto partition = mgr.get(ntp.source_ntp());
+    auto partition = mgr.get(ntp_config.ntp);
     if (unlikely(!partition)) {
         return ss::make_ready_future<read_result>(
           error_code::unknown_topic_or_partition);
@@ -219,7 +204,8 @@ ss::future<read_result> read_from_ntp(
         return ss::make_ready_future<read_result>(
           error_code::not_leader_for_partition);
     }
-    auto kafka_partition = make_partition_proxy(ntp, partition, mgr);
+
+    auto kafka_partition = make_partition_proxy(ntp_config, partition, mgr);
     if (!kafka_partition) {
         return ss::make_ready_future<read_result>(
           error_code::unknown_topic_or_partition);
@@ -231,112 +217,110 @@ ss::future<read_result> read_from_ntp(
                                                         : high_watermark;
 
     if (config::shard_local_cfg().enable_transactions.value()) {
-        if (config.isolation_level == model::isolation_level::read_committed) {
-            config.max_offset = partition->last_stable_offset();
+        if (
+          ntp_config.cfg.isolation_level
+          == model::isolation_level::read_committed) {
+            ntp_config.cfg.max_offset = partition->last_stable_offset();
             max_offset = partition->last_stable_offset();
         }
     }
 
     if (
-      config.start_offset < partition->start_offset()
-      || config.start_offset > max_offset) {
+      ntp_config.cfg.start_offset < partition->start_offset()
+      || ntp_config.cfg.start_offset > max_offset) {
         return ss::make_ready_future<read_result>(
           error_code::offset_out_of_range);
     }
 
-    return ss::do_with(
-      std::move(*kafka_partition),
-      [config, foreign_read, deadline](kafka::partition_proxy& part) {
-          return read_from_partition(part, config, foreign_read, deadline)
-            .then([&part](read_result result) {
-                // TODO(rystsov): use kafka_partition
-                auto aborted_f = part.aborted_transactions(
-                  result.fetched_range.base_offset,
-                  result.fetched_range.last_offset);
-                return aborted_f.then(
-                  [result = std::move(result)](
-                    std::vector<cluster::rm_stm::tx_range> txes) mutable {
-                      for (auto& tx : txes) {
-                          result.aborted_transactions.push_back(
-                            fetch_response::aborted_transaction{
-                              .producer_id = kafka::producer_id(tx.pid.id),
-                              .first_offset = tx.first});
-                      }
-                      return std::move(result);
-                  });
-            });
-      });
+    return read_from_partition(
+      std::move(*kafka_partition), ntp_config.cfg, foreign_read, deadline);
 }
 
-static ss::future<> do_fill_fetch_responses(
-  std::vector<read_result>& results,
-  std::vector<op_context::response_iterator>& responses) {
-    auto range = boost::irange<size_t>(0, results.size());
-    return ss::parallel_for_each(range, [&results, &responses](size_t idx) {
-        auto& res = results[idx];
-        auto& resp_it = responses[idx];
-        // error case
-        if (!res.reader) {
-            resp_it.set(
-              make_partition_response_error(res.partition, res.error));
-            resp_it->partition_response->log_start_offset = res.start_offset;
-            resp_it->partition_response->high_watermark = res.high_watermark;
-            resp_it->partition_response->last_stable_offset
-              = res.last_stable_offset;
-            return ss::now();
-        }
-        return std::move(*res.reader)
-          .consume(kafka_batch_serializer(), model::no_timeout)
-          .then([so = res.start_offset,
-                 hw = res.high_watermark,
-                 lso = res.last_stable_offset,
-                 pid = res.partition,
-                 &rres = res,
-                 resp_it = resp_it](
-                  kafka_batch_serializer::result res) mutable {
-              fetch_response::partition_response resp{
-                .partition_index = pid,
-                .error_code = error_code::none,
-                .records = batch_reader(std::move(res.data)),
-              };
-              resp_it.set(std::move(resp));
-              resp_it->partition_response->log_start_offset = so;
-              resp_it->partition_response->high_watermark = hw;
-              resp_it->partition_response->last_stable_offset = lso;
-              resp_it->partition_response->aborted = rres.aborted_transactions;
-          })
-          .handle_exception(
-            [so = res.start_offset,
-             hw = res.high_watermark,
-             lso = res.last_stable_offset,
-             pid = res.partition,
-             resp_it = resp_it](const std::exception_ptr&) mutable {
-                /*
-                 * TODO: this is where we will want to
-                 * handle any storage specific errors and
-                 * translate them into kafka response
-                 * error codes.
-                 */
-                resp_it.set(make_partition_response_error(
-                  pid, error_code::unknown_server_error));
-                resp_it->partition_response->log_start_offset = so;
-                resp_it->partition_response->high_watermark = hw;
-                resp_it->partition_response->last_stable_offset = lso;
-            });
-    });
+static ntp_fetch_config make_ntp_fetch_config(
+  const model::materialized_ntp& m_ntp, const fetch_config& fetch_cfg) {
+    if (m_ntp.is_materialized()) {
+        return ntp_fetch_config(
+          m_ntp.source_ntp(), fetch_cfg, m_ntp.input_ntp());
+    }
+
+    return ntp_fetch_config(m_ntp.source_ntp(), fetch_cfg);
 }
 
-static ss::future<> fill_fetch_responsens(
+ss::future<read_result> read_from_ntp(
+  cluster::partition_manager& pm,
+  const model::materialized_ntp& ntp,
+  fetch_config config,
+  bool foreign_read,
+  std::optional<model::timeout_clock::time_point> deadline) {
+    return do_read_from_ntp(
+      pm, make_ntp_fetch_config(ntp, config), foreign_read, deadline);
+}
+
+static void fill_fetch_responses(
+  op_context& octx,
   std::vector<read_result> results,
   std::vector<op_context::response_iterator> responses) {
-    return ss::do_with(
-      std::move(responses),
-      std::move(results),
-      [](
-        std::vector<op_context::response_iterator>& responses,
-        std::vector<read_result>& results) {
-          return do_fill_fetch_responses(results, responses);
-      });
+    auto range = boost::irange<size_t>(0, results.size());
+    for (auto idx : range) {
+        auto& res = results[idx];
+        auto& resp_it = responses[idx];
+
+        // error case
+        if (unlikely(res.error != error_code::none)) {
+            resp_it.set(
+              make_partition_response_error(res.partition, res.error));
+            continue;
+        }
+
+        model::ntp ntp(
+          model::kafka_namespace,
+          resp_it->partition->name,
+          resp_it->partition_response->partition_index);
+        /**
+         * Cache fetch metadata
+         */
+        octx.rctx.get_fetch_metadata_cache().insert_or_assign(
+          std::move(ntp),
+          res.start_offset,
+          res.high_watermark,
+          res.last_stable_offset);
+        /**
+         * Over response budget, we will just waste this read, it will cause
+         * data to be stored in the cache so next read is fast
+         */
+        fetch_response::partition_response resp;
+        resp.partition_index = res.partition;
+        resp.error_code = error_code::none;
+        resp.log_start_offset = res.start_offset;
+        resp.high_watermark = res.high_watermark;
+        resp.last_stable_offset = res.last_stable_offset;
+
+        if (res.has_data() && octx.bytes_left >= res.data_size_bytes()) {
+            /**
+             * set aborted transactions if present
+             */
+            if (!res.aborted_transactions.empty()) {
+                std::vector<fetch_response::aborted_transaction> aborted;
+                aborted.reserve(res.aborted_transactions.size());
+                std::transform(
+                  res.aborted_transactions.begin(),
+                  res.aborted_transactions.end(),
+                  std::back_inserter(aborted),
+                  [](cluster::rm_stm::tx_range range) {
+                      return fetch_response::aborted_transaction{
+                        .producer_id = kafka::producer_id(range.pid.id),
+                        .first_offset = range.first};
+                  });
+                resp.aborted = std::move(aborted);
+            }
+            resp.records = batch_reader(std::move(res).release_data());
+        } else {
+            // TODO: add probe to measure how much of read data is discarded
+            resp.records = batch_reader();
+        }
+
+        resp_it.set(std::move(resp));
+    }
 }
 
 static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
@@ -344,20 +328,14 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
   std::vector<ntp_fetch_config> ntp_fetch_configs,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
-    return ss::do_with(
+    return ssx::parallel_transform(
       std::move(ntp_fetch_configs),
-      [&mgr, deadline, foreign_read](
-        std::vector<ntp_fetch_config>& ntp_fetch_configs) {
-          return ssx::async_transform(
-            ntp_fetch_configs,
-            [&mgr, deadline, foreign_read](ntp_fetch_config cfg) {
-                auto p_id = cfg.first.source_ntp().tp.partition;
-                return read_from_ntp(
-                         mgr, cfg.first, cfg.second, foreign_read, deadline)
-                  .then([p_id](read_result res) {
-                      res.partition = p_id;
-                      return res;
-                  });
+      [&mgr, deadline, foreign_read](const ntp_fetch_config& ntp_cfg) {
+          auto p_id = ntp_cfg.ntp.tp.partition;
+          return do_read_from_ntp(mgr, ntp_cfg, foreign_read, deadline)
+            .then([p_id](read_result res) {
+                res.partition = p_id;
+                return res;
             });
       });
 }
@@ -394,70 +372,110 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
             return fetch_ntps_in_parallel(
               mgr, std::move(configs), foreign_read, deadline);
         })
-      .then([responses = std::move(fetch.responses)](
-              std::vector<read_result> results) mutable {
-          return fill_fetch_responsens(
-            std::move(results), std::move(responses));
+      .then([responses = std::move(fetch.responses),
+             &octx](std::vector<read_result> results) mutable {
+          fill_fetch_responses(octx, std::move(results), std::move(responses));
       });
 }
 
-static std::vector<shard_fetch> group_requests_by_shard(op_context& octx) {
-    std::vector<shard_fetch> shard_fetches(ss::smp::count);
-    auto resp_it = octx.response_begin();
-    /**
-     * group fetch requests by shard
-     */
-    octx.for_each_fetch_partition(
-      [&resp_it, &octx, &shard_fetches](const fetch_session_partition& fp) {
-          // if this is not an initial fetch we are allowed to skip
-          // partions that aleready have an error or we have enough data
-          if (!octx.initial_fetch) {
-              bool has_enough_data
-                = !resp_it->partition_response->records->empty()
-                  && octx.over_min_bytes();
+class parallel_fetch_plan_executor final : public fetch_plan_executor::impl {
+    ss::future<> execute_plan(op_context& octx, fetch_plan plan) final {
+        std::vector<ss::future<>> fetches;
+        fetches.reserve(ss::smp::count);
 
-              if (
-                resp_it->partition_response->error_code != error_code::none
-                || has_enough_data) {
+        // start fetching from random shard to make sure that we fetch data from
+        // all the partition even if we reach fetch message size limit
+        const ss::shard_id start_shard_idx = random_generators::get_int(
+          ss::smp::count - 1);
+        for (size_t i = 0; i < ss::smp::count; ++i) {
+            auto shard = (start_shard_idx + i) % ss::smp::count;
+
+            fetches.push_back(
+              handle_shard_fetch(shard, octx, plan.fetches_per_shard[shard]));
+        }
+
+        return ss::when_all_succeed(fetches.begin(), fetches.end());
+    }
+};
+
+class simple_fetch_planner final : public fetch_planner::impl {
+    fetch_plan create_plan(op_context& octx) final {
+        fetch_plan plan(ss::smp::count);
+        auto resp_it = octx.response_begin();
+        auto bytes_left_in_plan = octx.bytes_left;
+        /**
+         * group fetch requests by shard
+         */
+        octx.for_each_fetch_partition(
+          [&resp_it, &octx, &plan, &bytes_left_in_plan](
+            const fetch_session_partition& fp) {
+              // if this is not an initial fetch we are allowed to skip
+              // partions that aleready have an error or we have enough data
+              if (!octx.initial_fetch) {
+                  bool has_enough_data
+                    = !resp_it->partition_response->records->empty()
+                      && octx.over_min_bytes();
+
+                  if (
+                    resp_it->partition_response->error_code != error_code::none
+                    || has_enough_data) {
+                      ++resp_it;
+                      return;
+                  }
+              }
+              /**
+               * if not authorized do not include into a plan
+               */
+              if (!octx.rctx.authorized(
+                    security::acl_operation::read, fp.topic)) {
+                  (resp_it).set(make_partition_response_error(
+                    fp.partition, error_code::topic_authorization_failed));
                   ++resp_it;
                   return;
               }
-          }
 
-          if (!octx.rctx.authorized(security::acl_operation::read, fp.topic)) {
-              (resp_it).set(make_partition_response_error(
-                fp.partition, error_code::topic_authorization_failed));
-              ++resp_it;
-              return;
-          }
+              auto ntp = model::ntp(
+                model::kafka_namespace, fp.topic, fp.partition);
 
-          auto ntp = model::ntp(model::kafka_namespace, fp.topic, fp.partition);
-          auto materialized_ntp = model::materialized_ntp(std::move(ntp));
+              auto materialized_ntp = model::materialized_ntp(ntp);
 
-          auto shard = octx.rctx.shards().shard_for(
-            materialized_ntp.source_ntp());
-          if (!shard) {
-              // no shard found, set error
-              (resp_it).set(make_partition_response_error(
-                fp.partition, error_code::unknown_topic_or_partition));
-              ++resp_it;
-              return;
-          }
+              auto shard = octx.rctx.shards().shard_for(
+                materialized_ntp.source_ntp());
+              if (!shard) {
+                  // no shard found, set error, do not include into a plan
+                  (resp_it).set(make_partition_response_error(
+                    fp.partition, error_code::unknown_topic_or_partition));
+                  ++resp_it;
+                  return;
+              }
 
-          fetch_config config{
-            .start_offset = fp.fetch_offset,
-            .max_offset = model::model_limits<model::offset>::max(),
-            .isolation_level = octx.request.data.isolation_level,
-            .max_bytes = std::min(octx.bytes_left, size_t(fp.max_bytes)),
-            .timeout = octx.deadline.value_or(model::no_timeout),
-            .strict_max_bytes = octx.response_size > 0,
-          };
-          shard_fetches[*shard].push_back(
-            std::move(materialized_ntp), config, resp_it++);
-      });
+              auto fetch_md = octx.rctx.get_fetch_metadata_cache().get(ntp);
+              auto max_bytes = std::min(
+                bytes_left_in_plan, size_t(fp.max_bytes));
+              /**
+               * If offset is greater, assume that fetch will read max_bytes
+               */
+              if (fetch_md && fetch_md->high_watermark > fp.fetch_offset) {
+                  bytes_left_in_plan -= max_bytes;
+              }
 
-    return shard_fetches;
-}
+              fetch_config config{
+                .start_offset = fp.fetch_offset,
+                .max_offset = model::model_limits<model::offset>::max(),
+                .isolation_level = octx.request.data.isolation_level,
+                .max_bytes = max_bytes,
+                .timeout = octx.deadline.value_or(model::no_timeout),
+                .strict_max_bytes = octx.response_size > 0,
+                .skip_read = bytes_left_in_plan == 0 && max_bytes == 0,
+              };
+
+              plan.fetches_per_shard[*shard].push_back(
+                make_ntp_fetch_config(materialized_ntp, config), resp_it++);
+          });
+
+        return plan;
+    }
+};
 
 /**
  * Process partition fetch requests.
@@ -484,29 +502,23 @@ static std::vector<shard_fetch> group_requests_by_shard(op_context& octx) {
  */
 
 static ss::future<> fetch_topic_partitions(op_context& octx) {
-    std::vector<ss::future<>> fetches;
-    fetches.reserve(ss::smp::count);
+    auto planner = make_fetch_planner<simple_fetch_planner>();
 
-    ss::shard_id shard = 0;
-    for (auto& shard_fetch : group_requests_by_shard(octx)) {
-        fetches.push_back(
-          handle_shard_fetch(shard++, octx, std::move(shard_fetch)));
+    auto fetch_plan = planner.create_plan(octx);
+
+    fetch_plan_executor executor
+      = make_fetch_plan_executor<parallel_fetch_plan_executor>();
+    co_await executor.execute_plan(octx, std::move(fetch_plan));
+
+    if (octx.should_stop_fetch()) {
+        co_return;
     }
 
-    return ss::do_with(
-      std::move(fetches), [&octx](std::vector<ss::future<>>& fetches) {
-          return ss::when_all_succeed(fetches.begin(), fetches.end())
-            .then([&octx] {
-                if (octx.should_stop_fetch()) {
-                    return ss::now();
-                }
-                octx.reset_context();
-                // debounce next read retry
-                return ss::sleep(std::min(
-                  config::shard_local_cfg().fetch_reads_debounce_timeout(),
-                  octx.request.data.max_wait_ms));
-            });
-      });
+    octx.reset_context();
+    // debounce next read retry
+    co_await ss::sleep(std::min(
+      config::shard_local_cfg().fetch_reads_debounce_timeout(),
+      octx.request.data.max_wait_ms));
 }
 
 template<>
@@ -555,8 +567,9 @@ op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
      * integrate with other resource contraints that are dynamic within the
      * kafka server itself.
      */
-    static constexpr size_t max_size = 128_KiB;
-    bytes_left = std::min(max_size, size_t(request.data.max_bytes));
+    bytes_left = std::min(
+      config::shard_local_cfg().fetch_max_bytes(),
+      size_t(request.data.max_bytes));
     session_ctx = rctx.fetch_sessions().maybe_get_session(request);
     create_response_placeholders();
 }

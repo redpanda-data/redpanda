@@ -13,6 +13,7 @@
 #include "bytes/iobuf.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
 #include "kafka/protocol/response_writer.h"
+#include "model/fundamental.h"
 #include "model/record.h"
 #include "seastarx.h"
 
@@ -28,6 +29,8 @@ public:
     struct result {
         iobuf data;
         uint32_t record_count;
+        model::offset base_offset;
+        model::offset last_offset;
     };
 
     kafka_batch_serializer() noexcept
@@ -42,6 +45,10 @@ public:
       , _wr(_buf) {}
 
     ss::future<ss::stop_iteration> operator()(model::record_batch&& batch) {
+        if (unlikely(record_count_ == 0)) {
+            _base_offset = batch.base_offset();
+        }
+        _last_offset = batch.last_offset();
         record_count_ += batch.record_count();
         write_batch(std::move(batch));
         return ss::make_ready_future<ss::stop_iteration>(
@@ -52,6 +59,8 @@ public:
         return result{
           .data = std::move(_buf),
           .record_count = record_count_,
+          .base_offset = _base_offset,
+          .last_offset = _last_offset,
         };
     }
 
@@ -63,6 +72,8 @@ private:
 private:
     iobuf _buf;
     response_writer _wr;
+    model::offset _base_offset;
+    model::offset _last_offset;
     uint32_t record_count_ = 0;
 };
 

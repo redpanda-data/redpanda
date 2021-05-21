@@ -177,10 +177,6 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
                   true,
                   model::no_timeout);
             })
-          .then([](kafka::read_result res) {
-              return std::move(*res.reader)
-                .consume(kafka::kafka_batch_serializer(), model::no_timeout);
-          })
           .get0();
     };
     wait_for_controller_leadership().get0();
@@ -196,10 +192,11 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
           });
     }).get();
 
-    auto zero = do_read(ntp, 0).data.size_bytes();
-    auto one = do_read(ntp, 1).data.size_bytes();
-    auto maxlimit
-      = do_read(ntp, std::numeric_limits<size_t>::max()).data.size_bytes();
+    auto zero = do_read(ntp, 0).get_data().size_bytes();
+    auto one = do_read(ntp, 1).get_data().size_bytes();
+    auto maxlimit = do_read(ntp, std::numeric_limits<size_t>::max())
+                      .get_data()
+                      .size_bytes();
 
     BOOST_TEST(zero > 0); // read something
     BOOST_TEST(zero == one);
