@@ -32,6 +32,8 @@ namespace pandaproxy::schema_registry {
 template<typename Encoding>
 result<schema_definition> make_schema_definition(std::string_view sv) {
     // Validate and minify
+    // TODO (Ben): Minify. e.g.:
+    // "schema": "{\"type\": \"string\"}" -> "schema": "\"string\""
     rapidjson::GenericDocument<Encoding> doc;
     doc.Parse(sv.data(), sv.size());
     if (doc.HasParseError()) {
