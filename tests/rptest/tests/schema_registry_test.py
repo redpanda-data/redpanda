@@ -25,8 +25,11 @@ def create_topic_names(count):
     return list(f"pandaproxy-topic-{uuid.uuid4()}" for _ in range(count))
 
 
-HTTP_GET_SCHEMAS_TYPES_HEADERS = {
-    "Accept": "application/vnd.schemaregistry.v1+json"
+HTTP_GET_HEADERS = {"Accept": "application/vnd.schemaregistry.v1+json"}
+
+HTTP_POST_HEADERS = {
+    "Accept": "application/vnd.schemaregistry.v1+json",
+    "Content-Type": "application/vnd.schemaregistry.v1+json"
 }
 
 
@@ -51,10 +54,15 @@ class SchemaRegistryTest(RedpandaTest):
     def _base_uri(self):
         return f"http://{self.redpanda.nodes[0].account.hostname}:8081"
 
+    def _get_topics(self):
+        return requests.get(
+            f"http://{self.redpanda.nodes[0].account.hostname}:8082/topics")
+
     def _create_topics(self,
                        names=create_topic_names(1),
                        partitions=1,
-                       replicas=1):
+                       replicas=1,
+                       cleanup_policy=TopicSpec.CLEANUP_DELETE):
         self.logger.debug(f"Creating topics: {names}")
         kafka_tools = KafkaCliTools(self.redpanda)
         for name in names:
@@ -62,10 +70,13 @@ class SchemaRegistryTest(RedpandaTest):
                 TopicSpec(name=name,
                           partition_count=partitions,
                           replication_factor=replicas))
-        assert set(names).issubset(self._get_topics().json())
+        wait_until(lambda: set(names).issubset(self._get_topics().json()),
+                   timeout_sec=30,
+                   backoff_sec=1,
+                   err_msg="Topics failed to settle")
         return names
 
-    def _get_schemas_types(self, headers=HTTP_GET_SCHEMAS_TYPES_HEADERS):
+    def _get_schemas_types(self, headers=HTTP_GET_HEADERS):
         return requests.get(f"{self._base_uri()}/schemas/types",
                             headers=headers)
 
@@ -74,7 +85,7 @@ class SchemaRegistryTest(RedpandaTest):
         """
         Verify the schema registry returns the supported types
         """
-        
+
         self.logger.debug(f"Request schema types with no accept header")
         result_raw = self._get_schemas_types(headers={})
         assert result_raw.status_code == requests.codes.ok
