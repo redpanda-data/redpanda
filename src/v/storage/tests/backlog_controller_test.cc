@@ -57,6 +57,8 @@ struct backlog_controller_fixture {
           std::make_unique<simple_backlog_sampler>(backlog), ctrl_logger, cfg);
     }
 
+    ~backlog_controller_fixture() { ctrl->stop().get(); }
+
     ss::io_priority_class iopc;
     ss::scheduling_group sg;
     std::unique_ptr<storage::backlog_controller> ctrl;
