@@ -26,8 +26,6 @@
 namespace storage {
 class checksumming_consumer final : public batch_consumer {
 public:
-    static constexpr size_t max_segment_size = static_cast<size_t>(
-      std::numeric_limits<uint32_t>::max());
     checksumming_consumer(segment* s, log_replayer::checkpoint& c)
       : _seg(s)
       , _cfg(c) {
