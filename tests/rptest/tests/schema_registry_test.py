@@ -96,6 +96,12 @@ class SchemaRegistryTest(RedpandaTest):
             f"{self._base_uri()}/subjects/{subject}/versions/{version}",
             headers=headers)
 
+    def _get_subjects_subject_versions(self,
+                                       subject,
+                                       headers=HTTP_GET_HEADERS):
+        return requests.get(f"{self._base_uri()}/subjects/{subject}/versions",
+                            headers=headers)
+
     @cluster(num_nodes=3)
     def test_schemas_types(self):
         """
@@ -168,6 +174,26 @@ class SchemaRegistryTest(RedpandaTest):
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json()["id"] == 1
+
+        self.logger.debug("Get schema versions for invalid subject")
+        result_raw = self._get_subjects_subject_versions(
+            subject=f"{topic}-invalid")
+        assert result_raw.status_code == requests.codes.not_found
+        result = result_raw.json()
+        assert result["error_code"] == 40401
+        assert result["message"] == "Subject not found"
+
+        self.logger.debug("Get schema versions for subject key")
+        result_raw = self._get_subjects_subject_versions(
+            subject=f"{topic}-key")
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == [1]
+
+        self.logger.debug("Get schema versions for subject value")
+        result_raw = self._get_subjects_subject_versions(
+            subject=f"{topic}-value")
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == [1]
 
         self.logger.debug("Get schema version 1 for invalid subject")
         result_raw = self._get_subjects_subject_versions_version(
