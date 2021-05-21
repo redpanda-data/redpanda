@@ -362,13 +362,6 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
                   request, tx_errc::unknown_server_error));
           }
 
-          auto maybe_tx = stm->get_tx(request.transactional_id);
-          if (!maybe_tx) {
-              return ss::make_ready_future<add_paritions_tx_reply>(
-                make_add_partitions_error_response(
-                  request, tx_errc::unknown_server_error));
-          }
-
           return stm->get_tx_lock(request.transactional_id)
             ->with([&self, stm, request, timeout]() {
                 return self.do_add_partition_to_tx(stm, request, timeout);
