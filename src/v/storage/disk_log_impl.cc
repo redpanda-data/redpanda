@@ -56,7 +56,8 @@ disk_log_impl::disk_log_impl(
   , _kvstore(kvstore)
   , _start_offset(read_start_offset())
   , _lock_mngr(_segs)
-  , _max_segment_size(internal::jitter_segment_size(max_segment_size()))
+  , _max_segment_size(internal::jitter_segment_size(
+      std::min(max_segment_size(), segment_size_hard_limit)))
   , _readers_cache(std::make_unique<readers_cache>(
       config().ntp(), _manager.config().readers_cache_eviction_timeout)) {
     const bool is_compacted = config().is_compacted();

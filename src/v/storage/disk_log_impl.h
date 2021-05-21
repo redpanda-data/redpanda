@@ -36,6 +36,22 @@ class disk_log_impl final : public log::impl {
 public:
     using failure_probes = storage::log_failure_probes;
 
+    /*
+     * the offset index can handle larger than 4gb segments. but the offset
+     * index and compaction index still use 32-bit values to represent some
+     * (relative) logical offsets which mean that a 4-billion limit on records
+     * in a segment exists. by placing a hard limit on segment size we can avoid
+     * those overflows because a segment with more than 4-billion records would
+     * be larger than 4gb even when the records are empty. other practical but
+     * not fundmental limits exist for large segment sizes like our current
+     * in-memory representation of indices.
+     *
+     * the hard limit here is a slight mischaracterization. we apply this hard
+     * limit to the user requested size. max segment size fuzzing is still
+     * applied.
+     */
+    static constexpr size_t segment_size_hard_limit = 3_GiB;
+
     disk_log_impl(ntp_config, log_manager&, segment_set, kvstore&);
     ~disk_log_impl() override;
     disk_log_impl(disk_log_impl&&) noexcept = default;
