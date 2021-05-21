@@ -26,6 +26,8 @@ struct reply_error_category final : std::error_category {
             return "HTTP 406 Not Acceptable";
         case reply_error_code::unsupported_media_type:
             return "HTTP 415 Unsupported Media Type";
+        case reply_error_code::unprocessable_entity:
+            return "HTTP 422 Unprocesable Entity";
         case reply_error_code::kafka_bad_request:
             return "kafka_bad_request";
         case reply_error_code::kafka_authentication_error:

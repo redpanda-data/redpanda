@@ -27,6 +27,7 @@ namespace pandaproxy {
 enum class reply_error_code : uint16_t {
     not_acceptable = 406,
     unsupported_media_type = 415,
+    unprocessable_entity = 422,
     kafka_bad_request = 40002,
     kafka_authentication_error = 40101,
     kafka_authorization_error = 40301,
