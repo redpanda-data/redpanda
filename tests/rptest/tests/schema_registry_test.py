@@ -80,6 +80,14 @@ class SchemaRegistryTest(RedpandaTest):
         return requests.get(f"{self._base_uri()}/schemas/types",
                             headers=headers)
 
+    def _post_subjects_subject_versions(self,
+                                        subject,
+                                        data,
+                                        headers=HTTP_POST_HEADERS):
+        return requests.post(f"{self._base_uri()}/subjects/{subject}/versions",
+                             headers=headers,
+                             data=data)
+
     @cluster(num_nodes=3)
     def test_schemas_types(self):
         """
@@ -95,3 +103,60 @@ class SchemaRegistryTest(RedpandaTest):
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
         assert result == ["AVRO"]
+
+    @cluster(num_nodes=3)
+    def test_post_subjects_subject_versions(self):
+        """
+        Verify posting a schema
+        """
+
+        self.logger.debug("Creating _schemas topic")
+        self._create_topics(names=["_schemas"],
+                            partitions=1,
+                            replicas=1,
+                            cleanup_policy=TopicSpec.CLEANUP_COMPACT)
+
+        topic = create_topic_names(1)[0]
+
+        self.logger.debug(f"Register a schema against a subject")
+        schema_def = {
+            "namespace":
+            "example.avro",
+            "type":
+            "record",
+            "name":
+            "User",
+            "fields": [{
+                "name": "name",
+                "type": "string"
+            }, {
+                "name": "favorite_number",
+                "type": ["int", "null"]
+            }, {
+                "name": "favorite_color",
+                "type": ["string", "null"]
+            }]
+        }
+
+        schema_1_data = json.dumps({"schema": json.dumps(schema_def)})
+
+        self.logger.debug("Posting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == 1
+
+        self.logger.debug("Reposting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == 1
+
+        self.logger.debug("Reposting schema 1 as a subject value")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-value", data=schema_1_data)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == 1
