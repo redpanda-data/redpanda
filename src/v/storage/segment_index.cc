@@ -25,7 +25,7 @@
 namespace storage {
 
 static inline segment_index::entry translate_index_entry(
-  const index_state& s, std::tuple<uint32_t, uint32_t, uint32_t> entry) {
+  const index_state& s, std::tuple<uint32_t, uint32_t, uint64_t> entry) {
     auto [relative_offset, relative_time, filepos] = entry;
     return segment_index::entry{
       .offset = model::offset(relative_offset + s.base_offset()),

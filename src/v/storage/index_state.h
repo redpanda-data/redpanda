@@ -34,7 +34,7 @@ namespace storage {
    [] position_index
  */
 struct index_state {
-    static constexpr int8_t ondisk_version = 2;
+    static constexpr int8_t ondisk_version = 3;
 
     index_state() = default;
     index_state(index_state&&) noexcept = default;
@@ -61,12 +61,12 @@ struct index_state {
     /// breaking indexes into their own has a 6x latency reduction
     std::vector<uint32_t> relative_offset_index;
     std::vector<uint32_t> relative_time_index;
-    std::vector<uint32_t> position_index;
+    std::vector<uint64_t> position_index;
 
     bool empty() const { return relative_offset_index.empty(); }
 
     void
-    add_entry(uint32_t relative_offset, uint32_t relative_time, uint32_t pos) {
+    add_entry(uint32_t relative_offset, uint32_t relative_time, uint64_t pos) {
         relative_offset_index.push_back(relative_offset);
         relative_time_index.push_back(relative_time);
         position_index.push_back(pos);
@@ -76,7 +76,7 @@ struct index_state {
         relative_time_index.pop_back();
         position_index.pop_back();
     }
-    std::tuple<uint32_t, uint32_t, uint32_t> get_entry(size_t i) {
+    std::tuple<uint32_t, uint32_t, uint64_t> get_entry(size_t i) {
         return {
           relative_offset_index[i], relative_time_index[i], position_index[i]};
     }
