@@ -27,7 +27,8 @@ get_schemas_types(server::request_t rq, server::reply_t rp) {
     auto res_fmt = parse::accept_header(
       *rq.req,
       {ppj::serialization_format::schema_registry_v1_json,
-       ppj::serialization_format::schema_registry_json});
+       ppj::serialization_format::schema_registry_json,
+       ppj::serialization_format::none});
     rq.req.reset();
 
     static const std::vector<std::string_view> schemas_types{"AVRO"};
