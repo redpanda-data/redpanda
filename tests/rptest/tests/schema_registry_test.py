@@ -80,6 +80,10 @@ class SchemaRegistryTest(RedpandaTest):
         return requests.get(f"{self._base_uri()}/schemas/types",
                             headers=headers)
 
+    def _get_schemas_ids_id(self, id, headers=HTTP_GET_HEADERS):
+        return requests.get(f"{self._base_uri()}/schemas/ids/{id}",
+                            headers=headers)
+
     def _get_subjects(self, headers=HTTP_GET_HEADERS):
         return requests.get(f"{self._base_uri()}/subjects", headers=headers)
 
@@ -238,4 +242,17 @@ class SchemaRegistryTest(RedpandaTest):
         result = result_raw.json()
         assert result["name"] == f"{topic}-key"
         assert result["version"] == 1
+        # assert result["schema"] == json.dumps(schema_def)
+
+        self.logger.debug("Get invalid schema version")
+        result_raw = self._get_schemas_ids_id(id=2)
+        assert result_raw.status_code == requests.codes.not_found
+        result = result_raw.json()
+        assert result["error_code"] == 40401
+        assert result["message"] == "Schema not found"
+
+        self.logger.debug("Get schema version 1")
+        result_raw = self._get_schemas_ids_id(id=1)
+        assert result_raw.status_code == requests.codes.ok
+        result = result_raw.json()
         # assert result["schema"] == json.dumps(schema_def)
