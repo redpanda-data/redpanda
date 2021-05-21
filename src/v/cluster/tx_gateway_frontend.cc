@@ -876,10 +876,6 @@ tx_gateway_frontend::get_ongoing_tx(
         co_return checked<tm_transaction, tx_errc>(tx_errc::timeout);
     }
 
-    if (tx.status == tm_transaction::tx_status::aborting) {
-        co_return checked<tm_transaction, tx_errc>(tx_errc::timeout);
-    }
-
     checked<tm_transaction, tx_errc> r(tx);
 
     if (tx.status != tm_transaction::tx_status::ongoing) {
@@ -888,6 +884,8 @@ tx_gateway_frontend::get_ongoing_tx(
               stm, tx, timeout, ss::promise<tx_errc>());
         } else if (tx.status == tm_transaction::tx_status::prepared) {
             r = co_await recommit_tm_tx(tx, timeout);
+        } else if (tx.status == tm_transaction::tx_status::aborting) {
+            r = co_await reabort_tm_tx(tx, timeout);
         } else {
             vassert(
               tx.status == tm_transaction::tx_status::finished,
