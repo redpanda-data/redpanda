@@ -40,7 +40,7 @@ struct tm_transaction {
         preparing,
         prepared,
         aborting,
-        finished,
+        ready,
     };
 
     struct tx_partition {
@@ -65,6 +65,10 @@ struct tm_transaction {
     // triple (transactional_id, producer_identity, tx_seq) uniquely
     // identidies a transaction
     model::tx_seq tx_seq;
+    // term of a transaction coordinated started a transaction.
+    // transactions can't span cross term to prevent loss of information stored
+    // only in memory (partitions and groups).
+    model::term_id etag;
     tx_status status;
     std::vector<tx_partition> partitions;
     std::vector<tx_group> groups;
@@ -98,13 +102,18 @@ public:
 
     std::optional<tm_transaction> get_tx(kafka::transactional_id);
     checked<tm_transaction, tm_stm::op_status>
-      mark_tx_finished(kafka::transactional_id);
-    checked<tm_transaction, tm_stm::op_status>
       mark_tx_ongoing(kafka::transactional_id);
     bool add_partitions(
       kafka::transactional_id, std::vector<tm_transaction::tx_partition>);
     bool add_group(kafka::transactional_id, kafka::group_id, model::term_id);
+    bool is_actual_term(model::term_id term) { return _insync_term == term; }
 
+    ss::future<std::optional<tm_transaction>>
+      get_actual_tx(kafka::transactional_id);
+    ss::future<checked<tm_transaction, tm_stm::op_status>>
+      mark_tx_ready(kafka::transactional_id);
+    ss::future<checked<tm_transaction, tm_stm::op_status>>
+      mark_tx_ready(kafka::transactional_id, model::term_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       try_change_status(kafka::transactional_id, tm_transaction::tx_status);
     ss::future<tm_stm::op_status>
@@ -136,7 +145,7 @@ private:
     ss::future<> apply(model::record_batch b) override;
 
     ss::future<checked<tm_transaction, tm_stm::op_status>>
-      save_tx(model::term_id, tm_transaction);
+      update_tx(tm_transaction, model::term_id);
     ss::future<result<raft::replicate_result>>
     replicate_quorum_ack(model::term_id term, model::record_batch&& batch) {
         return _c->replicate(

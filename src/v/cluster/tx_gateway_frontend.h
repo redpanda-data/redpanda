@@ -100,9 +100,9 @@ private:
       cluster::tm_transaction,
       model::timeout_clock::duration,
       ss::promise<tx_errc>);
-    ss::future<checked<tm_transaction, tx_errc>>
+    ss::future<tx_errc>
       recommit_tm_tx(tm_transaction, model::timeout_clock::duration);
-    ss::future<checked<tm_transaction, tx_errc>>
+    ss::future<tx_errc>
       reabort_tm_tx(tm_transaction, model::timeout_clock::duration);
 
     ss::future<add_paritions_tx_reply> do_add_partition_to_tx(

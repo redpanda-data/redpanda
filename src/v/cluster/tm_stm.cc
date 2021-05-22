@@ -62,12 +62,7 @@ std::optional<tm_transaction> tm_stm::get_tx(kafka::transactional_id tx_id) {
 }
 
 ss::future<checked<tm_transaction, tm_stm::op_status>>
-tm_stm::save_tx(model::term_id term, tm_transaction tx) {
-    auto ptx = _tx_table.find(tx.id);
-    if (ptx == _tx_table.end()) {
-        co_return tm_stm::op_status::not_found;
-    }
-
+tm_stm::update_tx(tm_transaction tx, model::term_id term) {
     auto batch = serialize_tx(tx);
 
     auto r = co_await replicate_quorum_ack(term, std::move(batch));
@@ -80,7 +75,7 @@ tm_stm::save_tx(model::term_id term, tm_transaction tx) {
         co_return tm_stm::op_status::unknown;
     }
 
-    ptx = _tx_table.find(tx.id);
+    auto ptx = _tx_table.find(tx.id);
     if (ptx == _tx_table.end()) {
         co_return tm_stm::op_status::conflict;
     }
@@ -95,26 +90,48 @@ tm_stm::try_change_status(
         co_return tm_stm::op_status::unknown;
     }
 
-    auto term = _insync_term;
     auto ptx = _tx_table.find(tx_id);
     if (ptx == _tx_table.end()) {
         co_return tm_stm::op_status::not_found;
     }
-    auto tx = ptx->second;
+    tm_transaction tx = ptx->second;
+    tx.etag = _insync_term;
     tx.status = status;
-    co_return co_await save_tx(term, tx);
+    co_return co_await update_tx(tx, tx.etag);
 }
 
-checked<tm_transaction, tm_stm::op_status>
-tm_stm::mark_tx_finished(kafka::transactional_id tx_id) {
+ss::future<std::optional<tm_transaction>>
+tm_stm::get_actual_tx(kafka::transactional_id tx_id) {
+    auto is_ready = co_await sync(_sync_timeout);
+    if (!is_ready) {
+        co_return std::nullopt;
+    }
+
+    auto tx = _tx_table.find(tx_id);
+    if (tx != _tx_table.end()) {
+        co_return tx->second;
+    }
+
+    co_return std::nullopt;
+}
+
+ss::future<checked<tm_transaction, tm_stm::op_status>>
+tm_stm::mark_tx_ready(kafka::transactional_id tx_id) {
+    return mark_tx_ready(tx_id, _insync_term);
+}
+
+ss::future<checked<tm_transaction, tm_stm::op_status>>
+tm_stm::mark_tx_ready(kafka::transactional_id tx_id, model::term_id term) {
     auto ptx = _tx_table.find(tx_id);
     if (ptx == _tx_table.end()) {
-        return tm_stm::op_status::not_found;
+        co_return tm_stm::op_status::not_found;
     }
-    ptx->second.status = tm_transaction::tx_status::finished;
-    ptx->second.partitions.clear();
-    ptx->second.groups.clear();
-    return ptx->second;
+    tm_transaction tx = ptx->second;
+    tx.status = tm_transaction::tx_status::ready;
+    tx.partitions.clear();
+    tx.groups.clear();
+    tx.etag = term;
+    co_return co_await update_tx(tx, _insync_term);
 }
 
 checked<tm_transaction, tm_stm::op_status>
@@ -132,27 +149,22 @@ tm_stm::mark_tx_ongoing(kafka::transactional_id tx_id) {
 
 ss::future<tm_stm::op_status> tm_stm::re_register_producer(
   kafka::transactional_id tx_id, model::producer_identity pid) {
-    auto is_ready = co_await sync(_sync_timeout);
-    if (!is_ready) {
-        co_return tm_stm::op_status::unknown;
-    }
-
     vlog(
       clusterlog.trace, "Registering existing tx: id={}, pid={}", tx_id, pid);
 
-    auto term = _insync_term;
     auto ptx = _tx_table.find(tx_id);
     if (ptx == _tx_table.end()) {
         co_return tm_stm::op_status::not_found;
     }
     tm_transaction tx = ptx->second;
-    tx.status = tm_transaction::tx_status::ongoing;
+    tx.status = tm_transaction::tx_status::ready;
     tx.pid = pid;
     tx.tx_seq += 1;
+    tx.etag = _insync_term;
     tx.partitions.clear();
     tx.groups.clear();
 
-    auto r = co_await save_tx(term, tx);
+    auto r = co_await update_tx(tx, tx.etag);
 
     if (!r.has_value()) {
         co_return tm_stm::op_status::unknown;
@@ -169,9 +181,7 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
 
     vlog(clusterlog.trace, "Registering new tx: id={}, pid={}", tx_id, pid);
 
-    auto term = _insync_term;
-    auto ptx = _tx_table.find(tx_id);
-    if (ptx != _tx_table.end()) {
+    if (_tx_table.contains(tx_id)) {
         co_return tm_stm::op_status::conflict;
     }
 
@@ -179,11 +189,12 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
       .id = tx_id,
       .pid = pid,
       .tx_seq = model::tx_seq(0),
-      .status = tm_transaction::tx_status::ongoing,
+      .etag = _insync_term,
+      .status = tm_transaction::tx_status::ready,
     };
     auto batch = serialize_tx(tx);
 
-    auto r = co_await replicate_quorum_ack(term, std::move(batch));
+    auto r = co_await replicate_quorum_ack(tx.etag, std::move(batch));
 
     if (!r) {
         co_return tm_stm::op_status::unknown;

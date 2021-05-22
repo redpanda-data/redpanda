@@ -247,7 +247,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
   ss::shared_ptr<tm_stm> stm,
   kafka::transactional_id tx_id,
   model::timeout_clock::duration timeout) {
-    auto maybe_tx = stm->get_tx(tx_id);
+    auto maybe_tx = co_await stm->get_actual_tx(tx_id);
 
     if (!maybe_tx) {
         allocate_id_reply pid_reply
@@ -283,19 +283,26 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
 
     checked<tm_transaction, tx_errc> r(tx);
 
-    if (tx.status == tm_transaction::tx_status::ongoing) {
+    if (tx.status == tm_transaction::tx_status::ready) {
+        // already in a good state, we don't need to do nothing. even if
+        // tx's etag is old it will be bumped by re_register_producer
+    } else if (tx.status == tm_transaction::tx_status::ongoing) {
         r = co_await do_abort_tm_tx(stm, tx, timeout, ss::promise<tx_errc>());
     } else if (tx.status == tm_transaction::tx_status::preparing) {
         r = co_await do_commit_tm_tx(stm, tx, timeout, ss::promise<tx_errc>());
-    } else if (tx.status == tm_transaction::tx_status::prepared) {
-        r = co_await recommit_tm_tx(tx, timeout);
-    } else if (tx.status == tm_transaction::tx_status::aborting) {
-        r = co_await reabort_tm_tx(tx, timeout);
     } else {
-        vassert(
-          tx.status == tm_transaction::tx_status::finished,
-          "unexpected tx status {}",
-          tx.status);
+        tx_errc ec;
+        if (tx.status == tm_transaction::tx_status::prepared) {
+            ec = co_await recommit_tm_tx(tx, timeout);
+        } else if (tx.status == tm_transaction::tx_status::aborting) {
+            ec = co_await reabort_tm_tx(tx, timeout);
+        } else {
+            vassert(false, "unexpected tx status {}", tx.status);
+        }
+
+        if (ec != tx_errc::none) {
+            r = ec;
+        }
     }
 
     if (!r.has_value()) {
@@ -376,22 +383,17 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
     model::producer_identity pid{
       .id = request.producer_id, .epoch = request.producer_epoch};
 
-    auto f = get_ongoing_tx(stm, pid, request.transactional_id, timeout);
+    auto r = co_await get_ongoing_tx(
+      stm, pid, request.transactional_id, timeout);
 
-    return f.then(
-      [this, request, timeout, stm](checked<tm_transaction, tx_errc> r) {
-          if (!r.has_value()) {
-              return ss::make_ready_future<add_paritions_tx_reply>(
-                make_add_partitions_error_response(
-                  request, tx_errc::unknown_server_error));
-          }
+    if (!r.has_value()) {
+        co_return make_add_partitions_error_response(
+          request, tx_errc::unknown_server_error);
+    }
 
-          add_paritions_tx_reply response;
-
-          auto tx = r.value();
-
-          return do_add_partition_to_tx(std::move(tx), stm, request, timeout);
-      });
+    auto tx = r.value();
+    co_return co_await do_add_partition_to_tx(
+      std::move(tx), stm, request, timeout);
 }
 
 ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
@@ -512,13 +514,6 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
                   .error_code = tx_errc::unknown_server_error});
           }
 
-          auto maybe_tx = stm->get_tx(request.transactional_id);
-          if (!maybe_tx) {
-              return ss::make_ready_future<add_offsets_tx_reply>(
-                add_offsets_tx_reply{
-                  .error_code = tx_errc::unknown_server_error});
-          }
-
           return stm->get_tx_lock(request.transactional_id)
             ->with([&self, stm, request, timeout]() {
                 return self.do_add_offsets_to_tx(stm, request, timeout);
@@ -533,13 +528,13 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
     model::producer_identity pid{
       .id = request.producer_id, .epoch = request.producer_epoch};
 
-    auto tx_opt = co_await get_ongoing_tx(
+    auto r = co_await get_ongoing_tx(
       stm, pid, request.transactional_id, timeout);
-    if (!tx_opt.has_value()) {
+    if (!r.has_value()) {
         co_return add_offsets_tx_reply{
           .error_code = tx_errc::unknown_server_error};
     }
-    auto tx = tx_opt.value();
+    auto tx = r.value();
 
     auto group_info = co_await _rm_group_proxy->begin_group_tx(
       request.group_id, pid, tx.tx_seq, timeout);
@@ -631,20 +626,15 @@ tx_gateway_frontend::do_end_txn(
   ss::shared_ptr<cluster::tm_stm> stm,
   model::timeout_clock::duration timeout,
   ss::promise<tx_errc> outcome) {
-    auto maybe_tx = stm->get_tx(request.transactional_id);
+    auto maybe_tx = co_await stm->get_actual_tx(request.transactional_id);
     if (!maybe_tx) {
-        outcome.set_value(tx_errc::unknown_server_error);
-        co_return tx_errc::timeout;
-    }
-
-    auto tx = maybe_tx.value();
-    if (tx.status != tm_transaction::tx_status::ongoing) {
         outcome.set_value(tx_errc::unknown_server_error);
         co_return tx_errc::timeout;
     }
 
     model::producer_identity pid{
       .id = request.producer_id, .epoch = request.producer_epoch};
+    auto tx = maybe_tx.value();
     if (tx.pid != pid) {
         if (tx.pid.id == pid.id && tx.pid.epoch > pid.epoch) {
             outcome.set_value(tx_errc::fenced);
@@ -655,12 +645,22 @@ tx_gateway_frontend::do_end_txn(
         co_return tx_errc::timeout;
     }
 
+    checked<cluster::tm_transaction, tx_errc> r(tx_errc::timeout);
     if (request.committed) {
-        co_return co_await do_commit_tm_tx(
-          stm, tx, timeout, std::move(outcome));
+        r = co_await do_commit_tm_tx(stm, tx, timeout, std::move(outcome));
     } else {
-        co_return co_await do_abort_tm_tx(stm, tx, timeout, std::move(outcome));
+        r = co_await do_abort_tm_tx(stm, tx, timeout, std::move(outcome));
     }
+    if (!r.has_value()) {
+        co_return r;
+    }
+    tx = r.value();
+
+    auto ongoing_tx = stm->mark_tx_ongoing(tx.id);
+    if (!ongoing_tx.has_value()) {
+        co_return tx_errc::timeout;
+    }
+    co_return ongoing_tx.value();
 }
 
 ss::future<checked<cluster::tm_transaction, tx_errc>>
@@ -669,11 +669,34 @@ tx_gateway_frontend::do_abort_tm_tx(
   cluster::tm_transaction tx,
   model::timeout_clock::duration timeout,
   ss::promise<tx_errc> outcome) {
+    if (tx.status == tm_transaction::tx_status::ready) {
+        if (stm->is_actual_term(tx.etag)) {
+            // client should start a transaction before attempting to
+            // abort it. since tx has actual term we know for sure it
+            // wasn't start on a different leader
+            outcome.set_value(tx_errc::request_rejected);
+            co_return tx_errc::request_rejected;
+        }
+
+        // writing ready status to overwrite an ongoing transaction if
+        // it exists on an older leader
+        auto ready_tx = co_await stm->mark_tx_ready(tx.id);
+        if (!ready_tx.has_value()) {
+            outcome.set_value(tx_errc::unknown_server_error);
+            co_return tx_errc::unknown_server_error;
+        }
+        outcome.set_value(tx_errc::none);
+        co_return ready_tx.value();
+    } else if (tx.status != tm_transaction::tx_status::ongoing) {
+        outcome.set_value(tx_errc::unknown_server_error);
+        co_return tx_errc::unknown_server_error;
+    }
+
     auto changed_tx = co_await stm->try_change_status(
       tx.id, cluster::tm_transaction::tx_status::aborting);
     if (!changed_tx.has_value()) {
-        outcome.set_value(tx_errc::timeout);
-        co_return checked<cluster::tm_transaction, tx_errc>(tx_errc::timeout);
+        outcome.set_value(tx_errc::unknown_server_error);
+        co_return tx_errc::unknown_server_error;
     }
     outcome.set_value(tx_errc::none);
 
@@ -698,14 +721,9 @@ tx_gateway_frontend::do_abort_tm_tx(
         ok = ok && (r.ec == tx_errc::none);
     }
     if (!ok) {
-        co_return checked<cluster::tm_transaction, tx_errc>(tx_errc::timeout);
+        co_return tx_errc::timeout;
     }
-    changed_tx = stm->mark_tx_finished(tx.id);
-    if (!changed_tx.has_value()) {
-        co_return checked<cluster::tm_transaction, tx_errc>(tx_errc::timeout);
-    }
-    tx = changed_tx.value();
-    co_return checked<cluster::tm_transaction, tx_errc>(tx);
+    co_return tx;
 }
 
 ss::future<checked<cluster::tm_transaction, tx_errc>>
@@ -714,6 +732,11 @@ tx_gateway_frontend::do_commit_tm_tx(
   cluster::tm_transaction tx,
   model::timeout_clock::duration timeout,
   ss::promise<tx_errc> outcome) {
+    if (tx.status != tm_transaction::tx_status::ongoing) {
+        outcome.set_value(tx_errc::request_rejected);
+        co_return tx_errc::request_rejected;
+    }
+
     std::vector<ss::future<prepare_tx_reply>> pfs;
     for (auto rm : tx.partitions) {
         pfs.push_back(_rm_partition_frontend.local().prepare_tx(
@@ -784,18 +807,12 @@ tx_gateway_frontend::do_commit_tm_tx(
         ok = ok && (r.ec == tx_errc::none);
     }
     if (!ok) {
-        co_return checked<cluster::tm_transaction, tx_errc>(tx_errc::timeout);
+        co_return tx_errc::timeout;
     }
-    changed_tx = stm->mark_tx_finished(tx.id);
-    if (!changed_tx.has_value()) {
-        co_return checked<cluster::tm_transaction, tx_errc>(tx_errc::timeout);
-    }
-    tx = changed_tx.value();
-    co_return checked<cluster::tm_transaction, tx_errc>(tx);
+    co_return tx;
 }
 
-ss::future<checked<tm_transaction, tx_errc>>
-tx_gateway_frontend::recommit_tm_tx(
+ss::future<tx_errc> tx_gateway_frontend::recommit_tm_tx(
   tm_transaction tx, model::timeout_clock::duration timeout) {
     std::vector<ss::future<commit_group_tx_reply>> gfs;
     for (auto group : tx.groups) {
@@ -817,14 +834,13 @@ tx_gateway_frontend::recommit_tm_tx(
     for (const auto& r : crs) {
         ok = ok && (r.ec == tx_errc::none);
     }
-
-    if (ok) {
-        co_return checked<tm_transaction, tx_errc>(tx);
+    if (!ok) {
+        co_return tx_errc::timeout;
     }
-    co_return checked<tm_transaction, tx_errc>(tx_errc::timeout);
+    co_return tx_errc::none;
 }
 
-ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::reabort_tm_tx(
+ss::future<tx_errc> tx_gateway_frontend::reabort_tm_tx(
   tm_transaction tx, model::timeout_clock::duration timeout) {
     std::vector<ss::future<abort_tx_reply>> pfs;
     for (auto rm : tx.partitions) {
@@ -845,10 +861,10 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::reabort_tm_tx(
     for (const auto& r : grs) {
         ok = ok && (r.ec == tx_errc::none);
     }
-    if (ok) {
-        co_return checked<tm_transaction, tx_errc>(tx);
+    if (!ok) {
+        co_return tx_errc::timeout;
     }
-    co_return checked<tm_transaction, tx_errc>(tx_errc::timeout);
+    co_return tx_errc::none;
 }
 
 // get_tx must be called under stm->get_tx_lock
@@ -858,49 +874,83 @@ tx_gateway_frontend::get_ongoing_tx(
   model::producer_identity pid,
   kafka::transactional_id transactional_id,
   model::timeout_clock::duration timeout) {
-    auto maybe_tx = stm->get_tx(transactional_id);
+    auto maybe_tx = co_await stm->get_actual_tx(transactional_id);
     if (!maybe_tx) {
-        co_return checked<tm_transaction, tx_errc>(tx_errc::timeout);
+        co_return tx_errc::timeout;
     }
 
     auto tx = maybe_tx.value();
 
     if (tx.pid != pid) {
-        co_return checked<tm_transaction, tx_errc>(tx_errc::timeout);
+        co_return tx_errc::timeout;
     }
 
-    checked<tm_transaction, tx_errc> r(tx);
-
-    if (tx.status != tm_transaction::tx_status::ongoing) {
-        if (tx.status == tm_transaction::tx_status::preparing) {
-            r = co_await do_commit_tm_tx(
-              stm, tx, timeout, ss::promise<tx_errc>());
-        } else if (tx.status == tm_transaction::tx_status::prepared) {
-            r = co_await recommit_tm_tx(tx, timeout);
+    if (tx.status == tm_transaction::tx_status::ready) {
+        if (!stm->is_actual_term(tx.etag)) {
+            // There is a possibility that a transaction was already started on
+            // a previous leader. Failing this request since it has a chance of
+            // being a part of that transaction. We expect client to abort on
+            // error and the abort will bump the tx's term (etag)
+            co_return tx_errc::timeout;
+        }
+    } else if (tx.status == tm_transaction::tx_status::ongoing) {
+        if (!stm->is_actual_term(tx.etag)) {
+            // Intentnally empty body. Leaving it just to comment what's going
+            // on.
+            //
+            // We don't save ongoing state to the log so the only case when it's
+            // possible to observe old ongoing transaction is when the tx was
+            // started on this node. Then an another node became leader, a
+            // client didn't issue any new requests to that node, the current
+            // node became leader again and the client woke up. It's safe to
+            // continue it.
+        }
+        co_return tx;
+    } else if (tx.status == tm_transaction::tx_status::preparing) {
+        // a producer can see a transaction with the same pid and in a
+        // preparing state only if it attempted a commit, the commit
+        // failed and then the producer ignored it and tried to start
+        // another transaction.
+        //
+        // it violates the docs, the producer is expected to call abort
+        // https://kafka.apache.org/23/javadoc/org/apache/kafka/clients/producer/KafkaProducer.html
+        co_return tx_errc::timeout;
+    } else {
+        // A previous transaction has failed after its status has been
+        // decided, rolling it forward.
+        tx_errc ec;
+        if (tx.status == tm_transaction::tx_status::prepared) {
+            ec = co_await recommit_tm_tx(tx, timeout);
         } else if (tx.status == tm_transaction::tx_status::aborting) {
-            r = co_await reabort_tm_tx(tx, timeout);
+            ec = co_await reabort_tm_tx(tx, timeout);
         } else {
-            vassert(
-              tx.status == tm_transaction::tx_status::finished,
-              "unexpected tx status {}",
-              tx.status);
+            vassert(false, "unexpected tx status {}", tx.status);
         }
 
-        if (!r.has_value()) {
-            co_return r;
+        if (ec != tx_errc::none) {
+            co_return ec;
         }
 
-        auto tx = r.value();
-
-        auto changed_tx = stm->mark_tx_ongoing(tx.id);
-        if (!changed_tx.has_value()) {
-            co_return checked<cluster::tm_transaction, tx_errc>(
-              tx_errc::timeout);
+        if (!stm->is_actual_term(tx.etag)) {
+            // The tx has started on the previous term. Even though we rolled it
+            // forward there is a possibility that a previous leader did the
+            // same and already started the current transaction.
+            //
+            // Failing the current request. By the spec a client should abort on
+            // failure, but abort doesn't handle prepared and aborting statuses.
+            // So marking it as ready. We use previous term because aborting a
+            // tx in current ready state with current term means we abort a tx
+            // which wasn't started and it leads to an error.
+            (void)co_await stm->mark_tx_ready(tx.id, tx.etag);
+            co_return tx_errc::timeout;
         }
-        co_return checked<cluster::tm_transaction, tx_errc>(changed_tx.value());
     }
 
-    co_return r;
+    auto ongoing_tx = stm->mark_tx_ongoing(tx.id);
+    if (!ongoing_tx.has_value()) {
+        co_return tx_errc::timeout;
+    }
+    co_return ongoing_tx.value();
 }
 
 ss::future<bool> tx_gateway_frontend::try_create_tx_topic() {
