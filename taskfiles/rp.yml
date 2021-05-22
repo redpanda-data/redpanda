@@ -90,7 +90,7 @@ tasks:
     cmds:
     - cp '{{.SRC_DIR}}/tests/docker/Dockerfile.dockerignore' '{{.SRC_DIR}}/.dockerignore'
     - |
-      if [ '{{.CI}}' == '1' ]; then
+      if [ '{{.CI}}' == 'true' ]; then
         chmod 644 '{{.SRC_DIR}}/tests/docker/ssh/'* '{{.SRC_DIR}}/tests/setup.py'
         chmod 755 '{{.SRC_DIR}}/tests/docker/ssh'
         docker pull docker.io/vectorized/redpanda-test-node:cache || true
