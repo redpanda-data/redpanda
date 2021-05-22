@@ -147,8 +147,7 @@ scheduler_service_impl::get_archival_service_config() {
         config::shard_local_cfg().cloud_storage_max_connections.value()),
       .svc_metrics_disabled = service_metrics_disabled(
         static_cast<bool>(disable_metrics)),
-      .ntp_metrics_disabled = per_ntp_metrics_disabled(
-        static_cast<bool>(disable_metrics)),
+      .ntp_metrics_disabled = per_ntp_metrics_disabled::yes,
     };
     vlog(archival_log.debug, "Archival configuration generated: {}", cfg);
     co_return cfg;
