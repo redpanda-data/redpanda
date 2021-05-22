@@ -18,9 +18,8 @@
 namespace archival {
 
 ntp_level_probe::ntp_level_probe(
-  per_ntp_metrics_disabled disabled, model::ntp ntp)
-  : _ntp(std::move(ntp))
-  , _uploaded()
+  per_ntp_metrics_disabled disabled, const model::ntp& ntp)
+  : _uploaded()
   , _missing()
   , _pending() {
     if (disabled) {
