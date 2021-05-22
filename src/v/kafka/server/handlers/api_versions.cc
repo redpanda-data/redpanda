@@ -71,8 +71,59 @@ serialize_apis(type_list<RequestTypes...>) {
     return apis;
 }
 
+static std::vector<api_versions_response_key>
+get_supported_apis(bool is_idempotence_enabled, bool are_transactions_enabled) {
+    auto all_api = serialize_apis(request_types{});
+
+    std::vector<api_versions_response_key> filtered;
+    std::copy_if(
+      all_api.begin(),
+      all_api.end(),
+      std::back_inserter(filtered),
+      [is_idempotence_enabled,
+       are_transactions_enabled](api_versions_response_key api) {
+          if (!is_idempotence_enabled) {
+              if (api.api_key == init_producer_id_handler::api::key) {
+                  return false;
+              }
+          }
+          if (!are_transactions_enabled) {
+              if (api.api_key == add_partitions_to_txn_handler::api::key) {
+                  return false;
+              }
+              if (api.api_key == txn_offset_commit_handler::api::key) {
+                  return false;
+              }
+              if (api.api_key == add_offsets_to_txn_handler::api::key) {
+                  return false;
+              }
+              if (api.api_key == end_txn_handler::api::key) {
+                  return false;
+              }
+          }
+          return true;
+      });
+    return filtered;
+}
+
+struct APIs {
+    APIs() {
+        base = get_supported_apis(false, false);
+        idempotence = get_supported_apis(true, false);
+        transactions = get_supported_apis(true, true);
+    }
+
+    std::vector<api_versions_response_key> base;
+    std::vector<api_versions_response_key> idempotence;
+    std::vector<api_versions_response_key> transactions;
+};
+
+static thread_local APIs supported_apis;
+
 std::vector<api_versions_response_key> get_supported_apis() {
-    return serialize_apis(request_types{});
+    return get_supported_apis(
+      config::shard_local_cfg().enable_idempotence.value(),
+      config::shard_local_cfg().enable_transactions.value());
 }
 
 api_versions_response api_versions_handler::handle_raw(request_context& ctx) {
@@ -96,11 +147,16 @@ api_versions_response api_versions_handler::handle_raw(request_context& ctx) {
         r.data.throttle_time_ms = std::chrono::milliseconds(
           ctx.throttle_delay_ms());
     }
-
     if (
       r.data.error_code == error_code::none
       || r.data.error_code == error_code::unsupported_version) {
-        r.data.api_keys = get_supported_apis();
+        if (!ctx.is_idempotence_enabled()) {
+            r.data.api_keys = supported_apis.base;
+        } else if (!ctx.are_transactions_enabled()) {
+            r.data.api_keys = supported_apis.idempotence;
+        } else {
+            r.data.api_keys = supported_apis.transactions;
+        }
     }
     return r;
 }
