@@ -15,13 +15,17 @@
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "outcome.h"
+#include "raft/group_configuration.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 
 #include <absl/container/node_hash_map.h>
+
+#include <ostream>
 
 namespace cluster {
 
@@ -46,6 +50,23 @@ public:
     std::vector<topic_table::delta> list_ntp_deltas(const model::ntp&) const;
 
 private:
+    struct cross_shard_move_request {
+        cross_shard_move_request(model::revision_id, raft::group_configuration);
+
+        model::revision_id revision;
+        raft::group_configuration initial_configuration;
+        friend std::ostream& operator<<(
+          std::ostream& o,
+          const controller_backend::cross_shard_move_request& r) {
+            fmt::print(
+              o,
+              "{{revision: {}, configuration: {}}}",
+              r.revision,
+              r.initial_configuration);
+            return o;
+        }
+    };
+
     using deltas_t = std::vector<topic_table::delta>;
     using underlying_t = absl::flat_hash_map<model::ntp, deltas_t>;
 
@@ -96,7 +117,7 @@ private:
     ss::future<std::error_code>
       shutdown_on_current_shard(model::ntp, model::revision_id);
 
-    ss::future<std::optional<model::revision_id>>
+    ss::future<std::optional<cross_shard_move_request>>
       ask_remote_shard_for_initail_rev(model::ntp, ss::shard_id);
 
     void housekeeping();
@@ -119,10 +140,11 @@ private:
      * This map is populated by backend instance on shard that given NTP is
      * moved from. Map is then queried by the controller instance on target
      * shard. Partition is created on target shard with the same initial
-     * revision as on originating shard, this way identity of node i.e. raft
-     * vnode doesn't change.
+     * revision and configuration as on originating shard, this way identity of
+     * node i.e. raft vnode doesn't change.
      */
-    absl::node_hash_map<model::ntp, model::revision_id> _cross_shard_requests;
+    absl::node_hash_map<model::ntp, cross_shard_move_request>
+      _cross_shard_requests;
 };
 
 std::vector<topic_table::delta> calculate_bootstrap_deltas(
