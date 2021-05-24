@@ -759,8 +759,7 @@ tx_gateway_frontend::do_commit_tm_tx(
           tx.id, cluster::tm_transaction::tx_status::preparing);
         if (!became_preparing_tx.has_value()) {
             outcome.set_value(tx_errc::timeout);
-            co_return checked<cluster::tm_transaction, tx_errc>(
-              tx_errc::timeout);
+            co_return tx_errc::timeout;
         }
         tx = became_preparing_tx.value();
     }
@@ -776,14 +775,14 @@ tx_gateway_frontend::do_commit_tm_tx(
     }
     if (!ok) {
         outcome.set_value(tx_errc::timeout);
-        co_return checked<cluster::tm_transaction, tx_errc>(tx_errc::timeout);
+        co_return tx_errc::timeout;
     }
     outcome.set_value(tx_errc::none);
 
     auto changed_tx = co_await stm->try_change_status(
       tx.id, cluster::tm_transaction::tx_status::prepared);
     if (!changed_tx.has_value()) {
-        co_return checked<cluster::tm_transaction, tx_errc>(tx_errc::timeout);
+        co_return tx_errc::timeout;
     }
     tx = changed_tx.value();
 
