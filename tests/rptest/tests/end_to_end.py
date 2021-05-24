@@ -12,81 +12,78 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# Modifications copyright (C) 2021 Vectorized
+# - Reformatted code
+# - Replaced dependency on Kafka with Redpanda
+# - Imported annotate_missing_msgs helper from kafka test suite
+
+from collections import namedtuple
 
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
+from rptest.services.redpanda import RedpandaService
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.services.verifiable_consumer import VerifiableConsumer
+from rptest.services.verifiable_producer import VerifiableProducer
 
-from kafkatest.services.kafka import KafkaService, quorum
-from kafkatest.services.kafka import TopicPartition
-from kafkatest.services.verifiable_producer import VerifiableProducer
-from kafkatest.services.verifiable_consumer import VerifiableConsumer
-from kafkatest.services.zookeeper import ZookeeperService
-from kafkatest.utils import validate_delivery
+TopicPartition = namedtuple('TopicPartition', ['topic', 'partition'])
+
+
+def annotate_missing_msgs(missing, acked, consumed, msg):
+    missing_list = list(missing)
+    msg += "%s acked message did not make it to the Consumer. They are: " %\
+        len(missing_list)
+    if len(missing_list) < 20:
+        msg += str(missing_list) + ". "
+    else:
+        msg += ", ".join(str(m) for m in missing_list[:20])
+        msg += "...plus %s more. Total Acked: %s, Total Consumed: %s. " \
+            % (len(missing_list) - 20, len(set(acked)), len(set(consumed)))
+    return msg
 
 
 class EndToEndTest(Test):
-    """This class provides a shared template for tests which follow the common pattern of:
-
-        - produce to a topic in the background
-        - consume from that topic in the background
-        - run some logic, e.g. fail topic leader etc.
-        - perform validation
     """
-
-    DEFAULT_TOPIC_CONFIG = {"partitions": 2, "replication-factor": 1}
-
-    def __init__(self,
-                 test_context,
-                 topic="test_topic",
-                 topic_config=DEFAULT_TOPIC_CONFIG):
+    Test for common pattern:
+      - Produce and consume in the background
+      - Perform some action (e.g. partition movement)
+      - Run validation
+    """
+    def __init__(self, test_context):
         super(EndToEndTest, self).__init__(test_context=test_context)
-        self.topic = topic
-        self.topic_config = topic_config
         self.records_consumed = []
         self.last_consumed_offsets = {}
+        self.redpanda = None
+        self.topic = None
 
-    def create_zookeeper_if_necessary(self, num_nodes=1, **kwargs):
-        self.zk = ZookeeperService(
-            self.test_context, num_nodes=num_nodes, **
-            kwargs) if quorum.for_test(
-                self.test_context) == quorum.zk else None
+    def start_redpanda(self, num_nodes=1):
+        assert self.redpanda is None
+        self.redpanda = RedpandaService(self.test_context, num_nodes,
+                                        KafkaCliTools)
+        self.redpanda.start()
 
-    def create_kafka(self, num_nodes=1, **kwargs):
-        group_metadata_config = {
-            "partitions": num_nodes,
-            "replication-factor": min(num_nodes, 3),
-            "configs": {
-                "cleanup.policy": "compact"
-            }
-        }
-
-        topics = {
-            self.topic: self.topic_config,
-            "__consumer_offsets": group_metadata_config
-        }
-        self.kafka = KafkaService(self.test_context,
-                                  num_nodes=num_nodes,
-                                  zk=self.zk,
-                                  topics=topics,
-                                  **kwargs)
-
-    def create_consumer(self, num_nodes=1, group_id="test_group", **kwargs):
+    def start_consumer(self, num_nodes=1, group_id="test_group"):
+        assert self.redpanda
+        assert self.topic
         self.consumer = VerifiableConsumer(
             self.test_context,
             num_nodes=num_nodes,
-            kafka=self.kafka,
+            redpanda=self.redpanda,
             topic=self.topic,
             group_id=group_id,
-            on_record_consumed=self.on_record_consumed,
-            **kwargs)
+            on_record_consumed=self.on_record_consumed)
+        self.consumer.start()
 
-    def create_producer(self, num_nodes=1, throughput=1000, **kwargs):
+    def start_producer(self, num_nodes=1, throughput=1000):
+        assert self.redpanda
+        assert self.topic
         self.producer = VerifiableProducer(self.test_context,
                                            num_nodes=num_nodes,
-                                           kafka=self.kafka,
+                                           redpanda=self.redpanda,
                                            topic=self.topic,
-                                           throughput=throughput,
-                                           **kwargs)
+                                           throughput=throughput)
+        self.producer.start()
 
     def on_record_consumed(self, record, node):
         partition = TopicPartition(record["topic"], record["partition"])
@@ -154,16 +151,31 @@ class EndToEndTest(Test):
         self.logger.info("Number of consumed records: %d" %
                          len(self.records_consumed))
 
-        def check_lost_data(missing_records):
-            return self.kafka.search_data_files(self.topic, missing_records)
+        success = True
+        msg = ""
 
-        succeeded, error_msg = validate_delivery(self.producer.acked,
-                                                 self.records_consumed,
-                                                 enable_idempotence,
-                                                 check_lost_data)
+        # Correctness of the set difference operation depends on using equivalent
+        # message_validators in producer and consumer
+        missing = set(self.producer.acked) - set(self.records_consumed)
+
+        if len(missing) > 0:
+            success = False
+            msg = annotate_missing_msgs(missing, self.producer.acked,
+                                        self.records_consumed, msg)
+
+        # Are there duplicates?
+        if len(set(self.records_consumed)) != len(self.records_consumed):
+            num_duplicates = abs(
+                len(set(self.records_consumed)) - len(self.records_consumed))
+
+            if enable_idempotence:
+                success = False
+                msg += "Detected %d duplicates even though idempotence was enabled.\n" % num_duplicates
+            else:
+                msg += "(There are also %d duplicate messages in the log - but that is an acceptable outcome)\n" % num_duplicates
 
         # Collect all logs if validation fails
-        if not succeeded:
+        if not success:
             self._collect_all_logs()
 
-        assert succeeded, error_msg
+        assert success, msg
