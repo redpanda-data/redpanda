@@ -33,6 +33,8 @@
 namespace cluster {
 
 struct tm_transaction {
+    static constexpr uint8_t version = 0;
+
     enum tx_status {
         ongoing,
         preparing,
@@ -121,11 +123,6 @@ public:
     }
 
 private:
-    struct tx_updated_cmd {
-        static constexpr uint8_t record_key = 0;
-        tm_transaction tx;
-    };
-
     void load_snapshot(stm_snapshot_header, iobuf&&) override;
     stm_snapshot take_snapshot() override;
 

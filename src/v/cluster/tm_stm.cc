@@ -24,14 +24,19 @@
 
 namespace cluster {
 
-template<typename T>
-static model::record_batch serialize_cmd(T t, model::record_batch_type type) {
-    storage::record_batch_builder b(type, model::offset(0));
-    iobuf key_buf;
-    reflection::adl<uint8_t>{}.to(key_buf, T::record_key);
-    iobuf v_buf;
-    reflection::adl<T>{}.to(v_buf, std::move(t));
-    b.add_raw_kv(std::move(key_buf), std::move(v_buf));
+static model::record_batch serialize_tx(tm_transaction tx) {
+    iobuf key;
+    reflection::serialize(key, tm_update_batch_type());
+    auto pid_id = tx.pid.id;
+    auto tx_id = tx.id;
+    reflection::serialize(key, pid_id, tx_id);
+
+    iobuf value;
+    reflection::serialize(value, tm_transaction::version);
+    reflection::serialize(value, std::move(tx));
+
+    storage::record_batch_builder b(tm_update_batch_type, model::offset(0));
+    b.add_raw_kv(std::move(key), std::move(value));
     return std::move(b).build();
 }
 
@@ -63,8 +68,7 @@ tm_stm::save_tx(model::term_id term, tm_transaction tx) {
         co_return tm_stm::op_status::not_found;
     }
 
-    tx_updated_cmd cmd{.tx = tx};
-    auto batch = serialize_cmd(cmd, tm_update_batch_type);
+    auto batch = serialize_tx(tx);
 
     auto r = co_await replicate_quorum_ack(term, std::move(batch));
     if (!r) {
@@ -177,8 +181,7 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
       .tx_seq = model::tx_seq(0),
       .status = tm_transaction::tx_status::ongoing,
     };
-    tx_updated_cmd cmd{.tx = tx};
-    auto batch = serialize_cmd(cmd, tm_update_batch_type);
+    auto batch = serialize_tx(tx);
 
     auto r = co_await replicate_quorum_ack(term, std::move(batch));
 
@@ -270,19 +273,46 @@ ss::future<> tm_stm::apply(model::record_batch b) {
 
     vassert(
       b.record_count() == 1,
-      "We expect single command in a batch of tm_update_batch_type");
+      "tm_update_batch_type batch must contain a single record");
     auto r = b.copy_records();
     auto& record = *r.begin();
-    auto rk = reflection::adl<uint8_t>{}.from(record.release_key());
+    auto val_buf = record.release_value();
 
+    iobuf_parser val_reader(std::move(val_buf));
+    auto version = reflection::adl<int8_t>{}.from(val_reader);
     vassert(
-      rk == tx_updated_cmd::record_key, "Unknown tm update command: {}", rk);
-    tx_updated_cmd cmd = reflection::adl<tx_updated_cmd>{}.from(
-      record.release_value());
+      version == tm_transaction::version,
+      "unknown group inflight tx record version: {} expected: {}",
+      version,
+      tm_transaction::version);
+    auto tx = reflection::adl<tm_transaction>{}.from(val_reader);
 
-    auto [tx_it, inserted] = _tx_table.try_emplace(cmd.tx.id, cmd.tx);
+    auto key_buf = record.release_key();
+    iobuf_parser key_reader(std::move(key_buf));
+    auto batch_type = model::record_batch_type(
+      reflection::adl<int8_t>{}.from(key_reader));
+    vassert(
+      hdr.type == batch_type,
+      "broken tm_update_batch_type. expected batch type {} got: {}",
+      hdr.type,
+      batch_type);
+    auto p_id = model::producer_id(reflection::adl<int64_t>{}.from(key_reader));
+    vassert(
+      p_id == tx.pid.id,
+      "broken tm_update_batch_type. expected tx.pid {} got: {}",
+      tx.pid.id,
+      p_id);
+    auto tx_id = kafka::transactional_id(
+      reflection::adl<ss::sstring>{}.from(key_reader));
+    vassert(
+      tx_id == tx.id,
+      "broken tm_update_batch_type. expected tx.id {} got: {}",
+      tx.id,
+      tx_id);
+
+    auto [tx_it, inserted] = _tx_table.try_emplace(tx.id, tx);
     if (!inserted) {
-        tx_it->second = cmd.tx;
+        tx_it->second = tx;
     }
 
     expire_old_txs();
