@@ -122,6 +122,12 @@ func TestTopicCmd(t *testing.T) {
 			expectedOutput: "Added config 'somekey'='somevalue' to topic 'Panama'.",
 		},
 		{
+			name:           "set-config should allow passing negative numbers and not parse them as flags",
+			cmd:            topic.NewSetConfigCommand,
+			args:           []string{"Panama", "retention.ms", "-1"},
+			expectedOutput: "Added config 'retention.ms'='-1' to topic 'Panama'.",
+		},
+		{
 			name: "set-config should fail if the req fails",
 			cmd:  topic.NewSetConfigCommand,
 			args: []string{"Chiriqui", "k", "v"},
