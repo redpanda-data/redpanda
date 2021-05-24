@@ -30,7 +30,6 @@ using script_id = named_type<uint64_t, struct script_id_tag>;
 enum class enable_response_code : int8_t {
     success = 0,
     internal_error,
-    invalid_ingestion_policy,
     script_id_already_exists,
     script_contains_invalid_topic,
     script_contains_no_topics
@@ -45,11 +44,6 @@ enum class disable_response_code : int8_t {
 };
 
 enum class topic_ingestion_policy : int8_t { earliest = 0, stored, latest };
-
-inline bool is_valid_ingestion_policy(topic_ingestion_policy p) {
-    // Other ingestion policies to be implemented at a later time
-    return p == topic_ingestion_policy::latest;
-}
 
 /// \brief type to use for registration/deregistration of a topic
 struct enable_copros_request {

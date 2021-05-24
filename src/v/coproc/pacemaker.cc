@@ -154,30 +154,12 @@ std::vector<errc> pacemaker::add_source(
     return acks;
 }
 
-errc check_topic_policy(const model::topic& topic, topic_ingestion_policy tip) {
-    if (tip != topic_ingestion_policy::latest) {
-        return errc::invalid_ingestion_policy;
-    }
-    if (model::is_materialized_topic(topic)) {
-        return errc::materialized_topic;
-    }
-    if (model::validate_kafka_topic_name(topic).value() != 0) {
-        return errc::invalid_topic;
-    }
-    return errc::success;
-}
-
 void pacemaker::do_add_source(
   script_id id,
   ntp_context_cache& ctxs,
   std::vector<errc>& acks,
   const std::vector<topic_namespace_policy>& topics) {
     for (const topic_namespace_policy& tnp : topics) {
-        const errc r = check_topic_policy(tnp.tn.tp, tnp.policy);
-        if (r != errc::success) {
-            acks.push_back(r);
-            continue;
-        }
         auto logs = _shared_res.api.log_mgr().get(tnp.tn);
         if (logs.empty()) {
             acks.push_back(errc::topic_does_not_exist);

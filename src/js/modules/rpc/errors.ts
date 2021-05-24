@@ -21,7 +21,6 @@ import { Logger } from "winston";
 export enum EnableResponseCodes {
   success,
   internalError,
-  invalidIngestionPolicy,
   scriptIdAlreadyExists,
   scriptContainsInvalidTopic,
   scriptContainsNoTopics,
