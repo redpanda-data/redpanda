@@ -52,7 +52,9 @@ class WasmBuildTool():
         shutil.rmtree(self.work_dir)
 
     def _compile_template(self, script, template):
-        inputs = ",".join([f'"{topic}"' for topic in script.inputs])
+        inputs = ",".join([
+            f'["{topic}", PolicyInjection.Stored]' for topic in script.inputs
+        ])
         outputs = [topic for topic in script.outputs]
         if any(x is None for x in outputs):
             raise Exception('Error rendering template, outputs invalid')
