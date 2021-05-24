@@ -214,8 +214,10 @@ func tune(
 
 	results := []result{}
 	includeErr := false
+	allDisabled := true
 	for _, tunerName := range tunerNames {
 		enabled := factory.IsTunerEnabled(tunerName, conf.Rpk)
+		allDisabled = allDisabled && !enabled
 		tuner := tunersFactory.CreateTuner(tunerName, params)
 		supported, reason := tuner.CheckIfSupported()
 		if !enabled || !supported {
@@ -232,6 +234,14 @@ func tune(
 			errMsg = res.Error().Error()
 		}
 		results = append(results, result{tunerName, !res.IsFailed(), enabled, supported, errMsg})
+	}
+
+	if allDisabled {
+		log.Warn(
+			"All tuners were disabled, so none were applied. You may run " +
+				" `rpk mode prod` to enable the recommended set of tuners " +
+				" for non-containerized production use.",
+		)
 	}
 
 	printTuneResult(results, includeErr)
