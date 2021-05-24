@@ -26,6 +26,7 @@ import err, {
   EnableResponseCodes,
 } from "../../modules/rpc/errors";
 import assert = require("assert");
+import { PolicyInjection } from "../../modules/public/Coprocessor";
 
 const fs = require("fs");
 
@@ -383,9 +384,9 @@ describe("Server", function () {
               const metaDataExpected: EnableCoprocessorMetadata = {
                 id: createHandle().coprocessor.globalId,
                 inputTopic: createHandle().coprocessor.inputTopics.map(
-                  (topic) => ({
+                  ([topic, policy]) => ({
                     topic,
-                    ingestion_policy: 2,
+                    ingestion_policy: policy,
                   })
                 ),
               };
@@ -447,7 +448,7 @@ describe("Server", function () {
     it("shouldn't enable coprocessor if the coprocessor has invalid topics", () => {
       const server = new ProcessBatchServer();
       const coprocessor = createHandle().coprocessor;
-      coprocessor.inputTopics = ["topic."];
+      coprocessor.inputTopics = [["topic.", PolicyInjection.Stored]];
       server.loadCoprocFromString = (_, _2) => [coprocessor, undefined];
       server.listen(8080);
       return SupervisorClient.create(8080).then((client) => {
@@ -663,7 +664,7 @@ describe("Server", function () {
             {
               coprocessorIds: [handle.coprocessor.globalId],
               ntp: {
-                topic: handle.coprocessor.inputTopics[0],
+                topic: handle.coprocessor.inputTopics[0][0],
                 namespace: "",
                 partition: 1,
               },
@@ -719,7 +720,7 @@ describe("Server", function () {
             {
               coprocessorIds: [handle.coprocessor.globalId],
               ntp: {
-                topic: handle.coprocessor.inputTopics[0],
+                topic: handle.coprocessor.inputTopics[0][0],
                 namespace: "",
                 partition: 1,
               },
