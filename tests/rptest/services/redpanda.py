@@ -72,7 +72,7 @@ class RedpandaService(Service):
         self._context = context
         self._client_type = client_type
         self._enable_rp = enable_rp
-        self._extra_rp_conf = extra_rp_conf
+        self._extra_rp_conf = extra_rp_conf or dict()
         self._enable_pp = enable_pp
         self._enable_sr = enable_sr
         self._log_level = self._context.globals.get(self.LOG_LEVEL_KEY,
