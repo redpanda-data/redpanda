@@ -29,7 +29,7 @@ namespace archival {
 /// The unit of measure is offset delta.
 class ntp_level_probe {
 public:
-    ntp_level_probe(per_ntp_metrics_disabled disabled, model::ntp ntp);
+    ntp_level_probe(per_ntp_metrics_disabled disabled, const model::ntp& ntp);
 
     /// Register log-segment upload
     void uploaded(model::offset offset_delta) { _uploaded += offset_delta; }
@@ -41,8 +41,6 @@ public:
     void upload_lag(model::offset offset_delta) { _pending = offset_delta; }
 
 private:
-    /// NTP of the probe
-    model::ntp _ntp;
     /// Uploaded offsets
     int64_t _uploaded;
     /// Missing offsets due to gaps
