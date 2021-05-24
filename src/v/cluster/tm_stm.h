@@ -147,7 +147,6 @@ private:
     struct tx_updated_cmd {
         static constexpr uint8_t record_key = 0;
         tm_transaction tx;
-        tm_etag prev_etag;
     };
 
     void load_snapshot(stm_snapshot_header, iobuf&&) override;

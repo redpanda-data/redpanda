@@ -71,9 +71,8 @@ tm_stm::save_tx(model::term_id term, tm_transaction tx) {
         co_return tm_stm::op_status::conflict;
     }
 
-    auto etag = tx.etag;
-    tx.etag = etag.inc_log();
-    tx_updated_cmd cmd{.tx = tx, .prev_etag = etag};
+    tx.etag = tx.etag.inc_log();
+    tx_updated_cmd cmd{.tx = tx};
     auto batch = serialize_cmd(cmd, tm_update_batch_type);
 
     auto r = co_await replicate_quorum_ack(term, std::move(batch));
@@ -221,7 +220,7 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
       .tx_seq = model::tx_seq(0),
       .status = tm_transaction::tx_status::ongoing,
     };
-    tx_updated_cmd cmd{.tx = tx, .prev_etag = tx.etag};
+    tx_updated_cmd cmd{.tx = tx};
     auto batch = serialize_cmd(cmd, tm_update_batch_type);
 
     auto r = co_await replicate_quorum_ack(term, std::move(batch));
@@ -341,35 +340,9 @@ ss::future<> tm_stm::apply(model::record_batch b) {
     tx_updated_cmd cmd = reflection::adl<tx_updated_cmd>{}.from(
       record.release_value());
 
-    auto ptx = _tx_table.find(cmd.tx.id);
-    if (ptx == _tx_table.end()) {
-        if (cmd.prev_etag != cmd.tx.etag) {
-            vlog(
-              clusterlog.error,
-              "Inconsistent tm log. First command should depend on itself but "
-              "tx.id={}, etag={} it reffers to {}",
-              cmd.tx.id,
-              cmd.tx.etag,
-              cmd.prev_etag);
-            if (_recovery_policy == model::violation_recovery_policy::crash) {
-                vassert(
-                  false, "Crushing to prevent potential consistency violation");
-            } else if (
-              _recovery_policy
-              == model::violation_recovery_policy::best_effort) {
-                vlog(
-                  clusterlog.error,
-                  "Recovering by blindly applying tx: {}",
-                  cmd.tx);
-            } else {
-                vassert(false, "Unknown recovery policy {}", _recovery_policy);
-            }
-        }
-        _tx_table.try_emplace(cmd.tx.id, cmd.tx);
-    } else {
-        if (ptx->second.etag.log_etag == cmd.prev_etag.log_etag) {
-            ptx->second = cmd.tx;
-        }
+    auto [tx_it, inserted] = _tx_table.try_emplace(cmd.tx.id, cmd.tx);
+    if (!inserted) {
+        tx_it->second = cmd.tx;
     }
 
     expire_old_txs();
