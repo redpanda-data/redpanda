@@ -32,6 +32,8 @@ func Execute() {
 		color.NoColor = true
 	}
 	log.SetFormatter(cli.NewRpkLogFormatter())
+	log.SetOutput(os.Stdout)
+
 	cobra.OnInitialize(func() {
 		// This is only executed when a subcommand (e.g. rpk check) is
 		// specified.
