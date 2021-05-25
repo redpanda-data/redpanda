@@ -151,9 +151,9 @@ class RpkTool:
         self._redpanda.logger.debug("Executing command: %s", cmd)
         try:
             output = None
-            f = subprocess.PIPE
-
+            f = None
             if stdin:
+                f = subprocess.PIPE
                 if isinstance(stdin, str):
                     # Convert the string msg to bytes
                     stdin = stdin.encode()
