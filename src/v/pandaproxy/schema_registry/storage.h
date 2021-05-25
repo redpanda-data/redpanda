@@ -158,4 +158,173 @@ inline iobuf schema_key_to_iobuf(const schema_key& key) {
     return buf;
 }
 
+struct schema_value {
+    subject sub;
+    schema_version version;
+    schema_type type{schema_type::avro};
+    schema_id id;
+    schema_definition schema;
+    bool deleted{false};
+};
+
+inline void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const schema_registry::schema_value& val) {
+    w.StartObject();
+    w.Key("subject");
+    ::json::rjson_serialize(w, val.sub);
+    w.Key("version");
+    ::json::rjson_serialize(w, val.version);
+    w.Key("id");
+    ::json::rjson_serialize(w, val.id);
+    w.Key("schema");
+    ::json::rjson_serialize(w, val.schema);
+    w.Key("deleted");
+    ::json::rjson_serialize(w, val.deleted);
+    if (val.type != schema_type::avro) {
+        w.Key("schemaType");
+        ::json::rjson_serialize(w, to_string_view(val.type));
+    }
+    w.EndObject();
+}
+
+template<typename Encoding = rapidjson::UTF8<>>
+class schema_value_handler final : public json::base_handler<Encoding> {
+    enum class state {
+        empty = 0,
+        object,
+        subject,
+        version,
+        type,
+        id,
+        definition,
+        deleted,
+    };
+    state _state = state::empty;
+
+public:
+    using Ch = typename json::base_handler<Encoding>::Ch;
+    using rjson_parse_result = schema_value;
+    rjson_parse_result result;
+
+    schema_value_handler()
+      : json::base_handler<Encoding>{json::serialization_format::none} {}
+
+    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        switch (_state) {
+        case state::object: {
+            std::optional<state> s{string_switch<std::optional<state>>(sv)
+                                     .match("subject", state::subject)
+                                     .match("version", state::version)
+                                     .match("schemaType", state::type)
+                                     .match("schema", state::definition)
+                                     .match("id", state::id)
+                                     .match("deleted", state::deleted)
+                                     .default_match(std::nullopt)};
+            if (s.has_value()) {
+                _state = *s;
+            }
+            return s.has_value();
+        }
+        case state::empty:
+        case state::subject:
+        case state::version:
+        case state::type:
+        case state::id:
+        case state::definition:
+        case state::deleted:
+            return false;
+        }
+        return false;
+    }
+
+    bool Uint(int i) {
+        switch (_state) {
+        case state::version: {
+            result.version = schema_version{i};
+            _state = state::object;
+            return true;
+        }
+        case state::id: {
+            result.id = schema_id{i};
+            _state = state::object;
+            return true;
+        }
+        case state::empty:
+        case state::object:
+        case state::subject:
+        case state::type:
+        case state::definition:
+        case state::deleted:
+            return false;
+        }
+        return false;
+    }
+
+    bool Bool(bool b) {
+        switch (_state) {
+        case state::deleted: {
+            result.deleted = b;
+            _state = state::object;
+            return true;
+        }
+        case state::empty:
+        case state::object:
+        case state::subject:
+        case state::version:
+        case state::type:
+        case state::id:
+        case state::definition:
+            return false;
+        }
+        return false;
+    }
+
+    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        switch (_state) {
+        case state::subject: {
+            result.sub = subject{ss::sstring{sv}};
+            _state = state::object;
+            return true;
+        }
+        case state::definition: {
+            result.schema = schema_definition{ss::sstring{sv}};
+            _state = state::object;
+            return true;
+        }
+        case state::type: {
+            std::optional<schema_type> type{
+              string_switch<std::optional<schema_type>>(sv)
+                .match(to_string_view(schema_type::avro), schema_type::avro)
+                .match(to_string_view(schema_type::json), schema_type::json)
+                .match(
+                  to_string_view(schema_type::protobuf), schema_type::protobuf)
+                .default_match(std::nullopt)};
+            if (type.has_value()) {
+                result.type = *type;
+                _state = state::object;
+            }
+            return type.has_value();
+        }
+        case state::empty:
+        case state::object:
+        case state::version:
+        case state::id:
+        case state::deleted:
+            return false;
+        }
+        return false;
+    }
+
+    bool StartObject() {
+        return std::exchange(_state, state::object) == state::empty;
+    }
+
+    bool EndObject(rapidjson::SizeType) {
+        return std::exchange(_state, state::empty) == state::object;
+    }
+};
+
 } // namespace pandaproxy::schema_registry
