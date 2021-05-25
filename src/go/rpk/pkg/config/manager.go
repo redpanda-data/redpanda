@@ -98,8 +98,12 @@ func (m *manager) FindOrGenerate(path string) (*Config, error) {
 // Tries reading a config file at the given path, or generates a default config
 // and writes it to the path.
 func readOrGenerate(fs afero.Fs, v *viper.Viper, path string) (*Config, error) {
-	v.SetConfigFile(path)
-	err := v.ReadInConfig()
+	abs, err := absPath(path)
+	if err != nil {
+		return nil, err
+	}
+	v.SetConfigFile(abs)
+	err = v.ReadInConfig()
 	if err == nil {
 		// The config file's there, there's nothing to do.
 		return unmarshal(v)
@@ -109,25 +113,25 @@ func readOrGenerate(fs afero.Fs, v *viper.Viper, path string) (*Config, error) {
 	if err != nil && !notFound && !notExist {
 		return nil, fmt.Errorf(
 			"An error happened while trying to read %s: %v",
-			path,
+			abs,
 			err,
 		)
 	}
 	log.Debug(err)
 	log.Infof(
 		"Couldn't find config file at %s. Generating it.",
-		path,
+		abs,
 	)
-	v.Set("config_file", path)
-	err = createConfigDir(fs, path)
+	v.Set("config_file", abs)
+	err = createConfigDir(fs, abs)
 	if err != nil {
 		return nil, err
 	}
-	err = v.WriteConfigAs(path)
+	err = v.WriteConfigAs(abs)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"Couldn't write config to %s: %v",
-			path,
+			abs,
 			err,
 		)
 	}

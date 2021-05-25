@@ -1724,6 +1724,7 @@ func TestReadOrGenerate(t *testing.T) {
 		name        string
 		setup       func(afero.Fs) error
 		configFile  string
+		check       func(st *testing.T, conf *Config)
 		expectError bool
 	}{
 		{
@@ -1751,7 +1752,12 @@ func TestReadOrGenerate(t *testing.T) {
 		},
 		{
 			name:       "it should set config_file to the right value",
-			configFile: "/some/arbitrary/path/redpanda.yaml",
+			configFile: "./redpanda.yaml",
+			check: func(st *testing.T, conf *Config) {
+				path, err := filepath.Abs("./redpanda.yaml")
+				require.NoError(st, err)
+				require.Exactly(st, conf.ConfigFile, path)
+			},
 		},
 	}
 
@@ -1771,7 +1777,9 @@ func TestReadOrGenerate(t *testing.T) {
 			require.NoError(t, err)
 			conf, err := mgr.Read(tt.configFile)
 			require.NoError(t, err)
-			require.Exactly(t, tt.configFile, conf.ConfigFile)
+			if tt.check != nil {
+				tt.check(t, conf)
+			}
 		})
 	}
 }
