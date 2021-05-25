@@ -12,10 +12,13 @@
 #pragma once
 
 #include "bytes/iobuf_parser.h"
+#include "model/record_utils.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/types.h"
+#include "raft/types.h"
+#include "storage/record_batch_builder.h"
 #include "utils/string_switch.h"
 
 #include <rapidjson/stringbuffer.h>
@@ -350,6 +353,20 @@ inline iobuf schema_value_to_iobuf(
     iobuf val;
     val.append(str.data(), str.size());
     return val;
+}
+
+inline model::record_batch make_schema_batch(
+  subject sub,
+  schema_version ver,
+  schema_id id,
+  schema_definition schema,
+  schema_type type,
+  bool deleted) {
+    storage::record_batch_builder rb{raft::data_batch_type, model::offset{0}};
+    rb.add_raw_kv(
+      schema_key_to_iobuf(schema_key{.sub{sub}, .version{ver}}),
+      schema_value_to_iobuf(sub, ver, id, std::move(schema), type, deleted));
+    return std::move(rb).build();
 }
 
 } // namespace pandaproxy::schema_registry
