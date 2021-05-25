@@ -155,7 +155,6 @@ class PartitionMovementTest(EndToEndTest):
         """
         self.start_redpanda(num_nodes=3)
 
-        topics = []
         hb = HoneyBadger()
         # if failure injector is not enabled simply skip this test
         if not hb.is_enabled(self.redpanda.nodes[0]):
