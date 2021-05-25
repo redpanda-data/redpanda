@@ -31,7 +31,6 @@ class PartitionMovementTest(EndToEndTest):
 
     TODO
     - Add tests with node failures
-    - Add tests with active producer/consumer
     - Add settings for scaling up tests
     - Add tests guarnateeing multiple segments
     """
@@ -281,3 +280,19 @@ class PartitionMovementTest(EndToEndTest):
                 consumed.append((msg.key, msg.value))
             self.logger.info(f"Finished verifying records in {spec}")
             assert set(consumed) == produced
+
+    @cluster(num_nodes=5)
+    def test_dynamic(self):
+        """
+        Move partitions with active consumer / producer
+        """
+        self.start_redpanda(num_nodes=3)
+        spec = TopicSpec(name="topic", partition_count=3, replication_factor=3)
+        self.redpanda.create_topic(spec)
+        self.topic = spec.name
+        self.start_producer(1)
+        self.start_consumer(1)
+        self.await_startup()
+        for _ in range(25):
+            self._move_and_verify()
+        self.run_validation(enable_idempotence=False)

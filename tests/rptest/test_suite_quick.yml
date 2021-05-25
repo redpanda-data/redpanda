@@ -21,3 +21,4 @@ quick:
   - tests/wasm_identity_test.py
   - tests/wasm_failure_recovery_test.py
   - tests/wasm_redpanda_failure_recovery_test.py
+  - tests/partition_movement_test.py::PartitionMovementTest.test_dynamic
