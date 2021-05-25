@@ -43,7 +43,8 @@ class SchemaRegistryTest(RedpandaTest):
             num_brokers=3,
             enable_pp=True,
             enable_sr=True,
-            extra_rp_conf={"auto_create_topics_enabled": False})
+            extra_rp_conf={"auto_create_topics_enabled": False},
+            num_cores=1)
 
         http.client.HTTPConnection.debuglevel = 1
         logging.basicConfig()
