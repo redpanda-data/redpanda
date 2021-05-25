@@ -86,11 +86,18 @@ We'll use Helm to install cert-manager:
 
 ## Install the Redpanda operator and cluster
 
-1. Install the latest redpanda operator:
+1. Just to simplify the commands, create a variable to hold the latest version number:
+
+    ```
+    export VERSION=$(curl -s https://api.github.com/repos/vectorizedio/redpanda/releases/latest | jq -r .tag_name)
+    ```
+
+    **_Note_** - You can find information about the versions of the operator in the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).
+
+2. Install the latest redpanda operator:
 
   ```
-  VERSION=v21.4.15
-  kubectl apply -k 'https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=$VERSION'
+  kubectl apply -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=$VERSION && \
   helm repo add redpanda https://charts.vectorized.io/ && \
   helm repo update && \
   helm install \
@@ -103,7 +110,6 @@ We'll use Helm to install cert-manager:
 2. Install a cluster with external connectivity:
 
   ```
-  VERSION=v21.4.15
   kubectl apply -f https://raw.githubusercontent.com/vectorizedio/redpanda/$VERSION/src/go/k8s/config/samples/external_connectivity.yaml
   ```
 
