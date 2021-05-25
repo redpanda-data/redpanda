@@ -113,13 +113,13 @@ to verify that cert-manager is working correcly.
     helm repo update
     ```
 
-2. Just to simplify the commands, create a variable for the version number:
+2. Just to simplify the commands, create a variable to hold the latest version number:
 
     ```
-    export VERSION=v21.4.15
+    export VERSION=$(curl -s https://api.github.com/repos/vectorizedio/redpanda/releases/latest | jq -r .tag_name)
     ```
 
-    **_Note_** - You can find the latest version number of the operator in the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).
+    **_Note_** - You can find information about the versions of the operator in the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).
 
 3. Install the Redpanda operator CRD:
 
