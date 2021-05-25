@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "bytes/iobuf_parser.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/schema_registry/error.h"
@@ -143,5 +144,18 @@ public:
         return std::exchange(_state, state::empty) == state::object;
     }
 };
+
+inline schema_key schema_key_from_iobuf(iobuf&& iobuf) {
+    auto p = iobuf_parser(std::move(iobuf));
+    auto str = p.read_string(p.bytes_left());
+    return json::rjson_parse(str.data(), schema_key_handler<>{});
+}
+
+inline iobuf schema_key_to_iobuf(const schema_key& key) {
+    auto str = json::rjson_serialize(key);
+    iobuf buf;
+    buf.append(str.data(), str.size());
+    return buf;
+}
 
 } // namespace pandaproxy::schema_registry
