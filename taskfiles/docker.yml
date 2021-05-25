@@ -14,7 +14,7 @@ tasks:
     - download-task
     cmds:
     - |
-      docker run --rm -i --privileged {{.DOCKER_RUN_FLAGS}} \
+      docker run --rm -i {{.DOCKER_RUN_FLAGS}} \
         -e "COMMIT={{.COMMIT}}" \
         -e "CI={{.CI}}" \
         -e "TAG_NAME={{.TAG_NAME}}" \
