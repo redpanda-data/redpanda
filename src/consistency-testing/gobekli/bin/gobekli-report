@@ -9,8 +9,10 @@ from pathlib import Path
 
 from gobekli.logging import m
 from gobekli.chaos.analysis import (make_overview_chart, make_latency_chart,
-                                    make_pdf_latency_chart, make_availability_chart,
-                                    analyze_inject_recover_availability, LatencyType)
+                                    make_pdf_latency_chart,
+                                    make_availability_chart,
+                                    analyze_inject_recover_availability,
+                                    LatencyType)
 
 from os import path
 import json
@@ -242,22 +244,49 @@ EXPERIMENT = """
 </html>
 """
 
+
 def build_charts(config, root, results, warmup_s, zoom_us):
     for result in results:
         path = os.path.join(root, result["path"])
-        make_overview_chart(result["title"], path, result["availability_log"], result["latency_log"], warmup_s, LatencyType.OVERALL)
-        make_overview_chart(result["title"], path, result["availability_log"], result["latency_log"], warmup_s, LatencyType.PRODUCER)
-        make_availability_chart(result["title"], None, path, result["availability_log"], result["latency_log"], warmup_s)
+        make_overview_chart(result["title"], path, result["availability_log"],
+                            result["latency_log"], warmup_s,
+                            LatencyType.OVERALL)
+        make_overview_chart(result["title"], path, result["availability_log"],
+                            result["latency_log"], warmup_s,
+                            LatencyType.PRODUCER)
+        make_availability_chart(result["title"], None, path,
+                                result["availability_log"],
+                                result["latency_log"], warmup_s)
         for endpoint in config["endpoints"]:
-           make_availability_chart(result["title"], endpoint["idx"], path, result["availability_log"], result["latency_log"], warmup_s)
-        make_pdf_latency_chart(result["title"], None, path, result["availability_log"], result["latency_log"], warmup_s, zoom_us, LatencyType.OVERALL)
-        make_pdf_latency_chart(result["title"], None, path, result["availability_log"], result["latency_log"], warmup_s, zoom_us, LatencyType.PRODUCER)
+            make_availability_chart(result["title"], endpoint["idx"], path,
+                                    result["availability_log"],
+                                    result["latency_log"], warmup_s)
+        make_pdf_latency_chart(result["title"], None, path,
+                               result["availability_log"],
+                               result["latency_log"], warmup_s, zoom_us,
+                               LatencyType.OVERALL)
+        make_pdf_latency_chart(result["title"], None, path,
+                               result["availability_log"],
+                               result["latency_log"], warmup_s, zoom_us,
+                               LatencyType.PRODUCER)
         for endpoint in config["endpoints"]:
-            make_pdf_latency_chart(result["title"], endpoint["idx"], path, result["availability_log"], result["latency_log"], warmup_s, zoom_us, LatencyType.OVERALL)
-            make_pdf_latency_chart(result["title"], endpoint["idx"], path, result["availability_log"], result["latency_log"], warmup_s, zoom_us, LatencyType.PRODUCER)
+            make_pdf_latency_chart(result["title"], endpoint["idx"], path,
+                                   result["availability_log"],
+                                   result["latency_log"], warmup_s, zoom_us,
+                                   LatencyType.OVERALL)
+            make_pdf_latency_chart(result["title"], endpoint["idx"], path,
+                                   result["availability_log"],
+                                   result["latency_log"], warmup_s, zoom_us,
+                                   LatencyType.PRODUCER)
         for endpoint in config["endpoints"]:
-            make_latency_chart(result["title"], endpoint["idx"], path, result["availability_log"], result["latency_log"], warmup_s, LatencyType.OVERALL)
-            make_latency_chart(result["title"], endpoint["idx"], path, result["availability_log"], result["latency_log"], warmup_s, LatencyType.PRODUCER)
+            make_latency_chart(result["title"], endpoint["idx"], path,
+                               result["availability_log"],
+                               result["latency_log"], warmup_s,
+                               LatencyType.OVERALL)
+            make_latency_chart(result["title"], endpoint["idx"], path,
+                               result["availability_log"],
+                               result["latency_log"], warmup_s,
+                               LatencyType.PRODUCER)
         came_from = os.getcwd()
         os.chdir(path)
         gnuplot("pdf.latency.overall.all.gp")
@@ -274,7 +303,7 @@ def build_charts(config, root, results, warmup_s, zoom_us):
             gnuplot(f"pdf.latency.producer.{idx}.gp")
             rm(f"pdf.latency.producer.{idx}.gp")
             rm(f"pdf.latency.producer.{idx}.log")
-        
+
         gnuplot("availability.all.gp")
         rm("availability.all.gp")
         rm("availability.all.log")
@@ -304,6 +333,7 @@ def build_charts(config, root, results, warmup_s, zoom_us):
 
         os.chdir(came_from)
 
+
 def archive_logs(root, results):
     logs = []
     for result in results:
@@ -315,9 +345,10 @@ def archive_logs(root, results):
     for f in logs:
         os.remove(f)
 
+
 def archive_failed_cmd_log(root, results):
     for result in results:
-        status = result["status"] # passed | failed
+        status = result["status"]  # passed | failed
         if status == "passed":
             for f in os.listdir(path.join(root, result["path"])):
                 if f.startswith(result["cmd_log"]):
@@ -325,7 +356,8 @@ def archive_failed_cmd_log(root, results):
         else:
             cmd_logs = []
             for f in os.listdir(path.join(root, result["path"])):
-                if f.startswith(result["cmd_log"]) and not f.endswith(".tar.bz2"):
+                if f.startswith(
+                        result["cmd_log"]) and not f.endswith(".tar.bz2"):
                     cmd_logs.append(f)
             if len(cmd_logs) > 0:
                 tar_args = ["cjf", result["cmd_log"] + ".tar.bz2"] + cmd_logs
@@ -338,7 +370,8 @@ def archive_failed_cmd_log(root, results):
 
 
 class ChartSet:
-    def __init__(self, id, title, latency_overall, latency_producer, pdf_latency_overall, pdf_latency_producer, availability):
+    def __init__(self, id, title, latency_overall, latency_producer,
+                 pdf_latency_overall, pdf_latency_producer, availability):
         self.title = title
         self.id = id
         self.latency_overall = latency_overall
@@ -347,36 +380,41 @@ class ChartSet:
         self.pdf_latency_producer = pdf_latency_producer
         self.availability = availability
 
+
 def build_experiment_index(context, config, root, result, warmup, zoom_us):
     index_path = os.path.join(root, result["path"], "index.html")
-    
+
     charts = []
 
     if len(config["endpoints"]) > 1:
         charts.append(
-            ChartSet("overview", "Combined", "overview.overall.png", "overview.producer.png", "pdf.latency.overall.all.png", "pdf.latency.producer.all.png", "availability.all.png")
-        )
+            ChartSet("overview", "Combined", "overview.overall.png",
+                     "overview.producer.png", "pdf.latency.overall.all.png",
+                     "pdf.latency.producer.all.png", "availability.all.png"))
 
     for endpoint in config["endpoints"]:
         idx = endpoint["idx"]
         charts.append(
-            ChartSet(endpoint["id"], endpoint["id"], f"latency.overall.{idx}.png", f"latency.producer.{idx}.png", f"pdf.latency.overall.{idx}.png", f"pdf.latency.producer.{idx}.png", f"availability.{idx}.png")
-        )
-        
+            ChartSet(endpoint["id"], endpoint["id"],
+                     f"latency.overall.{idx}.png",
+                     f"latency.producer.{idx}.png",
+                     f"pdf.latency.overall.{idx}.png",
+                     f"pdf.latency.producer.{idx}.png",
+                     f"availability.{idx}.png"))
 
-    
     with open(index_path, 'w') as html:
-        html.write(jinja2.Template(EXPERIMENT).render(
-            system = context["system"],
-            workload = context["workload"],
-            scenario = context["scenario"],
-            charts = charts,
-            fault = result["fault"],
-            id = result["id"],
-            min_lat = result["stat"]["min_lat"],
-            max_lat = result["stat"]["max_lat"],
-            max_unavailability =  result["stat"]["max_unavailability"]
-        ))
+        html.write(
+            jinja2.Template(EXPERIMENT).render(
+                system=context["system"],
+                workload=context["workload"],
+                scenario=context["scenario"],
+                charts=charts,
+                fault=result["fault"],
+                id=result["id"],
+                min_lat=result["stat"]["min_lat"],
+                max_lat=result["stat"]["max_lat"],
+                max_unavailability=result["stat"]["max_unavailability"]))
+
 
 def load_results(context, results_log, warmup_s):
     root = Path(results_log).parent
@@ -384,42 +422,51 @@ def load_results(context, results_log, warmup_s):
         for line in result_file:
             result = json.loads(line)
             result["stat"] = analyze_inject_recover_availability(
-                path.join(root, result["path"]),
-                result["availability_log"],
-                result["latency_log"],
-                warmup_s
-            )
+                path.join(root, result["path"]), result["availability_log"],
+                result["latency_log"], warmup_s)
             yield result
+
 
 def load_context(root):
     with open(path.join(root, "context.json")) as context_info:
         return json.load(context_info)
 
+
 def build_alerts(root, results):
     with open(path.join(root, "alerts.log"), "w") as alerts:
         for result in results:
             if result["status"] == "failed":
-                alerts.write(str(m(type="consistency", message=result["error"], id=result["id"])) + "\n")
+                alerts.write(
+                    str(
+                        m(type="consistency",
+                          message=result["error"],
+                          id=result["id"])) + "\n")
+
 
 def load_config(root):
     with open(path.join(root, "settings.json")) as config_json:
         return json.load(config_json)
 
+
 def build_index(context, title, root, results):
     ava_stat = defaultdict(lambda: [])
-    fault_stat = defaultdict(lambda: { "passed": 0, "failed": [] })
-    
+    fault_stat = defaultdict(lambda: {"passed": 0, "failed": []})
+
     for result in results:
         fault = result["fault"]
-        status = result["status"] # passed | failed
+        status = result["status"]  # passed | failed
         if status == "passed":
             fault_stat[fault]["passed"] += 1
         else:
             fault_stat[fault]["failed"].append({
-                "error": result["error"],
-                "status": "failed",
-                "logs": path.join(result["path"], result["cmd_log"] + ".tar.bz2"),
-                "is_err": True
+                "error":
+                result["error"],
+                "status":
+                "failed",
+                "logs":
+                path.join(result["path"], result["cmd_log"] + ".tar.bz2"),
+                "is_err":
+                True
             })
 
     for result in results:
@@ -427,13 +474,15 @@ def build_index(context, title, root, results):
         availability["id"] = result["id"]
         availability["link"] = os.path.join(result["path"], "index.html")
         ava_stat[result["fault"]].append(availability)
-    
+
     atests = []
     for fault in ava_stat.keys():
         stat = ava_stat[fault]
         atests.append({
-            "fault": fault, "span": len(stat),
-            "first": stat[0], "rest": stat[1:]
+            "fault": fault,
+            "span": len(stat),
+            "first": stat[0],
+            "rest": stat[1:]
         })
 
     ctests = []
@@ -451,33 +500,40 @@ def build_index(context, title, root, results):
             first = fault_stat[fault]["failed"][0]
             rest = fault_stat[fault]["failed"][1:]
 
-        ctests.append({"fault": fault, "span": 1 + len(rest), "first": first, "rest": rest})
+        ctests.append({
+            "fault": fault,
+            "span": 1 + len(rest),
+            "first": first,
+            "rest": rest
+        })
 
     with open(path.join(root, "index.html"), 'w') as html:
-        html.write(jinja2.Template(INDEX).render(
-            title = title,
-            system = context["system"],
-            workload = context["workload"],
-            scenario = context["scenario"],
-            ctests = ctests,
-            atests = atests
-        ))
+        html.write(
+            jinja2.Template(INDEX).render(title=title,
+                                          system=context["system"],
+                                          workload=context["workload"],
+                                          scenario=context["scenario"],
+                                          ctests=ctests,
+                                          atests=atests))
+
 
 def build_report(results_log, warmup_s, zoom_us):
     root = Path(results_log).parent
     context = load_context(root)
     config = load_config(root)
-    results = list(load_results(context, results_log, warmup_s))   
+    results = list(load_results(context, results_log, warmup_s))
 
     build_charts(config, root, results, warmup_s, zoom_us)
     archive_failed_cmd_log(root, results)
-    
+
     for result in results:
-        build_experiment_index(context, config, root, result, warmup_s, zoom_us)
-    
+        build_experiment_index(context, config, root, result, warmup_s,
+                               zoom_us)
+
     build_index(context, results_log, root, results)
     build_alerts(root, results)
     archive_logs(root, results)
+
 
 parser = argparse.ArgumentParser(description='build gobekli report')
 parser.add_argument('--result', action='append', required=True)
