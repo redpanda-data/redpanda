@@ -23,6 +23,18 @@ tasks:
     - test -f "{{.NODE_ROOT}}/bin/node"
     - test -f "{{.NODE_ROOT}}/bin/npm"
 
+  install-yapf:
+    desc: install yapf
+    vars:
+      VENV: '{{.BUILD_ROOT}}/venv/yapf'
+    cmds:
+    - python3 -mvenv '{{.VENV}}'
+    - |
+      source '{{.VENV}}/bin/activate'
+      pip3 install --upgrade pip
+      pip3 install yapf
+    status:
+    - test -f '{{.VENV}}/bin/yapf'
 
   install-docker-compose:
     desc: install docker-compose
