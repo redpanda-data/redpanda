@@ -16,14 +16,14 @@ from rptest.clients.kafka_cat import KafkaCat
 import requests
 
 from rptest.clients.types import TopicSpec
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
 from rptest.services.honey_badger import HoneyBadger
 from kafka import KafkaProducer
 from kafka import KafkaConsumer
 
 
-class PartitionMovementTest(RedpandaTest):
+class PartitionMovementTest(EndToEndTest):
     """
     Basic partition movement tests. Each test builds a number of topics and then
     performs a series of random replica set changes. After each change a
@@ -153,6 +153,8 @@ class PartitionMovementTest(RedpandaTest):
         """
         Move partition before first leader is elected
         """
+        self.start_redpanda(num_nodes=3)
+
         topics = []
         hb = HoneyBadger()
         # if failure injector is not enabled simply skip this test
@@ -213,6 +215,8 @@ class PartitionMovementTest(RedpandaTest):
         """
         Move empty partitions.
         """
+        self.start_redpanda(num_nodes=3)
+
         topics = []
         for partition_count in range(1, 5):
             for replication_factor in (3, 3):
@@ -233,6 +237,8 @@ class PartitionMovementTest(RedpandaTest):
         """
         Move partitions with data, but no active producers or consumers.
         """
+        self.start_redpanda(num_nodes=3)
+
         topics = []
         for partition_count in range(1, 5):
             for replication_factor in (3, 3):
