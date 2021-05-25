@@ -327,4 +327,29 @@ public:
     }
 };
 
+inline schema_value schema_value_from_iobuf(iobuf&& iobuf) {
+    auto p = iobuf_parser(std::move(iobuf));
+    auto str = p.read_string(p.bytes_left());
+    return json::rjson_parse(str.data(), schema_value_handler<>{});
+}
+
+inline iobuf schema_value_to_iobuf(
+  subject sub,
+  schema_version ver,
+  schema_id id,
+  schema_definition schema,
+  schema_type type,
+  bool deleted) {
+    auto str = json::rjson_serialize(schema_value{
+      .sub{std::move(sub)},
+      .version{ver},
+      .type = type,
+      .id{id},
+      .schema{std::move(schema)},
+      .deleted = deleted});
+    iobuf val;
+    val.append(str.data(), str.size());
+    return val;
+}
+
 } // namespace pandaproxy::schema_registry
