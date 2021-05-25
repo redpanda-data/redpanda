@@ -30,7 +30,7 @@ struct error_category final : std::error_category {
     default_error_condition(int ec) const noexcept override {
         switch (static_cast<error_code>(ec)) {
         case error_code::invalid_json:
-            return reply_error_code::kafka_bad_request;
+            return reply_error_code::unprocessable_entity;
         }
         return {};
     }
