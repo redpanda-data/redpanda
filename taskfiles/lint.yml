@@ -8,3 +8,10 @@ tasks:
       PATH="{{.LLVM_INSTALL_PATH}}/bin":$PATH
       cd $(git rev-parse --show-toplevel)
       git ls-files "*.cc" "*.java" "*.h" | xargs -n1 clang-format -i -style=file -fallback-style=none
+
+  python:
+    desc: lint python code using yapf
+    deps:
+    - :dev:install-yapf
+    cmds:
+    - '"{{.BUILD_ROOT}}/venv/yapf/bin/yapf" -i -r -e "{{.BUILD_ROOT}}/*" "{{.SRC_DIR}}"'
