@@ -43,6 +43,28 @@
                 "port": 22,
                 "user": "root"
             }
+        },
+        {
+            "externally_routable_ip": "n5",
+            "ssh_config": {
+                "host": "n5",
+                "hostname": "n5",
+                "identityfile": "/root/.ssh/id_rsa",
+                "password": "UNUSED",
+                "port": 22,
+                "user": "root"
+            }
+        },
+        {
+            "externally_routable_ip": "n6",
+            "ssh_config": {
+                "host": "n6",
+                "hostname": "n6",
+                "identityfile": "/root/.ssh/id_rsa",
+                "password": "UNUSED",
+                "port": 22,
+                "user": "root"
+            }
         }
     ]
 }
