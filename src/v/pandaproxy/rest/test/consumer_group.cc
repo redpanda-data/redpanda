@@ -59,7 +59,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
     info("Waiting for leadership");
     wait_for_controller_leadership().get();
     info("Connecting client");
-    auto client = make_client();
+    auto client = make_proxy_client();
 
     kafka::group_id group_id{"test_group"};
     kafka::member_id member_id{kafka::no_member};

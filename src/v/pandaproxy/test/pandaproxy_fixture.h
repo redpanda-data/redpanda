@@ -30,9 +30,16 @@ public:
     pandaproxy_test_fixture operator=(pandaproxy_test_fixture&&) = delete;
     ~pandaproxy_test_fixture() = default;
 
-    http::client make_client() {
+    http::client make_proxy_client() {
         rpc::base_transport::configuration transport_cfg;
-        transport_cfg.server_addr = unresolved_address{"localhost", 8082};
+        transport_cfg.server_addr = unresolved_address{"localhost", proxy_port};
+        return http::client(transport_cfg);
+    }
+
+    http::client make_schema_reg_client() {
+        rpc::base_transport::configuration transport_cfg;
+        transport_cfg.server_addr = unresolved_address{
+          "localhost", schema_reg_port};
         return http::client(transport_cfg);
     }
 

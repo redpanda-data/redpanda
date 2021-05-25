@@ -25,7 +25,7 @@ FIXTURE_TEST(pandaproxy_list_topics, pandaproxy_test_fixture) {
     wait_for_controller_leadership().get();
 
     info("Connecting client");
-    auto client = make_client();
+    auto client = make_proxy_client();
 
     {
         info("List no topics");
