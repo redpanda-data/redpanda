@@ -171,19 +171,6 @@ static ss::future<read_result> read_from_partition(
       std::move(data), start_o, hw, lso, std::move(aborted_transactions));
 }
 
-std::optional<partition_proxy> make_partition_proxy(
-  const ntp_fetch_config& fetch_cfg,
-  ss::lw_shared_ptr<cluster::partition> partition,
-  cluster::partition_manager& pm) {
-    if (!fetch_cfg.is_materialized()) {
-        return make_partition_proxy<replicated_partition>(partition);
-    }
-    if (auto log = pm.log(*fetch_cfg.materialized_ntp); log) {
-        return make_partition_proxy<materialized_partition>(*log);
-    }
-    return std::nullopt;
-}
-
 /**
  * Entry point for reading from an ntp. This is executed on NTP home core and
  * build error responses if anything goes wrong.
@@ -196,7 +183,7 @@ static ss::future<read_result> do_read_from_ntp(
     /*
      * lookup the ntp's partition
      */
-    auto partition = mgr.get(ntp_config.ntp);
+    auto partition = mgr.get(ntp_config.ntp());
     if (unlikely(!partition)) {
         return ss::make_ready_future<read_result>(
           error_code::unknown_topic_or_partition);
@@ -206,7 +193,8 @@ static ss::future<read_result> do_read_from_ntp(
           error_code::not_leader_for_partition);
     }
 
-    auto kafka_partition = make_partition_proxy(ntp_config, partition, mgr);
+    auto kafka_partition = make_partition_proxy(
+      ntp_config.materialized_ntp, partition, mgr);
     if (!kafka_partition) {
         return ss::make_ready_future<read_result>(
           error_code::unknown_topic_or_partition);
@@ -239,12 +227,7 @@ static ss::future<read_result> do_read_from_ntp(
 
 static ntp_fetch_config make_ntp_fetch_config(
   const model::materialized_ntp& m_ntp, const fetch_config& fetch_cfg) {
-    if (m_ntp.is_materialized()) {
-        return ntp_fetch_config(
-          m_ntp.source_ntp(), fetch_cfg, m_ntp.input_ntp());
-    }
-
-    return ntp_fetch_config(m_ntp.source_ntp(), fetch_cfg);
+    return ntp_fetch_config(m_ntp, fetch_cfg);
 }
 
 ss::future<read_result> read_from_ntp(
@@ -338,7 +321,7 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
     return ssx::parallel_transform(
       std::move(ntp_fetch_configs),
       [&mgr, deadline, foreign_read](const ntp_fetch_config& ntp_cfg) {
-          auto p_id = ntp_cfg.ntp.tp.partition;
+          auto p_id = ntp_cfg.ntp().tp.partition;
           return do_read_from_ntp(mgr, ntp_cfg, foreign_read, deadline)
             .then([p_id](read_result res) {
                 res.partition = p_id;
