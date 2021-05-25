@@ -13,11 +13,15 @@ tasks:
     deps:
     - download-task
     cmds:
-    - printenv > /tmp/.envfile
-    - sed -i 's/PATH.*//' /tmp/.envfile
     - |
       docker run --rm -i --privileged {{.DOCKER_RUN_FLAGS}} \
-        --env-file /tmp/.envfile \
+        -e "COMMIT={{.COMMIT}}" \
+        -e "CI={{.CI}}" \
+        -e "TAG_NAME={{.TAG_NAME}}" \
+        -e "BRANCH_NAME={{.BRANCH_NAME}}" \
+        -e "COMPILER={{.COMPILER}}" \
+        -e "BUILD_TYPE={{.BUILD_TYPE}}" \
+        -e "PWD={{.PWD}}" \
         --volume '{{.PWD}}:{{.PWD}}' \
         --workdir '{{.PWD}}' \
         --entrypoint=bin/task \
