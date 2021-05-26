@@ -164,7 +164,7 @@ class RpkTool:
 
             # rpk logs everything on STDERR by default
             p = subprocess.Popen(cmd,
-                                 stderr=subprocess.PIPE,
+                                 stdout=subprocess.PIPE,
                                  stdin=f,
                                  text=True)
             start_time = time.time()
@@ -179,7 +179,7 @@ class RpkTool:
             if ret is None:
                 p.terminate()
 
-            output = p.stderr.read()
+            output = p.stdout.read()
 
             if p.returncode:
                 raise Exception('command %s returned %d, output: %s' %
