@@ -45,6 +45,7 @@ public:
 private:
     configuration _config;
     ss::semaphore _mem_sem;
+    ss::gate _gate;
     ss::sharded<kafka::client::client>& _client;
     ctx_server<service>::context_t _ctx;
     ctx_server<service> _server;

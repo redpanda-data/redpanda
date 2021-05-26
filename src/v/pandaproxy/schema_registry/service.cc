@@ -13,39 +13,54 @@
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/handlers.h"
+#include "utils/gate_guard.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/memory.hh>
+#include <seastar/core/std-coroutine.hh>
 #include <seastar/http/api_docs.hh>
 
 namespace pandaproxy::schema_registry {
 
 using server = ctx_server<service>;
 
-server::routes_t get_schema_registry_routes() {
+template<typename Handler>
+auto wrap(ss::gate& g, Handler h) {
+    return [&g, h{std::move(h)}](
+             server::request_t rq,
+             server::reply_t rp) -> ss::future<server::reply_t> {
+        auto guard = gate_guard(g);
+        co_return co_await h(std::move(rq), std::move(rp));
+    };
+}
+
+server::routes_t get_schema_registry_routes(ss::gate& gate) {
     server::routes_t routes;
     routes.api = ss::httpd::schema_registry_json::name;
 
     routes.routes.emplace_back(server::route_t{
-      ss::httpd::schema_registry_json::get_schemas_types, get_schemas_types});
+      ss::httpd::schema_registry_json::get_schemas_types,
+      wrap(gate, get_schemas_types)});
 
     routes.routes.emplace_back(server::route_t{
-      ss::httpd::schema_registry_json::get_schemas_ids_id, get_schemas_ids_id});
+      ss::httpd::schema_registry_json::get_schemas_ids_id,
+      wrap(gate, get_schemas_ids_id)});
 
     routes.routes.emplace_back(server::route_t{
-      ss::httpd::schema_registry_json::get_subjects, get_subjects});
+      ss::httpd::schema_registry_json::get_subjects, wrap(gate, get_subjects)});
 
     routes.routes.emplace_back(server::route_t{
       ss::httpd::schema_registry_json::get_subject_versions,
-      get_subject_versions});
+      wrap(gate, get_subject_versions)});
 
     routes.routes.emplace_back(server::route_t{
       ss::httpd::schema_registry_json::post_subject_versions,
-      post_subject_versions});
+      wrap(gate, post_subject_versions)});
 
     routes.routes.emplace_back(server::route_t{
       ss::httpd::schema_registry_json::get_subject_versions_version,
-      get_subject_versions_version});
+      wrap(gate, get_subject_versions_version)});
 
     return routes;
 }
@@ -68,14 +83,17 @@ service::service(
 
 ss::future<> service::start() {
     static std::vector<model::broker_endpoint> not_advertised{};
-    _server.routes(get_schema_registry_routes());
+    _server.routes(get_schema_registry_routes(_gate));
     return _server.start(
       _config.schema_registry_api(),
       _config.schema_registry_api_tls(),
       not_advertised);
 }
 
-ss::future<> service::stop() { return _server.stop(); }
+ss::future<> service::stop() {
+    co_await _gate.close();
+    co_await _server.stop();
+}
 
 configuration& service::config() { return _config; }
 
