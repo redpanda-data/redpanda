@@ -138,6 +138,13 @@ rm_stm::rm_stm(ss::logger& logger, raft::consensus* c)
 
 ss::future<checked<model::term_id, tx_errc>>
 rm_stm::begin_tx(model::producer_identity pid, model::tx_seq tx_seq) {
+    return get_tx_lock(pid.get_id())->with([this, pid, tx_seq]() {
+        return do_begin_tx(pid, tx_seq);
+    });
+}
+
+ss::future<checked<model::term_id, tx_errc>>
+rm_stm::do_begin_tx(model::producer_identity pid, model::tx_seq tx_seq) {
     auto is_ready = co_await sync(_sync_timeout);
     if (!is_ready) {
         co_return tx_errc::stale;
@@ -207,6 +214,18 @@ rm_stm::begin_tx(model::producer_identity pid, model::tx_seq tx_seq) {
 }
 
 ss::future<tx_errc> rm_stm::prepare_tx(
+  model::term_id etag,
+  model::partition_id tm,
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  model::timeout_clock::duration timeout) {
+    return get_tx_lock(pid.get_id())
+      ->with([this, etag, tm, pid, tx_seq, timeout]() {
+          return do_prepare_tx(etag, tm, pid, tx_seq, timeout);
+      });
+}
+
+ss::future<tx_errc> rm_stm::do_prepare_tx(
   model::term_id etag,
   model::partition_id tm,
   model::producer_identity pid,
@@ -327,6 +346,15 @@ ss::future<tx_errc> rm_stm::prepare_tx(
 }
 
 ss::future<tx_errc> rm_stm::commit_tx(
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  model::timeout_clock::duration timeout) {
+    return get_tx_lock(pid.get_id())->with([this, pid, tx_seq, timeout]() {
+        return do_commit_tx(pid, tx_seq, timeout);
+    });
+}
+
+ss::future<tx_errc> rm_stm::do_commit_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
@@ -459,10 +487,19 @@ abort_origin rm_stm::get_abort_origin(
     return abort_origin::present;
 }
 
+ss::future<tx_errc> rm_stm::abort_tx(
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  model::timeout_clock::duration timeout) {
+    return get_tx_lock(pid.get_id())->with([this, pid, tx_seq, timeout]() {
+        return do_abort_tx(pid, tx_seq, timeout);
+    });
+}
+
 // abort_tx is invoked strictly after a tx is canceled on the tm_stm
 // the purpose of abort is to put tx_range into the list of aborted txes
 // and to fence off the old epoch
-ss::future<tx_errc> rm_stm::abort_tx(
+ss::future<tx_errc> rm_stm::do_abort_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
@@ -528,15 +565,22 @@ rm_stm::replicate(
   model::record_batch_reader b,
   raft::replicate_options opts) {
     if (bid.is_transactional) {
-        co_return co_await replicate_tx(bid, std::move(b));
+        auto pid = bid.pid.get_id();
+        return get_tx_lock(pid)->with([this, bid, b = std::move(b)]() mutable {
+            return replicate_tx(bid, std::move(b));
+        });
     } else if (bid.has_idempotent() && bid.first_seq <= bid.last_seq) {
-        co_return co_await replicate_seq(bid, std::move(b), opts);
+        return replicate_seq(bid, std::move(b), opts);
     } else {
-        auto r = co_await _c->replicate(std::move(b), std::move(opts));
-        if (!r) {
-            co_return kafka::error_code::unknown_server_error;
-        }
-        co_return r.value();
+        return _c->replicate(std::move(b), std::move(opts))
+          .then([](result<raft::replicate_result> r) {
+              if (!r) {
+                  return checked<raft::replicate_result, kafka::error_code>(
+                    kafka::error_code::unknown_server_error);
+              }
+              return checked<raft::replicate_result, kafka::error_code>(
+                r.value());
+          });
     }
 }
 

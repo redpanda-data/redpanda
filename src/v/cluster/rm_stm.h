@@ -106,6 +106,18 @@ public:
       raft::replicate_options);
 
 private:
+    ss::future<checked<model::term_id, tx_errc>>
+      do_begin_tx(model::producer_identity, model::tx_seq);
+    ss::future<tx_errc> do_prepare_tx(
+      model::term_id,
+      model::partition_id,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
+    ss::future<tx_errc> do_commit_tx(
+      model::producer_identity, model::tx_seq, model::timeout_clock::duration);
+    ss::future<tx_errc> do_abort_tx(
+      model::producer_identity, model::tx_seq, model::timeout_clock::duration);
     void load_snapshot(stm_snapshot_header, iobuf&&) override;
     stm_snapshot take_snapshot() override;
 
@@ -206,6 +218,17 @@ private:
         }
     };
 
+    ss::lw_shared_ptr<mutex> get_tx_lock(model::producer_id pid) {
+        auto lock_it = _tx_locks.find(pid);
+        if (lock_it == _tx_locks.end()) {
+            auto [new_it, _] = _tx_locks.try_emplace(
+              pid, ss::make_lw_shared<mutex>());
+            lock_it = new_it;
+        }
+        return lock_it->second;
+    }
+
+    absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
     log_state _log_state;
     mem_state _mem_state;
     model::timestamp _oldest_session;
