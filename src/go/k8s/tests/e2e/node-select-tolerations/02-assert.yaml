@@ -15,7 +15,7 @@ spec:
   containers:
     - name: redpanda
       image: "vectorized/redpanda:latest"
-  nodeName: kind-worker2
+  nodeName: kind-worker
   nodeSelector:
     redpanda-node: "true"
 status:
