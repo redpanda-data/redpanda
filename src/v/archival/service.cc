@@ -17,6 +17,7 @@
 #include "cluster/topic_table.h"
 #include "config/configuration.h"
 #include "config/property.h"
+#include "http/client.h"
 #include "likely.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -240,7 +241,8 @@ ss::future<> scheduler_service_impl::upload_topic_manifest(
               s3::object_key(key),
               size_bytes,
               std::move(istr),
-              tags);
+              tags,
+              http::default_connect_timeout);
             _probe.topic_manifest_upload();
         } catch (const s3::rest_error_response& err) {
             vlog(

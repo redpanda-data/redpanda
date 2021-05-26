@@ -45,6 +45,8 @@
 #include <chrono>
 #include <exception>
 
+using namespace std::chrono_literals;
+
 static const uint16_t httpd_port_number = 4434;
 static constexpr const char* httpd_host_name = "127.0.0.1";
 static constexpr const char* expected_payload
@@ -198,7 +200,9 @@ SEASTAR_TEST_CASE(test_put_object_success) {
             s3::bucket_name("test-bucket"),
             s3::object_key("test"),
             expected_payload_size,
-            std::move(payload_stream))
+            std::move(payload_stream),
+            {},
+            100ms)
           .get();
         // shouldn't throw
         // the request is verified by the server
@@ -221,7 +225,9 @@ SEASTAR_TEST_CASE(test_put_object_failure) {
                 s3::bucket_name("test-bucket"),
                 s3::object_key("test-error"),
                 expected_payload_size,
-                std::move(payload_stream))
+                std::move(payload_stream),
+                {},
+                100ms)
               .get();
         } catch (const s3::rest_error_response& err) {
             BOOST_REQUIRE_EQUAL(err.code(), s3::s3_error_code::internal_error);
@@ -244,7 +250,8 @@ SEASTAR_TEST_CASE(test_get_object_success) {
         auto http_response = client
                                ->get_object(
                                  s3::bucket_name("test-bucket"),
-                                 s3::object_key("test"))
+                                 s3::object_key("test"),
+                                 100ms)
                                .get0();
         auto input_stream = http_response->as_input_stream();
         ss::copy(input_stream, payload_stream).get0();
@@ -264,7 +271,8 @@ SEASTAR_TEST_CASE(test_get_object_failure) {
             auto http_response = client
                                    ->get_object(
                                      s3::bucket_name("test-bucket"),
-                                     s3::object_key("test-error"))
+                                     s3::object_key("test-error"),
+                                     100ms)
                                    .get0();
         } catch (const s3::rest_error_response& err) {
             BOOST_REQUIRE_EQUAL(err.code(), s3::s3_error_code::internal_error);
@@ -284,7 +292,7 @@ SEASTAR_TEST_CASE(test_delete_object_success) {
         auto [server, client] = started_client_and_server(conf);
         client
           ->delete_object(
-            s3::bucket_name("test-bucket"), s3::object_key("test"))
+            s3::bucket_name("test-bucket"), s3::object_key("test"), 100ms)
           .get0();
         server->stop().get();
     });
@@ -298,7 +306,9 @@ SEASTAR_TEST_CASE(test_delete_object_failure) {
         try {
             client
               ->delete_object(
-                s3::bucket_name("test-bucket"), s3::object_key("test-error"))
+                s3::bucket_name("test-bucket"),
+                s3::object_key("test-error"),
+                100ms)
               .get0();
         } catch (const s3::rest_error_response& err) {
             BOOST_REQUIRE_EQUAL(err.code(), s3::s3_error_code::internal_error);
@@ -404,7 +414,7 @@ void test_client_pool(s3::client_pool_overdraft_policy policy) {
               iobuf payload;
               auto payload_stream = make_iobuf_ref_output_stream(payload);
               auto http_response = co_await client->get_object(
-                s3::bucket_name("test-bucket"), s3::object_key("test"));
+                s3::bucket_name("test-bucket"), s3::object_key("test"), 100ms);
               auto input_stream = http_response->as_input_stream();
               co_await ss::copy(input_stream, payload_stream);
               iobuf_parser p(std::move(payload));
@@ -448,7 +458,9 @@ SEASTAR_TEST_CASE(test_client_pool_reconnect) {
                   auto payload_stream = make_iobuf_ref_output_stream(payload);
                   try {
                       auto http_response = co_await client->get_object(
-                        s3::bucket_name("test-bucket"), s3::object_key("test"));
+                        s3::bucket_name("test-bucket"),
+                        s3::object_key("test"),
+                        100ms);
                       auto input_stream = http_response->as_input_stream();
                       co_await ss::copy(input_stream, payload_stream);
                       iobuf_parser p(std::move(payload));

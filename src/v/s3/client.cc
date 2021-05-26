@@ -25,6 +25,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/net/dns.hh>
@@ -377,15 +378,17 @@ ss::future<> client::shutdown() {
     return ss::now();
 }
 
-ss::future<http::client::response_stream_ref>
-client::get_object(bucket_name const& name, object_key const& key) {
+ss::future<http::client::response_stream_ref> client::get_object(
+  bucket_name const& name,
+  object_key const& key,
+  const ss::lowres_clock::duration& timeout) {
     auto header = _requestor.make_get_object_request(name, key);
     if (!header) {
         return ss::make_exception_future<http::client::response_stream_ref>(
           std::system_error(header.error()));
     }
     vlog(s3_log.trace, "send https request:\n{}", header);
-    return _client.request(std::move(header.value()))
+    return _client.request(std::move(header.value()), timeout)
       .then([](http::client::response_stream_ref&& ref) {
           // here we didn't receive any bytes from the socket and
           // ref->is_header_done() is 'false', we need to prefetch
@@ -413,7 +416,8 @@ ss::future<> client::put_object(
   object_key const& id,
   size_t payload_size,
   ss::input_stream<char>&& body,
-  const std::vector<object_tag>& tags) {
+  const std::vector<object_tag>& tags,
+  const ss::lowres_clock::duration& timeout) {
     auto header = _requestor.make_unsigned_put_object_request(
       name, id, payload_size, tags);
     if (!header) {
@@ -422,8 +426,9 @@ ss::future<> client::put_object(
     vlog(s3_log.trace, "send https request:\n{}", header);
     return ss::do_with(
       std::move(body),
-      [this, header = std::move(header)](ss::input_stream<char>& body) mutable {
-          return _client.request(std::move(header.value()), body)
+      [this, timeout, header = std::move(header)](
+        ss::input_stream<char>& body) mutable {
+          return _client.request(std::move(header.value()), body, timeout)
             .then([](const http::client::response_stream_ref& ref) {
                 return drain_response_stream(ref).then([ref](iobuf&& res) {
                     auto status = ref->get_headers().result();
@@ -447,7 +452,8 @@ ss::future<client::list_bucket_result> client::list_objects_v2(
   const bucket_name& name,
   std::optional<object_key> prefix,
   std::optional<object_key> start_after,
-  std::optional<size_t> max_keys) {
+  std::optional<size_t> max_keys,
+  const ss::lowres_clock::duration& timeout) {
     auto header = _requestor.make_list_objects_v2_request(
       name, std::move(prefix), std::move(start_after), max_keys);
     if (!header) {
@@ -455,7 +461,7 @@ ss::future<client::list_bucket_result> client::list_objects_v2(
           std::system_error(header.error()));
     }
     vlog(s3_log.trace, "send https request:\n{}", header);
-    return _client.request(std::move(header.value()))
+    return _client.request(std::move(header.value()), timeout)
       .then([](const http::client::response_stream_ref& resp) mutable {
           // chunked encoding is used so we don't know output size in
           // advance
@@ -487,14 +493,16 @@ ss::future<client::list_bucket_result> client::list_objects_v2(
       });
 }
 
-ss::future<>
-client::delete_object(const bucket_name& bucket, const object_key& key) {
+ss::future<> client::delete_object(
+  const bucket_name& bucket,
+  const object_key& key,
+  const ss::lowres_clock::duration& timeout) {
     auto header = _requestor.make_delete_object_request(bucket, key);
     if (!header) {
         return ss::make_exception_future<>(std::system_error(header.error()));
     }
     vlog(s3_log.trace, "send https request:\n{}", header);
-    return _client.request(std::move(header.value()))
+    return _client.request(std::move(header.value()), timeout)
       .then([](const http::client::response_stream_ref& ref) {
           return drain_response_stream(ref).then([ref](iobuf&& res) {
               auto status = ref->get_headers().result();

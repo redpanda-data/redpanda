@@ -19,6 +19,7 @@
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/lowres_clock.hh>
 
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/property_tree/ptree_fwd.hpp>
@@ -158,8 +159,10 @@ public:
     /// \param name is a bucket name
     /// \param key is an object key
     /// \return future that gets ready after request was sent
-    ss::future<http::client::response_stream_ref>
-    get_object(bucket_name const& name, object_key const& key);
+    ss::future<http::client::response_stream_ref> get_object(
+      bucket_name const& name,
+      object_key const& key,
+      const ss::lowres_clock::duration& timeout);
 
     /// Put object to S3 bucket.
     /// \param name is a bucket name
@@ -172,7 +175,8 @@ public:
       object_key const& key,
       size_t payload_size,
       ss::input_stream<char>&& body,
-      const std::vector<object_tag>& tags = {});
+      const std::vector<object_tag>& tags,
+      const ss::lowres_clock::duration& timeout);
 
     struct list_bucket_item {
         ss::sstring key;
@@ -188,10 +192,14 @@ public:
       const bucket_name& name,
       std::optional<object_key> prefix = std::nullopt,
       std::optional<object_key> start_after = std::nullopt,
-      std::optional<size_t> max_keys = std::nullopt);
+      std::optional<size_t> max_keys = std::nullopt,
+      const ss::lowres_clock::duration& timeout
+      = http::default_connect_timeout);
 
-    ss::future<>
-    delete_object(const bucket_name& bucket, const object_key& key);
+    ss::future<> delete_object(
+      const bucket_name& bucket,
+      const object_key& key,
+      const ss::lowres_clock::duration& timeout);
 
 private:
     request_creator _requestor;

@@ -180,7 +180,11 @@ int main(int args, char** argv, char** env) {
                         vlog(test_log.info, "receiving file {}", lcfg.out);
                         auto out_file = get_output_file_as_stream(lcfg.out);
                         try {
-                            auto resp = cli.get_object(lcfg.bucket, lcfg.object)
+                            auto resp = cli
+                                          .get_object(
+                                            lcfg.bucket,
+                                            lcfg.object,
+                                            http::default_connect_timeout)
                                           .get0()
                                           ->as_input_stream();
                             vlog(test_log.info, "response: OK");
@@ -210,7 +214,9 @@ int main(int args, char** argv, char** env) {
                                 lcfg.bucket,
                                 lcfg.object,
                                 payload_size,
-                                std::move(payload))
+                                std::move(payload),
+                                {},
+                                http::default_connect_timeout)
                               .get0();
                         } catch (const s3::rest_error_response& err) {
                             vlog(
@@ -257,7 +263,12 @@ int main(int args, char** argv, char** env) {
                         // put
                         vlog(test_log.info, "deleting objects");
                         try {
-                            cli.delete_object(lcfg.bucket, lcfg.object).get();
+                            cli
+                              .delete_object(
+                                lcfg.bucket,
+                                lcfg.object,
+                                http::default_connect_timeout)
+                              .get();
                             vlog(test_log.info, "DeleteObject completed");
                         } catch (const s3::rest_error_response& err) {
                             vlog(

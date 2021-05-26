@@ -11,6 +11,7 @@
 #include "archival/ntp_archiver_service.h"
 
 #include "archival/logger.h"
+#include "http/client.h"
 #include "model/metadata.h"
 #include "s3/client.h"
 #include "s3/error.h"
@@ -85,7 +86,8 @@ ss::future<download_manifest_result> ntp_archiver::download_manifest() {
     auto [client, deleter] = co_await _pool.acquire();
     auto result = download_manifest_result::success;
     try {
-        auto resp = co_await client->get_object(_bucket, path);
+        auto resp = co_await client->get_object(
+          _bucket, path, http::default_connect_timeout);
         vlog(archival_log.debug, "Receive OK response from {}", path);
         co_await _remote.update(resp->as_input_stream());
     } catch (const s3::rest_error_response& err) {
@@ -134,7 +136,12 @@ ss::future<> ntp_archiver::upload_manifest() {
         try {
             auto [is, size] = _remote.serialize();
             co_await client->put_object(
-              _bucket, path, size, std::move(is), tags);
+              _bucket,
+              path,
+              size,
+              std::move(is),
+              tags,
+              http::default_connect_timeout);
             _svc_probe.partition_manifest_upload();
         } catch (const s3::rest_error_response& err) {
             vlog(
@@ -219,7 +226,8 @@ ss::future<bool> ntp_archiver::upload_segment(upload_candidate candidate) {
               s3::object_key(s3path().string()),
               candidate.content_length,
               std::move(stream),
-              tags);
+              tags,
+              http::default_connect_timeout);
         } catch (const s3::rest_error_response& err) {
             vlog(
               archival_log.error,
