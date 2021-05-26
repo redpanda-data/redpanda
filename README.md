@@ -7,7 +7,7 @@
 ![C++](https://github.com/vectorizedio/redpanda/workflows/build-test/badge.svg)
 
 [<p align="center"><img src="docs/PANDA_sitting.jpg" alt="redpanda sitting" width="400"/></p>](https://vectorized.io/redpanda)
-
+<img src="https://static.scarf.sh/a.png?x-pxid=3c187215-e862-4b67-8057-45aa9a779055" />
 
 Redpanda is a streaming platform for mission critical workloads. Kafka® compatible, 
 No Zookeeper®, no JVM, and no code changes required. Use all your favorite open source tooling - 10x faster.
@@ -110,5 +110,5 @@ sudo yum install redpanda
 This is an example with the `v21.3.5-beta3` version prior to the 21.3.5 release.
 
 ```
-vectorized/redpanda:v21.3.5-beta3
+docker.vectorized.io/vectorized/redpanda:v21.3.5-beta3
 ```
