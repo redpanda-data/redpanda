@@ -166,8 +166,10 @@ parse_and_validate_payload(iobuf_parser& p, wasm::cpp_enable_payload& payload) {
         return enable_response_code::script_contains_no_topics;
     }
     bool all_topics_valid = std::all_of(
-      payload.topics.begin(), payload.topics.end(), [](const model::topic t) {
-          return model::validate_kafka_topic_name(t)
+      payload.topics.begin(),
+      payload.topics.end(),
+      [](const std::pair<model::topic, topic_ingestion_policy>& p) {
+          return model::validate_kafka_topic_name(p.first)
                  == make_error_code(model::errc::success);
       });
     return all_topics_valid
@@ -194,26 +196,17 @@ supervisor::enable_coprocessor(script_id id, iobuf src) {
     if (erc != enable_response_code::success) {
         co_return enable_copros_reply::data{.ack = erc, .script_meta{.id = id}};
     }
-    std::vector<enable_copros_reply::topic_policy> enriched_topics;
-    enriched_topics.reserve(payload.topics.size());
-    std::transform(
-      std::make_move_iterator(payload.topics.begin()),
-      std::make_move_iterator(payload.topics.end()),
-      std::back_inserter(enriched_topics),
-      [](model::topic&& t) {
-          return std::make_pair(std::move(t), topic_ingestion_policy::latest);
-      });
     vlog(
       coproclog.info,
       "Enabling coprocessor {} with topics: {}",
       id,
-      enriched_topics.size());
-    co_return co_await launch(id, std::move(enriched_topics), payload.tid);
+      payload.topics.size());
+    co_return co_await launch(id, std::move(payload.topics), payload.tid);
 }
 
 ss::future<enable_copros_reply::data> supervisor::launch(
   script_id id,
-  std::vector<enable_copros_reply::topic_policy> enriched_topics,
+  std::vector<enable_copros_reply::topic_policy>&& enriched_topics,
   registry::type_identifier tid) {
     return _coprocessors
       .invoke_on_all([id, enriched_topics, tid](script_map_t& coprocs) {

@@ -34,7 +34,8 @@ FIXTURE_TEST(test_metadata_request, router_test_fixture) {
       {{.id = 1234,
         .data{
           .tid = coproc::registry::type_identifier::identity_coprocessor,
-          .topics = {input_topic}}}})
+          .topics = {std::make_pair<>(
+            input_topic, coproc::topic_ingestion_policy::stored)}}}})
       .get();
 
     /// Deploy some data onto the input topic
@@ -75,7 +76,8 @@ FIXTURE_TEST(test_read_from_materialized_topic, router_test_fixture) {
       {{.id = 1234,
         .data{
           .tid = coproc::registry::type_identifier::identity_coprocessor,
-          .topics = {input_topic}}}})
+          .topics = {std::make_pair<>(
+            input_topic, coproc::topic_ingestion_policy::stored)}}}})
       .get();
 
     /// Deploy some data onto the input topic

@@ -27,6 +27,11 @@ class coproc_test_fixture : public redpanda_thread_fixture {
 public:
     using opt_reader_data_t = std::optional<model::record_batch_reader::data_t>;
 
+    static const auto inline tp_earliest
+      = coproc::topic_ingestion_policy::earliest;
+    static const auto inline tp_latest = coproc::topic_ingestion_policy::latest;
+    static const auto inline tp_stored = coproc::topic_ingestion_policy::stored;
+
     /// \brief Init the storage layer with the desired ntps
     virtual ss::future<> setup(log_layout_map);
 

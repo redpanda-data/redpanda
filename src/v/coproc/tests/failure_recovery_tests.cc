@@ -25,7 +25,8 @@ FIXTURE_TEST(test_wasm_engine_restart, router_test_fixture) {
       {{.id = 599872,
         .data{
           .tid = coproc::registry::type_identifier::identity_coprocessor,
-          .topics = {single_input}}}})
+          .topics = {std::make_pair<>(
+            single_input, coproc::topic_ingestion_policy::stored)}}}})
       .get();
     std::vector<model::ntp> inputs;
     std::vector<model::ntp> outputs;

@@ -22,7 +22,8 @@ FIXTURE_TEST(test_copro_internal_topic_do_undo, router_test_fixture) {
     model::topic input("input_topic");
     coproc::wasm::cpp_enable_payload deploy{
       .tid = coproc::registry::type_identifier::identity_coprocessor,
-      .topics = {input}};
+      .topics = {
+        std::make_pair<>(input, coproc::topic_ingestion_policy::stored)}};
     setup({{input, 1}}).get();
     std::vector<std::vector<coproc::wasm::event>> events{
       {{444, deploy},

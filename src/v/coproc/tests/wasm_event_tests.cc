@@ -81,7 +81,8 @@ BOOST_AUTO_TEST_CASE(verify_make_event_failures) {
 SEASTAR_THREAD_TEST_CASE(verify_event_reconciliation) {
     const auto deploy = coproc::wasm::cpp_enable_payload{
       .tid = coproc::registry::type_identifier::identity_coprocessor,
-      .topics = {model::topic("ABC")}};
+      .topics = {std::make_pair<>(
+        model::topic("ABC"), coproc::topic_ingestion_policy::earliest)}};
     std::vector<std::vector<coproc::wasm::event>> events{
       {{123, deploy}, {456, deploy}, {123}, {456, deploy}},
       {{789, deploy}, {123}}};

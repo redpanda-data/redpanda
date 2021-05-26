@@ -19,10 +19,6 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test_log.hpp>
 
-static const auto e = coproc::topic_ingestion_policy::earliest;
-static const auto s = coproc::topic_ingestion_policy::stored;
-static const auto l = coproc::topic_ingestion_policy::latest;
-
 using copro_typeid = coproc::registry::type_identifier;
 
 ss::future<std::size_t> number_of_logs(redpanda_thread_fixture* rtf) {
@@ -40,11 +36,16 @@ FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
     model::topic bar("bar");
     setup({{foo, 2}, {bar, 8}}).get();
     // Router has 2 coprocessors, one subscribed to 'foo' the other 'bar'
-    enable_coprocessors(
-      {{.id = 2222,
-        .data{.tid = copro_typeid::null_coprocessor, .topics = {bar}}},
-       {.id = 7777,
-        .data{.tid = copro_typeid::null_coprocessor, .topics = {foo}}}})
+    enable_coprocessors({{.id = 2222,
+                          .data{
+                            .tid = copro_typeid::null_coprocessor,
+                            .topics = {std::make_pair<>(
+                              bar, coproc::topic_ingestion_policy::stored)}}},
+                         {.id = 7777,
+                          .data{
+                            .tid = copro_typeid::null_coprocessor,
+                            .topics = {std::make_pair<>(
+                              foo, coproc::topic_ingestion_policy::stored)}}}})
       .get();
 
     // Test -> Start pushing to registered topics and check that NO
@@ -87,7 +88,9 @@ FIXTURE_TEST(test_coproc_router_off_by_one, router_test_fixture) {
     enable_coprocessors(
       {{.id = 12345678,
         .data{
-          .tid = copro_typeid::identity_coprocessor, .topics = {src_topic}}}})
+          .tid = copro_typeid::identity_coprocessor,
+          .topics = {std::make_pair<>(
+            src_topic, coproc::topic_ingestion_policy::stored)}}}})
       .get();
     auto fn = [this, input_ntp, output_ntp]() -> ss::future<size_t> {
         return push(input_ntp, single_record_record_batch_reader())
@@ -115,11 +118,16 @@ FIXTURE_TEST(test_coproc_router_double, router_test_fixture) {
     // Storage has 5 ntps, 4 of topic 'foo' and 1 of 'bar'
     setup({{foo, 4}, {bar, 1}}).get();
     // Supervisor has 3 registered transforms, of the same type
-    enable_coprocessors(
-      {{.id = 8888,
-        .data{.tid = copro_typeid::identity_coprocessor, .topics = {foo}}},
-       {.id = 9159,
-        .data{.tid = copro_typeid::identity_coprocessor, .topics = {foo}}}})
+    enable_coprocessors({{.id = 8888,
+                          .data{
+                            .tid = copro_typeid::identity_coprocessor,
+                            .topics = {std::make_pair<>(
+                              foo, coproc::topic_ingestion_policy::stored)}}},
+                         {.id = 9159,
+                          .data{
+                            .tid = copro_typeid::identity_coprocessor,
+                            .topics = {std::make_pair<>(
+                              foo, coproc::topic_ingestion_policy::stored)}}}})
       .get();
 
     model::ntp input_ntp(model::kafka_namespace, foo, model::partition_id(0));
@@ -165,10 +173,15 @@ FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
 
     enable_coprocessors(
       {{.id = 9111,
-        .data{.tid = copro_typeid::two_way_split_copro, .topics = {input_one}}},
+        .data{
+          .tid = copro_typeid::two_way_split_copro,
+          .topics = {std::make_pair<>(
+            input_one, coproc::topic_ingestion_policy::stored)}}},
        {.id = 4517,
         .data{
-          .tid = copro_typeid::two_way_split_copro, .topics = {input_two}}}})
+          .tid = copro_typeid::two_way_split_copro,
+          .topics = {std::make_pair<>(
+            input_two, coproc::topic_ingestion_policy::stored)}}}})
       .get();
 
     /// Run the test
@@ -200,7 +213,8 @@ FIXTURE_TEST(test_coproc_router_giant_fanin, router_test_fixture) {
           {.id = i,
            .data{
              .tid = copro_typeid::identity_coprocessor,
-             .topics = {source_topic}}});
+             .topics = {std::make_pair<>(
+               source_topic, coproc::topic_ingestion_policy::stored)}}});
     }
     log_layout_map inputs = {{source_topic, n_partitions}};
     log_layout_map outputs = {{output_topic, n_partitions}};
@@ -233,7 +247,8 @@ FIXTURE_TEST(test_coproc_router_giant_one_to_many, router_test_fixture) {
           {.id = i,
            .data{
              .tid = copro_typeid::unique_identity_coprocessor,
-             .topics = {source_topic}}});
+             .topics = {std::make_pair<>(
+               source_topic, coproc::topic_ingestion_policy::stored)}}});
     }
     log_layout_map inputs = {{source_topic, n_partitions}};
     log_layout_map outputs;
@@ -266,9 +281,11 @@ FIXTURE_TEST(test_copro_auto_deregister_function, router_test_fixture) {
     setup({{foo, 24}}).get();
     auto id = coproc::script_id(497563);
     // Register a coprocessor that throws
-    enable_coprocessors(
-      {{.id = id(),
-        .data{.tid = copro_typeid::throwing_coprocessor, .topics = {foo}}}})
+    enable_coprocessors({{.id = id(),
+                          .data{
+                            .tid = copro_typeid::throwing_coprocessor,
+                            .topics = {std::make_pair<>(
+                              foo, coproc::topic_ingestion_policy::stored)}}}})
       .get();
 
     // Push some data across input topic....
