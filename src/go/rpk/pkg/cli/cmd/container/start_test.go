@@ -20,6 +20,7 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
@@ -241,6 +242,7 @@ Please check your internet connection and try again.`,
 						_ *container.Config,
 						_ *container.HostConfig,
 						_ *network.NetworkingConfig,
+						_ *specs.Platform,
 						_ string,
 					) (container.ContainerCreateCreatedBody, error) {
 						body := container.ContainerCreateCreatedBody{}
@@ -285,6 +287,7 @@ Please check your internet connection and try again.`,
 						_ *container.Config,
 						_ *container.HostConfig,
 						_ *network.NetworkingConfig,
+						_ *specs.Platform,
 						_ string,
 					) (container.ContainerCreateCreatedBody, error) {
 						body := container.ContainerCreateCreatedBody{
@@ -329,6 +332,7 @@ Please check your internet connection and try again.`,
 						_ *container.Config,
 						_ *container.HostConfig,
 						_ *network.NetworkingConfig,
+						_ *specs.Platform,
 						_ string,
 					) (container.ContainerCreateCreatedBody, error) {
 						body := container.ContainerCreateCreatedBody{
@@ -407,6 +411,7 @@ Please check your internet connection and try again.`,
 						_ *container.Config,
 						_ *container.HostConfig,
 						_ *network.NetworkingConfig,
+						_ *specs.Platform,
 						_ string,
 					) (container.ContainerCreateCreatedBody, error) {
 						body := container.ContainerCreateCreatedBody{
@@ -456,6 +461,7 @@ Please check your internet connection and try again.`,
 						cc *container.Config,
 						_ *container.HostConfig,
 						_ *network.NetworkingConfig,
+						_ *specs.Platform,
 						_ string,
 					) (container.ContainerCreateCreatedBody, error) {
 						// If the node is not the seed, check

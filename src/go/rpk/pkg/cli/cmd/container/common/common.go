@@ -305,6 +305,7 @@ func CreateNode(
 		&containerConfig,
 		&hostConfig,
 		&networkConfig,
+		nil,
 		hostname,
 	)
 	if err != nil {

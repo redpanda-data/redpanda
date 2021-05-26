@@ -18,6 +18,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 // Defines an interface with the functions from Docker's *client.Client that are
@@ -35,12 +36,12 @@ type Client interface {
 		ctx context.Context,
 		options types.ImageListOptions,
 	) ([]types.ImageSummary, error)
-
 	ContainerCreate(
 		ctx context.Context,
 		config *container.Config,
 		hostConfig *container.HostConfig,
 		networkingConfig *network.NetworkingConfig,
+		platform *specs.Platform,
 		containerName string,
 	) (container.ContainerCreateCreatedBody, error)
 
@@ -101,7 +102,7 @@ type dockerClient struct {
 }
 
 func NewDockerClient() (Client, error) {
-	c, err := client.NewEnvClient()
+	c, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
 		return nil, err
 	}

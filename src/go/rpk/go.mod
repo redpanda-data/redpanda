@@ -13,7 +13,7 @@ require (
 	github.com/containerd/containerd v1.4.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.1.0
 	github.com/docker/distribution v2.7.1+incompatible // indirect
-	github.com/docker/docker v17.12.0-ce-rc1.0.20200916142827-bd33bbf0497b+incompatible
+	github.com/docker/docker v20.10.6+incompatible
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.4.0
 	github.com/fatih/color v1.7.0
