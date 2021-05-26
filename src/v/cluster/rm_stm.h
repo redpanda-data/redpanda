@@ -177,11 +177,6 @@ private:
         absl::flat_hash_map<model::producer_identity, seq_entry> seq_table;
     };
 
-    struct preparing_info {
-        bool has_applied;
-        model::tx_seq tx_seq;
-    };
-
     struct mem_state {
         // once raft's term has passed mem_state::term we wipe mem_state
         // and wait until log_state catches up with current committed index.
@@ -200,11 +195,9 @@ private:
         // a set of ongoing sessions. we use it  to prevent some client protocol
         // errors like the transactional writes outside of a transaction
         absl::flat_hash_map<model::producer_identity, model::tx_seq> expected;
-        // 'prepare' command may be replicated but reject during the apply phase
-        // because of the fencing and race with abort. we use this field to
-        // let a 'prepare' initator know the status of the 'prepare' command
-        // once state_machine::apply catches up with the prepare's offset
-        absl::flat_hash_map<model::producer_identity, preparing_info> preparing;
+        // `preparing` helps to identify failed prepare requests and use them to
+        // filter out stale abort requests
+        absl::flat_hash_map<model::producer_identity, model::tx_seq> preparing;
 
         void forget(model::producer_identity pid) {
             expected.erase(pid);

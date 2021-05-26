@@ -289,9 +289,8 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
         co_return tx_errc::request_rejected;
     }
 
-    auto [_, inserted] = _mem_state.preparing.try_emplace(
-      pid, preparing_info{.has_applied = false, .tx_seq = tx_seq});
-    if (!inserted) {
+    auto [preparing_it, _] = _mem_state.preparing.try_emplace(pid, tx_seq);
+    if (preparing_it->second != tx_seq) {
         vlog(
           clusterlog.error,
           "Can't prepare pid:{} - concurrent operation on the same session",
@@ -321,26 +320,7 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
         co_return tx_errc::unknown_server_error;
     }
 
-    auto preparing_it = _mem_state.preparing.find(pid);
-    if (preparing_it == _mem_state.preparing.end()) {
-        vlog(
-          clusterlog.warn,
-          "Can't prepare pid:{} - already aborted or it's an invariant "
-          "violation",
-          pid);
-        co_return tx_errc::unknown_server_error;
-    }
-    auto applied = preparing_it->second.has_applied;
     _mem_state.preparing.erase(pid);
-
-    if (!applied) {
-        vlog(
-          clusterlog.warn,
-          "Can't prepare pid:{} - already aborted or it's an invariant "
-          "violation",
-          pid);
-        co_return tx_errc::conflict;
-    }
 
     co_return tx_errc::none;
 }
@@ -466,10 +446,10 @@ abort_origin rm_stm::get_abort_origin(
 
     auto preparing_it = _mem_state.preparing.find(pid);
     if (preparing_it != _mem_state.preparing.end()) {
-        if (tx_seq < preparing_it->second.tx_seq) {
+        if (tx_seq < preparing_it->second) {
             return abort_origin::past;
         }
-        if (preparing_it->second.tx_seq < tx_seq) {
+        if (preparing_it->second < tx_seq) {
             return abort_origin::future;
         }
     }
@@ -874,13 +854,6 @@ void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
 
     _log_state.prepared.try_emplace(pid, prepare);
     _mem_state.expected.erase(pid);
-
-    auto preparing_it = _mem_state.preparing.find(pid);
-    if (preparing_it != _mem_state.preparing.end()) {
-        // _mem_state.preparing may lack pid if
-        // this is processing of the historic prepare
-        preparing_it->second.has_applied = true;
-    }
 }
 
 void rm_stm::apply_control(
