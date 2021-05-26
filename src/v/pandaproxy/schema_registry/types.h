@@ -32,6 +32,7 @@ inline constexpr std::string_view to_string_view(schema_type e) {
     case schema_type::protobuf:
         return "PROTOBUF";
     }
+    return "{invalid}";
 }
 
 ///\brief A subject is the name under which a schema is registered.
