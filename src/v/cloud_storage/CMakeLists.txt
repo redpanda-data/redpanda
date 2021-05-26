@@ -14,3 +14,4 @@ v_cc_library(
     v::cluster
     v::rphashing
 )
+add_subdirectory(tests)
