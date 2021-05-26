@@ -13,6 +13,7 @@
 #include "model/fundamental.h"
 
 #include <seastar/core/metrics_registration.hh>
+#include <seastar/core/shared_ptr.hh>
 
 #include <cstdint>
 
@@ -22,23 +23,46 @@ class partition;
 
 class partition_probe {
 public:
-    explicit partition_probe(partition& partition)
-      : _partition(partition) {}
+    struct impl {
+        virtual void add_records_produced(uint64_t) = 0;
+        virtual void add_records_fetched(uint64_t) = 0;
+        virtual void setup_metrics(const model::ntp&) = 0;
+        virtual ~impl() noexcept = default;
+    };
 
-    void setup_metrics(const model::ntp&);
+    explicit partition_probe(std::unique_ptr<impl> impl)
+      : _impl(std::move(impl)) {}
+
+    void setup_metrics(const model::ntp& ntp) {
+        return _impl->setup_metrics(ntp);
+    };
 
     void add_records_produced(uint64_t num_records) {
-        _records_produced += num_records;
+        return _impl->add_records_produced(num_records);
     }
 
     void add_records_fetched(uint64_t num_records) {
-        _records_fetched += num_records;
+        return _impl->add_records_fetched(num_records);
     }
 
 private:
-    partition& _partition;
-    uint64_t _records_produced = 0;
-    uint64_t _records_fetched = 0;
+    std::unique_ptr<impl> _impl;
+};
+class replicated_partition_probe : public partition_probe::impl {
+public:
+    explicit replicated_partition_probe(const partition&) noexcept;
+
+    void setup_metrics(const model::ntp&) final;
+
+    void add_records_fetched(uint64_t cnt) final { _records_fetched += cnt; }
+    void add_records_produced(uint64_t cnt) final { _records_produced += cnt; }
+
+private:
+    const partition& _partition;
+    uint64_t _records_produced{0};
+    uint64_t _records_fetched{0};
     ss::metrics::metric_groups _metrics;
 };
+
+partition_probe make_materialized_partition_probe();
 } // namespace cluster

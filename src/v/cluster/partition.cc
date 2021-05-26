@@ -27,7 +27,7 @@ static bool is_tx_manager_topic(const model::ntp& ntp) {
 
 partition::partition(consensus_ptr r)
   : _raft(r)
-  , _probe(*this) {
+  , _probe(std::make_unique<replicated_partition_probe>(*this)) {
     auto stm_manager = _raft->log().stm_manager();
     if (is_id_allocator_topic(_raft->ntp())) {
         _id_allocator_stm = ss::make_lw_shared<cluster::id_allocator_stm>(
