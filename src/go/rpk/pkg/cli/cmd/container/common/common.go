@@ -38,7 +38,7 @@ var (
 const (
 	redpandaNetwork = "redpanda"
 
-	defaultDockerClientTimeout = 10 * time.Second
+	defaultDockerClientTimeout = 60 * time.Second
 )
 
 type NodeState struct {
@@ -305,6 +305,7 @@ func CreateNode(
 		&containerConfig,
 		&hostConfig,
 		&networkConfig,
+		nil,
 		hostname,
 	)
 	if err != nil {
