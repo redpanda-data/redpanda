@@ -519,14 +519,19 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
 
 ss::future<result<replicate_result>>
 consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
-    return do_replicate({}, std::move(rdr), opts);
+    return ss::with_gate(_bg, [this, rdr = std::move(rdr), opts]() mutable {
+        return do_replicate({}, std::move(rdr), opts);
+    });
 }
 
 ss::future<result<replicate_result>> consensus::replicate(
   model::term_id expected_term,
   model::record_batch_reader&& rdr,
   replicate_options opts) {
-    return do_replicate(expected_term, std::move(rdr), opts);
+    return ss::with_gate(
+      _bg, [this, rdr = std::move(rdr), opts, expected_term]() mutable {
+          return do_replicate(expected_term, std::move(rdr), opts);
+      });
 }
 
 ss::future<result<replicate_result>> consensus::do_replicate(
@@ -540,11 +545,9 @@ ss::future<result<replicate_result>> consensus::do_replicate(
 
     if (opts.consistency == consistency_level::quorum_ack) {
         _probe.replicate_requests_ack_all();
-        return ss::with_gate(
-          _bg, [this, expected_term, rdr = std::move(rdr)]() mutable {
-              return _batcher.replicate(expected_term, std::move(rdr))
-                .finally([this] { _probe.replicate_done(); });
-          });
+
+        return _batcher.replicate(expected_term, std::move(rdr))
+          .finally([this] { _probe.replicate_done(); });
     }
 
     if (opts.consistency == consistency_level::leader_ack) {
