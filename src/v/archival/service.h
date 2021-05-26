@@ -9,9 +9,8 @@
  */
 
 #pragma once
-#include "archival/manifest.h"
 #include "archival/ntp_archiver_service.h"
-#include "archival/probe.h"
+#include "cloud_storage/manifest.h"
 #include "cluster/partition_manager.h"
 #include "model/fundamental.h"
 #include "s3/client.h"
@@ -21,8 +20,10 @@
 #include "storage/segment.h"
 #include "storage/segment_set.h"
 #include "utils/intrusive_list_helpers.h"
+#include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/weak_ptr.hh>
 
 #include <absl/container/node_hash_map.h>
@@ -93,6 +94,10 @@ void ntp_upload_queue::copy_if(FwdIt out, const Func& pred) const {
 /// - Re-upload manifest(s)
 /// - Reset timer
 class scheduler_service_impl {
+    static constexpr ss::lowres_clock::duration
+      max_topic_manifest_upload_backoff
+      = 60s;
+
 public:
     /// \brief create scheduler service
     ///
@@ -152,23 +157,25 @@ private:
     ss::future<> remove_archivers(std::vector<model::ntp> to_remove);
     ss::future<> create_archivers(std::vector<model::ntp> to_create);
     ss::future<> upload_topic_manifest(
-      model::topic_namespace_view view, model::revision_id rev);
+      model::topic_namespace topic_ns, model::revision_id rev);
+    /// Adds archiver to the reconciliation loop after fetching its manifest.
+    ss::future<ss::stop_iteration>
+    add_ntp_archiver(ss::lw_shared_ptr<ntp_archiver> archiver);
 
     configuration _conf;
-    s3::client_pool _pool;
     ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<cluster::topic_table>& _topic_table;
     ss::sharded<storage::api>& _storage_api;
     simple_time_jitter<ss::lowres_clock> _jitter;
-    simple_time_jitter<ss::lowres_clock> _gc_jitter;
     ss::timer<ss::lowres_clock> _timer;
-    ss::timer<ss::lowres_clock> _gc_timer;
     ss::gate _gate;
     ss::abort_source _as;
     ss::semaphore _stop_limit;
     ntp_upload_queue _queue;
     simple_time_jitter<ss::lowres_clock> _backoff{100ms};
+    retry_chain_node _rtcnode;
     service_probe _probe;
+    cloud_storage::remote _remote;
 };
 
 } // namespace internal

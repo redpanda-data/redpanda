@@ -5,13 +5,13 @@ v_cc_library(
     archival_policy.cc
     service.cc
     ntp_archiver_service.cc
-    manifest.cc
     probe.cc
   DEPS
     Seastar::seastar
     v::bytes
     v::http
     v::s3
+    v::cloud_storage
     v::json
     v::model
     v::storage
