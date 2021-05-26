@@ -3,6 +3,7 @@ v_cc_library(
   NAME cloud_storage
   SRCS
     manifest.cc
+    remote.cc
   DEPS
     Seastar::seastar
     v::bytes
