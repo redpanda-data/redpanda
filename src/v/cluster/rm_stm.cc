@@ -349,22 +349,39 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         _mem_state = mem_state{.term = _insync_term};
     }
 
-    if (_mem_state.preparing.contains(pid)) {
-        // it looks like a violation since tm_stm commits only after
-        // prepare succeeds but it's a legit rare situation:
-        //   * tm_stm failed during prepare
-        //   * its log update didn't pass
-        //   * on recovery it recommits its previous tx
-        //   * this commit (we're here) collides with "next" prepare
-        vlog(
-          clusterlog.error,
-          "Can't commit pid:{} - concurrent prepare operation on the same "
-          "session",
-          pid);
-        co_return tx_errc::conflict;
+    auto preparing_it = _mem_state.preparing.find(pid);
+    auto prepare_it = _log_state.prepared.find(pid);
+
+    if (preparing_it != _mem_state.preparing.end()) {
+        if (preparing_it->second > tx_seq) {
+            // - tm_stm & rm_stm failed during prepare
+            // - during recovery tm_stm recommits its previous tx
+            // - that commit (we're here) collides with "next" failed prepare
+            // it may happen only if the commit passed => acking
+            co_return tx_errc::none;
+        }
+
+        ss::sstring msg;
+        if (preparing_it->second == tx_seq) {
+            msg = ssx::sformat(
+              "Prepare hasn't completed => can't commit pid:{} tx_seq:{}",
+              pid,
+              tx_seq);
+        } else {
+            msg = ssx::sformat(
+              "Commit pid:{} tx_seq:{} conflicts with preparing tx_seq:{}",
+              pid,
+              tx_seq,
+              preparing_it->second);
+        }
+
+        if (_recovery_policy == best_effort) {
+            vlog(clusterlog.error, "{}", msg);
+            co_return tx_errc::request_rejected;
+        }
+        vassert(false, "{}", msg);
     }
 
-    auto prepare_it = _log_state.prepared.find(pid);
     if (prepare_it == _log_state.prepared.end()) {
         vlog(
           clusterlog.trace,
@@ -388,22 +405,16 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
           tx_seq);
         co_return tx_errc::none;
     } else if (prepare_it->second.tx_seq < tx_seq) {
+        std::string msg = fmt::format(
+          "Rejecting commit with tx_seq:{} since prepare with lesser tx_seq:{} "
+          "exists",
+          tx_seq,
+          prepare_it->second.tx_seq);
         if (_recovery_policy == best_effort) {
-            vlog(
-              clusterlog.error,
-              "Rejecting commit with tx_seq:{} since prepare with lesser "
-              "tx_seq:{} exists",
-              tx_seq,
-              prepare_it->second.tx_seq);
+            vlog(clusterlog.error, "{}", msg);
             co_return tx_errc::request_rejected;
-        } else {
-            vassert(
-              false,
-              "Received commit with tx_seq:{} while prepare with lesser "
-              "tx_seq:{} exists",
-              tx_seq,
-              prepare_it->second.tx_seq);
         }
+        vassert(false, "{}", msg);
     }
 
     // we commit only if a provided tx_seq matches prepared tx_seq
