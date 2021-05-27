@@ -107,10 +107,10 @@ tasks:
           '{{.SRC_DIR}}'
       fi
     - rm '{{.SRC_DIR}}/.dockerignore'
-    - cmd: "if [ '{{.CI}}' == 'true' ] && [ '{{.BRANCH_NAME}}' = 'dev' ]; then docker login --username {{.DOCKERHUB_USER}} --password {{.DOCKERHUB_TOKEN}}; fi"
+    - cmd: "if [ '{{.CI}}' == 'true' ] && [ '{{.BRANCH_NAME}}' = 'dev' ] && [ '{{.BUILD_TYPE}}' = 'release' ] && [ '{{.COMPILER}}' = 'clang' ]; then docker login --username {{.DOCKERHUB_USER}} --password {{.DOCKERHUB_TOKEN}}; fi"
       silent: true
     - |
-      if [ '{{.CI}}' = 'true' ] && [ '{{.BRANCH_NAME}}' = 'dev' ]; then
+      if [ '{{.CI}}' = 'true' ] && [ '{{.BRANCH_NAME}}' = 'dev' ] && [ '{{.BUILD_TYPE}}' = 'release' ] && [ '{{.COMPILER}}' = 'clang' ]; then
         docker tag vectorized/redpanda-test-node docker.io/vectorized/redpanda-test-node:cache-{{ARCH}}
         docker push docker.io/vectorized/redpanda-test-node:cache-{{ARCH}}
       fi
