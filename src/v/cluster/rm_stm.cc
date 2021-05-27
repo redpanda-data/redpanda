@@ -38,6 +38,22 @@ static bool is_sequence(int32_t last_seq, int32_t next_seq) {
            || (next_seq == 0 && last_seq == std::numeric_limits<int32_t>::max());
 }
 
+static model::record_batch make_fence_batch(
+  model::control_record_version version, model::producer_identity pid) {
+    iobuf key;
+    kafka::response_writer w(key);
+    w.write(version);
+
+    storage::record_batch_builder builder(
+      tx_fence_batch_type, model::offset(0));
+    builder.set_producer_identity(pid.id, pid.epoch);
+    builder.set_control_type();
+    builder.add_raw_kw(
+      std::move(key), std::nullopt, std::vector<model::record_header>());
+
+    return std::move(builder).build();
+}
+
 static model::record_batch make_tx_control_batch(
   model::producer_identity pid, model::control_record_type crt) {
     iobuf key;
