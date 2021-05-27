@@ -35,6 +35,9 @@ steps:
   - -euc
   - |
     cp vtools/envs/gcb-$_BUILD_TYPE-$_COMPILER .env
+    echo DOCKERHUB_USER=$$DOCKERHUB_USER >> .env
+    echo DOCKERHUB_TOKEN=$$DOCKERHUB_TOKEN >> .env
+    echo CLOUDSMITH_API_KEY=$$CLOUDSMITH_API_KEY >> .env
     mkdir build/
     bin/task $_TASK_ARGS
 
