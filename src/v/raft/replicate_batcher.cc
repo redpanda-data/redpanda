@@ -19,6 +19,7 @@
 #include "raft/types.h"
 
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/core/do_with.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/smp.hh>
@@ -34,13 +35,26 @@ replicate_batcher::replicate_batcher(consensus* ptr, size_t cache_size)
   , _max_batch_size_sem(cache_size)
   , _max_batch_size(cache_size) {}
 
-ss::future<result<replicate_result>> replicate_batcher::replicate(
+replicate_stages replicate_batcher::replicate(
   std::optional<model::term_id> expected_term, model::record_batch_reader&& r) {
-    return do_cache(expected_term, std::move(r)).then([this](item_ptr i) {
-        return _lock.with([this] { return flush(); }).then([i] {
-            return i->_promise.get_future();
-        });
-    });
+    ss::promise<> enqueued;
+    auto enqueued_f = enqueued.get_future();
+    auto f = do_cache(expected_term, std::move(r))
+               .then_wrapped([this, enqueued = std::move(enqueued)](
+                               ss::future<item_ptr> f) mutable {
+                   if (f.failed()) {
+                       enqueued.set_exception(f.get_exception());
+                       return ss::make_ready_future<result<replicate_result>>(
+                         errc::replicate_batcher_cache_error);
+                   }
+
+                   enqueued.set_value();
+                   return _lock.with([this] { return flush(); })
+                     .then([i = f.get()] { return i->_promise.get_future(); });
+               })
+               .finally([this] { _ptr->_probe.replicate_done(); });
+
+    return replicate_stages(std::move(enqueued_f), std::move(f));
 }
 
 ss::future<> replicate_batcher::stop() {

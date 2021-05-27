@@ -34,7 +34,8 @@ enum class errc {
     invalid_configuration_update,
     not_voter,
     invalid_target_node,
-    shutting_down
+    shutting_down,
+    replicate_batcher_cache_error,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "raft::errc"; }
@@ -80,6 +81,8 @@ struct errc_category final : public std::error_category {
                    "request was addressed to";
         case errc::shutting_down:
             return "raft protocol shutting down";
+        case errc::replicate_batcher_cache_error:
+            return "unable to append batch to replicate batcher cache";
         default:
             return "raft::errc::unknown";
         }

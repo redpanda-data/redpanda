@@ -45,7 +45,7 @@ public:
     replicate_batcher& operator=(const replicate_batcher&) = delete;
     ~replicate_batcher() noexcept = default;
 
-    ss::future<result<replicate_result>>
+    replicate_stages
     replicate(std::optional<model::term_id>, model::record_batch_reader&&);
 
     ss::future<> flush();
