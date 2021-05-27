@@ -17,6 +17,8 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "outcome.h"
+#include "raft/errc.h"
 #include "raft/fwd.h"
 #include "raft/group_configuration.h"
 #include "reflection/async_adl.h"
@@ -310,6 +312,16 @@ struct replicate_result {
     /// used by the kafka API to produce a kafka reply to produce request.
     /// see produce_request.cc
     model::offset last_offset;
+};
+struct replicate_stages {
+    replicate_stages(ss::future<>, ss::future<result<replicate_result>>);
+    explicit replicate_stages(raft::errc);
+    // after this future is ready, request in enqueued in raft and it will not
+    // be reorderd
+    ss::future<> request_enqueued;
+    // after this future is ready, request was successfully replicated with
+    // requested consistency level
+    ss::future<result<replicate_result>> replicate_finished;
 };
 
 enum class consistency_level { quorum_ack, leader_ack, no_ack };

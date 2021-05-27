@@ -12,6 +12,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/consensus_utils.h"
+#include "raft/errc.h"
 #include "raft/group_configuration.h"
 #include "reflection/adl.h"
 #include "utils/to_string.h"
@@ -23,6 +24,16 @@
 #include <type_traits>
 
 namespace raft {
+
+replicate_stages::replicate_stages(
+  ss::future<> enq, ss::future<result<replicate_result>> offset_future)
+  : request_enqueued(std::move(enq))
+  , replicate_finished(std::move(offset_future)) {}
+
+replicate_stages::replicate_stages(raft::errc ec)
+  : request_enqueued(ss::now())
+  , replicate_finished(
+      ss::make_ready_future<result<replicate_result>>(make_error_code(ec))){};
 
 std::ostream& operator<<(std::ostream& o, const vnode& id) {
     return o << "{id: " << id.id() << ", revision: " << id.revision() << "}";
