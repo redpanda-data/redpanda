@@ -83,6 +83,18 @@ public:
           .deleted = v_it->deleted};
     }
 
+    ///\brief Return a list of subjects.
+    std::vector<subject> get_subjects() const {
+        std::vector<subject> res;
+        res.reserve(_subjects.size());
+        std::transform(
+          _subjects.begin(),
+          _subjects.end(),
+          std::back_inserter(res),
+          [](const auto& v) { return v.first; });
+        return res;
+    }
+
     ///\brief Return a list of versions and associated schema_id.
     result<std::vector<schema_version>> get_versions(const subject& sub) const {
         auto sub_it = _subjects.find(sub);

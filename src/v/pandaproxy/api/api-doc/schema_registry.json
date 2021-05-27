@@ -27,4 +27,262 @@
           }
         }
       }
+    },
+    "/schemas/ids/{id}": {
+      "get": {
+        "summary": "Get a schema by id.",
+        "operationId": "get_schemas_ids_id",
+        "consumes": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "integer"
+          }
+        ],
+        "produces": ["application/vnd.schemaregistry.v1+json"],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Schema not found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "500": {
+            "description": "Internal Server error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
+    },
+    "/subjects": {
+      "get": {
+        "summary": "Retrieve a list of subjects.",
+        "operationId": "get_subjects",
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                  "type": "string"
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
+    },
+    "/subjects/{subject}/versions": {
+      "get": {
+        "summary": "Retrieve a list of versions for a subject.",
+        "operationId": "get_subject_versions",
+        "parameters": [
+          {
+            "name": "subject",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                  "type": "integer"
+              }
+            }
+          },
+          "404": {
+            "description": "Subject not found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new schema for the subject.",
+        "operationId": "post_subject_versions",
+        "consumes": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "subject",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "schema_def",
+            "in": "body",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "schema": {
+                  "type": "string"
+                },
+                "schemaType": {
+                  "type": "string"
+                },
+                "references": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "subject": {
+                        "type": "string"
+                      },
+                      "version": {
+                          "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "produces": ["application/vnd.schemaregistry.v1+json"],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Incompatible schema",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "422": {
+            "description": "Invalid schema",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
+    },
+    "/subjects/{subject}/versions/{version}": {
+      "get": {
+        "summary": "Retrieve a schema for the subject and version.",
+        "operationId": "get_subject_versions_version",
+        "parameters": [
+          {
+            "name": "subject",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer"
+                },
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Schema not found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "422": {
+            "description": "Invalid version",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
     }

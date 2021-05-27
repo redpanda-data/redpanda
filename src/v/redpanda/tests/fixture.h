@@ -56,6 +56,8 @@ public:
       std::optional<scheduling_groups> sch_groups,
       bool remove_on_shutdown)
       : app(ssx::sformat("redpanda-{}", node_id()))
+      , proxy_port(proxy_port)
+      , schema_reg_port(schema_reg_port)
       , data_dir(std::move(base_dir))
       , remove_on_shutdown(remove_on_shutdown) {
         configure(
@@ -311,6 +313,8 @@ public:
     }
 
     application app;
+    uint16_t proxy_port;
+    uint16_t schema_reg_port;
     std::filesystem::path data_dir;
     std::unique_ptr<kafka::protocol> proto;
     bool remove_on_shutdown;

@@ -35,6 +35,20 @@ struct error_category final : std::error_category {
         }
         return "(unrecognized error)";
     }
+    // TODO(Ben): Determine how best to use default_error_condition between
+    // pandaproxy/rest and pandaproxy/schema_registry
+    std::error_condition
+    default_error_condition(int ec) const noexcept override {
+        switch (static_cast<error_code>(ec)) {
+        case error_code::schema_id_not_found:
+        case error_code::subject_not_found:
+        case error_code::subject_version_not_found:
+            return reply_error_code::topic_not_found; // 40401
+        case error_code::schema_invalid:
+            return reply_error_code::unprocessable_entity;
+        }
+        return {};
+    }
 };
 
 const error_category pps_error_category{};

@@ -13,6 +13,7 @@
 
 #include "kafka/client/client.h"
 #include "pandaproxy/schema_registry/configuration.h"
+#include "pandaproxy/schema_registry/store.h"
 #include "pandaproxy/server.h"
 #include "seastarx.h"
 
@@ -39,6 +40,7 @@ public:
     configuration& config();
     kafka::client::configuration& client_config();
     ss::sharded<kafka::client::client>& client() { return _client; }
+    store& schema_store() { return _store; }
 
 private:
     configuration _config;
@@ -46,6 +48,7 @@ private:
     ss::sharded<kafka::client::client>& _client;
     ctx_server<service>::context_t _ctx;
     ctx_server<service> _server;
+    store _store;
 };
 
 } // namespace pandaproxy::schema_registry

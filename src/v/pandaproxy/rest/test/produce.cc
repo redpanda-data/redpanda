@@ -29,7 +29,7 @@ FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
     wait_for_controller_leadership().get();
 
     info("Connecting client");
-    auto client = make_client();
+    auto client = make_proxy_client();
     const ss::sstring produce_binary_body(
       R"({
    "records":[

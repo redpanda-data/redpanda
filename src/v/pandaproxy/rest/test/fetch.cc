@@ -30,7 +30,7 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
     wait_for_controller_leadership().get();
 
     info("Connecting client");
-    auto client = make_client();
+    auto client = make_proxy_client();
     const ss::sstring batch_1_body(
       R"({
    "records":[
@@ -220,7 +220,7 @@ FIXTURE_TEST(pandaproxy_fetch_json_v2, pandaproxy_test_fixture) {
     wait_for_controller_leadership().get();
 
     info("Connecting client");
-    auto client = make_client();
+    auto client = make_proxy_client();
     const ss::sstring batch_body(
       R"({
    "records":[
