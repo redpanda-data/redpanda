@@ -56,6 +56,23 @@ make_fence_batch(int8_t version, model::producer_identity pid) {
     return std::move(builder).build();
 }
 
+static model::record_batch make_prepare_batch(rm_stm::prepare_marker record) {
+    iobuf key;
+    kafka::response_writer w(key);
+    w.write(rm_stm::prepare_control_record_version());
+    w.write(record.tm_partition());
+    w.write(record.tx_seq());
+
+    storage::record_batch_builder builder(
+      tx_prepare_batch_type, model::offset(0));
+    builder.set_producer_identity(record.pid.id, record.pid.epoch);
+    builder.set_control_type();
+    builder.add_raw_kw(
+      std::move(key), std::nullopt, std::vector<model::record_header>());
+
+    return std::move(builder).build();
+}
+
 static model::record_batch make_tx_control_batch(
   model::producer_identity pid, model::control_record_type crt) {
     iobuf key;
@@ -68,23 +85,6 @@ static model::record_batch make_tx_control_batch(
     builder.set_producer_identity(pid.id, pid.epoch);
     builder.set_control_type();
     builder.set_transactional_type();
-    builder.add_raw_kw(
-      std::move(key), std::nullopt, std::vector<model::record_header>());
-
-    return std::move(builder).build();
-}
-
-static model::record_batch make_prepare_batch(rm_stm::prepare_marker record) {
-    iobuf key;
-    kafka::response_writer w(key);
-    w.write(rm_stm::prepare_control_record_version());
-    w.write(record.tm_partition());
-    w.write(record.tx_seq());
-
-    storage::record_batch_builder builder(
-      tx_prepare_batch_type, model::offset(0));
-    builder.set_producer_identity(record.pid.id, record.pid.epoch);
-    builder.set_control_type();
     builder.add_raw_kw(
       std::move(key), std::nullopt, std::vector<model::record_header>());
 
