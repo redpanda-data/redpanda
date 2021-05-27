@@ -320,8 +320,6 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
         co_return tx_errc::unknown_server_error;
     }
 
-    _mem_state.preparing.erase(pid);
-
     co_return tx_errc::none;
 }
 
@@ -803,68 +801,17 @@ ss::future<> rm_stm::apply(model::record_batch b) {
 void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
     auto pid = prepare.pid;
 
-    auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
-    if (fence_it == _log_state.fence_pid_epoch.end()) {
-        // impossible situation, tm_stm invokes prepare strictly
-        // after begin which adds a fence (if it's necessary)
-
-        vlog(
-          clusterlog.error,
-          "Can find an expected fence for an observed prepare with pid:{}",
-          pid);
-        if (_recovery_policy == best_effort) {
-            _log_state.fence_pid_epoch.emplace(pid.get_id(), pid.get_epoch());
-        } else {
-            vassert(
-              false,
-              "Can find an expected fence for an observed prepare with pid:{}",
-              pid);
-        }
-    } else if (fence_it->second < pid.get_epoch()) {
-        // impossible situation, tm_stm invokes prepare strictly
-        // after begin which adds a fence (if it's necessary)
-        // so fence should be at least as prepare's pid
-
-        vlog(
-          clusterlog.error,
-          "Set fence {} is lesser that prepare's epoch: {}",
-          fence_it->second,
-          pid);
-        if (_recovery_policy == best_effort) {
+    auto [fence_it, inserted] = _log_state.fence_pid_epoch.emplace(
+      pid.get_id(), pid.get_epoch());
+    if (!inserted) {
+        if (fence_it->second < pid.get_epoch()) {
             fence_it->second = pid.get_epoch();
-        } else {
-            vassert(
-              false,
-              "Set fence {} is lesser that prepare's epoch: {}",
-              fence_it->second,
-              pid);
         }
-    } else if (fence_it->second > pid.get_epoch()) {
-        // during a data race between replicating
-        //  - a prepare record and
-        //  - a record wth higher epoch for the same pid.id e.g abort
-        // the latter request won and prepare got fenced off
-
-        // cleaning the state since this pid is fenced off
-        vlog(
-          clusterlog.warn,
-          "Prepare with pid:{} is fenced off by {}",
-          pid,
-          fence_it->second);
-        _mem_state.expected.erase(pid);
-        return;
-    }
-
-    if (!_log_state.ongoing_map.contains(pid)) {
-        // probably there was a race and the tx is already
-        // aborted since it isn't ongoing
-        vlog(clusterlog.warn, "a tx with pid:{} might be already aborted", pid);
-        _mem_state.expected.erase(pid);
-        return;
     }
 
     _log_state.prepared.try_emplace(pid, prepare);
     _mem_state.expected.erase(pid);
+    _mem_state.preparing.erase(pid);
 }
 
 void rm_stm::apply_control(
