@@ -816,11 +816,12 @@ void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
 
 void rm_stm::apply_control(
   model::producer_identity pid, model::control_record_type crt) {
-    auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
-    if (fence_it == _log_state.fence_pid_epoch.end()) {
-        _log_state.fence_pid_epoch.emplace(pid.get_id(), pid.get_epoch());
-    } else if (fence_it->second < pid.get_epoch()) {
-        fence_it->second = pid.get_epoch();
+    auto [fence_it, inserted] = _log_state.fence_pid_epoch.emplace(
+      pid.get_id(), pid.get_epoch());
+    if (!inserted) {
+        if (fence_it->second < pid.get_epoch()) {
+            fence_it->second = pid.get_epoch();
+        }
     }
 
     // either epoch is the same as fencing or it's lesser in the latter
@@ -839,33 +840,6 @@ void rm_stm::apply_control(
 
         _mem_state.forget(pid);
     } else if (crt == model::control_record_type::tx_commit) {
-        if (!_log_state.prepared.contains(pid)) {
-            // trying to commit a tx which wasn't prepare
-
-            if (_log_state.ongoing_map.contains(pid)) {
-                vlog(
-                  clusterlog.error,
-                  "Committing an ongoing tx with pid:{} which isn't in a "
-                  "prepared state",
-                  pid);
-
-                if (_recovery_policy != best_effort) {
-                    vassert(
-                      false,
-                      "Committing an ongoing tx with pid:{} which isn't in a "
-                      "prepared state",
-                      pid);
-                }
-            } else {
-                // it's a (re)commit of an already committed tx during
-                // tm_stm recovery or caused by a concurrent init_tx
-                vlog(
-                  clusterlog.warn,
-                  "Committing a tx with pid:{} which isn't in a prepared state",
-                  pid);
-            }
-        }
-
         _log_state.prepared.erase(pid);
         auto offset_it = _log_state.ongoing_map.find(pid);
         if (offset_it != _log_state.ongoing_map.end()) {
