@@ -78,8 +78,7 @@ public:
 
     static constexpr model::control_record_version
       prepare_control_record_version{0};
-    static constexpr model::control_record_version fence_control_record_version{
-      0};
+    static constexpr int8_t fence_control_record_version{0};
 
     explicit rm_stm(ss::logger&, raft::consensus*);
 
@@ -138,6 +137,7 @@ private:
     get_abort_origin(const model::producer_identity&, model::tx_seq) const;
 
     ss::future<> apply(model::record_batch) override;
+    void apply_fence(model::record_batch&&);
     void apply_prepare(rm_stm::prepare_marker);
     void apply_control(model::producer_identity, model::control_record_type);
     void apply_data(model::batch_identity, model::offset);

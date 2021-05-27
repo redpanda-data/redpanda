@@ -38,18 +38,20 @@ static bool is_sequence(int32_t last_seq, int32_t next_seq) {
            || (next_seq == 0 && last_seq == std::numeric_limits<int32_t>::max());
 }
 
-static model::record_batch make_fence_batch(
-  model::control_record_version version, model::producer_identity pid) {
+static model::record_batch
+make_fence_batch(int8_t version, model::producer_identity pid) {
     iobuf key;
-    kafka::response_writer w(key);
-    w.write(version);
+    auto pid_id = pid.id;
+    reflection::serialize(key, tx_fence_batch_type(), pid_id);
+
+    iobuf value;
+    reflection::serialize(value, version);
 
     storage::record_batch_builder builder(
       tx_fence_batch_type, model::offset(0));
     builder.set_producer_identity(pid.id, pid.epoch);
     builder.set_control_type();
-    builder.add_raw_kw(
-      std::move(key), std::nullopt, std::vector<model::record_header>());
+    builder.add_raw_kv(std::move(key), std::move(value));
 
     return std::move(builder).build();
 }
@@ -787,21 +789,59 @@ void rm_stm::compact_snapshot() {
     _oldest_session = next_oldest_session;
 }
 
+void rm_stm::apply_fence(model::record_batch&& b) {
+    const auto& hdr = b.header();
+    auto bid = model::batch_identity::from(hdr);
+
+    vassert(
+      b.record_count() == 1,
+      "tx_fence_batch_type batch must contain a single record");
+    auto r = b.copy_records();
+    auto& record = *r.begin();
+    auto val_buf = record.release_value();
+
+    iobuf_parser val_reader(std::move(val_buf));
+    auto version = reflection::adl<int8_t>{}.from(val_reader);
+    vassert(
+      version == rm_stm::fence_control_record_version,
+      "unknown fence record version: {} expected: {}",
+      version,
+      rm_stm::fence_control_record_version);
+
+    auto key_buf = record.release_key();
+    iobuf_parser key_reader(std::move(key_buf));
+    auto batch_type = model::record_batch_type(
+      reflection::adl<int8_t>{}.from(key_reader));
+    vassert(
+      hdr.type == batch_type,
+      "broken tx_fence_batch_type batch. expected batch type {} got: {}",
+      hdr.type,
+      batch_type);
+    auto p_id = model::producer_id(reflection::adl<int64_t>{}.from(key_reader));
+    vassert(
+      p_id == bid.pid.id,
+      "broken tx_fence_batch_type batch. expected pid {} got: {}",
+      bid.pid.id,
+      p_id);
+
+    auto [fence_it, _] = _log_state.fence_pid_epoch.try_emplace(
+      bid.pid.get_id(), bid.pid.get_epoch());
+    if (fence_it->second < bid.pid.get_epoch()) {
+        fence_it->second = bid.pid.get_epoch();
+    }
+}
+
 ss::future<> rm_stm::apply(model::record_batch b) {
     auto last_offset = b.last_offset();
 
     const auto& hdr = b.header();
-    auto bid = model::batch_identity::from(hdr);
 
     if (hdr.type == tx_fence_batch_type) {
-        auto [fence_it, _] = _log_state.fence_pid_epoch.try_emplace(
-          bid.pid.get_id(), bid.pid.get_epoch());
-        if (fence_it->second < bid.pid.get_epoch()) {
-            fence_it->second = bid.pid.get_epoch();
-        }
+        apply_fence(std::move(b));
     } else if (hdr.type == tx_prepare_batch_type) {
         apply_prepare(parse_prepare_batch(b));
     } else if (hdr.type == raft::data_batch_type) {
+        auto bid = model::batch_identity::from(hdr);
         if (hdr.attrs.is_control()) {
             apply_control(bid.pid, parse_control_batch(b));
         } else {
