@@ -24,9 +24,8 @@ steps:
   name: gcr.io/cloud-builders/docker
   entrypoint: sh
   env:
-  - 'CI=1'
-  - 'COMMIT_SHA=$COMMIT_SHA'
-  - 'SHORT_SHA=$SHORT_SHA'
+  - 'CI=true'
+  - 'COMMIT=$COMMIT_SHA'
   - 'BRANCH_NAME=$BRANCH_NAME'
   - 'TAG_NAME=$TAG_NAME'
   - 'DOCKERHUB_USER=$_DOCKER_USERNAME'

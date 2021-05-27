@@ -69,8 +69,9 @@ tasks:
     desc: set minimum required value for fs.aio-max-nr sysctl option
     vars:
       MIN_REQUIRED_AIO_MAX: 10485760
+      USE_SUDO: '{{default "true" .USE_SUDO}}'
     cmds:
-    - sudo sysctl -w fs.aio-max-nr={{.MIN_REQUIRED_AIO_MAX}}
+    - '{{if eq .USE_SUDO "true"}}sudo {{end}}sysctl -w fs.aio-max-nr={{.MIN_REQUIRED_AIO_MAX}}'
     status:
     - test {{.MIN_REQUIRED_AIO_MAX}} -le $(sysctl -nb fs.aio-max-nr)
 
@@ -90,14 +91,14 @@ tasks:
     cmds:
     - cp '{{.SRC_DIR}}/tests/docker/Dockerfile.dockerignore' '{{.SRC_DIR}}/.dockerignore'
     - |
-      if [ '{{.CI}}' == '1' ]; then
+      if [ '{{.CI}}' == 'true' ]; then
         chmod 644 '{{.SRC_DIR}}/tests/docker/ssh/'* '{{.SRC_DIR}}/tests/setup.py'
         chmod 755 '{{.SRC_DIR}}/tests/docker/ssh'
-        docker pull docker.io/vectorized/redpanda-test-node:cache || true
+        docker pull docker.io/vectorized/redpanda-test-node:cache-{{ARCH}} || true
         docker build \
           --tag vectorized/redpanda-test-node \
           --file '{{.SRC_DIR}}/tests/docker/Dockerfile' \
-          --cache-from docker.io/vectorized/redpanda-test-node:cache \
+          --cache-from docker.io/vectorized/redpanda-test-node:cache-{{ARCH}} \
           '{{.SRC_DIR}}'
       else
         docker build \
@@ -106,6 +107,13 @@ tasks:
           '{{.SRC_DIR}}'
       fi
     - rm '{{.SRC_DIR}}/.dockerignore'
+    - cmd: "if [ '{{.CI}}' == 'true' ] && [ '{{.BRANCH_NAME}}' = 'dev' ]; then docker login --username {{.DOCKERHUB_USER}} --password {{.DOCKERHUB_TOKEN}}; fi"
+      silent: true
+    - |
+      if [ '{{.CI}}' = 'true' ] && [ '{{.BRANCH_NAME}}' = 'dev' ]; then
+        docker tag vectorized/redpanda-test-node docker.io/vectorized/redpanda-test-node:cache-{{ARCH}}
+        docker push docker.io/vectorized/redpanda-test-node:cache-{{ARCH}}
+      fi
 
   start-compose-cluster:
     desc: deploy a cluster using docker-compose
