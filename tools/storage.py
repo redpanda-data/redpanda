@@ -153,9 +153,9 @@ class Batch:
             batch = zstd.decompress(self.records)
             return Record.from_bytes(batch, self.header.record_count)
         except zstd.Error as e:
-            logger.warn(f"zstd decoding failure, header: {self.header}", e)
+            logger.warning(f"zstd decoding failure, {e} {self.header}")
         except Exception as e:
-            logger.warn(f"Unable to decode batch, header: {self.header}", e)
+            logger.warning(f"Unable to decode batch, {e} {self.header}")
         return []
 
     @staticmethod
