@@ -91,8 +91,9 @@ func defaultMap() map[string]interface{} {
 	}
 	var defaultAdminListeners []interface{} = []interface{}{defaultAdminListener}
 	return map[string]interface{}{
-		"config_file": "/etc/redpanda/redpanda.yaml",
-		"pandaproxy":  Pandaproxy{},
+		"config_file":     "/etc/redpanda/redpanda.yaml",
+		"pandaproxy":      Pandaproxy{},
+		"schema_registry": SchemaRegistry{},
 		"redpanda": map[string]interface{}{
 			"data_directory": "/var/lib/redpanda/data",
 			"rpc_server": map[string]interface{}{
