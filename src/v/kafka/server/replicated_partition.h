@@ -49,7 +49,7 @@ public:
     ss::future<result<model::offset>>
       replicate(model::record_batch_reader, raft::replicate_options);
 
-    ss::future<result<model::offset>> replicate(
+    raft::replicate_stages replicate(
       model::batch_identity,
       model::record_batch_reader&&,
       raft::replicate_options);

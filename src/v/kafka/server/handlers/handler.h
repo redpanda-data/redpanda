@@ -41,6 +41,15 @@ concept KafkaApiHandler = requires (T h, request_context&& ctx, ss::smp_service_
     { T::handle(std::move(ctx), g) } -> std::same_as<ss::future<response_ptr>>;
 };
 )
+CONCEPT(
+template<typename T>
+concept KafkaApiTwoPhaseHandler = requires (T h, request_context&& ctx, ss::smp_service_group g) {
+    KafkaApi<typename T::api>;
+    { T::min_supported } -> std::convertible_to<const api_version&>;
+    { T::max_supported } -> std::convertible_to<const api_version&>;
+    { T::handle(std::move(ctx), g) } -> std::same_as<process_result_stages>;
+};
+)
 // clang-format on
 
 } // namespace kafka
