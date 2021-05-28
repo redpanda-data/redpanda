@@ -21,8 +21,12 @@ const fs = require("fs");
  */
 const jsFolder = path.resolve(__dirname);
 const dependencyName = "wasm-api.js";
+const readmeName = "README.md";
 const publicFolder = path.join(jsFolder, "public");
+const artifactFolder = path.join(jsFolder, "publish_artifacts");
 const publishPackageJson = path.join(publicFolder, "package.json");
+const readmeArtifact = path.join(artifactFolder, readmeName);
+const publishReadme = path.join(publicFolder, readmeName);
 const publishCmd = "cd public && npm publish --access=public";
 
 var version = "1.0.0";
@@ -110,6 +114,7 @@ if (version === undefined) {
 } else {
   build()
     .then(() => fs.promises.writeFile(publishPackageJson, wasmPackageJson))
+    .then(() => fs.promises.copyFile(readmeArtifact, publishReadme))
     .then(() => console.log(`created public folder: ${publicFolder}`))
     .then(() => {
       if (publish == false) {
