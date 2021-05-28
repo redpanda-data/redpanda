@@ -74,7 +74,7 @@ pandaproxy_client:
 {% if enable_sr %}
 schema_registry:
   schema_registry_api:
-    address: "0.0.0.0"
+    address: "{{node.account.hostname}}"
     port: 8081
 
   api_doc_dir: {{root}}/usr/share/redpanda/proxy-api-doc
