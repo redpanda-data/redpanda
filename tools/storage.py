@@ -70,24 +70,26 @@ def read_varlong(buffer, pos):
         if shift >= 64:
             raise _DecodeError('Too many bytes when decoding varint.')
 
+
 class Record:
-    def __init__(self, size, record_attr, timestamp_delta, offset_delta, key, headers, value):
+    def __init__(self, size, record_attr, timestamp_delta, offset_delta, key,
+                 headers, value):
         self.size = size
         self.record_attr = record_attr
         self.timestamp_delta = timestamp_delta
         self.offset_delta = offset_delta
         self.key = key
         self.headers = headers
-        self.value = value 
+        self.value = value
 
     def __str__(self):
-        return "{}:{}".format(self.key.decode("utf-8"), self.value.decode("utf-8"))
-
+        return "{}:{}".format(self.key.decode("utf-8"),
+                              self.value.decode("utf-8"))
 
     @staticmethod
     def record_from_bytes(b):
         (size, v) = read_varlong(b, 0)
-        
+
         record_attr = b[v]
         v = v + 1
 
@@ -95,22 +97,23 @@ class Record:
         (offset_delta, v) = read_varlong(b, v)
 
         (key_length, v) = read_varlong(b, v)
-        key = b[v:v+key_length]
+        key = b[v:v + key_length]
         v = v + key_length
 
         (value_length, v) = read_varlong(b, v)
-        value = b[v:v+value_length]
+        value = b[v:v + value_length]
         v = v + value_length
 
         (header_count, v) = read_varlong(b, v)
         headers = []
         for i in range(0, header_count):
             (header_length, v) = read_varlong(b, v)
-            header = b[v:v+header_length]
+            header = b[v:v + header_length]
             v = v + header_length
             headers.append(header)
 
-        return Record(size, record_attr, timestamp_delta, offset_delta, key, headers, value)
+        return Record(size, record_attr, timestamp_delta, offset_delta, key,
+                      headers, value)
 
     @staticmethod
     def from_bytes(b, count):
@@ -188,7 +191,6 @@ class Segment:
                 logger.info(f"Previous header: {self.prev_batch.header}")
                 logger.info(f"Current  header: {batch.header}")
 
-
     def __read_batches(self, dump=False):
         index = 1
         with open(self.path, "rb") as f:
@@ -262,10 +264,11 @@ def main():
 
     def generate_options():
         parser = argparse.ArgumentParser(description='Redpanda log analyzer')
-        parser.add_argument('--dump',
-                            type=str,
-                            required=False,
-                            help='Dump key:value for a topic as utf-8 to stdout')
+        parser.add_argument(
+            '--dump',
+            type=str,
+            required=False,
+            help='Dump key:value for a topic as utf-8 to stdout')
         parser.add_argument('--path',
                             type=str,
                             required=True,
