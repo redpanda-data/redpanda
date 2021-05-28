@@ -46,6 +46,7 @@ public:
 private:
     ss::future<> do_start();
     ss::future<> create_internal_topic();
+    ss::future<> fetch_internal_topic();
     configuration _config;
     ss::semaphore _mem_sem;
     ss::gate _gate;

@@ -10,13 +10,17 @@
 #include "pandaproxy/schema_registry/service.h"
 
 #include "kafka/protocol/create_topics.h"
+#include "kafka/protocol/errors.h"
+#include "kafka/protocol/list_offsets.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "model/fundamental.h"
 #include "pandaproxy/api/api-doc/schema_registry.json.h"
 #include "pandaproxy/error.h"
 #include "pandaproxy/logger.h"
+#include "pandaproxy/schema_registry/client_fetch_batch_reader.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/handlers.h"
+#include "pandaproxy/schema_registry/storage.h"
 #include "utils/gate_guard.h"
 
 #include <seastar/core/coroutine.hh>
@@ -75,6 +79,7 @@ ss::future<> service::do_start() {
     auto guard = gate_guard(_gate);
     try {
         co_await create_internal_topic();
+        co_await fetch_internal_topic();
         vlog(plog.error, "service::ensure_started() - success");
     } catch (...) {
         vlog(
@@ -117,6 +122,31 @@ ss::future<> service::create_internal_topic() {
     }
 
     // TODO(Ben): Validate the _schemas topic
+}
+
+ss::future<> service::fetch_internal_topic() {
+    auto offset_res = co_await _client.local().list_offsets(
+      model::schema_registry_internal_tp);
+    const auto& topics = offset_res.data.topics;
+    if (topics.size() != 1 || topics.front().partitions.size() != 1) {
+        auto ec = kafka::error_code::unknown_topic_or_partition;
+        throw kafka::exception(ec, make_error_code(ec).message());
+    }
+    const auto& partition = topics.front().partitions.front();
+    if (partition.error_code != kafka::error_code::none) {
+        auto ec = partition.error_code;
+        throw kafka::exception(ec, make_error_code(ec).message());
+    }
+
+    auto max_offset = partition.offset;
+    vlog(plog.debug, "Schema registry: _schemas max_offset: {}", max_offset);
+
+    co_await make_client_fetch_batch_reader(
+      _client.local(),
+      model::schema_registry_internal_tp,
+      model::offset{0},
+      max_offset)
+      .consume(consume_to_store{_store}, model::no_timeout);
 }
 
 service::service(
