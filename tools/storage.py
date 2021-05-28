@@ -156,7 +156,6 @@ class Batch:
                 pass
             elif self.header.attrs == 1:
                 import gzip
-                logger.warning("Found zip")
                 batch = gzip.decompress(self.records)
             elif self.header.attrs == 2:
                 "snappy"
@@ -164,7 +163,6 @@ class Batch:
                     "Unsupported compression type snappy. Patches welcome!")
             elif self.header.attrs == 3:
                 import lz4.frame
-                logger.warning("Found lz4")
                 batch = lz4.frame.decompress(self.records)
             elif self.header.attrs == 4:
                 import zstd
