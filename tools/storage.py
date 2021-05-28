@@ -264,11 +264,15 @@ def main():
 
     def generate_options():
         parser = argparse.ArgumentParser(description='Redpanda log analyzer')
-        parser.add_argument(
-            '--dump',
-            type=str,
-            required=False,
-            help='Dump key:value for a topic as utf-8 to stdout')
+        parser.add_argument('--dump',
+                            type=str,
+                            required=False,
+                            metavar="TOPIC",
+                            help="""
+                Dump key:value for a topic as utf-8 to stdout, e.g. 
+                    ./storage.py --path /var/lib/redpanda/data --dump <old-topic> |
+                        kafkacat -P -b localhost:9092 -K -t <new-topic>
+            """)
         parser.add_argument('--path',
                             type=str,
                             required=True,
