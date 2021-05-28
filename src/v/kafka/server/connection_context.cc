@@ -115,7 +115,8 @@ ss::future<> connection_context::handle_auth_v0(const size_t size) {
           std::move(request_buf),
           0s);
         auto resp = co_await kafka::process_request(
-          std::move(ctx), _proto.smp_group());
+                      std::move(ctx), _proto.smp_group())
+                      .response;
         auto data = std::move(*resp).release();
         response.decode(std::move(data), version);
     }
@@ -224,16 +225,14 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                   std::move(buf),
                   sres.backpressure_delay);
                 /*
-                 * until authentication is complete, process requests in order
-                 * since all subsequent requests are dependent on authentication
-                 * having completed.
+                 * we process requests in order since all subsequent requests
+                 * are dependent on authentication having completed.
                  *
-                 * the other important reason for disabling pipeling before
-                 * authentication completes is because when a sasl handshake
-                 * with version=0 is processed, the next data on the wire is
-                 * _not_ another request: it is a size-prefixed authentication
-                 * payload without a request envelope, and requires special
-                 * handling.
+                 * the other important reason for disabling pipeling is because
+                 * when a sasl handshake with version=0 is processed, the next
+                 * data on the wire is _not_ another request: it is a
+                 * size-prefixed authentication payload without a request
+                 * envelope, and requires special handling.
                  *
                  * a well behaved client should implicitly provide a data stream
                  * that invokes this behavior in the server: that is, it won't
@@ -245,44 +244,49 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                  * stream at best and at worst some odd behavior.
                  */
 
-                if (unlikely(!sasl().complete())) {
-                    return do_process(std::move(rctx))
-                      .handle_exception([self](std::exception_ptr e) {
-                          vlog(
-                            klog.info,
-                            "Detected error processing request: {}",
-                            e);
-                          self->_rs.conn->shutdown_input();
-                      })
-                      .finally([s = std::move(sres), self] {});
-                }
-
-                (void)ss::try_with_gate(
-                  _rs.conn_gate(),
-                  [this, rctx = std::move(rctx)]() mutable {
-                      return do_process(std::move(rctx));
+                const auto correlation = rctx.header().correlation;
+                const sequence_id seq = _seq_idx;
+                _seq_idx = _seq_idx + sequence_id(1);
+                auto res = kafka::process_request(
+                  std::move(rctx), _proto.smp_group());
+                /**
+                 * first stage processed in a foreground.
+                 */
+                return res.dispatched
+                  .then([this,
+                         f = std::move(res.response),
+                         seq,
+                         correlation,
+                         self,
+                         s = std::move(sres)]() mutable {
+                      /**
+                       * second stage processed in background.
+                       */
+                      (void)ss::try_with_gate(
+                        _rs.conn_gate(),
+                        [this, f = std::move(f), seq, correlation]() mutable {
+                            return f.then(
+                              [this, seq, correlation](response_ptr r) mutable {
+                                  r->set_correlation(correlation);
+                                  _responses.insert({seq, std::move(r)});
+                                  return process_next_response();
+                              });
+                        })
+                        .handle_exception([self](std::exception_ptr e) {
+                            vlog(
+                              klog.info,
+                              "Detected error processing request: {}",
+                              e);
+                            self->_rs.conn->shutdown_input();
+                        })
+                        .finally([s = std::move(s), self] {});
                   })
                   .handle_exception([self](std::exception_ptr e) {
                       vlog(
                         klog.info, "Detected error processing request: {}", e);
                       self->_rs.conn->shutdown_input();
-                  })
-                  .finally([s = std::move(sres), self] {});
-
-                return ss::now();
+                  });
             });
-      });
-}
-
-ss::future<> connection_context::do_process(request_context ctx) {
-    const auto correlation = ctx.header().correlation;
-    const sequence_id seq = _seq_idx;
-    _seq_idx = _seq_idx + sequence_id(1);
-    return kafka::process_request(std::move(ctx), _proto.smp_group())
-      .then([this, seq, correlation](response_ptr r) mutable {
-          r->set_correlation(correlation);
-          _responses.insert({seq, std::move(r)});
-          return process_next_response();
       });
 }
 
