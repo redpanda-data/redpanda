@@ -16,6 +16,7 @@
 #include "kafka/protocol/types.h"
 #include "seastarx.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
 
 #include <memory>
@@ -53,5 +54,44 @@ private:
 };
 
 using response_ptr = ss::foreign_ptr<std::unique_ptr<response>>;
+
+struct process_result_stages {
+    process_result_stages(
+      ss::future<> dispatched_f, ss::future<response_ptr> response_f)
+      : dispatched(std::move(dispatched_f))
+      , response(std::move(response_f)) {}
+
+    explicit process_result_stages(response_ptr response)
+      : dispatched(ss::now())
+      , response(ss::make_ready_future<response_ptr>(std::move(response))) {}
+
+    /**
+     * Single stage method is a helper to execute whole request in foreground.
+     * The dispatch phase if finished after response phase this way when
+     * response is processed in background it is already resolved future.
+     */
+    static process_result_stages single_stage(ss::future<response_ptr> f) {
+        ss::promise<response_ptr> response;
+        auto response_f = response.get_future();
+        auto dispatch = f.then_wrapped(
+          [response = std::move(response)](ss::future<response_ptr> f) mutable {
+              try {
+                  auto r = f.get();
+                  response.set_value(std::move(r));
+              } catch (...) {
+                  response.set_exception(std::current_exception());
+              }
+          });
+
+        return process_result_stages(
+          std::move(dispatch), std::move(response_f));
+    }
+
+    // after this future resolved request is dispatched for processing and
+    // processing order is set
+    ss::future<> dispatched;
+    // the response future is intended to be executed in background
+    ss::future<response_ptr> response;
+};
 
 } // namespace kafka
