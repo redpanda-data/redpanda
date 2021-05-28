@@ -128,12 +128,6 @@ class SchemaRegistryTest(RedpandaTest):
         Verify posting a schema
         """
 
-        self.logger.debug("Creating _schemas topic")
-        self._create_topics(names=["_schemas"],
-                            partitions=1,
-                            replicas=1,
-                            cleanup_policy=TopicSpec.CLEANUP_COMPACT)
-
         topic = create_topic_names(1)[0]
 
         self.logger.debug(f"Register a schema against a subject")

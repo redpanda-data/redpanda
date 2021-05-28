@@ -9,7 +9,11 @@
 
 #include "pandaproxy/schema_registry/service.h"
 
+#include "kafka/protocol/create_topics.h"
+#include "kafka/server/handlers/topics/types.h"
+#include "model/fundamental.h"
 #include "pandaproxy/api/api-doc/schema_registry.json.h"
+#include "pandaproxy/error.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/handlers.h"
@@ -70,7 +74,7 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
 ss::future<> service::do_start() {
     auto guard = gate_guard(_gate);
     try {
-        return ss::now();
+        co_await create_internal_topic();
         vlog(plog.error, "service::ensure_started() - success");
     } catch (...) {
         vlog(
@@ -79,6 +83,40 @@ ss::future<> service::do_start() {
           std::current_exception());
         throw;
     }
+}
+
+ss::future<> service::create_internal_topic() {
+    vlog(plog.debug, "Schema registry: attempting to create internal topic");
+    static constexpr auto make_internal_topic = []() {
+        return kafka::creatable_topic{
+          .name{model::schema_registry_internal_tp.topic},
+          .num_partitions = 1,
+          .replication_factor = 1, // TODO(Ben): Make configurable
+          .assignments{},
+          .configs{
+            {.name{ss::sstring{kafka::topic_property_cleanup_policy}},
+             .value{"compact"}}}};
+    };
+    auto res = co_await _client.local().create_topic(make_internal_topic());
+    if (res.data.topics.size() != 1) {
+        throw std::runtime_error("Unexpected topic count");
+    }
+
+    const auto& topic = res.data.topics[0];
+    if (topic.error_code == kafka::error_code::none) {
+        vlog(plog.debug, "Schema registry: created internal topic");
+    } else if (topic.error_code == kafka::error_code::topic_already_exists) {
+        vlog(plog.debug, "Schema registry: found internal topic");
+    } else if (topic.error_code == kafka::error_code::not_controller) {
+        vlog(plog.debug, "Schema registry: not controller");
+    } else {
+        throw kafka::exception(
+          topic.error_code,
+          topic.error_message.value_or(
+            kafka::make_error_code(topic.error_code).message()));
+    }
+
+    // TODO(Ben): Validate the _schemas topic
 }
 
 service::service(
