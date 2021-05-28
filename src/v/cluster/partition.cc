@@ -67,24 +67,14 @@ ss::future<result<raft::replicate_result>> partition::replicate(
     return _raft->replicate(term, std::move(r), opts);
 }
 
-ss::future<checked<raft::replicate_result, kafka::error_code>>
-partition::replicate(
+ss::future<result<raft::replicate_result>> partition::replicate(
   model::batch_identity bid,
   model::record_batch_reader&& r,
   raft::replicate_options opts) {
     if (bid.is_transactional || bid.has_idempotent()) {
         return _rm_stm->replicate(bid, std::move(r), opts);
     } else {
-        return _raft->replicate(std::move(r), opts)
-          .then([](result<raft::replicate_result> result) {
-              if (result.has_value()) {
-                  return checked<raft::replicate_result, kafka::error_code>(
-                    result.value());
-              } else {
-                  return checked<raft::replicate_result, kafka::error_code>(
-                    kafka::error_code::unknown_server_error);
-              }
-          });
+        return _raft->replicate(std::move(r), opts);
     }
 }
 

@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/errc.h"
 #include "cluster/rm_stm.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
@@ -29,8 +30,8 @@
 
 using namespace std::chrono_literals;
 
-static const failure_type<kafka::error_code>
-  invalid_producer_epoch(kafka::error_code::invalid_producer_epoch);
+static const failure_type<cluster::errc>
+  invalid_producer_epoch(cluster::errc::invalid_producer_epoch);
 
 static ss::logger logger{"rm_stm-test"};
 

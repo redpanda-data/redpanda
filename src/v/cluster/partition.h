@@ -45,7 +45,7 @@ public:
     ss::future<result<raft::replicate_result>> replicate(
       model::term_id, model::record_batch_reader&&, raft::replicate_options);
 
-    ss::future<checked<raft::replicate_result, kafka::error_code>> replicate(
+    ss::future<result<raft::replicate_result>> replicate(
       model::batch_identity,
       model::record_batch_reader&&,
       raft::replicate_options);

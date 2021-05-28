@@ -49,7 +49,7 @@ public:
     ss::future<result<model::offset>>
       replicate(model::record_batch_reader, raft::replicate_options);
 
-    ss::future<checked<model::offset, kafka::error_code>> replicate(
+    ss::future<result<model::offset>> replicate(
       model::batch_identity,
       model::record_batch_reader&&,
       raft::replicate_options);

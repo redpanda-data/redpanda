@@ -15,7 +15,6 @@
 #include "cluster/tx_utils.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
-#include "kafka/protocol/errors.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "raft/consensus.h"
@@ -98,7 +97,7 @@ public:
     ss::future<std::vector<rm_stm::tx_range>>
       aborted_transactions(model::offset, model::offset);
 
-    ss::future<checked<raft::replicate_result, kafka::error_code>> replicate(
+    ss::future<result<raft::replicate_result>> replicate(
       model::batch_identity,
       model::record_batch_reader,
       raft::replicate_options);
@@ -121,14 +120,13 @@ private:
 
     bool check_seq(model::batch_identity);
 
-    ss::future<checked<raft::replicate_result, kafka::error_code>>
+    ss::future<result<raft::replicate_result>>
       replicate_tx(model::batch_identity, model::record_batch_reader);
 
-    ss::future<checked<raft::replicate_result, kafka::error_code>>
-      replicate_seq(
-        model::batch_identity,
-        model::record_batch_reader,
-        raft::replicate_options);
+    ss::future<result<raft::replicate_result>> replicate_seq(
+      model::batch_identity,
+      model::record_batch_reader,
+      raft::replicate_options);
 
     void compact_snapshot();
 

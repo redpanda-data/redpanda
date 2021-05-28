@@ -585,8 +585,7 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
     co_return tx_errc::none;
 }
 
-ss::future<checked<raft::replicate_result, kafka::error_code>>
-rm_stm::replicate(
+ss::future<result<raft::replicate_result>> rm_stm::replicate(
   model::batch_identity bid,
   model::record_batch_reader b,
   raft::replicate_options opts) {
@@ -597,17 +596,9 @@ rm_stm::replicate(
         });
     } else if (bid.has_idempotent() && bid.first_seq <= bid.last_seq) {
         return replicate_seq(bid, std::move(b), opts);
-    } else {
-        return _c->replicate(std::move(b), std::move(opts))
-          .then([](result<raft::replicate_result> r) {
-              if (!r) {
-                  return checked<raft::replicate_result, kafka::error_code>(
-                    kafka::error_code::unknown_server_error);
-              }
-              return checked<raft::replicate_result, kafka::error_code>(
-                r.value());
-          });
     }
+
+    return _c->replicate(std::move(b), opts);
 }
 
 bool rm_stm::check_seq(model::batch_identity bid) {
@@ -637,11 +628,11 @@ bool rm_stm::check_seq(model::batch_identity bid) {
     return true;
 }
 
-ss::future<checked<raft::replicate_result, kafka::error_code>>
+ss::future<result<raft::replicate_result>>
 rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
     auto is_ready = co_await sync(_sync_timeout);
     if (!is_ready) {
-        co_return kafka::error_code::not_leader_for_partition;
+        co_return errc::not_leader;
     }
     if (_mem_state.term != _insync_term) {
         _mem_state = mem_state{.term = _insync_term};
@@ -651,7 +642,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
     auto fence_it = _log_state.fence_pid_epoch.find(bid.pid.get_id());
     if (fence_it != _log_state.fence_pid_epoch.end()) {
         if (bid.pid.get_epoch() < fence_it->second) {
-            co_return kafka::error_code::invalid_producer_epoch;
+            co_return errc::invalid_producer_epoch;
         }
     }
 
@@ -665,7 +656,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
           clusterlog.warn,
           "Partition doesn't expect record with pid:{}",
           bid.pid);
-        co_return kafka::error_code::invalid_producer_epoch;
+        co_return errc::invalid_producer_epoch;
     }
 
     if (_mem_state.preparing.contains(bid.pid)) {
@@ -673,7 +664,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
           clusterlog.warn,
           "Client keeps producing after initiating a prepare for pid:{}",
           bid.pid);
-        co_return kafka::error_code::unknown_server_error;
+        co_return errc::generic_tx_error;
     }
 
     if (_mem_state.estimated.contains(bid.pid)) {
@@ -681,11 +672,11 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         // being processed. this is highly unlikely situation because
         // we replicate with ack=1 and it should be fast
         vlog(clusterlog.warn, "Too frequent produce with same pid:{}", bid.pid);
-        co_return kafka::error_code::unknown_server_error;
+        co_return errc::generic_tx_error;
     }
 
     if (!check_seq(bid)) {
-        co_return kafka::error_code::out_of_order_sequence_number;
+        co_return errc::sequence_out_of_order;
     }
 
     if (!_mem_state.tx_start.contains(bid.pid)) {
@@ -705,7 +696,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
             // an error during replication, preventin tx from progress
             _mem_state.expected.erase(bid.pid);
         }
-        co_return kafka::error_code::unknown_server_error;
+        co_return r.error();
     }
 
     auto replicated = r.value();
@@ -726,26 +717,21 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
     co_return replicated;
 }
 
-ss::future<checked<raft::replicate_result, kafka::error_code>>
-rm_stm::replicate_seq(
+ss::future<result<raft::replicate_result>> rm_stm::replicate_seq(
   model::batch_identity bid,
   model::record_batch_reader br,
   raft::replicate_options opts) {
     auto is_ready = co_await sync(_sync_timeout);
     if (!is_ready) {
-        co_return kafka::error_code::not_leader_for_partition;
+        co_return errc::not_leader;
     }
     if (_mem_state.term != _insync_term) {
         _mem_state = mem_state{.term = _insync_term};
     }
     if (!check_seq(bid)) {
-        co_return kafka::error_code::out_of_order_sequence_number;
+        co_return errc::sequence_out_of_order;
     }
-    auto r = co_await _c->replicate(_insync_term, std::move(br), opts);
-    if (!r) {
-        co_return kafka::error_code::unknown_server_error;
-    }
-    co_return r.value();
+    co_return co_await _c->replicate(_insync_term, std::move(br), opts);
 }
 
 model::offset rm_stm::last_stable_offset() {
