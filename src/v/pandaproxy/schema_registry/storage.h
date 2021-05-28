@@ -15,11 +15,16 @@
 #include "model/record_utils.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/rjson_util.h"
+#include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/error.h"
+#include "pandaproxy/schema_registry/store.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "raft/types.h"
 #include "storage/record_batch_builder.h"
 #include "utils/string_switch.h"
+
+#include <seastar/core/coroutine.hh>
+#include <seastar/core/std-coroutine.hh>
 
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
@@ -368,5 +373,37 @@ inline model::record_batch make_schema_batch(
       schema_value_to_iobuf(sub, ver, id, std::move(schema), type, deleted));
     return std::move(rb).build();
 }
+
+struct consume_to_store {
+    explicit consume_to_store(store& s)
+      : _store{s} {}
+
+    ss::future<ss::stop_iteration> operator()(model::record_batch b) {
+        if (!b.header().attrs.is_control()) {
+            b.for_each_record(*this);
+        }
+        co_return ss::stop_iteration::no;
+    }
+
+    void operator()(model::record record) {
+        auto key = schema_key_from_iobuf(record.release_key());
+        if (key.keytype == "SCHEMA") {
+            vassert(key.magic == 1, "Schema key magic is unknown");
+            auto val = schema_value_from_iobuf(record.release_value());
+            vlog(
+              plog.debug,
+              "Inserting key: subject: {}, version: {} ",
+              key.sub(),
+              key.version);
+            auto res = _store.insert(val.sub, val.schema, val.type);
+            vassert(res.id == val.id, "Schema_id mismatch");
+            vassert(res.version == val.version, "Schema_version mismatch");
+        } else {
+            vlog(plog.warn, "Ignoring keytype: {}", key.keytype);
+        }
+    }
+    void end_of_stream() {}
+    store& _store;
+};
 
 } // namespace pandaproxy::schema_registry
