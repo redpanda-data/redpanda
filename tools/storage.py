@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-import os
-import sys
+import crc32c
 import collections
 import glob
-import struct
-import crc32c
 import logging
-import zstd
+import os
 import six
+import struct
+import sys
 
 logger = logging.getLogger('storage')
 logging.basicConfig()
@@ -153,7 +152,28 @@ class Batch:
     def parse_records(self):
         batch = self.records
         try:
-            batch = zstd.decompress(self.records)
+            if self.header.attrs == 0:
+                pass
+            elif self.header.attrs == 1:
+                import gzip
+                logger.warning("Found zip")
+                batch = gzip.decompress(self.records)
+            elif self.header.attrs == 2:
+                "snappy"
+                raise NotImplementedError(
+                    "Unsupported compression type snappy. Patches welcome!")
+            elif self.header.attrs == 3:
+                import lz4.frame
+                logger.warning("Found lz4")
+                batch = lz4.frame.decompress(self.records)
+            elif self.header.attrs == 4:
+                import zstd
+                batch = zstd.decompress(self.records)
+            else:
+                raise NotImplementedError(
+                    f"Unknown compression type {self.header.attrs}. Patches welcome!"
+                )
+
             return Record.from_bytes(batch, self.header.record_count)
         except zstd.Error as e:
             logger.warning(f"zstd decoding failure, {e} {self.header}")
@@ -205,7 +225,10 @@ class Segment:
 
                 if dump:
                     for record in batch.parse_records():
-                        print(record)
+                        try:
+                            print(record)
+                        except UnicodeDecodeError as e:
+                            logger.warn("Unable to unicode decode batch", e)
                 index += 1
 
     def dump(self):
