@@ -377,7 +377,7 @@ func (r *ConfigMapResource) preparePandaproxyClient(
 	}
 
 	replicas := *r.pandaCluster.Spec.Replicas
-	cfgRpk.PandaproxyClient = &config.PandaproxyClient{}
+	cfgRpk.PandaproxyClient = &config.KafkaClient{}
 	for i := int32(0); i < replicas; i++ {
 		cfgRpk.PandaproxyClient.Brokers = append(cfgRpk.PandaproxyClient.Brokers, config.SocketAddress{
 			Address: fmt.Sprintf("%s-%d.%s", r.pandaCluster.Name, i, r.serviceFQDN),
