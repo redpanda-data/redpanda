@@ -1239,7 +1239,7 @@ rpk:
 			name: "shall write config with pandaproxy client configuration",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.PandaproxyClient = &PandaproxyClient{
+				c.PandaproxyClient = &KafkaClient{
 					Brokers: []SocketAddress{
 						{
 							Address: "1.2.3.4",
@@ -1420,7 +1420,7 @@ rpk:
 				mechanism := "abc"
 				username := "user"
 				password := "pass"
-				c.PandaproxyClient = &PandaproxyClient{
+				c.PandaproxyClient = &KafkaClient{
 					SASLMechanism: &mechanism,
 					SCRAMUsername: &username,
 					SCRAMPassword: &password,

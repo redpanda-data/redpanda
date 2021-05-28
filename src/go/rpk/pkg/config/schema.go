@@ -20,7 +20,7 @@ type Config struct {
 	Redpanda         RedpandaConfig         `yaml:"redpanda" mapstructure:"redpanda" json:"redpanda"`
 	Rpk              RpkConfig              `yaml:"rpk" mapstructure:"rpk" json:"rpk"`
 	Pandaproxy       *Pandaproxy            `yaml:"pandaproxy,omitempty" mapstructure:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`
-	PandaproxyClient *PandaproxyClient      `yaml:"pandaproxy_client,omitempty" mapstructure:"pandaproxy_client,omitempty" json:"pandaproxyClient,omitempty"`
+	PandaproxyClient *KafkaClient           `yaml:"pandaproxy_client,omitempty" mapstructure:"pandaproxy_client,omitempty" json:"pandaproxyClient,omitempty"`
 	Other            map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 
@@ -61,7 +61,7 @@ type Pandaproxy struct {
 	Other                   map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 
-type PandaproxyClient struct {
+type KafkaClient struct {
 	Brokers       []SocketAddress        `yaml:"brokers,omitempty" mapstructure:"brokers,omitempty" json:"brokers,omitempty"`
 	BrokerTLS     ServerTLS              `yaml:"broker_tls,omitempty" mapstructure:"broker_tls,omitempty" json:"brokerTls,omitempty"`
 	SASLMechanism *string                `yaml:"sasl_mechanism,omitempty" mapstructure:"sasl_mechanism,omitempty" json:"saslMechanism,omitempty"`
