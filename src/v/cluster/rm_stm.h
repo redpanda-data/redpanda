@@ -76,8 +76,7 @@ public:
         std::vector<seq_entry> seqs;
     };
 
-    static constexpr model::control_record_version
-      prepare_control_record_version{0};
+    static constexpr int8_t prepare_control_record_version{0};
     static constexpr int8_t fence_control_record_version{0};
 
     explicit rm_stm(ss::logger&, raft::consensus*);

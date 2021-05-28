@@ -57,19 +57,21 @@ make_fence_batch(int8_t version, model::producer_identity pid) {
 }
 
 static model::record_batch make_prepare_batch(rm_stm::prepare_marker record) {
-    iobuf key;
-    kafka::response_writer w(key);
-    w.write(rm_stm::prepare_control_record_version());
-    w.write(record.tm_partition());
-    w.write(record.tx_seq());
-
     storage::record_batch_builder builder(
       tx_prepare_batch_type, model::offset(0));
     builder.set_producer_identity(record.pid.id, record.pid.epoch);
     builder.set_control_type();
-    builder.add_raw_kw(
-      std::move(key), std::nullopt, std::vector<model::record_header>());
 
+    iobuf key;
+    reflection::serialize(key, tx_prepare_batch_type());
+    reflection::serialize(key, record.pid.id);
+
+    iobuf value;
+    reflection::serialize(value, rm_stm::prepare_control_record_version);
+    reflection::serialize(value, record.tm_partition());
+    reflection::serialize(value, record.tx_seq());
+
+    builder.add_raw_kv(std::move(key), std::move(value));
     return std::move(builder).build();
 }
 
@@ -91,30 +93,47 @@ static model::record_batch make_tx_control_batch(
     return std::move(builder).build();
 }
 
-static rm_stm::prepare_marker parse_prepare_batch(model::record_batch& b) {
+static rm_stm::prepare_marker parse_prepare_batch(model::record_batch&& b) {
     const auto& hdr = b.header();
-
-    vassert(
-      hdr.type == tx_prepare_batch_type,
-      "expect prepare batch type got {}",
-      hdr.type);
-    vassert(
-      b.record_count() == 1, "prepare batch must contain a single record");
-
     auto bid = model::batch_identity::from(hdr);
+
+    vassert(
+      b.record_count() == 1,
+      "tx_prepare_batch_type batch must contain a single record");
     auto r = b.copy_records();
     auto& record = *r.begin();
-    auto buf = record.release_key();
-    kafka::request_reader buf_reader(std::move(buf));
-    auto version = model::control_record_version(buf_reader.read_int16());
+    auto val_buf = record.release_value();
+
+    iobuf_parser val_reader(std::move(val_buf));
+    auto version = reflection::adl<int8_t>{}.from(val_reader);
     vassert(
       version == rm_stm::prepare_control_record_version,
       "unknown prepare record version: {} expected: {}",
       version,
       rm_stm::prepare_control_record_version);
+    auto tm_partition = model::partition_id(
+      reflection::adl<int32_t>{}.from(val_reader));
+    auto tx_seq = model::tx_seq(reflection::adl<int64_t>{}.from(val_reader));
+
+    auto key_buf = record.release_key();
+    iobuf_parser key_reader(std::move(key_buf));
+    auto batch_type = model::record_batch_type(
+      reflection::adl<int8_t>{}.from(key_reader));
+    vassert(
+      hdr.type == batch_type,
+      "broken tx_prepare_batch_type batch. expected batch type {} got: {}",
+      hdr.type,
+      batch_type);
+    auto p_id = model::producer_id(reflection::adl<int64_t>{}.from(key_reader));
+    vassert(
+      p_id == bid.pid.id,
+      "broken tx_prepare_batch_type batch. expected pid {} got: {}",
+      bid.pid.id,
+      p_id);
+
     return rm_stm::prepare_marker{
-      .tm_partition = model::partition_id(buf_reader.read_int32()),
-      .tx_seq = model::tx_seq(buf_reader.read_int64()),
+      .tm_partition = tm_partition,
+      .tx_seq = tx_seq,
       .pid = bid.pid,
     };
 }
@@ -839,7 +858,7 @@ ss::future<> rm_stm::apply(model::record_batch b) {
     if (hdr.type == tx_fence_batch_type) {
         apply_fence(std::move(b));
     } else if (hdr.type == tx_prepare_batch_type) {
-        apply_prepare(parse_prepare_batch(b));
+        apply_prepare(parse_prepare_batch(std::move(b)));
     } else if (hdr.type == raft::data_batch_type) {
         auto bid = model::batch_identity::from(hdr);
         if (hdr.attrs.is_control()) {
