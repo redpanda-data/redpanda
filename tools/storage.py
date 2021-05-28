@@ -220,7 +220,7 @@ class Segment:
                         try:
                             print(record)
                         except UnicodeDecodeError as e:
-                            logger.warn("Unable to unicode decode batch", e)
+                            logger.warning("Unable to unicode decode batch", e)
                 index += 1
 
     def dump(self):
