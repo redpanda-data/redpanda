@@ -12,6 +12,7 @@ package acl
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/Shopify/sarama"
@@ -201,6 +202,12 @@ func executeDeleteACLs(
 	for matchingACLs := range aclsChan {
 		acls = append(acls, matchingACLs...)
 	}
+
+	sort.Slice(acls, func(i, j int) bool {
+		a := acls[i]
+		b := acls[j]
+		return strings.Compare(a.ResourceName, b.ResourceName) < 0
+	})
 
 	printMatchingACLs(acls)
 
