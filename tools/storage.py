@@ -85,47 +85,47 @@ class Record:
         return "{}:{}".format(self.key.decode("utf-8"),
                               self.value.decode("utf-8"))
 
-    @staticmethod
-    def record_from_bytes(b):
-        (size, v) = read_varlong(b, 0)
 
-        record_attr = b[v]
-        v = v + 1
+def record_from_bytes(b):
+    (size, v) = read_varlong(b, 0)
 
-        (timestamp_delta, v) = read_varlong(b, v)
-        (offset_delta, v) = read_varlong(b, v)
+    record_attr = b[v]
+    v = v + 1
 
-        (key_length, v) = read_varlong(b, v)
-        key = b[v:v + key_length]
-        v = v + key_length
+    (timestamp_delta, v) = read_varlong(b, v)
+    (offset_delta, v) = read_varlong(b, v)
 
-        (value_length, v) = read_varlong(b, v)
-        value = b[v:v + value_length]
-        v = v + value_length
+    (key_length, v) = read_varlong(b, v)
+    key = b[v:v + key_length]
+    v = v + key_length
 
-        (header_count, v) = read_varlong(b, v)
-        headers = {}
-        for i in range(0, header_count):
-            (hkey_length, v) = read_varlong(b, v)
-            hkey = b[v:v + hkey_length]
-            v = v + hkey_length
-            (hvalue_length, v) = read_varlong(b, v)
-            hvalue = b[v:v + hvalue_length]
-            v = v + hvalue_length
-            headers[hkey] = hvalue
+    (value_length, v) = read_varlong(b, v)
+    value = b[v:v + value_length]
+    v = v + value_length
 
-        return Record(size, record_attr, timestamp_delta, offset_delta, key,
-                      headers, value)
+    (header_count, v) = read_varlong(b, v)
+    headers = {}
+    for i in range(0, header_count):
+        (hkey_length, v) = read_varlong(b, v)
+        hkey = b[v:v + hkey_length]
+        v = v + hkey_length
+        (hvalue_length, v) = read_varlong(b, v)
+        hvalue = b[v:v + hvalue_length]
+        v = v + hvalue_length
+        headers[hkey] = hvalue
 
-    @staticmethod
-    def from_bytes(b, count):
-        records = []
-        for i in range(0, count):
-            record = Record.record_from_bytes(b)
-            size = record.size + 2 # why do we need two extra bytes to get the entire record?
-            b = b[size:]
-            records.append(record)
-        return records
+    return Record(size, record_attr, timestamp_delta, offset_delta, key,
+                  headers, value)
+
+
+def records_from_bytes(b, count):
+    records = []
+    for i in range(0, count):
+        record = record_from_bytes(b)
+        size = record.size + 2  # why do we need two extra bytes to get the entire record?
+        b = b[size:]
+        records.append(record)
+    return records
 
 
 class Batch:
@@ -176,27 +176,27 @@ class Batch:
                     f"Unknown compression type {self.header.attrs}. Patches welcome!"
                 )
 
-            return Record.from_bytes(batch, self.header.record_count)
-        except zstd.Error as e:
-            logger.warning(f"zstd decoding failure, {e} {self.header}")
+            return records_from_bytes(batch, self.header.record_count)
         except Exception as e:
-            logger.warning(f"Unable to decode batch, {e} {self.header}")
+            logger.warning(
+                f"Unable to decode batch, {e} {self.header} from {self.records[:32]}"
+            )
         return []
 
-    @staticmethod
-    def from_file(f, index):
-        data = f.read(HEADER_SIZE)
-        if len(data) == HEADER_SIZE:
-            header = Header(*struct.unpack(HDR_FMT_RP, data))
-            # it appears that we may have hit a truncation point if all of the
-            # fields in the header are zeros
-            if all(map(lambda v: v == 0, header)):
-                return
-            records_size = header.batch_size - HEADER_SIZE
-            data = f.read(records_size)
-            assert len(data) == records_size
-            return Batch(index, header, data)
-        assert len(data) == 0
+
+def batch_from_file(f, index):
+    data = f.read(HEADER_SIZE)
+    if len(data) == HEADER_SIZE:
+        header = Header(*struct.unpack(HDR_FMT_RP, data))
+        # it appears that we may have hit a truncation point if all of the
+        # fields in the header are zeros
+        if all(map(lambda v: v == 0, header)):
+            return
+        records_size = header.batch_size - HEADER_SIZE
+        data = f.read(records_size)
+        assert len(data) == records_size
+        return Batch(index, header, data)
+    assert len(data) == 0
 
 
 class Segment:
@@ -217,7 +217,7 @@ class Segment:
         index = 1
         with open(self.path, "rb") as f:
             while True:
-                batch = Batch.from_file(f, index)
+                batch = batch_from_file(f, index)
                 if not batch:
                     break
 
@@ -228,9 +228,10 @@ class Segment:
                 if dump:
                     for record in batch.parse_records():
                         try:
-                            print(record)
+                            sys.stdout.write(str(record))
                         except UnicodeDecodeError as e:
                             logger.warning("Unable to unicode decode batch", e)
+                    sys.stdout.flush()
                 index += 1
 
     def dump(self):
@@ -284,6 +285,17 @@ class Store:
             self.ntps.append(ntp)
 
 
+def process_segment(path, dump):
+    try:
+        s = Segment(path, dump=dump)
+    except CorruptBatchError as e:
+        logger.error("corruption detected in batch {} of segment: {}".format(
+            e.batch.index, path))
+        logger.error("header of corrupt batch: {}".format(e.batch.header))
+        sys.exit(1)
+    logger.info("successfully decoded segment: {}".format(path))
+
+
 def main():
     import argparse
 
@@ -302,6 +314,9 @@ def main():
                             type=str,
                             required=True,
                             help='Path to the log desired to be analyzed')
+        parser.add_argument('--parallel',
+                            action="store_true",
+                            help='Process in parallel using all machine cores')
         return parser
 
     parser = generate_options()
@@ -310,20 +325,17 @@ def main():
     if not os.path.exists(options.path):
         logger.error("Path doesn't exist %s" % options.path)
         sys.exit(1)
+
     store = Store(options.path)
     for ntp in store.ntps:
         dump = options.dump == ntp.topic
-        for path in ntp.segments:
-            try:
-                s = Segment(path, dump=dump)
-            except CorruptBatchError as e:
-                logger.error(
-                    "corruption detected in batch {} of segment: {}".format(
-                        e.batch.index, path))
-                logger.error("header of corrupt batch: {}".format(
-                    e.batch.header))
-                sys.exit(1)
-            logger.info("successfully decoded segment: {}".format(path))
+        if options.parallel:
+            from multiprocessing import Pool
+            with Pool() as p:
+                p.starmap(process_segment, [(x, dump) for x in ntp.segments])
+        else:
+            for path in ntp.segments:
+                process_segment(path, dump)
 
 
 if __name__ == '__main__':
