@@ -56,6 +56,14 @@ func HostAddr(port uint) string {
 	return fmt.Sprintf("127.0.0.1:%d", port)
 }
 
+func ListenAddresses(ip string, internalPort, externalPort uint) string {
+	return fmt.Sprintf("internal://0.0.0.0:%d,external://%s:%d", internalPort, ip, externalPort)
+}
+
+func AdvertiseAddresses(ip string, internalPort, externalPort uint) string {
+	return fmt.Sprintf("internal://%s:%d,external://127.0.0.1:%d", ip, internalPort, externalPort)
+}
+
 // Returns the container name for the given node ID.
 func Name(nodeID uint) string {
 	return fmt.Sprintf("rp-node-%d", nodeID)
@@ -245,15 +253,15 @@ func CreateNode(
 		"--node-id",
 		fmt.Sprintf("%d", nodeID),
 		"--kafka-addr",
-		fmt.Sprintf("%s:%d", ip, config.DefaultKafkaPort),
+		ListenAddresses(ip, config.DefaultKafkaPort, kafkaPort),
 		"--pandaproxy-addr",
-		fmt.Sprintf("%s:%d", ip, config.DefaultProxyPort),
+		ListenAddresses(ip, config.DefaultProxyPort, proxyPort),
 		"--rpc-addr",
 		fmt.Sprintf("%s:%d", ip, config.Default().Redpanda.RPCServer.Port),
 		"--advertise-kafka-addr",
-		HostAddr(kafkaPort),
+		AdvertiseAddresses(ip, config.DefaultKafkaPort, kafkaPort),
 		"--advertise-pandaproxy-addr",
-		HostAddr(proxyPort),
+		AdvertiseAddresses(ip, config.DefaultProxyPort, proxyPort),
 		"--advertise-rpc-addr",
 		fmt.Sprintf("%s:%d", ip, config.Default().Redpanda.RPCServer.Port),
 		"--smp 1 --memory 1G --reserve-memory 0M",
