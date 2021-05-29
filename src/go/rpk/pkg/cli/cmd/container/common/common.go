@@ -212,7 +212,7 @@ func RemoveNetwork(c Client) error {
 
 func CreateNode(
 	c Client,
-	nodeID, kafkaPort, proxyPort, rpcPort, metricsPort uint,
+	nodeID, kafkaPort, proxyPort, schemaRegPort, rpcPort, metricsPort uint,
 	netID, image string,
 	args ...string,
 ) (*NodeState, error) {
@@ -237,6 +237,13 @@ func CreateNode(
 	if err != nil {
 		return nil, err
 	}
+	sPort, err := nat.NewPort(
+		"tcp",
+		strconv.Itoa(config.DefaultSchemaRegPort),
+	)
+	if err != nil {
+		return nil, err
+	}
 	metPort, err := nat.NewPort(
 		"tcp",
 		strconv.Itoa(config.DefaultAdminPort),
@@ -257,6 +264,8 @@ func CreateNode(
 		ListenAddresses(ip, config.DefaultKafkaPort, externalKafkaPort),
 		"--pandaproxy-addr",
 		ListenAddresses(ip, config.DefaultProxyPort, proxyPort),
+		"--schema-registry-addr",
+		fmt.Sprintf("%s:%d", ip, config.DefaultSchemaRegPort),
 		"--rpc-addr",
 		fmt.Sprintf("%s:%d", ip, config.Default().Redpanda.RPCServer.Port),
 		"--advertise-kafka-addr",
@@ -274,6 +283,7 @@ func CreateNode(
 		ExposedPorts: nat.PortSet{
 			rPort: {},
 			pPort: {},
+			sPort: {},
 			kPort: {},
 		},
 		Labels: map[string]string{
@@ -291,6 +301,9 @@ func CreateNode(
 			}},
 			pPort: []nat.PortBinding{{
 				HostPort: fmt.Sprint(proxyPort),
+			}},
+			pPort: []nat.PortBinding{{
+				HostPort: fmt.Sprint(schemaRegPort),
 			}},
 			metPort: []nat.PortBinding{{
 				HostPort: fmt.Sprint(metricsPort),
