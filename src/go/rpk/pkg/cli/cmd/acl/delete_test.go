@@ -122,8 +122,8 @@ func TestNewDeleteACLsCommand(t *testing.T) {
 		},
 		expectedOut: `  DELETED  PRINCIPAL    HOST       OPERATION  PERMISSION TYPE  RESOURCE TYPE  RESOURCE NAME      ERROR MESSAGE  
            
-  yes      User:user-2  127.0.0.1  Alter      Deny             Topic          some-cool-topic-2  None           
   yes      User:user-1  *          Read       Allow            Topic          some-cool-topic    None           
+  yes      User:user-2  127.0.0.1  Alter      Deny             Topic          some-cool-topic-2  None           
            
 `,
 	}, {
