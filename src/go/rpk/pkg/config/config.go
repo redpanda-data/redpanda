@@ -26,9 +26,10 @@ const (
 	ModeDev  = "dev"
 	ModeProd = "prod"
 
-	DefaultKafkaPort = 9092
-	DefaultProxyPort = 8082
-	DefaultAdminPort = 9644
+	DefaultKafkaPort     = 9092
+	DefaultSchemaRegPort = 8081
+	DefaultProxyPort     = 8082
+	DefaultAdminPort     = 9644
 )
 
 func InitViper(fs afero.Fs) *viper.Viper {
