@@ -104,12 +104,15 @@ class Record:
         v = v + value_length
 
         (header_count, v) = read_varlong(b, v)
-        headers = []
+        headers = {}
         for i in range(0, header_count):
-            (header_length, v) = read_varlong(b, v)
-            header = b[v:v + header_length]
-            v = v + header_length
-            headers.append(header)
+            (hkey_length, v) = read_varlong(b, v)
+            hkey = b[v:v + hkey_length]
+            v = v + hkey_length
+            (hvalue_length, v) = read_varlong(b, v)
+            hvalue = b[v:v + hvalue_length]
+            v = v + hvalue_length
+            headers[hkey] = hvalue
 
         return Record(size, record_attr, timestamp_delta, offset_delta, key,
                       headers, value)
@@ -119,7 +122,8 @@ class Record:
         records = []
         for i in range(0, count):
             record = Record.record_from_bytes(b)
-            b = b[:record.size]
+            size = record.size + 2 # why do we need two extra bytes to get the entire record?
+            b = b[size:]
             records.append(record)
         return records
 
