@@ -31,6 +31,8 @@ tasks:
       CC: '{{.COMPILER}}'
       CXX: '{{if eq .COMPILER "gcc"}}g++{{else}}clang++{{end}}'
       ENABLE_GIT_VERSION: '{{default "ON" .ENABLE_GIT_VERSION}}'
+    deps:
+      - task: :v-dev:install-depot-tools
     env:
       CCACHE_DIR: '{{default "/dev/shm/ccache/v" .CCACHE_DIR}}'
     cmds:
@@ -40,6 +42,7 @@ tasks:
         -GNinja \
         -DREDPANDA_DEPS_INSTALL_DIR="{{.RP_DEPS_INSTALL_DIR}}" \
         -DVECTORIZED_CMAKE_DIR="{{.VECTORIZED_CMAKE_DIR}}" \
+        -DDEPOT_TOOLS_DIR="{{.DEPOT_TOOLS_DIR}}" \
         -DCMAKE_BUILD_TYPE={{.BUILD_TYPE | lower | title}} \
         -DCMAKE_C_COMPILER={{.CC}} \
         -DCMAKE_CXX_COMPILER={{.CXX}} \
