@@ -168,6 +168,14 @@ func TestSet(t *testing.T) {
 			},
 		},
 		{
+			name:  "it should detect pandaproxy client single field if format isn't passed",
+			key:   "pandaproxy_client.retries",
+			value: "42",
+			check: func(st *testing.T, c *Config, mgr *manager) {
+				require.Exactly(st, 42.0, c.PandaproxyClient.Other["retries"])
+			},
+		},
+		{
 			name: "it should detect yaml-formatted values if format isn't passed",
 			key:  "redpanda.kafka_api",
 			value: `- name: external
@@ -272,6 +280,72 @@ func TestSet(t *testing.T) {
 			require.NoError(t, err)
 			if tt.check != nil {
 				conf, err = mgr.Get()
+				require.NoError(t, err)
+				m, _ := mgr.(*manager)
+				tt.check(t, conf, m)
+			}
+		})
+	}
+}
+
+func TestMerge(t *testing.T) {
+	tests := []struct {
+		name      string
+		config    Config
+		check     func(st *testing.T, c *Config, mgr *manager)
+		expectErr bool
+	}{
+		{
+			name: "it should merge Kafka API spec",
+			config: Config{
+				Redpanda: RedpandaConfig{
+					KafkaApi: []NamedSocketAddress{{
+						Name: "kafka-api-name",
+						SocketAddress: SocketAddress{
+							"1.2.3.4",
+							9123,
+						},
+					}},
+				},
+			},
+			check: func(st *testing.T, c *Config, _ *manager) {
+				require.Exactly(st, "kafka-api-name", c.Redpanda.KafkaApi[0].Name)
+				require.Exactly(st, "1.2.3.4", c.Redpanda.KafkaApi[0].Address)
+				require.Exactly(st, 9123, c.Redpanda.KafkaApi[0].Port)
+			},
+		},
+		{
+			name: "it should merge Pandaproxy API spec",
+			config: Config{
+				Pandaproxy: &Pandaproxy{
+					PandaproxyAPI: []NamedSocketAddress{{
+						Name: "proxy-api-name",
+						SocketAddress: SocketAddress{
+							"1.2.3.4",
+							8123,
+						},
+					}},
+				},
+			},
+			check: func(st *testing.T, c *Config, _ *manager) {
+				require.Exactly(st, "proxy-api-name", c.Pandaproxy.PandaproxyAPI[0].Name)
+				require.Exactly(st, "1.2.3.4", c.Pandaproxy.PandaproxyAPI[0].Address)
+				require.Exactly(st, 8123, c.Pandaproxy.PandaproxyAPI[0].Port)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
+			mgr := NewManager(fs)
+			err := mgr.Merge(&tt.config)
+			if tt.expectErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			if tt.check != nil {
+				conf, err := mgr.Get()
 				require.NoError(t, err)
 				m, _ := mgr.(*manager)
 				tt.check(t, conf, m)
