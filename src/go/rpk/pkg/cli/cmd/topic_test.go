@@ -12,6 +12,7 @@ package cmd
 import (
 	"bytes"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/Shopify/sarama"
@@ -51,7 +52,7 @@ func generatePartitions(no int) []*sarama.PartitionMetadata {
 func TestTopicCmd(t *testing.T) {
 	tests := []struct {
 		name           string
-		admin          *mocks.MockAdmin
+		admin          func(st *testing.T) *mocks.MockAdmin
 		cmd            func(func() (sarama.ClusterAdmin, error)) *cobra.Command
 		args           []string
 		expectedOutput string
@@ -61,19 +62,19 @@ func TestTopicCmd(t *testing.T) {
 			name:           "create should output info about the created topic (custom values)",
 			cmd:            topic.NewCreateCommand,
 			args:           []string{"Seattle", "--partitions", "2", "--replicas", "3", "--compact"},
-			expectedOutput: "Created topic 'Seattle'.\nYou may check its config with\n\nrpk topic describe 'Seattle'\n\n",
+			expectedOutput: "Created topic 'Seattle'.\nYou may check its config with\n\nrpk topic describe 'Seattle'",
 		},
 		{
 			name:           "create should allow passing arbitrary topic config",
 			cmd:            topic.NewCreateCommand,
 			args:           []string{"San Francisco", "--topic-config", "custom.config:value", "--topic-config", "another.config:anothervalue"},
-			expectedOutput: "Created topic 'San Francisco'.\nYou may check its config with\n\nrpk topic describe 'San Francisco'\n\n",
+			expectedOutput: "Created topic 'San Francisco'.\nYou may check its config with\n\nrpk topic describe 'San Francisco'",
 		},
 		{
 			name:           "create should allow passing comma-separated config values",
 			cmd:            topic.NewCreateCommand,
 			args:           []string{"San Francisco", "-c", "custom.config:value", "-c", "cleanup.policy:cleanup,compact"},
-			expectedOutput: "Created topic 'San Francisco'.\nYou may check its config with\n\nrpk topic describe 'San Francisco'\n\n",
+			expectedOutput: "Created topic 'San Francisco'.\nYou may check its config with\n\nrpk topic describe 'San Francisco'",
 		},
 		{
 			name:        "create should fail if no topic is passed",
@@ -85,10 +86,12 @@ func TestTopicCmd(t *testing.T) {
 			name: "create should fail if the topic creation req fails",
 			cmd:  topic.NewCreateCommand,
 			args: []string{"Chicago"},
-			admin: &mocks.MockAdmin{
-				MockCreateTopic: func(string, *sarama.TopicDetail, bool) error {
-					return errors.New("no bueno error")
-				},
+			admin: func(_ *testing.T) *mocks.MockAdmin {
+				return &mocks.MockAdmin{
+					MockCreateTopic: func(string, *sarama.TopicDetail, bool) error {
+						return errors.New("no bueno error")
+					},
+				}
 			},
 			expectedErr: "no bueno error",
 		},
@@ -102,10 +105,12 @@ func TestTopicCmd(t *testing.T) {
 			name: "delete should fail if the topic deletion req fails",
 			cmd:  topic.NewDeleteCommand,
 			args: []string{"Leticia"},
-			admin: &mocks.MockAdmin{
-				MockDeleteTopic: func(string) error {
-					return errors.New("that topic don't exist, yo")
-				},
+			admin: func(_ *testing.T) *mocks.MockAdmin {
+				return &mocks.MockAdmin{
+					MockDeleteTopic: func(string) error {
+						return errors.New("that topic don't exist, yo")
+					},
+				}
 			},
 			expectedErr: "that topic don't exist, yo",
 		},
@@ -128,18 +133,76 @@ func TestTopicCmd(t *testing.T) {
 			expectedOutput: "Added config 'retention.ms'='-1' to topic 'Panama'.",
 		},
 		{
+			name: "set-config should send the request with the updated config",
+			cmd:  topic.NewSetConfigCommand,
+			args: []string{"Rionegro", "retention.bytes", "420000"},
+			admin: func(st *testing.T) *mocks.MockAdmin {
+				return &mocks.MockAdmin{
+					MockAlterConfig: func(
+						_ sarama.ConfigResourceType,
+						_ string,
+						m map[string]*string,
+						_ bool,
+					) error {
+						value := "420000"
+						expected := map[string]*string{
+							"retention.bytes": &value,
+						}
+						require.Exactly(st, expected, m)
+						return nil
+					},
+					MockDescribeConfig: func(res sarama.ConfigResource) ([]sarama.ConfigEntry, error) {
+						require.Exactly(st, "Rionegro", res.Name)
+
+						return []sarama.ConfigEntry{{
+							Name:     "partition_count",
+							ReadOnly: true,
+							Value:    "1",
+						}, {
+							Name:  "retention.bytes",
+							Value: "-1",
+						}}, nil
+					},
+				}
+			},
+		},
+		{
+			name: "set-config should fail if the given property is read-only",
+			cmd:  topic.NewSetConfigCommand,
+			args: []string{"Jardin", "partition_count", "420000"},
+			admin: func(st *testing.T) *mocks.MockAdmin {
+				return &mocks.MockAdmin{
+					MockDescribeConfig: func(res sarama.ConfigResource) ([]sarama.ConfigEntry, error) {
+						require.Exactly(st, "Jardin", res.Name)
+
+						return []sarama.ConfigEntry{{
+							Name:     "partition_count",
+							ReadOnly: true,
+							Value:    "1",
+						}, {
+							Name:  "retention.bytes",
+							Value: "-1",
+						}}, nil
+					},
+				}
+			},
+			expectedErr: "property 'partition_count' is read-only and cannot be modified",
+		},
+		{
 			name: "set-config should fail if the req fails",
 			cmd:  topic.NewSetConfigCommand,
 			args: []string{"Chiriqui", "k", "v"},
-			admin: &mocks.MockAdmin{
-				MockAlterConfig: func(
-					sarama.ConfigResourceType,
-					string,
-					map[string]*string,
-					bool,
-				) error {
-					return errors.New("can't set the config for some reason")
-				},
+			admin: func(_ *testing.T) *mocks.MockAdmin {
+				return &mocks.MockAdmin{
+					MockAlterConfig: func(
+						sarama.ConfigResourceType,
+						string,
+						map[string]*string,
+						bool,
+					) error {
+						return errors.New("can't set the config for some reason")
+					},
+				}
 			},
 			expectedErr: "can't set the config for some reason",
 		},
@@ -164,23 +227,25 @@ func TestTopicCmd(t *testing.T) {
 		{
 			name: "list should output the list of topics",
 			cmd:  topic.NewListCommand,
-			admin: &mocks.MockAdmin{
-				MockListTopics: func() (map[string]sarama.TopicDetail, error) {
-					return map[string]sarama.TopicDetail{
-						"tokyo": {
-							NumPartitions:     2,
-							ReplicationFactor: 3,
-						},
-						"kyoto": {
-							NumPartitions:     10,
-							ReplicationFactor: 2,
-						},
-						"fukushima": {
-							NumPartitions:     7,
-							ReplicationFactor: 3,
-						},
-					}, nil
-				},
+			admin: func(_ *testing.T) *mocks.MockAdmin {
+				return &mocks.MockAdmin{
+					MockListTopics: func() (map[string]sarama.TopicDetail, error) {
+						return map[string]sarama.TopicDetail{
+							"tokyo": {
+								NumPartitions:     2,
+								ReplicationFactor: 3,
+							},
+							"kyoto": {
+								NumPartitions:     10,
+								ReplicationFactor: 2,
+							},
+							"fukushima": {
+								NumPartitions:     7,
+								ReplicationFactor: 3,
+							},
+						}, nil
+					},
+				}
 			},
 			args: []string{},
 			expectedOutput: `  Name       Partitions  Replicas  
@@ -193,20 +258,24 @@ func TestTopicCmd(t *testing.T) {
 			name: "list should fail if the req fails",
 			cmd:  topic.NewListCommand,
 			args: []string{},
-			admin: &mocks.MockAdmin{
-				MockListTopics: func() (map[string]sarama.TopicDetail, error) {
-					return nil, errors.New("an error happened :(")
-				},
+			admin: func(_ *testing.T) *mocks.MockAdmin {
+				return &mocks.MockAdmin{
+					MockListTopics: func() (map[string]sarama.TopicDetail, error) {
+						return nil, errors.New("an error happened :(")
+					},
+				}
 			},
 			expectedErr: "an error happened :(",
 		},
 		{
 			name: "list should output a message if there are no topics",
 			cmd:  topic.NewListCommand,
-			admin: &mocks.MockAdmin{
-				MockListTopics: func() (map[string]sarama.TopicDetail, error) {
-					return map[string]sarama.TopicDetail{}, nil
-				},
+			admin: func(_ *testing.T) *mocks.MockAdmin {
+				return &mocks.MockAdmin{
+					MockListTopics: func() (map[string]sarama.TopicDetail, error) {
+						return map[string]sarama.TopicDetail{}, nil
+					},
+				}
 			},
 			expectedOutput: "No topics found.",
 		},
@@ -216,7 +285,7 @@ func TestTopicCmd(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			admin := func() (sarama.ClusterAdmin, error) {
 				if tt.admin != nil {
-					return tt.admin, nil
+					return tt.admin(t), nil
 				}
 				return &mocks.MockAdmin{}, nil
 			}
@@ -230,7 +299,7 @@ func TestTopicCmd(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			require.Contains(t, out.String(), tt.expectedOutput)
+			require.Contains(t, strings.ReplaceAll(out.String(), "\\n", "\n"), tt.expectedOutput)
 		})
 	}
 }

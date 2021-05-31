@@ -10,6 +10,8 @@
 package topic
 
 import (
+	"fmt"
+
 	"github.com/Shopify/sarama"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -38,10 +40,31 @@ func NewSetConfigCommand(
 			key := args[1]
 			value := args[2]
 
+			res := sarama.ConfigResource{
+				Type: sarama.TopicResource,
+				Name: topicName,
+			}
+			configEntries, err := adm.DescribeConfig(res)
+
+			newConfig := map[string]*string{}
+			for _, configEntry := range configEntries {
+				ce := configEntry
+				if ce.ReadOnly || isReadOnly(ce.Name) {
+					if ce.Name == key {
+						return fmt.Errorf("property '%s' is read-only and cannot be modified", key)
+					}
+					continue
+				}
+				// Update the existing config with the new key-value pair.
+				newConfig[ce.Name] = &ce.Value
+			}
+
+			newConfig[key] = &value
+
 			err = adm.AlterConfig(
 				sarama.TopicResource,
 				topicName,
-				map[string]*string{key: &value},
+				newConfig,
 				false,
 			)
 			if err != nil {
@@ -57,4 +80,16 @@ func NewSetConfigCommand(
 		},
 	}
 	return cmd
+}
+
+// Some config properties are read-only, even if they're not marked as such
+// in the response. isReadOnly checks the well known ones.
+func isReadOnly(propertyName string) bool {
+	readOnly := []string{"partition_count", "replication_factor"}
+	for _, s := range readOnly {
+		if propertyName == s {
+			return true
+		}
+	}
+	return false
 }
