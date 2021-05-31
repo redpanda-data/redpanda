@@ -7,10 +7,12 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "bytes/bytes.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
+#include "model/record_batch_reader.h"
 #include "model/timestamp.h"
 #include "raft/consensus_utils.h"
 #include "raft/tests/raft_group_fixture.h"
@@ -761,3 +763,36 @@ FIXTURE_TEST(test_linarizable_barrier_single_node, raft_test_fixture) {
         BOOST_REQUIRE(are_logs_the_same_length(logs));
     }
 };
+
+FIXTURE_TEST(test_big_batches_replication, raft_test_fixture) {
+    raft_group gr = raft_group(raft::group_id(0), 1);
+    gr.enable_all();
+    auto leader_id = wait_for_group_leader(gr);
+    auto leader_raft = gr.get_member(leader_id).consensus;
+
+    bool success
+      = retry_with_leader(gr, 5, 2s, [](raft_node& leader_node) mutable {
+            storage::record_batch_builder builder(
+              raft::data_batch_type, model::offset(0));
+
+            auto value = bytes_to_iobuf(random_generators::get_bytes(3_MiB));
+            builder.add_raw_kv({}, std::move(value));
+
+            auto rdr = model::make_memory_record_batch_reader(
+              {std::move(builder).build()});
+            return leader_node.consensus
+              ->replicate(
+                std::move(rdr),
+                raft::replicate_options(raft::consistency_level::quorum_ack))
+              .then([](result<raft::replicate_result> res) {
+                  if (!res) {
+                      return false;
+                  }
+                  return true;
+              });
+        }).get();
+    BOOST_REQUIRE(success);
+
+    auto logs = gr.read_all_logs();
+    BOOST_REQUIRE(are_logs_the_same_length(logs));
+}

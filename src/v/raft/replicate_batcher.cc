@@ -31,7 +31,8 @@ namespace raft {
 using namespace std::chrono_literals; // NOLINT
 replicate_batcher::replicate_batcher(consensus* ptr, size_t cache_size)
   : _ptr(ptr)
-  , _max_batch_size_sem(cache_size) {}
+  , _max_batch_size_sem(cache_size)
+  , _max_batch_size(cache_size) {}
 
 ss::future<result<replicate_result>> replicate_batcher::replicate(
   std::optional<model::term_id> expected_term, model::record_batch_reader&& r) {
@@ -78,7 +79,20 @@ replicate_batcher::do_cache_with_backpressure(
   std::optional<model::term_id> expected_term,
   ss::circular_buffer<model::record_batch> batches,
   size_t bytes) {
-    return ss::get_units(_max_batch_size_sem, bytes)
+    /**
+     * Produce a message larger than the internal raft batch accumulator
+     * (default 1Mb) the semaphore can't be acquired. Closing
+     * the connection doesn't propagate this error and allow those units to be
+     * returned, so the entire partition is no longer writable.
+     * see:
+     *
+     * https://github.com/vectorizedio/redpanda/issues/1503.
+     *
+     * When batch size exceed available semaphore units we just acquire all of
+     * them to be able to continue.
+     */
+
+    return ss::get_units(_max_batch_size_sem, std::min(bytes, _max_batch_size))
       .then([this, expected_term, batches = std::move(batches)](
 
               ss::semaphore_units<> u) mutable {
