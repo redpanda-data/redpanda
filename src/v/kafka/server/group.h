@@ -14,6 +14,7 @@
 #include "cluster/partition.h"
 #include "cluster/tx_utils.h"
 #include "kafka/protocol/fwd.h"
+#include "kafka/protocol/offset_commit.h"
 #include "kafka/server/logger.h"
 #include "kafka/server/member.h"
 #include "kafka/types.h"
@@ -113,6 +114,21 @@ public:
     static constexpr int8_t prepared_tx_record_version{0};
     static constexpr int8_t commit_tx_record_version{0};
     static constexpr int8_t aborted_tx_record_version{0};
+
+    struct offset_commit_stages {
+        explicit offset_commit_stages(offset_commit_response resp)
+          : dispatched(ss::now())
+          , committed(
+              ss::make_ready_future<offset_commit_response>(std::move(resp))) {}
+
+        offset_commit_stages(
+          ss::future<> dispatched, ss::future<offset_commit_response> resp)
+          : dispatched(std::move(dispatched))
+          , committed(std::move(resp)) {}
+
+        ss::future<> dispatched;
+        ss::future<offset_commit_response> committed;
+    };
 
     struct offset_metadata {
         model::offset log_offset;
@@ -430,7 +446,7 @@ public:
     ss::future<txn_offset_commit_response>
     store_txn_offsets(txn_offset_commit_request r);
 
-    ss::future<offset_commit_response> store_offsets(offset_commit_request&& r);
+    offset_commit_stages store_offsets(offset_commit_request&& r);
 
     ss::future<txn_offset_commit_response>
     handle_txn_offset_commit(txn_offset_commit_request r);
@@ -444,8 +460,7 @@ public:
     ss::future<cluster::abort_group_tx_reply>
     handle_abort_tx(cluster::abort_group_tx_request r);
 
-    ss::future<offset_commit_response>
-    handle_offset_commit(offset_commit_request&& r);
+    offset_commit_stages handle_offset_commit(offset_commit_request&& r);
 
     ss::future<cluster::commit_group_tx_reply>
     handle_commit_tx(cluster::commit_group_tx_request r);

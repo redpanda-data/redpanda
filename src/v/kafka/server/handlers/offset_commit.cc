@@ -53,16 +53,15 @@ struct offset_commit_ctx {
       , ssg(ssg) {}
 };
 
-template<>
-ss::future<response_ptr>
+process_result_stages
 offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     offset_commit_request request;
     request.decode(ctx.reader(), ctx.header().version);
     klog.trace("Handling request {}", request);
 
     if (request.data.group_instance_id) {
-        return ctx.respond(
-          offset_commit_response(request, error_code::unsupported_version));
+        return process_result_stages::single_stage(ctx.respond(
+          offset_commit_response(request, error_code::unsupported_version)));
     }
 
     // check authorization for this group
@@ -186,13 +185,18 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
               .partitions = std::move(topic.second),
             });
         }
-        return octx.rctx.respond(std::move(resp));
+        return process_result_stages::single_stage(
+          octx.rctx.respond(std::move(resp)));
     }
-
-    return ss::do_with(std::move(octx), [](offset_commit_ctx& octx) {
-        return octx.rctx.groups()
-          .offset_commit(std::move(octx.request))
-          .then([&octx](offset_commit_response resp) {
+    ss::promise<> dispatch;
+    auto dispatch_f = dispatch.get_future();
+    auto f = ss::do_with(
+      std::move(octx),
+      [dispatch = std::move(dispatch)](offset_commit_ctx& octx) mutable {
+          auto stages = octx.rctx.groups().offset_commit(
+            std::move(octx.request));
+          stages.dispatched.forward_to(std::move(dispatch));
+          return stages.committed.then([&octx](offset_commit_response resp) {
               if (unlikely(!octx.nonexistent_tps.empty())) {
                   /*
                    * copy over partitions for topics that had some partitions
@@ -229,7 +233,9 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
               }
               return octx.rctx.respond(std::move(resp));
           });
-    });
+      });
+
+    return process_result_stages(std::move(dispatch_f), std::move(f));
 }
 
 } // namespace kafka

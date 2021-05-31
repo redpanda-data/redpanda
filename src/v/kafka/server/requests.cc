@@ -56,13 +56,21 @@ struct process_dispatch<api_versions_handler> {
     }
 };
 /**
- * Produce request is currently the only one leveraging two stage processing
+ * Requests processed in two stages
  */
 template<>
 struct process_dispatch<produce_handler> {
     static process_result_stages
     process(request_context&& ctx, ss::smp_service_group g) {
         return produce_handler::handle(std::move(ctx), g);
+    }
+};
+
+template<>
+struct process_dispatch<offset_commit_handler> {
+    static process_result_stages
+    process(request_context&& ctx, ss::smp_service_group g) {
+        return offset_commit_handler::handle(std::move(ctx), g);
     }
 };
 
