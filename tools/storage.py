@@ -315,7 +315,9 @@ def main():
                             required=True,
                             help='Path to the log desired to be analyzed')
         parser.add_argument('--parallel',
-                            action="store_true",
+                            type=int,
+                            default=1,
+                            metavar="PROCESSES",
                             help='Process in parallel using all machine cores')
         return parser
 
@@ -329,9 +331,9 @@ def main():
     store = Store(options.path)
     for ntp in store.ntps:
         dump = options.dump == ntp.topic
-        if options.parallel:
+        if options.parallel > 1:
             from multiprocessing import Pool
-            with Pool() as p:
+            with Pool(options.parallel) as p:
                 p.starmap(process_segment, [(x, dump) for x in ntp.segments])
         else:
             for path in ntp.segments:
