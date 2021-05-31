@@ -62,13 +62,12 @@ linters:
     - govet
     - vet
     - ineffassign
-    - interfacer
     - misspell
     - nakedret
     - noctx
     - nolintlint
     - rowserrcheck
-    - scopelint
+    - exportloopref
     - staticcheck
     - structcheck
     - stylecheck
