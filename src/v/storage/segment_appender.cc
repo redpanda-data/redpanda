@@ -362,29 +362,29 @@ void segment_appender::maybe_advance_stable_offset(
 
 void segment_appender::dispatch_background_head_write() {
     vassert(_head, "dispatching write requires active chunk");
-    auto h = std::exchange(_head, nullptr);
     vassert(
-      h->bytes_pending() > 0,
+      _head->bytes_pending() > 0,
       "There must be data to write to disk to advance the offset. {}",
       *this);
 
     const size_t start_offset = ss::align_down<size_t>(
-      _committed_offset, h->alignment());
-    const size_t expected = h->dma_size();
-    const char* src = h->dma_ptr();
+      _committed_offset, _head->alignment());
+    const size_t expected = _head->dma_size();
+    const char* src = _head->dma_ptr();
     vassert(
       expected <= chunk::chunk_size,
       "Writes can be at most a full segment. Expected {}, attempted write: {}",
       chunk::chunk_size,
       expected);
     // accounting synchronously
-    _committed_offset += h->bytes_pending();
-    _bytes_flush_pending -= h->bytes_pending();
+    _committed_offset += _head->bytes_pending();
+    _bytes_flush_pending -= _head->bytes_pending();
     // background write
-    h->flush();
+    _head->flush();
     _inflight.emplace_back(
       ss::make_lw_shared<inflight_write>(_committed_offset));
     auto w = _inflight.back();
+    auto h = std::exchange(_head, nullptr);
     (void)ss::with_semaphore(
       _concurrent_flushes,
       1,
