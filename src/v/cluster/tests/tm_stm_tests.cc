@@ -57,7 +57,9 @@ FIXTURE_TEST(test_tm_stm_new_tx, mux_state_machine_fixture) {
     auto tx_id = kafka::transactional_id("app-id-1");
     auto pid = model::producer_identity{.id = 1, .epoch = 0};
 
-    auto op_code = stm.register_new_producer(tx_id, pid).get0();
+    auto op_code
+      = stm.register_new_producer(tx_id, std::chrono::milliseconds(0), pid)
+          .get0();
     BOOST_REQUIRE_EQUAL(op_code, op_status::success);
     auto tx1 = expect_tx(stm.get_tx(tx_id));
     BOOST_REQUIRE_EQUAL(tx1.id, tx_id);
@@ -114,7 +116,9 @@ FIXTURE_TEST(test_tm_stm_seq_tx, mux_state_machine_fixture) {
     auto tx_id = kafka::transactional_id("app-id-1");
     auto pid = model::producer_identity{.id = 1, .epoch = 0};
 
-    auto op_code = stm.register_new_producer(tx_id, pid).get0();
+    auto op_code
+      = stm.register_new_producer(tx_id, std::chrono::milliseconds(0), pid)
+          .get0();
     BOOST_REQUIRE_EQUAL(op_code, op_status::success);
     auto tx1 = expect_tx(stm.get_tx(tx_id));
     std::vector<tm_transaction::tx_partition> partitions = {
@@ -151,7 +155,9 @@ FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
     auto tx_id = kafka::transactional_id("app-id-1");
     auto pid1 = model::producer_identity{.id = 1, .epoch = 0};
 
-    auto op_code = stm.register_new_producer(tx_id, pid1).get0();
+    auto op_code
+      = stm.register_new_producer(tx_id, std::chrono::milliseconds(0), pid1)
+          .get0();
     BOOST_REQUIRE(op_code == op_status::success);
     auto tx1 = expect_tx(stm.get_tx(tx_id));
     std::vector<tm_transaction::tx_partition> partitions = {
@@ -168,7 +174,9 @@ FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
     auto tx5 = expect_tx(stm.mark_tx_ongoing(tx_id));
 
     auto pid2 = model::producer_identity{.id = 1, .epoch = 1};
-    op_code = stm.re_register_producer(tx_id, pid2).get0();
+    op_code = stm
+                .re_register_producer(tx_id, std::chrono::milliseconds(0), pid2)
+                .get0();
     BOOST_REQUIRE_EQUAL(op_code, op_status::success);
     auto tx6 = expect_tx(stm.get_tx(tx_id));
     BOOST_REQUIRE_EQUAL(tx6.id, tx_id);

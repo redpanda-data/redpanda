@@ -71,6 +71,7 @@ struct tm_transaction {
     // only in memory (partitions and groups).
     model::term_id etag;
     tx_status status;
+    std::chrono::milliseconds timeout_ms;
     std::vector<tx_partition> partitions;
     std::vector<tx_group> groups;
 
@@ -117,10 +118,14 @@ public:
       mark_tx_ready(kafka::transactional_id, model::term_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       try_change_status(kafka::transactional_id, tm_transaction::tx_status);
-    ss::future<tm_stm::op_status>
-      re_register_producer(kafka::transactional_id, model::producer_identity);
-    ss::future<tm_stm::op_status>
-      register_new_producer(kafka::transactional_id, model::producer_identity);
+    ss::future<tm_stm::op_status> re_register_producer(
+      kafka::transactional_id,
+      std::chrono::milliseconds,
+      model::producer_identity);
+    ss::future<tm_stm::op_status> register_new_producer(
+      kafka::transactional_id,
+      std::chrono::milliseconds,
+      model::producer_identity);
 
     // before calling a tm_stm modifying operation a caller should
     // take get_tx_lock mutex

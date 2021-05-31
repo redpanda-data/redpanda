@@ -122,7 +122,9 @@ ss::future<std::optional<model::node_id>> tx_gateway_frontend::get_tx_broker() {
 }
 
 ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
-  kafka::transactional_id tx_id, model::timeout_clock::duration timeout) {
+  kafka::transactional_id tx_id,
+  std::chrono::milliseconds transaction_timeout_ms,
+  model::timeout_clock::duration timeout) {
     if (!_metadata_cache.local().contains(
           model::tx_manager_nt, model::tx_manager_ntp.tp.partition)) {
         vlog(
@@ -151,16 +153,20 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
     auto _self = _controller->self();
 
     if (leader == _self) {
-        co_return co_await init_tm_tx_locally(tx_id, timeout);
+        co_return co_await init_tm_tx_locally(
+          tx_id, transaction_timeout_ms, timeout);
     }
 
     vlog(clusterlog.trace, "dispatching abort tx to {} from {}", leader, _self);
 
-    co_return co_await dispatch_init_tm_tx(leader, tx_id, timeout);
+    co_return co_await dispatch_init_tm_tx(
+      leader, tx_id, transaction_timeout_ms, timeout);
 }
 
 ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
-  kafka::transactional_id tx_id, model::timeout_clock::duration timeout) {
+  kafka::transactional_id tx_id,
+  std::chrono::milliseconds transaction_timeout_ms,
+  model::timeout_clock::duration timeout) {
     auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
 
     auto retries = _metadata_dissemination_retries;
@@ -177,12 +183,14 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
         co_return cluster::init_tm_tx_reply{.ec = tx_errc::shard_not_found};
     }
 
-    co_return co_await do_init_tm_tx(*shard, tx_id, timeout);
+    co_return co_await do_init_tm_tx(
+      *shard, tx_id, transaction_timeout_ms, timeout);
 }
 
 ss::future<init_tm_tx_reply> tx_gateway_frontend::dispatch_init_tm_tx(
   model::node_id leader,
   kafka::transactional_id tx_id,
+  std::chrono::milliseconds transaction_timeout_ms,
   model::timeout_clock::duration timeout) {
     return _connection_cache.local()
       .with_node_client<cluster::tx_gateway_client_protocol>(
@@ -190,9 +198,13 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::dispatch_init_tm_tx(
         ss::this_shard_id(),
         leader,
         timeout,
-        [tx_id, timeout](tx_gateway_client_protocol cp) {
+        [tx_id, transaction_timeout_ms, timeout](
+          tx_gateway_client_protocol cp) {
             return cp.init_tm_tx(
-              init_tm_tx_request{.tx_id = tx_id, .timeout = timeout},
+              init_tm_tx_request{
+                .tx_id = tx_id,
+                .transaction_timeout_ms = transaction_timeout_ms,
+                .timeout = timeout},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<init_tm_tx_reply>)
@@ -212,9 +224,12 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::dispatch_init_tm_tx(
 ss::future<init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
   ss::shard_id shard,
   kafka::transactional_id tx_id,
+  std::chrono::milliseconds transaction_timeout_ms,
   model::timeout_clock::duration timeout) {
     return container().invoke_on(
-      shard, _ssg, [tx_id, timeout](tx_gateway_frontend& self) {
+      shard,
+      _ssg,
+      [tx_id, transaction_timeout_ms, timeout](tx_gateway_frontend& self) {
           auto partition = self._partition_manager.local().get(
             model::tx_manager_ntp);
           if (!partition) {
@@ -237,15 +252,18 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
                 init_tm_tx_reply{.ec = tx_errc::stm_not_found});
           }
 
-          return stm->get_tx_lock(tx_id)->with([&self, stm, tx_id, timeout]() {
-              return self.do_init_tm_tx(stm, tx_id, timeout);
-          });
+          return stm->get_tx_lock(tx_id)->with(
+            [&self, stm, tx_id, transaction_timeout_ms, timeout]() {
+                return self.do_init_tm_tx(
+                  stm, tx_id, transaction_timeout_ms, timeout);
+            });
       });
 }
 
 ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
   ss::shared_ptr<tm_stm> stm,
   kafka::transactional_id tx_id,
+  std::chrono::milliseconds transaction_timeout_ms,
   model::timeout_clock::duration timeout) {
     auto maybe_tx = co_await stm->get_actual_tx(tx_id);
 
@@ -259,7 +277,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
 
         model::producer_identity pid{.id = pid_reply.id, .epoch = 0};
         tm_stm::op_status op_status = co_await stm->register_new_producer(
-          tx_id, pid);
+          tx_id, transaction_timeout_ms, pid);
         init_tm_tx_reply reply{.pid = pid};
         if (op_status == tm_stm::op_status::success) {
             reply.ec = tx_errc::none;
@@ -324,7 +342,8 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
         reply.pid = model::producer_identity{.id = pid_reply.id, .epoch = 0};
     }
 
-    auto op_status = co_await stm->re_register_producer(tx.id, reply.pid);
+    auto op_status = co_await stm->re_register_producer(
+      tx.id, transaction_timeout_ms, reply.pid);
     if (op_status == tm_stm::op_status::success) {
         reply.ec = tx_errc::none;
     } else if (op_status == tm_stm::op_status::conflict) {
@@ -429,7 +448,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
                 res_topic.results.push_back(res_partition);
             } else {
                 bfs.push_back(_rm_partition_frontend.local().begin_tx(
-                  ntp, tx.pid, tx.tx_seq, timeout));
+                  ntp, tx.pid, tx.tx_seq, tx.timeout_ms, timeout));
             }
         }
         response.results.push_back(res_topic);

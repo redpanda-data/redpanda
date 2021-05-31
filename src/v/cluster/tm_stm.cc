@@ -148,7 +148,9 @@ tm_stm::mark_tx_ongoing(kafka::transactional_id tx_id) {
 }
 
 ss::future<tm_stm::op_status> tm_stm::re_register_producer(
-  kafka::transactional_id tx_id, model::producer_identity pid) {
+  kafka::transactional_id tx_id,
+  std::chrono::milliseconds transaction_timeout_ms,
+  model::producer_identity pid) {
     vlog(
       clusterlog.trace, "Registering existing tx: id={}, pid={}", tx_id, pid);
 
@@ -161,6 +163,7 @@ ss::future<tm_stm::op_status> tm_stm::re_register_producer(
     tx.pid = pid;
     tx.tx_seq += 1;
     tx.etag = _insync_term;
+    tx.timeout_ms = transaction_timeout_ms;
     tx.partitions.clear();
     tx.groups.clear();
 
@@ -173,7 +176,9 @@ ss::future<tm_stm::op_status> tm_stm::re_register_producer(
 }
 
 ss::future<tm_stm::op_status> tm_stm::register_new_producer(
-  kafka::transactional_id tx_id, model::producer_identity pid) {
+  kafka::transactional_id tx_id,
+  std::chrono::milliseconds transaction_timeout_ms,
+  model::producer_identity pid) {
     auto is_ready = co_await sync(_sync_timeout);
     if (!is_ready) {
         co_return tm_stm::op_status::unknown;
@@ -191,7 +196,7 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
       .tx_seq = model::tx_seq(0),
       .etag = _insync_term,
       .status = tm_transaction::tx_status::ready,
-    };
+      .timeout_ms = transaction_timeout_ms};
     auto batch = serialize_tx(tx);
 
     auto r = co_await replicate_quorum_ack(tx.etag, std::move(batch));

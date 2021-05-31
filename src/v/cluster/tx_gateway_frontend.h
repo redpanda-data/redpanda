@@ -40,10 +40,14 @@ public:
       ss::sharded<cluster::rm_partition_frontend>&);
 
     ss::future<std::optional<model::node_id>> get_tx_broker();
-    ss::future<init_tm_tx_reply>
-      init_tm_tx(kafka::transactional_id, model::timeout_clock::duration);
+    ss::future<init_tm_tx_reply> init_tm_tx(
+      kafka::transactional_id,
+      std::chrono::milliseconds transaction_timeout_ms,
+      model::timeout_clock::duration);
     ss::future<cluster::init_tm_tx_reply> init_tm_tx_locally(
-      kafka::transactional_id, model::timeout_clock::duration);
+      kafka::transactional_id,
+      std::chrono::milliseconds,
+      model::timeout_clock::duration);
     ss::future<add_paritions_tx_reply> add_partition_to_tx(
       add_paritions_tx_request, model::timeout_clock::duration);
     ss::future<add_offsets_tx_reply>
@@ -77,12 +81,19 @@ private:
       model::timeout_clock::duration);
 
     ss::future<cluster::init_tm_tx_reply> dispatch_init_tm_tx(
-      model::node_id, kafka::transactional_id, model::timeout_clock::duration);
+      model::node_id,
+      kafka::transactional_id,
+      std::chrono::milliseconds,
+      model::timeout_clock::duration);
     ss::future<cluster::init_tm_tx_reply> do_init_tm_tx(
-      ss::shard_id, kafka::transactional_id, model::timeout_clock::duration);
+      ss::shard_id,
+      kafka::transactional_id,
+      std::chrono::milliseconds,
+      model::timeout_clock::duration);
     ss::future<cluster::init_tm_tx_reply> do_init_tm_tx(
       ss::shared_ptr<tm_stm>,
       kafka::transactional_id,
+      std::chrono::milliseconds,
       model::timeout_clock::duration);
 
     ss::future<checked<cluster::tm_transaction, tx_errc>> do_end_txn(

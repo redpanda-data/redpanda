@@ -173,15 +173,20 @@ rm_stm::rm_stm(ss::logger& logger, raft::consensus* c)
     }
 }
 
-ss::future<checked<model::term_id, tx_errc>>
-rm_stm::begin_tx(model::producer_identity pid, model::tx_seq tx_seq) {
-    return get_tx_lock(pid.get_id())->with([this, pid, tx_seq]() {
-        return do_begin_tx(pid, tx_seq);
-    });
+ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  std::chrono::milliseconds transaction_timeout_ms) {
+    return get_tx_lock(pid.get_id())
+      ->with([this, pid, tx_seq, transaction_timeout_ms]() {
+          return do_begin_tx(pid, tx_seq, transaction_timeout_ms);
+      });
 }
 
-ss::future<checked<model::term_id, tx_errc>>
-rm_stm::do_begin_tx(model::producer_identity pid, model::tx_seq tx_seq) {
+ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  std::chrono::milliseconds transaction_timeout_ms) {
     if (!co_await sync(_sync_timeout)) {
         co_return tx_errc::stale;
     }

@@ -80,8 +80,8 @@ public:
 
     explicit rm_stm(ss::logger&, raft::consensus*);
 
-    ss::future<checked<model::term_id, tx_errc>>
-      begin_tx(model::producer_identity, model::tx_seq);
+    ss::future<checked<model::term_id, tx_errc>> begin_tx(
+      model::producer_identity, model::tx_seq, std::chrono::milliseconds);
     ss::future<tx_errc> prepare_tx(
       model::term_id,
       model::partition_id,
@@ -103,8 +103,8 @@ public:
       raft::replicate_options);
 
 private:
-    ss::future<checked<model::term_id, tx_errc>>
-      do_begin_tx(model::producer_identity, model::tx_seq);
+    ss::future<checked<model::term_id, tx_errc>> do_begin_tx(
+      model::producer_identity, model::tx_seq, std::chrono::milliseconds);
     ss::future<tx_errc> do_prepare_tx(
       model::term_id,
       model::partition_id,
