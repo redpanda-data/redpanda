@@ -173,6 +173,39 @@ Flags:
       --watermarks      If enabled, will display the topic's partitions' high watermarks (default: true)
 ```
 
+### topic produce
+
+Produce a record from data entered in stdin.
+
+```cmd
+Usage:
+  rpk topic produce <topic> [flags]
+
+Flags:
+  -H, --header stringArray   Header in format <key>:<value>. May be used multiple times to add more headers.
+  -j, --jvm-partitioner      Use a JVM-compatible partitioner. If --partition is passed with a positive value, this will be overridden and a manual partitioner will be used.
+  -k, --key string           Key for the record. Currently only strings are supported.
+  -n, --num int              Number of records to send. (default 1)
+  -p, --partition int32      Partition to produce to. (default -1)
+  -t, --timestamp string     RFC3339-compliant timestamp for the record. If the value passed can't be parsed, the current time will be used.
+```
+
+### topic consume
+
+Consume (read) records from a topic.
+
+```cmd
+Usage:
+  rpk topic consume <topic> [flags]
+
+Flags:
+      --commit                  Commit group offset after receiving messages (Only when consuming as Consumer Group)
+  -g, --group string            Consumer Group to use for consuming
+      --offset string           Offset to start consuming. Supported values: oldest, newest (default "oldest")
+  -p, --partitions int32Slice   Partitions to consume from (default [])
+      --pretty-print            Pretty-print the consumed messages. (default true)
+```
+
 ### topic list
 
 List topics.
