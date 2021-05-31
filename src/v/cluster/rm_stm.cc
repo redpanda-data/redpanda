@@ -171,6 +171,7 @@ rm_stm::rm_stm(ss::logger& logger, raft::consensus* c)
     if (_recovery_policy != crash && _recovery_policy != best_effort) {
         vassert(false, "Unknown recovery policy: {}", _recovery_policy);
     }
+    auto_abort_timer.set_callback([this] { abort_old_txes(); });
 }
 
 ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
@@ -237,6 +238,8 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
           pid);
         co_return tx_errc::unknown_server_error;
     }
+
+    track_tx(pid, transaction_timeout_ms);
 
     co_return _mem_state.term;
 }
@@ -581,6 +584,11 @@ ss::future<result<raft::replicate_result>> rm_stm::replicate(
     return _c->replicate(std::move(b), opts);
 }
 
+ss::future<> rm_stm::stop() {
+    auto_abort_timer.cancel();
+    return raft::state_machine::stop();
+}
+
 bool rm_stm::check_seq(model::batch_identity bid) {
     auto pid_seq = _log_state.seq_table.find(bid.pid);
     auto last_write_timestamp = model::timestamp::now().value();
@@ -672,6 +680,12 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         }
         co_return r.error();
     }
+
+    auto expiration_it = _mem_state.expiration.find(bid.pid);
+    if (expiration_it == _mem_state.expiration.end()) {
+        co_return errc::generic_tx_error;
+    }
+    expiration_it->second.last_update = clock_type::now();
 
     auto replicated = r.value();
 
@@ -767,6 +781,128 @@ ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {
         }
     }
     co_return ready;
+}
+
+void rm_stm::track_tx(
+  model::producer_identity pid,
+  std::chrono::milliseconds transaction_timeout_ms) {
+    if (_gate.is_closed()) {
+        return;
+    }
+    _mem_state.expiration[pid] = expiration_info{
+      .timeout = transaction_timeout_ms, .last_update = clock_type::now()};
+    auto deadline = _mem_state.expiration[pid].deadline();
+    if (auto_abort_timer.armed() && auto_abort_timer.get_timeout() > deadline) {
+        auto_abort_timer.cancel();
+        auto_abort_timer.arm(deadline);
+    } else if (!auto_abort_timer.armed()) {
+        auto_abort_timer.arm(deadline);
+    }
+}
+
+void rm_stm::abort_old_txes() {
+    (void)ss::with_gate(_gate, [this] {
+        std::vector<model::producer_identity> pids;
+        for (auto& [k, _] : _mem_state.estimated) {
+            pids.push_back(k);
+        }
+        for (auto& [k, _] : _mem_state.tx_start) {
+            pids.push_back(k);
+        }
+        for (auto& [k, _] : _log_state.ongoing_map) {
+            pids.push_back(k);
+        }
+        std::vector<model::producer_identity> expired;
+        for (auto pid : pids) {
+            if (_log_state.prepared.contains(pid)) {
+                continue;
+            }
+            if (_mem_state.preparing.contains(pid)) {
+                continue;
+            }
+            if (_mem_state.expected.contains(pid)) {
+                auto expiration_it = _mem_state.expiration.find(pid);
+                if (expiration_it != _mem_state.expiration.end()) {
+                    if (expiration_it->second.deadline() > clock_type::now()) {
+                        continue;
+                    }
+                }
+            }
+            expired.push_back(pid);
+        }
+        return abort_old_txes(expired);
+    });
+}
+
+ss::future<>
+rm_stm::abort_old_txes(std::vector<model::producer_identity> pids) {
+    for (auto pid : pids) {
+        co_await try_abort_old_tx(pid);
+    }
+
+    std::optional<time_point_type> earliest_deadline;
+    for (auto& [_, expiration] : _mem_state.expiration) {
+        auto candidate = expiration.deadline();
+        if (earliest_deadline) {
+            earliest_deadline = std::min(earliest_deadline.value(), candidate);
+        } else {
+            earliest_deadline = candidate;
+        }
+    }
+
+    if (earliest_deadline) {
+        auto deadline = earliest_deadline.value();
+        if (
+          auto_abort_timer.armed()
+          && auto_abort_timer.get_timeout() > deadline) {
+            auto_abort_timer.cancel();
+            auto_abort_timer.arm(deadline);
+        } else if (!auto_abort_timer.armed()) {
+            auto_abort_timer.arm(deadline);
+        }
+    }
+}
+
+ss::future<> rm_stm::try_abort_old_tx(model::producer_identity pid) {
+    return get_tx_lock(pid.get_id())->with([this, pid]() {
+        return do_try_abort_old_tx(pid);
+    });
+}
+
+ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
+    if (!co_await sync(_sync_timeout)) {
+        co_return;
+    }
+
+    if (!is_known_session(pid)) {
+        co_return;
+    }
+
+    if (_mem_state.expected.contains(pid)) {
+        auto expiration_it = _mem_state.expiration.find(pid);
+        if (expiration_it != _mem_state.expiration.end()) {
+            if (expiration_it->second.deadline() > clock_type::now()) {
+                co_return;
+            }
+        }
+    }
+
+    _mem_state.expected.erase(pid);
+
+    auto batch = make_tx_control_batch(
+      pid, model::control_record_type::tx_abort);
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
+    auto r = co_await _c->replicate(
+      _insync_term,
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+    if (!r) {
+        vlog(
+          clusterlog.warn,
+          "Error \"{}\" on aborting timed out pid: {}",
+          r.error(),
+          pid);
+    }
 }
 
 void rm_stm::apply_fence(model::record_batch&& b) {
