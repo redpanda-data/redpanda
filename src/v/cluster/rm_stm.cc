@@ -278,15 +278,17 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
 
     // checking fencing
     auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
-    if (fence_it != _log_state.fence_pid_epoch.end()) {
-        if (pid.get_epoch() < fence_it->second) {
-            vlog(
-              clusterlog.error,
-              "Can't prepare pid:{} - fenced out by epoch {}",
-              pid,
-              fence_it->second);
-            co_return tx_errc::fenced;
-        }
+    if (fence_it == _log_state.fence_pid_epoch.end()) {
+        // begin_tx should have set a fence
+        co_return tx_errc::request_rejected;
+    }
+    if (pid.get_epoch() != fence_it->second) {
+        vlog(
+          clusterlog.error,
+          "Can't prepare pid:{} - fenced out by epoch {}",
+          pid,
+          fence_it->second);
+        co_return tx_errc::fenced;
     }
 
     if (_mem_state.term != etag) {
@@ -630,10 +632,12 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
 
     // fencing
     auto fence_it = _log_state.fence_pid_epoch.find(bid.pid.get_id());
-    if (fence_it != _log_state.fence_pid_epoch.end()) {
-        if (bid.pid.get_epoch() < fence_it->second) {
-            co_return errc::invalid_producer_epoch;
-        }
+    if (fence_it == _log_state.fence_pid_epoch.end()) {
+        // begin_tx should have set a fence
+        co_return errc::invalid_producer_epoch;
+    }
+    if (bid.pid.get_epoch() != fence_it->second) {
+        co_return errc::invalid_producer_epoch;
     }
 
     if (!_mem_state.expected.contains(bid.pid)) {
