@@ -32,3 +32,8 @@ public:
 private:
     absl::random_internal::pcg32_2018_engine _rng;
 };
+
+inline uint32_t fast_prng_source() {
+    thread_local static fast_prng source;
+    return source();
+}
