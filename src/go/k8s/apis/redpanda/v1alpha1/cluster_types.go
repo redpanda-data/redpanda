@@ -51,6 +51,20 @@ type ClusterSpec struct {
 	Superusers []Superuser `json:"superUsers,omitempty"`
 	// SASL enablement flag
 	EnableSASL bool `json:"enableSasl,omitempty"`
+	// For configuration parameters not exposed, a map can be provided for string values.
+	// Such values are passed transparently to Redpanda. The key format is "<subsystem>.field", e.g.,
+	//
+	// additionalConfiguration:
+	//   redpanda.enable_idempotence: "true"
+	//   redpanda.default_topic_partitions: "3"
+	//   pandaproxy_client.produce_batch_size_bytes: "2097152"
+	//
+	// Notes:
+	// 1. versioning is not supported for map keys
+	// 2. key names not supported by Redpanda will lead to failure on start up
+	// 3. updating this map requires a manual restart of the Redpanda pods
+	// 4. cannot have keys that conflict with existing struct fields - it leads to panic
+	AdditionalConfiguration map[string]string `json:"additionalConfiguration,omitempty"`
 }
 
 // Superuser has full access to the Redpanda cluster
