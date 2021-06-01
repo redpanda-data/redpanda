@@ -68,7 +68,7 @@ func NewConsumeCommand(client func() (sarama.Client, error)) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "consume <topic>",
-		Short: "Consume records from a topic",
+		Short: "Consume (read) records from a topic",
 		Args:  common.ExactArgs(1, "topic's name is missing."),
 		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
 		SilenceUsage: true,
@@ -135,8 +135,8 @@ func NewConsumeCommand(client func() (sarama.Client, error)) *cobra.Command {
 		&groupCommit,
 		"commit",
 		false,
-		"Commit group offset after receiving messages."+
-			" Works only if consuming as Consumer Group",
+		"Commit group offset after receiving messages"+
+			" (Only when consuming as Consumer Group)",
 	)
 	return cmd
 }
