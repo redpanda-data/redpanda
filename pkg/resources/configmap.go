@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-logr/logr"
 	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
+	"github.com/spf13/afero"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
@@ -282,7 +283,21 @@ func (r *ConfigMapResource) createConfiguration(
 		return nil, err
 	}
 
-	return cfgRpk, nil
+	mgr := config.NewManager(afero.NewOsFs())
+	err = mgr.Merge(cfgRpk)
+	if err != nil {
+		return nil, err
+	}
+
+	// Add arbitrary parameters to configuration
+	for k, v := range r.pandaCluster.Spec.AdditionalConfiguration {
+		err = mgr.Set(k, v, "")
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return mgr.Get()
 }
 
 // calculateExternalPort can calculate external Kafka API port based on the internal Kafka API port
