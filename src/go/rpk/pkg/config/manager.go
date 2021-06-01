@@ -61,6 +61,8 @@ type Manager interface {
 	ReadAsJSON(path string) (string, error)
 	// Generates and writes the node's UUID
 	WriteNodeUUID(conf *Config) error
+	// Merges an input config to the currently-loaded map
+	Merge(conf *Config) error
 }
 
 type manager struct {
@@ -380,6 +382,14 @@ func (m *manager) Set(key, value, format string) error {
 	newV := viper.New()
 	newV.Set(key, newConfValue)
 	return m.v.MergeConfigMap(newV.AllSettings())
+}
+
+func (m *manager) Merge(conf *Config) error {
+	confMap, err := toMap(conf)
+	if err != nil {
+		return err
+	}
+	return m.v.MergeConfigMap(confMap)
 }
 
 func checkAndWrite(fs afero.Fs, v *viper.Viper, path string) error {
