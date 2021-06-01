@@ -26,6 +26,7 @@ coproc_slim_fixture::~coproc_slim_fixture() {
 }
 
 ss::future<> coproc_slim_fixture::setup(log_layout_map llm) {
+    _llm = llm;
     return start().then([this, llm = std::move(llm)]() mutable {
         return ss::do_with(std::move(llm), [this](const auto& llm) {
             return ss::do_for_each(llm, [this](const auto& item) {
@@ -33,6 +34,10 @@ ss::future<> coproc_slim_fixture::setup(log_layout_map llm) {
             });
         });
     });
+}
+
+ss::future<> coproc_slim_fixture::restart() {
+    return stop().then([this] { return setup(_llm); });
 }
 
 ss::future<std::set<ss::shard_id>>

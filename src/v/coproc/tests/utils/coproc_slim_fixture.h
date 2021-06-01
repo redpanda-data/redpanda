@@ -50,6 +50,12 @@ public:
     /// be compared or used for verification during the test.
     ss::future<std::set<ss::shard_id>> shards_for_topic(const model::topic&);
 
+    /// Simulates a redpanda restart from failure
+    ///
+    /// All internal state is wiped and setup() is called again. Application is
+    /// forced to read from the existing _data_dir to bootstrap
+    ss::future<> restart();
+
 protected:
     std::unique_ptr<coproc::wasm::script_dispatcher>& get_script_dispatcher() {
         return _script_dispatcher;
@@ -65,6 +71,7 @@ private:
     storage::log_config log_config() const;
 
 private:
+    log_layout_map _llm;
     std::filesystem::path _data_dir{
       std::filesystem::current_path() / "coproc_test"};
     ss::sharded<storage::api> _storage;
