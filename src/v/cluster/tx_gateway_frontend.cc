@@ -867,29 +867,27 @@ tx_gateway_frontend::get_ongoing_tx(
   model::timeout_clock::duration timeout) {
     auto maybe_tx = stm->get_tx(transactional_id);
     if (!maybe_tx) {
-        return ss::make_ready_future<checked<tm_transaction, tx_errc>>(
-          tx_errc::timeout);
+        co_return checked<tm_transaction, tx_errc>(tx_errc::timeout);
     }
 
     auto tx = maybe_tx.value();
 
     if (tx.pid != pid) {
-        return ss::make_ready_future<checked<tm_transaction, tx_errc>>(
-          tx_errc::timeout);
+        co_return checked<tm_transaction, tx_errc>(tx_errc::timeout);
     }
 
     if (tx.status == tm_transaction::tx_status::aborting) {
-        return ss::make_ready_future<checked<tm_transaction, tx_errc>>(
-          tx_errc::timeout);
+        co_return checked<tm_transaction, tx_errc>(tx_errc::timeout);
     }
 
-    auto f = ss::make_ready_future<checked<tm_transaction, tx_errc>>(tx);
+    checked<tm_transaction, tx_errc> r(tx);
 
     if (tx.status != tm_transaction::tx_status::ongoing) {
         if (tx.status == tm_transaction::tx_status::preparing) {
-            f = do_commit_tm_tx(stm, tx, timeout, ss::promise<tx_errc>());
+            r = co_await do_commit_tm_tx(
+              stm, tx, timeout, ss::promise<tx_errc>());
         } else if (tx.status == tm_transaction::tx_status::prepared) {
-            f = recommit_tm_tx(tx, timeout);
+            r = co_await recommit_tm_tx(tx, timeout);
         } else {
             vassert(
               tx.status == tm_transaction::tx_status::finished,
@@ -897,24 +895,21 @@ tx_gateway_frontend::get_ongoing_tx(
               tx.status);
         }
 
-        f = f.then([stm](checked<tm_transaction, tx_errc> r) {
-            if (!r.has_value()) {
-                return r;
-            }
+        if (!r.has_value()) {
+            co_return r;
+        }
 
-            auto tx = r.value();
+        auto tx = r.value();
 
-            auto changed_tx = stm->mark_tx_ongoing(tx.id);
-            if (!changed_tx.has_value()) {
-                return checked<cluster::tm_transaction, tx_errc>(
-                  tx_errc::timeout);
-            }
-            return checked<cluster::tm_transaction, tx_errc>(
-              changed_tx.value());
-        });
+        auto changed_tx = stm->mark_tx_ongoing(tx.id);
+        if (!changed_tx.has_value()) {
+            co_return checked<cluster::tm_transaction, tx_errc>(
+              tx_errc::timeout);
+        }
+        co_return checked<cluster::tm_transaction, tx_errc>(changed_tx.value());
     }
 
-    return f;
+    co_return r;
 }
 
 ss::future<bool> tx_gateway_frontend::try_create_tx_topic() {
