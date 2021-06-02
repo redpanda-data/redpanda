@@ -1603,3 +1603,114 @@ FIXTURE_TEST(disposing_in_use_reader, storage_test_fixture) {
     BOOST_REQUIRE(truncate_f.available());
     truncate_f.get();
 }
+
+void append_multi_record_batch(
+  storage::log log,
+  int cnt,
+  model::term_id term,
+  size_t val_size = 0,
+  bool rand_key = false) {
+    storage::record_batch_builder builder(
+      model::record_batch_type(1), model::offset(0));
+    for (int i = 0; i < cnt; ++i) {
+        ss::sstring key_str;
+        if (rand_key) {
+            key_str = ssx::sformat(
+              "key_{}", random_generators::get_int<uint64_t>());
+        } else {
+            key_str = "key";
+        }
+        iobuf key = bytes_to_iobuf(bytes(key_str.c_str()));
+        bytes val_bytes;
+        if (val_size > 0) {
+            val_bytes = random_generators::get_bytes(val_size);
+        } else {
+            ss::sstring v = ssx::sformat("v-{}", i);
+            val_bytes = bytes(v.c_str());
+        }
+        iobuf value = bytes_to_iobuf(val_bytes);
+
+        builder.add_raw_kv(std::move(key), std::move(value));
+    }
+    auto batch = std::move(builder).build();
+    batch.set_term(term);
+    auto reader = model::make_memory_record_batch_reader({std::move(batch)});
+    storage::log_append_config cfg{
+      .should_fsync = storage::log_append_config::fsync::no,
+      .io_priority = ss::default_priority_class(),
+      .timeout = model::no_timeout,
+    };
+
+    std::move(reader).for_each_ref(log.make_appender(cfg), cfg.timeout).get0();
+}
+
+FIXTURE_TEST(test_reading_up_to_max_offset, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.max_segment_size = 1_MiB;
+    cfg.stype = storage::log_config::storage_type::disk;
+    cfg.cache = storage::with_cache::no;
+    cfg.sanitize_fileops = storage::debug_sanitize_files::no;
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::deletion;
+
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp,
+                   mgr.config().base_dir,
+                   std::make_unique<storage::ntp_config::default_overrides>(
+                     overrides)))
+                 .get0();
+
+    auto disk_log = get_disk_log(log);
+
+    auto start_offset = model::offset(0);
+    auto max = model::offset(0);
+    for (auto i = 0; i < 1000; ++i) {
+        max = log.offsets().committed_offset;
+        /**
+         * append multi record batch
+         */
+        append_multi_record_batch(
+          log,
+          random_generators::get_int(5, 20),
+          model::term_id(1),
+          1_KiB,
+          true);
+
+        if (max == model::offset(0)) {
+            continue;
+        }
+        /**
+         * read up to previous committed offset i.e. last offset of previous
+         * segment
+         */
+        storage::log_reader_config reader_config(
+          start_offset,
+          max, // take offset from middle of the batch
+          0,
+          std::numeric_limits<size_t>::max(),
+          ss::default_priority_class(),
+          std::nullopt,
+          std::nullopt,
+          std::nullopt);
+        auto rdr = log.make_reader(reader_config).get();
+        auto batches = model::consume_reader_to_memory(
+                         std::move(rdr), model::no_timeout)
+                         .get();
+
+        if (!batches.empty()) {
+            info(
+              "reading to {}, read : {}, log: {}",
+              max,
+              batches.back().last_offset(),
+              log.offsets());
+            start_offset = batches.back().last_offset() + model::offset(1);
+            BOOST_REQUIRE(batches.back().last_offset() <= max);
+        }
+    }
+}
