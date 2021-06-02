@@ -41,10 +41,7 @@ public:
     struct offset_tracker {
         offset_tracker(model::term_id t, model::offset base)
           : term(t)
-          , base_offset(base)
-          , committed_offset(base)
-          , dirty_offset(base)
-          , stable_offset(base) {}
+          , base_offset(base) {}
         model::term_id term;
         model::offset base_offset;
 

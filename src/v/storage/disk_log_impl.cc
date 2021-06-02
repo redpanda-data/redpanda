@@ -42,6 +42,7 @@
 
 #include <fmt/format.h>
 
+#include <algorithm>
 #include <iterator>
 
 using namespace std::literals::chrono_literals;
@@ -557,46 +558,56 @@ model::term_id disk_log_impl::term() const {
     }
     return _segs.back()->offsets().term;
 }
+static offset_stats empty_offsets(model::offset start_offset) {
+    offset_stats ret;
+    ret.start_offset = start_offset;
+    if (ret.start_offset > model::offset(0)) {
+        ret.dirty_offset = ret.start_offset - model::offset(1);
+        ret.committed_offset = ret.dirty_offset;
+    }
+    return ret;
+}
 
 offset_stats disk_log_impl::offsets() const {
-    if (_segs.empty()) {
-        offset_stats ret;
-        ret.start_offset = _start_offset;
-        if (ret.start_offset > model::offset(0)) {
-            ret.dirty_offset = ret.start_offset - model::offset(1);
-            ret.committed_offset = ret.dirty_offset;
-        }
-        return ret;
+    /**
+     * We have to iterate backward over segments set as we have to find last
+     * non empty segment, last segment with initialized committed offset and
+     * first offset of current term
+     */
+    const auto rend = std::make_reverse_iterator(_segs.cbegin());
+    const auto rbegin = std::find_if(
+      std::make_reverse_iterator(_segs.cend()),
+      rend,
+      [](const segment_set::type& seg) { return !seg->empty(); });
+
+    // If all segments are empty, return empty offsets.
+    if (rend == rbegin) {
+        return empty_offsets(_start_offset);
     }
-    // NOTE: we have to do this because ss::circular_buffer<> does not provide
-    // with reverse iterators, so we manually find the iterator
-    segment_set::type end;
-    segment_set::type term_start;
-    for (int i = (int)_segs.size() - 1; i >= 0; --i) {
-        auto& seg = _segs[i];
-        if (!seg->empty()) {
-            if (!end) {
-                end = seg;
-            }
-            // find term start offset
-            if (seg->offsets().term < end->offsets().term) {
-                break;
-            }
-            term_start = seg;
-        }
-    }
-    if (!end) {
-        offset_stats ret;
-        ret.start_offset = _start_offset;
-        if (ret.start_offset > model::offset(0)) {
-            ret.dirty_offset = ret.start_offset - model::offset(1);
-            ret.committed_offset = ret.dirty_offset;
-        }
-        return ret;
-    }
+
+    auto it_last_committed = std::find_if(
+      rbegin, rend, [](const segment_set::type& seg) {
+          return seg->offsets().committed_offset >= model::offset(0);
+      });
+    // If nothing was committed, use the first segment
+    const auto& last_committed = it_last_committed != rend ? *it_last_committed
+                                                           : _segs.front();
+
+    // find last segment with term that is smaller than current one
+    auto it_term_start = std::lower_bound(
+      _segs.begin(),
+      _segs.end(),
+      (*rbegin)->offsets().term,
+      [](const segment_set::type& seg, model::term_id term) {
+          return seg->offsets().term < term;
+      });
+    // If term_start not found, use the first segment
+    const auto& term_start = it_term_start != _segs.end() ? *it_term_start
+                                                          : _segs.front();
+
     // we have valid begin and end
     const auto& bof = _segs.front()->offsets();
-    const auto& eof = end->offsets();
+    const auto& eof = (*rbegin)->offsets();
     // term start
     const auto term_start_offset = term_start->offsets().base_offset;
 
@@ -606,8 +617,8 @@ offset_stats disk_log_impl::offsets() const {
     return storage::offset_stats{
       .start_offset = start_offset,
 
-      .committed_offset = eof.committed_offset,
-      .committed_offset_term = eof.term,
+      .committed_offset = last_committed->offsets().committed_offset,
+      .committed_offset_term = last_committed->offsets().term,
 
       .dirty_offset = eof.dirty_offset,
       .dirty_offset_term = eof.term,
