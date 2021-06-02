@@ -17,13 +17,16 @@ const record = createRecordBatch({records: [{value: Buffer.from("test")}]});
 
 describe("transform", () => {
   it("should apply function", function() {
-    const result = transform.default.apply(record);
-    assert.strictEqual(result.size, 1);
-    assert(result.get("result"));
-    assert(!result.get("unExpectedTopic"));
-    result.get("result").records.forEach(record => {
-      assert.deepStrictEqual(record.value, Buffer.from("TEST"))
-    })
+    // apply function returns a Promise<Map<string, RecordBatch>>
+    return transform.default.apply(record)
+      .then((resultApply) => {
+        assert.strictEqual(resultApply.size, 1);
+        assert(resultApply.get("result"));
+        assert(!resultApply.get("unExpectedTopic"));
+        resultApply.get("result").records.forEach(record => {
+          assert.deepStrictEqual(record.value, Buffer.from("TEST"))
+        })
+      })
   });
 });`
 
