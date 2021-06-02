@@ -70,7 +70,7 @@ private:
 
     ss::future<bool> try_create_tx_topic();
 
-    ss::future<checked<tm_transaction, tx_errc>> get_tx(
+    ss::future<checked<tm_transaction, tx_errc>> get_ongoing_tx(
       ss::shared_ptr<tm_stm>,
       model::producer_identity,
       kafka::transactional_id,

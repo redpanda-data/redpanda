@@ -383,7 +383,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
     model::producer_identity pid{
       .id = request.producer_id, .epoch = request.producer_epoch};
 
-    auto f = get_tx(stm, pid, request.transactional_id, timeout);
+    auto f = get_ongoing_tx(stm, pid, request.transactional_id, timeout);
 
     return f.then(
       [this, request, timeout, stm](checked<tm_transaction, tx_errc> r) {
@@ -540,7 +540,8 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
     model::producer_identity pid{
       .id = request.producer_id, .epoch = request.producer_epoch};
 
-    auto tx_opt = co_await get_tx(stm, pid, request.transactional_id, timeout);
+    auto tx_opt = co_await get_ongoing_tx(
+      stm, pid, request.transactional_id, timeout);
     if (!tx_opt.has_value()) {
         co_return add_offsets_tx_reply{
           .error_code = tx_errc::unknown_server_error};
@@ -858,7 +859,8 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::reabort_tm_tx(
 }
 
 // get_tx must be called under stm->get_tx_lock
-ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::get_tx(
+ss::future<checked<tm_transaction, tx_errc>>
+tx_gateway_frontend::get_ongoing_tx(
   ss::shared_ptr<tm_stm> stm,
   model::producer_identity pid,
   kafka::transactional_id transactional_id,
