@@ -133,7 +133,7 @@ to verify that cert-manager is working correcly.
     ```
     helm install \
     --namespace redpanda-system \
-    --create-namespace redpanda-operator \
+    --create-namespace redpanda-system \
     --version $VERSION \
     redpanda/redpanda-operator
     ```
