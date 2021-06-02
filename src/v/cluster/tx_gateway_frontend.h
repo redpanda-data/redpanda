@@ -86,20 +86,20 @@ private:
       model::timeout_clock::duration);
 
     ss::future<checked<cluster::tm_transaction, tx_errc>> do_end_txn(
-      end_tx_request request,
-      ss::shared_ptr<cluster::tm_stm> stm,
-      model::timeout_clock::duration timeout,
-      ss::promise<tx_errc> outcome);
+      end_tx_request,
+      ss::shared_ptr<cluster::tm_stm>,
+      model::timeout_clock::duration,
+      ss::lw_shared_ptr<ss::shared_promise<tx_errc>>);
     ss::future<checked<cluster::tm_transaction, tx_errc>> do_abort_tm_tx(
       ss::shared_ptr<cluster::tm_stm>,
       cluster::tm_transaction,
       model::timeout_clock::duration,
-      ss::promise<tx_errc>);
+      ss::lw_shared_ptr<ss::shared_promise<tx_errc>>);
     ss::future<checked<cluster::tm_transaction, tx_errc>> do_commit_tm_tx(
       ss::shared_ptr<cluster::tm_stm>,
       cluster::tm_transaction,
       model::timeout_clock::duration,
-      ss::promise<tx_errc>);
+      ss::lw_shared_ptr<ss::shared_promise<tx_errc>>);
     ss::future<tx_errc>
       recommit_tm_tx(tm_transaction, model::timeout_clock::duration);
     ss::future<tx_errc>

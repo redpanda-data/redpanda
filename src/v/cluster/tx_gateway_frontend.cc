@@ -287,9 +287,11 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
         // already in a good state, we don't need to do nothing. even if
         // tx's etag is old it will be bumped by re_register_producer
     } else if (tx.status == tm_transaction::tx_status::ongoing) {
-        r = co_await do_abort_tm_tx(stm, tx, timeout, ss::promise<tx_errc>());
+        r = co_await do_abort_tm_tx(
+          stm, tx, timeout, ss::make_lw_shared<ss::shared_promise<tx_errc>>());
     } else if (tx.status == tm_transaction::tx_status::preparing) {
-        r = co_await do_commit_tm_tx(stm, tx, timeout, ss::promise<tx_errc>());
+        r = co_await do_commit_tm_tx(
+          stm, tx, timeout, ss::make_lw_shared<ss::shared_promise<tx_errc>>());
     } else {
         tx_errc ec;
         if (tx.status == tm_transaction::tx_status::prepared) {
@@ -589,13 +591,13 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
                 end_tx_reply{.error_code = tx_errc::unknown_server_error});
           }
 
-          ss::promise<tx_errc> outcome;
+          auto outcome = ss::make_lw_shared<ss::shared_promise<tx_errc>>();
           // commit_tm_tx and abort_tm_tx remove transient data during its
           // execution. however the outcome of the commit/abort operation
           // is already known before the cleanup started. to optimize this
           // they return the outcome promise to return the outcome before
           // cleaning up and before returing the actual control flow
-          auto decided = outcome.get_future();
+          auto decided = outcome->get_shared_future();
 
           (void)ss::with_gate(
             self._gate,
@@ -603,15 +605,21 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
              &self,
              stm,
              timeout,
-             outcome = std::move(outcome)]() mutable {
+             outcome]() mutable {
                 return stm->get_tx_lock(request.transactional_id)
                   ->with([request = std::move(request),
                           &self,
                           stm,
                           timeout,
-                          outcome = std::move(outcome)]() mutable {
-                      return self.do_end_txn(
-                        std::move(request), stm, timeout, std::move(outcome));
+                          outcome]() mutable {
+                      return self
+                        .do_end_txn(std::move(request), stm, timeout, outcome)
+                        .finally([outcome]() {
+                            if (!outcome->available()) {
+                                outcome->set_value(
+                                  tx_errc::unknown_server_error);
+                            }
+                        });
                   });
             });
 
@@ -625,10 +633,10 @@ tx_gateway_frontend::do_end_txn(
   end_tx_request request,
   ss::shared_ptr<cluster::tm_stm> stm,
   model::timeout_clock::duration timeout,
-  ss::promise<tx_errc> outcome) {
+  ss::lw_shared_ptr<ss::shared_promise<tx_errc>> outcome) {
     auto maybe_tx = co_await stm->get_actual_tx(request.transactional_id);
     if (!maybe_tx) {
-        outcome.set_value(tx_errc::request_rejected);
+        outcome->set_value(tx_errc::request_rejected);
         co_return tx_errc::request_rejected;
     }
 
@@ -637,19 +645,19 @@ tx_gateway_frontend::do_end_txn(
     auto tx = maybe_tx.value();
     if (tx.pid != pid) {
         if (tx.pid.id == pid.id && tx.pid.epoch > pid.epoch) {
-            outcome.set_value(tx_errc::fenced);
+            outcome->set_value(tx_errc::fenced);
             co_return tx_errc::fenced;
         }
 
-        outcome.set_value(tx_errc::request_rejected);
+        outcome->set_value(tx_errc::request_rejected);
         co_return tx_errc::request_rejected;
     }
 
     checked<cluster::tm_transaction, tx_errc> r(tx_errc::unknown_server_error);
     if (request.committed) {
-        r = co_await do_commit_tm_tx(stm, tx, timeout, std::move(outcome));
+        r = co_await do_commit_tm_tx(stm, tx, timeout, outcome);
     } else {
-        r = co_await do_abort_tm_tx(stm, tx, timeout, std::move(outcome));
+        r = co_await do_abort_tm_tx(stm, tx, timeout, outcome);
     }
     if (!r.has_value()) {
         co_return r;
@@ -668,13 +676,13 @@ tx_gateway_frontend::do_abort_tm_tx(
   ss::shared_ptr<cluster::tm_stm> stm,
   cluster::tm_transaction tx,
   model::timeout_clock::duration timeout,
-  ss::promise<tx_errc> outcome) {
+  ss::lw_shared_ptr<ss::shared_promise<tx_errc>> outcome) {
     if (tx.status == tm_transaction::tx_status::ready) {
         if (stm->is_actual_term(tx.etag)) {
             // client should start a transaction before attempting to
             // abort it. since tx has actual term we know for sure it
             // wasn't start on a different leader
-            outcome.set_value(tx_errc::request_rejected);
+            outcome->set_value(tx_errc::request_rejected);
             co_return tx_errc::request_rejected;
         }
 
@@ -682,23 +690,23 @@ tx_gateway_frontend::do_abort_tm_tx(
         // it exists on an older leader
         auto ready_tx = co_await stm->mark_tx_ready(tx.id);
         if (!ready_tx.has_value()) {
-            outcome.set_value(tx_errc::unknown_server_error);
+            outcome->set_value(tx_errc::unknown_server_error);
             co_return tx_errc::unknown_server_error;
         }
-        outcome.set_value(tx_errc::none);
+        outcome->set_value(tx_errc::none);
         co_return ready_tx.value();
     } else if (tx.status != tm_transaction::tx_status::ongoing) {
-        outcome.set_value(tx_errc::unknown_server_error);
+        outcome->set_value(tx_errc::unknown_server_error);
         co_return tx_errc::unknown_server_error;
     }
 
     auto changed_tx = co_await stm->try_change_status(
       tx.id, cluster::tm_transaction::tx_status::aborting);
     if (!changed_tx.has_value()) {
-        outcome.set_value(tx_errc::unknown_server_error);
+        outcome->set_value(tx_errc::unknown_server_error);
         co_return tx_errc::unknown_server_error;
     }
-    outcome.set_value(tx_errc::none);
+    outcome->set_value(tx_errc::none);
 
     tx = changed_tx.value();
     std::vector<ss::future<abort_tx_reply>> pfs;
@@ -731,9 +739,9 @@ tx_gateway_frontend::do_commit_tm_tx(
   ss::shared_ptr<cluster::tm_stm> stm,
   cluster::tm_transaction tx,
   model::timeout_clock::duration timeout,
-  ss::promise<tx_errc> outcome) {
+  ss::lw_shared_ptr<ss::shared_promise<tx_errc>> outcome) {
     if (tx.status != tm_transaction::tx_status::ongoing) {
-        outcome.set_value(tx_errc::request_rejected);
+        outcome->set_value(tx_errc::request_rejected);
         co_return tx_errc::request_rejected;
     }
 
@@ -758,7 +766,7 @@ tx_gateway_frontend::do_commit_tm_tx(
         auto became_preparing_tx = co_await stm->try_change_status(
           tx.id, cluster::tm_transaction::tx_status::preparing);
         if (!became_preparing_tx.has_value()) {
-            outcome.set_value(tx_errc::unknown_server_error);
+            outcome->set_value(tx_errc::unknown_server_error);
             co_return tx_errc::unknown_server_error;
         }
         tx = became_preparing_tx.value();
@@ -774,10 +782,10 @@ tx_gateway_frontend::do_commit_tm_tx(
         ok = ok && (r.ec == tx_errc::none);
     }
     if (!ok) {
-        outcome.set_value(tx_errc::unknown_server_error);
+        outcome->set_value(tx_errc::unknown_server_error);
         co_return tx_errc::unknown_server_error;
     }
-    outcome.set_value(tx_errc::none);
+    outcome->set_value(tx_errc::none);
 
     auto changed_tx = co_await stm->try_change_status(
       tx.id, cluster::tm_transaction::tx_status::prepared);
