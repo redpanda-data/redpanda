@@ -673,10 +673,6 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         _mem_state.estimated.emplace(bid.pid, _insync_offset);
     }
 
-    // after the replicate continuation _mem_state may change so caching term
-    // to invalidate the post processing
-    auto term = _mem_state.term;
-
     auto r = co_await _c->replicate(
       _mem_state.term,
       std::move(br),
@@ -690,11 +686,6 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
     }
 
     auto replicated = r.value();
-
-    if (_mem_state.term != term) {
-        // mem state already changed no need to clean it
-        co_return replicated;
-    }
 
     auto last_offset = model::offset(replicated.last_offset());
     if (!_mem_state.tx_start.contains(bid.pid)) {
