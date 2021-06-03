@@ -873,7 +873,7 @@ ss::future<tx_errc> tx_gateway_frontend::reabort_tm_tx(
           _rm_group_proxy->abort_group_tx(group.group_id, tx.pid, timeout));
     }
     auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
-    auto grs = co_await when_all_succeed(pfs.begin(), pfs.end());
+    auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
     auto ok = true;
     for (const auto& r : prs) {
         ok = ok && (r.ec == tx_errc::none);
