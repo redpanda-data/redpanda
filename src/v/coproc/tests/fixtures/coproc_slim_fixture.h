@@ -10,7 +10,7 @@
 
 #include "coproc/pacemaker.h"
 #include "coproc/script_dispatcher.h"
-#include "coproc/tests/utils/coproc_test_fixture.h"
+#include "coproc/tests/fixtures/coproc_test_fixture.h"
 #include "model/metadata.h"
 #include "storage/api.h"
 

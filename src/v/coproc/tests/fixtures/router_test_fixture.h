@@ -12,10 +12,10 @@
 #pragma once
 
 #include "coproc/logger.h"
-#include "coproc/tests/utils/coproc_test_fixture.h"
+#include "coproc/tests/fixtures/coproc_test_fixture.h"
+#include "coproc/tests/fixtures/supervisor_test_fixture.h"
 #include "coproc/tests/utils/coprocessor.h"
 #include "coproc/tests/utils/event_publisher.h"
-#include "coproc/tests/utils/supervisor_test_fixture.h"
 #include "coproc/types.h"
 
 /// This harness brings up an entire redpanda fixture + the c++ implementation

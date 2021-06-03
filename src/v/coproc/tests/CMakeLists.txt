@@ -1,10 +1,10 @@
 set(fixture_srcs
     utils/event_publisher.cc
     utils/supervisor.cc
-    utils/coproc_slim_fixture.cc
-    utils/coproc_test_fixture.cc
-    utils/router_test_fixture.cc
     utils/wasm_event_generator.cc
+    fixtures/coproc_slim_fixture.cc
+    fixtures/coproc_test_fixture.cc
+    fixtures/router_test_fixture.cc
 )
 
 set(fixture_deps

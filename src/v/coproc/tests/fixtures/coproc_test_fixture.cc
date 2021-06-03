@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "coproc_test_fixture.h"
+#include "coproc/tests/fixtures/coproc_test_fixture.h"
 
 #include "config/configuration.h"
 #include "coproc/logger.h"

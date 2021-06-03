@@ -8,8 +8,8 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "coproc/tests/fixtures/router_test_fixture.h"
 #include "coproc/tests/utils/coprocessor.h"
-#include "coproc/tests/utils/router_test_fixture.h"
 #include "coproc/types.h"
 #include "model/fundamental.h"
 #include "storage/tests/utils/random_batch.h"

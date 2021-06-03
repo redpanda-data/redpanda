@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "coproc/tests/utils/router_test_fixture.h"
+#include "coproc/tests/fixtures/router_test_fixture.h"
 
 router_test_fixture::router_test_plan::all_opts
 router_test_fixture::build_simple_opts(log_layout_map data, std::size_t rate) {

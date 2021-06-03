@@ -8,7 +8,7 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "coproc/tests/utils/coproc_slim_fixture.h"
+#include "coproc/tests/fixtures/coproc_slim_fixture.h"
 
 #include "coproc/types.h"
 #include "model/namespace.h"
