@@ -87,9 +87,10 @@ public:
       absl::flat_hash_map<vnode, follower_req_seq>);
     ~replicate_entries_stm();
 
-    /// caller have to pass _op_sem semaphore units, the apply call will do the
+    /// caller have to pass semaphore units, the apply call will do the
     /// fine grained locking on behalf of the caller
-    ss::future<result<replicate_result>> apply(ss::semaphore_units<>);
+    ss::future<result<replicate_result>>
+      apply(std::vector<ss::semaphore_units<>>);
 
     /// waits for the remaining background futures
     ss::future<> wait();
