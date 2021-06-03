@@ -105,9 +105,8 @@ struct errc_category final : public std::error_category {
             return "Producer sequence ID out of order";
         case errc::generic_tx_error:
             return "Generic error when processing transactional requests";
-        default:
-            return "cluster::errc::unknown";
         }
+        return "cluster::errc::unknown";
     }
 };
 inline const std::error_category& error_category() noexcept {
