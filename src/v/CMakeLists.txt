@@ -26,6 +26,7 @@ add_subdirectory(http)
 add_subdirectory(s3)
 add_subdirectory(archival)
 add_subdirectory(security)
+add_subdirectory(serde)
 
 option(ENABLE_GIT_VERSION "Build with Git metadata" OFF)
 if(${ENABLE_GIT_VERSION})
