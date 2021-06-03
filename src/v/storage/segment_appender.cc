@@ -27,6 +27,17 @@
 
 namespace storage {
 
+/*
+ * Optimization ideas:
+ *
+ * 1. partial writes to the same physical head chunk are serialized to prevent
+ * out-of-order writes clobbering previous writes. this is only relevant when
+ * there are many flushes which dispatch the current head if it has any pending
+ * bytes. there hasn't been any noticable performance degredation, but one
+ * option for avoiding this is to do more aligned appends or add a special
+ * padding batch that is read and then fully ignored by the parser.
+ */
+
 [[gnu::cold]] static ss::future<>
 size_missmatch_error(const char* ctx, size_t expected, size_t got) {
     return ss::make_exception_future<>(fmt::format(
@@ -37,6 +48,7 @@ segment_appender::segment_appender(ss::file f, options opts)
   : _out(std::move(f))
   , _opts(opts)
   , _concurrent_flushes(ss::semaphore::max_counter())
+  , _prev_head_write(ss::make_lw_shared<ss::semaphore>(1))
   , _inactive_timer([this] { handle_inactive_timer(); }) {
     const auto alignment = _out.disk_write_dma_alignment();
     vassert(
@@ -52,6 +64,12 @@ segment_appender::~segment_appender() noexcept {
       _bytes_flush_pending == 0 && _closed,
       "Must flush & close before deleting {}",
       *this);
+    if (_prev_head_write) {
+        vassert(
+          _prev_head_write->available_units() == 1,
+          "Unexpected pending head write {}",
+          *this);
+    }
     if (_head) {
         internal::chunks().add(std::exchange(_head, nullptr));
     }
@@ -66,6 +84,7 @@ segment_appender::segment_appender(segment_appender&& o) noexcept
   , _bytes_flush_pending(o._bytes_flush_pending)
   , _concurrent_flushes(std::move(o._concurrent_flushes))
   , _head(std::move(o._head))
+  , _prev_head_write(std::move(o._prev_head_write))
   , _inflight(std::move(o._inflight))
   , _callbacks(std::exchange(o._callbacks, nullptr))
   , _inactive_timer([this] { handle_inactive_timer(); })
@@ -298,6 +317,10 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
              _concurrent_flushes,
              ss::semaphore::max_counter(),
              [this]() mutable {
+                 vassert(
+                   _prev_head_write->available_units() == 1,
+                   "Unexpected pending head write {}",
+                   *this);
                  // step - compute step rounded to 4096; this is needed because
                  // during a truncation the follow up fallocation might not be
                  // page aligned
@@ -384,31 +407,59 @@ void segment_appender::dispatch_background_head_write() {
     _inflight.emplace_back(
       ss::make_lw_shared<inflight_write>(_committed_offset));
     auto w = _inflight.back();
-    auto h = std::exchange(_head, nullptr);
+
+    /*
+     * if _head is full then take control of it for this final write and then
+     * release it back into the chunk cache. otherwise, leave it in place so
+     * that new appends may accumulate. this optimization is meant to avoid
+     * redhydrating the chunk on append following a flush when the head has
+     * pending bytes and a write is dispatched.
+     */
+    const auto full = _head->is_full();
+    auto h = full ? std::exchange(_head, nullptr) : _head;
+
+    /*
+     * make sure that when the write is dispatched that is sequenced in-order on
+     * the correct semaphore by grabbing the units synchronously.
+     */
+    auto prev = _prev_head_write;
+    auto units = ss::get_units(*prev, 1);
+
     (void)ss::with_semaphore(
       _concurrent_flushes,
       1,
-      [h, w, this, start_offset, expected, src] {
+      [h, w, this, start_offset, expected, src, prev, units = std::move(units), full]() mutable  {
+          return units.then([this, h, w, start_offset, expected, src, full](ss::semaphore_units<> u) mutable {
           return _out.dma_write(start_offset, src, expected, _opts.priority)
-            .then([this, h, w, expected](size_t got) {
-                if (h->is_full()) {
+            .then([this, h, w, expected, full](size_t got) {
+                /*
+                 * the continuation that captured full=true is the end of the
+                 * dependency chain for this chunk. it can be returned to cache.
+                 */
+                if (full) {
                     h->reset();
-                }
-                if (h->is_empty()) {
                     internal::chunks().add(h);
-                } else {
-                    _head = h;
                 }
                 if (unlikely(expected != got)) {
                     return size_missmatch_error("chunk::write", expected, got);
                 }
                 maybe_advance_stable_offset(w);
                 return ss::make_ready_future<>();
-            });
+            }).finally([u = std::move(u)] {});
+         }).finally([prev] {});
       })
       .handle_exception([this](std::exception_ptr e) {
           vassert(false, "Could not dma_write: {} - {}", e, *this);
       });
+
+    /*
+     * when the head becomes full it still needs to be properly sequenced (see
+     * above), but no future writes to same head head are possible so the
+     * dependency chain is reset for the next head.
+     */
+    if (full) {
+        _prev_head_write = ss::make_lw_shared<ss::semaphore>(1);
+    }
 }
 
 ss::future<> segment_appender::flush() {
@@ -419,7 +470,13 @@ ss::future<> segment_appender::flush() {
     return ss::with_semaphore(
              _concurrent_flushes,
              ss::semaphore::max_counter(),
-             [this]() mutable { return _out.flush(); })
+             [this]() mutable {
+                 vassert(
+                   _prev_head_write->available_units() == 1,
+                   "Unexpected pending head write {}",
+                   *this);
+                 return _out.flush();
+             })
       .handle_exception([this](std::exception_ptr e) {
           vassert(false, "Could not flush: {} - {}", e, *this);
       });

@@ -109,6 +109,7 @@ private:
     size_t _bytes_flush_pending{0};
     ss::semaphore _concurrent_flushes;
     ss::lw_shared_ptr<chunk> _head;
+    ss::lw_shared_ptr<ss::semaphore> _prev_head_write;
 
     struct inflight_write {
         bool done;
