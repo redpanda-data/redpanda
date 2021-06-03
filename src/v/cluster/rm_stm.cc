@@ -214,17 +214,7 @@ rm_stm::do_begin_tx(model::producer_identity pid, model::tx_seq tx_seq) {
               model::offset(r.value().last_offset()), _sync_timeout)) {
             co_return tx_errc::unknown_server_error;
         }
-        fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
-        if (fence_it == _log_state.fence_pid_epoch.end()) {
-            vlog(
-              clusterlog.error,
-              "Unexpected state: can't find fencing token by id after "
-              "replicating {}",
-              pid);
-            co_return tx_errc::unknown_server_error;
-        }
-    }
-    if (pid.get_epoch() != fence_it->second) {
+    } else if (pid.get_epoch() < fence_it->second) {
         vlog(
           clusterlog.error,
           "pid {} fenced out by epoch {}",
@@ -861,15 +851,6 @@ ss::future<> rm_stm::apply(model::record_batch b) {
 
 void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
     auto pid = prepare.pid;
-
-    auto [fence_it, inserted] = _log_state.fence_pid_epoch.emplace(
-      pid.get_id(), pid.get_epoch());
-    if (!inserted) {
-        if (fence_it->second < pid.get_epoch()) {
-            fence_it->second = pid.get_epoch();
-        }
-    }
-
     _log_state.prepared.try_emplace(pid, prepare);
     _mem_state.expected.erase(pid);
     _mem_state.preparing.erase(pid);
@@ -877,14 +858,6 @@ void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
 
 void rm_stm::apply_control(
   model::producer_identity pid, model::control_record_type crt) {
-    auto [fence_it, inserted] = _log_state.fence_pid_epoch.emplace(
-      pid.get_id(), pid.get_epoch());
-    if (!inserted) {
-        if (fence_it->second < pid.get_epoch()) {
-            fence_it->second = pid.get_epoch();
-        }
-    }
-
     // either epoch is the same as fencing or it's lesser in the latter
     // case we don't fence off aborts and commits because transactional
     // manager already decided a tx's outcome and acked it to the client
