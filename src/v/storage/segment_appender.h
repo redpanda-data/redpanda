@@ -126,7 +126,6 @@ private:
 
     ss::timer<ss::lowres_clock> _inactive_timer;
     void handle_inactive_timer();
-    bool _previously_inactive = false;
 
     friend std::ostream& operator<<(std::ostream&, const segment_appender&);
 };

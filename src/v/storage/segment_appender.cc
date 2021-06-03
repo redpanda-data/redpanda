@@ -87,8 +87,7 @@ segment_appender::segment_appender(segment_appender&& o) noexcept
   , _prev_head_write(std::move(o._prev_head_write))
   , _inflight(std::move(o._inflight))
   , _callbacks(std::exchange(o._callbacks, nullptr))
-  , _inactive_timer([this] { handle_inactive_timer(); })
-  , _previously_inactive(o._previously_inactive) {
+  , _inactive_timer([this] { handle_inactive_timer(); }) {
     o._closed = true;
 }
 
@@ -119,22 +118,6 @@ ss::future<> segment_appender::append(const char* buf, const size_t n) {
 
 ss::future<> segment_appender::do_append(const char* buf, const size_t n) {
     vassert(!_closed, "append() on closed segment: {}", *this);
-
-    /*
-     * if at any point prior to this the inactive timer fired to flush/reclaim
-     * the active chunk, then insert a barrier. this barrier is necessary
-     * because the append interface assumes that all background writes are for
-     * full buffers. non-full buffers, upon write completion, replace the
-     * current head. if the inactive timer dispatches a background write, it may
-     * clobber the head when it finishes if it is racing with append.
-     */
-    if (_previously_inactive) {
-        _previously_inactive = false;
-        return ss::get_units(_concurrent_flushes, ss::semaphore::max_counter())
-          .then([this, buf, n](ss::semaphore_units<>) {
-              return do_append(buf, n);
-          });
-    }
 
     /*
      * if there is no current active chunk then we need to rehydrate. this can
@@ -185,8 +168,6 @@ ss::future<> segment_appender::do_append(const char* buf, const size_t n) {
 }
 
 void segment_appender::handle_inactive_timer() {
-    _previously_inactive = true;
-
     if (_head && _head->bytes_pending()) {
         /*
          * this is the why the timer was originally set upon returning from
