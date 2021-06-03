@@ -117,5 +117,7 @@ FIXTURE_TEST(test_heartbeat, script_dispatcher_fixture) {
     auto& dispatcher = get_script_dispatcher();
     BOOST_CHECK(dispatcher->heartbeat().get());
     set_delay_heartbeat(true).get();
-    BOOST_CHECK(!dispatcher->heartbeat().get());
+    auto result = dispatcher->heartbeat().get();
+    BOOST_CHECK(!result.has_error());
+    BOOST_CHECK_EQUAL(result.value().data(), -1);
 }
