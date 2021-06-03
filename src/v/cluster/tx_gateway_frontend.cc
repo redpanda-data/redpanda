@@ -772,14 +772,27 @@ tx_gateway_frontend::do_commit_tm_tx(
         tx = became_preparing_tx.value();
     }
 
-    bool ok = true;
+    auto ok = true;
+    auto rejected = false;
     auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
     for (const auto& r : prs) {
         ok = ok && (r.ec == tx_errc::none);
+        rejected = rejected || (r.ec == tx_errc::request_rejected);
     }
     auto pgrs = co_await when_all_succeed(pgfs.begin(), pgfs.end());
     for (const auto& r : pgrs) {
         ok = ok && (r.ec == tx_errc::none);
+        rejected = rejected || (r.ec == tx_errc::request_rejected);
+    }
+    if (rejected) {
+        auto became_aborting_tx = co_await stm->try_change_status(
+          tx.id, cluster::tm_transaction::tx_status::aborting);
+        if (!became_aborting_tx.has_value()) {
+            outcome->set_value(tx_errc::unknown_server_error);
+            co_return tx_errc::unknown_server_error;
+        }
+        outcome->set_value(tx_errc::request_rejected);
+        co_return tx_errc::request_rejected;
     }
     if (!ok) {
         outcome->set_value(tx_errc::unknown_server_error);
