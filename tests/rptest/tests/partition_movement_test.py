@@ -16,14 +16,14 @@ from rptest.clients.kafka_cat import KafkaCat
 import requests
 
 from rptest.clients.types import TopicSpec
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
 from rptest.services.honey_badger import HoneyBadger
 from kafka import KafkaProducer
 from kafka import KafkaConsumer
 
 
-class PartitionMovementTest(RedpandaTest):
+class PartitionMovementTest(EndToEndTest):
     """
     Basic partition movement tests. Each test builds a number of topics and then
     performs a series of random replica set changes. After each change a
@@ -31,7 +31,6 @@ class PartitionMovementTest(RedpandaTest):
 
     TODO
     - Add tests with node failures
-    - Add tests with active producer/consumer
     - Add settings for scaling up tests
     - Add tests guarnateeing multiple segments
     """
@@ -153,7 +152,8 @@ class PartitionMovementTest(RedpandaTest):
         """
         Move partition before first leader is elected
         """
-        topics = []
+        self.start_redpanda(num_nodes=3)
+
         hb = HoneyBadger()
         # if failure injector is not enabled simply skip this test
         if not hb.is_enabled(self.redpanda.nodes[0]):
@@ -213,6 +213,8 @@ class PartitionMovementTest(RedpandaTest):
         """
         Move empty partitions.
         """
+        self.start_redpanda(num_nodes=3)
+
         topics = []
         for partition_count in range(1, 5):
             for replication_factor in (3, 3):
@@ -233,6 +235,8 @@ class PartitionMovementTest(RedpandaTest):
         """
         Move partitions with data, but no active producers or consumers.
         """
+        self.start_redpanda(num_nodes=3)
+
         topics = []
         for partition_count in range(1, 5):
             for replication_factor in (3, 3):
@@ -276,3 +280,19 @@ class PartitionMovementTest(RedpandaTest):
                 consumed.append((msg.key, msg.value))
             self.logger.info(f"Finished verifying records in {spec}")
             assert set(consumed) == produced
+
+    @cluster(num_nodes=5)
+    def test_dynamic(self):
+        """
+        Move partitions with active consumer / producer
+        """
+        self.start_redpanda(num_nodes=3)
+        spec = TopicSpec(name="topic", partition_count=3, replication_factor=3)
+        self.redpanda.create_topic(spec)
+        self.topic = spec.name
+        self.start_producer(1)
+        self.start_consumer(1)
+        self.await_startup()
+        for _ in range(25):
+            self._move_and_verify()
+        self.run_validation(enable_idempotence=False)

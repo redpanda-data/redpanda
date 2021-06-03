@@ -41,3 +41,5 @@ services:
   n2: *node
   n3: *node
   n4: *node
+  n5: *node
+  n6: *node
