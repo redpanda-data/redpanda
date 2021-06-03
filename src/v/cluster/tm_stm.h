@@ -39,7 +39,8 @@ struct tm_transaction {
         ongoing,
         preparing,
         prepared,
-        aborting,
+        aborting, // abort is initiated by a client
+        killed,   // abort is initiated by a timeout
         ready,
     };
 

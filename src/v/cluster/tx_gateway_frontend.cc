@@ -298,6 +298,8 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
             ec = co_await recommit_tm_tx(tx, timeout);
         } else if (tx.status == tm_transaction::tx_status::aborting) {
             ec = co_await reabort_tm_tx(tx, timeout);
+        } else if (tx.status == tm_transaction::tx_status::killed) {
+            ec = co_await reabort_tm_tx(tx, timeout);
         } else {
             vassert(false, "unexpected tx status {}", tx.status);
         }
@@ -695,7 +697,9 @@ tx_gateway_frontend::do_abort_tm_tx(
         }
         outcome->set_value(tx_errc::none);
         co_return ready_tx.value();
-    } else if (tx.status != tm_transaction::tx_status::ongoing) {
+    } else if (
+      tx.status != tm_transaction::tx_status::ongoing
+      && tx.status != tm_transaction::tx_status::killed) {
         outcome->set_value(tx_errc::unknown_server_error);
         co_return tx_errc::unknown_server_error;
     }
@@ -786,7 +790,7 @@ tx_gateway_frontend::do_commit_tm_tx(
     }
     if (rejected) {
         auto became_aborting_tx = co_await stm->try_change_status(
-          tx.id, cluster::tm_transaction::tx_status::aborting);
+          tx.id, cluster::tm_transaction::tx_status::killed);
         if (!became_aborting_tx.has_value()) {
             outcome->set_value(tx_errc::unknown_server_error);
             co_return tx_errc::unknown_server_error;
@@ -934,6 +938,12 @@ tx_gateway_frontend::get_ongoing_tx(
         //
         // it violates the docs, the producer is expected to call abort
         // https://kafka.apache.org/23/javadoc/org/apache/kafka/clients/producer/KafkaProducer.html
+        co_return tx_errc::request_rejected;
+    } else if (tx.status == tm_transaction::tx_status::killed) {
+        // a tx was timed out, can't treat it as ::aborting because
+        // from the client perspective it will look like a tx wasn't
+        // failed at all but in fact the second part of the tx will
+        // start a new transactions
         co_return tx_errc::request_rejected;
     } else {
         // A previous transaction has failed after its status has been
