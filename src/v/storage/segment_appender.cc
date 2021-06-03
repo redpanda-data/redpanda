@@ -36,6 +36,11 @@ namespace storage {
  * bytes. there hasn't been any noticable performance degredation, but one
  * option for avoiding this is to do more aligned appends or add a special
  * padding batch that is read and then fully ignored by the parser.
+ *
+ * 2. flush operations are completed asynchronously when writes complete. there
+ * is not reason to do this so aggresively. we could potentially reduce the
+ * amount of flushing by using a bytes or time heuristic. we'd increase the
+ * latency of each flush, but we'd dispatch less physical flush operations.
  */
 
 [[gnu::cold]] static ss::future<>
@@ -70,6 +75,10 @@ segment_appender::~segment_appender() noexcept {
           "Unexpected pending head write {}",
           *this);
     }
+    vassert(
+      _flush_ops.empty(),
+      "Active flush operations on appender destroy {}",
+      *this);
     if (_head) {
         internal::chunks().add(std::exchange(_head, nullptr));
     }
@@ -85,6 +94,9 @@ segment_appender::segment_appender(segment_appender&& o) noexcept
   , _concurrent_flushes(std::move(o._concurrent_flushes))
   , _head(std::move(o._head))
   , _prev_head_write(std::move(o._prev_head_write))
+  , _flush_ops(std::move(o._flush_ops))
+  , _flushed_offset(o._flushed_offset)
+  , _stable_offset(o._stable_offset)
   , _inflight(std::move(o._inflight))
   , _callbacks(std::exchange(o._callbacks, nullptr))
   , _inactive_timer([this] { handle_inactive_timer(); }) {
@@ -265,9 +277,11 @@ ss::future<> segment_appender::truncate(size_t n) {
       "Cannot ask to truncate at:{} which is more bytes than we have:{} - {}",
       file_byte_offset(),
       *this);
-    return flush().then([this, n] { return do_truncation(n); }).then([this, n] {
+    return hard_flush().then([this, n] { return do_truncation(n); }).then([this, n] {
         _committed_offset = n;
         _fallocation_offset = n;
+        _flushed_offset = n;
+        _stable_offset = n;
         auto f = ss::now();
         if (_head) {
             // NOTE: Important to reset chunks for offset accounting.  reset any
@@ -288,7 +302,7 @@ ss::future<> segment_appender::truncate(size_t n) {
 ss::future<> segment_appender::close() {
     vassert(!_closed, "close() on closed segment: {}", *this);
     _closed = true;
-    return flush()
+    return hard_flush()
       .then([this] { return do_truncation(_committed_offset); })
       .then([this] { return _out.close(); });
 }
@@ -330,7 +344,7 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
       });
 }
 
-void segment_appender::maybe_advance_stable_offset(
+ss::future<> segment_appender::maybe_advance_stable_offset(
   const ss::lw_shared_ptr<inflight_write>& write) {
     /*
      * ack the largest committed offset such that all smaller
@@ -359,9 +373,38 @@ void segment_appender::maybe_advance_stable_offset(
         if (_callbacks) {
             _callbacks->committed_physical_offset(committed);
         }
+        _stable_offset = committed;
+        return process_flush_ops(committed);
     } else {
         write->done = true;
+        return ss::now();
     }
+}
+
+ss::future<> segment_appender::process_flush_ops(size_t committed) {
+    auto flushable = std::any_of(
+      _flush_ops.cbegin(), _flush_ops.cend(), [committed](const flush_op& op) {
+          return op.offset <= committed;
+      });
+
+    if (!flushable) {
+        return ss::now();
+    }
+
+    return _out.flush().then([this, committed] {
+        _flushed_offset = committed;
+
+        auto flushable = std::partition(
+          _flush_ops.begin(), _flush_ops.end(), [committed](const flush_op& w) {
+              return w.offset > committed;
+          });
+
+        for (auto it = flushable; it != _flush_ops.end(); ++it) {
+            it->p.set_value();
+        }
+
+        _flush_ops.erase(flushable, _flush_ops.end());
+    });
 }
 
 void segment_appender::dispatch_background_head_write() {
@@ -437,8 +480,7 @@ void segment_appender::dispatch_background_head_write() {
                           return size_missmatch_error(
                             "chunk::write", expected, got);
                       }
-                      maybe_advance_stable_offset(w);
-                      return ss::make_ready_future<>();
+                      return maybe_advance_stable_offset(w);
                   })
                   .finally([u = std::move(u)] {});
             })
@@ -460,6 +502,38 @@ void segment_appender::dispatch_background_head_write() {
 
 ss::future<> segment_appender::flush() {
     _inactive_timer.cancel();
+
+    // dispatched write will drive flush completion
+    if (_head && _head->bytes_pending()) {
+        auto& w = _flush_ops.emplace_back(file_byte_offset());
+        dispatch_background_head_write();
+        return w.p.get_future();
+    }
+
+    if (file_byte_offset() <= _flushed_offset) {
+        return ss::now();
+    }
+
+    /*
+     * if there are inflight write _ops_ then we can be sure that flush ops will
+     * be processed eventually (see: maybe advance stable offset).
+     */
+    if (!_inflight.empty()) {
+        auto& w = _flush_ops.emplace_back(file_byte_offset());
+        return w.p.get_future();
+    }
+
+    vassert(file_byte_offset() <= _stable_offset,
+        "No inflight writes but eof {} > stable offset {}",
+        file_byte_offset(), _stable_offset);
+
+    return _out.flush().handle_exception([this](std::exception_ptr e) {
+        vassert(false, "Could not flush: {} - {}", e, *this);
+    });
+}
+
+ss::future<> segment_appender::hard_flush() {
+    _inactive_timer.cancel();
     if (_head && _head->bytes_pending()) {
         dispatch_background_head_write();
     }
@@ -471,6 +545,8 @@ ss::future<> segment_appender::flush() {
                    _prev_head_write->available_units() == 1,
                    "Unexpected pending head write {}",
                    *this);
+                 vassert(_flush_ops.empty(),
+                    "Pending flushes after hard flush {}", *this);
                  return _out.flush();
              })
       .handle_exception([this](std::exception_ptr e) {
