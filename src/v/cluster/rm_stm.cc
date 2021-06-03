@@ -523,6 +523,10 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
         co_return tx_errc::stale;
     }
 
+    if (!is_known_session(pid)) {
+        co_return tx_errc::none;
+    }
+
     auto origin = get_abort_origin(pid, tx_seq);
     if (origin == abort_origin::past) {
         // rejecting a delayed abort command to prevent aborting
