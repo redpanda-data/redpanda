@@ -76,10 +76,8 @@ public:
         std::vector<seq_entry> seqs;
     };
 
-    static constexpr model::control_record_version
-      prepare_control_record_version{0};
-    static constexpr model::control_record_version fence_control_record_version{
-      0};
+    static constexpr int8_t prepare_control_record_version{0};
+    static constexpr int8_t fence_control_record_version{0};
 
     explicit rm_stm(ss::logger&, raft::consensus*);
 
@@ -106,6 +104,18 @@ public:
       raft::replicate_options);
 
 private:
+    ss::future<checked<model::term_id, tx_errc>>
+      do_begin_tx(model::producer_identity, model::tx_seq);
+    ss::future<tx_errc> do_prepare_tx(
+      model::term_id,
+      model::partition_id,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
+    ss::future<tx_errc> do_commit_tx(
+      model::producer_identity, model::tx_seq, model::timeout_clock::duration);
+    ss::future<tx_errc> do_abort_tx(
+      model::producer_identity, model::tx_seq, model::timeout_clock::duration);
     void load_snapshot(stm_snapshot_header, iobuf&&) override;
     stm_snapshot take_snapshot() override;
 
@@ -126,6 +136,7 @@ private:
     get_abort_origin(const model::producer_identity&, model::tx_seq) const;
 
     ss::future<> apply(model::record_batch) override;
+    void apply_fence(model::record_batch&&);
     void apply_prepare(rm_stm::prepare_marker);
     void apply_control(model::producer_identity, model::control_record_type);
     void apply_data(model::batch_identity, model::offset);
@@ -165,11 +176,6 @@ private:
         absl::flat_hash_map<model::producer_identity, seq_entry> seq_table;
     };
 
-    struct preparing_info {
-        bool has_applied;
-        model::tx_seq tx_seq;
-    };
-
     struct mem_state {
         // once raft's term has passed mem_state::term we wipe mem_state
         // and wait until log_state catches up with current committed index.
@@ -188,11 +194,9 @@ private:
         // a set of ongoing sessions. we use it  to prevent some client protocol
         // errors like the transactional writes outside of a transaction
         absl::flat_hash_map<model::producer_identity, model::tx_seq> expected;
-        // 'prepare' command may be replicated but reject during the apply phase
-        // because of the fencing and race with abort. we use this field to
-        // let a 'prepare' initator know the status of the 'prepare' command
-        // once state_machine::apply catches up with the prepare's offset
-        absl::flat_hash_map<model::producer_identity, preparing_info> preparing;
+        // `preparing` helps to identify failed prepare requests and use them to
+        // filter out stale abort requests
+        absl::flat_hash_map<model::producer_identity, model::tx_seq> preparing;
 
         void forget(model::producer_identity pid) {
             expected.erase(pid);
@@ -206,6 +210,17 @@ private:
         }
     };
 
+    ss::lw_shared_ptr<mutex> get_tx_lock(model::producer_id pid) {
+        auto lock_it = _tx_locks.find(pid);
+        if (lock_it == _tx_locks.end()) {
+            auto [new_it, _] = _tx_locks.try_emplace(
+              pid, ss::make_lw_shared<mutex>());
+            lock_it = new_it;
+        }
+        return lock_it->second;
+    }
+
+    absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
     log_state _log_state;
     mem_state _mem_state;
     model::timestamp _oldest_session;

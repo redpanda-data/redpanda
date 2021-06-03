@@ -38,6 +38,43 @@ static bool is_sequence(int32_t last_seq, int32_t next_seq) {
            || (next_seq == 0 && last_seq == std::numeric_limits<int32_t>::max());
 }
 
+static model::record_batch
+make_fence_batch(int8_t version, model::producer_identity pid) {
+    iobuf key;
+    auto pid_id = pid.id;
+    reflection::serialize(key, tx_fence_batch_type(), pid_id);
+
+    iobuf value;
+    reflection::serialize(value, version);
+
+    storage::record_batch_builder builder(
+      tx_fence_batch_type, model::offset(0));
+    builder.set_producer_identity(pid.id, pid.epoch);
+    builder.set_control_type();
+    builder.add_raw_kv(std::move(key), std::move(value));
+
+    return std::move(builder).build();
+}
+
+static model::record_batch make_prepare_batch(rm_stm::prepare_marker record) {
+    storage::record_batch_builder builder(
+      tx_prepare_batch_type, model::offset(0));
+    builder.set_producer_identity(record.pid.id, record.pid.epoch);
+    builder.set_control_type();
+
+    iobuf key;
+    reflection::serialize(key, tx_prepare_batch_type());
+    reflection::serialize(key, record.pid.id);
+
+    iobuf value;
+    reflection::serialize(value, rm_stm::prepare_control_record_version);
+    reflection::serialize(value, record.tm_partition());
+    reflection::serialize(value, record.tx_seq());
+
+    builder.add_raw_kv(std::move(key), std::move(value));
+    return std::move(builder).build();
+}
+
 static model::record_batch make_tx_control_batch(
   model::producer_identity pid, model::control_record_type crt) {
     iobuf key;
@@ -56,47 +93,47 @@ static model::record_batch make_tx_control_batch(
     return std::move(builder).build();
 }
 
-static model::record_batch make_prepare_batch(rm_stm::prepare_marker record) {
-    iobuf key;
-    kafka::response_writer w(key);
-    w.write(rm_stm::prepare_control_record_version());
-    w.write(record.tm_partition());
-    w.write(record.tx_seq());
-
-    storage::record_batch_builder builder(
-      tx_prepare_batch_type, model::offset(0));
-    builder.set_producer_identity(record.pid.id, record.pid.epoch);
-    builder.set_control_type();
-    builder.add_raw_kw(
-      std::move(key), std::nullopt, std::vector<model::record_header>());
-
-    return std::move(builder).build();
-}
-
-static rm_stm::prepare_marker parse_prepare_batch(model::record_batch& b) {
+static rm_stm::prepare_marker parse_prepare_batch(model::record_batch&& b) {
     const auto& hdr = b.header();
-
-    vassert(
-      hdr.type == tx_prepare_batch_type,
-      "expect prepare batch type got {}",
-      hdr.type);
-    vassert(
-      b.record_count() == 1, "prepare batch must contain a single record");
-
     auto bid = model::batch_identity::from(hdr);
+
+    vassert(
+      b.record_count() == 1,
+      "tx_prepare_batch_type batch must contain a single record");
     auto r = b.copy_records();
     auto& record = *r.begin();
-    auto buf = record.release_key();
-    kafka::request_reader buf_reader(std::move(buf));
-    auto version = model::control_record_version(buf_reader.read_int16());
+    auto val_buf = record.release_value();
+
+    iobuf_parser val_reader(std::move(val_buf));
+    auto version = reflection::adl<int8_t>{}.from(val_reader);
     vassert(
       version == rm_stm::prepare_control_record_version,
       "unknown prepare record version: {} expected: {}",
       version,
       rm_stm::prepare_control_record_version);
+    auto tm_partition = model::partition_id(
+      reflection::adl<int32_t>{}.from(val_reader));
+    auto tx_seq = model::tx_seq(reflection::adl<int64_t>{}.from(val_reader));
+
+    auto key_buf = record.release_key();
+    iobuf_parser key_reader(std::move(key_buf));
+    auto batch_type = model::record_batch_type(
+      reflection::adl<int8_t>{}.from(key_reader));
+    vassert(
+      hdr.type == batch_type,
+      "broken tx_prepare_batch_type batch. expected batch type {} got: {}",
+      hdr.type,
+      batch_type);
+    auto p_id = model::producer_id(reflection::adl<int64_t>{}.from(key_reader));
+    vassert(
+      p_id == bid.pid.id,
+      "broken tx_prepare_batch_type batch. expected pid {} got: {}",
+      bid.pid.id,
+      p_id);
+
     return rm_stm::prepare_marker{
-      .tm_partition = model::partition_id(buf_reader.read_int32()),
-      .tx_seq = model::tx_seq(buf_reader.read_int64()),
+      .tm_partition = tm_partition,
+      .tx_seq = tx_seq,
       .pid = bid.pid,
     };
 }
@@ -138,6 +175,13 @@ rm_stm::rm_stm(ss::logger& logger, raft::consensus* c)
 
 ss::future<checked<model::term_id, tx_errc>>
 rm_stm::begin_tx(model::producer_identity pid, model::tx_seq tx_seq) {
+    return get_tx_lock(pid.get_id())->with([this, pid, tx_seq]() {
+        return do_begin_tx(pid, tx_seq);
+    });
+}
+
+ss::future<checked<model::term_id, tx_errc>>
+rm_stm::do_begin_tx(model::producer_identity pid, model::tx_seq tx_seq) {
     auto is_ready = co_await sync(_sync_timeout);
     if (!is_ready) {
         co_return tx_errc::stale;
@@ -212,6 +256,18 @@ ss::future<tx_errc> rm_stm::prepare_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
+    return get_tx_lock(pid.get_id())
+      ->with([this, etag, tm, pid, tx_seq, timeout]() {
+          return do_prepare_tx(etag, tm, pid, tx_seq, timeout);
+      });
+}
+
+ss::future<tx_errc> rm_stm::do_prepare_tx(
+  model::term_id etag,
+  model::partition_id tm,
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  model::timeout_clock::duration timeout) {
     auto is_ready = co_await sync(timeout);
     if (!is_ready) {
         co_return tx_errc::stale;
@@ -270,9 +326,8 @@ ss::future<tx_errc> rm_stm::prepare_tx(
         co_return tx_errc::request_rejected;
     }
 
-    auto [_, inserted] = _mem_state.preparing.try_emplace(
-      pid, preparing_info{.has_applied = false, .tx_seq = tx_seq});
-    if (!inserted) {
+    auto [preparing_it, _] = _mem_state.preparing.try_emplace(pid, tx_seq);
+    if (preparing_it->second != tx_seq) {
         vlog(
           clusterlog.error,
           "Can't prepare pid:{} - concurrent operation on the same session",
@@ -302,31 +357,19 @@ ss::future<tx_errc> rm_stm::prepare_tx(
         co_return tx_errc::unknown_server_error;
     }
 
-    auto preparing_it = _mem_state.preparing.find(pid);
-    if (preparing_it == _mem_state.preparing.end()) {
-        vlog(
-          clusterlog.warn,
-          "Can't prepare pid:{} - already aborted or it's an invariant "
-          "violation",
-          pid);
-        co_return tx_errc::unknown_server_error;
-    }
-    auto applied = preparing_it->second.has_applied;
-    _mem_state.preparing.erase(pid);
-
-    if (!applied) {
-        vlog(
-          clusterlog.warn,
-          "Can't prepare pid:{} - already aborted or it's an invariant "
-          "violation",
-          pid);
-        co_return tx_errc::conflict;
-    }
-
     co_return tx_errc::none;
 }
 
 ss::future<tx_errc> rm_stm::commit_tx(
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  model::timeout_clock::duration timeout) {
+    return get_tx_lock(pid.get_id())->with([this, pid, tx_seq, timeout]() {
+        return do_commit_tx(pid, tx_seq, timeout);
+    });
+}
+
+ss::future<tx_errc> rm_stm::do_commit_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
@@ -341,22 +384,39 @@ ss::future<tx_errc> rm_stm::commit_tx(
         _mem_state = mem_state{.term = _insync_term};
     }
 
-    if (_mem_state.preparing.contains(pid)) {
-        // it looks like a violation since tm_stm commits only after
-        // prepare succeeds but it's a legit rare situation:
-        //   * tm_stm failed during prepare
-        //   * its log update didn't pass
-        //   * on recovery it recommits its previous tx
-        //   * this commit (we're here) collides with "next" prepare
-        vlog(
-          clusterlog.error,
-          "Can't commit pid:{} - concurrent prepare operation on the same "
-          "session",
-          pid);
-        co_return tx_errc::conflict;
+    auto preparing_it = _mem_state.preparing.find(pid);
+    auto prepare_it = _log_state.prepared.find(pid);
+
+    if (preparing_it != _mem_state.preparing.end()) {
+        if (preparing_it->second > tx_seq) {
+            // - tm_stm & rm_stm failed during prepare
+            // - during recovery tm_stm recommits its previous tx
+            // - that commit (we're here) collides with "next" failed prepare
+            // it may happen only if the commit passed => acking
+            co_return tx_errc::none;
+        }
+
+        ss::sstring msg;
+        if (preparing_it->second == tx_seq) {
+            msg = ssx::sformat(
+              "Prepare hasn't completed => can't commit pid:{} tx_seq:{}",
+              pid,
+              tx_seq);
+        } else {
+            msg = ssx::sformat(
+              "Commit pid:{} tx_seq:{} conflicts with preparing tx_seq:{}",
+              pid,
+              tx_seq,
+              preparing_it->second);
+        }
+
+        if (_recovery_policy == best_effort) {
+            vlog(clusterlog.error, "{}", msg);
+            co_return tx_errc::request_rejected;
+        }
+        vassert(false, "{}", msg);
     }
 
-    auto prepare_it = _log_state.prepared.find(pid);
     if (prepare_it == _log_state.prepared.end()) {
         vlog(
           clusterlog.trace,
@@ -380,22 +440,16 @@ ss::future<tx_errc> rm_stm::commit_tx(
           tx_seq);
         co_return tx_errc::none;
     } else if (prepare_it->second.tx_seq < tx_seq) {
+        std::string msg = fmt::format(
+          "Rejecting commit with tx_seq:{} since prepare with lesser tx_seq:{} "
+          "exists",
+          tx_seq,
+          prepare_it->second.tx_seq);
         if (_recovery_policy == best_effort) {
-            vlog(
-              clusterlog.error,
-              "Rejecting commit with tx_seq:{} since prepare with lesser "
-              "tx_seq:{} exists",
-              tx_seq,
-              prepare_it->second.tx_seq);
+            vlog(clusterlog.error, "{}", msg);
             co_return tx_errc::request_rejected;
-        } else {
-            vassert(
-              false,
-              "Received commit with tx_seq:{} while prepare with lesser "
-              "tx_seq:{} exists",
-              tx_seq,
-              prepare_it->second.tx_seq);
         }
+        vassert(false, "{}", msg);
     }
 
     // we commit only if a provided tx_seq matches prepared tx_seq
@@ -438,10 +492,10 @@ abort_origin rm_stm::get_abort_origin(
 
     auto preparing_it = _mem_state.preparing.find(pid);
     if (preparing_it != _mem_state.preparing.end()) {
-        if (tx_seq < preparing_it->second.tx_seq) {
+        if (tx_seq < preparing_it->second) {
             return abort_origin::past;
         }
-        if (preparing_it->second.tx_seq < tx_seq) {
+        if (preparing_it->second < tx_seq) {
             return abort_origin::future;
         }
     }
@@ -459,10 +513,19 @@ abort_origin rm_stm::get_abort_origin(
     return abort_origin::present;
 }
 
+ss::future<tx_errc> rm_stm::abort_tx(
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  model::timeout_clock::duration timeout) {
+    return get_tx_lock(pid.get_id())->with([this, pid, tx_seq, timeout]() {
+        return do_abort_tx(pid, tx_seq, timeout);
+    });
+}
+
 // abort_tx is invoked strictly after a tx is canceled on the tm_stm
 // the purpose of abort is to put tx_range into the list of aborted txes
 // and to fence off the old epoch
-ss::future<tx_errc> rm_stm::abort_tx(
+ss::future<tx_errc> rm_stm::do_abort_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
@@ -528,15 +591,22 @@ rm_stm::replicate(
   model::record_batch_reader b,
   raft::replicate_options opts) {
     if (bid.is_transactional) {
-        co_return co_await replicate_tx(bid, std::move(b));
+        auto pid = bid.pid.get_id();
+        return get_tx_lock(pid)->with([this, bid, b = std::move(b)]() mutable {
+            return replicate_tx(bid, std::move(b));
+        });
     } else if (bid.has_idempotent() && bid.first_seq <= bid.last_seq) {
-        co_return co_await replicate_seq(bid, std::move(b), opts);
+        return replicate_seq(bid, std::move(b), opts);
     } else {
-        auto r = co_await _c->replicate(std::move(b), std::move(opts));
-        if (!r) {
-            co_return kafka::error_code::unknown_server_error;
-        }
-        co_return r.value();
+        return _c->replicate(std::move(b), std::move(opts))
+          .then([](result<raft::replicate_result> r) {
+              if (!r) {
+                  return checked<raft::replicate_result, kafka::error_code>(
+                    kafka::error_code::unknown_server_error);
+              }
+              return checked<raft::replicate_result, kafka::error_code>(
+                r.value());
+          });
     }
 }
 
@@ -738,21 +808,59 @@ void rm_stm::compact_snapshot() {
     _oldest_session = next_oldest_session;
 }
 
+void rm_stm::apply_fence(model::record_batch&& b) {
+    const auto& hdr = b.header();
+    auto bid = model::batch_identity::from(hdr);
+
+    vassert(
+      b.record_count() == 1,
+      "tx_fence_batch_type batch must contain a single record");
+    auto r = b.copy_records();
+    auto& record = *r.begin();
+    auto val_buf = record.release_value();
+
+    iobuf_parser val_reader(std::move(val_buf));
+    auto version = reflection::adl<int8_t>{}.from(val_reader);
+    vassert(
+      version == rm_stm::fence_control_record_version,
+      "unknown fence record version: {} expected: {}",
+      version,
+      rm_stm::fence_control_record_version);
+
+    auto key_buf = record.release_key();
+    iobuf_parser key_reader(std::move(key_buf));
+    auto batch_type = model::record_batch_type(
+      reflection::adl<int8_t>{}.from(key_reader));
+    vassert(
+      hdr.type == batch_type,
+      "broken tx_fence_batch_type batch. expected batch type {} got: {}",
+      hdr.type,
+      batch_type);
+    auto p_id = model::producer_id(reflection::adl<int64_t>{}.from(key_reader));
+    vassert(
+      p_id == bid.pid.id,
+      "broken tx_fence_batch_type batch. expected pid {} got: {}",
+      bid.pid.id,
+      p_id);
+
+    auto [fence_it, _] = _log_state.fence_pid_epoch.try_emplace(
+      bid.pid.get_id(), bid.pid.get_epoch());
+    if (fence_it->second < bid.pid.get_epoch()) {
+        fence_it->second = bid.pid.get_epoch();
+    }
+}
+
 ss::future<> rm_stm::apply(model::record_batch b) {
     auto last_offset = b.last_offset();
 
     const auto& hdr = b.header();
-    auto bid = model::batch_identity::from(hdr);
 
     if (hdr.type == tx_fence_batch_type) {
-        auto [fence_it, _] = _log_state.fence_pid_epoch.try_emplace(
-          bid.pid.get_id(), bid.pid.get_epoch());
-        if (fence_it->second < bid.pid.get_epoch()) {
-            fence_it->second = bid.pid.get_epoch();
-        }
+        apply_fence(std::move(b));
     } else if (hdr.type == tx_prepare_batch_type) {
-        apply_prepare(parse_prepare_batch(b));
+        apply_prepare(parse_prepare_batch(std::move(b)));
     } else if (hdr.type == raft::data_batch_type) {
+        auto bid = model::batch_identity::from(hdr);
         if (hdr.attrs.is_control()) {
             apply_control(bid.pid, parse_control_batch(b));
         } else {
@@ -768,84 +876,27 @@ ss::future<> rm_stm::apply(model::record_batch b) {
 void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
     auto pid = prepare.pid;
 
-    auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
-    if (fence_it == _log_state.fence_pid_epoch.end()) {
-        // impossible situation, tm_stm invokes prepare strictly
-        // after begin which adds a fence (if it's necessary)
-
-        vlog(
-          clusterlog.error,
-          "Can find an expected fence for an observed prepare with pid:{}",
-          pid);
-        if (_recovery_policy == best_effort) {
-            _log_state.fence_pid_epoch.emplace(pid.get_id(), pid.get_epoch());
-        } else {
-            vassert(
-              false,
-              "Can find an expected fence for an observed prepare with pid:{}",
-              pid);
-        }
-    } else if (fence_it->second < pid.get_epoch()) {
-        // impossible situation, tm_stm invokes prepare strictly
-        // after begin which adds a fence (if it's necessary)
-        // so fence should be at least as prepare's pid
-
-        vlog(
-          clusterlog.error,
-          "Set fence {} is lesser that prepare's epoch: {}",
-          fence_it->second,
-          pid);
-        if (_recovery_policy == best_effort) {
+    auto [fence_it, inserted] = _log_state.fence_pid_epoch.emplace(
+      pid.get_id(), pid.get_epoch());
+    if (!inserted) {
+        if (fence_it->second < pid.get_epoch()) {
             fence_it->second = pid.get_epoch();
-        } else {
-            vassert(
-              false,
-              "Set fence {} is lesser that prepare's epoch: {}",
-              fence_it->second,
-              pid);
         }
-    } else if (fence_it->second > pid.get_epoch()) {
-        // during a data race between replicating
-        //  - a prepare record and
-        //  - a record wth higher epoch for the same pid.id e.g abort
-        // the latter request won and prepare got fenced off
-
-        // cleaning the state since this pid is fenced off
-        vlog(
-          clusterlog.warn,
-          "Prepare with pid:{} is fenced off by {}",
-          pid,
-          fence_it->second);
-        _mem_state.expected.erase(pid);
-        return;
-    }
-
-    if (!_log_state.ongoing_map.contains(pid)) {
-        // probably there was a race and the tx is already
-        // aborted since it isn't ongoing
-        vlog(clusterlog.warn, "a tx with pid:{} might be already aborted", pid);
-        _mem_state.expected.erase(pid);
-        return;
     }
 
     _log_state.prepared.try_emplace(pid, prepare);
     _mem_state.expected.erase(pid);
-
-    auto preparing_it = _mem_state.preparing.find(pid);
-    if (preparing_it != _mem_state.preparing.end()) {
-        // _mem_state.preparing may lack pid if
-        // this is processing of the historic prepare
-        preparing_it->second.has_applied = true;
-    }
+    _mem_state.preparing.erase(pid);
 }
 
 void rm_stm::apply_control(
   model::producer_identity pid, model::control_record_type crt) {
-    auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
-    if (fence_it == _log_state.fence_pid_epoch.end()) {
-        _log_state.fence_pid_epoch.emplace(pid.get_id(), pid.get_epoch());
-    } else if (fence_it->second < pid.get_epoch()) {
-        fence_it->second = pid.get_epoch();
+    auto [fence_it, inserted] = _log_state.fence_pid_epoch.emplace(
+      pid.get_id(), pid.get_epoch());
+    if (!inserted) {
+        if (fence_it->second < pid.get_epoch()) {
+            fence_it->second = pid.get_epoch();
+        }
     }
 
     // either epoch is the same as fencing or it's lesser in the latter
@@ -864,33 +915,6 @@ void rm_stm::apply_control(
 
         _mem_state.forget(pid);
     } else if (crt == model::control_record_type::tx_commit) {
-        if (!_log_state.prepared.contains(pid)) {
-            // trying to commit a tx which wasn't prepare
-
-            if (_log_state.ongoing_map.contains(pid)) {
-                vlog(
-                  clusterlog.error,
-                  "Committing an ongoing tx with pid:{} which isn't in a "
-                  "prepared state",
-                  pid);
-
-                if (_recovery_policy != best_effort) {
-                    vassert(
-                      false,
-                      "Committing an ongoing tx with pid:{} which isn't in a "
-                      "prepared state",
-                      pid);
-                }
-            } else {
-                // it's a (re)commit of an already committed tx during
-                // tm_stm recovery or caused by a concurrent init_tx
-                vlog(
-                  clusterlog.warn,
-                  "Committing a tx with pid:{} which isn't in a prepared state",
-                  pid);
-            }
-        }
-
         _log_state.prepared.erase(pid);
         auto offset_it = _log_state.ongoing_map.find(pid);
         if (offset_it != _log_state.ongoing_map.end()) {
