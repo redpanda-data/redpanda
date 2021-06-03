@@ -97,14 +97,9 @@ public:
 private:
     ss::future<append_entries_request> share_request();
 
-    ss::future<> dispatch_one(
-      vnode, ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>);
-    ss::future<result<append_entries_reply>> dispatch_single_retry(
-      vnode, ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>);
-    ss::future<result<append_entries_reply>> do_dispatch_one(
-      vnode,
-      append_entries_request,
-      ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>);
+    ss::future<> dispatch_one(vnode);
+    ss::future<result<append_entries_reply>> dispatch_single_retry(vnode);
+    ss::future<result<append_entries_reply>> flush_log();
 
     ss::future<result<append_entries_reply>>
       send_append_entries_request(vnode, append_entries_request);
