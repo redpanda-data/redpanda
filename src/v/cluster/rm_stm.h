@@ -137,6 +137,8 @@ private:
     void compact_snapshot();
 
     ss::future<bool> sync(model::timeout_clock::duration);
+    void became_leader();
+    void lost_leadership();
 
     void track_tx(model::producer_identity, std::chrono::milliseconds);
     void abort_old_txes();
@@ -258,6 +260,7 @@ private:
     std::chrono::milliseconds _sync_timeout;
     model::violation_recovery_policy _recovery_policy;
     std::chrono::milliseconds _transactional_id_expiration;
+    bool _is_leader{false};
 };
 
 } // namespace cluster

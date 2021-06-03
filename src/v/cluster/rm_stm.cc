@@ -780,8 +780,26 @@ ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {
             _mem_state = mem_state{.term = _insync_term};
         }
     }
+    if (ready && !_is_leader) {
+        _is_leader = true;
+        became_leader();
+    } else if (!ready && _is_leader) {
+        _is_leader = false;
+        lost_leadership();
+    }
     co_return ready;
 }
+
+void rm_stm::became_leader() {
+    if (_gate.is_closed()) {
+        return;
+    }
+    if (!auto_abort_timer.armed()) {
+        abort_old_txes();
+    }
+}
+
+void rm_stm::lost_leadership() { auto_abort_timer.cancel(); }
 
 void rm_stm::track_tx(
   model::producer_identity pid,
