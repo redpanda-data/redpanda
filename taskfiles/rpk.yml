@@ -16,6 +16,7 @@ tasks:
       ver_pkg='github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/version'
       cont_pkg='github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common'
       go build \
+        -modcacherw \
         -ldflags \
           "-X ${ver_pkg}.version={{.RPK_VERSION}} \
            -X ${ver_pkg}.rev={{.SHORT_SHA}} \
