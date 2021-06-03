@@ -130,6 +130,8 @@ private:
 
     void compact_snapshot();
 
+    ss::future<bool> sync(model::timeout_clock::duration);
+
     abort_origin
     get_abort_origin(const model::producer_identity&, model::tx_seq) const;
 

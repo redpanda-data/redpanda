@@ -182,12 +182,8 @@ rm_stm::begin_tx(model::producer_identity pid, model::tx_seq tx_seq) {
 
 ss::future<checked<model::term_id, tx_errc>>
 rm_stm::do_begin_tx(model::producer_identity pid, model::tx_seq tx_seq) {
-    auto is_ready = co_await sync(_sync_timeout);
-    if (!is_ready) {
+    if (!co_await sync(_sync_timeout)) {
         co_return tx_errc::stale;
-    }
-    if (_mem_state.term != _insync_term) {
-        _mem_state = mem_state{.term = _insync_term};
     }
 
     // checking / setting pid fencing
@@ -258,12 +254,8 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
-    auto is_ready = co_await sync(timeout);
-    if (!is_ready) {
+    if (!co_await sync(timeout)) {
         co_return tx_errc::stale;
-    }
-    if (_mem_state.term != _insync_term) {
-        _mem_state = mem_state{.term = _insync_term};
     }
 
     auto prepared_it = _log_state.prepared.find(pid);
@@ -367,13 +359,8 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
   model::timeout_clock::duration timeout) {
     // doesn't make sense to fence off a commit because transaction
     // manager has already decided to commit and acked to a client
-
-    auto is_ready = co_await sync(timeout);
-    if (!is_ready) {
+    if (!co_await sync(timeout)) {
         co_return tx_errc::stale;
-    }
-    if (_mem_state.term != _insync_term) {
-        _mem_state = mem_state{.term = _insync_term};
     }
 
     auto preparing_it = _mem_state.preparing.find(pid);
@@ -524,12 +511,8 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
     // doesn't make sense to fence off an abort because transaction
     // manager has already decided to abort and acked to a client
 
-    auto is_ready = co_await sync(timeout);
-    if (!is_ready) {
+    if (!co_await sync(timeout)) {
         co_return tx_errc::stale;
-    }
-    if (_mem_state.term != _insync_term) {
-        _mem_state = mem_state{.term = _insync_term};
     }
 
     auto origin = get_abort_origin(pid, tx_seq);
@@ -622,12 +605,8 @@ bool rm_stm::check_seq(model::batch_identity bid) {
 
 ss::future<result<raft::replicate_result>>
 rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
-    auto is_ready = co_await sync(_sync_timeout);
-    if (!is_ready) {
+    if (!co_await sync(_sync_timeout)) {
         co_return errc::not_leader;
-    }
-    if (_mem_state.term != _insync_term) {
-        _mem_state = mem_state{.term = _insync_term};
     }
 
     // fencing
@@ -706,12 +685,8 @@ ss::future<result<raft::replicate_result>> rm_stm::replicate_seq(
   model::batch_identity bid,
   model::record_batch_reader br,
   raft::replicate_options opts) {
-    auto is_ready = co_await sync(_sync_timeout);
-    if (!is_ready) {
+    if (!co_await sync(_sync_timeout)) {
         co_return errc::not_leader;
-    }
-    if (_mem_state.term != _insync_term) {
-        _mem_state = mem_state{.term = _insync_term};
     }
     if (!check_seq(bid)) {
         co_return errc::sequence_out_of_order;
@@ -777,6 +752,16 @@ void rm_stm::compact_snapshot() {
         }
     }
     _oldest_session = next_oldest_session;
+}
+
+ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {
+    auto ready = co_await persisted_stm::sync(timeout);
+    if (ready) {
+        if (_mem_state.term != _insync_term) {
+            _mem_state = mem_state{.term = _insync_term};
+        }
+    }
+    co_return ready;
 }
 
 void rm_stm::apply_fence(model::record_batch&& b) {
