@@ -32,32 +32,15 @@
 
 namespace cluster {
 
-struct tm_etag {
-    int64_t log_etag{0};
-    int64_t mem_etag{0};
-
-    tm_etag inc_mem() const {
-        return tm_etag{
-          .log_etag = this->log_etag, .mem_etag = this->mem_etag + 1};
-    }
-
-    tm_etag inc_log() const {
-        // kicking log_etag (major component) resetting minor
-        return tm_etag{.log_etag = this->log_etag + 1, .mem_etag = 0};
-    }
-
-    auto operator<=>(const tm_etag&) const = default;
-
-    friend std::ostream& operator<<(std::ostream&, const tm_etag&);
-};
-
 struct tm_transaction {
+    static constexpr uint8_t version = 0;
+
     enum tx_status {
         ongoing,
         preparing,
         prepared,
         aborting,
-        finished,
+        ready,
     };
 
     struct tx_partition {
@@ -82,11 +65,13 @@ struct tm_transaction {
     // triple (transactional_id, producer_identity, tx_seq) uniquely
     // identidies a transaction
     model::tx_seq tx_seq;
+    // term of a transaction coordinated started a transaction.
+    // transactions can't span cross term to prevent loss of information stored
+    // only in memory (partitions and groups).
+    model::term_id etag;
     tx_status status;
     std::vector<tx_partition> partitions;
     std::vector<tx_group> groups;
-    // version of tm_tx, used to perform conditional updates
-    tm_etag etag;
 
     friend std::ostream& operator<<(std::ostream&, const tm_transaction&);
 };
@@ -116,39 +101,37 @@ public:
     explicit tm_stm(ss::logger&, raft::consensus*);
 
     std::optional<tm_transaction> get_tx(kafka::transactional_id);
-    ss::future<checked<tm_transaction, tm_stm::op_status>> try_change_status(
-      kafka::transactional_id, tm_etag, tm_transaction::tx_status);
     checked<tm_transaction, tm_stm::op_status>
-      mark_tx_finished(kafka::transactional_id, tm_etag);
-    checked<tm_transaction, tm_stm::op_status>
-      mark_tx_ongoing(kafka::transactional_id, tm_etag);
-    ss::future<tm_stm::op_status> re_register_producer(
-      kafka::transactional_id, tm_etag, model::producer_identity);
+      mark_tx_ongoing(kafka::transactional_id);
+    bool add_partitions(
+      kafka::transactional_id, std::vector<tm_transaction::tx_partition>);
+    bool add_group(kafka::transactional_id, kafka::group_id, model::term_id);
+    bool is_actual_term(model::term_id term) { return _insync_term == term; }
+
+    ss::future<std::optional<tm_transaction>>
+      get_actual_tx(kafka::transactional_id);
+    ss::future<checked<tm_transaction, tm_stm::op_status>>
+      mark_tx_ready(kafka::transactional_id);
+    ss::future<checked<tm_transaction, tm_stm::op_status>>
+      mark_tx_ready(kafka::transactional_id, model::term_id);
+    ss::future<checked<tm_transaction, tm_stm::op_status>>
+      try_change_status(kafka::transactional_id, tm_transaction::tx_status);
+    ss::future<tm_stm::op_status>
+      re_register_producer(kafka::transactional_id, model::producer_identity);
     ss::future<tm_stm::op_status>
       register_new_producer(kafka::transactional_id, model::producer_identity);
-    bool add_partitions(
-      kafka::transactional_id,
-      tm_etag,
-      std::vector<tm_transaction::tx_partition>);
-    bool add_group(
-      kafka::transactional_id, tm_etag, kafka::group_id, model::term_id);
 
-    // redpanda acks a transaction after a decision to commit / abort
-    // is persisted but before tx is executed; without a coordination
-    // so producer's new transaction may conflict with its previous tx
-    // get_end_lock method returns a mutex used to coordinate start
-    // and end of a transaction
-    ss::lw_shared_ptr<mutex> get_end_lock(kafka::transactional_id tid) {
-        return _end_locks.find(tid)->second;
+    // before calling a tm_stm modifying operation a caller should
+    // take get_tx_lock mutex
+    ss::lw_shared_ptr<mutex> get_tx_lock(kafka::transactional_id tid) {
+        auto [lock_it, inserted] = _tx_locks.try_emplace(tid, nullptr);
+        if (inserted) {
+            lock_it->second = ss::make_lw_shared<mutex>();
+        }
+        return lock_it->second;
     }
 
 private:
-    struct tx_updated_cmd {
-        static constexpr uint8_t record_key = 0;
-        tm_transaction tx;
-        tm_etag prev_etag;
-    };
-
     void load_snapshot(stm_snapshot_header, iobuf&&) override;
     stm_snapshot take_snapshot() override;
 
@@ -159,14 +142,10 @@ private:
     absl::flat_hash_map<kafka::transactional_id, tm_transaction> _tx_table;
     absl::flat_hash_map<kafka::transactional_id, ss::lw_shared_ptr<mutex>>
       _tx_locks;
-    absl::flat_hash_map<kafka::transactional_id, ss::lw_shared_ptr<mutex>>
-      _end_locks;
     ss::future<> apply(model::record_batch b) override;
 
-    ss::future<tm_stm::op_status> register_new_producer(
-      model::term_id, kafka::transactional_id, model::producer_identity);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
-      save_tx(model::term_id, tm_transaction);
+      update_tx(tm_transaction, model::term_id);
     ss::future<result<raft::replicate_result>>
     replicate_quorum_ack(model::term_id term, model::record_batch&& batch) {
         return _c->replicate(

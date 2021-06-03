@@ -70,7 +70,7 @@ private:
 
     ss::future<bool> try_create_tx_topic();
 
-    ss::future<checked<tm_transaction, tx_errc>> get_tx(
+    ss::future<checked<tm_transaction, tx_errc>> get_ongoing_tx(
       ss::shared_ptr<tm_stm>,
       model::producer_identity,
       kafka::transactional_id,
@@ -80,32 +80,29 @@ private:
       model::node_id, kafka::transactional_id, model::timeout_clock::duration);
     ss::future<cluster::init_tm_tx_reply> do_init_tm_tx(
       ss::shard_id, kafka::transactional_id, model::timeout_clock::duration);
-    ss::future<cluster::init_tm_tx_reply>
-      do_init_tm_tx(kafka::transactional_id, model::timeout_clock::duration);
+    ss::future<cluster::init_tm_tx_reply> do_init_tm_tx(
+      ss::shared_ptr<tm_stm>,
+      kafka::transactional_id,
+      model::timeout_clock::duration);
 
-    ss::future<checked<cluster::tm_transaction, tx_errc>> abort_tm_tx(
+    ss::future<checked<cluster::tm_transaction, tx_errc>> do_end_txn(
+      end_tx_request,
       ss::shared_ptr<cluster::tm_stm>,
-      cluster::tm_transaction,
       model::timeout_clock::duration,
-      ss::promise<tx_errc>);
+      ss::lw_shared_ptr<ss::shared_promise<tx_errc>>);
     ss::future<checked<cluster::tm_transaction, tx_errc>> do_abort_tm_tx(
       ss::shared_ptr<cluster::tm_stm>,
       cluster::tm_transaction,
       model::timeout_clock::duration,
-      ss::promise<tx_errc>);
-    ss::future<checked<cluster::tm_transaction, tx_errc>> commit_tm_tx(
-      ss::shared_ptr<cluster::tm_stm>,
-      cluster::tm_transaction,
-      model::timeout_clock::duration,
-      ss::promise<tx_errc>);
+      ss::lw_shared_ptr<ss::shared_promise<tx_errc>>);
     ss::future<checked<cluster::tm_transaction, tx_errc>> do_commit_tm_tx(
       ss::shared_ptr<cluster::tm_stm>,
       cluster::tm_transaction,
       model::timeout_clock::duration,
-      ss::promise<tx_errc>);
-    ss::future<checked<tm_transaction, tx_errc>>
+      ss::lw_shared_ptr<ss::shared_promise<tx_errc>>);
+    ss::future<tx_errc>
       recommit_tm_tx(tm_transaction, model::timeout_clock::duration);
-    ss::future<checked<tm_transaction, tx_errc>>
+    ss::future<tx_errc>
       reabort_tm_tx(tm_transaction, model::timeout_clock::duration);
 
     ss::future<add_paritions_tx_reply> do_add_partition_to_tx(

@@ -24,27 +24,27 @@
 
 namespace cluster {
 
-template<typename T>
-static model::record_batch serialize_cmd(T t, model::record_batch_type type) {
-    storage::record_batch_builder b(type, model::offset(0));
-    iobuf key_buf;
-    reflection::adl<uint8_t>{}.to(key_buf, T::record_key);
-    iobuf v_buf;
-    reflection::adl<T>{}.to(v_buf, std::move(t));
-    b.add_raw_kv(std::move(key_buf), std::move(v_buf));
-    return std::move(b).build();
-}
+static model::record_batch serialize_tx(tm_transaction tx) {
+    iobuf key;
+    reflection::serialize(key, tm_update_batch_type());
+    auto pid_id = tx.pid.id;
+    auto tx_id = tx.id;
+    reflection::serialize(key, pid_id, tx_id);
 
-std::ostream& operator<<(std::ostream& o, const tm_etag& etag) {
-    return o << "{tm_etag: log_etag=" << etag.log_etag
-             << ", mem_etag=" << etag.mem_etag << "}";
+    iobuf value;
+    reflection::serialize(value, tm_transaction::version);
+    reflection::serialize(value, std::move(tx));
+
+    storage::record_batch_builder b(tm_update_batch_type, model::offset(0));
+    b.add_raw_kv(std::move(key), std::move(value));
+    return std::move(b).build();
 }
 
 std::ostream& operator<<(std::ostream& o, const tm_transaction& tx) {
     return o << "{tm_transaction: id=" << tx.id << ", status=" << tx.status
              << ", pid=" << tx.pid
              << ", size(partitions)=" << tx.partitions.size()
-             << ", etag=" << tx.etag << ", tx_seq=" << tx.tx_seq << "}";
+             << ", tx_seq=" << tx.tx_seq << "}";
 }
 
 tm_stm::tm_stm(ss::logger& logger, raft::consensus* c)
@@ -62,19 +62,8 @@ std::optional<tm_transaction> tm_stm::get_tx(kafka::transactional_id tx_id) {
 }
 
 ss::future<checked<tm_transaction, tm_stm::op_status>>
-tm_stm::save_tx(model::term_id term, tm_transaction tx) {
-    auto ptx = _tx_table.find(tx.id);
-    if (ptx == _tx_table.end()) {
-        co_return tm_stm::op_status::not_found;
-    }
-    if (ptx->second.etag != tx.etag) {
-        co_return tm_stm::op_status::conflict;
-    }
-
-    auto etag = tx.etag;
-    tx.etag = etag.inc_log();
-    tx_updated_cmd cmd{.tx = tx, .prev_etag = etag};
-    auto batch = serialize_cmd(cmd, tm_update_batch_type);
+tm_stm::update_tx(tm_transaction tx, model::term_id term) {
+    auto batch = serialize_tx(tx);
 
     auto r = co_await replicate_quorum_ack(term, std::move(batch));
     if (!r) {
@@ -86,11 +75,8 @@ tm_stm::save_tx(model::term_id term, tm_transaction tx) {
         co_return tm_stm::op_status::unknown;
     }
 
-    ptx = _tx_table.find(tx.id);
+    auto ptx = _tx_table.find(tx.id);
     if (ptx == _tx_table.end()) {
-        co_return tm_stm::op_status::conflict;
-    }
-    if (ptx->second.etag != tx.etag) {
         co_return tm_stm::op_status::conflict;
     }
     co_return ptx->second;
@@ -98,63 +84,63 @@ tm_stm::save_tx(model::term_id term, tm_transaction tx) {
 
 ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::try_change_status(
-  kafka::transactional_id tx_id,
-  tm_etag etag,
-  tm_transaction::tx_status status) {
+  kafka::transactional_id tx_id, tm_transaction::tx_status status) {
     auto is_ready = co_await sync(_sync_timeout);
     if (!is_ready) {
         co_return tm_stm::op_status::unknown;
     }
 
-    auto term = _insync_term;
     auto ptx = _tx_table.find(tx_id);
     if (ptx == _tx_table.end()) {
         co_return tm_stm::op_status::not_found;
     }
-    if (ptx->second.etag != etag) {
-        co_return tm_stm::op_status::conflict;
-    }
-    auto tx = ptx->second;
+    tm_transaction tx = ptx->second;
+    tx.etag = _insync_term;
     tx.status = status;
-    auto lock_it = _tx_locks.find(tx_id);
-    vassert(
-      lock_it != _tx_locks.end(),
-      "Existence of _tx_table[{}] must emply existence of _tx_locks[{}]",
-      tx_id,
-      tx_id);
+    co_return co_await update_tx(tx, tx.etag);
+}
 
-    // hack: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95599
-    auto func = [this, term, tx]() { return save_tx(term, tx); };
-    co_return co_await lock_it->second->with(func);
+ss::future<std::optional<tm_transaction>>
+tm_stm::get_actual_tx(kafka::transactional_id tx_id) {
+    auto is_ready = co_await sync(_sync_timeout);
+    if (!is_ready) {
+        co_return std::nullopt;
+    }
+
+    auto tx = _tx_table.find(tx_id);
+    if (tx != _tx_table.end()) {
+        co_return tx->second;
+    }
+
+    co_return std::nullopt;
+}
+
+ss::future<checked<tm_transaction, tm_stm::op_status>>
+tm_stm::mark_tx_ready(kafka::transactional_id tx_id) {
+    return mark_tx_ready(tx_id, _insync_term);
+}
+
+ss::future<checked<tm_transaction, tm_stm::op_status>>
+tm_stm::mark_tx_ready(kafka::transactional_id tx_id, model::term_id term) {
+    auto ptx = _tx_table.find(tx_id);
+    if (ptx == _tx_table.end()) {
+        co_return tm_stm::op_status::not_found;
+    }
+    tm_transaction tx = ptx->second;
+    tx.status = tm_transaction::tx_status::ready;
+    tx.partitions.clear();
+    tx.groups.clear();
+    tx.etag = term;
+    co_return co_await update_tx(tx, _insync_term);
 }
 
 checked<tm_transaction, tm_stm::op_status>
-tm_stm::mark_tx_finished(kafka::transactional_id tx_id, tm_etag etag) {
+tm_stm::mark_tx_ongoing(kafka::transactional_id tx_id) {
     auto ptx = _tx_table.find(tx_id);
     if (ptx == _tx_table.end()) {
         return tm_stm::op_status::not_found;
-    }
-    if (ptx->second.etag != etag) {
-        return tm_stm::op_status::conflict;
-    }
-    ptx->second.status = tm_transaction::tx_status::finished;
-    ptx->second.etag = etag.inc_mem();
-    ptx->second.partitions.clear();
-    ptx->second.groups.clear();
-    return ptx->second;
-}
-
-checked<tm_transaction, tm_stm::op_status>
-tm_stm::mark_tx_ongoing(kafka::transactional_id tx_id, tm_etag etag) {
-    auto ptx = _tx_table.find(tx_id);
-    if (ptx == _tx_table.end()) {
-        return tm_stm::op_status::not_found;
-    }
-    if (ptx->second.etag != etag) {
-        return tm_stm::op_status::conflict;
     }
     ptx->second.status = tm_transaction::tx_status::ongoing;
-    ptx->second.etag = etag.inc_mem();
     ptx->second.tx_seq += 1;
     ptx->second.partitions.clear();
     ptx->second.groups.clear();
@@ -162,37 +148,23 @@ tm_stm::mark_tx_ongoing(kafka::transactional_id tx_id, tm_etag etag) {
 }
 
 ss::future<tm_stm::op_status> tm_stm::re_register_producer(
-  kafka::transactional_id tx_id, tm_etag etag, model::producer_identity pid) {
-    auto is_ready = co_await sync(_sync_timeout);
-    if (!is_ready) {
-        co_return tm_stm::op_status::unknown;
-    }
-
+  kafka::transactional_id tx_id, model::producer_identity pid) {
     vlog(
-      clusterlog.trace,
-      "Registering existing tx: id={}, pid={}, etag={}",
-      tx_id,
-      pid,
-      etag);
+      clusterlog.trace, "Registering existing tx: id={}, pid={}", tx_id, pid);
 
-    auto term = _insync_term;
     auto ptx = _tx_table.find(tx_id);
     if (ptx == _tx_table.end()) {
         co_return tm_stm::op_status::not_found;
     }
-    if (ptx->second.etag != etag) {
-        co_return tm_stm::op_status::conflict;
-    }
     tm_transaction tx = ptx->second;
-    tx.status = tm_transaction::tx_status::ongoing;
+    tx.status = tm_transaction::tx_status::ready;
     tx.pid = pid;
     tx.tx_seq += 1;
+    tx.etag = _insync_term;
     tx.partitions.clear();
     tx.groups.clear();
 
-    // hack: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95599
-    auto func = [this, term, tx]() { return save_tx(term, tx); };
-    auto r = co_await _tx_locks.find(tx_id)->second->with(func);
+    auto r = co_await update_tx(tx, tx.etag);
 
     if (!r.has_value()) {
         co_return tm_stm::op_status::unknown;
@@ -209,28 +181,7 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
 
     vlog(clusterlog.trace, "Registering new tx: id={}, pid={}", tx_id, pid);
 
-    auto term = _insync_term;
-    auto ptx = _tx_table.find(tx_id);
-    if (ptx != _tx_table.end()) {
-        co_return tm_stm::op_status::conflict;
-    }
-    _end_locks.try_emplace(tx_id, ss::make_lw_shared<mutex>());
-    auto [lock_it, _] = _tx_locks.try_emplace(
-      tx_id, ss::make_lw_shared<mutex>());
-
-    // hack: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95599
-    auto func = [this, term, tx_id, pid]() {
-        return register_new_producer(term, tx_id, pid);
-    };
-    co_return co_await lock_it->second->with(func);
-}
-
-ss::future<tm_stm::op_status> tm_stm::register_new_producer(
-  model::term_id term,
-  kafka::transactional_id tx_id,
-  model::producer_identity pid) {
-    auto ptx = _tx_table.find(tx_id);
-    if (ptx != _tx_table.end()) {
+    if (_tx_table.contains(tx_id)) {
         co_return tm_stm::op_status::conflict;
     }
 
@@ -238,12 +189,12 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
       .id = tx_id,
       .pid = pid,
       .tx_seq = model::tx_seq(0),
-      .status = tm_transaction::tx_status::ongoing,
+      .etag = _insync_term,
+      .status = tm_transaction::tx_status::ready,
     };
-    tx_updated_cmd cmd{.tx = tx, .prev_etag = tx.etag};
-    auto batch = serialize_cmd(cmd, tm_update_batch_type);
+    auto batch = serialize_tx(tx);
 
-    auto r = co_await replicate_quorum_ack(term, std::move(batch));
+    auto r = co_await replicate_quorum_ack(tx.etag, std::move(batch));
 
     if (!r) {
         co_return tm_stm::op_status::unknown;
@@ -254,28 +205,16 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
         co_return tm_stm::op_status::unknown;
     }
 
-    ptx = _tx_table.find(tx_id);
-    if (ptx == _tx_table.end()) {
-        co_return tm_stm::op_status::unknown;
-    }
-    if (ptx->second.etag != tx.etag) {
-        co_return tm_stm::op_status::conflict;
-    }
     co_return tm_stm::op_status::success;
 }
 
 bool tm_stm::add_partitions(
   kafka::transactional_id tx_id,
-  tm_etag etag,
   std::vector<tm_transaction::tx_partition> partitions) {
     auto ptx = _tx_table.find(tx_id);
     if (ptx == _tx_table.end()) {
         return false;
     }
-    if (ptx->second.etag != etag) {
-        return false;
-    }
-    ptx->second.etag = etag.inc_mem();
     for (auto& partition : partitions) {
         ptx->second.partitions.push_back(partition);
     }
@@ -284,17 +223,12 @@ bool tm_stm::add_partitions(
 
 bool tm_stm::add_group(
   kafka::transactional_id tx_id,
-  tm_etag etag,
   kafka::group_id group_id,
   model::term_id term) {
     auto ptx = _tx_table.find(tx_id);
     if (ptx == _tx_table.end()) {
         return false;
     }
-    if (ptx->second.etag != etag) {
-        return false;
-    }
-    ptx->second.etag = etag.inc_mem();
     ptx->second.groups.push_back(
       tm_transaction::tx_group{.group_id = group_id, .etag = term});
     return true;
@@ -314,8 +248,6 @@ void tm_stm::load_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
 
     for (auto& entry : data.transactions) {
         _tx_table.try_emplace(entry.id, entry);
-        _tx_locks.try_emplace(entry.id, ss::make_lw_shared<mutex>());
-        _end_locks.try_emplace(entry.id, ss::make_lw_shared<mutex>());
     }
     _last_snapshot_offset = data.offset;
     _insync_offset = data.offset;
@@ -352,47 +284,46 @@ ss::future<> tm_stm::apply(model::record_batch b) {
 
     vassert(
       b.record_count() == 1,
-      "We expect single command in a batch of tm_update_batch_type");
+      "tm_update_batch_type batch must contain a single record");
     auto r = b.copy_records();
     auto& record = *r.begin();
-    auto rk = reflection::adl<uint8_t>{}.from(record.release_key());
+    auto val_buf = record.release_value();
 
+    iobuf_parser val_reader(std::move(val_buf));
+    auto version = reflection::adl<int8_t>{}.from(val_reader);
     vassert(
-      rk == tx_updated_cmd::record_key, "Unknown tm update command: {}", rk);
-    tx_updated_cmd cmd = reflection::adl<tx_updated_cmd>{}.from(
-      record.release_value());
+      version == tm_transaction::version,
+      "unknown group inflight tx record version: {} expected: {}",
+      version,
+      tm_transaction::version);
+    auto tx = reflection::adl<tm_transaction>{}.from(val_reader);
 
-    auto ptx = _tx_table.find(cmd.tx.id);
-    if (ptx == _tx_table.end()) {
-        if (cmd.prev_etag != cmd.tx.etag) {
-            vlog(
-              clusterlog.error,
-              "Inconsistent tm log. First command should depend on itself but "
-              "tx.id={}, etag={} it reffers to {}",
-              cmd.tx.id,
-              cmd.tx.etag,
-              cmd.prev_etag);
-            if (_recovery_policy == model::violation_recovery_policy::crash) {
-                vassert(
-                  false, "Crushing to prevent potential consistency violation");
-            } else if (
-              _recovery_policy
-              == model::violation_recovery_policy::best_effort) {
-                vlog(
-                  clusterlog.error,
-                  "Recovering by blindly applying tx: {}",
-                  cmd.tx);
-            } else {
-                vassert(false, "Unknown recovery policy {}", _recovery_policy);
-            }
-        }
-        _tx_table.try_emplace(cmd.tx.id, cmd.tx);
-        _end_locks.try_emplace(cmd.tx.id, ss::make_lw_shared<mutex>());
-        _tx_locks.try_emplace(cmd.tx.id, ss::make_lw_shared<mutex>());
-    } else {
-        if (ptx->second.etag.log_etag == cmd.prev_etag.log_etag) {
-            ptx->second = cmd.tx;
-        }
+    auto key_buf = record.release_key();
+    iobuf_parser key_reader(std::move(key_buf));
+    auto batch_type = model::record_batch_type(
+      reflection::adl<int8_t>{}.from(key_reader));
+    vassert(
+      hdr.type == batch_type,
+      "broken tm_update_batch_type. expected batch type {} got: {}",
+      hdr.type,
+      batch_type);
+    auto p_id = model::producer_id(reflection::adl<int64_t>{}.from(key_reader));
+    vassert(
+      p_id == tx.pid.id,
+      "broken tm_update_batch_type. expected tx.pid {} got: {}",
+      tx.pid.id,
+      p_id);
+    auto tx_id = kafka::transactional_id(
+      reflection::adl<ss::sstring>{}.from(key_reader));
+    vassert(
+      tx_id == tx.id,
+      "broken tm_update_batch_type. expected tx.id {} got: {}",
+      tx.id,
+      tx_id);
+
+    auto [tx_it, inserted] = _tx_table.try_emplace(tx.id, tx);
+    if (!inserted) {
+        tx_it->second = tx;
     }
 
     expire_old_txs();
