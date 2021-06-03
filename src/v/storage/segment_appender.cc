@@ -428,25 +428,40 @@ void segment_appender::dispatch_background_head_write() {
     (void)ss::with_semaphore(
       _concurrent_flushes,
       1,
-      [h, w, this, start_offset, expected, src, prev, units = std::move(units), full]() mutable  {
-          return units.then([this, h, w, start_offset, expected, src, full](ss::semaphore_units<> u) mutable {
-          return _out.dma_write(start_offset, src, expected, _opts.priority)
-            .then([this, h, w, expected, full](size_t got) {
-                /*
-                 * the continuation that captured full=true is the end of the
-                 * dependency chain for this chunk. it can be returned to cache.
-                 */
-                if (full) {
-                    h->reset();
-                    internal::chunks().add(h);
-                }
-                if (unlikely(expected != got)) {
-                    return size_missmatch_error("chunk::write", expected, got);
-                }
-                maybe_advance_stable_offset(w);
-                return ss::make_ready_future<>();
-            }).finally([u = std::move(u)] {});
-         }).finally([prev] {});
+      [h,
+       w,
+       this,
+       start_offset,
+       expected,
+       src,
+       prev,
+       units = std::move(units),
+       full]() mutable {
+          return units
+            .then([this, h, w, start_offset, expected, src, full](
+                    ss::semaphore_units<> u) mutable {
+                return _out
+                  .dma_write(start_offset, src, expected, _opts.priority)
+                  .then([this, h, w, expected, full](size_t got) {
+                      /*
+                       * the continuation that captured full=true is the end of
+                       * the dependency chain for this chunk. it can be returned
+                       * to cache.
+                       */
+                      if (full) {
+                          h->reset();
+                          internal::chunks().add(h);
+                      }
+                      if (unlikely(expected != got)) {
+                          return size_missmatch_error(
+                            "chunk::write", expected, got);
+                      }
+                      maybe_advance_stable_offset(w);
+                      return ss::make_ready_future<>();
+                  })
+                  .finally([u = std::move(u)] {});
+            })
+            .finally([prev] {});
       })
       .handle_exception([this](std::exception_ptr e) {
           vassert(false, "Could not dma_write: {} - {}", e, *this);
