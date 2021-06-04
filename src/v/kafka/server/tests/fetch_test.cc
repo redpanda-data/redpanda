@@ -594,3 +594,69 @@ FIXTURE_TEST(fetch_multi_topics, redpanda_thread_fixture) {
     }
     BOOST_REQUIRE_GT(total_size, 0);
 }
+
+FIXTURE_TEST(fetch_request_max_bytes, redpanda_thread_fixture) {
+    model::topic topic("foo");
+    model::partition_id pid(0);
+    model::offset offset(0);
+    auto ntp = make_default_ntp(topic, pid);
+
+    wait_for_controller_leadership().get0();
+
+    add_topic(model::topic_namespace_view(ntp)).get();
+    wait_for_partition_offset(ntp, model::offset(0)).get0();
+    // append some data
+    auto shard = app.shard_table.local().shard_for(ntp);
+    app.partition_manager
+      .invoke_on(
+        *shard,
+        [ntp](cluster::partition_manager& mgr) {
+            auto partition = mgr.get(ntp);
+            auto batches = storage::test::make_random_batches(
+              model::offset(0), 20);
+            auto rdr = model::make_memory_record_batch_reader(
+              std::move(batches));
+            return partition->replicate(
+              std::move(rdr),
+              raft::replicate_options(raft::consistency_level::quorum_ack));
+        })
+      .get();
+
+    auto fetch = [this, &topic, &pid](int32_t max_bytes) {
+        kafka::fetch_request req;
+        req.data.max_bytes = max_bytes;
+        req.data.min_bytes = 1;
+        req.data.max_wait_ms = std::chrono::milliseconds(0);
+        req.data.session_id = kafka::invalid_fetch_session_id;
+        req.data.topics = {{
+          .name = topic,
+          .fetch_partitions = {{
+            .partition_index = pid,
+            .fetch_offset = model::offset(0),
+          }},
+        }};
+
+        auto client = make_kafka_client().get();
+        client.connect().get();
+        auto fresp = client.dispatch(req, kafka::api_version(4));
+
+        auto resp = fresp.get();
+        client.stop().then([&client] { client.shutdown(); }).get();
+        return resp;
+    };
+    auto fetch_one_byte = fetch(1);
+    /**
+     * At least one record has to be returned since KiP-74
+     */
+    BOOST_REQUIRE(fetch_one_byte.data.topics.size() == 1);
+    BOOST_REQUIRE(fetch_one_byte.data.topics[0].name == topic());
+    BOOST_REQUIRE(fetch_one_byte.data.topics[0].partitions.size() == 1);
+    BOOST_REQUIRE(
+      fetch_one_byte.data.topics[0].partitions[0].error_code
+      == kafka::error_code::none);
+    BOOST_REQUIRE(
+      fetch_one_byte.data.topics[0].partitions[0].partition_index == pid);
+    BOOST_REQUIRE(fetch_one_byte.data.topics[0].partitions[0].records);
+    BOOST_REQUIRE(
+      fetch_one_byte.data.topics[0].partitions[0].records->size_bytes() > 0);
+}
