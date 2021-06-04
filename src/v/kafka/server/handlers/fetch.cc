@@ -296,7 +296,13 @@ static void fill_fetch_responses(
         resp.high_watermark = res.high_watermark;
         resp.last_stable_offset = res.last_stable_offset;
 
-        if (res.has_data() && octx.bytes_left >= res.data_size_bytes()) {
+        /**
+         * According to KIP-74 we have to return first batch even if it would
+         * violate max_bytes fetch parameter
+         */
+        if (
+          res.has_data()
+          && (octx.bytes_left >= res.data_size_bytes() || octx.response_size == 0)) {
             /**
              * set aborted transactions if present
              */
