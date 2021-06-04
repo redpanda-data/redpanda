@@ -22,7 +22,7 @@ spec:
          enabled: true
     pandaproxyApi:
      - port: 8082
-     - tls:
+       tls:
          enabled: true
     adminApi:
     - port: 9644
