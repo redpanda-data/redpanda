@@ -2,7 +2,6 @@ module github.com/vectorizedio/redpanda/src/go/rpk
 
 require (
 	cloud.google.com/go v0.26.0
-	github.com/Azure/go-ansiterm v0.0.0-20170929234023-d6e3b3328b78 // indirect
 	github.com/Microsoft/go-winio v0.4.12 // indirect
 	github.com/Shopify/sarama v1.28.1-0.20210318150015-41df78df10a9
 	github.com/avast/retry-go v2.6.0+incompatible
@@ -17,6 +16,7 @@ require (
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.4.0
 	github.com/fatih/color v1.7.0
+	github.com/google/go-cmp v0.5.6 // indirect
 	github.com/google/uuid v1.1.1
 	github.com/hashicorp/go-multierror v1.1.0
 	github.com/icza/dyno v0.0.0-20200205103839-49cb13720835
@@ -28,6 +28,7 @@ require (
 	github.com/mattn/go-colorable v0.1.2 // indirect
 	github.com/mattn/go-runewidth v0.0.4 // indirect
 	github.com/mitchellh/mapstructure v1.4.1
+	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635 // indirect
 	github.com/morikuni/aec v0.0.0-20170113033406-39771216ff4c // indirect
 	github.com/olekukonko/tablewriter v0.0.1
 	github.com/opencontainers/go-digest v1.0.0-rc1 // indirect
@@ -48,7 +49,7 @@ require (
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	golang.org/x/sys v0.0.0-20210112091331-59c308dcf3cc
 	gopkg.in/yaml.v2 v2.4.0
-	gotest.tools v2.2.0+incompatible // indirect
+	gotest.tools/v3 v3.0.3 // indirect
 	mvdan.cc/sh/v3 v3.2.1
 )
 
