@@ -146,7 +146,7 @@ tasks:
     - mkdir -p '{{.BUILD_ROOT}}/ducktape/config/metadata'
     - docker run --rm --privileged
         --name ducktape
-        --network redpanda
+        --network redpanda-test
         --volume '{{.BUILD_ROOT}}/ducktape/config/:/root/.ducktape/'
         --volume '{{.BUILD_ROOT}}/ducktape/:/build/tests/'
         --volume '{{.BUILD_ROOT}}:{{.BUILD_ROOT}}'

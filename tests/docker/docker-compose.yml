@@ -1,8 +1,8 @@
 version: '3'
 
 networks:
-  redpanda:
-    name: redpanda
+  redpanda-test:
+    name: redpanda-test
     driver: bridge
 
 services:
@@ -27,7 +27,7 @@ services:
       timeout: 20s
     image: minio/minio:RELEASE.2021-03-26T00-00-41Z
     networks:
-    - redpanda
+    - redpanda-test
 
   n1: &node
     image: vectorized/redpanda-test-node
@@ -37,7 +37,7 @@ services:
     volumes:
     - '${BUILD_ROOT}:${BUILD_ROOT}'
     networks:
-    - redpanda
+    - redpanda-test
   n2: *node
   n3: *node
   n4: *node
