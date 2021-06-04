@@ -798,6 +798,9 @@ void rm_stm::became_leader() {
     if (_gate.is_closed()) {
         return;
     }
+    if (!_is_autoabort_enabled) {
+        return;
+    }
     if (!auto_abort_timer.armed()) {
         abort_old_txes();
     }
@@ -813,6 +816,9 @@ void rm_stm::track_tx(
     }
     _mem_state.expiration[pid] = expiration_info{
       .timeout = transaction_timeout_ms, .last_update = clock_type::now()};
+    if (!_is_autoabort_enabled) {
+        return;
+    }
     auto deadline = _mem_state.expiration[pid].deadline();
     if (auto_abort_timer.armed() && auto_abort_timer.get_timeout() > deadline) {
         auto_abort_timer.cancel();

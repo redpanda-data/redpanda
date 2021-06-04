@@ -36,6 +36,7 @@ FIXTURE_TEST(
     start_raft();
 
     cluster::rm_stm stm(logger, _raft.get());
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -86,6 +87,7 @@ FIXTURE_TEST(
     start_raft();
 
     cluster::rm_stm stm(logger, _raft.get());
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -135,6 +137,7 @@ FIXTURE_TEST(test_rm_stm_prevents_duplicates, mux_state_machine_fixture) {
     start_raft();
 
     cluster::rm_stm stm(logger, _raft.get());
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -185,6 +188,7 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
     start_raft();
 
     cluster::rm_stm stm(logger, _raft.get());
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -236,6 +240,7 @@ FIXTURE_TEST(
     start_raft();
 
     cluster::rm_stm stm(logger, _raft.get());
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });

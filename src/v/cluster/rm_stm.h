@@ -108,6 +108,8 @@ public:
 
     ss::future<> stop() override;
 
+    void testing_only_disable_auto_abort() { _is_autoabort_enabled = false; }
+
 private:
     ss::future<checked<model::term_id, tx_errc>> do_begin_tx(
       model::producer_identity, model::tx_seq, std::chrono::milliseconds);
@@ -261,6 +263,7 @@ private:
     model::violation_recovery_policy _recovery_policy;
     std::chrono::milliseconds _transactional_id_expiration;
     bool _is_leader{false};
+    bool _is_autoabort_enabled{true};
 };
 
 } // namespace cluster

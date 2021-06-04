@@ -65,6 +65,7 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
     start_raft();
 
     cluster::rm_stm stm(logger, _raft.get());
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -135,6 +136,7 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
     start_raft();
 
     cluster::rm_stm stm(logger, _raft.get());
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -207,6 +209,7 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
     start_raft();
 
     cluster::rm_stm stm(logger, _raft.get());
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -283,6 +286,7 @@ FIXTURE_TEST(test_tx_unknown_produce, mux_state_machine_fixture) {
     start_raft();
 
     cluster::rm_stm stm(logger, _raft.get());
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -317,6 +321,7 @@ FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
     start_raft();
 
     cluster::rm_stm stm(logger, _raft.get());
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -371,6 +376,7 @@ FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
     start_raft();
 
     cluster::rm_stm stm(logger, _raft.get());
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
