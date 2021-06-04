@@ -306,10 +306,10 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
         // tx's etag is old it will be bumped by re_register_producer
     } else if (tx.status == tm_transaction::tx_status::ongoing) {
         r = co_await do_abort_tm_tx(
-          stm, tx, timeout, ss::make_lw_shared<ss::shared_promise<tx_errc>>());
+          stm, tx, timeout, ss::make_lw_shared<available_promise<tx_errc>>());
     } else if (tx.status == tm_transaction::tx_status::preparing) {
         r = co_await do_commit_tm_tx(
-          stm, tx, timeout, ss::make_lw_shared<ss::shared_promise<tx_errc>>());
+          stm, tx, timeout, ss::make_lw_shared<available_promise<tx_errc>>());
     } else {
         tx_errc ec;
         if (tx.status == tm_transaction::tx_status::prepared) {
@@ -612,13 +612,13 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
                 end_tx_reply{.error_code = tx_errc::unknown_server_error});
           }
 
-          auto outcome = ss::make_lw_shared<ss::shared_promise<tx_errc>>();
+          auto outcome = ss::make_lw_shared<available_promise<tx_errc>>();
           // commit_tm_tx and abort_tm_tx remove transient data during its
           // execution. however the outcome of the commit/abort operation
           // is already known before the cleanup started. to optimize this
           // they return the outcome promise to return the outcome before
           // cleaning up and before returing the actual control flow
-          auto decided = outcome->get_shared_future();
+          auto decided = outcome->get_future();
 
           (void)ss::with_gate(
             self._gate,
@@ -654,7 +654,7 @@ tx_gateway_frontend::do_end_txn(
   end_tx_request request,
   ss::shared_ptr<cluster::tm_stm> stm,
   model::timeout_clock::duration timeout,
-  ss::lw_shared_ptr<ss::shared_promise<tx_errc>> outcome) {
+  ss::lw_shared_ptr<available_promise<tx_errc>> outcome) {
     auto maybe_tx = co_await stm->get_actual_tx(request.transactional_id);
     if (!maybe_tx) {
         outcome->set_value(tx_errc::request_rejected);
@@ -697,7 +697,7 @@ tx_gateway_frontend::do_abort_tm_tx(
   ss::shared_ptr<cluster::tm_stm> stm,
   cluster::tm_transaction tx,
   model::timeout_clock::duration timeout,
-  ss::lw_shared_ptr<ss::shared_promise<tx_errc>> outcome) {
+  ss::lw_shared_ptr<available_promise<tx_errc>> outcome) {
     if (tx.status == tm_transaction::tx_status::ready) {
         if (stm->is_actual_term(tx.etag)) {
             // client should start a transaction before attempting to
@@ -762,7 +762,7 @@ tx_gateway_frontend::do_commit_tm_tx(
   ss::shared_ptr<cluster::tm_stm> stm,
   cluster::tm_transaction tx,
   model::timeout_clock::duration timeout,
-  ss::lw_shared_ptr<ss::shared_promise<tx_errc>> outcome) {
+  ss::lw_shared_ptr<available_promise<tx_errc>> outcome) {
     if (tx.status != tm_transaction::tx_status::ongoing) {
         outcome->set_value(tx_errc::request_rejected);
         co_return tx_errc::request_rejected;
