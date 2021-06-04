@@ -121,6 +121,112 @@ ss::future<std::optional<model::node_id>> tx_gateway_frontend::get_tx_broker() {
     });
 }
 
+ss::future<try_abort_reply> tx_gateway_frontend::try_abort(
+  model::partition_id tm,
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  model::timeout_clock::duration timeout) {
+    if (!_metadata_cache.local().contains(
+          model::tx_manager_nt, model::tx_manager_ntp.tp.partition)) {
+        vlog(
+          clusterlog.warn, "can't find {}/0 partition", model::tx_manager_nt);
+        co_return try_abort_reply{.ec = tx_errc::partition_not_exists};
+    }
+
+    auto leader_opt = _leaders.local().get_leader(model::tx_manager_ntp);
+
+    auto retries = _metadata_dissemination_retries;
+    auto delay_ms = _metadata_dissemination_retry_delay_ms;
+    auto aborted = false;
+    while (!aborted && !leader_opt && 0 < retries--) {
+        aborted = !co_await sleep_abortable(delay_ms);
+        leader_opt = _leaders.local().get_leader(model::tx_manager_ntp);
+    }
+
+    if (!leader_opt) {
+        vlog(
+          clusterlog.warn, "can't find a leader for {}", model::tx_manager_ntp);
+        co_return try_abort_reply{.ec = tx_errc::leader_not_found};
+    }
+
+    auto leader = leader_opt.value();
+    auto _self = _controller->self();
+
+    if (leader == _self) {
+        co_return co_await try_abort_locally(tm, pid, tx_seq, timeout);
+    }
+
+    vlog(
+      clusterlog.trace, "dispatching try_abort to {} from {}", leader, _self);
+
+    co_return co_await dispatch_try_abort(leader, tm, pid, tx_seq, timeout);
+}
+
+ss::future<try_abort_reply> tx_gateway_frontend::try_abort_locally(
+  model::partition_id tm,
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  model::timeout_clock::duration timeout) {
+    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+
+    auto retries = _metadata_dissemination_retries;
+    auto delay_ms = _metadata_dissemination_retry_delay_ms;
+    auto aborted = false;
+    while (!aborted && !shard && 0 < retries--) {
+        aborted = !co_await sleep_abortable(delay_ms);
+        shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+    }
+
+    if (!shard) {
+        vlog(
+          clusterlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
+        co_return try_abort_reply{.ec = tx_errc::shard_not_found};
+    }
+
+    co_return co_await do_try_abort(*shard, tm, pid, tx_seq, timeout);
+}
+
+ss::future<try_abort_reply> tx_gateway_frontend::dispatch_try_abort(
+  model::node_id leader,
+  model::partition_id tm,
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  model::timeout_clock::duration timeout) {
+    return _connection_cache.local()
+      .with_node_client<tx_gateway_client_protocol>(
+        _controller->self(),
+        ss::this_shard_id(),
+        leader,
+        timeout,
+        [tm, pid, tx_seq, timeout](tx_gateway_client_protocol cp) {
+            return cp.try_abort(
+              try_abort_request{
+                .tm = tm, .pid = pid, .tx_seq = tx_seq, .timeout = timeout},
+              rpc::client_opts(model::timeout_clock::now() + timeout));
+        })
+      .then(&rpc::get_ctx_data<try_abort_reply>)
+      .then([](result<try_abort_reply> r) {
+          if (r.has_error()) {
+              vlog(
+                clusterlog.warn,
+                "got error {} on remote init tm tx",
+                r.error());
+              return try_abort_reply{.ec = tx_errc::unknown_server_error};
+          }
+
+          return r.value();
+      });
+}
+
+ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
+  ss::shard_id,
+  model::partition_id,
+  model::producer_identity,
+  model::tx_seq,
+  model::timeout_clock::duration) {
+    co_return try_abort_reply{.ec = tx_errc::none};
+}
+
 ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
@@ -157,7 +263,8 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
           tx_id, transaction_timeout_ms, timeout);
     }
 
-    vlog(clusterlog.trace, "dispatching abort tx to {} from {}", leader, _self);
+    vlog(
+      clusterlog.trace, "dispatching init_tm_tx to {} from {}", leader, _self);
 
     co_return co_await dispatch_init_tm_tx(
       leader, tx_id, transaction_timeout_ms, timeout);

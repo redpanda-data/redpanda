@@ -41,6 +41,16 @@ public:
       ss::sharded<cluster::rm_partition_frontend>&);
 
     ss::future<std::optional<model::node_id>> get_tx_broker();
+    ss::future<try_abort_reply> try_abort(
+      model::partition_id,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
+    ss::future<try_abort_reply> try_abort_locally(
+      model::partition_id,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
     ss::future<init_tm_tx_reply> init_tm_tx(
       kafka::transactional_id,
       std::chrono::milliseconds transaction_timeout_ms,
@@ -79,6 +89,19 @@ private:
       ss::shared_ptr<tm_stm>,
       model::producer_identity,
       kafka::transactional_id,
+      model::timeout_clock::duration);
+
+    ss::future<try_abort_reply> dispatch_try_abort(
+      model::node_id,
+      model::partition_id,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
+    ss::future<try_abort_reply> do_try_abort(
+      ss::shard_id,
+      model::partition_id,
+      model::producer_identity,
+      model::tx_seq,
       model::timeout_clock::duration);
 
     ss::future<cluster::init_tm_tx_reply> dispatch_init_tm_tx(
