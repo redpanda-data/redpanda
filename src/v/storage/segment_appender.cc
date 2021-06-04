@@ -277,26 +277,28 @@ ss::future<> segment_appender::truncate(size_t n) {
       "Cannot ask to truncate at:{} which is more bytes than we have:{} - {}",
       file_byte_offset(),
       *this);
-    return hard_flush().then([this, n] { return do_truncation(n); }).then([this, n] {
-        _committed_offset = n;
-        _fallocation_offset = n;
-        _flushed_offset = n;
-        _stable_offset = n;
-        auto f = ss::now();
-        if (_head) {
-            // NOTE: Important to reset chunks for offset accounting.  reset any
-            // partial state, since after the truncate, it makes no sense to
-            // keep any old state/pointers/sizes, etc
-            _head->reset();
-        } else {
-            // https://github.com/vectorizedio/redpanda/issues/43
-            f = internal::chunks().get().then(
-              [this](ss::lw_shared_ptr<chunk> chunk) {
-                  _head = std::move(chunk);
-              });
-        }
-        return f.then([this] { return hydrate_last_half_page(); });
-    });
+    return hard_flush()
+      .then([this, n] { return do_truncation(n); })
+      .then([this, n] {
+          _committed_offset = n;
+          _fallocation_offset = n;
+          _flushed_offset = n;
+          _stable_offset = n;
+          auto f = ss::now();
+          if (_head) {
+              // NOTE: Important to reset chunks for offset accounting.  reset
+              // any partial state, since after the truncate, it makes no sense
+              // to keep any old state/pointers/sizes, etc
+              _head->reset();
+          } else {
+              // https://github.com/vectorizedio/redpanda/issues/43
+              f = internal::chunks().get().then(
+                [this](ss::lw_shared_ptr<chunk> chunk) {
+                    _head = std::move(chunk);
+                });
+          }
+          return f.then([this] { return hydrate_last_half_page(); });
+      });
 }
 
 ss::future<> segment_appender::close() {
@@ -523,9 +525,11 @@ ss::future<> segment_appender::flush() {
         return w.p.get_future();
     }
 
-    vassert(file_byte_offset() <= _stable_offset,
-        "No inflight writes but eof {} > stable offset {}",
-        file_byte_offset(), _stable_offset);
+    vassert(
+      file_byte_offset() <= _stable_offset,
+      "No inflight writes but eof {} > stable offset {}",
+      file_byte_offset(),
+      _stable_offset);
 
     return _out.flush().handle_exception([this](std::exception_ptr e) {
         vassert(false, "Could not flush: {} - {}", e, *this);
@@ -545,8 +549,10 @@ ss::future<> segment_appender::hard_flush() {
                    _prev_head_write->available_units() == 1,
                    "Unexpected pending head write {}",
                    *this);
-                 vassert(_flush_ops.empty(),
-                    "Pending flushes after hard flush {}", *this);
+                 vassert(
+                   _flush_ops.empty(),
+                   "Pending flushes after hard flush {}",
+                   *this);
                  return _out.flush();
              })
       .handle_exception([this](std::exception_ptr e) {
