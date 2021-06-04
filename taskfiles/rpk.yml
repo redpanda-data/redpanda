@@ -22,3 +22,13 @@ tasks:
            -X ${ver_pkg}.rev={{.SHORT_SHA}} \
            -X ${cont_pkg}.tag={{.RPK_VERSION}}" \
         -o "{{.BUILD_ROOT}}/go/$GOOS/bin" ./...
+  tidy:
+    desc: mod tidy rpk
+    env:
+      CGO_ENABLED: "0"
+    dir: "{{.SRC_DIR}}/src/go"
+    cmds:
+    - |
+      for dir in $(find . -maxdepth 1 -type d ! -path .); do
+        cd $dir; go mod tidy; cd ..
+      done
