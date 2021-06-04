@@ -160,7 +160,10 @@ static model::control_record_type parse_control_batch(model::record_batch& b) {
     return model::control_record_type(key_reader.read_int16());
 }
 
-rm_stm::rm_stm(ss::logger& logger, raft::consensus* c)
+rm_stm::rm_stm(
+  ss::logger& logger,
+  raft::consensus* c,
+  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend)
   : persisted_stm("rm", logger, c)
   , _oldest_session(model::timestamp::now())
   , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.value())
@@ -168,7 +171,8 @@ rm_stm::rm_stm(ss::logger& logger, raft::consensus* c)
   , _recovery_policy(
       config::shard_local_cfg().rm_violation_recovery_policy.value())
   , _transactional_id_expiration(
-      config::shard_local_cfg().transactional_id_expiration_ms.value()) {
+      config::shard_local_cfg().transactional_id_expiration_ms.value())
+  , _tx_gateway_frontend(tx_gateway_frontend) {
     if (_recovery_policy != crash && _recovery_policy != best_effort) {
         vassert(false, "Unknown recovery policy: {}", _recovery_policy);
     }

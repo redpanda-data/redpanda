@@ -26,9 +26,12 @@ static bool is_tx_manager_topic(const model::ntp& ntp) {
     return ntp == model::tx_manager_ntp;
 }
 
-partition::partition(consensus_ptr r)
+partition::partition(
+  consensus_ptr r,
+  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend)
   : _raft(r)
-  , _probe(std::make_unique<replicated_partition_probe>(*this)) {
+  , _probe(std::make_unique<replicated_partition_probe>(*this))
+  , _tx_gateway_frontend(tx_gateway_frontend) {
     auto stm_manager = _raft->log().stm_manager();
     if (is_id_allocator_topic(_raft->ntp())) {
         _id_allocator_stm = ss::make_lw_shared<cluster::id_allocator_stm>(
@@ -50,7 +53,8 @@ partition::partition(consensus_ptr r)
           = config::shard_local_cfg().enable_idempotence.value()
             || config::shard_local_cfg().enable_transactions.value();
         if (has_rm_stm) {
-            _rm_stm = ss::make_shared<cluster::rm_stm>(clusterlog, _raft.get());
+            _rm_stm = ss::make_shared<cluster::rm_stm>(
+              clusterlog, _raft.get(), _tx_gateway_frontend);
             stm_manager->add_stm(_rm_stm);
         }
     }

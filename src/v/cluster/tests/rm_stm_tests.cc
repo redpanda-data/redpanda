@@ -64,7 +64,8 @@ static rich_reader make_rreader(
 FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::rm_stm stm(logger, _raft.get());
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
@@ -135,7 +136,8 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
 FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::rm_stm stm(logger, _raft.get());
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
@@ -208,7 +210,8 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
 FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::rm_stm stm(logger, _raft.get());
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
@@ -285,7 +288,8 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
 FIXTURE_TEST(test_tx_unknown_produce, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::rm_stm stm(logger, _raft.get());
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
@@ -320,7 +324,8 @@ FIXTURE_TEST(test_tx_unknown_produce, mux_state_machine_fixture) {
 FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::rm_stm stm(logger, _raft.get());
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
@@ -375,7 +380,8 @@ FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
 FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::rm_stm stm(logger, _raft.get());
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
