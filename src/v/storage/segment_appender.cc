@@ -384,28 +384,30 @@ ss::future<> segment_appender::maybe_advance_stable_offset(
 }
 
 ss::future<> segment_appender::process_flush_ops(size_t committed) {
-    auto flushable = std::any_of(
-      _flush_ops.cbegin(), _flush_ops.cend(), [committed](const flush_op& op) {
-          return op.offset <= committed;
+    auto flushable = std::partition(
+      _flush_ops.begin(), _flush_ops.end(), [committed](const flush_op& w) {
+          return w.offset > committed;
       });
 
-    if (!flushable) {
+    if (flushable == _flush_ops.end()) {
         return ss::now();
     }
 
-    return _out.flush().then([this, committed] {
+    std::vector<flush_op> ops(
+      std::make_move_iterator(flushable),
+      std::make_move_iterator(_flush_ops.end()));
+
+    _flush_ops.erase(flushable, _flush_ops.end());
+
+    return _out.flush().then([this, committed, ops = std::move(ops)]() mutable {
         _flushed_offset = committed;
-
-        auto flushable = std::partition(
-          _flush_ops.begin(), _flush_ops.end(), [committed](const flush_op& w) {
-              return w.offset > committed;
-          });
-
-        for (auto it = flushable; it != _flush_ops.end(); ++it) {
-            it->p.set_value();
+        /*
+         * TODO: as an optimization, add a little house keeping to determine if
+         * eligible flush operations showed up while flush() was completing.
+         */
+        for (auto& op : ops) {
+            op.p.set_value();
         }
-
-        _flush_ops.erase(flushable, _flush_ops.end());
     });
 }
 
