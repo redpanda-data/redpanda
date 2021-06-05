@@ -529,9 +529,10 @@ ss::future<> segment_appender::flush() {
 
     vassert(
       file_byte_offset() <= _stable_offset,
-      "No inflight writes but eof {} > stable offset {}",
+      "No inflight writes but eof {} > stable offset {}: {}",
       file_byte_offset(),
-      _stable_offset);
+      _stable_offset,
+      *this);
 
     return _out.flush().handle_exception([this](std::exception_ptr e) {
         vassert(false, "Could not flush: {} - {}", e, *this);
