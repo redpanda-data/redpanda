@@ -227,7 +227,7 @@ private:
         absl::flat_hash_map<model::producer_identity, model::tx_seq> expected;
         // `preparing` helps to identify failed prepare requests and use them to
         // filter out stale abort requests
-        absl::flat_hash_map<model::producer_identity, model::tx_seq> preparing;
+        absl::flat_hash_map<model::producer_identity, prepare_marker> preparing;
         absl::flat_hash_map<model::producer_identity, expiration_info>
           expiration;
 

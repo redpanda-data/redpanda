@@ -319,8 +319,10 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
         co_return tx_errc::request_rejected;
     }
 
-    auto [preparing_it, _] = _mem_state.preparing.try_emplace(pid, tx_seq);
-    if (preparing_it->second != tx_seq) {
+    auto marker = prepare_marker{
+      .tm_partition = tm, .tx_seq = tx_seq, .pid = pid};
+    auto [_, inserted] = _mem_state.preparing.try_emplace(pid, marker);
+    if (!inserted) {
         vlog(
           clusterlog.error,
           "Can't prepare pid:{} - concurrent operation on the same session",
@@ -328,8 +330,7 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
         co_return tx_errc::conflict;
     }
 
-    auto batch = make_prepare_batch(
-      prepare_marker{.tm_partition = tm, .tx_seq = tx_seq, .pid = pid});
+    auto batch = make_prepare_batch(marker);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
     auto r = co_await _c->replicate(
       etag,
@@ -376,7 +377,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
     auto prepare_it = _log_state.prepared.find(pid);
 
     if (preparing_it != _mem_state.preparing.end()) {
-        if (preparing_it->second > tx_seq) {
+        if (preparing_it->second.tx_seq > tx_seq) {
             // - tm_stm & rm_stm failed during prepare
             // - during recovery tm_stm recommits its previous tx
             // - that commit (we're here) collides with "next" failed prepare
@@ -385,7 +386,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         }
 
         ss::sstring msg;
-        if (preparing_it->second == tx_seq) {
+        if (preparing_it->second.tx_seq == tx_seq) {
             msg = ssx::sformat(
               "Prepare hasn't completed => can't commit pid:{} tx_seq:{}",
               pid,
@@ -395,7 +396,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
               "Commit pid:{} tx_seq:{} conflicts with preparing tx_seq:{}",
               pid,
               tx_seq,
-              preparing_it->second);
+              preparing_it->second.tx_seq);
         }
 
         if (_recovery_policy == best_effort) {
@@ -480,10 +481,10 @@ abort_origin rm_stm::get_abort_origin(
 
     auto preparing_it = _mem_state.preparing.find(pid);
     if (preparing_it != _mem_state.preparing.end()) {
-        if (tx_seq < preparing_it->second) {
+        if (tx_seq < preparing_it->second.tx_seq) {
             return abort_origin::past;
         }
-        if (preparing_it->second < tx_seq) {
+        if (preparing_it->second.tx_seq < tx_seq) {
             return abort_origin::future;
         }
     }
