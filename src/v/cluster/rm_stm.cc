@@ -164,6 +164,7 @@ rm_stm::rm_stm(ss::logger& logger, raft::consensus* c)
   : persisted_stm("rm", logger, c)
   , _oldest_session(model::timestamp::now())
   , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.value())
+  , _tx_timeout_delay(config::shard_local_cfg().tx_timeout_delay_ms.value())
   , _recovery_policy(
       config::shard_local_cfg().rm_violation_recovery_policy.value())
   , _transactional_id_expiration(
@@ -879,7 +880,8 @@ rm_stm::abort_old_txes(std::vector<model::producer_identity> pids) {
     }
 
     if (earliest_deadline) {
-        auto deadline = earliest_deadline.value();
+        auto deadline = std::max(
+          earliest_deadline.value(), clock_type::now() + _tx_timeout_delay);
         if (
           auto_abort_timer.armed()
           && auto_abort_timer.get_timeout() > deadline) {

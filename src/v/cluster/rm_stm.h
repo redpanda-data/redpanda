@@ -260,6 +260,7 @@ private:
     ss::timer<clock_type> auto_abort_timer;
     model::timestamp _oldest_session;
     std::chrono::milliseconds _sync_timeout;
+    std::chrono::milliseconds _tx_timeout_delay;
     model::violation_recovery_policy _recovery_policy;
     std::chrono::milliseconds _transactional_id_expiration;
     bool _is_leader{false};

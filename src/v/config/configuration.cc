@@ -282,6 +282,12 @@ configuration::configuration()
       "Time to wait state catch up before rejecting a request",
       required::no,
       2000ms)
+  , tx_timeout_delay_ms(
+      *this,
+      "tx_timeout_delay_ms",
+      "Delay before scheduling next check for timed out transactions",
+      required::no,
+      1000ms)
   , rm_violation_recovery_policy(
       *this,
       "rm_violation_recovery_policy",
