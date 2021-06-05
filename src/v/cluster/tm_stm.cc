@@ -167,6 +167,8 @@ ss::future<tm_stm::op_status> tm_stm::re_register_producer(
     tx.partitions.clear();
     tx.groups.clear();
 
+    _pid_tx_id[pid] = tx_id;
+
     auto r = co_await update_tx(tx, tx.etag);
 
     if (!r.has_value()) {
@@ -198,6 +200,8 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
       .status = tm_transaction::tx_status::ready,
       .timeout_ms = transaction_timeout_ms};
     auto batch = serialize_tx(tx);
+
+    _pid_tx_id[pid] = tx_id;
 
     auto r = co_await replicate_quorum_ack(tx.etag, std::move(batch));
 
@@ -253,6 +257,7 @@ void tm_stm::load_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
 
     for (auto& entry : data.transactions) {
         _tx_table.try_emplace(entry.id, entry);
+        _pid_tx_id[entry.pid] = entry.id;
     }
     _last_snapshot_offset = data.offset;
     _insync_offset = data.offset;
@@ -330,6 +335,8 @@ ss::future<> tm_stm::apply(model::record_batch b) {
     if (!inserted) {
         tx_it->second = tx;
     }
+
+    _pid_tx_id[tx.pid] = tx.id;
 
     expire_old_txs();
 
