@@ -147,7 +147,7 @@ private:
 
     void track_tx(model::producer_identity, std::chrono::milliseconds);
     void abort_old_txes();
-    ss::future<> abort_old_txes(std::vector<model::producer_identity>);
+    ss::future<> abort_old_txes(absl::btree_set<model::producer_identity>);
     ss::future<> try_abort_old_tx(model::producer_identity);
     ss::future<> do_try_abort_old_tx(model::producer_identity);
 
