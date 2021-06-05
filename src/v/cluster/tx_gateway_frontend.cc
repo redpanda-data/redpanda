@@ -219,12 +219,135 @@ ss::future<try_abort_reply> tx_gateway_frontend::dispatch_try_abort(
 }
 
 ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
-  ss::shard_id,
+  ss::shard_id shard,
   model::partition_id,
-  model::producer_identity,
-  model::tx_seq,
-  model::timeout_clock::duration) {
-    co_return try_abort_reply{.ec = tx_errc::none};
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  model::timeout_clock::duration timeout) {
+    return container().invoke_on(
+      shard, _ssg, [pid, tx_seq, timeout](tx_gateway_frontend& self) {
+          auto partition = self._partition_manager.local().get(
+            model::tx_manager_ntp);
+          if (!partition) {
+              vlog(
+                clusterlog.warn,
+                "can't get partition by {} ntp",
+                model::tx_manager_ntp);
+              return ss::make_ready_future<try_abort_reply>(
+                try_abort_reply{.ec = tx_errc::partition_not_found});
+          }
+
+          auto stm = partition->tm_stm();
+
+          if (!stm) {
+              vlog(
+                clusterlog.warn,
+                "can't get tm stm of the {}' partition",
+                model::tx_manager_ntp);
+              return ss::make_ready_future<try_abort_reply>(
+                try_abort_reply{.ec = tx_errc::stm_not_found});
+          }
+
+          return stm->barrier().then([&self, stm, pid, tx_seq, timeout](
+                                       bool ready) {
+              if (!ready) {
+                  return ss::make_ready_future<try_abort_reply>(
+                    try_abort_reply{.ec = tx_errc::unknown_server_error});
+              }
+              auto tx_id_opt = stm->get_id_by_pid(pid);
+              if (!tx_id_opt) {
+                  return ss::make_ready_future<try_abort_reply>(
+                    try_abort_reply{.aborted = true, .ec = tx_errc::none});
+              }
+              auto tx_id = tx_id_opt.value();
+              return stm->get_tx_lock(tx_id)->with(
+                [&self, stm, tx_id, pid, tx_seq, timeout]() {
+                    return self.do_try_abort(stm, tx_id, pid, tx_seq, timeout);
+                });
+          });
+      });
+}
+
+ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
+  ss::shared_ptr<tm_stm> stm,
+  kafka::transactional_id transactional_id,
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  model::timeout_clock::duration timeout) {
+    auto maybe_tx = co_await stm->get_actual_tx(transactional_id);
+    if (!maybe_tx) {
+        // unknown tx => state was lost => can't be comitted => aborted
+        co_return try_abort_reply{.aborted = true, .ec = tx_errc::none};
+    }
+
+    auto tx = maybe_tx.value();
+
+    if (tx.pid != pid) {
+        // well, that's wierd, it may happen when the coordinator ended
+        // a transaction and initiated a new session for the same tx.id
+        // while the `try_abort` request was inflight
+        co_return try_abort_reply{.ec = tx_errc::request_rejected};
+    }
+
+    if (tx.tx_seq != tx_seq) {
+        // well, that's wierd, it may happen when the coordinator ended
+        // a transaction and started a new one when the `try_abort`
+        // request was inflight
+        co_return try_abort_reply{.ec = tx_errc::request_rejected};
+    }
+
+    if (tx.status == tm_transaction::tx_status::prepared) {
+        co_return try_abort_reply{.commited = true, .ec = tx_errc::none};
+    } else if (
+      tx.status == tm_transaction::tx_status::aborting
+      || tx.status == tm_transaction::tx_status::killed
+      || tx.status == tm_transaction::tx_status::ready) {
+        // when it's ready it means in-memory state was lost
+        // so can't be comitted and it's save to aborted
+        co_return try_abort_reply{.aborted = true, .ec = tx_errc::none};
+    } else if (tx.status == tm_transaction::tx_status::preparing) {
+        (void)ss::with_gate(_gate, [this, stm, tx, timeout] {
+            return stm->get_tx_lock(tx.id)->with([this, stm, tx, timeout]() {
+                return do_commit_tm_tx(stm, tx.id, tx.pid, tx.tx_seq, timeout);
+            });
+        });
+        co_return try_abort_reply{.ec = tx_errc::none};
+    } else if (tx.status == tm_transaction::tx_status::ongoing) {
+        auto killed_tx = co_await stm->try_change_status(
+          tx.id, cluster::tm_transaction::tx_status::killed);
+        if (!killed_tx.has_value()) {
+            co_return try_abort_reply{.ec = tx_errc::unknown_server_error};
+        }
+        co_return try_abort_reply{.aborted = true, .ec = tx_errc::none};
+    } else {
+        vlog(clusterlog.error, "unknown tx status: {}", tx.status);
+        co_return try_abort_reply{.ec = tx_errc::unknown_server_error};
+    }
+}
+
+ss::future<checked<cluster::tm_transaction, tx_errc>>
+tx_gateway_frontend::do_commit_tm_tx(
+  ss::shared_ptr<cluster::tm_stm> stm,
+  kafka::transactional_id tx_id,
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  model::timeout_clock::duration timeout) {
+    auto maybe_tx = co_await stm->get_actual_tx(tx_id);
+    if (!maybe_tx) {
+        co_return tx_errc::request_rejected;
+    }
+    auto tx = maybe_tx.value();
+    if (tx.pid != pid) {
+        co_return tx_errc::request_rejected;
+    }
+    if (tx.tx_seq != tx_seq) {
+        co_return tx_errc::request_rejected;
+    }
+    if (tx.status != tm_transaction::tx_status::preparing) {
+        co_return tx_errc::request_rejected;
+    }
+    co_return co_await do_commit_tm_tx(
+      stm, tx, timeout, ss::make_lw_shared<available_promise<tx_errc>>());
 }
 
 ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
