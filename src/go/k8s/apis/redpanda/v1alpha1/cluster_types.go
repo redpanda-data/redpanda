@@ -309,6 +309,11 @@ type SocketAddress struct {
 	Port int `json:"port,omitempty"`
 }
 
+const (
+	// MinimumMemoryPerCore the minimum amount of memory needed per core
+	MinimumMemoryPerCore = 2 * gb
+)
+
 func init() {
 	SchemeBuilder.Register(&Cluster{}, &ClusterList{})
 }
