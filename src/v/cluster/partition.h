@@ -42,14 +42,21 @@ public:
     ss::future<result<raft::replicate_result>>
     replicate(model::record_batch_reader&&, raft::replicate_options);
 
+    raft::replicate_stages
+    replicate_in_stages(model::record_batch_reader&&, raft::replicate_options);
+
     ss::future<result<raft::replicate_result>> replicate(
       model::term_id, model::record_batch_reader&&, raft::replicate_options);
 
-    ss::future<checked<raft::replicate_result, kafka::error_code>> replicate(
+    ss::future<result<raft::replicate_result>> replicate(
       model::batch_identity,
       model::record_batch_reader&&,
       raft::replicate_options);
 
+    raft::replicate_stages replicate_in_stages(
+      model::batch_identity,
+      model::record_batch_reader&&,
+      raft::replicate_options);
     /**
      * The reader is modified such that the max offset is configured to be
      * the minimum of the max offset requested and the committed index of the

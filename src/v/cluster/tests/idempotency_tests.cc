@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/errc.h"
 #include "cluster/rm_stm.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
@@ -177,9 +178,7 @@ FIXTURE_TEST(test_rm_stm_prevents_duplicates, mux_state_machine_fixture) {
                   raft::replicate_options(raft::consistency_level::quorum_ack))
                 .get0();
     BOOST_REQUIRE(
-      r2
-      == failure_type<kafka::error_code>(
-        kafka::error_code::out_of_order_sequence_number));
+      r2 == failure_type<cluster::errc>(cluster::errc::sequence_out_of_order));
 }
 
 FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
@@ -229,9 +228,7 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
                   raft::replicate_options(raft::consistency_level::quorum_ack))
                 .get0();
     BOOST_REQUIRE(
-      r2
-      == failure_type<kafka::error_code>(
-        kafka::error_code::out_of_order_sequence_number));
+      r2 == failure_type<cluster::errc>(cluster::errc::sequence_out_of_order));
 }
 
 FIXTURE_TEST(
@@ -266,7 +263,5 @@ FIXTURE_TEST(
                  raft::replicate_options(raft::consistency_level::quorum_ack))
                .get0();
     BOOST_REQUIRE(
-      r
-      == failure_type<kafka::error_code>(
-        kafka::error_code::out_of_order_sequence_number));
+      r == failure_type<cluster::errc>(cluster::errc::sequence_out_of_order));
 }

@@ -796,3 +796,74 @@ FIXTURE_TEST(test_big_batches_replication, raft_test_fixture) {
     auto logs = gr.read_all_logs();
     BOOST_REQUIRE(are_logs_the_same_length(logs));
 }
+struct request_ordering_test_fixture : public raft_test_fixture {
+    model::record_batch_reader make_indexed_batch_reader(int32_t idx) {
+        storage::record_batch_builder builder(
+          raft::data_batch_type, model::offset(0));
+
+        iobuf buf;
+        reflection::serialize(buf, idx);
+        builder.add_raw_kv({}, std::move(buf));
+
+        return model::make_memory_record_batch_reader(
+          {std::move(builder).build()});
+    }
+
+    ss::future<> replicate_indexed_batches(
+      consensus_ptr c, int count, raft::consistency_level consistency) {
+        std::vector<ss::future<result<raft::replicate_result>>> results;
+        for (int32_t i = 0; i < 20; ++i) {
+            auto r = c->replicate_in_stages(
+              make_indexed_batch_reader(i),
+              raft::replicate_options(consistency));
+            // wait for request to be enqueued before dispatching next one
+            // (comenting this out should cause this test to fail)
+            r.request_enqueued.get0();
+            results.push_back(std::move(r.replicate_finished));
+        }
+        return ss::when_all_succeed(results.begin(), results.end())
+          .discard_result();
+    }
+
+    void validate_batch_ordering(int count, raft_group& gr) {
+        for (auto& [id, batches] : gr.read_all_logs()) {
+            int32_t idx = 0;
+            BOOST_REQUIRE_GE(batches.size(), count);
+            for (auto& b : batches) {
+                if (b.header().type == raft::data_batch_type) {
+                    BOOST_REQUIRE_EQUAL(
+                      idx,
+                      reflection::from_iobuf<int32_t>(
+                        b.copy_records()[0].release_value()));
+                    ++idx;
+                }
+            }
+        }
+    }
+};
+
+FIXTURE_TEST(test_quorum_ack_write_ordering, request_ordering_test_fixture) {
+    raft_group gr = raft_group(raft::group_id(0), 1);
+    gr.enable_all();
+    auto leader_id = wait_for_group_leader(gr);
+    auto leader_raft = gr.get_member(leader_id).consensus;
+    replicate_indexed_batches(
+      leader_raft, 20, raft::consistency_level::quorum_ack)
+      .get0();
+    validate_logs_replication(gr);
+
+    validate_batch_ordering(20, gr);
+}
+
+FIXTURE_TEST(test_leader_ack_write_ordering, request_ordering_test_fixture) {
+    raft_group gr = raft_group(raft::group_id(0), 1);
+    gr.enable_all();
+    auto leader_id = wait_for_group_leader(gr);
+    auto leader_raft = gr.get_member(leader_id).consensus;
+    replicate_indexed_batches(
+      leader_raft, 20, raft::consistency_level::quorum_ack)
+      .get0();
+    validate_logs_replication(gr);
+
+    validate_batch_ordering(20, gr);
+}

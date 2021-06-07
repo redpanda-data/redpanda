@@ -103,10 +103,34 @@ reader_from_lcore_batch(model::record_batch&& batch) {
     return model::make_foreign_memory_record_batch_reader(std::move(batch));
 }
 
-static const failure_type<error_code>
-  not_leader_for_partition(error_code::not_leader_for_partition);
-static const failure_type<error_code>
-  out_of_order_sequence_number(error_code::out_of_order_sequence_number);
+static error_code map_produce_error_code(std::error_code ec) {
+    if (ec.category() == raft::error_category()) {
+        switch (static_cast<raft::errc>(ec.value())) {
+        case raft::errc::not_leader:
+            return error_code::not_leader_for_partition;
+        default:
+            return error_code::unknown_server_error;
+        }
+    }
+
+    if (ec.category() == cluster::error_category()) {
+        switch (static_cast<cluster::errc>(ec.value())) {
+        case cluster::errc::not_leader:
+            return error_code::not_leader_for_partition;
+        case cluster::errc::topic_not_exists:
+        case cluster::errc::partition_not_exists:
+            return error_code::unknown_topic_or_partition;
+        case cluster::errc::invalid_producer_epoch:
+            return error_code::invalid_producer_epoch;
+        case cluster::errc::sequence_out_of_order:
+            return error_code::out_of_order_sequence_number;
+        default:
+            return error_code::unknown_server_error;
+        }
+    }
+
+    return error_code::unknown_server_error;
+}
 
 /*
  * Caller is expected to catch errors that may be thrown while the kafka
@@ -122,7 +146,7 @@ static ss::future<produce_response::partition> partition_append(
     return partition
       ->replicate(bid, std::move(reader), acks_to_replicate_options(acks))
       .then_wrapped([partition, id, num_records = num_records](
-                      ss::future<checked<model::offset, kafka::error_code>> f) {
+                      ss::future<result<model::offset>> f) {
           produce_response::partition p{.partition_index = id};
           try {
               auto r = f.get0();
@@ -132,12 +156,8 @@ static ss::future<produce_response::partition> partition_append(
                   p.base_offset = model::offset(r.value() - (num_records - 1));
                   p.error_code = error_code::none;
                   partition->probe().add_records_produced(num_records);
-              } else if (r == not_leader_for_partition) {
-                  p.error_code = error_code::not_leader_for_partition;
-              } else if (r == out_of_order_sequence_number) {
-                  p.error_code = error_code::out_of_order_sequence_number;
               } else {
-                  p.error_code = error_code::unknown_server_error;
+                  p.error_code = map_produce_error_code(r.error());
               }
           } catch (...) {
               p.error_code = error_code::unknown_server_error;
