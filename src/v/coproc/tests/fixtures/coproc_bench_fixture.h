@@ -11,17 +11,13 @@
 
 #pragma once
 
-#include "coproc/logger.h"
 #include "coproc/tests/fixtures/coproc_test_fixture.h"
-#include "coproc/tests/fixtures/supervisor_test_fixture.h"
-#include "coproc/tests/utils/coprocessor.h"
-#include "coproc/tests/utils/event_publisher.h"
 #include "coproc/types.h"
 
 /// This harness brings up an entire redpanda fixture + the c++ implementation
 /// of the wasm engine. Use this fixture for when a complete end-to-end
 /// infrastructure is needed to perform some tests
-class router_test_fixture : public coproc_test_fixture {
+class coproc_bench_fixture : public coproc_test_fixture {
 private:
     struct push_action_tag;
     struct drain_action_tag;

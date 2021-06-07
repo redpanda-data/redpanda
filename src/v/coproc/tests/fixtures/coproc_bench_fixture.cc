@@ -9,11 +9,11 @@
  * by the Apache License, Version 2.0
  */
 
-#include "coproc/tests/fixtures/router_test_fixture.h"
+#include "coproc/tests/fixtures/coproc_bench_fixture.h"
 
-router_test_fixture::router_test_plan::all_opts
-router_test_fixture::build_simple_opts(log_layout_map data, std::size_t rate) {
-    using rtp = router_test_fixture::router_test_plan;
+coproc_bench_fixture::router_test_plan::all_opts
+coproc_bench_fixture::build_simple_opts(log_layout_map data, std::size_t rate) {
+    using rtp = coproc_bench_fixture::router_test_plan;
     rtp::all_opts results;
     rtp::options rate_opts = {.number_of_batches = rate, .number_of_pushes = 1};
     for (auto& [topic, n_partitions] : data) {
@@ -27,9 +27,9 @@ router_test_fixture::build_simple_opts(log_layout_map data, std::size_t rate) {
 }
 
 ss::future<std::tuple<
-  router_test_fixture::push_results,
-  router_test_fixture::drain_results>>
-router_test_fixture::start_benchmark(router_test_plan plan) {
+  coproc_bench_fixture::push_results,
+  coproc_bench_fixture::drain_results>>
+coproc_bench_fixture::start_benchmark(router_test_plan plan) {
     return send_all<push_action_tag>(std::move(plan.input))
       .then([this, output = std::move(plan.output)](push_results prs) mutable {
           return send_all<drain_action_tag>(std::move(output))
@@ -40,8 +40,8 @@ router_test_fixture::start_benchmark(router_test_plan plan) {
 }
 
 template<typename ActionTag>
-ss::future<router_test_fixture::action_results<ActionTag>>
-router_test_fixture::send_all(router_test_plan::all_opts options) {
+ss::future<coproc_bench_fixture::action_results<ActionTag>>
+coproc_bench_fixture::send_all(router_test_plan::all_opts options) {
     using ret_t = action_results<ActionTag>;
     return ss::do_with(
       ret_t(),
@@ -69,7 +69,7 @@ auto initial_mapped_value() {
 }
 
 template<typename ActionTag, typename ResultType>
-ss::future<ResultType> router_test_fixture::send_n_times(
+ss::future<ResultType> coproc_bench_fixture::send_n_times(
   const model::ntp& ntp, router_test_plan::options opts) {
     auto r = boost::irange<std::size_t>(0, opts.number_of_pushes);
     return ss::do_with(
@@ -94,7 +94,7 @@ ss::future<ResultType> router_test_fixture::send_n_times(
 }
 
 template<typename ActionTag, typename ResultType>
-ss::future<> router_test_fixture::do_action(
+ss::future<> coproc_bench_fixture::do_action(
   const model::ntp& ntp,
   std::size_t n_batches,
   std::size_t total_expected_batches,

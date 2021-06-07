@@ -8,7 +8,7 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "coproc/tests/fixtures/router_test_fixture.h"
+#include "coproc/tests/fixtures/coproc_bench_fixture.h"
 #include "coproc/tests/utils/coprocessor.h"
 #include "coproc/types.h"
 #include "model/fundamental.h"
@@ -21,7 +21,7 @@
 
 using copro_typeid = coproc::registry::type_identifier;
 
-FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
+FIXTURE_TEST(test_coproc_router_multi_route, coproc_bench_fixture) {
     /// Topics that coprocessors will consume from
     const model::topic input_one("one");
     const model::topic input_two("two");
@@ -71,13 +71,13 @@ FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
     }
 }
 
-FIXTURE_TEST(test_coproc_router_giant_fanin, router_test_fixture) {
+FIXTURE_TEST(test_coproc_router_giant_fanin, coproc_bench_fixture) {
     const std::size_t n_copros = 50;
     const std::size_t n_partitions = 10;
     const model::topic source_topic("sole_input");
     const model::topic output_topic = model::to_materialized_topic(
       source_topic, identity_coprocessor::identity_topic);
-    std::vector<coproc::wasm::event_publisher::deploy> deploys;
+    std::vector<coproc_fixture_iface::deploy> deploys;
     for (uint64_t i = 0; i < n_copros; ++i) {
         deploys.push_back(
           {.id = i,
@@ -107,11 +107,11 @@ FIXTURE_TEST(test_coproc_router_giant_fanin, router_test_fixture) {
     BOOST_CHECK_EQUAL(n_record_batches, expected_record_batches);
 }
 
-FIXTURE_TEST(test_coproc_router_giant_one_to_many, router_test_fixture) {
+FIXTURE_TEST(test_coproc_router_giant_one_to_many, coproc_bench_fixture) {
     const std::size_t n_copros = 25;
     const std::size_t n_partitions = 5;
     const model::topic source_topic("input");
-    std::vector<coproc::wasm::event_publisher::deploy> deploys;
+    std::vector<coproc_fixture_iface::deploy> deploys;
     for (uint64_t i = 0; i < n_copros; ++i) {
         deploys.push_back(
           {.id = i,

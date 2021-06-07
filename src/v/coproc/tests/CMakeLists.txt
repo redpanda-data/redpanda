@@ -4,7 +4,7 @@ set(fixture_srcs
     utils/wasm_event_generator.cc
     fixtures/coproc_slim_fixture.cc
     fixtures/coproc_test_fixture.cc
-    fixtures/router_test_fixture.cc
+    fixtures/coproc_bench_fixture.cc
 )
 
 set(fixture_deps
@@ -19,7 +19,7 @@ rp_test(
     script_dispatcher_tests.cc
     failure_recovery_tests.cc
     pacemaker_tests.cc
-    router_test.cc
+    coproc_bench_tests.cc
     offset_storage_utils_tests.cc
     wasm_event_tests.cc
     event_listener_tests.cc
