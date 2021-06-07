@@ -177,7 +177,7 @@ func CreateProducer(
 	brokers func() []string,
 	configuration func() (*config.Config, error),
 	tlsConfig func() (*config.TLS, error),
-	authConfig func() (*config.SCRAM, error),
+	authConfig func() (*config.SASL, error),
 ) func(bool, int32) (sarama.SyncProducer, error) {
 	return func(jvmPartitioner bool, partition int32) (sarama.SyncProducer, error) {
 		conf, err := configuration()
@@ -195,19 +195,19 @@ func CreateProducer(
 			tls = &conf.Rpk.TLS
 		}
 
-		scram, err := authConfig()
+		sasl, err := authConfig()
 		if err != nil {
 			// If the user passed the credentials and there was still an
 			// error, return it.
 			if !errors.Is(err, ErrNoCredentials) {
 				return nil, err
 			}
-			// If no SCRAM config was set, try to look for it in the
+			// If no SASL config was set, try to look for it in the
 			// config file.
-			scram = &conf.Rpk.SCRAM
+			sasl = &conf.Rpk.SASL
 		}
 
-		cfg, err := kafka.LoadConfig(tls, scram)
+		cfg, err := kafka.LoadConfig(tls, sasl)
 		if err != nil {
 			return nil, err
 		}
@@ -227,7 +227,7 @@ func CreateClient(
 	brokers func() []string,
 	configuration func() (*config.Config, error),
 	tlsConfig func() (*config.TLS, error),
-	authConfig func() (*config.SCRAM, error),
+	authConfig func() (*config.SASL, error),
 ) func() (sarama.Client, error) {
 	return func() (sarama.Client, error) {
 		conf, err := configuration()
@@ -244,20 +244,20 @@ func CreateClient(
 			tls = &conf.Rpk.TLS
 		}
 
-		scram, err := authConfig()
+		sasl, err := authConfig()
 		if err != nil {
 			// If the user passed the credentials and there was still an
 			// error, return it.
 			if !errors.Is(err, ErrNoCredentials) {
 				return nil, err
 			}
-			// If no SCRAM config was set, try to look for it in the
+			// If no SASL config was set, try to look for it in the
 			// config file.
-			scram = &conf.Rpk.SCRAM
+			sasl = &conf.Rpk.SASL
 		}
 
 		bs := brokers()
-		client, err := kafka.InitClientWithConf(tls, scram, bs...)
+		client, err := kafka.InitClientWithConf(tls, sasl, bs...)
 		return client, wrapConnErr(err, bs)
 	}
 }
@@ -266,7 +266,7 @@ func CreateAdmin(
 	brokers func() []string,
 	configuration func() (*config.Config, error),
 	tlsConfig func() (*config.TLS, error),
-	authConfig func() (*config.SCRAM, error),
+	authConfig func() (*config.SASL, error),
 ) func() (sarama.ClusterAdmin, error) {
 	return func() (sarama.ClusterAdmin, error) {
 		var err error
@@ -285,19 +285,19 @@ func CreateAdmin(
 			tls = &conf.Rpk.TLS
 		}
 
-		scram, err := authConfig()
+		sasl, err := authConfig()
 		if err != nil {
 			// If the user passed the credentials and there was still an
 			// error, return it.
 			if !errors.Is(err, ErrNoCredentials) {
 				return nil, err
 			}
-			// If no SCRAM config was set, try to look for it in the
+			// If no SASL config was set, try to look for it in the
 			// config file.
-			scram = &conf.Rpk.SCRAM
+			sasl = &conf.Rpk.SASL
 		}
 
-		cfg, err := kafka.LoadConfig(tls, scram)
+		cfg, err := kafka.LoadConfig(tls, sasl)
 		if err != nil {
 			return nil, err
 		}
@@ -310,8 +310,8 @@ func CreateAdmin(
 
 func KafkaAuthConfig(
 	user, password, mechanism *string,
-) func() (*config.SCRAM, error) {
-	return func() (*config.SCRAM, error) {
+) func() (*config.SASL, error) {
+	return func() (*config.SASL, error) {
 		u := *user
 		p := *password
 		m := *mechanism
@@ -345,10 +345,10 @@ func KafkaAuthConfig(
 				sarama.SASLTypeSCRAMSHA512,
 			)
 		}
-		return &config.SCRAM{
-			User:     u,
-			Password: p,
-			Type:     m,
+		return &config.SASL{
+			User:      u,
+			Password:  p,
+			Mechanism: m,
 		}, nil
 	}
 }

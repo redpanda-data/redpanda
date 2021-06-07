@@ -267,7 +267,7 @@ func TestKafkaAuthConfig(t *testing.T) {
 		mechanism      string
 		before         func()
 		cleanup        func()
-		expected       *config.SCRAM
+		expected       *config.SASL
 		expectedErrMsg string
 	}{{
 		name:           "it should fail if user is empty",
@@ -292,13 +292,13 @@ func TestKafkaAuthConfig(t *testing.T) {
 		user:      "usuario",
 		password:  "contraseño",
 		mechanism: "SCRAM-SHA-256",
-		expected:  &config.SCRAM{User: "usuario", Password: "contraseño", Type: "SCRAM-SHA-256"},
+		expected:  &config.SASL{User: "usuario", Password: "contraseño", Mechanism: "SCRAM-SHA-256"},
 	}, {
 		name:      "it should support SCRAM-SHA-512",
 		user:      "usuario",
 		password:  "contraseño",
 		mechanism: "SCRAM-SHA-512",
-		expected:  &config.SCRAM{User: "usuario", Password: "contraseño", Type: "SCRAM-SHA-512"},
+		expected:  &config.SASL{User: "usuario", Password: "contraseño", Mechanism: "SCRAM-SHA-512"},
 	}, {
 		name: "it should pick up the values from env vars if the vars' values is empty",
 		before: func() {
@@ -311,7 +311,7 @@ func TestKafkaAuthConfig(t *testing.T) {
 			os.Unsetenv("REDPANDA_SASL_PASSWORD")
 			os.Unsetenv("REDPANDA_SASL_MECHANISM")
 		},
-		expected: &config.SCRAM{User: "ringo", Password: "octopussgarden66", Type: "SCRAM-SHA-512"},
+		expected: &config.SASL{User: "ringo", Password: "octopussgarden66", Mechanism: "SCRAM-SHA-512"},
 	}, {
 		name:      "it should give priority to values set through the flags",
 		user:      "usuario",
@@ -328,7 +328,7 @@ func TestKafkaAuthConfig(t *testing.T) {
 			os.Unsetenv("REDPANDA_SASL_MECHANISM")
 		},
 		// Disregards the env vars' values
-		expected: &config.SCRAM{User: "usuario", Password: "contraseño", Type: "SCRAM-SHA-512"},
+		expected: &config.SASL{User: "usuario", Password: "contraseño", Mechanism: "SCRAM-SHA-512"},
 	}}
 
 	for _, tt := range tests {
@@ -461,7 +461,7 @@ func TestCreateAdmin(t *testing.T) {
 		brokers        func() []string
 		configuration  func() (*config.Config, error)
 		tlsConfig      func() (*config.TLS, error)
-		authConfig     func() (*config.SCRAM, error)
+		authConfig     func() (*config.SASL, error)
 		expectedErrMsg string
 	}{{
 		name: "the returned closure should fail if configuration fails",
@@ -477,13 +477,13 @@ func TestCreateAdmin(t *testing.T) {
 		expectedErrMsg: "bad tls conf",
 	}, {
 		name: "the returned closure should fail if authConfig returns an error other than ErrNoCredentials",
-		authConfig: func() (*config.SCRAM, error) {
+		authConfig: func() (*config.SASL, error) {
 			return nil, errors.New("Some bad error")
 		},
 		expectedErrMsg: "Some bad error",
 	}, {
 		name: "the returned closure shouldn't fail due to authConfig returning ErrNoCredentials",
-		authConfig: func() (*config.SCRAM, error) {
+		authConfig: func() (*config.SASL, error) {
 			return nil, common.ErrNoCredentials
 		},
 	}}
@@ -511,7 +511,7 @@ func TestCreateAdmin(t *testing.T) {
 				tlsConfig = tt.tlsConfig
 			}
 
-			authConfig := func() (*config.SCRAM, error) {
+			authConfig := func() (*config.SASL, error) {
 				return nil, nil
 			}
 			if tt.authConfig != nil {
@@ -536,7 +536,7 @@ func TestCreateClient(t *testing.T) {
 		brokers        func() []string
 		configuration  func() (*config.Config, error)
 		tlsConfig      func() (*config.TLS, error)
-		authConfig     func() (*config.SCRAM, error)
+		authConfig     func() (*config.SASL, error)
 		expectedErrMsg string
 	}{{
 		name: "the returned closure should fail if configuration fails",
@@ -552,13 +552,13 @@ func TestCreateClient(t *testing.T) {
 		expectedErrMsg: "bad tls conf",
 	}, {
 		name: "the returned closure should fail if authConfig returns an error other than ErrNoCredentials",
-		authConfig: func() (*config.SCRAM, error) {
+		authConfig: func() (*config.SASL, error) {
 			return nil, errors.New("Some bad error")
 		},
 		expectedErrMsg: "Some bad error",
 	}, {
 		name: "the returned closure shouldn't fail due to authConfig returning ErrNoCredentials",
-		authConfig: func() (*config.SCRAM, error) {
+		authConfig: func() (*config.SASL, error) {
 			return nil, common.ErrNoCredentials
 		},
 	}}
@@ -586,7 +586,7 @@ func TestCreateClient(t *testing.T) {
 				tlsConfig = tt.tlsConfig
 			}
 
-			authConfig := func() (*config.SCRAM, error) {
+			authConfig := func() (*config.SASL, error) {
 				return nil, nil
 			}
 			if tt.authConfig != nil {

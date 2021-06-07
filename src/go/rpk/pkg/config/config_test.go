@@ -1636,9 +1636,9 @@ schema_registry: {}
 			name: "shall write a valid config file with scram configured",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Rpk.SCRAM.User = "scram_user"
-				c.Rpk.SCRAM.Password = "scram_password"
-				c.Rpk.SCRAM.Type = "SCRAM-SHA-256"
+				c.Rpk.SASL.User = "scram_user"
+				c.Rpk.SASL.Password = "scram_password"
+				c.Rpk.SASL.Mechanism = "SCRAM-SHA-256"
 				return c
 			},
 			wantErr: false,
