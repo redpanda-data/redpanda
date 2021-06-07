@@ -38,7 +38,8 @@ public:
     /// Raw interface to the internal topic, you can publish any event however
     /// messages are checked for validity before being written to the topic,
     /// result of this is arg0 of the result tuple.
-    ss::future<> publish_events(model::record_batch_reader);
+    ss::future<std::vector<kafka::produce_response::partition>>
+      publish_events(model::record_batch_reader);
 
 private:
     ss::future<> create_coproc_internal_topic();

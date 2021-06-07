@@ -21,10 +21,7 @@
 /// This harness brings up an entire redpanda fixture + the c++ implementation
 /// of the wasm engine. Use this fixture for when a complete end-to-end
 /// infrastructure is needed to perform some tests
-class router_test_fixture
-  : public coproc_test_fixture
-  , public supervisor_test_fixture
-  , public coproc::wasm::event_publisher {
+class router_test_fixture : public coproc_test_fixture {
 private:
     struct push_action_tag;
     struct drain_action_tag;
@@ -43,16 +40,6 @@ public:
     using push_results = absl::flat_hash_map<model::ntp, model::offset>;
     using drain_results
       = absl::flat_hash_map<model::ntp, std::pair<model::offset, std::size_t>>;
-
-    ss::future<> setup(log_layout_map llm) override {
-        return wait_for_controller_leadership().then(
-          [this, llm = std::move(llm)]() mutable {
-              return event_publisher::start().then(
-                [this, llm = std::move(llm)]() mutable {
-                    return coproc_test_fixture::setup(std::move(llm));
-                });
-          });
-    }
 
     /// \brief Start the actual test, ensure that startup() has been called,
     /// it initializes the storage layer and registers the coprocessors

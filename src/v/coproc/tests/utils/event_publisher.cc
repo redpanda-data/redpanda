@@ -17,6 +17,7 @@
 #include "coproc/wasm_event.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/produce.h"
 #include "model/namespace.h"
 #include "model/record.h"
 #include "storage/parser_utils.h"
@@ -135,7 +136,7 @@ ss::future<> event_publisher::create_coproc_internal_topic() {
       });
 }
 
-ss::future<>
+ss::future<std::vector<kafka::produce_response::partition>>
 event_publisher::publish_events(model::record_batch_reader reader) {
     return std::move(reader)
       .for_each_ref(
@@ -143,7 +144,10 @@ event_publisher::publish_events(model::record_batch_reader reader) {
           coproc::wasm::batch_verifier(),
           coproc::wasm::publisher(_client, model::coprocessor_internal_tp)),
         model::no_timeout)
-      .discard_result();
+      .then([](auto tuple) {
+          vassert(std::get<0>(tuple), "crc checks failed");
+          return std::move(std::get<1>(tuple));
+      });
 }
 
 } // namespace coproc::wasm

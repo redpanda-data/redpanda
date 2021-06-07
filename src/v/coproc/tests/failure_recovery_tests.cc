@@ -9,7 +9,6 @@
  */
 
 #include "coproc/tests/fixtures/coproc_test_fixture.h"
-#include "coproc/tests/fixtures/router_test_fixture.h"
 #include "coproc/tests/utils/coprocessor.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
@@ -19,7 +18,7 @@
 
 #include <seastar/core/when_all.hh>
 
-FIXTURE_TEST(test_wasm_engine_restart, router_test_fixture) {
+FIXTURE_TEST(test_wasm_engine_restart, coproc_test_fixture) {
     model::topic single_input("plain_topic");
     setup({{single_input, 5}}).get();
     enable_coprocessors(

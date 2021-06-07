@@ -34,8 +34,10 @@ coproc_test_fixture::enable_coprocessors(std::vector<deploy> copros) {
       copros.begin(), copros.end(), std::back_inserter(events), [](deploy& e) {
           return coproc::wasm::event(e.id, std::move(e.data));
       });
-    return _publisher.publish_events(
-      coproc::wasm::make_event_record_batch_reader({std::move(events)}));
+    return _publisher
+      .publish_events(
+        coproc::wasm::make_event_record_batch_reader({std::move(events)}))
+      .discard_result();
 }
 
 ss::future<>
@@ -46,8 +48,10 @@ coproc_test_fixture::disable_coprocessors(std::vector<uint64_t> ids) {
       ids.begin(), ids.end(), std::back_inserter(events), [](uint64_t id) {
           return coproc::wasm::event(id);
       });
-    return _publisher.publish_events(
-      coproc::wasm::make_event_record_batch_reader({std::move(events)}));
+    return _publisher
+      .publish_events(
+        coproc::wasm::make_event_record_batch_reader({std::move(events)}))
+      .discard_result();
 }
 
 ss::future<> coproc_test_fixture::setup(log_layout_map llm) {

@@ -8,7 +8,7 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "coproc/tests/fixtures/router_test_fixture.h"
+#include "coproc/tests/fixtures/coproc_test_fixture.h"
 #include "coproc/tests/utils/coprocessor.h"
 #include "coproc/tests/utils/wasm_event_generator.h"
 #include "coproc/wasm_event.h"
@@ -18,12 +18,11 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test_log.hpp>
 
-FIXTURE_TEST(test_copro_internal_topic_do_undo, router_test_fixture) {
+FIXTURE_TEST(test_copro_internal_topic_do_undo, coproc_test_fixture) {
     model::topic input("input_topic");
     coproc::wasm::cpp_enable_payload deploy{
       .tid = coproc::registry::type_identifier::identity_coprocessor,
-      .topics = {
-        std::make_pair<>(input, coproc::topic_ingestion_policy::stored)}};
+      .topics = {{input, coproc::topic_ingestion_policy::stored}}};
     setup({{input, 1}}).get();
     std::vector<std::vector<coproc::wasm::event>> events{
       {{444, deploy},
@@ -37,8 +36,7 @@ FIXTURE_TEST(test_copro_internal_topic_do_undo, router_test_fixture) {
     auto rbr = make_event_record_batch_reader(std::move(events));
 
     /// Push and assert
-    auto [valid, rset] = publish_events(std::move(rbr)).get0();
-    BOOST_CHECK(valid);
+    auto rset = get_publisher().publish_events(std::move(rbr)).get0();
     BOOST_CHECK_EQUAL(rset.size(), 2);
 
     tests::cooperative_spin_wait_with_timeout(5s, [&] {
