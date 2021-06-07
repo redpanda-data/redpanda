@@ -73,6 +73,8 @@ ss::future<model::record_batch_reader> replicated_partition::make_reader(
             });
         }
 
+        ss::future<> finally() noexcept final { return _underlying->finally(); }
+
     private:
         std::unique_ptr<model::record_batch_reader::impl> _underlying;
         ss::lw_shared_ptr<offset_translator> _translator;
