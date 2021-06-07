@@ -353,9 +353,9 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 								"start",
 								"--check=false",
 								r.portsConfiguration(),
-							}, overprovisioned(
+							}, prepareAdditionalArguments(
 								r.pandaCluster.Spec.Configuration.DeveloperMode,
-								r.pandaCluster.Spec.Resources.Limits)...),
+								r.pandaCluster.Spec.Resources.Requests)...),
 							Env: []corev1.EnvVar{
 								{
 									Name:  "REDPANDA_ENVIRONMENT",
@@ -457,27 +457,54 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 	return ss, nil
 }
 
-func overprovisioned(developerMode bool, limits corev1.ResourceList) []string {
-	memory, exist := limits["memory"]
-	if !exist {
-		memory = resource.MustParse("2Gi")
-	}
+func prepareAdditionalArguments(
+	developerMode bool, originalRequests corev1.ResourceList,
+) []string {
+	requests := originalRequests.DeepCopy()
+
+	requests.Cpu().RoundUp(0)
+	requestedCores := requests.Cpu().Value()
+	requestedMemory := requests.Memory().Value()
 
 	if developerMode {
-		return []string{
+		args := []string{
 			"--overprovisioned",
 			// sometimes a little bit of memory is consumed by other processes than seastar
 			"--reserve-memory " + redpandav1alpha1.ReserveMemoryString,
-			"--smp=1",
 			"--kernel-page-cache=true",
 			"--default-log-level=debug",
 		}
+		// When smp is not set, all cores are used
+		if requestedCores > 0 {
+			args = append(args, "--smp="+strconv.FormatInt(requestedCores, 10))
+		}
+		return args
 	}
-	return []string{
+
+	args := []string{
 		"--default-log-level=info",
 		"--reserve-memory 0M",
-		"--memory " + strconv.FormatInt(memory.Value(), 10),
 	}
+
+	/*
+	 * Example:
+	 *    in: minimum requirement per core, 2GB
+	 *    in: requestedMemory, 16GB
+	 *    => maxAllowedCores = 8
+	 *    if requestedCores == 8, set smp = 8 (with 2GB per core)
+	 *    if requestedCores == 4, set smp = 4 (with 4GB per core)
+	 */
+
+	// The webhook ensures that the requested memory is >= the per-core requirement
+	maxAllowedCores := requestedMemory / redpandav1alpha1.MinimumMemoryPerCore
+	var smp int64 = maxAllowedCores
+	if requestedCores != 0 && requestedCores < smp {
+		smp = requestedCores
+	}
+	args = append(args, "--smp="+strconv.FormatInt(smp, 10),
+		"--memory="+strconv.FormatInt(requestedMemory, 10))
+
+	return args
 }
 
 func (r *StatefulSetResource) pandaproxyEnvVars() []corev1.EnvVar {
