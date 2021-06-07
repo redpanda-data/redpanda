@@ -13,10 +13,12 @@
 #include "archival/logger.h"
 #include "archival/ntp_archiver_service.h"
 #include "archival/types.h"
+#include "cloud_storage/types.h"
 #include "cluster/partition_manager.h"
 #include "cluster/topic_table.h"
 #include "config/configuration.h"
 #include "config/property.h"
+#include "http/client.h"
 #include "likely.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -30,6 +32,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/semaphore.hh>
@@ -160,14 +163,14 @@ scheduler_service_impl::scheduler_service_impl(
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<cluster::topic_table>& tt)
   : _conf(conf)
-  , _pool(conf.connection_limit(), conf.client_config)
   , _partition_manager(pm)
   , _topic_table(tt)
   , _storage_api(api)
   , _jitter(conf.interval, 1ms)
-  , _gc_jitter(conf.gc_interval, 1ms)
   , _stop_limit(conf.connection_limit())
-  , _probe(conf.svc_metrics_disabled) {}
+  , _rtcnode(_as)
+  , _probe(conf.svc_metrics_disabled)
+  , _remote(conf.connection_limit, conf.client_config, _probe) {}
 
 scheduler_service_impl::scheduler_service_impl(
   ss::sharded<storage::api>& api,
@@ -185,8 +188,12 @@ void scheduler_service_impl::rearm_timer() {
               }
               _timer.rearm(_jitter());
           })
-          .handle_exception([](std::exception_ptr e) {
-              vlog(archival_log.info, "Error in timer callback: {}", e);
+          .handle_exception([this](std::exception_ptr e) {
+              vlog(
+                archival_log.info,
+                "{} Error in timer callback: {}",
+                _rtcnode(),
+                e);
           });
     });
 }
@@ -198,10 +205,10 @@ ss::future<> scheduler_service_impl::start() {
 }
 
 ss::future<> scheduler_service_impl::stop() {
-    vlog(archival_log.info, "Scheduler service stop");
+    vlog(archival_log.info, "{} Scheduler service stop", _rtcnode());
     _timer.cancel();
     _as.request_abort(); // interrupt possible sleep
-    return _pool.stop().then([this] {
+    return _remote.stop().then([this] {
         std::vector<ss::future<>> outstanding;
         for (auto& it : _queue) {
             auto fut = ss::with_semaphore(
@@ -223,159 +230,161 @@ ss::lw_shared_ptr<ntp_archiver> scheduler_service_impl::get_upload_candidate() {
 }
 
 ss::future<> scheduler_service_impl::upload_topic_manifest(
-  model::topic_namespace_view view, model::revision_id rev) {
+  model::topic_namespace topic_ns, model::revision_id rev) {
     gate_guard gg(_gate);
-    auto cfg = _topic_table.local().get_topic_cfg(view);
-    if (cfg) {
-        try {
-            vlog(archival_log.info, "Uploading topic manifest {}", view);
-            auto [client, deleter] = co_await _pool.acquire();
-            topic_manifest tm(*cfg, rev);
-            auto [istr, size_bytes] = tm.serialize();
-            auto key = tm.get_manifest_path();
-            vlog(archival_log.debug, "Topic manifest object key is '{}'", key);
-            std::vector<s3::object_tag> tags = {{"rp-type", "topic-manifest"}};
-            co_await client->put_object(
-              _conf.bucket_name,
-              s3::object_key(key),
-              size_bytes,
-              std::move(istr),
-              tags);
-            _probe.topic_manifest_upload();
-        } catch (const s3::rest_error_response& err) {
-            vlog(
-              archival_log.error,
-              "REST API error occured during topic manifest upload: "
-              "{}, code: {}, request-id: {}, resource: {}",
-              err.message(),
-              err.code(),
-              err.request_id(),
-              err.resource());
-        } catch (...) {
-            vlog(
-              archival_log.error,
-              "Exception occured during topic manifest upload: "
-              "{}",
-              std::current_exception());
-        }
+    auto cfg = _topic_table.local().get_topic_cfg(topic_ns);
+    if (!cfg) {
+        co_return;
     }
+    try {
+        bool uploaded = false;
+        while (!uploaded && !_gate.is_closed()) {
+            // This runs asynchronously so we can just retry indefinetly
+            retry_chain_node fib(
+              max_topic_manifest_upload_backoff, 100ms, &_rtcnode);
+            vlog(
+              archival_log.info,
+              "{} Uploading topic manifest {}",
+              fib(),
+              topic_ns);
+            cloud_storage::topic_manifest tm(*cfg, rev);
+            auto key = tm.get_manifest_path();
+            vlog(
+              archival_log.debug,
+              "{} Topic manifest object key is '{}'",
+              fib(),
+              key);
+            auto res = co_await _remote.upload_manifest(
+              _conf.bucket_name, tm, fib);
+            uploaded = res == cloud_storage::upload_result::success;
+            if (!uploaded) {
+                vlog(
+                  archival_log.warn,
+                  "{} Topic manifest upload timed out: {}",
+                  fib(),
+                  key);
+            }
+        }
+    } catch (const ss::gate_closed_exception& err) {
+        vlog(
+          archival_log.error,
+          "{} Topic manifest upload for {} failed, {}",
+          _rtcnode(),
+          topic_ns,
+          err);
+    } catch (const ss::abort_requested_exception& err) {
+        vlog(
+          archival_log.error,
+          "{} Topic manifest upload for {} failed, {}",
+          _rtcnode(),
+          topic_ns,
+          err);
+    }
+}
+
+ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
+  ss::lw_shared_ptr<ntp_archiver> archiver) {
+    if (_gate.is_closed()) {
+        return ss::make_ready_future<ss::stop_iteration>(
+          ss::stop_iteration::yes);
+    }
+    return archiver->download_manifest(_rtcnode).then(
+      [this, archiver](cloud_storage::download_result result)
+        -> ss::future<ss::stop_iteration> {
+          auto ntp = archiver->get_ntp();
+          switch (result) {
+          case cloud_storage::download_result::success:
+              _queue.insert(archiver);
+              vlog(
+                archival_log.info,
+                "{} Found manifest for partition {}",
+                _rtcnode(),
+                archiver->get_ntp());
+              _probe.start_archiving_ntp();
+              return ss::make_ready_future<ss::stop_iteration>(
+                ss::stop_iteration::yes);
+          case cloud_storage::download_result::notfound:
+              _queue.insert(archiver);
+              vlog(
+                archival_log.info,
+                "{} Start archiving new partition {}",
+                _rtcnode(),
+                archiver->get_ntp());
+              // Start topic manifest upload
+              // asynchronously
+              (void)upload_topic_manifest(
+                model::topic_namespace(ntp.ns, ntp.tp.topic),
+                archiver->get_revision_id());
+              _probe.start_archiving_ntp();
+              return ss::make_ready_future<ss::stop_iteration>(
+                ss::stop_iteration::yes);
+          case cloud_storage::download_result::failed:
+          case cloud_storage::download_result::timedout:
+              vlog(
+                archival_log.warn, "{} Manifest download failed", _rtcnode());
+              return ss::make_exception_future<ss::stop_iteration>(
+                ss::timed_out_error());
+          }
+          return ss::make_ready_future<ss::stop_iteration>(
+            ss::stop_iteration::yes);
+      });
 }
 
 ss::future<>
 scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
-    return ss::do_with(
-      std::move(to_create), [this](std::vector<model::ntp>& to_create) {
-          return ss::parallel_for_each(
-            to_create, [this](const model::ntp& ntp) {
-                storage::api& api = _storage_api.local();
-                storage::log_manager& lm = api.log_mgr();
-                auto log = lm.get(ntp);
-                if (!log.has_value()) {
-                    return ss::now();
-                }
-                auto svc = ss::make_lw_shared<ntp_archiver>(
-                  log->config(), _conf, _pool, _probe);
-                return ss::repeat([this, svc, ntp] {
-                    return svc->download_manifest()
-                      .then(
-                        [this, svc](download_manifest_result result)
-                          -> ss::future<ss::stop_iteration> {
-                            switch (result) {
-                            case download_manifest_result::success:
-                                _queue.insert(svc);
-                                vlog(
-                                  archival_log.info,
-                                  "Found manifest for partition {}",
-                                  svc->get_ntp());
-                                _probe.start_archiving_ntp();
-                                return ss::make_ready_future<
-                                  ss::stop_iteration>(ss::stop_iteration::yes);
-                            case download_manifest_result::notfound:
-                                _queue.insert(svc);
-                                vlog(
-                                  archival_log.info,
-                                  "Start archiving new partition {}",
-                                  svc->get_ntp());
-                                (void)upload_topic_manifest(
-                                  model::topic_namespace_view(svc->get_ntp()),
-                                  svc->get_revision_id());
-                                _probe.start_archiving_ntp();
-                                return ss::make_ready_future<
-                                  ss::stop_iteration>(ss::stop_iteration::yes);
-                            case download_manifest_result::backoff:
-                                vlog(
-                                  archival_log.trace,
-                                  "Manifest download exponential backoff");
-                                _probe.manifest_backoff();
-                                return ss::sleep_abortable(
-                                         _backoff.next_jitter_duration(), _as)
-                                  .then([] {
-                                      return ss::make_ready_future<
-                                        ss::stop_iteration>(
-                                        ss::stop_iteration::no);
-                                  })
-                                  .handle_exception_type([](const ss::
-                                                              sleep_aborted&) {
-                                      vlog(
-                                        archival_log.debug,
-                                        "Reconciliation loop abroted (sleep)");
-                                      return ss::make_ready_future<
-                                        ss::stop_iteration>(
-                                        ss::stop_iteration::yes);
-                                  });
-                            }
-                            return ss::make_ready_future<ss::stop_iteration>(
-                              ss::stop_iteration::yes);
-                        })
-                      .handle_exception_type(
-                        [ntp](const s3::rest_error_response& err) {
-                            vlog(
-                              archival_log.error,
-                              "Manifest download for partition {} failed, "
-                              "message: {}, code: {}, request-id: {}, "
-                              "resource: {}",
-                              ntp,
-                              err.message(),
-                              err.code_string(),
-                              err.request_id(),
-                              err.resource());
-                            return ss::make_ready_future<ss::stop_iteration>(
-                              ss::stop_iteration::yes);
-                        })
-                      .handle_exception([ntp](const std::exception_ptr& eptr) {
-                          vlog(
-                            archival_log.error,
-                            "Manifest download for partition {} failed, "
-                            "error: {}",
-                            ntp,
-                            eptr);
-                          return ss::make_ready_future<ss::stop_iteration>(
-                            ss::stop_iteration::yes);
+    return ss::with_gate(
+      _gate, [this, to_create = std::move(to_create)]() mutable {
+          return ss::do_with(
+            std::move(to_create), [this](std::vector<model::ntp>& to_create) {
+                return ss::parallel_for_each(
+                  to_create, [this](const model::ntp& ntp) {
+                      storage::api& api = _storage_api.local();
+                      storage::log_manager& lm = api.log_mgr();
+                      auto log = lm.get(ntp);
+                      if (!log.has_value()) {
+                          return ss::now();
+                      }
+                      auto svc = ss::make_lw_shared<ntp_archiver>(
+                        log->config(), _conf, _remote, _probe);
+                      return ss::repeat([this, svc = std::move(svc)] {
+                          return add_ntp_archiver(svc);
                       });
-                });
-            });
-      });
-} // namespace archival::internal
-
-ss::future<>
-scheduler_service_impl::remove_archivers(std::vector<model::ntp> to_remove) {
-    return ss::parallel_for_each(
-      to_remove, [this](const model::ntp& ntp) -> ss::future<> {
-          vlog(archival_log.info, "removing archiver for {}", ntp.path());
-          auto archiver = _queue[ntp];
-          return ss::with_semaphore(
-                   _stop_limit, 1, [archiver] { return archiver->stop(); })
-            .finally([this, ntp] {
-                vlog(archival_log.info, "archiver stopped {}", ntp.path());
-                _queue.erase(ntp);
-                _probe.stop_archiving_ntp();
+                  });
             });
       });
 }
 
+ss::future<>
+scheduler_service_impl::remove_archivers(std::vector<model::ntp> to_remove) {
+    gate_guard g(_gate);
+    return ss::parallel_for_each(
+             to_remove,
+             [this](const model::ntp& ntp) -> ss::future<> {
+                 vlog(
+                   archival_log.info,
+                   "{} removing archiver for {}",
+                   _rtcnode(),
+                   ntp.path());
+                 auto archiver = _queue[ntp];
+                 return ss::with_semaphore(
+                          _stop_limit,
+                          1,
+                          [archiver] { return archiver->stop(); })
+                   .finally([this, ntp] {
+                       vlog(
+                         archival_log.info,
+                         "{} archiver stopped {}",
+                         _rtcnode(),
+                         ntp.path());
+                       _queue.erase(ntp);
+                       _probe.stop_archiving_ntp();
+                   });
+             })
+      .finally([g = std::move(g)] {});
+}
+
 ss::future<> scheduler_service_impl::reconcile_archivers() {
     gate_guard g(_gate);
-    _probe.reconciliation();
     cluster::partition_manager& pm = _partition_manager.local();
     storage::api& api = _storage_api.local();
     storage::log_manager& lm = api.log_mgr();
@@ -412,10 +421,12 @@ ss::future<> scheduler_service_impl::reconcile_archivers() {
         auto [remove_fut, create_fut] = co_await ss::when_all(
           std::move(fremove), std::move(fcreate));
         if (remove_fut.failed()) {
-            vlog(archival_log.error, "Failed to remove archivers");
+            vlog(
+              archival_log.error, "{} Failed to remove archivers", _rtcnode());
         }
         if (create_fut.failed()) {
-            vlog(archival_log.error, "Failed to create archivers");
+            vlog(
+              archival_log.error, "{} Failed to create archivers", _rtcnode());
         }
     }
 }
@@ -440,9 +451,10 @@ ss::future<> scheduler_service_impl::run_uploads() {
                   storage::log_manager& lm = api.log_mgr();
                   vlog(
                     archival_log.debug,
-                    "Checking {} for S3 upload candidates",
+                    "{} Checking {} for S3 upload candidates",
+                    _rtcnode(),
                     archiver->get_ntp());
-                  return archiver->upload_next_candidates(lm);
+                  return archiver->upload_next_candidates(lm, _rtcnode);
               });
 
             auto results = co_await ss::when_all_succeed(

@@ -45,8 +45,8 @@ inline ss::logger fixt_log("fixture"); // NOLINT
 static constexpr uint16_t httpd_port_number = 4430;
 static constexpr const char* httpd_host_name = "127.0.0.1";
 
-static archival::manifest load_manifest_from_str(std::string_view v) {
-    archival::manifest m;
+static cloud_storage::manifest load_manifest_from_str(std::string_view v) {
+    cloud_storage::manifest m;
     iobuf i;
     i.append(v.data(), v.size());
     auto s = make_iobuf_input_stream(std::move(i));
@@ -86,8 +86,8 @@ archival::configuration get_configuration() {
     conf.client_config = s3conf;
     conf.bucket_name = s3::bucket_name("test-bucket");
     conf.connection_limit = archival::s3_connection_limit(2);
-    conf.svc_metrics_disabled = archival::service_metrics_disabled(true);
-    conf.ntp_metrics_disabled = archival::per_ntp_metrics_disabled(true);
+    conf.ntp_metrics_disabled = archival::per_ntp_metrics_disabled::yes;
+    conf.svc_metrics_disabled = archival::service_metrics_disabled::yes;
     return conf;
 }
 
@@ -353,7 +353,8 @@ void segment_matcher<Fixture>::verify_segment(
 }
 
 template<class Fixture>
-void segment_matcher<Fixture>::verify_manifest(const archival::manifest& man) {
+void segment_matcher<Fixture>::verify_manifest(
+  const cloud_storage::manifest& man) {
     auto all_segments = list_segments(man.get_ntp());
     BOOST_REQUIRE_EQUAL(all_segments.size(), man.size());
     for (const auto& s : all_segments) {
@@ -375,7 +376,7 @@ void segment_matcher<Fixture>::verify_manifest(const archival::manifest& man) {
 template<class Fixture>
 void segment_matcher<Fixture>::verify_manifest_content(
   const ss::sstring& manifest_content) {
-    archival::manifest m = load_manifest_from_str(manifest_content);
+    cloud_storage::manifest m = load_manifest_from_str(manifest_content);
     verify_manifest(m);
 }
 

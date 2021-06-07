@@ -7,10 +7,12 @@ v_cc_library(
     human.cc
     file_io.cc
     base64.cc
+    retry_chain_node.cc
   DEPS
     Seastar::seastar
     Hdrhistogram::hdr_histogram
     Base64::base64
     v::rphashing
+    v::rprandom
     v::bytes)
 add_subdirectory(tests)

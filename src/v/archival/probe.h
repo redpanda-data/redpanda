@@ -11,6 +11,7 @@
 #pragma once
 
 #include "archival/types.h"
+#include "cloud_storage/probe.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
 
@@ -52,18 +53,12 @@ private:
 };
 
 /// Service level probe
-class service_probe {
+class service_probe : public cloud_storage::service_probe {
 public:
     explicit service_probe(service_metrics_disabled disabled);
 
     /// Increment gap counter (global)
     void add_gap() { _cnt_gaps++; }
-
-    /// Register topic manifest upload
-    void topic_manifest_upload() { _cnt_topic_manifest_uploads++; }
-
-    /// Register manifest (re)upload
-    void partition_manifest_upload() { _cnt_partition_manifest_uploads++; }
 
     /// Count new ntp archiving event
     void start_archiving_ntp() { _cnt_start_archiving_ntp++; }
@@ -72,42 +67,18 @@ public:
     /// of the ntp event
     void stop_archiving_ntp() { _cnt_stop_archiving_ntp++; }
 
-    /// Register backof invocation during manifest upload or download
-    void manifest_backoff() { _cnt_manifest_backoff++; }
-
     /// Count reconciliation loop iterations (liveliness probe)
     void reconciliation() { _cnt_reconciliations++; }
-
-    /// Register successfull uploads
-    void successful_upload(size_t n) { _cnt_successful_uploads += n; }
-
-    /// Register failed uploads
-    void failed_upload(size_t n) { _cnt_failed_uploads += n; }
-
-    /// Register backoff during log-segment upload
-    void upload_backoff() { _cnt_upload_backoff++; }
 
 private:
     /// Number of gaps dected
     uint64_t _cnt_gaps;
-    /// Number of topic manifest uploads
-    uint64_t _cnt_topic_manifest_uploads;
-    /// Number of manifest (re)uploads
-    uint64_t _cnt_partition_manifest_uploads;
     /// Start archiving npt event counter
     uint64_t _cnt_start_archiving_ntp;
     /// Stop archiving npt event counter
     uint64_t _cnt_stop_archiving_ntp;
-    /// Number of times backoff was applied during manifest upload/download
-    uint64_t _cnt_manifest_backoff;
     /// Number of reconciliation loop iterations
     uint64_t _cnt_reconciliations;
-    /// Number of completed log-segment uploads
-    uint64_t _cnt_successful_uploads;
-    /// Number of failed log-segment uploads
-    uint64_t _cnt_failed_uploads;
-    /// Number of times backoff  was applied during log-segment uploads
-    uint64_t _cnt_upload_backoff;
 
     ss::metrics::metric_groups _metrics;
 };

@@ -186,8 +186,6 @@ upload_candidate archival_policy::get_next_candidate(
     if (segment.get() == nullptr || ntp_conf == nullptr) {
         return {};
     }
-    // Invariant: segment is not compacted (segment->is_compacted_segment() ==
-    // false)
     return create_upload_candidate(last_offset, segment, ntp_conf);
 }
 

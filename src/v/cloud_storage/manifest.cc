@@ -8,9 +8,8 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "archival/manifest.h"
+#include "cloud_storage/manifest.h"
 
-#include "archival/logger.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_istreambuf.h"
 #include "bytes/iobuf_ostreambuf.h"
@@ -21,7 +20,6 @@
 #include "model/timestamp.h"
 #include "ssx/sformat.h"
 #include "storage/ntp_config.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -37,7 +35,7 @@
 #include <array>
 #include <chrono>
 
-namespace archival {
+namespace cloud_storage {
 
 manifest::manifest()
   : _ntp()
@@ -120,15 +118,13 @@ std::insert_iterator<manifest::segment_map> manifest::get_insert_iterator() {
 }
 
 manifest manifest::difference(const manifest& remote_set) const {
-    if (_ntp != remote_set._ntp && _rev != remote_set._rev) {
-        throw std::logic_error(fmt_with_ctx(
-          fmt::format,
-          "{}-{} do not match {}-{}",
-          _ntp,
-          _rev,
-          remote_set._ntp,
-          remote_set._rev));
-    }
+    vassert(
+      _ntp == remote_set._ntp && _rev == remote_set._rev,
+      "Local manifest {}-{} and remote {}-{} doesn't match",
+      _ntp,
+      _rev,
+      remote_set._ntp,
+      remote_set._rev);
     manifest result(_ntp, _rev);
     std::set_difference(
       begin(),
@@ -139,7 +135,7 @@ manifest manifest::difference(const manifest& remote_set) const {
     return result;
 }
 
-ss::future<> manifest::update(ss::input_stream<char>&& is) {
+ss::future<> manifest::update(ss::input_stream<char> is) {
     using namespace rapidjson;
     iobuf result;
     auto os = make_iobuf_ref_output_stream(result);
@@ -251,7 +247,7 @@ topic_manifest::topic_manifest(
 topic_manifest::topic_manifest()
   : _topic_config(std::nullopt) {}
 
-ss::future<> topic_manifest::update(ss::input_stream<char>&& is) {
+ss::future<> topic_manifest::update(ss::input_stream<char> is) {
     using namespace rapidjson;
     iobuf result;
     auto os = make_iobuf_ref_output_stream(result);
@@ -429,7 +425,8 @@ remote_manifest_path topic_manifest::get_manifest_path() const {
 std::vector<remote_manifest_path>
 topic_manifest::get_partition_manifests() const {
     std::vector<remote_manifest_path> result;
-    int32_t npart = _topic_config->partition_count;
+    const int32_t npart = _topic_config->partition_count;
+    result.reserve(npart);
     for (int32_t i = 0; i < npart; i++) {
         model::ntp ntp(
           _topic_config->tp_ns.ns(),
@@ -441,4 +438,4 @@ topic_manifest::get_partition_manifests() const {
     return result;
 }
 
-} // namespace archival
+} // namespace cloud_storage
