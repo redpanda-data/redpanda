@@ -18,6 +18,7 @@ rp_test(
     ${fixture_srcs}
     script_dispatcher_tests.cc
     failure_recovery_tests.cc
+    pacemaker_tests.cc
     router_test.cc
     offset_storage_utils_tests.cc
     wasm_event_tests.cc
