@@ -39,14 +39,20 @@ def retry_on_slowdown(tries=4, delay=1.0, backoff=2.0):
 
 class S3Client:
     """Simple S3 client"""
-    def __init__(self, region, access_key, secret_key, endpoint, logger):
+    def __init__(self,
+                 region,
+                 access_key,
+                 secret_key,
+                 endpoint,
+                 logger,
+                 disable_ssl=True):
         cfg = Config(region_name=region, signature_version='s3v4')
         self._cli = boto3.client('s3',
                                  config=cfg,
                                  aws_access_key_id=access_key,
                                  aws_secret_access_key=secret_key,
                                  endpoint_url=endpoint,
-                                 use_ssl=False)
+                                 use_ssl=not disable_ssl)
         self._region = region
         self.logger = logger
 
