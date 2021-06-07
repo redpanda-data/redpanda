@@ -25,6 +25,37 @@ coproc_slim_fixture::~coproc_slim_fixture() {
     std::filesystem::remove_all(_data_dir);
 }
 
+ss::future<> coproc_slim_fixture::enable_coprocessors(
+  std::vector<coproc_fixture_iface::deploy> data) {
+    std::vector<coproc::enable_copros_request::data> d;
+    std::transform(
+      data.begin(),
+      data.end(),
+      std::back_inserter(d),
+      [](coproc_fixture_iface::deploy& item) {
+          return coproc::enable_copros_request::data{
+            .id = coproc::script_id(item.id),
+            .source_code = reflection::to_iobuf(std::move(item.data))};
+      });
+    return get_script_dispatcher()
+      ->enable_coprocessors(
+        coproc::enable_copros_request{.inputs = std::move(d)})
+      .discard_result();
+}
+
+ss::future<>
+coproc_slim_fixture::disable_coprocessors(std::vector<uint64_t> ids) {
+    std::vector<coproc::script_id> d;
+    std::transform(
+      ids.begin(), ids.end(), std::back_inserter(d), [](uint64_t id) {
+          return coproc::script_id(id);
+      });
+    return get_script_dispatcher()
+      ->disable_coprocessors(
+        coproc::disable_copros_request{.ids = std::move(d)})
+      .discard_result();
+}
+
 ss::future<> coproc_slim_fixture::setup(log_layout_map llm) {
     _llm = llm;
     return start().then([this, llm = std::move(llm)]() mutable {

@@ -13,6 +13,7 @@
 #include "coproc/tests/utils/coprocessor.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
+#include "model/record_batch_reader.h"
 #include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
 
@@ -67,7 +68,8 @@ FIXTURE_TEST(test_wasm_engine_restart, router_test_fixture) {
     /// themselves have an at-least-once durability guarantee, so it would be
     /// more likely that a script processed a duplicate record. The wider the
     /// commit interval, the more likely this is.
-    std::vector<ss::future<coproc_test_fixture::opt_reader_data_t>> fs;
+    std::vector<ss::future<std::optional<model::record_batch_reader::data_t>>>
+      fs;
     for (const auto& ntp : outputs) {
         fs.emplace_back(drain(ntp, 20));
     }

@@ -21,21 +21,42 @@
 #include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/smp.hh>
 
 #include <chrono>
 
+ss::future<>
+coproc_test_fixture::enable_coprocessors(std::vector<deploy> copros) {
+    std::vector<coproc::wasm::event> events;
+    events.reserve(copros.size());
+    std::transform(
+      copros.begin(), copros.end(), std::back_inserter(events), [](deploy& e) {
+          return coproc::wasm::event(e.id, std::move(e.data));
+      });
+    return _publisher.publish_events(
+      coproc::wasm::make_event_record_batch_reader({std::move(events)}));
+}
+
+ss::future<>
+coproc_test_fixture::disable_coprocessors(std::vector<uint64_t> ids) {
+    std::vector<coproc::wasm::event> events;
+    events.reserve(ids.size());
+    std::transform(
+      ids.begin(), ids.end(), std::back_inserter(events), [](uint64_t id) {
+          return coproc::wasm::event(id);
+      });
+    return _publisher.publish_events(
+      coproc::wasm::make_event_record_batch_reader({std::move(events)}));
+}
+
 ss::future<> coproc_test_fixture::setup(log_layout_map llm) {
-    return ss::do_with(std::move(llm), [this](const log_layout_map& llm) {
-        return wait_for_controller_leadership().then([this, &llm] {
-            return ss::do_for_each(
-              llm, [this](const log_layout_map::value_type& p) {
-                  return add_topic(
-                    model::topic_namespace(model::kafka_namespace, p.first),
-                    p.second);
-              });
-        });
-    });
+    co_await wait_for_controller_leadership();
+    co_await _publisher.start();
+    for (auto& p : llm) {
+        co_await add_topic(
+          model::topic_namespace(model::kafka_namespace, p.first), p.second);
+    }
 }
 
 static storage::log_reader_config log_rdr_cfg(const model::offset& min_offset) {
@@ -91,7 +112,8 @@ static ss::future<model::record_batch_reader::data_t> do_drain(
       });
 }
 
-ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
+ss::future<std::optional<model::record_batch_reader::data_t>>
+coproc_test_fixture::drain(
   const model::ntp& ntp,
   std::size_t limit,
   model::offset offset,
@@ -103,7 +125,8 @@ ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
           coproc::coproclog.error,
           "No ntp exists, cannot drain from ntp: {}",
           m_ntp.input_ntp());
-        return ss::make_ready_future<opt_reader_data_t>(std::nullopt);
+        return ss::make_ready_future<
+          std::optional<model::record_batch_reader::data_t>>(std::nullopt);
     }
     vlog(
       coproc::coproclog.info,
@@ -133,7 +156,8 @@ ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
                   kafka::make_partition_proxy<kafka::materialized_partition>(
                     *log));
                 return do_drain(p, offset, limit, timeout).then([](auto rval) {
-                    return opt_reader_data_t(std::move(rval));
+                    return std::optional<model::record_batch_reader::data_t>(
+                      std::move(rval));
                 });
             });
       });

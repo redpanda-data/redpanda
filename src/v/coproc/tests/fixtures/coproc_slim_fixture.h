@@ -10,7 +10,7 @@
 
 #include "coproc/pacemaker.h"
 #include "coproc/script_dispatcher.h"
-#include "coproc/tests/fixtures/coproc_test_fixture.h"
+#include "coproc/tests/fixtures/coproc_fixture_iface.h"
 #include "model/metadata.h"
 #include "storage/api.h"
 
@@ -23,7 +23,7 @@
 /// This fixture sets up the mininum viable framework neccessary to test the
 /// script_dispatcher without using the redpanda_thread_fixture as that starts
 /// an entire application stack.
-class coproc_slim_fixture {
+class coproc_slim_fixture : public coproc_fixture_iface {
 public:
     /// Class constructor, sets up the data_dir
     coproc_slim_fixture();
@@ -37,12 +37,30 @@ public:
     /// Class destructor, destroys resources in order, and rm's data_dir
     ~coproc_slim_fixture();
 
-    /// Call to define the state-of-the-world
-    ///
-    /// This is the current ntps registered within the log manger. Since theres
-    /// no shard_table, a trivial hashing scheme is internally used to map ntps
-    /// to shards.
-    ss::future<> setup(log_layout_map);
+    virtual ss::future<> enable_coprocessors(std::vector<deploy>) override;
+
+    virtual ss::future<> disable_coprocessors(std::vector<uint64_t>) override;
+
+    virtual ss::future<> setup(log_layout_map) override;
+
+    virtual ss::future<> restart() override;
+
+    virtual ss::future<model::offset>
+    push(const model::ntp&, model::record_batch_reader) override {
+        return ss::make_ready_future<model::offset>(model::offset{});
+    }
+
+    /// \brief Read records from storage::api up until 'limit' or 'time'
+    /// starting at 'offset'
+    virtual ss::future<std::optional<model::record_batch_reader::data_t>> drain(
+      const model::ntp&,
+      std::size_t,
+      model::offset = model::offset(0),
+      model::timeout_clock::time_point = model::timeout_clock::now()
+                                         + std::chrono::seconds(5)) override {
+        return ss::make_ready_future<
+          std::optional<model::record_batch_reader::data_t>>(std::nullopt);
+    }
 
     /// Query what shards contain an ntp with the given topic
     //
@@ -50,11 +68,14 @@ public:
     /// be compared or used for verification during the test.
     ss::future<std::set<ss::shard_id>> shards_for_topic(const model::topic&);
 
-    /// Simulates a redpanda restart from failure
-    ///
-    /// All internal state is wiped and setup() is called again. Application is
-    /// forced to read from the existing _data_dir to bootstrap
-    ss::future<> restart();
+    ss::future<size_t> scripts_across_shards(uint64_t id) {
+        return get_pacemaker().map_reduce0(
+          [id](coproc::pacemaker& p) {
+              return p.local_script_id_exists(coproc::script_id(id)) ? 1 : 0;
+          },
+          size_t(0),
+          std::plus<>());
+    }
 
 protected:
     std::unique_ptr<coproc::wasm::script_dispatcher>& get_script_dispatcher() {

@@ -135,38 +135,15 @@ ss::future<> event_publisher::create_coproc_internal_topic() {
       });
 }
 
-ss::future<wasm::publish_result>
+ss::future<>
 event_publisher::publish_events(model::record_batch_reader reader) {
-    return std::move(reader).for_each_ref(
-      coproc::reference_window_consumer(
-        coproc::wasm::batch_verifier(),
-        coproc::wasm::publisher(_client, model::coprocessor_internal_tp)),
-      model::no_timeout);
-}
-
-ss::future<publish_result>
-event_publisher::enable_coprocessors(std::vector<deploy> copros) {
-    std::vector<coproc::wasm::event> events;
-    events.reserve(copros.size());
-    std::transform(
-      copros.begin(), copros.end(), std::back_inserter(events), [](deploy& e) {
-          return coproc::wasm::event(e.id, std::move(e.data));
-      });
-    return publish_events(
-      coproc::wasm::make_event_record_batch_reader({std::move(events)}));
-}
-
-ss::future<publish_result>
-event_publisher::disable_coprocessors(std::vector<coproc::script_id> ids) {
-    std::vector<coproc::wasm::event> events;
-    events.reserve(ids.size());
-    std::transform(
-      ids.begin(),
-      ids.end(),
-      std::back_inserter(events),
-      [](coproc::script_id id) { return coproc::wasm::event(id); });
-    return publish_events(
-      coproc::wasm::make_event_record_batch_reader({std::move(events)}));
+    return std::move(reader)
+      .for_each_ref(
+        coproc::reference_window_consumer(
+          coproc::wasm::batch_verifier(),
+          coproc::wasm::publisher(_client, model::coprocessor_internal_tp)),
+        model::no_timeout)
+      .discard_result();
 }
 
 } // namespace coproc::wasm

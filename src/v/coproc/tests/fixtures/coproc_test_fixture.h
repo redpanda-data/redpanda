@@ -9,41 +9,32 @@
  */
 
 #pragma once
-#include "model/fundamental.h"
-#include "model/record_batch_reader.h"
+#include "coproc/tests/fixtures/coproc_fixture_iface.h"
+#include "coproc/tests/utils/event_publisher.h"
 #include "redpanda/tests/fixture.h"
-#include "test_utils/fixture.h"
 
-#include <seastar/core/future.hh>
-
-#include <optional>
-
-/// Use this to prepare the storage layer with a desired pre-defined state
-using log_layout_map = absl::btree_map<model::topic, size_t>;
-
-/// Contains additional utilities for pushing and reading from underlying logs
-/// within the storage api.
-class coproc_test_fixture : public redpanda_thread_fixture {
+class coproc_test_fixture
+  : public redpanda_thread_fixture
+  , public coproc_fixture_iface {
 public:
-    using opt_reader_data_t = std::optional<model::record_batch_reader::data_t>;
+    ss::future<> enable_coprocessors(std::vector<deploy>) override;
 
-    static const auto inline tp_earliest
-      = coproc::topic_ingestion_policy::earliest;
-    static const auto inline tp_latest = coproc::topic_ingestion_policy::latest;
-    static const auto inline tp_stored = coproc::topic_ingestion_policy::stored;
+    ss::future<> disable_coprocessors(std::vector<uint64_t>) override;
 
-    /// \brief Init the storage layer with the desired ntps
-    virtual ss::future<> setup(log_layout_map);
+    ss::future<> setup(log_layout_map) override;
 
-    /// \brief Write records to storage::api
+    ss::future<> restart() override { return ss::now(); }
+
     ss::future<model::offset>
-    push(const model::ntp&, model::record_batch_reader);
+    push(const model::ntp&, model::record_batch_reader) override;
 
-    /// \brief Read records from storage::api up until 'limit' or 'time'
-    /// starting at 'offset'
-    ss::future<opt_reader_data_t> drain(
+    ss::future<std::optional<model::record_batch_reader::data_t>> drain(
       const model::ntp&,
       std::size_t,
       model::offset = model::offset(0),
-      model::timeout_clock::time_point = model::timeout_clock::now() + 5s);
+      model::timeout_clock::time_point = model::timeout_clock::now()
+                                         + std::chrono::seconds(5)) override;
+
+private:
+    coproc::wasm::event_publisher _publisher;
 };
