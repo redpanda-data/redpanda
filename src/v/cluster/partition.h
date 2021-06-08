@@ -103,7 +103,7 @@ public:
             return _rm_stm->last_stable_offset();
         }
 
-        return raft::details::next_offset(_raft->last_stable_offset());
+        return high_watermark();
     }
 
     /**
