@@ -676,7 +676,12 @@ tx_gateway_frontend::do_end_txn(
 
     checked<cluster::tm_transaction, tx_errc> r(tx_errc::unknown_server_error);
     if (request.committed) {
-        r = co_await do_commit_tm_tx(stm, tx, timeout, outcome);
+        if (tx.status == tm_transaction::tx_status::ongoing) {
+            r = co_await do_commit_tm_tx(stm, tx, timeout, outcome);
+        } else {
+            outcome->set_value(tx_errc::request_rejected);
+            r = tx_errc::request_rejected;
+        }
     } else {
         r = co_await do_abort_tm_tx(stm, tx, timeout, outcome);
     }
@@ -765,7 +770,9 @@ tx_gateway_frontend::do_commit_tm_tx(
   cluster::tm_transaction tx,
   model::timeout_clock::duration timeout,
   ss::lw_shared_ptr<available_promise<tx_errc>> outcome) {
-    if (tx.status != tm_transaction::tx_status::ongoing) {
+    if (
+      tx.status != tm_transaction::tx_status::ongoing
+      && tx.status != tm_transaction::tx_status::preparing) {
         outcome->set_value(tx_errc::request_rejected);
         co_return tx_errc::request_rejected;
     }
