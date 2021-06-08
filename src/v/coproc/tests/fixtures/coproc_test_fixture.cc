@@ -13,7 +13,9 @@
 
 #include "config/configuration.h"
 #include "coproc/logger.h"
+#include "coproc/tests/fixtures/fixture_utils.h"
 #include "kafka/server/materialized_partition.h"
+#include "kafka/server/replicated_partition.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
@@ -63,57 +65,19 @@ ss::future<> coproc_test_fixture::setup(log_layout_map llm) {
     }
 }
 
-static storage::log_reader_config log_rdr_cfg(const model::offset& min_offset) {
-    return storage::log_reader_config(
-      min_offset,
-      model::model_limits<model::offset>::max(),
-      0,
-      std::numeric_limits<size_t>::max(),
-      ss::default_priority_class(),
-      raft::data_batch_type,
-      std::nullopt,
-      std::nullopt);
-}
-
-static ss::future<model::record_batch_reader::data_t> do_drain(
-  ss::lw_shared_ptr<kafka::partition_proxy> partition,
-  model::offset offset,
-  std::size_t limit,
-  model::timeout_clock::time_point timeout) {
-    struct state {
-        std::size_t batches_read{0};
-        model::offset next_offset;
-        model::record_batch_reader::data_t batches;
-        explicit state(model::offset o)
-          : next_offset(o) {}
-    };
-    return ss::do_with(
-      state(offset), [limit, timeout, partition](state& s) mutable {
-          return ss::do_until(
-                   [&s, limit, timeout] {
-                       const auto now = model::timeout_clock::now();
-                       return (s.batches_read >= limit) || (now > timeout);
-                   },
-                   [&s, partition]() mutable {
-                       return partition->make_reader(log_rdr_cfg(s.next_offset))
-                         .then([](model::record_batch_reader rbr) {
-                             return model::consume_reader_to_memory(
-                               std::move(rbr), model::no_timeout);
-                         })
-                         .then([&s](model::record_batch_reader::data_t b) {
-                             if (b.empty()) {
-                                 return ss::sleep(20ms);
-                             }
-                             s.batches_read += b.size();
-                             s.next_offset = ++b.back().last_offset();
-                             for (model::record_batch& rb : b) {
-                                 s.batches.push_back(std::move(rb));
-                             }
-                             return ss::now();
-                         });
-                   })
-            .then([&s] { return std::move(s.batches); });
-      });
+/// TODO: Code duplication remove after a rebase of dev
+static std::optional<kafka::partition_proxy> make_partition_proxy(
+  const model::materialized_ntp& ntp,
+  ss::lw_shared_ptr<cluster::partition> partition,
+  cluster::partition_manager& pm) {
+    if (!ntp.is_materialized()) {
+        return kafka::make_partition_proxy<kafka::replicated_partition>(
+          partition);
+    }
+    if (auto log = pm.log(ntp.input_ntp()); log) {
+        return kafka::make_partition_proxy<kafka::materialized_partition>(*log);
+    }
+    return std::nullopt;
 }
 
 ss::future<std::optional<model::record_batch_reader::data_t>>
@@ -150,19 +114,20 @@ coproc_test_fixture::drain(
                    })
             .then([&pm, m_ntp, limit, offset, timeout] {
                 auto partition = pm.get(m_ntp.source_ntp());
-                std::optional<storage::log> log;
-                if (m_ntp.is_materialized()) {
-                    if (auto olog = pm.log(m_ntp.input_ntp())) {
-                        log = olog;
-                    }
-                }
-                auto p = ss::make_lw_shared<kafka::partition_proxy>(
-                  kafka::make_partition_proxy<kafka::materialized_partition>(
-                    *log));
-                return do_drain(p, offset, limit, timeout).then([](auto rval) {
-                    return std::optional<model::record_batch_reader::data_t>(
-                      std::move(rval));
-                });
+                auto partition_proxy = make_partition_proxy(
+                  m_ntp, partition, pm);
+                return do_drain(
+                         offset,
+                         limit,
+                         timeout,
+                         [pp = std::move(partition_proxy)](
+                           model::offset next_offset) mutable {
+                             return pp->make_reader(log_rdr_cfg(next_offset));
+                         })
+                  .then([](auto data) {
+                      return std::optional<model::record_batch_reader::data_t>(
+                        std::move(data));
+                  });
             });
       });
 }

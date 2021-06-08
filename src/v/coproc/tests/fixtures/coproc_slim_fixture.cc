@@ -10,11 +10,14 @@
 
 #include "coproc/tests/fixtures/coproc_slim_fixture.h"
 
+#include "coproc/tests/fixtures/fixture_utils.h"
 #include "coproc/types.h"
+#include "model/fundamental.h"
 #include "model/namespace.h"
 #include "storage/kvstore.h"
 #include "storage/ntp_config.h"
 #include "storage/types.h"
+#include "test_utils/async.h"
 
 coproc_slim_fixture::coproc_slim_fixture() {
     std::filesystem::create_directory(_data_dir);
@@ -111,12 +114,16 @@ ss::future<> coproc_slim_fixture::stop() {
     return _pacemaker.stop().then([this] { return _storage.stop(); });
 }
 
+ss::shard_id shard_for_ntp(const model::ntp& ntp) {
+    return std::hash<model::ntp>{}(ntp) % ss::smp::count;
+}
+
 ss::future<>
 coproc_slim_fixture::add_ntps(const model::topic& topic, size_t n) {
     auto r = boost::irange<size_t>(0, n);
     return ss::do_for_each(r, [this, topic](size_t i) {
         model::ntp ntp(model::kafka_namespace, topic, model::partition_id(i));
-        auto shard_id = std::hash<model::ntp>{}(ntp) % ss::smp::count;
+        auto shard_id = shard_for_ntp(ntp);
         return _storage.invoke_on(
           shard_id, [ntp, dir = _data_dir](storage::api& api) {
               return api.log_mgr()
@@ -140,4 +147,59 @@ storage::log_config coproc_slim_fixture::log_config() const {
       _data_dir.string(),
       1_GiB,
       storage::debug_sanitize_files::no);
+}
+
+ss::future<model::offset> coproc_slim_fixture::push(
+  const model::ntp& ntp, model::record_batch_reader rbr) {
+    /// TODO: Possible mutex for pushing to the same logs from different cores?
+    vassert(
+      !model::is_materialized_topic(ntp.tp.topic),
+      "Cannot push to a materialized topic");
+    auto shard_id = shard_for_ntp(ntp);
+    return _storage.invoke_on(
+      shard_id, [ntp, rbr = std::move(rbr)](storage::api& api) mutable {
+          auto log = api.log_mgr().get(ntp);
+          if (!log) {
+              return ss::make_ready_future<model::offset>();
+          }
+          const storage::log_append_config write_cfg{
+            .should_fsync = storage::log_append_config::fsync::no,
+            .io_priority = ss::default_priority_class(),
+            .timeout = model::no_timeout};
+          return std::move(rbr)
+            .for_each_ref(log->make_appender(write_cfg), model::no_timeout)
+            .then([log](storage::append_result ar) { return ar.last_offset; });
+      });
+}
+
+ss::future<std::optional<model::record_batch_reader::data_t>>
+coproc_slim_fixture::drain(
+  const model::ntp& ntp,
+  std::size_t limit,
+  model::offset offset,
+  model::timeout_clock::time_point timeout) {
+    model::materialized_ntp mntp(ntp);
+    auto shard_id = shard_for_ntp(mntp.source_ntp());
+    return _storage.invoke_on(
+      shard_id, [mntp, limit, offset, timeout](storage::api& api) {
+          return tests::cooperative_spin_wait_with_timeout(
+                   60s,
+                   [&api, mntp] {
+                       return api.log_mgr().get(mntp.input_ntp()).has_value();
+                   })
+            .then([&api, mntp, limit, offset, timeout] {
+                auto log = api.log_mgr().get(mntp.input_ntp());
+                return do_drain(
+                         offset,
+                         limit,
+                         timeout,
+                         [log = *log](model::offset next_offset) mutable {
+                             return log.make_reader(log_rdr_cfg(next_offset));
+                         })
+                  .then([](auto data) {
+                      return std::optional<model::record_batch_reader::data_t>(
+                        std::move(data));
+                  });
+            });
+      });
 }

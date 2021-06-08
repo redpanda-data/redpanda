@@ -46,9 +46,7 @@ public:
     virtual ss::future<> restart() override;
 
     virtual ss::future<model::offset>
-    push(const model::ntp&, model::record_batch_reader) override {
-        return ss::make_ready_future<model::offset>(model::offset{});
-    }
+    push(const model::ntp&, model::record_batch_reader) override;
 
     /// \brief Read records from storage::api up until 'limit' or 'time'
     /// starting at 'offset'
@@ -57,10 +55,7 @@ public:
       std::size_t,
       model::offset = model::offset(0),
       model::timeout_clock::time_point = model::timeout_clock::now()
-                                         + std::chrono::seconds(5)) override {
-        return ss::make_ready_future<
-          std::optional<model::record_batch_reader::data_t>>(std::nullopt);
-    }
+                                         + std::chrono::seconds(5)) override;
 
     /// Query what shards contain an ntp with the given topic
     //
