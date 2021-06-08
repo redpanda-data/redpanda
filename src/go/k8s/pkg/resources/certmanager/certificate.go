@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
@@ -29,8 +30,14 @@ import (
 
 var _ resources.Resource = &CertificateResource{}
 
-// CAKey filename for root certificate
-const CAKey = cmetav1.TLSCAKey
+const (
+	// CAKey filename for root certificate
+	CAKey = cmetav1.TLSCAKey
+	// DefaultCertificateDuration default certification duration - 5 years
+	DefaultCertificateDuration = 5 * 365 * 24 * time.Hour
+	// DefaultRenewBefore default time length prior to expiration to attempt renewal - 90 days
+	DefaultRenewBefore = 90 * 24 * time.Hour
+)
 
 // CertificateResource is part of the reconciliation of redpanda.vectorized.io CRD
 // creating Certificate from the Issuer resource to have TLS communication supported
@@ -100,9 +107,11 @@ func (r *CertificateResource) obj() (k8sclient.Object, error) {
 			Labels:    objLabels,
 		},
 		Spec: cmapiv1.CertificateSpec{
-			SecretName: r.Key().Name,
-			IssuerRef:  *r.issuerRef,
-			IsCA:       r.isCA,
+			SecretName:  r.Key().Name,
+			IssuerRef:   *r.issuerRef,
+			IsCA:        r.isCA,
+			Duration:    &metav1.Duration{Duration: DefaultCertificateDuration},
+			RenewBefore: &metav1.Duration{Duration: DefaultRenewBefore},
 		},
 	}
 
