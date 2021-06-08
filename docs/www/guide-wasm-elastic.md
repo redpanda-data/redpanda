@@ -230,8 +230,8 @@ Here's the real fun -- seeing the transform work.
     You can see a log line in `/var/lib/redpanda/coprocessor/logs/wasm` that look like:
 
     ```
-    Applying Wasm process function
-    Index record value to Elasticsearch
+    2021-05-13T18:20:49.344Z [WasmScript] info: Applying Wasm process function
+    2021-05-13T18:20:49.344Z [WasmScript] info: Index record value to Elasticsearch
     ```
 
 ## Verify Elasticsearch results
