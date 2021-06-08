@@ -10,15 +10,23 @@
 package system
 
 import (
+	"errors"
+
 	"github.com/docker/go-units"
 	"github.com/spf13/afero"
 )
 
 type MemInfo struct {
-	MemTotal       uint64
-	MemFree        uint64
-	CGroupMemLimit uint64
-	SwapTotal      uint64
+	MemTotal  uint64
+	MemFree   uint64
+	SwapTotal uint64
+
+	// CGroupMemLimit does not load on all unix systems, specifically,
+	// unless Raspberry Pi's /boot/cmdline.txt is modified, memory cgroups
+	// will not be present.
+	//
+	// Its value will be either the cgroup's memory.limit_in_bytes, or 0.
+	CGroupMemLimit uint64 `json:"omitempty"`
 }
 
 func GetTransparentHugePagesActive(fs afero.Fs) (bool, error) {
@@ -43,6 +51,9 @@ func GetMemTotalMB(fs afero.Fs) (int, error) {
 		return 0, err
 	}
 
+	if mInfo.CGroupMemLimit == 0 {
+		return 0, errors.New("unable to determine cgroup memory limit")
+	}
 	memBytes := min(mInfo.MemTotal, mInfo.CGroupMemLimit)
 	return int(memBytes / units.MiB), nil
 }
