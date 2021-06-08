@@ -208,7 +208,6 @@ public:
 
     model::offset get_latest_configuration_offset() const;
     model::offset committed_offset() const { return _commit_index; }
-    model::offset last_stable_offset() const;
 
     /**
      * Last visible index is an offset that is safe to be fetched by the
