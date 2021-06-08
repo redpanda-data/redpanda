@@ -21,8 +21,10 @@
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/find_coordinator.h"
 #include "kafka/protocol/leave_group.h"
+#include "kafka/protocol/list_offsets.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "random/generators.h"
 #include "seastarx.h"
@@ -262,6 +264,23 @@ client::create_topic(kafka::creatable_topic req) {
               }
               return ss::make_ready_future<create_topics_response>(
                 std::move(res));
+          });
+    });
+}
+
+ss::future<list_offsets_response>
+client::list_offsets(model::topic_partition tp) {
+    return gated_retry_with_mitigation([this, tp]() {
+        return _topic_cache.leader(tp)
+          .then(
+            [this](model::node_id node_id) { return _brokers.find(node_id); })
+          .then([tp](auto broker) mutable {
+              return broker->dispatch(kafka::list_offsets_request{
+                .data = {.topics{
+                  {{.name{std::move(tp.topic)},
+                    .partitions{
+                      {{.partition_index{tp.partition},
+                        .max_num_offsets = 1}}}}}}}});
           });
     });
 }

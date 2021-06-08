@@ -24,6 +24,7 @@
 #include "kafka/client/types.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/fetch.h"
+#include "kafka/protocol/list_offsets.h"
 #include "kafka/types.h"
 #include "utils/retry.h"
 #include "utils/unresolved_address.h"
@@ -109,6 +110,8 @@ public:
 
     ss::future<produce_response>
     produce_records(model::topic topic, std::vector<record_essence> batch);
+
+    ss::future<list_offsets_response> list_offsets(model::topic_partition tp);
 
     ss::future<fetch_response> fetch_partition(
       model::topic_partition tp,
