@@ -161,22 +161,17 @@ struct fetch_config {
 };
 
 struct ntp_fetch_config {
-    ntp_fetch_config(
-      model::ntp ntp,
-      fetch_config cfg,
-      std::optional<model::ntp> materialized_ntp = std::nullopt)
-      : ntp(std::move(ntp))
-      , cfg(cfg)
-      , materialized_ntp(std::move(materialized_ntp)) {}
-    model::ntp ntp;
+    ntp_fetch_config(const model::materialized_ntp& ntp, fetch_config cfg)
+      : materialized_ntp(std::move(ntp))
+      , cfg(cfg) {}
+    model::materialized_ntp materialized_ntp;
     fetch_config cfg;
-    std::optional<model::ntp> materialized_ntp;
 
-    bool is_materialized() const { return materialized_ntp.has_value(); }
+    const model::ntp& ntp() const { return materialized_ntp.source_ntp(); }
 
     friend std::ostream&
     operator<<(std::ostream& o, const ntp_fetch_config& ntp_fetch) {
-        fmt::print(o, R"({{"{}": {}}})", ntp_fetch.ntp, ntp_fetch.cfg);
+        fmt::print(o, R"({{"{}": {}}})", ntp_fetch.ntp(), ntp_fetch.cfg);
         return o;
     }
 };

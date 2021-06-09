@@ -34,14 +34,11 @@ class NativeKafkaConsumer(BackgroundTask):
         return f"consumer-worker-{str(random.randint(0,9999))}"
 
     def _init_consumer(self):
-        # Setting 'auto_offset_reset' to something other then "earliest" or
-        # "latest" throws "OffsetOutOfRangeError" in the case there is a gap
-        # in the log or read of an offset too new / old.
         consumer = KafkaConsumer(client_id=self.task_name(),
                                  bootstrap_servers=self._brokers,
                                  request_timeout_ms=1000,
                                  enable_auto_commit=False,
-                                 auto_offset_reset="crash")
+                                 auto_offset_reset="latest")
         consumer.assign(self._topic_partitions)
         for tps in self._topic_partitions:
             consumer.seek_to_beginning(tps)
@@ -56,22 +53,11 @@ class NativeKafkaConsumer(BackgroundTask):
         consumer = self._init_consumer()
         empty_reads = 0
         while not stop_consume(empty_reads):
-            try:
-                results = consumer.poll(timeout_ms=1000,
-                                        max_records=self._batch_size)
-                if results is None or len(results) == 0:
-                    empty_reads += 1
-                    time.sleep(1)
-                else:
-                    empty_reads = 0
-                    self.results.append(results)
-            except OffsetOutOfRangeError:
-                # Ensure that the element at this offset is read, otherwise
-                # there will be gaps in the result set. In other words this
-                # class does manage its own offset to its subscriptions.
-                time.sleep(1)
+            results = consumer.poll(timeout_ms=1000,
+                                    max_records=self._batch_size)
+            if results is None or len(results) == 0:
                 empty_reads += 1
-                for tp, values in self.results.rset.items():
-                    offset = values[-1].offset + 1
-                    # print(f"Offset OOR tp: {tp} - offset {offset}")
-                    consumer.seek(tp, offset)
+                time.sleep(1)
+            else:
+                empty_reads = 0
+                self.results.append(results)

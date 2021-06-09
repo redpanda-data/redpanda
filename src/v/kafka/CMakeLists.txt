@@ -56,6 +56,7 @@ v_cc_library(
     server/quota_manager.cc
     server/fetch_session_cache.cc
     server/replicated_partition.cc
+    server/partition_proxy.cc
  DEPS
     Seastar::seastar
     v::bytes
