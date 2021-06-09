@@ -723,15 +723,17 @@ tx_gateway_frontend::do_abort_tm_tx(
         co_return tx_errc::unknown_server_error;
     }
 
-    auto changed_tx = co_await stm->try_change_status(
-      tx.id, cluster::tm_transaction::tx_status::aborting);
-    if (!changed_tx.has_value()) {
-        outcome->set_value(tx_errc::unknown_server_error);
-        co_return tx_errc::unknown_server_error;
+    if (tx.status == tm_transaction::tx_status::ongoing) {
+        auto changed_tx = co_await stm->try_change_status(
+          tx.id, cluster::tm_transaction::tx_status::aborting);
+        if (!changed_tx.has_value()) {
+            outcome->set_value(tx_errc::unknown_server_error);
+            co_return tx_errc::unknown_server_error;
+        }
+        tx = changed_tx.value();
     }
     outcome->set_value(tx_errc::none);
 
-    tx = changed_tx.value();
     std::vector<ss::future<abort_tx_reply>> pfs;
     for (auto rm : tx.partitions) {
         pfs.push_back(_rm_partition_frontend.local().abort_tx(
