@@ -21,6 +21,7 @@ includes:
   dashboard: taskfiles/dashboard.yml
   docker: taskfiles/docker.yml
   lint: taskfiles/lint.yml
+  k8s: taskfiles/k8s.yml
   rp: taskfiles/rp.yml
   rpk: taskfiles/rpk.yml
   wasm: taskfiles/wasm.yml
