@@ -5,17 +5,25 @@ Graceful shutdown
 Leadership
 Geo-replication (Rename mirror-maker2)
 
-## [2. APIs](#api)
+# The Kafka APIs
 
-### APIS
-Kafka includes five core apis:
-The Producer API allows applications to send streams of data to topics in the Kafka cluster.
-The Consumer API allows applications to read streams of data from topics in the Kafka cluster.
-The Streams API allows transforming streams of data from input topics to output topics.
-The Connect API allows implementing connectors that continually pull from some source system or application into Kafka or push from Kafka into some sink system or application.
-The Admin API allows managing and inspecting topics, brokers, and other Kafka objects.
-Kafka exposes all its functionality over a language independent protocol which has clients available in many programming languages. However only the Java clients are maintained as part of the main Kafka project, the others are available as independent open source projects. A list of non-Java clients is available here.
-#### Producer API
+If we are an alternative solution to Kafka, then why is Redpanda built around the Kafka APIs?
+
+Although Redpanda includes some important infrastructure updates like raft consensus and graceful shutdown,
+the Kafka APIs are still the primary interface with Redpanda for data streaming.
+
+The core Kafka APIs are:
+
+- The Producer API receives data streams from applications and stores them in topics.
+- The Consumer API reads data streams from the topics.
+- The Streams API transforms data streams from input topics to output topics.
+- The Connect API continually pulls data from an application into Kafka or push from Kafka into an application.
+- The Admin API manages topics, brokers, and other Kafka objects.
+
+These APIs support connections from any Kafka-compatible client.
+
+## Producer API
+
 The Producer API allows applications to send streams of data to topics in the Kafka cluster.
 Examples showing how to use the producer are given in the javadocs.
 
@@ -26,7 +34,9 @@ To use the producer, you can use the following maven dependency:
 			<artifactId>kafka-clients</artifactId>
 			<version>2.8.0</version>
 		</dependency>
-#### Consumer API
+
+## Consumer API
+
 The Consumer API allows applications to read streams of data from topics in the Kafka cluster.
 Examples showing how to use the consumer are given in the javadocs.
 
