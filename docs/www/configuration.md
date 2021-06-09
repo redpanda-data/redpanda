@@ -188,6 +188,10 @@ redpanda:
   # Default: 2GiB
   target_quota_byte_rate: 2147483648
   
+  # Cluster identifier.
+  # Default: null
+  cluster_id: "cluster-id"
+
   # Rack identifier.
   # Default: null
   rack: "rack-id"

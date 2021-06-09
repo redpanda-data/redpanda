@@ -47,6 +47,7 @@ func TestEnsure(t *testing.T) {
 	resourcesUpdatedCluster := cluster.DeepCopy()
 	resourcesUpdatedCluster.Spec.Resources.Requests = newResources
 	resourcesUpdatedSts := stsFromCluster(cluster).DeepCopy()
+	resourcesUpdatedSts.Spec.Template.Spec.InitContainers[0].Resources.Requests = newResources
 	resourcesUpdatedSts.Spec.Template.Spec.Containers[0].Resources.Requests = newResources
 
 	var tests = []struct {
@@ -97,10 +98,18 @@ func TestEnsure(t *testing.T) {
 		err = c.Get(context.Background(), sts.Key(), actual)
 		assert.NoError(t, err, tt.name)
 
-		if *actual.Spec.Replicas != *tt.expectedObject.Spec.Replicas || !reflect.DeepEqual(actual.Spec.Template.Spec.Containers[0].Resources.Requests, tt.expectedObject.Spec.Template.Spec.Containers[0].Resources.Requests) {
-			t.Errorf("%s: expecting replicas %d and resources %v, got replicas %d and resources %v", tt.name,
-				*tt.expectedObject.Spec.Replicas, tt.expectedObject.Spec.Template.Spec.Containers[0].Resources.Requests,
-				*actual.Spec.Replicas, actual.Spec.Template.Spec.Containers[0].Resources.Requests)
+		actualInitResources := actual.Spec.Template.Spec.InitContainers[0].Resources
+		actualRedpandaResources := actual.Spec.Template.Spec.Containers[0].Resources
+
+		expectedInitResources := tt.expectedObject.Spec.Template.Spec.InitContainers[0].Resources
+		expectedRedpandaResources := tt.expectedObject.Spec.Template.Spec.Containers[0].Resources
+
+		assert.Equal(t, expectedRedpandaResources, actualRedpandaResources)
+		assert.Equal(t, expectedInitResources, actualInitResources)
+
+		if *actual.Spec.Replicas != *tt.expectedObject.Spec.Replicas {
+			t.Errorf("%s: expecting replicas %d, got replicas %d", tt.name,
+				*tt.expectedObject.Spec.Replicas, *actual.Spec.Replicas)
 		}
 
 		if len(actual.Spec.VolumeClaimTemplates) == 0 || !reflect.DeepEqual(actual.Spec.VolumeClaimTemplates[0].Spec, tt.expectedObject.Spec.VolumeClaimTemplates[0].Spec) {
@@ -128,6 +137,10 @@ func stsFromCluster(pandaCluster *redpandav1alpha1.Cluster) *v1.StatefulSet {
 					InitContainers: []corev1.Container{{
 						Name:  "redpanda-configurator",
 						Image: "vectorized/configurator:latest",
+						Resources: corev1.ResourceRequirements{
+							Limits:   pandaCluster.Spec.Resources.Limits,
+							Requests: pandaCluster.Spec.Resources.Requests,
+						},
 					}},
 					Containers: []corev1.Container{
 						{

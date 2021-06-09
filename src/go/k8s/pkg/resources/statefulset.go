@@ -332,6 +332,10 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 								RunAsUser:  pointer.Int64Ptr(userID),
 								RunAsGroup: pointer.Int64Ptr(groupID),
 							},
+							Resources: corev1.ResourceRequirements{
+								Limits:   r.pandaCluster.Spec.Resources.Limits,
+								Requests: r.pandaCluster.Spec.Resources.Requests,
+							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "config-dir",
