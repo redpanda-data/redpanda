@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package common_test
+package common
 
 import (
 	"context"
@@ -18,7 +18,6 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	ccommon "github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 )
@@ -161,7 +160,7 @@ func TestDeduceBrokers(t *testing.T) {
 			if tt.brokers != nil {
 				brokers = &tt.brokers
 			}
-			bs := common.DeduceBrokers(client, config, brokers)()
+			bs := DeduceBrokers(client, config, brokers)()
 			require.Exactly(st, tt.expected, bs)
 		})
 	}
@@ -193,7 +192,7 @@ func TestAddKafkaFlags(t *testing.T) {
 		}
 		parent.AddCommand(child)
 
-		common.AddKafkaFlags(
+		AddKafkaFlags(
 			parent,
 			&configFile,
 			&user,
@@ -279,7 +278,7 @@ func TestKafkaAuthConfig(t *testing.T) {
 		expectedErrMsg: "empty password. Pass --password to set a value.",
 	}, {
 		name:           "it should fail if both user and password are empty",
-		expectedErrMsg: common.ErrNoCredentials.Error(),
+		expectedErrMsg: ErrNoCredentials.Error(),
 	}, {
 		name:      "it should fail if the mechanism isn't supported",
 		user:      "usuario",
@@ -339,7 +338,7 @@ func TestKafkaAuthConfig(t *testing.T) {
 			if tt.cleanup != nil {
 				defer tt.cleanup()
 			}
-			closure := common.KafkaAuthConfig(&tt.user, &tt.password, &tt.mechanism)
+			closure := KafkaAuthConfig(&tt.user, &tt.password, &tt.mechanism)
 			res, err := closure()
 			if tt.expectedErrMsg != "" {
 				require.EqualError(st, err, tt.expectedErrMsg)
@@ -351,6 +350,10 @@ func TestKafkaAuthConfig(t *testing.T) {
 }
 
 func TestBuildTLSConfig(t *testing.T) {
+	certVarName := "RP_TEST_CERT"
+	keyVarName := "RP_TEST_KEY"
+	truststoreVarName := "RP_TEST_TRUSTSTORE"
+
 	tests := []struct {
 		name           string
 		keyFile        string
@@ -358,11 +361,23 @@ func TestBuildTLSConfig(t *testing.T) {
 		truststoreFile string
 		before         func()
 		cleanup        func()
+		defaultVal     func() (*config.TLS, error)
 		expected       *config.TLS
 		expectedErrMsg string
 	}{{
-		name:     "it should return a nil config if none are set",
-		expected: nil,
+		name: "it should return the default value provided if none are set",
+		defaultVal: func() (*config.TLS, error) {
+			return &config.TLS{
+				CertFile:       "default-cert.pem",
+				KeyFile:        "default-key.pem",
+				TruststoreFile: "default-trust.pem",
+			}, nil
+		},
+		expected: &config.TLS{
+			CertFile:       "default-cert.pem",
+			KeyFile:        "default-key.pem",
+			TruststoreFile: "default-trust.pem",
+		},
 	}, {
 		name:           "it should fail if truststoreFile is empty",
 		certFile:       "cert.pem",
@@ -397,14 +412,14 @@ func TestBuildTLSConfig(t *testing.T) {
 	}, {
 		name: "it should pick up the values from env vars if the vars' values is empty",
 		before: func() {
-			os.Setenv("REDPANDA_TLS_CERT", "./node.crt")
-			os.Setenv("REDPANDA_TLS_KEY", "./node.key")
-			os.Setenv("REDPANDA_TLS_TRUSTSTORE", "./ca.crt")
+			os.Setenv(certVarName, "./node.crt")
+			os.Setenv(keyVarName, "./node.key")
+			os.Setenv(truststoreVarName, "./ca.crt")
 		},
 		cleanup: func() {
-			os.Unsetenv("REDPANDA_TLS_CERT")
-			os.Unsetenv("REDPANDA_TLS_KEY")
-			os.Unsetenv("REDPANDA_TLS_TRUSTSTORE")
+			os.Unsetenv(certVarName)
+			os.Unsetenv(keyVarName)
+			os.Unsetenv(truststoreVarName)
 		},
 		expected: &config.TLS{
 			CertFile:       "./node.crt",
@@ -417,20 +432,34 @@ func TestBuildTLSConfig(t *testing.T) {
 		keyFile:        "key.pem",
 		truststoreFile: "trust.pem",
 		before: func() {
-			os.Setenv("REDPANDA_TLS_CERT", "./node.crt")
-			os.Setenv("REDPANDA_TLS_KEY", "./node.key")
-			os.Setenv("REDPANDA_TLS_TRUSTSTORE", "./ca.crt")
+			os.Setenv(certVarName, "./node.crt")
+			os.Setenv(keyVarName, "./node.key")
+			os.Setenv(truststoreVarName, "./ca.crt")
 		},
 		cleanup: func() {
-			os.Unsetenv("REDPANDA_TLS_CERT")
-			os.Unsetenv("REDPANDA_TLS_KEY")
-			os.Unsetenv("REDPANDA_TLS_TRUSTSTORE")
+			os.Unsetenv(certVarName)
+			os.Unsetenv(keyVarName)
+			os.Unsetenv(truststoreVarName)
 		},
 		// Disregards the env vars' values
 		expected: &config.TLS{
 			CertFile:       "cert.pem",
 			KeyFile:        "key.pem",
 			TruststoreFile: "trust.pem",
+		},
+	}, {
+		name: "it should return the given default value if no values are set",
+		defaultVal: func() (*config.TLS, error) {
+			return &config.TLS{
+				CertFile:       "certificate.pem",
+				KeyFile:        "cert.key",
+				TruststoreFile: "ca.pem",
+			}, nil
+		},
+		expected: &config.TLS{
+			CertFile:       "certificate.pem",
+			KeyFile:        "cert.key",
+			TruststoreFile: "ca.pem",
 		},
 	}}
 
@@ -442,11 +471,22 @@ func TestBuildTLSConfig(t *testing.T) {
 			if tt.cleanup != nil {
 				defer tt.cleanup()
 			}
-			res, err := common.BuildTLSConfig(
+			defaultVal := tt.defaultVal
+			if tt.defaultVal == nil {
+				defaultVal = func() (*config.TLS, error) {
+					return nil, nil
+				}
+			}
+
+			res, err := buildTLS(
 				&tt.certFile,
 				&tt.keyFile,
 				&tt.truststoreFile,
-			)()
+				certVarName,
+				keyVarName,
+				truststoreVarName,
+				defaultVal,
+			)
 			if tt.expectedErrMsg != "" {
 				require.EqualError(st, err, tt.expectedErrMsg)
 			}
@@ -484,7 +524,7 @@ func TestCreateAdmin(t *testing.T) {
 	}, {
 		name: "the returned closure shouldn't fail due to authConfig returning ErrNoCredentials",
 		authConfig: func() (*config.SASL, error) {
-			return nil, common.ErrNoCredentials
+			return nil, ErrNoCredentials
 		},
 	}}
 
@@ -518,7 +558,7 @@ func TestCreateAdmin(t *testing.T) {
 				authConfig = tt.authConfig
 			}
 
-			fn := common.CreateAdmin(brokers, configuration, tlsConfig, authConfig)
+			fn := CreateAdmin(brokers, configuration, tlsConfig, authConfig)
 			_, err := fn()
 			if tt.expectedErrMsg != "" {
 				require.EqualError(st, err, tt.expectedErrMsg)
@@ -559,7 +599,7 @@ func TestCreateClient(t *testing.T) {
 	}, {
 		name: "the returned closure shouldn't fail due to authConfig returning ErrNoCredentials",
 		authConfig: func() (*config.SASL, error) {
-			return nil, common.ErrNoCredentials
+			return nil, ErrNoCredentials
 		},
 	}}
 
@@ -593,7 +633,7 @@ func TestCreateClient(t *testing.T) {
 				authConfig = tt.authConfig
 			}
 
-			fn := common.CreateClient(brokers, configuration, tlsConfig, authConfig)
+			fn := CreateClient(brokers, configuration, tlsConfig, authConfig)
 			_, err := fn()
 			if tt.expectedErrMsg != "" {
 				require.EqualError(st, err, tt.expectedErrMsg)

@@ -359,52 +359,76 @@ func BuildTLSConfig(
 	truststoreFile *string,
 ) func() (*config.TLS, error) {
 	return func() (*config.TLS, error) {
-		c := *certFile
-		k := *keyFile
-		t := *truststoreFile
-
-		if c == "" {
-			c = os.Getenv("REDPANDA_TLS_CERT")
-		}
-		if k == "" {
-			k = os.Getenv("REDPANDA_TLS_KEY")
-		}
-		if t == "" {
-			t = os.Getenv("REDPANDA_TLS_TRUSTSTORE")
-		}
-
-		if t == "" && c == "" && k == "" {
-			return nil, nil
-		}
-		if t == "" && (c != "" || k != "") {
-			return nil, fmt.Errorf(
-				"--%s is required to enable TLS",
-				truststoreFileFlag,
-			)
-		}
-		if c != "" && k == "" {
-			return nil, fmt.Errorf(
-				"if --%s is passed, then --%s must be passed to enable"+
-					" TLS authentication",
-				certFileFlag,
-				keyFileFlag,
-			)
-		}
-		if k != "" && c == "" {
-			return nil, fmt.Errorf(
-				"if --%s is passed, then --%s must be passed to enable"+
-					" TLS authentication",
-				keyFileFlag,
-				certFileFlag,
-			)
-		}
-		tls := &config.TLS{
-			KeyFile:        k,
-			CertFile:       c,
-			TruststoreFile: t,
-		}
-		return tls, nil
+		return buildTLS(
+			certFile,
+			keyFile,
+			truststoreFile,
+			"REDPANDA_TLS_CERT",
+			"REDPANDA_TLS_KEY",
+			"REDPANDA_TLS_TRUSTSTORE",
+			func() (*config.TLS, error) { return nil, nil },
+		)
 	}
+}
+
+// Builds an instance of config.TLS.
+// If certFile, keyFile or truststoreFile are nil, then their corresponding
+// env vars are checked (given by certEnvVar, keyEnvVar & truststoreEnvVar).
+// If after that no value is found for any of them, the result of calling
+// defaultVal is returned.
+func buildTLS(
+	certFile, keyFile, truststoreFile *string,
+	certEnvVar, keyEnvVar, truststoreEnvVar string,
+	defaultVal func() (*config.TLS, error),
+) (*config.TLS, error) {
+	// Give priority to building the TLS config with args that were passed
+	// directly or as env vars.
+	c := *certFile
+	k := *keyFile
+	t := *truststoreFile
+
+	if c == "" {
+		c = os.Getenv(certEnvVar)
+	}
+	if k == "" {
+		k = os.Getenv(keyEnvVar)
+	}
+	if t == "" {
+		t = os.Getenv(truststoreEnvVar)
+	}
+	if t == "" && c == "" && k == "" {
+		// If the values weren't set with flags nor env vars,
+		// return the TLS config for the Admin API from the config
+		return defaultVal()
+	}
+	if t == "" && (c != "" || k != "") {
+		return nil, fmt.Errorf(
+			"--%s is required to enable TLS",
+			truststoreFileFlag,
+		)
+	}
+	if c != "" && k == "" {
+		return nil, fmt.Errorf(
+			"if --%s is passed, then --%s must be passed to enable"+
+				" TLS authentication",
+			certFileFlag,
+			keyFileFlag,
+		)
+	}
+	if k != "" && c == "" {
+		return nil, fmt.Errorf(
+			"if --%s is passed, then --%s must be passed to enable"+
+				" TLS authentication",
+			keyFileFlag,
+			certFileFlag,
+		)
+	}
+	tls := &config.TLS{
+		KeyFile:        k,
+		CertFile:       c,
+		TruststoreFile: t,
+	}
+	return tls, nil
 }
 
 func CreateDockerClient() (common.Client, error) {
