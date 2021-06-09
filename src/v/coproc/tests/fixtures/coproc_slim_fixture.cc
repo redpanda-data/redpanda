@@ -23,6 +23,12 @@
 
 coproc_slim_fixture::coproc_slim_fixture() {
     std::filesystem::create_directory(_data_dir);
+    ss::smp::invoke_on_all([this]() mutable {
+        auto& config = config::shard_local_cfg();
+        config.get("coproc_offset_flush_interval_ms").set_value(1000ms);
+        config.get("data_directory")
+          .set_value(config::data_directory_path{.path = _data_dir});
+    }).get();
 }
 
 coproc_slim_fixture::~coproc_slim_fixture() {
