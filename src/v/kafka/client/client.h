@@ -183,6 +183,8 @@ private:
     topic_cache _topic_cache;
     /// \brief Broker lookup from topic_partition.
     brokers _brokers;
+    /// \brief The node id of the controller.
+    model::node_id _controller{unknown_node_id};
     /// \brief Update metadata, or wait for an existing one.
     wait_or_start _wait_or_start_update_metadata;
     /// \brief Batching producer.

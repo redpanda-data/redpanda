@@ -134,6 +134,7 @@ ss::future<> client::update_metadata(wait_or_start::tag) {
 ss::future<> client::apply(metadata_response res) {
     co_await _brokers.apply(std::move(res.data.brokers));
     co_await _topic_cache.apply(std::move(res.data.topics));
+    _controller = res.data.controller_id;
 }
 
 ss::future<> client::mitigate_error(std::exception_ptr ex) {
