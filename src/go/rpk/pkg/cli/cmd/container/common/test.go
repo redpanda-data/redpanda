@@ -243,7 +243,7 @@ func (c *MockClient) IsErrConnectionFailed(err error) bool {
 func MockContainerInspect(
 	_ context.Context, _ string,
 ) (types.ContainerJSON, error) {
-	kafkaNatPort := nat.Port("9092/tcp")
+	kafkaNatPort := nat.Port("9093/tcp")
 	rpcNatPort := nat.Port("33145/tcp")
 	return types.ContainerJSON{
 		ContainerJSONBase: &types.ContainerJSONBase{
