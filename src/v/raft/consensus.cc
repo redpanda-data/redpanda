@@ -1021,24 +1021,12 @@ void consensus::start_dispatching_disk_append_events() {
     });
 }
 
-bytes consensus::voted_for_key() const {
-    iobuf buf;
-    reflection::serialize(buf, metadata_key::voted_for, _group);
-    return iobuf_to_bytes(buf);
-}
-
 ss::future<>
 consensus::write_voted_for(consensus::voted_for_configuration config) {
     auto key = voted_for_key();
     iobuf val = reflection::to_iobuf(config);
     return _storage.kvs().put(
       storage::kvstore::key_space::consensus, std::move(key), std::move(val));
-}
-
-bytes consensus::last_applied_key() const {
-    iobuf buf;
-    reflection::serialize(buf, metadata_key::last_applied_offset, _group);
-    return iobuf_to_bytes(buf);
 }
 
 ss::future<> consensus::write_last_applied(model::offset o) {
@@ -1061,9 +1049,8 @@ model::offset consensus::read_last_applied() const {
 }
 
 ss::future<model::run_id> consensus::get_run_id() {
-    iobuf buf;
-    reflection::serialize(buf, metadata_key::unique_local_id, _group);
-    const auto key = iobuf_to_bytes(buf);
+    auto key = raft::details::serialize_group_key(
+      _group, metadata_key::unique_local_id);
 
     auto value = _storage.kvs().get(
       storage::kvstore::key_space::consensus, key);

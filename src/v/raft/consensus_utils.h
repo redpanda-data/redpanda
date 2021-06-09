@@ -177,4 +177,5 @@ auto for_each_ref_extract_configuration(
       });
 }
 
+bytes serialize_group_key(raft::group_id, metadata_key);
 } // namespace raft::details

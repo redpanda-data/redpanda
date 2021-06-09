@@ -304,4 +304,10 @@ model::record_batch_reader make_config_extracting_reader(
     return model::record_batch_reader(std::move(reader));
 }
 
+bytes serialize_group_key(raft::group_id group, metadata_key key_type) {
+    iobuf buf;
+    reflection::serialize(buf, key_type, group);
+    return iobuf_to_bytes(buf);
+}
+
 } // namespace raft::details

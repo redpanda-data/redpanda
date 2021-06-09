@@ -237,24 +237,7 @@ ss::future<configuration_manager::underlying_t> deserialize_configurations(
       });
 }
 
-bytes configuration_manager::configurations_map_key() {
-    iobuf buf;
-    reflection::serialize(buf, metadata_key::config_map, _group);
-    return iobuf_to_bytes(buf);
-}
 
-bytes configuration_manager::highest_known_offset_key() {
-    iobuf buf;
-    reflection::serialize(
-      buf, metadata_key::config_latest_known_offset, _group);
-    return iobuf_to_bytes(buf);
-}
-
-bytes configuration_manager::next_configuration_idx_key() {
-    iobuf buf;
-    reflection::serialize(buf, metadata_key::config_next_cfg_idx, _group);
-    return iobuf_to_bytes(buf);
-}
 
 ss::future<> configuration_manager::store_configurations() {
     return serialize_configurations(_configurations).then([this](iobuf buf) {

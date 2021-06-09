@@ -407,7 +407,10 @@ private:
 
     void setup_metrics();
 
-    bytes voted_for_key() const;
+    bytes voted_for_key() const {
+        return raft::details::serialize_group_key(
+          _group, metadata_key::voted_for);
+    }
     void read_voted_for();
     ss::future<> write_voted_for(consensus::voted_for_configuration);
     model::term_id get_last_entry_term(const storage::offset_stats&) const;
@@ -421,7 +424,10 @@ private:
     ss::future<model::record_batch_reader>
       do_make_reader(storage::log_reader_config);
 
-    bytes last_applied_key() const;
+    bytes last_applied_key() const {
+        return raft::details::serialize_group_key(
+          _group, metadata_key::last_applied_offset);
+    }
 
     void maybe_update_last_visible_index(model::offset);
     void maybe_update_majority_replicated_index();
