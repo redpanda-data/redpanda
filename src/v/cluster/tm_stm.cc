@@ -61,6 +61,31 @@ std::optional<tm_transaction> tm_stm::get_tx(kafka::transactional_id tx_id) {
     return std::nullopt;
 }
 
+ss::future<bool> tm_stm::barrier() {
+    if (_insync_term != _c->term()) {
+        return ss::make_ready_future<bool>(false);
+    }
+    auto term = _c->term();
+    return quorum_write_empty_batch(model::timeout_clock::now() + _sync_timeout)
+      .then_wrapped([this, term](ss::future<result<raft::replicate_result>> f) {
+          try {
+              if (!f.get0().has_value()) {
+                  return false;
+              }
+              if (term != _c->term()) {
+                  return false;
+              }
+              return true;
+          } catch (...) {
+              vlog(
+                clusterlog.error,
+                "Error during writing a barrier batch: {}",
+                std::current_exception());
+              return false;
+          }
+      });
+}
+
 ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::update_tx(tm_transaction tx, model::term_id term) {
     auto batch = serialize_tx(tx);

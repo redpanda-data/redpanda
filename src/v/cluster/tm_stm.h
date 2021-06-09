@@ -119,6 +119,8 @@ public:
         return r;
     }
 
+    ss::future<bool> barrier();
+
     ss::future<std::optional<tm_transaction>>
       get_actual_tx(kafka::transactional_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
