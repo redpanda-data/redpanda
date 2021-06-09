@@ -26,43 +26,59 @@ namespace pandaproxy::schema_registry {
 using server = ctx_server<service>;
 
 template<typename Handler>
-auto wrap(ss::gate& g, Handler h) {
-    return [&g, h{std::move(h)}](
+auto wrap(ss::gate& g, one_shot& os, Handler h) {
+    return [&g, &os, h{std::move(h)}](
              server::request_t rq,
              server::reply_t rp) -> ss::future<server::reply_t> {
+        auto units = co_await os();
         auto guard = gate_guard(g);
         co_return co_await h(std::move(rq), std::move(rp));
     };
 }
 
-server::routes_t get_schema_registry_routes(ss::gate& gate) {
+server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
     server::routes_t routes;
     routes.api = ss::httpd::schema_registry_json::name;
 
     routes.routes.emplace_back(server::route_t{
       ss::httpd::schema_registry_json::get_schemas_types,
-      wrap(gate, get_schemas_types)});
+      wrap(gate, es, get_schemas_types)});
 
     routes.routes.emplace_back(server::route_t{
       ss::httpd::schema_registry_json::get_schemas_ids_id,
-      wrap(gate, get_schemas_ids_id)});
+      wrap(gate, es, get_schemas_ids_id)});
 
     routes.routes.emplace_back(server::route_t{
-      ss::httpd::schema_registry_json::get_subjects, wrap(gate, get_subjects)});
+      ss::httpd::schema_registry_json::get_subjects,
+      wrap(gate, es, get_subjects)});
 
     routes.routes.emplace_back(server::route_t{
       ss::httpd::schema_registry_json::get_subject_versions,
-      wrap(gate, get_subject_versions)});
+      wrap(gate, es, get_subject_versions)});
 
     routes.routes.emplace_back(server::route_t{
       ss::httpd::schema_registry_json::post_subject_versions,
-      wrap(gate, post_subject_versions)});
+      wrap(gate, es, post_subject_versions)});
 
     routes.routes.emplace_back(server::route_t{
       ss::httpd::schema_registry_json::get_subject_versions_version,
-      wrap(gate, get_subject_versions_version)});
+      wrap(gate, es, get_subject_versions_version)});
 
     return routes;
+}
+
+ss::future<> service::do_start() {
+    auto guard = gate_guard(_gate);
+    try {
+        return ss::now();
+        vlog(plog.error, "service::ensure_started() - success");
+    } catch (...) {
+        vlog(
+          plog.error,
+          "Schema registry failed to initialize internal topic: {}",
+          std::current_exception());
+        throw;
+    }
 }
 
 service::service(
@@ -79,11 +95,12 @@ service::service(
       ss::api_registry_builder20(_config.api_doc_dir(), "/v1"),
       "schema_registry_header",
       "/definitions",
-      _ctx) {}
+      _ctx)
+  , _ensure_started{[this]() { return do_start(); }} {}
 
 ss::future<> service::start() {
     static std::vector<model::broker_endpoint> not_advertised{};
-    _server.routes(get_schema_registry_routes(_gate));
+    _server.routes(get_schema_registry_routes(_gate, _ensure_started));
     return _server.start(
       _config.schema_registry_api(),
       _config.schema_registry_api_tls(),
