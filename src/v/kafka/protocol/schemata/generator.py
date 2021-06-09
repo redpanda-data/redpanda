@@ -245,6 +245,9 @@ path_type_map = {
             },
         },
     },
+    "InitProducerIdRequestData": {
+        "TransactionTimeoutMs": ("std::chrono::milliseconds", "int32")
+    },
 }
 
 # a few kafka field types specify an entity type
