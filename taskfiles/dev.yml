@@ -1,5 +1,9 @@
 version: '3'
 
+vars:
+  GO_VERSION: '1.16.5'
+  GO_BUILD_ROOT: '{{.BUILD_ROOT}}/go/{{.GO_VERSION}}'
+
 tasks:
   install-deps:
     desc: install system packages
@@ -35,6 +39,17 @@ tasks:
       pip3 install yapf
     status:
     - test -f '{{.VENV}}/bin/yapf'
+
+  install-go:
+    desc: install golang compiler
+    vars:
+      GOLANG_URL_DEFAULT: 'https://golang.org/dl/go{{.GO_VERSION}}.linux-{{ARCH}}.tar.gz'
+      GOLANG_URL: '{{default .GOLANG_URL_DEFAULT .GOLANG_URL}}'
+    cmds:
+    - mkdir -p '{{.GO_BUILD_ROOT}}'
+    - curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 '{{.GOLANG_URL}}' | tar -xz -C '{{.GO_BUILD_ROOT}}' --strip 1
+    status:
+    - test -f '{{.GO_BUILD_ROOT}}/bin/go'
 
   install-docker-compose:
     desc: install docker-compose
