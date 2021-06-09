@@ -202,6 +202,17 @@ spec:
                                 If TLS is enabled then this subdomain will be requested
                                 as a subject alternative name.
                               type: string
+                            basePort:
+                              description: Base port for bootstrap, and every other broker would get assinged an ordinal Number
+                              type: integer
+                            ordinalPortPerBroker:
+                              description: Ordinal port per broker
+                                eg SUBDOMAIN:{BASEPORT+BROKER_ID}
+                              type: boolean
+                            ordinalBrokerHostname:
+                              description: Ordinal Broker hostname
+                                eg. BROKER_ID.SUBDOMAIN:EXTERNAL_KAFKA_API_PORT
+                              type: boolean
                           type: object
                         port:
                           type: integer

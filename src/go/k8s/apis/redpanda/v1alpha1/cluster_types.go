@@ -132,6 +132,13 @@ type ExternalConnectivityConfig struct {
 	// If TLS is enabled then this subdomain will be requested
 	// as a subject alternative name.
 	Subdomain string `json:"subdomain,omitempty"`
+	// BasePort can be used when OrdinalPortPerBroker is set to false
+	BasePort string `json:"basePort"`
+	// OrdinalPortPerBroker can be used when incremental port is needed
+	OrdinalPortPerBroker bool `json:"ordinalPortPerBroker"`
+	// OrdinalBrokerHostname can be used when you have incremental port and you want Broker Ordinal
+	// number to be set as subdomain
+	OrdinalBrokerHostname bool `json:"ordinalBrokerHostname"`
 }
 
 // ClusterStatus defines the observed state of Cluster
