@@ -232,8 +232,7 @@ ss::future<response_ptr> metadata_handler::handle(
         }
     }
 
-    // FIXME:  #95 Cluster Id
-    reply.data.cluster_id = std::nullopt;
+    reply.data.cluster_id = config::shard_local_cfg().cluster_id;
 
     auto leader_id = ctx.metadata_cache().get_controller_leader_id();
     reply.data.controller_id = leader_id.value_or(model::node_id(-1));

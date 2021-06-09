@@ -192,6 +192,8 @@ configuration::configuration()
       "Target quota byte rate (bytes per second) - 2GB default",
       required::no,
       2_GiB)
+  , cluster_id(
+      *this, "cluster_id", "Cluster identifier", required::no, std::nullopt)
   , rack(*this, "rack", "Rack identifier", required::no, std::nullopt)
   , dashboard_dir(
       *this,
