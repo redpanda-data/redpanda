@@ -19,6 +19,7 @@
 
 #include <filesystem>
 #include <set>
+#include <variant>
 
 /// This fixture sets up the mininum viable framework neccessary to test the
 /// script_dispatcher without using the redpanda_thread_fixture as that starts
@@ -79,6 +80,9 @@ protected:
     ss::sharded<coproc::pacemaker>& get_pacemaker() { return _pacemaker; }
 
 private:
+    using request_type = std::
+      variant<coproc::enable_copros_request, coproc::disable_copros_request>;
+
     ss::future<> start();
     ss::future<> stop();
     ss::future<> add_ntps(const model::topic&, size_t);
@@ -87,7 +91,14 @@ private:
     storage::log_config log_config() const;
 
 private:
+    /// Cache the inital state of the system so it can be artifically rebuild on
+    /// restart
     log_layout_map _llm;
+    /// Cache all wasm deploy/remove requests, this emmulates the event_listener
+    /// starting from the coproc topic at offset 0 when it is determined that a
+    /// restart must occur
+    std::vector<request_type> _cached_requests;
+
     std::filesystem::path _data_dir{
       std::filesystem::current_path() / "coproc_test"};
     ss::sharded<storage::api> _storage;

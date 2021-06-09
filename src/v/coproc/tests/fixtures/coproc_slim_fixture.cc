@@ -19,27 +19,34 @@
 #include "storage/types.h"
 #include "test_utils/async.h"
 
+#include <variant>
+
 coproc_slim_fixture::coproc_slim_fixture() {
     std::filesystem::create_directory(_data_dir);
 }
 
 coproc_slim_fixture::~coproc_slim_fixture() {
+    _abort_src.request_abort();
     stop().get();
     std::filesystem::remove_all(_data_dir);
 }
 
 ss::future<> coproc_slim_fixture::enable_coprocessors(
   std::vector<coproc_fixture_iface::deploy> data) {
+    std::vector<coproc::enable_copros_request::data> copy;
     std::vector<coproc::enable_copros_request::data> d;
-    std::transform(
-      data.begin(),
-      data.end(),
-      std::back_inserter(d),
-      [](coproc_fixture_iface::deploy& item) {
-          return coproc::enable_copros_request::data{
-            .id = coproc::script_id(item.id),
-            .source_code = reflection::to_iobuf(std::move(item.data))};
-      });
+    copy.reserve(data.size());
+    d.reserve(data.size());
+    for (const auto& e : data) {
+        copy.emplace_back(coproc::enable_copros_request::data{
+          .id = coproc::script_id(e.id),
+          .source_code = reflection::to_iobuf(e.data)});
+        d.emplace_back(coproc::enable_copros_request::data{
+          .id = coproc::script_id(e.id),
+          .source_code = reflection::to_iobuf(e.data)});
+    }
+    _cached_requests.emplace_back(
+      coproc::enable_copros_request{.inputs = std::move(copy)});
     return get_script_dispatcher()
       ->enable_coprocessors(
         coproc::enable_copros_request{.inputs = std::move(d)})
@@ -49,29 +56,25 @@ ss::future<> coproc_slim_fixture::enable_coprocessors(
 ss::future<>
 coproc_slim_fixture::disable_coprocessors(std::vector<uint64_t> ids) {
     std::vector<coproc::script_id> d;
+    d.reserve(ids.size());
     std::transform(
       ids.begin(), ids.end(), std::back_inserter(d), [](uint64_t id) {
           return coproc::script_id(id);
       });
+    coproc::disable_copros_request req{.ids = std::move(d)};
+    _cached_requests.push_back(req);
     return get_script_dispatcher()
-      ->disable_coprocessors(
-        coproc::disable_copros_request{.ids = std::move(d)})
+      ->disable_coprocessors(std::move(req))
       .discard_result();
 }
 
 ss::future<> coproc_slim_fixture::setup(log_layout_map llm) {
     _llm = llm;
-    return start().then([this, llm = std::move(llm)]() mutable {
-        return ss::do_with(std::move(llm), [this](const auto& llm) {
-            return ss::do_for_each(llm, [this](const auto& item) {
-                return add_ntps(item.first, item.second);
-            });
-        });
-    });
+    return start();
 }
 
 ss::future<> coproc_slim_fixture::restart() {
-    return stop().then([this] { return setup(_llm); });
+    return stop().then([this] { return start(); });
 }
 
 ss::future<std::set<ss::shard_id>>
@@ -96,6 +99,11 @@ ss::future<> coproc_slim_fixture::start() {
     return _storage.start(kvstore_config(), log_config())
       .then([this] { return _storage.invoke_on_all(&storage::api::start); })
       .then([this] {
+          return ss::do_for_each(_llm, [this](const auto& item) {
+              return add_ntps(item.first, item.second);
+          });
+      })
+      .then([this] {
           return _pacemaker.start(
             unresolved_address("127.0.0.1", 43189), std::ref(_storage));
       })
@@ -105,11 +113,27 @@ ss::future<> coproc_slim_fixture::start() {
           _script_dispatcher
             = std::make_unique<coproc::wasm::script_dispatcher>(
               _pacemaker, _abort_src);
+          return _script_dispatcher->disable_all_coprocessors()
+            .discard_result();
+      })
+      .then([this] {
+          return ss::do_for_each(_cached_requests, [this](auto& req) {
+              if (std::holds_alternative<coproc::enable_copros_request>(req)) {
+                  return get_script_dispatcher()
+                    ->enable_coprocessors(
+                      std::get<coproc::enable_copros_request>(std::move(req)))
+                    .discard_result();
+              } else {
+                  return get_script_dispatcher()
+                    ->disable_coprocessors(
+                      std::get<coproc::disable_copros_request>(std::move(req)))
+                    .discard_result();
+              }
+          });
       });
 }
 
 ss::future<> coproc_slim_fixture::stop() {
-    _abort_src.request_abort();
     { auto sd = std::move(_script_dispatcher); }
     return _pacemaker.stop().then([this] { return _storage.stop(); });
 }
