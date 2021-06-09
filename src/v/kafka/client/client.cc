@@ -245,6 +245,27 @@ ss::future<produce_response> client::produce_records(
         .throttle_time_ms{{std::chrono::milliseconds{0}}}}};
 }
 
+ss::future<create_topics_response>
+client::create_topic(kafka::creatable_topic req) {
+    return gated_retry_with_mitigation([this, req{std::move(req)}]() {
+        auto controller = _controller;
+        return _brokers.find(controller)
+          .then([req](auto broker) mutable {
+              return broker->dispatch(
+                kafka::create_topics_request{.data{.topics{std::move(req)}}});
+          })
+          .then([controller](auto res) {
+              auto ec = res.data.topics[0].error_code;
+              if (ec == kafka::error_code::not_controller) {
+                  return ss::make_exception_future<create_topics_response>(
+                    broker_error(controller, ec));
+              }
+              return ss::make_ready_future<create_topics_response>(
+                std::move(res));
+          });
+    });
+}
+
 ss::future<fetch_response> client::fetch_partition(
   model::topic_partition tp,
   model::offset offset,
