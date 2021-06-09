@@ -7,7 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-name: K8S build and test
+name: helm chart test
 on:
   push:
     branches:
@@ -16,44 +16,6 @@ on:
     branches:
       - dev
 jobs:
-  test:
-    runs-on: ubuntu-latest
-
-    steps:
-
-    - name: Check out code
-      uses: actions/checkout@v2
-
-    - name: golangci-lint
-      uses: golangci/golangci-lint-action@v2
-      with:
-        version: v1.36
-        args: --timeout 8m
-        working-directory: src/go/k8s/
-
-    - name: Set up Go
-      uses: actions/setup-go@v2
-      with:
-        go-version: 1.16.3
-      id: go
-
-    - uses: azure/setup-kubectl@v1
-      with:
-        version: 'v1.20.2'
-      id: install
-
-    - name: Unit tests & Integration tests & E2E tests
-      working-directory: src/go/k8s/
-      run: make e2e-tests
-      shell: bash
-
-    - name: Archive test data
-      if: ${{ failure() }}
-      uses: actions/upload-artifact@v2
-      with:
-        name: kuttl test artifacts
-        path: src/go/k8s/tests/_e2e_artifacts
-
   helm-test:
     runs-on: ubuntu-latest
 
@@ -91,38 +53,3 @@ jobs:
       with:
         name: kuttl helm test artifacts
         path: src/go/k8s/tests/_helm_e2e_artifacts
-
-  publish-images:
-    needs: [test, helm-test]
-
-    runs-on: ubuntu-latest
-
-    if: github.ref == 'refs/heads/dev' && github.repository == 'vectorizedio/redpanda'
-
-    steps:
-
-    - name: Check out code
-      uses: actions/checkout@v2
-
-    - name: Build and tag dev images
-      working-directory: src/go/k8s/
-      shell: bash
-      env:
-        TAG_NAME: "dev"
-      run: |
-        make docker-build
-        make docker-build-configurator
-        make docker-tag-dev
-
-    - name: Login to dockerhub
-      uses: docker/login-action@v1
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-    - name: Push dev images
-      working-directory: src/go/k8s/
-      shell: bash
-      env:
-        TAG_NAME: "dev"
-      run: make docker-push-dev
