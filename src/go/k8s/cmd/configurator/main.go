@@ -41,9 +41,9 @@ const (
 	externalConnectivitySubDomainEnvVar = "EXTERNAL_CONNECTIVITY_SUBDOMAIN"
 	hostPortEnvVar                      = "HOST_PORT"
 	proxyHostPortEnvVar                 = "PROXY_HOST_PORT"
-	ordinalPortPerBroker 				= "ORDINAL_PORT_PER_BROKER"
-	ordinalBrokerHostname				= "ORDINAL_BROKER_HOSTNAME"
-	basePort							= "BASE_PORT"
+	ordinalPortPerBroker                = "ORDINAL_PORT_PER_BROKER"
+	ordinalBrokerHostname               = "ORDINAL_BROKER_HOSTNAME"
+	basePort                            = "BASE_PORT"
 )
 
 type brokerID int
@@ -75,9 +75,8 @@ func (c *configuratorConfig) String() string {
 		"externalConnectivitySubdomain: %s\n"+
 		"redpandaRPCPort: %d\n"+
 		"hostPort: %d\n"+
-		"proxyHostPort: %d\n",
-		"ordinalPortPerBroker: %t\n",
-		"ordinalBrokerHostname: %t\n",
+		"proxyHostPort: %d\n"+
+		"ordinalBrokerHostname: %t\n"+
 		"basePort: %d\n",
 		c.hostName,
 		c.svcFQDN,
@@ -89,9 +88,9 @@ func (c *configuratorConfig) String() string {
 		c.redpandaRPCPort,
 		c.hostPort,
 		c.proxyHostPort,
-		c.ordinalPortPerBroker,
 		c.ordinalBrokerHostname,
-		c.basePort)
+		c.basePort,
+	)
 }
 
 var errorMissingEnvironmentVariable = errors.New("missing environment variable")
@@ -438,7 +437,6 @@ func checkEnvVars() (configuratorConfig, error) {
 		}
 	}
 
-
 	ordinalBrokerHostnameVar, exist := os.LookupEnv(ordinalBrokerHostname)
 	if exist {
 		c.ordinalBrokerHostname, err = strconv.ParseBool(ordinalBrokerHostnameVar)
@@ -446,7 +444,6 @@ func checkEnvVars() (configuratorConfig, error) {
 			result = multierror.Append(result, fmt.Errorf("unable to convert ordinal broker hostname from string to bool: %w", err))
 		}
 	}
-
 
 	basePortVar, exist := os.LookupEnv(basePort)
 	if exist {
@@ -467,7 +464,6 @@ func hostIndex(hostName string) (brokerID, error) {
 	i, err := strconv.Atoi(s[last])
 	return brokerID(i), err
 }
-
 
 func hostBaseName(hostName string) string {
 	s := strings.Split(hostName, "-")

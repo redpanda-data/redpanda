@@ -15,7 +15,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strconv"
 	"strings"
 	"time"
 
@@ -371,11 +370,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 				if externalKafkaListener.External.OrdinalPortPerBroker {
 					port = getNodePort(&nodePortSvc, resources.ExternalListenerName)
 				} else {
-					basePort, err := strconv.Atoi(externalKafkaListener.External.BasePort )
-					if err != nil {
-						return nil, nil, nil, "", fmt.Errorf("invalid base port %s", externalKafkaListener.External.BasePort)
-					}
-					port = int32(basePort + i)
+					port = int32(externalKafkaListener.External.BasePort + i)
 				}
 
 				address = subdomainAddress("", externalKafkaListener.External.Subdomain, port)

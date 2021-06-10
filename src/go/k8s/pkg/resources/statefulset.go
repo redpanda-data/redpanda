@@ -226,11 +226,11 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 	externalSubdomain := ""
 	ordinalPortPerBroker := false
 	ordinalBrokerHostname := false
-	basePort := ""
+	basePort := 0
 	if externalListener != nil {
 		externalSubdomain = externalListener.External.Subdomain
-		ordinalPortPerBroker =  externalListener.External.OrdinalPortPerBroker
-		ordinalBrokerHostname =  externalListener.External.OrdinalBrokerHostname
+		ordinalPortPerBroker = externalListener.External.OrdinalPortPerBroker
+		ordinalBrokerHostname = externalListener.External.OrdinalBrokerHostname
 		basePort = externalListener.External.BasePort
 	}
 
@@ -334,16 +334,16 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 									Value: r.getNodePort(ExternalListenerName),
 								},
 								{
-									Name: "ORDINAL_PORT_PER_BROKER",
+									Name:  "ORDINAL_PORT_PER_BROKER",
 									Value: strconv.FormatBool(ordinalPortPerBroker),
 								},
 								{
-									Name: "ORDINAL_BROKER_HOSTNAME",
+									Name:  "ORDINAL_BROKER_HOSTNAME",
 									Value: strconv.FormatBool(ordinalBrokerHostname),
 								},
 								{
-									Name: "BASE_PORT",
-									Value: basePort,
+									Name:  "BASE_PORT",
+									Value: strconv.Itoa(basePort),
 								},
 							}, r.pandaproxyEnvVars()...),
 							SecurityContext: &corev1.SecurityContext{
