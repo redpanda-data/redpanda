@@ -13,14 +13,19 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timestamp.h"
+#include "raft/group_configuration.h"
 #include "raft/logger.h"
+#include "raft/types.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "resource_mgmt/io_priority.h"
+#include "storage/api.h"
+#include "storage/kvstore.h"
 #include "storage/record_batch_builder.h"
 #include "vassert.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/file-types.hh>
 #include <seastar/core/file.hh>
 #include <seastar/core/future.hh>
@@ -31,6 +36,7 @@
 #include <filesystem>
 // delete
 #include <seastar/core/future-util.hh>
+#include <seastar/core/when_all.hh>
 
 #include <yaml-cpp/yaml.h>
 
@@ -308,6 +314,113 @@ bytes serialize_group_key(raft::group_id group, metadata_key key_type) {
     iobuf buf;
     reflection::serialize(buf, key_type, group);
     return iobuf_to_bytes(buf);
+}
+
+ss::future<> move_persistent_state(
+  raft::group_id group,
+  ss::shard_id source_shard,
+  ss::shard_id target_shard,
+  ss::sharded<storage::api>& api) {
+    struct persistent_state {
+        std::optional<iobuf> voted_for;
+        std::optional<iobuf> last_applied;
+        std::optional<iobuf> unique_run_id;
+        std::optional<iobuf> configuration_map;
+        std::optional<iobuf> highest_known_offset;
+        std::optional<iobuf> next_cfg_idx;
+    };
+    using state_ptr = std::unique_ptr<persistent_state>;
+    using state_fptr = ss::foreign_ptr<std::unique_ptr<persistent_state>>;
+
+    state_fptr state = co_await api.invoke_on(
+      source_shard, [gr = group](storage::api& api) {
+          const auto ks = storage::kvstore::key_space::consensus;
+          persistent_state state{
+            .voted_for = api.kvs().get(
+              ks, serialize_group_key(gr, metadata_key::voted_for)),
+            .last_applied = api.kvs().get(
+              ks, serialize_group_key(gr, metadata_key::last_applied_offset)),
+            .unique_run_id = api.kvs().get(
+              ks, serialize_group_key(gr, metadata_key::unique_local_id)),
+            .configuration_map = api.kvs().get(
+              ks, serialize_group_key(gr, metadata_key::config_map)),
+            .highest_known_offset = api.kvs().get(
+              ks,
+              serialize_group_key(
+                gr, metadata_key::config_latest_known_offset)),
+            .next_cfg_idx = api.kvs().get(
+              ks, serialize_group_key(gr, metadata_key::config_next_cfg_idx))};
+          return ss::make_foreign<state_ptr>(
+            std::make_unique<persistent_state>(std::move(state)));
+      });
+
+    co_await api.invoke_on(
+      target_shard, [gr = group, state = std::move(state)](storage::api& api) {
+          const auto ks = storage::kvstore::key_space::consensus;
+          std::vector<ss::future<>> write_futures;
+          write_futures.reserve(6);
+          if (state->voted_for) {
+              write_futures.push_back(api.kvs().put(
+                ks,
+                serialize_group_key(gr, metadata_key::voted_for),
+                state->voted_for->copy()));
+          }
+          if (state->last_applied) {
+              write_futures.push_back(api.kvs().put(
+                ks,
+                serialize_group_key(gr, metadata_key::last_applied_offset),
+                state->last_applied->copy()));
+          }
+          if (state->unique_run_id) {
+              write_futures.push_back(api.kvs().put(
+                ks,
+                serialize_group_key(gr, metadata_key::unique_local_id),
+                state->unique_run_id->copy()));
+          }
+          if (state->configuration_map) {
+              write_futures.push_back(api.kvs().put(
+                ks,
+                serialize_group_key(gr, metadata_key::config_map),
+                state->configuration_map->copy()));
+          }
+          if (state->highest_known_offset) {
+              write_futures.push_back(api.kvs().put(
+                ks,
+                serialize_group_key(
+                  gr, metadata_key::config_latest_known_offset),
+                state->highest_known_offset->copy()));
+          }
+          if (state->next_cfg_idx) {
+              write_futures.push_back(api.kvs().put(
+                ks,
+                serialize_group_key(gr, metadata_key::config_next_cfg_idx),
+                state->next_cfg_idx->copy()));
+          }
+          return ss::when_all_succeed(
+            write_futures.begin(), write_futures.end());
+      });
+
+    // remove on source shard
+    co_await api.invoke_on(source_shard, [gr = group](storage::api& api) {
+        const auto ks = storage::kvstore::key_space::consensus;
+        std::vector<ss::future<>> remove_futures;
+        remove_futures.reserve(6);
+        remove_futures.push_back(api.kvs().remove(
+          ks, serialize_group_key(gr, metadata_key::voted_for)));
+        remove_futures.push_back(api.kvs().remove(
+          ks, serialize_group_key(gr, metadata_key::last_applied_offset)));
+        remove_futures.push_back(api.kvs().remove(
+          ks, serialize_group_key(gr, metadata_key::unique_local_id)));
+        remove_futures.push_back(api.kvs().remove(
+          ks, serialize_group_key(gr, metadata_key::config_map)));
+        remove_futures.push_back(api.kvs().remove(
+          ks,
+          serialize_group_key(gr, metadata_key::config_latest_known_offset)));
+        remove_futures.push_back(api.kvs().remove(
+          ks, serialize_group_key(gr, metadata_key::config_next_cfg_idx)));
+        return ss::when_all_succeed(
+          remove_futures.begin(), remove_futures.end());
+    });
 }
 
 } // namespace raft::details
