@@ -36,7 +36,8 @@ var (
 )
 
 const (
-	redpandaNetwork = "redpanda"
+	redpandaNetwork   = "redpanda"
+	externalKafkaPort = 9093
 
 	defaultDockerClientTimeout = 60 * time.Second
 )
@@ -54,6 +55,14 @@ type NodeState struct {
 
 func HostAddr(port uint) string {
 	return fmt.Sprintf("127.0.0.1:%d", port)
+}
+
+func ListenAddresses(ip string, internalPort, externalPort uint) string {
+	return fmt.Sprintf("internal://0.0.0.0:%d,external://%s:%d", internalPort, ip, externalPort)
+}
+
+func AdvertiseAddresses(ip string, internalPort, externalPort uint) string {
+	return fmt.Sprintf("internal://%s:%d,external://127.0.0.1:%d", ip, internalPort, externalPort)
 }
 
 // Returns the container name for the given node ID.
@@ -126,7 +135,7 @@ func GetState(c Client, nodeID uint) (*NodeState, error) {
 		return nil, err
 	}
 	hostKafkaPort, err := getHostPort(
-		config.DefaultKafkaPort,
+		externalKafkaPort,
 		containerJSON,
 	)
 	if err != nil {
@@ -216,7 +225,7 @@ func CreateNode(
 	}
 	kPort, err := nat.NewPort(
 		"tcp",
-		strconv.Itoa(config.DefaultKafkaPort),
+		strconv.Itoa(int(externalKafkaPort)),
 	)
 	if err != nil {
 		return nil, err
@@ -245,15 +254,15 @@ func CreateNode(
 		"--node-id",
 		fmt.Sprintf("%d", nodeID),
 		"--kafka-addr",
-		fmt.Sprintf("%s:%d", ip, config.DefaultKafkaPort),
+		ListenAddresses(ip, config.DefaultKafkaPort, externalKafkaPort),
 		"--pandaproxy-addr",
-		fmt.Sprintf("%s:%d", ip, config.DefaultProxyPort),
+		ListenAddresses(ip, config.DefaultProxyPort, proxyPort),
 		"--rpc-addr",
 		fmt.Sprintf("%s:%d", ip, config.Default().Redpanda.RPCServer.Port),
 		"--advertise-kafka-addr",
-		HostAddr(kafkaPort),
+		AdvertiseAddresses(ip, config.DefaultKafkaPort, kafkaPort),
 		"--advertise-pandaproxy-addr",
-		HostAddr(proxyPort),
+		AdvertiseAddresses(ip, config.DefaultProxyPort, proxyPort),
 		"--advertise-rpc-addr",
 		fmt.Sprintf("%s:%d", ip, config.Default().Redpanda.RPCServer.Port),
 		"--smp 1 --memory 1G --reserve-memory 0M",
