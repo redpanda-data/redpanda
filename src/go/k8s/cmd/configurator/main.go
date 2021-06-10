@@ -41,21 +41,27 @@ const (
 	externalConnectivitySubDomainEnvVar = "EXTERNAL_CONNECTIVITY_SUBDOMAIN"
 	hostPortEnvVar                      = "HOST_PORT"
 	proxyHostPortEnvVar                 = "PROXY_HOST_PORT"
+	ordinalPortPerBroker 				= "ORDINAL_PORT_PER_BROKER"
+	ordinalBrokerHostname				= "ORDINAL_BROKER_HOSTNAME"
+	basePort							= "BASE_PORT"
 )
 
 type brokerID int
 
 type configuratorConfig struct {
-	hostName             string
-	svcFQDN              string
-	configSourceDir      string
-	configDestination    string
-	nodeName             string
-	subdomain            string
-	externalConnectivity bool
-	redpandaRPCPort      int
-	hostPort             int
-	proxyHostPort        int
+	hostName              string
+	svcFQDN               string
+	configSourceDir       string
+	configDestination     string
+	nodeName              string
+	subdomain             string
+	externalConnectivity  bool
+	redpandaRPCPort       int
+	hostPort              int
+	proxyHostPort         int
+	ordinalPortPerBroker  bool
+	ordinalBrokerHostname bool
+	basePort              int
 }
 
 func (c *configuratorConfig) String() string {
@@ -70,6 +76,9 @@ func (c *configuratorConfig) String() string {
 		"redpandaRPCPort: %d\n"+
 		"hostPort: %d\n"+
 		"proxyHostPort: %d\n",
+		"ordinalPortPerBroker: %t\n",
+		"ordinalBrokerHostname: %t\n",
+		"basePort: %d\n",
 		c.hostName,
 		c.svcFQDN,
 		c.configSourceDir,
@@ -79,7 +88,10 @@ func (c *configuratorConfig) String() string {
 		c.subdomain,
 		c.redpandaRPCPort,
 		c.hostPort,
-		c.proxyHostPort)
+		c.proxyHostPort,
+		c.ordinalPortPerBroker,
+		c.ordinalBrokerHostname,
+		c.basePort)
 }
 
 var errorMissingEnvironmentVariable = errors.New("missing environment variable")
@@ -188,6 +200,9 @@ func getNode(nodeName string) (*corev1.Node, error) {
 func registerAdvertisedKafkaAPI(
 	c *configuratorConfig, cfg *config.Config, index brokerID, kafkaAPIPort int,
 ) error {
+
+	internalIndex, _ := strconv.Atoi(fmt.Sprintf("%d", index))
+
 	cfg.Redpanda.AdvertisedKafkaApi = []config.NamedSocketAddress{
 		{
 			SocketAddress: config.SocketAddress{
@@ -203,13 +218,29 @@ func registerAdvertisedKafkaAPI(
 	}
 
 	if len(c.subdomain) > 0 {
-		cfg.Redpanda.AdvertisedKafkaApi = append(cfg.Redpanda.AdvertisedKafkaApi, config.NamedSocketAddress{
-			SocketAddress: config.SocketAddress{
-				Address: fmt.Sprintf("%d.%s", index, c.subdomain),
-				Port:    c.hostPort,
-			},
-			Name: "kafka-external",
-		})
+		if c.ordinalBrokerHostname {
+			cfg.Redpanda.AdvertisedKafkaApi = append(cfg.Redpanda.AdvertisedKafkaApi, config.NamedSocketAddress{
+				SocketAddress: config.SocketAddress{
+					Address: fmt.Sprintf("%d.%s", index, c.subdomain),
+					Port:    c.hostPort,
+				},
+				Name: "kafka-external",
+			})
+		} else {
+			port := c.hostPort
+			if !c.ordinalPortPerBroker {
+				port = c.basePort + internalIndex
+			}
+
+			cfg.Redpanda.AdvertisedKafkaApi = append(cfg.Redpanda.AdvertisedKafkaApi, config.NamedSocketAddress{
+				SocketAddress: config.SocketAddress{
+					Address: fmt.Sprintf("%s.%s", hostBaseName(c.hostName), c.subdomain),
+					Port:    port,
+				},
+				Name: "kafka-external",
+			})
+		}
+
 		return nil
 	}
 
@@ -218,10 +249,15 @@ func registerAdvertisedKafkaAPI(
 		return fmt.Errorf("unable to retrieve node: %w", err)
 	}
 
+	port := c.hostPort
+	if !c.ordinalPortPerBroker {
+		port = c.basePort + internalIndex
+	}
+
 	cfg.Redpanda.AdvertisedKafkaApi = append(cfg.Redpanda.AdvertisedKafkaApi, config.NamedSocketAddress{
 		SocketAddress: config.SocketAddress{
 			Address: getExternalIP(node),
-			Port:    c.hostPort,
+			Port:    port,
 		},
 		Name: "kafka-external",
 	})
@@ -246,15 +282,33 @@ func registerAdvertisedPandaproxyAPI(
 		return nil
 	}
 
+	internalIndex, _ := strconv.Atoi(fmt.Sprintf("%d", index))
+
 	// Pandaproxy uses the Kafka API subdomain.
 	if len(c.subdomain) > 0 {
-		cfg.Pandaproxy.AdvertisedPandaproxyAPI = append(cfg.Pandaproxy.AdvertisedPandaproxyAPI, config.NamedSocketAddress{
-			SocketAddress: config.SocketAddress{
-				Address: fmt.Sprintf("%d.%s", index, c.subdomain),
-				Port:    c.proxyHostPort,
-			},
-			Name: "proxy-external",
-		})
+		if c.ordinalBrokerHostname {
+			cfg.Pandaproxy.AdvertisedPandaproxyAPI = append(cfg.Pandaproxy.AdvertisedPandaproxyAPI, config.NamedSocketAddress{
+				SocketAddress: config.SocketAddress{
+					Address: fmt.Sprintf("%d.%s", index, c.subdomain),
+					Port:    c.proxyHostPort,
+				},
+				Name: "proxy-external",
+			})
+		} else {
+			port := c.hostPort
+			if !c.ordinalPortPerBroker {
+				port = c.basePort + internalIndex
+			}
+
+			cfg.Pandaproxy.AdvertisedPandaproxyAPI = append(cfg.Pandaproxy.AdvertisedPandaproxyAPI, config.NamedSocketAddress{
+				SocketAddress: config.SocketAddress{
+					Address: fmt.Sprintf("%s.%s", hostBaseName(c.hostName), c.subdomain),
+					Port:    port,
+				},
+				Name: "proxy-external",
+			})
+		}
+
 		return nil
 	}
 
@@ -262,11 +316,14 @@ func registerAdvertisedPandaproxyAPI(
 	if err != nil {
 		return fmt.Errorf("unable to retrieve node: %w", err)
 	}
-
+	port := c.hostPort
+	if !c.ordinalPortPerBroker {
+		port = c.basePort + internalIndex
+	}
 	cfg.Pandaproxy.AdvertisedPandaproxyAPI = append(cfg.Pandaproxy.AdvertisedPandaproxyAPI, config.NamedSocketAddress{
 		SocketAddress: config.SocketAddress{
 			Address: getExternalIP(node),
-			Port:    c.proxyHostPort,
+			Port:    port,
 		},
 		Name: "proxy-external",
 	})
@@ -373,6 +430,31 @@ func checkEnvVars() (configuratorConfig, error) {
 		}
 	}
 
+	ordinalPortPerBrokerVar, exist := os.LookupEnv(ordinalPortPerBroker)
+	if exist {
+		c.ordinalPortPerBroker, err = strconv.ParseBool(ordinalPortPerBrokerVar)
+		if err != nil {
+			result = multierror.Append(result, fmt.Errorf("unable to convert ordinal port per broker from string to bool: %w", err))
+		}
+	}
+
+
+	ordinalBrokerHostnameVar, exist := os.LookupEnv(ordinalBrokerHostname)
+	if exist {
+		c.ordinalBrokerHostname, err = strconv.ParseBool(ordinalBrokerHostnameVar)
+		if err != nil {
+			result = multierror.Append(result, fmt.Errorf("unable to convert ordinal broker hostname from string to bool: %w", err))
+		}
+	}
+
+
+	basePortVar, exist := os.LookupEnv(basePort)
+	if exist {
+		c.basePort, err = strconv.Atoi(basePortVar)
+		if err != nil {
+			result = multierror.Append(result, fmt.Errorf("unable to convert base port from string to int: %w", err))
+		}
+	}
 	return c, result
 }
 
@@ -384,4 +466,11 @@ func hostIndex(hostName string) (brokerID, error) {
 	last := len(s) - 1
 	i, err := strconv.Atoi(s[last])
 	return brokerID(i), err
+}
+
+
+func hostBaseName(hostName string) string {
+	s := strings.Split(hostName, "-")
+	last := len(s) - 1
+	return strings.Join(s[:last], "-")
 }

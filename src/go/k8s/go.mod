@@ -1,4 +1,4 @@
-module github.com/danielungur-firebolt/redpanda/src/go/k8s
+module github.com/vectorizedio/redpanda/src/go/k8s
 
 go 1.16
 
