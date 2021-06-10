@@ -145,8 +145,14 @@ private:
      */
     absl::node_hash_map<model::ntp, cross_shard_move_request>
       _cross_shard_requests;
+    /**
+     * This map is populated when bootstrapping. If partition is moved cross
+     * shard on the same node it has to be created with revision that it was
+     * first created on current node before cross core move series
+     */
+    absl::node_hash_map<model::ntp, model::revision_id> _bootstrap_revisions;
 };
 
 std::vector<topic_table::delta> calculate_bootstrap_deltas(
-  model::node_id self, std::vector<topic_table::delta>&&);
+  model::node_id self, const std::vector<topic_table::delta>&);
 } // namespace cluster
