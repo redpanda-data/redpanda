@@ -38,3 +38,23 @@ tasks:
       for dir in $(find . -maxdepth 1 -type d ! -path .); do
         cd $dir; go mod tidy; cd ..
       done
+
+  test:
+    desc: run rpk tests
+    vars:
+      CACHE_TESTS: '{{default "true" .CACHE_TESTS}}'
+      FILTER: '{{default "" .FILTER}}'
+    env:
+      GOOS: '{{OS | lower}}'
+      GOPATH: '{{.GO_BUILD_ROOT}}'
+    dir: "{{.SRC_DIR}}/src/go/rpk"
+    cmds:
+    - |
+      cmd="{{.GO_BUILD_ROOT}}/bin/go test ./..."
+      if [ '{{.CACHE_TESTS}}' != 'true' ]; then
+        cmd="$cmd -count=1"
+      fi
+      if [ '{{.FILTER}}' != '' ]; then
+        cmd="$cmd: -run {{.FILTER}}"
+      fi
+      $cmd
