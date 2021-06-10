@@ -69,7 +69,7 @@ public:
       offset_tracker tracker,
       segment_reader,
       segment_index,
-      std::optional<segment_appender>,
+      segment_appender_ptr,
       std::optional<compacted_index_writer>,
       std::optional<batch_cache_index>) noexcept;
     ~segment() noexcept = default;
@@ -117,6 +117,7 @@ public:
     const segment_reader& reader() const;
     segment_index& index();
     const segment_index& index() const;
+    segment_appender_ptr release_appender();
     segment_appender& appender();
     const segment_appender& appender() const;
     bool has_appender() const;
@@ -154,7 +155,7 @@ private:
     ss::future<> do_close();
     ss::future<> do_flush();
     ss::future<> do_release_appender(
-      std::optional<segment_appender>,
+      segment_appender_ptr,
       std::optional<batch_cache_index>,
       std::optional<compacted_index_writer>);
     ss::future<> remove_tombstones();
@@ -181,7 +182,7 @@ private:
     segment_reader _reader;
     segment_index _idx;
     bitflags _flags{bitflags::none};
-    std::optional<segment_appender> _appender;
+    segment_appender_ptr _appender;
     std::optional<compacted_index_writer> _compaction_index;
     std::optional<batch_cache_index> _cache;
     ss::rwlock _destructive_ops;
@@ -340,9 +341,12 @@ inline segment_reader& segment::reader() { return _reader; }
 inline const segment_reader& segment::reader() const { return _reader; }
 inline segment_index& segment::index() { return _idx; }
 inline const segment_index& segment::index() const { return _idx; }
+inline segment_appender_ptr segment::release_appender() {
+    return std::move(_appender);
+}
 inline segment_appender& segment::appender() { return *_appender; }
 inline const segment_appender& segment::appender() const { return *_appender; }
-inline bool segment::has_appender() const { return _appender != std::nullopt; }
+inline bool segment::has_appender() const { return !!_appender; }
 inline compacted_index_writer& segment::compaction_index() {
     return *_compaction_index;
 }
