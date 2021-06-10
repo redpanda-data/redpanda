@@ -73,11 +73,11 @@ generate: controller-gen
 
 # Build the docker image
 docker-build:
-	docker build -f Dockerfile -t ${OPERATOR_IMG_LATEST} ../
+	docker build --target=manager -f Dockerfile -t ${OPERATOR_IMG_LATEST} ../
 
 # Build the docker image
 docker-build-configurator:
-	docker build -f cmd/configurator/Dockerfile -t ${CONFIGURATOR_IMG_LATEST} ../
+	docker build --target=configurator -f Dockerfile -t ${OPERATOR_IMG_LATEST} ../
 
 # Preload controller image to kind cluster
 push-to-kind:
