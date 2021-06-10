@@ -89,12 +89,25 @@ func FindConfigFile(
 	}
 }
 
+// Returns the configured brokers list.
+// The configuration priority is as follows (highest to lowest):
+// 1. Values passed through flags (`brokers`)
+// 2. A list of brokers set through the `REDPANDA_BROKERS` environment
+//    variable
+// 3. The addresses of a running local container cluster deployed with
+//    `rpk container start`.
+// 4. A list of brokers from the `rpk.kafka_api.brokers` field in the
+//    config file.
+//
+// If none of those sources yield a list of broker addresses, the default
+// local address (127.0.0.1:9092) is assumed.
 func DeduceBrokers(
 	client func() (common.Client, error),
 	configuration func() (*config.Config, error),
 	brokers *[]string,
 ) func() []string {
 	return func() []string {
+		defaultAddrs := []string{"127.0.0.1:9092"}
 		bs := *brokers
 		// Prioritize brokers passed through --brokers
 		if len(bs) != 0 {
@@ -136,43 +149,24 @@ func DeduceBrokers(
 		if err != nil {
 			log.Trace(
 				"Couldn't read the config file." +
-					" Assuming 127.0.0.1:9092",
+					" Assuming 127.0.0.1:9092.",
 			)
 			log.Debug(err)
-			return []string{"127.0.0.1:9092"}
+			return defaultAddrs
 		}
 
-		if len(conf.Redpanda.KafkaApi) == 0 {
-			log.Trace(
-				"The config file contains no kafka listeners." +
-					" Empty redpanda.kafka_api.",
+		if len(conf.Rpk.KafkaApi.Brokers) == 0 {
+			log.Debug(
+				"Empty rpk.kafka_api.brokers. Assuming 127.0.0.1:9092.",
 			)
-			return []string{}
+			return defaultAddrs
 		}
 
-		// Add the seed servers' Kafka addrs.
-		if len(conf.Redpanda.SeedServers) > 0 {
-			for _, b := range conf.Redpanda.SeedServers {
-				addr := fmt.Sprintf(
-					"%s:%d",
-					b.Host.Address,
-					conf.Redpanda.KafkaApi[0].Port,
-				)
-				bs = append(bs, addr)
-			}
-		}
-		// Add the current node's Kafka addr.
-		selfAddr := fmt.Sprintf(
-			"%s:%d",
-			conf.Redpanda.KafkaApi[0].Address,
-			conf.Redpanda.KafkaApi[0].Port,
-		)
-		bs = append(bs, selfAddr)
 		log.Debugf(
 			"Using brokers from config: %s",
-			strings.Join(bs, ", "),
+			strings.Join(conf.Rpk.KafkaApi.Brokers, ", "),
 		)
-		return bs
+		return conf.Rpk.KafkaApi.Brokers
 	}
 }
 
@@ -195,7 +189,7 @@ func CreateProducer(
 		// If no TLS config was set, try to look for TLS config in the
 		// config file.
 		if tls == nil {
-			tls = &conf.Rpk.TLS
+			tls = conf.Rpk.KafkaApi.TLS
 		}
 
 		sasl, err := authConfig()
@@ -207,7 +201,11 @@ func CreateProducer(
 			}
 			// If no SASL config was set, try to look for it in the
 			// config file.
-			sasl = &conf.Rpk.SASL
+			if conf.Rpk.KafkaApi.SASL != nil {
+				sasl = conf.Rpk.KafkaApi.SASL
+			} else {
+				sasl = conf.Rpk.SASL
+			}
 		}
 
 		cfg, err := kafka.LoadConfig(tls, sasl)
@@ -244,7 +242,7 @@ func CreateClient(
 		// If no TLS config was set, try to look for TLS config in the
 		// config file.
 		if tls == nil {
-			tls = &conf.Rpk.TLS
+			tls = conf.Rpk.KafkaApi.TLS
 		}
 
 		sasl, err := authConfig()
@@ -256,7 +254,11 @@ func CreateClient(
 			}
 			// If no SASL config was set, try to look for it in the
 			// config file.
-			sasl = &conf.Rpk.SASL
+			if conf.Rpk.KafkaApi.SASL != nil {
+				sasl = conf.Rpk.KafkaApi.SASL
+			} else {
+				sasl = conf.Rpk.SASL
+			}
 		}
 
 		bs := brokers()
@@ -285,7 +287,7 @@ func CreateAdmin(
 		// If no TLS config was set, try to look for TLS config in the
 		// config file.
 		if tls == nil {
-			tls = &conf.Rpk.TLS
+			tls = conf.Rpk.KafkaApi.TLS
 		}
 
 		sasl, err := authConfig()
@@ -297,7 +299,11 @@ func CreateAdmin(
 			}
 			// If no SASL config was set, try to look for it in the
 			// config file.
-			sasl = &conf.Rpk.SASL
+			if conf.Rpk.KafkaApi.SASL != nil {
+				sasl = conf.Rpk.KafkaApi.SASL
+			} else {
+				sasl = conf.Rpk.SASL
+			}
 		}
 
 		cfg, err := kafka.LoadConfig(tls, sasl)
@@ -356,12 +362,52 @@ func KafkaAuthConfig(
 	}
 }
 
-func BuildTLSConfig(
-	certFile,
-	keyFile,
-	truststoreFile *string,
+func BuildAdminApiTLSConfig(
+	certFile, keyFile, truststoreFile *string,
+	configuration func() (*config.Config, error),
 ) func() (*config.TLS, error) {
 	return func() (*config.TLS, error) {
+		defaultVal := func() (*config.TLS, error) {
+			conf, err := configuration()
+			if err != nil {
+				return nil, err
+			}
+			// If the specific field is there, return it.
+			if conf.Rpk.AdminApi.TLS != nil {
+				return conf.Rpk.AdminApi.TLS, nil
+			}
+			// Otherwise return the general purpose TLS field (deprecated).
+			return conf.Rpk.TLS, nil
+		}
+		return buildTLS(
+			certFile,
+			keyFile,
+			truststoreFile,
+			"REDPANDA_ADMIN_TLS_CERT",
+			"REDPANDA_ADMIN_TLS_KEY",
+			"REDPANDA_ADMIN_TLS_TRUSTSTORE",
+			defaultVal,
+		)
+	}
+}
+
+func BuildKafkaTLSConfig(
+	certFile, keyFile, truststoreFile *string,
+	configuration func() (*config.Config, error),
+) func() (*config.TLS, error) {
+	return func() (*config.TLS, error) {
+		defaultVal := func() (*config.TLS, error) {
+			conf, err := configuration()
+			if err != nil {
+				return nil, err
+			}
+			// If the specific field is there, return it.
+			if conf.Rpk.KafkaApi.TLS != nil {
+				return conf.Rpk.KafkaApi.TLS, nil
+			}
+			// Otherwise return the general purpose TLS field (deprecated).
+			return conf.Rpk.TLS, nil
+		}
 		return buildTLS(
 			certFile,
 			keyFile,
@@ -369,7 +415,7 @@ func BuildTLSConfig(
 			"REDPANDA_TLS_CERT",
 			"REDPANDA_TLS_KEY",
 			"REDPANDA_TLS_TRUSTSTORE",
-			func() (*config.TLS, error) { return nil, nil },
+			defaultVal,
 		)
 	}
 }

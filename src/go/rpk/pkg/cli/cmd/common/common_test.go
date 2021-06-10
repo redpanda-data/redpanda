@@ -103,12 +103,7 @@ func TestDeduceBrokers(t *testing.T) {
 		},
 		config: func() (*config.Config, error) {
 			conf := config.Default()
-			conf.Redpanda.KafkaApi = []config.NamedSocketAddress{{
-				SocketAddress: config.SocketAddress{
-					Address: "192.168.25.88",
-					Port:    1235,
-				},
-			}}
+			conf.Rpk.KafkaApi.Brokers = []string{"192.168.25.88:1235"}
 			return conf, nil
 		},
 		expected: []string{"192.168.25.88:1235"},
@@ -123,15 +118,13 @@ func TestDeduceBrokers(t *testing.T) {
 		name: "it should prioritize the config over the default broker addr",
 		config: func() (*config.Config, error) {
 			conf := config.Default()
-			conf.Redpanda.KafkaApi = []config.NamedSocketAddress{{
-				SocketAddress: config.SocketAddress{
-					Address: "192.168.25.87",
-					Port:    1234,
-				},
-			}}
+			conf.Rpk.KafkaApi.Brokers = []string{"192.168.25.87:1234", "192.168.26.98:9092"}
 			return conf, nil
 		},
-		expected: []string{"192.168.25.87:1234"},
+		expected: []string{"192.168.25.87:1234", "192.168.26.98:9092"},
+	}, {
+		name:     "it should return 127.0.0.1:9092 if no config sources yield a brokers list",
+		expected: []string{"127.0.0.1:9092"},
 	}}
 
 	for _, tt := range tests {

@@ -14,9 +14,11 @@ func Test_LoadConfig(t *testing.T) {
 
 	getCfg := func() *config.Config {
 		cfg := config.Default()
-		cfg.Rpk.SASL.User = "some_user"
-		cfg.Rpk.SASL.Password = "some_password"
-		cfg.Rpk.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
+		cfg.Rpk.KafkaApi.SASL = &config.SASL{
+			User:      "some_user",
+			Password:  "some_password",
+			Mechanism: sarama.SASLTypeSCRAMSHA256,
+		}
 		return cfg
 	}
 
@@ -27,45 +29,45 @@ func Test_LoadConfig(t *testing.T) {
 	}{{
 		name: "it should load the SCRAM config",
 		check: func(st *testing.T, cfg *config.Config, c *sarama.Config) {
-			assert.Equal(t, cfg.Rpk.SASL.User, c.Net.SASL.User)
-			assert.Equal(t, cfg.Rpk.SASL.Password, c.Net.SASL.Password)
-			assert.Equal(t, sarama.SASLMechanism(cfg.Rpk.SASL.Mechanism), c.Net.SASL.Mechanism)
+			assert.Equal(t, cfg.Rpk.KafkaApi.SASL.User, c.Net.SASL.User)
+			assert.Equal(t, cfg.Rpk.KafkaApi.SASL.Password, c.Net.SASL.Password)
+			assert.Equal(t, sarama.SASLMechanism(cfg.Rpk.KafkaApi.SASL.Mechanism), c.Net.SASL.Mechanism)
 		},
 	}, {
 		name: "it shouldn't load the SCRAM user if it's missing",
 		conf: func() *config.Config {
 			cfg := getCfg()
-			cfg.Rpk.SASL.User = ""
+			cfg.Rpk.KafkaApi.SASL.User = ""
 			return cfg
 		},
 		check: func(st *testing.T, cfg *config.Config, c *sarama.Config) {
-			assert.Equal(t, cfg.Rpk.SASL.User, c.Net.SASL.User)
-			assert.NotEqual(t, cfg.Rpk.SASL.Password, c.Net.SASL.Password)
-			assert.NotEqual(t, sarama.SASLMechanism(cfg.Rpk.SASL.Mechanism), c.Net.SASL.Mechanism)
+			assert.Equal(t, cfg.Rpk.KafkaApi.SASL.User, c.Net.SASL.User)
+			assert.NotEqual(t, cfg.Rpk.KafkaApi.SASL.Password, c.Net.SASL.Password)
+			assert.NotEqual(t, sarama.SASLMechanism(cfg.Rpk.KafkaApi.SASL.Mechanism), c.Net.SASL.Mechanism)
 		},
 	}, {
 		name: "it shouldn't load the SCRAM password if it's missing",
 		conf: func() *config.Config {
 			cfg := getCfg()
-			cfg.Rpk.SASL.Password = ""
+			cfg.Rpk.KafkaApi.SASL.Password = ""
 			return cfg
 		},
 		check: func(st *testing.T, cfg *config.Config, c *sarama.Config) {
-			assert.NotEqual(t, cfg.Rpk.SASL.User, c.Net.SASL.User)
-			assert.Equal(t, cfg.Rpk.SASL.Password, c.Net.SASL.Password)
-			assert.NotEqual(t, sarama.SASLMechanism(cfg.Rpk.SASL.Mechanism), c.Net.SASL.Mechanism)
+			assert.NotEqual(t, cfg.Rpk.KafkaApi.SASL.User, c.Net.SASL.User)
+			assert.Equal(t, cfg.Rpk.KafkaApi.SASL.Password, c.Net.SASL.Password)
+			assert.NotEqual(t, sarama.SASLMechanism(cfg.Rpk.KafkaApi.SASL.Mechanism), c.Net.SASL.Mechanism)
 		},
 	}, {
 		name: "it shouldn't load the SCRAM type if it's missing",
 		conf: func() *config.Config {
 			cfg := getCfg()
-			cfg.Rpk.SASL.Mechanism = ""
+			cfg.Rpk.KafkaApi.SASL.Mechanism = ""
 			return cfg
 		},
 		check: func(st *testing.T, cfg *config.Config, c *sarama.Config) {
-			assert.NotEqual(t, cfg.Rpk.SASL.User, c.Net.SASL.User)
-			assert.NotEqual(t, cfg.Rpk.SASL.Password, c.Net.SASL.Password)
-			assert.Equal(t, sarama.SASLMechanism(cfg.Rpk.SASL.Mechanism), c.Net.SASL.Mechanism)
+			assert.NotEqual(t, cfg.Rpk.KafkaApi.SASL.User, c.Net.SASL.User)
+			assert.NotEqual(t, cfg.Rpk.KafkaApi.SASL.Password, c.Net.SASL.Password)
+			assert.Equal(t, sarama.SASLMechanism(cfg.Rpk.KafkaApi.SASL.Mechanism), c.Net.SASL.Mechanism)
 		},
 	}}
 	for _, tt := range tests {
@@ -74,7 +76,7 @@ func Test_LoadConfig(t *testing.T) {
 			if tt.conf != nil {
 				conf = tt.conf()
 			}
-			c, err := kafka.LoadConfig(&conf.Rpk.TLS, &conf.Rpk.SASL)
+			c, err := kafka.LoadConfig(conf.Rpk.KafkaApi.TLS, conf.Rpk.KafkaApi.SASL)
 			require.NoError(t, err)
 			tt.check(st, conf, c)
 		})
