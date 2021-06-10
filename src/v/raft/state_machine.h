@@ -62,7 +62,7 @@ public:
     // start after ready to receive batches through apply upcall.
     virtual ss::future<> start();
 
-    ss::future<> stop();
+    virtual ss::future<> stop();
 
     // wait until at least offset is applied to state machine
     ss::future<> wait(model::offset, model::timeout_clock::time_point);

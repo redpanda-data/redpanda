@@ -423,9 +423,11 @@ struct producer_identity {
     int64_t id{-1};
     int16_t epoch{0};
 
-    model::producer_id get_id() { return model::producer_id(id); }
+    model::producer_id get_id() const { return model::producer_id(id); }
 
-    model::producer_epoch get_epoch() { return model::producer_epoch(epoch); }
+    model::producer_epoch get_epoch() const {
+        return model::producer_epoch(epoch);
+    }
 
     auto operator<=>(const producer_identity&) const = default;
 
