@@ -32,7 +32,8 @@ model::record_batch make_batch(size_t size) {
     static model::offset base_offset{0};
     iobuf value;
     value.append(ss::temporary_buffer<char>(size));
-    cluster::simple_batch_builder builder(raft::data_batch_type, base_offset);
+    cluster::simple_batch_builder builder(
+      model::record_batch_type::raft_data, base_offset);
     builder.add_kv(iobuf{}, std::move(value));
     auto batch = std::move(builder).build();
     base_offset += model::offset(batch.record_count());

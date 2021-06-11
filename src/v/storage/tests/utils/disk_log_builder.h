@@ -253,7 +253,7 @@ public:
       model::offset offset,
       int num_records,
       maybe_compress_batches comp = maybe_compress_batches::yes,
-      model::record_batch_type bt = model::record_batch_type(1), // data
+      model::record_batch_type bt = model::record_batch_type::raft_data, // data
       log_append_config config = append_config(),
       should_flush_after flush = should_flush_after::yes);
     ss::future<> add_random_batches(

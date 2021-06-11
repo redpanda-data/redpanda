@@ -14,6 +14,8 @@
 #include "reflection/adl.h"
 #include "utils/vint.h"
 
+#include <type_traits>
+
 namespace model {
 
 template<typename T, typename = std::enable_if_t<std::is_integral_v<T>, T>>
@@ -36,7 +38,7 @@ uint32_t internal_header_only_crc(const record_batch_header& header) {
       /*Additional fields*/
       header.size_bytes,
       header.base_offset(),
-      header.type(),
+      static_cast<std::underlying_type_t<record_batch_type>>(header.type),
       header.crc,
 
       /*Below are same fields as kafka - but at no cost on x86 since they are

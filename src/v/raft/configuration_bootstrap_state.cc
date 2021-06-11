@@ -19,7 +19,8 @@
 namespace raft {
 void configuration_bootstrap_state::process_configuration(
   model::record_batch b) {
-    if (unlikely(b.header().type != configuration_batch_type)) {
+    if (unlikely(
+          b.header().type != model::record_batch_type::raft_configuration)) {
         throw std::runtime_error(fmt::format(
           "Logic error. Asked a configuration tracker to process an unknown "
           "record_batch_type: {}",
@@ -43,7 +44,8 @@ void configuration_bootstrap_state::process_configuration(
 void configuration_bootstrap_state::process_data_offsets(
   model::record_batch b) {
     _data_batches_seen++;
-    if (unlikely(b.header().type == configuration_batch_type)) {
+    if (unlikely(
+          b.header().type == model::record_batch_type::raft_configuration)) {
         throw std::runtime_error(fmt::format(
           "Logic error. Asked a data tracker to process "
           "configuration_batch_type "
@@ -75,7 +77,7 @@ void configuration_bootstrap_state::process_offsets(
 
 void configuration_bootstrap_state::process_batch(model::record_batch b) {
     switch (b.header().type) {
-    case configuration_batch_type:
+    case model::record_batch_type::raft_configuration:
         process_configuration(std::move(b));
         break;
     default:

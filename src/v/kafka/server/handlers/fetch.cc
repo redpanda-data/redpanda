@@ -88,7 +88,7 @@ iobuf make_control_record_batch_key() {
  */
 model::record_batch adapt_fetch_batch(model::record_batch&& batch) {
     // pass through data batches
-    if (likely(batch.header().type == raft::data_batch_type)) {
+    if (likely(batch.header().type == model::record_batch_type::raft_data)) {
         return std::move(batch);
     }
     /**

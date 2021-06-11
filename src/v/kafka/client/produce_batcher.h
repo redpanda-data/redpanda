@@ -112,7 +112,7 @@ public:
 
 private:
     storage::record_batch_builder make_builder() {
-        return {raft::data_batch_type, model::offset(0)};
+        return {model::record_batch_type::raft_data, model::offset(0)};
     }
 
     storage::record_batch_builder _builder;

@@ -35,8 +35,10 @@ public:
     ss::future<std::error_code> apply_update(model::record_batch);
 
     bool is_batch_applicable(const model::record_batch& batch) const {
-        return batch.header().type == user_batch_type
-               || batch.header().type == acl_batch_type;
+        return batch.header().type
+                 == model::record_batch_type::user_management_cmd
+               || batch.header().type
+                    == model::record_batch_type::acl_management_cmd;
     }
 
 private:

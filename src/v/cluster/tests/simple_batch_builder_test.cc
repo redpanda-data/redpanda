@@ -44,15 +44,16 @@ cluster::partition_assignment create_test_assignment(uint32_t p, uint16_t rf) {
 SEASTAR_THREAD_TEST_CASE(simple_batch_builder_batch_test) {
     auto pa_key = log_record_key{log_record_key::type::partition_assignment};
     auto batch
-      = std::move(cluster::simple_batch_builder(
-                    model::record_batch_type(3), model::offset(0))
-                    .add_kv(
-                      log_record_key{log_record_key::type::topic_configuration},
-                      cluster::topic_configuration(
-                        model::ns("test"), model::topic{"a_topic"}, 3, 1))
-                    .add_kv(pa_key, create_test_assignment(0, 1))
-                    .add_kv(pa_key, create_test_assignment(1, 1))
-                    .add_kv(pa_key, create_test_assignment(2, 1)))
+      = std::move(
+          cluster::simple_batch_builder(
+            model::record_batch_type::topic_management_cmd, model::offset(0))
+            .add_kv(
+              log_record_key{log_record_key::type::topic_configuration},
+              cluster::topic_configuration(
+                model::ns("test"), model::topic{"a_topic"}, 3, 1))
+            .add_kv(pa_key, create_test_assignment(0, 1))
+            .add_kv(pa_key, create_test_assignment(1, 1))
+            .add_kv(pa_key, create_test_assignment(2, 1)))
           .build();
 
     BOOST_REQUIRE_EQUAL(batch.record_count(), 4);
@@ -63,15 +64,16 @@ SEASTAR_THREAD_TEST_CASE(simple_batch_builder_batch_test) {
 SEASTAR_THREAD_TEST_CASE(round_trip_test) {
     auto pa_key = log_record_key{log_record_key::type::partition_assignment};
     auto batch
-      = std::move(cluster::simple_batch_builder(
-                    model::record_batch_type(3), model::offset(0))
-                    .add_kv(
-                      log_record_key{log_record_key::type::topic_configuration},
-                      cluster::topic_configuration(
-                        model::ns("test"), model::topic{"a_topic"}, 3, 1))
-                    .add_kv(pa_key, create_test_assignment(0, 1))
-                    .add_kv(pa_key, create_test_assignment(1, 1))
-                    .add_kv(pa_key, create_test_assignment(2, 1)))
+      = std::move(
+          cluster::simple_batch_builder(
+            model::record_batch_type::topic_management_cmd, model::offset(0))
+            .add_kv(
+              log_record_key{log_record_key::type::topic_configuration},
+              cluster::topic_configuration(
+                model::ns("test"), model::topic{"a_topic"}, 3, 1))
+            .add_kv(pa_key, create_test_assignment(0, 1))
+            .add_kv(pa_key, create_test_assignment(1, 1))
+            .add_kv(pa_key, create_test_assignment(2, 1)))
           .build();
     int32_t current_crc = batch.header().crc;
     ss::sstring base_dir = "test.dir_"

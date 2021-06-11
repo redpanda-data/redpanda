@@ -86,7 +86,7 @@ sample_type deserialize_sample_type(model::record& r) {
 
 SEASTAR_THREAD_TEST_CASE(empty_builder) {
     storage::record_batch_builder rbb(
-      model::record_batch_type(), model::offset(0));
+      model::record_batch_type::raft_data, model::offset(0));
     auto rb = std::move(rbb).build();
     BOOST_CHECK(rb.empty());
     BOOST_CHECK_EQUAL(rb.record_count(), 0);
@@ -113,7 +113,7 @@ SEASTAR_THREAD_TEST_CASE(serialize_deserialize_then_cmp) {
 
     /// 2. Serialize to record_batch
     storage::record_batch_builder rbb(
-      model::record_batch_type(), model::offset(0));
+      model::record_batch_type::raft_data, model::offset(0));
     for (const auto& st : sample_data) {
         detail::serialize_sample_type(rbb, st);
     }

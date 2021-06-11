@@ -129,7 +129,7 @@ private:
     }
     model::record_batch data_batch() {
         storage::record_batch_builder bldr(
-          raft::data_batch_type, _offset_index);
+          model::record_batch_type::raft_data, _offset_index);
         bldr.add_raw_kv(rand_iobuf(_cfg.key_size), rand_iobuf(_cfg.value_size));
         ++_offset_index;
         return std::move(bldr).build();

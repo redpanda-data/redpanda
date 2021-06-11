@@ -48,7 +48,7 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
 
     std::vector<kafka::produce_request::partition> small_batches(size_t count) {
         storage::record_batch_builder builder(
-          model::well_known_record_batch_types[1], model::offset(0));
+          model::record_batch_type::raft_data, model::offset(0));
 
         for (int i = 0; i < count; ++i) {
             iobuf v{};

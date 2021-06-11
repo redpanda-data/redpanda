@@ -88,8 +88,9 @@ FIXTURE_TEST(test_valid_segment_name_with_zeroes_data, log_builder_fixture) {
 FIXTURE_TEST(iterator_invalidation, log_builder_fixture) {
     using namespace storage; // NOLINT
     constexpr const model::record_batch_type configuration
-      = model::record_batch_type(2);
-    constexpr const model::record_batch_type data = model::record_batch_type(1);
+      = model::record_batch_type::raft_configuration;
+    constexpr const model::record_batch_type data
+      = model::record_batch_type::raft_data;
 
     b | start() | add_segment(0)
       | add_random_batch(0, 1, maybe_compress_batches::yes, configuration)

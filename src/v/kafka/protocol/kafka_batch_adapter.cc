@@ -66,7 +66,7 @@ model::record_batch_header kafka_batch_adapter::read_header(iobuf_parser& in) {
     auto header = model::record_batch_header{
       .size_bytes = size_bytes,
       .base_offset = base_offset,
-      .type = raft::data_batch_type,
+      .type = model::record_batch_type::raft_data,
       .crc = crc,
       .attrs = attrs,
       .last_offset_delta = last_offset_delta,
@@ -272,7 +272,7 @@ void kafka_batch_adapter::adapt_with_version(
 
     // accumulates records from legacy message set
     storage::record_batch_builder builder(
-      raft::data_batch_type, model::offset(0));
+      model::record_batch_type::raft_data, model::offset(0));
 
     convert_message_set(builder, std::move(kbatch), false);
 

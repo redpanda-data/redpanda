@@ -52,7 +52,7 @@ public:
       handle_configuration_update_request(configuration_update_request);
 
     bool is_batch_applicable(const model::record_batch& b) {
-        return b.header().type == raft::configuration_batch_type;
+        return b.header().type == model::record_batch_type::raft_configuration;
     }
 
 private:

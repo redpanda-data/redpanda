@@ -27,18 +27,6 @@
 
 namespace cluster {
 
-// cluster batch types
-// we do not have to add it to well_known_batch_types as we will never use it to
-// filter the batches out
-static constexpr model::record_batch_type topic_batch_type
-  = model::record_batch_type(6);
-
-static constexpr model::record_batch_type user_batch_type
-  = model::record_batch_type(12);
-
-static constexpr model::record_batch_type acl_batch_type
-  = model::record_batch_type(13);
-
 using command_type = named_type<int8_t, struct command_type_tag>;
 // Controller state updates are represented in terms of commands. Each
 // command represent different type of action that is going to be executed
@@ -49,7 +37,7 @@ using command_type = named_type<int8_t, struct command_type_tag>;
 // handling.
 //
 // Generic controller command, this type is base for all commands
-template<typename K, typename V, int8_t tp, model::record_batch_type::type bt>
+template<typename K, typename V, int8_t tp, model::record_batch_type bt>
 struct controller_command {
     using key_t = K;
     using value_t = V;
@@ -81,61 +69,61 @@ using create_topic_cmd = controller_command<
   model::topic_namespace,
   topic_configuration_assignment,
   create_topic_cmd_type,
-  topic_batch_type()>;
+  model::record_batch_type::topic_management_cmd>;
 
 using delete_topic_cmd = controller_command<
   model::topic_namespace,
   model::topic_namespace,
   delete_topic_cmd_type,
-  topic_batch_type()>;
+  model::record_batch_type::topic_management_cmd>;
 
 using move_partition_replicas_cmd = controller_command<
   model::ntp,
   std::vector<model::broker_shard>,
   move_partition_replicas_cmd_type,
-  topic_batch_type()>;
+  model::record_batch_type::topic_management_cmd>;
 
 using finish_moving_partition_replicas_cmd = controller_command<
   model::ntp,
   std::vector<model::broker_shard>,
   finish_moving_partition_replicas_cmd_type,
-  topic_batch_type()>;
+  model::record_batch_type::topic_management_cmd>;
 
 using update_topic_properties_cmd = controller_command<
   model::topic_namespace,
   incremental_topic_updates,
   update_topic_properties_cmd_type,
-  topic_batch_type()>;
+  model::record_batch_type::topic_management_cmd>;
 
 using create_user_cmd = controller_command<
   security::credential_user,
   security::scram_credential,
   create_user_cmd_type,
-  user_batch_type()>;
+  model::record_batch_type::user_management_cmd>;
 
 using delete_user_cmd = controller_command<
   security::credential_user,
   int8_t, // unused
   delete_user_cmd_type,
-  user_batch_type()>;
+  model::record_batch_type::user_management_cmd>;
 
 using update_user_cmd = controller_command<
   security::credential_user,
   security::scram_credential,
   update_user_cmd_type,
-  user_batch_type()>;
+  model::record_batch_type::user_management_cmd>;
 
 using create_acls_cmd = controller_command<
   create_acls_cmd_data,
   int8_t, // unused
   create_acls_cmd_type,
-  acl_batch_type()>;
+  model::record_batch_type::acl_management_cmd>;
 
 using delete_acls_cmd = controller_command<
   delete_acls_cmd_data,
   int8_t, // unused
   delete_acls_cmd_type,
-  acl_batch_type()>;
+  model::record_batch_type::acl_management_cmd>;
 
 // typelist utils
 // clang-format off

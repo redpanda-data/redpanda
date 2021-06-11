@@ -35,7 +35,7 @@ static iobuf disk_header_to_iobuf(const model::record_batch_header& h) {
       h.header_crc,
       h.size_bytes,
       h.base_offset(),
-      h.type(),
+      h.type,
       h.crc,
       h.attrs.value(),
       h.last_offset_delta,
