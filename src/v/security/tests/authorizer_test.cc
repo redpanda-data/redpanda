@@ -841,4 +841,26 @@ BOOST_AUTO_TEST_CASE(topic_acl) {
       auth.authorized(default_topic, acl_operation::write, user3, host1));
 }
 
+// a bug had allowed a topic with read permissions (prefix) to authorize a group
+// for read permissions when the topic name was a prefix of the group name
+BOOST_AUTO_TEST_CASE(topic_group_same_name) {
+    authorizer auth;
+
+    std::vector<acl_binding> bindings;
+
+    resource_pattern resource(
+      resource_type::topic, "topic-foo", pattern_type::prefixed);
+    bindings.emplace_back(resource, allow_read_acl);
+
+    auth.add_bindings(bindings);
+
+    acl_principal user(principal_type::user, "alice");
+    acl_host host("192.168.0.1");
+
+    BOOST_REQUIRE(!auth.authorized(
+      kafka::group_id("topic-foo"), acl_operation::read, user, host));
+    BOOST_REQUIRE(!auth.authorized(
+      kafka::group_id("topic-foo-xxx"), acl_operation::read, user, host));
+}
+
 } // namespace security
