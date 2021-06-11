@@ -318,9 +318,9 @@ consensus::success_reply consensus::update_follower_index(
           _ctxlog.trace,
           "Updated node {} last committed log index: {}",
           idx.node_id,
-          reply.last_committed_log_index);
+          reply.last_flushed_log_index);
         idx.last_dirty_log_index = reply.last_dirty_log_index;
-        idx.last_committed_log_index = reply.last_committed_log_index;
+        idx.last_flushed_log_index = reply.last_flushed_log_index;
         idx.next_index = details::next_offset(idx.last_dirty_log_index);
     }
 
@@ -336,7 +336,7 @@ consensus::success_reply consensus::update_follower_index(
             // update follower state to allow recovery of follower with
             // missing entries
             idx.last_dirty_log_index = reply.last_dirty_log_index;
-            idx.last_committed_log_index = reply.last_committed_log_index;
+            idx.last_flushed_log_index = reply.last_flushed_log_index;
             idx.next_index = details::next_offset(idx.last_dirty_log_index);
             idx.follower_state_change.broadcast();
         }
@@ -418,7 +418,7 @@ void consensus::successfull_append_entries_reply(
   follower_index_metadata& idx, append_entries_reply reply) {
     // follower and leader logs matches
     idx.last_dirty_log_index = reply.last_dirty_log_index;
-    idx.last_committed_log_index = reply.last_committed_log_index;
+    idx.last_flushed_log_index = reply.last_flushed_log_index;
     idx.match_index = idx.last_dirty_log_index;
     idx.next_index = details::next_offset(idx.last_dirty_log_index);
     vlog(
@@ -1483,7 +1483,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     reply.group = r.meta.group;
     reply.term = _term;
     reply.last_dirty_log_index = lstats.dirty_offset;
-    reply.last_committed_log_index = _flushed_offset;
+    reply.last_flushed_log_index = _flushed_offset;
     reply.result = append_entries_reply::status::failure;
     _probe.append_request();
 
@@ -2013,7 +2013,7 @@ append_entries_reply consensus::make_append_entries_reply(
     reply.group = _group;
     reply.term = _term;
     reply.last_dirty_log_index = disk_results.last_offset;
-    reply.last_committed_log_index = _flushed_offset;
+    reply.last_flushed_log_index = _flushed_offset;
     reply.result = append_entries_reply::status::success;
     return reply;
 }
@@ -2890,7 +2890,7 @@ std::vector<follower_metrics> consensus::get_follower_metrics() const {
         ret.push_back(follower_metrics{
           .id = f.first.id(),
           .is_learner = f.second.is_learner,
-          .committed_log_index = f.second.last_committed_log_index,
+          .committed_log_index = f.second.last_flushed_log_index,
           .dirty_log_index = f.second.last_dirty_log_index,
           .match_index = f.second.match_index,
           .last_heartbeat = last_hbeat,

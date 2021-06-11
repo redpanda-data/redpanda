@@ -143,7 +143,7 @@ void append_entries_buffer::propagate_results(
               // this is important, we want to update response committed
               // offset here as we flushed after the response structure was
               // created
-              r.last_committed_log_index = _consensus._flushed_offset;
+              r.last_flushed_log_index = _consensus._flushed_offset;
               resp_it->set_value(r);
           },
           [&resp_it](std::exception_ptr& e) {
