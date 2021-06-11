@@ -1246,10 +1246,10 @@ ss::future<bool> tx_gateway_frontend::try_create_tx_topic() {
       model::kafka_internal_namespace,
       model::tx_manager_topic,
       1,
-      config::shard_local_cfg().default_topic_replication()};
+      config::shard_local_cfg().transaction_coordinator_replication()};
 
     topic.properties.cleanup_policy_bitflags
-      = model::cleanup_policy_bitflags::none;
+      = config::shard_local_cfg().transaction_coordinator_cleanup_policy();
 
     return _controller->get_topics_frontend()
       .local()
