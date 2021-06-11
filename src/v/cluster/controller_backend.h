@@ -18,6 +18,7 @@
 #include "model/metadata.h"
 #include "outcome.h"
 #include "raft/group_configuration.h"
+#include "storage/api.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
@@ -42,6 +43,7 @@ public:
       ss::sharded<members_table>&,
       ss::sharded<cluster::partition_leaders_table>&,
       ss::sharded<topics_frontend>&,
+      ss::sharded<storage::api>&,
       ss::sharded<seastar::abort_source>&);
 
     ss::future<> stop();
@@ -128,6 +130,7 @@ private:
     ss::sharded<members_table>& _members_table;
     ss::sharded<partition_leaders_table>& _partition_leaders_table;
     ss::sharded<topics_frontend>& _topics_frontend;
+    ss::sharded<storage::api>& _storage;
     model::node_id _self;
     ss::sstring _data_directory;
     std::chrono::milliseconds _housekeeping_timer_interval;

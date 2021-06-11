@@ -138,6 +138,7 @@ controller_backend::controller_backend(
   ss::sharded<members_table>& members,
   ss::sharded<partition_leaders_table>& leaders,
   ss::sharded<topics_frontend>& frontend,
+  ss::sharded<storage::api>& storage,
   ss::sharded<ss::abort_source>& as)
   : _topics(tp_state)
   , _shard_table(st)
@@ -145,6 +146,7 @@ controller_backend::controller_backend(
   , _members_table(members)
   , _partition_leaders_table(leaders)
   , _topics_frontend(frontend)
+  , _storage(storage)
   , _self(model::node_id(config::shard_local_cfg().node_id))
   , _data_directory(config::shard_local_cfg().data_directory().as_sstring())
   , _housekeeping_timer_interval(
@@ -620,6 +622,8 @@ ss::future<std::error_code> controller_backend::process_partition_update(
               "creating partition {} from shard {}",
               ntp,
               previous_shard);
+            co_await raft::details::move_persistent_state(
+              requested.group, *previous_shard, ss::this_shard_id(), _storage);
             auto ec = co_await create_partition(
               ntp,
               requested.group,

@@ -118,6 +118,7 @@ ss::future<> controller::start() {
             std::ref(_members_table),
             std::ref(_partition_leaders),
             std::ref(_tp_frontend),
+            std::ref(_storage),
             std::ref(_as));
       })
       .then([this] {
