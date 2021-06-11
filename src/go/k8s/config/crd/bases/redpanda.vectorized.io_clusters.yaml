@@ -171,10 +171,6 @@ spec:
                                 If TLS is enabled then this subdomain will be requested
                                 as a subject alternative name.
                               type: string
-                          required:
-                          - basePort
-                          - ordinalBrokerHostname
-                          - ordinalPortPerBroker
                           type: object
                         port:
                           type: integer
@@ -232,10 +228,6 @@ spec:
                                 If TLS is enabled then this subdomain will be requested
                                 as a subject alternative name.
                               type: string
-                          required:
-                          - basePort
-                          - ordinalBrokerHostname
-                          - ordinalPortPerBroker
                           type: object
                         port:
                           type: integer
@@ -343,10 +335,12 @@ spec:
                                 you have incremental port and you want Broker Ordinal
                                 number to be set as subdomain
                               type: boolean
+                              default: true
                             ordinalPortPerBroker:
                               description: OrdinalPortPerBroker can be used when incremental
                                 port is needed
                               type: boolean
+                              default: true
                             subdomain:
                               description: Subdomain can be used to change the behavior
                                 of an advertised KafkaAPI. Each broker advertises
@@ -356,10 +350,6 @@ spec:
                                 If TLS is enabled then this subdomain will be requested
                                 as a subject alternative name.
                               type: string
-                          required:
-                          - basePort
-                          - ordinalBrokerHostname
-                          - ordinalPortPerBroker
                           type: object
                         port:
                           type: integer
