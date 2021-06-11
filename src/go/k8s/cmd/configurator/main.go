@@ -20,9 +20,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/danielungur-firebolt/redpanda/src/go/rpk/pkg/config"
 	"github.com/hashicorp/go-multierror"
 	"github.com/spf13/afero"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -227,13 +227,15 @@ func registerAdvertisedKafkaAPI(
 			})
 		} else {
 			port := c.hostPort
-			if !c.ordinalPortPerBroker {
+			address := fmt.Sprintf("%d.%s", index, c.subdomain)
+			if !c.ordinalPortPerBroker && c.basePort > 0 {
 				port = c.basePort + internalIndex
+				address = fmt.Sprintf("%s.%s", hostBaseName(c.hostName), c.subdomain)
 			}
 
 			cfg.Redpanda.AdvertisedKafkaApi = append(cfg.Redpanda.AdvertisedKafkaApi, config.NamedSocketAddress{
 				SocketAddress: config.SocketAddress{
-					Address: fmt.Sprintf("%s.%s", hostBaseName(c.hostName), c.subdomain),
+					Address: address,
 					Port:    port,
 				},
 				Name: "kafka-external",
@@ -249,7 +251,7 @@ func registerAdvertisedKafkaAPI(
 	}
 
 	port := c.hostPort
-	if !c.ordinalPortPerBroker {
+	if !c.ordinalPortPerBroker && c.basePort > 0 {
 		port = c.basePort + internalIndex
 	}
 
@@ -295,13 +297,14 @@ func registerAdvertisedPandaproxyAPI(
 			})
 		} else {
 			port := c.hostPort
-			if !c.ordinalPortPerBroker {
+			address := fmt.Sprintf("%d.%s", index, c.subdomain)
+			if !c.ordinalPortPerBroker && c.basePort > 0 {
 				port = c.basePort + internalIndex
+				address = fmt.Sprintf("%s.%s", hostBaseName(c.hostName), c.subdomain)
 			}
-
 			cfg.Pandaproxy.AdvertisedPandaproxyAPI = append(cfg.Pandaproxy.AdvertisedPandaproxyAPI, config.NamedSocketAddress{
 				SocketAddress: config.SocketAddress{
-					Address: fmt.Sprintf("%s.%s", hostBaseName(c.hostName), c.subdomain),
+					Address: address,
 					Port:    port,
 				},
 				Name: "proxy-external",
@@ -316,7 +319,7 @@ func registerAdvertisedPandaproxyAPI(
 		return fmt.Errorf("unable to retrieve node: %w", err)
 	}
 	port := c.hostPort
-	if !c.ordinalPortPerBroker {
+	if !c.ordinalPortPerBroker && c.basePort > 0 {
 		port = c.basePort + internalIndex
 	}
 	cfg.Pandaproxy.AdvertisedPandaproxyAPI = append(cfg.Pandaproxy.AdvertisedPandaproxyAPI, config.NamedSocketAddress{
