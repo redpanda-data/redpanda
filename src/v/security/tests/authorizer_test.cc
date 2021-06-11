@@ -78,6 +78,17 @@ static auto get_acls(authorizer& auth, acl_binding_filter filter) {
 
 BOOST_AUTO_TEST_CASE(resource_type_auto) {
     BOOST_REQUIRE(
+      get_resource_type<model::topic>() == security::resource_type::topic);
+    BOOST_REQUIRE(
+      get_resource_type<kafka::group_id>() == security::resource_type::group);
+    BOOST_REQUIRE(
+      get_resource_type<security::acl_cluster_name>()
+      == security::resource_type::cluster);
+    BOOST_REQUIRE(
+      get_resource_type<kafka::transactional_id>()
+      == security::resource_type::transactional_id);
+
+    BOOST_REQUIRE(
       get_resource_type<model::topic>() == get_resource_type<model::topic>());
     BOOST_REQUIRE(
       get_resource_type<model::topic>()
