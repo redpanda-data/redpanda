@@ -711,20 +711,6 @@ ss::future<result<replicate_result>> consensus::do_append_replicate_relaxed(
       .finally([this, u = std::move(u)] { _probe.replicate_done(); });
 }
 
-void consensus::dispatch_flush_with_lock() {
-    if (!_has_pending_flushes) {
-        return;
-    }
-    (void)ss::with_gate(_bg, [this] {
-        return _op_lock.with([this] {
-            if (!_has_pending_flushes) {
-                return ss::make_ready_future<>();
-            }
-            return flush_log();
-        });
-    });
-}
-
 ss::future<model::record_batch_reader>
 consensus::do_make_reader(storage::log_reader_config config) {
     // limit to last visible index
