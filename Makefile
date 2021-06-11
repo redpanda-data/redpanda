@@ -5,6 +5,12 @@ CONFIGURATOR_IMG_LATEST ?= "vectorized/configurator:latest"
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 
+ifeq (aarch64,$(uname -m))
+TARGETARCH = arm64
+else
+TARGETARCH = amd64
+endif
+
 SHELL := /bin/bash
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -71,13 +77,17 @@ vet:
 generate: controller-gen
 	$(CONTROLLER_GEN) object:headerFile="../../../licenses/boilerplate.go.txt" paths="./..."
 
-# Build the docker image
-docker-build:
-	docker build --target=manager -f Dockerfile -t ${OPERATOR_IMG_LATEST} ../
+prepare-dockerfile:
+	echo "ARG BUILDPLATFORM" > Dockerfile
+	cat Dockerfile.in >> Dockerfile
 
 # Build the docker image
-docker-build-configurator:
-	docker build --target=configurator -f Dockerfile -t ${OPERATOR_IMG_LATEST} ../
+docker-build: prepare-dockerfile
+	docker build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=manager -f Dockerfile -t ${OPERATOR_IMG_LATEST} ../
+
+# Build the docker image
+docker-build-configurator: prepare-dockerfile
+	docker build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=configurator -f Dockerfile -t ${CONFIGURATOR_IMG_LATEST} ../
 
 # Preload controller image to kind cluster
 push-to-kind:
