@@ -10,6 +10,8 @@
  */
 #include "security/acl_store.h"
 
+#include "security/logger.h"
+
 #include <absl/container/flat_hash_map.h>
 
 namespace security {
@@ -99,17 +101,21 @@ acl_store::find(resource_type resource, const ss::sstring& name) const {
     }
 
     /*
-     * TODO: the prefix search operation can be optimized by bounding the search
-     * range by upper/lower limits, but we need to be careful about which upper
-     * limit is chosen.
+     * the acls are sorted within (resource-type, pattern-type) bounds by name
+     * in reverse order so longer names (prefixes) appear first.
      */
     std::vector<acl_matches::entry_set_ref> prefixes;
-    for (const auto& it : _acls) {
-        if (it.first.pattern() != pattern_type::prefixed) {
-            continue;
-        }
-        if (std::string_view(name).starts_with(it.first.name())) {
-            prefixes.emplace_back(it.second);
+    {
+        auto it = _acls.lower_bound(
+          resource_pattern(resource, name, pattern_type::prefixed));
+
+        auto end = _acls.upper_bound(resource_pattern(
+          resource, name.substr(0, 1), pattern_type::prefixed));
+
+        for (; it != end; ++it) {
+            if (std::string_view(name).starts_with(it->first.name())) {
+                prefixes.emplace_back(it->second);
+            }
         }
     }
 

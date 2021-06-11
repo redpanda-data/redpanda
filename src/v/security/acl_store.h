@@ -138,7 +138,7 @@ private:
      *
      *  1. resource type
      *  2. pattern type
-     *  3. name
+     *  3. name (in reverse order)
      */
     struct resource_pattern_compare {
         bool
@@ -149,7 +149,7 @@ private:
             if (a.pattern() != b.pattern()) {
                 return a.pattern() < b.pattern();
             }
-            return a.name() < b.name();
+            return b.name() < a.name();
         }
     };
 
