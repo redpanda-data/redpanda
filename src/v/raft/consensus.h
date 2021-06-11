@@ -429,9 +429,6 @@ private:
 
     /// \brief _does not_ hold the lock.
     ss::future<> flush_log();
-    /// \brief called by the vote timer, to dispatch a write under
-    /// the ops semaphore
-    void dispatch_flush_with_lock();
 
     void maybe_step_down();
 
