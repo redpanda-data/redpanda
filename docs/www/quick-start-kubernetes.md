@@ -316,7 +316,7 @@ Let's create a cluster that is externally accessible. The CR allows us to enable
 
 We now have two listeners, one internal and one external. The operator will create the headless service as earlier and additionally, two services to support external connectivity: 1) a load-balanced ClusterIP service that is used as an entrypoint for the Pandaproxy; 2) a Nodeport service used to expose each API to the node’s external network - note that if the node is not reachable externally the Redpanda listeners will not be reachable.
 
-|   | \<cluster-name\> <br /> headless  | \<cluster-name\>-cluster <br /> load-balanced | \<cluster-name\>-external <br /> nodeports |
+|   | \<cluster-name\> <br> headless  | \<cluster-name\>-cluster <br> load-balanced | \<cluster-name\>-external nodeports |
 |---|---|---|---|
 | Admin API  | y  | n  | y |
 | Kafka API  | y  | n  | y |
@@ -453,7 +453,7 @@ The CRD includes a field “subdomain” that allows to specify the advertised a
         subdomain: "test.subdomain.com"
 ```
 
-The generated `redpanda.yaml` configuration uses the subdomain field to generate the advertised addresses for the external listeners following this format: \<broker_id\>.\<subdomain\>:\<node_port\>. Note that the DNS configuration is *not* handled by the Redpanda operator.
+The generated `redpanda.yaml` configuration uses the subdomain field to generate the advertised addresses for the external listeners following this format: <broker_id>.<subdomain>:<node_port>. Note that the DNS configuration is *not* handled by the Redpanda operator.
 
 The Redpanda configuration will reflect this in the advertised addresses: 
 
