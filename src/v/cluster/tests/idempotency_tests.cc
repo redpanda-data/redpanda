@@ -35,7 +35,9 @@ FIXTURE_TEST(
   mux_state_machine_fixture) {
     start_raft();
 
-    cluster::rm_stm stm(logger, _raft.get());
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -85,7 +87,9 @@ FIXTURE_TEST(
   test_rm_stm_passes_monotonic_in_session_messages, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::rm_stm stm(logger, _raft.get());
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -134,7 +138,9 @@ FIXTURE_TEST(
 FIXTURE_TEST(test_rm_stm_prevents_duplicates, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::rm_stm stm(logger, _raft.get());
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -184,7 +190,9 @@ FIXTURE_TEST(test_rm_stm_prevents_duplicates, mux_state_machine_fixture) {
 FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::rm_stm stm(logger, _raft.get());
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -235,7 +243,9 @@ FIXTURE_TEST(
   test_rm_stm_prevents_odd_session_start_off, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::rm_stm stm(logger, _raft.get());
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });

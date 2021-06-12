@@ -82,7 +82,10 @@ public:
     static constexpr int8_t prepare_control_record_version{0};
     static constexpr int8_t fence_control_record_version{0};
 
-    explicit rm_stm(ss::logger&, raft::consensus*);
+    explicit rm_stm(
+      ss::logger&,
+      raft::consensus*,
+      ss::sharded<cluster::tx_gateway_frontend>&);
 
     ss::future<checked<model::term_id, tx_errc>> begin_tx(
       model::producer_identity, model::tx_seq, std::chrono::milliseconds);
@@ -107,6 +110,8 @@ public:
       raft::replicate_options);
 
     ss::future<> stop() override;
+
+    void testing_only_disable_auto_abort() { _is_autoabort_enabled = false; }
 
 private:
     ss::future<checked<model::term_id, tx_errc>> do_begin_tx(
@@ -142,7 +147,7 @@ private:
 
     void track_tx(model::producer_identity, std::chrono::milliseconds);
     void abort_old_txes();
-    ss::future<> abort_old_txes(std::vector<model::producer_identity>);
+    ss::future<> abort_old_txes(absl::btree_set<model::producer_identity>);
     ss::future<> try_abort_old_tx(model::producer_identity);
     ss::future<> do_try_abort_old_tx(model::producer_identity);
 
@@ -225,7 +230,7 @@ private:
         absl::flat_hash_map<model::producer_identity, model::tx_seq> expected;
         // `preparing` helps to identify failed prepare requests and use them to
         // filter out stale abort requests
-        absl::flat_hash_map<model::producer_identity, model::tx_seq> preparing;
+        absl::flat_hash_map<model::producer_identity, prepare_marker> preparing;
         absl::flat_hash_map<model::producer_identity, expiration_info>
           expiration;
 
@@ -258,9 +263,12 @@ private:
     ss::timer<clock_type> auto_abort_timer;
     model::timestamp _oldest_session;
     std::chrono::milliseconds _sync_timeout;
+    std::chrono::milliseconds _tx_timeout_delay;
     model::violation_recovery_policy _recovery_policy;
     std::chrono::milliseconds _transactional_id_expiration;
     bool _is_leader{false};
+    bool _is_autoabort_enabled{true};
+    ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
 };
 
 } // namespace cluster

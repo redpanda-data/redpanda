@@ -28,9 +28,12 @@
 namespace cluster {
 
 partition_manager::partition_manager(
-  ss::sharded<storage::api>& storage, ss::sharded<raft::group_manager>& raft)
+  ss::sharded<storage::api>& storage,
+  ss::sharded<raft::group_manager>& raft,
+  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend)
   : _storage(storage.local())
-  , _raft_manager(raft) {}
+  , _raft_manager(raft)
+  , _tx_gateway_frontend(tx_gateway_frontend) {}
 
 ss::future<consensus_ptr> partition_manager::manage(
   storage::ntp_config ntp_cfg,
@@ -43,7 +46,7 @@ ss::future<consensus_ptr> partition_manager::manage(
           return _raft_manager.local()
             .create_group(group, std::move(nodes), log)
             .then([this, log, group](ss::lw_shared_ptr<raft::consensus> c) {
-                auto p = ss::make_lw_shared<partition>(c);
+                auto p = ss::make_lw_shared<partition>(c, _tx_gateway_frontend);
                 _ntp_table.emplace(log.config().ntp(), p);
                 _raft_table.emplace(group, p);
                 _manage_watchers.notify(p->ntp(), p);

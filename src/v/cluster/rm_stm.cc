@@ -10,6 +10,7 @@
 #include "cluster/rm_stm.h"
 
 #include "cluster/logger.h"
+#include "cluster/tx_gateway_frontend.h"
 #include "kafka/protocol/request_reader.h"
 #include "kafka/protocol/response_writer.h"
 #include "model/record.h"
@@ -160,14 +161,19 @@ static model::control_record_type parse_control_batch(model::record_batch& b) {
     return model::control_record_type(key_reader.read_int16());
 }
 
-rm_stm::rm_stm(ss::logger& logger, raft::consensus* c)
+rm_stm::rm_stm(
+  ss::logger& logger,
+  raft::consensus* c,
+  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend)
   : persisted_stm("rm", logger, c)
   , _oldest_session(model::timestamp::now())
   , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.value())
+  , _tx_timeout_delay(config::shard_local_cfg().tx_timeout_delay_ms.value())
   , _recovery_policy(
       config::shard_local_cfg().rm_violation_recovery_policy.value())
   , _transactional_id_expiration(
-      config::shard_local_cfg().transactional_id_expiration_ms.value()) {
+      config::shard_local_cfg().transactional_id_expiration_ms.value())
+  , _tx_gateway_frontend(tx_gateway_frontend) {
     if (_recovery_policy != crash && _recovery_policy != best_effort) {
         vassert(false, "Unknown recovery policy: {}", _recovery_policy);
     }
@@ -318,8 +324,10 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
         co_return tx_errc::request_rejected;
     }
 
-    auto [preparing_it, _] = _mem_state.preparing.try_emplace(pid, tx_seq);
-    if (preparing_it->second != tx_seq) {
+    auto marker = prepare_marker{
+      .tm_partition = tm, .tx_seq = tx_seq, .pid = pid};
+    auto [_, inserted] = _mem_state.preparing.try_emplace(pid, marker);
+    if (!inserted) {
         vlog(
           clusterlog.error,
           "Can't prepare pid:{} - concurrent operation on the same session",
@@ -327,8 +335,7 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
         co_return tx_errc::conflict;
     }
 
-    auto batch = make_prepare_batch(
-      prepare_marker{.tm_partition = tm, .tx_seq = tx_seq, .pid = pid});
+    auto batch = make_prepare_batch(marker);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
     auto r = co_await _c->replicate(
       etag,
@@ -375,7 +382,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
     auto prepare_it = _log_state.prepared.find(pid);
 
     if (preparing_it != _mem_state.preparing.end()) {
-        if (preparing_it->second > tx_seq) {
+        if (preparing_it->second.tx_seq > tx_seq) {
             // - tm_stm & rm_stm failed during prepare
             // - during recovery tm_stm recommits its previous tx
             // - that commit (we're here) collides with "next" failed prepare
@@ -384,7 +391,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         }
 
         ss::sstring msg;
-        if (preparing_it->second == tx_seq) {
+        if (preparing_it->second.tx_seq == tx_seq) {
             msg = ssx::sformat(
               "Prepare hasn't completed => can't commit pid:{} tx_seq:{}",
               pid,
@@ -394,7 +401,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
               "Commit pid:{} tx_seq:{} conflicts with preparing tx_seq:{}",
               pid,
               tx_seq,
-              preparing_it->second);
+              preparing_it->second.tx_seq);
         }
 
         if (_recovery_policy == best_effort) {
@@ -440,7 +447,6 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
     }
 
     // we commit only if a provided tx_seq matches prepared tx_seq
-
     auto batch = make_tx_control_batch(
       pid, model::control_record_type::tx_commit);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
@@ -479,10 +485,10 @@ abort_origin rm_stm::get_abort_origin(
 
     auto preparing_it = _mem_state.preparing.find(pid);
     if (preparing_it != _mem_state.preparing.end()) {
-        if (tx_seq < preparing_it->second) {
+        if (tx_seq < preparing_it->second.tx_seq) {
             return abort_origin::past;
         }
-        if (preparing_it->second < tx_seq) {
+        if (preparing_it->second.tx_seq < tx_seq) {
             return abort_origin::future;
         }
     }
@@ -798,6 +804,9 @@ void rm_stm::became_leader() {
     if (_gate.is_closed()) {
         return;
     }
+    if (!_is_autoabort_enabled) {
+        return;
+    }
     if (!auto_abort_timer.armed()) {
         abort_old_txes();
     }
@@ -813,6 +822,9 @@ void rm_stm::track_tx(
     }
     _mem_state.expiration[pid] = expiration_info{
       .timeout = transaction_timeout_ms, .last_update = clock_type::now()};
+    if (!_is_autoabort_enabled) {
+        return;
+    }
     auto deadline = _mem_state.expiration[pid].deadline();
     if (auto_abort_timer.armed() && auto_abort_timer.get_timeout() > deadline) {
         auto_abort_timer.cancel();
@@ -834,30 +846,22 @@ void rm_stm::abort_old_txes() {
         for (auto& [k, _] : _log_state.ongoing_map) {
             pids.push_back(k);
         }
-        std::vector<model::producer_identity> expired;
+        absl::btree_set<model::producer_identity> expired;
         for (auto pid : pids) {
-            if (_log_state.prepared.contains(pid)) {
-                continue;
-            }
-            if (_mem_state.preparing.contains(pid)) {
-                continue;
-            }
-            if (_mem_state.expected.contains(pid)) {
-                auto expiration_it = _mem_state.expiration.find(pid);
-                if (expiration_it != _mem_state.expiration.end()) {
-                    if (expiration_it->second.deadline() > clock_type::now()) {
-                        continue;
-                    }
+            auto expiration_it = _mem_state.expiration.find(pid);
+            if (expiration_it != _mem_state.expiration.end()) {
+                if (expiration_it->second.deadline() > clock_type::now()) {
+                    continue;
                 }
             }
-            expired.push_back(pid);
+            expired.insert(pid);
         }
-        return abort_old_txes(expired);
+        return abort_old_txes(std::move(expired));
     });
 }
 
 ss::future<>
-rm_stm::abort_old_txes(std::vector<model::producer_identity> pids) {
+rm_stm::abort_old_txes(absl::btree_set<model::producer_identity> pids) {
     for (auto pid : pids) {
         co_await try_abort_old_tx(pid);
     }
@@ -873,7 +877,8 @@ rm_stm::abort_old_txes(std::vector<model::producer_identity> pids) {
     }
 
     if (earliest_deadline) {
-        auto deadline = earliest_deadline.value();
+        auto deadline = std::max(
+          earliest_deadline.value(), clock_type::now() + _tx_timeout_delay);
         if (
           auto_abort_timer.armed()
           && auto_abort_timer.get_timeout() > deadline) {
@@ -900,30 +905,65 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
         co_return;
     }
 
-    if (_mem_state.expected.contains(pid)) {
-        auto expiration_it = _mem_state.expiration.find(pid);
-        if (expiration_it != _mem_state.expiration.end()) {
-            if (expiration_it->second.deadline() > clock_type::now()) {
-                co_return;
-            }
+    auto expiration_it = _mem_state.expiration.find(pid);
+    if (expiration_it != _mem_state.expiration.end()) {
+        if (expiration_it->second.deadline() > clock_type::now()) {
+            co_return;
         }
     }
 
     _mem_state.expected.erase(pid);
 
-    auto batch = make_tx_control_batch(
-      pid, model::control_record_type::tx_abort);
-    auto reader = model::make_memory_record_batch_reader(std::move(batch));
-    auto r = co_await _c->replicate(
-      _insync_term,
-      std::move(reader),
-      raft::replicate_options(raft::consistency_level::quorum_ack));
-    if (!r) {
-        vlog(
-          clusterlog.warn,
-          "Error \"{}\" on aborting timed out pid: {}",
-          r.error(),
-          pid);
+    std::optional<prepare_marker> marker;
+    auto prepare_it = _mem_state.preparing.find(pid);
+    if (prepare_it != _mem_state.preparing.end()) {
+        marker = prepare_it->second;
+    }
+    prepare_it = _log_state.prepared.find(pid);
+    if (prepare_it != _log_state.prepared.end()) {
+        marker = prepare_it->second;
+    }
+
+    if (marker) {
+        auto r = co_await _tx_gateway_frontend.local().try_abort(
+          marker->tm_partition, marker->pid, marker->tx_seq, _sync_timeout);
+        if (r.ec == tx_errc::none) {
+            if (r.commited) {
+                auto batch = make_tx_control_batch(
+                  pid, model::control_record_type::tx_commit);
+                auto reader = model::make_memory_record_batch_reader(
+                  std::move(batch));
+                co_await _c
+                  ->replicate(
+                    _insync_term,
+                    std::move(reader),
+                    raft::replicate_options(
+                      raft::consistency_level::quorum_ack))
+                  .discard_result();
+            } else if (r.aborted) {
+                auto batch = make_tx_control_batch(
+                  pid, model::control_record_type::tx_abort);
+                auto reader = model::make_memory_record_batch_reader(
+                  std::move(batch));
+                co_await _c
+                  ->replicate(
+                    _insync_term,
+                    std::move(reader),
+                    raft::replicate_options(
+                      raft::consistency_level::quorum_ack))
+                  .discard_result();
+            }
+        }
+    } else {
+        auto batch = make_tx_control_batch(
+          pid, model::control_record_type::tx_abort);
+        auto reader = model::make_memory_record_batch_reader(std::move(batch));
+        co_await _c
+          ->replicate(
+            _insync_term,
+            std::move(reader),
+            raft::replicate_options(raft::consistency_level::quorum_ack))
+          .discard_result();
     }
 }
 

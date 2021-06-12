@@ -61,6 +61,31 @@ std::optional<tm_transaction> tm_stm::get_tx(kafka::transactional_id tx_id) {
     return std::nullopt;
 }
 
+ss::future<bool> tm_stm::barrier() {
+    if (_insync_term != _c->term()) {
+        return ss::make_ready_future<bool>(false);
+    }
+    auto term = _c->term();
+    return quorum_write_empty_batch(model::timeout_clock::now() + _sync_timeout)
+      .then_wrapped([this, term](ss::future<result<raft::replicate_result>> f) {
+          try {
+              if (!f.get0().has_value()) {
+                  return false;
+              }
+              if (term != _c->term()) {
+                  return false;
+              }
+              return true;
+          } catch (...) {
+              vlog(
+                clusterlog.error,
+                "Error during writing a barrier batch: {}",
+                std::current_exception());
+              return false;
+          }
+      });
+}
+
 ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::update_tx(tm_transaction tx, model::term_id term) {
     auto batch = serialize_tx(tx);
@@ -167,6 +192,8 @@ ss::future<tm_stm::op_status> tm_stm::re_register_producer(
     tx.partitions.clear();
     tx.groups.clear();
 
+    _pid_tx_id[pid] = tx_id;
+
     auto r = co_await update_tx(tx, tx.etag);
 
     if (!r.has_value()) {
@@ -198,6 +225,8 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
       .status = tm_transaction::tx_status::ready,
       .timeout_ms = transaction_timeout_ms};
     auto batch = serialize_tx(tx);
+
+    _pid_tx_id[pid] = tx_id;
 
     auto r = co_await replicate_quorum_ack(tx.etag, std::move(batch));
 
@@ -253,6 +282,7 @@ void tm_stm::load_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
 
     for (auto& entry : data.transactions) {
         _tx_table.try_emplace(entry.id, entry);
+        _pid_tx_id[entry.pid] = entry.id;
     }
     _last_snapshot_offset = data.offset;
     _insync_offset = data.offset;
@@ -330,6 +360,8 @@ ss::future<> tm_stm::apply(model::record_batch b) {
     if (!inserted) {
         tx_it->second = tx;
     }
+
+    _pid_tx_id[tx.pid] = tx.id;
 
     expire_old_txs();
 

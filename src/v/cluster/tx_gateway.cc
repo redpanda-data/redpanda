@@ -32,6 +32,12 @@ tx_gateway::tx_gateway(
   , _rm_group_proxy(group_proxy)
   , _rm_partition_frontend(rm_partition_frontend) {}
 
+ss::future<try_abort_reply>
+tx_gateway::try_abort(try_abort_request&& request, rpc::streaming_context&) {
+    return _tx_gateway_frontend.local().try_abort_locally(
+      request.tm, request.pid, request.tx_seq, request.timeout);
+}
+
 ss::future<init_tm_tx_reply>
 tx_gateway::init_tm_tx(init_tm_tx_request&& request, rpc::streaming_context&) {
     return _tx_gateway_frontend.local().init_tm_tx_locally(

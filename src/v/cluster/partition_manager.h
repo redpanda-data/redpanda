@@ -29,7 +29,9 @@ public:
       = absl::flat_hash_map<model::ntp, ss::lw_shared_ptr<partition>>;
 
     partition_manager(
-      ss::sharded<storage::api>&, ss::sharded<raft::group_manager>&);
+      ss::sharded<storage::api>&,
+      ss::sharded<raft::group_manager>&,
+      ss::sharded<cluster::tx_gateway_frontend>&);
 
     using manage_cb_t
       = ss::noncopyable_function<void(ss::lw_shared_ptr<partition>)>;
@@ -120,6 +122,7 @@ private:
     ntp_table_container _ntp_table;
     absl::flat_hash_map<raft::group_id, ss::lw_shared_ptr<partition>>
       _raft_table;
+    ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
 
     friend std::ostream& operator<<(std::ostream&, const partition_manager&);
 };
