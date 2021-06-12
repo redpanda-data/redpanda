@@ -3,6 +3,8 @@ version: '3'
 vars:
   GO_VERSION: '1.16.5'
   GO_BUILD_ROOT: '{{.BUILD_ROOT}}/go/{{.GO_VERSION}}'
+  KUBECTL_VERSION: '1.21.0'
+  GOLANGCI_LINT_VERSION: '1.40.1'
 
 tasks:
   install-deps:
@@ -50,6 +52,29 @@ tasks:
     - curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 '{{.GOLANG_URL}}' | tar -xz -C '{{.GO_BUILD_ROOT}}' --strip 1
     status:
     - test -f '{{.GO_BUILD_ROOT}}/bin/go'
+
+  install-kubectl:
+    desc: install kubectl
+    vars:
+      KUBECTL_URL_DEFAULT: 'https://storage.googleapis.com/kubernetes-release/release/v{{.KUBECTL_VERSION}}/bin/linux/{{ARCH}}/kubectl'
+      KUBECTL_URL: '{{default .KUBECTL_URL_DEFAULT .KUBECTL_URL}}'
+    cmds:
+    - mkdir -p '{{.BUILD_ROOT}}/bin'
+    - curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 '{{.KUBECTL_URL}}' -o '{{.BUILD_ROOT}}/bin/kubectl'
+    - chmod +x '{{.BUILD_ROOT}}/bin/kubectl'
+    status:
+    - test -f '{{.BUILD_ROOT}}/bin/kubectl'
+
+  install-golangci-lint:
+    desc: install golangci-lint
+    vars:
+      GOLANGCI_LINT_URL_DEFAULT: 'https://github.com/golangci/golangci-lint/releases/download/v{{.GOLANGCI_LINT_VERSION}}/golangci-lint-{{.GOLANGCI_LINT_VERSION}}-linux-{{ARCH}}.tar.gz'
+      GOLANGCI_LINT_URL: '{{default .GOLANGCI_LINT_URL_DEFAULT .GOLANGCI_LINT_URL}}'
+    cmds:
+    - mkdir -p '{{.BUILD_ROOT}}/bin'
+    - curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 '{{.GOLANGCI_LINT_URL}}' | tar -xz -C '{{.BUILD_ROOT}}/bin' --strip 1 --wildcards '*/golangci-lint'
+    status:
+    - test -f '{{.BUILD_ROOT}}/bin/golangci-lint'
 
   install-docker-compose:
     desc: install docker-compose
