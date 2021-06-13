@@ -1,9 +1,9 @@
 ---
-title: Connect to a Kubernetes cluster from an external client
+title: Kubernetes Quick Start Guide with external connectivity
 order: 0
 ---
 
-# Connect to a Kubernetes cluster from an external client
+# Kubernetes Quick Start Guide with external connectivity
 
 The [Kubernetes Quick Start guide](/docs/quick-start-kubernetes) describes how to quickly get up and running with a Kubernetes cluster.
 Those instructions only provide access to the cluster from within the Kuberenetes network.
@@ -155,4 +155,7 @@ We'll use Helm to install cert-manager:
 
 Now you know how to set up a Kubernetes cluster in a cloud and access it from a remote machine.
 
-Contact us in our [Slack](https://vectorized.io/slack) community so we can work together to implement your Kubernetes use cases.
+## Next steps
+
+- Check out our in-depth explanation of [Kubernetes connectivity](/docs/kubernetes-connectivity).
+- Contact us in our [Slack](https://vectorized.io/slack) community so we can work together to implement your Kubernetes use cases.
