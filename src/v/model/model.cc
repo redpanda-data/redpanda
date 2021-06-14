@@ -399,4 +399,16 @@ std::ostream& operator<<(std::ostream& o, record_batch_type bt) {
     return o << "batch_type::unknown{" << static_cast<int>(bt) << "}";
 }
 
+std::ostream& operator<<(std::ostream& o, membership_state st) {
+    switch (st) {
+    case membership_state::active:
+        return o << "active";
+    case membership_state::draining:
+        return o << "draining";
+    case membership_state::removed:
+        return o << "removed";
+    }
+    return o << "unknown membership state {" << static_cast<int>(st) << "}";
+}
+
 } // namespace model
