@@ -90,7 +90,8 @@ ss::future<> controller::start() {
             _raft0.get(),
             raft::persistent_last_applied::yes,
             std::ref(_tp_updates_dispatcher),
-            std::ref(_security_manager));
+            std::ref(_security_manager),
+            std::ref(_members_manager));
       })
       .then([this] {
           return _security_frontend.start(
