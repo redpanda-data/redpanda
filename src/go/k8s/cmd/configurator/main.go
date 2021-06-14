@@ -20,9 +20,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/danielungur-firebolt/redpanda/src/go/rpk/pkg/config"
 	"github.com/hashicorp/go-multierror"
 	"github.com/spf13/afero"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
