@@ -24,6 +24,72 @@
                     "parameters": []
                 }
             ]
+        },
+        {
+            "path": "/v1/brokers/{id}",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get broker",
+                    "type": "broker",
+                    "nickname": "get_broker",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": true,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/brokers/{id}/decommission",
+            "operations": [
+                {
+                    "method": "PUT",
+                    "summary": "decommission broker",
+                    "type": "void",
+                    "nickname": "decommission",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": true,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/brokers/{id}/recommission",
+            "operations": [
+                {
+                    "method": "PUT",
+                    "summary": "recommission broker",
+                    "type": "void",
+                    "nickname": "recommission",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": true,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {
@@ -38,6 +104,10 @@
                 "num_cores": {
                     "type": "long",
                     "description": "cores"
+                },
+                "membership_status": {
+                    "type": "string",
+                    "description": "Broker membership status"
                 }
             }
         }
