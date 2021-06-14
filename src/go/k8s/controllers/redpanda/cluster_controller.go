@@ -362,7 +362,20 @@ func (r *ClusterReconciler) createExternalNodesList(
 		}
 
 		if externalKafkaListener != nil && len(externalKafkaListener.External.Subdomain) > 0 {
-			address := subdomainAddress(podName, externalKafkaListener.External.Subdomain, getNodePort(&nodePortSvc, resources.ExternalListenerName))
+			var address string
+			if externalKafkaListener.External.OrdinalBrokerHostname {
+				address = subdomainAddress(podName, externalKafkaListener.External.Subdomain, getNodePort(&nodePortSvc, resources.ExternalListenerName))
+			} else {
+				var port int32
+				if externalKafkaListener.External.OrdinalPortPerBroker {
+					port = getNodePort(&nodePortSvc, resources.ExternalListenerName)
+				} else {
+					port = int32(externalKafkaListener.External.BasePort + i)
+				}
+
+				address = subdomainAddress("", externalKafkaListener.External.Subdomain, port)
+			}
+
 			observedNodesExternal = append(observedNodesExternal, address)
 		} else if externalKafkaListener != nil {
 			observedNodesExternal = append(observedNodesExternal,
@@ -405,6 +418,12 @@ func needExternalIP(external redpandav1alpha1.ExternalConnectivityConfig) bool {
 }
 
 func subdomainAddress(name, subdomain string, port int32) string {
+	if name == "" {
+		return fmt.Sprintf("%s:%d",
+			subdomain,
+			port,
+		)
+	}
 	return fmt.Sprintf("%s.%s:%d",
 		name,
 		subdomain,

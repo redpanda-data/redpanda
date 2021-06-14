@@ -224,8 +224,14 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 
 	externalListener := r.pandaCluster.ExternalListener()
 	externalSubdomain := ""
+	ordinalPortPerBroker := false
+	ordinalBrokerHostname := false
+	basePort := 0
 	if externalListener != nil {
 		externalSubdomain = externalListener.External.Subdomain
+		ordinalPortPerBroker = externalListener.External.OrdinalPortPerBroker
+		ordinalBrokerHostname = externalListener.External.OrdinalBrokerHostname
+		basePort = externalListener.External.BasePort
 	}
 
 	ss := &appsv1.StatefulSet{
@@ -326,6 +332,18 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 								{
 									Name:  "HOST_PORT",
 									Value: r.getNodePort(ExternalListenerName),
+								},
+								{
+									Name:  "ORDINAL_PORT_PER_BROKER",
+									Value: strconv.FormatBool(ordinalPortPerBroker),
+								},
+								{
+									Name:  "ORDINAL_BROKER_HOSTNAME",
+									Value: strconv.FormatBool(ordinalBrokerHostname),
+								},
+								{
+									Name:  "BASE_PORT",
+									Value: strconv.Itoa(basePort),
 								},
 							}, r.pandaproxyEnvVars()...),
 							SecurityContext: &corev1.SecurityContext{

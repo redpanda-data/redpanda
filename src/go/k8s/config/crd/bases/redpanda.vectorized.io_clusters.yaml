@@ -145,10 +145,25 @@ spec:
                             API outside of a Kubernetes cluster. For more information
                             please go to ExternalConnectivityConfig
                           properties:
+                            basePort:
+                              description: BasePort can be used when OrdinalPortPerBroker
+                                is set to false
+                              type: integer
                             enabled:
                               description: Enabled enables the external connectivity
                                 feature
                               type: boolean
+                            ordinalBrokerHostname:
+                              description: OrdinalBrokerHostname can be used when
+                                you have incremental port and you want Broker Ordinal
+                                number to be set as subdomain
+                              type: boolean
+                              default: true
+                            ordinalPortPerBroker:
+                              description: OrdinalPortPerBroker can be used when incremental
+                                port is needed
+                              type: boolean
+                              default: true
                             subdomain:
                               description: Subdomain can be used to change the behavior
                                 of an advertised KafkaAPI. Each broker advertises
@@ -189,10 +204,25 @@ spec:
                             outside of a Kubernetes cluster. For more information
                             please go to ExternalConnectivityConfig
                           properties:
+                            basePort:
+                              description: BasePort can be used when OrdinalPortPerBroker
+                                is set to false
+                              type: integer
                             enabled:
                               description: Enabled enables the external connectivity
                                 feature
                               type: boolean
+                            ordinalBrokerHostname:
+                              description: OrdinalBrokerHostname can be used when
+                                you have incremental port and you want Broker Ordinal
+                                number to be set as subdomain
+                              type: boolean
+                              default: true
+                            ordinalPortPerBroker:
+                              description: OrdinalPortPerBroker can be used when incremental
+                                port is needed
+                              type: boolean
+                              default: true
                             subdomain:
                               description: Subdomain can be used to change the behavior
                                 of an advertised KafkaAPI. Each broker advertises
@@ -202,17 +232,6 @@ spec:
                                 If TLS is enabled then this subdomain will be requested
                                 as a subject alternative name.
                               type: string
-                            basePort:
-                              description: Base port for bootstrap, and every other broker would get assinged an ordinal Number
-                              type: integer
-                            ordinalPortPerBroker:
-                              description: Ordinal port per broker
-                                eg SUBDOMAIN:{BASEPORT+BROKER_ID}
-                              type: boolean
-                            ordinalBrokerHostname:
-                              description: Ordinal Broker hostname
-                                eg. BROKER_ID.SUBDOMAIN:EXTERNAL_KAFKA_API_PORT
-                              type: boolean
                           type: object
                         port:
                           type: integer
@@ -307,10 +326,25 @@ spec:
                             outside of a Kubernetes cluster. For more information
                             please go to ExternalConnectivityConfig
                           properties:
+                            basePort:
+                              description: BasePort can be used when OrdinalPortPerBroker
+                                is set to false
+                              type: integer
                             enabled:
                               description: Enabled enables the external connectivity
                                 feature
                               type: boolean
+                            ordinalBrokerHostname:
+                              description: OrdinalBrokerHostname can be used when
+                                you have incremental port and you want Broker Ordinal
+                                number to be set as subdomain
+                              type: boolean
+                              default: true
+                            ordinalPortPerBroker:
+                              description: OrdinalPortPerBroker can be used when incremental
+                                port is needed
+                              type: boolean
+                              default: true
                             subdomain:
                               description: Subdomain can be used to change the behavior
                                 of an advertised KafkaAPI. Each broker advertises

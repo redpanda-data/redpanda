@@ -128,7 +128,7 @@ func (r *NodePortServiceResource) obj() (k8sclient.Object, error) {
 			Ports:                 ports,
 			// The selector is purposely set to nil. Our external connectivity doesn't use
 			// kubernetes service as kafka protocol need to have access to each broker individually.
-			Selector: nil,
+			Selector: objLabels.AsAPISelector().MatchLabels,
 		},
 	}
 
