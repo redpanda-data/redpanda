@@ -25,6 +25,7 @@ rp_test(
     wasm_event_tests.cc
     event_listener_tests.cc
     read_materialized_topic_test.cc
+		api/wasm_list_tests.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main ${fixture_deps}
   LABELS coproc

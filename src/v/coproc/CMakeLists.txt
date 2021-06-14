@@ -17,6 +17,7 @@ v_cc_library(
     wasm_event.cc
     event_listener.cc
     script_dispatcher.cc
+    api/wasm_list.cc
   DEPS
     v::rpc
     v::model
