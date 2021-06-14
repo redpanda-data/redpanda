@@ -78,13 +78,13 @@ tasks:
   test:
     desc: run redpanda unit tests
     vars:
-      CI: '{{ default "0" .CI}}'
+      CI: '{{default "false" .CI}}'
       CTEST_ARGS: '{{default `-R ".*_rp(unit|bench|int)$"` .CTEST_ARGS}}'
     dir: '{{.BUILD_DIR}}'
     deps:
     - set-aio-max
     cmds:
-    - ctest {{if eq .CI "1"}}"--output-on-failure" -LE "disable_on_ci"{{end}} {{.CTEST_ARGS}}
+    - ctest {{if eq .CI "true"}}"--output-on-failure" -LE "disable_on_ci"{{end}} {{.CTEST_ARGS}}
 
   build-test-docker-image:
     desc: build image used in integration tests
