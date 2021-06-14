@@ -64,6 +64,7 @@ v_cc_library(
     security_manager.cc
     security_frontend.cc
     controller_api.cc
+    members_frontend.cc
   DEPS
     Seastar::seastar
     controller_rpc
