@@ -1,7 +1,7 @@
 module github.com/vectorizedio/redpanda/src/go/rpk
 
 require (
-	cloud.google.com/go v0.26.0
+	cloud.google.com/go v0.46.3
 	github.com/Microsoft/go-winio v0.4.12 // indirect
 	github.com/Shopify/sarama v1.28.1-0.20210318150015-41df78df10a9
 	github.com/avast/retry-go v2.6.0+incompatible
@@ -24,7 +24,6 @@ require (
 	github.com/lestrrat-go/jwx v1.1.7
 	github.com/lorenzosaino/go-sysctl v0.1.0
 	github.com/lovoo/goka v1.0.6 // indirect
-	github.com/magiconair/properties v1.8.1 // indirect
 	github.com/mattn/go-colorable v0.1.2 // indirect
 	github.com/mattn/go-runewidth v0.0.4 // indirect
 	github.com/mitchellh/mapstructure v1.4.1
@@ -39,9 +38,9 @@ require (
 	github.com/safchain/ethtool v0.0.0-20190326074333-42ed695e3de8
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/afero v1.2.2
-	github.com/spf13/cobra v0.0.7
+	github.com/spf13/cobra v1.1.3
 	github.com/spf13/pflag v1.0.5
-	github.com/spf13/viper v1.4.0
+	github.com/spf13/viper v1.7.0
 	github.com/stretchr/testify v1.7.0
 	github.com/tklauser/go-sysconf v0.1.0
 	github.com/xdg/scram v1.0.3
