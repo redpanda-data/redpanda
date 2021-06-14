@@ -35,7 +35,7 @@ func NewProduceCommand(
 	)
 	cmd := &cobra.Command{
 		Use:   "produce <topic>",
-		Short: "Produce a record. Reads data from stdin.",
+		Short: "Produce a record from data entered in stdin.",
 		Args:  common.ExactArgs(1, "topic's name is missing."),
 		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
 		SilenceUsage: true,
