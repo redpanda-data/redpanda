@@ -75,7 +75,7 @@ bool state_machine::stop_batch_applicator() { return _gate.is_closed(); }
 
 model::record_batch_reader make_checkpoint() {
     storage::record_batch_builder builder(
-      state_machine::checkpoint_batch_type, model::offset(0));
+      model::record_batch_type::checkpoint, model::offset(0));
     builder.add_raw_kv(iobuf(), iobuf());
     return model::make_memory_record_batch_reader(std::move(builder).build());
 }

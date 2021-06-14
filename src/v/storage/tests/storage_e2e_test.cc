@@ -498,7 +498,7 @@ ss::future<storage::append_result> append_exactly(
 
     for (int i = 0; i < batch_count; ++i) {
         storage::record_batch_builder builder(
-          model::record_batch_type(1), model::offset{});
+          model::record_batch_type::raft_data, model::offset{});
         iobuf value = bytes_to_iobuf(random_generators::get_bytes(val_sz));
         builder.add_raw_kv(key_buf.copy(), std::move(value));
 
@@ -593,7 +593,7 @@ FIXTURE_TEST(empty_segment_recovery, storage_test_fixture) {
      */
 
     storage::disk_log_builder builder(cfg);
-    model::record_batch_type bt = model::record_batch_type(1);
+    model::record_batch_type bt = model::record_batch_type::raft_data;
     using should_flush_t = storage::disk_log_builder::should_flush_after;
     storage::log_append_config appender_cfg{
       .should_fsync = storage::log_append_config::fsync::no,
@@ -687,7 +687,7 @@ FIXTURE_TEST(test_compation_preserve_state, storage_test_fixture) {
     ss::abort_source as;
 
     storage::disk_log_builder builder(cfg);
-    model::record_batch_type bt = model::record_batch_type(2);
+    model::record_batch_type bt = model::record_batch_type::raft_configuration;
     using should_flush_t = storage::disk_log_builder::should_flush_after;
     storage::log_append_config appender_cfg{
       .should_fsync = storage::log_append_config::fsync::no,
@@ -777,7 +777,7 @@ void append_single_record_batch(
         }
         iobuf value = bytes_to_iobuf(val_bytes);
         storage::record_batch_builder builder(
-          model::record_batch_type(1), model::offset(0));
+          model::record_batch_type::raft_data, model::offset(0));
         builder.add_raw_kv(std::move(key), std::move(value));
         auto batch = std::move(builder).build();
         batch.set_term(term);

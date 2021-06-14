@@ -26,7 +26,7 @@ namespace cluster {
 
 static model::record_batch serialize_tx(tm_transaction tx) {
     iobuf key;
-    reflection::serialize(key, tm_update_batch_type());
+    reflection::serialize(key, model::record_batch_type::tm_update);
     auto pid_id = tx.pid.id;
     auto tx_id = tx.id;
     reflection::serialize(key, pid_id, tx_id);
@@ -35,7 +35,8 @@ static model::record_batch serialize_tx(tm_transaction tx) {
     reflection::serialize(value, tm_transaction::version);
     reflection::serialize(value, std::move(tx));
 
-    storage::record_batch_builder b(tm_update_batch_type, model::offset(0));
+    storage::record_batch_builder b(
+      model::record_batch_type::tm_update, model::offset(0));
     b.add_raw_kv(std::move(key), std::move(value));
     return std::move(b).build();
 }
@@ -313,13 +314,13 @@ ss::future<> tm_stm::apply(model::record_batch b) {
     const auto& hdr = b.header();
     _insync_offset = b.last_offset();
 
-    if (hdr.type != tm_update_batch_type) {
+    if (hdr.type != model::record_batch_type::tm_update) {
         return ss::now();
     }
 
     vassert(
       b.record_count() == 1,
-      "tm_update_batch_type batch must contain a single record");
+      "model::record_batch_type::tm_update batch must contain a single record");
     auto r = b.copy_records();
     auto& record = *r.begin();
     auto val_buf = record.release_value();
@@ -335,24 +336,25 @@ ss::future<> tm_stm::apply(model::record_batch b) {
 
     auto key_buf = record.release_key();
     iobuf_parser key_reader(std::move(key_buf));
-    auto batch_type = model::record_batch_type(
-      reflection::adl<int8_t>{}.from(key_reader));
+    auto batch_type = reflection::adl<model::record_batch_type>{}.from(
+      key_reader);
     vassert(
       hdr.type == batch_type,
-      "broken tm_update_batch_type. expected batch type {} got: {}",
+      "broken model::record_batch_type::tm_update. expected batch type {} got: "
+      "{}",
       hdr.type,
       batch_type);
     auto p_id = model::producer_id(reflection::adl<int64_t>{}.from(key_reader));
     vassert(
       p_id == tx.pid.id,
-      "broken tm_update_batch_type. expected tx.pid {} got: {}",
+      "broken model::record_batch_type::tm_update. expected tx.pid {} got: {}",
       tx.pid.id,
       p_id);
     auto tx_id = kafka::transactional_id(
       reflection::adl<ss::sstring>{}.from(key_reader));
     vassert(
       tx_id == tx.id,
-      "broken tm_update_batch_type. expected tx.id {} got: {}",
+      "broken model::record_batch_type::tm_update. expected tx.id {} got: {}",
       tx.id,
       tx_id);
 

@@ -61,7 +61,8 @@ public:
       update_topic_properties_cmd>();
 
     bool is_batch_applicable(const model::record_batch& batch) const {
-        return batch.header().type == topic_batch_type;
+        return batch.header().type
+               == model::record_batch_type::topic_management_cmd;
     }
 
 private:

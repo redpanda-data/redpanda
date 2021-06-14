@@ -773,7 +773,7 @@ FIXTURE_TEST(test_big_batches_replication, raft_test_fixture) {
     bool success
       = retry_with_leader(gr, 5, 2s, [](raft_node& leader_node) mutable {
             storage::record_batch_builder builder(
-              raft::data_batch_type, model::offset(0));
+              model::record_batch_type::raft_data, model::offset(0));
 
             auto value = bytes_to_iobuf(random_generators::get_bytes(3_MiB));
             builder.add_raw_kv({}, std::move(value));
@@ -799,7 +799,7 @@ FIXTURE_TEST(test_big_batches_replication, raft_test_fixture) {
 struct request_ordering_test_fixture : public raft_test_fixture {
     model::record_batch_reader make_indexed_batch_reader(int32_t idx) {
         storage::record_batch_builder builder(
-          raft::data_batch_type, model::offset(0));
+          model::record_batch_type::raft_data, model::offset(0));
 
         iobuf buf;
         reflection::serialize(buf, idx);
@@ -830,7 +830,7 @@ struct request_ordering_test_fixture : public raft_test_fixture {
             int32_t idx = 0;
             BOOST_REQUIRE_GE(batches.size(), count);
             for (auto& b : batches) {
-                if (b.header().type == raft::data_batch_type) {
+                if (b.header().type == model::record_batch_type::raft_data) {
                     BOOST_REQUIRE_EQUAL(
                       idx,
                       reflection::from_iobuf<int32_t>(

@@ -36,7 +36,7 @@ FIXTURE_TEST(half_next_page, fixture) {
     value.append(data.share());
     key.append(data.share());
     auto batchbldr = record_batch_builder(
-      model::record_batch_type{1}, model::offset(0));
+      model::record_batch_type::raft_data, model::offset(0));
     auto batch = std::move(
                    batchbldr.add_raw_kv(std::move(key), std::move(value)))
                    .build();

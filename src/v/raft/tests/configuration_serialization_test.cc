@@ -84,7 +84,7 @@ struct test_consumer {
     ss::future<ss::stop_iteration> operator()(model::record_batch& b) {
         if (
           !b.compressed()
-          && b.header().type == raft::configuration_batch_type) {
+          && b.header().type == model::record_batch_type::raft_configuration) {
             _config_offsets.push_back(_next_offset);
         }
         _next_offset += model::offset(b.header().last_offset_delta)

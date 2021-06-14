@@ -208,7 +208,7 @@ ss::future<produce_response> client::produce_records(
                    .emplace(
                      *p_id,
                      storage::record_batch_builder(
-                       raft::data_batch_type, model::offset(0)))
+                       model::record_batch_type::raft_data, model::offset(0)))
                    .first;
         }
         it->second.add_raw_kw(

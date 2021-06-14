@@ -45,7 +45,7 @@ static storage::log_reader_config log_rdr_cfg(const model::offset& min_offset) {
       0,
       std::numeric_limits<size_t>::max(),
       ss::default_priority_class(),
-      raft::data_batch_type,
+      model::record_batch_type::raft_data,
       std::nullopt,
       std::nullopt);
 }

@@ -145,7 +145,8 @@ ss::circular_buffer<model::record_batch>
 serialize_configuration_as_batches(group_configuration cfg) {
     auto batch = std::move(
                    storage::record_batch_builder(
-                     raft::configuration_batch_type, model::offset(0))
+                     model::record_batch_type::raft_configuration,
+                     model::offset(0))
                      .add_raw_kv(iobuf(), reflection::to_iobuf(std::move(cfg))))
                    .build();
     ss::circular_buffer<model::record_batch> batches;
@@ -166,7 +167,7 @@ model::record_batch make_ghost_batch(
     model::record_batch_header header = {
       .size_bytes = model::packed_record_batch_header_size,
       .base_offset = start_offset,
-      .type = storage::ghost_record_batch_type,
+      .type = model::record_batch_type::ghost_batch,
       .crc = 0, // crc computed later
       .attrs = model::record_batch_attributes{} |= model::compression::none,
       .last_offset_delta = static_cast<int32_t>(delta),
@@ -275,7 +276,9 @@ model::record_batch_reader make_config_extracting_reader(
         do_load_slice(model::timeout_clock::time_point t) final {
             return _ptr->do_load_slice(t).then([this](storage_t recs) {
                 for (auto& batch : get_batches(recs)) {
-                    if (batch.header().type == configuration_batch_type) {
+                    if (
+                      batch.header().type
+                      == model::record_batch_type::raft_configuration) {
                         extract_configuration(batch);
                     }
                     // calculate next offset

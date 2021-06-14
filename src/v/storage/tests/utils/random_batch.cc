@@ -92,7 +92,7 @@ model::record_batch make_random_batch(
 model::record_batch
 make_random_batch(model::offset o, int num_records, bool allow_compression) {
     return make_random_batch(
-      o, num_records, allow_compression, model::record_batch_type(1));
+      o, num_records, allow_compression, model::record_batch_type::raft_data);
 }
 
 model::record_batch make_random_batch(record_batch_spec spec) {
@@ -156,7 +156,7 @@ model::record_batch make_random_batch(record_batch_spec spec) {
 model::record_batch make_random_batch(model::offset o, bool allow_compression) {
     auto num_records = get_int(2, 30);
     return make_random_batch(
-      o, num_records, allow_compression, model::record_batch_type(1));
+      o, num_records, allow_compression, model::record_batch_type::raft_data);
 }
 
 ss::circular_buffer<model::record_batch>

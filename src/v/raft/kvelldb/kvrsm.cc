@@ -42,7 +42,8 @@ ss::future<kvrsm::cmd_result> kvrsm::set_and_wait(
   model::timeout_clock::time_point timeout) {
     sequence_id seq = ++_last_generated_seq;
     return replicate_and_wait(
-      serialize_cmd(set_cmd{seq, key, value, write_id}, kvrsm_batch_type),
+      serialize_cmd(
+        set_cmd{seq, key, value, write_id}, model::record_batch_type::kvstore),
       timeout,
       seq);
 }
@@ -56,7 +57,8 @@ ss::future<kvrsm::cmd_result> kvrsm::cas_and_wait(
     sequence_id seq = ++_last_generated_seq;
     return replicate_and_wait(
       serialize_cmd(
-        cas_cmd{seq, key, prev_write_id, value, write_id}, kvrsm_batch_type),
+        cas_cmd{seq, key, prev_write_id, value, write_id},
+        model::record_batch_type::kvstore),
       timeout,
       seq);
 }
@@ -65,11 +67,13 @@ ss::future<kvrsm::cmd_result>
 kvrsm::get_and_wait(ss::sstring key, model::timeout_clock::time_point timeout) {
     sequence_id seq = ++_last_generated_seq;
     return replicate_and_wait(
-      serialize_cmd(get_cmd{seq, key}, kvrsm_batch_type), timeout, seq);
+      serialize_cmd(get_cmd{seq, key}, model::record_batch_type::kvstore),
+      timeout,
+      seq);
 }
 
 ss::future<> kvrsm::apply(model::record_batch b) {
-    if (b.header().type == kvrsm::kvrsm_batch_type) {
+    if (b.header().type == model::record_batch_type::kvstore) {
         auto last_offset = b.last_offset();
         auto result = process(std::move(b));
         result.offset = last_offset;

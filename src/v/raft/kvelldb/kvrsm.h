@@ -135,9 +135,6 @@ private:
     consensus* _c;
     absl::flat_hash_map<sequence_id, expiring_promise<cmd_result>> _promises;
     absl::flat_hash_map<ss::sstring, kvrsm::record> kv_map;
-
-    static inline constexpr model::record_batch_type kvrsm_batch_type
-      = model::record_batch_type(10);
 };
 
 } // namespace raft::kvelldb

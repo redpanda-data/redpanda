@@ -32,7 +32,7 @@ ss::future<model::record_batch_reader> replicated_partition::make_reader(
   std::optional<model::timeout_clock::time_point> deadline) {
     cfg.start_offset = _translator->from_kafka_offset(cfg.start_offset);
     cfg.max_offset = _translator->from_kafka_offset(cfg.max_offset);
-    cfg.type_filter = {raft::data_batch_type};
+    cfg.type_filter = {model::record_batch_type::raft_data};
 
     class reader : public model::record_batch_reader::impl {
     public:

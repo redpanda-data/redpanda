@@ -42,10 +42,6 @@ static constexpr clock_type::time_point no_timeout
   = clock_type::time_point::max();
 
 using group_id = named_type<int64_t, struct raft_group_id_type>;
-
-static constexpr const model::record_batch_type configuration_batch_type{2};
-static constexpr const model::record_batch_type data_batch_type{1};
-
 struct protocol_metadata {
     group_id group;
     model::offset commit_index;

@@ -248,7 +248,7 @@ SEASTAR_THREAD_TEST_CASE(test_batch_type_filter) {
 
         std::set<int> types;
         for (auto& batch : res) {
-            types.insert(batch.header().type);
+            types.insert(static_cast<int>(batch.header().type));
         }
         return {types.begin(), types.end()};
     };

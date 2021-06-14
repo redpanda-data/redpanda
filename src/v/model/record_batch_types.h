@@ -13,27 +13,29 @@
 
 #include "utils/named_type.h"
 
+#include <cstdint>
+#include <ostream>
+
 namespace model {
-
-using record_batch_type = named_type<int8_t, struct model_record_batch_type>;
-
-constexpr std::array<record_batch_type, 17> well_known_record_batch_types{
-  record_batch_type(),   // unknown - used for debugging
-  record_batch_type(1),  // raft::data
-  record_batch_type(2),  // raft::configuration
-  record_batch_type(3),  // controller::*
-  record_batch_type(4),  // kvstore::*
-  record_batch_type(5),  // checkpoint - used to achieve linearizable reads
-  record_batch_type(6),  // controller topic command batch type
-  record_batch_type(7),  // ghost - used to fill gaps in raft recovery
-  record_batch_type(8),  // id_allocator_stm::*
-  record_batch_type(9),  // tx_prepare_batch_type
-  record_batch_type(10), // tx_fence_batch_type
-  record_batch_type(11), // tm_update_batch_type
-  record_batch_type(12), // controller user management command batch type
-  record_batch_type(13), // controller acl management command batch type
-  record_batch_type(14), // group_prepare_tx_batch_type
-  record_batch_type(15), // group_commit_tx_batch_type
-  record_batch_type(16), // group_abort_tx_batch_type
+enum class record_batch_type : int8_t {
+    raft_data = 1,            // raft::data
+    raft_configuration = 2,   // raft::configuration
+    controller = 3,           // controller::*
+    kvstore = 4,              // kvstore::*
+    checkpoint = 5,           // checkpoint - used to achieve linearizable reads
+    topic_management_cmd = 6, // controller topic command batch type
+    ghost_batch = 7,          // ghost - used to fill gaps in raft recovery
+    id_allocator = 8,         // id_allocator_stm::*
+    tx_prepare = 9,           // tx_prepare_batch_type
+    tx_fence = 10,            // tx_fence_batch_type
+    tm_update = 11,           // tm_update_batch_type
+    user_management_cmd = 12, // controller user management command batch type
+    acl_management_cmd = 13,  // controller acl management command batch type
+    group_prepare_tx = 14,    // group_prepare_tx_batch_type
+    group_commit_tx = 15,     // group_commit_tx_batch_type
+    group_abort_tx = 16,      // group_abort_tx_batch_type
 };
+
+std::ostream& operator<<(std::ostream& o, record_batch_type bt);
+
 } // namespace model

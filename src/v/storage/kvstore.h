@@ -71,8 +71,6 @@ namespace storage {
  * the set of unique keys and queue depth of at most a few bytes *
  * O(#-partitions-per-core).
  */
-static constexpr const model::record_batch_type kvstore_batch_type(4);
-
 struct kvstore_config {
     size_t max_segment_size;
     std::chrono::milliseconds commit_interval;

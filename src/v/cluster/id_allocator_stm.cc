@@ -64,7 +64,7 @@ id_allocator_stm::allocate_id_and_wait(
                                     return replicate(serialize_cmd(
                                       execute_truncation_cmd{
                                         _prepare_offset, _prepare_state},
-                                      cluster::id_allocator_stm_batch_type));
+                                      model::record_batch_type::id_allocator));
                                 });
                             } catch (const ss::gate_closed_exception&) {
                                 // it's ok to ignore the expection because
@@ -78,7 +78,7 @@ id_allocator_stm::allocate_id_and_wait(
             (void)ss::with_gate(_gate, [this] {
                 return replicate(serialize_cmd(
                   execute_truncation_cmd{_prepare_offset, _prepare_state},
-                  cluster::id_allocator_stm_batch_type));
+                  model::record_batch_type::id_allocator));
             });
         } catch (const ss::gate_closed_exception&) {
             // it's ok to ignore the expection because
@@ -101,7 +101,7 @@ id_allocator_stm::allocate_id_and_wait(
 }
 
 ss::future<> id_allocator_stm::apply(model::record_batch b) {
-    if (b.header().type == cluster::id_allocator_stm_batch_type) {
+    if (b.header().type == model::record_batch_type::id_allocator) {
         return process(std::move(b));
     }
 
@@ -188,7 +188,7 @@ id_allocator_stm::replicate_and_wait(
   sequence_id seq) {
     using ret_t = id_allocator_stm::log_allocation_result;
 
-    auto b = serialize_cmd(cmd, cluster::id_allocator_stm_batch_type);
+    auto b = serialize_cmd(cmd, model::record_batch_type::id_allocator);
     _promises.emplace(seq, expiring_promise<ret_t>{});
 
     return replicate(std::move(b))
@@ -231,7 +231,7 @@ ss::future<bool> id_allocator_stm::replicate_and_wait(
   prepare_truncation_cmd cmd,
   model::timeout_clock::time_point timeout,
   sequence_id seq) {
-    auto b = serialize_cmd(cmd, cluster::id_allocator_stm_batch_type);
+    auto b = serialize_cmd(cmd, model::record_batch_type::id_allocator);
     _prepare_promises.emplace(seq, expiring_promise<bool>{});
 
     return replicate(std::move(b))
