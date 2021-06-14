@@ -10,6 +10,7 @@
 
 #include "coproc/errc.h"
 #include "model/async_adl_serde.h"
+#include "reflection/std/vector.h"
 
 #include <boost/range/irange.hpp>
 

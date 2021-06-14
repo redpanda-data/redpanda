@@ -15,8 +15,8 @@
 
 #include <boost/range/irange.hpp>
 
+#include <iterator>
 #include <optional>
-#include <vector>
 
 namespace reflection {
 
@@ -32,6 +32,96 @@ struct async_adl {
         return ss::make_ready_future<type>(reflection::adl<type>{}.from(p));
     }
 };
+
+namespace detail {
+
+template<typename List>
+struct async_adl_list {
+    using T = typename List::value_type;
+
+    ss::future<> to(iobuf& out, List l) {
+        reflection::serialize<int32_t>(out, l.size());
+        return ss::do_with(std::move(l), [&out](List& e) {
+            return ss::do_for_each(
+              e, [&out](typename List::value_type& element) {
+                  return async_adl<T>{}.to(out, std::move(element));
+              });
+        });
+    }
+
+    ss::future<List> from(iobuf_parser& in) {
+        const auto size = adl<int32_t>{}.from(in);
+        List list;
+        list.reserve(size);
+        auto range = boost::irange<int32_t>(0, size);
+        return ss::do_with(
+          std::move(list),
+          range,
+          [&in](List& list, const boost::integer_range<int32_t>& r) {
+              return ss::do_for_each(
+                       r,
+                       [&list, &in](int32_t) {
+                           return async_adl<T>{}.from(in).then(
+                             [&list](T value) {
+                                 std::back_inserter(list) = std::move(value);
+                             });
+                       })
+                .then([&list] { return std::move(list); });
+          });
+    }
+};
+
+template<typename Map>
+struct async_adl_map {
+    using K = typename Map::key_type;
+    using V = typename Map::mapped_type;
+
+    /// Keys of the collection are copied rather then moved to their respective
+    /// serializer.
+    ss::future<> to(iobuf& out, Map map) {
+        reflection::serialize(out, static_cast<int32_t>(map.size()));
+        return ss::do_with(std::move(map), [&out](Map& map) {
+            return ss::do_for_each(map, [&out](typename Map::value_type& p) {
+                /// We must copy the key since map keys are all const
+                auto copy = p.first;
+                return reflection::async_adl<K>{}
+                  .to(out, std::move(copy))
+                  .then([&out, data = std::move(p.second)]() mutable {
+                      return reflection::async_adl<V>{}.to(
+                        out, std::move(data));
+                  });
+            });
+        });
+    }
+
+    ss::future<Map> from(iobuf_parser& in) {
+        int32_t size = reflection::adl<int32_t>{}.from(in);
+        auto range = boost::irange<int32_t>(0, size);
+        return ss::do_with(
+          Map(),
+          range,
+          [&in](Map& result, const boost::integer_range<int32_t>& r) {
+              return ss::do_for_each(
+                       r,
+                       [&in, &result](int32_t) {
+                           return reflection::async_adl<K>{}.from(in).then(
+                             [&in, &result](K key) mutable {
+                                 return reflection::async_adl<V>{}
+                                   .from(in)
+                                   .then([key = std::move(key),
+                                          &result](V value) mutable {
+                                       auto [_, r] = result.emplace(
+                                         std::move(key), std::move(value));
+                                       vassert(r, "Item wasn't inserted");
+                                   });
+                             });
+                       })
+                .then([&result] { return std::move(result); });
+          });
+    }
+};
+
+} // namespace detail
 
 /// Specializations of async_adl for nested types, optional and vector
 template<typename T>
@@ -60,28 +150,4 @@ struct async_adl<std::optional<T>> {
     }
 };
 
-template<typename T>
-struct async_adl<std::vector<T>> {
-    using value_type = std::remove_reference_t<std::decay_t<T>>;
-
-    ss::future<> to(iobuf& out, std::vector<value_type> t) {
-        reflection::serialize<int32_t>(out, t.size());
-        return ss::do_with(std::move(t), [&out](auto& t) {
-            return ss::do_for_each(t, [&out](value_type& element) {
-                return async_adl<value_type>{}.to(out, std::move(element));
-            });
-        });
-    }
-
-    ss::future<std::vector<value_type>> from(iobuf_parser& in) {
-        const auto size = adl<int32_t>{}.from(in);
-        return ss::do_with(
-          boost::irange<size_t>(0, size),
-          [&in](const boost::integer_range<size_t>& r) {
-              return ssx::async_transform(r.begin(), r.end(), [&in](size_t) {
-                  return async_adl<value_type>{}.from(in);
-              });
-          });
-    }
-};
 } // namespace reflection

@@ -240,9 +240,4 @@ bool pacemaker::local_script_id_exists(script_id id) {
     return _scripts.find(id) != _scripts.end();
 }
 
-bool pacemaker::ntp_is_registered(const model::ntp& ntp) {
-    auto found = _ntps.find(ntp);
-    return found != _ntps.end() && found->second;
-}
-
 } // namespace coproc
