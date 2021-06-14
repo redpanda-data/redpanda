@@ -11,6 +11,11 @@
             "output_type": "init_tm_tx_reply"
         },
         {
+            "name": "try_abort",
+            "input_type": "try_abort_request",
+            "output_type": "try_abort_reply"
+        },
+        {
             "name": "begin_tx",
             "input_type": "begin_tx_request",
             "output_type": "begin_tx_reply"

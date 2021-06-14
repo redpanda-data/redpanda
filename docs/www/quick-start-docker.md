@@ -2,6 +2,7 @@
 title: Docker Quick Start Guide
 order: 0
 ---
+
 # Docker Quick Start Guide
 
 Redpanda is a modern [streaming platform](/blog/intelligent-data-api/) for mission critical workloads.
@@ -254,3 +255,5 @@ docker network rm redpandanet
 - Get a multi-node cluster up and running using [`rpk container`](/docs/guide-rpk-container).
 - Use the [Quick Start Docker Guide](/docs/quick-start-docker) to try out Redpanda using Docker.
 - Want to setup a production cluster? Check out our [Production Deployment Guide](/docs/production-deployment).
+
+<img src="https://static.scarf.sh/a.png?x-pxid=3c187215-e862-4b67-8057-45aa9a779055" />

@@ -1,0 +1,30 @@
+version: '3'
+
+tasks:
+  run-make:
+    desc: invoke a make target for k8s subproject
+    summary: |
+      Expects a make target given after the POSIX end of arguments
+      separator. For example:
+
+        task k8s:run-make -- e2e-tests
+
+    dir: 'src/go/k8s'
+    deps:
+    - task: :dev:install-go
+    - task: :dev:install-kubectl
+    cmds:
+    - |
+      PATH="{{.BUILD_ROOT}}/bin:{{.GO_BUILD_ROOT}}/bin:$PATH"
+      make {{.CLI_ARGS}}
+
+  run-golangci-lint:
+    desc: run golangci-lint
+    deps:
+    - task: :dev:install-go
+    - task: :dev:install-golangci-lint
+    dir: 'src/go/k8s'
+    cmds:
+    - |
+      PATH="{{.BUILD_ROOT}}/bin:{{.GO_BUILD_ROOT}}/bin:$PATH"
+      golangci-lint run --timeout 8m

@@ -91,6 +91,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> tm_sync_timeout_ms;
     property<model::violation_recovery_policy> tm_violation_recovery_policy;
     property<std::chrono::milliseconds> rm_sync_timeout_ms;
+    property<std::chrono::milliseconds> tx_timeout_delay_ms;
     property<model::violation_recovery_policy> rm_violation_recovery_policy;
     property<std::chrono::milliseconds> fetch_reads_debounce_timeout;
     property<std::chrono::milliseconds> alter_topic_cfg_timeout_ms;
@@ -109,6 +110,10 @@ struct configuration final : public config_store {
     property<std::optional<size_t>> retention_bytes;
     property<int32_t> group_topic_partitions;
     property<int16_t> default_topic_replication;
+    property<int16_t> transaction_coordinator_replication;
+    property<int16_t> id_allocator_replication;
+    property<model::cleanup_policy_bitflags>
+      transaction_coordinator_cleanup_policy;
     property<std::chrono::milliseconds> create_topic_timeout_ms;
     property<std::chrono::milliseconds> wait_for_leader_timeout_ms;
     property<int32_t> default_topic_partitions;

@@ -12,6 +12,7 @@ package system
 import (
 	"syscall"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 )
 
@@ -23,12 +24,20 @@ func getMemInfo(fs afero.Fs) (*MemInfo, error) {
 	}
 	cGroupMemLimit, err := ReadCgroupMemLimitBytes(fs)
 	if err != nil {
-		return nil, err
+		// Systems such as Raspberry Pi do not support cgroups by default
+		// unless /boot/cmdline.txt is modified, see:
+		//
+		//     https://downey.io/blog/exploring-cgroups-raspberry-pi/
+		//
+		// We do not need the cgroup memory limit, so this  error is
+		// non-fatal.
+		log.Debugf("Unable to query memory -- cgroups is likely not supported; err: %v", err)
 	}
 	return &MemInfo{
-		MemTotal:       si.Totalram * uint64(si.Unit),
-		MemFree:        si.Freeram * uint64(si.Unit),
-		CGroupMemLimit: cGroupMemLimit,
-		SwapTotal:      si.Totalswap * uint64(si.Unit),
+		MemTotal:  si.Totalram * uint64(si.Unit),
+		MemFree:   si.Freeram * uint64(si.Unit),
+		SwapTotal: si.Totalswap * uint64(si.Unit),
+
+		CGroupMemLimit: cGroupMemLimit, // optional field last
 	}, nil
 }

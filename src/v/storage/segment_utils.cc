@@ -601,7 +601,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
       offsets,
       std::move(reader),
       std::move(index),
-      std::nullopt,
+      nullptr,
       std::nullopt,
       std::nullopt);
 }

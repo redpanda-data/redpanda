@@ -39,7 +39,8 @@ struct tm_transaction {
         ongoing,
         preparing,
         prepared,
-        aborting,
+        aborting, // abort is initiated by a client
+        killed,   // abort is initiated by a timeout
         ready,
     };
 
@@ -70,6 +71,7 @@ struct tm_transaction {
     // only in memory (partitions and groups).
     model::term_id etag;
     tx_status status;
+    std::chrono::milliseconds timeout_ms;
     std::vector<tx_partition> partitions;
     std::vector<tx_group> groups;
 
@@ -107,6 +109,17 @@ public:
       kafka::transactional_id, std::vector<tm_transaction::tx_partition>);
     bool add_group(kafka::transactional_id, kafka::group_id, model::term_id);
     bool is_actual_term(model::term_id term) { return _insync_term == term; }
+    std::optional<kafka::transactional_id>
+    get_id_by_pid(model::producer_identity pid) {
+        auto tx_it = _pid_tx_id.find(pid);
+        std::optional<kafka::transactional_id> r;
+        if (tx_it != _pid_tx_id.end()) {
+            r = tx_it->second;
+        }
+        return r;
+    }
+
+    ss::future<bool> barrier();
 
     ss::future<std::optional<tm_transaction>>
       get_actual_tx(kafka::transactional_id);
@@ -116,10 +129,14 @@ public:
       mark_tx_ready(kafka::transactional_id, model::term_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       try_change_status(kafka::transactional_id, tm_transaction::tx_status);
-    ss::future<tm_stm::op_status>
-      re_register_producer(kafka::transactional_id, model::producer_identity);
-    ss::future<tm_stm::op_status>
-      register_new_producer(kafka::transactional_id, model::producer_identity);
+    ss::future<tm_stm::op_status> re_register_producer(
+      kafka::transactional_id,
+      std::chrono::milliseconds,
+      model::producer_identity);
+    ss::future<tm_stm::op_status> register_new_producer(
+      kafka::transactional_id,
+      std::chrono::milliseconds,
+      model::producer_identity);
 
     // before calling a tm_stm modifying operation a caller should
     // take get_tx_lock mutex
@@ -140,6 +157,8 @@ private:
     std::chrono::milliseconds _sync_timeout;
     model::violation_recovery_policy _recovery_policy;
     absl::flat_hash_map<kafka::transactional_id, tm_transaction> _tx_table;
+    absl::flat_hash_map<model::producer_identity, kafka::transactional_id>
+      _pid_tx_id;
     absl::flat_hash_map<kafka::transactional_id, ss::lw_shared_ptr<mutex>>
       _tx_locks;
     ss::future<> apply(model::record_batch b) override;

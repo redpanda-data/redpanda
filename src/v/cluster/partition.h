@@ -33,7 +33,7 @@ class partition_manager;
 /// all raft logic is proxied transparently
 class partition {
 public:
-    explicit partition(consensus_ptr r);
+    partition(consensus_ptr r, ss::sharded<cluster::tx_gateway_frontend>&);
 
     raft::group_id group() const { return _raft->group(); }
     ss::future<> start();
@@ -103,7 +103,7 @@ public:
             return _rm_stm->last_stable_offset();
         }
 
-        return raft::details::next_offset(_raft->last_stable_offset());
+        return high_watermark();
     }
 
     /**
@@ -194,6 +194,7 @@ private:
     ss::shared_ptr<cluster::tm_stm> _tm_stm;
     ss::abort_source _as;
     partition_probe _probe;
+    ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

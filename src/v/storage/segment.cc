@@ -45,7 +45,7 @@ segment::segment(
   segment::offset_tracker tkr,
   segment_reader r,
   segment_index i,
-  std::optional<segment_appender> a,
+  segment_appender_ptr a,
   std::optional<compacted_index_writer> ci,
   std::optional<batch_cache_index> c) noexcept
   : _appender_callbacks(this)
@@ -144,14 +144,14 @@ ss::future<> segment::do_close() {
 }
 
 ss::future<> segment::do_release_appender(
-  std::optional<segment_appender> appender,
+  segment_appender_ptr appender,
   std::optional<batch_cache_index> cache,
   std::optional<compacted_index_writer> compacted_index) {
     return ss::do_with(
       std::move(appender),
       std::move(compacted_index),
       [this, cache = std::move(cache)](
-        std::optional<segment_appender>& appender,
+        segment_appender_ptr& appender,
         std::optional<compacted_index_writer>& compacted_index) {
           return appender->close()
             .then([this] { return _idx.flush(); })
@@ -185,7 +185,7 @@ ss::future<> segment::release_appender(readers_cache* readers_cache) {
         return write_lock().then([this](ss::rwlock::holder h) {
             return do_flush()
               .then([this] {
-                  auto a = std::exchange(_appender, std::nullopt);
+                  auto a = std::exchange(_appender, nullptr);
                   auto c
                     = config::shard_local_cfg().release_cache_on_segment_roll()
                         ? std::exchange(_cache, std::nullopt)
@@ -208,7 +208,7 @@ ss::future<> segment::release_appender(readers_cache* readers_cache) {
 }
 
 void segment::release_appender_in_background(readers_cache* readers_cache) {
-    auto a = std::exchange(_appender, std::nullopt);
+    auto a = std::exchange(_appender, nullptr);
     auto c = config::shard_local_cfg().release_cache_on_segment_roll()
                ? std::exchange(_cache, std::nullopt)
                : std::nullopt;
@@ -303,7 +303,7 @@ segment::do_truncate(model::offset prev_last_offset, size_t physical) {
         // release appender to force segment roll
         if (is_compacted_segment()) {
             f = f.then([this] {
-                auto appender = std::exchange(_appender, std::nullopt);
+                auto appender = std::exchange(_appender, nullptr);
                 auto cache = std::exchange(_cache, std::nullopt);
                 auto c_idx = std::exchange(_compaction_index, std::nullopt);
                 return do_release_appender(
@@ -605,7 +605,7 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
                     segment::offset_tracker(meta->term, meta->base_offset),
                     std::move(*rdr),
                     std::move(idx),
-                    std::nullopt,
+                    nullptr,
                     std::nullopt,
                     std::move(batch_cache)));
             });
@@ -643,7 +643,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                           seg->offsets(),
                           std::move(seg->reader()),
                           std::move(seg->index()),
-                          std::move(*a),
+                          std::move(a),
                           std::nullopt,
                           seg->has_cache()
                             ? std::optional(std::move(seg->cache()->get()))
@@ -669,7 +669,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                           seg->offsets(),
                           std::move(seg->reader()),
                           std::move(seg->index()),
-                          std::move(seg->appender()),
+                          seg->release_appender(),
                           std::move(compact),
                           seg->has_cache()
                             ? std::optional(std::move(seg->cache()->get()))

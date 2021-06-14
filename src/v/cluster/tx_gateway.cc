@@ -32,16 +32,22 @@ tx_gateway::tx_gateway(
   , _rm_group_proxy(group_proxy)
   , _rm_partition_frontend(rm_partition_frontend) {}
 
+ss::future<try_abort_reply>
+tx_gateway::try_abort(try_abort_request&& request, rpc::streaming_context&) {
+    return _tx_gateway_frontend.local().try_abort_locally(
+      request.tm, request.pid, request.tx_seq, request.timeout);
+}
+
 ss::future<init_tm_tx_reply>
 tx_gateway::init_tm_tx(init_tm_tx_request&& request, rpc::streaming_context&) {
     return _tx_gateway_frontend.local().init_tm_tx_locally(
-      request.tx_id, request.timeout);
+      request.tx_id, request.transaction_timeout_ms, request.timeout);
 }
 
 ss::future<begin_tx_reply>
 tx_gateway::begin_tx(begin_tx_request&& request, rpc::streaming_context&) {
     return _rm_partition_frontend.local().do_begin_tx(
-      request.ntp, request.pid, request.tx_seq);
+      request.ntp, request.pid, request.tx_seq, request.transaction_timeout_ms);
 }
 
 ss::future<prepare_tx_reply>

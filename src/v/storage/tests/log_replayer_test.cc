@@ -45,14 +45,14 @@ struct context {
         fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
         fidx = ss::file(ss::make_shared(file_io_sanitizer(std::move(fidx))));
 
-        auto appender = segment_appender(
+        auto appender = std::make_unique<segment_appender>(
           fd, segment_appender::options(ss::default_priority_class(), 1));
         auto indexer = segment_index(
           base_name + ".index", std::move(fidx), base, 4096);
         auto reader = segment_reader(
           base_name,
           ss::open_file_dma(base_name, ss::open_flags::ro).get0(),
-          appender.file_byte_offset(),
+          appender->file_byte_offset(),
           128);
         _seg = ss::make_lw_shared<segment>(
           segment::offset_tracker(model::term_id(0), base),

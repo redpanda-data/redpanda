@@ -44,6 +44,10 @@ namespace cluster {
  */
 class rm_stm final : public persisted_stm {
 public:
+    using clock_type = ss::lowres_clock;
+    using time_point_type = clock_type::time_point;
+    using duration_type = clock_type::duration;
+
     static constexpr const int8_t tx_snapshot_version = 0;
     struct tx_range {
         model::producer_identity pid;
@@ -78,10 +82,13 @@ public:
     static constexpr int8_t prepare_control_record_version{0};
     static constexpr int8_t fence_control_record_version{0};
 
-    explicit rm_stm(ss::logger&, raft::consensus*);
+    explicit rm_stm(
+      ss::logger&,
+      raft::consensus*,
+      ss::sharded<cluster::tx_gateway_frontend>&);
 
-    ss::future<checked<model::term_id, tx_errc>>
-      begin_tx(model::producer_identity, model::tx_seq);
+    ss::future<checked<model::term_id, tx_errc>> begin_tx(
+      model::producer_identity, model::tx_seq, std::chrono::milliseconds);
     ss::future<tx_errc> prepare_tx(
       model::term_id,
       model::partition_id,
@@ -102,9 +109,13 @@ public:
       model::record_batch_reader,
       raft::replicate_options);
 
+    ss::future<> stop() override;
+
+    void testing_only_disable_auto_abort() { _is_autoabort_enabled = false; }
+
 private:
-    ss::future<checked<model::term_id, tx_errc>>
-      do_begin_tx(model::producer_identity, model::tx_seq);
+    ss::future<checked<model::term_id, tx_errc>> do_begin_tx(
+      model::producer_identity, model::tx_seq, std::chrono::milliseconds);
     ss::future<tx_errc> do_prepare_tx(
       model::term_id,
       model::partition_id,
@@ -129,6 +140,24 @@ private:
       raft::replicate_options);
 
     void compact_snapshot();
+
+    ss::future<bool> sync(model::timeout_clock::duration);
+    void became_leader();
+    void lost_leadership();
+
+    void track_tx(model::producer_identity, std::chrono::milliseconds);
+    void abort_old_txes();
+    ss::future<> abort_old_txes(absl::btree_set<model::producer_identity>);
+    ss::future<> try_abort_old_tx(model::producer_identity);
+    ss::future<> do_try_abort_old_tx(model::producer_identity);
+
+    bool is_known_session(model::producer_identity pid) const {
+        auto is_known = false;
+        is_known |= _mem_state.estimated.contains(pid);
+        is_known |= _mem_state.tx_start.contains(pid);
+        is_known |= _log_state.ongoing_map.contains(pid);
+        return is_known;
+    }
 
     abort_origin
     get_abort_origin(const model::producer_identity&, model::tx_seq) const;
@@ -174,6 +203,13 @@ private:
         absl::flat_hash_map<model::producer_identity, seq_entry> seq_table;
     };
 
+    struct expiration_info {
+        duration_type timeout;
+        time_point_type last_update;
+
+        time_point_type deadline() const { return last_update + timeout; }
+    };
+
     struct mem_state {
         // once raft's term has passed mem_state::term we wipe mem_state
         // and wait until log_state catches up with current committed index.
@@ -194,12 +230,15 @@ private:
         absl::flat_hash_map<model::producer_identity, model::tx_seq> expected;
         // `preparing` helps to identify failed prepare requests and use them to
         // filter out stale abort requests
-        absl::flat_hash_map<model::producer_identity, model::tx_seq> preparing;
+        absl::flat_hash_map<model::producer_identity, prepare_marker> preparing;
+        absl::flat_hash_map<model::producer_identity, expiration_info>
+          expiration;
 
         void forget(model::producer_identity pid) {
             expected.erase(pid);
             estimated.erase(pid);
             preparing.erase(pid);
+            expiration.erase(pid);
             auto tx_start_it = tx_start.find(pid);
             if (tx_start_it != tx_start.end()) {
                 tx_starts.erase(tx_start_it->second);
@@ -221,10 +260,15 @@ private:
     absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
     log_state _log_state;
     mem_state _mem_state;
+    ss::timer<clock_type> auto_abort_timer;
     model::timestamp _oldest_session;
     std::chrono::milliseconds _sync_timeout;
+    std::chrono::milliseconds _tx_timeout_delay;
     model::violation_recovery_policy _recovery_policy;
     std::chrono::milliseconds _transactional_id_expiration;
+    bool _is_leader{false};
+    bool _is_autoabort_enabled{true};
+    ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
 };
 
 } // namespace cluster

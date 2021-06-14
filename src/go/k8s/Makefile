@@ -1,16 +1,15 @@
 
 # Image URL to use all building/pushing image targets
-TAG_NAME ?= "latest"
-OPERATOR_IMG ?= vectorized/redpanda-operator
-OPERATOR_IMG_LATEST ?= "${OPERATOR_IMG}:latest"
-OPERATOR_IMG_DEV ?= "${OPERATOR_IMG}:dev"
-OPERATOR_IMG_RELEASE ?= "${OPERATOR_IMG}:${TAG_NAME}"
-CONFIGURATOR_IMG ?= vectorized/configurator
-CONFIGURATOR_IMG_LATEST ?= "${CONFIGURATOR_IMG}:latest"
-CONFIGURATOR_IMG_DEV ?= "${CONFIGURATOR_IMG}:dev"
-CONFIGURATOR_IMG_RELEASE ?= "${CONFIGURATOR_IMG}:${TAG_NAME}"
+OPERATOR_IMG_LATEST ?= "vectorized/redpanda-operator:latest"
+CONFIGURATOR_IMG_LATEST ?= "vectorized/configurator:latest"
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
+
+ifeq (aarch64,$(uname -m))
+TARGETARCH = arm64
+else
+TARGETARCH = amd64
+endif
 
 SHELL := /bin/bash
 
@@ -78,36 +77,17 @@ vet:
 generate: controller-gen
 	$(CONTROLLER_GEN) object:headerFile="../../../licenses/boilerplate.go.txt" paths="./..."
 
-# Build the docker image
-docker-build:
-	docker build -f Dockerfile -t ${OPERATOR_IMG_LATEST} ../
-
-docker-tag-dev:
-	docker tag ${OPERATOR_IMG_LATEST} ${OPERATOR_IMG_DEV}
-	docker tag ${CONFIGURATOR_IMG_LATEST} ${CONFIGURATOR_IMG_DEV}
-
-docker-tag-release:
-	docker tag ${OPERATOR_IMG_LATEST} ${OPERATOR_IMG_RELEASE}
-	docker tag ${CONFIGURATOR_IMG_LATEST} ${CONFIGURATOR_IMG_RELEASE}
-
-# Push to dockerhub
-docker-push-dev:
-	docker push ${OPERATOR_IMG_DEV}
-	docker push ${CONFIGURATOR_IMG_DEV}
-
-docker-push-release:
-	if curl --silent -f -lSL https://index.docker.io/v1/repositories/${OPERATOR_IMG}/tags | grep '"name": "${TAG_NAME}"' ; then \
-	  echo "Release ${TAG_NAME} already on dockerhub, skipping push"; \
-	else \
-	  docker push ${OPERATOR_IMG_RELEASE}; \
-	  docker push ${OPERATOR_IMG_LATEST}; \
-	  docker push ${CONFIGURATOR_IMG_RELEASE}; \
-	  docker push ${CONFIGURATOR_IMG_LATEST}; \
-	fi
+prepare-dockerfile:
+	echo "ARG BUILDPLATFORM" > Dockerfile
+	cat Dockerfile.in >> Dockerfile
 
 # Build the docker image
-docker-build-configurator:
-	docker build -f cmd/configurator/Dockerfile -t ${CONFIGURATOR_IMG_LATEST} ../
+docker-build: prepare-dockerfile
+	docker build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=manager -f Dockerfile -t ${OPERATOR_IMG_LATEST} ../
+
+# Build the docker image
+docker-build-configurator: prepare-dockerfile
+	docker build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=configurator -f Dockerfile -t ${CONFIGURATOR_IMG_LATEST} ../
 
 # Preload controller image to kind cluster
 push-to-kind:

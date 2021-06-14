@@ -1,18 +1,23 @@
 version: '3'
 
+# GO_BUILD_ROOT defined in taskfiles/dev.yml
+
 tasks:
   build:
     desc: build rpk
+    deps:
+    - task: :dev:install-go
     vars:
       RPK_VERSION: '{{default "latest" .TAG_NAME}}'
     env:
       GOOS: '{{OS | lower}}'
-      GOPATH: '{{.BUILD_ROOT}}/go'
+      GOPATH: '{{.GO_BUILD_ROOT}}'
       CGO_ENABLED: "0"
     dir: "{{.SRC_DIR}}/src/go/rpk"
     cmds:
     - mkdir -p "{{.BUILD_ROOT}}/go/$GOOS/bin"
     - |
+      PATH={{.GO_BUILD_ROOT}}/bin:$PATH
       ver_pkg='github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/version'
       cont_pkg='github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common'
       go build \
@@ -22,6 +27,7 @@ tasks:
            -X ${ver_pkg}.rev={{.SHORT_SHA}} \
            -X ${cont_pkg}.tag={{.RPK_VERSION}}" \
         -o "{{.BUILD_ROOT}}/go/$GOOS/bin" ./...
+
   tidy:
     desc: mod tidy rpk
     env:

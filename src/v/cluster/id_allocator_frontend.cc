@@ -216,7 +216,7 @@ ss::future<bool> id_allocator_frontend::try_create_id_allocator_topic() {
       model::kafka_internal_namespace,
       model::id_allocator_topic,
       1,
-      config::shard_local_cfg().default_topic_replication()};
+      config::shard_local_cfg().id_allocator_replication()};
 
     topic.properties.cleanup_policy_bitflags
       = model::cleanup_policy_bitflags::none;

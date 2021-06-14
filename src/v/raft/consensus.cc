@@ -657,12 +657,6 @@ void consensus::dispatch_flush_with_lock() {
     });
 }
 
-model::offset consensus::last_stable_offset() const {
-    // TODO: handle transactions, when we implement them, for now LSO is simply
-    // equal to max consumable offset
-    return _majority_replicated_index;
-}
-
 ss::future<model::record_batch_reader>
 consensus::do_make_reader(storage::log_reader_config config) {
     // limit to last visible index

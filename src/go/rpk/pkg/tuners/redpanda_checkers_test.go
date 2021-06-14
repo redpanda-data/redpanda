@@ -132,7 +132,7 @@ func TestFreeMemoryChecker(t *testing.T) {
 			name:          "it should return an err if the mem. limit value is empty",
 			memoryLimit:   "",
 			effectiveCpus: "8",
-			expectedErr:   "no value found in /sys/fs/cgroup/memory/memory.limit_in_bytes",
+			expectedErr:   "unable to determine cgroup memory limit",
 		},
 		{
 			name:          "it should return an err if the eff. cpus value is empty",
@@ -157,7 +157,7 @@ func TestFreeMemoryChecker(t *testing.T) {
 			name:          "it should return an err if the mem. limit value is empty",
 			memoryLimit:   "",
 			effectiveCpus: "8",
-			expectedErr:   "no value found in /sys/fs/cgroup/redpanda.slice/redpanda.service/memory.max",
+			expectedErr:   "unable to determine cgroup memory limit",
 			cgroupsV2:     true,
 		},
 		{

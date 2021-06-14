@@ -128,8 +128,20 @@ inline std::error_code make_error_code(tx_errc e) noexcept {
     return std::error_code(static_cast<int>(e), tx_error_category());
 }
 
+struct try_abort_request {
+    model::partition_id tm;
+    model::producer_identity pid;
+    model::tx_seq tx_seq;
+    model::timeout_clock::duration timeout;
+};
+struct try_abort_reply {
+    bool commited{false};
+    bool aborted{false};
+    tx_errc ec;
+};
 struct init_tm_tx_request {
     kafka::transactional_id tx_id;
+    std::chrono::milliseconds transaction_timeout_ms;
     model::timeout_clock::duration timeout;
 };
 struct init_tm_tx_reply {
@@ -180,6 +192,7 @@ struct begin_tx_request {
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
+    std::chrono::milliseconds transaction_timeout_ms;
 };
 struct begin_tx_reply {
     model::ntp ntp;

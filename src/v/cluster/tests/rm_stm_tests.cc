@@ -64,7 +64,9 @@ static rich_reader make_rreader(
 FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::rm_stm stm(logger, _raft.get());
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -92,7 +94,13 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
     BOOST_REQUIRE_LT(first_offset, stm.last_stable_offset());
 
     auto pid2 = model::producer_identity{.id = 2, .epoch = 0};
-    auto term_op = stm.begin_tx(pid2, tx_seq).get0();
+    auto term_op = stm
+                     .begin_tx(
+                       pid2,
+                       tx_seq,
+                       std::chrono::milliseconds(
+                         std::numeric_limits<int32_t>::max()))
+                     .get0();
     BOOST_REQUIRE((bool)term_op);
 
     rreader = make_rreader(pid2, 0, 5, true);
@@ -128,7 +136,9 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
 FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::rm_stm stm(logger, _raft.get());
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -156,7 +166,13 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
     BOOST_REQUIRE_LT(first_offset, stm.last_stable_offset());
 
     auto pid2 = model::producer_identity{.id = 2, .epoch = 0};
-    auto term_op = stm.begin_tx(pid2, tx_seq).get0();
+    auto term_op = stm
+                     .begin_tx(
+                       pid2,
+                       tx_seq,
+                       std::chrono::milliseconds(
+                         std::numeric_limits<int32_t>::max()))
+                     .get0();
     BOOST_REQUIRE((bool)term_op);
 
     rreader = make_rreader(pid2, 0, 5, true);
@@ -194,7 +210,9 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
 FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::rm_stm stm(logger, _raft.get());
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -222,7 +240,13 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
     BOOST_REQUIRE_LT(first_offset, stm.last_stable_offset());
 
     auto pid2 = model::producer_identity{.id = 2, .epoch = 0};
-    auto term_op = stm.begin_tx(pid2, tx_seq).get0();
+    auto term_op = stm
+                     .begin_tx(
+                       pid2,
+                       tx_seq,
+                       std::chrono::milliseconds(
+                         std::numeric_limits<int32_t>::max()))
+                     .get0();
     BOOST_REQUIRE((bool)term_op);
 
     rreader = make_rreader(pid2, 0, 5, true);
@@ -264,7 +288,9 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
 FIXTURE_TEST(test_tx_unknown_produce, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::rm_stm stm(logger, _raft.get());
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -298,7 +324,9 @@ FIXTURE_TEST(test_tx_unknown_produce, mux_state_machine_fixture) {
 FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::rm_stm stm(logger, _raft.get());
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -319,11 +347,23 @@ FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
     BOOST_REQUIRE((bool)offset_r);
 
     auto pid20 = model::producer_identity{.id = 2, .epoch = 0};
-    auto term_op = stm.begin_tx(pid20, tx_seq).get0();
+    auto term_op = stm
+                     .begin_tx(
+                       pid20,
+                       tx_seq,
+                       std::chrono::milliseconds(
+                         std::numeric_limits<int32_t>::max()))
+                     .get0();
     BOOST_REQUIRE((bool)term_op);
 
     auto pid21 = model::producer_identity{.id = 2, .epoch = 1};
-    term_op = stm.begin_tx(pid21, tx_seq).get0();
+    term_op = stm
+                .begin_tx(
+                  pid21,
+                  tx_seq,
+                  std::chrono::milliseconds(
+                    std::numeric_limits<int32_t>::max()))
+                .get0();
     BOOST_REQUIRE((bool)term_op);
 
     rreader = make_rreader(pid20, 0, 5, true);
@@ -340,7 +380,9 @@ FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
 FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::rm_stm stm(logger, _raft.get());
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -361,7 +403,13 @@ FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
     BOOST_REQUIRE((bool)offset_r);
 
     auto pid20 = model::producer_identity{.id = 2, .epoch = 0};
-    auto term_op = stm.begin_tx(pid20, tx_seq).get0();
+    auto term_op = stm
+                     .begin_tx(
+                       pid20,
+                       tx_seq,
+                       std::chrono::milliseconds(
+                         std::numeric_limits<int32_t>::max()))
+                     .get0();
     BOOST_REQUIRE((bool)term_op);
 
     rreader = make_rreader(pid20, 0, 5, true);

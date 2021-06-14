@@ -109,6 +109,22 @@ private:
     size_t _bytes_flush_pending{0};
     ss::semaphore _concurrent_flushes;
     ss::lw_shared_ptr<chunk> _head;
+    ss::lw_shared_ptr<ss::semaphore> _prev_head_write;
+
+    struct flush_op {
+        explicit flush_op(size_t offset)
+          : offset(offset) {}
+        size_t offset;
+        ss::promise<> p;
+    };
+
+    std::vector<flush_op> _flush_ops;
+    size_t _flushed_offset{0};
+    size_t _stable_offset{0};
+
+    // like flush, but wait on fibers. used by truncate() and close() which are
+    // still heavy weight operations compared to regular flush()
+    ss::future<> hard_flush();
 
     struct inflight_write {
         bool done;
@@ -121,11 +137,12 @@ private:
 
     ss::chunked_fifo<ss::lw_shared_ptr<inflight_write>> _inflight;
     callbacks* _callbacks = nullptr;
-    void maybe_advance_stable_offset(const ss::lw_shared_ptr<inflight_write>&);
+    ss::future<>
+    maybe_advance_stable_offset(const ss::lw_shared_ptr<inflight_write>&);
+    ss::future<> process_flush_ops(size_t);
 
     ss::timer<ss::lowres_clock> _inactive_timer;
     void handle_inactive_timer();
-    bool _previously_inactive = false;
 
     friend std::ostream& operator<<(std::ostream&, const segment_appender&);
 };

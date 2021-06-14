@@ -282,6 +282,12 @@ configuration::configuration()
       "Time to wait state catch up before rejecting a request",
       required::no,
       2000ms)
+  , tx_timeout_delay_ms(
+      *this,
+      "tx_timeout_delay_ms",
+      "Delay before scheduling next check for timed out transactions",
+      required::no,
+      1000ms)
   , rm_violation_recovery_policy(
       *this,
       "rm_violation_recovery_policy",
@@ -372,6 +378,24 @@ configuration::configuration()
       "Default replication factor for new topics",
       required::no,
       1)
+  , transaction_coordinator_replication(
+      *this,
+      "transaction_coordinator_replication",
+      "Replication factor for a transaction coordinator topic",
+      required::no,
+      1)
+  , id_allocator_replication(
+      *this,
+      "id_allocator_replication",
+      "Replication factor for an id allocator topic",
+      required::no,
+      1)
+  , transaction_coordinator_cleanup_policy(
+      *this,
+      "transaction_coordinator_cleanup_policy",
+      "Cleanup policy for a transaction coordinator topic",
+      required::no,
+      model::cleanup_policy_bitflags::compaction)
   , create_topic_timeout_ms(
       *this,
       "create_topic_timeout_ms",

@@ -45,6 +45,7 @@ ss::future<response_ptr> init_producer_id_handler::handle(
             return ctx.tx_gateway_frontend()
               .init_tm_tx(
                 request.data.transactional_id.value(),
+                request.data.transaction_timeout_ms,
                 config::shard_local_cfg().create_topic_timeout_ms())
               .then([&ctx](cluster::init_tm_tx_reply r) {
                   init_producer_id_response reply;
