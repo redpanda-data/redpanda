@@ -593,6 +593,21 @@ struct reconciliation_state_reply {
     std::vector<ntp_reconciliation_state> results;
 };
 
+struct decommission_node_request {
+    model::node_id id;
+};
+
+struct decommission_node_reply {
+    errc error;
+};
+struct recommission_node_request {
+    model::node_id id;
+};
+
+struct recommission_node_reply {
+    errc error;
+};
+
 } // namespace cluster
 namespace std {
 template<>
