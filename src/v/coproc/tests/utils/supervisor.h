@@ -75,9 +75,9 @@ private:
     ss::future<disable_copros_reply::ack> disable_coprocessor(script_id);
     ss::future<enable_copros_reply::data> enable_coprocessor(script_id, iobuf);
     ss::future<enable_copros_reply::data> launch(
-      script_id id,
-      std::vector<enable_copros_reply::topic_policy> enriched_topics,
-      registry::type_identifier tid);
+      script_id,
+      std::vector<enable_copros_reply::topic_policy>&&,
+      registry::type_identifier);
 
     ss::future<std::vector<process_batch_reply::data>> invoke_coprocessor(
       const model::ntp&,

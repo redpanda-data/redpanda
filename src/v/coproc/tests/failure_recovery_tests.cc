@@ -8,24 +8,25 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "coproc/tests/utils/coproc_test_fixture.h"
+#include "coproc/tests/fixtures/coproc_test_fixture.h"
 #include "coproc/tests/utils/coprocessor.h"
-#include "coproc/tests/utils/router_test_fixture.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
+#include "model/record_batch_reader.h"
 #include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/when_all.hh>
 
-FIXTURE_TEST(test_wasm_engine_restart, router_test_fixture) {
+FIXTURE_TEST(test_wasm_engine_restart, coproc_test_fixture) {
     model::topic single_input("plain_topic");
     setup({{single_input, 5}}).get();
     enable_coprocessors(
       {{.id = 599872,
         .data{
           .tid = coproc::registry::type_identifier::identity_coprocessor,
-          .topics = {single_input}}}})
+          .topics = {std::make_pair<>(
+            single_input, coproc::topic_ingestion_policy::stored)}}}})
       .get();
     std::vector<model::ntp> inputs;
     std::vector<model::ntp> outputs;
@@ -66,7 +67,8 @@ FIXTURE_TEST(test_wasm_engine_restart, router_test_fixture) {
     /// themselves have an at-least-once durability guarantee, so it would be
     /// more likely that a script processed a duplicate record. The wider the
     /// commit interval, the more likely this is.
-    std::vector<ss::future<coproc_test_fixture::opt_reader_data_t>> fs;
+    std::vector<ss::future<std::optional<model::record_batch_reader::data_t>>>
+      fs;
     for (const auto& ntp : outputs) {
         fs.emplace_back(drain(ntp, 20));
     }

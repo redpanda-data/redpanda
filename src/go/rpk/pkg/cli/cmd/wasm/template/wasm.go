@@ -12,10 +12,11 @@ package template
 const wasmJs = `const {
   SimpleTransform,
   PolicyError,
+  PolicyInjection
 } = require("@vectorizedio/wasm-api");
 const transform = new SimpleTransform();
 /* Topics that fire the transform function */
-transform.subscribe(["test-topic"]);
+transform.subscribe(["test-topic", PolicyInjection.Stored]);
 /* The strategy the transform engine will use when handling errors */
 transform.errorHandler(PolicyError.SkipOnFailure);
 /* Auxiliar transform function for records */

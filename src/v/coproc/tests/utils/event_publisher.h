@@ -22,18 +22,10 @@
 #include <vector>
 
 namespace coproc::wasm {
-using publish_result
-  = std::tuple<bool, std::vector<kafka::produce_response::partition>>;
-
 /// Adds the ability to publish coprocessor event to the
 /// coprocessor_internal_topic to any fixture
 class event_publisher {
 public:
-    struct deploy {
-        uint64_t id;
-        cpp_enable_payload data;
-    };
-
     event_publisher();
     ~event_publisher() { _client.stop().get(); }
 
@@ -46,18 +38,8 @@ public:
     /// Raw interface to the internal topic, you can publish any event however
     /// messages are checked for validity before being written to the topic,
     /// result of this is arg0 of the result tuple.
-    ss::future<publish_result> publish_events(model::record_batch_reader);
-
-    /// Higher level abstraction of 'publish_events'
-    ///
-    /// Maps tuple to proper encoded wasm record and calls 'publish_events'
-    ss::future<wasm::publish_result> enable_coprocessors(std::vector<deploy>);
-
-    /// Higher level abstraction of 'publish_events'
-    ///
-    /// Maps the list of ids to the proper type and calls 'publish_events'
-    ss::future<wasm::publish_result>
-      disable_coprocessors(std::vector<coproc::script_id>);
+    ss::future<std::vector<kafka::produce_response::partition>>
+      publish_events(model::record_batch_reader);
 
 private:
     ss::future<> create_coproc_internal_topic();

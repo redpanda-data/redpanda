@@ -13,6 +13,7 @@ const { exec } = require("child_process");
 const webpack = require("webpack");
 const path = require("path");
 const fs = require("fs");
+
 /**
  * for testing, the result file from the public folder is going to be saved
  * in the /sdk folder. After the test, this file is going to be publish to
@@ -20,9 +21,32 @@ const fs = require("fs");
  */
 const jsFolder = path.resolve(__dirname);
 const dependencyName = "wasm-api.js";
+const readmeName = "README.md";
 const publicFolder = path.join(jsFolder, "public");
+const artifactFolder = path.join(jsFolder, "publish_artifacts");
 const publishPackageJson = path.join(publicFolder, "package.json");
-const version = process.argv.splice(2)[0];
+const readmeArtifact = path.join(artifactFolder, readmeName);
+const publishReadme = path.join(publicFolder, readmeName);
+const publishCmd = "cd public && npm publish --access=public";
+
+var version = "1.0.0";
+var publish = true;
+
+if (process.argv.length == 4) {
+  const arr = process.argv.splice(2);
+  const skip = arr[0];
+  version = arr[1];
+  if (skip == "--skip-publish") {
+    publish = false;
+  }
+} else if (process.argv.length == 3) {
+  version = process.argv.splice(2)[0];
+} else {
+  console.error(
+    "Incorrect number of args pased, usage: [node ./publish-wasm-dep.js --skip-publish 1.0.1]"
+  );
+  return 1;
+}
 
 const wasmPackageJson = `{
   "name": "@vectorizedio/wasm-api",
@@ -71,9 +95,9 @@ const build = () => {
   });
 };
 
-const executeCommands = (command) =>
+const publishWasmLib = () =>
   new Promise((resolve, reject) => {
-    exec(command, (error, stdout, stderr) => {
+    exec(publishCmd, (error, stdout, stderr) => {
       if (error) {
         return reject(`error: ${error.message}`);
       }
@@ -90,8 +114,15 @@ if (version === undefined) {
 } else {
   build()
     .then(() => fs.promises.writeFile(publishPackageJson, wasmPackageJson))
-    .then(() => console.log("create public folder"))
-    .then(() => executeCommands("cd public && npm publish --access=public"))
+    .then(() => fs.promises.copyFile(readmeArtifact, publishReadme))
+    .then(() => console.log(`created public folder: ${publicFolder}`))
+    .then(() => {
+      if (publish == false) {
+        return Promise.resolve("Publish skipped");
+      } else {
+        return publishWasmLib();
+      }
+    })
     .then(console.log)
     .catch((e) => {
       console.error(e);

@@ -24,9 +24,6 @@ std::ostream& operator<<(std::ostream& os, const enable_response_code erc) {
     case enable_response_code::internal_error:
         os << "internal_error";
         break;
-    case enable_response_code::invalid_ingestion_policy:
-        os << "invalid_ingestion_policy";
-        break;
     case enable_response_code::script_id_already_exists:
         os << "script_id_already_exists";
         break;

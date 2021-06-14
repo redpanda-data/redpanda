@@ -21,4 +21,18 @@ tasks:
     status:
     - test -f "{{.JS_BUILD_ROOT}}/modules/rpc/service.js"
 
+  publish-local:
+    desc: Export the wasm-js public API
+    vars:
+      JS_ROOT: "{{.SRC_DIR}}/src/js"
+      JS_BUILD_ROOT: "{{.BUILD_ROOT}}/node/output"
+      NPM_CMD: "PATH={{.BUILD_ROOT}}/node/bin/:$PATH {{.BUILD_ROOT}}/node/bin/npm"
+      WASM_API_VERSION: "1.0.1"
+    deps:
+      - :wasm:build
+    cmds:
+    - "{{.NPM_CMD}} --prefix {{.JS_ROOT}} run publish:wasm-api -- --skip-publish {{.WASM_API_VERSION}}"
+    status:
+    - test -f "{{.JS_BUILD_ROOT}}/public/wasm-api.js"
+    - test -f "{{.JS_BUILD_ROOT}}/public/package.json"
 

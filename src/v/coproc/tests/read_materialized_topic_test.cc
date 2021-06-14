@@ -8,8 +8,8 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "coproc/tests/fixtures/coproc_test_fixture.h"
 #include "coproc/tests/utils/coprocessor.h"
-#include "coproc/tests/utils/router_test_fixture.h"
 #include "coproc/types.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/errors.h"
@@ -19,7 +19,7 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test_log.hpp>
 
-FIXTURE_TEST(test_metadata_request, router_test_fixture) {
+FIXTURE_TEST(test_metadata_request, coproc_test_fixture) {
     model::topic input_topic("intpc1");
     model::topic output_topic = model::to_materialized_topic(
       input_topic, identity_coprocessor::identity_topic);
@@ -34,7 +34,8 @@ FIXTURE_TEST(test_metadata_request, router_test_fixture) {
       {{.id = 1234,
         .data{
           .tid = coproc::registry::type_identifier::identity_coprocessor,
-          .topics = {input_topic}}}})
+          .topics = {std::make_pair<>(
+            input_topic, coproc::topic_ingestion_policy::stored)}}}})
       .get();
 
     /// Deploy some data onto the input topic
@@ -60,7 +61,7 @@ FIXTURE_TEST(test_metadata_request, router_test_fixture) {
     BOOST_REQUIRE_EQUAL(resp.data.topics[0].partitions.size(), 1);
 }
 
-FIXTURE_TEST(test_read_from_materialized_topic, router_test_fixture) {
+FIXTURE_TEST(test_read_from_materialized_topic, coproc_test_fixture) {
     model::topic input_topic("foo");
     model::topic output_topic = model::to_materialized_topic(
       input_topic, identity_coprocessor::identity_topic);
@@ -75,7 +76,8 @@ FIXTURE_TEST(test_read_from_materialized_topic, router_test_fixture) {
       {{.id = 1234,
         .data{
           .tid = coproc::registry::type_identifier::identity_coprocessor,
-          .topics = {input_topic}}}})
+          .topics = {std::make_pair<>(
+            input_topic, coproc::topic_ingestion_policy::stored)}}}})
       .get();
 
     /// Deploy some data onto the input topic

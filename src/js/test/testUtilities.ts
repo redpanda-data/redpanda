@@ -8,13 +8,19 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
-import { Coprocessor, PolicyError } from "../modules/public/Coprocessor";
+import {
+  Coprocessor,
+  PolicyError,
+  PolicyInjection,
+} from "../modules/public/Coprocessor";
 import { Handle } from "../modules/domain/Handle";
 import { createRecordBatch } from "../modules/public/";
 
 export const createMockCoprocessor = (
   globalId: Coprocessor["globalId"] = BigInt(1),
-  inputTopics: Coprocessor["inputTopics"] = ["topicA"],
+  inputTopics: Coprocessor["inputTopics"] = [
+    ["topicA", PolicyInjection.Stored],
+  ],
   policyError: Coprocessor["policyError"] = PolicyError.SkipOnFailure,
   apply: Coprocessor["apply"] = () =>
     Promise.resolve(new Map([["result", createRecordBatch()]]))

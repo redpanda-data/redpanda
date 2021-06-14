@@ -24,7 +24,9 @@ export enum PolicyError {
 }
 
 export enum PolicyInjection {
-  LastOffset = 2,
+  Earliest = 0,
+  Stored,
+  Latest = 2,
 }
 
 interface RecordHeader {
@@ -72,7 +74,7 @@ interface RecordBatch {
 type Topic = string;
 
 interface Coprocessor {
-  inputTopics: string[];
+  inputTopics: [string, PolicyInjection][];
   policyError: PolicyError;
   globalId: bigint;
   apply: (

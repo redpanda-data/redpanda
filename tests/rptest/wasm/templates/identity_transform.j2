@@ -1,7 +1,8 @@
 const {
   SimpleTransform,
   PolicyError,
-} = require("@vectorizedio/wasm-api");
+  PolicyInjection
+} = require("/root/js-public/wasm-api");
 const transform = new SimpleTransform();
 transform.subscribe([{{input_topics}}]);
 transform.errorHandler(PolicyError.SkipOnFailure);

@@ -134,6 +134,7 @@ tasks:
     deps:
     - set-aio-max
     - start-compose-cluster
+    - :wasm:publish-local
     vars:
       DUCKTAPE_ARGS: '{{default "--exit-first tests/rptest/test_suite_quick.yml" .DUCKTAPE_ARGS}}'
       RP_INSTALL_DIR_DEFAULT: '{{.BUILD_DIR}}'
@@ -152,6 +153,7 @@ tasks:
         --volume '{{.BUILD_ROOT}}:{{.BUILD_ROOT}}'
         --volume '{{.SRC_DIR}}/tests/:/root/tests/'
         --volume '{{.SRC_DIR}}/tests/docker/ducktape_cluster.json:/cluster.json'
+        --volume '{{.SRC_DIR}}/src/js/public:/root/js-public'
         --entrypoint ducktape
         --workdir /root
         vectorized/redpanda-test-node

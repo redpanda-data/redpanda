@@ -12,11 +12,16 @@ import {
   Coprocessor,
   RecordBatch,
   PolicyError,
+  PolicyInjection,
 } from "../../modules/public/Coprocessor";
+
+function defaultInput(): [string, PolicyInjection][] {
+  return [["topicA", PolicyInjection.Stored]];
+}
 
 class CoprocessorTest implements Coprocessor {
   globalId = BigInt(1);
-  inputTopics = ["topicA"];
+  inputTopics = defaultInput();
   policyError = PolicyError.Deregister;
 
   apply(record: RecordBatch): Promise<Map<string, RecordBatch>> {

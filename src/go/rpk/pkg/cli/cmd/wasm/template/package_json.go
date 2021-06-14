@@ -23,7 +23,7 @@ const packageJson = `{
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@vectorizedio/wasm-api": "^1.0.0"
+    "@vectorizedio/wasm-api": "^%s"
   },
   "devDependencies": {
     "ts-loader": "8.0.4",
