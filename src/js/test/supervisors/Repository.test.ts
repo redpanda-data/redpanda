@@ -15,7 +15,7 @@ import { createHandle, createMockCoprocessor } from "../testUtilities";
 import { ProcessBatchRequestItem } from "../../modules/domain/generatedRpc/generatedClasses";
 import { ProcessBatchServer } from "../../modules/rpc/server";
 import { createRecordBatch } from "../../modules/public";
-import { RecordBatch } from "../../modules/public/Coprocessor";
+import { PolicyInjection, RecordBatch } from "../../modules/public/Coprocessor";
 import sinon = require("sinon");
 import LogService from "../../modules/utilities/Logging";
 import { createSandbox, SinonSandbox } from "sinon";
@@ -62,23 +62,30 @@ describe("Repository", function () {
       createSinonInstances(sinonInstance);
       const topicA = "topicA";
       const topicB = "topicB";
-      const coprocessorA = createMockCoprocessor(BigInt(1), [topicA]);
-      const coprocessorB = createMockCoprocessor(BigInt(1), [topicB]);
+      const coprocessorA = createMockCoprocessor(BigInt(1), [
+        [topicA, PolicyInjection.Stored],
+      ]);
+      const coprocessorB = createMockCoprocessor(BigInt(1), [
+        [topicB, PolicyInjection.Stored],
+      ]);
       const repository = new Repository();
       repository.add(createHandle(coprocessorA));
       assert(repository.findByCoprocessor(coprocessorA));
+      const lookup_a = repository.findByCoprocessor(coprocessorA);
+      assert(lookup_a);
       assert(
-        repository
-          .findByCoprocessor(coprocessorA)
-          .coprocessor.inputTopics.includes(topicA)
+        lookup_a.coprocessor.inputTopics.find(([topic, _]) => {
+          return topic == topicA;
+        })
       );
       repository.add(createHandle(coprocessorB));
       assert(repository.findByCoprocessor(coprocessorA));
-      assert(repository.findByCoprocessor(coprocessorB));
+      const lookup_b = repository.findByCoprocessor(coprocessorB);
+      assert(lookup_b);
       assert(
-        repository
-          .findByCoprocessor(coprocessorB)
-          .coprocessor.inputTopics.includes(topicB)
+        lookup_b.coprocessor.inputTopics.find(([topic, _]) => {
+          return topic == topicB;
+        })
       );
     }
   );
@@ -89,7 +96,7 @@ describe("Repository", function () {
     const handleA = createHandle();
     const handleB = createHandle({
       globalId: BigInt(2),
-      inputTopics: ["topicB"],
+      inputTopics: [["topicB", PolicyInjection.Stored]],
     });
     repository.add(handleA);
     assert(repository.findByGlobalId(handleA));
@@ -102,7 +109,7 @@ describe("Repository", function () {
     const handleA = createHandle();
     const handleB = createHandle({
       globalId: BigInt(2),
-      inputTopics: ["topicB"],
+      inputTopics: [["topicB", PolicyInjection.Stored]],
     });
     repository.add(handleA);
     assert(repository.findByCoprocessor(handleA.coprocessor));

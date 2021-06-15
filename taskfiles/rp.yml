@@ -78,13 +78,13 @@ tasks:
   test:
     desc: run redpanda unit tests
     vars:
-      CI: '{{ default "0" .CI}}'
+      CI: '{{default "false" .CI}}'
       CTEST_ARGS: '{{default `-R ".*_rp(unit|bench|int)$"` .CTEST_ARGS}}'
     dir: '{{.BUILD_DIR}}'
     deps:
     - set-aio-max
     cmds:
-    - ctest {{if eq .CI "1"}}"--output-on-failure" -LE "disable_on_ci"{{end}} {{.CTEST_ARGS}}
+    - ctest {{if eq .CI "true"}}"--output-on-failure" -LE "disable_on_ci"{{end}} {{.CTEST_ARGS}}
 
   build-test-docker-image:
     desc: build image used in integration tests
@@ -134,17 +134,22 @@ tasks:
     deps:
     - set-aio-max
     - start-compose-cluster
+    - :wasm:publish-local
     vars:
       DUCKTAPE_ARGS: '{{default "--exit-first tests/rptest/test_suite_quick.yml" .DUCKTAPE_ARGS}}'
       RP_INSTALL_DIR_DEFAULT: '{{.BUILD_DIR}}'
       RP_INSTALL_DIR: '{{default .RP_INSTALL_DIR_DEFAULT .RP_INSTALL_DIR}}'
       REDPANDA_LOG_LEVEL: '{{default "info" .REDPANDA_LOG_LEVEL}}'
+      S3_BUCKET: '{{default "" .S3_BUCKET}}'
+      S3_REGION: '{{default "" .S3_REGION}}'
+      S3_ACCESS_KEY: '{{default "" .S3_ACCESS_KEY}}'
+      S3_SECRET_KEY: '{{default "" .S3_SECRET_KEY}}'
     env:
       CI: "1"
     ignore_error: true
     cmds:
     - mkdir -p '{{.BUILD_ROOT}}/ducktape/config/metadata'
-    - docker run --rm --privileged
+    - docker run --rm --privileged --ulimit nofile=65535:65535
         --name ducktape
         --network redpanda-test
         --volume '{{.BUILD_ROOT}}/ducktape/config/:/root/.ducktape/'
@@ -152,13 +157,14 @@ tasks:
         --volume '{{.BUILD_ROOT}}:{{.BUILD_ROOT}}'
         --volume '{{.SRC_DIR}}/tests/:/root/tests/'
         --volume '{{.SRC_DIR}}/tests/docker/ducktape_cluster.json:/cluster.json'
+        --volume '{{.SRC_DIR}}/src/js/public:/root/js-public'
         --entrypoint ducktape
         --workdir /root
         vectorized/redpanda-test-node
           --cluster=ducktape.cluster.json.JsonCluster
           --cluster-file=/cluster.json
           --results-root=/build/tests/results
-          --globals='{"rp_install_path_root":"{{.RP_INSTALL_DIR}}","redpanda_log_level":"{{.REDPANDA_LOG_LEVEL}}"}'
+          --globals='{"rp_install_path_root":"{{.RP_INSTALL_DIR}}","redpanda_log_level":"{{.REDPANDA_LOG_LEVEL}}","s3_bucket":"{{.S3_BUCKET}}","s3_region":"{{.S3_REGION}}","s3_access_key":"{{.S3_ACCESS_KEY}}","s3_secret_key":"{{.S3_SECRET_KEY}}"}'
           {{.DUCKTAPE_ARGS}}
 
   stop-compose-cluster:

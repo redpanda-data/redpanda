@@ -13,11 +13,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/wasm/template"
+	vos "github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 )
 
@@ -27,12 +30,12 @@ type genFile struct {
 	permission os.FileMode
 }
 
-var manifest = func() map[string][]genFile {
+func GenerateManifest(version string) map[string][]genFile {
 	return map[string][]genFile{
 		"src":  {genFile{name: "wasm.js", content: template.GetWasmJs()}},
 		"test": {genFile{name: "wasm.test.js", content: template.GetWasmTestJs()}},
 		"": {
-			genFile{name: "package.json", content: template.GetPackageJson()},
+			genFile{name: "package.json", content: fmt.Sprintf(template.GetPackageJson(), version)},
 			genFile{name: "webpack.js", content: template.GetWebpack(), permission: 0766},
 		},
 	}
@@ -75,6 +78,27 @@ func createIfNotExist(fs afero.Fs, path string) (afero.File, error) {
 	return fs.Create(path)
 }
 
+func GetLatestClientApiVersion() string {
+	/// Works by using npm to lookup the latest version of our library
+	timeout := 2 * time.Second
+	version := "1.0.0"
+	proc := vos.NewProc()
+	output, err := proc.RunWithSystemLdPath(timeout, "npm", "search", "'@vectorizedio/wasm-api'")
+	if err != nil {
+		log.Error(err)
+		return version
+	}
+	for line := range output {
+		resultLine := output[line]
+		splitResults := strings.Split(resultLine, "|")
+		if strings.TrimSpace(splitResults[0]) == "@vectorizedio/wasm-api" {
+			version = strings.TrimSpace(splitResults[len(splitResults)-2])
+			break
+		}
+	}
+	return version
+}
+
 func executeGenerate(fs afero.Fs, path string) error {
 	err := fs.MkdirAll(path, 0755)
 	if err != nil {
@@ -82,7 +106,7 @@ func executeGenerate(fs afero.Fs, path string) error {
 			return err
 		}
 	}
-	for folderName, templates := range manifest() {
+	for folderName, templates := range GenerateManifest(GetLatestClientApiVersion()) {
 		folderPath := filepath.Join(path, folderName)
 		err := fs.MkdirAll(folderPath, 0755)
 		if err != nil && !os.IsExist(err) {

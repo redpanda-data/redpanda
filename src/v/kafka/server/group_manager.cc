@@ -189,7 +189,7 @@ ss::future<> group_manager::inject_noop(
   ss::lw_shared_ptr<cluster::partition> p,
   [[maybe_unused]] ss::lowres_clock::time_point timeout) {
     cluster::simple_batch_builder builder(
-      raft::data_batch_type, model::offset(0));
+      model::record_batch_type::raft_data, model::offset(0));
     group_log_record_key key{
       .record_type = group_log_record_key::type::noop,
     };
@@ -372,8 +372,8 @@ parse_tx_batch(const model::record_batch& batch, int8_t version) {
     auto cmd = reflection::adl<T>{}.from(val_reader);
 
     iobuf_parser key_reader(std::move(key_buf));
-    auto batch_type = model::record_batch_type(
-      reflection::adl<int8_t>{}.from(key_reader));
+    auto batch_type = reflection::adl<model::record_batch_type>{}.from(
+      key_reader);
     const auto& hdr = batch.header();
     vassert(
       hdr.type == batch_type,
@@ -398,7 +398,7 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
           ss::stop_iteration::yes);
     }
 
-    if (batch.header().type == raft::data_batch_type) {
+    if (batch.header().type == model::record_batch_type::raft_data) {
         batch_base_offset = batch.base_offset();
         return ss::do_with(
                  std::move(batch),
@@ -409,7 +409,8 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
                        });
                  })
           .then([] { return ss::stop_iteration::no; });
-    } else if (batch.header().type == cluster::group_prepare_tx_batch_type) {
+    } else if (
+      batch.header().type == model::record_batch_type::group_prepare_tx) {
         auto val = parse_tx_batch<group_log_prepared_tx>(
                      batch, group::prepared_tx_record_version)
                      .cmd;
@@ -419,7 +420,8 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
 
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
-    } else if (batch.header().type == cluster::group_commit_tx_batch_type) {
+    } else if (
+      batch.header().type == model::record_batch_type::group_commit_tx) {
         auto cmd = parse_tx_batch<group_log_commit_tx>(
           batch, group::commit_tx_record_version);
 
@@ -428,7 +430,8 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
 
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
-    } else if (batch.header().type == cluster::group_abort_tx_batch_type) {
+    } else if (
+      batch.header().type == model::record_batch_type::group_abort_tx) {
         auto cmd = parse_tx_batch<group_log_aborted_tx>(
           batch, group::aborted_tx_record_version);
 
@@ -437,7 +440,7 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
 
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
-    } else if (batch.header().type == cluster::tx_fence_batch_type) {
+    } else if (batch.header().type == model::record_batch_type::tx_fence) {
         auto cmd = parse_tx_batch<group_log_fencing>(
           batch, group::fence_control_record_version);
 

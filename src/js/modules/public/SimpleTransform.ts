@@ -8,7 +8,12 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
-import { RecordBatch, Coprocessor, PolicyError } from "./Coprocessor";
+import {
+  RecordBatch,
+  Coprocessor,
+  PolicyError,
+  PolicyInjection,
+} from "./Coprocessor";
 
 export class SimpleTransform implements Coprocessor {
   subscribe(inputTopics: Coprocessor["inputTopics"]): void {
@@ -35,7 +40,7 @@ export class SimpleTransform implements Coprocessor {
   }
 
   globalId: bigint;
-  inputTopics: string[];
+  inputTopics: [string, PolicyInjection][];
   policyError: PolicyError;
 
   apply = (record: RecordBatch): Promise<Map<string, RecordBatch>> => {

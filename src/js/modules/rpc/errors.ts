@@ -21,7 +21,6 @@ import { Logger } from "winston";
 export enum EnableResponseCodes {
   success,
   internalError,
-  invalidIngestionPolicy,
   scriptIdAlreadyExists,
   scriptContainsInvalidTopic,
   scriptContainsNoTopics,
@@ -72,9 +71,9 @@ const createResponseSuccess: HandleEnableResponse = (handle: Handle) => ({
     id: handle.coprocessor.globalId,
     inputTopic:
       handle.coprocessor.inputTopics.map<EnableCoprocessorMetadataItem>(
-        (topic) => ({
+        ([topic, policy]) => ({
           topic,
-          ingestion_policy: PolicyInjection.LastOffset,
+          ingestion_policy: policy,
         })
       ),
   },
@@ -91,9 +90,9 @@ const createResponseScriptIdAlreadyExists: HandleEnableResponse = (handle) => ({
     id: handle.coprocessor.globalId,
     inputTopic:
       handle.coprocessor.inputTopics.map<EnableCoprocessorMetadataItem>(
-        (topic) => ({
+        ([topic, policy]) => ({
           topic,
-          ingestion_policy: PolicyInjection.LastOffset,
+          ingestion_policy: policy,
         })
       ),
   },

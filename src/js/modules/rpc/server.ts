@@ -172,7 +172,7 @@ export class ProcessBatchServer extends SupervisorServer {
         return errors.createResponseScriptWithoutTopics(handle);
       }
       const validTopics = handle.coprocessor.inputTopics.reduce(
-        (prev, topic) => errors.validateKafkaTopicName(topic) && prev,
+        (prev, [topic, _]) => errors.validateKafkaTopicName(topic) && prev,
         true
       );
       if (!validTopics) {

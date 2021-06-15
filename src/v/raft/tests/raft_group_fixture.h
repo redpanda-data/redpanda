@@ -751,7 +751,7 @@ make_compactible_batches(int keys, size_t batches, model::timestamp ts) {
     for (size_t b = 0; b < batches; b++) {
         int k = random_generators::get_int(0, keys);
         storage::record_batch_builder builder(
-          raft::data_batch_type, model::offset(0));
+          model::record_batch_type::raft_data, model::offset(0));
         iobuf k_buf;
         iobuf v_buf;
         ss::sstring k_str = ssx::sformat("key-{}", k);

@@ -66,8 +66,7 @@ static bool fold_enable_codes(const std::vector<coproc::errc>& codes) {
     /// If the following circumstances occur, that means there is a bug in
     /// the wasm engine
     if (
-      contains_all_codes(codes, coproc::errc::invalid_ingestion_policy)
-      || contains_all_codes(codes, coproc::errc::materialized_topic)
+      contains_all_codes(codes, coproc::errc::materialized_topic)
       || contains_all_codes(codes, coproc::errc::invalid_topic)) {
         vlog(
           coproclog.error,

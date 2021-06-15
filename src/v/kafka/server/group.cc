@@ -119,7 +119,7 @@ static model::record_batch make_tx_batch(
   const model::producer_identity& pid,
   T cmd) {
     iobuf key;
-    reflection::serialize(key, type(), pid.id);
+    reflection::serialize(key, type, pid.id);
 
     iobuf value;
     reflection::serialize(value, version);
@@ -1025,7 +1025,7 @@ model::record_batch group::checkpoint(const assignments_type& assignments) {
     }
 
     cluster::simple_batch_builder builder(
-      raft::data_batch_type, model::offset(0));
+      model::record_batch_type::raft_data, model::offset(0));
 
     group_log_record_key key{
       .record_type = group_log_record_key::type::group_metadata,
@@ -1272,7 +1272,7 @@ group::commit_tx(cluster::commit_group_tx_request r) {
     // include producer_id+type into key to make it unique-ish
     // to prevent being GCed by the compaction
     auto batch = make_tx_batch(
-      cluster::group_commit_tx_batch_type,
+      model::record_batch_type::group_commit_tx,
       commit_tx_record_version,
       r.pid,
       std::move(commit_tx));
@@ -1340,7 +1340,7 @@ group::begin_tx(cluster::begin_group_tx_request r) {
         // include producer_id into key to make it unique-ish
         // to prevent being GCed by the compaction
         auto batch = make_tx_batch(
-          cluster::tx_fence_batch_type,
+          model::record_batch_type::tx_fence,
           fence_control_record_version,
           r.pid,
           std::move(fence));
@@ -1454,7 +1454,7 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
     // include producer_id+type into key to make it unique-ish
     // to prevent being GCed by the compaction
     auto batch = make_tx_batch(
-      cluster::group_prepare_tx_batch_type,
+      model::record_batch_type::group_prepare_tx,
       prepared_tx_record_version,
       r.pid,
       std::move(tx_entry));
@@ -1549,7 +1549,7 @@ group::abort_tx(cluster::abort_group_tx_request r) {
     // include producer_id+type into key to make it unique-ish
     // to prevent being GCed by the compaction
     auto batch = make_tx_batch(
-      cluster::group_abort_tx_batch_type,
+      model::record_batch_type::group_abort_tx,
       aborted_tx_record_version,
       r.pid,
       std::move(tx));
@@ -1603,7 +1603,7 @@ group::store_txn_offsets(txn_offset_commit_request r) {
 ss::future<offset_commit_response>
 group::store_offsets(offset_commit_request&& r) {
     cluster::simple_batch_builder builder(
-      raft::data_batch_type, model::offset(0));
+      model::record_batch_type::raft_data, model::offset(0));
 
     std::vector<std::pair<model::topic_partition, offset_metadata>>
       offset_commits;
@@ -1930,7 +1930,7 @@ ss::future<error_code> group::remove() {
 
     // build offset tombstones
     storage::record_batch_builder builder(
-      raft::data_batch_type, model::offset(0));
+      model::record_batch_type::raft_data, model::offset(0));
 
     for (auto& offset : _offsets) {
         group_log_record_key key{
@@ -2019,7 +2019,7 @@ group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
 
     // build offset tombstones
     storage::record_batch_builder builder(
-      raft::data_batch_type, model::offset(0));
+      model::record_batch_type::raft_data, model::offset(0));
 
     // create deletion records for offsets from deleted partitions
     for (auto& offset : removed) {

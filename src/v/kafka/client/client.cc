@@ -21,8 +21,10 @@
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/find_coordinator.h"
 #include "kafka/protocol/leave_group.h"
+#include "kafka/protocol/list_offsets.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "random/generators.h"
 #include "seastarx.h"
@@ -134,6 +136,7 @@ ss::future<> client::update_metadata(wait_or_start::tag) {
 ss::future<> client::apply(metadata_response res) {
     co_await _brokers.apply(std::move(res.data.brokers));
     co_await _topic_cache.apply(std::move(res.data.topics));
+    _controller = res.data.controller_id;
 }
 
 ss::future<> client::mitigate_error(std::exception_ptr ex) {
@@ -208,7 +211,7 @@ ss::future<produce_response> client::produce_records(
                    .emplace(
                      *p_id,
                      storage::record_batch_builder(
-                       raft::data_batch_type, model::offset(0)))
+                       model::record_batch_type::raft_data, model::offset(0)))
                    .first;
         }
         it->second.add_raw_kw(
@@ -242,6 +245,44 @@ ss::future<produce_response> client::produce_records(
         .responses{
           {.name{std::move(topic)}, .partitions{std::move(responses)}}},
         .throttle_time_ms{{std::chrono::milliseconds{0}}}}};
+}
+
+ss::future<create_topics_response>
+client::create_topic(kafka::creatable_topic req) {
+    return gated_retry_with_mitigation([this, req{std::move(req)}]() {
+        auto controller = _controller;
+        return _brokers.find(controller)
+          .then([req](auto broker) mutable {
+              return broker->dispatch(
+                kafka::create_topics_request{.data{.topics{std::move(req)}}});
+          })
+          .then([controller](auto res) {
+              auto ec = res.data.topics[0].error_code;
+              if (ec == kafka::error_code::not_controller) {
+                  return ss::make_exception_future<create_topics_response>(
+                    broker_error(controller, ec));
+              }
+              return ss::make_ready_future<create_topics_response>(
+                std::move(res));
+          });
+    });
+}
+
+ss::future<list_offsets_response>
+client::list_offsets(model::topic_partition tp) {
+    return gated_retry_with_mitigation([this, tp]() {
+        return _topic_cache.leader(tp)
+          .then(
+            [this](model::node_id node_id) { return _brokers.find(node_id); })
+          .then([tp](auto broker) mutable {
+              return broker->dispatch(kafka::list_offsets_request{
+                .data = {.topics{
+                  {{.name{std::move(tp.topic)},
+                    .partitions{
+                      {{.partition_index{tp.partition},
+                        .max_num_offsets = 1}}}}}}}});
+          });
+    });
 }
 
 ss::future<fetch_response> client::fetch_partition(

@@ -54,7 +54,8 @@ public:
     }
 
     bool is_batch_applicable(const model::record_batch& b) const {
-        return b.header().type == topic_batch_type;
+        return b.header().type
+               == model::record_batch_type::topic_management_cmd;
     }
 
     // list of commands that this table is able to apply, the list is used to

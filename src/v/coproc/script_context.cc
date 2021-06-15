@@ -196,7 +196,7 @@ script_context::get_reader(const ss::lw_shared_ptr<ntp_context>& ntp_ctx) {
       1,
       max_batch_size(),
       ss::default_priority_class(),
-      raft::data_batch_type,
+      model::record_batch_type::raft_data,
       std::nullopt,
       _abort_source);
 }

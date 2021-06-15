@@ -59,7 +59,6 @@ inline std::error_code make_error_code(errc e) noexcept {
 enum class errc {
     success = 0,
     internal_error,
-    invalid_ingestion_policy,
     topic_does_not_exist,
     invalid_topic,
     materialized_topic,
@@ -75,8 +74,6 @@ struct errc_category final : public std::error_category {
             return "Success";
         case errc::internal_error:
             return "Internal error";
-        case errc::invalid_ingestion_policy:
-            return "Ingestion policy not yet supported";
         case errc::topic_does_not_exist:
             return "Topic does not exist yet";
         case errc::invalid_topic:

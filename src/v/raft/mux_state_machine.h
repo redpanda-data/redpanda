@@ -264,8 +264,9 @@ ss::future<> mux_state_machine<T...>::apply(model::record_batch b) {
         // applicable state not found
         if (!state) {
             vassert(
-              b.header().type == state_machine::checkpoint_batch_type
-                || b.header().type == raft::configuration_batch_type,
+              b.header().type == model::record_batch_type::checkpoint
+                || b.header().type
+                     == model::record_batch_type::raft_configuration,
               "State handler for batch of type: {} not found",
               b.header().type);
             return ss::now();

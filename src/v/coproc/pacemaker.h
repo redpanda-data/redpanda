@@ -89,11 +89,6 @@ public:
      */
     bool local_script_id_exists(script_id);
 
-    /**
-     * @returns true if a matching ntp exists on 'this' shard
-     */
-    bool ntp_is_registered(const model::ntp&);
-
     /// returns the number of running / registered fibers
     size_t n_registered_scripts() const { return _scripts.size(); }
 

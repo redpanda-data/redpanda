@@ -108,7 +108,8 @@ disk_log_appender::operator()(model::record_batch& batch) {
 ss::future<ss::stop_iteration>
 disk_log_appender::append_batch_to_segment(const model::record_batch& batch) {
     // ghost batch handling, it doesn't happen often so we can use unlikely
-    if (unlikely(batch.header().type == storage::ghost_record_batch_type)) {
+    if (unlikely(
+          batch.header().type == model::record_batch_type::ghost_batch)) {
         _idx = batch.last_offset() + model::offset(1); // next base offset
         _last_offset = batch.last_offset();
         return ss::make_ready_future<ss::stop_iteration>(

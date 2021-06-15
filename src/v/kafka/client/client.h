@@ -22,7 +22,9 @@
 #include "kafka/client/topic_cache.h"
 #include "kafka/client/transport.h"
 #include "kafka/client/types.h"
+#include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/fetch.h"
+#include "kafka/protocol/list_offsets.h"
 #include "kafka/types.h"
 #include "utils/retry.h"
 #include "utils/unresolved_address.h"
@@ -101,11 +103,15 @@ public:
         });
     }
 
+    ss::future<create_topics_response> create_topic(kafka::creatable_topic req);
+
     ss::future<produce_response::partition> produce_record_batch(
       model::topic_partition tp, model::record_batch&& batch);
 
     ss::future<produce_response>
     produce_records(model::topic topic, std::vector<record_essence> batch);
+
+    ss::future<list_offsets_response> list_offsets(model::topic_partition tp);
 
     ss::future<fetch_response> fetch_partition(
       model::topic_partition tp,
@@ -183,6 +189,8 @@ private:
     topic_cache _topic_cache;
     /// \brief Broker lookup from topic_partition.
     brokers _brokers;
+    /// \brief The node id of the controller.
+    model::node_id _controller{unknown_node_id};
     /// \brief Update metadata, or wait for an existing one.
     wait_or_start _wait_or_start_update_metadata;
     /// \brief Batching producer.

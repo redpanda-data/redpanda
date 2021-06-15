@@ -218,7 +218,8 @@ ss::future<> kvstore::flush_and_apply_ops() {
     auto ops = std::exchange(_ops, {});
 
     // build the operation batch to be logged
-    storage::record_batch_builder builder(kvstore_batch_type, _next_offset);
+    storage::record_batch_builder builder(
+      model::record_batch_type::kvstore, _next_offset);
     for (auto& op : ops) {
         std::optional<iobuf> value;
         if (op.value) {
@@ -324,7 +325,8 @@ ss::future<> kvstore::save_snapshot() {
       _next_offset - model::offset(1));
 
     // package up the db into a batch
-    storage::record_batch_builder builder(kvstore_batch_type, model::offset(0));
+    storage::record_batch_builder builder(
+      model::record_batch_type::kvstore, model::offset(0));
     for (auto& entry : _db) {
         builder.add_raw_kv(
           bytes_to_iobuf(entry.first),

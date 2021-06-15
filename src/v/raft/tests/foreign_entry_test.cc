@@ -90,14 +90,15 @@ struct foreign_entry_fixture {
         return reader_gen(n, [this] { return data_batch(); });
     }
     model::record_batch data_batch() {
-        storage::record_batch_builder bldr(raft::data_batch_type, _base_offset);
+        storage::record_batch_builder bldr(
+          model::record_batch_type::raft_data, _base_offset);
         bldr.add_raw_kv(rand_iobuf(), rand_iobuf());
         ++_base_offset;
         return std::move(bldr).build();
     }
     model::record_batch config_batch() {
         storage::record_batch_builder bldr(
-          raft::configuration_batch_type, _base_offset);
+          model::record_batch_type::raft_configuration, _base_offset);
         bldr.add_raw_kv(rand_iobuf(), reflection::to_iobuf(rand_config()));
         ++_base_offset;
         return std::move(bldr).build();
