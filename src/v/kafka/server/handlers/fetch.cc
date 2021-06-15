@@ -200,23 +200,15 @@ static ss::future<read_result> do_read_from_ntp(
           error_code::unknown_topic_or_partition);
     }
 
-    auto high_watermark = kafka_partition->high_watermark();
-
-    auto max_offset = high_watermark < model::offset(0) ? model::offset(0)
-                                                        : high_watermark;
-
     if (config::shard_local_cfg().enable_transactions.value()) {
         if (
           ntp_config.cfg.isolation_level
           == model::isolation_level::read_committed) {
             ntp_config.cfg.max_offset = kafka_partition->last_stable_offset();
-            max_offset = kafka_partition->last_stable_offset();
         }
     }
 
-    if (
-      ntp_config.cfg.start_offset < kafka_partition->start_offset()
-      || ntp_config.cfg.start_offset > max_offset) {
+    if (ntp_config.cfg.start_offset < kafka_partition->start_offset()) {
         return ss::make_ready_future<read_result>(
           error_code::offset_out_of_range);
     }

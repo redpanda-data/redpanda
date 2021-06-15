@@ -18,6 +18,7 @@
 #include "model/metadata.h"
 #include "outcome.h"
 #include "raft/group_configuration.h"
+#include "storage/api.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
@@ -42,6 +43,7 @@ public:
       ss::sharded<members_table>&,
       ss::sharded<cluster::partition_leaders_table>&,
       ss::sharded<topics_frontend>&,
+      ss::sharded<storage::api>&,
       ss::sharded<seastar::abort_source>&);
 
     ss::future<> stop();
@@ -128,6 +130,7 @@ private:
     ss::sharded<members_table>& _members_table;
     ss::sharded<partition_leaders_table>& _partition_leaders_table;
     ss::sharded<topics_frontend>& _topics_frontend;
+    ss::sharded<storage::api>& _storage;
     model::node_id _self;
     ss::sstring _data_directory;
     std::chrono::milliseconds _housekeeping_timer_interval;
@@ -145,8 +148,14 @@ private:
      */
     absl::node_hash_map<model::ntp, cross_shard_move_request>
       _cross_shard_requests;
+    /**
+     * This map is populated when bootstrapping. If partition is moved cross
+     * shard on the same node it has to be created with revision that it was
+     * first created on current node before cross core move series
+     */
+    absl::node_hash_map<model::ntp, model::revision_id> _bootstrap_revisions;
 };
 
 std::vector<topic_table::delta> calculate_bootstrap_deltas(
-  model::node_id self, std::vector<topic_table::delta>&&);
+  model::node_id self, const std::vector<topic_table::delta>&);
 } // namespace cluster

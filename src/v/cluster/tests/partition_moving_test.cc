@@ -583,7 +583,14 @@ FIXTURE_TEST(test_moving_cross_cores, partition_assignment_test_fixture) {
           .node_id = model::node_id(0), .shard = i % ss::smp::count}});
     }
 
-    execute_and_validate_history_updates(ntp, history);
+    auto reference_batches = execute_and_validate_history_updates(ntp, history);
+    restart_cluster();
+    // check after all changes were applied
+    wait_for_metadata_update(ntp, history.back());
+    // here we have to wait for a long time as the cluster must reach all
+    // intermediate states before reaching this point
+    wait_for_replica_set_partitions(60s, ntp, history.back());
+    validate_replicas_recovery(60s, ntp, history.back(), reference_batches);
 }
 
 FIXTURE_TEST(corner_cases, partition_assignment_test_fixture) {

@@ -13,6 +13,7 @@
 
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "raft/consensus_utils.h"
 #include "raft/logger.h"
 #include "raft/types.h"
 #include "storage/fwd.h"
@@ -166,9 +167,20 @@ public:
 private:
     ss::future<> store_configurations();
     ss::future<> store_highest_known_offset();
-    bytes configurations_map_key();
-    bytes highest_known_offset_key();
-    bytes next_configuration_idx_key();
+    bytes configurations_map_key() const {
+        return raft::details::serialize_group_key(
+          _group, metadata_key::config_map);
+    }
+
+    bytes highest_known_offset_key() const {
+        return raft::details::serialize_group_key(
+          _group, metadata_key::config_latest_known_offset);
+    }
+
+    bytes next_configuration_idx_key() const {
+        return raft::details::serialize_group_key(
+          _group, metadata_key::config_next_cfg_idx);
+    }
 
     void add_configuration(model::offset, group_configuration);
 

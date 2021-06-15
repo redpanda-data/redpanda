@@ -98,8 +98,15 @@ ss::future<> configuration_manager::prefix_truncate(model::offset offset) {
 
 void configuration_manager::add_configuration(
   model::offset offset, group_configuration cfg) {
+    auto idx = _next_index++;
+    vlog(
+      _ctxlog.trace,
+      "Adding configuration: {}, offset: {}, index: {}",
+      cfg,
+      offset,
+      idx);
     auto [_, success] = _configurations.try_emplace(
-      offset, indexed_configuration(std::move(cfg), _next_index++));
+      offset, indexed_configuration(std::move(cfg), idx));
     if (!success) {
         throw std::invalid_argument(fmt::format(
           "Unable to add configuration at offset {} as it "
@@ -115,11 +122,7 @@ configuration_manager::add(std::vector<offset_configuration> configurations) {
         for (auto& co : configurations) {
             // handling backward compatibility i.e. revisionless configurations
             co.cfg.maybe_set_initial_revision(_initial_revision);
-            vlog(
-              _ctxlog.trace,
-              "Adding configuration: {}, offset: {}",
-              co.cfg,
-              co.offset);
+
             add_configuration(co.offset, std::move(co.cfg));
             _highest_known_offset = std::max(_highest_known_offset, co.offset);
         }
@@ -134,7 +137,6 @@ configuration_manager::add(model::offset offset, group_configuration cfg) {
     // handling backward compatibility i.e. revisionless configurations
     cfg.maybe_set_initial_revision(_initial_revision);
 
-    vlog(_ctxlog.trace, "Adding configuration: {}, offset: {}", cfg, offset);
     return _lock.with([this, cfg = std::move(cfg), offset]() mutable {
         auto it = _configurations.find(offset);
         // we already have this configuration, do nothing
@@ -235,25 +237,6 @@ ss::future<configuration_manager::underlying_t> deserialize_configurations(
                   .then([&configs]() mutable { return std::move(configs); });
             });
       });
-}
-
-bytes configuration_manager::configurations_map_key() {
-    iobuf buf;
-    reflection::serialize(buf, metadata_key::config_map, _group);
-    return iobuf_to_bytes(buf);
-}
-
-bytes configuration_manager::highest_known_offset_key() {
-    iobuf buf;
-    reflection::serialize(
-      buf, metadata_key::config_latest_known_offset, _group);
-    return iobuf_to_bytes(buf);
-}
-
-bytes configuration_manager::next_configuration_idx_key() {
-    iobuf buf;
-    reflection::serialize(buf, metadata_key::config_next_cfg_idx, _group);
-    return iobuf_to_bytes(buf);
 }
 
 ss::future<> configuration_manager::store_configurations() {

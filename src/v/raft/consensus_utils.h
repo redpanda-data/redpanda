@@ -20,6 +20,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
 
 namespace raft::details {
@@ -176,5 +177,16 @@ auto for_each_ref_extract_configuration(
             });
       });
 }
+
+bytes serialize_group_key(raft::group_id, metadata_key);
+/**
+ * moves raft persistent state from KV store on source shard to the one on
+ * target shard.
+ */
+ss::future<> move_persistent_state(
+  raft::group_id,
+  ss::shard_id source_shard,
+  ss::shard_id target_shard,
+  ss::sharded<storage::api>&);
 
 } // namespace raft::details

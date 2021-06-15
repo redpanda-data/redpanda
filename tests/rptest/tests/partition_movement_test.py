@@ -295,4 +295,4 @@ class PartitionMovementTest(EndToEndTest):
         self.await_startup()
         for _ in range(25):
             self._move_and_verify()
-        self.run_validation(enable_idempotence=False)
+        self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
