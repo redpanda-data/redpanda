@@ -59,6 +59,26 @@ ss::future<model::record_batch> decompress_batch(const model::record_batch& b) {
     return ss::make_ready_future<model::record_batch>(std::move(batch));
 }
 
+compress_batch_consumer::compress_batch_consumer(
+  model::compression c, std::size_t threshold) noexcept
+  : _compression_type(c)
+  , _threshold(threshold) {}
+
+ss::future<ss::stop_iteration>
+compress_batch_consumer::operator()(model::record_batch& rb) {
+    if (static_cast<std::size_t>(rb.size_bytes()) >= _threshold) {
+        _batches.push_back(co_await storage::internal::compress_batch(
+          _compression_type, std::move(rb)));
+    } else {
+        _batches.push_back(std::move(rb));
+    }
+    co_return ss::stop_iteration::no;
+}
+
+model::record_batch_reader compress_batch_consumer::end_of_stream() {
+    return model::make_memory_record_batch_reader(std::move(_batches));
+}
+
 ss::future<model::record_batch>
 compress_batch(model::compression c, model::record_batch&& b) {
     if (c == model::compression::none) {
