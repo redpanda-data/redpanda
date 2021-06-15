@@ -15,7 +15,6 @@ func TestNewRemoveCommand(t *testing.T) {
 	tests := []struct {
 		name           string
 		producer       kafkaMocks.MockProducer
-		filename       string
 		args           []string
 		expectedOutput []string
 		expectedErr    string
@@ -23,14 +22,14 @@ func TestNewRemoveCommand(t *testing.T) {
 	}{
 		{
 			name: "it should publish a message with correct format",
-			args: []string{"filename.js"},
+			args: []string{"bar"},
 		}, {
-			name:        "it should a error if the name arg doesn't set",
+			name:        "it should a error if the name arg isn't set",
 			args:        []string{},
 			expectedErr: "no wasm script name specified",
 		}, {
 			name: "it should publish a message with correct format with valid headers",
-			args: []string{"filename.js"},
+			args: []string{"foo"},
 			producer: kafkaMocks.MockProducer{
 				MockSendMessage: func(msg *sarama.ProducerMessage) (partition int32, offset int64, err error) {
 					require.Equal(t, msg.Topic, kafka.CoprocessorTopic)
@@ -38,9 +37,6 @@ func TestNewRemoveCommand(t *testing.T) {
 						{
 							Key:   []byte("action"),
 							Value: []byte("remove"),
-						}, {
-							Key:   []byte("file_name"),
-							Value: []byte("filename.js"),
 						},
 					}
 					require.Equal(t, expectHeader, msg.Headers)

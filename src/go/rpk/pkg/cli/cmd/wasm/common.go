@@ -71,9 +71,6 @@ func CreateDeployMsg(
 			Key:   []byte("description"),
 			Value: []byte(description),
 		}, {
-			Key:   []byte("file_name"),
-			Value: []byte(name),
-		}, {
 			Key:   []byte("sha256"),
 			Value: shaValue[:],
 		},
@@ -94,9 +91,6 @@ func CreateRemoveMsg(name string) sarama.ProducerMessage {
 		{
 			Key:   []byte("action"),
 			Value: []byte("remove"),
-		}, {
-			Key:   []byte("file_name"),
-			Value: []byte(name),
 		},
 	}
 	id := xxhash.Sum64([]byte(name))
