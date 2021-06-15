@@ -261,6 +261,8 @@ func (r *ConfigMapResource) createConfiguration(
 		cr.Other = make(map[string]interface{})
 	}
 	cr.Other["auto_create_topics_enabled"] = r.pandaCluster.Spec.Configuration.AutoCreateTopics
+	cr.Other["enable_idempotence"] = true
+	cr.Other["enable_transactions"] = true
 
 	segmentSize := logSegmentSize
 	cr.LogSegmentSize = &segmentSize
