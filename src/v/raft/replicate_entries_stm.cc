@@ -113,10 +113,18 @@ ss::future<> replicate_entries_stm::dispatch_one(vnode id) {
              [this, id]() mutable {
                  return dispatch_single_retry(id).then(
                    [this, id](result<append_entries_reply> reply) {
-                       auto it = _followers_seq.find(id);
-                       auto seq = it == _followers_seq.end()
-                                    ? follower_req_seq(0)
-                                    : it->second;
+                       raft::follower_req_seq seq{0};
+                       if (id != _ptr->self()) {
+                           auto it = _followers_seq.find(id);
+                           vassert(
+                             it != _followers_seq.end(),
+                             "Follower request sequence is required to exists "
+                             "for each follower. No follower sequence found "
+                             "for {}",
+                             id);
+                           seq = it->second;
+                       }
+
                        if (!reply) {
                            _ptr->get_probe().replicate_request_error();
                        }
