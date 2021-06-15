@@ -22,6 +22,7 @@
 
 #include "coproc/tests/utils/wasm_event_generator.h"
 #include "random/generators.h"
+#include "storage/parser_utils.h"
 
 #include <boost/test/unit_test.hpp>
 
@@ -32,7 +33,11 @@ using cp_errc = coproc::wasm::errc;
 SEASTAR_THREAD_TEST_CASE(verify_make_event) {
     /// The generator only creates valid events by default
     auto rbr = coproc::wasm::make_random_event_record_batch_reader(
-      model::offset(0), 5, 5);
+                 model::offset(0), 5, 5)
+                 .for_each_ref(
+                   storage::internal::decompress_batch_consumer(),
+                   model::no_timeout)
+                 .get0();
     auto batches = model::consume_reader_to_memory(
                      std::move(rbr), model::no_timeout)
                      .get0();
@@ -87,7 +92,11 @@ SEASTAR_THREAD_TEST_CASE(verify_event_reconciliation) {
       {{123, deploy}, {456, deploy}, {123}, {456, deploy}},
       {{789, deploy}, {123}}};
 
-    auto rbr = make_event_record_batch_reader(std::move(events));
+    auto rbr = make_event_record_batch_reader(std::move(events))
+                 .for_each_ref(
+                   storage::internal::decompress_batch_consumer(),
+                   model::no_timeout)
+                 .get0();
     auto batches = model::consume_reader_to_memory(
                      std::move(rbr), model::no_timeout)
                      .get0();
