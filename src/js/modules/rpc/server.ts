@@ -194,7 +194,8 @@ export class ProcessBatchServer extends SupervisorServer {
      * from a string, the first and second arguments are the parameter for
      * that function and the last one is the js string program.
      */
-    const loadScript = Function("module", "require", script.toString());
+    const loadScript = (module, requireNative) =>
+      Function("module", "require", script.toString())(module, requireNative);
     /**
      * Create a custom type for result function, as coprocessor script return
      * a exports.default value, ResultFunction type represents that result.
