@@ -18,8 +18,20 @@
 #include "vlog.h"
 
 #include <seastar/core/byteorder.hh>
+#include <seastar/core/coroutine.hh>
 
 namespace storage::internal {
+
+ss::future<ss::stop_iteration>
+decompress_batch_consumer::operator()(model::record_batch& rb) {
+    _batches.push_back(
+      co_await storage::internal::decompress_batch(std::move(rb)));
+    co_return ss::stop_iteration::no;
+}
+
+model::record_batch_reader decompress_batch_consumer::end_of_stream() {
+    return model::make_memory_record_batch_reader(std::move(_batches));
+}
 
 ss::future<model::record_batch> decompress_batch(model::record_batch&& b) {
     if (!b.compressed()) {
