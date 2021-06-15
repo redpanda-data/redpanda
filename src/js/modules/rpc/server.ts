@@ -225,6 +225,9 @@ export class ProcessBatchServer extends SupervisorServer {
       );
       return undefined;
     }
+    if (!errors.validateWasmAttributes(handle, id, this.logger)) {
+      return [undefined, errors.validateLoadScriptError(null, id, script)];
+    }
     handle.globalId = id;
     return [handle, undefined];
   }
