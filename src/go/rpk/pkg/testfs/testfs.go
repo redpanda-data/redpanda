@@ -4,7 +4,6 @@ package testfs
 
 import (
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -17,18 +16,18 @@ type Fmode struct {
 	Contents string
 }
 
-// FromMap returns an afer.MemMapFs from the input paths and their
+// FromMap returns an afero.MemMapFs from the input paths and their
 // corresponding file contents & modes. All directories are created with perms
 // 0644.
 //
 // Paths that end in / are treated solely as directories and the Fmode is not
-// used.
+// used. Similar to Go's os/fs, paths must use /, not os.PathSeparator.
 func FromMap(m map[string]Fmode) afero.Fs {
 	mmfs := afero.NewMemMapFs()
 	for path, fmode := range m {
 		dir := ""
-		if strings.IndexByte(path, os.PathSeparator) != -1 {
-			if path[len(path)-1] == os.PathSeparator {
+		if strings.IndexByte(path, '/') != -1 {
+			if path[len(path)-1] == '/' {
 				mmfs.MkdirAll(path, 0644)
 				continue
 			}
