@@ -8,6 +8,7 @@ seastar_generate_swagger(
 v_cc_library(
   NAME pandaproxy_schema_registry
   SRCS
+    client_fetch_batch_reader.cc
     configuration.cc
     handlers.cc
     error.cc

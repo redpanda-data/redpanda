@@ -20,6 +20,7 @@
 #include "pandaproxy/schema_registry/requests/get_schemas_ids_id.h"
 #include "pandaproxy/schema_registry/requests/get_subject_versions_version.h"
 #include "pandaproxy/schema_registry/requests/post_subject_versions.h"
+#include "pandaproxy/schema_registry/storage.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/server.h"
 #include "storage/record_batch_builder.h"
@@ -125,7 +126,21 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
       req.sub, req.payload.schema, req.payload.type);
 
     if (ins_res.inserted) {
-        // TODO(Ben): Publish to the _schemas topic
+        auto batch = make_schema_batch(
+          req.sub,
+          ins_res.version,
+          ins_res.id,
+          req.payload.schema,
+          req.payload.type,
+          false);
+
+        auto res = co_await rq.service().client().local().produce_record_batch(
+          model::schema_registry_internal_tp, std::move(batch));
+
+        // TODO(Ben): Check the error reporting here
+        if (res.error_code != kafka::error_code::none) {
+            throw kafka::exception(res.error_code, *res.error_message);
+        }
     }
 
     auto json_rslt{

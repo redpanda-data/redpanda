@@ -11,15 +11,22 @@
 
 #pragma once
 
+#include "likely.h"
 #include "outcome.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/types.h"
+#include "seastarx.h"
+
+#include <seastar/core/semaphore.hh>
 
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
+
+#include <exception>
+#include <utility>
 
 namespace pandaproxy::schema_registry {
 
@@ -46,5 +53,45 @@ result<schema_definition> make_schema_definition(std::string_view sv) {
     return schema_definition{
       ss::sstring{str_buf.GetString(), str_buf.GetSize()}};
 }
+
+///\brief The first invocation of one_shot::operator()() will invoke func and
+/// wait for it to finish. Concurrent invocatons will also wait.
+///
+/// On success, all waiters will be allowed to continue. Successive invocations
+/// of one_shot::operator()() will return ss::now().
+///
+/// If func fails, waiters will receive the error, and one_shot will be reset.
+/// Successive calls to operator()() will restart the process.
+class one_shot {
+    enum class state { empty, started, available };
+    using futurator = ss::futurize<ss::semaphore_units<>>;
+
+public:
+    explicit one_shot(ss::noncopyable_function<ss::future<>()> func)
+      : _func{std::move(func)} {}
+    futurator::type operator()() {
+        if (likely(_started_sem.available_units() != 0)) {
+            return ss::get_units(_started_sem, 1);
+        }
+        auto units = ss::consume_units(_started_sem, 1);
+        return _func().then_wrapped(
+          [this, units{std::move(units)}](ss::future<> f) mutable noexcept {
+              if (f.failed()) {
+                  units.release();
+                  auto ex = f.get_exception();
+                  _started_sem.broken(ex);
+                  _started_sem = ss::semaphore{0};
+                  return futurator::make_exception_future(ex);
+              }
+
+              _started_sem.signal(_started_sem.max_counter());
+              return futurator::convert(std::move(units));
+          });
+    }
+
+private:
+    ss::noncopyable_function<ss::future<>()> _func;
+    ss::semaphore _started_sem{0};
+};
 
 } // namespace pandaproxy::schema_registry

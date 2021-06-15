@@ -14,6 +14,7 @@
 #include "kafka/client/client.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/store.h"
+#include "pandaproxy/schema_registry/util.h"
 #include "pandaproxy/server.h"
 #include "seastarx.h"
 
@@ -43,12 +44,17 @@ public:
     store& schema_store() { return _store; }
 
 private:
+    ss::future<> do_start();
+    ss::future<> create_internal_topic();
+    ss::future<> fetch_internal_topic();
     configuration _config;
     ss::semaphore _mem_sem;
+    ss::gate _gate;
     ss::sharded<kafka::client::client>& _client;
     ctx_server<service>::context_t _ctx;
     ctx_server<service> _server;
     store _store;
+    one_shot _ensure_started;
 };
 
 } // namespace pandaproxy::schema_registry
