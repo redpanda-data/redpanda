@@ -90,6 +90,11 @@ private:
       const model::materialized_ntp&, model::record_batch_reader);
     ss::future<std::variant<write_response, model::term_id>>
       write_checked(storage::log, model::term_id, model::record_batch_reader);
+    std::optional<process_batch_request::data> mark_offset(
+      ss::lw_shared_ptr<ntp_context>,
+      model::offset,
+      std::size_t,
+      model::record_batch_reader);
 
     std::size_t max_batch_size() const {
         return config::shard_local_cfg().coproc_max_batch_size.value();
@@ -102,7 +107,8 @@ private:
     /// Manages async fiber that begins when calling 'start()'
     ss::gate _gate;
 
-    // Reference to resources shared across all script_contexts on 'this' shard
+    // Reference to resources shared across all script_contexts on 'this'
+    // shard
     shared_script_resources& _resources;
 
     /// References to input topics that this script is interested in
