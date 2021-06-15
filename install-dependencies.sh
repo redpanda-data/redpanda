@@ -34,6 +34,7 @@ deb_deps=(
   python3-jinja2
   pkg-config
   git
+  zip
 )
 fedora_deps=(
   curl
@@ -44,6 +45,7 @@ fedora_deps=(
   xxhash-devel
   python3-virtualenv
   python3-jinja2
+  zip
 )
 
 case "$ID" in
