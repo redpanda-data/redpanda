@@ -22,5 +22,6 @@ func NewGenerateCommand(mgr config.Manager) *cobra.Command {
 	}
 	command.AddCommand(generate.NewGrafanaDashboardCmd())
 	command.AddCommand(generate.NewPrometheusConfigCmd(mgr))
+	command.AddCommand(generate.NewShellCompletionCommand())
 	return command
 }
