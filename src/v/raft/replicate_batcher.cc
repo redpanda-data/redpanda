@@ -49,7 +49,10 @@ replicate_stages replicate_batcher::replicate(
                    }
 
                    enqueued.set_value();
-                   return _lock.with([this] { return flush(); })
+                   return _lock.get_units()
+                     .then([this](ss::semaphore_units<> u) {
+                         return flush(std::move(u));
+                     })
                      .then([i = f.get()] { return i->_promise.get_future(); });
                })
                .finally([this] { _ptr->_probe.replicate_done(); });
@@ -108,7 +111,6 @@ replicate_batcher::do_cache_with_backpressure(
 
     return ss::get_units(_max_batch_size_sem, std::min(bytes, _max_batch_size))
       .then([this, expected_term, batches = std::move(batches)](
-
               ss::semaphore_units<> u) mutable {
           size_t record_count = 0;
           auto i = ss::make_lw_shared<item>();
@@ -128,16 +130,23 @@ replicate_batcher::do_cache_with_backpressure(
       });
 }
 
-ss::future<> replicate_batcher::flush() {
+ss::future<> replicate_batcher::flush(ss::semaphore_units<> u) {
     auto item_cache = std::exchange(_item_cache, {});
     if (item_cache.empty()) {
         return ss::now();
     }
     return ss::with_gate(
-      _ptr->_bg, [this, item_cache = std::move(item_cache)]() mutable {
+      _ptr->_bg,
+      [this,
+       item_cache = std::move(item_cache),
+       batcher_units = std::move(u)]() mutable {
           return _ptr->_op_lock.get_units().then(
-            [this, item_cache = std::move(item_cache)](
+            [this,
+             item_cache = std::move(item_cache),
+             batcher_units = std::move(batcher_units)](
               ss::semaphore_units<> u) mutable {
+                // release batcher replicate batcher lock
+                batcher_units.return_all();
                 // we have to check if we are the leader
                 // it is critical as term could have been updated already by
                 // vote request and entries from current node could be accepted
@@ -155,8 +164,9 @@ ss::future<> replicate_batcher::flush() {
                 auto const term = model::term_id(meta.term);
                 ss::circular_buffer<model::record_batch> data;
                 std::vector<item_ptr> notifications;
-
+                ss::semaphore_units<> item_memory_units(_max_batch_size_sem, 0);
                 for (auto& n : item_cache) {
+                    item_memory_units.adopt(std::move(n->units));
                     if (
                       !n->expected_term.has_value()
                       || n->expected_term.value() == term) {
@@ -179,10 +189,16 @@ ss::future<> replicate_batcher::flush() {
                   _ptr->_self,
                   std::move(meta),
                   model::make_memory_record_batch_reader(std::move(data)));
+                std::vector<ss::semaphore_units<>> units;
+                units.reserve(2);
+                units.push_back(std::move(u));
+                // we will release memory semaphore as soon as append entry
+                // requests will be dispatched
+                units.push_back(std::move(item_memory_units));
                 return do_flush(
                   std::move(notifications),
                   std::move(req),
-                  std::move(u),
+                  std::move(units),
                   std::move(seqs));
             });
       });
@@ -219,7 +235,7 @@ static void propagate_current_exception(
 ss::future<> replicate_batcher::do_flush(
   std::vector<replicate_batcher::item_ptr>&& notifications,
   append_entries_request&& req,
-  ss::semaphore_units<> u,
+  std::vector<ss::semaphore_units<>> u,
   absl::flat_hash_map<vnode, follower_req_seq> seqs) {
     _ptr->_probe.replicate_batch_flushed();
     auto stm = ss::make_lw_shared<replicate_entries_stm>(

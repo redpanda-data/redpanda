@@ -40,37 +40,38 @@ ss::future<append_entries_request> replicate_entries_stm::share_request() {
           });
     });
 }
-ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
-  vnode n,
-  append_entries_request req,
-  ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> units) {
+
+ss::future<result<append_entries_reply>> replicate_entries_stm::flush_log() {
     using ret_t = result<append_entries_reply>;
-
-    if (n == _ptr->_self) {
-        auto f = _ptr->flush_log()
-                   .then([this, units]() {
-                       auto lstats = _ptr->_log.offsets();
-                       auto last_idx = lstats.committed_offset;
-                       append_entries_reply reply;
-                       reply.node_id = _ptr->_self;
-                       reply.target_node_id = _ptr->_self;
-                       reply.group = _ptr->group();
-                       reply.term = _ptr->term();
-                       // we just flushed offsets are the same
-                       reply.last_dirty_log_index = last_idx;
-                       reply.last_committed_log_index = last_idx;
-                       reply.result = append_entries_reply::status::success;
-                       return ret_t(std::move(reply));
-                   })
-                   .handle_exception(
-                     []([[maybe_unused]] const std::exception_ptr& ex) {
-                         return ret_t(errc::leader_flush_failed);
-                     });
-
-        _dispatch_sem.signal();
-        return f;
-    }
-    return send_append_entries_request(n, std::move(req));
+    auto f = _ptr->flush_log()
+               .then([this]() {
+                   /**
+                    * Replicate STM _dirty_offset is set to the dirty offset of
+                    * a log after successfull self append. After flush we are
+                    * certain that data to at least `_dirty_offset` were
+                    * flushed. Sampling offset again right before the flush
+                    * isn't necessary since it will not influence result of
+                    * replication process in current `replicate_entries_stm`
+                    * instance.
+                    */
+                   auto new_committed_offset = _dirty_offset;
+                   append_entries_reply reply;
+                   reply.node_id = _ptr->_self;
+                   reply.target_node_id = _ptr->_self;
+                   reply.group = _ptr->group();
+                   reply.term = _ptr->term();
+                   // we just flushed offsets are the same
+                   reply.last_dirty_log_index = new_committed_offset;
+                   reply.last_committed_log_index = new_committed_offset;
+                   reply.result = append_entries_reply::status::success;
+                   return ret_t(reply);
+               })
+               .handle_exception(
+                 []([[maybe_unused]] const std::exception_ptr& ex) {
+                     return ret_t(errc::leader_flush_failed);
+                 });
+    _dispatch_sem.signal();
+    return f;
 }
 
 clock_type::time_point replicate_entries_stm::append_entries_timeout() {
@@ -94,23 +95,36 @@ replicate_entries_stm::send_append_entries_request(
                      "append_entries_replicate", std::move(reply));
                });
     _dispatch_sem.signal();
-    return f.finally([this, n] {
-        _ptr->update_suppress_heartbeats(
-          n, _followers_seq[n], heartbeats_suppressed::no);
-    });
+    return f
+      .handle_exception([this](const std::exception_ptr& e) {
+          vlog(_ctxlog.warn, "Error while replicating entries {}", e);
+          return result<append_entries_reply>(
+            errc::append_entries_dispatch_error);
+      })
+      .finally([this, n] {
+          _ptr->update_suppress_heartbeats(
+            n, _followers_seq[n], heartbeats_suppressed::no);
+      });
 }
 
-ss::future<> replicate_entries_stm::dispatch_one(
-  vnode id, ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> units) {
+ss::future<> replicate_entries_stm::dispatch_one(vnode id) {
     return ss::with_gate(
              _req_bg,
-             [this, id, units]() mutable {
-                 return dispatch_single_retry(id, std::move(units))
-                   .then([this, id](result<append_entries_reply> reply) {
-                       auto it = _followers_seq.find(id);
-                       auto seq = it == _followers_seq.end()
-                                    ? follower_req_seq(0)
-                                    : it->second;
+             [this, id]() mutable {
+                 return dispatch_single_retry(id).then(
+                   [this, id](result<append_entries_reply> reply) {
+                       raft::follower_req_seq seq{0};
+                       if (id != _ptr->self()) {
+                           auto it = _followers_seq.find(id);
+                           vassert(
+                             it != _followers_seq.end(),
+                             "Follower request sequence is required to exists "
+                             "for each follower. No follower sequence found "
+                             "for {}",
+                             id);
+                           seq = it->second;
+                       }
+
                        if (!reply) {
                            _ptr->get_probe().replicate_request_error();
                        }
@@ -122,17 +136,15 @@ ss::future<> replicate_entries_stm::dispatch_one(
 }
 
 ss::future<result<append_entries_reply>>
-replicate_entries_stm::dispatch_single_retry(
-  vnode id, ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> units) {
-    return share_request()
-      .then([this, id, units](append_entries_request r) mutable {
-          return do_dispatch_one(id, std::move(r), units);
-      })
-      .handle_exception([this](const std::exception_ptr& e) {
-          vlog(_ctxlog.warn, "Error while replicating entries {}", e);
-          return result<append_entries_reply>(
-            errc::append_entries_dispatch_error);
-      });
+replicate_entries_stm::dispatch_single_retry(vnode id) {
+    if (id == _ptr->_self) {
+        return flush_log();
+    } else {
+        return share_request().then(
+          [this, id](append_entries_request r) mutable {
+              return send_append_entries_request(id, std::move(r));
+          });
+    }
 }
 
 ss::future<result<storage::append_result>>
@@ -181,7 +193,7 @@ inline bool replicate_entries_stm::should_skip_follower_request(vnode id) {
 }
 
 ss::future<result<replicate_result>>
-replicate_entries_stm::apply(ss::semaphore_units<> u) {
+replicate_entries_stm::apply(std::vector<ss::semaphore_units<>> u) {
     // first append lo leader log, no flushing
     auto cfg = _ptr->config();
     cfg.for_each_broker_id([this](const vnode& rni) {
@@ -200,30 +212,27 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
           }
           _dirty_offset = append_result.value().last_offset;
           // dispatch requests to followers & leader flush
-          std::vector<ss::semaphore_units<>> vec;
-          vec.push_back(std::move(u));
-          auto units = ss::make_lw_shared<std::vector<ss::semaphore_units<>>>(
-            std::move(vec));
           uint16_t requests_count = 0;
-          cfg.for_each_broker_id(
-            [this, &requests_count, units](const vnode& rni) {
-                // We are not dispatching request to followers that are
-                // recovering
-                if (should_skip_follower_request(rni)) {
-                    vlog(
-                      _ctxlog.trace,
-                      "Skipping sending append request to {}",
-                      rni);
-                    _ptr->update_suppress_heartbeats(
-                      rni, _followers_seq[rni], heartbeats_suppressed::no);
-                    return;
-                }
-                ++requests_count;
-                (void)dispatch_one(rni, units); // background
-            });
+          cfg.for_each_broker_id([this, &requests_count](const vnode& rni) {
+              // We are not dispatching request to followers that are
+              // recovering
+              if (should_skip_follower_request(rni)) {
+                  vlog(
+                    _ctxlog.trace,
+                    "Skipping sending append request to {}",
+                    rni);
+                  _ptr->update_suppress_heartbeats(
+                    rni, _followers_seq[rni], heartbeats_suppressed::no);
+                  return;
+              }
+              ++requests_count;
+              (void)dispatch_one(rni); // background
+          });
           // Wait until all RPCs will be dispatched
           return _dispatch_sem.wait(requests_count)
-            .then([append_result, units]() mutable { return append_result; });
+            .then([append_result, u = std::move(u)]() mutable {
+                return append_result;
+            });
       })
       .then([this](result<storage::append_result> append_result) {
           if (!append_result) {

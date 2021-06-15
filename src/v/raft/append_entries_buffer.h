@@ -4,6 +4,7 @@
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/semaphore.hh>
 
 namespace raft {
 
@@ -136,7 +137,7 @@ private:
     using reply_t = std::variant<append_entries_reply, std::exception_ptr>;
 
     ss::future<> flush();
-    ss::future<> do_flush(request_t, response_t);
+    ss::future<> do_flush(request_t, response_t, ss::semaphore_units<>);
 
     void propagate_results(std::vector<reply_t>, response_t);
 

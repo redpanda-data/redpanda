@@ -6,6 +6,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/do_with.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/util/later.hh>
 #include <seastar/util/variant_utils.hh>
 
@@ -75,34 +76,44 @@ ss::future<> append_entries_buffer::flush() {
     auto requests = std::exchange(_requests, {});
     auto response_promises = std::exchange(_responses, {});
 
-    return _consensus._op_lock.with(
+    return _consensus._op_lock.get_units().then(
       [this,
        requests = std::move(requests),
-       response_promises = std::move(response_promises)]() mutable {
-          return do_flush(std::move(requests), std::move(response_promises));
+       response_promises = std::move(response_promises)](
+        ss::semaphore_units<> u) mutable {
+          return do_flush(
+            std::move(requests), std::move(response_promises), std::move(u));
       });
 }
 
 ss::future<> append_entries_buffer::do_flush(
-  request_t requests, response_t response_promises) {
+  request_t requests, response_t response_promises, ss::semaphore_units<> u) {
     bool needs_flush = false;
     std::vector<reply_t> replies;
-    replies.reserve(requests.size());
-    for (auto& req : requests) {
-        if (req.flush) {
-            needs_flush = true;
+    auto f = ss::now();
+    {
+        ss::semaphore_units<> op_lock_units = std::move(u);
+        replies.reserve(requests.size());
+        for (auto& req : requests) {
+            if (req.flush) {
+                needs_flush = true;
+            }
+            try {
+                // NOTE: do_append_entries do not flush
+                auto reply = co_await _consensus.do_append_entries(
+                  std::move(req));
+                replies.emplace_back(reply);
+            } catch (...) {
+                replies.emplace_back(std::current_exception());
+            }
         }
-        try {
-            // NOTE: do_append_entries do not flush
-            auto reply = co_await _consensus.do_append_entries(std::move(req));
-            replies.emplace_back(reply);
-        } catch (...) {
-            replies.emplace_back(std::current_exception());
+        if (needs_flush) {
+            f = _consensus.flush_log();
         }
     }
-    if (needs_flush) {
-        co_await _consensus.flush_log();
-    }
+
+    // units were released before flushing log
+    co_await std::move(f);
 
     propagate_results(std::move(replies), std::move(response_promises));
     _flushed.broadcast();

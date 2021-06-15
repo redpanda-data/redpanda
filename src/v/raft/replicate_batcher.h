@@ -48,14 +48,14 @@ public:
     replicate_stages
     replicate(std::optional<model::term_id>, model::record_batch_reader&&);
 
-    ss::future<> flush();
+    ss::future<> flush(ss::semaphore_units<> u);
     ss::future<> stop();
 
     // it will lock on behalf of caller to append entries to leader log.
     ss::future<> do_flush(
       std::vector<item_ptr>&&,
       append_entries_request&&,
-      ss::semaphore_units<>,
+      std::vector<ss::semaphore_units<>>,
       absl::flat_hash_map<vnode, follower_req_seq>);
 
 private:

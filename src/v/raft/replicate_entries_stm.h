@@ -87,9 +87,10 @@ public:
       absl::flat_hash_map<vnode, follower_req_seq>);
     ~replicate_entries_stm();
 
-    /// caller have to pass _op_sem semaphore units, the apply call will do the
+    /// caller have to pass semaphore units, the apply call will do the
     /// fine grained locking on behalf of the caller
-    ss::future<result<replicate_result>> apply(ss::semaphore_units<>);
+    ss::future<result<replicate_result>>
+      apply(std::vector<ss::semaphore_units<>>);
 
     /// waits for the remaining background futures
     ss::future<> wait();
@@ -97,14 +98,9 @@ public:
 private:
     ss::future<append_entries_request> share_request();
 
-    ss::future<> dispatch_one(
-      vnode, ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>);
-    ss::future<result<append_entries_reply>> dispatch_single_retry(
-      vnode, ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>);
-    ss::future<result<append_entries_reply>> do_dispatch_one(
-      vnode,
-      append_entries_request,
-      ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>);
+    ss::future<> dispatch_one(vnode);
+    ss::future<result<append_entries_reply>> dispatch_single_retry(vnode);
+    ss::future<result<append_entries_reply>> flush_log();
 
     ss::future<result<append_entries_reply>>
       send_append_entries_request(vnode, append_entries_request);
