@@ -27,7 +27,6 @@ import sys
 
 NTP = namedtuple("NTP", ['ns', 'topic', 'partition', 'revision'])
 
-
 SegmentMetadata = namedtuple(
     'SegmentMetadata',
     ['ntp', 'base_offset', 'term', 'normalized_path', 'md5', 'size'])
@@ -118,27 +117,31 @@ def _parse_manifest_segment(manifest, sname, meta, remote_set, logger):
 
 
 class ArchivalTest(RedpandaTest):
-    topics = tuple([TopicSpec(name=f'panda-topic-{ix}',
-                        partition_count=10,
-                        replication_factor=3) for ix in range(0, 10)])
+    topics = tuple([
+        TopicSpec(name=f'panda-topic-{ix}',
+                  partition_count=10,
+                  replication_factor=3) for ix in range(0, 10)
+    ])
 
     GLOBAL_S3_BUCKET = "s3_bucket"
     GLOBAL_S3_REGION = "s3_region"
     GLOBAL_S3_ACCESS_KEY = "s3_access_key"
     GLOBAL_S3_SECRET_KEY = "s3_secret_key"
 
-    MINIO_HOST_NAME   = "minio-s3"
+    MINIO_HOST_NAME = "minio-s3"
     MINIO_BUCKET_NAME = "panda-bucket"
-    MINIO_ACCESS_KEY  = "panda-user"
-    MINIO_SECRET_KEY  = "panda-secret"
-    MINIO_REGION      = "panda-region"
-    MINIO_TOPIC_NAME  = "panda-topic"
+    MINIO_ACCESS_KEY = "panda-user"
+    MINIO_SECRET_KEY = "panda-secret"
+    MINIO_REGION = "panda-region"
+    MINIO_TOPIC_NAME = "panda-topic"
 
     def __init__(self, test_context):
         self.s3_bucket = test_context.globals.get(self.GLOBAL_S3_BUCKET, None)
         self.s3_region = test_context.globals.get(self.GLOBAL_S3_REGION, None)
-        self.s3_access_key = test_context.globals.get(self.GLOBAL_S3_ACCESS_KEY, None)
-        self.s3_secret_key = test_context.globals.get(self.GLOBAL_S3_SECRET_KEY, None)
+        self.s3_access_key = test_context.globals.get(
+            self.GLOBAL_S3_ACCESS_KEY, None)
+        self.s3_secret_key = test_context.globals.get(
+            self.GLOBAL_S3_SECRET_KEY, None)
         self.s3_endpoint = None
         self.real_thing = self.s3_bucket and self.s3_region and self.s3_access_key and self.s3_secret_key
         if self.real_thing:
@@ -153,7 +156,7 @@ class ArchivalTest(RedpandaTest):
                 cloud_storage_reconciliation_interval_ms=10000,
                 cloud_storage_max_connections=10,
                 cloud_storage_trust_file="/etc/ssl/certs/ca-certificates.crt",
-                log_segment_size=32*1048576  # 32MB
+                log_segment_size=32 * 1048576  # 32MB
             )
         else:
             self.s3_bucket = ArchivalTest.MINIO_BUCKET_NAME
@@ -173,7 +176,7 @@ class ArchivalTest(RedpandaTest):
                 cloud_storage_api_endpoint_port=9000,
                 cloud_storage_reconciliation_interval_ms=10000,
                 cloud_storage_max_connections=5,
-                log_segment_size=32*1048576  # 32MB
+                log_segment_size=32 * 1048576  # 32MB
             )
             self.s3_endpoint = f'http://{ArchivalTest.MINIO_HOST_NAME}:9000'
 
@@ -181,12 +184,11 @@ class ArchivalTest(RedpandaTest):
                                            extra_rp_conf=extra_rp_conf)
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
-        self.s3_client = S3Client(
-            region=self.s3_region,
-            access_key=self.s3_access_key,
-            secret_key=self.s3_secret_key,
-            endpoint=self.s3_endpoint,
-            logger=self.logger)
+        self.s3_client = S3Client(region=self.s3_region,
+                                  access_key=self.s3_access_key,
+                                  secret_key=self.s3_secret_key,
+                                  endpoint=self.s3_endpoint,
+                                  logger=self.logger)
 
     def setUp(self):
         if not self.real_thing:
@@ -205,14 +207,13 @@ class ArchivalTest(RedpandaTest):
         data hit the S3 storage bucket"""
         for topic in ArchivalTest.topics:
             time.sleep(5)
-            self.kafka_tools.produce(topic.name, 10000, 64*1024)
+            self.kafka_tools.produce(topic.name, 10000, 64 * 1024)
         time.sleep(30)
         self._verify()
 
     def verify_remote(self):
         results = [
-            loc.Key for loc in self.s3_client.list_objects(
-                self.s3_bucket)
+            loc.Key for loc in self.s3_client.list_objects(self.s3_bucket)
         ]
         self.logger.debug(f"ListObjects: {results}")
 
@@ -270,8 +271,7 @@ class ArchivalTest(RedpandaTest):
                 f"expected path {expected} is not found in the bucket, bucket content: \n{objlist}"
             )
             assert not id is None
-        manifest = self.s3_client.get_object_data(self.s3_bucket,
-                                                  id)
+        manifest = self.s3_client.get_object_data(self.s3_bucket, id)
         self.logger.info(f"manifest found: {manifest}")
         return json.loads(manifest)
 
@@ -451,8 +451,7 @@ class ArchivalTest(RedpandaTest):
 
     def _list_objects(self):
         results = [
-            loc.Key for loc in self.s3_client.list_objects(
-                self.s3_bucket)
+            loc.Key for loc in self.s3_client.list_objects(self.s3_bucket)
         ]
         self.logger.debug(f"ListObjects: {results}")
         return results
