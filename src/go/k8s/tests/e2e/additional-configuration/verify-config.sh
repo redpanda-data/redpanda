@@ -34,6 +34,7 @@ redpanda:
   default_topic_partitions: 3
   developer_mode: true
   enable_idempotence: true
+  enable_transactions: true
   kafka_api:
   - address: 0.0.0.0
     name: kafka
