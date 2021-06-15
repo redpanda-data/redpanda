@@ -124,6 +124,12 @@ func TestEnsure_ConfigMap(t *testing.T) {
 	if !strings.Contains(data, "auto_create_topics_enabled: false") {
 		t.Fatalf("expecting configmap containing 'auto_create_topics_enabled: false' but got %v", data)
 	}
+	if !strings.Contains(data, "enable_idempotence: true") {
+		t.Fatalf("expecting configmap containing 'enable_idempotence: true' but got %v", data)
+	}
+	if !strings.Contains(data, "enable_transactions: true") {
+		t.Fatalf("expecting configmap containing 'enable_transactions: true' but got %v", data)
+	}
 
 	// calling ensure for second time to see the resource does not get updated
 	err = cm.Ensure(context.Background())
