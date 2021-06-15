@@ -856,13 +856,12 @@ group_manager::abort_tx(cluster::abort_group_tx_request&& r) {
       });
 }
 
-ss::future<offset_commit_response>
+group::offset_commit_stages
 group_manager::offset_commit(offset_commit_request&& r) {
     auto error = validate_group_status(
       r.ntp, r.data.group_id, offset_commit_api::key);
     if (error != error_code::none) {
-        return ss::make_ready_future<offset_commit_response>(
-          offset_commit_response(r, error));
+        return group::offset_commit_stages(offset_commit_response(r, error));
     }
 
     auto group = get_group(r.data.group_id);
@@ -878,7 +877,7 @@ group_manager::offset_commit(offset_commit_request&& r) {
         } else {
             // <kafka>or this is a request coming from an older generation.
             // either way, reject the commit</kafka>
-            return ss::make_ready_future<offset_commit_response>(
+            return group::offset_commit_stages(
               offset_commit_response(r, error_code::illegal_generation));
         }
     }

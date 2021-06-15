@@ -12,6 +12,7 @@
 
 #include "kafka/protocol/errors.h"
 #include "model/fundamental.h"
+#include "raft/types.h"
 #include "storage/types.h"
 
 #include <seastar/core/coroutine.hh>
@@ -108,17 +109,21 @@ ss::future<result<model::offset>> replicated_partition::replicate(
           return ret_t(_translator->to_kafka_offset(r.value().last_offset));
       });
 }
-ss::future<result<model::offset>> replicated_partition::replicate(
+
+raft::replicate_stages replicated_partition::replicate(
   model::batch_identity batch_id,
   model::record_batch_reader&& rdr,
   raft::replicate_options opts) {
-    using ret_t = result<model::offset>;
-    return _partition->replicate(batch_id, std::move(rdr), opts)
-      .then([this](result<raft::replicate_result> r) {
+    using ret_t = result<raft::replicate_result>;
+    auto res = _partition->replicate_in_stages(batch_id, std::move(rdr), opts);
+    res.replicate_finished = res.replicate_finished.then(
+      [this](result<raft::replicate_result> r) {
           if (!r) {
               return ret_t(r.error());
           }
-          return ret_t(_translator->to_kafka_offset(r.value().last_offset));
+          return ret_t(raft::replicate_result{
+            _translator->to_kafka_offset(r.value().last_offset)});
       });
+    return res;
 }
 } // namespace kafka

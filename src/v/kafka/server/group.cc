@@ -1600,8 +1600,7 @@ group::store_txn_offsets(txn_offset_commit_request r) {
     co_return txn_offset_commit_response(r, error_code::none);
 }
 
-ss::future<offset_commit_response>
-group::store_offsets(offset_commit_request&& r) {
+group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
     cluster::simple_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
 
@@ -1642,12 +1641,13 @@ group::store_offsets(offset_commit_request&& r) {
     auto batch = std::move(builder).build();
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
-    return _partition
-      ->replicate(
-        std::move(reader),
-        raft::replicate_options(raft::consistency_level::quorum_ack))
-      .then([this, req = std::move(r), commits = std::move(offset_commits)](
-              result<raft::replicate_result> r) mutable {
+    auto replicate_stages = _partition->replicate_in_stages(
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+
+    auto f = replicate_stages.replicate_finished.then(
+      [this, req = std::move(r), commits = std::move(offset_commits)](
+        result<raft::replicate_result> r) mutable {
           error_code error = r ? error_code::none : error_code::not_coordinator;
           if (in_state(group_state::dead)) {
               return offset_commit_response(req, error);
@@ -1666,6 +1666,8 @@ group::store_offsets(offset_commit_request&& r) {
 
           return offset_commit_response(req, error);
       });
+    return offset_commit_stages(
+      std::move(replicate_stages.request_enqueued), std::move(f));
 }
 
 ss::future<cluster::commit_group_tx_reply>
@@ -1780,10 +1782,10 @@ group::handle_abort_tx(cluster::abort_group_tx_request r) {
     }
 }
 
-ss::future<offset_commit_response>
+group::offset_commit_stages
 group::handle_offset_commit(offset_commit_request&& r) {
     if (in_state(group_state::dead)) {
-        return ss::make_ready_future<offset_commit_response>(
+        return offset_commit_stages(
           offset_commit_response(r, error_code::coordinator_not_available));
 
     } else if (r.data.generation_id < 0 && in_state(group_state::empty)) {
@@ -1791,11 +1793,11 @@ group::handle_offset_commit(offset_commit_request&& r) {
         return store_offsets(std::move(r));
 
     } else if (!contains_member(r.data.member_id)) {
-        return ss::make_ready_future<offset_commit_response>(
+        return offset_commit_stages(
           offset_commit_response(r, error_code::unknown_member_id));
 
     } else if (r.data.generation_id != generation()) {
-        return ss::make_ready_future<offset_commit_response>(
+        return offset_commit_stages(
           offset_commit_response(r, error_code::illegal_generation));
     } else if (
       in_state(group_state::stable)
@@ -1807,12 +1809,13 @@ group::handle_offset_commit(offset_commit_request&& r) {
         schedule_next_heartbeat_expiration(member);
         return store_offsets(std::move(r));
     } else if (in_state(group_state::completing_rebalance)) {
-        return ss::make_ready_future<offset_commit_response>(
+        return offset_commit_stages(
           offset_commit_response(r, error_code::rebalance_in_progress));
     } else {
-        return ss::make_exception_future<offset_commit_response>(
-          std::runtime_error(
-            fmt::format("Unexpected group state {} for {}", _state, *this)));
+        return offset_commit_stages(
+          ss::now(),
+          ss::make_exception_future<offset_commit_response>(std::runtime_error(
+            fmt::format("Unexpected group state {} for {}", _state, *this))));
     }
 }
 

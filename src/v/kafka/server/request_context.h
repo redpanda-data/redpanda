@@ -184,7 +184,6 @@ private:
 };
 
 // Executes the API call identified by the specified request_context.
-ss::future<response_ptr>
-process_request(request_context&&, ss::smp_service_group);
+process_result_stages process_request(request_context&&, ss::smp_service_group);
 
 } // namespace kafka

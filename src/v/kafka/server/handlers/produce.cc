@@ -78,6 +78,24 @@ struct produce_ctx {
       , ssg(ssg) {}
 };
 
+struct partition_produce_stages {
+    ss::future<> dispatched;
+    ss::future<produce_response::partition> produced;
+};
+
+struct topic_produce_stages {
+    ss::future<> dispatched;
+    ss::future<produce_response::topic> produced;
+};
+
+partition_produce_stages make_ready_stage(produce_response::partition p) {
+    return partition_produce_stages{
+      .dispatched = ss::now(),
+      .produced = ss::make_ready_future<produce_response::partition>(
+        std::move(p)),
+    };
+}
+
 static raft::replicate_options acks_to_replicate_options(int16_t acks) {
     switch (acks) {
     case -1:
@@ -136,40 +154,45 @@ static error_code map_produce_error_code(std::error_code ec) {
  * Caller is expected to catch errors that may be thrown while the kafka
  * batch is being deserialized (see reader_from_kafka_batch).
  */
-static ss::future<produce_response::partition> partition_append(
+static partition_produce_stages partition_append(
   model::partition_id id,
   ss::lw_shared_ptr<replicated_partition> partition,
   model::batch_identity bid,
   model::record_batch_reader reader,
   int16_t acks,
   int32_t num_records) {
-    return partition
-      ->replicate(bid, std::move(reader), acks_to_replicate_options(acks))
-      .then_wrapped([partition, id, num_records = num_records](
-                      ss::future<result<model::offset>> f) {
-          produce_response::partition p{.partition_index = id};
-          try {
-              auto r = f.get0();
-              if (r.has_value()) {
-                  // have to subtract num_of_records - 1 as base_offset
-                  // is inclusive
-                  p.base_offset = model::offset(r.value() - (num_records - 1));
-                  p.error_code = error_code::none;
-                  partition->probe().add_records_produced(num_records);
-              } else {
-                  p.error_code = map_produce_error_code(r.error());
-              }
-          } catch (...) {
-              p.error_code = error_code::unknown_server_error;
-          }
-          return p;
-      });
+    auto stages = partition->replicate(
+      bid, std::move(reader), acks_to_replicate_options(acks));
+    return partition_produce_stages{
+      .dispatched = std::move(stages.request_enqueued),
+      .produced = stages.replicate_finished.then_wrapped(
+        [partition, id, num_records = num_records](
+          ss::future<result<raft::replicate_result>> f) {
+            produce_response::partition p{.partition_index = id};
+            try {
+                auto r = f.get0();
+                if (r.has_value()) {
+                    // have to subtract num_of_records - 1 as base_offset
+                    // is inclusive
+                    p.base_offset = model::offset(
+                      r.value().last_offset - (num_records - 1));
+                    p.error_code = error_code::none;
+                    partition->probe().add_records_produced(num_records);
+                } else {
+                    p.error_code = map_produce_error_code(r.error());
+                }
+            } catch (...) {
+                p.error_code = error_code::unknown_server_error;
+            }
+            return p;
+        }),
+    };
 }
 
 /**
  * \brief handle writing to a single topic partition.
  */
-static ss::future<produce_response::partition> produce_topic_partition(
+static partition_produce_stages produce_topic_partition(
   produce_ctx& octx,
   produce_request::topic& topic,
   produce_request::partition& part) {
@@ -183,10 +206,9 @@ static ss::future<produce_response::partition> produce_topic_partition(
     auto shard = octx.rctx.shards().shard_for(ntp);
 
     if (!shard) {
-        return ss::make_ready_future<produce_response::partition>(
-          produce_response::partition{
-            .partition_index = ntp.tp.partition,
-            .error_code = error_code::unknown_topic_or_partition});
+        return make_ready_stage(produce_response::partition{
+          .partition_index = ntp.tp.partition,
+          .error_code = error_code::unknown_topic_or_partition});
     }
 
     // steal the batch from the adapter
@@ -214,55 +236,106 @@ static ss::future<produce_response::partition> produce_topic_partition(
     auto num_records = batch.record_count();
     auto reader = reader_from_lcore_batch(std::move(batch));
     auto start = std::chrono::steady_clock::now();
-    auto f = octx.rctx.partition_manager().invoke_on(
-      *shard,
-      octx.ssg,
-      [reader = std::move(reader),
-       ntp = std::move(ntp),
-       num_records,
-       bid,
-       acks = octx.request.data.acks](cluster::partition_manager& mgr) mutable {
-          auto partition = mgr.get(ntp);
-          if (!partition) {
-              return ss::make_ready_future<produce_response::partition>(
-                produce_response::partition{
-                  .partition_index = ntp.tp.partition,
-                  .error_code = error_code::unknown_topic_or_partition});
-          }
-          if (unlikely(!partition->is_leader())) {
-              return ss::make_ready_future<produce_response::partition>(
-                produce_response::partition{
-                  .partition_index = ntp.tp.partition,
-                  .error_code = error_code::not_leader_for_partition});
-          }
-          return partition_append(
-            ntp.tp.partition,
-            ss::make_lw_shared<replicated_partition>(std::move(partition)),
-            bid,
-            std::move(reader),
-            acks,
-            num_records);
-      });
-    return f.then([&octx, start](produce_response::partition p) {
-        if (p.error_code == error_code::none) {
-            auto dur = std::chrono::steady_clock::now() - start;
-            octx.rctx.connection()->server().update_produce_latency(dur);
-        }
-        return p;
-    });
+
+    auto dispatch = std::make_unique<ss::promise<>>();
+    auto dispatch_f = dispatch->get_future();
+    auto f
+      = octx.rctx.partition_manager()
+          .invoke_on(
+            *shard,
+            octx.ssg,
+            [reader = std::move(reader),
+             ntp = std::move(ntp),
+             dispatch = std::move(dispatch),
+             num_records,
+             bid,
+             acks = octx.request.data.acks,
+             source_shard = ss::this_shard_id()](
+              cluster::partition_manager& mgr) mutable {
+                auto partition = mgr.get(ntp);
+                if (!partition) {
+                    // submit back to promise source shard
+                    (void)ss::smp::submit_to(
+                      source_shard, [dispatch = std::move(dispatch)]() mutable {
+                          dispatch->set_value();
+                          dispatch.reset();
+                      });
+                    return ss::make_ready_future<produce_response::partition>(
+                      produce_response::partition{
+                        .partition_index = ntp.tp.partition,
+                        .error_code = error_code::unknown_topic_or_partition});
+                }
+                if (unlikely(!partition->is_leader())) {
+                    // submit back to promise source shard
+                    (void)ss::smp::submit_to(
+                      source_shard, [dispatch = std::move(dispatch)]() mutable {
+                          dispatch->set_value();
+                          dispatch.reset();
+                      });
+                    return ss::make_ready_future<produce_response::partition>(
+                      produce_response::partition{
+                        .partition_index = ntp.tp.partition,
+                        .error_code = error_code::not_leader_for_partition});
+                }
+                auto stages = partition_append(
+                  ntp.tp.partition,
+                  ss::make_lw_shared<replicated_partition>(
+                    std::move(partition)),
+                  bid,
+                  std::move(reader),
+                  acks,
+                  num_records);
+                return stages.dispatched
+                  .then_wrapped([source_shard, dispatch = std::move(dispatch)](
+                                  ss::future<> f) mutable {
+                      if (f.failed()) {
+                          (void)ss::smp::submit_to(
+                            source_shard,
+                            [dispatch = std::move(dispatch),
+                             e = f.get_exception()]() mutable {
+                                dispatch->set_exception(e);
+                                dispatch.reset();
+                            });
+                          return;
+                      }
+                      (void)ss::smp::submit_to(
+                        source_shard,
+                        [dispatch = std::move(dispatch)]() mutable {
+                            dispatch->set_value();
+                            dispatch.reset();
+                        });
+                  })
+                  .then([f = std::move(stages.produced)]() mutable {
+                      return std::move(f);
+                  });
+            })
+          .then([&octx, start](produce_response::partition p) {
+              if (p.error_code == error_code::none) {
+                  auto dur = std::chrono::steady_clock::now() - start;
+                  octx.rctx.connection()->server().update_produce_latency(dur);
+              }
+              return p;
+          });
+    return partition_produce_stages{
+      .dispatched = std::move(dispatch_f),
+      .produced = std::move(f),
+    };
 }
 
 /**
  * \brief Dispatch and collect topic partition produce responses
  */
-static ss::future<produce_response::topic>
+static topic_produce_stages
 produce_topic(produce_ctx& octx, produce_request::topic& topic) {
-    std::vector<ss::future<produce_response::partition>> partitions;
-    partitions.reserve(topic.partitions.size());
+    std::vector<ss::future<produce_response::partition>> partitions_produced;
+    std::vector<ss::future<>> partitions_dispatched;
+    partitions_produced.reserve(topic.partitions.size());
+    partitions_dispatched.reserve(topic.partitions.size());
 
     for (auto& part : topic.partitions) {
         if (!octx.rctx.authorized(security::acl_operation::write, topic.name)) {
-            partitions.push_back(
+            partitions_dispatched.push_back(ss::now());
+            partitions_produced.push_back(
               ss::make_ready_future<produce_response::partition>(
                 produce_response::partition{
                   .partition_index = part.partition_index,
@@ -273,7 +346,8 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
         if (!octx.rctx.metadata_cache().contains(
               model::topic_namespace_view(model::kafka_namespace, topic.name),
               part.partition_index)) {
-            partitions.push_back(
+            partitions_dispatched.push_back(ss::now());
+            partitions_produced.push_back(
               ss::make_ready_future<produce_response::partition>(
                 produce_response::partition{
                   .partition_index = part.partition_index,
@@ -283,7 +357,8 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
 
         // the record data on the wire was null value
         if (unlikely(!part.records)) {
-            partitions.push_back(
+            partitions_dispatched.push_back(ss::now());
+            partitions_produced.push_back(
               ss::make_ready_future<produce_response::partition>(
                 produce_response::partition{
                   .partition_index = part.partition_index,
@@ -293,7 +368,8 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
 
         // an error occured handling legacy messages (magic 0 or 1)
         if (unlikely(part.records->adapter.legacy_error)) {
-            partitions.push_back(
+            partitions_dispatched.push_back(ss::now());
+            partitions_produced.push_back(
               ss::make_ready_future<produce_response::partition>(
                 produce_response::partition{
                   .partition_index = part.partition_index,
@@ -302,7 +378,8 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
         }
 
         if (unlikely(!part.records->adapter.valid_crc)) {
-            partitions.push_back(
+            partitions_dispatched.push_back(ss::now());
+            partitions_produced.push_back(
               ss::make_ready_future<produce_response::partition>(
                 produce_response::partition{
                   .partition_index = part.partition_index,
@@ -320,7 +397,8 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
         if (unlikely(
               !part.records->adapter.v2_format
               || !part.records->adapter.batch)) {
-            partitions.push_back(
+            partitions_dispatched.push_back(ss::now());
+            partitions_produced.push_back(
               ss::make_ready_future<produce_response::partition>(
                 produce_response::partition{
                   .partition_index = part.partition_index,
@@ -329,38 +407,42 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
         }
 
         auto pr = produce_topic_partition(octx, topic, part);
-        partitions.push_back(std::move(pr));
+        partitions_produced.push_back(std::move(pr.produced));
+        partitions_dispatched.push_back(std::move(pr.dispatched));
     }
 
     // collect partition responses and build the topic response
-    return when_all_succeed(partitions.begin(), partitions.end())
-      .then([name = std::move(topic.name)](
-              std::vector<produce_response::partition> parts) mutable {
-          return produce_response::topic{
-            .name = std::move(name),
-            .partitions = std::move(parts),
-          };
-      });
+    return topic_produce_stages{
+      .dispatched = ss::when_all_succeed(
+        partitions_dispatched.begin(), partitions_dispatched.end()),
+      .produced
+      = ss::when_all_succeed(
+          partitions_produced.begin(), partitions_produced.end())
+          .then([name = std::move(topic.name)](
+                  std::vector<produce_response::partition> parts) mutable {
+              return produce_response::topic{
+                .name = std::move(name),
+                .partitions = std::move(parts),
+              };
+          }),
+    };
 }
 
 /**
  * \brief Dispatch and collect topic produce responses
  */
-static std::vector<ss::future<produce_response::topic>>
-produce_topics(produce_ctx& octx) {
-    std::vector<ss::future<produce_response::topic>> topics;
+static std::vector<topic_produce_stages> produce_topics(produce_ctx& octx) {
+    std::vector<topic_produce_stages> topics;
     topics.reserve(octx.request.data.topics.size());
 
     for (auto& topic : octx.request.data.topics) {
-        auto tr = produce_topic(octx, topic);
-        topics.push_back(std::move(tr));
+        topics.push_back(produce_topic(octx, topic));
     }
 
     return topics;
 }
 
-template<>
-ss::future<response_ptr>
+process_result_stages
 produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     produce_request request;
     request.decode(ctx.reader(), ctx.header().version);
@@ -390,8 +472,9 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
      */
     if (request.has_transactional) {
         if (!ctx.are_transactions_enabled()) {
-            return ctx.respond(request.make_error_response(
-              error_code::transactional_id_authorization_failed));
+            return process_result_stages::single_stage(
+              ctx.respond(request.make_error_response(
+                error_code::transactional_id_authorization_failed)));
         }
 
         if (
@@ -399,8 +482,9 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
           || !ctx.authorized(
             security::acl_operation::write,
             transactional_id(*request.data.transactional_id))) {
-            return ctx.respond(request.make_error_response(
-              error_code::transactional_id_authorization_failed));
+            return process_result_stages::single_stage(
+              ctx.respond(request.make_error_response(
+                error_code::transactional_id_authorization_failed)));
         }
         // <kafka>Note that authorization to a transactionalId implies
         // ProducerId authorization</kafka>
@@ -409,13 +493,15 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
         if (!ctx.authorized(
               security::acl_operation::idempotent_write,
               security::default_cluster_name)) {
-            return ctx.respond(request.make_error_response(
-              error_code::cluster_authorization_failed));
+            return process_result_stages::single_stage(
+              ctx.respond(request.make_error_response(
+                error_code::cluster_authorization_failed)));
         }
 
         if (!ctx.is_idempotence_enabled()) {
-            return ctx.respond(request.make_error_response(
-              error_code::cluster_authorization_failed));
+            return process_result_stages::single_stage(
+              ctx.respond(request.make_error_response(
+                error_code::cluster_authorization_failed)));
         }
 
     } else if (request.data.acks < -1 || request.data.acks > 1) {
@@ -428,65 +514,95 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
           "configuration/"
           "producer-configs.html",
           request.data.acks);
-        return ctx.respond(
-          request.make_error_response(error_code::invalid_required_acks));
+        return process_result_stages::single_stage(ctx.respond(
+          request.make_error_response(error_code::invalid_required_acks)));
     }
-
-    return ss::do_with(
+    ss::promise<> dispatched_promise;
+    auto dispatched_f = dispatched_promise.get_future();
+    auto produced_f = ss::do_with(
       produce_ctx(std::move(ctx), std::move(request), ssg),
-      [](produce_ctx& octx) {
+      [dispatched_promise = std::move(dispatched_promise)](
+        produce_ctx& octx) mutable {
           vlog(klog.trace, "handling produce request {}", octx.request);
 
           // dispatch produce requests for each topic
-          auto topics = produce_topics(octx);
+          auto stages = produce_topics(octx);
+          std::vector<ss::future<>> dispatched;
+          std::vector<ss::future<produce_response::topic>> produced;
+          dispatched.reserve(stages.size());
+          produced.reserve(stages.size());
 
-          // collect topic responses
-          return when_all_succeed(topics.begin(), topics.end())
-            .then([&octx](std::vector<produce_response::topic> topics) {
-                octx.response.data.responses = std::move(topics);
-            })
-            .then([&octx] {
-                // send response immediately
-                if (octx.request.data.acks != 0) {
-                    return octx.rctx.respond(std::move(octx.response));
-                }
+          for (auto& s : stages) {
+              dispatched.push_back(std::move(s.dispatched));
+              produced.push_back(std::move(s.produced));
+          }
+          return seastar::when_all_succeed(dispatched.begin(), dispatched.end())
+            .then_wrapped([&octx,
+                           dispatched_promise = std::move(dispatched_promise),
+                           produced = std::move(produced)](
+                            ss::future<> f) mutable {
+                try {
+                    f.get();
+                    dispatched_promise.set_value();
+                    // collect topic responses
+                    return when_all_succeed(produced.begin(), produced.end())
+                      .then(
+                        [&octx](std::vector<produce_response::topic> topics) {
+                            octx.response.data.responses = std::move(topics);
+                        })
+                      .then([&octx] {
+                          // send response immediately
+                          if (octx.request.data.acks != 0) {
+                              return octx.rctx.respond(
+                                std::move(octx.response));
+                          }
 
-                // acks = 0 is handled separately. first, check for
-                // errors
-                bool has_error = false;
-                for (const auto& topic : octx.response.data.responses) {
-                    for (const auto& p : topic.partitions) {
-                        if (p.error_code != error_code::none) {
-                            has_error = true;
-                            break;
-                        }
-                    }
-                }
+                          // acks = 0 is handled separately. first, check for
+                          // errors
+                          bool has_error = false;
+                          for (const auto& topic :
+                               octx.response.data.responses) {
+                              for (const auto& p : topic.partitions) {
+                                  if (p.error_code != error_code::none) {
+                                      has_error = true;
+                                      break;
+                                  }
+                              }
+                          }
 
-                // in the absense of errors, acks = 0 results in the
-                // response being dropped, as the client does not expect
-                // a response. here we mark the response as noop, but
-                // let it flow back so that it can be accounted for in
-                // quota and stats tracking. it is dropped later during
-                // processing.
-                if (!has_error) {
-                    return octx.rctx.respond(std::move(octx.response))
-                      .then([](response_ptr resp) {
-                          resp->mark_noop();
-                          return resp;
+                          // in the absense of errors, acks = 0 results in the
+                          // response being dropped, as the client does not
+                          // expect a response. here we mark the response as
+                          // noop, but let it flow back so that it can be
+                          // accounted for in quota and stats tracking. it is
+                          // dropped later during processing.
+                          if (!has_error) {
+                              return octx.rctx.respond(std::move(octx.response))
+                                .then([](response_ptr resp) {
+                                    resp->mark_noop();
+                                    return resp;
+                                });
+                          }
+
+                          // errors in a response from an acks=0 produce request
+                          // result in the connection being dropped to signal an
+                          // issue to the client
+                          return ss::make_exception_future<response_ptr>(
+                            std::runtime_error(fmt::format(
+                              "Closing connection due to error in produce "
+                              "response: {}",
+                              octx.response)));
                       });
+                } catch (...) {
+                    dispatched_promise.set_exception(std::current_exception());
+                    return ss::make_exception_future<response_ptr>(
+                      std::current_exception());
                 }
-
-                // errors in a response from an acks=0 produce request
-                // result in the connection being dropped to signal an
-                // issue to the client
-                return ss::make_exception_future<response_ptr>(
-                  std::runtime_error(fmt::format(
-                    "Closing connection due to error in produce "
-                    "response: {}",
-                    octx.response)));
             });
       });
+
+    return process_result_stages(
+      std::move(dispatched_f), std::move(produced_f));
 }
 
 } // namespace kafka
