@@ -27,7 +27,7 @@ event::event(uint64_t id)
 
 event::event(uint64_t id, cpp_enable_payload ep)
   : id(id)
-  , desc(random_generators::gen_alphanum_string(15))
+  , desc(random_generators::get_bytes(64))
   , action(event_action::deploy) {
     iobuf payload;
     reflection::serialize(payload, ep.tid, std::move(ep.topics));
@@ -114,7 +114,7 @@ model::record_batch_reader make_random_event_record_batch_reader(
             if (random_generators::get_int(0, 1) == 0) {
                 e.action = event_action::deploy;
                 e.script = random_generators::get_bytes();
-                e.desc = random_generators::gen_alphanum_string(15);
+                e.desc = random_generators::get_bytes(64);
                 e.checksum = calculate_checksum(e);
             }
             serialize_event(rbb, e);
