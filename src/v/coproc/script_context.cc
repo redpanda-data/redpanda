@@ -15,6 +15,7 @@
 #include "coproc/reference_window_consumer.hpp"
 #include "coproc/types.h"
 #include "likely.h"
+#include "model/compression.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/types.h"
@@ -343,22 +344,17 @@ script_context::write_checked(
   model::term_id last_term,
   model::record_batch_reader reader) {
     using rt_val = std::variant<write_response, model::term_id>;
-    using consumption_result = std::tuple<
-      bool,
-      std::optional<model::term_id>,
-      ss::future<storage::append_result>>;
-    const storage::log_append_config write_cfg{
-      .should_fsync = storage::log_append_config::fsync::no,
-      .io_priority = ss::default_priority_class(),
-      .timeout = model::no_timeout};
+    using consumption_result = std::
+      tuple<bool, std::optional<model::term_id>, model::record_batch_reader>;
     return std::move(reader)
       .for_each_ref(
         coproc::reference_window_consumer(
           model::record_batch_crc_checker(),
           term_id_barrier(last_term),
-          log.make_appender(write_cfg)),
+          storage::internal::compress_batch_consumer(
+            model::compression::zstd, 512)),
         model::no_timeout)
-      .then([](consumption_result rs) mutable {
+      .then([log](consumption_result rs) mutable {
           bool crc_success = std::get<bool>(rs);
           if (!crc_success) {
               return ss::make_ready_future<rt_val>(write_response::crc_failure);
@@ -368,7 +364,12 @@ script_context::write_checked(
               return ss::make_ready_future<rt_val>(
                 write_response::term_too_old);
           }
-          return std::move(std::get<ss::future<storage::append_result>>(rs))
+          const storage::log_append_config write_cfg{
+            .should_fsync = storage::log_append_config::fsync::no,
+            .io_priority = ss::default_priority_class(),
+            .timeout = model::no_timeout};
+          return std::move(std::get<model::record_batch_reader>(rs))
+            .for_each_ref(log.make_appender(write_cfg), model::no_timeout)
             .then(
               [](storage::append_result ar) { return rt_val(ar.last_term); });
       });
