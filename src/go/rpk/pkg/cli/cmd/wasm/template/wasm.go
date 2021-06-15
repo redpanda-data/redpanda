@@ -24,7 +24,7 @@ const uppercase = (record) => {
   const newRecord = {
     ...record,
     value: record.value.map((char) => {
-      if (char > 97 && char < 122) {
+      if (char >= 97 && char <= 122) {
         return char - 32;
       } else {
         return char;
