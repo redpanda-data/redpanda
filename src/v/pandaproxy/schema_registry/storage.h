@@ -367,7 +367,8 @@ inline model::record_batch make_schema_batch(
   schema_definition schema,
   schema_type type,
   bool deleted) {
-    storage::record_batch_builder rb{raft::data_batch_type, model::offset{0}};
+    storage::record_batch_builder rb{
+      model::record_batch_type::raft_data, model::offset{0}};
     rb.add_raw_kv(
       schema_key_to_iobuf(schema_key{.sub{sub}, .version{ver}}),
       schema_value_to_iobuf(sub, ver, id, std::move(schema), type, deleted));
