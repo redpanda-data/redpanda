@@ -115,7 +115,10 @@ const createResponseScriptWithoutTopics: HandleEnableResponse = (handle) => ({
 });
 
 const createResponseScriptSyntaxError: SimpleEnableResponse = (handleDef) => ({
-  enableResponseCode: EnableResponseCodes.scriptContainsSyntaxError,
+  // the enableResponseCode should be:
+  // enableResponseCode: EnableResponseCodes.EnableResponseCodes.internalError,
+  // but redpanda doesn't support that error yet
+  enableResponseCode: EnableResponseCodes.internalError,
   scriptMetadata: { id: handleDef.id, inputTopic: [] },
 });
 
