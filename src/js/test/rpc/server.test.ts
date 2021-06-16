@@ -10,7 +10,7 @@
 
 import { ProcessBatchServer } from "../../modules/rpc/server";
 import Repository from "../../modules/supervisors/Repository";
-import { createSandbox, SinonSandbox } from "sinon";
+import { createSandbox, SinonSandbox, SinonStub } from "sinon";
 import { SupervisorClient } from "../../modules/rpc/serverAndClients/rpcServer";
 import { createRecordBatch } from "../../modules/public";
 import {
@@ -27,12 +27,20 @@ import err, {
 } from "../../modules/rpc/errors";
 import assert = require("assert");
 import { PolicyInjection } from "../../modules/public/Coprocessor";
+import {
+  syntaxError,
+  validCopro,
+  wasmWithoutErrorPolicy,
+  wasmWithoutTopic,
+  webpackScript,
+} from "./coprocString";
 
 const fs = require("fs");
 
 let sinonInstance: SinonSandbox;
 let server: ProcessBatchServer;
 let client: SupervisorClient;
+let writeError: SinonStub;
 
 const createStubs = (sandbox: SinonSandbox) => {
   const watchMock = sandbox.stub(chokidar, "watch");
@@ -751,5 +759,130 @@ describe("Server", function () {
         );
       }
     );
+  });
+
+  describe("Load script from string", function () {
+    beforeEach(() => {
+      sinonInstance = createSandbox();
+      writeError = sinonInstance.stub();
+      //Mock LogService
+      sinonInstance.stub(LogService, "createLogger").returns({
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        info: sinonInstance.stub(),
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        error: writeError,
+      });
+      server = new ProcessBatchServer();
+      server.listen(43000);
+      return new Promise<void>((resolve, reject) => {
+        return SupervisorClient.create(43000)
+          .then((c) => {
+            client = c;
+            resolve();
+          })
+          .catch((e) => reject(e));
+      });
+    });
+
+    afterEach(async () => {
+      client.close();
+      sinonInstance.restore();
+      await server.closeConnection();
+    });
+
+    it("should load a script", function () {
+      const [coproc, err] = server.loadCoprocFromString(
+        BigInt(1),
+        Buffer.from(validCopro)
+      );
+      assert.strictEqual(coproc.globalId, BigInt(1));
+      assert.deepStrictEqual(coproc.inputTopics, ["test-topic"]);
+      assert.strictEqual(coproc.policyError, PolicyError.SkipOnFailure);
+      assert.strictEqual(err, undefined);
+    });
+
+    it("should not load a script with syntax error", function () {
+      const [, err] = server.loadCoprocFromString(
+        BigInt(1),
+        Buffer.from(syntaxError)
+      );
+      assert.deepStrictEqual(err, {
+        // this code should be 5, but redpanda doesn't support it yet
+        enableResponseCode: 1,
+        scriptMetadata: {
+          id: BigInt(1),
+          inputTopic: [],
+        },
+      });
+    });
+
+    it("should not load a script with syntax error", function () {
+      const [, err] = server.loadCoprocFromString(
+        BigInt(1),
+        Buffer.from(syntaxError)
+      );
+      assert.deepStrictEqual(err, {
+        // this code should be 5, but redpanda doesn't support it yet
+        enableResponseCode: 1,
+        scriptMetadata: {
+          id: BigInt(1),
+          inputTopic: [],
+        },
+      });
+    });
+
+    it("should not load a no wasm script", function () {
+      const [, err] = server.loadCoprocFromString(
+        BigInt(1),
+        Buffer.from(webpackScript)
+      );
+      assert.deepStrictEqual(err, {
+        enableResponseCode: 1,
+        scriptMetadata: {
+          id: BigInt(1),
+          inputTopic: [],
+        },
+      });
+    });
+
+    it("should not load a wasm script without topic", function () {
+      const [, err] = server.loadCoprocFromString(
+        BigInt(1),
+        Buffer.from(wasmWithoutTopic)
+      );
+      assert.strictEqual(writeError.called, true);
+      assert.strictEqual(
+        writeError.getCall(0).firstArg,
+        "Wasm script doesn't have topics, script id 1"
+      );
+      assert.deepStrictEqual(err, {
+        enableResponseCode: 1,
+        scriptMetadata: {
+          id: BigInt(1),
+          inputTopic: [],
+        },
+      });
+    });
+
+    it("should not load a wasm script without policy error", function () {
+      const [, err] = server.loadCoprocFromString(
+        BigInt(1),
+        Buffer.from(wasmWithoutErrorPolicy)
+      );
+      assert.strictEqual(writeError.called, true);
+      assert.strictEqual(
+        writeError.getCall(0).firstArg,
+        "Wasm script doesn't have policy error, script id 1"
+      );
+      assert.deepStrictEqual(err, {
+        enableResponseCode: 1,
+        scriptMetadata: {
+          id: BigInt(1),
+          inputTopic: [],
+        },
+      });
+    });
   });
 });
