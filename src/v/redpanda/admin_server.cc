@@ -113,13 +113,7 @@ void admin_server::configure_admin_routes() {
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "hbadger");
 
-    ss::httpd::config_json::get_config.set(
-      _server._routes, []([[maybe_unused]] ss::const_req req) {
-          rapidjson::StringBuffer buf;
-          rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
-          config::shard_local_cfg().to_json(writer);
-          return ss::json::json_return_type(buf.GetString());
-      });
+    register_config_routes();
     register_raft_routes();
     register_kafka_routes();
     register_security_routes();
@@ -175,6 +169,16 @@ ss::future<> admin_server::configure_listeners() {
             return _server.listen(resolved, cred);
         });
     }
+}
+
+void admin_server::register_config_routes() {
+    ss::httpd::config_json::get_config.set(
+      _server._routes, []([[maybe_unused]] ss::const_req req) {
+          rapidjson::StringBuffer buf;
+          rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+          config::shard_local_cfg().to_json(writer);
+          return ss::json::json_return_type(buf.GetString());
+      });
 }
 
 void admin_server::register_raft_routes() {

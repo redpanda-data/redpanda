@@ -69,6 +69,7 @@ private:
     void configure_dashboard();
     void configure_metrics_route();
     void configure_admin_routes();
+    void register_config_routes();
     void register_raft_routes();
     void register_kafka_routes();
     void register_security_routes();
