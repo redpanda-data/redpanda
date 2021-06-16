@@ -470,6 +470,74 @@ public:
     }
 };
 
+struct config_value {
+    compatibility_level compat{compatibility_level::none};
+
+    friend bool operator==(const config_value&, const config_value&) = default;
+
+    friend std::ostream& operator<<(std::ostream& os, const config_value& v) {
+        fmt::print(os, "compatibility: {}", to_string_view(v.compat));
+        return os;
+    }
+};
+
+inline void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const schema_registry::config_value& val) {
+    w.StartObject();
+    w.Key("compatibilityLevel");
+    ::json::rjson_serialize(w, to_string_view(val.compat));
+    w.EndObject();
+}
+
+template<typename Encoding = rapidjson::UTF8<>>
+class config_value_handler : public json::base_handler<Encoding> {
+    enum class state {
+        empty = 0,
+        object,
+        compatibility,
+    };
+    state _state = state::empty;
+
+public:
+    using Ch = typename json::base_handler<Encoding>::Ch;
+    using rjson_parse_result = config_value;
+    rjson_parse_result result;
+
+    config_value_handler()
+      : json::base_handler<Encoding>{json::serialization_format::none} {}
+
+    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        if (_state == state::object && sv == "compatibilityLevel") {
+            _state = state::compatibility;
+            return true;
+        }
+        return false;
+    }
+
+    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        if (_state == state::compatibility) {
+            auto s = from_string_view<compatibility_level>(sv);
+            if (s.has_value()) {
+                result.compat = *s;
+                _state = state::object;
+            }
+            return s.has_value();
+        }
+        return false;
+    }
+
+    bool StartObject() {
+        return std::exchange(_state, state::object) == state::empty;
+    }
+
+    bool EndObject(rapidjson::SizeType) {
+        return std::exchange(_state, state::empty) == state::object;
+    }
+};
+
 template<typename Handler>
 auto from_json_iobuf(iobuf&& iobuf) {
     auto p = iobuf_parser(std::move(iobuf));
