@@ -13,8 +13,32 @@
 
 #include "bytes/iobuf_parser.h"
 #include "model/record.h"
+#include "model/record_batch_reader.h"
 
 namespace storage::internal {
+
+/// \brief Decompress over a model::record_batch_reader
+class decompress_batch_consumer {
+public:
+    ss::future<ss::stop_iteration> operator()(model::record_batch&);
+    model::record_batch_reader end_of_stream();
+
+private:
+    model::record_batch_reader::data_t _batches;
+};
+
+/// \brief Apply compressor over a model::record_batch_reader
+class compress_batch_consumer {
+public:
+    compress_batch_consumer(model::compression, std::size_t threshold) noexcept;
+    ss::future<ss::stop_iteration> operator()(model::record_batch&);
+    model::record_batch_reader end_of_stream();
+
+private:
+    model::compression _compression_type{model::compression::none};
+    std::size_t _threshold{0};
+    model::record_batch_reader::data_t _batches;
+};
 
 /// \brief batch decompression
 ss::future<model::record_batch> decompress_batch(model::record_batch&&);

@@ -18,8 +18,20 @@
 #include "vlog.h"
 
 #include <seastar/core/byteorder.hh>
+#include <seastar/core/coroutine.hh>
 
 namespace storage::internal {
+
+ss::future<ss::stop_iteration>
+decompress_batch_consumer::operator()(model::record_batch& rb) {
+    _batches.push_back(
+      co_await storage::internal::decompress_batch(std::move(rb)));
+    co_return ss::stop_iteration::no;
+}
+
+model::record_batch_reader decompress_batch_consumer::end_of_stream() {
+    return model::make_memory_record_batch_reader(std::move(_batches));
+}
 
 ss::future<model::record_batch> decompress_batch(model::record_batch&& b) {
     if (!b.compressed()) {
@@ -45,6 +57,26 @@ ss::future<model::record_batch> decompress_batch(const model::record_batch& b) {
     auto batch = model::record_batch(
       h, std::move(body_buf), model::record_batch::tag_ctor_ng{});
     return ss::make_ready_future<model::record_batch>(std::move(batch));
+}
+
+compress_batch_consumer::compress_batch_consumer(
+  model::compression c, std::size_t threshold) noexcept
+  : _compression_type(c)
+  , _threshold(threshold) {}
+
+ss::future<ss::stop_iteration>
+compress_batch_consumer::operator()(model::record_batch& rb) {
+    if (static_cast<std::size_t>(rb.size_bytes()) >= _threshold) {
+        _batches.push_back(co_await storage::internal::compress_batch(
+          _compression_type, std::move(rb)));
+    } else {
+        _batches.push_back(std::move(rb));
+    }
+    co_return ss::stop_iteration::no;
+}
+
+model::record_batch_reader compress_batch_consumer::end_of_stream() {
+    return model::make_memory_record_batch_reader(std::move(_batches));
 }
 
 ss::future<model::record_batch>

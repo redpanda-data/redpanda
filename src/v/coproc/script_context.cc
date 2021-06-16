@@ -15,10 +15,12 @@
 #include "coproc/reference_window_consumer.hpp"
 #include "coproc/types.h"
 #include "likely.h"
+#include "model/compression.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/types.h"
 #include "storage/api.h"
+#include "storage/parser_utils.h"
 #include "storage/types.h"
 #include "vlog.h"
 
@@ -29,32 +31,24 @@
 
 namespace coproc {
 
-struct batch_info {
-    model::offset last;
-    std::size_t total_size_bytes;
-    model::record_batch_reader rbr;
-};
-
-std::optional<batch_info>
-extract_batch_info(model::record_batch_reader::data_t data) {
-    if (data.empty()) {
-        /// TODO(rob) Its possible to recieve an empty batch when a
-        /// batch type filter is enabled on the reader which for copro
-        return std::nullopt;
+class high_offset_tracker {
+public:
+    struct batch_info {
+        model::offset last{};
+        std::size_t size{0};
+    };
+    ss::future<ss::stop_iteration> operator()(const model::record_batch& rb) {
+        _info.last = rb.last_offset();
+        _info.size += rb.size_bytes();
+        return ss::make_ready_future<ss::stop_iteration>(
+          ss::stop_iteration::no);
     }
-    const model::offset last_offset = data.back().last_offset();
-    const std::size_t total_size = std::accumulate(
-      data.cbegin(),
-      data.cend(),
-      std::size_t(0),
-      [](std::size_t acc, const model::record_batch& x) {
-          return acc + x.size_bytes();
-      });
-    return batch_info{
-      .last = last_offset,
-      .total_size_bytes = total_size,
-      .rbr = model::make_memory_record_batch_reader(std::move(data))};
-}
+
+    batch_info end_of_stream() { return _info; }
+
+private:
+    batch_info _info;
+};
 
 script_context::script_context(
   script_id id,
@@ -201,31 +195,41 @@ script_context::get_reader(const ss::lw_shared_ptr<ntp_context>& ntp_ctx) {
       _abort_source);
 }
 
+std::optional<process_batch_request::data> script_context::mark_offset(
+  ss::lw_shared_ptr<ntp_context> ntp_ctx,
+  model::offset batch_last_offset,
+  std::size_t batch_size,
+  model::record_batch_reader rbr) {
+    if (batch_size == 0) {
+        return std::nullopt;
+    }
+    ntp_ctx->offsets[_id].last_read = batch_last_offset;
+    return process_batch_request::data{
+      .ids = std::vector<script_id>{_id},
+      .ntp = ntp_ctx->ntp(),
+      .reader = std::move(rbr)};
+}
+
 ss::future<std::optional<process_batch_request::data>>
 script_context::read_ntp(ss::lw_shared_ptr<ntp_context> ntp_ctx) {
+    using read_result
+      = std::tuple<high_offset_tracker::batch_info, model::record_batch_reader>;
     return ss::with_semaphore(
       _resources.read_sem, max_batch_size(), [this, ntp_ctx]() {
           storage::log_reader_config cfg = get_reader(ntp_ctx);
           return ntp_ctx->log.make_reader(cfg)
             .then([](model::record_batch_reader rbr) {
-                return model::consume_reader_to_memory(
-                  std::move(rbr), model::no_timeout);
+                return std::move(rbr).for_each_ref(
+                  coproc::reference_window_consumer(
+                    high_offset_tracker(),
+                    storage::internal::decompress_batch_consumer()),
+                  model::no_timeout);
             })
-            .then([](model::record_batch_reader::data_t data) {
-                return extract_batch_info(std::move(data));
-            })
-            .then(
-              [this, ntp_ctx](std::optional<batch_info> obatch_info)
-                -> std::optional<process_batch_request::data> {
-                  if (!obatch_info) {
-                      return std::nullopt;
-                  }
-                  ntp_ctx->offsets[_id].last_read = obatch_info->last;
-                  return process_batch_request::data{
-                    .ids = std::vector<script_id>{_id},
-                    .ntp = ntp_ctx->ntp(),
-                    .reader = std::move(obatch_info->rbr)};
-              });
+            .then([this, ntp_ctx](read_result t) {
+                auto& [info, rbr] = t;
+                return mark_offset(
+                  ntp_ctx, info.last, info.size, std::move(rbr));
+            });
       });
 }
 
@@ -340,22 +344,17 @@ script_context::write_checked(
   model::term_id last_term,
   model::record_batch_reader reader) {
     using rt_val = std::variant<write_response, model::term_id>;
-    using consumption_result = std::tuple<
-      bool,
-      std::optional<model::term_id>,
-      ss::future<storage::append_result>>;
-    const storage::log_append_config write_cfg{
-      .should_fsync = storage::log_append_config::fsync::no,
-      .io_priority = ss::default_priority_class(),
-      .timeout = model::no_timeout};
+    using consumption_result = std::
+      tuple<bool, std::optional<model::term_id>, model::record_batch_reader>;
     return std::move(reader)
       .for_each_ref(
         coproc::reference_window_consumer(
           model::record_batch_crc_checker(),
           term_id_barrier(last_term),
-          log.make_appender(write_cfg)),
+          storage::internal::compress_batch_consumer(
+            model::compression::zstd, 512)),
         model::no_timeout)
-      .then([](consumption_result rs) mutable {
+      .then([log](consumption_result rs) mutable {
           bool crc_success = std::get<bool>(rs);
           if (!crc_success) {
               return ss::make_ready_future<rt_val>(write_response::crc_failure);
@@ -365,7 +364,12 @@ script_context::write_checked(
               return ss::make_ready_future<rt_val>(
                 write_response::term_too_old);
           }
-          return std::move(std::get<ss::future<storage::append_result>>(rs))
+          const storage::log_append_config write_cfg{
+            .should_fsync = storage::log_append_config::fsync::no,
+            .io_priority = ss::default_priority_class(),
+            .timeout = model::no_timeout};
+          return std::move(std::get<model::record_batch_reader>(rs))
+            .for_each_ref(log.make_appender(write_cfg), model::no_timeout)
             .then(
               [](storage::append_result ar) { return rt_val(ar.last_term); });
       });

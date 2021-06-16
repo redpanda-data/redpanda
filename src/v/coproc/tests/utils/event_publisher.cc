@@ -43,35 +43,14 @@ namespace coproc::wasm {
 class batch_verifier {
 public:
     ss::future<ss::stop_iteration> operator()(const model::record_batch& rb) {
-        auto f = verify_records(rb);
-        if (rb.compressed()) {
-            f = storage::internal::decompress_batch(rb).then(
-              [this](model::record_batch rb) { return verify_records(rb); });
-        }
-        return f.then([this](bool valid) {
-            _all_valid &= valid;
-            return _all_valid ? ss::stop_iteration::no
-                              : ss::stop_iteration::yes;
+        vassert(!rb.compressed(), "Records should have been compressed");
+        co_await model::for_each_record(rb, [this](const model::record& r) {
+            _all_valid &= (validate_event(r) == errc::none);
         });
+        co_return _all_valid ? ss::stop_iteration::no : ss::stop_iteration::yes;
     }
 
-    bool end_of_stream() const {
-        if (!_all_valid) {
-            vlog(
-              coproc::coproclog.error,
-              "batch_verifier enountered an invalid batch...");
-        }
-        return _all_valid;
-    }
-
-private:
-    ss::future<bool> verify_records(const model::record_batch& rb) const {
-        bool result = true;
-        co_await model::for_each_record(rb, [&result](const model::record& r) {
-            result &= (validate_event(r) == errc::none);
-        });
-        co_return result;
-    }
+    bool end_of_stream() const { return _all_valid; }
 
 private:
     /// If at least one event isn't valid the validator will stop early and the
@@ -140,13 +119,19 @@ ss::future<std::vector<kafka::produce_response::partition>>
 event_publisher::publish_events(model::record_batch_reader reader) {
     return std::move(reader)
       .for_each_ref(
-        coproc::reference_window_consumer(
-          coproc::wasm::batch_verifier(),
-          coproc::wasm::publisher(_client, model::coprocessor_internal_tp)),
-        model::no_timeout)
-      .then([](auto tuple) {
-          vassert(std::get<0>(tuple), "crc checks failed");
-          return std::move(std::get<1>(tuple));
+        storage::internal::decompress_batch_consumer(), model::no_timeout)
+      .then([this](model::record_batch_reader rbr) {
+          return std::move(rbr)
+            .for_each_ref(
+              coproc::reference_window_consumer(
+                coproc::wasm::batch_verifier(),
+                coproc::wasm::publisher(
+                  _client, model::coprocessor_internal_tp)),
+              model::no_timeout)
+            .then([](auto tuple) {
+                vassert(std::get<0>(tuple), "crc checks failed");
+                return std::move(std::get<1>(tuple));
+            });
       });
 }
 
