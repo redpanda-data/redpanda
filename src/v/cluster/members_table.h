@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/commands.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
 
@@ -33,6 +34,9 @@ public:
     std::optional<broker_ptr> get_broker(model::node_id) const;
 
     void update_brokers(patch<broker_ptr>);
+
+    std::error_code apply(decommission_node_cmd);
+    std::error_code apply(recommission_node_cmd);
 
 private:
     using broker_cache_t = absl::flat_hash_map<model::node_id, broker_ptr>;
