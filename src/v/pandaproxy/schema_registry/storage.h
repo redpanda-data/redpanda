@@ -23,6 +23,7 @@
 #include "raft/types.h"
 #include "storage/record_batch_builder.h"
 #include "utils/string_switch.h"
+#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/std-coroutine.hh>
