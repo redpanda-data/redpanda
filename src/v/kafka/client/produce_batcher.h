@@ -72,18 +72,13 @@ public:
     };
 
     ss::future<partition_response> produce(model::record_batch&& batch) {
-        return storage::internal::decompress_batch(std::move(batch))
-          .then([this](model::record_batch decompressed_batch) {
-              decompressed_batch.for_each_record([this](model::record rec) {
-                  _builder.add_raw_kw(
-                    rec.release_key(),
-                    rec.release_value(),
-                    std::move(rec.headers()));
-              });
+        batch.for_each_record([this](model::record rec) {
+            _builder.add_raw_kw(
+              rec.release_key(), rec.release_value(), std::move(rec.headers()));
+        });
 
-              _client_reqs.emplace_back(decompressed_batch.record_count());
-              return _client_reqs.back().promise.get_future();
-          });
+        _client_reqs.emplace_back(batch.record_count());
+        return _client_reqs.back().promise.get_future();
     }
 
     model::record_batch consume() {
