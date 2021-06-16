@@ -19,6 +19,7 @@
 
 #include <fmt/core.h>
 #include <fmt/format.h>
+#include <fmt/ostream.h>
 
 #include <type_traits>
 
@@ -49,6 +50,10 @@ from_string_view<schema_type>(std::string_view sv) {
       .match(to_string_view(schema_type::json), schema_type::json)
       .match(to_string_view(schema_type::protobuf), schema_type::protobuf)
       .default_match(std::nullopt);
+}
+
+inline std::ostream& operator<<(std::ostream& os, const schema_type& v) {
+    return os << to_string_view(v);
 }
 
 ///\brief A subject is the name under which a schema is registered.
