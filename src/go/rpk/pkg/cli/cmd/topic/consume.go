@@ -145,7 +145,10 @@ func NewConsumeCommand(client func() (sarama.Client, error)) *cobra.Command {
 }
 
 func withConsumerGroup(
-	client sarama.Client, topic, group string, offset int64, commit, prettyPrint bool,
+	client sarama.Client,
+	topic, group string,
+	offset int64,
+	commit, prettyPrint bool,
 ) error {
 	cg, err := sarama.NewConsumerGroupFromClient(group, client)
 	if err != nil {
