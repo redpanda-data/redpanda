@@ -15,7 +15,7 @@ import {
   EnableCoprocessorRequestData,
 } from "../domain/generatedRpc/generatedClasses";
 import { Handle } from "../domain/Handle";
-import { PolicyInjection } from "../public/Coprocessor";
+import { Coprocessor } from "../public/Coprocessor";
 import { Logger } from "winston";
 
 export enum EnableResponseCodes {
@@ -115,7 +115,10 @@ const createResponseScriptWithoutTopics: HandleEnableResponse = (handle) => ({
 });
 
 const createResponseScriptSyntaxError: SimpleEnableResponse = (handleDef) => ({
-  enableResponseCode: EnableResponseCodes.scriptContainsSyntaxError,
+  // the enableResponseCode should be:
+  // enableResponseCode: EnableResponseCodes.EnableResponseCodes.internalError,
+  // but redpanda doesn't support that error yet
+  enableResponseCode: EnableResponseCodes.internalError,
   scriptMetadata: { id: handleDef.id, inputTopic: [] },
 });
 
@@ -134,6 +137,30 @@ const createDisableDoesNotExist: DisableCoprocResponse = (id) => ({
   disableResponseCode: DisableResponseCode.scriptDoesNotExist,
 });
 
+const validateWasmAttributes = (
+  handle: Coprocessor,
+  id: bigint,
+  logger: Logger
+): boolean => {
+  if (handle === undefined) {
+    logger.error(`Wasm script doesn't export anything, script id ${id}`);
+    return false;
+  }
+  if (handle.inputTopics === undefined || handle.inputTopics.length === 0) {
+    logger.error(`Wasm script doesn't have topics, script id ${id}`);
+    return false;
+  }
+  if (handle.apply === undefined) {
+    logger.error(`Wasm script doesn't have apply function, script id ${id}`);
+    return false;
+  }
+  if (handle.policyError === undefined) {
+    logger.error(`Wasm script doesn't have policy error, script id ${id}`);
+    return false;
+  }
+  return true;
+};
+
 export default {
   validateLoadScriptError,
   validateKafkaTopicName,
@@ -146,4 +173,5 @@ export default {
   createDisableInternalError,
   createDisableSuccess,
   createDisableDoesNotExist,
+  validateWasmAttributes,
 };
