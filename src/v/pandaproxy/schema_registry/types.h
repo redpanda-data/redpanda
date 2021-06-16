@@ -115,4 +115,59 @@ struct subject_schema {
     bool deleted{false};
 };
 
+enum class compatibility_level {
+    none = 0,
+    backward,
+    backward_transitive,
+    forward,
+    forward_transitive,
+    full,
+    full_transitive,
+};
+
+constexpr std::string_view to_string_view(compatibility_level v) {
+    switch (v) {
+    case compatibility_level::none:
+        return "NONE";
+    case compatibility_level::backward:
+        return "BACKWARD";
+    case compatibility_level::backward_transitive:
+        return "BACKWARD_TRANSITIVE";
+    case compatibility_level::forward:
+        return "FORWARD";
+    case compatibility_level::forward_transitive:
+        return "FORWARD_TRANSITIVE";
+    case compatibility_level::full:
+        return "FULL";
+    case compatibility_level::full_transitive:
+        return "FULL_TRANSITIVE";
+    }
+    return "{invalid}";
+}
+template<>
+constexpr std::optional<compatibility_level>
+from_string_view<compatibility_level>(std::string_view sv) {
+    return string_switch<std::optional<compatibility_level>>(sv)
+      .match(
+        to_string_view(compatibility_level::none), compatibility_level::none)
+      .match(
+        to_string_view(compatibility_level::backward),
+        compatibility_level::backward)
+      .match(
+        to_string_view(compatibility_level::backward_transitive),
+        compatibility_level::backward_transitive)
+      .match(
+        to_string_view(compatibility_level::forward),
+        compatibility_level::forward)
+      .match(
+        to_string_view(compatibility_level::forward_transitive),
+        compatibility_level::forward_transitive)
+      .match(
+        to_string_view(compatibility_level::full), compatibility_level::full)
+      .match(
+        to_string_view(compatibility_level::full_transitive),
+        compatibility_level::full_transitive)
+      .default_match(std::nullopt);
+}
+
 } // namespace pandaproxy::schema_registry
