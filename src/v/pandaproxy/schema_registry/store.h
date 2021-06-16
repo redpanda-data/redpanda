@@ -112,6 +112,37 @@ public:
         return res;
     }
 
+    ///\brief Get the global compatibility level.
+    result<compatibility_level> get_compatibility() const {
+        return _compatibility;
+    }
+
+    ///\brief Get the compatibility level for a subject, or fallback to global.
+    result<compatibility_level> get_compatibility(const subject& sub) const {
+        auto sub_it = _subjects.find(sub);
+        if (sub_it == _subjects.end()) {
+            return error_code::subject_not_found;
+        }
+        return sub_it->second.compatibility.value_or(_compatibility);
+    }
+
+    ///\brief Set the global compatibility level.
+    result<bool> set_compatibility(compatibility_level compatibility) {
+        return std::exchange(_compatibility, compatibility) != compatibility;
+    }
+
+    ///\brief Set the compatibility level for a subject.
+    result<bool>
+    set_compatibility(const subject& sub, compatibility_level compatibility) {
+        auto sub_it = _subjects.find(sub);
+        if (sub_it == _subjects.end()) {
+            return error_code::subject_not_found;
+        }
+        // TODO(Ben): Check needs to be made here?
+        return std::exchange(sub_it->second.compatibility, compatibility)
+               != compatibility;
+    }
+
 private:
     struct insert_schema_result {
         schema_id id;
@@ -164,11 +195,13 @@ private:
     };
 
     struct subject_entry {
+        std::optional<compatibility_level> compatibility;
         std::vector<subject_version_id> versions;
     };
 
     absl::btree_map<schema_id, schema_entry> _schemas;
     absl::node_hash_map<subject, subject_entry> _subjects;
+    compatibility_level _compatibility{compatibility_level::none};
 };
 
 } // namespace pandaproxy::schema_registry
