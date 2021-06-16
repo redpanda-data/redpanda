@@ -152,6 +152,9 @@ public:
     const unresolved_address& rpc_address() const { return _rpc_address; }
     const std::optional<ss::sstring>& rack() const { return _rack; }
 
+    membership_state get_membership_state() const { return _membership_state; }
+    void set_membership_state(membership_state st) { _membership_state = st; }
+
     bool operator==(const model::broker& other) const = default;
     bool operator<(const model::broker& other) const { return _id < other._id; }
 
@@ -161,6 +164,8 @@ private:
     unresolved_address _rpc_address;
     std::optional<ss::sstring> _rack;
     broker_properties _properties;
+    // in memory state, not serialized
+    membership_state _membership_state = membership_state::active;
 
     friend std::ostream& operator<<(std::ostream&, const broker&);
 };

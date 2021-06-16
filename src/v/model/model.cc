@@ -254,12 +254,13 @@ std::ostream& operator<<(std::ostream& o, const model::broker& b) {
     return ss::fmt_print(
       o,
       "{{id: {}, kafka_advertised_listeners: {}, rpc_address: {}, rack: {}, "
-      "properties: {}}}",
+      "properties: {}, membership_state: {}}}",
       b.id(),
       b.kafka_advertised_listeners(),
       b.rpc_address(),
       b.rack(),
-      b.properties());
+      b.properties(),
+      b.get_membership_state());
 }
 
 std::ostream& operator<<(std::ostream& o, const topic_metadata& t_md) {
