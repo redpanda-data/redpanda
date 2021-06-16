@@ -13,6 +13,7 @@ v_cc_library(
     handlers.cc
     error.cc
     service.cc
+    avro.cc
   DEPS
     v::pandaproxy_common
     v::pandaproxy_parsing
@@ -21,6 +22,7 @@ v_cc_library(
     v::kafka
     v::ssx
     v::utils
+    avrocpp_s
   )
 
 add_dependencies(v_pandaproxy_schema_registry schema_registry_swagger)
