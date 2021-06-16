@@ -43,7 +43,7 @@ namespace coproc::wasm {
 class batch_verifier {
 public:
     ss::future<ss::stop_iteration> operator()(const model::record_batch& rb) {
-        vassert(!rb.compressed(), "Records should have been compressed");
+        vassert(!rb.compressed(), "Records should not have been compressed");
         co_await model::for_each_record(rb, [this](const model::record& r) {
             _all_valid &= (validate_event(r) == errc::none);
         });
@@ -117,6 +117,9 @@ ss::future<> event_publisher::create_coproc_internal_topic() {
 
 ss::future<std::vector<kafka::produce_response::partition>>
 event_publisher::publish_events(model::record_batch_reader reader) {
+    /// TODO: our kafka client doesn't support producing compressed batches,
+    /// however to emmulate the real situation best we should eventually
+    /// have our unit tests do this once support for this lands.
     return std::move(reader)
       .for_each_ref(
         storage::internal::decompress_batch_consumer(), model::no_timeout)
