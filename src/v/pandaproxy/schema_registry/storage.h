@@ -12,6 +12,7 @@
 #pragma once
 
 #include "bytes/iobuf_parser.h"
+#include "json/json.h"
 #include "model/record_utils.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/rjson_util.h"
@@ -39,6 +40,19 @@ struct schema_key {
     subject sub;
     schema_version version;
     topic_key_magic magic{1};
+
+    friend bool operator==(const schema_key&, const schema_key&) = default;
+
+    friend std::ostream& operator<<(std::ostream& os, const schema_key& v) {
+        fmt::print(
+          os,
+          "keytype: {}, subject: {}, version: {}, magic: {}",
+          v.keytype,
+          v.sub,
+          v.version,
+          v.magic);
+        return os;
+    }
 };
 
 inline void rjson_serialize(
