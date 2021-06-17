@@ -16,6 +16,7 @@ func NewDeployCommand(
 	adminCreate func() (sarama.ClusterAdmin, error),
 ) *cobra.Command {
 	var description string
+	var name string
 
 	command := &cobra.Command{
 		Use:   "deploy <path>",
@@ -44,7 +45,7 @@ func NewDeployCommand(
 				return err
 			}
 			return deploy(
-				fullFileName,
+				name,
 				fileContent,
 				description,
 				producer,
@@ -60,6 +61,14 @@ func NewDeployCommand(
 		"Optional description about what the wasm function does, for reference.",
 	)
 
+	command.Flags().StringVar(
+		&name,
+		"name",
+		"",
+		"Unique deploy identifier attached to the instance of this script",
+	)
+	command.MarkFlagRequired("name")
+
 	return command
 }
 
@@ -67,17 +76,17 @@ func NewDeployCommand(
 this function create and publish message for deploying coprocessor
 message format:
 {
-	key: <file name>,
+	key: <name>,
 	header: {
 		action: "deploy",
 		sha256: <file content sha256>,
-		description: <file description>
+		description: <file description>,
 	}
 	message: <binary file content>
 }
 */
 func deploy(
-	fileName string,
+	name string,
 	fileContent []byte,
 	description string,
 	producer sarama.SyncProducer,
@@ -94,11 +103,11 @@ func deploy(
 		}
 	}
 	// create message
-	message := CreateDeployMsg(fileName, description, fileContent)
+	message := CreateDeployMsg(name, description, fileContent)
 	// publish message
 	err = kafka.PublishMessage(producer, &message)
 	if err != nil {
-		return fmt.Errorf("error deploying '%s.js: %v'", fileName, err)
+		return fmt.Errorf("error deploying '%s: %v'", name, err)
 	}
 	return nil
 }

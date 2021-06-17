@@ -9,6 +9,8 @@
 
 import os
 import uuid
+import random
+import string
 
 from kafka import TopicPartition
 
@@ -33,8 +35,15 @@ def flat_map(fn, ll):
     return reduce(lambda acc, x: acc + fn(x), ll, [])
 
 
+def random_string(N):
+    return ''.join(
+        random.choice(string.ascii_uppercase + string.digits)
+        for _ in range(N))
+
+
 class WasmScript:
     def __init__(self, inputs=[], outputs=[], script=None):
+        self.name = random_string(10)
         self.inputs = inputs
         self.outputs = outputs
         self.script = script
@@ -73,7 +82,8 @@ class WasmTest(RedpandaTest):
 
         # Deploy coprocessor
         self._rpk_tool.wasm_deploy(
-            script.get_artifact(self._build_tool.work_dir), "ducktape")
+            script.get_artifact(self._build_tool.work_dir), script.name,
+            "ducktape")
 
     def restart_wasm_engine(self, node):
         self.logger.info(

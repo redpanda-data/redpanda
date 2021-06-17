@@ -49,7 +49,7 @@ func NewRemoveCommand(
 this function create and publish message for removing coprocessor
 message format:
 {
-	key: <file name>,
+	key: <name>,
 	header: {
 		action: "remove"
 	}

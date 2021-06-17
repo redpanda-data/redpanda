@@ -35,7 +35,7 @@ struct cpp_enable_payload {
 /// skipped during serialization, useful for testing failure cases
 struct event {
     std::optional<uint64_t> id;
-    std::optional<ss::sstring> desc;
+    std::optional<bytes> desc;
     std::optional<bytes> script;
     std::optional<bytes> checksum;
     std::optional<event_action> action;

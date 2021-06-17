@@ -73,7 +73,7 @@ BOOST_AUTO_TEST_CASE(verify_make_event_failures) {
         /// Erroneous checksum
         coproc::wasm::event e;
         e.id = random_generators::get_int<uint64_t>(55555);
-        e.desc = random_generators::gen_alphanum_string(15);
+        e.desc = random_generators::get_bytes(64);
         e.script = random_generators::get_bytes(15);
         e.checksum = random_generators::get_bytes(32);
         e.action = coproc::wasm::event_action::deploy;

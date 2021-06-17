@@ -335,7 +335,9 @@ script_dispatcher::heartbeat(int8_t connect_attempts) {
           coproclog.error,
           "Failed to connect wasm engine, reason {}",
           transport.error());
-        if (transport.error() == rpc::errc::disconnected_endpoint) {
+        if (
+          transport.error() == rpc::errc::disconnected_endpoint
+          || transport.error() == rpc::errc::exponential_backoff) {
             /// The expected 1s timeout didn't occur
             co_await ss::sleep(1s);
         }

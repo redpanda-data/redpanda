@@ -32,7 +32,7 @@ func TestNewDeployCommand(t *testing.T) {
 	}{
 		{
 			name: "it should publish a message with correct format",
-			args: []string{"--description", "coprocessor description"},
+			args: []string{"--description", "coprocessor description", "--name", "foo"},
 			fileInformation: fileInfo{
 				name:    "fileName.js",
 				content: "let s = 'text'",
@@ -42,18 +42,21 @@ func TestNewDeployCommand(t *testing.T) {
 			},
 		}, {
 			name: "it should fail if the file extension isn't js",
+			args: []string{"--name", "foo"},
 			fileInformation: fileInfo{
 				name: "fileName.html",
 			},
 			expectedErr: "can't deploy 'fileName.html': only .js files are supported.",
 		}, {
 			name: "it should fail if the file doesn't exist",
+			args: []string{"--name", "foo"},
 			fileInformation: fileInfo{
 				name: "fileName.js",
 			},
 			expectedErr: "open fileName.js: file does not exist",
 		}, {
 			name: "it should show an error if there is a error on send message",
+			args: []string{"--name", "foo"},
 			fileInformation: fileInfo{
 				name: "fileName.js",
 			},
@@ -76,6 +79,7 @@ func TestNewDeployCommand(t *testing.T) {
 			},
 		}, {
 			name: "it should create a coprocessor_internal_topic if it doesn't exist",
+			args: []string{"--name", "foo"},
 			fileInformation: fileInfo{
 				name: "fileName.js",
 			},
@@ -95,6 +99,7 @@ func TestNewDeployCommand(t *testing.T) {
 			},
 		}, {
 			name: "it shouldn't create a coprocessor_internal_topic if it exist",
+			args: []string{"--name", "foo"},
 			fileInformation: fileInfo{
 				name: "fileName.js",
 			},
@@ -114,7 +119,7 @@ func TestNewDeployCommand(t *testing.T) {
 			},
 		}, {
 			name: "it should publish a message with correct format with correct header",
-			args: []string{"--description", "coprocessor description"},
+			args: []string{"--description", "coprocessor description", "--name", "bar"},
 			fileInformation: fileInfo{
 				name:    "fileName.js",
 				content: "let s = 'text'",
@@ -133,9 +138,6 @@ func TestNewDeployCommand(t *testing.T) {
 						}, {
 							Key:   []byte("description"),
 							Value: []byte("coprocessor description"),
-						}, {
-							Key:   []byte("file_name"),
-							Value: []byte("fileName.js"),
 						}, {
 							Key:   []byte("sha256"),
 							Value: hashContent[:],

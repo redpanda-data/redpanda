@@ -88,18 +88,16 @@ class RpkTool:
 
         return filter(lambda p: p != None, map(partition_line, lines))
 
-    def wasm_deploy(self, script, description):
+    def wasm_deploy(self, script, name, description):
         cmd = [
             self._rpk_binary(), 'wasm', 'deploy', script, '--brokers',
-            self._redpanda.brokers(), '--description', description
+            self._redpanda.brokers(), '--name', name, '--description',
+            description
         ]
         return self._execute(cmd)
 
-    def wasm_remove(self, unique_id):
-        cmd = [
-            'wasm', 'remove', unique_id, '--brokers',
-            self._redpanda.brokers()
-        ]
+    def wasm_remove(self, name):
+        cmd = ['wasm', 'remove', name, '--brokers', self._redpanda.brokers()]
         return self._execute(cmd)
 
     def wasm_gen(self, directory):
