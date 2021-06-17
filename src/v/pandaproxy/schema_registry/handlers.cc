@@ -17,6 +17,7 @@
 #include "pandaproxy/parsing/httpd.h"
 #include "pandaproxy/reply.h"
 #include "pandaproxy/schema_registry/error.h"
+#include "pandaproxy/schema_registry/requests/config.h"
 #include "pandaproxy/schema_registry/requests/get_schemas_ids_id.h"
 #include "pandaproxy/schema_registry/requests/get_subject_versions_version.h"
 #include "pandaproxy/schema_registry/requests/post_subject_versions.h"
@@ -53,6 +54,35 @@ void parse_content_type_header(const server::request_t& rq) {
 
 auto make_errored_body(std::error_code ec) {
     return pandaproxy::errored_body(ec, ec.message());
+}
+
+ss::future<server::reply_t>
+put_config(server::request_t rq, server::reply_t rp) {
+    parse_accept_header(rq, rp);
+    auto config = ppj::rjson_parse(
+      rq.req->content.data(), put_config_handler<>{});
+    rq.req.reset();
+
+    auto res = rq.service().schema_store().set_compatibility(config.compat);
+    if (res.has_error()) {
+        rp.rep = make_errored_body(res.error());
+        co_return rp;
+    }
+
+    if (res.value()) {
+        auto res = co_await rq.service().client().local().produce_record_batch(
+          model::schema_registry_internal_tp,
+          make_config_batch(std::nullopt, config.compat));
+
+        // TODO(Ben): Check the error reporting here
+        if (res.error_code != kafka::error_code::none) {
+            throw kafka::exception(res.error_code, *res.error_message);
+        }
+    }
+
+    auto json_rslt = ppj::rjson_serialize(config);
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
 }
 
 ss::future<server::reply_t>
