@@ -56,6 +56,58 @@ from_string_view<topic_key_type>(std::string_view sv) {
       .default_match(std::nullopt);
 }
 
+// Just peek at the keytype. Allow other fields through.
+template<typename Encoding = rapidjson::UTF8<>>
+class topic_key_type_handler
+  : public rapidjson::
+      BaseReaderHandler<Encoding, topic_key_type_handler<Encoding>> {
+    enum class state {
+        empty = 0,
+        object,
+        keytype,
+    };
+    state _state = state::empty;
+
+public:
+    using Ch = typename rapidjson::BaseReaderHandler<Encoding>::Ch;
+    using rjson_parse_result = ss::sstring;
+    rjson_parse_result result;
+
+    topic_key_type_handler()
+      : rapidjson::
+        BaseReaderHandler<Encoding, topic_key_type_handler<Encoding>>{} {}
+
+    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        if (_state == state::object && sv == "keytype") {
+            _state = state::keytype;
+        }
+        return true;
+    }
+
+    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+        if (_state == state::keytype) {
+            result = ss::sstring{str, len};
+            _state = state::object;
+        }
+        return true;
+    }
+
+    bool StartObject() {
+        if (_state == state::empty) {
+            _state = state::object;
+        }
+        return true;
+    }
+
+    bool EndObject(rapidjson::SizeType) {
+        if (_state == state::object) {
+            _state = state::empty;
+        }
+        return true;
+    }
+};
+
 struct schema_key {
     static constexpr topic_key_type keytype{topic_key_type::schema};
     subject sub;
