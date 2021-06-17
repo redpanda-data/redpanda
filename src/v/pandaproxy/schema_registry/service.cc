@@ -55,6 +55,10 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
       ss::httpd::schema_registry_json::put_config, wrap(gate, es, put_config)});
 
     routes.routes.emplace_back(server::route_t{
+      ss::httpd::schema_registry_json::put_config_subject,
+      wrap(gate, es, put_config_subject)});
+
+    routes.routes.emplace_back(server::route_t{
       ss::httpd::schema_registry_json::get_schemas_types,
       wrap(gate, es, get_schemas_types)});
 
