@@ -29,6 +29,8 @@ func TestDeduceBrokers(t *testing.T) {
 		client   func() (ccommon.Client, error)
 		config   func() (*config.Config, error)
 		brokers  []string
+		before   func()
+		cleanup  func()
 		expected []string
 	}{{
 		name: "it should prioritize the flag over the config & containers",
@@ -50,6 +52,31 @@ func TestDeduceBrokers(t *testing.T) {
 		},
 		brokers:  []string{"192.168.34.12:9093"},
 		expected: []string{"192.168.34.12:9093"},
+	}, {
+		name: "it should take the value from the env vars if the flag wasn't passed",
+		client: func() (ccommon.Client, error) {
+			return &ccommon.MockClient{
+				MockContainerInspect: ccommon.MockContainerInspect,
+				MockContainerList: func(
+					_ context.Context,
+					_ types.ContainerListOptions,
+				) ([]types.Container, error) {
+					return []types.Container{{
+						ID: "a",
+						Labels: map[string]string{
+							"node-id": "0",
+						},
+					}}, nil
+				},
+			}, nil
+		},
+		before: func() {
+			os.Setenv("REDPANDA_BROKERS", "192.168.34.12:9093,123.4.5.78:9092")
+		},
+		cleanup: func() {
+			os.Unsetenv("REDPANDA_BROKERS")
+		},
+		expected: []string{"192.168.34.12:9093", "123.4.5.78:9092"},
 	}, {
 		name: "it should prioritize the local containers over the config",
 		client: func() (ccommon.Client, error) {
@@ -110,6 +137,12 @@ func TestDeduceBrokers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(st *testing.T) {
+			if tt.before != nil {
+				tt.before()
+			}
+			if tt.cleanup != nil {
+				defer tt.cleanup()
+			}
 			client := func() (ccommon.Client, error) {
 				return &ccommon.MockClient{}, nil
 			}
