@@ -632,6 +632,12 @@ inline model::record_batch make_schema_batch(
         .deleted = deleted});
 }
 
+inline model::record_batch
+make_config_batch(std::optional<subject> sub, compatibility_level compat) {
+    return as_record_batch(
+      config_key{.sub{std::move(sub)}}, config_value{.compat = compat});
+}
+
 struct consume_to_store {
     explicit consume_to_store(store& s)
       : _store{s} {}
