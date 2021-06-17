@@ -193,6 +193,10 @@ class RedpandaService(Service):
                 f"Wasm engine didn't finish startup in {RedpandaService.READY_TIMEOUT_SEC} seconds",
             )
 
+    def monitor_log(self, node):
+        assert node in self.nodes
+        return node.account.monitor_log(RedpandaService.STDOUT_STDERR_CAPTURE)
+
     def find_wasm_root(self):
         rp_install_path_root = self._context.globals.get(
             "rp_install_path_root", None)

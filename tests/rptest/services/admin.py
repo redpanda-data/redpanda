@@ -24,6 +24,18 @@ class Admin:
     def _url(node, path):
         return f"http://{node.account.hostname}:9644/v1/{path}"
 
+    def set_log_level(self, name, level, expires=None):
+        """
+        Set broker log level
+        """
+        for node in self.redpanda.nodes:
+            path = f"config/log_level/{name}?level={level}"
+            if expires:
+                path = f"{path}&expires={expires}"
+            url = self._url(node, path)
+            ret = requests.put(url)
+            self.redpanda.logger.debug(ret)
+
     def get_brokers(self, node=None):
         """
         Return metadata about brokers.

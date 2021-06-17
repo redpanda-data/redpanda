@@ -80,21 +80,24 @@ func NewConsumeCommand(client func() (sarama.Client, error)) *cobra.Command {
 			}
 			defer cl.Close()
 
+			off, err := parseOffset(offset)
+			if err != nil {
+				log.Errorf("Couldn't parse offset: '%s'", offset)
+				return err
+			}
+
 			topic := args[0]
 			if group != "" {
 				return withConsumerGroup(
 					cl,
 					topic,
 					group,
+					off,
 					groupCommit,
 					prettyPrint,
 				)
 			}
-			off, err := parseOffset(offset)
-			if err != nil {
-				log.Errorf("Couldn't parse offset: '%s'", offset)
-				return err
-			}
+
 			return withoutConsumerGroup(
 				cl,
 				topic,
@@ -142,13 +145,18 @@ func NewConsumeCommand(client func() (sarama.Client, error)) *cobra.Command {
 }
 
 func withConsumerGroup(
-	client sarama.Client, topic, group string, commit, prettyPrint bool,
+	client sarama.Client,
+	topic, group string,
+	offset int64,
+	commit, prettyPrint bool,
 ) error {
 	cg, err := sarama.NewConsumerGroupFromClient(group, client)
 	if err != nil {
 		log.Error("Failed to create consumer group")
 		return err
 	}
+
+	client.Config().Consumer.Offsets.Initial = int64(offset)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	err = cg.Consume(
