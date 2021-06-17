@@ -57,7 +57,7 @@ public:
             return error_code::subject_not_found;
         }
 
-        const auto& versions = sub_it->second;
+        const auto& versions = sub_it->second.versions;
         auto v_it = std::lower_bound(
           versions.begin(),
           versions.end(),
@@ -101,7 +101,7 @@ public:
         if (sub_it == _subjects.end()) {
             return error_code::subject_not_found;
         }
-        const auto& versions = sub_it->second;
+        const auto& versions = sub_it->second.versions;
         std::vector<schema_version> res;
         res.reserve(versions.size());
         std::transform(
@@ -139,7 +139,7 @@ private:
         bool inserted;
     };
     insert_subject_result insert_subject(subject sub, schema_id id) {
-        auto& versions = _subjects[std::move(sub)];
+        auto& versions = _subjects[std::move(sub)].versions;
         const auto v_it = std::find_if(
           versions.cbegin(), versions.cend(), [id](auto v) {
               return v.id == id;
@@ -164,16 +164,11 @@ private:
     };
 
     struct subject_entry {
-        explicit subject_entry(subject sub)
-          : sub{std::move(sub)}
-          , versions{} {}
-
-        subject sub;
         std::vector<subject_version_id> versions;
     };
 
     absl::btree_map<schema_id, schema_entry> _schemas;
-    absl::node_hash_map<subject, subject_versions> _subjects;
+    absl::node_hash_map<subject, subject_entry> _subjects;
 };
 
 } // namespace pandaproxy::schema_registry
