@@ -366,6 +366,110 @@ public:
     }
 };
 
+struct config_key {
+    static constexpr topic_key_type keytype{topic_key_type::config};
+    std::optional<subject> sub;
+    topic_key_magic magic{0};
+
+    friend bool operator==(const config_key&, const config_key&) = default;
+
+    friend std::ostream& operator<<(std::ostream& os, const config_key& v) {
+        fmt::print(
+          os,
+          "keytype: {}, subject: {}, magic: {}",
+          to_string_view(v.keytype),
+          v.sub.value_or(invalid_subject),
+          v.magic);
+        return os;
+    }
+};
+
+inline void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const schema_registry::config_key& key) {
+    w.StartObject();
+    w.Key("keytype");
+    ::json::rjson_serialize(w, to_string_view(key.keytype));
+    w.Key("subject");
+    if (key.sub) {
+        ::json::rjson_serialize(w, key.sub.value());
+    } else {
+        w.Null();
+    }
+    w.Key("magic");
+    ::json::rjson_serialize(w, key.magic);
+    w.EndObject();
+}
+
+template<typename Encoding = rapidjson::UTF8<>>
+class config_key_handler : public json::base_handler<Encoding> {
+    enum class state {
+        empty = 0,
+        object,
+        keytype,
+        subject,
+        magic,
+    };
+    state _state = state::empty;
+
+public:
+    using Ch = typename json::base_handler<Encoding>::Ch;
+    using rjson_parse_result = config_key;
+    rjson_parse_result result;
+
+    config_key_handler()
+      : json::base_handler<Encoding>{json::serialization_format::none} {}
+
+    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        std::optional<state> s{string_switch<std::optional<state>>(sv)
+                                 .match("keytype", state::keytype)
+                                 .match("subject", state::subject)
+                                 .match("magic", state::magic)
+                                 .default_match(std::nullopt)};
+        return s.has_value() && std::exchange(_state, *s) == state::object;
+    }
+
+    bool Uint(int i) {
+        result.magic = topic_key_magic{i};
+        return std::exchange(_state, state::object) == state::magic;
+    }
+
+    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        switch (_state) {
+        case state::keytype: {
+            auto kt = from_string_view<topic_key_type>(sv);
+            _state = state::object;
+            return kt == result.keytype;
+        }
+        case state::subject: {
+            result.sub = subject{ss::sstring{sv}};
+            _state = state::object;
+            return true;
+        }
+        case state::empty:
+        case state::object:
+        case state::magic:
+            return false;
+        }
+        return false;
+    }
+
+    bool Null() {
+        // The subject, and only the subject, is nullable.
+        return std::exchange(_state, state::object) == state::subject;
+    }
+
+    bool StartObject() {
+        return std::exchange(_state, state::object) == state::empty;
+    }
+
+    bool EndObject(rapidjson::SizeType) {
+        return std::exchange(_state, state::empty) == state::object;
+    }
+};
+
 template<typename Handler>
 auto from_json_iobuf(iobuf&& iobuf) {
     auto p = iobuf_parser(std::move(iobuf));

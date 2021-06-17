@@ -49,6 +49,23 @@ const pps::schema_value avro_schema_value{
   .schema{pps::schema_definition{R"({"type":"string"})"}},
   .deleted = true};
 
+constexpr std::string_view config_key_sv{
+  R"({
+  "keytype": "CONFIG",
+  "subject": null,
+  "magic": 0
+})"};
+const pps::config_key config_key{.sub{}, .magic{pps::topic_key_magic{0}}};
+
+constexpr std::string_view config_key_sub_sv{
+  R"({
+  "keytype": "CONFIG",
+  "subject": "my-kafka-value",
+  "magic": 0
+})"};
+const pps::config_key config_key_sub{
+  .sub{pps::subject{"my-kafka-value"}}, .magic{pps::topic_key_magic{0}}};
+
 BOOST_AUTO_TEST_CASE(test_storage_serde) {
     {
         auto key = ppj::rjson_parse(
@@ -66,5 +83,23 @@ BOOST_AUTO_TEST_CASE(test_storage_serde) {
 
         auto str = ppj::rjson_serialize(avro_schema_value);
         BOOST_CHECK_EQUAL(str, ppj::minify(avro_schema_value_sv));
+    }
+
+    {
+        auto val = ppj::rjson_parse(
+          config_key_sv.data(), pps::config_key_handler<>{});
+        BOOST_CHECK_EQUAL(config_key, val);
+
+        auto str = ppj::rjson_serialize(config_key);
+        BOOST_CHECK_EQUAL(str, ppj::minify(config_key_sv));
+    }
+
+    {
+        auto val = ppj::rjson_parse(
+          config_key_sub_sv.data(), pps::config_key_handler<>{});
+        BOOST_CHECK_EQUAL(config_key_sub, val);
+
+        auto str = ppj::rjson_serialize(config_key_sub);
+        BOOST_CHECK_EQUAL(str, ppj::minify(config_key_sub_sv));
     }
 }
