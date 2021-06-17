@@ -147,7 +147,7 @@ group_state group::set_state(group_state s) {
     return std::exchange(_state, s);
 }
 
-bool group::supports_protocols(const join_group_request& r) {
+bool group::supports_protocols(const join_group_request& r) const {
     // first member decides so make sure its defined
     if (in_state(group_state::empty)) {
         return !r.data.protocol_type().empty() && !r.data.protocols.empty();

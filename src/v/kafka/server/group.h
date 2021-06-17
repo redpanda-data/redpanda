@@ -252,7 +252,7 @@ public:
      * specifies at least one protocol that is supported by all members of
      * the group.
      */
-    bool supports_protocols(const join_group_request& r);
+    bool supports_protocols(const join_group_request& r) const;
 
     /**
      * \brief Add a member to the group.
