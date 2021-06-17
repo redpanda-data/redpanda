@@ -57,6 +57,23 @@ auto make_errored_body(std::error_code ec) {
 }
 
 ss::future<server::reply_t>
+get_config(server::request_t rq, server::reply_t rp) {
+    parse_accept_header(rq, rp);
+    rq.req.reset();
+
+    auto res = rq.service().schema_store().get_compatibility();
+    if (res.has_error()) {
+        rp.rep = make_errored_body(res.error());
+        co_return rp;
+    }
+
+    auto json_rslt = ppj::rjson_serialize(
+      get_config_req_rep{.compat = res.value()});
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
+ss::future<server::reply_t>
 put_config(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto config = ppj::rjson_parse(
