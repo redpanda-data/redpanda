@@ -10,6 +10,7 @@
 package cmd
 
 import (
+	"github.com/Shopify/sarama"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
@@ -56,10 +57,12 @@ func NewWasmCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	tlsClosure := common.BuildTLSConfig(&certFile, &keyFile, &truststoreFile)
 	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism)
 	producerClosure := common.CreateProducer(brokersClosure, configClosure, tlsClosure, kAuthClosure)
+	clientClosure := common.CreateClient(brokersClosure, configClosure, tlsClosure, kAuthClosure)
 	adminClosure := common.CreateAdmin(brokersClosure, configClosure, tlsClosure, kAuthClosure)
+	consumerClosure := sarama.NewConsumerFromClient
 
 	command.AddCommand(wasm.NewDeployCommand(fs, producerClosure, adminClosure))
-
+	command.AddCommand(wasm.NewListCommand(clientClosure, consumerClosure))
 	command.AddCommand(wasm.NewRemoveCommand(producerClosure, adminClosure))
 
 	return command

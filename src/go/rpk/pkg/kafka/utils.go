@@ -9,6 +9,7 @@ import (
 
 // internal topics
 const CoprocessorTopic = "coprocessor_internal_topic"
+const CoprocessorStatusTopic = "coprocessor_status_topic"
 
 func PublishMessage(
 	producer sarama.SyncProducer, produceMessage *sarama.ProducerMessage,
