@@ -579,6 +579,12 @@ configuration::configuration()
       "Interval between iterations of controller backend housekeeping loop",
       required::no,
       1s)
+  , node_management_operation_timeout_ms(
+      *this,
+      "node_management_operation_timeout_ms",
+      "Timeout for executing node management operations",
+      required::no,
+      5s)
   , compaction_ctrl_update_interval_ms(
       *this, "compaction_ctrl_update_interval_ms", "", required::no, 30s)
   , compaction_ctrl_p_coeff(

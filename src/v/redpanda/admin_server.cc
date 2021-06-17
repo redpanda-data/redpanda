@@ -14,7 +14,9 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/controller.h"
 #include "cluster/controller_api.h"
+#include "cluster/errc.h"
 #include "cluster/fwd.h"
+#include "cluster/members_frontend.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/security_frontend.h"
@@ -24,6 +26,7 @@
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "finjector/hbadger.h"
+#include "model/metadata.h"
 #include "model/namespace.h"
 #include "raft/types.h"
 #include "redpanda/admin/api-doc/broker.json.h"
@@ -51,13 +54,16 @@
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
+#include <boost/lexical_cast.hpp>
 #include <boost/lexical_cast/bad_lexical_cast.hpp>
+#include <fmt/core.h>
 #include <rapidjson/document.h>
 #include <rapidjson/schema.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
 #include <stdexcept>
+#include <system_error>
 #include <unordered_map>
 
 using namespace std::chrono_literals;
@@ -115,6 +121,8 @@ void admin_server::configure_admin_routes() {
     rb->register_api_file(_server._routes, "status");
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "hbadger");
+    rb->register_function(_server._routes, insert_comma);
+    rb->register_api_file(_server._routes, "broker");
 
     register_config_routes();
     register_raft_routes();
@@ -554,6 +562,37 @@ void admin_server::register_status_routes() {
       });
 }
 
+void map_broker_state_update_error(model::node_id id, std::error_code ec) {
+    if (ec.category() == cluster::error_category()) {
+        switch (cluster::errc(ec.value())) {
+        case cluster::errc::node_does_not_exists:
+            throw ss::httpd::not_found_exception(
+              fmt::format("broker with id {} not found", id));
+        case cluster::errc::invalid_node_opeartion:
+            throw ss::httpd::bad_request_exception(fmt::format(
+              "can not update broker {} state, ivalid state transition "
+              "requested",
+              id));
+        default:
+            throw ss::httpd::server_error_exception(
+              fmt::format("error updating broker state: {}", ec.message()));
+        }
+    }
+
+    throw ss::httpd::server_error_exception(
+      fmt::format("error updating broker state: {}", ec.message()));
+}
+
+model::node_id parse_broker_id(const ss::httpd::request& req) {
+    try {
+        return model::node_id(
+          boost::lexical_cast<model::node_id::type>(req.param["id"]));
+    } catch (...) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("Broker id: {}, must be an integer", req.param["id"]));
+    }
+}
+
 void admin_server::register_broker_routes() {
     ss::httpd::broker_json::get_brokers.set(
       _server._routes, [this](std::unique_ptr<ss::httpd::request>) {
@@ -565,6 +604,53 @@ void admin_server::register_broker_routes() {
           }
           return ss::make_ready_future<ss::json::json_return_type>(
             std::move(res));
+      });
+
+    ss::httpd::broker_json::get_broker.set(
+      _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+          model::node_id id = parse_broker_id(*req);
+          auto broker = _metadata_cache.local().get_broker(id);
+          if (!broker) {
+              throw ss::httpd::not_found_exception(
+                fmt::format("broker with id: {} not found", id));
+          }
+          ss::httpd::broker_json::broker ret;
+          ret.node_id = (*broker)->id();
+          ret.num_cores = (*broker)->properties().cores;
+          ret.membership_status = fmt::format(
+            "{}", (*broker)->get_membership_state());
+          return ss::make_ready_future<ss::json::json_return_type>(ret);
+      });
+
+    ss::httpd::broker_json::decommission.set(
+      _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+          model::node_id id = parse_broker_id(*req);
+
+          return _controller->get_members_frontend()
+            .local()
+            .decommission_node(id)
+            .then([id](std::error_code ec) {
+                if (ec) {
+                    map_broker_state_update_error(id, ec);
+                }
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_void());
+            });
+      });
+    ss::httpd::broker_json::recommission.set(
+      _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+          model::node_id id = parse_broker_id(*req);
+
+          return _controller->get_members_frontend()
+            .local()
+            .recommission_node(id)
+            .then([id](std::error_code ec) {
+                if (ec) {
+                    map_broker_state_update_error(id, ec);
+                }
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_void());
+            });
       });
 }
 

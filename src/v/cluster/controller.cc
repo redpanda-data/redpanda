@@ -14,6 +14,7 @@
 #include "cluster/controller_backend.h"
 #include "cluster/controller_service.h"
 #include "cluster/logger.h"
+#include "cluster/members_frontend.h"
 #include "cluster/members_manager.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_dissemination_service.h"
@@ -90,7 +91,15 @@ ss::future<> controller::start() {
             _raft0.get(),
             raft::persistent_last_applied::yes,
             std::ref(_tp_updates_dispatcher),
-            std::ref(_security_manager));
+            std::ref(_security_manager),
+            std::ref(_members_manager));
+      })
+      .then([this] {
+          return _members_frontend.start(
+            std::ref(_stm),
+            std::ref(_connections),
+            std::ref(_partition_leaders),
+            std::ref(_as));
       })
       .then([this] {
           return _security_frontend.start(
@@ -176,6 +185,7 @@ ss::future<> controller::stop() {
           .then([this] { return _backend.stop(); })
           .then([this] { return _tp_frontend.stop(); })
           .then([this] { return _security_frontend.stop(); })
+          .then([this] { return _members_frontend.stop(); })
           .then([this] { return _stm.stop(); })
           .then([this] { return _authorizer.stop(); })
           .then([this] { return _credentials.stop(); })

@@ -74,6 +74,45 @@ std::ostream& operator<<(std::ostream&, const broker_endpoint&);
 
 enum class violation_recovery_policy { crash = 0, best_effort };
 
+/**
+ * Node membership can be in one of three states: active, draining and removed.
+ *
+ *                                              no partitions
+ *                      decommission          left on current node
+ *                ┌──────────────────────┐          │
+ *                │                      │          │
+ *           ┌────┴─────┐          ┌─────▼──────┐   ▼    ┌───────────┐
+ *    join   │          │          │            │  done  │           │
+ *    ------>│  active  │          │  draining  │------->│  removed  │
+ *           │          │          │            │        │           │
+ *           └────▲─────┘          └─────┬──────┘        └───────────┘
+ *                │                      │
+ *                └──────────────────────┘
+ *                     recommission
+ *
+ * Membership states have following implications:
+ *
+ * active - when node joins the cluster it is automatically assigned to active
+ *          state, active is a default cluster member state
+ *
+ * draining - in this state redpanda started to drain all existing partition
+ *            replicas from given node, node is no longer accepting new
+ *            partitions, but can still handle Kafka requests
+ *
+ * removed - after node is drained and it has no replicas assigned it is finally
+ *           marked as removed, at the same time the node is no longer cluster
+ *           member and can be shut down.
+ *
+ * TODO: keep removed nodes in members_state. Currently we keep brokers in raft0
+ * configuration and it is our source of information about cluster members,
+ * basing on configuration updates we build `cluster::members_table`. It would
+ * be ideal to migrate brokers out of the raft configuration and manage them in
+ * cluster layer, this way Raft can operate solely on node ids.
+ */
+enum class membership_state : int8_t { active, draining, removed };
+
+std::ostream& operator<<(std::ostream&, membership_state);
+
 class broker {
 public:
     broker(
@@ -113,6 +152,9 @@ public:
     const unresolved_address& rpc_address() const { return _rpc_address; }
     const std::optional<ss::sstring>& rack() const { return _rack; }
 
+    membership_state get_membership_state() const { return _membership_state; }
+    void set_membership_state(membership_state st) { _membership_state = st; }
+
     bool operator==(const model::broker& other) const = default;
     bool operator<(const model::broker& other) const { return _id < other._id; }
 
@@ -122,6 +164,8 @@ private:
     unresolved_address _rpc_address;
     std::optional<ss::sstring> _rack;
     broker_properties _properties;
+    // in memory state, not serialized
+    membership_state _membership_state = membership_state::active;
 
     friend std::ostream& operator<<(std::ostream&, const broker&);
 };
@@ -137,6 +181,7 @@ struct broker_shard {
     /// and for predictability we need fixed-sized ints
     uint32_t shard;
     friend std::ostream& operator<<(std::ostream&, const broker_shard&);
+    bool operator==(const broker_shard&) const = default;
 };
 
 struct partition_metadata {

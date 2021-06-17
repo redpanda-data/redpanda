@@ -11,6 +11,7 @@
 
 #pragma once
 #include "cluster/controller_service.h"
+#include "cluster/fwd.h"
 #include "cluster/types.h"
 #include "rpc/types.h"
 
@@ -19,10 +20,6 @@
 #include <vector>
 
 namespace cluster {
-class members_manager;
-class topics_frontend;
-class metadata_cache;
-
 class service : public controller_service {
 public:
     service(
@@ -32,7 +29,8 @@ public:
       ss::sharded<members_manager>&,
       ss::sharded<metadata_cache>&,
       ss::sharded<security_frontend>&,
-      ss::sharded<controller_api>&);
+      ss::sharded<controller_api>&,
+      ss::sharded<members_frontend>&);
 
     virtual ss::future<join_reply>
     join(join_request&&, rpc::streaming_context&) override;
@@ -57,6 +55,12 @@ public:
     ss::future<delete_acls_reply>
     delete_acls(delete_acls_request&&, rpc::streaming_context&) final;
 
+    ss::future<decommission_node_reply> decommission_node(
+      decommission_node_request&&, rpc::streaming_context&) final;
+
+    ss::future<recommission_node_reply> recommission_node(
+      recommission_node_request&&, rpc::streaming_context&) final;
+
 private:
     std::
       pair<std::vector<model::topic_metadata>, std::vector<topic_configuration>>
@@ -76,5 +80,6 @@ private:
     ss::sharded<metadata_cache>& _md_cache;
     ss::sharded<security_frontend>& _security_frontend;
     ss::sharded<controller_api>& _api;
+    ss::sharded<members_frontend>& _members_frontend;
 };
 } // namespace cluster

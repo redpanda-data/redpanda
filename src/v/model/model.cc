@@ -254,12 +254,13 @@ std::ostream& operator<<(std::ostream& o, const model::broker& b) {
     return ss::fmt_print(
       o,
       "{{id: {}, kafka_advertised_listeners: {}, rpc_address: {}, rack: {}, "
-      "properties: {}}}",
+      "properties: {}, membership_state: {}}}",
       b.id(),
       b.kafka_advertised_listeners(),
       b.rpc_address(),
       b.rack(),
-      b.properties());
+      b.properties(),
+      b.get_membership_state());
 }
 
 std::ostream& operator<<(std::ostream& o, const topic_metadata& t_md) {
@@ -392,9 +393,23 @@ std::ostream& operator<<(std::ostream& o, record_batch_type bt) {
         return o << "batch_type::group_commit_tx";
     case record_batch_type::group_abort_tx:
         return o << "batch_type::group_abort_tx";
+    case record_batch_type::node_management_cmd:
+        return o << "batch_type::node_management_cmd";
     }
 
     return o << "batch_type::unknown{" << static_cast<int>(bt) << "}";
+}
+
+std::ostream& operator<<(std::ostream& o, membership_state st) {
+    switch (st) {
+    case membership_state::active:
+        return o << "active";
+    case membership_state::draining:
+        return o << "draining";
+    case membership_state::removed:
+        return o << "removed";
+    }
+    return o << "unknown membership state {" << static_cast<int>(st) << "}";
 }
 
 } // namespace model

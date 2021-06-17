@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "cluster/commands.h"
+#include "cluster/fwd.h"
 #include "cluster/types.h"
 #include "config/seed_server.h"
 #include "config/tls_config.h"
@@ -33,6 +35,8 @@ namespace cluster {
 // for validation of node configuration invariants.
 class members_manager {
 public:
+    static constexpr auto accepted_commands
+      = make_commands_list<decommission_node_cmd, recommission_node_cmd>{};
     static constexpr ss::shard_id shard = 0;
     members_manager(
       consensus_ptr,
@@ -52,7 +56,7 @@ public:
       handle_configuration_update_request(configuration_update_request);
 
     bool is_batch_applicable(const model::record_batch& b) {
-        return b.header().type == model::record_batch_type::raft_configuration;
+        return b.header().type == model::record_batch_type::node_management_cmd;
     }
 
 private:
@@ -82,6 +86,9 @@ private:
     ss::future<> dispatch_configuration_update(model::broker);
     ss::future<result<configuration_update_reply>>
       do_dispatch_configuration_update(model::broker, model::broker);
+
+    template<typename Cmd>
+    ss::future<std::error_code> dispatch_updates_to_cores(Cmd);
 
     model::offset _last_seen_configuration_offset;
     std::vector<config::seed_server> _seed_servers;

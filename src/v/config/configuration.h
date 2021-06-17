@@ -147,7 +147,7 @@ struct configuration final : public config_store {
     property<bool> enable_sasl;
     property<std::chrono::milliseconds>
       controller_backend_housekeeping_interval_ms;
-
+    property<std::chrono::milliseconds> node_management_operation_timeout_ms;
     // Compaction controller
     property<std::chrono::milliseconds> compaction_ctrl_update_interval_ms;
     property<double> compaction_ctrl_p_coeff;

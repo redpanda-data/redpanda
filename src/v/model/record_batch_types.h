@@ -34,6 +34,7 @@ enum class record_batch_type : int8_t {
     group_prepare_tx = 14,    // group_prepare_tx_batch_type
     group_commit_tx = 15,     // group_commit_tx_batch_type
     group_abort_tx = 16,      // group_abort_tx_batch_type
+    node_management_cmd = 17, // controller node management
 };
 
 std::ostream& operator<<(std::ostream& o, record_batch_type bt);

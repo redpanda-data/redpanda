@@ -10,6 +10,7 @@
 #include "cluster/members_manager.h"
 
 #include "cluster/cluster_utils.h"
+#include "cluster/commands.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_allocator.h"
@@ -56,7 +57,6 @@ members_manager::members_manager(
 
 ss::future<> members_manager::start() {
     vlog(clusterlog.info, "starting cluster::members_manager...");
-
     // join raft0
     if (!is_already_member()) {
         join_raft0();
@@ -164,11 +164,40 @@ members_manager::handle_raft0_cfg_update(raft::group_configuration cfg) {
 
 ss::future<std::error_code>
 members_manager::apply_update(model::record_batch b) {
-    auto cfg = reflection::from_iobuf<raft::group_configuration>(
-      b.copy_records().begin()->release_value());
-    return handle_raft0_cfg_update(std::move(cfg)).then([] {
-        return std::error_code(errc::success);
-    });
+    // handle node managements command
+    auto cmd = co_await cluster::deserialize(std::move(b), accepted_commands);
+
+    co_return co_await ss::visit(
+      cmd,
+      [this](decommission_node_cmd cmd) mutable {
+          return dispatch_updates_to_cores(cmd);
+      },
+      [this](recommission_node_cmd cmd) mutable {
+          return dispatch_updates_to_cores(cmd);
+      });
+}
+
+template<typename Cmd>
+ss::future<std::error_code>
+members_manager::dispatch_updates_to_cores(Cmd cmd) {
+    return _members_table
+      .map([cmd](members_table& mt) { return mt.apply(cmd); })
+      .then([](std::vector<std::error_code> results) {
+          auto sentinel = results.front();
+          auto state_consistent = std::all_of(
+            results.begin(), results.end(), [sentinel](std::error_code res) {
+                return sentinel == res;
+            });
+
+          vassert(
+            state_consistent,
+            "State inconsistency across shards detected, "
+            "expected result: {}, have: {}",
+            sentinel,
+            results);
+
+          return sentinel;
+      });
 }
 
 ss::future<> members_manager::stop() {
