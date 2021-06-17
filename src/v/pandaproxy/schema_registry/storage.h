@@ -188,19 +188,6 @@ public:
     }
 };
 
-inline schema_key schema_key_from_iobuf(iobuf&& iobuf) {
-    auto p = iobuf_parser(std::move(iobuf));
-    auto str = p.read_string(p.bytes_left());
-    return json::rjson_parse(str.data(), schema_key_handler<>{});
-}
-
-inline iobuf schema_key_to_iobuf(const schema_key& key) {
-    auto str = json::rjson_serialize(key);
-    iobuf buf;
-    buf.append(str.data(), str.size());
-    return buf;
-}
-
 struct schema_value {
     subject sub;
     schema_version version;
@@ -379,29 +366,27 @@ public:
     }
 };
 
-inline schema_value schema_value_from_iobuf(iobuf&& iobuf) {
+template<typename Handler>
+auto from_json_iobuf(iobuf&& iobuf) {
     auto p = iobuf_parser(std::move(iobuf));
     auto str = p.read_string(p.bytes_left());
-    return json::rjson_parse(str.data(), schema_value_handler<>{});
+    return json::rjson_parse(str.data(), Handler{});
 }
 
-inline iobuf schema_value_to_iobuf(
-  subject sub,
-  schema_version ver,
-  schema_id id,
-  schema_definition schema,
-  schema_type type,
-  bool deleted) {
-    auto str = json::rjson_serialize(schema_value{
-      .sub{std::move(sub)},
-      .version{ver},
-      .type = type,
-      .id{id},
-      .schema{std::move(schema)},
-      .deleted = deleted});
-    iobuf val;
-    val.append(str.data(), str.size());
-    return val;
+template<typename T>
+auto to_json_iobuf(T t) {
+    auto val_js = json::rjson_serialize(t);
+    iobuf buf;
+    buf.append(val_js.data(), val_js.size());
+    return buf;
+}
+
+template<typename Key, typename Value>
+model::record_batch as_record_batch(Key key, Value val) {
+    storage::record_batch_builder rb{
+      model::record_batch_type::raft_data, model::offset{0}};
+    rb.add_raw_kv(to_json_iobuf(std::move(key)), to_json_iobuf(std::move(val)));
+    return std::move(rb).build();
 }
 
 inline model::record_batch make_schema_batch(
@@ -411,12 +396,16 @@ inline model::record_batch make_schema_batch(
   schema_definition schema,
   schema_type type,
   bool deleted) {
-    storage::record_batch_builder rb{
-      model::record_batch_type::raft_data, model::offset{0}};
-    rb.add_raw_kv(
-      schema_key_to_iobuf(schema_key{.sub{sub}, .version{ver}}),
-      schema_value_to_iobuf(sub, ver, id, std::move(schema), type, deleted));
-    return std::move(rb).build();
+    schema_key key{.sub{sub}, .version{ver}};
+    return as_record_batch(
+      std::move(key),
+      schema_value{
+        .sub{std::move(sub)},
+        .version{ver},
+        .type = type,
+        .id{id},
+        .schema{std::move(schema)},
+        .deleted = deleted});
 }
 
 struct consume_to_store {
@@ -431,23 +420,29 @@ struct consume_to_store {
     }
 
     void operator()(model::record record) {
-        auto key = schema_key_from_iobuf(record.release_key());
+        auto key = from_json_iobuf<schema_key_handler<>>(record.release_key());
         if (key.keytype == topic_key_type::schema) {
-            vassert(key.magic == 1, "Schema key magic is unknown");
-            auto val = schema_value_from_iobuf(record.release_value());
-            vlog(
-              plog.debug,
-              "Inserting key: subject: {}, version: {} ",
-              key.sub(),
-              key.version);
-            auto res = _store.insert(val.sub, val.schema, val.type);
-            vassert(res.id == val.id, "Schema_id mismatch");
-            vassert(res.version == val.version, "Schema_version mismatch");
+            apply(
+              std::move(key),
+              from_json_iobuf<schema_value_handler<>>(record.release_value()));
         } else {
             vlog(
               plog.warn, "Ignoring keytype: {}", to_string_view(key.keytype));
         }
     }
+
+    void apply(schema_key key, schema_value val) {
+        vassert(key.magic == 1, "Schema key magic is unknown");
+        vlog(
+          plog.debug,
+          "Inserting key: subject: {}, version: {} ",
+          key.sub(),
+          key.version);
+        auto res = _store.insert(val.sub, val.schema, val.type);
+        vassert(res.id == val.id, "Schema_id mismatch");
+        vassert(res.version == val.version, "Schema_version mismatch");
+    }
+
     void end_of_stream() {}
     store& _store;
 };
