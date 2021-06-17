@@ -11,4 +11,44 @@
       }
     }
   }
+},
+"/v1/config/log_level/{name}": {
+  "put": {
+    "summary": "Set log level",
+    "operationId": "set_log_level",
+    "parameters": [
+        {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+        },
+        {
+            "name": "level",
+            "in": "query",
+            "required": true,
+            "allowMultiple": false,
+            "type": "string",
+            "enum": [
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ]
+        },
+        {
+            "name": "expires",
+            "in": "query",
+            "required": false,
+            "allowMultiple": false,
+            "type": "long"
+        }
+    ],
+    "responses": {
+      "200": {
+        "description": "Log level"
+      }
+    }
+  }
 }

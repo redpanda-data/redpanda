@@ -51,11 +51,13 @@
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
+#include <boost/lexical_cast/bad_lexical_cast.hpp>
 #include <rapidjson/document.h>
 #include <rapidjson/schema.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
+#include <stdexcept>
 #include <unordered_map>
 
 using namespace std::chrono_literals;
@@ -68,7 +70,8 @@ admin_server::admin_server(
   cluster::controller* controller,
   ss::sharded<cluster::shard_table>& st,
   ss::sharded<cluster::metadata_cache>& metadata_cache)
-  : _server("admin")
+  : _log_level_timer([this] { log_level_timer_handler(); })
+  , _server("admin")
   , _cfg(std::move(cfg))
   , _partition_manager(pm)
   , _controller(controller)
@@ -113,13 +116,7 @@ void admin_server::configure_admin_routes() {
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "hbadger");
 
-    ss::httpd::config_json::get_config.set(
-      _server._routes, []([[maybe_unused]] ss::const_req req) {
-          rapidjson::StringBuffer buf;
-          rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
-          config::shard_local_cfg().to_json(writer);
-          return ss::json::json_return_type(buf.GetString());
-      });
+    register_config_routes();
     register_raft_routes();
     register_kafka_routes();
     register_security_routes();
@@ -175,6 +172,122 @@ ss::future<> admin_server::configure_listeners() {
             return _server.listen(resolved, cred);
         });
     }
+}
+
+void admin_server::rearm_log_level_timer() {
+    _log_level_timer.cancel();
+
+    auto next = std::min_element(
+      _log_level_resets.begin(),
+      _log_level_resets.end(),
+      [](const auto& a, const auto& b) {
+          return a.second.expires < b.second.expires;
+      });
+
+    if (next != _log_level_resets.end()) {
+        _log_level_timer.arm(next->second.expires);
+    }
+}
+
+void admin_server::log_level_timer_handler() {
+    for (auto it = _log_level_resets.begin(); it != _log_level_resets.end();) {
+        if (it->second.expires <= ss::timer<>::clock::now()) {
+            vlog(
+              logger.info,
+              "Expiring log level for {{{}}} to {}",
+              it->first,
+              it->second.level);
+            ss::global_logger_registry().set_logger_level(
+              it->first, it->second.level);
+            _log_level_resets.erase(it++);
+        } else {
+            ++it;
+        }
+    }
+    rearm_log_level_timer();
+}
+
+void admin_server::register_config_routes() {
+    ss::httpd::config_json::get_config.set(
+      _server._routes, []([[maybe_unused]] ss::const_req req) {
+          rapidjson::StringBuffer buf;
+          rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+          config::shard_local_cfg().to_json(writer);
+          return ss::json::json_return_type(buf.GetString());
+      });
+
+    ss::httpd::config_json::set_log_level.set(
+      _server._routes, [this](ss::const_req req) {
+          auto name = req.param["name"];
+
+          // current level: will be used revert after a timeout (optional)
+          ss::log_level cur_level;
+          try {
+              cur_level = ss::global_logger_registry().get_logger_level(name);
+          } catch (std::out_of_range&) {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Cannot set log level: unknown logger {{{}}}", name));
+          }
+
+          // decode new level
+          ss::log_level new_level;
+          try {
+              new_level = boost::lexical_cast<ss::log_level>(
+                req.get_query_param("level"));
+          } catch (const boost::bad_lexical_cast& e) {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Cannot set log level for {{{}}}: unknown level {{{}}}",
+                name,
+                req.get_query_param("level")));
+          }
+
+          // how long should the new log level be active
+          std::optional<std::chrono::seconds> expires;
+          if (auto e = req.get_query_param("expires"); !e.empty()) {
+              try {
+                  expires = std::chrono::seconds(
+                    boost::lexical_cast<unsigned int>(e));
+              } catch (const boost::bad_lexical_cast& e) {
+                  throw ss::httpd::bad_param_exception(fmt::format(
+                    "Cannot set log level for {{{}}}: invalid expires value "
+                    "{{{}}}",
+                    name,
+                    e));
+              }
+          }
+
+          vlog(
+            logger.info,
+            "Set log level for {{{}}}: {} -> {}",
+            name,
+            cur_level,
+            new_level);
+
+          ss::global_logger_registry().set_logger_level(name, new_level);
+
+          if (!expires) {
+              // if no expiration was given, then use some reasonable default
+              // that will prevent the system from remaining in a non-optimal
+              // state (e.g. trace logging) indefinitely.
+              expires = std::chrono::minutes(10);
+          }
+
+          // expires=0 is same as not specifying it at all
+          if (expires->count() > 0) {
+              auto when = ss::timer<>::clock::now() + expires.value();
+              auto res = _log_level_resets.try_emplace(name, cur_level, when);
+              if (!res.second) {
+                  res.first->second.expires = when;
+              }
+          } else {
+              // perm change. no need to store prev level
+              _log_level_resets.erase(name);
+          }
+
+          rearm_log_level_timer();
+
+          return ss::json::json_return_type(ss::json::json_void());
+      });
 }
 
 void admin_server::register_raft_routes() {
