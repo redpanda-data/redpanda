@@ -107,9 +107,9 @@ bool group::valid_previous_state(group_state s) const {
         return _state == g::completing_rebalance;
     case g::dead:
         return true;
-    default:
-        std::terminate(); // make gcc happy
     }
+
+    __builtin_unreachable();
 }
 
 template<typename T>
@@ -572,10 +572,9 @@ group::join_group_known_member(join_group_request&& r) {
         klog.trace(
           "member {} rejoin in unexpected state {}", r.data.member_id, state());
         return make_join_error(r.data.member_id, error_code::unknown_member_id);
-
-    default:
-        std::terminate(); // make gcc happy
     }
+
+    __builtin_unreachable();
 }
 
 ss::future<join_group_response> group::add_member_and_rebalance(
@@ -995,12 +994,11 @@ group::handle_sync_group(sync_group_request&& r) {
     }
 
     case group_state::dead:
-        // checked above
-        [[fallthrough]];
-
-    default:
-        std::terminate(); // make gcc happy
+        // checked above on method entry
+        break;
     }
+
+    __builtin_unreachable();
 }
 
 model::record_batch group::checkpoint(const assignments_type& assignments) {
@@ -1140,12 +1138,11 @@ ss::future<heartbeat_response> group::handle_heartbeat(heartbeat_request&& r) {
     }
 
     case group_state::dead:
-        // checked above
-        [[fallthrough]];
-
-    default:
-        std::terminate(); // mame gcc happy
+        // checked above on method entry
+        break;
     }
+
+    __builtin_unreachable();
 }
 
 ss::future<leave_group_response>
