@@ -25,6 +25,9 @@ get_config(ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
 ss::future<ctx_server<service>::reply_t>
 put_config(ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
 
+ss::future<ctx_server<service>::reply_t> get_config_subject(
+  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
+
 ss::future<ctx_server<service>::reply_t> put_config_subject(
   ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
 

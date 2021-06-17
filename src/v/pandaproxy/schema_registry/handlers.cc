@@ -103,6 +103,24 @@ put_config(server::request_t rq, server::reply_t rp) {
 }
 
 ss::future<server::reply_t>
+get_config_subject(server::request_t rq, server::reply_t rp) {
+    parse_accept_header(rq, rp);
+    auto sub = parse::request_param<subject>(*rq.req, "subject");
+    rq.req.reset();
+
+    auto res = rq.service().schema_store().get_compatibility(sub);
+    if (res.has_error()) {
+        rp.rep = make_errored_body(res.error());
+        co_return rp;
+    }
+
+    auto json_rslt = ppj::rjson_serialize(
+      get_config_req_rep{.compat = res.value()});
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
+ss::future<server::reply_t>
 put_config_subject(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto sub = parse::request_param<subject>(*rq.req, "subject");
