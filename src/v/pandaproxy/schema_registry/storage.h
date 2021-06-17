@@ -644,14 +644,27 @@ struct consume_to_store {
     }
 
     void operator()(model::record record) {
-        auto key = from_json_iobuf<schema_key_handler<>>(record.release_key());
-        if (key.keytype == topic_key_type::schema) {
-            apply(
-              std::move(key),
+        auto key = record.release_key();
+        auto key_type_str = from_json_iobuf<topic_key_type_handler<>>(
+          key.share(0, key.size_bytes()));
+
+        auto key_type = from_string_view<topic_key_type>(key_type_str);
+        if (!key_type.has_value()) {
+            vlog(plog.warn, "Ignoring keytype: {}", key_type_str);
+            return;
+        }
+
+        switch (*key_type) {
+        case topic_key_type::noop:
+            return;
+        case topic_key_type::schema:
+            return apply(
+              from_json_iobuf<schema_key_handler<>>(std::move(key)),
               from_json_iobuf<schema_value_handler<>>(record.release_value()));
-        } else {
-            vlog(
-              plog.warn, "Ignoring keytype: {}", to_string_view(key.keytype));
+        case topic_key_type::config:
+            return apply(
+              from_json_iobuf<config_key_handler<>>(std::move(key)),
+              from_json_iobuf<config_value_handler<>>(record.release_value()));
         }
     }
 
@@ -665,6 +678,20 @@ struct consume_to_store {
         auto res = _store.insert(val.sub, val.schema, val.type);
         vassert(res.id == val.id, "Schema_id mismatch");
         vassert(res.version == val.version, "Schema_version mismatch");
+    }
+
+    void apply(config_key key, config_value val) {
+        vassert(key.magic == 0, "Config key magic is unknown");
+        vlog(
+          plog.debug,
+          "Applying config: subject: {}, config: {} ",
+          key.sub.value_or(invalid_subject),
+          to_string_view(val.compat));
+        if (key.sub) {
+            _store.set_compatibility(*key.sub, val.compat).value();
+        } else {
+            _store.set_compatibility(val.compat).value();
+        }
     }
 
     void end_of_stream() {}
