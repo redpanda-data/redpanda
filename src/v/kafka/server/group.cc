@@ -34,6 +34,7 @@
 #include <boost/uuid/uuid_io.hpp>
 #include <fmt/core.h>
 #include <fmt/ostream.h>
+#include <fmt/ranges.h>
 
 #include <algorithm>
 #include <chrono>
@@ -148,6 +149,16 @@ group_state group::set_state(group_state s) {
 }
 
 bool group::supports_protocols(const join_group_request& r) const {
+    vlog(
+      _ctxlog.trace,
+      "Check protocol support type {} members {} req.type {} req.protos {} "
+      "supported {}",
+      _protocol_type,
+      _members.size(),
+      r.data.protocol_type,
+      r.data.protocols,
+      fmt::join(_supported_protocols, ", "));
+
     // first member decides so make sure its defined
     if (in_state(group_state::empty)) {
         return !r.data.protocol_type().empty() && !r.data.protocols.empty();
@@ -1892,7 +1903,7 @@ kafka::member_id group::generate_member_id(const join_group_request& r) {
     auto cid = r.client_id ? *r.client_id : kafka::client_id("");
     auto id = r.data.group_instance_id ? (*r.data.group_instance_id)() : cid();
     boost::uuids::uuid uuid = boost::uuids::random_generator()();
-    return kafka::member_id(ssx::sformat("{}-{}", id, uuid));
+    return kafka::member_id(ssx::sformat("{}-{}", id, to_string(uuid)));
 }
 
 described_group group::describe() const {
