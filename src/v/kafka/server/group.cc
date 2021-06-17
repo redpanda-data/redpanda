@@ -136,10 +136,13 @@ static model::record_batch make_tx_batch(
 }
 
 group_state group::set_state(group_state s) {
-    klog.trace("group state transition {} -> {}", _state, s);
-    if (!valid_previous_state(s)) {
-        std::terminate();
-    }
+    vassert(
+      valid_previous_state(s),
+      "Group {} invalid state transition from {} to {}",
+      _id,
+      _state,
+      s);
+    vlog(_ctxlog.trace, "Changing state from {} to {}", _state, s);
     _state_timestamp = clock_type::now();
     return std::exchange(_state, s);
 }
