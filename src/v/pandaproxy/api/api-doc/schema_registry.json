@@ -1,4 +1,41 @@
 "/config/{subject}": {
+      "get": {
+        "summary": "Get the compatibility level for a subject.",
+        "operationId": "get_config_subject",
+        "consumes": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "subject",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "produces": ["application/vnd.schemaregistry.v1+json"],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "compatibilityLevel": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      },
       "put": {
         "summary": "Set the compatibility level for a subject.",
         "operationId": "put_config_subject",
