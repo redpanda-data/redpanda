@@ -34,6 +34,7 @@ deb_deps=(
   python3-jinja2
   pkg-config
   git
+  zip
 )
 fedora_deps=(
   curl
@@ -44,6 +45,7 @@ fedora_deps=(
   xxhash-devel
   python3-virtualenv
   python3-jinja2
+  zip
 )
 
 case "$ID" in
@@ -62,3 +64,32 @@ esac
 # needed for unit tests
 sysctl -w fs.aio-max-nr=10485760 || true
 curl -1sLf "https://raw.githubusercontent.com/vectorizedio/seastar/master/install-dependencies.sh" | bash
+
+set -e
+
+root="$(cd $(dirname ${BASH_SOURCE[0]}) && pwd)"
+
+cd $root
+
+rm -rf $root/depot_tools
+git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+cd $root/depot_tools
+git checkout ecdc362593cfee1ade115ead7be6c3e96b2e7384
+mkdir $root/depot_tools/installed-gn
+
+link_for_gn=""
+
+# Download gn (git_revision:e0c476ffc83dc10897cb90b45c03ae2539352c5c)
+case $(uname -i) in
+  x86_64)
+    link_for_gn="https://chrome-infra-packages.appspot.com/dl/gn/gn/linux-amd64/+/COENCtFXQmybPdz3KQBjmuSaCK4qdzmzwuCJHQKxovEC"
+    ;;
+  *)
+    link_for_gn="https://chrome-infra-packages.appspot.com/dl/gn/gn/linux-arm64/+/QckR7eHEDkvAVMi-h0_7w4D38fWeo-wdfI7Nfxy3jfEC"
+    ;;
+esac
+
+curl -L $link_for_gn --output $root/depot_tools/gn_zip
+unzip -d $root/depot_tools/installed-gn/ $root/depot_tools/gn_zip
+
+chmod -R 777 $root/depot_tools

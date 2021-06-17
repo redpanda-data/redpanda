@@ -21,6 +21,7 @@ cmake -DCMAKE_BUILD_TYPE=Release \
   -GNinja \
   -DCMAKE_C_COMPILER=$CC \
   -DCMAKE_CXX_COMPILER=$CXX \
+  -DDEPOT_TOOLS_DIR="$root/depot_tools" \
   "$@"
 
 (cd $root/build && ninja && ctest --output-on-failure -R _rpunit)
