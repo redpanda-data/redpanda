@@ -150,6 +150,9 @@ func TestNewDeployCommand(t *testing.T) {
 						}, {
 							Key:   []byte("sha256"),
 							Value: hashContent[:],
+						}, {
+							Key:   []byte("name"),
+							Value: []byte("bar"),
 						},
 					}
 					require.Equal(t, expectHeader, msg.Headers)

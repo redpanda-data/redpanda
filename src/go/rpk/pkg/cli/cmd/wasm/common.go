@@ -82,6 +82,9 @@ func CreateDeployMsg(
 		}, {
 			Key:   []byte("sha256"),
 			Value: shaValue[:],
+		}, {
+			Key:   []byte("name"),
+			Value: []byte(name),
 		},
 	}
 	id := xxhash.Sum64([]byte(name))
