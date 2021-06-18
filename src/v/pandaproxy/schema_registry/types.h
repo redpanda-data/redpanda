@@ -13,17 +13,24 @@
 
 #include "seastarx.h"
 #include "utils/named_type.h"
+#include "utils/string_switch.h"
 
 #include <seastar/core/sstring.hh>
 
 #include <fmt/core.h>
 #include <fmt/format.h>
 
+#include <type_traits>
+
 namespace pandaproxy::schema_registry {
+
+template<typename E>
+std::enable_if_t<std::is_enum_v<E>, std::optional<E>>
+  from_string_view(std::string_view);
 
 enum class schema_type { avro = 0, json, protobuf };
 
-inline constexpr std::string_view to_string_view(schema_type e) {
+constexpr std::string_view to_string_view(schema_type e) {
     switch (e) {
     case schema_type::avro:
         return "AVRO";
@@ -33,6 +40,15 @@ inline constexpr std::string_view to_string_view(schema_type e) {
         return "PROTOBUF";
     }
     return "{invalid}";
+}
+template<>
+constexpr std::optional<schema_type>
+from_string_view<schema_type>(std::string_view sv) {
+    return string_switch<std::optional<schema_type>>(sv)
+      .match(to_string_view(schema_type::avro), schema_type::avro)
+      .match(to_string_view(schema_type::json), schema_type::json)
+      .match(to_string_view(schema_type::protobuf), schema_type::protobuf)
+      .default_match(std::nullopt);
 }
 
 ///\brief A subject is the name under which a schema is registered.

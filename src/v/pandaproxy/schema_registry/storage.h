@@ -303,13 +303,7 @@ public:
             return true;
         }
         case state::type: {
-            std::optional<schema_type> type{
-              string_switch<std::optional<schema_type>>(sv)
-                .match(to_string_view(schema_type::avro), schema_type::avro)
-                .match(to_string_view(schema_type::json), schema_type::json)
-                .match(
-                  to_string_view(schema_type::protobuf), schema_type::protobuf)
-                .default_match(std::nullopt)};
+            auto type = from_string_view<schema_type>(sv);
             if (type.has_value()) {
                 result.type = *type;
                 _state = state::object;
