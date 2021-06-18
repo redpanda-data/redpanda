@@ -64,7 +64,8 @@ group::group(
   , _conf(conf)
   , _partition(std::move(partition))
   , _recovery_policy(
-      config::shard_local_cfg().rm_violation_recovery_policy.value()) {}
+      config::shard_local_cfg().rm_violation_recovery_policy.value())
+  , _ctxlog(*this) {}
 
 group::group(
   kafka::group_id id,
@@ -77,7 +78,8 @@ group::group(
   , _conf(conf)
   , _partition(std::move(partition))
   , _recovery_policy(
-      config::shard_local_cfg().rm_violation_recovery_policy.value()) {
+      config::shard_local_cfg().rm_violation_recovery_policy.value())
+  , _ctxlog(*this) {
     _state = md.members.empty() ? group_state::empty : group_state::stable;
     _generation = md.generation;
     _protocol_type = md.protocol_type;
