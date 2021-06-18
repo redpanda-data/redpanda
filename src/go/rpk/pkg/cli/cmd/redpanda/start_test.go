@@ -1354,22 +1354,28 @@ func TestStartCommand(t *testing.T) {
 			"--another-arbitrary-seastar-flag", "",
 		},
 	}, {
-		name: "it should allow arbitrary flags after '--'",
+		name: "it should fail if an unrecognized flag is passed",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
-			"--",
-			"--i-just-made-this-on-the-spot", "nice",
 		},
-		postCheck: func(
-			_ afero.Fs,
-			rpArgs *rp.RedpandaArgs,
-			st *testing.T,
-		) {
-			expected := []string{
+		before: func(fs afero.Fs) error {
+			os.Args = append(
+				os.Args,
+				"--something-weird",
+				"--kfaka-ardd", "192.168.54.19",
 				"--i-just-made-this-on-the-spot", "nice",
-			}
-			require.Equal(st, expected, rpArgs.ExtraArgs)
+			)
+			return nil
 		},
+		after: func() {
+			for i, a := range os.Args {
+				if a == "--something-weird" {
+					os.Args = os.Args[:i]
+					return
+				}
+			}
+		},
+		expectedErrMsg: "unknown flags: --something-weird, --kfaka-ardd, --i-just-made-this-on-the-spot",
 	}}
 
 	for _, tt := range tests {

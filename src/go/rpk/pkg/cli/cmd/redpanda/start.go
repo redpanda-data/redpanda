@@ -79,6 +79,48 @@ const (
 	setConfigFlag        = "set"
 )
 
+func checkFlags(command *cobra.Command, extraFlags, args []string) error {
+	allowedFlags := map[string]bool{}
+	// Add the "extra" flags, which aren't registered in the *cobra.Command.
+	for _, f := range extraFlags {
+		allowedFlags[f] = true
+	}
+	visit := func(f *pflag.Flag) {
+		allowedFlags[f.Name] = true
+		if f.Shorthand != "" {
+			allowedFlags[f.Shorthand] = true
+		}
+	}
+	// Add the command's registered flags, as well as its parents'.
+	command.Flags().VisitAll(visit)
+	command.InheritedFlags().VisitAll(visit)
+
+	unknown := []string{}
+
+	for _, a := range args {
+		// When running tests, `go test` passes flags like -test.testlogfile
+		// or -test.timeout, so just ignore those.
+		if strings.HasPrefix(a, "-test.") {
+			continue
+		}
+		if strings.HasPrefix(a, "-") {
+			arg := strings.TrimLeft(a, "-")
+			// Split the arg in case it's something like
+			// --set=config.field=value, and get the first element.
+			flagName := strings.Split(arg, "=")[0]
+			allowed, _ := allowedFlags[flagName]
+			if !allowed {
+				unknown = append(unknown, a)
+			}
+		}
+	}
+
+	if len(unknown) > 0 {
+		return fmt.Errorf("unknown flags: %s", strings.Join(unknown, ", "))
+	}
+	return nil
+}
+
 func updateConfigWithFlags(conf *config.Config, flags *pflag.FlagSet) {
 	if flags.Changed(configFlag) {
 		conf.ConfigFile, _ = flags.GetString(configFlag)
@@ -142,6 +184,15 @@ func NewStartCommand(
 			UnknownFlags: true,
 		},
 		RunE: func(ccmd *cobra.Command, args []string) error {
+			// Since unknown flags are allowed, cobra won't complain.
+			// This might be confusing to the user if they unknowingly make
+			// a typo in one of the flags, so we have to check the flags
+			// ourselves.
+			err := checkFlags(ccmd, []string{setConfigFlag}, os.Args)
+			if err != nil {
+				return err
+			}
+
 			// --set flags have to be parsed by hand because pflag (the
 			// underlying flag-parsing lib used by cobra) uses a CSV parser
 			// for list flags, and since JSON often contains commas, it
