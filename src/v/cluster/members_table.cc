@@ -49,7 +49,18 @@ std::optional<broker_ptr> members_table::get_broker(model::node_id id) const {
 
 void members_table::update_brokers(patch<broker_ptr> patch) {
     for (auto& br : patch.additions) {
-        _brokers.insert_or_assign(br->id(), br);
+        /**
+         * broker properties may be updated event if it is draining partitions,
+         * we have to preserve its membership_state.
+         */
+        auto it = _brokers.find(br->id());
+        if (it != _brokers.end()) {
+            auto membership_state = it->second->get_membership_state();
+            it->second = br;
+            // do not override membership state of brokers
+            it->second->set_membership_state(membership_state);
+        }
+        _brokers.emplace(br->id(), br);
     }
 
     for (auto& br : patch.deletions) {
