@@ -359,6 +359,67 @@ describe("Server", function () {
       });
     });
 
+    it("should process a complete request", function () {
+      const { spyGetHandles } = createStubs(sinonInstance);
+      // transform coprocessor function
+      const uppercase = (record) => ({
+        ...record,
+        value: Buffer.from("B"),
+      });
+
+      const coprocessors = [1].map((id) =>
+        createHandle({
+          globalId: BigInt(id),
+          apply: (recordBatch) => {
+            const result = new Map();
+            const transformedRecord =
+              // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+              // @ts-ignore
+              recordBatch.map(({ header, records }) => ({
+                header,
+                records: records.map(uppercase),
+              }));
+            result.set("result", transformedRecord);
+            return Promise.resolve(result);
+          },
+        })
+      );
+      spyGetHandles.returns(coprocessors);
+      const requests = new Array(1000)
+        .fill({
+          recordBatch: [
+            createRecordBatch({
+              header: {
+                recordCount: 1,
+              },
+              records: [{ value: Buffer.from("b") }],
+            }),
+          ],
+          coprocessorIds: [BigInt(1)],
+          ntp: { partition: 1, namespace: "", topic: "produce" },
+        })
+        .map((v) => ({
+          ...v,
+          recordBatch: [
+            createRecordBatch({
+              header: {
+                recordCount: 1,
+              },
+              records: [{ value: Buffer.from("b") }],
+            }),
+          ],
+        }));
+
+      return Promise.all(
+        requests.map((item) => client.process_batch({ requests: [item] }))
+      ).then(([{ result }]) => {
+        result.forEach((r) => {
+          const e = r.resultRecordBatch[0].records[0].value;
+          assert.deepStrictEqual(e, Buffer.from("B"));
+        });
+      });
+    });
+
     it("should enable coprocessor", () => {
       const server = new ProcessBatchServer();
       server.loadCoprocFromString = () => [

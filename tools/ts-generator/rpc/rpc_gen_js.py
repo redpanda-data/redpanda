@@ -115,10 +115,26 @@ const readBufferRequest = (buffer: Buffer, fn: ApplyFn, socket: Socket) => {
     return fn(rpcHeader, result, socket);
   } else if (availableBytesOnBuffer > size) {
     const result = buffer.slice(rpcHeaderSize, size + rpcHeaderSize);
-    readBufferRequest(buffer.slice(size + rpcHeaderSize), fn, socket);
-    return fn(rpcHeader, result, socket);
+    const restBuffer = buffer.slice(size + rpcHeaderSize)
+    if( restBuffer.length >= rpcHeaderSize ) {
+      // in this case, we can read a rpc header from residual buffer
+      readBufferRequest(buffer.slice(size + rpcHeaderSize), fn, socket);
+      return fn(rpcHeader, result, socket);
+    } else {
+      // in this case, we can't read a rpc header from residual buffer, therefore
+      // we need to wait for next chunk, before we continue reading 
+      return readNextChunk(socket, 0, fn, true)
+        .then(nextChunk => {
+          readBufferRequest(
+            Buffer.concat([restBuffer, nextChunk]),
+            fn,
+            socket
+          );
+          return fn(rpcHeader, result, socket)
+        })
+    }
   } else {
-    const bytesForReading = size - (availableBytesOnBuffer);
+    const bytesForReading = size - availableBytesOnBuffer;
     return readNextChunk(socket, bytesForReading, fn)
       .then((nextBuffer) =>
         Buffer.concat([buffer.slice(rpcHeaderSize), nextBuffer])
@@ -133,26 +149,35 @@ const readBufferRequest = (buffer: Buffer, fn: ApplyFn, socket: Socket) => {
  * @param socket
  * @param size
  * @param fn
+ * @param returnComplete
  */
 const readNextChunk = (
   socket: Socket,
   size: number,
-  fn: ApplyFn
+  fn: ApplyFn,
+  returnComplete?: boolean
 ): Promise<Buffer> => {
   return new Promise<Buffer>((resolve) => {
     socket.once("data", (data) => {
-      if (data.length > size) {
-        readBufferRequest(data.slice(size), fn, socket);
-        return resolve(data.slice(0, size));
+      if (returnComplete === true) {
+        return resolve(data)
+      } else if (data.length > size) {
+        const isCompleteChunk = (data.length - size) >= 26
+        if (isCompleteChunk) {
+          readBufferRequest(data.slice(size), fn, socket);
+        } else {
+          readNextChunk(socket, 0, fn, true)
+            .then((nextChunk) => readBufferRequest(
+              Buffer.concat([data.slice(size), nextChunk]), fn, socket));
+        }
+        return resolve(data.slice(0, size))
       } else if (data.length === size) {
         startReadRequest(fn)(socket);
-        return resolve(data.slice(0, size));
+        return resolve(data);
       } else {
-        return readNextChunk(
-          socket,
-          size - data.length,
-          fn
-        ).then((nextBuffer) => resolve(Buffer.concat([data, nextBuffer])));
+        return readNextChunk(socket, size - data.length, fn).then(
+          (nextBuffer) => resolve(Buffer.concat([data, nextBuffer]))
+        );
       }
     });
   });
