@@ -11,6 +11,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
+#include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_allocator.h"
@@ -53,7 +54,19 @@ members_manager::members_manager(
   , _allocator(allocator)
   , _storage(storage)
   , _as(as)
-  , _rpc_tls_config(config::shard_local_cfg().rpc_server_tls()) {}
+  , _rpc_tls_config(config::shard_local_cfg().rpc_server_tls())
+  , _update_queue(max_updates_queue_size) {
+    auto sub = _as.local().subscribe([this]() noexcept {
+        _update_queue.abort(
+          std::make_exception_ptr(ss::abort_requested_exception{}));
+    });
+    if (!sub) {
+        _update_queue.abort(
+          std::make_exception_ptr(ss::abort_requested_exception{}));
+    } else {
+        _queue_abort_subscription = std::move(*sub);
+    }
+}
 
 ss::future<> members_manager::start() {
     vlog(clusterlog.info, "starting cluster::members_manager...");
@@ -170,11 +183,35 @@ members_manager::apply_update(model::record_batch b) {
     co_return co_await ss::visit(
       cmd,
       [this](decommission_node_cmd cmd) mutable {
-          return dispatch_updates_to_cores(cmd);
+          auto id = cmd.key;
+          return dispatch_updates_to_cores(cmd).then(
+            [this, id](std::error_code error) {
+                auto f = ss::now();
+                if (!error) {
+                    _allocator.local().decommission_node(id);
+                    f = _update_queue.push_eventually(node_update{
+                      .id = id, .type = node_update_type::decommissioned});
+                }
+                return f.then([error] { return error; });
+            });
       },
       [this](recommission_node_cmd cmd) mutable {
-          return dispatch_updates_to_cores(cmd);
+          auto id = cmd.key;
+          return dispatch_updates_to_cores(cmd).then(
+            [this, id](std::error_code error) {
+                auto f = ss::now();
+                if (!error) {
+                    _allocator.local().recommission_node(id);
+                    f = _update_queue.push_eventually(node_update{
+                      .id = id, .type = node_update_type::recommissioned});
+                }
+                return f.then([error] { return error; });
+            });
       });
+}
+
+ss::future<members_manager::node_update> members_manager::get_node_update() {
+    return _update_queue.pop_eventually();
 }
 
 template<typename Cmd>

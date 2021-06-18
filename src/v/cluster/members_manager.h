@@ -38,6 +38,18 @@ public:
     static constexpr auto accepted_commands
       = make_commands_list<decommission_node_cmd, recommission_node_cmd>{};
     static constexpr ss::shard_id shard = 0;
+    static constexpr size_t max_updates_queue_size = 100;
+    enum class node_update_type : int8_t {
+        added,
+        decommissioned,
+        recommissioned
+    };
+
+    struct node_update {
+        model::node_id id;
+        node_update_type type;
+    };
+
     members_manager(
       consensus_ptr,
       ss::sharded<members_table>&,
@@ -58,6 +70,11 @@ public:
     bool is_batch_applicable(const model::record_batch& b) {
         return b.header().type == model::record_batch_type::node_management_cmd;
     }
+    /**
+     * This API is backed by the seastar::queue. It can not be called
+     * concurrently from multiple fibers.
+     */
+    ss::future<members_manager::node_update> get_node_update();
 
 private:
     using seed_iterator = std::vector<config::seed_server>::const_iterator;
@@ -103,5 +120,7 @@ private:
     ss::sharded<ss::abort_source>& _as;
     config::tls_config _rpc_tls_config;
     ss::gate _gate;
+    ss::queue<node_update> _update_queue;
+    ss::abort_source::subscription _queue_abort_subscription;
 };
 } // namespace cluster
