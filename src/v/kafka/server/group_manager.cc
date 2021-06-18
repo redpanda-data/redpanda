@@ -1009,17 +1009,29 @@ bool group_manager::valid_group_id(const group_id& group, api_key api) {
 error_code group_manager::validate_group_status(
   const model::ntp& ntp, const group_id& group, api_key api) {
     if (!valid_group_id(group, api)) {
+        vlog(
+          klog.trace, "Group name {} is invalid for operation {}", group, api);
         return error_code::invalid_group_id;
     }
 
     if (const auto it = _partitions.find(ntp); it != _partitions.end()) {
         if (!it->second->partition->is_leader()) {
-            klog.trace("group partition is not leader {}/{}", group, ntp);
+            vlog(
+              klog.trace,
+              "Group {} operation {} sent to non-leader coordinator {}",
+              group,
+              api,
+              ntp);
             return error_code::not_coordinator;
         }
 
         if (it->second->loading) {
-            klog.trace("group is loading {}/{}", group, ntp);
+            vlog(
+              klog.trace,
+              "Group {} operation {} sent to loading coordinator {}",
+              group,
+              api,
+              ntp);
             return error_code::not_coordinator;
             /*
              * returning `load in progress` is the correct error code for this
@@ -1039,7 +1051,12 @@ error_code group_manager::validate_group_status(
         return error_code::none;
     }
 
-    klog.trace("group operation misdirected {}/{}", group, ntp);
+    vlog(
+      klog.trace,
+      "Group {} operation {} misdirected to non-coordinator {}",
+      group,
+      api,
+      ntp);
     return error_code::not_coordinator;
 }
 
