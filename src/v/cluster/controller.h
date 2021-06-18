@@ -82,6 +82,7 @@ private:
     ss::sharded<controller_service> _service;        // instance per core
     ss::sharded<controller_api> _api;                // instance per core
     ss::sharded<members_frontend> _members_frontend; // instance per core
+    ss::sharded<members_backend> _members_backend;   // single instance
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_manager>& _partition_manager;
     ss::sharded<shard_table>& _shard_table;

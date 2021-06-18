@@ -13,7 +13,9 @@
 #include "cluster/controller_api.h"
 #include "cluster/controller_backend.h"
 #include "cluster/controller_service.h"
+#include "cluster/fwd.h"
 #include "cluster/logger.h"
+#include "cluster/members_backend.h"
 #include "cluster/members_frontend.h"
 #include "cluster/members_manager.h"
 #include "cluster/members_table.h"
@@ -120,6 +122,17 @@ ss::future<> controller::start() {
             std::ref(_as));
       })
       .then([this] {
+          return _members_backend.start_single(
+            std::ref(_tp_frontend),
+            std::ref(_tp_state),
+            std::ref(_partition_allocator),
+            std::ref(_members_table),
+            std::ref(_api),
+            std::ref(_members_manager),
+            _raft0,
+            std::ref(_as));
+      })
+      .then([this] {
           return _backend.start(
             std::ref(_tp_state),
             std::ref(_shard_table),
@@ -162,6 +175,10 @@ ss::future<> controller::start() {
             std::ref(_shard_table),
             std::ref(_connections),
             std::ref(_as));
+      })
+      .then([this] {
+          return _members_backend.invoke_on(
+            members_manager::shard, &members_backend::start);
       });
 }
 
@@ -181,7 +198,8 @@ ss::future<> controller::stop() {
     }
 
     return f.then([this] {
-        return _api.stop()
+        return _members_backend.stop()
+          .then([this] { return _api.stop(); })
           .then([this] { return _backend.stop(); })
           .then([this] { return _tp_frontend.stop(); })
           .then([this] { return _security_frontend.stop(); })
