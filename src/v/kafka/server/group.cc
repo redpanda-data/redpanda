@@ -91,6 +91,7 @@ group::group(
 
     for (auto& m : md.members) {
         auto member = ss::make_lw_shared<group_member>(std::move(m), id);
+        vlog(_ctxlog.trace, "Initializing group with member {}", member);
         add_member_no_join(member);
     }
 }
@@ -191,6 +192,10 @@ void group::add_member_no_join(member_ptr member) {
 
     auto res = _members.emplace(member->id(), member);
     if (!res.second) {
+        vlog(
+          _ctxlog.trace,
+          "Cannot add member with duplicate id {}",
+          member->id());
         throw std::runtime_error(
           fmt::format("group already contains member {}", member));
     }
@@ -208,6 +213,13 @@ ss::future<join_group_response> group::add_member(member_ptr member) {
 
 ss::future<join_group_response> group::update_member(
   member_ptr member, std::vector<member_protocol>&& new_protocols) {
+    vlog(
+      _ctxlog.trace,
+      "Updating {}joining member {} with protocols {}",
+      member->is_joining() ? "" : "non-",
+      member,
+      new_protocols);
+
     /*
      * before updating the member, subtract its existing protocols from
      * group-level aggregate tracking. finally, update the group to reflect the
@@ -216,7 +228,11 @@ ss::future<join_group_response> group::update_member(
     for (auto& p : member->protocols()) {
         auto& count = _supported_protocols[p.name];
         --count;
-        vassert(count >= 0, "supported protocols cannot be negative");
+        vassert(
+          count >= 0,
+          "Invalid protocol support count {} for group {}",
+          count,
+          *this);
     }
     member->set_protocols(std::move(new_protocols));
     for (auto& p : member->protocols()) {
@@ -242,6 +258,7 @@ group::duration_type group::rebalance_timeout() const {
     if (likely(it != _members.end())) {
         return it->second->rebalance_timeout();
     } else {
+        vlog(_ctxlog.trace, "Cannot compute rebalance timeout for empty group");
         throw std::runtime_error("no members in group");
     }
 }
@@ -250,6 +267,10 @@ std::vector<member_config> group::member_metadata() const {
     if (
       in_state(group_state::dead)
       || in_state(group_state::preparing_rebalance)) {
+        vlog(
+          _ctxlog.trace,
+          "Cannot collect member metadata in group state {}",
+          _state);
         throw std::runtime_error(
           fmt::format("invalid group state: {}", _state));
     }
@@ -305,11 +326,7 @@ void group::advance_generation() {
         _protocol = select_protocol();
         set_state(group_state::completing_rebalance);
     }
-    klog.trace(
-      "advanced to group generation {} protocol {} state {}",
-      _generation,
-      _protocol,
-      _state);
+    vlog(_ctxlog.trace, "Advanced generation with protocol {}", _protocol);
 }
 
 /*
@@ -319,8 +336,6 @@ void group::advance_generation() {
  *   creation / destruction.
  */
 kafka::protocol_name group::select_protocol() const {
-    klog.trace("selecting group protocol");
-
     // index of protocols supported by all members
     absl::flat_hash_set<kafka::protocol_name> candidates;
     std::for_each(
@@ -329,20 +344,25 @@ kafka::protocol_name group::select_protocol() const {
       [this, &candidates](const protocol_support::value_type& p) mutable {
           if ((size_t)p.second == _members.size()) {
               candidates.insert(p.first);
-              klog.trace("candidate: {}", p.first);
           }
       });
+
+    vlog(_ctxlog.trace, "Selecting protocol from candidates {}", candidates);
 
     // collect votes from members
     protocol_support votes;
     std::for_each(
       std::cbegin(_members),
       std::cend(_members),
-      [&votes, &candidates](const member_map::value_type& m) mutable {
+      [this, &votes, &candidates](const member_map::value_type& m) mutable {
           auto& choice = m.second->vote_for_protocol(candidates);
           auto total = ++votes[choice];
-          klog.trace(
-            "member {} votes for protocol {} ({})", m.first, choice, total);
+          vlog(
+            _ctxlog.trace,
+            "Member {} voting for protocol {} (total {})",
+            m.first,
+            choice,
+            total);
       });
 
     // select the candidate protocol with the most votes
@@ -357,7 +377,7 @@ kafka::protocol_name group::select_protocol() const {
 
     // this is guaranteed to succeed because `member->vote` will throw if it
     // is unable to vote on some protocol candidate.
-    klog.trace("selected group protocol {}", winner->first);
+    vlog(_ctxlog.trace, "Selected protocol {}", winner->first);
     return winner->first;
 }
 
@@ -369,7 +389,11 @@ void group::finish_syncing_members(error_code error) {
           auto member = m.second;
           if (member->is_syncing()) {
               auto reply = sync_group_response(error, member->assignment());
-              klog.trace("set sync response for member {}", member);
+              vlog(
+                _ctxlog.trace,
+                "Completed syncing member {} with reply {}",
+                member,
+                reply);
               member->set_sync_response(std::move(reply));
               // <kafka>reset the session timeout for members after propagating
               // the member's assignment. This is because if any member's
@@ -384,16 +408,13 @@ void group::finish_syncing_members(error_code error) {
 
 bool group::leader_rejoined() {
     if (!_leader) {
-        klog.trace("group has no leader");
         return false;
     }
 
     auto leader = get_member(*_leader);
     if (leader->is_joining()) {
-        klog.trace("leader has rejoined");
+        vlog(_ctxlog.trace, "Leader {} has rejoined", *_leader);
         return true;
-    } else {
-        klog.trace("leader has not rejoined {}", *_leader);
     }
 
     // look for a replacement
@@ -405,17 +426,19 @@ bool group::leader_rejoined() {
       });
 
     if (it == _members.end()) {
-        klog.trace("group has no leader replacement");
+        vlog(_ctxlog.trace, "No replacement leader is available");
         return false;
     } else {
         _leader = it->first;
-        klog.trace("selected new leader {}", *_leader);
+        vlog(_ctxlog.trace, "Selected new leader {}", *_leader);
         return true;
     }
 }
 
 ss::future<join_group_response>
 group::handle_join_group(join_group_request&& r, bool is_new_group) {
+    vlog(_ctxlog.trace, "Handling join request {}", r);
+
     auto ret = ss::make_ready_future<join_group_response>(
       join_group_response(error_code::none));
 
@@ -448,6 +471,7 @@ group::handle_join_group(join_group_request&& r, bool is_new_group) {
          * handles that before returning.
          */
         if (all_members_joined()) {
+            vlog(_ctxlog.trace, "Finishing join with all members present");
             _join_timer.cancel();
             complete_join();
         }
@@ -456,17 +480,15 @@ group::handle_join_group(join_group_request&& r, bool is_new_group) {
     return ret;
 }
 
+// DONE
 ss::future<join_group_response>
 group::join_group_unknown_member(join_group_request&& r) {
-    klog.trace("unknown member joining group {}", *this);
-
     if (in_state(group_state::dead)) {
-        klog.trace("group is in the dead state");
+        vlog(_ctxlog.trace, "Join rejected in state {}", _state);
         return make_join_error(
           unknown_member_id, error_code::coordinator_not_available);
 
     } else if (!supports_protocols(r)) {
-        klog.trace("requested protocols not supported by group");
         return make_join_error(
           unknown_member_id, error_code::inconsistent_group_protocol);
     }
@@ -480,8 +502,11 @@ group::join_group_unknown_member(join_group_request&& r) {
         // member in the pending member list and send back a response to
         // call for another join group request with allocated member id.
         // </kafka>
+        vlog(
+          _ctxlog.trace,
+          "Requesting rejoin for unknown member with new id {}",
+          new_member_id);
         add_pending_member(new_member_id);
-        klog.trace("requesting member rejoin with new id {}", new_member_id);
         return make_join_error(new_member_id, error_code::member_id_required);
     } else {
         return add_member_and_rebalance(std::move(new_member_id), std::move(r));
@@ -490,29 +515,38 @@ group::join_group_unknown_member(join_group_request&& r) {
 
 ss::future<join_group_response>
 group::join_group_known_member(join_group_request&& r) {
-    klog.trace("member {} joining group {}", r.data.member_id, *this);
-
     if (in_state(group_state::dead)) {
-        klog.trace("group is in the dead state");
+        vlog(
+          _ctxlog.trace,
+          "Join rejected in state {} for {}",
+          _state,
+          r.data.member_id);
         return make_join_error(
           r.data.member_id, error_code::coordinator_not_available);
 
     } else if (!supports_protocols(r)) {
-        klog.trace("requested protocols not supported by group");
         return make_join_error(
           r.data.member_id, error_code::inconsistent_group_protocol);
 
     } else if (contains_pending_member(r.data.member_id)) {
-        klog.trace("making pending member a regular member");
         kafka::member_id new_member_id = std::move(r.data.member_id);
         return add_member_and_rebalance(std::move(new_member_id), std::move(r));
 
     } else if (!contains_member(r.data.member_id)) {
-        klog.trace("member is not registered in the group");
+        vlog(
+          _ctxlog.trace,
+          "Join rejected for unregistered member {}",
+          r.data.member_id);
         return make_join_error(r.data.member_id, error_code::unknown_member_id);
     }
 
     auto member = get_member(r.data.member_id);
+
+    vlog(
+      _ctxlog.trace,
+      "Handling join for {}leader member {}",
+      is_leader(member->id()) ? "" : "non-",
+      member);
 
     switch (state()) {
     case group_state::preparing_rebalance:
@@ -524,7 +558,6 @@ group::join_group_known_member(join_group_request&& r) {
             // because it failed to receive the initial JoinGroup response), so
             // just return current group information for the current
             // generation.</kafka>
-            klog.trace("resending the member join group response");
 
             // the leader receives group member metadata
             std::vector<member_config> members;
@@ -540,12 +573,18 @@ group::join_group_known_member(join_group_request&& r) {
               std::move(r.data.member_id),
               std::move(members));
 
+            vlog(
+              _ctxlog.trace,
+              "Resending join response for member {} reply {}",
+              member->id(),
+              response);
+
             return ss::make_ready_future<join_group_response>(
               std::move(response));
 
         } else {
             // <kafka>member has changed metadata, so force a rebalance</kafka>
-            klog.trace("member rejoined while completing rebalance");
+            vlog(_ctxlog.trace, "Rebalancing due to protocol change");
             return update_member_and_rebalance(member, std::move(r));
         }
 
@@ -558,24 +597,21 @@ group::join_group_known_member(join_group_request&& r) {
             // trigger rebalances for changes affecting assignment which do not
             // affect the member metadata (such as topic metadata changes for
             // the consumer)</kafka>
-            klog.trace(
-              "member rejoining (leader={}) stable group causing rebalance",
-              (is_leader(r.data.member_id) ? "yes" : "no"));
-
+            vlog(_ctxlog.trace, "Rebalancing due to leader or protocol change");
             return update_member_and_rebalance(member, std::move(r));
 
         } else {
             // <kafka>for followers with no actual change to their metadata,
             // just return group information for the current generation which
             // will allow them to issue SyncGroup</kafka>
-            klog.trace("follower rejoined stable group with identical state");
-
             join_group_response response(
               error_code::none,
               generation(),
               protocol().value_or(protocol_name("")),
               leader().value_or(member_id("")),
               std::move(r.data.member_id));
+
+            vlog(_ctxlog.trace, "Handling idemponent group join {}", response);
 
             return ss::make_ready_future<join_group_response>(
               std::move(response));
@@ -585,8 +621,6 @@ group::join_group_known_member(join_group_request&& r) {
         [[fallthrough]];
 
     case group_state::dead:
-        klog.trace(
-          "member {} rejoin in unexpected state {}", r.data.member_id, state());
         return make_join_error(r.data.member_id, error_code::unknown_member_id);
     }
 
@@ -624,7 +658,6 @@ ss::future<join_group_response> group::add_member_and_rebalance(
     // is done below in `try_prepare_rebalance`). therefore, we grab the future
     // now since the promise may be invalidated before we return.
     auto response = add_member(member);
-    klog.trace("added member {} to group {}", member, *this);
     _pending_members.erase(member->id());
 
     // <kafka>The session timeout does not affect new members since they do not
@@ -645,6 +678,13 @@ ss::future<join_group_response> group::add_member_and_rebalance(
       });
     member->expire_timer().arm(deadline);
 
+    vlog(
+      _ctxlog.trace,
+      "Added member {} with join timeout {} ms to group {}",
+      member,
+      _conf.group_new_member_join_timeout(),
+      *this);
+
     try_prepare_rebalance();
     return response;
 }
@@ -659,14 +699,13 @@ group::update_member_and_rebalance(member_ptr member, join_group_request&& r) {
 
 void group::try_prepare_rebalance() {
     if (!valid_previous_state(group_state::preparing_rebalance)) {
-        klog.trace("skipping prepare rebalance state={}", state());
+        vlog(_ctxlog.trace, "Cannot prepare rebalance in state {}", _state);
         return;
     }
 
     // <kafka>if any members are awaiting sync, cancel their request and have
     // them rejoin.</kafka>
     if (in_state(group_state::completing_rebalance)) {
-        klog.trace("requesting rejoin from syncing members");
         clear_assignments();
         finish_syncing_members(error_code::rebalance_in_progress);
     }
@@ -689,40 +728,40 @@ void group::try_prepare_rebalance() {
                   delay = std::min(initial, remaining);
                   remaining = std::max(
                     remaining - prev_delay, duration_type(0));
-                  klog.trace(
-                    "rearming debounce timer for {}ms after new member join. "
-                    "remaining {}ms",
+                  vlog(
+                    _ctxlog.trace,
+                    "Scheduling debounce join timer for {} ms remaining {} ms",
                     delay,
                     remaining);
                   _join_timer.arm(delay);
               } else {
-                  klog.trace("completing join after debounce timer expiration");
                   complete_join();
               }
           });
 
-        klog.trace("debouncing empty group join for {}ms", initial);
+        vlog(
+          _ctxlog.trace,
+          "Scheduling initial debounce join timer for {} ms",
+          initial);
+
         _join_timer.arm(initial);
 
     } else if (all_members_joined()) {
+        vlog(_ctxlog.trace, "All members have joined");
         complete_join();
 
     } else {
-        klog.trace(
-          "not all members have joined cur {} waiting {} pending {}",
+        auto timeout = rebalance_timeout();
+        vlog(
+          _ctxlog.trace,
+          "Join completion scheduled in {} ms. Current members {} waiting {} "
+          "pending {}",
+          timeout,
           _members.size(),
           _num_members_joining,
           _pending_members.size());
-        auto timeout = rebalance_timeout();
         _join_timer.cancel();
-        _join_timer.set_callback([this]() {
-            vlog(
-              klog.trace,
-              "completing join on group rebalance timeout {}",
-              id());
-            complete_join();
-        });
-        klog.trace("scheduling join completion for {}ms", timeout);
+        _join_timer.set_callback([this]() { complete_join(); });
         _join_timer.arm(timeout);
     }
 }
@@ -734,13 +773,14 @@ void group::try_prepare_rebalance() {
  * is added.
  */
 void group::complete_join() {
-    klog.trace("completing join for group {}", *this);
+    vlog(_ctxlog.trace, "Completing join for group {}", *this);
 
     // <kafka>remove dynamic members who haven't joined the group yet</kafka>
     // this is the old group->remove_unjoined_members();
+    const auto prev_leader = _leader;
     for (auto it = _members.begin(); it != _members.end();) {
         if (!it->second->is_joining()) {
-            vlog(klog.trace, "removing unjoined member {}", it->first);
+            vlog(_ctxlog.trace, "Removing unjoined member {}", it->first);
 
             // cancel the heartbeat timer
             it->second->expire_timer().cancel();
@@ -749,7 +789,11 @@ void group::complete_join() {
             for (auto& p : it->second->protocols()) {
                 auto& count = _supported_protocols[p.name];
                 --count;
-                vassert(count >= 0, "supported protocols cannot be negative");
+                vassert(
+                  count >= 0,
+                  "Invalid supported protocols {} in {}",
+                  count,
+                  *this);
             }
 
             auto leader = is_leader(it->second->id());
@@ -768,8 +812,16 @@ void group::complete_join() {
         }
     }
 
+    if (_leader != prev_leader) {
+        vlog(
+          _ctxlog.trace,
+          "Leadership changed to {} from {}",
+          _leader,
+          prev_leader);
+    }
+
     if (in_state(group_state::dead)) {
-        klog.trace("skipping join completion because group is dead");
+        vlog(_ctxlog.trace, "Cancelling join completion in state {}", _state);
 
     } else if (!leader_rejoined() && has_members()) {
         // <kafka>If all members are not rejoining, we will postpone the
@@ -779,20 +831,20 @@ void group::complete_join() {
         //
         // the callback needs to be reset because we may have arrived here via
         // the initial delayed callback which implements debouncing.
-        klog.trace("could not complete rebalance because no members rejoined");
         auto timeout = rebalance_timeout();
+        vlog(
+          _ctxlog.trace,
+          "No members re-joined. Scheduling completion for {} ms",
+          timeout);
         _join_timer.cancel();
-        _join_timer.set_callback([this]() {
-            vlog(
-              klog.trace, "completing join after waiting for leader {}", id());
-            complete_join();
-        });
+        _join_timer.set_callback([this]() { complete_join(); });
         _join_timer.arm(timeout);
 
     } else {
         advance_generation();
 
         if (in_state(group_state::empty)) {
+            vlog(_ctxlog.trace, "Checkpointing empty group {}", *this);
             auto batch = checkpoint(assignments_type{});
             auto reader = model::make_memory_record_batch_reader(
               std::move(batch));
@@ -823,8 +875,11 @@ void group::complete_join() {
                     member->id(),
                     std::move(md));
 
-                  klog.trace(
-                    "set join response for member {} reply {}", member, reply);
+                  vlog(
+                    _ctxlog.trace,
+                    "Completing join for {} with reply {}",
+                    member->id(),
+                    reply);
 
                   try_finish_joining_member(member, std::move(reply));
                   schedule_next_heartbeat_expiration(member);

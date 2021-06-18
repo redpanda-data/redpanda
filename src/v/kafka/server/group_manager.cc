@@ -530,23 +530,24 @@ ss::future<> recovery_batch_consumer::handle_offset_metadata(
 
 ss::future<join_group_response>
 group_manager::join_group(join_group_request&& r) {
-    klog.trace("join request {}", r);
-
     auto error = validate_group_status(
       r.ntp, r.data.group_id, join_group_api::key);
     if (error != error_code::none) {
-        klog.trace("request validation failed with error={}", error);
         return make_join_error(r.data.member_id, error);
     }
 
     if (
       r.data.session_timeout_ms < _conf.group_min_session_timeout_ms()
       || r.data.session_timeout_ms > _conf.group_max_session_timeout_ms()) {
-        klog.trace(
-          "join group request has invalid session timeout min={}/{}/max={}",
+        vlog(
+          klog.trace,
+          "Join group {} rejected for invalid session timeout {} valid range "
+          "[{},{}]. Request {}",
+          r.data.group_id,
           _conf.group_min_session_timeout_ms(),
           r.data.session_timeout_ms,
-          _conf.group_max_session_timeout_ms());
+          _conf.group_max_session_timeout_ms(),
+          r);
         return make_join_error(
           r.data.member_id, error_code::invalid_session_timeout);
     }
@@ -558,8 +559,13 @@ group_manager::join_group(join_group_request&& r) {
         // the member id is UNKNOWN, if member is specified but group does
         // not exist we should reject the request.</kafka>
         if (r.data.member_id != unknown_member_id) {
-            klog.trace(
-              "join request rejected for known member and unknown group");
+            vlog(
+              klog.trace,
+              "Join group {} rejected for known member {} joining unknown "
+              "group. Request {}",
+              r.data.group_id,
+              r.data.member_id,
+              r);
             return make_join_error(
               r.data.member_id, error_code::unknown_member_id);
         }
@@ -569,10 +575,11 @@ group_manager::join_group(join_group_request&& r) {
             // request to the correct core, but when we looked again it was
             // gone. this is generally not going to be a scenario that can
             // happen until we have rebalancing / partition deletion feature.
-            klog.error(
-              "Partition not found for ntp {} joining group {}",
-              r.ntp,
-              r.data.group_id);
+            vlog(
+              klog.trace,
+              "Join group {} rejected for unavailable ntp {}",
+              r.data.group_id,
+              r.ntp);
             return make_join_error(
               r.data.member_id, error_code::not_coordinator);
         }
@@ -581,8 +588,8 @@ group_manager::join_group(join_group_request&& r) {
           r.data.group_id, group_state::empty, _conf, p);
         _groups.emplace(r.data.group_id, group);
         _groups.rehash(0);
-        klog.trace("created new group {}", group);
         is_new_group = true;
+        vlog(klog.trace, "Created new group {} while joining", r.data.group_id);
     }
 
     return group->handle_join_group(std::move(r), is_new_group);
