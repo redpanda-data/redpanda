@@ -232,6 +232,14 @@ ss::future<absl::btree_map<script_id, errc>> pacemaker::remove_all_sources() {
     co_return results_map;
 }
 
+absl::flat_hash_set<model::ntp> pacemaker::registered_ntps(script_id id) const {
+    auto found = _scripts.find(id);
+    if (found != _scripts.end()) {
+        return found->second->registered_ntps();
+    }
+    return {};
+}
+
 bool pacemaker::local_script_id_exists(script_id id) {
     return _scripts.find(id) != _scripts.end();
 }

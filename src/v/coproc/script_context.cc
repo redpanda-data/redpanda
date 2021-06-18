@@ -407,4 +407,16 @@ ss::future<script_context::write_response> script_context::write_materialized(
     });
 }
 
+absl::flat_hash_set<model::ntp> script_context::registered_ntps() const {
+    absl::flat_hash_set<model::ntp> ntps;
+    std::transform(
+      _ntp_ctxs.cbegin(),
+      _ntp_ctxs.cend(),
+      std::inserter(ntps, ntps.begin()),
+      [](const std::pair<model::ntp, ss::lw_shared_ptr<ntp_context>>& p) {
+          return p.first;
+      });
+    return ntps;
+}
+
 } // namespace coproc

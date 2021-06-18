@@ -21,6 +21,8 @@
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 
+#include <absl/container/flat_hash_set.h>
+
 namespace coproc {
 
 /**
@@ -67,6 +69,12 @@ public:
      * held by this context are relinquished
      */
     ss::future<> shutdown();
+
+    /**
+     * Query the registered ntps for the part of the coprocessor existing on
+     * 'this' shard.
+     */
+    absl::flat_hash_set<model::ntp> registered_ntps() const;
 
 private:
     enum class write_response { success, crc_failure, term_too_old };

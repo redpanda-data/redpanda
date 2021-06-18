@@ -25,6 +25,7 @@
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/socket_defs.hh>
 
+#include <absl/container/flat_hash_set.h>
 #include <absl/container/node_hash_map.h>
 
 namespace coproc {
@@ -85,9 +86,19 @@ public:
     ss::future<absl::btree_map<script_id, errc>> remove_all_sources();
 
     /**
+     * @returns valid registered ntps for a given id
+     */
+    absl::flat_hash_set<model::ntp> registered_ntps(script_id) const;
+
+    /**
      * @returns true if a matching script id exists on 'this' shard
      */
     bool local_script_id_exists(script_id);
+
+    /**
+     * @returns true if there is a valid connection to the wasm engine
+     */
+    bool is_connected() const { return _shared_res.transport.is_valid(); }
 
     /// returns the number of running / registered fibers
     size_t n_registered_scripts() const { return _scripts.size(); }
