@@ -62,15 +62,15 @@ ss::future<> event_listener::stop() {
 }
 
 ss::future<> event_listener::persist_actions(
-  absl::btree_map<script_id, iobuf> wsas, model::offset last_offset) {
+  absl::btree_map<script_id, log_event> wsas, model::offset last_offset) {
     std::vector<enable_copros_request::data> enables;
     std::vector<script_id> disables;
-    for (auto& [id, source] : wsas) {
+    for (auto& [id, event] : wsas) {
         /// Keeping the active_ids cache up to date solves the issue of issuing
         /// a bunch of remove commands for scripts that aren't deployed (this
         /// could occur during bootstrapping)
         auto found = _active_ids.find(id);
-        if (query_action(source) == event_action::remove) {
+        if (query_action(event.source_code) == event_action::remove) {
             if (found != _active_ids.end()) {
                 disables.emplace_back(id);
             }
@@ -81,7 +81,7 @@ ss::future<> event_listener::persist_actions(
             /// arrived in separate batches.
             if (found == _active_ids.end()) {
                 enables.emplace_back(enable_copros_request::data{
-                  .id = id, .source_code = std::move(source)});
+                  .id = id, .source_code = std::move(event.source_code)});
             }
         }
     }
@@ -103,7 +103,7 @@ ss::future<> event_listener::persist_actions(
                   coproclog.info,
                   "Successfully registered script with id: {}",
                   id);
-                _active_ids.insert(id);
+                _active_ids[id] = std::move(wsas[id].attrs);
             }
         }
     }

@@ -25,10 +25,19 @@
 namespace coproc::wasm {
 
 /// Enumerations for all possible values for keys within the record headers
-enum class event_header { action, description, checksum };
+enum class event_header { action, name, description, checksum };
 
 /// Enumerations for all possible values for the 'action' key within the headers
 enum class event_action { deploy, remove };
+
+struct deploy_attributes {
+    ss::sstring description;
+    ss::sstring name;
+};
+struct log_event {
+    deploy_attributes attrs;
+    iobuf source_code;
+};
 
 /// \brief returns the id of the event, performs a byte-copy
 std::optional<script_id> get_event_id(const model::record&);
@@ -51,7 +60,7 @@ wasm::errc validate_event(const model::record&);
 
 /// \brief Returns the newest events and their data blobs if the event has
 /// passed all validators
-absl::btree_map<script_id, iobuf>
+absl::btree_map<script_id, log_event>
   reconcile_events(std::vector<model::record_batch>);
 
 } // namespace coproc::wasm

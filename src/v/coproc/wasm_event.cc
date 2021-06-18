@@ -37,6 +37,8 @@ std::string_view header_as_string_view(event_header header) {
         return "description";
     case event_header::checksum:
         return "sha256";
+    case event_header::name:
+        return "name";
     }
     __builtin_unreachable();
 }
@@ -95,7 +97,7 @@ wasm::errc verify_event_checksum(const model::record& r) {
              : wasm::errc::mismatched_checksum;
 }
 
-wasm::errc validate_event(const model::record& r) {
+wasm::errc parse_event(const model::record& r, log_event& le) {
     /// A key field is mandatory for all types of expected events
     if (!get_event_id(r)) {
         return wasm::errc::empty_mandatory_field;
@@ -114,23 +116,43 @@ wasm::errc validate_event(const model::record& r) {
         if (r.value_size() == 0) {
             return wasm::errc::empty_mandatory_field;
         }
-        return verify_event_checksum(r);
+        auto desc_itr = get_value_for_event_header(
+          r, event_header::description);
+        auto name_itr = get_value_for_event_header(r, event_header::name);
+        if (
+          (desc_itr == r.headers().cend())
+          || (name_itr == r.headers().cend())) {
+            return wasm::errc::empty_mandatory_field;
+        }
+        auto checksum_errc = verify_event_checksum(r);
+        if (checksum_errc != wasm::errc::none) {
+            return checksum_errc;
+        }
+        le.attrs.description = iobuf_const_parser(desc_itr->value())
+                                 .read_string(desc_itr->value_size());
+        le.attrs.name = iobuf_const_parser(name_itr->value())
+                          .read_string(name_itr->value_size());
     } else {
         if (r.value_size() > 0) {
             /// A 'remove' should have an empty body
             return wasm::errc::unexpected_value;
         }
     }
-    /// A description isn't neccessary for either event type
     return wasm::errc::none;
 }
 
-absl::btree_map<script_id, iobuf>
+wasm::errc validate_event(const model::record& r) {
+    log_event le;
+    return parse_event(r, le);
+}
+
+absl::btree_map<script_id, log_event>
 reconcile_events(std::vector<model::record_batch> events) {
-    absl::btree_map<script_id, iobuf> wsas;
+    absl::btree_map<script_id, log_event> wsas;
     for (auto& record_batch : events) {
         record_batch.for_each_record([&wsas](model::record r) {
-            auto mb_error = wasm::validate_event(r);
+            log_event le;
+            auto mb_error = wasm::parse_event(r, le);
             if (mb_error != wasm::errc::none) {
                 vlog(
                   coproclog.error,
@@ -139,8 +161,8 @@ reconcile_events(std::vector<model::record_batch> events) {
                 return;
             }
             auto id = wasm::get_event_id(r);
-            /// Update or insert, preferring the newest
-            wsas.insert_or_assign(*id, r.share_value());
+            le.source_code = r.share_value();
+            wsas.insert_or_assign(*id, std::move(le));
         });
     }
     return wsas;

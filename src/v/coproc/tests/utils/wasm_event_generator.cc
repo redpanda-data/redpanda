@@ -28,6 +28,7 @@ event::event(uint64_t id)
 event::event(uint64_t id, cpp_enable_payload ep)
   : id(id)
   , desc(random_generators::get_bytes(64))
+  , name(random_generators::get_bytes(24))
   , action(event_action::deploy) {
     iobuf payload;
     reflection::serialize(payload, ep.tid, std::move(ep.topics));
@@ -67,6 +68,9 @@ void serialize_event(storage::record_batch_builder& rbb, const event& e) {
     }
     if (e.desc) {
         headers.emplace_back(create_header("description", *e.desc));
+    }
+    if (e.name) {
+        headers.emplace_back(create_header("name", *e.name));
     }
     if (e.checksum) {
         headers.emplace_back(create_header("sha256", *e.checksum));
@@ -116,6 +120,7 @@ model::record_batch_reader make_random_event_record_batch_reader(
                 e.action = event_action::deploy;
                 e.script = random_generators::get_bytes();
                 e.desc = random_generators::get_bytes(64);
+                e.name = random_generators::get_bytes(24);
                 e.checksum = calculate_checksum(e);
             }
             serialize_event(rbb, e);

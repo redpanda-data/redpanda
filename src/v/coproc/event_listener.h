@@ -12,6 +12,7 @@
 
 #include "coproc/script_dispatcher.h"
 #include "coproc/types.h"
+#include "coproc/wasm_event.h"
 #include "kafka/client/client.h"
 
 #include <seastar/core/abort_source.hh>
@@ -54,7 +55,7 @@ private:
     poll_topic(model::record_batch_reader::data_t&);
 
     ss::future<>
-      persist_actions(absl::btree_map<script_id, iobuf>, model::offset);
+      persist_actions(absl::btree_map<script_id, log_event>, model::offset);
 
 private:
     /// Kafka client used to poll the internal topic
@@ -68,7 +69,7 @@ private:
     model::offset _offset{0};
 
     /// Set of known script ids to be active
-    absl::btree_set<script_id> _active_ids;
+    absl::btree_map<script_id, deploy_attributes> _active_ids;
 
     /// Used to make requests to the wasm engine
     script_dispatcher _dispatcher;

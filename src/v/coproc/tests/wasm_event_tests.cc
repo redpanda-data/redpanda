@@ -75,6 +75,7 @@ BOOST_AUTO_TEST_CASE(verify_make_event_failures) {
         e.id = random_generators::get_int<uint64_t>(55555);
         e.desc = random_generators::get_bytes(64);
         e.script = random_generators::get_bytes(15);
+        e.name = random_generators::get_bytes(15);
         e.checksum = random_generators::get_bytes(32);
         e.action = coproc::wasm::event_action::deploy;
         model::record r = coproc::wasm::make_record(e);
@@ -106,8 +107,8 @@ SEASTAR_THREAD_TEST_CASE(verify_event_reconciliation) {
         std::make_move_iterator(batches.begin()),
         std::make_move_iterator(batches.end())));
     BOOST_CHECK_EQUAL(results.size(), 3);
-    BOOST_CHECK(
-      results.find(coproc::script_id(123))->second.empty()); /// 'remove' event
+    BOOST_CHECK(results.find(coproc::script_id(123))
+                  ->second.source_code.empty()); /// 'remove' event
     BOOST_CHECK(results.find(coproc::script_id(123)) != results.end());
     BOOST_CHECK(results.find(coproc::script_id(456)) != results.end());
     BOOST_CHECK(results.find(coproc::script_id(789)) != results.end());

@@ -37,6 +37,7 @@ struct event {
     std::optional<uint64_t> id;
     std::optional<bytes> desc;
     std::optional<bytes> script;
+    std::optional<bytes> name;
     std::optional<bytes> checksum;
     std::optional<event_action> action;
 
