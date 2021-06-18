@@ -11,10 +11,13 @@
 #include "coproc/event_listener.h"
 
 #include "config/configuration.h"
+#include "coproc/api/wasm_list.h"
 #include "coproc/errc.h"
 #include "coproc/logger.h"
 #include "coproc/types.h"
-#include "coproc/wasm_event.h"
+#include "kafka/client/publish_batch_consumer.h"
+#include "kafka/protocol/errors.h"
+#include "kafka/protocol/schemata/create_topics_request.h"
 #include "model/namespace.h"
 #include "ssx/future-util.h"
 #include "storage/parser_utils.h"
@@ -105,6 +108,7 @@ ss::future<> event_listener::persist_actions(
                   id);
                 _active_ids[id] = std::move(wsas[id].attrs);
             }
+            co_await advertise_state_update();
         }
     }
     if (!disables.empty()) {
@@ -125,12 +129,14 @@ ss::future<> event_listener::persist_actions(
             for (script_id id : resp.value()) {
                 _active_ids.erase(id);
             }
+            co_await advertise_state_update();
         }
     }
 }
 
 event_listener::event_listener(ss::sharded<pacemaker>& pacemaker)
   : _client(make_client())
+  , _pacemaker(pacemaker)
   , _dispatcher(pacemaker, _abort_source) {}
 
 ss::future<> event_listener::start() {
@@ -196,9 +202,35 @@ ss::future<> event_listener::do_start() {
         } else {
             _active_ids.clear();
             _offset = model::offset(0);
+            co_await advertise_state_update();
         }
     }
+
     co_await do_ingest();
+}
+
+ss::future<> event_listener::boostrap_status_topic() {
+    /// Bootstrap the coproc status topic. At mininum the wasm engine must
+    /// be up for this part of code to be reached.
+    kafka::creatable_topic copro_status_topic{
+      .name = model::coprocessor_status_topic,
+      .num_partitions = 1,
+      .replication_factor = 1,
+      .configs{kafka::createable_topic_config{
+        .name = "cleanup.policy", .value = "compact"}}};
+    auto responses = co_await _client.create_topic(
+      std::move(copro_status_topic));
+    vassert(responses.data.topics.size() == 1, "more then expected responses");
+    const auto code = responses.data.topics[0].error_code;
+    if (
+      code != kafka::error_code::none
+      && code != kafka::error_code::topic_already_exists) {
+        vlog(
+          coproclog.error,
+          "Error recieved when attempting to create coproc status topic: "
+          "{}, will try again",
+          code);
+    }
 }
 
 ss::future<> event_listener::do_ingest() {
@@ -251,5 +283,32 @@ event_listener::poll_topic(model::record_batch_reader::data_t& events) {
     co_return initial == _offset ? ss::stop_iteration::yes
                                  : ss::stop_iteration::no;
 };
+
+ss::future<> event_listener::advertise_state_update(std::size_t n) {
+    if (n <= 0) {
+        vlog(
+          coproclog.error,
+          "Attempted to create and produce to status topic multiple times, "
+          "will try again later");
+        co_return;
+    }
+    model::node_id node_id = model::node_id(config::shard_local_cfg().node_id);
+    model::record_batch_reader status = co_await current_status(
+      node_id, _pacemaker, _active_ids);
+    auto results = co_await std::move(status).for_each_ref(
+      kafka::client::publish_batch_consumer(
+        _client, model::coprocessor_status_tp),
+      model::no_timeout);
+    vassert(
+      results.size() == 1,
+      "Only one response was to be expected for this request");
+    if (
+      results[0].error_code == kafka::error_code::unknown_topic_or_partition) {
+        co_await boostrap_status_topic();
+        co_await advertise_state_update(n - 1);
+    } else if (results[0].error_code != kafka::error_code::none) {
+        vlog(coproclog.error, "Error producing onto coproc status topic");
+    }
+}
 
 } // namespace coproc::wasm

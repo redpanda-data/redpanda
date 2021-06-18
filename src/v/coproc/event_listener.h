@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "coproc/pacemaker.h"
 #include "coproc/script_dispatcher.h"
 #include "coproc/types.h"
 #include "coproc/wasm_event.h"
@@ -57,6 +58,9 @@ private:
     ss::future<>
       persist_actions(absl::btree_map<script_id, log_event>, model::offset);
 
+    ss::future<> boostrap_status_topic();
+    ss::future<> advertise_state_update(std::size_t n = 3);
+
 private:
     /// Kafka client used to poll the internal topic
     kafka::client::client _client;
@@ -70,6 +74,9 @@ private:
 
     /// Set of known script ids to be active
     absl::btree_map<script_id, deploy_attributes> _active_ids;
+
+    /// Managing instance of coprocessor infra
+    ss::sharded<coproc::pacemaker>& _pacemaker;
 
     /// Used to make requests to the wasm engine
     script_dispatcher _dispatcher;
