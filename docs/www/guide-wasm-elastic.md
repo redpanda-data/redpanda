@@ -91,9 +91,9 @@ This command creates a directory with a template that gives us a simple build sy
       .
       ├── package.json
       ├── src
-      │   └── wasm.js
+      │   └── main.js
       ├── test
-      │   └── wasm.test.js
+      │   └── main.test.js
       └── webpack.js
     ```
 
