@@ -98,6 +98,13 @@ func DeduceBrokers(
 			log.Debugf("Using --brokers: %s", strings.Join(bs, ", "))
 			return bs
 		}
+		// If no values were passed directly, look for the env vars.
+		envVar := "REDPANDA_BROKERS"
+		envBrokers := os.Getenv(envVar)
+		if envBrokers != "" {
+			log.Debugf("Using %s: %s", envVar, envBrokers)
+			return strings.Split(envBrokers, ",")
+		}
 		// Otherwise, try to detect if a local container cluster is
 		// running, and use its brokers' addresses.
 		c, err := client()
@@ -436,7 +443,10 @@ func AddKafkaFlags(
 		brokers,
 		"brokers",
 		[]string{},
-		"Comma-separated list of broker ip:port pairs",
+		"Comma-separated list of broker ip:port pairs (e.g."+
+			" --brokers '192.168.78.34:9092,192.168.78.35:9092,192.179.23.54:9092' )."+
+			" Alternatively, you may set the REDPANDA_BROKERS environment"+
+			" variable with the comma-separated list of broker addresses.",
 	)
 	command.PersistentFlags().StringVar(
 		configFile,
