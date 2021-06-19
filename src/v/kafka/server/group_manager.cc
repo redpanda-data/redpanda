@@ -662,12 +662,9 @@ ss::future<heartbeat_response> group_manager::heartbeat(heartbeat_request&& r) {
 
 ss::future<leave_group_response>
 group_manager::leave_group(leave_group_request&& r) {
-    klog.trace("leave request {}", r);
-
     auto error = validate_group_status(
       r.ntp, r.data.group_id, leave_group_api::key);
     if (error != error_code::none) {
-        klog.trace("invalid group status error={}", error);
         return make_leave_error(error);
     }
 
@@ -675,7 +672,10 @@ group_manager::leave_group(leave_group_request&& r) {
     if (group) {
         return group->handle_leave_group(std::move(r));
     } else {
-        klog.trace("group does not exist");
+        vlog(
+          klog.trace,
+          "Cannot handle leave group request for unknown group {}",
+          r.data.group_id);
         return make_leave_error(error_code::unknown_member_id);
     }
 }

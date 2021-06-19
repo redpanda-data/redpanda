@@ -928,6 +928,11 @@ void group::heartbeat_expire(
 void group::try_finish_joining_member(
   member_ptr member, join_group_response&& response) {
     if (member->is_joining()) {
+        vlog(
+          _ctxlog.trace,
+          "Finishing joining member {} with reply {}",
+          member->id(),
+          response);
         member->set_join_response(std::move(response));
         _num_members_joining--;
         vassert(_num_members_joining >= 0, "negative members joining");
@@ -953,6 +958,7 @@ void group::schedule_next_heartbeat_expiration(member_ptr member) {
 
 void group::remove_pending_member(const kafka::member_id& member_id) {
     _pending_members.erase(member_id);
+    vlog(_ctxlog.trace, "Removing pending member {}", member_id);
     if (in_state(group_state::preparing_rebalance)) {
         if (_join_timer.armed() && all_members_joined()) {
             _join_timer.cancel();
@@ -962,6 +968,8 @@ void group::remove_pending_member(const kafka::member_id& member_id) {
 }
 
 void group::remove_member(member_ptr member) {
+    vlog(_ctxlog.trace, "Removing member {}", member->id());
+
     // <kafka>New members may timeout with a pending JoinGroup while the group
     // is still rebalancing, so we have to invoke the callback before removing
     // the member. We return UNKNOWN_MEMBER_ID so that the consumer will retry
@@ -983,15 +991,22 @@ void group::remove_member(member_ptr member) {
                 vassert(_num_members_joining >= 0, "negative members joining");
             }
         }
-        vlog(klog.trace, "removing member {}", member->id());
         _members.erase(it);
     }
 
+    const auto prev_leader = _leader;
     if (is_leader(member->id())) {
         if (!_members.empty()) {
             _leader = _members.begin()->first;
         } else {
             _leader = std::nullopt;
+        }
+        if (_leader != prev_leader) {
+            vlog(
+              _ctxlog.trace,
+              "Leadership changed to {} from {}",
+              _leader,
+              prev_leader);
         }
     }
 
@@ -1261,24 +1276,27 @@ ss::future<heartbeat_response> group::handle_heartbeat(heartbeat_request&& r) {
 
 ss::future<leave_group_response>
 group::handle_leave_group(leave_group_request&& r) {
+    vlog(_ctxlog.trace, "Handling leave group request {}", r);
+
     if (in_state(group_state::dead)) {
-        klog.trace("group is dead");
+        vlog(_ctxlog.trace, "Leave rejected for group state {}", _state);
         return make_leave_error(error_code::coordinator_not_available);
 
     } else if (contains_pending_member(r.data.member_id)) {
         // <kafka>if a pending member is leaving, it needs to be removed
         // from the pending list, heartbeat cancelled and if necessary,
         // prompt a JoinGroup completion.</kafka>
-        klog.trace("pending member leaving group");
         remove_pending_member(r.data.member_id);
         return make_leave_error(error_code::none);
 
     } else if (!contains_member(r.data.member_id)) {
-        klog.trace("member not found");
+        vlog(
+          _ctxlog.trace,
+          "Leave rejected for unregistered member {}",
+          r.data.member_id);
         return make_leave_error(error_code::unknown_member_id);
 
     } else {
-        vlog(klog.trace, "member has left {}", r.data.member_id);
         auto member = get_member(r.data.member_id);
         member->expire_timer().cancel();
         remove_member(member);
