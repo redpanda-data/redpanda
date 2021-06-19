@@ -892,23 +892,34 @@ void group::complete_join() {
 void group::heartbeat_expire(
   kafka::member_id member_id, clock_type::time_point deadline) {
     if (in_state(group_state::dead)) {
-        klog.trace("heartbeat expire for dead group");
+        vlog(
+          _ctxlog.trace,
+          "Ignoring heartbeat expiration for group state {}",
+          _state);
 
     } else if (contains_pending_member(member_id)) {
-        klog.trace("heartbeat expire for pending member");
+        vlog(
+          _ctxlog.trace,
+          "Handling expired heartbeat for pending member {}",
+          member_id);
         remove_pending_member(member_id);
 
     } else if (!contains_member(member_id)) {
-        klog.trace("heartbeat expire for unknown member");
+        vlog(
+          _ctxlog.trace,
+          "Ignoring heartbeat expiration for unregistered member {}",
+          member_id);
 
     } else {
         auto member = get_member(member_id);
-        if (!member->should_keep_alive(
-              deadline, _conf.group_new_member_join_timeout())) {
-            vlog(
-              klog.trace,
-              "expired member heartbeat. removing member {}",
-              member->id());
+        const auto keep_alive = member->should_keep_alive(
+          deadline, _conf.group_new_member_join_timeout());
+        vlog(
+          _ctxlog.trace,
+          "Heartbeat expired for keep_alive={} member {}",
+          keep_alive,
+          member_id);
+        if (!keep_alive) {
             remove_member(member);
         }
     }
@@ -932,6 +943,11 @@ void group::schedule_next_heartbeat_expiration(member_ptr member) {
       [this, deadline, member_id = member->id()]() {
           heartbeat_expire(member_id, deadline);
       });
+    vlog(
+      _ctxlog.trace,
+      "Scheduling heartbeat expiration {} ms for {}",
+      member->session_timeout(),
+      member->id());
     member->expire_timer().arm(deadline);
 }
 
@@ -1192,26 +1208,35 @@ ss::future<sync_group_response> group::sync_group_completing_rebalance(
 }
 
 ss::future<heartbeat_response> group::handle_heartbeat(heartbeat_request&& r) {
+    vlog(_ctxlog.trace, "Handling heartbeat request {}", r);
+
     if (in_state(group_state::dead)) {
-        klog.trace("group is dead");
+        vlog(_ctxlog.trace, "Heartbeat rejected for group state {}", _state);
         return make_heartbeat_error(error_code::coordinator_not_available);
 
     } else if (!contains_member(r.data.member_id)) {
-        klog.trace("member not found");
+        vlog(
+          _ctxlog.trace,
+          "Heartbeat rejected for unregistered member {}",
+          r.data.member_id);
         return make_heartbeat_error(error_code::unknown_member_id);
 
     } else if (r.data.generation_id != generation()) {
-        klog.trace("generation does not match group");
+        vlog(
+          _ctxlog.trace,
+          "Heartbeat rejected with out-of-date generation {} != {}",
+          r.data.generation_id,
+          generation());
         return make_heartbeat_error(error_code::illegal_generation);
     }
 
     switch (state()) {
     case group_state::empty:
-        klog.trace("group is in the empty state");
+        vlog(_ctxlog.trace, "Heartbeat rejected for group state {}", _state);
         return make_heartbeat_error(error_code::unknown_member_id);
 
     case group_state::completing_rebalance:
-        klog.trace("group is completing rebalance");
+        vlog(_ctxlog.trace, "Heartbeat rejected for group state {}", _state);
         return make_heartbeat_error(error_code::rebalance_in_progress);
 
     case group_state::preparing_rebalance: {
