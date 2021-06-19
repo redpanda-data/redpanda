@@ -635,7 +635,8 @@ ss::future<join_group_response> group::add_member_and_rebalance(
 
 ss::future<join_group_response>
 group::update_member_and_rebalance(member_ptr member, join_group_request&& r) {
-    auto response = update_member(member, r.native_member_protocols());
+    auto response = update_member(
+      std::move(member), r.native_member_protocols());
     try_prepare_rebalance();
     return response;
 }
