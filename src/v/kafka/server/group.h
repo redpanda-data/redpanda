@@ -252,7 +252,7 @@ public:
      * specifies at least one protocol that is supported by all members of
      * the group.
      */
-    bool supports_protocols(const join_group_request& r);
+    bool supports_protocols(const join_group_request& r) const;
 
     /**
      * \brief Add a member to the group.
@@ -511,6 +511,44 @@ private:
 
     friend std::ostream& operator<<(std::ostream&, const group&);
 
+    class ctx_log {
+    public:
+        explicit ctx_log(const group& group)
+          : _group(group) {}
+
+        template<typename... Args>
+        void info(const char* format, Args&&... args) const {
+            log(ss::log_level::info, format, std::forward<Args>(args)...);
+        }
+
+        template<typename... Args>
+        void debug(const char* format, Args&&... args) const {
+            log(ss::log_level::debug, format, std::forward<Args>(args)...);
+        }
+
+        template<typename... Args>
+        void trace(const char* format, Args&&... args) const {
+            log(ss::log_level::trace, format, std::forward<Args>(args)...);
+        }
+
+        template<typename... Args>
+        void log(ss::log_level lvl, const char* format, Args&&... args) const {
+            if (unlikely(klog.is_enabled(lvl))) {
+                auto line_fmt = ss::sstring("[N:{} S:{} G:{}] ") + format;
+                klog.log(
+                  lvl,
+                  line_fmt.c_str(),
+                  _group.id()(),
+                  _group.state(),
+                  _group.generation(),
+                  std::forward<Args>(args)...);
+            }
+        }
+
+    private:
+        const group& _group;
+    };
+
     model::record_batch checkpoint(const assignments_type& assignments);
 
     cluster::abort_origin
@@ -533,6 +571,7 @@ private:
     ss::lw_shared_ptr<cluster::partition> _partition;
     absl::node_hash_map<model::topic_partition, offset_metadata> _offsets;
     model::violation_recovery_policy _recovery_policy;
+    ctx_log _ctxlog;
 
     mutex _tx_mutex;
     model::term_id _term;

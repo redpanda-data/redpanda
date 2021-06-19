@@ -530,23 +530,24 @@ ss::future<> recovery_batch_consumer::handle_offset_metadata(
 
 ss::future<join_group_response>
 group_manager::join_group(join_group_request&& r) {
-    klog.trace("join request {}", r);
-
     auto error = validate_group_status(
       r.ntp, r.data.group_id, join_group_api::key);
     if (error != error_code::none) {
-        klog.trace("request validation failed with error={}", error);
         return make_join_error(r.data.member_id, error);
     }
 
     if (
       r.data.session_timeout_ms < _conf.group_min_session_timeout_ms()
       || r.data.session_timeout_ms > _conf.group_max_session_timeout_ms()) {
-        klog.trace(
-          "join group request has invalid session timeout min={}/{}/max={}",
+        vlog(
+          klog.trace,
+          "Join group {} rejected for invalid session timeout {} valid range "
+          "[{},{}]. Request {}",
+          r.data.group_id,
           _conf.group_min_session_timeout_ms(),
           r.data.session_timeout_ms,
-          _conf.group_max_session_timeout_ms());
+          _conf.group_max_session_timeout_ms(),
+          r);
         return make_join_error(
           r.data.member_id, error_code::invalid_session_timeout);
     }
@@ -558,8 +559,13 @@ group_manager::join_group(join_group_request&& r) {
         // the member id is UNKNOWN, if member is specified but group does
         // not exist we should reject the request.</kafka>
         if (r.data.member_id != unknown_member_id) {
-            klog.trace(
-              "join request rejected for known member and unknown group");
+            vlog(
+              klog.trace,
+              "Join group {} rejected for known member {} joining unknown "
+              "group. Request {}",
+              r.data.group_id,
+              r.data.member_id,
+              r);
             return make_join_error(
               r.data.member_id, error_code::unknown_member_id);
         }
@@ -569,10 +575,11 @@ group_manager::join_group(join_group_request&& r) {
             // request to the correct core, but when we looked again it was
             // gone. this is generally not going to be a scenario that can
             // happen until we have rebalancing / partition deletion feature.
-            klog.error(
-              "Partition not found for ntp {} joining group {}",
-              r.ntp,
-              r.data.group_id);
+            vlog(
+              klog.trace,
+              "Join group {} rejected for unavailable ntp {}",
+              r.data.group_id,
+              r.ntp);
             return make_join_error(
               r.data.member_id, error_code::not_coordinator);
         }
@@ -581,8 +588,8 @@ group_manager::join_group(join_group_request&& r) {
           r.data.group_id, group_state::empty, _conf, p);
         _groups.emplace(r.data.group_id, group);
         _groups.rehash(0);
-        klog.trace("created new group {}", group);
         is_new_group = true;
+        vlog(klog.trace, "Created new group {} while joining", r.data.group_id);
     }
 
     return group->handle_join_group(std::move(r), is_new_group);
@@ -590,17 +597,14 @@ group_manager::join_group(join_group_request&& r) {
 
 ss::future<sync_group_response>
 group_manager::sync_group(sync_group_request&& r) {
-    klog.trace("sync request {}", r);
-
     if (r.data.group_instance_id) {
-        klog.trace("static group membership is unsupported");
+        vlog(klog.trace, "Static group membership is not supported");
         return make_sync_error(error_code::unsupported_version);
     }
 
     auto error = validate_group_status(
       r.ntp, r.data.group_id, sync_group_api::key);
     if (error != error_code::none) {
-        klog.trace("invalid group status {}", error);
         if (error == error_code::coordinator_load_in_progress) {
             // <kafka>The coordinator is loading, which means we've lost the
             // state of the active rebalance and the group will need to start
@@ -618,23 +622,23 @@ group_manager::sync_group(sync_group_request&& r) {
     if (group) {
         return group->handle_sync_group(std::move(r));
     } else {
-        klog.trace("group not found");
+        vlog(
+          klog.trace,
+          "Cannot handle sync group request for unknown group {}",
+          r.data.group_id);
         return make_sync_error(error_code::unknown_member_id);
     }
 }
 
 ss::future<heartbeat_response> group_manager::heartbeat(heartbeat_request&& r) {
-    klog.trace("heartbeat request {}", r);
-
     if (r.data.group_instance_id) {
-        klog.trace("static group membership is unsupported");
+        vlog(klog.trace, "Static group membership is not supported");
         return make_heartbeat_error(error_code::unsupported_version);
     }
 
     auto error = validate_group_status(
       r.ntp, r.data.group_id, heartbeat_api::key);
     if (error != error_code::none) {
-        klog.trace("invalid group status {}", error);
         if (error == error_code::coordinator_load_in_progress) {
             // <kafka>the group is still loading, so respond just
             // blindly</kafka>
@@ -648,18 +652,19 @@ ss::future<heartbeat_response> group_manager::heartbeat(heartbeat_request&& r) {
         return group->handle_heartbeat(std::move(r));
     }
 
-    klog.trace("group not found");
+    vlog(
+      klog.trace,
+      "Cannot handle heartbeat request for unknown group {}",
+      r.data.group_id);
+
     return make_heartbeat_error(error_code::unknown_member_id);
 }
 
 ss::future<leave_group_response>
 group_manager::leave_group(leave_group_request&& r) {
-    klog.trace("leave request {}", r);
-
     auto error = validate_group_status(
       r.ntp, r.data.group_id, leave_group_api::key);
     if (error != error_code::none) {
-        klog.trace("invalid group status error={}", error);
         return make_leave_error(error);
     }
 
@@ -667,7 +672,10 @@ group_manager::leave_group(leave_group_request&& r) {
     if (group) {
         return group->handle_leave_group(std::move(r));
     } else {
-        klog.trace("group does not exist");
+        vlog(
+          klog.trace,
+          "Cannot handle leave group request for unknown group {}",
+          r.data.group_id);
         return make_leave_error(error_code::unknown_member_id);
     }
 }
@@ -1009,17 +1017,29 @@ bool group_manager::valid_group_id(const group_id& group, api_key api) {
 error_code group_manager::validate_group_status(
   const model::ntp& ntp, const group_id& group, api_key api) {
     if (!valid_group_id(group, api)) {
+        vlog(
+          klog.trace, "Group name {} is invalid for operation {}", group, api);
         return error_code::invalid_group_id;
     }
 
     if (const auto it = _partitions.find(ntp); it != _partitions.end()) {
         if (!it->second->partition->is_leader()) {
-            klog.trace("group partition is not leader {}/{}", group, ntp);
+            vlog(
+              klog.trace,
+              "Group {} operation {} sent to non-leader coordinator {}",
+              group,
+              api,
+              ntp);
             return error_code::not_coordinator;
         }
 
         if (it->second->loading) {
-            klog.trace("group is loading {}/{}", group, ntp);
+            vlog(
+              klog.trace,
+              "Group {} operation {} sent to loading coordinator {}",
+              group,
+              api,
+              ntp);
             return error_code::not_coordinator;
             /*
              * returning `load in progress` is the correct error code for this
@@ -1039,7 +1059,12 @@ error_code group_manager::validate_group_status(
         return error_code::none;
     }
 
-    klog.trace("group operation misdirected {}/{}", group, ntp);
+    vlog(
+      klog.trace,
+      "Group {} operation {} misdirected to non-coordinator {}",
+      group,
+      api,
+      ntp);
     return error_code::not_coordinator;
 }
 
