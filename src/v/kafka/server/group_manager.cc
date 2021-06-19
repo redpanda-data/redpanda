@@ -597,17 +597,14 @@ group_manager::join_group(join_group_request&& r) {
 
 ss::future<sync_group_response>
 group_manager::sync_group(sync_group_request&& r) {
-    klog.trace("sync request {}", r);
-
     if (r.data.group_instance_id) {
-        klog.trace("static group membership is unsupported");
+        vlog(klog.trace, "Static group membership is not supported");
         return make_sync_error(error_code::unsupported_version);
     }
 
     auto error = validate_group_status(
       r.ntp, r.data.group_id, sync_group_api::key);
     if (error != error_code::none) {
-        klog.trace("invalid group status {}", error);
         if (error == error_code::coordinator_load_in_progress) {
             // <kafka>The coordinator is loading, which means we've lost the
             // state of the active rebalance and the group will need to start
@@ -625,7 +622,10 @@ group_manager::sync_group(sync_group_request&& r) {
     if (group) {
         return group->handle_sync_group(std::move(r));
     } else {
-        klog.trace("group not found");
+        vlog(
+          klog.trace,
+          "Cannot handle sync group request for unknown group {}",
+          r.data.group_id);
         return make_sync_error(error_code::unknown_member_id);
     }
 }

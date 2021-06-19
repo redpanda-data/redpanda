@@ -1009,17 +1009,23 @@ void group::remove_member(member_ptr member) {
 
 ss::future<sync_group_response>
 group::handle_sync_group(sync_group_request&& r) {
+    vlog(_ctxlog.trace, "Handling sync group request {}", r);
+
     if (in_state(group_state::dead)) {
-        klog.trace("group is dead");
+        vlog(_ctxlog.trace, "Sync rejected for group state {}", _state);
         return make_sync_error(error_code::coordinator_not_available);
 
     } else if (!contains_member(r.data.member_id)) {
-        klog.trace("member not found");
+        vlog(
+          _ctxlog.trace,
+          "Sync rejected for unregistered member {}",
+          r.data.member_id);
         return make_sync_error(error_code::unknown_member_id);
 
     } else if (r.data.generation_id != generation()) {
-        klog.trace(
-          "invalid generation request {} != group {}",
+        vlog(
+          _ctxlog.trace,
+          "Sync rejected with out-of-date generation {} != {}",
           r.data.generation_id,
           generation());
         return make_sync_error(error_code::illegal_generation);
@@ -1042,27 +1048,30 @@ group::handle_sync_group(sync_group_request&& r) {
     // and returns the assignment for itself.
     switch (state()) {
     case group_state::empty:
-        klog.trace("group is in the empty state");
+        vlog(_ctxlog.trace, "Sync rejected for group state {}", _state);
         return make_sync_error(error_code::unknown_member_id);
 
     case group_state::preparing_rebalance:
-        klog.trace("group is in the preparing rebalance state");
+        vlog(_ctxlog.trace, "Sync rejected for group state {}", _state);
         return make_sync_error(error_code::rebalance_in_progress);
 
     case group_state::completing_rebalance: {
-        klog.trace("completing rebalance");
         auto member = get_member(r.data.member_id);
         return sync_group_completing_rebalance(member, std::move(r));
     }
 
     case group_state::stable: {
-        klog.trace("group is stable. returning current assignment");
         // <kafka>if the group is stable, we just return the current
         // assignment</kafka>
         auto member = get_member(r.data.member_id);
         schedule_next_heartbeat_expiration(member);
-        return ss::make_ready_future<sync_group_response>(
-          sync_group_response(error_code::none, member->assignment()));
+        sync_group_response reply(error_code::none, member->assignment());
+        vlog(
+          _ctxlog.trace,
+          "Handling idemponent group sync for member {} with reply {}",
+          member,
+          reply);
+        return ss::make_ready_future<sync_group_response>(std::move(reply));
     }
 
     case group_state::dead:
@@ -1117,9 +1126,14 @@ ss::future<sync_group_response> group::sync_group_completing_rebalance(
 
     // wait for the leader to show up and fulfill the promise
     if (!is_leader(r.data.member_id)) {
-        klog.trace("non-leader member waiting for assignment");
+        vlog(
+          _ctxlog.trace,
+          "Non-leader member waiting for assignment {}",
+          member->id());
         return response;
     }
+
+    vlog(_ctxlog.trace, "Completing group sync with leader {}", member->id());
 
     // construct a member assignment structure that will be persisted to the
     // underlying metadata topic for group recovery. the mapping is the
@@ -1147,12 +1161,11 @@ ss::future<sync_group_response> group::sync_group_completing_rebalance(
           if (
             !in_state(group_state::completing_rebalance)
             || expected_generation != generation()) {
-              klog.trace("sync group state changed");
+              vlog(_ctxlog.trace, "Group state changed while completing sync");
               return std::move(response);
           }
 
           if (r) {
-              klog.trace("sync group state success {}", id());
               // the group state was successfully persisted:
               //   - save the member assignments; clients may re-request
               //   - unblock any clients waiting on their assignment
@@ -1160,8 +1173,12 @@ ss::future<sync_group_response> group::sync_group_completing_rebalance(
               set_assignments(std::move(assignments));
               finish_syncing_members(error_code::none);
               set_state(group_state::stable);
+              vlog(_ctxlog.trace, "Successfully completed group sync");
           } else {
-              klog.trace("sync group state failure {}", id());
+              vlog(
+                _ctxlog.trace,
+                "An error occurred completing group sync {}",
+                r.error());
               // an error was encountered persisting the group state:
               //   - clear all the member assignments
               //   - propogate error back to waiting clients
