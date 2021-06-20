@@ -38,7 +38,7 @@ If you’re on linux, follow the instructions in the
 Note: please follow only this section. If you do the production section, it
 will optimize your machine for Redpanda, which might affect your experience
 with desktop applications and other services. Be especially careful with
-`sudo rpk tune all` you probably don’t want to run that on your personal
+`sudo rpk redpanda tune all` you probably don’t want to run that on your personal
 workstation.
 
 
