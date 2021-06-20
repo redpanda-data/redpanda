@@ -55,14 +55,14 @@ By default Redpanda is installed in **Development** mode, to we next need to
 set Redpanda to run in **Production** mode. This is done with:
 
 ```
-sudo rpk mode production
+sudo rpk redpanda mode production
 ```
 
 We then need to tune the hardware, which can be done by running the following
 on each node:
 
 ```
-sudo rpk tune all
+sudo rpk redpanda tune all
 ```
 
 > **_Optional: Benchmark your SSD_**
