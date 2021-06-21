@@ -13,6 +13,7 @@ v_cc_library(
     handlers.cc
     error.cc
     service.cc
+    store.cc
     avro.cc
   DEPS
     v::pandaproxy_common
