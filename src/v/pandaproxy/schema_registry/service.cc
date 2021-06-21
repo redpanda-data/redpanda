@@ -176,7 +176,7 @@ service::service(
       "schema_registry",
       ss::api_registry_builder20(_config.api_doc_dir(), "/v1"),
       "schema_registry_header",
-      "/definitions",
+      "/schema_registry_definitions",
       _ctx)
   , _ensure_started{[this]() { return do_start(); }} {}
 

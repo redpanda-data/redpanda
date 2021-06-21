@@ -323,33 +323,8 @@
           {
             "name": "schema_def",
             "in": "body",
-            "schema": {
-              "type": "object",
-              "properties": {
-                "schema": {
-                  "type": "string"
-                },
-                "schemaType": {
-                  "type": "string"
-                },
-                "references": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "name": {
-                        "type": "string"
-                      },
-                      "subject": {
-                        "type": "string"
-                      },
-                      "version": {
-                          "type": "integer"
-                      }
-                    }
-                  }
-                }
-              }
+            "schema":  {
+              "$ref": "#/definitions/schema_def"
             }
           }
         ],
