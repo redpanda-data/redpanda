@@ -303,6 +303,38 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version(
 }
 
 ss::future<server::reply_t>
+delete_subject(server::request_t rq, server::reply_t rp) {
+    parse_accept_header(rq, rp);
+    auto sub{parse::request_param<subject>(*rq.req, "subject")};
+    auto permanent{
+      parse::query_param<std::optional<permanent_delete>>(*rq.req, "permanent")
+        .value_or(permanent_delete::no)};
+    rq.req.reset();
+
+    auto versions = rq.service().schema_store().delete_subject(sub, permanent);
+    if (versions.has_error()) {
+        rp.rep = make_errored_body(versions.error());
+        co_return rp;
+    }
+
+    auto batch = permanent
+                   ? make_delete_subject_permanently_batch(
+                     sub, versions.value())
+                   : make_delete_subject_batch(sub, versions.value().back());
+
+    auto res = co_await rq.service().client().local().produce_record_batch(
+      model::schema_registry_internal_tp, std::move(batch));
+
+    if (res.error_code != kafka::error_code::none) {
+        throw kafka::exception(res.error_code, *res.error_message);
+    }
+
+    auto json_rslt{json::rjson_serialize(versions.value())};
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
+ss::future<server::reply_t>
 compatibility_subject_version(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
