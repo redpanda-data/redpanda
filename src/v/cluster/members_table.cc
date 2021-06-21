@@ -114,4 +114,8 @@ std::vector<model::node_id> members_table::get_decommissioned() const {
     return ret;
 }
 
+bool members_table::contains(model::node_id id) const {
+    return _brokers.contains(id);
+}
+
 } // namespace cluster

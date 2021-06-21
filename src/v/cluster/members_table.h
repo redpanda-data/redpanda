@@ -35,6 +35,8 @@ public:
 
     std::vector<model::node_id> get_decommissioned() const;
 
+    bool contains(model::node_id) const;
+
     void update_brokers(patch<broker_ptr>);
 
     std::error_code apply(decommission_node_cmd);
