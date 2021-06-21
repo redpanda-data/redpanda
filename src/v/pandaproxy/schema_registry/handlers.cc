@@ -17,6 +17,7 @@
 #include "pandaproxy/parsing/httpd.h"
 #include "pandaproxy/reply.h"
 #include "pandaproxy/schema_registry/error.h"
+#include "pandaproxy/schema_registry/requests/compatibility.h"
 #include "pandaproxy/schema_registry/requests/config.h"
 #include "pandaproxy/schema_registry/requests/get_schemas_ids_id.h"
 #include "pandaproxy/schema_registry/requests/get_subject_versions_version.h"
@@ -284,6 +285,51 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version(
       .sub = sub,
       .version = version,
       .definition = std::move(get_res).value().definition})};
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
+ss::future<server::reply_t>
+compatibility_subject_version(server::request_t rq, server::reply_t rp) {
+    parse_accept_header(rq, rp);
+    auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
+    auto req = post_subject_versions_request{
+      .sub = parse::request_param<subject>(*rq.req, "subject"),
+      .payload = ppj::rjson_parse(
+        rq.req->content.data(), post_subject_versions_request_handler<>{})};
+    rq.req.reset();
+
+    auto version = invalid_schema_version;
+    if (ver == "latest") {
+        auto versions = rq.service().schema_store().get_versions(req.sub);
+        if (versions.has_error()) {
+            rp.rep = make_errored_body(versions.error());
+            co_return rp;
+        }
+        if (versions.value().empty()) {
+            auto code = make_error_code(error_code::subject_version_not_found);
+            rp.rep = make_errored_body(code);
+            co_return rp;
+        }
+        version = versions.value().back();
+    } else {
+        auto res = parse::from_chars<schema_version>{}(ver);
+        if (res.has_error()) {
+            rp.rep = make_errored_body(res.error());
+            co_return rp;
+        }
+        version = res.value();
+    }
+
+    auto get_res = rq.service().schema_store().is_compatible(
+      req.sub, version, req.payload.schema, req.payload.type);
+    if (get_res.has_error()) {
+        rp.rep = make_errored_body(get_res.error());
+        co_return rp;
+    }
+
+    auto json_rslt{json::rjson_serialize(
+      post_compatibility_res{.is_compat = get_res.value()})};
     rp.rep->write_body("json", json_rslt);
     co_return rp;
 }
