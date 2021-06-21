@@ -423,4 +423,68 @@
           }
         }
       }
+    },
+    "/compatibility/subjects/{subject}/versions/{version}": {
+      "post": {
+        "summary": "Test compatibility of a schema for the subject and version.",
+        "operationId": "compatibility_subject_version",
+        "consumes": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "subject",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "name": "schema_def",
+            "in": "body",
+            "schema":  {
+              "$ref": "#/definitions/schema_def"
+            }
+          }
+        ],
+        "produces": ["application/vnd.schemaregistry.v1+json"],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Incompatible schema",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "422": {
+            "description": "Invalid schema",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
     }
