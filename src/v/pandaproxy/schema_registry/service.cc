@@ -86,6 +86,10 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
       ss::httpd::schema_registry_json::get_subject_versions_version,
       wrap(gate, es, get_subject_versions_version)});
 
+    routes.routes.emplace_back(server::route_t{
+      ss::httpd::schema_registry_json::compatibility_subject_version,
+      wrap(gate, es, compatibility_subject_version)});
+
     return routes;
 }
 
