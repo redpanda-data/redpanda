@@ -33,6 +33,7 @@ namespace pandaproxy::schema_registry {
 
 struct post_subject_versions_version_response {
     subject sub;
+    schema_id id;
     schema_version version;
     schema_definition definition;
 };
@@ -43,6 +44,8 @@ inline void rjson_serialize(
     w.StartObject();
     w.Key("name");
     ::json::rjson_serialize(w, res.sub);
+    w.Key("id");
+    ::json::rjson_serialize(w, res.id);
     w.Key("version");
     ::json::rjson_serialize(w, res.version);
     w.Key("schema");
