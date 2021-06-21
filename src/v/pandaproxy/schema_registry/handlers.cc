@@ -187,9 +187,12 @@ get_schemas_ids_id(server::request_t rq, server::reply_t rp) {
 ss::future<server::reply_t>
 get_subjects(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
+    auto inc_del{
+      parse::query_param<std::optional<include_deleted>>(*rq.req, "deleted")
+        .value_or(include_deleted::no)};
     rq.req.reset();
 
-    auto subjects = rq.service().schema_store().get_subjects();
+    auto subjects = rq.service().schema_store().get_subjects(inc_del);
     auto json_rslt{json::rjson_serialize(subjects)};
     rp.rep->write_body("json", json_rslt);
     co_return rp;

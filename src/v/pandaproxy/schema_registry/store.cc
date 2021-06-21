@@ -26,6 +26,10 @@ result<bool> store::is_compatible(
         return error_code::subject_not_found;
     }
 
+    if (sub_it->second.deleted) {
+        return error_code::subject_not_found;
+    }
+
     // Lookup the version
     const auto& versions = sub_it->second.versions;
     auto ver_it = std::lower_bound(

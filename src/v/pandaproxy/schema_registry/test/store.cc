@@ -251,18 +251,18 @@ BOOST_AUTO_TEST_CASE(test_store_get_subjects) {
 
     pps::store s;
 
-    auto subjects = s.get_subjects();
+    auto subjects = s.get_subjects(pps::include_deleted::no);
     BOOST_REQUIRE(subjects.empty());
 
     // First insert
     s.insert(subject0, string_def0, pps::schema_type::avro);
-    subjects = s.get_subjects();
+    subjects = s.get_subjects(pps::include_deleted::no);
     BOOST_REQUIRE_EQUAL(subjects.size(), 1);
     BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject0)), 1);
 
     // second insert
     s.insert(subject1, string_def0, pps::schema_type::avro);
-    subjects = s.get_subjects();
+    subjects = s.get_subjects(pps::include_deleted::no);
     BOOST_REQUIRE(subjects.size() == 2);
     BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject0)), 1);
     BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject1)), 1);
@@ -342,4 +342,88 @@ BOOST_AUTO_TEST_CASE(test_store_invalid_subject_compat) {
     BOOST_REQUIRE_EQUAL(
       s.set_compatibility(subject0, expected).error(),
       pps::error_code::subject_not_found);
+}
+
+BOOST_AUTO_TEST_CASE(test_store_delete_subject) {
+    const std::vector<pps::schema_version> expected_vers{
+      {pps::schema_version{1}, pps::schema_version{2}}};
+
+    pps::store s;
+    s.set_compatibility(pps::compatibility_level::none).value();
+
+    BOOST_REQUIRE_EQUAL(
+      s.delete_subject(subject0, pps::permanent_delete::no).error(),
+      pps::error_code::subject_not_found);
+
+    BOOST_REQUIRE_EQUAL(
+      s.delete_subject(subject0, pps::permanent_delete::yes).error(),
+      pps::error_code::subject_not_found);
+
+    // First insert, expect id{1}, version{1}
+    s.insert(subject0, string_def0, pps::schema_type::avro);
+    s.insert(subject0, int_def0, pps::schema_type::avro);
+
+    auto v_res = s.get_versions(subject0);
+    BOOST_REQUIRE(v_res.has_value());
+    BOOST_REQUIRE_EQUAL_COLLECTIONS(
+      v_res.value().cbegin(),
+      v_res.value().cend(),
+      expected_vers.cbegin(),
+      expected_vers.cend());
+
+    // permanent delete of not soft-deleted should fail
+    auto d_res = s.delete_subject(subject0, pps::permanent_delete::yes);
+    BOOST_REQUIRE(d_res.has_error());
+    BOOST_REQUIRE_EQUAL(d_res.error(), pps::error_code::subject_not_deleted);
+
+    v_res = s.get_versions(subject0);
+    BOOST_REQUIRE(v_res.has_value());
+    BOOST_REQUIRE_EQUAL_COLLECTIONS(
+      v_res.value().cbegin(),
+      v_res.value().cend(),
+      expected_vers.cbegin(),
+      expected_vers.cend());
+
+    // expecting one subject
+    BOOST_REQUIRE_EQUAL(s.get_subjects(pps::include_deleted::no).size(), 1);
+
+    // soft delete should return versions
+    d_res = s.delete_subject(subject0, pps::permanent_delete::no);
+    BOOST_REQUIRE(d_res.has_value());
+    BOOST_REQUIRE_EQUAL_COLLECTIONS(
+      d_res.value().cbegin(),
+      d_res.value().cend(),
+      expected_vers.cbegin(),
+      expected_vers.cend());
+
+    // soft-deleted should return error
+    v_res = s.get_versions(subject0);
+    BOOST_REQUIRE(v_res.has_error());
+    BOOST_REQUIRE_EQUAL(v_res.error(), pps::error_code::subject_not_found);
+
+    BOOST_REQUIRE_EQUAL(s.get_subjects(pps::include_deleted::no).size(), 0);
+    BOOST_REQUIRE_EQUAL(s.get_subjects(pps::include_deleted::yes).size(), 1);
+
+    // Second soft delete should fail
+    d_res = s.delete_subject(subject0, pps::permanent_delete::no);
+    BOOST_REQUIRE(d_res.has_error());
+    BOOST_REQUIRE_EQUAL(d_res.error(), pps::error_code::subject_soft_deleted);
+
+    // permanent delete should return versions
+    d_res = s.delete_subject(subject0, pps::permanent_delete::yes);
+    BOOST_REQUIRE(d_res.has_value());
+    BOOST_REQUIRE_EQUAL_COLLECTIONS(
+      d_res.value().cbegin(),
+      d_res.value().cend(),
+      expected_vers.cbegin(),
+      expected_vers.cend());
+
+    // permanently deleted should not find subject, even if include_deleted
+    BOOST_REQUIRE(s.get_subjects(pps::include_deleted::no).empty());
+    BOOST_REQUIRE(s.get_subjects(pps::include_deleted::yes).empty());
+
+    // Second permanant delete should fail
+    d_res = s.delete_subject(subject0, pps::permanent_delete::yes);
+    BOOST_REQUIRE(d_res.has_error());
+    BOOST_REQUIRE_EQUAL(d_res.error(), pps::error_code::subject_not_found);
 }

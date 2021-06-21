@@ -71,6 +71,10 @@ public:
             return error_code::subject_not_found;
         }
 
+        if (sub_it->second.deleted) {
+            return error_code::subject_not_found;
+        }
+
         const auto& versions = sub_it->second.versions;
         auto v_it = std::lower_bound(
           versions.begin(),
@@ -98,14 +102,14 @@ public:
     }
 
     ///\brief Return a list of subjects.
-    std::vector<subject> get_subjects() const {
+    std::vector<subject> get_subjects(include_deleted inc_del) const {
         std::vector<subject> res;
         res.reserve(_subjects.size());
-        std::transform(
-          _subjects.begin(),
-          _subjects.end(),
-          std::back_inserter(res),
-          [](const auto& v) { return v.first; });
+        for (const auto& sub : _subjects) {
+            if (inc_del || !sub.second.deleted) {
+                res.push_back(sub.first);
+            }
+        }
         return res;
     }
 
@@ -115,6 +119,11 @@ public:
         if (sub_it == _subjects.end()) {
             return error_code::subject_not_found;
         }
+
+        if (sub_it->second.deleted) {
+            return error_code::subject_not_found;
+        }
+
         const auto& versions = sub_it->second.versions;
         std::vector<schema_version> res;
         res.reserve(versions.size());
@@ -123,6 +132,40 @@ public:
           versions.end(),
           std::back_inserter(res),
           [](const auto& v) { return v.version; });
+        return res;
+    }
+
+    ///\brief Delete a subject.
+    result<std::vector<schema_version>>
+    delete_subject(const subject& sub, permanent_delete permanent) {
+        auto sub_it = _subjects.find(sub);
+        if (sub_it == _subjects.end()) {
+            return error_code::subject_not_found;
+        }
+
+        if (permanent && !sub_it->second.deleted) {
+            return error_code::subject_not_deleted;
+        }
+
+        if (!permanent && sub_it->second.deleted) {
+            return error_code::subject_soft_deleted;
+        }
+
+        sub_it->second.deleted = is_deleted::yes;
+
+        const auto& versions = sub_it->second.versions;
+        std::vector<schema_version> res;
+        res.reserve(versions.size());
+        std::transform(
+          versions.begin(),
+          versions.end(),
+          std::back_inserter(res),
+          [](const auto& v) { return v.version; });
+
+        if (permanent) {
+            _subjects.erase(sub_it);
+        }
+
         return res;
     }
 
@@ -137,6 +180,11 @@ public:
         if (sub_it == _subjects.end()) {
             return error_code::subject_not_found;
         }
+
+        if (sub_it->second.deleted) {
+            return error_code::subject_not_found;
+        }
+
         return sub_it->second.compatibility.value_or(_compatibility);
     }
 
@@ -152,6 +200,11 @@ public:
         if (sub_it == _subjects.end()) {
             return error_code::subject_not_found;
         }
+
+        if (sub_it->second.deleted) {
+            return error_code::subject_not_found;
+        }
+
         // TODO(Ben): Check needs to be made here?
         return std::exchange(sub_it->second.compatibility, compatibility)
                != compatibility;
@@ -200,7 +253,9 @@ private:
         bool inserted;
     };
     insert_subject_result insert_subject(subject sub, schema_id id) {
-        auto& versions = _subjects[std::move(sub)].versions;
+        auto& subject_entry = _subjects[std::move(sub)];
+        subject_entry.deleted = is_deleted::no;
+        auto& versions = subject_entry.versions;
         const auto v_it = std::find_if(
           versions.cbegin(), versions.cend(), [id](auto v) {
               return v.id == id;
@@ -244,6 +299,7 @@ private:
     struct subject_entry {
         std::optional<compatibility_level> compatibility;
         std::vector<subject_version_id> versions;
+        is_deleted deleted{false};
     };
 
     absl::btree_map<schema_id, schema_entry> _schemas;

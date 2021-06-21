@@ -240,6 +240,14 @@
       "get": {
         "summary": "Retrieve a list of subjects.",
         "operationId": "get_subjects",
+        "parameters": [
+          {
+            "name": "deleted",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
         "produces": [
           "application/vnd.schemaregistry.v1+json",
           "application/vnd.schemaregistry+json",
