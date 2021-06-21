@@ -74,8 +74,10 @@ all built from source. The only thing we do not build yet is the Linux Kernel, b
 For hackers, here is the short and sweet:
 
 ```
-sudo ./install-dependencies.sh && ./build.sh
+sudo ./install-dependencies.sh && CC=gcc-11 CXX=g++-11 ./build.sh
 ```
+
+> We build with coros, so you need gcc11+ or clang12+
 
 # Beta builds
 
