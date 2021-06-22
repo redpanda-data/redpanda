@@ -65,6 +65,10 @@ type ClusterSpec struct {
 	// 3. updating this map requires a manual restart of the Redpanda pods
 	// 4. cannot have keys that conflict with existing struct fields - it leads to panic
 	AdditionalConfiguration map[string]string `json:"additionalConfiguration,omitempty"`
+	// DNSTrailingDotDisabled gives ability to turn off the fully-qualified
+	// DNS name.
+	// http://www.dns-sd.org/trailingdotsindomainnames.html
+	DNSTrailingDotDisabled bool `json:"dnsTrailingDotDisabled,omitempty"`
 }
 
 // Superuser has full access to the Redpanda cluster
