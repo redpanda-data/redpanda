@@ -31,8 +31,6 @@ import (
 var _ resources.Resource = &CertificateResource{}
 
 const (
-	// CAKey filename for root certificate
-	CAKey = cmetav1.TLSCAKey
 	// DefaultCertificateDuration default certification duration - 5 years
 	DefaultCertificateDuration = 5 * 365 * 24 * time.Hour
 	// DefaultRenewBefore default time length prior to expiration to attempt renewal - 90 days
