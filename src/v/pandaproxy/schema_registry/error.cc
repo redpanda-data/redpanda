@@ -32,6 +32,8 @@ struct error_category final : std::error_category {
             return "Subject not found";
         case error_code::subject_version_not_found:
             return "Subject version not found";
+        case error_code::topic_parse_error:
+            return "Unexpected data found in topic";
         }
         return "(unrecognized error)";
     }
@@ -46,6 +48,8 @@ struct error_category final : std::error_category {
             return reply_error_code::topic_not_found; // 40401
         case error_code::schema_invalid:
             return reply_error_code::unprocessable_entity;
+        case error_code::topic_parse_error:
+            return reply_error_code::zookeeper_error; // 50001
         }
         return {};
     }
