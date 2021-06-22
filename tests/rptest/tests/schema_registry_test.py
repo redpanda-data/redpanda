@@ -32,6 +32,10 @@ HTTP_POST_HEADERS = {
     "Content-Type": "application/vnd.schemaregistry.v1+json"
 }
 
+schema1_def = '{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"}]}'
+schema2_def = '{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2","default":"foo"}]}'
+schema3_def = '{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2"}]}'
+
 
 class SchemaRegistryTest(RedpandaTest):
     """
@@ -148,26 +152,7 @@ class SchemaRegistryTest(RedpandaTest):
         topic = create_topic_names(1)[0]
 
         self.logger.debug(f"Register a schema against a subject")
-        schema_def = {
-            "namespace":
-            "example.avro",
-            "type":
-            "record",
-            "name":
-            "User",
-            "fields": [{
-                "name": "name",
-                "type": "string"
-            }, {
-                "name": "favorite_number",
-                "type": ["int", "null"]
-            }, {
-                "name": "favorite_color",
-                "type": ["string", "null"]
-            }]
-        }
-
-        schema_1_data = json.dumps({"schema": json.dumps(schema_def)})
+        schema_1_data = json.dumps({"schema": schema1_def})
 
         self.logger.debug("Get empty subjects")
         result_raw = self._get_subjects()
@@ -284,26 +269,7 @@ class SchemaRegistryTest(RedpandaTest):
         assert result_raw.status_code == requests.codes.not_found
         assert result_raw.json()["error_code"] == 40401
 
-        schema_def = {
-            "namespace":
-            "example.avro",
-            "type":
-            "record",
-            "name":
-            "User",
-            "fields": [{
-                "name": "name",
-                "type": "string"
-            }, {
-                "name": "favorite_number",
-                "type": ["int", "null"]
-            }, {
-                "name": "favorite_color",
-                "type": ["string", "null"]
-            }]
-        }
-
-        schema_1_data = json.dumps({"schema": json.dumps(schema_def)})
+        schema_1_data = json.dumps({"schema": schema1_def})
 
         topic = create_topic_names(1)[0]
 
