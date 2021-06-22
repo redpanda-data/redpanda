@@ -63,6 +63,91 @@ BOOST_AUTO_TEST_CASE(test_store_insert) {
     BOOST_REQUIRE_EQUAL(ins_res.version, pps::schema_version{2});
 }
 
+BOOST_AUTO_TEST_CASE(test_store_upsert_in_order) {
+    const auto expected = std::vector<pps::schema_version>(
+      {pps::schema_version{0}, pps::schema_version{1}});
+
+    pps::store s;
+    BOOST_REQUIRE(s.upsert(
+      subject0,
+      string_def0,
+      pps::schema_type::avro,
+      pps::schema_id{0},
+      pps::schema_version{0}));
+    BOOST_REQUIRE(s.upsert(
+      subject0,
+      string_def0,
+      pps::schema_type::avro,
+      pps::schema_id{1},
+      pps::schema_version{1}));
+
+    auto res = s.get_versions(subject0);
+    BOOST_REQUIRE(res.has_value());
+    BOOST_REQUIRE_EQUAL_COLLECTIONS(
+      res.value().cbegin(),
+      res.value().cend(),
+      expected.cbegin(),
+      expected.cend());
+}
+
+BOOST_AUTO_TEST_CASE(test_store_upsert_reverse_order) {
+    const auto expected = std::vector<pps::schema_version>(
+      {pps::schema_version{0}, pps::schema_version{1}});
+
+    pps::store s;
+    BOOST_REQUIRE(s.upsert(
+      subject0,
+      string_def0,
+      pps::schema_type::avro,
+      pps::schema_id{1},
+      pps::schema_version{1}));
+    BOOST_REQUIRE(s.upsert(
+      subject0,
+      string_def0,
+      pps::schema_type::avro,
+      pps::schema_id{0},
+      pps::schema_version{0}));
+
+    auto res = s.get_versions(subject0);
+    BOOST_REQUIRE(res.has_value());
+    BOOST_REQUIRE_EQUAL_COLLECTIONS(
+      res.value().cbegin(),
+      res.value().cend(),
+      expected.cbegin(),
+      expected.cend());
+}
+
+BOOST_AUTO_TEST_CASE(test_store_upsert_override) {
+    const auto expected = std::vector<pps::schema_version>(
+      {pps::schema_version{0}});
+
+    pps::store s;
+    BOOST_REQUIRE(s.upsert(
+      subject0,
+      string_def0,
+      pps::schema_type::avro,
+      pps::schema_id{0},
+      pps::schema_version{0}));
+    // override schema and version (should return no insertion)
+    BOOST_REQUIRE(!s.upsert(
+      subject0,
+      int_def0,
+      pps::schema_type::avro,
+      pps::schema_id{0},
+      pps::schema_version{0}));
+
+    auto v_res = s.get_versions(subject0);
+    BOOST_REQUIRE(v_res.has_value());
+    BOOST_REQUIRE_EQUAL_COLLECTIONS(
+      v_res.value().cbegin(),
+      v_res.value().cend(),
+      expected.cbegin(),
+      expected.cend());
+    auto s_res = s.get_subject_schema(subject0, pps::schema_version{0});
+    BOOST_REQUIRE(s_res.has_value());
+    BOOST_REQUIRE(s_res.value().definition == int_def0);
+}
+
 BOOST_AUTO_TEST_CASE(test_store_get_schema) {
     pps::store s;
 

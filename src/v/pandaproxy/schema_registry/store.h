@@ -40,6 +40,20 @@ public:
         return {version, id, inserted};
     }
 
+    ///\brief Update or insert a schema with the given id, and register it with
+    /// the subject for the given version.
+    ///
+    /// return true if a new version was inserted, false if updated.
+    bool upsert(
+      subject sub,
+      schema_definition def,
+      schema_type type,
+      schema_id id,
+      schema_version version) {
+        upsert_schema(id, std::move(def), type);
+        return upsert_subject(std::move(sub), version, id);
+    }
+
     ///\brief Return a schema by id.
     result<schema> get_schema(const schema_id& id) const {
         auto it = _schemas.find(id);
@@ -165,6 +179,11 @@ private:
         return {id, inserted};
     }
 
+    bool upsert_schema(schema_id id, schema_definition def, schema_type type) {
+        return _schemas.insert_or_assign(id, schema_entry(type, std::move(def)))
+          .second;
+    }
+
     struct insert_subject_result {
         schema_version version;
         bool inserted;
@@ -183,6 +202,23 @@ private:
                                               : versions.back().version + 1;
         versions.emplace_back(version, id);
         return {version, true};
+    }
+
+    bool upsert_subject(subject sub, schema_version version, schema_id id) {
+        auto& versions = _subjects[std::move(sub)].versions;
+        const auto v_it = std::lower_bound(
+          versions.begin(),
+          versions.end(),
+          version,
+          [](const subject_version_id& lhs, schema_version rhs) {
+              return lhs.version < rhs;
+          });
+        if (v_it != versions.end() && v_it->version == version) {
+            *v_it = subject_version_id(version, id);
+            return false;
+        }
+        versions.insert(v_it, subject_version_id(version, id));
+        return true;
     }
 
     struct schema_entry {
