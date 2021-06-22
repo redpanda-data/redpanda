@@ -118,19 +118,19 @@ func TestTopicCmd(t *testing.T) {
 		{
 			name:           "set-config should output the given config key-value pair",
 			cmd:            topic.NewSetConfigCommand,
-			args:           []string{"Panama", "somekey", "somevalue"},
-			expectedOutput: "Added config 'somekey'='somevalue' to topic 'Panama'.",
+			args:           []string{"Panama", "somekey=somevalue", "someotherkey=someothervalue"},
+			expectedOutput: "Added configs somekey=somevalue, someotherkey=someothervalue to topic 'Panama'.",
 		},
 		{
 			name:           "set-config should allow passing negative numbers and not parse them as flags",
 			cmd:            topic.NewSetConfigCommand,
-			args:           []string{"Panama", "retention.ms", "-1"},
-			expectedOutput: "Added config 'retention.ms'='-1' to topic 'Panama'.",
+			args:           []string{"Panama", "retention.ms=-1"},
+			expectedOutput: "Added configs retention.ms=-1 to topic 'Panama'.",
 		},
 		{
 			name: "set-config should fail if the req fails",
 			cmd:  topic.NewSetConfigCommand,
-			args: []string{"Chiriqui", "k", "v"},
+			args: []string{"Chiriqui", "k=v"},
 			admin: &mocks.MockAdmin{
 				MockAlterConfig: func(
 					sarama.ConfigResourceType,
@@ -147,19 +147,19 @@ func TestTopicCmd(t *testing.T) {
 			name:        "set-config should fail if no topic is passed",
 			cmd:         topic.NewSetConfigCommand,
 			args:        []string{},
-			expectedErr: "topic's name, config key or value are missing.",
+			expectedErr: "a topic name and at least one key=value pair is required",
 		},
 		{
-			name:        "set-config should fail if no key is passed",
+			name:        "set-config should fail if no key-value pairs are passed",
 			cmd:         topic.NewSetConfigCommand,
 			args:        []string{"Chepo"},
-			expectedErr: "topic's name, config key or value are missing.",
+			expectedErr: "a topic name and at least one key=value pair is required",
 		},
 		{
-			name:        "set-config should fail if no value is passed",
+			name:        "set-config should fail if a key-value pair is invalid",
 			cmd:         topic.NewSetConfigCommand,
-			args:        []string{"Chepo", "key"},
-			expectedErr: "topic's name, config key or value are missing.",
+			args:        []string{"Chepo", "key=value", "keyequalsvalue"},
+			expectedErr: "invalid element 'keyequalsvalue'. Expected format <key>=<value>",
 		},
 		{
 			name: "list should output the list of topics",
