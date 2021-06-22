@@ -18,6 +18,7 @@
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/error.h"
+#include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/store.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "raft/types.h"
@@ -644,60 +645,67 @@ struct consume_to_store {
 
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
         if (!b.header().attrs.is_control()) {
-            b.for_each_record(*this);
+            co_await model::for_each_record(b, [this](model::record& rec) {
+                return (*this)(std::move(rec));
+            });
         }
         co_return ss::stop_iteration::no;
     }
 
-    void operator()(model::record record) {
+    ss::future<> operator()(model::record record) {
         auto key = record.release_key();
         auto key_type_str = from_json_iobuf<topic_key_type_handler<>>(
           key.share(0, key.size_bytes()));
 
         auto key_type = from_string_view<topic_key_type>(key_type_str);
         if (!key_type.has_value()) {
-            vlog(plog.warn, "Ignoring keytype: {}", key_type_str);
-            return;
+            vlog(plog.error, "Ignoring keytype: {}", key_type_str);
+            co_return;
         }
 
         switch (*key_type) {
         case topic_key_type::noop:
-            return;
+            co_return;
         case topic_key_type::schema:
-            return apply(
+            co_return co_await apply(
               from_json_iobuf<schema_key_handler<>>(std::move(key)),
               from_json_iobuf<schema_value_handler<>>(record.release_value()));
         case topic_key_type::config:
-            return apply(
+            co_return co_await apply(
               from_json_iobuf<config_key_handler<>>(std::move(key)),
               from_json_iobuf<config_value_handler<>>(record.release_value()));
         }
     }
 
-    void apply(schema_key key, schema_value val) {
-        vassert(key.magic == 1, "Schema key magic is unknown");
-        vlog(
-          plog.debug,
-          "Inserting key: subject: {}, version: {} ",
-          key.sub(),
-          key.version);
-        auto res = _store.insert(val.sub, val.schema, val.type);
-        vassert(res.id == val.id, "Schema_id mismatch");
-        vassert(res.version == val.version, "Schema_version mismatch");
+    ss::future<> apply(schema_key key, schema_value val) {
+        if (key.magic != 1) {
+            throw exception(
+              error_code::topic_parse_error,
+              fmt::format("key has unexpected magic: {}", key));
+        }
+        vlog(plog.debug, "Inserting key: {}", key);
+        _store.upsert(
+          std::move(val.sub),
+          std::move(val.schema),
+          val.type,
+          val.id,
+          val.version);
+        co_return;
     }
 
-    void apply(config_key key, config_value val) {
-        vassert(key.magic == 0, "Config key magic is unknown");
-        vlog(
-          plog.debug,
-          "Applying config: subject: {}, config: {} ",
-          key.sub.value_or(invalid_subject),
-          to_string_view(val.compat));
+    ss::future<> apply(config_key key, config_value val) {
+        if (key.magic != 0) {
+            throw exception(
+              error_code::topic_parse_error,
+              fmt::format("key has unexpected magic: {}", key));
+        }
+        vlog(plog.debug, "Applying config: {}", key);
         if (key.sub) {
             _store.set_compatibility(*key.sub, val.compat).value();
         } else {
             _store.set_compatibility(val.compat).value();
         }
+        co_return;
     }
 
     void end_of_stream() {}
