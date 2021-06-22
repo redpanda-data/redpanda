@@ -128,6 +128,16 @@ class SchemaRegistryTest(RedpandaTest):
         return requests.get(f"{self._base_uri()}/subjects/{subject}/versions",
                             headers=headers)
 
+    def _post_compatibility_subject_version(self,
+                                            subject,
+                                            version,
+                                            data,
+                                            headers=HTTP_POST_HEADERS):
+        return requests.post(
+            f"{self._base_uri()}/compatibility/subjects/{subject}/versions/{version}",
+            headers=headers,
+            data=data)
+
     @cluster(num_nodes=3)
     def test_schemas_types(self):
         """
@@ -290,3 +300,52 @@ class SchemaRegistryTest(RedpandaTest):
         self.logger.debug("Get subject config - should be overriden")
         result_raw = self._get_config_subject(subject=f"{topic}-key")
         assert result_raw.json()["compatibilityLevel"] == "BACKWARD_TRANSITIVE"
+
+    @cluster(num_nodes=3)
+    def test_post_compatibility_subject_version(self):
+        """
+        Verify compatibility
+        """
+
+        topic = create_topic_names(1)[0]
+
+        self.logger.debug(f"Register a schema against a subject")
+        schema_1_data = json.dumps({"schema": schema1_def})
+        schema_2_data = json.dumps({"schema": schema2_def})
+        schema_3_data = json.dumps({"schema": schema3_def})
+
+        self.logger.debug("Posting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Set subject config - NONE")
+        result_raw = self._set_config_subject(subject=f"{topic}-key",
+                                              data=json.dumps(
+                                                  {"compatibility": "NONE"}))
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Check compatibility none, no default")
+        result_raw = self._post_compatibility_subject_version(
+            subject=f"{topic}-key", version=1, data=schema_2_data)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["is_compatible"] == True
+
+        self.logger.debug("Set subject config - BACKWARD")
+        result_raw = self._set_config_subject(
+            subject=f"{topic}-key",
+            data=json.dumps({"compatibility": "BACKWARD"}))
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Check compatibility backward, with default")
+        result_raw = self._post_compatibility_subject_version(
+            subject=f"{topic}-key", version=1, data=schema_2_data)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["is_compatible"] == True
+
+        self.logger.debug("Check compatibility backward, no default")
+        result_raw = self._post_compatibility_subject_version(
+            subject=f"{topic}-key", version=1, data=schema_3_data)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["is_compatible"] == False
