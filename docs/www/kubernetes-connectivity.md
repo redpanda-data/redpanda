@@ -2,6 +2,7 @@
 title: Configuring Redpanda operator for connectivity
 order: 0
 ---
+# Configuring Redpanda operator for connectivity
 
 The Redpanda operator supports configuration for internal and external connectivity.
 In the folllowing sections we'll go over the corresponding configuration settings, the main actions the operator takes, the resouces created, and the expected outputs.
