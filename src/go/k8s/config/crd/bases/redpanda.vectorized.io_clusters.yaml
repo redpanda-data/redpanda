@@ -329,6 +329,10 @@ spec:
                         type: integer
                     type: object
                 type: object
+              dnsTrailingDotDisabled:
+                description: DNSTrailingDotDisabled gives ability to turn off the
+                  fully-qualified DNS name. http://www.dns-sd.org/trailingdotsindomainnames.html
+                type: boolean
               enableSasl:
                 description: SASL enablement flag
                 type: boolean
