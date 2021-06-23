@@ -335,6 +335,74 @@ delete_subject(server::request_t rq, server::reply_t rp) {
 }
 
 ss::future<server::reply_t>
+delete_subject_version(server::request_t rq, server::reply_t rp) {
+    parse_accept_header(rq, rp);
+    auto sub{parse::request_param<subject>(*rq.req, "subject")};
+    auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
+    auto permanent{
+      parse::query_param<std::optional<permanent_delete>>(*rq.req, "permanent")
+        .value_or(permanent_delete::no)};
+    rq.req.reset();
+
+    auto version = invalid_schema_version;
+    if (ver == "latest") {
+        auto versions = rq.service().schema_store().get_versions(
+          sub, include_deleted::yes);
+        if (versions.has_error()) {
+            rp.rep = make_errored_body(versions.error());
+            co_return rp;
+        }
+        if (versions.value().empty()) {
+            auto code = make_error_code(error_code::subject_version_not_found);
+            rp.rep = make_errored_body(code);
+            co_return rp;
+        }
+        version = versions.value().back();
+    } else {
+        auto res = parse::from_chars<schema_version>{}(ver);
+        if (res.has_error()) {
+            rp.rep = make_errored_body(res.error());
+            co_return rp;
+        }
+        version = res.value();
+    }
+
+    auto d_res = rq.service().schema_store().delete_subject_version(
+      sub, version, permanent, include_deleted::no);
+    if (d_res.has_error()) {
+        rp.rep = make_errored_body(d_res.error());
+        co_return rp;
+    }
+
+    if (d_res.value()) {
+        std::optional<model::record_batch> batch;
+        if (permanent) {
+            batch.emplace(
+              make_delete_subject_version_permanently_batch(sub, version));
+        } else {
+            auto s_res = rq.service().schema_store().get_subject_schema(
+              sub, version, include_deleted::yes);
+            if (s_res.has_error()) {
+                rp.rep = make_errored_body(s_res.error());
+                co_return rp;
+            }
+            batch.emplace(
+              make_delete_subject_version_batch(std::move(s_res).value()));
+        }
+        auto res = co_await rq.service().client().local().produce_record_batch(
+          model::schema_registry_internal_tp, std::move(batch).value());
+
+        if (res.error_code != kafka::error_code::none) {
+            throw kafka::exception(res.error_code, *res.error_message);
+        }
+    }
+
+    auto json_rslt{json::rjson_serialize(version)};
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
+ss::future<server::reply_t>
 compatibility_subject_version(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
