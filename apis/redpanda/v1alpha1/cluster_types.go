@@ -252,6 +252,10 @@ type PandaproxyAPI struct {
 // retrieved from the Secret named '<redpanda-cluster-name>-user-client'.
 //
 // All TLS secrets are stored in the same namespace as the Redpanda cluster.
+//
+// Additionally all mentioned certificates beside PEM version will have JKS
+// and PKCS#12 certificate. Both stores are protected with the password that
+// is the same as the name of the Cluster custom resource.
 type KafkaAPITLS struct {
 	Enabled bool `json:"enabled,omitempty"`
 	// References cert-manager Issuer or ClusterIssuer. When provided, this
@@ -285,6 +289,10 @@ type KafkaAPITLS struct {
 // the Secret named '<redpanda-cluster-name>-admin-api-client'.
 //
 // All TLS secrets are stored in the same namespace as the Redpanda cluster.
+//
+// Additionally all mentioned certificates beside PEM version will have JKS
+// and PKCS#12 certificate. Both stores are protected with the password that
+// is the same as the name of the Cluster custom resource.
 type AdminAPITLS struct {
 	Enabled           bool `json:"enabled,omitempty"`
 	RequireClientAuth bool `json:"requireClientAuth,omitempty"`
@@ -303,6 +311,10 @@ type AdminAPITLS struct {
 // the Secret named '<redpanda-cluster-name>-proxy-api-client'.
 //
 // All TLS secrets are stored in the same namespace as the Redpanda cluster.
+//
+// Additionally all mentioned certificates beside PEM version will have JKS
+// and PKCS#12 certificate. Both stores are protected with the password that
+// is the same as the name of the Cluster custom resource.
 type PandaproxyAPITLS struct {
 	Enabled           bool `json:"enabled,omitempty"`
 	RequireClientAuth bool `json:"requireClientAuth,omitempty"`
