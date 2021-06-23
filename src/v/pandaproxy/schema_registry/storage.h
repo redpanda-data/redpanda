@@ -717,6 +717,111 @@ public:
     }
 };
 
+struct delete_subject_value {
+    subject sub;
+    schema_version version;
+
+    friend bool
+    operator==(const delete_subject_value&, const delete_subject_value&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const delete_subject_value& v) {
+        fmt::print(os, "subject: {}, version: {}", v.sub, v.version);
+        return os;
+    }
+};
+
+inline void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const delete_subject_value& val) {
+    w.StartObject();
+    w.Key("subject");
+    ::json::rjson_serialize(w, val.sub);
+    w.Key("version");
+    ::json::rjson_serialize(w, val.version);
+    w.EndObject();
+}
+
+template<typename Encoding = rapidjson::UTF8<>>
+class delete_subject_value_handler : public json::base_handler<Encoding> {
+    enum class state {
+        empty = 0,
+        object,
+        subject,
+        version,
+    };
+    state _state = state::empty;
+
+public:
+    using Ch = typename json::base_handler<Encoding>::Ch;
+    using rjson_parse_result = delete_subject_value;
+    rjson_parse_result result;
+
+    delete_subject_value_handler()
+      : json::base_handler<Encoding>{json::serialization_format::none} {}
+
+    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        switch (_state) {
+        case state::object: {
+            std::optional<state> s{string_switch<std::optional<state>>(sv)
+                                     .match("subject", state::subject)
+                                     .match("version", state::version)
+                                     .default_match(std::nullopt)};
+            if (s.has_value()) {
+                _state = *s;
+            }
+            return s.has_value();
+        }
+        case state::empty:
+        case state::subject:
+        case state::version:
+            return false;
+        }
+        return false;
+    }
+
+    bool Uint(int i) {
+        switch (_state) {
+        case state::version: {
+            result.version = schema_version{i};
+            _state = state::object;
+            return true;
+        }
+        case state::empty:
+        case state::object:
+        case state::subject:
+            return false;
+        }
+        return false;
+    }
+
+    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        switch (_state) {
+        case state::subject: {
+            result.sub = subject{ss::sstring{sv}};
+            _state = state::object;
+            return true;
+        }
+        case state::empty:
+        case state::object:
+        case state::version:
+            return false;
+        }
+        return false;
+    }
+
+    bool StartObject() {
+        return std::exchange(_state, state::object) == state::empty;
+    }
+
+    bool EndObject(rapidjson::SizeType) {
+        return std::exchange(_state, state::empty) == state::object;
+    }
+};
+
 template<typename Handler>
 auto from_json_iobuf(iobuf&& iobuf) {
     auto p = iobuf_parser(std::move(iobuf));

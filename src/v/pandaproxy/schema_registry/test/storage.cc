@@ -83,6 +83,14 @@ constexpr std::string_view delete_subject_key_sv{
 const pps::delete_subject_key delete_subject_key{
   .sub{pps::subject{"my-kafka-value"}}};
 
+constexpr std::string_view delete_subject_value_sv{
+  R"({
+  "subject": "my-kafka-value",
+  "version": 2
+})"};
+const pps::delete_subject_value delete_subject_value{
+  .sub{pps::subject{"my-kafka-value"}}, .version{pps::schema_version{2}}};
+
 BOOST_AUTO_TEST_CASE(test_storage_serde) {
     {
         auto key = ppj::rjson_parse(
@@ -136,5 +144,15 @@ BOOST_AUTO_TEST_CASE(test_storage_serde) {
 
         auto str = ppj::rjson_serialize(delete_subject_key);
         BOOST_CHECK_EQUAL(str, ppj::minify(delete_subject_key_sv));
+    }
+
+    {
+        auto val = ppj::rjson_parse(
+          delete_subject_value_sv.data(),
+          pps::delete_subject_value_handler<>{});
+        BOOST_CHECK_EQUAL(delete_subject_value, val);
+
+        auto str = ppj::rjson_serialize(delete_subject_value);
+        BOOST_CHECK_EQUAL(str, ppj::minify(delete_subject_value_sv));
     }
 }
