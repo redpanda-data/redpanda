@@ -40,6 +40,14 @@ struct reply_error_category final : std::error_category {
             return "partition_not_found";
         case reply_error_code::consumer_instance_not_found:
             return "consumer_instance_not_found";
+        case reply_error_code::subject_soft_deleted:
+            return "subject_soft_deleted";
+        case reply_error_code::subject_not_deleted:
+            return "subject_not_deleted";
+        case reply_error_code::subject_version_soft_deleted:
+            return "subject_version_soft_deleted";
+        case reply_error_code::subject_version_not_deleted:
+            return "subject_version_not_deleted";
         case reply_error_code::zookeeper_error:
             return "zookeeper_error";
         case reply_error_code::kafka_error:
