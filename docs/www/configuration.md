@@ -466,6 +466,14 @@ pandaproxy_client:
   scram_password: ""
 
 rpk:
+  # Add optional flags to have rpk start redpanda with specific parameters.
+  # The available start flags are found in: /src/v/config/configuration.cc
+  additional_start_flags:
+    - "--overprovisioned"
+    - "--smp=2"
+    - "--memory=4G"
+    - "--default-log-level=info"
+
   # TLS configuration to allow rpk to make requests to the redpanda API.
   tls:
     # The path to the root CA certificate (PEM).
