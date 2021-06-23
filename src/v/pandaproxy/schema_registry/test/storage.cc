@@ -12,6 +12,7 @@
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/schema_registry/error.h"
+#include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/schema_registry/util.h"
 
 #include <absl/algorithm/container.h>
@@ -73,6 +74,15 @@ constexpr std::string_view config_value_sv{
 const pps::config_value config_value{
   .compat = pps::compatibility_level::forward_transitive};
 
+constexpr std::string_view delete_subject_key_sv{
+  R"({
+  "keytype": "DELETE_SUBJECT",
+  "subject": "my-kafka-value",
+  "magic": 0
+})"};
+const pps::delete_subject_key delete_subject_key{
+  .sub{pps::subject{"my-kafka-value"}}};
+
 BOOST_AUTO_TEST_CASE(test_storage_serde) {
     {
         auto key = ppj::rjson_parse(
@@ -117,5 +127,14 @@ BOOST_AUTO_TEST_CASE(test_storage_serde) {
 
         auto str = ppj::rjson_serialize(config_value);
         BOOST_CHECK_EQUAL(str, ppj::minify(config_value_sv));
+    }
+
+    {
+        auto val = ppj::rjson_parse(
+          delete_subject_key_sv.data(), pps::delete_subject_key_handler<>{});
+        BOOST_CHECK_EQUAL(delete_subject_key, val);
+
+        auto str = ppj::rjson_serialize(delete_subject_key);
+        BOOST_CHECK_EQUAL(str, ppj::minify(delete_subject_key_sv));
     }
 }

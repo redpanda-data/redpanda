@@ -35,7 +35,7 @@
 namespace pandaproxy::schema_registry {
 
 using topic_key_magic = named_type<int32_t, struct topic_key_magic_tag>;
-enum class topic_key_type { noop = 0, schema, config };
+enum class topic_key_type { noop = 0, schema, config, delete_subject };
 constexpr std::string_view to_string_view(topic_key_type kt) {
     switch (kt) {
     case topic_key_type::noop:
@@ -44,6 +44,8 @@ constexpr std::string_view to_string_view(topic_key_type kt) {
         return "SCHEMA";
     case topic_key_type::config:
         return "CONFIG";
+    case topic_key_type::delete_subject:
+        return "DELETE_SUBJECT";
     }
     return "{invalid}";
 };
@@ -54,6 +56,9 @@ from_string_view<topic_key_type>(std::string_view sv) {
       .match(to_string_view(topic_key_type::noop), topic_key_type::noop)
       .match(to_string_view(topic_key_type::schema), topic_key_type::schema)
       .match(to_string_view(topic_key_type::config), topic_key_type::config)
+      .match(
+        to_string_view(topic_key_type::delete_subject),
+        topic_key_type::delete_subject)
       .default_match(std::nullopt);
 }
 
@@ -591,6 +596,127 @@ public:
     }
 };
 
+struct delete_subject_key {
+    static constexpr topic_key_type keytype{topic_key_type::delete_subject};
+    subject sub;
+    topic_key_magic magic{0};
+
+    friend bool operator==(const delete_subject_key&, const delete_subject_key&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const delete_subject_key& v) {
+        fmt::print(
+          os,
+          "keytype: {}, subject: {}, magic: {}",
+          to_string_view(v.keytype),
+          v.sub,
+          v.magic);
+        return os;
+    }
+};
+
+inline void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const delete_subject_key& key) {
+    w.StartObject();
+    w.Key("keytype");
+    ::json::rjson_serialize(w, to_string_view(key.keytype));
+    w.Key("subject");
+    ::json::rjson_serialize(w, key.sub());
+    w.Key("magic");
+    ::json::rjson_serialize(w, key.magic);
+    w.EndObject();
+}
+
+template<typename Encoding = rapidjson::UTF8<>>
+class delete_subject_key_handler : public json::base_handler<Encoding> {
+    enum class state {
+        empty = 0,
+        object,
+        keytype,
+        subject,
+        magic,
+    };
+    state _state = state::empty;
+
+public:
+    using Ch = typename json::base_handler<Encoding>::Ch;
+    using rjson_parse_result = delete_subject_key;
+    rjson_parse_result result;
+
+    delete_subject_key_handler()
+      : json::base_handler<Encoding>{json::serialization_format::none} {}
+
+    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        switch (_state) {
+        case state::object: {
+            std::optional<state> s{string_switch<std::optional<state>>(sv)
+                                     .match("keytype", state::keytype)
+                                     .match("subject", state::subject)
+                                     .match("magic", state::magic)
+                                     .default_match(std::nullopt)};
+            if (s.has_value()) {
+                _state = *s;
+            }
+            return s.has_value();
+        }
+        case state::empty:
+        case state::keytype:
+        case state::subject:
+        case state::magic:
+            return false;
+        }
+        return false;
+    }
+
+    bool Uint(int i) {
+        switch (_state) {
+        case state::magic: {
+            result.magic = topic_key_magic{i};
+            _state = state::object;
+            return true;
+        }
+        case state::empty:
+        case state::keytype:
+        case state::object:
+        case state::subject:
+            return false;
+        }
+        return false;
+    }
+
+    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        switch (_state) {
+        case state::keytype: {
+            auto kt = from_string_view<topic_key_type>(sv);
+            _state = state::object;
+            return kt == result.keytype;
+        }
+        case state::subject: {
+            result.sub = subject{ss::sstring{sv}};
+            _state = state::object;
+            return true;
+        }
+        case state::empty:
+        case state::object:
+        case state::magic:
+            return false;
+        }
+        return false;
+    }
+
+    bool StartObject() {
+        return std::exchange(_state, state::object) == state::empty;
+    }
+
+    bool EndObject(rapidjson::SizeType) {
+        return std::exchange(_state, state::empty) == state::object;
+    }
+};
+
 template<typename Handler>
 auto from_json_iobuf(iobuf&& iobuf) {
     auto p = iobuf_parser(std::move(iobuf));
@@ -674,6 +800,8 @@ struct consume_to_store {
             co_return co_await apply(
               from_json_iobuf<config_key_handler<>>(std::move(key)),
               from_json_iobuf<config_value_handler<>>(record.release_value()));
+        case topic_key_type::delete_subject:
+            co_return;
         }
     }
 
