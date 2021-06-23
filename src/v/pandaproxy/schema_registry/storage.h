@@ -870,6 +870,31 @@ make_config_batch(std::optional<subject> sub, compatibility_level compat) {
       config_key{.sub{std::move(sub)}}, config_value{.compat = compat});
 }
 
+inline model::record_batch
+make_delete_subject_batch(subject sub, schema_version version) {
+    storage::record_batch_builder rb{
+      model::record_batch_type::raft_data, model::offset{0}};
+
+    rb.add_raw_kv(
+      to_json_iobuf(delete_subject_key{.sub{sub}}),
+      to_json_iobuf(delete_subject_value{.sub{sub}, .version{version}}));
+    rb.add_raw_kv(to_json_iobuf(config_key{.sub{sub}}), std::nullopt);
+    return std::move(rb).build();
+}
+
+inline model::record_batch make_delete_subject_permanently_batch(
+  subject sub, const std::vector<schema_version>& versions) {
+    storage::record_batch_builder rb{
+      model::record_batch_type::raft_data, model::offset{0}};
+
+    std::for_each(versions.cbegin(), versions.cend(), [&](auto version) {
+        rb.add_raw_kv(
+          to_json_iobuf(schema_key{.sub{sub}, .version{version}}),
+          std::nullopt);
+    });
+    return std::move(rb).build();
+}
+
 struct consume_to_store {
     explicit consume_to_store(store& s)
       : _store{s} {}
