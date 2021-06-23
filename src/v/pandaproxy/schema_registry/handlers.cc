@@ -232,7 +232,7 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
           ins_res.id,
           req.payload.schema,
           req.payload.type,
-          false);
+          is_deleted::no);
 
         auto res = co_await rq.service().client().local().produce_record_batch(
           model::schema_registry_internal_tp, std::move(batch));

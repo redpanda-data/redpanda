@@ -191,7 +191,7 @@ BOOST_AUTO_TEST_CASE(test_store_get_subject_schema) {
     auto val = std::move(res).assume_value();
     BOOST_REQUIRE_EQUAL(val.id, pps::schema_id{1});
     BOOST_REQUIRE_EQUAL(val.version, pps::schema_version{1});
-    BOOST_REQUIRE_EQUAL(val.deleted, false);
+    BOOST_REQUIRE_EQUAL(val.deleted, pps::is_deleted::no);
     BOOST_REQUIRE_EQUAL(val.definition, string_def0);
 
     // Second insert, expect id{1}, version{1}
@@ -205,7 +205,7 @@ BOOST_AUTO_TEST_CASE(test_store_get_subject_schema) {
     val = std::move(res).assume_value();
     BOOST_REQUIRE_EQUAL(val.id, pps::schema_id{1});
     BOOST_REQUIRE_EQUAL(val.version, pps::schema_version{1});
-    BOOST_REQUIRE_EQUAL(val.deleted, false);
+    BOOST_REQUIRE_EQUAL(val.deleted, pps::is_deleted::no);
     BOOST_REQUIRE_EQUAL(val.definition, string_def0);
 
     // Request bad version

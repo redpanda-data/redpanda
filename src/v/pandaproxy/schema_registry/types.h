@@ -16,6 +16,7 @@
 #include "utils/string_switch.h"
 
 #include <seastar/core/sstring.hh>
+#include <seastar/util/bool_class.hh>
 
 #include <fmt/core.h>
 #include <fmt/format.h>
@@ -24,6 +25,10 @@
 #include <type_traits>
 
 namespace pandaproxy::schema_registry {
+
+using permanent_delete = ss::bool_class<struct delete_tag>;
+using include_deleted = ss::bool_class<struct include_deleted_tag>;
+using is_deleted = ss::bool_class<struct is_deleted_tag>;
 
 template<typename E>
 std::enable_if_t<std::is_enum_v<E>, std::optional<E>>
@@ -99,7 +104,7 @@ struct subject_version_id {
 
     schema_version version;
     schema_id id;
-    bool deleted{false};
+    is_deleted deleted{is_deleted::no};
 };
 
 ///\brief All schema versions for a subject.
@@ -112,7 +117,7 @@ struct subject_schema {
     schema_id id{invalid_schema_id};
     schema_type type{schema_type::avro};
     schema_definition definition{invalid_schema_definition};
-    bool deleted{false};
+    is_deleted deleted{false};
 };
 
 enum class compatibility_level {

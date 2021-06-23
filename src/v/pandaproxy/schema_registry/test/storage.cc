@@ -47,7 +47,7 @@ const pps::schema_value avro_schema_value{
   .type = pps::schema_type::avro,
   .id{pps::schema_id{1}},
   .schema{pps::schema_definition{R"({"type":"string"})"}},
-  .deleted = true};
+  .deleted = pps::is_deleted::yes};
 
 constexpr std::string_view config_key_sv{
   R"({

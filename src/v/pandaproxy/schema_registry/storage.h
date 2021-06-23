@@ -247,7 +247,7 @@ struct schema_value {
     schema_type type{schema_type::avro};
     schema_id id;
     schema_definition schema;
-    bool deleted{false};
+    is_deleted deleted{false};
 
     friend bool operator==(const schema_value&, const schema_value&) = default;
 
@@ -278,7 +278,7 @@ inline void rjson_serialize(
     w.Key("schema");
     ::json::rjson_serialize(w, val.schema);
     w.Key("deleted");
-    ::json::rjson_serialize(w, val.deleted);
+    ::json::rjson_serialize(w, bool(val.deleted));
     if (val.type != schema_type::avro) {
         w.Key("schemaType");
         ::json::rjson_serialize(w, to_string_view(val.type));
@@ -363,7 +363,7 @@ public:
     bool Bool(bool b) {
         switch (_state) {
         case state::deleted: {
-            result.deleted = b;
+            result.deleted = is_deleted(b);
             _state = state::object;
             return true;
         }
@@ -620,7 +620,7 @@ inline model::record_batch make_schema_batch(
   schema_id id,
   schema_definition schema,
   schema_type type,
-  bool deleted) {
+  is_deleted deleted) {
     schema_key key{.sub{sub}, .version{ver}};
     return as_record_batch(
       std::move(key),
