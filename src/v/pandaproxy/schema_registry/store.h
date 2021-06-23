@@ -313,16 +313,17 @@ private:
         subject_entry.deleted = is_deleted::no;
         auto& versions = subject_entry.versions;
         const auto v_it = std::find_if(
-          versions.cbegin(), versions.cend(), [id](auto v) {
+          versions.begin(), versions.end(), [id](auto v) {
               return v.id == id;
           });
         if (v_it != versions.cend()) {
-            return {v_it->version, false};
+            auto inserted = std::exchange(v_it->deleted, is_deleted::no);
+            return {v_it->version, bool(inserted)};
         }
 
         const auto version = versions.empty() ? schema_version{1}
                                               : versions.back().version + 1;
-        versions.emplace_back(version, id);
+        versions.emplace_back(version, id, is_deleted::no);
         return {version, true};
     }
 
