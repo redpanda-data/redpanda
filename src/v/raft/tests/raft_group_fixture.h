@@ -35,6 +35,7 @@
 #include "storage/types.h"
 #include "test_utils/fixture.h"
 
+#include <seastar/core/scheduling.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/net/socket_defs.hh>
@@ -127,7 +128,9 @@ struct raft_node {
           std::move(cfg),
           std::move(jit),
           *log,
-          seastar::default_priority_class(),
+          raft::scheduling_config(
+            seastar::default_scheduling_group(),
+            seastar::default_priority_class()),
           std::chrono::seconds(10),
           raft::make_rpc_client_protocol(self_id, cache),
           [this](raft::leadership_status st) { leader_callback(st); },

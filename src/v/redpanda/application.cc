@@ -503,6 +503,7 @@ void application::wire_up_redpanda_services() {
       raft_group_manager,
       model::node_id(config::shard_local_cfg().node_id()),
       config::shard_local_cfg().raft_io_timeout_ms(),
+      _scheduling_groups.raft_sg(),
       config::shard_local_cfg().raft_heartbeat_interval_ms(),
       config::shard_local_cfg().raft_heartbeat_timeout_ms(),
       std::ref(_raft_connection_cache),

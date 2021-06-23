@@ -26,11 +26,11 @@ namespace raft {
 using namespace std::chrono_literals;
 
 recovery_stm::recovery_stm(
-  consensus* p, vnode node_id, ss::io_priority_class prio)
+  consensus* p, vnode node_id, scheduling_config scheduling)
   : _ptr(p)
   , _node_id(node_id)
   , _term(_ptr->term())
-  , _prio(prio)
+  , _scheduling(scheduling)
   , _ctxlog(_ptr->_ctxlog) {}
 
 ss::future<> recovery_stm::do_recover() {
@@ -173,7 +173,7 @@ ss::future<> recovery_stm::read_range_for_recovery(
       // time and all drawing from memory. If this setting proves difficult,
       // we'll need to throttle with a core-local semaphore
       32 * 1024,
-      _prio,
+      _scheduling.default_iopc,
       std::nullopt,
       std::nullopt,
       _ptr->_as);

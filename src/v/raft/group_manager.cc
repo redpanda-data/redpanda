@@ -14,17 +14,21 @@
 #include "prometheus/prometheus_sanitize.h"
 #include "resource_mgmt/io_priority.h"
 
+#include <seastar/core/scheduling.hh>
+
 namespace raft {
 
 group_manager::group_manager(
   model::node_id self,
   model::timeout_clock::duration disk_timeout,
+  ss::scheduling_group raft_sg,
   std::chrono::milliseconds heartbeat_interval,
   std::chrono::milliseconds heartbeat_timeout,
   ss::sharded<rpc::connection_cache>& clients,
   ss::sharded<storage::api>& storage)
   : _self(self)
   , _disk_timeout(disk_timeout)
+  , _raft_sg(raft_sg)
   , _client(make_rpc_client_protocol(self, clients))
   , _heartbeats(heartbeat_interval, _client, _self, heartbeat_timeout)
   , _storage(storage.local()) {
@@ -53,7 +57,7 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
       raft::timeout_jitter(
         config::shard_local_cfg().raft_election_timeout_ms()),
       log,
-      raft_priority(),
+      scheduling_config(_raft_sg, raft_priority()),
       _disk_timeout,
       _client,
       [this](raft::leadership_status st) {
