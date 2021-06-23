@@ -961,10 +961,15 @@ struct consume_to_store {
               from_json_iobuf<schema_key_handler<>>(std::move(key)),
               std::move(val));
         }
-        case topic_key_type::config:
+        case topic_key_type::config: {
+            std::optional<config_value> val;
+            if (!record.value().empty()) {
+                val.emplace(from_json_iobuf<config_value_handler<>>(
+                  record.release_value()));
+            }
             co_return co_await apply(
-              from_json_iobuf<config_key_handler<>>(std::move(key)),
-              from_json_iobuf<config_value_handler<>>(record.release_value()));
+              from_json_iobuf<config_key_handler<>>(std::move(key)), val);
+        }
         case topic_key_type::delete_subject:
             co_return;
         }
@@ -999,17 +1004,31 @@ struct consume_to_store {
         co_return;
     }
 
-    ss::future<> apply(config_key key, config_value val) {
+    ss::future<> apply(config_key key, std::optional<config_value> val) {
         if (key.magic != 0) {
             throw exception(
               error_code::topic_parse_error,
-              fmt::format("key has unexpected magic: {}", key));
+              fmt::format("Unexpected magic: {}", key));
         }
-        vlog(plog.debug, "Applying config: {}", key);
-        if (key.sub) {
-            _store.set_compatibility(*key.sub, val.compat).value();
+        vlog(plog.debug, "Applying: {}", key);
+        if (!val) {
+            auto res = _store.clear_compatibility(*key.sub);
+            if (res.has_error()) {
+                vlog(
+                  plog.debug, "Ignoring: {}: {}", key, res.error().message());
+            }
+        } else if (key.sub) {
+            auto res = _store.set_compatibility(*key.sub, val->compat);
+            if (res.has_error()) {
+                vlog(
+                  plog.debug, "Ignoring: {}: {}", key, res.error().message());
+            }
         } else {
-            _store.set_compatibility(val.compat).value();
+            auto res = _store.set_compatibility(val->compat);
+            if (res.has_error()) {
+                vlog(
+                  plog.debug, "Ignoring: {}: {}", key, res.error().message());
+            }
         }
         co_return;
     }
