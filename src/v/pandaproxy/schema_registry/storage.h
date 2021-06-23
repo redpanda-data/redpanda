@@ -951,10 +951,16 @@ struct consume_to_store {
         switch (*key_type) {
         case topic_key_type::noop:
             co_return;
-        case topic_key_type::schema:
+        case topic_key_type::schema: {
+            std::optional<schema_value> val;
+            if (!record.value().empty()) {
+                val.emplace(from_json_iobuf<schema_value_handler<>>(
+                  record.release_value()));
+            }
             co_return co_await apply(
               from_json_iobuf<schema_key_handler<>>(std::move(key)),
-              from_json_iobuf<schema_value_handler<>>(record.release_value()));
+              std::move(val));
+        }
         case topic_key_type::config:
             co_return co_await apply(
               from_json_iobuf<config_key_handler<>>(std::move(key)),
@@ -964,20 +970,32 @@ struct consume_to_store {
         }
     }
 
-    ss::future<> apply(schema_key key, schema_value val) {
+    ss::future<> apply(schema_key key, std::optional<schema_value> val) {
         if (key.magic != 0 && key.magic != 1) {
             throw exception(
               error_code::topic_parse_error,
-              fmt::format("key has unexpected magic: {}", key));
+              fmt::format("Unexpected magic: {}", key));
         }
-        vlog(plog.debug, "Inserting key: {}", key);
+        vlog(plog.debug, "Applying: {}", key);
+        if (!val) {
+            auto res = _store.delete_subject_version(
+              key.sub,
+              key.version,
+              permanent_delete::yes,
+              include_deleted::yes);
+            if (res.has_error()) {
+                vlog(
+                  plog.debug, "Ignoring: {}: {}", key, res.error().message());
+            }
+            co_return;
+        }
         _store.upsert(
-          std::move(val.sub),
-          std::move(val.schema),
-          val.type,
-          val.id,
-          val.version,
-          val.deleted);
+          std::move(val->sub),
+          std::move(val->schema),
+          val->type,
+          val->id,
+          val->version,
+          val->deleted);
         co_return;
     }
 
