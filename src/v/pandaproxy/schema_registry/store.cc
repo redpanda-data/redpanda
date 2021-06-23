@@ -42,6 +42,9 @@ result<bool> store::is_compatible(
     if (ver_it == versions.end() || ver_it->version != version) {
         return error_code::subject_version_not_found;
     }
+    if (ver_it->deleted) {
+        return error_code::subject_version_not_found;
+    }
 
     // Lookup the schema at the version
     auto sch_it = _schemas.find(ver_it->id);
@@ -88,6 +91,10 @@ result<bool> store::is_compatible(
 
     auto is_compat = true;
     for (; is_compat && ver_it != versions.end(); ++ver_it) {
+        if (ver_it->deleted) {
+            continue;
+        }
+
         auto sch_it = _schemas.find(ver_it->id);
         if (sch_it == _schemas.end()) {
             return error_code::schema_id_not_found;
