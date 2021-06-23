@@ -135,7 +135,7 @@ These are some metrics to watch out for:
 Check that the VM where the redpanda process is hosted is still running. If it
 was accidentally stopped, you may start it again and restart redpanda. If you're
 using systemd, it's as easy as running `sudo systemctl start redpanda`.
-Otherwise, you may use `rpk start** directly.
+Otherwise, you may use `rpk start` directly.
 
 **Verify that redpanda is running**
 
@@ -158,7 +158,7 @@ If everything looks ok, and redpanda is running, move on to the next step.
 the cluster.**
 
 If you're certain that the redpanda process is running in the affected node, you
-can use `telnet` or `ncat** to check that the node is reachable from the rest,
+can use `telnet` or `ncat` to check that the node is reachable from the rest,
 and that it can reach the other nodes. Check your firewall rules to discard any
 misconfigurations.
 
