@@ -10,23 +10,42 @@
 package topic
 
 import (
+	"errors"
+	"fmt"
+	"strings"
+
 	"github.com/Shopify/sarama"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 )
 
 func NewSetConfigCommand(
 	admin func() (sarama.ClusterAdmin, error),
 ) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "set-config <topic> <key> <value>",
+		Use:   "set-config <topic> <key>=<value> [<key>=<value>...]",
 		Short: "Set the topic's config key/value pairs",
-		Args:  common.ExactArgs(3, "topic's name, config key or value are missing."),
+		Args: func(_ *cobra.Command, args []string) error {
+			if len(args) < 2 {
+				return errors.New("a topic name and at least one key=value pair is required")
+			}
+			return nil
+		},
 		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
-		SilenceUsage:       true,
-		DisableFlagParsing: true,
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+
+			topicName := args[0]
+
+			kvs := map[string]*string{}
+			for _, a := range args[1:] {
+				kv := strings.Split(a, "=")
+				if len(kv) != 2 {
+					return fmt.Errorf("invalid element '%s'. Expected format <key>=<value>", a)
+				}
+				kvs[kv[0]] = &kv[1]
+			}
+
 			adm, err := admin()
 			if err != nil {
 				log.Error("Couldn't initialize API admin")
@@ -34,23 +53,18 @@ func NewSetConfigCommand(
 			}
 			defer adm.Close()
 
-			topicName := args[0]
-			key := args[1]
-			value := args[2]
-
 			err = adm.AlterConfig(
 				sarama.TopicResource,
 				topicName,
-				map[string]*string{key: &value},
+				kvs,
 				false,
 			)
 			if err != nil {
 				return err
 			}
 			log.Infof(
-				"Added config '%s'='%s' to topic '%s'.",
-				key,
-				value,
+				"Added configs %s to topic '%s'.",
+				strings.Join(args[1:], ", "),
 				topicName,
 			)
 			return nil
