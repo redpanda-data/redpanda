@@ -128,7 +128,7 @@ func (r *ClusterReconciler) Reconcile(
 	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, nodeports, log)
 
 	clusterPorts := []resources.NamedServicePort{}
-	if proxyAPIExternal != nil {
+	if proxyAPIExternal != nil && proxyAPIInternal != nil {
 		clusterPorts = append(clusterPorts, resources.NamedServicePort{Name: resources.PandaproxyPortExternalName, Port: proxyAPIInternal.Port + 1})
 	}
 	clusterSvc := resources.NewClusterService(r.Client, &redpandaCluster, r.Scheme, clusterPorts, log)
