@@ -255,6 +255,16 @@ public:
                != compatibility;
     }
 
+    ///\brief Clear the compatibility level for a subject.
+    result<bool> clear_compatibility(const subject& sub) {
+        auto sub_it = _subjects.find(sub);
+        if (sub_it == _subjects.end()) {
+            return error_code::subject_not_found;
+        }
+        return std::exchange(sub_it->second.compatibility, std::nullopt)
+               != std::nullopt;
+    }
+
     ///\brief Check if the provided schema is compatible with the subject and
     /// version, according the the current compatibility.
     ///
