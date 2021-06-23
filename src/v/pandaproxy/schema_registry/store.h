@@ -172,6 +172,48 @@ public:
         return res;
     }
 
+    ///\brief Delete a subject version
+    result<bool> delete_subject_version(
+      const subject& sub,
+      schema_version version,
+      permanent_delete permanent,
+      include_deleted inc_del) {
+        auto sub_it = _subjects.find(sub);
+        if (sub_it == _subjects.end()) {
+            return error_code::subject_not_found;
+        }
+
+        if (sub_it->second.deleted && !inc_del) {
+            return error_code::subject_not_found;
+        }
+
+        auto& versions = sub_it->second.versions;
+        auto v_it = std::lower_bound(
+          versions.begin(),
+          versions.end(),
+          version,
+          [](const subject_version_id& lhs, schema_version rhs) {
+              return lhs.version < rhs;
+          });
+        if (v_it == versions.end() || v_it->version != version) {
+            return error_code::subject_version_not_found;
+        }
+
+        if (!v_it->deleted && permanent && !inc_del) {
+            return error_code::subject_version_not_deleted;
+        }
+
+        if (v_it->deleted && !permanent && !inc_del) {
+            return error_code::subject_version_soft_deleted;
+        }
+
+        if (permanent) {
+            versions.erase(v_it);
+            return true;
+        }
+        return std::exchange(v_it->deleted, is_deleted::yes) != is_deleted::yes;
+    }
+
     ///\brief Get the global compatibility level.
     result<compatibility_level> get_compatibility() const {
         return _compatibility;
