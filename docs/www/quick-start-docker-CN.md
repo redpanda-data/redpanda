@@ -157,9 +157,8 @@ status命令的输出如下所示：
     ```yaml
     version: '3.7'
     services:
-    redpanda:
-        entrypoint:
-        - /usr/bin/rpk
+      redpanda:
+        command:
         - redpanda
         - start
         - --smp
