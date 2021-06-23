@@ -81,7 +81,7 @@ BOOST_AUTO_TEST_CASE(test_store_upsert_in_order) {
       pps::schema_id{1},
       pps::schema_version{1}));
 
-    auto res = s.get_versions(subject0);
+    auto res = s.get_versions(subject0, pps::include_deleted::no);
     BOOST_REQUIRE(res.has_value());
     BOOST_REQUIRE_EQUAL_COLLECTIONS(
       res.value().cbegin(),
@@ -108,7 +108,7 @@ BOOST_AUTO_TEST_CASE(test_store_upsert_reverse_order) {
       pps::schema_id{0},
       pps::schema_version{0}));
 
-    auto res = s.get_versions(subject0);
+    auto res = s.get_versions(subject0, pps::include_deleted::no);
     BOOST_REQUIRE(res.has_value());
     BOOST_REQUIRE_EQUAL_COLLECTIONS(
       res.value().cbegin(),
@@ -136,14 +136,15 @@ BOOST_AUTO_TEST_CASE(test_store_upsert_override) {
       pps::schema_id{0},
       pps::schema_version{0}));
 
-    auto v_res = s.get_versions(subject0);
+    auto v_res = s.get_versions(subject0, pps::include_deleted::no);
     BOOST_REQUIRE(v_res.has_value());
     BOOST_REQUIRE_EQUAL_COLLECTIONS(
       v_res.value().cbegin(),
       v_res.value().cend(),
       expected.cbegin(),
       expected.cend());
-    auto s_res = s.get_subject_schema(subject0, pps::schema_version{0});
+    auto s_res = s.get_subject_schema(
+      subject0, pps::schema_version{0}, pps::include_deleted::no);
     BOOST_REQUIRE(s_res.has_value());
     BOOST_REQUIRE(s_res.value().definition == int_def0);
 }
@@ -174,7 +175,8 @@ BOOST_AUTO_TEST_CASE(test_store_get_schema) {
 BOOST_AUTO_TEST_CASE(test_store_get_subject_schema) {
     pps::store s;
 
-    auto res = s.get_subject_schema(subject0, pps::schema_version{1});
+    auto res = s.get_subject_schema(
+      subject0, pps::schema_version{1}, pps::include_deleted::no);
     BOOST_REQUIRE(res.has_error());
     auto err = std::move(res).assume_error();
     BOOST_REQUIRE(err == pps::error_code::subject_not_found);
@@ -186,7 +188,8 @@ BOOST_AUTO_TEST_CASE(test_store_get_subject_schema) {
     BOOST_REQUIRE_EQUAL(ins_res.version, pps::schema_version{1});
 
     // Request good version
-    res = s.get_subject_schema(subject0, pps::schema_version{1});
+    res = s.get_subject_schema(
+      subject0, pps::schema_version{1}, pps::include_deleted::no);
     BOOST_REQUIRE(res.has_value());
     auto val = std::move(res).assume_value();
     BOOST_REQUIRE_EQUAL(val.id, pps::schema_id{1});
@@ -200,7 +203,8 @@ BOOST_AUTO_TEST_CASE(test_store_get_subject_schema) {
     BOOST_REQUIRE_EQUAL(ins_res.id, pps::schema_id{1});
 
     // Request good version
-    res = s.get_subject_schema(subject0, pps::schema_version{1});
+    res = s.get_subject_schema(
+      subject0, pps::schema_version{1}, pps::include_deleted::no);
     BOOST_REQUIRE(res.has_value());
     val = std::move(res).assume_value();
     BOOST_REQUIRE_EQUAL(val.id, pps::schema_id{1});
@@ -209,7 +213,8 @@ BOOST_AUTO_TEST_CASE(test_store_get_subject_schema) {
     BOOST_REQUIRE_EQUAL(val.definition, string_def0);
 
     // Request bad version
-    res = s.get_subject_schema(subject0, pps::schema_version{2});
+    res = s.get_subject_schema(
+      subject0, pps::schema_version{2}, pps::include_deleted::no);
     BOOST_REQUIRE(res.has_error());
     err = std::move(res).assume_error();
     BOOST_REQUIRE(err == pps::error_code::subject_version_not_found);
@@ -221,7 +226,7 @@ BOOST_AUTO_TEST_CASE(test_store_get_versions) {
     // First insert, expect id{1}, version{1}
     s.insert(subject0, string_def0, pps::schema_type::avro);
 
-    auto versions = s.get_versions(subject0);
+    auto versions = s.get_versions(subject0, pps::include_deleted::no);
     BOOST_REQUIRE(versions.has_value());
     BOOST_REQUIRE_EQUAL(versions.value().size(), 1);
     BOOST_REQUIRE_EQUAL(versions.value().front(), pps::schema_version{1});
@@ -229,7 +234,7 @@ BOOST_AUTO_TEST_CASE(test_store_get_versions) {
     // Insert duplicate, expect id{1}, versions{1}
     s.insert(subject0, string_def0, pps::schema_type::avro);
 
-    versions = s.get_versions(subject0);
+    versions = s.get_versions(subject0, pps::include_deleted::no);
     BOOST_REQUIRE(versions.has_value());
     BOOST_REQUIRE_EQUAL(versions.value().size(), 1);
     BOOST_REQUIRE_EQUAL(versions.value().front(), pps::schema_version{1});
@@ -237,7 +242,7 @@ BOOST_AUTO_TEST_CASE(test_store_get_versions) {
     // Insert different schema, expect id{2}, version{2}
     s.insert(subject0, int_def0, pps::schema_type::avro);
 
-    versions = s.get_versions(subject0);
+    versions = s.get_versions(subject0, pps::include_deleted::no);
     BOOST_REQUIRE(versions.has_value());
     BOOST_REQUIRE_EQUAL(versions.value().size(), 2);
     BOOST_REQUIRE_EQUAL(versions.value().front(), pps::schema_version{1});
@@ -363,7 +368,7 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject) {
     s.insert(subject0, string_def0, pps::schema_type::avro);
     s.insert(subject0, int_def0, pps::schema_type::avro);
 
-    auto v_res = s.get_versions(subject0);
+    auto v_res = s.get_versions(subject0, pps::include_deleted::no);
     BOOST_REQUIRE(v_res.has_value());
     BOOST_REQUIRE_EQUAL_COLLECTIONS(
       v_res.value().cbegin(),
@@ -376,7 +381,7 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject) {
     BOOST_REQUIRE(d_res.has_error());
     BOOST_REQUIRE_EQUAL(d_res.error(), pps::error_code::subject_not_deleted);
 
-    v_res = s.get_versions(subject0);
+    v_res = s.get_versions(subject0, pps::include_deleted::no);
     BOOST_REQUIRE(v_res.has_value());
     BOOST_REQUIRE_EQUAL_COLLECTIONS(
       v_res.value().cbegin(),
@@ -397,7 +402,7 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject) {
       expected_vers.cend());
 
     // soft-deleted should return error
-    v_res = s.get_versions(subject0);
+    v_res = s.get_versions(subject0, pps::include_deleted::no);
     BOOST_REQUIRE(v_res.has_error());
     BOOST_REQUIRE_EQUAL(v_res.error(), pps::error_code::subject_not_found);
 
@@ -409,6 +414,14 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject) {
     BOOST_REQUIRE(d_res.has_error());
     BOOST_REQUIRE_EQUAL(d_res.error(), pps::error_code::subject_soft_deleted);
 
+    v_res = s.get_versions(subject0, pps::include_deleted::yes);
+    BOOST_REQUIRE(v_res.has_value());
+    BOOST_REQUIRE_EQUAL_COLLECTIONS(
+      v_res.value().cbegin(),
+      v_res.value().cend(),
+      expected_vers.cbegin(),
+      expected_vers.cend());
+
     // permanent delete should return versions
     d_res = s.delete_subject(subject0, pps::permanent_delete::yes);
     BOOST_REQUIRE(d_res.has_value());
@@ -419,6 +432,10 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject) {
       expected_vers.cend());
 
     // permanently deleted should not find subject, even if include_deleted
+    v_res = s.get_versions(subject0, pps::include_deleted::yes);
+    BOOST_REQUIRE(v_res.has_error());
+    BOOST_REQUIRE_EQUAL(v_res.error(), pps::error_code::subject_not_found);
+
     BOOST_REQUIRE(s.get_subjects(pps::include_deleted::no).empty());
     BOOST_REQUIRE(s.get_subjects(pps::include_deleted::yes).empty());
 

@@ -64,14 +64,16 @@ public:
     }
 
     ///\brief Return a schema by subject and version.
-    result<subject_schema>
-    get_subject_schema(const subject& sub, schema_version version) const {
+    result<subject_schema> get_subject_schema(
+      const subject& sub,
+      schema_version version,
+      include_deleted inc_del) const {
         auto sub_it = _subjects.find(sub);
         if (sub_it == _subjects.end()) {
             return error_code::subject_not_found;
         }
 
-        if (sub_it->second.deleted) {
+        if (sub_it->second.deleted && !inc_del) {
             return error_code::subject_not_found;
         }
 
@@ -114,24 +116,25 @@ public:
     }
 
     ///\brief Return a list of versions and associated schema_id.
-    result<std::vector<schema_version>> get_versions(const subject& sub) const {
+    result<std::vector<schema_version>>
+    get_versions(const subject& sub, include_deleted inc_del) const {
         auto sub_it = _subjects.find(sub);
         if (sub_it == _subjects.end()) {
             return error_code::subject_not_found;
         }
 
-        if (sub_it->second.deleted) {
+        if (sub_it->second.deleted && !inc_del) {
             return error_code::subject_not_found;
         }
 
         const auto& versions = sub_it->second.versions;
         std::vector<schema_version> res;
         res.reserve(versions.size());
-        std::transform(
-          versions.begin(),
-          versions.end(),
-          std::back_inserter(res),
-          [](const auto& v) { return v.version; });
+        for (const auto& ver : versions) {
+            if (inc_del || !(ver.deleted || sub_it->second.deleted)) {
+                res.push_back(ver.version);
+            }
+        }
         return res;
     }
 

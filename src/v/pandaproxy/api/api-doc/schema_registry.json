@@ -282,6 +282,12 @@
             "in": "path",
             "required": true,
             "type": "string"
+          },
+          {
+            "name": "deleted",
+            "in": "query",
+            "required": false,
+            "type": "string"
           }
         ],
         "produces": [
@@ -385,6 +391,12 @@
             "name": "version",
             "in": "path",
             "required": true,
+            "type": "string"
+          },
+          {
+            "name": "deleted",
+            "in": "query",
+            "required": false,
             "type": "string"
           }
         ],

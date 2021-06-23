@@ -202,9 +202,12 @@ ss::future<server::reply_t>
 get_subject_versions(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto sub = parse::request_param<subject>(*rq.req, "subject");
+    auto inc_del{
+      parse::query_param<std::optional<include_deleted>>(*rq.req, "deleted")
+        .value_or(include_deleted::no)};
     rq.req.reset();
 
-    auto versions = rq.service().schema_store().get_versions(sub);
+    auto versions = rq.service().schema_store().get_versions(sub, inc_del);
     if (versions.has_error()) {
         rp.rep = make_errored_body(versions.error());
         co_return rp;
@@ -257,11 +260,14 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version(
     parse_accept_header(rq, rp);
     auto sub = parse::request_param<subject>(*rq.req, "subject");
     auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
+    auto inc_del{
+      parse::query_param<std::optional<include_deleted>>(*rq.req, "deleted")
+        .value_or(include_deleted::no)};
     rq.req.reset();
 
     auto version = invalid_schema_version;
     if (ver == "latest") {
-        auto versions = rq.service().schema_store().get_versions(sub);
+        auto versions = rq.service().schema_store().get_versions(sub, inc_del);
         if (versions.has_error()) {
             rp.rep = make_errored_body(versions.error());
             co_return rp;
@@ -281,7 +287,8 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version(
         version = res.value();
     }
 
-    auto get_res = rq.service().schema_store().get_subject_schema(sub, version);
+    auto get_res = rq.service().schema_store().get_subject_schema(
+      sub, version, inc_del);
     if (get_res.has_error()) {
         rp.rep = make_errored_body(get_res.error());
         co_return rp;
@@ -307,7 +314,8 @@ compatibility_subject_version(server::request_t rq, server::reply_t rp) {
 
     auto version = invalid_schema_version;
     if (ver == "latest") {
-        auto versions = rq.service().schema_store().get_versions(req.sub);
+        auto versions = rq.service().schema_store().get_versions(
+          req.sub, include_deleted::no);
         if (versions.has_error()) {
             rp.rep = make_errored_body(versions.error());
             co_return rp;

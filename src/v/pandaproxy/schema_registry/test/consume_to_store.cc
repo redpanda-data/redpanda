@@ -54,7 +54,8 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
         subject0, version0, pps::schema_type::avro, id0, string_def0});
     BOOST_REQUIRE_NO_THROW(c(std::move(good_schema_1)).get());
 
-    auto s_res = s.get_subject_schema(subject0, version0);
+    auto s_res = s.get_subject_schema(
+      subject0, version0, pps::include_deleted::no);
     BOOST_REQUIRE(s_res.has_value());
     BOOST_REQUIRE(s_res.value().definition == string_def0);
 
