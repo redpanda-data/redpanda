@@ -36,7 +36,7 @@ func (r *PkiReconciler) PandaproxyAPIClientCert() types.NamespacedName {
 }
 
 func (r *PkiReconciler) preparePandaproxyAPI(
-	issuerRef *cmmeta.ObjectReference,
+	issuerRef *cmmeta.ObjectReference, keystoreSecret *types.NamespacedName,
 ) []resources.Resource {
 	toApply := []resources.Resource{}
 
@@ -50,14 +50,14 @@ func (r *PkiReconciler) preparePandaproxyAPI(
 		dnsName = externalListener.External.Subdomain
 	}
 
-	nodeCert := NewNodeCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, issuerRef, dnsName, cn, false, r.logger)
+	nodeCert := NewNodeCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, issuerRef, dnsName, cn, false, keystoreSecret, r.logger)
 	toApply = append(toApply, nodeCert)
 
 	if r.pandaCluster.PandaproxyAPITLS() != nil && r.pandaCluster.PandaproxyAPITLS().TLS.RequireClientAuth {
 		// Certificate for calling the Pandaproxy API on any broker
 		cn := NewCommonName(r.pandaCluster.Name, PandaproxyAPIClientCert)
 		clientCertsKey := types.NamespacedName{Name: string(cn), Namespace: r.pandaCluster.Namespace}
-		proxyClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, clientCertsKey, issuerRef, cn, false, r.logger)
+		proxyClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, clientCertsKey, issuerRef, cn, false, keystoreSecret, r.logger)
 
 		toApply = append(toApply, proxyClientCert)
 	}

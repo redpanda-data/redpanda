@@ -59,6 +59,7 @@ func (r *PkiReconciler) prepareKafkaAPI(
 	ctx context.Context,
 	issuerRef *cmmetav1.ObjectReference,
 	tlsListener *v1alpha1.KafkaAPITLS,
+	keystoreSecret *types.NamespacedName,
 ) ([]resources.Resource, error) {
 	toApply := []resources.Resource{}
 
@@ -81,7 +82,7 @@ func (r *PkiReconciler) prepareKafkaAPI(
 			dnsName = externalListener.External.Subdomain
 		}
 
-		redpandaCert := NewNodeCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, nodeIssuerRef, dnsName, cn, false, r.logger)
+		redpandaCert := NewNodeCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, nodeIssuerRef, dnsName, cn, false, keystoreSecret, r.logger)
 
 		toApply = append(toApply, redpandaCert)
 	}
@@ -96,17 +97,17 @@ func (r *PkiReconciler) prepareKafkaAPI(
 		// Certificate for external clients to call the Kafka API on any broker in this Redpanda cluster
 		userClientCn := NewCommonName(r.pandaCluster.Name, UserClientCert)
 		userClientKey := types.NamespacedName{Name: string(userClientCn), Namespace: r.pandaCluster.Namespace}
-		externalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, userClientKey, issuerRef, userClientCn, false, r.logger)
+		externalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, userClientKey, issuerRef, userClientCn, false, keystoreSecret, r.logger)
 
 		// Certificate for operator to call the Kafka API on any broker in this Redpanda cluster
 		operatorClientCn := NewCommonName(r.pandaCluster.Name, OperatorClientCert)
 		operatorClientKey := types.NamespacedName{Name: string(operatorClientCn), Namespace: r.pandaCluster.Namespace}
-		internalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, operatorClientKey, issuerRef, operatorClientCn, false, r.logger)
+		internalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, operatorClientKey, issuerRef, operatorClientCn, false, keystoreSecret, r.logger)
 
 		// Certificate for admin to call the Kafka API on any broker in this Redpanda cluster
 		adminClientCn := NewCommonName(r.pandaCluster.Name, AdminClientCert)
 		adminClientKey := types.NamespacedName{Name: string(adminClientCn), Namespace: r.pandaCluster.Namespace}
-		adminClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, adminClientKey, issuerRef, adminClientCn, false, r.logger)
+		adminClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, adminClientKey, issuerRef, adminClientCn, false, keystoreSecret, r.logger)
 
 		toApply = append(toApply, externalClientCert, internalClientCert, adminClientCert)
 	}
