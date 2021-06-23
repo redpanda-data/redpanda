@@ -21,6 +21,10 @@ enum class error_code {
     schema_invalid,
     subject_not_found,
     subject_version_not_found,
+    subject_soft_deleted,
+    subject_not_deleted,
+    subject_version_soft_deleted,
+    subject_version_not_deleted,
     topic_parse_error,
 };
 
