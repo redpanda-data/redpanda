@@ -689,7 +689,8 @@ struct consume_to_store {
           std::move(val.schema),
           val.type,
           val.id,
-          val.version);
+          val.version,
+          val.deleted);
         co_return;
     }
 

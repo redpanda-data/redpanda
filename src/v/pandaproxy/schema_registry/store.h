@@ -49,9 +49,10 @@ public:
       schema_definition def,
       schema_type type,
       schema_id id,
-      schema_version version) {
+      schema_version version,
+      is_deleted deleted) {
         upsert_schema(id, std::move(def), type);
-        return upsert_subject(std::move(sub), version, id);
+        return upsert_subject(std::move(sub), version, id, deleted);
     }
 
     ///\brief Return a schema by id.
@@ -325,8 +326,12 @@ private:
         return {version, true};
     }
 
-    bool upsert_subject(subject sub, schema_version version, schema_id id) {
-        auto& versions = _subjects[std::move(sub)].versions;
+    bool upsert_subject(
+      subject sub, schema_version version, schema_id id, is_deleted deleted) {
+        auto& subject_entry = _subjects[std::move(sub)];
+        // Inserting a version undeletes the subject
+        subject_entry.deleted = is_deleted::no;
+        auto& versions = subject_entry.versions;
         const auto v_it = std::lower_bound(
           versions.begin(),
           versions.end(),
@@ -335,10 +340,10 @@ private:
               return lhs.version < rhs;
           });
         if (v_it != versions.end() && v_it->version == version) {
-            *v_it = subject_version_id(version, id);
+            *v_it = subject_version_id(version, id, deleted);
             return false;
         }
-        versions.insert(v_it, subject_version_id(version, id));
+        versions.insert(v_it, subject_version_id(version, id, deleted));
         return true;
     }
 

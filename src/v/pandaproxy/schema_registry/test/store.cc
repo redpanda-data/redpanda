@@ -73,13 +73,15 @@ BOOST_AUTO_TEST_CASE(test_store_upsert_in_order) {
       string_def0,
       pps::schema_type::avro,
       pps::schema_id{0},
-      pps::schema_version{0}));
+      pps::schema_version{0},
+      pps::is_deleted::no));
     BOOST_REQUIRE(s.upsert(
       subject0,
       string_def0,
       pps::schema_type::avro,
       pps::schema_id{1},
-      pps::schema_version{1}));
+      pps::schema_version{1},
+      pps::is_deleted::no));
 
     auto res = s.get_versions(subject0, pps::include_deleted::no);
     BOOST_REQUIRE(res.has_value());
@@ -100,13 +102,15 @@ BOOST_AUTO_TEST_CASE(test_store_upsert_reverse_order) {
       string_def0,
       pps::schema_type::avro,
       pps::schema_id{1},
-      pps::schema_version{1}));
+      pps::schema_version{1},
+      pps::is_deleted::no));
     BOOST_REQUIRE(s.upsert(
       subject0,
       string_def0,
       pps::schema_type::avro,
       pps::schema_id{0},
-      pps::schema_version{0}));
+      pps::schema_version{0},
+      pps::is_deleted::no));
 
     auto res = s.get_versions(subject0, pps::include_deleted::no);
     BOOST_REQUIRE(res.has_value());
@@ -127,14 +131,16 @@ BOOST_AUTO_TEST_CASE(test_store_upsert_override) {
       string_def0,
       pps::schema_type::avro,
       pps::schema_id{0},
-      pps::schema_version{0}));
+      pps::schema_version{0},
+      pps::is_deleted::no));
     // override schema and version (should return no insertion)
     BOOST_REQUIRE(!s.upsert(
       subject0,
       int_def0,
       pps::schema_type::avro,
       pps::schema_id{0},
-      pps::schema_version{0}));
+      pps::schema_version{0},
+      pps::is_deleted::no));
 
     auto v_res = s.get_versions(subject0, pps::include_deleted::no);
     BOOST_REQUIRE(v_res.has_value());
