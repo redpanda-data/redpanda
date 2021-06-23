@@ -19,6 +19,7 @@
 #include "pandaproxy/json/types.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/parsing/exceptions.h"
+#include "pandaproxy/schema_registry/exceptions.h"
 #include "seastarx.h"
 
 #include <seastar/core/gate.hh>
@@ -99,6 +100,8 @@ inline std::unique_ptr<ss::httpd::reply> exception_reply(std::exception_ptr e) {
     } catch (const parse::exception_base& e) {
         return errored_body(e.error, e.what());
     } catch (const kafka::exception_base& e) {
+        return errored_body(e.error, e.what());
+    } catch (const schema_registry::exception_base& e) {
         return errored_body(e.error, e.what());
     } catch (const seastar::httpd::base_exception& e) {
         return errored_body(
