@@ -895,6 +895,35 @@ inline model::record_batch make_delete_subject_permanently_batch(
     return std::move(rb).build();
 }
 
+inline model::record_batch
+make_delete_subject_version_batch(subject_schema schema) {
+    storage::record_batch_builder rb{
+      model::record_batch_type::raft_data, model::offset{0}};
+
+    auto key = to_json_iobuf(
+      schema_key{.sub{schema.sub}, .version{schema.version}});
+    rb.add_raw_kv(
+      std::move(key),
+      to_json_iobuf(schema_value{
+        .sub{std::move(schema.sub)},
+        .version{schema.version},
+        .type = schema.type,
+        .id{schema.id},
+        .schema{std::move(schema.definition)},
+        .deleted{is_deleted::yes}}));
+    return std::move(rb).build();
+}
+
+inline model::record_batch make_delete_subject_version_permanently_batch(
+  const subject& sub, schema_version version) {
+    storage::record_batch_builder rb{
+      model::record_batch_type::raft_data, model::offset{0}};
+
+    rb.add_raw_kv(
+      to_json_iobuf(schema_key{.sub{sub}, .version{version}}), std::nullopt);
+    return std::move(rb).build();
+}
+
 struct consume_to_store {
     explicit consume_to_store(store& s)
       : _store{s} {}
