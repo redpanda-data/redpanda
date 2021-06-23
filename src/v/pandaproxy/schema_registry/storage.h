@@ -971,7 +971,10 @@ struct consume_to_store {
               from_json_iobuf<config_key_handler<>>(std::move(key)), val);
         }
         case topic_key_type::delete_subject:
-            co_return;
+            co_return co_await apply(
+              from_json_iobuf<delete_subject_key_handler<>>(std::move(key)),
+              from_json_iobuf<delete_subject_value_handler<>>(
+                record.release_value()));
         }
     }
 
@@ -1029,6 +1032,20 @@ struct consume_to_store {
                 vlog(
                   plog.debug, "Ignoring: {}: {}", key, res.error().message());
             }
+        }
+        co_return;
+    }
+
+    ss::future<> apply(delete_subject_key key, delete_subject_value val) {
+        if (key.magic != 0) {
+            throw exception(
+              error_code::topic_parse_error,
+              fmt::format("Unexpected magic: {}", key));
+        }
+        vlog(plog.debug, "Applying: {}", key);
+        auto res = _store.delete_subject(val.sub, permanent_delete::no);
+        if (res.has_error()) {
+            vlog(plog.debug, "Ignoring: {}: {}", key, res.error().message());
         }
         co_return;
     }

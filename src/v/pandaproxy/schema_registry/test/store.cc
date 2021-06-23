@@ -520,7 +520,7 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject_version) {
         .error(),
       pps::error_code::subject_version_not_found);
 
-    // perm-deete before soft-delete should fail
+    // perm-delete before soft-delete should fail
     BOOST_REQUIRE_EQUAL(
       s.delete_subject_version(
          subject0,
