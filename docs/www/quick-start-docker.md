@@ -158,9 +158,8 @@ You can easily try out different docker configuration parameters with a docker-c
     ```yaml
     version: '3.7'
     services:
-    redpanda:
-        entrypoint:
-        - /usr/bin/rpk
+      redpanda:
+        command:
         - redpanda
         - start
         - --smp
