@@ -359,6 +359,11 @@ class RedpandaService(Service):
         cfg = self.read_configuration(node)
         return f"{node.account.hostname}:{cfg['redpanda']['kafka_api']['port']}"
 
+    def node_id(self, node):
+        assert node in self.nodes
+        cfg = self.read_configuration(node)
+        return int(cfg['redpanda']['node_id'])
+
     def brokers(self, limit=None):
         brokers = ",".join(
             map(lambda n: self.broker_address(n), self.nodes[:limit]))
@@ -366,6 +371,9 @@ class RedpandaService(Service):
 
     def brokers_list(self, limit=None):
         return [self.broker_address(n) for n in self.nodes[:limit]]
+
+    def node_id_list(self, limit=None):
+        return [self.node_id(n) for n in self.nodes[:limit]]
 
     def metrics(self, node):
         assert node in self.nodes
