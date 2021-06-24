@@ -124,9 +124,19 @@ class SchemaRegistryTest(RedpandaTest):
 
     def _get_subjects_subject_versions(self,
                                        subject,
+                                       deleted=False,
                                        headers=HTTP_GET_HEADERS):
-        return requests.get(f"{self._base_uri()}/subjects/{subject}/versions",
-                            headers=headers)
+        return requests.get(
+            f"{self._base_uri()}/subjects/{subject}/versions{'?deleted=true' if deleted else ''}",
+            headers=headers)
+
+    def _delete_subject(self,
+                        subject,
+                        permanent=False,
+                        headers=HTTP_GET_HEADERS):
+        return requests.delete(
+            f"{self._base_uri()}/subjects/{subject}{'?permanent=true' if permanent else ''}",
+            headers=headers)
 
     def _post_compatibility_subject_version(self,
                                             subject,
@@ -349,3 +359,70 @@ class SchemaRegistryTest(RedpandaTest):
             subject=f"{topic}-key", version=1, data=schema_3_data)
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json()["is_compatible"] == False
+
+    @cluster(num_nodes=3)
+    def test_delete_subject(self):
+        """
+        Verify delete subject
+        """
+
+        topic = create_topic_names(1)[0]
+
+        self.logger.debug(f"Register a schema against a subject")
+        schema_1_data = json.dumps({"schema": schema1_def})
+        schema_2_data = json.dumps({"schema": schema2_def})
+        schema_3_data = json.dumps({"schema": schema3_def})
+
+        self.logger.debug("Posting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Set subject config - NONE")
+        result_raw = self._set_config_subject(subject=f"{topic}-key",
+                                              data=json.dumps(
+                                                  {"compatibility": "NONE"}))
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Posting schema 2 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_2_data)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Posting schema 3 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_3_data)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Permanently delete subject")
+        result_raw = self._delete_subject(subject=f"{topic}-key",
+                                          permanent=True)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.not_found
+
+        self.logger.debug("Soft delete subject")
+        result_raw = self._delete_subject(subject=f"{topic}-key")
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Get versions")
+        result_raw = self._get_subjects_subject_versions(
+            subject=f"{topic}-key")
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.not_found
+
+        self.logger.debug("Get versions - include deleted")
+        result_raw = self._get_subjects_subject_versions(
+            subject=f"{topic}-key", deleted=True)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == [1, 2, 3]
+
+        self.logger.debug("Permanently delete subject")
+        result_raw = self._delete_subject(subject=f"{topic}-key",
+                                          permanent=True)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
