@@ -375,6 +375,73 @@ void append_custom_timestamp_batches(
     }
 }
 
+FIXTURE_TEST(
+  test_timestamp_updates_when_max_timestamp_is_not_set, storage_test_fixture) {
+    auto append_batch_with_no_max_ts =
+      [](storage::log log, model::term_id term, model::timestamp base_ts) {
+          auto current_ts = base_ts;
+
+          iobuf key = bytes_to_iobuf(bytes("key"));
+          iobuf value = bytes_to_iobuf(bytes("v"));
+
+          storage::record_batch_builder builder(
+            model::record_batch_type::raft_data, model::offset(0));
+
+          builder.add_raw_kv(key.copy(), value.copy());
+
+          auto batch = std::move(builder).build();
+
+          batch.set_term(term);
+          batch.header().first_timestamp = current_ts;
+          // EXPLICITLY SET TO MISSING
+          batch.header().max_timestamp = model::timestamp::missing();
+          auto reader = model::make_memory_record_batch_reader(
+            {std::move(batch)});
+          storage::log_append_config cfg{
+            .should_fsync = storage::log_append_config::fsync::no,
+            .io_priority = ss::default_priority_class(),
+            .timeout = model::no_timeout,
+          };
+
+          std::move(reader)
+            .for_each_ref(log.make_appender(cfg), cfg.timeout)
+            .get();
+          current_ts = model::timestamp(current_ts() + 1);
+      };
+
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+
+    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+    auto log = mgr.manage(std::move(ntp_cfg)).get0();
+    auto disk_log = get_disk_log(log);
+
+    append_batch_with_no_max_ts(log, model::term_id(0), model::timestamp(100));
+    append_batch_with_no_max_ts(log, model::term_id(0), model::timestamp(110));
+    append_batch_with_no_max_ts(log, model::term_id(0), model::timestamp(120));
+    disk_log->force_roll(ss::default_priority_class()).get0();
+
+    append_batch_with_no_max_ts(log, model::term_id(0), model::timestamp(200));
+    // reordered timestamps
+    append_batch_with_no_max_ts(log, model::term_id(0), model::timestamp(230));
+    append_batch_with_no_max_ts(log, model::term_id(0), model::timestamp(220));
+    auto& segments = disk_log->segments();
+    // first segment
+    BOOST_REQUIRE_EQUAL(
+      segments[0]->index().base_timestamp(), model::timestamp(100));
+    BOOST_REQUIRE_EQUAL(
+      segments[0]->index().max_timestamp(), model::timestamp(120));
+    // second segment
+    BOOST_REQUIRE_EQUAL(
+      segments[1]->index().base_timestamp(), model::timestamp(200));
+    BOOST_REQUIRE_EQUAL(
+      segments[1]->index().max_timestamp(), model::timestamp(230));
+};
+
 FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     cfg.stype = storage::log_config::storage_type::disk;

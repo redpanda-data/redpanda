@@ -71,6 +71,10 @@ bool index_state::maybe_index(
     // NOTE: we don't need the 'max()' trick below because we controll the
     // offsets ourselves and it would be a bug otherwise - see assert above
     max_offset = batch_max_offset;
+    // some clients leave max timestamp uninitialized in cases there is a
+    // single record in a batch in this case we use first timestamp as a
+    // last one
+    last_timestamp = std::max(first_timestamp, last_timestamp);
     max_timestamp = std::max(max_timestamp, last_timestamp);
     // always saving the first batch simplifies a lot of book keeping
     if (accumulator >= step || retval) {
