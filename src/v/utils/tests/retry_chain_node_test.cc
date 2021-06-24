@@ -51,6 +51,7 @@ SEASTAR_THREAD_TEST_CASE(check_fmt) {
     }
     retry_chain_node n8(ss::lowres_clock::now() + 100ms, 50ms);
     BOOST_REQUIRE_EQUAL(n8(), "[fiber1|0|100ms]");
+    BOOST_REQUIRE_EQUAL(n8("{} + {}", 1, 2), "[fiber1|0|100ms 1 + 2]");
 }
 
 SEASTAR_THREAD_TEST_CASE(check_retry1) {
