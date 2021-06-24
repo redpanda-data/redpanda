@@ -44,6 +44,7 @@ def random_string(N):
 class WasmScript:
     def __init__(self, inputs=[], outputs=[], script=None):
         self.name = random_string(10)
+        self.description = random_string(20)
         self.inputs = inputs
         self.outputs = outputs
         self.script = script
@@ -83,7 +84,7 @@ class WasmTest(RedpandaTest):
         # Deploy coprocessor
         self._rpk_tool.wasm_deploy(
             script.get_artifact(self._build_tool.work_dir), script.name,
-            "ducktape")
+            script.description)
 
     def restart_wasm_engine(self, node):
         self.logger.info(
