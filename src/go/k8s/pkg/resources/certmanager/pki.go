@@ -71,6 +71,7 @@ func (r *PkiReconciler) prepareRoot(
 		selfSignedIssuer.objRef(),
 		rootCn,
 		true,
+		nil,
 		r.logger)
 
 	leafIssuer := NewIssuer(r.Client,
@@ -90,9 +91,15 @@ func (r *PkiReconciler) prepareRoot(
 func (r *PkiReconciler) Ensure(ctx context.Context) error {
 	toApply := []resources.Resource{}
 	tlsListener := r.pandaCluster.KafkaTLSListener()
+
+	keystoreKey := types.NamespacedName{Name: keystoreName(r.pandaCluster.Name), Namespace: r.pandaCluster.Namespace}
+	keystoreSecret := NewKeystoreSecretResource(r.Client, r.scheme, r.pandaCluster, keystoreKey, r.logger)
+
+	toApply = append(toApply, keystoreSecret)
+
 	if tlsListener != nil {
 		toApplyRootKafka, kafkaIssuerRef := r.prepareRoot(kafkaAPI)
-		toApplyKafka, err := r.prepareKafkaAPI(ctx, kafkaIssuerRef, &tlsListener.TLS)
+		toApplyKafka, err := r.prepareKafkaAPI(ctx, kafkaIssuerRef, &tlsListener.TLS, &keystoreKey)
 		if err != nil {
 			return err
 		}
@@ -103,13 +110,13 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 	if r.pandaCluster.AdminAPITLS() != nil {
 		toApplyRootAdmin, adminIssuerRef := r.prepareRoot(adminAPI)
 		toApply = append(toApply, toApplyRootAdmin...)
-		toApply = append(toApply, r.prepareAdminAPI(adminIssuerRef)...)
+		toApply = append(toApply, r.prepareAdminAPI(adminIssuerRef, &keystoreKey)...)
 	}
 
 	if r.pandaCluster.PandaproxyAPITLS() != nil {
 		toApplyRootPandaproxy, pandaproxyIssuerRef := r.prepareRoot(pandaproxyAPI)
 		toApply = append(toApply, toApplyRootPandaproxy...)
-		toApply = append(toApply, r.preparePandaproxyAPI(pandaproxyIssuerRef)...)
+		toApply = append(toApply, r.preparePandaproxyAPI(pandaproxyIssuerRef, &keystoreKey)...)
 	}
 
 	for _, res := range toApply {

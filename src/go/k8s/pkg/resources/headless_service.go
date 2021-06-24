@@ -138,6 +138,12 @@ func serviceKind() string {
 // allows it.
 func (r *HeadlessServiceResource) HeadlessServiceFQDN() string {
 	// TODO Retrieve cluster domain dynamically and remove hardcoded cluster.local
+	if r.pandaCluster.Spec.DNSTrailingDotDisabled {
+		return fmt.Sprintf("%s%c%s.svc.cluster.local",
+			r.Key().Name,
+			'.',
+			r.Key().Namespace)
+	}
 	return fmt.Sprintf("%s%c%s.svc.cluster.local.",
 		r.Key().Name,
 		'.',

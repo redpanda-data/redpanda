@@ -159,64 +159,134 @@ func TestEnsure_ConfigMap(t *testing.T) {
 	}
 }
 
+// nolint:funlen // the subtests might causes linter to complain
 func TestEnsure_HeadlessService(t *testing.T) {
-	cluster := pandaCluster()
-	cluster = cluster.DeepCopy()
-	cluster.Name = "ensure-integration-hs-cluster"
+	t.Run("create-headless-service", func(t *testing.T) {
+		cluster := pandaCluster()
+		cluster.Name = "create-headles-service"
 
-	hsvc := res.NewHeadlessService(
-		c,
-		cluster,
-		scheme.Scheme,
-		[]res.NamedServicePort{
-			{Port: 123},
-		},
-		ctrl.Log.WithName("test"))
+		hsvc := res.NewHeadlessService(
+			c,
+			cluster,
+			scheme.Scheme,
+			[]res.NamedServicePort{
+				{Port: 123},
+			},
+			ctrl.Log.WithName("test"))
 
-	err := hsvc.Ensure(context.Background())
-	assert.NoError(t, err)
+		err := hsvc.Ensure(context.Background())
+		assert.NoError(t, err)
 
-	actual := &corev1.Service{}
-	err = c.Get(context.Background(), hsvc.Key(), actual)
-	assert.NoError(t, err)
-	originalResourceVersion := actual.ResourceVersion
+		actual := &corev1.Service{}
+		err = c.Get(context.Background(), hsvc.Key(), actual)
+		assert.NoError(t, err)
+		assert.Equal(t, int32(123), actual.Spec.Ports[0].Port)
+	})
 
-	// calling ensure for second time to see the resource does not get updated
-	err = hsvc.Ensure(context.Background())
-	assert.NoError(t, err)
+	t.Run("create headless service idempotency", func(t *testing.T) {
+		cluster := pandaCluster()
+		cluster.Name = "create-headles-service-idempotency"
 
-	err = c.Get(context.Background(), hsvc.Key(), actual)
-	assert.NoError(t, err)
-	if actual.ResourceVersion != originalResourceVersion {
-		t.Fatalf("second ensure: expecting version %s but got %s", originalResourceVersion, actual.GetResourceVersion())
-	}
+		hsvc := res.NewHeadlessService(
+			c,
+			cluster,
+			scheme.Scheme,
+			[]res.NamedServicePort{
+				{Port: 123},
+			},
+			ctrl.Log.WithName("test"))
 
-	// verify the update patches the config
+		err := hsvc.Ensure(context.Background())
+		assert.NoError(t, err)
 
-	// TODO this has to recreate the resource because the ports are passed from
-	// outside. Once we refactor it to a point where ports are derived from CR
-	// as it should, this test should be adjusted
-	hsvc = res.NewHeadlessService(
-		c,
-		cluster,
-		scheme.Scheme,
-		[]res.NamedServicePort{
-			{Port: 1111},
-		},
-		ctrl.Log.WithName("test"))
+		actual := &corev1.Service{}
+		err = c.Get(context.Background(), hsvc.Key(), actual)
+		assert.NoError(t, err)
+		originalResourceVersion := actual.ResourceVersion
 
-	err = hsvc.Ensure(context.Background())
-	assert.NoError(t, err)
+		err = hsvc.Ensure(context.Background())
+		assert.NoError(t, err)
 
-	err = c.Get(context.Background(), hsvc.Key(), actual)
-	assert.NoError(t, err)
-	if actual.ResourceVersion == originalResourceVersion {
-		t.Fatalf("expecting version to get updated after resource update but is %s", originalResourceVersion)
-	}
-	port := actual.Spec.Ports[0].Port
-	if port != 1111 {
-		t.Fatalf("expecting configmap updated but got %d", port)
-	}
+		err = c.Get(context.Background(), hsvc.Key(), actual)
+		assert.NoError(t, err)
+		assert.Equal(t, originalResourceVersion, actual.ResourceVersion)
+	})
+
+	t.Run("updating headless service", func(t *testing.T) {
+		cluster := pandaCluster()
+		cluster.Name = "update-headles-service"
+
+		hsvc := res.NewHeadlessService(
+			c,
+			cluster,
+			scheme.Scheme,
+			[]res.NamedServicePort{
+				{Port: 123},
+			},
+			ctrl.Log.WithName("test"))
+
+		err := hsvc.Ensure(context.Background())
+		assert.NoError(t, err)
+
+		actual := &corev1.Service{}
+		err = c.Get(context.Background(), hsvc.Key(), actual)
+		assert.NoError(t, err)
+		originalResourceVersion := actual.ResourceVersion
+
+		hsvc = res.NewHeadlessService(
+			c,
+			cluster,
+			scheme.Scheme,
+			[]res.NamedServicePort{
+				{Port: 1111},
+			},
+			ctrl.Log.WithName("test"))
+
+		err = hsvc.Ensure(context.Background())
+		assert.NoError(t, err)
+
+		err = c.Get(context.Background(), hsvc.Key(), actual)
+		assert.NoError(t, err)
+		assert.NotEqual(t, originalResourceVersion, actual.ResourceVersion)
+		assert.Equal(t, int32(1111), actual.Spec.Ports[0].Port)
+	})
+
+	t.Run("HeadlessServiceFQDN with trailing dot", func(t *testing.T) {
+		cluster := pandaCluster()
+		cluster.Name = "trailing-dot-headles-service"
+		cluster.Namespace = "some-namespace"
+
+		hsvc := res.NewHeadlessService(
+			c,
+			cluster,
+			scheme.Scheme,
+			[]res.NamedServicePort{
+				{Port: 123},
+			},
+			ctrl.Log.WithName("test"))
+
+		fqdn := hsvc.HeadlessServiceFQDN()
+		assert.Equal(t, "trailing-dot-headles-service.some-namespace.svc.cluster.local.", fqdn)
+	})
+
+	t.Run("HeadlessServiceFQDN without trailing dot", func(t *testing.T) {
+		cluster := pandaCluster()
+		cluster.Name = "without-trailing-dot-headles-service"
+		cluster.Namespace = "different-namespace"
+		cluster.Spec.DNSTrailingDotDisabled = true
+
+		hsvc := res.NewHeadlessService(
+			c,
+			cluster,
+			scheme.Scheme,
+			[]res.NamedServicePort{
+				{Port: 123},
+			},
+			ctrl.Log.WithName("test"))
+
+		fqdn := hsvc.HeadlessServiceFQDN()
+		assert.Equal(t, "without-trailing-dot-headles-service.different-namespace.svc.cluster.local", fqdn)
+	})
 }
 
 func TestEnsure_NodePortService(t *testing.T) {
