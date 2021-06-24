@@ -35,6 +35,10 @@
 #include <iterator>
 #include <numeric>
 
+storage::disk_log_impl* get_disk_log(storage::log log) {
+    return dynamic_cast<storage::disk_log_impl*>(log.get_impl());
+}
+
 void validate_offsets(
   model::offset base,
   const std::vector<model::record_batch_header>& write_headers,
@@ -335,9 +339,44 @@ struct custom_ts_batch_generator {
     }
     model::timestamp _start_ts;
 };
+
+void append_custom_timestamp_batches(
+  storage::log log,
+  int batch_count,
+  model::term_id term,
+  model::timestamp base_ts) {
+    auto current_ts = base_ts;
+    for (int i = 0; i < batch_count; ++i) {
+        iobuf key = bytes_to_iobuf(bytes("key"));
+        iobuf value = bytes_to_iobuf(bytes("v"));
+
+        storage::record_batch_builder builder(
+          model::record_batch_type::raft_data, model::offset(0));
+
+        builder.add_raw_kv(key.copy(), value.copy());
+
+        auto batch = std::move(builder).build();
+
+        batch.set_term(term);
+        batch.header().first_timestamp = current_ts;
+        batch.header().max_timestamp = current_ts;
+        auto reader = model::make_memory_record_batch_reader(
+          {std::move(batch)});
+        storage::log_append_config cfg{
+          .should_fsync = storage::log_append_config::fsync::no,
+          .io_priority = ss::default_priority_class(),
+          .timeout = model::no_timeout,
+        };
+
+        std::move(reader)
+          .for_each_ref(log.make_appender(cfg), cfg.timeout)
+          .get();
+        current_ts = model::timestamp(current_ts() + 1);
+    }
+}
+
 FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
-    cfg.max_segment_size = 10;
     cfg.stype = storage::log_config::storage_type::disk;
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
@@ -347,31 +386,66 @@ FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
 
     storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
-    auto headers = append_random_batches(
-      log,
-      10,
-      model::term_id(0),
-      custom_ts_batch_generator(model::timestamp::now()));
+    auto disk_log = get_disk_log(log);
 
-    log.flush().get0();
-    model::timestamp gc_ts = headers.back().max_timestamp;
-    auto lstats = log.offsets();
-    info("Offsets to be evicted {}", lstats);
-    headers = append_random_batches(
-      log,
-      10,
-      model::term_id(0),
-      custom_ts_batch_generator(model::timestamp(gc_ts() + 10)));
+    // 1. segment timestamps from 100 to 110
+    append_custom_timestamp_batches(
+      log, 10, model::term_id(0), model::timestamp(100));
+    disk_log->force_roll(ss::default_priority_class()).get0();
 
-    storage::compaction_config ccfg(
-      gc_ts, std::nullopt, ss::default_priority_class(), as);
+    // 2. segment timestamps from 200 to 230
+    append_custom_timestamp_batches(
+      log, 30, model::term_id(0), model::timestamp(200));
+
+    disk_log->force_roll(ss::default_priority_class()).get0();
+    // 3. segment timestamps from 231 to 250
+    append_custom_timestamp_batches(
+      log, 20, model::term_id(0), model::timestamp(231));
+
+    /**
+     *  Log contains 3 segments with following timestamps:
+     *
+     * [100..110][200..230][231..261]
+     */
+
+    auto make_compaction_cfg = [&as](int timestamp) {
+        return storage::compaction_config(
+          model::timestamp(timestamp),
+          std::nullopt,
+          ss::default_priority_class(),
+          as);
+    };
     log.set_collectible_offset(log.offsets().dirty_offset);
-    log.compact(ccfg).get0();
 
-    auto new_lstats = log.offsets();
-    info("Final offsets {}", new_lstats);
+    // gc with timestamp 50, no segments should be evicted
+    log.compact(make_compaction_cfg(50)).get0();
+    BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 3);
     BOOST_REQUIRE_EQUAL(
-      new_lstats.start_offset, lstats.dirty_offset + model::offset(1));
+      disk_log->segments().front()->offsets().base_offset, model::offset(0));
+    BOOST_REQUIRE_EQUAL(
+      disk_log->segments().back()->offsets().dirty_offset, model::offset(59));
+
+    // gc with timestamp 102, no segments should be evicted
+    log.compact(make_compaction_cfg(102)).get0();
+    BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 3);
+    BOOST_REQUIRE_EQUAL(
+      disk_log->segments().front()->offsets().base_offset, model::offset(0));
+    BOOST_REQUIRE_EQUAL(
+      disk_log->segments().back()->offsets().dirty_offset, model::offset(59));
+    // gc with timestamp 201, should evict first segment
+    log.compact(make_compaction_cfg(201)).get0();
+    BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 2);
+    BOOST_REQUIRE_EQUAL(
+      disk_log->segments().front()->offsets().base_offset, model::offset(10));
+    BOOST_REQUIRE_EQUAL(
+      disk_log->segments().back()->offsets().dirty_offset, model::offset(59));
+    // gc with timestamp 240, should evict first segment
+    log.compact(make_compaction_cfg(240)).get0();
+    BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      disk_log->segments().front()->offsets().base_offset, model::offset(40));
+    BOOST_REQUIRE_EQUAL(
+      disk_log->segments().back()->offsets().dirty_offset, model::offset(59));
 };
 
 FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
@@ -966,10 +1040,6 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(read.begin()->last_offset(), model::offset(6));
     BOOST_REQUIRE_EQUAL(read[read.size() - 1].base_offset(), model::offset(16));
     BOOST_REQUIRE_EQUAL(read[read.size() - 1].last_offset(), model::offset(16));
-}
-
-storage::disk_log_impl* get_disk_log(storage::log log) {
-    return reinterpret_cast<storage::disk_log_impl*>(log.get_impl());
 }
 
 FIXTURE_TEST(check_max_segment_size, storage_test_fixture) {
