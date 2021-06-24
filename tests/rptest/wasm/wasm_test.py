@@ -11,6 +11,7 @@ import os
 import uuid
 import random
 import string
+import json
 
 from kafka import TopicPartition
 
@@ -72,10 +73,44 @@ class WasmTest(RedpandaTest):
                                        extra_rp_conf=wasm_opts,
                                        num_brokers=num_brokers)
         self._rpk_tool = RpkTool(self.redpanda)
+        self._detected_deployed = False
         self._build_tool = WasmBuildTool(self._rpk_tool)
+        self._scripts = []
         self._input_consumer = None
         self._output_consumer = None
         self._producers = None
+
+    def _verify_list_output(self):
+        output = json.loads(self._rpk_tool.wasm_list())
+        ids = self.redpanda.node_id_list()
+        all_found = set([])
+        if 'status' in output:
+            if output['status'] == 'uninitialized':
+                return
+        elif len(output) == 0:
+            return
+        for node_id, result in output.items():
+            if int(node_id) != result['node_id']:
+                raise Exception("Key should equal advertised node_id")
+            if int(node_id) not in ids:
+                raise Exception("Unknown node_id returned from wasm list cmd")
+            if result['status'] != "up":
+                raise Exception("Wasm engine is down, should be up")
+            if self._detected_deployed is True:
+                copros = result['coprocessors']
+                for name, options in copros.items():
+                    found = [x for x in self._scripts if x.name == name]
+                    assert len(found) < 2
+                    if len(found) > 0:
+                        e = found[0]
+                        all_found.add(e.name)
+                        if options['description'] != e.description:
+                            raise Exception("Mismatch script description")
+                        if set(options['input_topics']) != set(e.inputs):
+                            raise Exception("Mistmatch input topics")
+        if self._detected_deployed and all_found != set(
+            [x.name for x in self._scripts]):
+            raise Exception("Expected copro was missing")
 
     def _build_script(self, script):
         # Build the script itself
@@ -98,6 +133,8 @@ class WasmTest(RedpandaTest):
         self.redpanda.restart_nodes(node)
 
     def start(self, topic_spec, scripts):
+        self._scripts = scripts
+
         def to_output_topic_spec(output_topics):
             """
             Create a list of TopicPartitions for the set of output topics.
@@ -187,7 +224,9 @@ class WasmTest(RedpandaTest):
             self.logger.info("Output: %d" %
                              self._output_consumer.results.num_records())
             batch_total = self._input_consumer.results.num_records()
+            self._verify_list_output()
             if batch_total > 0:
+                self._detected_deployed = True
                 self.records_recieved(batch_total)
 
             return self._input_consumer.is_finished() \
