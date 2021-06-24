@@ -5,18 +5,25 @@ order: 5
 # Custom configuration
 
 The redpanda configuration is by default loaded from and persisted to
-`/etc/redpanda/redpanda.yaml`. It is broadly divided into 2 sections, `redpanda`
-and `rpk`.
+`/etc/redpanda/redpanda.yaml`. It is broadly divided into a few sections:
 
-The `redpanda` section contains all the runtime configuration, such as the
-cluster member IPs, the node ID, data directory, and so on. The `rpk` section
-contains configuration related to tuning the machine that redpanda will run on.
+- `redpanda` - The runtime configuration parameters, such as the cluster member IPs, the node ID, data directory
+- `pandaproxy` - Parameters for the Redpanda REST API
+- `pandaproxy_client` - Parameters for the REST API client that Redpanda uses to make calls to other nodes
+- `rpk` - Configuration related to tuning the container that redpanda
+
+To create a simple config file that you can customize, run:
+
+```
+rpk config init
+```
 
 ## Sample configuration
 
 Here’s a sample of the config. The [configuration reference](#config-parameter-reference) shows a more complete list of the configuration options.
 
-Only include in your `redpanda.yaml` file the sections that you want to customize.
+This is not a valid Redpanda configuration file, but it shows the parameters that you can configure in the config file.
+Only include the sections that you want to customize.
 
 ```yaml
 # organization and cluster_id help Vectorized identify your system.
