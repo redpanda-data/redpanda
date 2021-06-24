@@ -283,6 +283,12 @@ func getExternalIP(node *corev1.Node) string {
 			return address.Address
 		}
 	}
+	// If no external IP is found, fallback on the internal IP. This is mainly useful for Kind.
+	for _, address := range node.Status.Addresses {
+		if address.Type == corev1.NodeInternalIP {
+			return address.Address
+		}
+	}
 	return ""
 }
 
