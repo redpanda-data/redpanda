@@ -160,7 +160,6 @@ class RpkTool:
                 f.write(stdin)
                 f.seek(0)
 
-            # rpk logs everything on STDERR by default
             p = subprocess.Popen(cmd,
                                  stdout=subprocess.PIPE,
                                  stdin=f,
