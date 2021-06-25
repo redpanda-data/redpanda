@@ -21,14 +21,21 @@
 
 namespace coproc::wasm {
 
+static bytes gen_random_string_as_bytes(size_t n) {
+    auto string = random_generators::gen_alphanum_string(n);
+    iobuf buf;
+    buf.append(string.begin(), string.size());
+    return iobuf_to_bytes(buf);
+}
+
 event::event(uint64_t id)
   : id(id)
   , action(event_action::remove) {}
 
 event::event(uint64_t id, cpp_enable_payload ep)
   : id(id)
-  , desc(random_generators::get_bytes(64))
-  , name(random_generators::get_bytes(24))
+  , desc(gen_random_string_as_bytes(64))
+  , name(gen_random_string_as_bytes(24))
   , action(event_action::deploy) {
     iobuf payload;
     reflection::serialize(payload, ep.tid, std::move(ep.topics));
@@ -119,8 +126,8 @@ model::record_batch_reader make_random_event_record_batch_reader(
             if (random_generators::get_int(0, 1) == 0) {
                 e.action = event_action::deploy;
                 e.script = random_generators::get_bytes();
-                e.desc = random_generators::get_bytes(64);
-                e.name = random_generators::get_bytes(24);
+                e.desc = gen_random_string_as_bytes(64);
+                e.name = gen_random_string_as_bytes(24);
                 e.checksum = calculate_checksum(e);
             }
             serialize_event(rbb, e);
