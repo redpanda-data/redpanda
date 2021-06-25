@@ -322,9 +322,13 @@ ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
                 archiver->get_ntp());
               // Start topic manifest upload
               // asynchronously
-              (void)upload_topic_manifest(
-                model::topic_namespace(ntp.ns, ntp.tp.topic),
-                archiver->get_revision_id());
+              if (ntp.tp.partition == 0) {
+                  // Upload manifest once per topic. GCS has strict
+                  // limits for single object updates.
+                  (void)upload_topic_manifest(
+                    model::topic_namespace(ntp.ns, ntp.tp.topic),
+                    archiver->get_revision_id());
+              }
               _probe.start_archiving_ntp();
               return ss::make_ready_future<ss::stop_iteration>(
                 ss::stop_iteration::yes);
