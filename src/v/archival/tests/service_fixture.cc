@@ -88,6 +88,9 @@ archival::configuration get_configuration() {
     conf.connection_limit = archival::s3_connection_limit(2);
     conf.ntp_metrics_disabled = archival::per_ntp_metrics_disabled::yes;
     conf.svc_metrics_disabled = archival::service_metrics_disabled::yes;
+    conf.initial_backoff = 100ms;
+    conf.segment_upload_timeout = 1s;
+    conf.manifest_upload_timeout = 1s;
     return conf;
 }
 
