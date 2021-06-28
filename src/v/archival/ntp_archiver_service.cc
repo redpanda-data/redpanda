@@ -95,7 +95,10 @@ ntp_archiver::download_manifest(retry_chain_node& parent) {
     gate_guard guard{_gate};
     retry_chain_node fib(_manifest_upload_timeout, _initial_backoff, &parent);
     vlog(archival_log.debug, "{} Downloading manifest for {}", fib(), _ntp);
-    co_return co_await _remote.download_manifest(_bucket, _manifest, fib);
+    auto path = _manifest.get_manifest_path();
+    auto key = cloud_storage::remote_manifest_path(
+      std::filesystem::path(std::move(path)));
+    co_return co_await _remote.download_manifest(_bucket, key, _manifest, fib);
 }
 
 ss::future<cloud_storage::upload_result>

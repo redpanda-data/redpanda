@@ -159,12 +159,13 @@ ss::future<> remote::stop() {
 
 ss::future<download_result> remote::download_manifest(
   const s3::bucket_name& bucket,
+  const remote_manifest_path& key,
   base_manifest& manifest,
   retry_chain_node& parent) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
-    auto key = manifest.get_manifest_path();
-    auto path = s3::object_key(key().string());
+    retry_chain_logger ctxlog(cst_log, fib);
+    auto path = s3::object_key(key().native());
     auto [client, deleter] = co_await _pool.acquire();
     auto retry_permit = fib.retry();
     vlog(cst_log.debug, "{} Download manifest {}", fib(), key());
@@ -382,7 +383,7 @@ ss::future<upload_result> remote::upload_segment(
 ss::future<download_result> remote::download_segment(
   const s3::bucket_name& bucket,
   const segment_name& name,
-  manifest& manifest,
+  const manifest& manifest,
   const try_consume_stream& cons_str,
   retry_chain_node& parent) {
     gate_guard guard{_gate};
@@ -397,9 +398,11 @@ ss::future<download_result> remote::download_segment(
         try {
             auto resp = co_await client->get_object(
               bucket, path, fib.get_timeout());
-            vlog(cst_log.debug, "{} Receive OK response from {}", fib(), path);
+            vlog(ctxlog.debug, "Receive OK response from {}", path);
+            auto length = boost::lexical_cast<uint64_t>(resp->get_headers().at(
+              boost::beast::http::field::content_length));
             uint64_t content_length = co_await cons_str(
-              resp->as_input_stream());
+              length, resp->as_input_stream());
             _probe.successful_download(content_length);
             co_return download_result::success;
         } catch (...) {

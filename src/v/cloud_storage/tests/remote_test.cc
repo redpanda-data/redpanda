@@ -64,18 +64,19 @@ static const auto manifest_ntp = model::ntp(                    // NOLINT
   manifest_partition);
 static const auto manifest_revision = model::revision_id(0); // NOLINT
 static const ss::sstring manifest_url = ssx::sformat(        // NOLINT
-  "/20000000/meta/{}_{}/manifest.json",
+  "20000000/meta/{}_{}/manifest.json",
   manifest_ntp.path(),
   manifest_revision());
 // NOLINTNEXTLINE
 static const ss::sstring segment_url
-  = "/ce4fd1a3/test-ns/test-topic/42_0/1-2-v1.log";
+  = "ce4fd1a3/test-ns/test-topic/42_0/1-2-v1.log";
 
 static const std::vector<s3_imposter_fixture::expectation>
   default_expectations({
     s3_imposter_fixture::expectation{
-      .url = manifest_url, .body = ss::sstring(manifest_payload)},
-    s3_imposter_fixture::expectation{.url = segment_url, .body = "segment1"},
+      .url = "/" + manifest_url, .body = ss::sstring(manifest_payload)},
+    s3_imposter_fixture::expectation{
+      .url = "/" + segment_url, .body = "segment1"},
   });
 
 static manifest load_manifest_from_str(std::string_view v) {
@@ -95,8 +96,13 @@ FIXTURE_TEST(test_download_manifest, s3_imposter_fixture) { // NOLINT
     manifest actual(manifest_ntp, manifest_revision);
     auto action = ss::defer([&remote] { remote.stop().get(); });
     retry_chain_node fib(100ms, 20ms);
-    auto res
-      = remote.download_manifest(s3::bucket_name("bucket"), actual, fib).get0();
+    auto res = remote
+                 .download_manifest(
+                   s3::bucket_name("bucket"),
+                   remote_manifest_path(std::filesystem::path(manifest_url)),
+                   actual,
+                   fib)
+                 .get();
     BOOST_REQUIRE(res == download_result::success);
     auto expected = load_manifest_from_str(manifest_payload);
     BOOST_REQUIRE(expected == actual); // NOLINT
@@ -109,8 +115,13 @@ FIXTURE_TEST(test_download_manifest_timeout, s3_imposter_fixture) { // NOLINT
     manifest actual(manifest_ntp, manifest_revision);
     auto action = ss::defer([&remote] { remote.stop().get(); });
     retry_chain_node fib(100ms, 20ms);
-    auto res
-      = remote.download_manifest(s3::bucket_name("bucket"), actual, fib).get0();
+    auto res = remote
+                 .download_manifest(
+                   s3::bucket_name("bucket"),
+                   remote_manifest_path(std::filesystem::path(manifest_url)),
+                   actual,
+                   fib)
+                 .get();
     BOOST_REQUIRE(res == download_result::timedout);
 }
 
@@ -181,8 +192,9 @@ FIXTURE_TEST(test_download_segment, s3_imposter_fixture) { // NOLINT
     BOOST_REQUIRE(upl_res == upload_result::success);
 
     iobuf downloaded;
-    auto try_consume =
-      [&downloaded](ss::input_stream<char> is) -> ss::future<uint64_t> {
+    auto try_consume = [&downloaded](
+                         uint64_t len,
+                         ss::input_stream<char> is) -> ss::future<uint64_t> {
         downloaded.clear();
         auto rds = make_iobuf_ref_output_stream(downloaded);
         co_await ss::copy(is, rds);
@@ -206,10 +218,9 @@ FIXTURE_TEST(test_download_segment_timeout, s3_imposter_fixture) { // NOLINT
     auto name = segment_name("1-2-v1.log");
 
     iobuf downloaded;
-    auto try_consume =
-      [&downloaded]([[maybe_unused]] ss::input_stream<char> is) {
-          return ss::make_ready_future<uint64_t>(0);
-      };
+    auto try_consume = [&downloaded](uint64_t, ss::input_stream<char>) {
+        return ss::make_ready_future<uint64_t>(0);
+    };
 
     retry_chain_node fib(100ms, 20ms);
     auto dnl_res
