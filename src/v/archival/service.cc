@@ -177,6 +177,7 @@ scheduler_service_impl::scheduler_service_impl(
   , _jitter(conf.interval, 1ms)
   , _stop_limit(conf.connection_limit())
   , _rtcnode(_as)
+  , _rtclog(archival_log, _rtcnode)
   , _probe(conf.svc_metrics_disabled)
   , _remote(conf.connection_limit, conf.client_config, _probe)
   , _topic_manifest_upload_timeout(conf.manifest_upload_timeout)
@@ -199,11 +200,7 @@ void scheduler_service_impl::rearm_timer() {
               _timer.rearm(_jitter());
           })
           .handle_exception([this](std::exception_ptr e) {
-              vlog(
-                archival_log.info,
-                "{} Error in timer callback: {}",
-                _rtcnode(),
-                e);
+              vlog(_rtclog.info, "Error in timer callback: {}", e);
           });
     });
 }
@@ -215,7 +212,7 @@ ss::future<> scheduler_service_impl::start() {
 }
 
 ss::future<> scheduler_service_impl::stop() {
-    vlog(archival_log.info, "{} Scheduler service stop", _rtcnode());
+    vlog(_rtclog.info, "Scheduler service stop");
     _timer.cancel();
     _as.request_abort(); // interrupt possible sleep
     return _remote.stop().then([this] {
@@ -252,41 +249,28 @@ ss::future<> scheduler_service_impl::upload_topic_manifest(
             // This runs asynchronously so we can just retry indefinetly
             retry_chain_node fib(
               _topic_manifest_upload_timeout, _initial_backoff, &_rtcnode);
-            vlog(
-              archival_log.info,
-              "{} Uploading topic manifest {}",
-              fib(),
-              topic_ns);
+            retry_chain_logger ctxlog(archival_log, fib);
+            vlog(ctxlog.info, "Uploading topic manifest {}", topic_ns);
             cloud_storage::topic_manifest tm(*cfg, rev);
             auto key = tm.get_manifest_path();
-            vlog(
-              archival_log.debug,
-              "{} Topic manifest object key is '{}'",
-              fib(),
-              key);
+            vlog(ctxlog.debug, "Topic manifest object key is '{}'", key);
             auto res = co_await _remote.upload_manifest(
               _conf.bucket_name, tm, fib);
             uploaded = res == cloud_storage::upload_result::success;
             if (!uploaded) {
-                vlog(
-                  archival_log.warn,
-                  "{} Topic manifest upload timed out: {}",
-                  fib(),
-                  key);
+                vlog(ctxlog.warn, "Topic manifest upload timed out: {}", key);
             }
         }
     } catch (const ss::gate_closed_exception& err) {
         vlog(
-          archival_log.error,
-          "{} Topic manifest upload for {} failed, {}",
-          _rtcnode(),
+          _rtclog.error,
+          "Topic manifest upload for {} failed, {}",
           topic_ns,
           err);
     } catch (const ss::abort_requested_exception& err) {
         vlog(
-          archival_log.error,
-          "{} Topic manifest upload for {} failed, {}",
-          _rtcnode(),
+          _rtclog.error,
+          "Topic manifest upload for {} failed, {}",
           topic_ns,
           err);
     }
@@ -306,9 +290,8 @@ ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
           case cloud_storage::download_result::success:
               _queue.insert(archiver);
               vlog(
-                archival_log.info,
-                "{} Found manifest for partition {}",
-                _rtcnode(),
+                _rtclog.info,
+                "Found manifest for partition {}",
                 archiver->get_ntp());
               _probe.start_archiving_ntp();
               return ss::make_ready_future<ss::stop_iteration>(
@@ -316,9 +299,8 @@ ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
           case cloud_storage::download_result::notfound:
               _queue.insert(archiver);
               vlog(
-                archival_log.info,
-                "{} Start archiving new partition {}",
-                _rtcnode(),
+                _rtclog.info,
+                "Start archiving new partition {}",
                 archiver->get_ntp());
               // Start topic manifest upload
               // asynchronously
@@ -334,8 +316,7 @@ ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
                 ss::stop_iteration::yes);
           case cloud_storage::download_result::failed:
           case cloud_storage::download_result::timedout:
-              vlog(
-                archival_log.warn, "{} Manifest download failed", _rtcnode());
+              vlog(_rtclog.warn, "Manifest download failed");
               return ss::make_exception_future<ss::stop_iteration>(
                 ss::timed_out_error());
           }
@@ -374,22 +355,14 @@ scheduler_service_impl::remove_archivers(std::vector<model::ntp> to_remove) {
     return ss::parallel_for_each(
              to_remove,
              [this](const model::ntp& ntp) -> ss::future<> {
-                 vlog(
-                   archival_log.info,
-                   "{} removing archiver for {}",
-                   _rtcnode(),
-                   ntp.path());
+                 vlog(_rtclog.info, "removing archiver for {}", ntp.path());
                  auto archiver = _queue[ntp];
                  return ss::with_semaphore(
                           _stop_limit,
                           1,
                           [archiver] { return archiver->stop(); })
                    .finally([this, ntp] {
-                       vlog(
-                         archival_log.info,
-                         "{} archiver stopped {}",
-                         _rtcnode(),
-                         ntp.path());
+                       vlog(_rtclog.info, "archiver stopped {}", ntp.path());
                        _queue.erase(ntp);
                        _probe.stop_archiving_ntp();
                    });
@@ -445,13 +418,11 @@ ss::future<> scheduler_service_impl::reconcile_archivers() {
         auto [remove_fut, create_fut] = co_await ss::when_all(
           std::move(fremove), std::move(fcreate));
         if (remove_fut.failed()) {
-            vlog(
-              archival_log.error, "{} Failed to remove archivers", _rtcnode());
+            vlog(_rtclog.error, "Failed to remove archivers");
             remove_fut.ignore_ready_future();
         }
         if (create_fut.failed()) {
-            vlog(
-              archival_log.error, "{} Failed to create archivers", _rtcnode());
+            vlog(_rtclog.error, "Failed to create archivers");
             create_fut.ignore_ready_future();
         }
     }
@@ -477,9 +448,8 @@ ss::future<> scheduler_service_impl::run_uploads() {
                   storage::api& api = _storage_api.local();
                   storage::log_manager& lm = api.log_mgr();
                   vlog(
-                    archival_log.debug,
-                    "{} Checking {} for S3 upload candidates",
-                    _rtcnode(),
+                    _rtclog.debug,
+                    "Checking {} for S3 upload candidates",
                     archiver->get_ntp());
                   auto hwm = get_high_watermark(archiver->get_ntp());
                   if (hwm) {
@@ -509,13 +479,13 @@ ss::future<> scheduler_service_impl::run_uploads() {
 
             if (total.num_failed != 0) {
                 vlog(
-                  archival_log.error,
+                  _rtclog.error,
                   "Failed to upload {} segments out of {}",
                   total.num_failed,
                   total.num_succeded + total.num_failed);
             } else if (total.num_succeded != 0) {
                 vlog(
-                  archival_log.debug,
+                  _rtclog.debug,
                   "Successfuly upload {} segments",
                   total.num_succeded);
             }
@@ -531,7 +501,7 @@ ss::future<> scheduler_service_impl::run_uploads() {
                 // to some reasonable value (e.g. 5s) because otherwise it can
                 // grow very large disabling the archival storage
                 vlog(
-                  archival_log.trace,
+                  _rtclog.trace,
                   "Nothing to upload, applying backoff algorithm");
                 co_await ss::sleep_abortable(
                   backoff + _backoff.next_jitter_duration(), _as);
@@ -543,16 +513,13 @@ ss::future<> scheduler_service_impl::run_uploads() {
             }
         }
     } catch (const ss::sleep_aborted&) {
-        vlog(archival_log.debug, "Upload loop aborted");
+        vlog(_rtclog.debug, "Upload loop aborted");
     } catch (const ss::gate_closed_exception&) {
-        vlog(archival_log.debug, "Upload loop aborted (gate closed)");
+        vlog(_rtclog.debug, "Upload loop aborted (gate closed)");
     } catch (const ss::abort_requested_exception&) {
-        vlog(archival_log.debug, "Upload loop aborted (abort requested)");
+        vlog(_rtclog.debug, "Upload loop aborted (abort requested)");
     } catch (...) {
-        vlog(
-          archival_log.error,
-          "Upload loop error: {}",
-          std::current_exception());
+        vlog(_rtclog.error, "Upload loop error: {}", std::current_exception());
         throw;
     }
 }

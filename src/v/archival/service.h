@@ -173,6 +173,7 @@ private:
     ntp_upload_queue _queue;
     simple_time_jitter<ss::lowres_clock> _backoff{100ms};
     retry_chain_node _rtcnode;
+    retry_chain_logger _rtclog;
     service_probe _probe;
     cloud_storage::remote _remote;
     ss::lowres_clock::duration _topic_manifest_upload_timeout;
