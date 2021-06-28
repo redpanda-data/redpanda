@@ -83,9 +83,8 @@ struct errc_category final : public std::error_category {
             return "raft protocol shutting down";
         case errc::replicate_batcher_cache_error:
             return "unable to append batch to replicate batcher cache";
-        default:
-            return "raft::errc::unknown";
         }
+        return "cluster::errc::unknown";
     }
 };
 inline const std::error_category& error_category() noexcept {
