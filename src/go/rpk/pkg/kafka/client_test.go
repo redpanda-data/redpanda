@@ -1,6 +1,7 @@
 package kafka_test
 
 import (
+	"crypto/tls"
 	"testing"
 
 	"github.com/Shopify/sarama"
@@ -76,7 +77,7 @@ func Test_LoadConfig(t *testing.T) {
 			if tt.conf != nil {
 				conf = tt.conf()
 			}
-			c, err := kafka.LoadConfig(conf.Rpk.KafkaApi.TLS, conf.Rpk.KafkaApi.SASL)
+			c, err := kafka.LoadConfig(&tls.Config{}, conf.Rpk.KafkaApi.SASL)
 			require.NoError(t, err)
 			tt.check(st, conf, c)
 		})

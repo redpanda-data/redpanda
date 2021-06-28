@@ -10,6 +10,7 @@
 package debug
 
 import (
+	"crypto/tls"
 	"fmt"
 	"sort"
 	"strconv"
@@ -29,6 +30,7 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system"
+	vtls "github.com/vectorizedio/redpanda/src/go/rpk/pkg/tls"
 )
 
 type metricsResult struct {
@@ -265,6 +267,7 @@ func getKafkaInfo(
 	kafkaInfoCh chan<- kafkaInfo,
 	send bool,
 ) error {
+	var err error
 	kInfo := kafkaInfo{}
 	if len(conf.Redpanda.KafkaApi) == 0 {
 		out <- [][]string{}
@@ -276,8 +279,23 @@ func getKafkaInfo(
 		conf.Redpanda.KafkaApi[0].Address,
 		conf.Redpanda.KafkaApi[0].Port,
 	)
+	var tlsConfig *tls.Config
+	var t *config.TLS
+	if conf.Rpk.KafkaApi.TLS != nil {
+		t = conf.Rpk.KafkaApi.TLS
+	} else if conf.Rpk.TLS != nil {
+		t = conf.Rpk.TLS
+	}
+	if t != nil {
+		tlsConfig, err = vtls.BuildTLSConfig(true, t.CertFile, t.KeyFile, t.TruststoreFile)
+		if err != nil {
+			out <- [][]string{}
+			kafkaInfoCh <- kInfo
+			return errors.Wrap(err, "Error loading TLS configuration")
+		}
+	}
 	client, err := kafka.InitClientWithConf(
-		conf.Rpk.KafkaApi.TLS,
+		tlsConfig,
 		conf.Rpk.KafkaApi.SASL,
 		addr,
 	)

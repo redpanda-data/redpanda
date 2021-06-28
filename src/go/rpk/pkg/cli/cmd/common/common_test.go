@@ -185,12 +185,15 @@ func TestAddKafkaFlags(t *testing.T) {
 		}
 		parent.AddCommand(child)
 
+		enableTLS := false
+
 		AddKafkaFlags(
 			parent,
 			&configFile,
 			&user,
 			&password,
 			&mechanism,
+			&enableTLS,
 			&certFile,
 			&keyFile,
 			&truststoreFile,
@@ -253,6 +256,7 @@ func TestAddKafkaFlags(t *testing.T) {
 
 func TestAddAdminAPITLSFlags(t *testing.T) {
 	var (
+		enableTLS      bool
 		certFile       string
 		keyFile        string
 		truststoreFile string
@@ -274,6 +278,7 @@ func TestAddAdminAPITLSFlags(t *testing.T) {
 
 		AddAdminAPITLSFlags(
 			parent,
+			&enableTLS,
 			&certFile,
 			&keyFile,
 			&truststoreFile,
@@ -286,11 +291,13 @@ func TestAddAdminAPITLSFlags(t *testing.T) {
 		"--admin-api-tls-cert", "admin-cert.pem",
 		"--admin-api-tls-key", "admin-key.pem",
 		"--admin-api-tls-truststore", "admin-truststore.pem",
+		"--admin-api-tls-enabled",
 	})
 
 	err := cmd.Execute()
 	require.NoError(t, err)
 
+	require.True(t, enableTLS)
 	require.Exactly(t, "admin-cert.pem", certFile)
 	require.Exactly(t, "admin-key.pem", keyFile)
 	require.Exactly(t, "admin-truststore.pem", truststoreFile)
@@ -307,6 +314,7 @@ func TestAddAdminAPITLSFlags(t *testing.T) {
 	err = cmd.Execute()
 	require.NoError(t, err)
 
+	require.False(t, enableTLS)
 	require.Exactly(t, "admin-cert1.pem", certFile)
 	require.Exactly(t, "admin-key1.pem", keyFile)
 	require.Exactly(t, "admin-truststore1.pem", truststoreFile)
