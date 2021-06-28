@@ -454,6 +454,20 @@ private:
     result<Reply> validate_reply_target_node(
       std::string_view request, result<Reply>&& reply) {
         if (unlikely(reply && reply.value().target_node_id != self())) {
+            /**
+             * if received node_id is not initialized it means that there were
+             * no raft group instance on target node to handle the request.
+             */
+            if (reply.value().target_node_id.id() == model::node_id{}) {
+                vlog(
+                  _ctxlog.warn,
+                  "received {} reply from the node where ntp {} does not "
+                  "exists",
+                  request,
+                  _log.config().ntp());
+                return result<Reply>(errc::group_not_exists);
+            }
+
             vlog(
               _ctxlog.warn,
               "received {} reply addressed to different node: {}, current "
