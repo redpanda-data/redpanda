@@ -17,6 +17,7 @@
 #include "utils/intrusive_list_helpers.h"
 #include "utils/string_switch.h"
 
+#include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/timed_out_error.hh>
@@ -433,6 +434,80 @@ ss::future<download_result> remote::download_segment(
       fib(),
       bucket,
       path);
+    _probe.failed_download();
+    co_return download_result::timedout;
+}
+
+static const s3::object_key empty_object_key = s3::object_key();
+
+ss::future<download_result> remote::list_objects(
+  const list_objects_consumer& cons,
+  const s3::bucket_name& bucket,
+  const std::optional<s3::object_key>& prefix,
+  const std::optional<size_t>& max_keys,
+  retry_chain_node& parent) {
+    gate_guard guard{_gate};
+    retry_chain_node fib(&parent);
+    retry_chain_logger ctxlog(cst_log, fib);
+    auto permit = fib.retry();
+    auto [client, deleter] = co_await _pool.acquire();
+    std::optional<s3::object_key> last_key;
+    s3::client::list_bucket_result res{
+      .is_truncated = true, .prefix = {}, .contents = {}};
+    while (res.is_truncated) {
+        std::exception_ptr eptr;
+        try {
+            auto res = co_await client->list_objects_v2(
+              bucket, prefix, last_key, max_keys, fib.get_timeout());
+            vlog(
+              ctxlog.debug,
+              "ListObjectV2 response, is_truncated {}, prefix {}, num-keys {}",
+              res.is_truncated,
+              res.prefix,
+              res.contents.size());
+            ss::stop_iteration cons_res = ss::stop_iteration::no;
+            for (auto&& it : res.contents) {
+                vlog(ctxlog.debug, "Response object key {}", it.key);
+                cons_res = cons(
+                  std::move(it.key),
+                  it.last_modified,
+                  it.size_bytes,
+                  std::move(it.etag));
+                if (cons_res == ss::stop_iteration::yes) {
+                    break;
+                }
+            }
+            if (!res.contents.empty()) {
+                last_key = s3::object_key(
+                  std::filesystem::path(res.contents.back().key));
+            }
+            if (!res.is_truncated || cons_res == ss::stop_iteration::yes) {
+                co_return download_result::success;
+            }
+        } catch (...) {
+            eptr = std::current_exception();
+        }
+        auto outcome = categorize_error(eptr, fib, bucket, empty_object_key);
+        switch (outcome) {
+        case error_outcome::retry_slowdown:
+            co_await client->shutdown();
+            [[fallthrough]];
+        case error_outcome::retry:
+            vlog(
+              ctxlog.debug,
+              "Listing objects in {}, {}ms backoff required",
+              bucket,
+              permit.delay.count());
+            _probe.download_backoff();
+            co_await ss::sleep_abortable(permit.delay, _as);
+            permit = fib.retry();
+            break;
+        case error_outcome::fail:
+        case error_outcome::notfound:
+            co_return download_result::failed;
+        }
+    }
+    vlog(ctxlog.warn, "ListObjectsV2 backoff quota exceded");
     _probe.failed_download();
     co_return download_result::timedout;
 }
