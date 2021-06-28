@@ -65,8 +65,9 @@ func NewACLCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		configClosure,
 		&brokers,
 	)
-	kafkaTlsClosure := common.BuildKafkaTLSConfig(&enableTLS, &certFile, &keyFile, &truststoreFile, configClosure)
+	kafkaTlsClosure := common.BuildKafkaTLSConfig(fs, &enableTLS, &certFile, &keyFile, &truststoreFile, configClosure)
 	adminTlsClosure := common.BuildAdminApiTLSConfig(
+		fs,
 		&adminAPIEnableTLS,
 		&adminAPICertFile,
 		&adminAPIKeyFile,

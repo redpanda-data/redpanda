@@ -4,23 +4,24 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"io/ioutil"
+
+	"github.com/spf13/afero"
 )
 
 func LoadTLSConfig(
-	truststoreFile, certFile, keyFile string,
+	fs afero.Fs, truststoreFile, certFile, keyFile string,
 ) (*tls.Config, error) {
 	var err error
 	var caCertPool *x509.CertPool
 	var certs []tls.Certificate
 	if truststoreFile != "" {
-		caCertPool, err = LoadRootCACert(truststoreFile)
+		caCertPool, err = LoadRootCACert(fs, truststoreFile)
 		if err != nil {
 			return nil, err
 		}
 	}
 	if certFile != "" && keyFile != "" {
-		certs, err = LoadCert(certFile, keyFile)
+		certs, err = LoadCert(fs, certFile, keyFile)
 		if err != nil {
 			return nil, err
 		}
@@ -31,8 +32,10 @@ func LoadTLSConfig(
 	return tlsConf, nil
 }
 
-func LoadRootCACert(truststoreFile string) (*x509.CertPool, error) {
-	caCert, err := ioutil.ReadFile(truststoreFile)
+func LoadRootCACert(
+	fs afero.Fs, truststoreFile string,
+) (*x509.CertPool, error) {
+	caCert, err := afero.ReadFile(fs, truststoreFile)
 	if err != nil {
 		return nil, err
 	}
@@ -41,8 +44,18 @@ func LoadRootCACert(truststoreFile string) (*x509.CertPool, error) {
 	return caCertPool, nil
 }
 
-func LoadCert(certFile, keyFile string) ([]tls.Certificate, error) {
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+func LoadCert(
+	fs afero.Fs, certFile, keyFile string,
+) ([]tls.Certificate, error) {
+	certPEMBlock, err := afero.ReadFile(fs, certFile)
+	if err != nil {
+		return nil, err
+	}
+	keyPEMBlock, err := afero.ReadFile(fs, keyFile)
+	if err != nil {
+		return nil, err
+	}
+	cert, err := tls.X509KeyPair(certPEMBlock, keyPEMBlock)
 	if err != nil {
 		return nil, err
 	}
@@ -50,11 +63,10 @@ func LoadCert(certFile, keyFile string) ([]tls.Certificate, error) {
 }
 
 func BuildTLSConfig(
-	enableTLS bool,
-	certFile, keyFile, truststoreFile string,
+	fs afero.Fs, enableTLS bool, certFile, keyFile, truststoreFile string,
 ) (*tls.Config, error) {
-	tlsConfig := &tls.Config{}
 	var err error
+	tlsConfig := &tls.Config{}
 
 	switch {
 	case certFile != "" && keyFile == "":
@@ -80,6 +92,7 @@ func BuildTLSConfig(
 		truststoreFile != "":
 
 		tlsConfig, err = LoadTLSConfig(
+			fs,
 			truststoreFile,
 			certFile,
 			keyFile,
@@ -90,7 +103,7 @@ func BuildTLSConfig(
 
 	// Enable TLS (no auth) if only the CA cert file is set for rpk
 	case truststoreFile != "":
-		caCertPool, err := LoadRootCACert(truststoreFile)
+		caCertPool, err := LoadRootCACert(fs, truststoreFile)
 		if err != nil {
 			return nil, err
 		}

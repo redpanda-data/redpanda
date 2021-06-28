@@ -19,6 +19,7 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/burdiyan/kafkautil"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
@@ -352,6 +353,7 @@ func KafkaAuthConfig(
 }
 
 func BuildAdminApiTLSConfig(
+	fs afero.Fs,
 	enableTLS *bool,
 	certFile, keyFile, truststoreFile *string,
 	configuration func() (*config.Config, error),
@@ -370,6 +372,7 @@ func BuildAdminApiTLSConfig(
 			return conf.Rpk.TLS, nil
 		}
 		return buildTLS(
+			fs,
 			enableTLS,
 			certFile,
 			keyFile,
@@ -383,6 +386,7 @@ func BuildAdminApiTLSConfig(
 }
 
 func BuildKafkaTLSConfig(
+	fs afero.Fs,
 	enableTLS *bool,
 	certFile, keyFile, truststoreFile *string,
 	configuration func() (*config.Config, error),
@@ -401,6 +405,7 @@ func BuildKafkaTLSConfig(
 			return conf.Rpk.TLS, nil
 		}
 		return buildTLS(
+			fs,
 			enableTLS,
 			certFile,
 			keyFile,
@@ -419,6 +424,7 @@ func BuildKafkaTLSConfig(
 // If after that no value is found for any of them, the result of calling
 // defaultVal is returned.
 func buildTLS(
+	fs afero.Fs,
 	enableTLS *bool,
 	certFile, keyFile, truststoreFile *string,
 	certEnvVar, keyEnvVar, truststoreEnvVar string,
@@ -454,6 +460,7 @@ func buildTLS(
 		}
 	}
 	return vtls.BuildTLSConfig(
+		fs,
 		enable,
 		c,
 		k,

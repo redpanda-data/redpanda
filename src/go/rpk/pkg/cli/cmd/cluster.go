@@ -69,7 +69,7 @@ func NewClusterCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		&brokers,
 	)
 	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism)
-	tlsClosure := common.BuildKafkaTLSConfig(&enableTLS, &certFile, &keyFile, &truststoreFile, configClosure)
+	tlsClosure := common.BuildKafkaTLSConfig(fs, &enableTLS, &certFile, &keyFile, &truststoreFile, configClosure)
 	adminClosure := common.CreateAdmin(brokersClosure, configClosure, tlsClosure, kAuthClosure)
 	command.AddCommand(cluster.NewInfoCommand(adminClosure))
 

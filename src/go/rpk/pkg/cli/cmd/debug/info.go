@@ -109,7 +109,7 @@ func executeInfo(
 	metricsRes, err := getMetrics(fs, mgr, timeout, *conf)
 
 	go func() {
-		err := getKafkaInfo(*conf, kafkaRowsCh, kafkaInfoCh, send)
+		err := getKafkaInfo(fs, *conf, kafkaRowsCh, kafkaInfoCh, send)
 		log.Debug(err)
 	}()
 	if err != nil {
@@ -262,6 +262,7 @@ func getConf(
 }
 
 func getKafkaInfo(
+	fs afero.Fs,
 	conf config.Config,
 	out chan<- [][]string,
 	kafkaInfoCh chan<- kafkaInfo,
@@ -287,7 +288,7 @@ func getKafkaInfo(
 		t = conf.Rpk.TLS
 	}
 	if t != nil {
-		tlsConfig, err = vtls.BuildTLSConfig(true, t.CertFile, t.KeyFile, t.TruststoreFile)
+		tlsConfig, err = vtls.BuildTLSConfig(fs, true, t.CertFile, t.KeyFile, t.TruststoreFile)
 		if err != nil {
 			out <- [][]string{}
 			kafkaInfoCh <- kInfo
