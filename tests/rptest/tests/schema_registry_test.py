@@ -74,6 +74,23 @@ class SchemaRegistryTest(RedpandaTest):
         assert set(names).issubset(self._get_topics().json())
         return names
 
+    def _get_config(self, headers=HTTP_GET_HEADERS):
+        return requests.get(f"{self._base_uri()}/config", headers=headers)
+
+    def _set_config(self, data, headers=HTTP_POST_HEADERS):
+        return requests.put(f"{self._base_uri()}/config",
+                            headers=headers,
+                            data=data)
+
+    def _get_config_subject(self, subject, headers=HTTP_GET_HEADERS):
+        return requests.get(f"{self._base_uri()}/config/{subject}",
+                            headers=headers)
+
+    def _set_config_subject(self, subject, data, headers=HTTP_POST_HEADERS):
+        return requests.put(f"{self._base_uri()}/config/{subject}",
+                            headers=headers,
+                            data=data)
+
     def _get_schemas_types(self, headers=HTTP_GET_HEADERS):
         return requests.get(f"{self._base_uri()}/schemas/types",
                             headers=headers)
@@ -247,3 +264,63 @@ class SchemaRegistryTest(RedpandaTest):
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
         # assert result["schema"] == json.dumps(schema_def)
+
+    @cluster(num_nodes=3)
+    def test_config(self):
+        """
+        Smoketest config endpoints
+        """
+        self.logger.debug("Get initial global config")
+        result_raw = self._get_config()
+        assert result_raw.json()["compatibilityLevel"] == "NONE"
+
+        self.logger.debug("Set global config")
+        result_raw = self._set_config(
+            data=json.dumps({"compatibility": "FULL"}))
+        assert result_raw.json()["compatibility"] == "FULL"
+
+        self.logger.debug("Get invalid subject config")
+        result_raw = self._get_config_subject(subject="invalid_subject")
+        assert result_raw.status_code == requests.codes.not_found
+        assert result_raw.json()["error_code"] == 40401
+
+        schema_def = {
+            "namespace":
+            "example.avro",
+            "type":
+            "record",
+            "name":
+            "User",
+            "fields": [{
+                "name": "name",
+                "type": "string"
+            }, {
+                "name": "favorite_number",
+                "type": ["int", "null"]
+            }, {
+                "name": "favorite_color",
+                "type": ["string", "null"]
+            }]
+        }
+
+        schema_1_data = json.dumps({"schema": json.dumps(schema_def)})
+
+        topic = create_topic_names(1)[0]
+
+        self.logger.debug("Posting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data)
+
+        self.logger.debug("Get subject config - should be same as global")
+        result_raw = self._get_config_subject(subject=f"{topic}-key")
+        assert result_raw.json()["compatibilityLevel"] == "FULL"
+
+        self.logger.debug("Set subject config")
+        result_raw = self._set_config_subject(
+            subject=f"{topic}-key",
+            data=json.dumps({"compatibility": "BACKWARD_TRANSITIVE"}))
+        assert result_raw.json()["compatibility"] == "BACKWARD_TRANSITIVE"
+
+        self.logger.debug("Get subject config - should be overriden")
+        result_raw = self._get_config_subject(subject=f"{topic}-key")
+        assert result_raw.json()["compatibilityLevel"] == "BACKWARD_TRANSITIVE"

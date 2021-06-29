@@ -40,6 +40,20 @@ public:
         return {version, id, inserted};
     }
 
+    ///\brief Update or insert a schema with the given id, and register it with
+    /// the subject for the given version.
+    ///
+    /// return true if a new version was inserted, false if updated.
+    bool upsert(
+      subject sub,
+      schema_definition def,
+      schema_type type,
+      schema_id id,
+      schema_version version) {
+        upsert_schema(id, std::move(def), type);
+        return upsert_subject(std::move(sub), version, id);
+    }
+
     ///\brief Return a schema by id.
     result<schema> get_schema(const schema_id& id) const {
         auto it = _schemas.find(id);
@@ -57,7 +71,7 @@ public:
             return error_code::subject_not_found;
         }
 
-        const auto& versions = sub_it->second;
+        const auto& versions = sub_it->second.versions;
         auto v_it = std::lower_bound(
           versions.begin(),
           versions.end(),
@@ -101,7 +115,7 @@ public:
         if (sub_it == _subjects.end()) {
             return error_code::subject_not_found;
         }
-        const auto& versions = sub_it->second;
+        const auto& versions = sub_it->second.versions;
         std::vector<schema_version> res;
         res.reserve(versions.size());
         std::transform(
@@ -110,6 +124,37 @@ public:
           std::back_inserter(res),
           [](const auto& v) { return v.version; });
         return res;
+    }
+
+    ///\brief Get the global compatibility level.
+    result<compatibility_level> get_compatibility() const {
+        return _compatibility;
+    }
+
+    ///\brief Get the compatibility level for a subject, or fallback to global.
+    result<compatibility_level> get_compatibility(const subject& sub) const {
+        auto sub_it = _subjects.find(sub);
+        if (sub_it == _subjects.end()) {
+            return error_code::subject_not_found;
+        }
+        return sub_it->second.compatibility.value_or(_compatibility);
+    }
+
+    ///\brief Set the global compatibility level.
+    result<bool> set_compatibility(compatibility_level compatibility) {
+        return std::exchange(_compatibility, compatibility) != compatibility;
+    }
+
+    ///\brief Set the compatibility level for a subject.
+    result<bool>
+    set_compatibility(const subject& sub, compatibility_level compatibility) {
+        auto sub_it = _subjects.find(sub);
+        if (sub_it == _subjects.end()) {
+            return error_code::subject_not_found;
+        }
+        // TODO(Ben): Check needs to be made here?
+        return std::exchange(sub_it->second.compatibility, compatibility)
+               != compatibility;
     }
 
 private:
@@ -134,12 +179,17 @@ private:
         return {id, inserted};
     }
 
+    bool upsert_schema(schema_id id, schema_definition def, schema_type type) {
+        return _schemas.insert_or_assign(id, schema_entry(type, std::move(def)))
+          .second;
+    }
+
     struct insert_subject_result {
         schema_version version;
         bool inserted;
     };
     insert_subject_result insert_subject(subject sub, schema_id id) {
-        auto& versions = _subjects[std::move(sub)];
+        auto& versions = _subjects[std::move(sub)].versions;
         const auto v_it = std::find_if(
           versions.cbegin(), versions.cend(), [id](auto v) {
               return v.id == id;
@@ -154,6 +204,23 @@ private:
         return {version, true};
     }
 
+    bool upsert_subject(subject sub, schema_version version, schema_id id) {
+        auto& versions = _subjects[std::move(sub)].versions;
+        const auto v_it = std::lower_bound(
+          versions.begin(),
+          versions.end(),
+          version,
+          [](const subject_version_id& lhs, schema_version rhs) {
+              return lhs.version < rhs;
+          });
+        if (v_it != versions.end() && v_it->version == version) {
+            *v_it = subject_version_id(version, id);
+            return false;
+        }
+        versions.insert(v_it, subject_version_id(version, id));
+        return true;
+    }
+
     struct schema_entry {
         schema_entry(schema_type type, schema_definition definition)
           : type{type}
@@ -164,16 +231,13 @@ private:
     };
 
     struct subject_entry {
-        explicit subject_entry(subject sub)
-          : sub{std::move(sub)}
-          , versions{} {}
-
-        subject sub;
+        std::optional<compatibility_level> compatibility;
         std::vector<subject_version_id> versions;
     };
 
     absl::btree_map<schema_id, schema_entry> _schemas;
-    absl::node_hash_map<subject, subject_versions> _subjects;
+    absl::node_hash_map<subject, subject_entry> _subjects;
+    compatibility_level _compatibility{compatibility_level::none};
 };
 
 } // namespace pandaproxy::schema_registry

@@ -13,17 +13,25 @@
 
 #include "seastarx.h"
 #include "utils/named_type.h"
+#include "utils/string_switch.h"
 
 #include <seastar/core/sstring.hh>
 
 #include <fmt/core.h>
 #include <fmt/format.h>
+#include <fmt/ostream.h>
+
+#include <type_traits>
 
 namespace pandaproxy::schema_registry {
 
+template<typename E>
+std::enable_if_t<std::is_enum_v<E>, std::optional<E>>
+  from_string_view(std::string_view);
+
 enum class schema_type { avro = 0, json, protobuf };
 
-inline constexpr std::string_view to_string_view(schema_type e) {
+constexpr std::string_view to_string_view(schema_type e) {
     switch (e) {
     case schema_type::avro:
         return "AVRO";
@@ -33,6 +41,19 @@ inline constexpr std::string_view to_string_view(schema_type e) {
         return "PROTOBUF";
     }
     return "{invalid}";
+}
+template<>
+constexpr std::optional<schema_type>
+from_string_view<schema_type>(std::string_view sv) {
+    return string_switch<std::optional<schema_type>>(sv)
+      .match(to_string_view(schema_type::avro), schema_type::avro)
+      .match(to_string_view(schema_type::json), schema_type::json)
+      .match(to_string_view(schema_type::protobuf), schema_type::protobuf)
+      .default_match(std::nullopt);
+}
+
+inline std::ostream& operator<<(std::ostream& os, const schema_type& v) {
+    return os << to_string_view(v);
 }
 
 ///\brief A subject is the name under which a schema is registered.
@@ -93,5 +114,60 @@ struct subject_schema {
     schema_definition definition{invalid_schema_definition};
     bool deleted{false};
 };
+
+enum class compatibility_level {
+    none = 0,
+    backward,
+    backward_transitive,
+    forward,
+    forward_transitive,
+    full,
+    full_transitive,
+};
+
+constexpr std::string_view to_string_view(compatibility_level v) {
+    switch (v) {
+    case compatibility_level::none:
+        return "NONE";
+    case compatibility_level::backward:
+        return "BACKWARD";
+    case compatibility_level::backward_transitive:
+        return "BACKWARD_TRANSITIVE";
+    case compatibility_level::forward:
+        return "FORWARD";
+    case compatibility_level::forward_transitive:
+        return "FORWARD_TRANSITIVE";
+    case compatibility_level::full:
+        return "FULL";
+    case compatibility_level::full_transitive:
+        return "FULL_TRANSITIVE";
+    }
+    return "{invalid}";
+}
+template<>
+constexpr std::optional<compatibility_level>
+from_string_view<compatibility_level>(std::string_view sv) {
+    return string_switch<std::optional<compatibility_level>>(sv)
+      .match(
+        to_string_view(compatibility_level::none), compatibility_level::none)
+      .match(
+        to_string_view(compatibility_level::backward),
+        compatibility_level::backward)
+      .match(
+        to_string_view(compatibility_level::backward_transitive),
+        compatibility_level::backward_transitive)
+      .match(
+        to_string_view(compatibility_level::forward),
+        compatibility_level::forward)
+      .match(
+        to_string_view(compatibility_level::forward_transitive),
+        compatibility_level::forward_transitive)
+      .match(
+        to_string_view(compatibility_level::full), compatibility_level::full)
+      .match(
+        to_string_view(compatibility_level::full_transitive),
+        compatibility_level::full_transitive)
+      .default_match(std::nullopt);
+}
 
 } // namespace pandaproxy::schema_registry

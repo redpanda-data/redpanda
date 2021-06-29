@@ -9,6 +9,7 @@
 
 #include "pandaproxy/schema_registry/store.h"
 
+#include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/util.h"
 
 #include <absl/algorithm/container.h>
@@ -60,6 +61,91 @@ BOOST_AUTO_TEST_CASE(test_store_insert) {
     BOOST_REQUIRE(ins_res.inserted);
     BOOST_REQUIRE_EQUAL(ins_res.id, pps::schema_id{2});
     BOOST_REQUIRE_EQUAL(ins_res.version, pps::schema_version{2});
+}
+
+BOOST_AUTO_TEST_CASE(test_store_upsert_in_order) {
+    const auto expected = std::vector<pps::schema_version>(
+      {pps::schema_version{0}, pps::schema_version{1}});
+
+    pps::store s;
+    BOOST_REQUIRE(s.upsert(
+      subject0,
+      string_def0,
+      pps::schema_type::avro,
+      pps::schema_id{0},
+      pps::schema_version{0}));
+    BOOST_REQUIRE(s.upsert(
+      subject0,
+      string_def0,
+      pps::schema_type::avro,
+      pps::schema_id{1},
+      pps::schema_version{1}));
+
+    auto res = s.get_versions(subject0);
+    BOOST_REQUIRE(res.has_value());
+    BOOST_REQUIRE_EQUAL_COLLECTIONS(
+      res.value().cbegin(),
+      res.value().cend(),
+      expected.cbegin(),
+      expected.cend());
+}
+
+BOOST_AUTO_TEST_CASE(test_store_upsert_reverse_order) {
+    const auto expected = std::vector<pps::schema_version>(
+      {pps::schema_version{0}, pps::schema_version{1}});
+
+    pps::store s;
+    BOOST_REQUIRE(s.upsert(
+      subject0,
+      string_def0,
+      pps::schema_type::avro,
+      pps::schema_id{1},
+      pps::schema_version{1}));
+    BOOST_REQUIRE(s.upsert(
+      subject0,
+      string_def0,
+      pps::schema_type::avro,
+      pps::schema_id{0},
+      pps::schema_version{0}));
+
+    auto res = s.get_versions(subject0);
+    BOOST_REQUIRE(res.has_value());
+    BOOST_REQUIRE_EQUAL_COLLECTIONS(
+      res.value().cbegin(),
+      res.value().cend(),
+      expected.cbegin(),
+      expected.cend());
+}
+
+BOOST_AUTO_TEST_CASE(test_store_upsert_override) {
+    const auto expected = std::vector<pps::schema_version>(
+      {pps::schema_version{0}});
+
+    pps::store s;
+    BOOST_REQUIRE(s.upsert(
+      subject0,
+      string_def0,
+      pps::schema_type::avro,
+      pps::schema_id{0},
+      pps::schema_version{0}));
+    // override schema and version (should return no insertion)
+    BOOST_REQUIRE(!s.upsert(
+      subject0,
+      int_def0,
+      pps::schema_type::avro,
+      pps::schema_id{0},
+      pps::schema_version{0}));
+
+    auto v_res = s.get_versions(subject0);
+    BOOST_REQUIRE(v_res.has_value());
+    BOOST_REQUIRE_EQUAL_COLLECTIONS(
+      v_res.value().cbegin(),
+      v_res.value().cend(),
+      expected.cbegin(),
+      expected.cend());
+    auto s_res = s.get_subject_schema(subject0, pps::schema_version{0});
+    BOOST_REQUIRE(s_res.has_value());
+    BOOST_REQUIRE(s_res.value().definition == int_def0);
 }
 
 BOOST_AUTO_TEST_CASE(test_store_get_schema) {
@@ -180,4 +266,80 @@ BOOST_AUTO_TEST_CASE(test_store_get_subjects) {
     BOOST_REQUIRE(subjects.size() == 2);
     BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject0)), 1);
     BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject1)), 1);
+}
+
+BOOST_AUTO_TEST_CASE(test_store_global_compat) {
+    // Setting the retrieving global compatibility should be allowed multiple
+    // times
+
+    pps::compatibility_level expected{pps::compatibility_level::none};
+    pps::store s;
+    BOOST_REQUIRE(s.get_compatibility().value() == expected);
+
+    expected = pps::compatibility_level::backward;
+    BOOST_REQUIRE(s.set_compatibility(expected).value() == true);
+    BOOST_REQUIRE(s.get_compatibility().value() == expected);
+
+    // duplicate should return false
+    expected = pps::compatibility_level::backward;
+    BOOST_REQUIRE(s.set_compatibility(expected).value() == false);
+    BOOST_REQUIRE(s.get_compatibility().value() == expected);
+
+    expected = pps::compatibility_level::full_transitive;
+    BOOST_REQUIRE(s.set_compatibility(expected).value() == true);
+    BOOST_REQUIRE(s.get_compatibility().value() == expected);
+}
+
+BOOST_AUTO_TEST_CASE(test_store_subject_compat) {
+    // Setting the retrieving a subject compatibility should be allowed multiple
+    // times
+
+    pps::compatibility_level global_expected{pps::compatibility_level::none};
+    pps::store s;
+    BOOST_REQUIRE(s.get_compatibility().value() == global_expected);
+    s.insert(subject0, string_def0, pps::schema_type::avro);
+
+    auto sub_expected = pps::compatibility_level::backward;
+    BOOST_REQUIRE(s.set_compatibility(subject0, sub_expected).value() == true);
+    BOOST_REQUIRE(s.get_compatibility(subject0).value() == sub_expected);
+
+    // duplicate should return false
+    sub_expected = pps::compatibility_level::backward;
+    BOOST_REQUIRE(s.set_compatibility(subject0, sub_expected).value() == false);
+    BOOST_REQUIRE(s.get_compatibility(subject0).value() == sub_expected);
+
+    sub_expected = pps::compatibility_level::full_transitive;
+    BOOST_REQUIRE(s.set_compatibility(subject0, sub_expected).value() == true);
+    BOOST_REQUIRE(s.get_compatibility(subject0).value() == sub_expected);
+    BOOST_REQUIRE(s.get_compatibility().value() == global_expected);
+}
+
+BOOST_AUTO_TEST_CASE(test_store_subject_compat_fallback) {
+    // A Subject should fallback to the current global setting
+
+    pps::compatibility_level expected{pps::compatibility_level::none};
+    pps::store s;
+    s.insert(subject0, string_def0, pps::schema_type::avro);
+    BOOST_REQUIRE(s.get_compatibility(subject0).value() == expected);
+
+    expected = pps::compatibility_level::backward;
+    BOOST_REQUIRE(s.set_compatibility(expected).value() == true);
+    BOOST_REQUIRE(s.get_compatibility(subject0).value() == expected);
+}
+
+BOOST_AUTO_TEST_CASE(test_store_invalid_subject_compat) {
+    // Setting and getting a compatibility for a non-existant subject should
+    // fail
+
+    pps::compatibility_level expected{pps::compatibility_level::none};
+    pps::store s;
+
+    BOOST_REQUIRE_EQUAL(
+      s.get_compatibility(subject0).error(),
+      pps::error_code::subject_not_found);
+
+    expected = pps::compatibility_level::backward;
+    BOOST_REQUIRE_EQUAL(
+      s.set_compatibility(subject0, expected).error(),
+      pps::error_code::subject_not_found);
 }

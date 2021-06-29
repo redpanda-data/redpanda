@@ -12,16 +12,19 @@
 #pragma once
 
 #include "bytes/iobuf_parser.h"
+#include "json/json.h"
 #include "model/record_utils.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/error.h"
+#include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/store.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "raft/types.h"
 #include "storage/record_batch_builder.h"
 #include "utils/string_switch.h"
+#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/std-coroutine.hh>
@@ -32,13 +35,98 @@
 namespace pandaproxy::schema_registry {
 
 using topic_key_magic = named_type<int32_t, struct topic_key_magic_tag>;
-using topic_key_type = named_type<ss::sstring, struct topic_key_type_tag>;
+enum class topic_key_type { noop = 0, schema, config };
+constexpr std::string_view to_string_view(topic_key_type kt) {
+    switch (kt) {
+    case topic_key_type::noop:
+        return "NOOP";
+    case topic_key_type::schema:
+        return "SCHEMA";
+    case topic_key_type::config:
+        return "CONFIG";
+    }
+    return "{invalid}";
+};
+template<>
+constexpr std::optional<topic_key_type>
+from_string_view<topic_key_type>(std::string_view sv) {
+    return string_switch<std::optional<topic_key_type>>(sv)
+      .match(to_string_view(topic_key_type::noop), topic_key_type::noop)
+      .match(to_string_view(topic_key_type::schema), topic_key_type::schema)
+      .match(to_string_view(topic_key_type::config), topic_key_type::config)
+      .default_match(std::nullopt);
+}
+
+// Just peek at the keytype. Allow other fields through.
+template<typename Encoding = rapidjson::UTF8<>>
+class topic_key_type_handler
+  : public rapidjson::
+      BaseReaderHandler<Encoding, topic_key_type_handler<Encoding>> {
+    enum class state {
+        empty = 0,
+        object,
+        keytype,
+    };
+    state _state = state::empty;
+
+public:
+    using Ch = typename rapidjson::BaseReaderHandler<Encoding>::Ch;
+    using rjson_parse_result = ss::sstring;
+    rjson_parse_result result;
+
+    topic_key_type_handler()
+      : rapidjson::
+        BaseReaderHandler<Encoding, topic_key_type_handler<Encoding>>{} {}
+
+    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        if (_state == state::object && sv == "keytype") {
+            _state = state::keytype;
+        }
+        return true;
+    }
+
+    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+        if (_state == state::keytype) {
+            result = ss::sstring{str, len};
+            _state = state::object;
+        }
+        return true;
+    }
+
+    bool StartObject() {
+        if (_state == state::empty) {
+            _state = state::object;
+        }
+        return true;
+    }
+
+    bool EndObject(rapidjson::SizeType) {
+        if (_state == state::object) {
+            _state = state::empty;
+        }
+        return true;
+    }
+};
 
 struct schema_key {
-    topic_key_type keytype{"SCHEMA"};
+    static constexpr topic_key_type keytype{topic_key_type::schema};
     subject sub;
     schema_version version;
     topic_key_magic magic{1};
+
+    friend bool operator==(const schema_key&, const schema_key&) = default;
+
+    friend std::ostream& operator<<(std::ostream& os, const schema_key& v) {
+        fmt::print(
+          os,
+          "keytype: {}, subject: {}, version: {}, magic: {}",
+          to_string_view(v.keytype),
+          v.sub,
+          v.version,
+          v.magic);
+        return os;
+    }
 };
 
 inline void rjson_serialize(
@@ -46,7 +134,7 @@ inline void rjson_serialize(
   const schema_registry::schema_key& key) {
     w.StartObject();
     w.Key("keytype");
-    ::json::rjson_serialize(w, key.keytype);
+    ::json::rjson_serialize(w, to_string_view(key.keytype));
     w.Key("subject");
     ::json::rjson_serialize(w, key.sub());
     w.Key("version");
@@ -126,9 +214,9 @@ public:
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::keytype: {
-            result.keytype = topic_key_type{ss::sstring{sv}};
+            auto kt = from_string_view<topic_key_type>(sv);
             _state = state::object;
-            return true;
+            return kt == result.keytype;
         }
         case state::subject: {
             result.sub = subject{ss::sstring{sv}};
@@ -153,19 +241,6 @@ public:
     }
 };
 
-inline schema_key schema_key_from_iobuf(iobuf&& iobuf) {
-    auto p = iobuf_parser(std::move(iobuf));
-    auto str = p.read_string(p.bytes_left());
-    return json::rjson_parse(str.data(), schema_key_handler<>{});
-}
-
-inline iobuf schema_key_to_iobuf(const schema_key& key) {
-    auto str = json::rjson_serialize(key);
-    iobuf buf;
-    buf.append(str.data(), str.size());
-    return buf;
-}
-
 struct schema_value {
     subject sub;
     schema_version version;
@@ -173,6 +248,21 @@ struct schema_value {
     schema_id id;
     schema_definition schema;
     bool deleted{false};
+
+    friend bool operator==(const schema_value&, const schema_value&) = default;
+
+    friend std::ostream& operator<<(std::ostream& os, const schema_value& v) {
+        fmt::print(
+          os,
+          "subject: {}, version: {}, type: {}, id: {}, schema: {}, deleted: {}",
+          v.sub,
+          v.version,
+          v.type,
+          v.id,
+          v.schema,
+          v.deleted);
+        return os;
+    }
 };
 
 inline void rjson_serialize(
@@ -303,13 +393,7 @@ public:
             return true;
         }
         case state::type: {
-            std::optional<schema_type> type{
-              string_switch<std::optional<schema_type>>(sv)
-                .match(to_string_view(schema_type::avro), schema_type::avro)
-                .match(to_string_view(schema_type::json), schema_type::json)
-                .match(
-                  to_string_view(schema_type::protobuf), schema_type::protobuf)
-                .default_match(std::nullopt)};
+            auto type = from_string_view<schema_type>(sv);
             if (type.has_value()) {
                 result.type = *type;
                 _state = state::object;
@@ -335,29 +419,199 @@ public:
     }
 };
 
-inline schema_value schema_value_from_iobuf(iobuf&& iobuf) {
-    auto p = iobuf_parser(std::move(iobuf));
-    auto str = p.read_string(p.bytes_left());
-    return json::rjson_parse(str.data(), schema_value_handler<>{});
+struct config_key {
+    static constexpr topic_key_type keytype{topic_key_type::config};
+    std::optional<subject> sub;
+    topic_key_magic magic{0};
+
+    friend bool operator==(const config_key&, const config_key&) = default;
+
+    friend std::ostream& operator<<(std::ostream& os, const config_key& v) {
+        fmt::print(
+          os,
+          "keytype: {}, subject: {}, magic: {}",
+          to_string_view(v.keytype),
+          v.sub.value_or(invalid_subject),
+          v.magic);
+        return os;
+    }
+};
+
+inline void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const schema_registry::config_key& key) {
+    w.StartObject();
+    w.Key("keytype");
+    ::json::rjson_serialize(w, to_string_view(key.keytype));
+    w.Key("subject");
+    if (key.sub) {
+        ::json::rjson_serialize(w, key.sub.value());
+    } else {
+        w.Null();
+    }
+    w.Key("magic");
+    ::json::rjson_serialize(w, key.magic);
+    w.EndObject();
 }
 
-inline iobuf schema_value_to_iobuf(
-  subject sub,
-  schema_version ver,
-  schema_id id,
-  schema_definition schema,
-  schema_type type,
-  bool deleted) {
-    auto str = json::rjson_serialize(schema_value{
-      .sub{std::move(sub)},
-      .version{ver},
-      .type = type,
-      .id{id},
-      .schema{std::move(schema)},
-      .deleted = deleted});
-    iobuf val;
-    val.append(str.data(), str.size());
-    return val;
+template<typename Encoding = rapidjson::UTF8<>>
+class config_key_handler : public json::base_handler<Encoding> {
+    enum class state {
+        empty = 0,
+        object,
+        keytype,
+        subject,
+        magic,
+    };
+    state _state = state::empty;
+
+public:
+    using Ch = typename json::base_handler<Encoding>::Ch;
+    using rjson_parse_result = config_key;
+    rjson_parse_result result;
+
+    config_key_handler()
+      : json::base_handler<Encoding>{json::serialization_format::none} {}
+
+    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        std::optional<state> s{string_switch<std::optional<state>>(sv)
+                                 .match("keytype", state::keytype)
+                                 .match("subject", state::subject)
+                                 .match("magic", state::magic)
+                                 .default_match(std::nullopt)};
+        return s.has_value() && std::exchange(_state, *s) == state::object;
+    }
+
+    bool Uint(int i) {
+        result.magic = topic_key_magic{i};
+        return std::exchange(_state, state::object) == state::magic;
+    }
+
+    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        switch (_state) {
+        case state::keytype: {
+            auto kt = from_string_view<topic_key_type>(sv);
+            _state = state::object;
+            return kt == result.keytype;
+        }
+        case state::subject: {
+            result.sub = subject{ss::sstring{sv}};
+            _state = state::object;
+            return true;
+        }
+        case state::empty:
+        case state::object:
+        case state::magic:
+            return false;
+        }
+        return false;
+    }
+
+    bool Null() {
+        // The subject, and only the subject, is nullable.
+        return std::exchange(_state, state::object) == state::subject;
+    }
+
+    bool StartObject() {
+        return std::exchange(_state, state::object) == state::empty;
+    }
+
+    bool EndObject(rapidjson::SizeType) {
+        return std::exchange(_state, state::empty) == state::object;
+    }
+};
+
+struct config_value {
+    compatibility_level compat{compatibility_level::none};
+
+    friend bool operator==(const config_value&, const config_value&) = default;
+
+    friend std::ostream& operator<<(std::ostream& os, const config_value& v) {
+        fmt::print(os, "compatibility: {}", to_string_view(v.compat));
+        return os;
+    }
+};
+
+inline void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const schema_registry::config_value& val) {
+    w.StartObject();
+    w.Key("compatibilityLevel");
+    ::json::rjson_serialize(w, to_string_view(val.compat));
+    w.EndObject();
+}
+
+template<typename Encoding = rapidjson::UTF8<>>
+class config_value_handler : public json::base_handler<Encoding> {
+    enum class state {
+        empty = 0,
+        object,
+        compatibility,
+    };
+    state _state = state::empty;
+
+public:
+    using Ch = typename json::base_handler<Encoding>::Ch;
+    using rjson_parse_result = config_value;
+    rjson_parse_result result;
+
+    config_value_handler()
+      : json::base_handler<Encoding>{json::serialization_format::none} {}
+
+    bool Key(const Ch* str, rapidjson::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        if (_state == state::object && sv == "compatibilityLevel") {
+            _state = state::compatibility;
+            return true;
+        }
+        return false;
+    }
+
+    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        if (_state == state::compatibility) {
+            auto s = from_string_view<compatibility_level>(sv);
+            if (s.has_value()) {
+                result.compat = *s;
+                _state = state::object;
+            }
+            return s.has_value();
+        }
+        return false;
+    }
+
+    bool StartObject() {
+        return std::exchange(_state, state::object) == state::empty;
+    }
+
+    bool EndObject(rapidjson::SizeType) {
+        return std::exchange(_state, state::empty) == state::object;
+    }
+};
+
+template<typename Handler>
+auto from_json_iobuf(iobuf&& iobuf) {
+    auto p = iobuf_parser(std::move(iobuf));
+    auto str = p.read_string(p.bytes_left());
+    return json::rjson_parse(str.data(), Handler{});
+}
+
+template<typename T>
+auto to_json_iobuf(T t) {
+    auto val_js = json::rjson_serialize(t);
+    iobuf buf;
+    buf.append(val_js.data(), val_js.size());
+    return buf;
+}
+
+template<typename Key, typename Value>
+model::record_batch as_record_batch(Key key, Value val) {
+    storage::record_batch_builder rb{
+      model::record_batch_type::raft_data, model::offset{0}};
+    rb.add_raw_kv(to_json_iobuf(std::move(key)), to_json_iobuf(std::move(val)));
+    return std::move(rb).build();
 }
 
 inline model::record_batch make_schema_batch(
@@ -367,12 +621,22 @@ inline model::record_batch make_schema_batch(
   schema_definition schema,
   schema_type type,
   bool deleted) {
-    storage::record_batch_builder rb{
-      model::record_batch_type::raft_data, model::offset{0}};
-    rb.add_raw_kv(
-      schema_key_to_iobuf(schema_key{.sub{sub}, .version{ver}}),
-      schema_value_to_iobuf(sub, ver, id, std::move(schema), type, deleted));
-    return std::move(rb).build();
+    schema_key key{.sub{sub}, .version{ver}};
+    return as_record_batch(
+      std::move(key),
+      schema_value{
+        .sub{std::move(sub)},
+        .version{ver},
+        .type = type,
+        .id{id},
+        .schema{std::move(schema)},
+        .deleted = deleted});
+}
+
+inline model::record_batch
+make_config_batch(std::optional<subject> sub, compatibility_level compat) {
+    return as_record_batch(
+      config_key{.sub{std::move(sub)}}, config_value{.compat = compat});
 }
 
 struct consume_to_store {
@@ -381,28 +645,69 @@ struct consume_to_store {
 
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
         if (!b.header().attrs.is_control()) {
-            b.for_each_record(*this);
+            co_await model::for_each_record(b, [this](model::record& rec) {
+                return (*this)(std::move(rec));
+            });
         }
         co_return ss::stop_iteration::no;
     }
 
-    void operator()(model::record record) {
-        auto key = schema_key_from_iobuf(record.release_key());
-        if (key.keytype == "SCHEMA") {
-            vassert(key.magic == 1, "Schema key magic is unknown");
-            auto val = schema_value_from_iobuf(record.release_value());
-            vlog(
-              plog.debug,
-              "Inserting key: subject: {}, version: {} ",
-              key.sub(),
-              key.version);
-            auto res = _store.insert(val.sub, val.schema, val.type);
-            vassert(res.id == val.id, "Schema_id mismatch");
-            vassert(res.version == val.version, "Schema_version mismatch");
-        } else {
-            vlog(plog.warn, "Ignoring keytype: {}", key.keytype);
+    ss::future<> operator()(model::record record) {
+        auto key = record.release_key();
+        auto key_type_str = from_json_iobuf<topic_key_type_handler<>>(
+          key.share(0, key.size_bytes()));
+
+        auto key_type = from_string_view<topic_key_type>(key_type_str);
+        if (!key_type.has_value()) {
+            vlog(plog.error, "Ignoring keytype: {}", key_type_str);
+            co_return;
+        }
+
+        switch (*key_type) {
+        case topic_key_type::noop:
+            co_return;
+        case topic_key_type::schema:
+            co_return co_await apply(
+              from_json_iobuf<schema_key_handler<>>(std::move(key)),
+              from_json_iobuf<schema_value_handler<>>(record.release_value()));
+        case topic_key_type::config:
+            co_return co_await apply(
+              from_json_iobuf<config_key_handler<>>(std::move(key)),
+              from_json_iobuf<config_value_handler<>>(record.release_value()));
         }
     }
+
+    ss::future<> apply(schema_key key, schema_value val) {
+        if (key.magic != 0 && key.magic != 1) {
+            throw exception(
+              error_code::topic_parse_error,
+              fmt::format("key has unexpected magic: {}", key));
+        }
+        vlog(plog.debug, "Inserting key: {}", key);
+        _store.upsert(
+          std::move(val.sub),
+          std::move(val.schema),
+          val.type,
+          val.id,
+          val.version);
+        co_return;
+    }
+
+    ss::future<> apply(config_key key, config_value val) {
+        if (key.magic != 0) {
+            throw exception(
+              error_code::topic_parse_error,
+              fmt::format("key has unexpected magic: {}", key));
+        }
+        vlog(plog.debug, "Applying config: {}", key);
+        if (key.sub) {
+            _store.set_compatibility(*key.sub, val.compat).value();
+        } else {
+            _store.set_compatibility(val.compat).value();
+        }
+        co_return;
+    }
+
     void end_of_stream() {}
     store& _store;
 };

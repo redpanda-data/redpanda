@@ -17,6 +17,7 @@
 
 #include <seastar/core/sstring.hh>
 
+#include <rapidjson/prettywriter.h>
 #include <rapidjson/reader.h>
 #include <rapidjson/stream.h>
 #include <rapidjson/stringbuffer.h>
@@ -71,6 +72,24 @@ typename Handler::rjson_parse_result
         throw parse_error(reader.GetErrorOffset());
     }
     return std::move(handler.result);
+}
+
+inline ss::sstring minify(std::string_view json) {
+    rapidjson::Reader r;
+    rapidjson::StringStream in(json.data());
+    rapidjson::StringBuffer out;
+    rapidjson::Writer<rapidjson::StringBuffer> w{out};
+    r.Parse(in, w);
+    return ss::sstring(out.GetString(), out.GetSize());
+}
+
+inline ss::sstring prettify(std::string_view json) {
+    rapidjson::Reader r;
+    rapidjson::StringStream in(json.data());
+    rapidjson::StringBuffer out;
+    rapidjson::PrettyWriter<rapidjson::StringBuffer> w{out};
+    r.Parse(in, w);
+    return ss::sstring(out.GetString(), out.GetSize());
 }
 
 } // namespace pandaproxy::json

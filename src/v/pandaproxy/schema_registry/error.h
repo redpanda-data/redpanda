@@ -21,6 +21,7 @@ enum class error_code {
     schema_invalid,
     subject_not_found,
     subject_version_not_found,
+    topic_parse_error,
 };
 
 std::error_code make_error_code(error_code);
