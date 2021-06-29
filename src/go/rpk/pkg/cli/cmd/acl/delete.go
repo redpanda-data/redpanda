@@ -220,16 +220,12 @@ func deleteACLs(
 	acls chan<- []sarama.MatchingAcl,
 ) func() error {
 	return func() error {
-		resType, _ := filter.ResourceType.MarshalText()
-		pat, _ := filter.ResourcePatternTypeFilter.MarshalText()
-		op, _ := filter.Operation.MarshalText()
-		perm, _ := filter.PermissionType.MarshalText()
 		filterInfo := fmt.Sprintf("resource type: '%s',"+
 			" name pattern type '%s', operation '%s', permission '%s'",
-			string(resType),
-			string(pat),
-			string(op),
-			string(perm),
+			filter.ResourceType.String(),
+			filter.ResourcePatternTypeFilter.String(),
+			filter.Operation.String(),
+			filter.PermissionType.String(),
 		)
 		as, err := adm.DeleteACL(filter, false)
 		if err == nil {
@@ -371,9 +367,6 @@ func printMatchingACLs(matchingACLs []sarama.MatchingAcl) {
 	t.Append(spacer)
 
 	for _, acl := range matchingACLs {
-		resType, _ := acl.ResourceType.MarshalText()
-		op, _ := acl.Operation.MarshalText()
-		perm, _ := acl.PermissionType.MarshalText()
 		deleted := "yes"
 		errMsg := "None"
 		if acl.ErrMsg != nil {
@@ -384,9 +377,9 @@ func printMatchingACLs(matchingACLs []sarama.MatchingAcl) {
 			deleted,
 			acl.Principal,
 			acl.Host,
-			string(op),
-			string(perm),
-			string(resType),
+			acl.Operation.String(),
+			acl.PermissionType.String(),
+			acl.ResourceType.String(),
 			acl.ResourceName,
 			errMsg,
 		})
