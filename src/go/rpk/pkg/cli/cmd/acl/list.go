@@ -291,11 +291,12 @@ func printResourceACLs(resACLs []sarama.ResourceAcls) {
 	t := ui.NewRpkTable(log.StandardLogger().Out)
 	t.SetColWidth(80)
 	t.SetAutoWrapText(true)
-	t.SetHeader([]string{"Principal", "Host", "Operation", "Permission Type", "Resource Type", "Resource Name"})
+	t.SetHeader([]string{"Principal", "Host", "Operation", "Permission Type", "Resource Type", "Resource Name", "Resource Pattern Type"})
 	t.Append(spacer)
 	for _, resACL := range resACLs {
 		resType := resACL.Resource.ResourceType.String()
 		resName := resACL.ResourceName
+		resNamePattern := resACL.Resource.ResourcePatternType.String()
 		for _, acl := range resACL.Acls {
 			t.Append([]string{
 				acl.Principal,
@@ -304,6 +305,7 @@ func printResourceACLs(resACLs []sarama.ResourceAcls) {
 				acl.PermissionType.String(),
 				resType,
 				resName,
+				resNamePattern,
 			})
 		}
 	}
