@@ -8,7 +8,10 @@ import (
 	"testing"
 
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/testfs"
 )
 
 func TestLogOutput(t *testing.T) {
@@ -21,9 +24,9 @@ func TestLogOutput(t *testing.T) {
 func TestTryExecPlugin(t *testing.T) {
 	fs := func() testPluginHandler {
 		return testPluginHandler{
-			"rpk-foo_bar-baz":     nil,
-			"rpk-foo_bar":         nil,
-			"rpk-fizz-buzz-bizzy": nil,
+			"rpk-foo-bar_baz":     nil,
+			"rpk-foo-bar":         nil,
+			"rpk-fizz_buzz_bizzy": nil,
 		}
 	}
 	hit := func(file, args string) testPluginHandler {
@@ -41,31 +44,31 @@ func TestTryExecPlugin(t *testing.T) {
 		{
 			name: "prefer longest command match",
 			args: []string{"foo-bar", "baz"},
-			exp:  hit("foo_bar-baz", ""),
+			exp:  hit("foo-bar_baz", ""),
 		},
 
 		{
 			name: "match shorter command if not all pieces specified",
 			args: []string{"foo-bar", "--baz"},
-			exp:  hit("foo_bar", "--baz"),
+			exp:  hit("foo-bar", "--baz"),
 		},
 
 		{
 			name: "match shorter command, flag with argument",
 			args: []string{"foo-bar", "--baz", "buzz"},
-			exp:  hit("foo_bar", "--baz\x00buzz"),
+			exp:  hit("foo-bar", "--baz\x00buzz"),
 		},
 
 		{
 			name: "match shorter command, no flags",
 			args: []string{"foo-bar"},
-			exp:  hit("foo_bar", ""),
+			exp:  hit("foo-bar", ""),
 		},
 
 		{
 			name: "pieces joined with dash",
 			args: []string{"fizz", "buzz", "bizzy"},
-			exp:  hit("fizz-buzz-bizzy", ""),
+			exp:  hit("fizz_buzz_bizzy", ""),
 		},
 
 		{
@@ -134,4 +137,126 @@ func (t testPluginHandler) exec(path string, args []string) error {
 	joined := strings.Join(args, "\x00")
 	argHits[joined]++
 	return nil
+}
+
+func TestListPlugins(t *testing.T) {
+	fs := testfs.FromMap(map[string]testfs.Fmode{
+		"/usr/local/sbin/rpk-non_executable":    {0666, ""},
+		"/usr/local/sbin/rpk-barely_executable": {0100, ""},
+		"/bin/rpk-barely_executable":            {0100, "shadowed!"},
+		"/bin/rpk.ac-barely_executable":         {0100, "also shadowed!"},
+		"/bin/rpk.ac-auto_completed":            {0777, ""},
+		"/bin/has/dir/":                         {0777, ""},
+		"/bin/rpk.ac-":                          {0777, "empty name ignored"},
+		"/bin/rpk-":                             {0777, "empty name ignored"},
+		"/bin/rpkunrelated":                     {0777, ""},
+		"/unsearched/rpk-valid_unused":          {0777, ""},
+	})
+
+	got := listPlugins(fs, []string{
+		"   /usr/local/sbin   ", // space trimmed
+		"",                      // empty path, ignored
+		"/usr/local/sbin",       // dup ignored
+		"/bin",
+	})
+
+	exp := []plugin{
+		{
+			pieces: []string{"barely", "executable"},
+			path:   "/usr/local/sbin/rpk-barely_executable",
+		},
+		{
+			pieces: []string{"auto", "completed"},
+			path:   "/bin/rpk.ac-auto_completed",
+		},
+	}
+
+	require.Equal(t, exp, got, "got plugins != expected")
+}
+
+func TestUniqueTrimmedStrs(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		in   []string
+		exp  []string
+	}{
+		{"empty",
+			[]string{},
+			[]string{},
+		},
+
+		{"duplicated",
+			[]string{"foo", "bar", "foo", "biz", "baz"},
+			[]string{"foo", "bar", "biz", "baz"},
+		},
+
+		{"trimmed and empty dropped",
+			[]string{"", "    bar ", "foo", "biz", "baz", "foo   "},
+			[]string{"bar", "foo", "biz", "baz"},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := uniqueTrimmedStrs(test.in)
+			require.Equal(t, test.exp, got, "got unique trimmed strs != expected")
+		})
+	}
+}
+
+func TestAddPluginWithExec(t *testing.T) {
+	root := &cobra.Command{
+		Use: "root",
+	}
+
+	subcommands := func(c *cobra.Command) []string {
+		var subs []string
+		for _, c := range c.Commands() {
+			subs = append(subs, c.Use)
+		}
+		return subs
+	}
+	find := func(c *cobra.Command, search []string) *cobra.Command {
+		child, _, _ := c.Find(search)
+		return child
+	}
+
+	addPluginWithExec(root, []string{"foo", "bar"}, "") // we cannot test exec path, so we leave empty
+	assert.Equal(t, []string{"foo"}, subcommands(root), "expected one subcommand of root to be [foo]")
+	assert.Equal(t, []string{"bar"}, subcommands(find(root, []string{"foo"})), "expected one subcommand of root foo to be [bar]")
+
+	addPluginWithExec(root, []string{"foo", "baz"}, "")
+	assert.Equal(t, []string{"foo"}, subcommands(root), "expected one subcommand of root to still be [foo]")
+	assert.Equal(t, []string{"bar", "baz"}, subcommands(find(root, []string{"foo"})), "expected two subcommands of root foo to be [bar, baz]")
+
+	addPluginWithExec(root, []string{"fizz"}, "")
+	assert.Equal(t, []string{"fizz", "foo"}, subcommands(root), "expected one subcommand of root to be [fizz, foo]")
+	assert.Equal(t, []string{"bar", "baz"}, subcommands(find(root, []string{"foo"})), "expected two subcommands of root foo to still be [bar, baz]")
+	assert.Equal(t, []string(nil), subcommands(find(root, []string{"fizz"})), "expected no subcommands under fizz")
+}
+
+func TestTrackHelp(t *testing.T) {
+	var base useHelp
+
+	trackHelp(&base, []string{"foo", "bar"}, pluginHelp{Short: "short foo bar"})
+	exp := useHelp{
+		inner: map[string]*useHelp{
+			"foo": {
+				inner: map[string]*useHelp{
+					"bar": {help: pluginHelp{Short: "short foo bar"}},
+				},
+			},
+		},
+	}
+	assert.Equal(t, exp, base, "expected trackHelp to create two nestings for %s", []string{"foo", "bar"})
+
+	trackHelp(&base, []string{"foo", "baz"}, pluginHelp{Short: "short foo baz"})
+	exp.inner["foo"].inner["baz"] = &useHelp{help: pluginHelp{Short: "short foo baz"}}
+	assert.Equal(t, exp, base, "expected trackHelp to create additional second-level nesting for %s", []string{"foo", "baz"})
+
+	trackHelp(&base, []string{"biz"}, pluginHelp{Short: "top level biz"})
+	exp.inner["biz"] = &useHelp{help: pluginHelp{Short: "top level biz"}}
+	assert.Equal(t, exp, base, "expected trackHelp to create additional top-level command for %s", []string{"biz"})
+
+	trackHelp(&base, []string{"foo"}, pluginHelp{Short: "updated foo help"})
+	exp.inner["foo"].help = pluginHelp{Short: "updated foo help"}
+	assert.Equal(t, exp, base, "expected trackHelp to create perform in-place update to existing incomplete top level-foo")
 }
