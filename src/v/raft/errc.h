@@ -36,6 +36,7 @@ enum class errc {
     invalid_target_node,
     shutting_down,
     replicate_batcher_cache_error,
+    group_not_exists
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "raft::errc"; }
@@ -83,9 +84,10 @@ struct errc_category final : public std::error_category {
             return "raft protocol shutting down";
         case errc::replicate_batcher_cache_error:
             return "unable to append batch to replicate batcher cache";
-        default:
-            return "raft::errc::unknown";
+        case errc::group_not_exists:
+            return "raft group does not exists on target broker";
         }
+        return "cluster::errc::unknown";
     }
 };
 inline const std::error_category& error_category() noexcept {

@@ -501,6 +501,37 @@ members_manager::dispatch_configuration_update(model::broker broker) {
     }
 }
 
+bool is_result_configuration_valid(
+  const std::vector<broker_ptr>& current_brokers,
+  const model::broker& to_update) {
+    /**
+     * validate if any two of the brokers would listen on the same addresses
+     * after applying configuration update
+     */
+    for (auto& current : current_brokers) {
+        if (current->id() == to_update.id()) {
+            continue;
+        }
+        // error, nodes would point to the same addresses
+        if (current->rpc_address() == to_update.rpc_address()) {
+            return false;
+        }
+        for (auto& current_ep : current->kafka_advertised_listeners()) {
+            auto any_is_the_same = std::any_of(
+              to_update.kafka_advertised_listeners().begin(),
+              to_update.kafka_advertised_listeners().end(),
+              [&current_ep](const model::broker_endpoint& ep) {
+                  return current_ep == ep;
+              });
+            // error, kafka endpoint would point to the same addresses
+            if (any_is_the_same) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 ss::future<result<configuration_update_reply>>
 members_manager::handle_configuration_update_request(
   configuration_update_request req) {
@@ -516,6 +547,16 @@ members_manager::handle_configuration_update_request(
     }
     vlog(
       clusterlog.trace, "Handling node {} configuration update", req.node.id());
+    auto all_brokers = _members_table.local().all_brokers();
+    if (!is_result_configuration_valid(all_brokers, req.node)) {
+        vlog(
+          clusterlog.warn,
+          "Rejecting invalid configuration update: {}, current brokers list: "
+          "{}",
+          req.node,
+          all_brokers);
+        return ss::make_ready_future<ret_t>(errc::invalid_configuration_update);
+    }
     auto node_ptr = ss::make_lw_shared(std::move(req.node));
     patch<broker_ptr> broker_update_patch{
       .additions = {node_ptr}, .deletions = {}};
