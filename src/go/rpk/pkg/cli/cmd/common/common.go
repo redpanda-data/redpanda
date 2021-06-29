@@ -28,10 +28,13 @@ const FeedbackMsg = `We'd love to hear about your experience with redpanda:
 https://vectorized.io/feedback`
 
 const (
-	saslMechanismFlag  = "sasl-mechanism"
-	certFileFlag       = "tls-cert"
-	keyFileFlag        = "tls-key"
-	truststoreFileFlag = "tls-truststore"
+	saslMechanismFlag          = "sasl-mechanism"
+	certFileFlag               = "tls-cert"
+	keyFileFlag                = "tls-key"
+	truststoreFileFlag         = "tls-truststore"
+	adminAPICertFileFlag       = "admin-api-tls-cert"
+	adminAPIKeyFileFlag        = "admin-api-tls-key"
+	adminAPITruststoreFileFlag = "admin-api-tls-truststore"
 )
 
 var ErrNoCredentials = errors.New("empty username and password")
@@ -529,6 +532,33 @@ func AddTLSFlags(
 		truststoreFileFlag,
 		"",
 		"The truststore to be used for TLS communication with the broker.",
+	)
+
+	return command
+}
+
+func AddAdminAPITLSFlags(
+	command *cobra.Command, certFile,
+	keyFile,
+	truststoreFile *string,
+) *cobra.Command {
+	command.PersistentFlags().StringVar(
+		certFile,
+		adminAPICertFileFlag,
+		"",
+		"The certificate to be used for TLS authentication with the Admin API.",
+	)
+	command.PersistentFlags().StringVar(
+		keyFile,
+		adminAPIKeyFileFlag,
+		"",
+		"The certificate key to be used for TLS authentication with the Admin API.",
+	)
+	command.PersistentFlags().StringVar(
+		truststoreFile,
+		adminAPITruststoreFileFlag,
+		"",
+		"The truststore to be used for TLS communication with the Admin API.",
 	)
 
 	return command

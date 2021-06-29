@@ -258,6 +258,67 @@ func TestAddKafkaFlags(t *testing.T) {
 	require.Exactly(t, "truststore1.pem", truststoreFile)
 }
 
+func TestAddAdminAPITLSFlags(t *testing.T) {
+	var (
+		certFile       string
+		keyFile        string
+		truststoreFile string
+	)
+	command := func() *cobra.Command {
+		parent := &cobra.Command{
+			Use: "parent",
+			RunE: func(_ *cobra.Command, _ []string) error {
+				return nil
+			},
+		}
+		child := &cobra.Command{
+			Use: "child",
+			RunE: func(_ *cobra.Command, _ []string) error {
+				return nil
+			},
+		}
+		parent.AddCommand(child)
+
+		AddAdminAPITLSFlags(
+			parent,
+			&certFile,
+			&keyFile,
+			&truststoreFile,
+		)
+		return parent
+	}
+
+	cmd := command()
+	cmd.SetArgs([]string{
+		"--admin-api-tls-cert", "admin-cert.pem",
+		"--admin-api-tls-key", "admin-key.pem",
+		"--admin-api-tls-truststore", "admin-truststore.pem",
+	})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	require.Exactly(t, "admin-cert.pem", certFile)
+	require.Exactly(t, "admin-key.pem", keyFile)
+	require.Exactly(t, "admin-truststore.pem", truststoreFile)
+
+	// The flags should be available for the children commands too
+	cmd = command() // reset it.
+	cmd.SetArgs([]string{
+		"child", // so that it executes the child command
+		"--admin-api-tls-cert", "admin-cert1.pem",
+		"--admin-api-tls-key", "admin-key1.pem",
+		"--admin-api-tls-truststore", "admin-truststore1.pem",
+	})
+
+	err = cmd.Execute()
+	require.NoError(t, err)
+
+	require.Exactly(t, "admin-cert1.pem", certFile)
+	require.Exactly(t, "admin-key1.pem", keyFile)
+	require.Exactly(t, "admin-truststore1.pem", truststoreFile)
+}
+
 func TestKafkaAuthConfig(t *testing.T) {
 	tests := []struct {
 		name           string
