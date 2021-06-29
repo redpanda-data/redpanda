@@ -67,7 +67,7 @@ private:
 
     ss::future<topic_result> replicate_create_topic(
       topic_configuration,
-      partition_allocator::allocation_units,
+      allocation_units,
       model::timeout_clock::time_point);
 
     ss::future<topic_result>

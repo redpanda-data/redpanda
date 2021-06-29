@@ -18,6 +18,7 @@
 #include "cluster/members_manager.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_dissemination_service.h"
+#include "cluster/partition_allocation_strategies.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
 #include "cluster/raft0_utils.h"
@@ -53,8 +54,11 @@ ss::future<> controller::wire_up() {
     return _as.start()
       .then([this] { return _members_table.start(); })
       .then([this] { return _partition_leaders.start(); })
-      .then(
-        [this] { return _partition_allocator.start_single(raft::group_id(0)); })
+      .then([this] {
+          return _partition_allocator.start_single(
+            cluster::make_allocation_strategy<
+              cluster::round_robin_allocation_strategy>());
+      })
       .then([this] { return _credentials.start(); })
       .then([this] { return _authorizer.start(); })
       .then([this] { return _tp_state.start(); });

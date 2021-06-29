@@ -95,6 +95,7 @@ FIXTURE_TEST(
     // check allocation state
     BOOST_REQUIRE_EQUAL(
       allocator.local()
+        .state()
         .allocation_nodes()
         .at(model::node_id(1))
         ->partition_capacity(),
@@ -102,6 +103,7 @@ FIXTURE_TEST(
 
     BOOST_REQUIRE_EQUAL(
       allocator.local()
+        .state()
         .allocation_nodes()
         .at(model::node_id(2))
         ->partition_capacity(),
@@ -109,6 +111,7 @@ FIXTURE_TEST(
 
     BOOST_REQUIRE_EQUAL(
       allocator.local()
+        .state()
         .allocation_nodes()
         .at(model::node_id(3))
         ->partition_capacity(),
@@ -138,6 +141,7 @@ FIXTURE_TEST(
     // check allocation state
     BOOST_REQUIRE_EQUAL(
       allocator.local()
+        .state()
         .allocation_nodes()
         .at(model::node_id(1))
         ->partition_capacity(),
@@ -145,6 +149,7 @@ FIXTURE_TEST(
 
     BOOST_REQUIRE_EQUAL(
       allocator.local()
+        .state()
         .allocation_nodes()
         .at(model::node_id(2))
         ->partition_capacity(),
@@ -152,6 +157,7 @@ FIXTURE_TEST(
 
     BOOST_REQUIRE_EQUAL(
       allocator.local()
+        .state()
         .allocation_nodes()
         .at(model::node_id(3))
         ->partition_capacity(),
@@ -178,10 +184,13 @@ FIXTURE_TEST(
                    .get0();
     BOOST_REQUIRE_EQUAL(res_2, cluster::errc::topic_already_exists);
     BOOST_REQUIRE_EQUAL(table.local().has_pending_changes(), false);
-
+    for (auto& [id, n] : allocator.local().state().allocation_nodes()) {
+        std::cout << *n << std::endl;
+    }
     // check allocation state
     BOOST_REQUIRE_EQUAL(
       allocator.local()
+        .state()
         .allocation_nodes()
         .at(model::node_id(1))
         ->partition_capacity(),
@@ -189,6 +198,7 @@ FIXTURE_TEST(
 
     BOOST_REQUIRE_EQUAL(
       allocator.local()
+        .state()
         .allocation_nodes()
         .at(model::node_id(2))
         ->partition_capacity(),
@@ -196,6 +206,7 @@ FIXTURE_TEST(
 
     BOOST_REQUIRE_EQUAL(
       allocator.local()
+        .state()
         .allocation_nodes()
         .at(model::node_id(3))
         ->partition_capacity(),

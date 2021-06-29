@@ -11,18 +11,59 @@
 
 #pragma once
 
+#include "cluster/errc.h"
+#include "cluster/logger.h"
 #include "cluster/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
-#include "utils/intrusive_list_helpers.h"
+#include "raft/types.h"
 #include "vassert.h"
+#include "vlog.h"
 
-#include <boost/container/flat_map.hpp>
+#include <seastar/core/shared_ptr.hh>
 
-#include <vector>
+#include <absl/container/btree_map.h>
+#include <absl/container/node_hash_map.h>
 
 namespace cluster {
-class partition_allocator;
+class allocation_state;
 
+/**
+ * Configuration used to request partition allocation, if current allocations
+ * are not empty then allocation strategy will allocate as many replis as
+ * required to achieve requested replication factor.
+ */
+struct allocation_configuration {
+    explicit allocation_configuration(int16_t);
+    allocation_configuration(int16_t, std::vector<model::broker_shard>);
+    int16_t replication_factor;
+    std::vector<model::broker_shard> current_allocations;
+    friend std::ostream&
+    operator<<(std::ostream&, const allocation_configuration&);
+};
+/**
+ * Configuration used to request custom allocation configuration. Custom
+ * allocation only designate nodes where partition should be placed but not the
+ * shards on each node, allocation strategy will assing shards to each replica
+ */
+struct custom_allocation_configuration {
+    model::partition_id partition_id;
+    std::vector<model::node_id> nodes;
+    friend std::ostream&
+    operator<<(std::ostream&, const custom_allocation_configuration&);
+};
+
+struct topic_allocation_configuration {
+    int32_t partition_count;
+    int16_t replication_factor;
+    std::vector<custom_allocation_configuration> custom_allocations;
+    friend std::ostream&
+    operator<<(std::ostream&, const topic_allocation_configuration&);
+};
+
+/**
+ * Allocation node represent a node where partitions may be allocated
+ */
 class allocation_node {
 public:
     static constexpr const uint32_t core0_extra_weight = 2;
@@ -30,190 +71,194 @@ public:
     static constexpr const uint32_t max_allocations_per_core = 7000;
 
     allocation_node(
-      model::node_id id,
-      uint32_t cpus,
-      std::unordered_map<ss::sstring, ss::sstring> labels)
-      : _id(id)
-      , _weights(cpus)
-      , _machine_labels(std::move(labels)) {
-        // add extra weights to core 0
-        _weights[0] = core0_extra_weight;
-        _partition_capacity = (cpus * max_allocations_per_core)
-                              - core0_extra_weight;
-    }
+      model::node_id, uint32_t, absl::node_hash_map<ss::sstring, ss::sstring>);
 
-    allocation_node(allocation_node&& o) noexcept
-      : _id(o._id)
-      , _weights(std::move(o._weights))
-      , _partition_capacity(o._partition_capacity)
-      , _machine_labels(std::move(o._machine_labels)) {
-        _hook.swap_nodes(o._hook);
-    }
-
+    allocation_node(allocation_node&& o) noexcept = default;
     allocation_node& operator=(allocation_node&&) = delete;
     allocation_node(const allocation_node&) = delete;
     allocation_node& operator=(const allocation_node&) = delete;
+    ~allocation_node() = default;
 
     uint32_t cpus() const { return _weights.size(); }
     model::node_id id() const { return _id; }
-    uint32_t partition_capacity() const { return _partition_capacity; }
+
+    uint32_t partition_capacity() const {
+        // there might be a situation when node is over assigned, this state is
+        // transient and it may be caused by holding allocation units while
+        // state is being updated
+        return _max_capacity - std::min(_allocated_partitions, _max_capacity);
+    }
+
+    uint32_t allocated_partitions() const { return _allocated_partitions; }
+
+    bool empty() const { return _allocated_partitions == 0; }
+    bool is_full() const { return _allocated_partitions >= _max_capacity; }
+
+    uint32_t allocate();
 
 private:
-    friend partition_allocator;
+    friend allocation_state;
 
-    bool is_full() const {
-        for (uint32_t w : _weights) {
-            if (w != max_allocations_per_core) {
-                return false;
-            }
-        }
-        return true;
-    }
-    uint32_t allocate() {
-        auto it = std::min_element(_weights.begin(), _weights.end());
-        (*it)++; // increment the weights
-        _partition_capacity--;
-        return std::distance(_weights.begin(), it);
-    }
-    void deallocate(uint32_t core) {
-        vassert(
-          core < _weights.size(),
-          "Tried to deallocate a non-existing core:{} - {}",
-          core,
-          *this);
-        _partition_capacity++;
-        _weights[core]--;
-    }
-    void allocate(uint32_t core) {
-        vassert(
-          core < _weights.size(),
-          "Tried to allocate a non-existing core:{} - {}",
-          core,
-          *this);
-        _weights[core]++;
-        _partition_capacity--;
-    }
-    const std::unordered_map<ss::sstring, ss::sstring>& machine_labels() const {
-        return _machine_labels;
-    }
+    void deallocate(uint32_t core);
+    void allocate(uint32_t core);
+    const absl::node_hash_map<ss::sstring, ss::sstring>& machine_labels() const;
 
     model::node_id _id;
-    /// each index is a CPU. A weight is roughly the number of assigments
+    /// each index is a CPU. A weight is roughly the number of assignments
     std::vector<uint32_t> _weights;
-    uint32_t _partition_capacity{0};
+    const uint32_t _max_capacity;
+    uint32_t _allocated_partitions{0};
     /// generated by `rpk` usually in /etc/redpanda/machine_labels.json
-    std::unordered_map<ss::sstring, ss::sstring> _machine_labels;
-
-    // for partition_allocator
-    safe_intrusive_list_hook _hook;
+    absl::node_hash_map<ss::sstring, ss::sstring> _machine_labels;
 
     friend std::ostream& operator<<(std::ostream&, const allocation_node&);
 };
 
-struct partition_allocator_tester;
-class partition_allocator {
+/**
+ * Partition allocator state
+ */
+class allocation_state {
 public:
-    struct allocation_units {
-        allocation_units(
-          std::vector<partition_assignment> assignments,
-          partition_allocator* pal)
-          : _assignments(std::move(assignments))
-          , _allocator(pal) {}
+    using node_t = allocation_node;
+    using node_ptr = std::unique_ptr<node_t>;
+    // we use ordered container to achieve deterministic ordering of nodes
+    using underlying_t = absl::btree_map<model::node_id, node_ptr>;
 
-        allocation_units& operator=(allocation_units&&) = default;
-        allocation_units& operator=(const allocation_units&) = delete;
-        allocation_units(const allocation_units&) = delete;
-        allocation_units(allocation_units&&) = default;
+    void deallocate(const model::broker_shard&);
+    void rollback(const std::vector<partition_assignment>& pa);
+    void rollback(const std::vector<model::broker_shard>& v);
 
-        ~allocation_units() {
-            for (auto& pas : _assignments) {
-                for (auto& replica : pas.replicas) {
-                    _allocator->deallocate(replica);
-                }
+    void register_node(node_ptr);
+    void unregister_node(model::node_id);
+
+    bool is_empty(model::node_id) const;
+    bool contains_node(model::node_id n) const { return _nodes.contains(n); }
+
+    const underlying_t& allocation_nodes() const { return _nodes; }
+    void apply_update(std::vector<model::broker_shard>, raft::group_id);
+
+    int16_t available_nodes() const;
+
+    raft::group_id last_group_id() const { return _highest_group; }
+
+    // allocates on the node
+    result<uint32_t> allocate(model::node_id id);
+    raft::group_id next_group_id();
+
+private:
+    raft::group_id _highest_group{0};
+    underlying_t _nodes;
+};
+/**
+ * RAII based helper holding allocated partititions, allocation is reverted
+ * after this object goes out of scope.
+ */
+struct allocation_units {
+    allocation_units(
+      std::vector<partition_assignment> assignments, allocation_state* state)
+      : _assignments(std::move(assignments))
+      , _state(state) {}
+
+    allocation_units& operator=(allocation_units&&) = default;
+    allocation_units& operator=(const allocation_units&) = delete;
+    allocation_units(const allocation_units&) = delete;
+    allocation_units(allocation_units&&) = default;
+
+    ~allocation_units() {
+        for (auto& pas : _assignments) {
+            for (auto& replica : pas.replicas) {
+                _state->deallocate(replica);
             }
         }
+    }
 
-        const std::vector<partition_assignment>& get_assignments() {
-            return _assignments;
-        }
+    const std::vector<partition_assignment>& get_assignments() {
+        return _assignments;
+    }
 
-    private:
-        std::vector<partition_assignment> _assignments;
-        // keep the pointer to make this type movable
-        partition_allocator* _allocator;
+private:
+    std::vector<partition_assignment> _assignments;
+    // keep the pointer to make this type movable
+    allocation_state* _state;
+};
+
+class allocation_strategy {
+public:
+    using replicas_t = std::vector<model::broker_shard>;
+    struct impl {
+        virtual result<replicas_t>
+        allocate_partition(const allocation_configuration&, allocation_state&)
+          = 0;
+        virtual result<replicas_t> allocate_partition(
+          const custom_allocation_configuration&, allocation_state&)
+          = 0;
+
+        virtual ~impl() noexcept = default;
     };
 
+    explicit allocation_strategy(ss::shared_ptr<impl> impl)
+      : _impl(std::move(impl)) {}
+
+    result<replicas_t> allocate_partition(
+      const allocation_configuration& ac, allocation_state& state) {
+        return _impl->allocate_partition(ac, state);
+    }
+
+    result<replicas_t> allocate_partition(
+      const custom_allocation_configuration& ac, allocation_state& state) {
+        return _impl->allocate_partition(ac, state);
+    }
+
+private:
+    ss::shared_ptr<impl> _impl;
+};
+
+template<typename Impl, typename... Args>
+allocation_strategy make_allocation_strategy(Args&&... args) {
+    return allocation_strategy(
+      ss::make_shared<Impl>(std::forward<Args>(args)...));
+}
+
+class partition_allocator {
+public:
     static constexpr ss::shard_id shard = 0;
-    using value_type = allocation_node;
-    using ptr = std::unique_ptr<value_type>;
-    using underlying_t = boost::container::flat_map<model::node_id, ptr>;
-    using iterator = underlying_t::iterator;
-    using cil_t = counted_intrusive_list<value_type, &allocation_node::_hook>;
+    explicit partition_allocator(allocation_strategy);
 
-    /// should only be initialized _after_ we become the leader so we know we
-    /// are up to date, and have the highest known group_id ever assigned
-    /// reset to nullptr when no longer leader
-    explicit partition_allocator(raft::group_id highest_known_group)
-      : _highest_group(highest_known_group) {
-        _rr = _available_machines.end();
+    void register_node(allocation_state::node_ptr n) {
+        vlog(clusterlog.debug, "registering allocation node: {}", *n);
+        _state->register_node(std::move(n));
     }
-    void register_node(ptr n) {
-        _available_machines.push_back(*n);
-        _machines.emplace(n->id(), std::move(n));
+    void unregister_node(model::node_id id) {
+        vlog(clusterlog.debug, "removing allocation node: {}", id);
+        return _state->unregister_node(id);
+    };
+
+    bool is_empty(model::node_id id) const { return _state->is_empty(id); }
+    bool contains_node(model::node_id n) const {
+        return _state->contains_node(n);
     }
 
-    bool contains_node(model::node_id n) { return _machines.contains(n); }
-
-    /// best effort placement.
-    /// kafka/common/protocol/Errors.java does not have a way to
-    /// represent failed allocation yet. Up to caller to interpret
-    /// how to use a nullopt value
-    std::optional<allocation_units> allocate(const topic_configuration&);
+    result<allocation_units> allocate(const topic_allocation_configuration&);
 
     /// best effort. Does not throw if we cannot find the old partition
-    void deallocate(const model::broker_shard&);
+    void deallocate(const std::vector<model::broker_shard>&);
 
     /// updates the state of allocation, it is used during recovery and
     /// when processing raft0 committed notifications
     void update_allocation_state(
-      std::vector<model::topic_metadata>, raft::group_id);
-    void
-      update_allocation_state(std::vector<model::broker_shard>, raft::group_id);
+      const std::vector<model::broker_shard>&, raft::group_id);
 
-    const underlying_t& allocation_nodes() { return _machines; }
+    /// updates the state of allocation, it is used during recovery and
+    /// when processing raft0 committed notifications
+    void update_allocation_state(
+      const std::vector<model::broker_shard>&,
+      const std::vector<model::broker_shard>&);
 
-    ~partition_allocator() {
-        _available_machines.clear();
-        _rr = _available_machines.end();
-    }
+    allocation_state& state() { return *_state; }
 
 private:
-    friend partition_allocator_tester;
-    /// rolls back partition assignment, only decrementing
-    /// raft-group by distinct raft-group counts
-    /// assumes sorted in raft-group order
-    void rollback(const std::vector<partition_assignment>& pa);
-    void rollback(const std::vector<model::broker_shard>& v);
-
-    std::optional<std::vector<model::broker_shard>>
-    allocate_replicas(int16_t replication_factor);
-    iterator find_node(model::node_id id);
-
-    [[gnu::always_inline]] inline cil_t::iterator& round_robin_ptr() {
-        if (_rr == _available_machines.end()) {
-            _rr = _available_machines.begin();
-        }
-        return _rr;
-    }
-    raft::group_id _highest_group;
-
-    cil_t::iterator _rr; // round robin
-    cil_t _available_machines;
-    underlying_t _machines;
-
-    // for testing
-    void test_only_saturate_all_machines();
-    uint32_t test_only_max_cluster_allocation_partition_capacity() const;
+    std::unique_ptr<allocation_state> _state;
+    allocation_strategy _allocation_strategy;
 };
 
 } // namespace cluster

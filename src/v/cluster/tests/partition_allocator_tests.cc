@@ -7,194 +7,212 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cluster/partition_allocator.h"
-#include "cluster/tests/partition_allocator_tester.h"
+#include "cluster/errc.h"
+#include "cluster/fwd.h"
+#include "cluster/tests/partition_allocator_fixture.h"
+#include "cluster/types.h"
+#include "model/metadata.h"
+#include "model/namespace.h"
 #include "raft/types.h"
+#include "random/fast_prng.h"
 #include "test_utils/fixture.h"
 
-using namespace cluster; // NOLINT
-
-uint allocated_nodes_count(const std::vector<partition_assignment>& allocs) {
-    return std::accumulate(
-      allocs.begin(),
-      allocs.end(),
-      0U,
-      [](size_t acc, const cluster::partition_assignment& p_as) {
-          return acc + p_as.replicas.size();
-      });
+FIXTURE_TEST(register_node, partition_allocator_fixture) {
+    register_node(0, 32);
+    register_node(1, 64);
+    register_node(2, 12);
+    BOOST_REQUIRE(allocator.contains_node(model::node_id(0)));
+    BOOST_REQUIRE(allocator.contains_node(model::node_id(1)));
+    BOOST_REQUIRE(allocator.contains_node(model::node_id(2)));
+    BOOST_REQUIRE_EQUAL(allocator.state().available_nodes(), 3);
 }
 
-FIXTURE_TEST(register_node, partition_allocator_tester) {
-    BOOST_REQUIRE_EQUAL(machines().size(), 3);
-    BOOST_REQUIRE_EQUAL(highest_group()(), 0);
+FIXTURE_TEST(unregister_node, partition_allocator_fixture) {
+    register_node(0, 32);
+    register_node(1, 64);
+    register_node(2, 12);
+    allocator.unregister_node(model::node_id(1));
+    BOOST_REQUIRE(allocator.contains_node(model::node_id(0)));
+    BOOST_REQUIRE(!allocator.contains_node(model::node_id(1)));
+    BOOST_REQUIRE(allocator.contains_node(model::node_id(2)));
+    BOOST_REQUIRE_EQUAL(allocator.state().available_nodes(), 2);
 }
-FIXTURE_TEST(invalid_allocation, partition_allocator_tester) {
-    auto cfg = gen_topic_configuration(1, 1);
+
+FIXTURE_TEST(invalid_allocation_over_capacity, partition_allocator_fixture) {
+    register_node(0, 8);
+    register_node(1, 4);
+    register_node(2, 6);
+    cluster::topic_allocation_configuration cfg{
+      .partition_count = 1,
+      .replication_factor = 1,
+    };
+
     saturate_all_machines();
-    BOOST_REQUIRE(std::nullopt == pa.allocate(cfg));
-    BOOST_REQUIRE_EQUAL(highest_group()(), 0);
+    auto gr = allocator.state().last_group_id();
+    BOOST_REQUIRE(allocator.allocate(cfg).has_error());
+    // group id hasn't changed
+    BOOST_REQUIRE_EQUAL(allocator.state().last_group_id(), gr);
 }
-FIXTURE_TEST(max_allocation, partition_allocator_tester) {
-    // This test performs - 209994 partition assignments
 
-    using ts = partition_allocator_tester;
-    const auto max = (ts::cpus_per_node
-                      * allocation_node::max_allocations_per_core)
-                     - allocation_node::core0_extra_weight;
-    auto cfg = gen_topic_configuration(max, ts::max_nodes);
-    partition_allocator::allocation_units allocs = pa.allocate(cfg).value();
+FIXTURE_TEST(max_allocation, partition_allocator_fixture) {
+    register_node(0, 2);
+    register_node(1, 2);
+    register_node(2, 2);
+    // available capacity
+    // 3 * 7000 * 2 - 3*2 = 41994
 
-    BOOST_REQUIRE_EQUAL(max * ts::max_nodes, 209994);
-    BOOST_REQUIRE_EQUAL(allocs.get_assignments().size() * 3, 209994);
-    BOOST_REQUIRE_EQUAL(
-      allocated_nodes_count(allocs.get_assignments()), 209994);
-    BOOST_REQUIRE_EQUAL(highest_group()(), max);
+    cluster::topic_allocation_configuration cfg{
+      .partition_count = max_capacity() / 3,
+      .replication_factor = 3,
+    };
+    auto units = allocator.allocate(cfg).value();
+
+    BOOST_REQUIRE_EQUAL(units.get_assignments().size(), 13998);
+    BOOST_REQUIRE_EQUAL(allocated_nodes_count(units.get_assignments()), 41994);
+    BOOST_REQUIRE_EQUAL(allocator.state().last_group_id()(), 13998);
 
     // make sure there is no room left after
-    auto one_topic_cfg = gen_topic_configuration(1, 1);
-    BOOST_REQUIRE(std::nullopt == pa.allocate(one_topic_cfg));
+    cluster::topic_allocation_configuration single_partition_cfg{
+      .partition_count = 1,
+      .replication_factor = 1,
+    };
+    auto result = allocator.allocate(single_partition_cfg);
+    BOOST_REQUIRE(result.has_error());
 }
-FIXTURE_TEST(unsatisfyable_diversity_assignment, partition_allocator_tester) {
-    using ts = partition_allocator_tester;
-    auto cfg = gen_topic_configuration(1, ts::max_nodes + 1);
-    auto allocs = pa.allocate(cfg);
-    BOOST_REQUIRE(std::nullopt == allocs);
+
+FIXTURE_TEST(unsatisfyable_diversity_assignment, partition_allocator_fixture) {
+    register_node(0, 8);
+    register_node(1, 4);
+    register_node(2, 6);
+    auto cfg = cluster::topic_allocation_configuration{
+      .partition_count = 1,
+      .replication_factor = 5,
+    };
+    auto allocs = allocator.allocate(cfg);
+    BOOST_TEST_REQUIRE(allocs.has_error());
+    BOOST_REQUIRE_EQUAL(
+      cluster::errc(allocs.error().value()),
+      cluster::errc::topic_invalid_replication_factor);
 
     // ensure rollback happened
-    const auto max_cluster_capacity
-      = ((ts::cpus_per_node * allocation_node::max_allocations_per_core)
-         - allocation_node::core0_extra_weight)
-        * ts::max_nodes;
+    BOOST_REQUIRE(all_nodes_empty());
 
-    BOOST_REQUIRE_EQUAL(max_cluster_capacity, cluster_partition_capacity());
-    BOOST_REQUIRE_EQUAL(highest_group()(), 0);
+    BOOST_REQUIRE_EQUAL(allocator.state().last_group_id()(), 0);
 }
-FIXTURE_TEST(partial_assignment, partition_allocator_tester) {
-    using ts = partition_allocator_tester;
-    const auto max_partitions = (ts::cpus_per_node
-                                 * allocation_node::max_allocations_per_core)
-                                - allocation_node::core0_extra_weight;
-
-    const auto expected_usage_capacity = (max_partitions * ts::max_nodes) - 3;
-
-    const auto max_correct_partitions = max_partitions - 1;
-
-    // just fill up the cluster partially
-    auto cfg1 = gen_topic_configuration(max_correct_partitions, ts::max_nodes);
-    auto allocs1 = pa.allocate(cfg1).value();
+FIXTURE_TEST(partial_assignment, partition_allocator_fixture) {
+    register_node(0, 2);
+    register_node(1, 2);
+    register_node(2, 2);
+    auto max_partitions_in_cluster = max_capacity() / 3;
+    cluster::topic_allocation_configuration cfg_1{
+      .partition_count = max_partitions_in_cluster - 1,
+      .replication_factor = 3,
+    };
+    auto units_1 = allocator.allocate(cfg_1).value();
     BOOST_REQUIRE_EQUAL(
-      allocs1.get_assignments().size() * 3, expected_usage_capacity);
-    BOOST_REQUIRE_EQUAL(
-      allocated_nodes_count(allocs1.get_assignments()),
-      expected_usage_capacity);
+      units_1.get_assignments().size(), max_partitions_in_cluster - 1);
 
     // allocate 2 partitions - one should fail, returning null & deallocating
-    auto cfg = gen_topic_configuration(2, ts::max_nodes);
-    auto allocs = pa.allocate(cfg);
-    BOOST_REQUIRE(std::nullopt == allocs);
+    cluster::topic_allocation_configuration cfg_2{
+      .partition_count = 2,
+      .replication_factor = 3,
+    };
 
-    BOOST_REQUIRE_EQUAL(3, cluster_partition_capacity());
-    BOOST_REQUIRE_EQUAL(highest_group()(), max_correct_partitions);
+    auto units_2 = allocator.allocate(cfg_2);
+    BOOST_REQUIRE(units_2.has_error());
+
+    BOOST_REQUIRE_EQUAL(3, max_capacity());
+    BOOST_REQUIRE_EQUAL(
+      allocator.state().last_group_id()(), max_partitions_in_cluster - 1);
 }
-FIXTURE_TEST(max_deallocation, partition_allocator_tester) {
+FIXTURE_TEST(max_deallocation, partition_allocator_fixture) {
+    register_node(0, 3);
+    register_node(1, 3);
+    register_node(2, 3);
     // This test performs - 209994 partition assignments
-    using ts = partition_allocator_tester;
-    const auto max = (ts::cpus_per_node
-                      * allocation_node::max_allocations_per_core)
-                     - allocation_node::core0_extra_weight;
+    const auto max = max_capacity();
 
-    auto cfg = gen_topic_configuration(max, ts::max_nodes);
-    partition_allocator::allocation_units allocs = pa.allocate(cfg).value();
+    auto cfg = cluster::topic_allocation_configuration{
+      .partition_count = max / 3,
+      .replication_factor = 3,
+    };
+    {
+        cluster::allocation_units allocs = allocator.allocate(cfg).value();
 
-    BOOST_REQUIRE_EQUAL(max * ts::max_nodes, 209994);
-    BOOST_REQUIRE_EQUAL(
-      allocs.get_assignments().size() * ts::max_nodes, 209994);
-    BOOST_REQUIRE_EQUAL(
-      allocated_nodes_count(allocs.get_assignments()), 209994);
-    BOOST_REQUIRE_EQUAL(highest_group()(), max);
-    BOOST_REQUIRE_EQUAL(available_machines().size(), 0);
+        BOOST_REQUIRE_EQUAL(allocs.get_assignments().size() * 3, max);
 
-    // make sure there is no room left after
-    auto one_topic_cfg = gen_topic_configuration(1, 1);
-    BOOST_REQUIRE(std::nullopt == pa.allocate(one_topic_cfg));
-
-    // now deallocate them all, and we _must_ not decrease the raft count
-    for (auto& as : allocs.get_assignments()) {
-        for (auto& bs : as.replicas) {
-            pa.deallocate(bs);
-        }
+        BOOST_REQUIRE_EQUAL(allocator.state().last_group_id()(), max / 3);
     }
 
-    BOOST_REQUIRE_EQUAL(highest_group()(), max);
-    BOOST_REQUIRE_EQUAL(available_machines().size(), 3);
-    BOOST_REQUIRE_EQUAL(cluster_partition_capacity(), 209994);
+    BOOST_REQUIRE_EQUAL(allocator.state().last_group_id()(), max / 3);
+    BOOST_REQUIRE_EQUAL(max_capacity(), max);
 }
 
-FIXTURE_TEST(recovery_test, partition_allocator_tester) {
-    using ts = partition_allocator_tester;
-    const auto max = (ts::cpus_per_node
-                      * allocation_node::max_allocations_per_core)
-                     - allocation_node::core0_extra_weight;
+FIXTURE_TEST(recovery_test, partition_allocator_fixture) {
+    register_node(0, 3);
+    register_node(1, 3);
+    register_node(2, 3);
+    auto create_replicas = [this](int topics, int partitions) {
+        std::vector<model::broker_shard> ret;
 
+        for (int t = 0; t < topics; t++) {
+            for (int p = 0; p < partitions; p++) {
+                std::vector<model::broker_shard> replicas;
+                for (int r = 0; r < 3; r++) {
+                    ret.push_back(
+                      model::broker_shard{model::node_id(r), prng() % 3});
+                }
+            }
+        }
+        return ret;
+    };
     // 100 topics with 12 partitions each replicated on 3 nodes each
-    auto md = create_topic_metadata(100, 12);
-    pa.update_allocation_state(md, raft::group_id(0));
+    auto replicas = create_replicas(100, 12);
+    allocator.update_allocation_state(replicas, raft::group_id(0));
     // each node in the cluster holds one replica for each partition,
     // so it has to have topics * partitions shards allocated
     auto allocated_shards = 100 * 12;
     // Remaining capacity on node 0
     BOOST_REQUIRE_EQUAL(
-      max - machines().at(model::node_id(0))->partition_capacity(),
+      allocator.state()
+        .allocation_nodes()
+        .find(model::node_id(0))
+        ->second->allocated_partitions(),
       allocated_shards);
     // Remaining capacity on node 1
     BOOST_REQUIRE_EQUAL(
-      max - machines().at(model::node_id(1))->partition_capacity(),
+      allocator.state()
+        .allocation_nodes()
+        .find(model::node_id(1))
+        ->second->allocated_partitions(),
       allocated_shards);
     // Remaining capacity on node 2
     BOOST_REQUIRE_EQUAL(
-      max - machines().at(model::node_id(2))->partition_capacity(),
+      allocator.state()
+        .allocation_nodes()
+        .find(model::node_id(2))
+        ->second->allocated_partitions(),
       allocated_shards);
 }
 
-BOOST_AUTO_TEST_CASE(round_robin_load) {
-    partition_allocator_tester test(5, 10);
-    auto cfg = test.gen_topic_configuration(100, 3);
-    std::vector<partition_assignment> allocs
-      = test.pa.allocate(cfg).value().get_assignments();
-    std::map<model::node_id, int> node_assignment;
-    for (auto& a : allocs) {
-        for (auto& bs : a.replicas) {
-            node_assignment[bs.node_id]++;
-        }
-    }
-    for (auto& p : node_assignment) {
-        BOOST_REQUIRE_EQUAL(p.second, 60);
-    }
-}
-
-FIXTURE_TEST(allocation_units_test, partition_allocator_tester) {
-    using ts = partition_allocator_tester;
-    const auto partitions = 128;
-    const auto max = (ts::cpus_per_node
-                      * allocation_node::max_allocations_per_core)
-                     - allocation_node::core0_extra_weight;
+FIXTURE_TEST(allocation_units_test, partition_allocator_fixture) {
+    register_node(1, 10);
+    register_node(2, 11);
+    register_node(3, 12);
     // just fill up the cluster partially
-    auto cfg1 = gen_topic_configuration(partitions, ts::max_nodes);
+    auto cfg1 = cluster::topic_allocation_configuration{
+      .partition_count = 10,
+      .replication_factor = 3,
+    };
     {
-        auto allocs = pa.allocate(cfg1).value();
+        auto allocs = allocator.allocate(cfg1).value();
+        BOOST_REQUIRE_EQUAL(allocs.get_assignments().size(), 10);
         BOOST_REQUIRE_EQUAL(
-          allocs.get_assignments().size() * 3, ts::max_nodes * partitions);
-        BOOST_REQUIRE_EQUAL(
-          allocated_nodes_count(allocs.get_assignments()),
-          ts::max_nodes * partitions);
+          allocated_nodes_count(allocs.get_assignments()), 3 * 10);
     }
-    // after allocs left the scope we deallocate
-    BOOST_REQUIRE_EQUAL(
-      machines().at(model::node_id(0))->partition_capacity(), max);
-    BOOST_REQUIRE_EQUAL(
-      machines().at(model::node_id(1))->partition_capacity(), max);
-    BOOST_REQUIRE_EQUAL(
-      machines().at(model::node_id(2))->partition_capacity(), max);
+
+    BOOST_REQUIRE(all_nodes_empty());
+
     // we do not decrement the highest raft group
-    BOOST_REQUIRE_EQUAL(highest_group()(), partitions);
+    BOOST_REQUIRE_EQUAL(allocator.state().last_group_id()(), 10);
 }

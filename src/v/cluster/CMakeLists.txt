@@ -65,6 +65,7 @@ v_cc_library(
     security_frontend.cc
     controller_api.cc
     members_frontend.cc
+    partition_allocation_strategies.cc
   DEPS
     Seastar::seastar
     controller_rpc

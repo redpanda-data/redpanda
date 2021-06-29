@@ -42,7 +42,9 @@ enum class errc : int16_t {
     sequence_out_of_order,
     generic_tx_error,
     node_does_not_exists,
-    invalid_node_opeartion
+    invalid_node_opeartion,
+    topic_operation_error,
+
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -111,6 +113,8 @@ struct errc_category final : public std::error_category {
             return "Requested node does not exists";
         case errc::invalid_node_opeartion:
             return "Requested node opeartion is invalid";
+        case errc::topic_operation_error:
+            return "Unable to perform requested topic operation ";
         }
         return "cluster::errc::unknown";
     }
