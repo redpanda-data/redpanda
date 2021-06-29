@@ -2,6 +2,7 @@
 title: Deploying Redpanda for production
 order: 0
 ---
+
 # Deploying for production
 
 This guide will take you through what is needed to setup a production cluster
@@ -39,7 +40,7 @@ On Fedora/RedHat Systems:
 
 ```
 curl -1sLf 'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.rpm.sh' | \
-sudo -E bash && sudo yum install redpanda -y 
+sudo -E bash && sudo yum install redpanda -y
 ```
 
 On Debian Systems:
@@ -66,21 +67,21 @@ sudo rpk redpanda tune all
 ```
 
 > **_Optional: Benchmark your SSD_**
-> 
+>
 > On taller machines we recommend benchmarking your SSD. This can be done
 > with `rpk iotune`. You only need to run this once. For reference, a decent
-> local  NVMe SSD should yield around 1GB/s sustained writes.
+> local NVMe SSD should yield around 1GB/s sustained writes.
 > `rpk iotune` will capture SSD wear and tear and give accurate measurements
 > of what your hardware is actually capable of delivering. It is recommended
 > you run this before benchmarking.
 >
->If you are on AWS, GCP or Azure, creating a new instance and upgrading to
->an image with a recent Linux Kernel version is often the easiest way to
->work around bad devices.
+> If you are on AWS, GCP or Azure, creating a new instance and upgrading to
+> an image with a recent Linux Kernel version is often the easiest way to
+> work around bad devices.
 >
->```
->sudo rpk iotune # takes 10mins
->```
+> ```
+> sudo rpk iotune # takes 10mins
+> ```
 
 ### Step 3: Configure and start the root node
 
@@ -118,5 +119,5 @@ journalctl -u redpanda
 You should also be able to create a topic with the following command:
 
 ```
-rpk api topic create panda
+rpk topic create panda
 ```
