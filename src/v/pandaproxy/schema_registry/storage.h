@@ -678,7 +678,7 @@ struct consume_to_store {
     }
 
     ss::future<> apply(schema_key key, schema_value val) {
-        if (key.magic != 1) {
+        if (key.magic != 0 && key.magic != 1) {
             throw exception(
               error_code::topic_parse_error,
               fmt::format("key has unexpected magic: {}", key));

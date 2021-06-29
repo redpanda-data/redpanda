@@ -38,6 +38,7 @@ const pps::schema_definition int_def0{
 const pps::subject subject0{"subject0"};
 constexpr pps::topic_key_magic magic0{0};
 constexpr pps::topic_key_magic magic1{1};
+constexpr pps::topic_key_magic magic2{2};
 constexpr pps::schema_version version0{0};
 constexpr pps::schema_version version1{1};
 constexpr pps::schema_id id0{0};
@@ -58,7 +59,7 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
     BOOST_REQUIRE(s_res.value().definition == string_def0);
 
     auto bad_schema_magic = pps::as_record_batch(
-      pps::schema_key{subject0, version0, magic0},
+      pps::schema_key{subject0, version0, magic2},
       pps::schema_value{
         subject0, version0, pps::schema_type::avro, id0, string_def0});
     BOOST_REQUIRE_THROW(c(std::move(bad_schema_magic)).get(), pps::exception);
