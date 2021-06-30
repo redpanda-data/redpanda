@@ -16,6 +16,7 @@
 #include "s3/logger.h"
 #include "ssx/sformat.h"
 
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sstring.hh>
 
 #include <boost/algorithm/string/compare.hpp>
@@ -326,6 +327,16 @@ ss::sstring signature_v4::sha256_hexdigest(std::string_view payload) {
     return sha_256(payload);
 }
 
+void signature_v4::update_credentials_if_outdated() {
+    static constexpr ss::lowres_clock::duration max_allowed_age
+      = std::chrono::seconds(86400);
+    auto now = ss::lowres_clock::now();
+    auto diff = now - _last_update;
+    if (diff > max_allowed_age) {
+        update_credentials();
+    }
+}
+
 std::error_code signature_v4::sign_header(
   http::client::request_header& header, const ss::sstring& sha256) const {
     auto amz_date = _sig_time.format_datetime();
@@ -356,6 +367,20 @@ std::error_code signature_v4::sign_header(
     return {};
 }
 
+void signature_v4::update_credentials() {
+    ss::sstring date_str = _sig_time.format_date();
+    ss::sstring service = "s3";
+    _sign_key = gen_sig_key(_private_key(), date_str, _region(), service);
+    _cred_scope = ssx::sformat(
+      "{}/{}/{}/aws4_request", date_str, _region(), service);
+    _last_update = ss::lowres_clock::now();
+    vlog(
+      s3_log.trace,
+      "Credentials updated:\n[signing key]\n{}\n[scope]\n{}\n",
+      hexdigest(_sign_key),
+      _cred_scope);
+}
+
 signature_v4::signature_v4(
   aws_region_name region,
   public_key_str access_key,
@@ -365,15 +390,6 @@ signature_v4::signature_v4(
   , _region(std::move(region))
   , _access_key(std::move(access_key))
   , _private_key(std::move(private_key)) {
-    ss::sstring date_str = _sig_time.format_date();
-    ss::sstring service = "s3";
-    _sign_key = gen_sig_key(_private_key(), date_str, _region(), service);
-    _cred_scope = ssx::sformat(
-      "{}/{}/{}/aws4_request", date_str, _region(), service);
-    vlog(
-      s3_log.trace,
-      "\n[signing key]\n{}\n[scope]\n{}\n",
-      hexdigest(_sign_key),
-      _cred_scope);
+    update_credentials();
 }
 } // namespace s3

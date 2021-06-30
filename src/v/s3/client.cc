@@ -144,6 +144,7 @@ result<http::client::request_header> request_creator::make_get_object_request(
     header.insert(boost::beast::http::field::host, host);
     header.insert(boost::beast::http::field::content_length, "0");
     header.insert(aws_header_names::x_amz_content_sha256, emptysig);
+    _sign.update_credentials_if_outdated();
     auto ec = _sign.sign_header(header, emptysig);
     if (ec) {
         return ec;
@@ -188,6 +189,7 @@ request_creator::make_unsigned_put_object_request(
         }
         header.insert(aws_header_names::x_amz_tagging, tstr.str().substr(1));
     }
+    _sign.update_credentials_if_outdated();
     auto ec = _sign.sign_header(header, sig);
     if (ec) {
         return ec;
@@ -226,6 +228,7 @@ request_creator::make_list_objects_v2_request(
     if (max_keys) {
         header.insert(aws_header_names::start_after, std::to_string(*max_keys));
     }
+    _sign.update_credentials_if_outdated();
     auto ec = _sign.sign_header(header, emptysig);
     vlog(s3_log.trace, "ListObjectsV2:\n {}", header);
     if (ec) {
@@ -256,6 +259,7 @@ request_creator::make_delete_object_request(
     header.insert(boost::beast::http::field::host, host);
     header.insert(boost::beast::http::field::content_length, "0");
     header.insert(aws_header_names::x_amz_content_sha256, emptysig);
+    _sign.update_credentials_if_outdated();
     auto ec = _sign.sign_header(header, emptysig);
     if (ec) {
         return ec;
