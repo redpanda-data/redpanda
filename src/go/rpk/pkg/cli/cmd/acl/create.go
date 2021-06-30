@@ -247,15 +247,13 @@ func createACL(
 	adm sarama.ClusterAdmin, res sarama.Resource, acl *sarama.Acl,
 ) func() error {
 	return func() error {
-		op, _ := acl.Operation.MarshalText()
-		perm, _ := acl.PermissionType.MarshalText()
 		msg := fmt.Sprintf(
 			"ACL for principal '%s' with host '%s', operation '%s' and"+
 				" permission '%s'",
 			acl.Principal,
 			acl.Host,
-			string(op),
-			string(perm),
+			acl.Operation.String(),
+			acl.PermissionType.String(),
 		)
 		err := adm.CreateACL(res, *acl)
 		if err == nil {

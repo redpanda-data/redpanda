@@ -162,16 +162,12 @@ func listACLs(
 	acls chan<- []sarama.ResourceAcls,
 ) func() error {
 	return func() error {
-		resType, _ := filter.ResourceType.MarshalText()
-		pat, _ := filter.ResourcePatternTypeFilter.MarshalText()
-		op, _ := filter.Operation.MarshalText()
-		perm, _ := filter.PermissionType.MarshalText()
 		filterInfo := fmt.Sprintf("resource type: '%s',"+
 			" name pattern type '%s', operation '%s', permission '%s'",
-			string(resType),
-			string(pat),
-			string(op),
-			string(perm),
+			filter.ResourceType.String(),
+			filter.ResourcePatternTypeFilter.String(),
+			filter.Operation.String(),
+			filter.PermissionType.String(),
 		)
 		log.Debugf("Listing ACLs with filter %s", filterInfo)
 		as, err := adm.ListAcls(filter)
@@ -295,21 +291,21 @@ func printResourceACLs(resACLs []sarama.ResourceAcls) {
 	t := ui.NewRpkTable(log.StandardLogger().Out)
 	t.SetColWidth(80)
 	t.SetAutoWrapText(true)
-	t.SetHeader([]string{"Principal", "Host", "Operation", "Permission Type", "Resource Type", "Resource Name"})
+	t.SetHeader([]string{"Principal", "Host", "Operation", "Permission Type", "Resource Type", "Resource Name", "Resource Pattern Type"})
 	t.Append(spacer)
-
 	for _, resACL := range resACLs {
-		resType, _ := resACL.Resource.ResourceType.MarshalText()
+		resType := resACL.Resource.ResourceType.String()
+		resName := resACL.ResourceName
+		resNamePattern := resACL.Resource.ResourcePatternType.String()
 		for _, acl := range resACL.Acls {
-			op, _ := acl.Operation.MarshalText()
-			perm, _ := acl.PermissionType.MarshalText()
 			t.Append([]string{
 				acl.Principal,
 				acl.Host,
-				string(op),
-				string(perm),
-				string(resType),
-				resACL.ResourceName,
+				acl.Operation.String(),
+				acl.PermissionType.String(),
+				resType,
+				resName,
+				resNamePattern,
 			})
 		}
 	}

@@ -106,10 +106,10 @@ func TestNewListACLsCommand(t *testing.T) {
 				},
 			}, nil
 		},
-		expectedOut: `  PRINCIPAL  HOST            OPERATION  PERMISSION TYPE  RESOURCE TYPE  RESOURCE NAME    
+		expectedOut: `  PRINCIPAL  HOST            OPERATION  PERMISSION TYPE  RESOURCE TYPE  RESOURCE NAME    RESOURCE PATTERN TYPE  
              
-  User:Lola  127.0.0.1       All        Allow            Topic          some-cool-topic  
-  User:Momo  162.168.90.124  Any        Deny             Topic          some-cool-topic  
+  User:Lola  127.0.0.1       All        Allow            Topic          some-cool-topic  Any                    
+  User:Momo  162.168.90.124  Any        Deny             Topic          some-cool-topic  Any                    
              
 `,
 	}, {
