@@ -423,10 +423,12 @@ ss::future<> scheduler_service_impl::reconcile_archivers() {
         if (remove_fut.failed()) {
             vlog(
               archival_log.error, "{} Failed to remove archivers", _rtcnode());
+            remove_fut.ignore_ready_future();
         }
         if (create_fut.failed()) {
             vlog(
               archival_log.error, "{} Failed to create archivers", _rtcnode());
+            create_fut.ignore_ready_future();
         }
     }
 }
@@ -434,8 +436,8 @@ ss::future<> scheduler_service_impl::reconcile_archivers() {
 ss::future<> scheduler_service_impl::run_uploads() {
     gate_guard g(_gate);
     try {
-        const ss::lowres_clock::duration initial_backoff = 10ms;
-        const ss::lowres_clock::duration max_backoff = 5s;
+        static constexpr ss::lowres_clock::duration initial_backoff = 100ms;
+        static constexpr ss::lowres_clock::duration max_backoff = 10s;
         ss::lowres_clock::duration backoff = initial_backoff;
         while (!_gate.is_closed()) {
             int quota = _queue.size();
@@ -472,10 +474,30 @@ ss::future<> scheduler_service_impl::run_uploads() {
                     .num_failed = lhs.num_failed + rhs.num_failed};
               });
 
-            if (total.num_succeded == 0 && total.num_failed == 0) {
+            _probe.successful_upload(total.num_succeded);
+            _probe.failed_upload(total.num_failed);
+
+            if (total.num_failed != 0) {
+                vlog(
+                  archival_log.error,
+                  "Failed to upload {} segments out of {}",
+                  total.num_failed,
+                  total.num_succeded + total.num_failed);
+            } else if (total.num_succeded != 0) {
+                vlog(
+                  archival_log.debug,
+                  "Successfuly upload {} segments",
+                  total.num_succeded);
+            }
+
+            if (total.num_succeded == 0) {
                 // The backoff algorithm here is used to prevent high CPU
                 // utilization when redpanda is not receiving any data and there
-                // is nothing to update. We want to limit max backoff duration
+                // is nothing to update. Also, we want to limit amount of
+                // logging if nothing is uploaded because of bad configuration
+                // or some other problem.
+                //
+                // We want to limit max backoff duration
                 // to some reasonable value (e.g. 5s) because otherwise it can
                 // grow very large disabling the archival storage
                 vlog(
@@ -488,20 +510,7 @@ ss::future<> scheduler_service_impl::run_uploads() {
                     backoff = max_backoff;
                 }
                 continue;
-            } else if (total.num_failed != 0) {
-                vlog(
-                  archival_log.error,
-                  "Failed to upload {} segments out of {}",
-                  total.num_failed,
-                  total.num_succeded);
-            } else {
-                vlog(
-                  archival_log.debug,
-                  "Successfuly upload {} segments",
-                  total.num_succeded);
             }
-            _probe.successful_upload(total.num_succeded);
-            _probe.failed_upload(total.num_failed);
         }
     } catch (const ss::sleep_aborted&) {
         vlog(archival_log.debug, "Upload loop aborted");
