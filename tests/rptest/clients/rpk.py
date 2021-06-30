@@ -25,6 +25,12 @@ class RpkPartition:
             self.id, self.leader, self.replicas, self.high_watermark)
 
 
+class RpkClusterInfoNode:
+    def __init__(self, id, address):
+        self.id = id
+        self.address = address
+
+
 class RpkTool:
     """
     Wrapper around rpk.
@@ -33,14 +39,14 @@ class RpkTool:
         self._redpanda = redpanda
 
     def create_topic(self, topic, partitions=1):
-        cmd = ["topic", "create", topic]
+        cmd = ["create", topic]
         cmd += ["--partitions", str(partitions)]
-        return self._run_api(cmd)
+        return self._run_topic(cmd)
 
     def list_topics(self):
-        cmd = ["topic", "list"]
+        cmd = ["list"]
 
-        output = self._run_api(cmd)
+        output = self._run_topic(cmd)
         if "No topics found." in output:
             return []
 
@@ -65,11 +71,11 @@ class RpkTool:
             cmd += ['-H ' + h for h in headers]
         if partition:
             cmd += ['-p', str(partition)]
-        return self._run_api(cmd, stdin=msg)
+        return self._run_topic(cmd, stdin=msg)
 
     def describe_topic(self, topic):
-        cmd = ['topic', 'describe', topic]
-        output = self._run_api(cmd)
+        cmd = ['describe', topic]
+        output = self._run_topic(cmd)
         if "not found" in output:
             return None
         lines = output.splitlines()
@@ -104,27 +110,59 @@ class RpkTool:
         cmd = [self._rpk_binary(), 'wasm', 'generate', directory]
         return self._execute(cmd)
 
-    def _run_api(self, cmd, stdin=None, timeout=30):
+    def _run_topic(self, cmd, stdin=None, timeout=30):
         cmd = [
-            self._rpk_binary(), "api", "--brokers",
-            self._redpanda.brokers(1)
+            self._rpk_binary(), "topic", "--brokers",
+            self._redpanda.brokers()
         ] + cmd
         return self._execute(cmd, stdin=stdin, timeout=timeout)
+
+    def cluster_info(self, timeout=30):
+        # Matches against `rpk cluster info`'s output & parses the brokers'
+        # ID & address. Example:
+        #
+        #  Redpanda Cluster Info
+        #
+        #  1 (192.168.52.1:9092)  (No partitions)
+        #
+        #  2 (192.168.52.2:9092)  (No partitions)
+        #
+        #  3 (192.168.52.3:9092)  (No partitions)
+        #
+        def _parse_out(line):
+            m = re.match(r" *(?P<id>\d) \((?P<addr>.+\:[0-9]+)\) *", line)
+            if m is None:
+                return None
+
+            return RpkClusterInfoNode(id=int(m.group('id')),
+                                      address=m.group('addr'))
+
+        cmd = [
+            self._rpk_binary(), 'cluster', 'info', '--brokers',
+            self._redpanda.brokers(1)
+        ]
+        output = self._execute(cmd, stdin=None, timeout=timeout)
+        parsed = map(_parse_out, output.splitlines())
+        return [p for p in parsed if p is not None]
 
     def _execute(self, cmd, stdin=None, timeout=30):
         self._redpanda.logger.debug("Executing command: %s", cmd)
         try:
             output = None
-            f = subprocess.PIPE
-
+            f = None
             if stdin:
+                f = subprocess.PIPE
+                if isinstance(stdin, str):
+                    # Convert the string msg to bytes
+                    stdin = stdin.encode()
+
                 f = tempfile.TemporaryFile()
                 f.write(stdin)
                 f.seek(0)
 
             # rpk logs everything on STDERR by default
             p = subprocess.Popen(cmd,
-                                 stderr=subprocess.PIPE,
+                                 stdout=subprocess.PIPE,
                                  stdin=f,
                                  text=True)
             start_time = time.time()
@@ -139,7 +177,7 @@ class RpkTool:
             if ret is None:
                 p.terminate()
 
-            output = p.stderr.read()
+            output = p.stdout.read()
 
             if p.returncode:
                 raise Exception('command %s returned %d, output: %s' %

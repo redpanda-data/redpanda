@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import json
+import time
 from ducktape.services.background_thread import BackgroundThreadService
 
 
@@ -18,6 +19,8 @@ class RpkConsumer(BackgroundThreadService):
                  topic,
                  partitions=[],
                  offset='oldest',
+                 ignore_errors=True,
+                 retries=3,
                  group='',
                  commit=False):
         super(RpkConsumer, self).__init__(context, num_nodes=1)
@@ -25,6 +28,8 @@ class RpkConsumer(BackgroundThreadService):
         self._topic = topic
         self._partitions = partitions
         self._offset = offset
+        self._ignore_errors = ignore_errors
+        self._retries = retries
         self._group = group
         self._commit = commit
         self.done = False
@@ -33,19 +38,29 @@ class RpkConsumer(BackgroundThreadService):
         self.offset = dict()
 
     def _worker(self, idx, node):
-        try:
-            self.messages = self._consume(node)
-        except Exception as e:
-            self.error = e
-            raise
-        finally:
-            self.done = True
+        retries = 1
+        retry_sec = 5
+        err = None
+        while retries < self._retries:
+            try:
+                self._consume(node)
+            except Exception as e:
+                err = e
+                self._redpanda.logger.error(
+                    f"Consumer failed with error: '{e}'. Retrying in {retry_sec} seconds."
+                )
+                retries += 1
+                time.sleep(retry_sec)
+
+        self.done = True
+        if retries == self._retries and err is not None:
+            self.error = err
 
     def stop_node(self, node):
         node.account.kill_process('rpk', clean_shutdown=False)
 
     def _consume(self, node):
-        cmd = '%s api consume --offset %s --pretty-print=false --brokers %s %s' % (
+        cmd = '%s topic consume --offset %s --pretty-print=false --brokers %s %s' % (
             self._redpanda.find_binary('rpk'),
             self._offset,
             self._redpanda.brokers(),
@@ -63,8 +78,11 @@ class RpkConsumer(BackgroundThreadService):
 
         for line in node.account.ssh_capture(cmd):
             l = line.rstrip()
-            self.logger.debug(l)
             if not l:
                 continue
+
             msg = json.loads(l)
             self.messages.append(msg)
+
+    def clean_node(self, nodes):
+        pass

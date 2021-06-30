@@ -13,6 +13,7 @@ import signal
 import tempfile
 import shutil
 import requests
+import threading
 import collections
 
 import yaml
@@ -83,6 +84,8 @@ class RedpandaService(Service):
 
         # client is intiialized after service starts
         self._client = None
+
+        self.config_file_lock = threading.Lock()
 
     def sasl_enabled(self):
         return self._extra_rp_conf and self._extra_rp_conf.get(
@@ -373,9 +376,9 @@ class RedpandaService(Service):
 
     def read_configuration(self, node):
         assert node in self.nodes
-        with node.account.open(RedpandaService.CONFIG_FILE) as f:
-            cfg = yaml.full_load(f.read())
-        return cfg
+        with self.config_file_lock:
+            with node.account.open(RedpandaService.CONFIG_FILE) as f:
+                return yaml.full_load(f.read())
 
     def shards(self):
         """
