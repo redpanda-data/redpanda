@@ -102,7 +102,7 @@ inline std::unique_ptr<ss::httpd::reply> exception_reply(std::exception_ptr e) {
     } catch (const kafka::exception_base& e) {
         return errored_body(e.error, e.what());
     } catch (const schema_registry::exception_base& e) {
-        return errored_body(e.error, e.what());
+        return errored_body(e.code(), e.message());
     } catch (const seastar::httpd::base_exception& e) {
         return errored_body(
           reply_error_code::kafka_bad_request,
