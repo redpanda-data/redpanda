@@ -86,14 +86,14 @@ tasks:
     - test -f '{{.BUILD_ROOT}}/bin/docker-compose'
 
   start-podman-socket-service:
-    desc: start podman socket service (requires sudo)
+    desc: start podman.socket service
+    vars:
+      USE_PODMAN_DOCKER: '{{default "" .USE_PODMAN_DOCKER}}'
     cmds:
-    - |
-      if {{empty .USE_PODMAN_DOCKER}}; then
-        exit 0
-      fi
-      sudo systemctl start podman.socket
-      sudo curl -H "Content-Type: application/json" --unix-socket /var/run/docker.sock http://localhost/_ping | grep OK
+    - systemctl --user start podman.socket
+    - "curl -H 'Content-Type: application/json' --unix-socket $XDG_RUNTIME_DIR/podman/podman.sock http://localhost/_ping | grep OK"
+    status:
+    - test -z {{.USE_PODMAN_DOCKER}}
 
   generate-certs:
     desc: use openssl to generate dev certs
