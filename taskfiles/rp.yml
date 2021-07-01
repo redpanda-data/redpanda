@@ -128,6 +128,9 @@ tasks:
     cmds:
     - |
       PATH={{.BUILD_ROOT}}/bin/:$PATH
+      if ! {{empty .USE_PODMAN_DOCKER}}; then
+        export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock
+      fi
       docker-compose up --detach
 
   run-ducktape-tests:
@@ -174,4 +177,7 @@ tasks:
     cmds:
     - |
       PATH={{.BUILD_ROOT}}/bin/:$PATH
+      if ! {{empty .USE_PODMAN_DOCKER}}; then
+        export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock
+      fi
       docker-compose down
