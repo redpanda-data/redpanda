@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "json/json.h"
 #include "likely.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/types.h"

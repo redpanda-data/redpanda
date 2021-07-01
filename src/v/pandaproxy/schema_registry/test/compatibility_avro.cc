@@ -10,18 +10,8 @@
 #include "pandaproxy/schema_registry/avro.h"
 #include "pandaproxy/schema_registry/store.h"
 #include "pandaproxy/schema_registry/types.h"
-#include "vassert.h"
 
-#include <avro/Compiler.hh>
-#include <avro/GenericDatum.hh>
-#include <avro/ValidSchema.hh>
-#include <avro/Validator.hh>
-#include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
-#include <rapidjson/encodings.h>
-
-#include <memory>
-#include <type_traits>
 
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
