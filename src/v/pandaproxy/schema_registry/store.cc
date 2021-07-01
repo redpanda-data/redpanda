@@ -20,18 +20,10 @@ result<bool> store::is_compatible(
   schema_version version,
   const schema_definition& new_schema,
   schema_type new_schema_type) {
-    // Lookup the subject
-    auto sub_it = _subjects.find(sub);
-    if (sub_it == _subjects.end()) {
-        return not_found(sub);
-    }
+    // Lookup the version ids
+    auto versions = BOOST_OUTCOME_TRYX(
+      get_version_ids(sub, include_deleted::no));
 
-    if (sub_it->second.deleted) {
-        return not_found(sub);
-    }
-
-    // Lookup the version
-    const auto& versions = sub_it->second.versions;
     auto ver_it = std::lower_bound(
       versions.begin(),
       versions.end(),

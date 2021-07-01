@@ -149,6 +149,13 @@ public:
         return res;
     }
 
+    ///\brief Return a list of versions and associated schema_id.
+    result<std::vector<subject_version_id>>
+    get_version_ids(const subject& sub, include_deleted inc_del) const {
+        auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
+        return sub_it->second.versions;
+    }
+
     ///\brief Delete a subject.
     result<std::vector<schema_version>>
     delete_subject(const subject& sub, permanent_delete permanent) {
