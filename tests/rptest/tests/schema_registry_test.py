@@ -218,7 +218,7 @@ class SchemaRegistryTest(RedpandaTest):
         assert result_raw.status_code == requests.codes.not_found
         result = result_raw.json()
         assert result["error_code"] == 40401
-        assert result["message"] == "Subject not found"
+        assert result["message"] == f"Subject '{topic}-invalid' not found."
 
         self.logger.debug("Get schema versions for subject key")
         result_raw = self._get_subjects_subject_versions(
@@ -238,7 +238,7 @@ class SchemaRegistryTest(RedpandaTest):
         assert result_raw.status_code == requests.codes.not_found
         result = result_raw.json()
         assert result["error_code"] == 40401
-        assert result["message"] == "Subject not found"
+        assert result["message"] == f"Subject '{topic}-invalid' not found."
 
         self.logger.debug("Get invalid schema version for subject")
         result_raw = self._get_subjects_subject_versions_version(
@@ -246,7 +246,8 @@ class SchemaRegistryTest(RedpandaTest):
         assert result_raw.status_code == requests.codes.not_found
         result = result_raw.json()
         assert result["error_code"] == 40401
-        assert result["message"] == "Subject version not found"
+        assert result[
+            "message"] == f"Subject '{topic}-key' Version 2 not found."
 
         self.logger.debug("Get schema version 1 for subject key")
         result_raw = self._get_subjects_subject_versions_version(
@@ -271,7 +272,7 @@ class SchemaRegistryTest(RedpandaTest):
         assert result_raw.status_code == requests.codes.not_found
         result = result_raw.json()
         assert result["error_code"] == 40401
-        assert result["message"] == "Schema not found"
+        assert result["message"] == "Schema 2 not found"
 
         self.logger.debug("Get schema version 1")
         result_raw = self._get_schemas_ids_id(id=1)

@@ -23,11 +23,11 @@ result<bool> store::is_compatible(
     // Lookup the subject
     auto sub_it = _subjects.find(sub);
     if (sub_it == _subjects.end()) {
-        return error_code::subject_not_found;
+        return not_found(sub);
     }
 
     if (sub_it->second.deleted) {
-        return error_code::subject_not_found;
+        return not_found(sub);
     }
 
     // Lookup the version
@@ -40,16 +40,16 @@ result<bool> store::is_compatible(
           return lhs.version < rhs;
       });
     if (ver_it == versions.end() || ver_it->version != version) {
-        return error_code::subject_version_not_found;
+        return not_found(sub, version);
     }
     if (ver_it->deleted) {
-        return error_code::subject_version_not_found;
+        return not_found(sub, version);
     }
 
     // Lookup the schema at the version
     auto sch_it = _schemas.find(ver_it->id);
     if (sch_it == _schemas.end()) {
-        return error_code::schema_id_not_found;
+        return not_found(ver_it->id);
     }
 
     // Types must always match
@@ -71,8 +71,10 @@ result<bool> store::is_compatible(
 
     // Currently only support AVRO
     if (new_schema_type != schema_type::avro) {
-        // TODO: better error_code
-        return error_code::schema_invalid;
+        return error_info{
+          error_code::schema_invalid,
+          fmt::format(
+            "Invalid schema type {}", to_string_view(new_schema_type))};
     }
 
     // if transitive, search all, otherwise seach forwards from version
@@ -97,7 +99,7 @@ result<bool> store::is_compatible(
 
         auto sch_it = _schemas.find(ver_it->id);
         if (sch_it == _schemas.end()) {
-            return error_code::schema_id_not_found;
+            return not_found(ver_it->id);
         }
 
         auto old_avro_res = make_avro_schema_definition(

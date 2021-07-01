@@ -11,8 +11,7 @@
 
 #pragma once
 
-#include "outcome.h"
-#include "pandaproxy/schema_registry/error.h"
+#include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/types.h"
 
 #include <absl/container/btree_map.h>
@@ -59,7 +58,7 @@ public:
     result<schema> get_schema(const schema_id& id) const {
         auto it = _schemas.find(id);
         if (it == _schemas.end()) {
-            return error_code::schema_id_not_found;
+            return not_found(id);
         }
         return {it->first, it->second.type, it->second.definition};
     }
@@ -71,11 +70,11 @@ public:
       include_deleted inc_del) const {
         auto sub_it = _subjects.find(sub);
         if (sub_it == _subjects.end()) {
-            return error_code::subject_not_found;
+            return not_found(sub);
         }
 
         if (sub_it->second.deleted && !inc_del) {
-            return error_code::subject_not_found;
+            return not_found(sub);
         }
 
         const auto& versions = sub_it->second.versions;
@@ -87,7 +86,7 @@ public:
               return lhs.version < rhs;
           });
         if (v_it == versions.end() || v_it->version != version) {
-            return error_code::subject_version_not_found;
+            return not_found(sub, version);
         }
 
         auto s = get_schema(v_it->id);
@@ -121,11 +120,11 @@ public:
     get_versions(const subject& sub, include_deleted inc_del) const {
         auto sub_it = _subjects.find(sub);
         if (sub_it == _subjects.end()) {
-            return error_code::subject_not_found;
+            return not_found(sub);
         }
 
         if (sub_it->second.deleted && !inc_del) {
-            return error_code::subject_not_found;
+            return not_found(sub);
         }
 
         const auto& versions = sub_it->second.versions;
@@ -144,15 +143,15 @@ public:
     delete_subject(const subject& sub, permanent_delete permanent) {
         auto sub_it = _subjects.find(sub);
         if (sub_it == _subjects.end()) {
-            return error_code::subject_not_found;
+            return not_found(sub);
         }
 
         if (permanent && !sub_it->second.deleted) {
-            return error_code::subject_not_deleted;
+            return not_deleted(sub);
         }
 
         if (!permanent && sub_it->second.deleted) {
-            return error_code::subject_soft_deleted;
+            return soft_deleted(sub);
         }
 
         sub_it->second.deleted = is_deleted::yes;
@@ -181,11 +180,11 @@ public:
       include_deleted inc_del) {
         auto sub_it = _subjects.find(sub);
         if (sub_it == _subjects.end()) {
-            return error_code::subject_not_found;
+            return not_found(sub);
         }
 
         if (sub_it->second.deleted && !inc_del) {
-            return error_code::subject_not_found;
+            return not_found(sub);
         }
 
         auto& versions = sub_it->second.versions;
@@ -197,15 +196,15 @@ public:
               return lhs.version < rhs;
           });
         if (v_it == versions.end() || v_it->version != version) {
-            return error_code::subject_version_not_found;
+            return not_found(sub, version);
         }
 
         if (!v_it->deleted && permanent && !inc_del) {
-            return error_code::subject_version_not_deleted;
+            return not_deleted(sub, version);
         }
 
         if (v_it->deleted && !permanent && !inc_del) {
-            return error_code::subject_version_soft_deleted;
+            return soft_deleted(sub, version);
         }
 
         if (permanent) {
@@ -224,11 +223,11 @@ public:
     result<compatibility_level> get_compatibility(const subject& sub) const {
         auto sub_it = _subjects.find(sub);
         if (sub_it == _subjects.end()) {
-            return error_code::subject_not_found;
+            return not_found(sub);
         }
 
         if (sub_it->second.deleted) {
-            return error_code::subject_not_found;
+            return not_found(sub);
         }
 
         return sub_it->second.compatibility.value_or(_compatibility);
@@ -244,11 +243,11 @@ public:
     set_compatibility(const subject& sub, compatibility_level compatibility) {
         auto sub_it = _subjects.find(sub);
         if (sub_it == _subjects.end()) {
-            return error_code::subject_not_found;
+            return not_found(sub);
         }
 
         if (sub_it->second.deleted) {
-            return error_code::subject_not_found;
+            return not_found(sub);
         }
 
         // TODO(Ben): Check needs to be made here?
@@ -260,7 +259,7 @@ public:
     result<bool> clear_compatibility(const subject& sub) {
         auto sub_it = _subjects.find(sub);
         if (sub_it == _subjects.end()) {
-            return error_code::subject_not_found;
+            return not_found(sub);
         }
         return std::exchange(sub_it->second.compatibility, std::nullopt)
                != std::nullopt;
