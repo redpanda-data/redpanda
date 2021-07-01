@@ -224,14 +224,16 @@ ss::future<> sharded_store::maybe_update_max_schema_id(schema_id id) {
       ss::shard_id{0}, _smp_opts, std::move(update));
 }
 
-result<bool> store::is_compatible(
+ss::future<bool> sharded_store::is_compatible(
   const subject& sub,
   schema_version version,
   const schema_definition& new_schema,
   schema_type new_schema_type) {
-    // Lookup the version ids
-    auto versions = BOOST_OUTCOME_TRYX(
-      get_version_ids(sub, include_deleted::no));
+    // Lookup the version_ids
+    const auto versions = co_await _store.invoke_on(
+      shard_for(sub), _smp_opts, [&sub](auto& s) {
+          return s.get_version_ids(sub, include_deleted::no).value();
+      });
 
     auto ver_it = std::lower_bound(
       versions.begin(),
@@ -241,41 +243,34 @@ result<bool> store::is_compatible(
           return lhs.version < rhs;
       });
     if (ver_it == versions.end() || ver_it->version != version) {
-        return not_found(sub, version);
+        throw as_exception(not_found(sub, version));
     }
     if (ver_it->deleted) {
-        return not_found(sub, version);
+        throw as_exception(not_found(sub, version));
     }
 
     // Lookup the schema at the version
-    auto sch_it = _schemas.find(ver_it->id);
-    if (sch_it == _schemas.end()) {
-        return not_found(ver_it->id);
-    }
+    auto old_schema = co_await get_subject_schema(
+      sub, version, include_deleted::no);
 
     // Types must always match
-    const auto& old_schema = sch_it->second;
     if (old_schema.type != new_schema_type) {
-        return false;
+        co_return false;
     }
 
     // Lookup the compatibility level
-    auto compat_res = get_compatibility(sub);
-    if (compat_res.has_error()) {
-        return compat_res.error();
-    }
-    auto compat = compat_res.assume_value();
+    auto compat = co_await get_compatibility(sub);
 
     if (compat == compatibility_level::none) {
-        return true;
+        co_return true;
     }
 
     // Currently only support AVRO
     if (new_schema_type != schema_type::avro) {
-        return error_info{
+        throw as_exception(error_info{
           error_code::schema_invalid,
           fmt::format(
-            "Invalid schema type {}", to_string_view(new_schema_type))};
+            "Invalid schema type {}", to_string_view(new_schema_type))});
     }
 
     // if transitive, search all, otherwise seach forwards from version
@@ -286,29 +281,16 @@ result<bool> store::is_compatible(
         ver_it = versions.begin();
     }
 
-    auto new_avro_res = make_avro_schema_definition(new_schema());
-    if (new_avro_res.has_error()) {
-        return new_avro_res.error();
-    }
-    auto new_avro = std::move(new_avro_res).assume_value();
-
+    auto new_avro = make_avro_schema_definition(new_schema()).value();
     auto is_compat = true;
     for (; is_compat && ver_it != versions.end(); ++ver_it) {
         if (ver_it->deleted) {
             continue;
         }
 
-        auto sch_it = _schemas.find(ver_it->id);
-        if (sch_it == _schemas.end()) {
-            return not_found(ver_it->id);
-        }
-
-        auto old_avro_res = make_avro_schema_definition(
-          sch_it->second.definition());
-        if (old_avro_res.has_error()) {
-            return old_avro_res.error();
-        }
-        auto old_avro = std::move(old_avro_res).assume_value();
+        auto old_schema = co_await get_schema(ver_it->id);
+        auto old_avro
+          = make_avro_schema_definition(old_schema.definition()).value();
 
         if (
           compat == compatibility_level::backward
@@ -323,7 +305,7 @@ result<bool> store::is_compatible(
             is_compat = is_compat && check_compatible(old_avro, new_avro);
         }
     }
-    return is_compat;
+    co_return is_compat;
 }
 
 } // namespace pandaproxy::schema_registry

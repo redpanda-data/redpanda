@@ -179,7 +179,8 @@ service::service(
   const YAML::Node& config,
   ss::smp_service_group smp_sg,
   size_t max_memory,
-  ss::sharded<kafka::client::client>& client)
+  ss::sharded<kafka::client::client>& client,
+  sharded_store& store)
   : _config(config)
   , _mem_sem(max_memory)
   , _client(client)
@@ -190,6 +191,7 @@ service::service(
       "schema_registry_header",
       "/schema_registry_definitions",
       _ctx)
+  , _store(store)
   , _ensure_started{[this]() { return do_start(); }} {}
 
 ss::future<> service::start() {

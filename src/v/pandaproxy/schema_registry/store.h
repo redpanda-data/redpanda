@@ -250,17 +250,6 @@ public:
                != std::nullopt;
     }
 
-    ///\brief Check if the provided schema is compatible with the subject and
-    /// version, according the the current compatibility.
-    ///
-    /// If the compatibility level is transitive, then all versions are checked,
-    /// otherwise checks are against the version provided and newer.
-    result<bool> is_compatible(
-      const subject& sub,
-      schema_version version,
-      const schema_definition& new_schema,
-      schema_type new_schema_type);
-
     struct insert_schema_result {
         schema_id id;
         bool inserted;

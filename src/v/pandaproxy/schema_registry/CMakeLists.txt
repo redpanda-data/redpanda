@@ -13,7 +13,6 @@ v_cc_library(
     handlers.cc
     error.cc
     service.cc
-    store.cc
     sharded_store.cc
     avro.cc
   DEPS

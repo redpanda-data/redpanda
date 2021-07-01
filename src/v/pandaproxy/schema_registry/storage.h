@@ -19,7 +19,7 @@
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/exceptions.h"
-#include "pandaproxy/schema_registry/store.h"
+#include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "raft/types.h"
 #include "storage/record_batch_builder.h"
@@ -925,7 +925,7 @@ inline model::record_batch make_delete_subject_version_permanently_batch(
 }
 
 struct consume_to_store {
-    explicit consume_to_store(store& s)
+    explicit consume_to_store(sharded_store& s)
       : _store{s} {}
 
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
@@ -984,27 +984,26 @@ struct consume_to_store {
               error_code::topic_parse_error,
               fmt::format("Unexpected magic: {}", key));
         }
-        vlog(plog.debug, "Applying: {}", key);
-        if (!val) {
-            auto res = _store.delete_subject_version(
-              key.sub,
-              key.version,
-              permanent_delete::yes,
-              include_deleted::yes);
-            if (res.has_error()) {
-                vlog(
-                  plog.debug, "Ignoring: {}: {}", key, res.error().message());
+        try {
+            vlog(plog.debug, "Applying: {}", key);
+            if (!val) {
+                co_await _store.delete_subject_version(
+                  key.sub,
+                  key.version,
+                  permanent_delete::yes,
+                  include_deleted::yes);
+            } else {
+                co_await _store.upsert(
+                  std::move(key.sub),
+                  std::move(val->schema),
+                  val->type,
+                  val->id,
+                  val->version,
+                  val->deleted);
             }
-            co_return;
+        } catch (const exception& e) {
+            vlog(plog.debug, "Ignoring: {}: {}", key, e.what());
         }
-        _store.upsert(
-          std::move(val->sub),
-          std::move(val->schema),
-          val->type,
-          val->id,
-          val->version,
-          val->deleted);
-        co_return;
     }
 
     ss::future<> apply(config_key key, std::optional<config_value> val) {
@@ -1013,27 +1012,18 @@ struct consume_to_store {
               error_code::topic_parse_error,
               fmt::format("Unexpected magic: {}", key));
         }
-        vlog(plog.debug, "Applying: {}", key);
-        if (!val) {
-            auto res = _store.clear_compatibility(*key.sub);
-            if (res.has_error()) {
-                vlog(
-                  plog.debug, "Ignoring: {}: {}", key, res.error().message());
+        try {
+            vlog(plog.debug, "Applying: {}", key);
+            if (!val) {
+                co_await _store.clear_compatibility(*key.sub);
+            } else if (key.sub) {
+                co_await _store.set_compatibility(*key.sub, val->compat);
+            } else {
+                co_await _store.set_compatibility(val->compat);
             }
-        } else if (key.sub) {
-            auto res = _store.set_compatibility(*key.sub, val->compat);
-            if (res.has_error()) {
-                vlog(
-                  plog.debug, "Ignoring: {}: {}", key, res.error().message());
-            }
-        } else {
-            auto res = _store.set_compatibility(val->compat);
-            if (res.has_error()) {
-                vlog(
-                  plog.debug, "Ignoring: {}: {}", key, res.error().message());
-            }
+        } catch (const exception& e) {
+            vlog(plog.debug, "Ignoring: {}: {}", key, e.what());
         }
-        co_return;
     }
 
     ss::future<> apply(delete_subject_key key, delete_subject_value val) {
@@ -1042,16 +1032,16 @@ struct consume_to_store {
               error_code::topic_parse_error,
               fmt::format("Unexpected magic: {}", key));
         }
-        vlog(plog.debug, "Applying: {}", key);
-        auto res = _store.delete_subject(val.sub, permanent_delete::no);
-        if (res.has_error()) {
-            vlog(plog.debug, "Ignoring: {}: {}", key, res.error().message());
+        try {
+            vlog(plog.debug, "Applying: {}", key);
+            co_await _store.delete_subject(val.sub, permanent_delete::no);
+        } catch (const exception& e) {
+            vlog(plog.debug, "Ignoring: {}: {}", key, e);
         }
-        co_return;
     }
 
     void end_of_stream() {}
-    store& _store;
+    sharded_store& _store;
 };
 
 } // namespace pandaproxy::schema_registry

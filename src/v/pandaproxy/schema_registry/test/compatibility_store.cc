@@ -7,10 +7,11 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "pandaproxy/schema_registry/store.h"
+#include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/test/compatibility_avro.h"
 #include "pandaproxy/schema_registry/types.h"
 
+#include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/defer.hh>
 
 #include <boost/test/unit_test.hpp>
@@ -18,48 +19,51 @@
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
 
-BOOST_AUTO_TEST_CASE(test_avro_basic_backwards_store_compat) {
+SEASTAR_THREAD_TEST_CASE(test_avro_basic_backwards_store_compat) {
     // Backward compatibility: A new schema is backward compatible if it can be
     // used to read the data written in the previous schema.
 
-    pps::store s;
-    s.set_compatibility(pps::compatibility_level::backward).value();
+    pps::sharded_store s;
+    s.start(ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&s]() { s.stop().get(); });
+
+    s.set_compatibility(pps::compatibility_level::backward).get();
     auto sub = pps::subject{"sub"};
     auto avro = pps::schema_type::avro;
-    auto res = s.insert(sub, pps::schema_definition{schema1}, avro);
+    auto res = s.insert(sub, pps::schema_definition{schema1}, avro).get();
     // add a defaulted field
     BOOST_REQUIRE(
       s.is_compatible(
          sub, pps::schema_version{1}, pps::schema_definition{schema2}, avro)
-        .value());
-    res = s.insert(sub, pps::schema_definition{schema2}, avro);
+        .get());
+    res = s.insert(sub, pps::schema_definition{schema2}, avro).get();
 
     // Test non-defaulted field
     BOOST_REQUIRE(
       !s.is_compatible(
           sub, pps::schema_version{1}, pps::schema_definition{schema3}, avro)
-         .value());
+         .get());
 
     // Insert schema with non-defaulted field
-    res = s.insert(sub, pps::schema_definition{schema2}, avro);
+    res = s.insert(sub, pps::schema_definition{schema2}, avro).get();
 
     // Test Remove defaulted field to previous
     BOOST_REQUIRE(
       s.is_compatible(
          sub, pps::schema_version{2}, pps::schema_definition{schema3}, avro)
-        .value());
+        .get());
 
     // Test Remove defaulted field to first - should fail
     BOOST_REQUIRE(
       !s.is_compatible(
           sub, pps::schema_version{1}, pps::schema_definition{schema3}, avro)
-         .value());
+         .get());
 
-    s.set_compatibility(pps::compatibility_level::backward_transitive).value();
+    s.set_compatibility(pps::compatibility_level::backward_transitive).get();
 
     // Test transitive defaulted field to previous - should fail
     BOOST_REQUIRE(
       !s.is_compatible(
           sub, pps::schema_version{2}, pps::schema_definition{schema3}, avro)
-         .value());
+         .get());
 }

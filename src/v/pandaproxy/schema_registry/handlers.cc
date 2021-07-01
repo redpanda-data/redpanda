@@ -61,7 +61,7 @@ get_config(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     rq.req.reset();
 
-    auto res = rq.service().schema_store().get_compatibility().value();
+    auto res = co_await rq.service().schema_store().get_compatibility();
 
     auto json_rslt = ppj::rjson_serialize(get_config_req_rep{.compat = res});
     rp.rep->write_body("json", json_rslt);
@@ -75,8 +75,8 @@ put_config(server::request_t rq, server::reply_t rp) {
       rq.req->content.data(), put_config_handler<>{});
     rq.req.reset();
 
-    auto res
-      = rq.service().schema_store().set_compatibility(config.compat).value();
+    auto res = co_await rq.service().schema_store().set_compatibility(
+      config.compat);
 
     if (res) {
         auto res = co_await rq.service().client().local().produce_record_batch(
@@ -100,7 +100,7 @@ get_config_subject(server::request_t rq, server::reply_t rp) {
     auto sub = parse::request_param<subject>(*rq.req, "subject");
     rq.req.reset();
 
-    auto res = rq.service().schema_store().get_compatibility(sub).value();
+    auto res = co_await rq.service().schema_store().get_compatibility(sub);
 
     auto json_rslt = ppj::rjson_serialize(get_config_req_rep{.compat = res});
     rp.rep->write_body("json", json_rslt);
@@ -115,10 +115,8 @@ put_config_subject(server::request_t rq, server::reply_t rp) {
       rq.req->content.data(), put_config_handler<>{});
     rq.req.reset();
 
-    auto res = rq.service()
-                 .schema_store()
-                 .set_compatibility(sub, config.compat)
-                 .value();
+    auto res = co_await rq.service().schema_store().set_compatibility(
+      sub, config.compat);
 
     if (res) {
         auto res = co_await rq.service().client().local().produce_record_batch(
@@ -153,10 +151,10 @@ get_schemas_ids_id(server::request_t rq, server::reply_t rp) {
     auto id = parse::request_param<schema_id>(*rq.req, "id");
     rq.req.reset();
 
-    auto schema = rq.service().schema_store().get_schema(id).value();
+    auto schema = co_await rq.service().schema_store().get_schema(id);
 
     auto json_rslt = ppj::rjson_serialize(
-      get_schemas_ids_id_response{.definition = schema.definition});
+      get_schemas_ids_id_response{.definition{std::move(schema.definition)}});
     rp.rep->write_body("json", json_rslt);
     co_return rp;
 }
@@ -169,7 +167,7 @@ get_subjects(server::request_t rq, server::reply_t rp) {
         .value_or(include_deleted::no)};
     rq.req.reset();
 
-    auto subjects = rq.service().schema_store().get_subjects(inc_del);
+    auto subjects = co_await rq.service().schema_store().get_subjects(inc_del);
     auto json_rslt{json::rjson_serialize(subjects)};
     rp.rep->write_body("json", json_rslt);
     co_return rp;
@@ -184,8 +182,8 @@ get_subject_versions(server::request_t rq, server::reply_t rp) {
         .value_or(include_deleted::no)};
     rq.req.reset();
 
-    auto versions
-      = rq.service().schema_store().get_versions(sub, inc_del).value();
+    auto versions = co_await rq.service().schema_store().get_versions(
+      sub, inc_del);
 
     auto json_rslt{json::rjson_serialize(versions)};
     rp.rep->write_body("json", json_rslt);
@@ -202,7 +200,7 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
         rq.req->content.data(), post_subject_versions_request_handler<>{})};
     rq.req.reset();
 
-    auto ins_res = rq.service().schema_store().insert(
+    auto ins_res = co_await rq.service().schema_store().insert(
       req.sub, req.payload.schema, req.payload.type);
 
     if (ins_res.inserted) {
@@ -241,8 +239,8 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version(
 
     auto version = invalid_schema_version;
     if (ver == "latest") {
-        auto versions
-          = rq.service().schema_store().get_versions(sub, inc_del).value();
+        auto versions = co_await rq.service().schema_store().get_versions(
+          sub, inc_del);
         if (versions.empty()) {
             throw as_exception(not_found(sub, version));
         }
@@ -251,15 +249,13 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version(
         version = parse::from_chars<schema_version>{}(ver).value();
     }
 
-    auto get_res = rq.service()
-                     .schema_store()
-                     .get_subject_schema(sub, version, inc_del)
-                     .value();
+    auto get_res = co_await rq.service().schema_store().get_subject_schema(
+      sub, version, inc_del);
 
     auto json_rslt{json::rjson_serialize(post_subject_versions_version_response{
       .sub = sub,
       .version = version,
-      .definition = std::move(get_res).definition})};
+      .definition = std::move(get_res.definition)})};
     rp.rep->write_body("json", json_rslt);
     co_return rp;
 }
@@ -273,8 +269,8 @@ delete_subject(server::request_t rq, server::reply_t rp) {
         .value_or(permanent_delete::no)};
     rq.req.reset();
 
-    auto versions
-      = rq.service().schema_store().delete_subject(sub, permanent).value();
+    auto versions = co_await rq.service().schema_store().delete_subject(
+      sub, permanent);
 
     auto batch = permanent
                    ? make_delete_subject_permanently_batch(sub, versions)
@@ -304,10 +300,8 @@ delete_subject_version(server::request_t rq, server::reply_t rp) {
 
     auto version = invalid_schema_version;
     if (ver == "latest") {
-        auto versions = rq.service()
-                          .schema_store()
-                          .get_versions(sub, include_deleted::yes)
-                          .value();
+        auto versions = co_await rq.service().schema_store().get_versions(
+          sub, include_deleted::yes);
         if (versions.empty()) {
             throw as_exception(not_found(sub, version));
         }
@@ -316,11 +310,8 @@ delete_subject_version(server::request_t rq, server::reply_t rp) {
         version = parse::from_chars<schema_version>{}(ver).value();
     }
 
-    auto d_res = rq.service()
-                   .schema_store()
-                   .delete_subject_version(
-                     sub, version, permanent, include_deleted::no)
-                   .value();
+    auto d_res = co_await rq.service().schema_store().delete_subject_version(
+      sub, version, permanent, include_deleted::no);
 
     if (d_res) {
         std::optional<model::record_batch> batch;
@@ -328,11 +319,9 @@ delete_subject_version(server::request_t rq, server::reply_t rp) {
             batch.emplace(
               make_delete_subject_version_permanently_batch(sub, version));
         } else {
-            auto s_res = rq.service()
-                           .schema_store()
-                           .get_subject_schema(
-                             sub, version, include_deleted::yes)
-                           .value();
+            auto s_res
+              = co_await rq.service().schema_store().get_subject_schema(
+                sub, version, include_deleted::yes);
             batch.emplace(make_delete_subject_version_batch(std::move(s_res)));
         }
         auto res = co_await rq.service().client().local().produce_record_batch(
@@ -358,12 +347,15 @@ compatibility_subject_version(server::request_t rq, server::reply_t rp) {
         rq.req->content.data(), post_subject_versions_request_handler<>{})};
     rq.req.reset();
 
+    vlog(
+      plog.info,
+      "compatibility_subject_version: subject: {}, version: {}",
+      req.sub,
+      ver);
     auto version = invalid_schema_version;
     if (ver == "latest") {
-        auto versions = rq.service()
-                          .schema_store()
-                          .get_versions(req.sub, include_deleted::no)
-                          .value();
+        auto versions = co_await rq.service().schema_store().get_versions(
+          req.sub, include_deleted::no);
         if (versions.empty()) {
             throw as_exception(not_found(req.sub, version));
         }
@@ -372,11 +364,8 @@ compatibility_subject_version(server::request_t rq, server::reply_t rp) {
         version = parse::from_chars<schema_version>{}(ver).value();
     }
 
-    auto get_res = rq.service()
-                     .schema_store()
-                     .is_compatible(
-                       req.sub, version, req.payload.schema, req.payload.type)
-                     .value();
+    auto get_res = co_await rq.service().schema_store().is_compatible(
+      req.sub, version, req.payload.schema, req.payload.type);
 
     auto json_rslt{
       json::rjson_serialize(post_compatibility_res{.is_compat = get_res})};

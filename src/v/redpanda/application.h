@@ -23,6 +23,7 @@
 #include "pandaproxy/rest/fwd.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/fwd.h"
+#include "pandaproxy/schema_registry/sharded_store.h"
 #include "raft/group_manager.h"
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/cpu_scheduling.h"
@@ -138,6 +139,7 @@ private:
     ss::sharded<kafka::client::client> _proxy_client;
     ss::sharded<pandaproxy::rest::proxy> _proxy;
     ss::sharded<kafka::client::client> _schema_registry_client;
+    pandaproxy::schema_registry::sharded_store _schema_registry_store;
     ss::sharded<pandaproxy::schema_registry::service> _schema_registry;
     ss::sharded<storage::compaction_controller> _compaction_controller;
 
