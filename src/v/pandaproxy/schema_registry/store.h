@@ -86,17 +86,8 @@ public:
       schema_version version,
       include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
-        const auto& versions = sub_it->second.versions;
-        auto v_it = std::lower_bound(
-          versions.begin(),
-          versions.end(),
-          version,
-          [](const subject_version_id& lhs, schema_version rhs) {
-              return lhs.version < rhs;
-          });
-        if (v_it == versions.end() || v_it->version != version) {
-            return not_found(sub, version);
-        }
+        auto v_it = BOOST_OUTCOME_TRYX(
+          get_version_iter(*sub_it, version, inc_del));
 
         auto s = get_schema(v_it->id);
         if (!s) {
@@ -179,16 +170,8 @@ public:
       include_deleted inc_del) {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
         auto& versions = sub_it->second.versions;
-        auto v_it = std::lower_bound(
-          versions.begin(),
-          versions.end(),
-          version,
-          [](const subject_version_id& lhs, schema_version rhs) {
-              return lhs.version < rhs;
-          });
-        if (v_it == versions.end() || v_it->version != version) {
-            return not_found(sub, version);
-        }
+        auto v_it = BOOST_OUTCOME_TRYX(
+          get_version_iter(*sub_it, version, include_deleted::yes));
 
         if (!v_it->deleted && permanent && !inc_del) {
             return not_deleted(sub, version);
@@ -358,6 +341,38 @@ private:
             return not_found(sub);
         }
         return sub_it;
+    }
+
+    static result<std::vector<subject_version_id>::iterator> get_version_iter(
+      subject_map::value_type& sub_entry,
+      schema_version version,
+      include_deleted inc_del) {
+        const subject_map::value_type& const_entry = sub_entry;
+        return detail::make_non_const_iterator(
+          sub_entry.second.versions,
+          get_version_iter(const_entry, version, inc_del));
+    }
+
+    static result<std::vector<subject_version_id>::const_iterator>
+    get_version_iter(
+      const subject_map::value_type& sub_entry,
+      schema_version version,
+      include_deleted inc_del) {
+        auto& versions = sub_entry.second.versions;
+        auto v_it = std::lower_bound(
+          versions.begin(),
+          versions.end(),
+          version,
+          [](const subject_version_id& lhs, schema_version rhs) {
+              return lhs.version < rhs;
+          });
+        if (v_it == versions.end() || v_it->version != version) {
+            return not_found(sub_entry.first, version);
+        }
+        if (!inc_del && v_it->deleted) {
+            return not_found(sub_entry.first, version);
+        }
+        return v_it;
     }
 
     schema_map _schemas;
