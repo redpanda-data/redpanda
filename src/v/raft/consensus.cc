@@ -929,11 +929,6 @@ ss::future<> consensus::start() {
                   _term = lstats.dirty_offset_term;
                   _voted_for = {};
               }
-              vlog(
-                _ctxlog.info,
-                "Recovered, log offsets: {}, term:{}",
-                lstats,
-                _term);
               /**
                * The configuration manager state may be divereged from the log
                * state, as log is flushed lazily, we have to make sure that the
@@ -994,7 +989,15 @@ ss::future<> consensus::start() {
               start_dispatching_disk_append_events();
               return _event_manager.start();
           })
-          .then([this] { _append_requests_buffer.start(); });
+          .then([this] { _append_requests_buffer.start(); })
+          .then([this] {
+              vlog(
+                _ctxlog.info,
+                "started raft, log offsets: {}, term: {}, configuration: {}",
+                _log.offsets(),
+                _term,
+                _configuration_manager.get_latest());
+          });
     });
 }
 

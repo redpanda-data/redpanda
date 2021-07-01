@@ -33,5 +33,6 @@ class metadata_dissemination_service;
 class security_frontend;
 class controller_api;
 class members_frontend;
+class members_backend;
 
 } // namespace cluster

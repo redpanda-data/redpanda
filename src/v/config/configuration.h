@@ -156,6 +156,7 @@ struct configuration final : public config_store {
     property<int16_t> compaction_ctrl_min_shares;
     property<int16_t> compaction_ctrl_max_shares;
     property<std::optional<size_t>> compaction_ctrl_backlog_size;
+    property<std::chrono::milliseconds> members_backend_retry_ms;
 
     // Archival storage
     property<bool> cloud_storage_enabled;
