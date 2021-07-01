@@ -361,9 +361,11 @@ private:
         std::vector<subject_version_id> versions;
         is_deleted deleted{false};
     };
+    using schema_map = absl::btree_map<schema_id, schema_entry>;
+    using subject_map = absl::node_hash_map<subject, subject_entry>;
 
-    absl::btree_map<schema_id, schema_entry> _schemas;
-    absl::node_hash_map<subject, subject_entry> _subjects;
+    schema_map _schemas;
+    subject_map _subjects;
     compatibility_level _compatibility{compatibility_level::none};
 };
 
