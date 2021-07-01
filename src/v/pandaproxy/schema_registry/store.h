@@ -261,7 +261,6 @@ public:
       const schema_definition& new_schema,
       schema_type new_schema_type);
 
-private:
     struct insert_schema_result {
         schema_id id;
         bool inserted;
@@ -332,6 +331,7 @@ private:
         return true;
     }
 
+private:
     struct schema_entry {
         schema_entry(schema_type type, schema_definition definition)
           : type{type}
