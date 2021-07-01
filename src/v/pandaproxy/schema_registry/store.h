@@ -19,6 +19,23 @@
 
 namespace pandaproxy::schema_registry {
 
+namespace detail {
+
+template<typename T>
+typename T::iterator
+make_non_const_iterator(T& container, typename T::const_iterator it) {
+    return container.erase(it, it);
+}
+
+template<typename T>
+result<typename T::iterator>
+make_non_const_iterator(T& container, result<typename T::const_iterator> it) {
+    auto res = BOOST_OUTCOME_TRYX(it);
+    return detail::make_non_const_iterator(container, res);
+}
+
+} // namespace detail
+
 class store {
 public:
     struct insert_result {
@@ -68,15 +85,7 @@ public:
       const subject& sub,
       schema_version version,
       include_deleted inc_del) const {
-        auto sub_it = _subjects.find(sub);
-        if (sub_it == _subjects.end()) {
-            return not_found(sub);
-        }
-
-        if (sub_it->second.deleted && !inc_del) {
-            return not_found(sub);
-        }
-
+        auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
         const auto& versions = sub_it->second.versions;
         auto v_it = std::lower_bound(
           versions.begin(),
@@ -118,20 +127,12 @@ public:
     ///\brief Return a list of versions and associated schema_id.
     result<std::vector<schema_version>>
     get_versions(const subject& sub, include_deleted inc_del) const {
-        auto sub_it = _subjects.find(sub);
-        if (sub_it == _subjects.end()) {
-            return not_found(sub);
-        }
-
-        if (sub_it->second.deleted && !inc_del) {
-            return not_found(sub);
-        }
-
+        auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
         const auto& versions = sub_it->second.versions;
         std::vector<schema_version> res;
         res.reserve(versions.size());
         for (const auto& ver : versions) {
-            if (inc_del || !(ver.deleted || sub_it->second.deleted)) {
+            if (inc_del || !ver.deleted) {
                 res.push_back(ver.version);
             }
         }
@@ -141,10 +142,8 @@ public:
     ///\brief Delete a subject.
     result<std::vector<schema_version>>
     delete_subject(const subject& sub, permanent_delete permanent) {
-        auto sub_it = _subjects.find(sub);
-        if (sub_it == _subjects.end()) {
-            return not_found(sub);
-        }
+        auto sub_it = BOOST_OUTCOME_TRYX(
+          get_subject_iter(sub, include_deleted::yes));
 
         if (permanent && !sub_it->second.deleted) {
             return not_deleted(sub);
@@ -178,15 +177,7 @@ public:
       schema_version version,
       permanent_delete permanent,
       include_deleted inc_del) {
-        auto sub_it = _subjects.find(sub);
-        if (sub_it == _subjects.end()) {
-            return not_found(sub);
-        }
-
-        if (sub_it->second.deleted && !inc_del) {
-            return not_found(sub);
-        }
-
+        auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
         auto& versions = sub_it->second.versions;
         auto v_it = std::lower_bound(
           versions.begin(),
@@ -221,15 +212,8 @@ public:
 
     ///\brief Get the compatibility level for a subject, or fallback to global.
     result<compatibility_level> get_compatibility(const subject& sub) const {
-        auto sub_it = _subjects.find(sub);
-        if (sub_it == _subjects.end()) {
-            return not_found(sub);
-        }
-
-        if (sub_it->second.deleted) {
-            return not_found(sub);
-        }
-
+        auto sub_it = BOOST_OUTCOME_TRYX(
+          get_subject_iter(sub, include_deleted::no));
         return sub_it->second.compatibility.value_or(_compatibility);
     }
 
@@ -241,14 +225,8 @@ public:
     ///\brief Set the compatibility level for a subject.
     result<bool>
     set_compatibility(const subject& sub, compatibility_level compatibility) {
-        auto sub_it = _subjects.find(sub);
-        if (sub_it == _subjects.end()) {
-            return not_found(sub);
-        }
-
-        if (sub_it->second.deleted) {
-            return not_found(sub);
-        }
+        auto sub_it = BOOST_OUTCOME_TRYX(
+          get_subject_iter(sub, include_deleted::no));
 
         // TODO(Ben): Check needs to be made here?
         return std::exchange(sub_it->second.compatibility, compatibility)
@@ -257,10 +235,8 @@ public:
 
     ///\brief Clear the compatibility level for a subject.
     result<bool> clear_compatibility(const subject& sub) {
-        auto sub_it = _subjects.find(sub);
-        if (sub_it == _subjects.end()) {
-            return not_found(sub);
-        }
+        auto sub_it = BOOST_OUTCOME_TRYX(
+          get_subject_iter(sub, include_deleted::yes));
         return std::exchange(sub_it->second.compatibility, std::nullopt)
                != std::nullopt;
     }
@@ -363,6 +339,26 @@ private:
     };
     using schema_map = absl::btree_map<schema_id, schema_entry>;
     using subject_map = absl::node_hash_map<subject, subject_entry>;
+
+    result<subject_map::iterator>
+    get_subject_iter(const subject& sub, include_deleted inc_del) {
+        const store* const_this = this;
+        auto res = const_this->get_subject_iter(sub, inc_del);
+        return detail::make_non_const_iterator(_subjects, res);
+    }
+
+    result<subject_map::const_iterator>
+    get_subject_iter(const subject& sub, include_deleted inc_del) const {
+        auto sub_it = _subjects.find(sub);
+        if (sub_it == _subjects.end()) {
+            return not_found(sub);
+        }
+
+        if (sub_it->second.deleted && !inc_del) {
+            return not_found(sub);
+        }
+        return sub_it;
+    }
 
     schema_map _schemas;
     subject_map _subjects;
