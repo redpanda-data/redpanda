@@ -7,6 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "pandaproxy/schema_registry/test/compatibility_avro.h"
+
 #include "pandaproxy/schema_registry/avro.h"
 #include "pandaproxy/schema_registry/store.h"
 #include "pandaproxy/schema_registry/types.h"
@@ -15,29 +17,6 @@
 
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
-
-const auto enum2 = pps::make_avro_schema_definition(R"({
-  "name": "test2",
-  "type": "enum",
-  "symbols": ["One", "Two"]
-})")
-                     .value();
-
-const auto enum3 = pps::make_avro_schema_definition(R"({
-  "name": "test2",
-  "type": "enum",
-  "symbols": ["One", "Two", "Three"]
-})")
-                     .value();
-
-const auto enum_2def = pps::make_avro_schema_definition(
-                         R"({
-  "name": "test2",
-  "type": "enum",
-  "symbols": ["One", "Two"],
-  "default": "One"
-})")
-                         .value();
 
 BOOST_AUTO_TEST_CASE(test_avro_enum) {
     // Adding an enum field is ok
@@ -50,39 +29,6 @@ BOOST_AUTO_TEST_CASE(test_avro_enum) {
     // TODO(Ben): Fix avro-cpp?
     // BOOST_REQUIRE(check_compatible(enum3, enum2_def));
 }
-
-// Schemas defined in AvroCompatibilityTest.java. Used here to ensure
-// compatibility with the schema-registry
-const auto schema1
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"}]})")
-      .value();
-const auto schema2
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2","default":"foo"}]})")
-      .value();
-const auto schema3
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2"}]})")
-      .value();
-const auto schema4
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1_new","aliases":["f1"]}]})")
-      .value();
-const auto schema6
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"type":["null","string"],"name":"f1","doc":"doc of f1"}]})")
-      .value();
-const auto schema7
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"type":["null","string","int"],"name":"f1","doc":"doc of f1"}]})")
-      .value();
-const auto schema8
-  = pps::make_avro_schema_definition(
-      R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2","default":"foo"}]},{"type":"string","name":"f3","default":"bar"}]})")
-      .value();
-const auto badDefaultNullString_def = pps::make_avro_schema_definition(
-  R"({"type":"record","name":"myrecord","fields":[{"type":["null","string"],"name":"f1","default":"null"},{"type":"string","name":"f2","default":"foo"},{"type":"string","name":"f3","default":"bar"}]})");
 
 BOOST_AUTO_TEST_CASE(test_avro_basic_backwards_compat) {
     // Backward compatibility: A new schema is backward compatible if it can be
