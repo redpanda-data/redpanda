@@ -41,7 +41,7 @@ steps:
     mkdir build/
     bin/task $_TASK_ARGS
 
-timeout: 7200s
+timeout: 10800s
 
 options:
   machineType: 'N1_HIGHCPU_32'
