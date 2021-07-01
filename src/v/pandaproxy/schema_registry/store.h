@@ -80,6 +80,18 @@ public:
         return {it->first, it->second.type, it->second.definition};
     }
 
+    ///\brief Return the id of the schema, if it already exists.
+    std::optional<schema_id>
+    get_schema_id(const schema_definition& def, schema_type type) const {
+        const auto s_it = std::find_if(
+          _schemas.begin(), _schemas.end(), [&](const auto& s) {
+              const auto& entry = s.second;
+              return type == entry.type && def == entry.definition;
+          });
+        return s_it == _schemas.end() ? std::optional<schema_id>{}
+                                      : s_it->first;
+    }
+
     ///\brief Return subject_version_id for a subject and version
     result<subject_version_id> get_subject_version_id(
       const subject& sub,
