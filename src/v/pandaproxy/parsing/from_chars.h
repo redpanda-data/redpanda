@@ -14,6 +14,7 @@
 #include "outcome.h"
 #include "reflection/type_traits.h"
 
+#include <cctype>
 #include <charconv>
 #include <chrono>
 #include <type_traits>
@@ -53,13 +54,14 @@ public:
     static constexpr bool is_named_type = reflection::is_named_type_v<type>;
     static constexpr bool is_duration = detail::is_duration_v<type>;
     static constexpr bool is_arithmetic = std::is_arithmetic_v<type>;
+    static constexpr bool is_ss_bool = reflection::is_ss_bool_v<type>;
     static constexpr bool is_constructible_from_string_view
       = std::is_constructible_v<type, std::string_view>;
     static constexpr bool is_constructible_from_sstring
       = std::is_constructible_v<type, ss::sstring>;
 
     static_assert(
-      is_optional || is_named_type || is_duration || is_arithmetic
+      is_optional || is_named_type || is_duration || is_arithmetic || is_ss_bool
         || is_constructible_from_string_view || is_constructible_from_sstring,
       "from_chars not defined for T");
 
@@ -82,6 +84,8 @@ public:
         } else if constexpr (is_duration) {
             using value_type = typename type::rep;
             return wrap(from_chars<value_type>{}(in));
+        } else if constexpr (is_ss_bool) {
+            return type(in == "true" || in == "TRUE" || in == "1");
         } else if constexpr (is_arithmetic) {
             return do_from_chars(in);
         }

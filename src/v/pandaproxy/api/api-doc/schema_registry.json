@@ -240,6 +240,14 @@
       "get": {
         "summary": "Retrieve a list of subjects.",
         "operationId": "get_subjects",
+        "parameters": [
+          {
+            "name": "deleted",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
         "produces": [
           "application/vnd.schemaregistry.v1+json",
           "application/vnd.schemaregistry+json",
@@ -264,6 +272,55 @@
         }
       }
     },
+    "/subjects/{subject}": {
+      "delete": {
+        "summary": "Delete all schemas for the subject.",
+        "operationId": "delete_subject",
+        "consumes": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "subject",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "permanent",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "produces": ["application/vnd.schemaregistry.v1+json"],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            }
+          },
+          "404": {
+            "description": "Subject not found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
+    },
     "/subjects/{subject}/versions": {
       "get": {
         "summary": "Retrieve a list of versions for a subject.",
@@ -273,6 +330,12 @@
             "name": "subject",
             "in": "path",
             "required": true,
+            "type": "string"
+          },
+          {
+            "name": "deleted",
+            "in": "query",
+            "required": false,
             "type": "string"
           }
         ],
@@ -323,33 +386,8 @@
           {
             "name": "schema_def",
             "in": "body",
-            "schema": {
-              "type": "object",
-              "properties": {
-                "schema": {
-                  "type": "string"
-                },
-                "schemaType": {
-                  "type": "string"
-                },
-                "references": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "name": {
-                        "type": "string"
-                      },
-                      "subject": {
-                        "type": "string"
-                      },
-                      "version": {
-                          "type": "integer"
-                      }
-                    }
-                  }
-                }
-              }
+            "schema":  {
+              "$ref": "#/definitions/schema_def"
             }
           }
         ],
@@ -403,6 +441,12 @@
             "in": "path",
             "required": true,
             "type": "string"
+          },
+          {
+            "name": "deleted",
+            "in": "query",
+            "required": false,
+            "type": "string"
           }
         ],
         "produces": [
@@ -436,6 +480,125 @@
           },
           "422": {
             "description": "Invalid version",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a schema for the subject and version.",
+        "operationId": "delete_subject_version",
+        "parameters": [
+          {
+            "name": "subject",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "permanent",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          "404": {
+            "description": "Schema not found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "422": {
+            "description": "Invalid version",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
+    },
+    "/compatibility/subjects/{subject}/versions/{version}": {
+      "post": {
+        "summary": "Test compatibility of a schema for the subject and version.",
+        "operationId": "compatibility_subject_version",
+        "consumes": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "subject",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "name": "schema_def",
+            "in": "body",
+            "schema":  {
+              "$ref": "#/definitions/schema_def"
+            }
+          }
+        ],
+        "produces": ["application/vnd.schemaregistry.v1+json"],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Incompatible schema",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "422": {
+            "description": "Invalid schema",
             "schema": {
               "$ref": "#/definitions/error_body"
             }

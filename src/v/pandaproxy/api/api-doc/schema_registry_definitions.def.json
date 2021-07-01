@@ -1,0 +1,40 @@
+
+    "error_body": {
+      "type": "object",
+      "properties": {
+        "error_code": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "schema_def": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string"
+        },
+        "schemaType": {
+          "type": "string"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              },
+              "version": {
+                  "type": "integer"
+              }
+            }
+          }
+        }
+      }
+    }
