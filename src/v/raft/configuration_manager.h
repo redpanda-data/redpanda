@@ -117,7 +117,7 @@ public:
      */
     model::offset get_latest_offset() const;
     /**
-     * Get latest configuration indedx
+     * Get latest configuration index.
      */
     configuration_idx get_latest_index() const;
 
