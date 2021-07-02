@@ -7,7 +7,6 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cluster/partition_allocator.h"
 #include "cluster/tests/partition_allocator_tester.h"
 #include "raft/types.h"
 #include "test_utils/fixture.h"

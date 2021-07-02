@@ -8,7 +8,6 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/commands.h"
-#include "cluster/partition_allocator.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tests/utils.h"
 #include "cluster/types.h"

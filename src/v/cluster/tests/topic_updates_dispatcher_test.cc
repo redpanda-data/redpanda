@@ -7,7 +7,6 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cluster/partition_allocator.h"
 #include "cluster/tests/topic_table_fixture.h"
 #include "cluster/topic_updates_dispatcher.h"
 #include "model/metadata.h"

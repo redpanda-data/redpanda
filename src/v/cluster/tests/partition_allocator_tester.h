@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "cluster/partition_allocator.h"
+#include "cluster/scheduling/partition_allocator.h"
 #include "random/fast_prng.h"
 #include "random/generators.h"
 

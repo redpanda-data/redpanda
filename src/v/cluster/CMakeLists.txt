@@ -33,7 +33,7 @@ v_cc_library(
   SRCS
     metadata_cache.cc
     partition_manager.cc
-    partition_allocator.cc
+    scheduling/partition_allocator.cc
     logger.cc
     cluster_utils.cc
     id_allocator.cc
