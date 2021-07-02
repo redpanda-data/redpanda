@@ -19,6 +19,8 @@
 #include "raft/raftgen_service.h"
 
 #include <seastar/core/future-util.hh>
+#include <seastar/core/io_priority_class.hh>
+#include <seastar/core/with_scheduling_group.hh>
 
 #include <chrono>
 
@@ -26,14 +28,30 @@ namespace raft {
 using namespace std::chrono_literals;
 
 recovery_stm::recovery_stm(
-  consensus* p, vnode node_id, ss::io_priority_class prio)
+  consensus* p, vnode node_id, scheduling_config scheduling)
   : _ptr(p)
   , _node_id(node_id)
   , _term(_ptr->term())
-  , _prio(prio)
+  , _scheduling(scheduling)
   , _ctxlog(_ptr->_ctxlog) {}
 
-ss::future<> recovery_stm::do_recover() {
+ss::future<> recovery_stm::recover() {
+    auto meta = get_follower_meta();
+    if (!meta) {
+        // stop recovery when node was removed
+        _stop_requested = true;
+        return ss::now();
+    }
+    auto sg = meta.value()->is_learner ? _scheduling.learner_recovery_sg
+                                       : _scheduling.default_sg;
+    auto iopc = meta.value()->is_learner ? _scheduling.learner_recovery_iopc
+                                         : _scheduling.default_iopc;
+
+    return ss::with_scheduling_group(
+      sg, [this, iopc] { return do_recover(iopc); });
+}
+
+ss::future<> recovery_stm::do_recover(ss::io_priority_class iopc) {
     // We have to send all the records that leader have, event those that are
     // beyond commit index, thanks to that after majority have recovered
     // leader can update its commit index
@@ -99,11 +117,12 @@ ss::future<> recovery_stm::do_recover() {
 
     // read & replicate log entries
     return f
-      .then([this, follower_next_offset, follower_committed_match_index] {
+      .then([this, follower_next_offset, follower_committed_match_index, iopc] {
           return read_range_for_recovery(
             follower_next_offset,
             _ptr->_log.offsets().dirty_offset,
-            follower_committed_match_index);
+            follower_committed_match_index,
+            iopc);
       })
       .then([this] {
           auto meta = get_follower_meta();
@@ -163,7 +182,8 @@ recovery_stm::should_flush(model::offset follower_committed_match_index) const {
 ss::future<> recovery_stm::read_range_for_recovery(
   model::offset start_offset,
   model::offset end_offset,
-  model::offset follower_committed_match_index) {
+  model::offset follower_committed_match_index,
+  ss::io_priority_class iopc) {
     storage::log_reader_config cfg(
       start_offset,
       end_offset,
@@ -173,7 +193,7 @@ ss::future<> recovery_stm::read_range_for_recovery(
       // time and all drawing from memory. If this setting proves difficult,
       // we'll need to throttle with a core-local semaphore
       32 * 1024,
-      _prio,
+      iopc,
       std::nullopt,
       std::nullopt,
       _ptr->_as);
@@ -466,10 +486,10 @@ ss::future<> recovery_stm::apply() {
     return ss::with_gate(
              _ptr->_bg,
              [this] {
-                 return do_recover().then([this] {
+                 return recover().then([this] {
                      return ss::do_until(
                        [this] { return is_recovery_finished(); },
-                       [this] { return do_recover(); });
+                       [this] { return recover(); });
                  });
              })
       .finally([this] {

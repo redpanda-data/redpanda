@@ -19,6 +19,7 @@
 #include "storage/fwd.h"
 
 #include <seastar/core/metrics_registration.hh>
+#include <seastar/core/scheduling.hh>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -37,6 +38,7 @@ public:
     group_manager(
       model::node_id self,
       model::timeout_clock::duration disk_timeout,
+      ss::scheduling_group raft_scheduling_group,
       std::chrono::milliseconds heartbeat_interval,
       std::chrono::milliseconds heartbeat_timeout,
       ss::sharded<rpc::connection_cache>& clients,
@@ -81,6 +83,7 @@ private:
 
     model::node_id _self;
     model::timeout_clock::duration _disk_timeout;
+    ss::scheduling_group _raft_sg;
     raft::consensus_client_protocol _client;
     raft::heartbeat_manager _heartbeats;
     ss::gate _gate;

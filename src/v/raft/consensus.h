@@ -84,7 +84,7 @@ public:
       group_configuration,
       timeout_jitter,
       storage::log,
-      ss::io_priority_class io_priority,
+      scheduling_config,
       model::timeout_clock::duration disk_timeout,
       consensus_client_protocol,
       leader_cb_t,
@@ -501,7 +501,7 @@ private:
     raft::group_id _group;
     timeout_jitter _jit;
     storage::log _log;
-    ss::io_priority_class _io_priority;
+    scheduling_config _scheduling;
     model::timeout_clock::duration _disk_timeout;
     consensus_client_protocol _client_protocol;
     leader_cb_t _leader_notification;

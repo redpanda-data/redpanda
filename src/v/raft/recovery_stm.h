@@ -20,13 +20,14 @@ namespace raft {
 
 class recovery_stm {
 public:
-    recovery_stm(consensus*, vnode, ss::io_priority_class);
+    recovery_stm(consensus*, vnode, scheduling_config);
     ss::future<> apply();
 
 private:
-    ss::future<> do_recover();
-    ss::future<>
-      read_range_for_recovery(model::offset, model::offset, model::offset);
+    ss::future<> recover();
+    ss::future<> do_recover(ss::io_priority_class);
+    ss::future<> read_range_for_recovery(
+      model::offset, model::offset, model::offset, ss::io_priority_class);
     ss::future<> replicate(
       model::record_batch_reader&&, append_entries_request::flush_after_append);
     ss::future<result<append_entries_reply>>
@@ -49,7 +50,7 @@ private:
     model::offset _last_batch_offset;
     model::offset _committed_offset;
     model::term_id _term;
-    ss::io_priority_class _prio;
+    scheduling_config _scheduling;
     ctx_log _ctxlog;
     // tracking follower snapshot delivery
     std::unique_ptr<storage::snapshot_reader> _snapshot_reader;
