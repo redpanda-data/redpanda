@@ -18,7 +18,7 @@ tasks:
       JS_ROOT: "{{.SRC_DIR}}/src/js"
       NODE_VERSION: '12.16.1'
       NODE_ROOT: "{{.BUILD_ROOT}}/node"
-      NODE_PKG: "node-v{{.NODE_VERSION}}-linux-x64"
+      NODE_PKG: 'node-v{{.NODE_VERSION}}-linux-{{if eq ARCH "arm64"}}arm64{{else}}x64{{end}}'
       NODE_URL: "https://nodejs.org/dist/v{{.NODE_VERSION}}/{{.NODE_PKG}}.tar.xz"
     cmds:
     - mkdir -p "{{.NODE_ROOT}}"
