@@ -117,12 +117,17 @@ ss::future<> recovery_stm::do_recover(ss::io_priority_class iopc) {
 
     // read & replicate log entries
     return f
-      .then([this, follower_next_offset, follower_committed_match_index, iopc] {
+      .then([this,
+             follower_next_offset,
+             follower_committed_match_index,
+             iopc,
+             is_learner = meta.value()->is_learner] {
           return read_range_for_recovery(
             follower_next_offset,
             _ptr->_log.offsets().dirty_offset,
             follower_committed_match_index,
-            iopc);
+            iopc,
+            is_learner);
       })
       .then([this] {
           auto meta = get_follower_meta();
@@ -183,7 +188,8 @@ ss::future<> recovery_stm::read_range_for_recovery(
   model::offset start_offset,
   model::offset end_offset,
   model::offset follower_committed_match_index,
-  ss::io_priority_class iopc) {
+  ss::io_priority_class iopc,
+  bool is_learner) {
     storage::log_reader_config cfg(
       start_offset,
       end_offset,
@@ -197,6 +203,12 @@ ss::future<> recovery_stm::read_range_for_recovery(
       std::nullopt,
       std::nullopt,
       _ptr->_as);
+
+    if (is_learner) {
+        // skip cache insertion on miss for learners which are throttled and
+        // often catching up from the beginning of the log (e.g. new nodes)
+        cfg.skip_batch_cache = true;
+    }
 
     vlog(
       _ctxlog.trace,

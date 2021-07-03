@@ -27,7 +27,7 @@ private:
     ss::future<> recover();
     ss::future<> do_recover(ss::io_priority_class);
     ss::future<> read_range_for_recovery(
-      model::offset, model::offset, model::offset, ss::io_priority_class);
+      model::offset, model::offset, model::offset, ss::io_priority_class, bool);
     ss::future<> replicate(
       model::record_batch_reader&&, append_entries_request::flush_after_append);
     ss::future<result<append_entries_reply>>
