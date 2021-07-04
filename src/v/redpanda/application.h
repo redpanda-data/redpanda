@@ -24,6 +24,7 @@
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/fwd.h"
 #include "raft/group_manager.h"
+#include "raft/recovery_throttle.h"
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
@@ -75,6 +76,7 @@ public:
     ss::sharded<storage::api> storage;
     ss::sharded<coproc::pacemaker> pacemaker;
     ss::sharded<cluster::partition_manager> partition_manager;
+    ss::sharded<raft::recovery_throttle> recovery_throttle;
     ss::sharded<raft::group_manager> raft_group_manager;
     ss::sharded<cluster::metadata_dissemination_service>
       md_dissemination_service;

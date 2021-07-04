@@ -120,6 +120,10 @@ struct raft_node {
         log = std::make_unique<storage::log>(
           storage.local().log_mgr().manage(std::move(ntp_cfg)).get0());
 
+        recovery_throttle
+          .start(config::shard_local_cfg().raft_learner_recovery_rate())
+          .get();
+
         // setup consensus
         auto self_id = broker.id();
         consensus = ss::make_lw_shared<raft::consensus>(
@@ -134,7 +138,8 @@ struct raft_node {
           std::chrono::seconds(10),
           raft::make_rpc_client_protocol(self_id, cache),
           [this](raft::leadership_status st) { leader_callback(st); },
-          storage.local());
+          storage.local(),
+          recovery_throttle.local());
 
         // create connections to initial nodes
         consensus->config().for_each_broker(
@@ -200,7 +205,8 @@ struct raft_node {
 
         tstlog.info("Stopping node stack {}", broker.id());
         _as.request_abort();
-        return server.stop()
+        return recovery_throttle.stop()
+          .then([this] { return server.stop(); })
           .then([this] {
               if (hbeats) {
                   tstlog.info("Stopping heartbets manager at {}", broker.id());
@@ -289,6 +295,7 @@ struct raft_node {
     bool started = false;
     model::broker broker;
     ss::sharded<storage::api> storage;
+    ss::sharded<raft::recovery_throttle> recovery_throttle;
     std::unique_ptr<storage::log> log;
     ss::sharded<rpc::connection_cache> cache;
     ss::sharded<rpc::server> server;

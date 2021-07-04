@@ -25,13 +25,15 @@ group_manager::group_manager(
   std::chrono::milliseconds heartbeat_interval,
   std::chrono::milliseconds heartbeat_timeout,
   ss::sharded<rpc::connection_cache>& clients,
-  ss::sharded<storage::api>& storage)
+  ss::sharded<storage::api>& storage,
+  ss::sharded<recovery_throttle>& recovery_throttle)
   : _self(self)
   , _disk_timeout(disk_timeout)
   , _raft_sg(raft_sg)
   , _client(make_rpc_client_protocol(self, clients))
   , _heartbeats(heartbeat_interval, _client, _self, heartbeat_timeout)
-  , _storage(storage.local()) {
+  , _storage(storage.local())
+  , _recovery_throttle(recovery_throttle.local()) {
     setup_metrics();
 }
 
@@ -63,7 +65,8 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
       [this](raft::leadership_status st) {
           trigger_leadership_notification(std::move(st));
       },
-      _storage);
+      _storage,
+      _recovery_throttle);
 
     return ss::with_gate(_gate, [this, raft] {
         return _heartbeats.register_group(raft).then([this, raft] {

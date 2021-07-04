@@ -47,7 +47,8 @@ consensus::consensus(
   model::timeout_clock::duration disk_timeout,
   consensus_client_protocol client,
   consensus::leader_cb_t cb,
-  storage::api& storage)
+  storage::api& storage,
+  std::optional<std::reference_wrapper<recovery_throttle>> recovery_throttle)
   : _self(nid, initial_cfg.revision_id())
   , _group(group)
   , _jit(std::move(jit))
@@ -65,6 +66,7 @@ consensus::consensus(
   , _recovery_append_timeout(
       config::shard_local_cfg().recovery_append_timeout_ms())
   , _storage(storage)
+  , _recovery_throttle(recovery_throttle)
   , _snapshot_mgr(
       std::filesystem::path(_log.config().work_directory()),
       storage::snapshot_manager::default_snapshot_filename,

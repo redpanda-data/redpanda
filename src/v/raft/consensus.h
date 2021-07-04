@@ -24,6 +24,7 @@
 #include "raft/mutex_buffer.h"
 #include "raft/prevote_stm.h"
 #include "raft/probe.h"
+#include "raft/recovery_throttle.h"
 #include "raft/replicate_batcher.h"
 #include "raft/timeout_jitter.h"
 #include "raft/types.h"
@@ -88,7 +89,8 @@ public:
       model::timeout_clock::duration disk_timeout,
       consensus_client_protocol,
       leader_cb_t,
-      storage::api&);
+      storage::api&,
+      std::optional<std::reference_wrapper<recovery_throttle>>);
 
     /// Initial call. Allow for internal state recovery
     ss::future<> start();
@@ -546,6 +548,7 @@ private:
     ss::metrics::metric_groups _metrics;
     ss::abort_source _as;
     storage::api& _storage;
+    std::optional<std::reference_wrapper<recovery_throttle>> _recovery_throttle;
     storage::snapshot_manager _snapshot_mgr;
     std::optional<storage::snapshot_writer> _snapshot_writer;
     model::offset _last_snapshot_index;

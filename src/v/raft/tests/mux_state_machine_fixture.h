@@ -48,6 +48,7 @@ struct mux_state_machine_fixture {
         _storage.start(kv_conf, default_log_cfg()).get0();
         _storage.invoke_on_all(&storage::api::start).get0();
         _connections.start().get0();
+        _recovery_throttle.start(100_MiB).get();
 
         _group_mgr
           .start(
@@ -57,7 +58,8 @@ struct mux_state_machine_fixture {
             std::chrono::milliseconds(100),
             std::chrono::milliseconds(2000),
             std::ref(_connections),
-            std::ref(_storage))
+            std::ref(_storage),
+            std::ref(_recovery_throttle))
           .get0();
 
         _group_mgr.invoke_on_all(&raft::group_manager::start).get0();
@@ -80,6 +82,7 @@ struct mux_state_machine_fixture {
     }
     ~mux_state_machine_fixture() {
         if (_started) {
+            _recovery_throttle.stop().get();
             _group_mgr.stop().get0();
             _connections.stop().get0();
             _storage.stop().get0();
@@ -128,5 +131,6 @@ struct mux_state_machine_fixture {
     ss::sharded<rpc::connection_cache> _connections;
     ss::sharded<storage::api> _storage;
     ss::sharded<raft::group_manager> _group_mgr;
+    ss::sharded<raft::recovery_throttle> _recovery_throttle;
     bool _started = false;
 };
