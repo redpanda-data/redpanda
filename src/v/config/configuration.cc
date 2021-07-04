@@ -451,6 +451,12 @@ configuration::configuration()
       "Max size of requests cached for replication",
       required::no,
       1_MiB)
+  , raft_learner_recovery_rate(
+      *this,
+      "raft_learner_recovery_rate",
+      "Raft learner recovery rate limit in bytes per sec",
+      required::no,
+      100_MiB)
   , reclaim_min_size(
       *this,
       "reclaim_min_size",
