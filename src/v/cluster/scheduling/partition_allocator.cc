@@ -111,8 +111,7 @@ partition_allocator::allocate_replicas(
     return new_replicas;
 }
 
-std::optional<allocation_units>
-partition_allocator::reassign_decommissioned_replicas(
+result<allocation_units> partition_allocator::reassign_decommissioned_replicas(
   const partition_assignment& pas) {
     int16_t rf = pas.replicas.size();
     auto current_replicas = pas.replicas;
@@ -144,14 +143,14 @@ partition_allocator::reassign_decommissioned_replicas(
         return allocation_units({res}, this);
     }
     // there are not enough nodes to fullfil replicas assignment return nullopt
-    return std::nullopt;
+    return errc::topic_invalid_partitions;
 }
 
 // FIXME: take into account broker.rack diversity & other constraints
-std::optional<allocation_units>
+result<allocation_units>
 partition_allocator::allocate(const topic_configuration& cfg) {
     if (_available_machines.empty()) {
-        return std::nullopt;
+        return errc::topic_invalid_partitions;
     }
     const int32_t cap = std::accumulate(
       _available_machines.begin(),
@@ -166,7 +165,7 @@ partition_allocator::allocate(const topic_configuration& cfg) {
           "Cannot allocate request: {}. Exceeds maximum capacity left:{}",
           cfg,
           cap);
-        return std::nullopt;
+        return errc::topic_invalid_partitions;
     }
     std::vector<partition_assignment> ret;
     ret.reserve(cfg.partition_count);
@@ -177,7 +176,7 @@ partition_allocator::allocate(const topic_configuration& cfg) {
           cfg.replication_factor, {});
         if (replicas_assignment == std::nullopt) {
             rollback(ret);
-            return std::nullopt;
+            return errc::topic_invalid_partitions;
         }
 
         partition_assignment p_as{

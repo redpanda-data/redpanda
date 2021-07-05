@@ -63,9 +63,9 @@ FIXTURE_TEST(test_decommissioned_realloc, partition_allocator_tester) {
     auto second_attempt = pa.reassign_decommissioned_replicas(assignment);
     //  second attempt should be successfull
     BOOST_REQUIRE_EQUAL(second_attempt.has_value(), true);
-    BOOST_REQUIRE_EQUAL(second_attempt->get_assignments().size(), 1);
+    BOOST_REQUIRE_EQUAL(second_attempt.value().get_assignments().size(), 1);
     BOOST_REQUIRE_EQUAL(
-      second_attempt->get_assignments().begin()->replicas.size(), 3);
+      second_attempt.value().get_assignments().begin()->replicas.size(), 3);
 }
 
 FIXTURE_TEST(
@@ -85,15 +85,15 @@ FIXTURE_TEST(
     // first attempt should be successful as we have 2 nodes left and requested
     // rf = 1
     BOOST_REQUIRE_EQUAL(reallocated.has_value(), true);
-    BOOST_REQUIRE_EQUAL(reallocated->get_assignments().size(), 1);
+    BOOST_REQUIRE_EQUAL(reallocated.value().get_assignments().size(), 1);
     BOOST_REQUIRE_EQUAL(
-      reallocated->get_assignments().begin()->replicas.size(), 1);
+      reallocated.value().get_assignments().begin()->replicas.size(), 1);
 }
 
 FIXTURE_TEST(invalid_allocation, partition_allocator_tester) {
     auto cfg = gen_topic_configuration(1, 1);
     saturate_all_machines();
-    BOOST_REQUIRE(std::nullopt == pa.allocate(cfg));
+    BOOST_REQUIRE(pa.allocate(cfg).has_error());
     BOOST_REQUIRE_EQUAL(highest_group()(), 0);
 }
 FIXTURE_TEST(max_allocation, partition_allocator_tester) {
@@ -114,14 +114,13 @@ FIXTURE_TEST(max_allocation, partition_allocator_tester) {
 
     // make sure there is no room left after
     auto one_topic_cfg = gen_topic_configuration(1, 1);
-    BOOST_REQUIRE(std::nullopt == pa.allocate(one_topic_cfg));
+    BOOST_REQUIRE(pa.allocate(one_topic_cfg).has_error());
 }
 FIXTURE_TEST(unsatisfyable_diversity_assignment, partition_allocator_tester) {
     using ts = partition_allocator_tester;
     auto cfg = gen_topic_configuration(1, ts::max_nodes + 1);
     auto allocs = pa.allocate(cfg);
-    BOOST_REQUIRE(std::nullopt == allocs);
-
+    BOOST_REQUIRE(allocs.has_error());
     // ensure rollback happened
     const auto max_cluster_capacity
       = ((ts::cpus_per_node * allocation_node::max_allocations_per_core)
@@ -153,7 +152,7 @@ FIXTURE_TEST(partial_assignment, partition_allocator_tester) {
     // allocate 2 partitions - one should fail, returning null & deallocating
     auto cfg = gen_topic_configuration(2, ts::max_nodes);
     auto allocs = pa.allocate(cfg);
-    BOOST_REQUIRE(std::nullopt == allocs);
+    BOOST_REQUIRE(allocs.has_error());
 
     BOOST_REQUIRE_EQUAL(3, cluster_partition_capacity());
     BOOST_REQUIRE_EQUAL(highest_group()(), max_correct_partitions);
@@ -178,7 +177,7 @@ FIXTURE_TEST(max_deallocation, partition_allocator_tester) {
 
     // make sure there is no room left after
     auto one_topic_cfg = gen_topic_configuration(1, 1);
-    BOOST_REQUIRE(std::nullopt == pa.allocate(one_topic_cfg));
+    BOOST_REQUIRE(pa.allocate(one_topic_cfg).has_error());
 
     // now deallocate them all, and we _must_ not decrease the raft count
     for (auto& as : allocs.get_assignments()) {

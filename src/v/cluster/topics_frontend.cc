@@ -222,6 +222,15 @@ ss::future<std::error_code> topics_frontend::replicate_and_wait(
       });
 }
 
+topic_result
+make_error_result(const model::topic_namespace& tp_ns, std::error_code ec) {
+    if (ec.category() == cluster::error_category()) {
+        return topic_result(tp_ns, cluster::errc(ec.value()));
+    }
+
+    return topic_result(tp_ns, errc::topic_operation_error);
+}
+
 ss::future<topic_result> topics_frontend::do_create_topic(
   topic_configuration t_cfg, model::timeout_clock::time_point timeout) {
     if (!validate_topic_name(t_cfg.tp_ns)) {
@@ -233,15 +242,15 @@ ss::future<topic_result> topics_frontend::do_create_topic(
         partition_allocator::shard,
         [t_cfg](partition_allocator& al) { return al.allocate(t_cfg); })
       .then([this, t_cfg = std::move(t_cfg), timeout](
-              std::optional<allocation_units> units) mutable {
+              result<allocation_units> units) mutable {
           // no assignments, error
           if (!units) {
               return ss::make_ready_future<topic_result>(
-                topic_result(t_cfg.tp_ns, errc::topic_invalid_partitions));
+                make_error_result(t_cfg.tp_ns, units.error()));
           }
 
           return replicate_create_topic(
-            std::move(t_cfg), std::move(*units), timeout);
+            std::move(t_cfg), std::move(units.value()), timeout);
       });
 }
 

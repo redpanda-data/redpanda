@@ -58,13 +58,13 @@ public:
     /// kafka/common/protocol/Errors.java does not have a way to
     /// represent failed allocation yet. Up to caller to interpret
     /// how to use a nullopt value
-    std::optional<allocation_units> allocate(const topic_configuration&);
+    result<allocation_units> allocate(const topic_configuration&);
 
     /// Realocates partition replicas, moving them away from decommissioned
     /// nodes. Replicas on nodes that were left untouched are not changed.
     ///
     /// Returns an empty optional if it reallocation is impossible
-    std::optional<allocation_units>
+    result<allocation_units>
     reassign_decommissioned_replicas(const partition_assignment&);
 
     /// best effort. Does not throw if we cannot find the old partition
