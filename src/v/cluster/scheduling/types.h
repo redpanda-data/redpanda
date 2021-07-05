@@ -149,4 +149,36 @@ private:
     partition_allocator* _allocator;
 };
 
+/**
+ * Configuration used to request manual allocation configuration for topic.
+ * Custom allocation only designate nodes where partition should be placed but
+ * not the shards on each node, allocation strategy will assing shards to each
+ * replica
+ */
+struct partition_constraints {
+    partition_constraints(model::partition_id, uint16_t);
+
+    partition_constraints(
+      model::partition_id, uint16_t, allocation_constraints);
+
+    model::partition_id partition_id;
+    uint16_t replication_factor;
+    allocation_constraints constraints;
+    friend std::ostream&
+    operator<<(std::ostream&, const partition_constraints&);
+};
+
+struct allocation_request {
+    allocation_request() = default;
+    allocation_request(const allocation_request&) = delete;
+    allocation_request(allocation_request&&) = default;
+    allocation_request& operator=(const allocation_request&) = delete;
+    allocation_request& operator=(allocation_request&&) = default;
+    ~allocation_request() = default;
+
+    std::vector<partition_constraints> partitions;
+
+    friend std::ostream& operator<<(std::ostream&, const allocation_request&);
+};
+
 } // namespace cluster

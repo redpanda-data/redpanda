@@ -44,4 +44,30 @@ allocation_units::~allocation_units() {
         }
     }
 }
+
+partition_constraints::partition_constraints(
+  model::partition_id id, uint16_t replication_factor)
+  : partition_constraints(id, replication_factor, allocation_constraints{}) {}
+
+partition_constraints::partition_constraints(
+  model::partition_id id,
+  uint16_t replication_factor,
+  allocation_constraints constraints)
+  : partition_id(id)
+  , replication_factor(replication_factor)
+  , constraints(std::move(constraints)) {}
+
+std::ostream& operator<<(std::ostream& o, const partition_constraints& pc) {
+    fmt::print(
+      o,
+      "{{partition_id: {}, replication_factor: {}, constrains: {}}}",
+      pc.partition_id,
+      pc.replication_factor,
+      pc.constraints);
+    return o;
+}
+std::ostream& operator<<(std::ostream& o, const allocation_request& req) {
+    fmt::print(o, "{{partion_constraints: {}}}", req.partitions);
+    return o;
+}
 } // namespace cluster
