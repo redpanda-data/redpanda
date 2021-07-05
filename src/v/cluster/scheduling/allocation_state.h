@@ -1,0 +1,54 @@
+/*
+ * Copyright 2020 Vectorized, Inc.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file licenses/BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+
+#pragma once
+
+#include "cluster/scheduling/allocation_node.h"
+#include "model/metadata.h"
+
+namespace cluster {
+/**
+ * Partition allocator state
+ */
+class allocation_state {
+public:
+    using node_t = allocation_node;
+    using node_ptr = std::unique_ptr<node_t>;
+    // we use ordered container to achieve deterministic ordering of nodes
+    using underlying_t = absl::btree_map<model::node_id, node_ptr>;
+
+    // Allocation nodes
+    void register_node(node_ptr);
+    void unregister_node(model::node_id);
+    void decommission_node(model::node_id);
+    void recommission_node(model::node_id);
+    bool is_empty(model::node_id) const;
+    bool contains_node(model::node_id n) const { return _nodes.contains(n); }
+    const underlying_t& allocation_nodes() const { return _nodes; }
+    int16_t available_nodes() const;
+
+    // Operations on state
+    void deallocate(const model::broker_shard&);
+    void apply_update(std::vector<model::broker_shard>, raft::group_id);
+    result<uint32_t> allocate(model::node_id id);
+
+    void rollback(const std::vector<partition_assignment>& pa);
+    void rollback(const std::vector<model::broker_shard>& v);
+
+    // Raft group id
+    raft::group_id next_group_id();
+    raft::group_id last_group_id() const { return _highest_group; }
+
+private:
+    raft::group_id _highest_group{0};
+    underlying_t _nodes;
+};
+} // namespace cluster

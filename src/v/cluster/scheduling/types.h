@@ -15,9 +15,11 @@
 #include "model/fundamental.h"
 #include "vassert.h"
 
+#include <absl/container/node_hash_set.h>
+
 namespace cluster {
 class allocation_node;
-class partition_allocator;
+class allocation_state;
 
 /**
  * Constraints evaluators loosely inspired by Fenzo Constrainst Solver.
@@ -121,17 +123,16 @@ struct allocation_constraints {
     friend std::ostream&
     operator<<(std::ostream&, const allocation_constraints&);
 };
-/*
+/**
  * RAII based helper holding allocated partititions, allocation is reverted
  * after this object goes out of scope.
  */
-class allocation_units {
-public:
+struct allocation_units {
+    allocation_units(std::vector<partition_assignment>, allocation_state*);
     allocation_units(
-      std::vector<partition_assignment> assignments, partition_allocator* pal)
-      : _assignments(std::move(assignments))
-      , _allocator(pal) {}
-
+      std::vector<partition_assignment>,
+      std::vector<model::broker_shard>,
+      allocation_state*);
     allocation_units& operator=(allocation_units&&) = default;
     allocation_units& operator=(const allocation_units&) = delete;
     allocation_units(const allocation_units&) = delete;
@@ -139,14 +140,17 @@ public:
 
     ~allocation_units();
 
-    const std::vector<partition_assignment>& get_assignments() {
+    const std::vector<partition_assignment>& get_assignments() const {
         return _assignments;
     }
 
 private:
     std::vector<partition_assignment> _assignments;
+    // set of previous replicas, they will not be reverted when allocation units
+    // goes out of scope
+    absl::node_hash_set<model::broker_shard> _previous;
     // keep the pointer to make this type movable
-    partition_allocator* _allocator;
+    allocation_state* _state;
 };
 
 /**

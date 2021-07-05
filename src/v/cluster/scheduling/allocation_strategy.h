@@ -48,4 +48,6 @@ allocation_strategy make_allocation_strategy(Args&&... args) {
     return allocation_strategy(
       std::make_unique<Impl>(std::forward<Args>(args)...));
 }
+
+allocation_strategy simple_allocation_strategy();
 } // namespace cluster

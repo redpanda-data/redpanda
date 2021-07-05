@@ -11,7 +11,7 @@
 
 #include "cluster/scheduling/types.h"
 
-#include "cluster/scheduling/partition_allocator.h"
+#include "cluster/scheduling/allocation_state.h"
 
 #include <fmt/ostream.h>
 
@@ -37,10 +37,29 @@ void allocation_constraints::add(allocation_constraints other) {
       std::back_inserter(soft_constraints));
 }
 
+allocation_units::allocation_units(
+  std::vector<partition_assignment> assignments, allocation_state* state)
+  : _assignments(std::move(assignments))
+  , _state(state) {}
+
+allocation_units::allocation_units(
+  std::vector<partition_assignment> assignments,
+  std::vector<model::broker_shard> previous_allocations,
+  allocation_state* state)
+  : _assignments(std::move(assignments))
+  , _state(state) {
+    _previous.reserve(previous_allocations.size());
+    for (auto& prev : previous_allocations) {
+        _previous.emplace(prev);
+    }
+}
+
 allocation_units::~allocation_units() {
     for (auto& pas : _assignments) {
         for (auto& replica : pas.replicas) {
-            _allocator->deallocate(replica);
+            if (!_previous.contains(replica)) {
+                _state->deallocate(replica);
+            }
         }
     }
 }

@@ -68,6 +68,9 @@ v_cc_library(
     members_backend.cc
     scheduling/allocation_node.cc
     scheduling/types.cc
+    scheduling/allocation_state.cc
+    scheduling/allocation_strategy.cc
+    scheduling/constraints.cc
   DEPS
     Seastar::seastar
     controller_rpc
