@@ -234,7 +234,7 @@ ss::future<topic_result> topics_frontend::do_create_topic(
         [t_cfg](partition_allocator& al) { return al.allocate(t_cfg); })
       .then(
         [this, t_cfg = std::move(t_cfg), timeout](
-          std::optional<partition_allocator::allocation_units> units) mutable {
+          std::optional<allocation_units> units) mutable {
             // no assignments, error
             if (!units) {
                 return ss::make_ready_future<topic_result>(
@@ -248,7 +248,7 @@ ss::future<topic_result> topics_frontend::do_create_topic(
 
 ss::future<topic_result> topics_frontend::replicate_create_topic(
   topic_configuration cfg,
-  partition_allocator::allocation_units units,
+  allocation_units units,
   model::timeout_clock::time_point timeout) {
     auto tp_ns = cfg.tp_ns;
     create_topic_cmd cmd(

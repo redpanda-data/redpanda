@@ -11,6 +11,8 @@
 
 #include "cluster/scheduling/types.h"
 
+#include "cluster/scheduling/partition_allocator.h"
+
 #include <fmt/ostream.h>
 
 namespace cluster {
@@ -33,5 +35,13 @@ void allocation_constraints::add(allocation_constraints other) {
       other.soft_constraints.begin(),
       other.soft_constraints.end(),
       std::back_inserter(soft_constraints));
+}
+
+allocation_units::~allocation_units() {
+    for (auto& pas : _assignments) {
+        for (auto& replica : pas.replicas) {
+            _allocator->deallocate(replica);
+        }
+    }
 }
 } // namespace cluster

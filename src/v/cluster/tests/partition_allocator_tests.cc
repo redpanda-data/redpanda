@@ -43,7 +43,7 @@ FIXTURE_TEST(decommission_node, partition_allocator_tester) {
 
 FIXTURE_TEST(test_decommissioned_realloc, partition_allocator_tester) {
     auto cfg = gen_topic_configuration(1, 3);
-    partition_allocator::allocation_units allocs = pa.allocate(cfg).value();
+    allocation_units allocs = pa.allocate(cfg).value();
 
     pa.decommission_node(model::node_id(2));
     BOOST_REQUIRE_EQUAL(machines().size(), 3);
@@ -71,7 +71,7 @@ FIXTURE_TEST(test_decommissioned_realloc, partition_allocator_tester) {
 FIXTURE_TEST(
   test_decommissioned_realloc_single_replica, partition_allocator_tester) {
     auto cfg = gen_topic_configuration(1, 1);
-    partition_allocator::allocation_units allocs = pa.allocate(cfg).value();
+    allocation_units allocs = pa.allocate(cfg).value();
 
     pa.decommission_node(model::node_id(1));
     BOOST_REQUIRE_EQUAL(machines().size(), 3);
@@ -104,7 +104,7 @@ FIXTURE_TEST(max_allocation, partition_allocator_tester) {
                       * allocation_node::max_allocations_per_core)
                      - allocation_node::core0_extra_weight;
     auto cfg = gen_topic_configuration(max, ts::max_nodes);
-    partition_allocator::allocation_units allocs = pa.allocate(cfg).value();
+    allocation_units allocs = pa.allocate(cfg).value();
 
     BOOST_REQUIRE_EQUAL(max * ts::max_nodes, 209994);
     BOOST_REQUIRE_EQUAL(allocs.get_assignments().size() * 3, 209994);
@@ -166,7 +166,7 @@ FIXTURE_TEST(max_deallocation, partition_allocator_tester) {
                      - allocation_node::core0_extra_weight;
 
     auto cfg = gen_topic_configuration(max, ts::max_nodes);
-    partition_allocator::allocation_units allocs = pa.allocate(cfg).value();
+    allocation_units allocs = pa.allocate(cfg).value();
 
     BOOST_REQUIRE_EQUAL(max * ts::max_nodes, 209994);
     BOOST_REQUIRE_EQUAL(

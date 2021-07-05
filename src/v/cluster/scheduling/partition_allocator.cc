@@ -111,7 +111,7 @@ partition_allocator::allocate_replicas(
     return new_replicas;
 }
 
-std::optional<partition_allocator::allocation_units>
+std::optional<allocation_units>
 partition_allocator::reassign_decommissioned_replicas(
   const partition_assignment& pas) {
     int16_t rf = pas.replicas.size();
@@ -148,7 +148,7 @@ partition_allocator::reassign_decommissioned_replicas(
 }
 
 // FIXME: take into account broker.rack diversity & other constraints
-std::optional<partition_allocator::allocation_units>
+std::optional<allocation_units>
 partition_allocator::allocate(const topic_configuration& cfg) {
     if (_available_machines.empty()) {
         return std::nullopt;

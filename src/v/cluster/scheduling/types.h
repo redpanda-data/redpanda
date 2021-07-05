@@ -17,6 +17,7 @@
 
 namespace cluster {
 class allocation_node;
+class partition_allocator;
 
 /**
  * Constraints evaluators loosely inspired by Fenzo Constrainst Solver.
@@ -120,4 +121,32 @@ struct allocation_constraints {
     friend std::ostream&
     operator<<(std::ostream&, const allocation_constraints&);
 };
+/*
+ * RAII based helper holding allocated partititions, allocation is reverted
+ * after this object goes out of scope.
+ */
+class allocation_units {
+public:
+    allocation_units(
+      std::vector<partition_assignment> assignments, partition_allocator* pal)
+      : _assignments(std::move(assignments))
+      , _allocator(pal) {}
+
+    allocation_units& operator=(allocation_units&&) = default;
+    allocation_units& operator=(const allocation_units&) = delete;
+    allocation_units(const allocation_units&) = delete;
+    allocation_units(allocation_units&&) = default;
+
+    ~allocation_units();
+
+    const std::vector<partition_assignment>& get_assignments() {
+        return _assignments;
+    }
+
+private:
+    std::vector<partition_assignment> _assignments;
+    // keep the pointer to make this type movable
+    partition_allocator* _allocator;
+};
+
 } // namespace cluster

@@ -13,6 +13,7 @@
 
 #include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
+#include "cluster/scheduling/types.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
@@ -66,9 +67,7 @@ private:
       do_create_topic(topic_configuration, model::timeout_clock::time_point);
 
     ss::future<topic_result> replicate_create_topic(
-      topic_configuration,
-      partition_allocator::allocation_units,
-      model::timeout_clock::time_point);
+      topic_configuration, allocation_units, model::timeout_clock::time_point);
 
     ss::future<topic_result>
       do_delete_topic(model::topic_namespace, model::timeout_clock::time_point);

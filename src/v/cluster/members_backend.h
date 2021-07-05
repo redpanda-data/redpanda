@@ -28,7 +28,7 @@ public:
 
         members_manager::node_update update;
         model::ntp ntp;
-        std::optional<partition_allocator::allocation_units> new_assignment;
+        std::optional<allocation_units> new_assignment;
         reallocation_state state = reallocation_state::initial;
     };
 

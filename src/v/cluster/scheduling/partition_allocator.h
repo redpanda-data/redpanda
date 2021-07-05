@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/scheduling/allocation_node.h"
+#include "cluster/scheduling/types.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
 #include "utils/intrusive_list_helpers.h"
@@ -27,36 +28,6 @@ class partition_allocator;
 struct partition_allocator_tester;
 class partition_allocator {
 public:
-    struct allocation_units {
-        allocation_units(
-          std::vector<partition_assignment> assignments,
-          partition_allocator* pal)
-          : _assignments(std::move(assignments))
-          , _allocator(pal) {}
-
-        allocation_units& operator=(allocation_units&&) = default;
-        allocation_units& operator=(const allocation_units&) = delete;
-        allocation_units(const allocation_units&) = delete;
-        allocation_units(allocation_units&&) = default;
-
-        ~allocation_units() {
-            for (auto& pas : _assignments) {
-                for (auto& replica : pas.replicas) {
-                    _allocator->deallocate(replica);
-                }
-            }
-        }
-
-        const std::vector<partition_assignment>& get_assignments() {
-            return _assignments;
-        }
-
-    private:
-        std::vector<partition_assignment> _assignments;
-        // keep the pointer to make this type movable
-        partition_allocator* _allocator;
-    };
-
     static constexpr ss::shard_id shard = 0;
     using value_type = allocation_node;
     using ptr = std::unique_ptr<value_type>;
