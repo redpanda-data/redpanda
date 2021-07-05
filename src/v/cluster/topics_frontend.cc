@@ -14,8 +14,8 @@
 #include "cluster/controller_stm.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
-#include "cluster/scheduling/partition_allocator.h"
 #include "cluster/partition_leaders_table.h"
+#include "cluster/scheduling/partition_allocator.h"
 #include "cluster/types.h"
 #include "model/errc.h"
 #include "model/metadata.h"
@@ -232,18 +232,17 @@ ss::future<topic_result> topics_frontend::do_create_topic(
       .invoke_on(
         partition_allocator::shard,
         [t_cfg](partition_allocator& al) { return al.allocate(t_cfg); })
-      .then(
-        [this, t_cfg = std::move(t_cfg), timeout](
-          std::optional<allocation_units> units) mutable {
-            // no assignments, error
-            if (!units) {
-                return ss::make_ready_future<topic_result>(
-                  topic_result(t_cfg.tp_ns, errc::topic_invalid_partitions));
-            }
+      .then([this, t_cfg = std::move(t_cfg), timeout](
+              std::optional<allocation_units> units) mutable {
+          // no assignments, error
+          if (!units) {
+              return ss::make_ready_future<topic_result>(
+                topic_result(t_cfg.tp_ns, errc::topic_invalid_partitions));
+          }
 
-            return replicate_create_topic(
-              std::move(t_cfg), std::move(*units), timeout);
-        });
+          return replicate_create_topic(
+            std::move(t_cfg), std::move(*units), timeout);
+      });
 }
 
 ss::future<topic_result> topics_frontend::replicate_create_topic(
