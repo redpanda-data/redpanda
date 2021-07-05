@@ -66,6 +66,7 @@ v_cc_library(
     controller_api.cc
     members_frontend.cc
     members_backend.cc
+    scheduling/allocation_node.cc
   DEPS
     Seastar::seastar
     controller_rpc

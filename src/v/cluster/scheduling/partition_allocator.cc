@@ -331,14 +331,4 @@ partition_allocator::test_only_max_cluster_allocation_partition_capacity()
       });
 }
 
-std::ostream& operator<<(std::ostream& o, const allocation_node& n) {
-    o << "{ node:" << n._id << ", max_partitions_per_core: "
-      << allocation_node::max_allocations_per_core
-      << ", partition_capacity:" << n._partition_capacity << ", weights: [";
-    for (auto w : n._weights) {
-        o << "(" << w << ")";
-    }
-    return o << "]}";
-}
-
 } // namespace cluster

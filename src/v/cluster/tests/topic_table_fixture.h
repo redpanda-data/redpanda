@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "cluster/scheduling/allocation_node.h"
+#include "cluster/scheduling/partition_allocator.h"
 #include "cluster/tests/utils.h"
 #include "cluster/topic_table.h"
 #include "test_utils/fixture.h"
