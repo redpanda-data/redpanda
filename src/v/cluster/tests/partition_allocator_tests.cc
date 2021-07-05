@@ -358,4 +358,80 @@ FIXTURE_TEST(test_decommissioned_realloc, partition_allocator_fixture) {
         ->second->allocated_partitions(),
       cluster::allocation_node::allocation_capacity(0));
 }
+
+cluster::hard_constraint_evaluator make_throwning_hard_evaluator() {
+    struct impl : cluster::hard_constraint_evaluator::impl {
+        bool evaluate(const cluster::allocation_node&) const final {
+            throw std::runtime_error("evaluation exception");
+        }
+        void print(std::ostream& o) const final {
+            fmt::print(o, "exception throwing hard constraint evaluator");
+        }
+    };
+
+    return cluster::hard_constraint_evaluator(std::make_unique<impl>());
+}
+
+cluster::hard_constraint_evaluator make_false_evaluator() {
+    struct impl : cluster::hard_constraint_evaluator::impl {
+        bool evaluate(const cluster::allocation_node&) const final {
+            return false;
+        }
+        void print(std::ostream& o) const final {
+            fmt::print(o, "false returning constraint evaluator");
+        }
+    };
+
+    return cluster::hard_constraint_evaluator(std::make_unique<impl>());
+}
+
+cluster::hard_constraint_evaluator make_nop_evaluator() {
+    struct impl : cluster::hard_constraint_evaluator::impl {
+        bool evaluate(const cluster::allocation_node&) const final {
+            return true;
+        }
+        void print(std::ostream& o) const final {
+            fmt::print(o, "false returning constraint evaluator");
+        }
+    };
+
+    return cluster::hard_constraint_evaluator(std::make_unique<impl>());
+}
+
+cluster::hard_constraint_evaluator random_evaluator() {
+    auto gen_id = random_generators::get_int(0, 2);
+    switch (gen_id) {
+    case 0:
+        return make_throwning_hard_evaluator();
+    case 1:
+        return make_false_evaluator();
+    default:
+        return make_nop_evaluator();
+    }
+}
+
+FIXTURE_TEST(allocator_exception_safety_test, partition_allocator_fixture) {
+    register_node(0, 2);
+    register_node(1, 4);
+    register_node(2, 7);
+
+    auto capacity = max_capacity();
+    for (int i = 0; i < 500; ++i) {
+        auto req = make_allocation_request(1, 1);
+        req.partitions[0].constraints.hard_constraints.push_back(
+          ss::make_lw_shared<cluster::hard_constraint_evaluator>(
+            random_evaluator()));
+        try {
+            auto res = allocator.allocate(std::move(req));
+            if (res) {
+                capacity--;
+                for (auto& as : res.value().get_assignments()) {
+                    allocator.update_allocation_state(as.replicas, as.group);
+                }
+            }
+
+        } catch (...) {
+        }
+        BOOST_REQUIRE_EQUAL(capacity, max_capacity());
+    }
 }
