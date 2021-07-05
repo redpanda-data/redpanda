@@ -164,6 +164,7 @@ members_manager::handle_raft0_cfg_update(raft::group_configuration cfg) {
         })
       .then([this, cfg = std::move(cfg)]() mutable {
           auto diff = calculate_brokers_diff(_members_table.local(), cfg);
+          auto added_brokers = diff.additions;
           return _members_table
             .invoke_on_all([cfg = std::move(cfg)](members_table& m) mutable {
                 m.update_brokers(calculate_brokers_diff(m, cfg));
@@ -171,6 +172,18 @@ members_manager::handle_raft0_cfg_update(raft::group_configuration cfg) {
             .then([this, diff = std::move(diff)]() mutable {
                 // update internode connections
                 return update_connections(std::move(diff));
+            })
+            .then([this, added_nodes = std::move(added_brokers)]() mutable {
+                return ss::do_with(
+                  std::move(added_nodes),
+                  [this](std::vector<broker_ptr>& added_nodes) {
+                      return ss::do_for_each(
+                        added_nodes, [this](const broker_ptr& broker) {
+                            return _update_queue.push_eventually(node_update{
+                              .id = broker->id(),
+                              .type = node_update_type::added});
+                        });
+                  });
             });
       });
 }
