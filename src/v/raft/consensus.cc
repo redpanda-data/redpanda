@@ -1415,7 +1415,9 @@ consensus::do_append_entries(append_entries_request&& r) {
             vlog(
               _ctxlog.info,
               "Stale append entries request processed, entry is already "
-              "present");
+              "present, request: {}, current state: {}",
+              r.meta,
+              meta());
             return ss::make_ready_future<append_entries_reply>(
               std::move(reply));
         }
