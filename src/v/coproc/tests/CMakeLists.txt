@@ -17,7 +17,6 @@ rp_test(
   SOURCES
     ${fixture_srcs}
     topic_ingestion_policy_tests.cc
-    script_dispatcher_tests.cc
     failure_recovery_tests.cc
     pacemaker_tests.cc
     coproc_bench_tests.cc
