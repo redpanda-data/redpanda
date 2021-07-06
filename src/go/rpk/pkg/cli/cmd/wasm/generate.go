@@ -32,8 +32,8 @@ type genFile struct {
 
 func GenerateManifest(version string) map[string][]genFile {
 	return map[string][]genFile{
-		"src":  {genFile{name: "wasm.js", content: template.GetWasmJs()}},
-		"test": {genFile{name: "wasm.test.js", content: template.GetWasmTestJs()}},
+		"src":  {genFile{name: "main.js", content: template.GetWasmJs()}},
+		"test": {genFile{name: "main.test.js", content: template.GetWasmTestJs()}},
 		"": {
 			genFile{name: "package.json", content: fmt.Sprintf(template.GetPackageJson(), version)},
 			genFile{name: "webpack.js", content: template.GetWebpack(), permission: 0766},
