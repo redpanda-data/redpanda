@@ -1893,6 +1893,11 @@ void consensus::maybe_update_leader_commit_idx() {
     (void)with_gate(_bg, [this] {
         return _op_lock.get_units().then(
           [this](ss::semaphore_units<> u) mutable {
+              // do not update committed index if not the leader, this check has
+              // to be done under the semaphore
+              if (!is_leader()) {
+                  return ss::now();
+              }
               return do_maybe_update_leader_commit_idx(std::move(u));
           });
     }).handle_exception([this](const std::exception_ptr& e) {
