@@ -112,6 +112,20 @@ public:
         std::nullopt,
         true) {}
 
+    // Restart the fixture with an existing data directory
+    explicit redpanda_thread_fixture(std::filesystem::path existing_data_dir)
+      : redpanda_thread_fixture(
+        model::node_id(1),
+        9092,
+        33145,
+        8082,
+        8081,
+        43189,
+        {},
+        existing_data_dir.string(),
+        std::nullopt,
+        true) {}
+
     ~redpanda_thread_fixture() {
         app.shutdown();
         if (remove_on_shutdown) {

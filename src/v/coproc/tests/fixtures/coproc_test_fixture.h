@@ -18,9 +18,7 @@
 
 using log_layout_map = absl::btree_map<model::topic, size_t>;
 
-class coproc_test_fixture
-  : public supervisor_test_fixture
-  , public redpanda_thread_fixture {
+class coproc_test_fixture : public supervisor_test_fixture {
 public:
     static const auto inline tp_stored = coproc::topic_ingestion_policy::stored;
     static const auto inline tp_earliest
@@ -60,7 +58,7 @@ public:
     ///
     /// All internal state is wiped and setup() is called again. Application is
     /// forced to read from the existing _data_dir to bootstrap
-    ss::future<> restart() { return ss::now(); }
+    ss::future<> restart();
 
     /// \brief Write records to storage::api
     ss::future<model::offset>
@@ -77,6 +75,14 @@ public:
 
     coproc::wasm::event_publisher& get_publisher() { return _publisher; };
 
+protected:
+    redpanda_thread_fixture* root_fixture() {
+        vassert(_root_fixture != nullptr, "Access root_fixture when null");
+        return _root_fixture.get();
+    }
+
 private:
     coproc::wasm::event_publisher _publisher;
+
+    std::unique_ptr<redpanda_thread_fixture> _root_fixture;
 };
