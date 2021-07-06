@@ -1415,7 +1415,9 @@ consensus::do_append_entries(append_entries_request&& r) {
             vlog(
               _ctxlog.info,
               "Stale append entries request processed, entry is already "
-              "present");
+              "present, request: {}, current state: {}",
+              r.meta,
+              meta());
             return ss::make_ready_future<append_entries_reply>(
               std::move(reply));
         }
@@ -1893,6 +1895,11 @@ void consensus::maybe_update_leader_commit_idx() {
     (void)with_gate(_bg, [this] {
         return _op_lock.get_units().then(
           [this](ss::semaphore_units<> u) mutable {
+              // do not update committed index if not the leader, this check has
+              // to be done under the semaphore
+              if (!is_leader()) {
+                  return ss::now();
+              }
               return do_maybe_update_leader_commit_idx(std::move(u));
           });
     }).handle_exception([this](const std::exception_ptr& e) {
