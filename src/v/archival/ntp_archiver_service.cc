@@ -41,11 +41,15 @@ std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
     fmt::print(
       o,
       "{{bucket_name: {}, interval: {}, client_config: {}, connection_limit: "
-      "{}}}",
+      "{}, initial_backoff: {}, segment_upload_timeout: {}, "
+      "manifest_upload_timeout: {}}}",
       cfg.bucket_name,
       cfg.interval.count(),
       cfg.client_config,
-      cfg.connection_limit);
+      cfg.connection_limit,
+      cfg.initial_backoff.count(),
+      cfg.segment_upload_timeout.count(),
+      cfg.manifest_upload_timeout.count());
     return o;
 }
 
@@ -62,7 +66,10 @@ ntp_archiver::ntp_archiver(
   , _policy(_ntp, _svc_probe, std::ref(_probe))
   , _bucket(conf.bucket_name)
   , _manifest(_ntp, _rev)
-  , _gate() {
+  , _gate()
+  , _initial_backoff(conf.initial_backoff)
+  , _segment_upload_timeout(conf.segment_upload_timeout)
+  , _manifest_upload_timeout(conf.manifest_upload_timeout) {
     vlog(archival_log.trace, "Create ntp_archiver {}", _ntp.path());
 }
 
@@ -86,7 +93,7 @@ const cloud_storage::manifest& ntp_archiver::get_remote_manifest() const {
 ss::future<cloud_storage::download_result>
 ntp_archiver::download_manifest(retry_chain_node& parent) {
     gate_guard guard{_gate};
-    retry_chain_node fib(manifest_upload_timeout, 100ms, &parent);
+    retry_chain_node fib(_manifest_upload_timeout, _initial_backoff, &parent);
     vlog(archival_log.debug, "{} Downloading manifest for {}", fib(), _ntp);
     co_return co_await _remote.download_manifest(_bucket, _manifest, fib);
 }
@@ -94,7 +101,7 @@ ntp_archiver::download_manifest(retry_chain_node& parent) {
 ss::future<cloud_storage::upload_result>
 ntp_archiver::upload_manifest(retry_chain_node& parent) {
     gate_guard guard{_gate};
-    retry_chain_node fib(manifest_upload_timeout, 100ms, &parent);
+    retry_chain_node fib(_manifest_upload_timeout, _initial_backoff, &parent);
     vlog(archival_log.debug, "{} Uploading manifest for {}", fib(), _ntp);
     co_return co_await _remote.upload_manifest(_bucket, _manifest, fib);
 }
@@ -102,7 +109,7 @@ ntp_archiver::upload_manifest(retry_chain_node& parent) {
 ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
   upload_candidate candidate, retry_chain_node& parent) {
     gate_guard guard{_gate};
-    retry_chain_node fib(segment_upload_timeout, 100ms, &parent);
+    retry_chain_node fib(_segment_upload_timeout, _initial_backoff, &parent);
     vlog(
       archival_log.debug,
       "{} Uploading segment for {}, exposed name {} offset {}, length {}",

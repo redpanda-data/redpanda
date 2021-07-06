@@ -94,10 +94,6 @@ void ntp_upload_queue::copy_if(FwdIt out, const Func& pred) const {
 /// - Re-upload manifest(s)
 /// - Reset timer
 class scheduler_service_impl {
-    static constexpr ss::lowres_clock::duration
-      max_topic_manifest_upload_backoff
-      = 60s;
-
 public:
     /// \brief create scheduler service
     ///
@@ -176,6 +172,8 @@ private:
     retry_chain_node _rtcnode;
     service_probe _probe;
     cloud_storage::remote _remote;
+    ss::lowres_clock::duration _topic_manifest_upload_timeout;
+    ss::lowres_clock::duration _initial_backoff;
 };
 
 } // namespace internal

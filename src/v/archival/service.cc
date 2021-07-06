@@ -148,6 +148,14 @@ scheduler_service_impl::get_archival_service_config() {
       = config::shard_local_cfg().cloud_storage_reconciliation_ms.value(),
       .connection_limit = s3_connection_limit(
         config::shard_local_cfg().cloud_storage_max_connections.value()),
+      .initial_backoff
+      = config::shard_local_cfg().cloud_storage_initial_backoff_ms.value(),
+      .segment_upload_timeout
+      = config::shard_local_cfg()
+          .cloud_storage_segment_upload_timeout_ms.value(),
+      .manifest_upload_timeout
+      = config::shard_local_cfg()
+          .cloud_storage_manifest_upload_timeout_ms.value(),
       .svc_metrics_disabled = service_metrics_disabled(
         static_cast<bool>(disable_metrics)),
       .ntp_metrics_disabled = per_ntp_metrics_disabled(
@@ -170,7 +178,9 @@ scheduler_service_impl::scheduler_service_impl(
   , _stop_limit(conf.connection_limit())
   , _rtcnode(_as)
   , _probe(conf.svc_metrics_disabled)
-  , _remote(conf.connection_limit, conf.client_config, _probe) {}
+  , _remote(conf.connection_limit, conf.client_config, _probe)
+  , _topic_manifest_upload_timeout(conf.manifest_upload_timeout)
+  , _initial_backoff(conf.initial_backoff) {}
 
 scheduler_service_impl::scheduler_service_impl(
   ss::sharded<storage::api>& api,
@@ -241,7 +251,7 @@ ss::future<> scheduler_service_impl::upload_topic_manifest(
         while (!uploaded && !_gate.is_closed()) {
             // This runs asynchronously so we can just retry indefinetly
             retry_chain_node fib(
-              max_topic_manifest_upload_backoff, 100ms, &_rtcnode);
+              _topic_manifest_upload_timeout, _initial_backoff, &_rtcnode);
             vlog(
               archival_log.info,
               "{} Uploading topic manifest {}",
@@ -312,9 +322,13 @@ ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
                 archiver->get_ntp());
               // Start topic manifest upload
               // asynchronously
-              (void)upload_topic_manifest(
-                model::topic_namespace(ntp.ns, ntp.tp.topic),
-                archiver->get_revision_id());
+              if (ntp.tp.partition == 0) {
+                  // Upload manifest once per topic. GCS has strict
+                  // limits for single object updates.
+                  (void)upload_topic_manifest(
+                    model::topic_namespace(ntp.ns, ntp.tp.topic),
+                    archiver->get_revision_id());
+              }
               _probe.start_archiving_ntp();
               return ss::make_ready_future<ss::stop_iteration>(
                 ss::stop_iteration::yes);
