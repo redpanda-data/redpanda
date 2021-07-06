@@ -28,6 +28,13 @@
 
 #include <chrono>
 
+coproc_test_fixture::coproc_test_fixture() {
+    ss::smp::invoke_on_all([]() {
+        auto& config = config::shard_local_cfg();
+        config.get("coproc_offset_flush_interval_ms").set_value(500ms);
+    }).get0();
+}
+
 ss::future<>
 coproc_test_fixture::enable_coprocessors(std::vector<deploy> copros) {
     std::vector<coproc::wasm::event> events;

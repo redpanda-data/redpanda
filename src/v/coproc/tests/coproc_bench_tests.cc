@@ -77,7 +77,7 @@ FIXTURE_TEST(test_coproc_router_giant_fanin, coproc_bench_fixture) {
     const model::topic source_topic("sole_input");
     const model::topic output_topic = model::to_materialized_topic(
       source_topic, identity_coprocessor::identity_topic);
-    std::vector<coproc_fixture_iface::deploy> deploys;
+    std::vector<coproc_test_fixture::deploy> deploys;
     for (uint64_t i = 0; i < n_copros; ++i) {
         deploys.push_back(
           {.id = i,
@@ -111,7 +111,7 @@ FIXTURE_TEST(test_coproc_router_giant_one_to_many, coproc_bench_fixture) {
     const std::size_t n_copros = 25;
     const std::size_t n_partitions = 5;
     const model::topic source_topic("input");
-    std::vector<coproc_fixture_iface::deploy> deploys;
+    std::vector<coproc_test_fixture::deploy> deploys;
     for (uint64_t i = 0; i < n_copros; ++i) {
         deploys.push_back(
           {.id = i,

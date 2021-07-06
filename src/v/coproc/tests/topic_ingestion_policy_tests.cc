@@ -8,7 +8,7 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "coproc/tests/fixtures/coproc_slim_fixture.h"
+#include "coproc/tests/fixtures/coproc_test_fixture.h"
 #include "coproc/tests/utils/coprocessor.h"
 #include "model/namespace.h"
 #include "storage/tests/utils/random_batch.h"
@@ -19,7 +19,7 @@
 
 #include <chrono>
 
-class tip_fixture : public coproc_slim_fixture {
+class tip_fixture : public coproc_test_fixture {
 public:
     std::optional<std::size_t> run(
       coproc::topic_ingestion_policy tip, std::size_t n, std::size_t drain_n) {
@@ -77,7 +77,7 @@ FIXTURE_TEST(test_copro_tip_earliest, tip_fixture) {
     BOOST_CHECK_EQUAL(*result, 80);
 }
 
-FIXTURE_TEST(test_copro_tip_stored, coproc_slim_fixture) {
+FIXTURE_TEST(test_copro_tip_stored, coproc_test_fixture) {
     model::topic sttp("sttp");
     model::ntp sttp_ntp(model::kafka_namespace, sttp, model::partition_id(0));
     setup({{sttp, 1}}).get();
@@ -106,8 +106,8 @@ FIXTURE_TEST(test_copro_tip_stored, coproc_slim_fixture) {
       .get();
 
     /// Assert that only the records from the second batch exist in the
-    /// materialized log since the latest policy was chosen and the coprocessor
-    /// was deployed between both pushes
+    /// materialized log since the latest policy was chosen and the
+    /// coprocessor was deployed between both pushes
     model::ntp output_ntp(
       model::kafka_namespace,
       model::to_materialized_topic(sttp, identity_coprocessor::identity_topic),
