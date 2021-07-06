@@ -76,29 +76,12 @@ private:
     ss::future<>
       send_request(supervisor_client_protocol, process_batch_request);
 
-    storage::log_reader_config
-    get_reader(const ss::lw_shared_ptr<ntp_context>&);
-
-    ss::future<std::vector<process_batch_request::data>> read();
-
-    ss::future<std::optional<process_batch_request::data>>
-      read_ntp(ss::lw_shared_ptr<ntp_context>);
-
     ss::future<> process_reply(process_batch_reply);
     ss::future<> process_one_reply(process_batch_reply::data);
     ss::future<write_response> write_materialized(
       const model::materialized_ntp&, model::record_batch_reader);
     ss::future<std::variant<write_response, model::term_id>>
       write_checked(storage::log, model::term_id, model::record_batch_reader);
-    std::optional<process_batch_request::data> mark_offset(
-      ss::lw_shared_ptr<ntp_context>,
-      model::offset,
-      std::size_t,
-      model::record_batch_reader);
-
-    std::size_t max_batch_size() const {
-        return config::shard_local_cfg().coproc_max_batch_size.value();
-    }
 
 private:
     /// Killswitch for in-process reads
