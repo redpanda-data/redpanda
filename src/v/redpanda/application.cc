@@ -498,17 +498,33 @@ void application::wire_up_redpanda_services() {
           .get();
     }
 
-    syschecks::systemd_message("Intializing raft group manager").get();
-    construct_service(
-      raft_group_manager,
-      model::node_id(config::shard_local_cfg().node_id()),
-      config::shard_local_cfg().raft_io_timeout_ms(),
-      _scheduling_groups.raft_sg(),
-      config::shard_local_cfg().raft_heartbeat_interval_ms(),
-      config::shard_local_cfg().raft_heartbeat_timeout_ms(),
-      std::ref(_raft_connection_cache),
-      std::ref(storage))
+    syschecks::systemd_message("Intializing raft recovery throttle").get();
+    recovery_throttle
+      .start(
+        config::shard_local_cfg().raft_learner_recovery_rate() / ss::smp::count)
       .get();
+
+    syschecks::systemd_message("Intializing raft group manager").get();
+    raft_group_manager
+      .start(
+        model::node_id(config::shard_local_cfg().node_id()),
+        config::shard_local_cfg().raft_io_timeout_ms(),
+        _scheduling_groups.raft_sg(),
+        config::shard_local_cfg().raft_heartbeat_interval_ms(),
+        config::shard_local_cfg().raft_heartbeat_timeout_ms(),
+        std::ref(_raft_connection_cache),
+        std::ref(storage),
+        std::ref(recovery_throttle))
+      .get();
+
+    // custom handling for recovery_throttle and raft group manager shutdown.
+    // the former needs to happen first in order to ensure that any raft groups
+    // that are being throttled are released so that they can make be quickly
+    // shutdown by the group manager.
+    _deferred.emplace_back([this] {
+        recovery_throttle.stop().get();
+        raft_group_manager.stop().get();
+    });
 
     syschecks::systemd_message("Adding partition manager").get();
     construct_service(

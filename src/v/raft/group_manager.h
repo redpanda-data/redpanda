@@ -42,7 +42,8 @@ public:
       std::chrono::milliseconds heartbeat_interval,
       std::chrono::milliseconds heartbeat_timeout,
       ss::sharded<rpc::connection_cache>& clients,
-      ss::sharded<storage::api>& storage);
+      ss::sharded<storage::api>& storage,
+      ss::sharded<recovery_throttle>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -93,6 +94,7 @@ private:
       _notifications;
     ss::metrics::metric_groups _metrics;
     storage::api& _storage;
+    recovery_throttle& _recovery_throttle;
 };
 
 } // namespace raft

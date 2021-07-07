@@ -117,12 +117,17 @@ ss::future<> recovery_stm::do_recover(ss::io_priority_class iopc) {
 
     // read & replicate log entries
     return f
-      .then([this, follower_next_offset, follower_committed_match_index, iopc] {
+      .then([this,
+             follower_next_offset,
+             follower_committed_match_index,
+             iopc,
+             is_learner = meta.value()->is_learner] {
           return read_range_for_recovery(
             follower_next_offset,
             _ptr->_log.offsets().dirty_offset,
             follower_committed_match_index,
-            iopc);
+            iopc,
+            is_learner);
       })
       .then([this] {
           auto meta = get_follower_meta();
@@ -183,7 +188,8 @@ ss::future<> recovery_stm::read_range_for_recovery(
   model::offset start_offset,
   model::offset end_offset,
   model::offset follower_committed_match_index,
-  ss::io_priority_class iopc) {
+  ss::io_priority_class iopc,
+  bool is_learner) {
     storage::log_reader_config cfg(
       start_offset,
       end_offset,
@@ -198,6 +204,12 @@ ss::future<> recovery_stm::read_range_for_recovery(
       std::nullopt,
       _ptr->_as);
 
+    if (is_learner) {
+        // skip cache insertion on miss for learners which are throttled and
+        // often catching up from the beginning of the log (e.g. new nodes)
+        cfg.skip_batch_cache = true;
+    }
+
     vlog(
       _ctxlog.trace,
       "Reading batches in range [{},{}] for node {} recovery",
@@ -211,7 +223,7 @@ ss::future<> recovery_stm::read_range_for_recovery(
           return model::consume_reader_to_memory(
             std::move(reader), model::no_timeout);
       })
-      .then([this, start_offset, follower_committed_match_index](
+      .then([this, start_offset, follower_committed_match_index, is_learner](
               ss::circular_buffer<model::record_batch> batches) {
           vlog(
             _ctxlog.trace,
@@ -227,11 +239,33 @@ ss::future<> recovery_stm::read_range_for_recovery(
           _base_batch_offset = gap_filled_batches.begin()->base_offset();
           _last_batch_offset = gap_filled_batches.back().last_offset();
 
+          auto throttle_f = ss::now();
+          if (is_learner && _ptr->_recovery_throttle) {
+              const auto size = std::accumulate(
+                gap_filled_batches.cbegin(),
+                gap_filled_batches.cend(),
+                size_t{0},
+                [](size_t acc, const auto& batch) {
+                    return acc + batch.size_bytes();
+                });
+              throttle_f
+                = _ptr->_recovery_throttle->get()
+                    .throttle(size)
+                    .handle_exception_type([this](const ss::broken_semaphore&) {
+                        vlog(_ctxlog.info, "Recovery throttling has stopped");
+                    });
+          }
+
           auto f_reader = model::make_foreign_memory_record_batch_reader(
             std::move(gap_filled_batches));
 
-          return replicate(
-            std::move(f_reader), should_flush(follower_committed_match_index));
+          return throttle_f.then([this,
+                                  f_reader = std::move(f_reader),
+                                  follower_committed_match_index]() mutable {
+              return replicate(
+                std::move(f_reader),
+                should_flush(follower_committed_match_index));
+          });
       });
 }
 

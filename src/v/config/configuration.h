@@ -123,6 +123,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> replicate_append_timeout_ms;
     property<std::chrono::milliseconds> recovery_append_timeout_ms;
     property<size_t> raft_replicate_batch_window_size;
+    property<size_t> raft_learner_recovery_rate;
 
     property<size_t> reclaim_min_size;
     property<size_t> reclaim_max_size;

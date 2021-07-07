@@ -138,7 +138,8 @@ public:
                               st.current_leader.value(),
                               st.group);
                         },
-                        _storage);
+                        _storage,
+                        std::nullopt);
                       return _consensus->start().then(
                         [this] { return _hbeats.register_group(_consensus); });
                   });
