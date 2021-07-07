@@ -1,9 +1,9 @@
 ---
-title: Connect to a Kubernetes cluster from an external client
+title: Kubernetes Quick Start Guide with external connectivity
 order: 0
 ---
 
-# Connect to a Kubernetes cluster from an external client
+# Kubernetes Quick Start Guide with external connectivity
 
 The [Kubernetes Quick Start guide](/docs/quick-start-kubernetes) describes how to quickly get up and running with a Kubernetes cluster.
 Those instructions only provide access to the cluster from within the Kuberenetes network.
@@ -86,11 +86,18 @@ We'll use Helm to install cert-manager:
 
 ## Install the Redpanda operator and cluster
 
-1. Install the latest redpanda operator:
+1. Just to simplify the commands, create a variable to hold the latest version number:
+
+    ```
+    export VERSION=$(curl -s https://api.github.com/repos/vectorizedio/redpanda/releases/latest | jq -r .tag_name)
+    ```
+
+    **_Note_** - You can find information about the versions of the operator in the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).
+
+2. Install the latest redpanda operator:
 
   ```
-  VERSION=v21.4.15
-  kubectl apply -k 'https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=$VERSION'
+  kubectl apply -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=$VERSION && \
   helm repo add redpanda https://charts.vectorized.io/ && \
   helm repo update && \
   helm install \
@@ -103,7 +110,6 @@ We'll use Helm to install cert-manager:
 2. Install a cluster with external connectivity:
 
   ```
-  VERSION=v21.4.15
   kubectl apply -f https://raw.githubusercontent.com/vectorizedio/redpanda/$VERSION/src/go/k8s/config/samples/external_connectivity.yaml
   ```
 
@@ -155,4 +161,7 @@ We'll use Helm to install cert-manager:
 
 Now you know how to set up a Kubernetes cluster in a cloud and access it from a remote machine.
 
-Contact us in our [Slack](https://vectorized.io/slack) community so we can work together to implement your Kubernetes use cases.
+## Next steps
+
+- Check out our in-depth explanation of [Kubernetes connectivity](/docs/kubernetes-connectivity).
+- Contact us in our [Slack](https://vectorized.io/slack) community so we can work together to implement your Kubernetes use cases.

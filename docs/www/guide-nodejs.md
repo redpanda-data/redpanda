@@ -38,20 +38,20 @@ If you’re on linux, follow the instructions in the
 Note: please follow only this section. If you do the production section, it
 will optimize your machine for Redpanda, which might affect your experience
 with desktop applications and other services. Be especially careful with
-`sudo rpk tune all` you probably don’t want to run that on your personal
+`sudo rpk redpanda tune all` you probably don’t want to run that on your personal
 workstation.
 
 
 After Redpanda is installed and running, you will create the first topic
 ```
-$ rpk api topic create chat-room
+$ rpk topic create chat-room
   Created topic 'chat-room'. Partitions: 1, replicas: 1, configuration:
   'cleanup.policy':'delete'
 ```
 This will create a topic named `chat-room`, with one partition and one replica.
 You can also see all created topics with:
 ```
-$ rpk api topic list
+$ rpk topic list
   Name       Partitions  Replicas  
   chat-room  1           1
 ```

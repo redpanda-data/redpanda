@@ -113,13 +113,13 @@ to verify that cert-manager is working correcly.
     helm repo update
     ```
 
-2. Just to simplify the commands, create a variable for the version number:
+2. Just to simplify the commands, create a variable to hold the latest version number:
 
     ```
-    export VERSION=v21.4.15
+    export VERSION=$(curl -s https://api.github.com/repos/vectorizedio/redpanda/releases/latest | jq -r .tag_name)
     ```
 
-    **_Note_** - You can find the latest version number of the operator in the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).
+    **_Note_** - You can find information about the versions of the operator in the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).
 
 3. Install the Redpanda operator CRD:
 
@@ -186,9 +186,9 @@ Let's try setting up a Redpanda topic to handle a stream of events from a chat a
         -- rpk --brokers one-node-cluster-0.one-node-cluster.chat-with-me.svc.cluster.local:9092 \
         topic list
 
-As you can see, the commands from the "rpk" pod created a 5 partition topic in for the chat rooms.
+As you can see, the commands from the "rpk" pod created a 5-partition topic in for the chat rooms.
 
 ## Next steps
 
+- Check out our in-depth explanation of how to [connect external clients](/docs/kubernetes-connectivity) to a Redpanda Kubernetes deployment.
 - Contact us in our [Slack](https://vectorized.io/slack) community so we can work together to implement your Kubernetes use cases.
-- Check out how to set up a Kubernetes cluster with [access from an external machine](/docs/kubernetes-external-connect).
