@@ -34,9 +34,6 @@ public:
             model::offset(0), n, 1))
           .get();
 
-        /// Using the slim fixture makes this test possible, otherwise the call
-        /// to .get() here just ensures the coprocessor was pushed into the
-        /// copro topic, not fully registered
         enable_coprocessors(
           {{.id = 78,
             .data{
@@ -44,15 +41,23 @@ public:
               .topics = {{infoo, tip}}}}})
           .get();
 
+        /// Wait for the coprocessor to startup before next batch
+        coproc::script_id id(78);
+        tests::cooperative_spin_wait_with_timeout(60s, [this, id]() {
+            return root_fixture()->app.pacemaker.map_reduce0(
+              [id](coproc::pacemaker& p) {
+                  return p.local_script_id_exists(id);
+              },
+              false,
+              std::logical_or<>());
+        }).get();
+
         push(
           infoo_ntp,
           storage::test::make_random_memory_record_batch_reader(
             model::offset{0}, n, 1))
           .get();
 
-        /// Assert that only the records from the second batch exist in the
-        /// materialized log since the latest policy was chosen and the
-        /// coprocessor was deployed between both pushes
         model::ntp output_ntp(
           model::kafka_namespace,
           model::to_materialized_topic(
