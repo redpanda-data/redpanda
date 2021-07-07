@@ -7,9 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cluster/partition_manager.h"
-
 #include "cluster/logger.h"
+#include "cluster/partition_manager.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
@@ -37,6 +36,18 @@ partition_manager::partition_manager(
   : _storage(storage.local())
   , _raft_manager(raft)
   , _tx_gateway_frontend(tx_gateway_frontend) {}
+
+partition_manager::ntp_table_container
+partition_manager::get_topic_partition_table(
+  const model::topic_namespace& tn) const {
+    ntp_table_container rs;
+    for (const auto& p : _ntp_table) {
+        if (p.second->ntp().ns == tn.ns && p.second->ntp().tp.topic == tn.tp) {
+            rs.emplace(p.first, p.second);
+        }
+    }
+    return rs;
+}
 
 ss::future<consensus_ptr> partition_manager::manage(
   storage::ntp_config ntp_cfg,
