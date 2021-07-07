@@ -66,10 +66,9 @@ storage::log_reader_config get_reader(
           ntp_ctx->ntp(),
           cp_offsets.last_read);
     }
-    const storage::offset_stats os = ntp_ctx->log.offsets();
     return storage::log_reader_config(
       next_read,
-      os.dirty_offset,
+      ntp_ctx->partition->last_stable_offset(),
       1,
       max_batch_size(),
       ss::default_priority_class(),
@@ -82,7 +81,7 @@ ss::future<std::optional<process_batch_request::data>>
 read_ntp(input_read_args args, ss::lw_shared_ptr<ntp_context> ntp_ctx) {
     storage::log_reader_config cfg = get_reader(
       args.id, args.abort_src, ntp_ctx);
-    auto rbr = co_await ntp_ctx->log.make_reader(cfg);
+    auto rbr = co_await ntp_ctx->partition->make_reader(cfg);
     auto read_result = co_await std::move(rbr).for_each_ref(
       coproc::reference_window_consumer(
         high_offset_tracker(), storage::internal::decompress_batch_consumer()),

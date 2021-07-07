@@ -292,17 +292,6 @@ ss::future<> log_manager::dispatch_topic_dir_deletion(ss::sstring dir) {
     });
 }
 
-absl::flat_hash_map<model::ntp, log>
-log_manager::get(const model::topic_namespace& tn) {
-    absl::flat_hash_map<model::ntp, log> r;
-    for (const auto& p : _logs) {
-        if (p.first.ns == tn.ns && p.first.tp.topic == tn.tp) {
-            r.emplace(p.first, p.second.handle);
-        }
-    }
-    return r;
-}
-
 absl::flat_hash_set<model::ntp> log_manager::get_all_ntps() const {
     absl::flat_hash_set<model::ntp> r;
     for (const auto& p : _logs) {

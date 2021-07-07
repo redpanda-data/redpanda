@@ -34,7 +34,7 @@ using iresults_map
   = absl::flat_hash_map<model::ntp, ntp_context::offset_tracker>;
 
 ss::future<ntp_context_cache> recover_offsets(
-  storage::simple_snapshot_manager& snap, storage::log_manager& log_mgr) {
+  storage::simple_snapshot_manager& snap, cluster::partition_manager& pm) {
     ntp_context_cache recovered;
     auto optional_snap_reader = co_await snap.open_snapshot();
     if (!optional_snap_reader) {
@@ -61,16 +61,16 @@ ss::future<ntp_context_cache> recover_offsets(
     /// Match the offsets map with the corresponding storage::log queried from
     /// the log_manager, building the completed ntp_context_cache
     for (auto& [key, offsets] : irm) {
-        std::optional<storage::log> log = log_mgr.get(key);
-        if (!log) {
+        auto partition = pm.get(key);
+        if (!partition) {
             vlog(
               coproclog.error,
               "Coult not recover ntp {}, for some reason it does not exist in "
-              "the log_manager",
+              "the partition_manager",
               key);
         } else {
             auto [itr, _] = recovered.emplace(
-              key, ss::make_lw_shared<ntp_context>(std::move(*log)));
+              key, ss::make_lw_shared<ntp_context>(std::move(partition)));
             itr->second->offsets = std::move(offsets);
         }
     }

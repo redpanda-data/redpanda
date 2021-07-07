@@ -24,6 +24,7 @@ v_cc_library(
     v::storage
     v::reflection
     v::kafka_client
+    v::cluster
     coproc_gen
   )
 

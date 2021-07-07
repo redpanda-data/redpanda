@@ -11,12 +11,12 @@
 
 #pragma once
 
+#include "cluster/partition.h"
+#include "cluster/partition_manager.h"
 #include "config/configuration.h"
 #include "coproc/types.h"
 #include "random/simple_time_jitter.h"
 #include "rpc/reconnect_transport.h"
-#include "storage/fwd.h"
-#include "storage/log.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/semaphore.hh>
@@ -58,13 +58,14 @@ struct ntp_context {
 
     using offset_tracker = absl::btree_map<script_id, offset_pair>;
 
-    explicit ntp_context(storage::log lg)
-      : log(std::move(lg)) {}
+    explicit ntp_context(ss::lw_shared_ptr<cluster::partition> p)
+      : partition(std::move(p)) {}
 
-    const model::ntp& ntp() const { return log.config().ntp(); }
+    const model::ntp& ntp() const { return partition->ntp(); }
 
-    /// Reference to the storage layer for reading from the input ntp
-    storage::log log;
+    /// Reference to a partition for reading from an input source
+    ss::lw_shared_ptr<cluster::partition> partition;
+
     /// Interested scripts write their last read offset of the input ntp
     offset_tracker offsets;
 };
@@ -87,9 +88,12 @@ struct shared_script_resources {
     /// Underlying transport connection to the wasm engine
     rpc::reconnect_transport transport;
 
-    /// Reference to the storage api, used to lookup and create
-    /// storage::logs
+    /// Reference to the storage layer for writing to materialized logs
     storage::api& api;
+
+    /// Reference to the partition manager, used to interface with
+    /// cluster::partition
+    cluster::partition_manager& pm;
 
     /// A mutex per materialized log is required as concurrency is not
     /// guaranteed across script contexts. Two scripts writing to the same
@@ -100,9 +104,12 @@ struct shared_script_resources {
     absl::node_hash_map<model::ntp, mutex> log_mtx;
 
     explicit shared_script_resources(
-      rpc::reconnect_transport t, storage::api& a)
+      rpc::reconnect_transport t,
+      storage::api& sapi,
+      cluster::partition_manager& a)
       : transport(std::move(t))
-      , api(a) {}
+      , api(sapi)
+      , pm(a) {}
 };
 
 } // namespace coproc

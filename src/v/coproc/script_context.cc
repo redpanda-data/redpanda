@@ -9,10 +9,9 @@
  * by the Apache License, Version 2.0
  */
 
-#include "coproc/script_context.h"
-
 #include "coproc/logger.h"
 #include "coproc/reference_window_consumer.hpp"
+#include "coproc/script_context.h"
 #include "coproc/script_context_frontend.h"
 #include "coproc/types.h"
 #include "model/record_batch_reader.h"
