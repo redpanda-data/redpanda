@@ -788,7 +788,9 @@ func parseFlags(flags []string) map[string]string {
 		}
 
 		// Check if it's in name=value format
-		parts := strings.Split(trimmed, "=")
+		// Split only into 2 tokens, since some flags can have multiple '='
+		// in them, like --logger-log-level=archival=debug:cloud_storage=debug
+		parts := strings.SplitN(trimmed, "=", 2)
 		if len(parts) >= 2 {
 			name := strings.Trim(parts[0], " ")
 			value := strings.Trim(parts[1], " ")
