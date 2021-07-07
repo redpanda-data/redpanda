@@ -306,3 +306,90 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
       upload3.source->offsets().committed_offset + model::offset(1), lm);
     BOOST_REQUIRE(upload4.source.get() == nullptr);
 }
+
+// NOLINTNEXTLINE
+FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
+    // This test simulates leadership transfer. In this situation the
+    // manifest might contain misaligned segments. This triggers partial
+    // segment upload which, in turn should guarantee that the progress is
+    // made.
+    // The manifest that this test generates contains a segment definition
+    // that clashes with the partial upload.
+    std::vector<segment_desc> segments = {
+      {manifest_ntp, model::offset(1), model::term_id(2)},
+      {manifest_ntp, model::offset(1000), model::term_id(4)},
+    };
+    init_storage_api_local(segments);
+    auto s1name = archival::segment_name("1-2-v1.log");
+    auto s2name = archival::segment_name("1000-4-v1.log");
+    auto segment1 = get_segment(manifest_ntp, s1name);
+    BOOST_REQUIRE(static_cast<bool>(segment1));
+    auto segment2 = get_segment(manifest_ntp, s2name);
+    BOOST_REQUIRE(static_cast<bool>(segment2));
+
+    //
+    cloud_storage::manifest old_manifest(manifest_ntp, manifest_revision);
+    cloud_storage::manifest::segment_meta old_meta{
+      .is_compacted = false,
+      .size_bytes = 100,
+      .base_offset = model::offset(2),
+      .committed_offset = segment1->offsets().committed_offset
+                          - model::offset(1)};
+    auto oldname = archival::segment_name("2-2-v1.log");
+    old_manifest.add(oldname, old_meta);
+    std::stringstream old_str;
+    old_manifest.serialize(old_str);
+    ss::sstring segment3_url = "/dfee62b1/test-ns/test-topic/42_0/2-2-v1.log";
+
+    std::vector<s3_imposter_fixture::expectation> expectations({
+      s3_imposter_fixture::expectation{
+        .url = manifest_url, .body = ss::sstring(old_str.str())},
+      s3_imposter_fixture::expectation{.url = segment1_url, .body = "segment1"},
+      s3_imposter_fixture::expectation{.url = segment2_url, .body = "segment2"},
+      s3_imposter_fixture::expectation{.url = segment3_url, .body = "segment3"},
+    });
+
+    set_expectations_and_listen(expectations);
+    auto conf = get_configuration();
+    service_probe probe(service_metrics_disabled::yes);
+    cloud_storage::remote remote(
+      conf.connection_limit, conf.client_config, probe);
+    archival::ntp_archiver archiver(
+      get_ntp_conf(), get_configuration(), remote, probe);
+    auto action = ss::defer([&archiver] { archiver.stop().get(); });
+
+    retry_chain_node fib;
+
+    archiver.download_manifest(fib).get();
+
+    auto res = archiver
+                 .upload_next_candidates(get_local_storage_api().log_mgr(), fib)
+                 .get0();
+    BOOST_REQUIRE_EQUAL(res.num_succeded, 2);
+    BOOST_REQUIRE_EQUAL(res.num_failed, 0);
+
+    for (auto req : get_requests()) {
+        vlog(test_log.error, "{}", req._url);
+    }
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 4);
+    {
+        auto it = get_requests().at(0);
+        BOOST_REQUIRE(it._url == manifest_url);
+        BOOST_REQUIRE(it._method == "GET"); // NOLINT
+    }
+    {
+        auto it = get_requests().at(1);
+        BOOST_REQUIRE(it._url == segment3_url);
+        BOOST_REQUIRE(it._method == "PUT"); // NOLINT
+    }
+    {
+        auto it = get_requests().at(2);
+        BOOST_REQUIRE(it._url == segment2_url);
+        BOOST_REQUIRE(it._method == "PUT"); // NOLINT
+    }
+    {
+        auto it = get_requests().at(3);
+        BOOST_REQUIRE(it._url == manifest_url);
+        BOOST_REQUIRE(it._method == "PUT"); // NOLINT
+    }
+}

@@ -172,18 +172,55 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
             break;
         }
         if (_manifest.contains(upload.exposed_name)) {
-            // This sholdn't happen normally and indicates an error (e.g.
-            // manifest doesn't match the actual data because it was uploaded by
-            // different cluster or altered). We can just skip the segment.
-            vlog(
-              archival_log.warn,
-              "{} Uploading next candidates for {}, attempt to re-upload {}",
-              parent(),
-              _ntp,
-              upload);
+            // If the manifest already contains the name we have the following
+            // cases
+            //
+            // manifest: [A-B], upload: [C-D] where A/C are base offsets and B/D
+            // are committed offsets
+            // invariant:
+            // - A == C (because the name contains base offset)
+            // cases:
+            // - B < C:
+            //   - We need to upload the segment since it has more data.
+            //     Skipping the upload is not an option since partial upload
+            //     is not guaranteed to start from an offset which is not equal
+            //     to B (which will trigger a loop).
+            // - B > C:
+            //   - Normally this shouldn't happen because we will lookup
+            //     offset B to start the next upload and the segment returned by
+            //     the policy will have commited offset which is less than this
+            //     value. We need to log a warning and continue with the largest
+            //     offset.
+            // - B == C:
+            //   - Same as previoius. We need to log error and continue with the
+            //   largest offset.
             const auto& meta = _manifest.get(upload.exposed_name);
-            offset = meta->committed_offset + model::offset(1);
-            continue;
+            auto committed_offset = upload.source->offsets().committed_offset;
+            if (meta->committed_offset < committed_offset) {
+                vlog(
+                  archival_log.info,
+                  "{} Uploading next candidates for {}, attempt to re-upload "
+                  "{}, manifest committed offset {}, upload committed offset "
+                  "{}",
+                  parent(),
+                  _ntp,
+                  upload,
+                  meta->committed_offset,
+                  committed_offset);
+            } else if (meta->committed_offset >= committed_offset) {
+                vlog(
+                  archival_log.warn,
+                  "{} Skip upload for {} because it's already in the manifest "
+                  "{}, manifest committed offset {}, upload committed offset "
+                  "{}",
+                  parent(),
+                  _ntp,
+                  upload,
+                  meta->committed_offset,
+                  committed_offset);
+                offset = meta->committed_offset + model::offset(1);
+                continue;
+            }
         }
         auto committed = upload.source->offsets().committed_offset;
         auto base = upload.source->offsets().base_offset;
