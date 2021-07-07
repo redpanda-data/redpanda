@@ -17,6 +17,7 @@
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/timestamp.h"
 #include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
@@ -42,6 +43,7 @@ struct tm_transaction {
         aborting, // abort is initiated by a client
         killed,   // abort is initiated by a timeout
         ready,
+        tombstone,
     };
 
     struct tx_partition {
@@ -72,6 +74,7 @@ struct tm_transaction {
     model::term_id etag;
     tx_status status;
     std::chrono::milliseconds timeout_ms;
+    ss::lowres_system_clock::time_point last_update_ts;
     std::vector<tx_partition> partitions;
     std::vector<tx_group> groups;
 
@@ -91,6 +94,7 @@ struct tm_snapshot {
  */
 class tm_stm final : public persisted_stm {
 public:
+    using clock_type = ss::lowres_system_clock;
     static constexpr const int8_t supported_version = 0;
 
     enum op_status {
@@ -137,6 +141,9 @@ public:
       kafka::transactional_id,
       std::chrono::milliseconds,
       model::producer_identity);
+    ss::future<> expire_tx(kafka::transactional_id);
+
+    bool is_expired(const tm_transaction&);
 
     // before calling a tm_stm modifying operation a caller should
     // take get_tx_lock mutex
@@ -148,13 +155,14 @@ public:
         return lock_it->second;
     }
 
+    std::vector<kafka::transactional_id> get_expired_txs();
+
 private:
     void load_snapshot(stm_snapshot_header, iobuf&&) override;
     stm_snapshot take_snapshot() override;
 
-    void expire_old_txs();
-
     std::chrono::milliseconds _sync_timeout;
+    std::chrono::milliseconds _transactional_id_expiration;
     model::violation_recovery_policy _recovery_policy;
     absl::flat_hash_map<kafka::transactional_id, tm_transaction> _tx_table;
     absl::flat_hash_map<model::producer_identity, kafka::transactional_id>
