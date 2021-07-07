@@ -257,6 +257,7 @@ func CreateNode(
 	}
 	hostname := Name(nodeID)
 	cmd := []string{
+		"redpanda",
 		"start",
 		"--node-id",
 		fmt.Sprintf("%d", nodeID),
