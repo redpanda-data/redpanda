@@ -16,4 +16,5 @@ commands:
   - command: "./hack/wait-for-webhook-ready.sh"
 artifactsDir: tests/_helm_e2e_artifacts
 timeout: 300
+reportFormat: xml
 parallel: 3
