@@ -181,6 +181,10 @@ func startCluster(
 	if err != nil {
 		return err
 	}
+	seedSchemaRegPort, err := net.GetFreePort()
+	if err != nil {
+		return err
+	}
 	seedRPCPort, err := net.GetFreePort()
 	if err != nil {
 		return err
@@ -194,6 +198,7 @@ func startCluster(
 		seedID,
 		seedKafkaPort,
 		seedProxyPort,
+		seedSchemaRegPort,
 		seedRPCPort,
 		seedMetricsPort,
 		netID,
@@ -235,6 +240,10 @@ func startCluster(
 			if err != nil {
 				return err
 			}
+			schemaRegPort, err := net.GetFreePort()
+			if err != nil {
+				return err
+			}
 			rpcPort, err := net.GetFreePort()
 			if err != nil {
 				return err
@@ -256,6 +265,7 @@ func startCluster(
 				id,
 				kafkaPort,
 				proxyPort,
+				schemaRegPort,
 				rpcPort,
 				metricsPort,
 				netID,

@@ -357,8 +357,9 @@ func TestMerge(t *testing.T) {
 func TestDefault(t *testing.T) {
 	defaultConfig := Default()
 	expected := &Config{
-		ConfigFile: "/etc/redpanda/redpanda.yaml",
-		Pandaproxy: &Pandaproxy{},
+		ConfigFile:     "/etc/redpanda/redpanda.yaml",
+		Pandaproxy:     &Pandaproxy{},
+		SchemaRegistry: &SchemaRegistry{},
 		Redpanda: RedpandaConfig{
 			Directory: "/var/lib/redpanda/data",
 			RPCServer: SocketAddress{"0.0.0.0", 33145},
@@ -487,6 +488,7 @@ rpk:
   tune_swappiness: true
   tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
+schema_registry: {}
 `,
 		},
 		{
@@ -533,6 +535,7 @@ rpk:
   tune_swappiness: true
   tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
+schema_registry: {}
 `,
 		},
 		{
@@ -589,6 +592,7 @@ rpk:
   tune_swappiness: true
   tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
+schema_registry: {}
 `,
 		},
 		{
@@ -647,6 +651,7 @@ rpk:
   tune_swappiness: true
   tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
+schema_registry: {}
 `,
 		},
 		{
@@ -696,6 +701,7 @@ rpk:
   tune_network: false
   tune_swappiness: false
   tune_transparent_hugepages: false
+schema_registry: {}
 `,
 		},
 		{
@@ -751,6 +757,7 @@ rpk:
   tune_swappiness: true
   tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
+schema_registry: {}
 `,
 		},
 		{
@@ -829,6 +836,7 @@ rpk:
   tune_swappiness: true
   tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
+schema_registry: {}
 unrecognized_top_field:
   child: true
 `,
@@ -899,6 +907,7 @@ rpk:
   tune_swappiness: true
   tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
+schema_registry: {}
 `,
 		},
 		{
@@ -965,6 +974,7 @@ rpk:
   tune_swappiness: true
   tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
+schema_registry: {}
 `,
 		},
 		{
@@ -1027,6 +1037,7 @@ rpk:
   tune_swappiness: true
   tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
+schema_registry: {}
 `,
 		},
 		{
@@ -1079,6 +1090,7 @@ rpk:
   tune_swappiness: true
   tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
+schema_registry: {}
 `,
 		},
 		{
@@ -1169,6 +1181,7 @@ rpk:
   tune_swappiness: true
   tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
+schema_registry: {}
 `,
 		},
 		{
@@ -1233,13 +1246,14 @@ rpk:
   tune_swappiness: true
   tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
+schema_registry: {}
 `,
 		},
 		{
 			name: "shall write config with pandaproxy client configuration",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.PandaproxyClient = &PandaproxyClient{
+				c.PandaproxyClient = &KafkaClient{
 					Brokers: []SocketAddress{
 						{
 							Address: "1.2.3.4",
@@ -1307,6 +1321,7 @@ rpk:
   tune_swappiness: true
   tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
+schema_registry: {}
 `,
 		},
 		{
@@ -1359,6 +1374,7 @@ rpk:
   tune_swappiness: true
   tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
+schema_registry: {}
 `,
 		},
 		{
@@ -1411,6 +1427,7 @@ rpk:
   tune_swappiness: true
   tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
+schema_registry: {}
 `,
 		},
 		{
@@ -1420,7 +1437,7 @@ rpk:
 				mechanism := "abc"
 				username := "user"
 				password := "pass"
-				c.PandaproxyClient = &PandaproxyClient{
+				c.PandaproxyClient = &KafkaClient{
 					SASLMechanism: &mechanism,
 					SCRAMUsername: &username,
 					SCRAMPassword: &password,
@@ -1472,6 +1489,7 @@ rpk:
   tune_swappiness: true
   tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
+schema_registry: {}
 `,
 		},
 		{
@@ -1554,6 +1572,7 @@ rpk:
   tune_swappiness: true
   tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
+schema_registry: {}
 `,
 		},
 		{
@@ -1610,6 +1629,7 @@ rpk:
   tune_swappiness: true
   tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
+schema_registry: {}
 `,
 		},
 		{
@@ -1666,6 +1686,7 @@ rpk:
   tune_swappiness: true
   tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
+schema_registry: {}
 `,
 		},
 		{
@@ -1734,6 +1755,7 @@ rpk:
   tune_network: false
   tune_swappiness: false
   tune_transparent_hugepages: false
+schema_registry: {}
 `,
 		},
 	}
@@ -2077,7 +2099,7 @@ func TestReadAsJSON(t *testing.T) {
 				return mgr.Write(conf)
 			},
 			path:     Default().ConfigFile,
-			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","pandaproxy":{},"redpanda":{"admin":[{"address":"0.0.0.0","port":9644}],"data_directory":"/var/lib/redpanda/data","developer_mode":true,"kafka_api":[{"address":"0.0.0.0","name":"internal","port":9092}],"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_disk_write_cache":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
+			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","pandaproxy":{},"redpanda":{"admin":[{"address":"0.0.0.0","port":9644}],"data_directory":"/var/lib/redpanda/data","developer_mode":true,"kafka_api":[{"address":"0.0.0.0","name":"internal","port":9092}],"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_disk_write_cache":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false},"schema_registry":{}}`,
 		},
 		{
 			name:           "it should fail if the the config isn't found",
@@ -2153,6 +2175,7 @@ func TestReadFlat(t *testing.T) {
 		"rpk.tune_network":                             "false",
 		"rpk.tune_swappiness":                          "false",
 		"rpk.tune_transparent_hugepages":               "false",
+		"schema_registry":                              "",
 	}
 	fs := afero.NewMemMapFs()
 	mgr := NewManager(fs)

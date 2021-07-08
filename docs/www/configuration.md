@@ -472,6 +472,41 @@ pandaproxy_client:
   # Default: ""
   scram_password: ""
 
+# The Schema Registry provides a RESTful interface for Schema storage, retrieval, and compatibility.
+# To disable the Schema Registry, remove this top-level config node
+schema_registry:
+  # A list of address and port to listen for Schema Registry API requests.
+  # Default: 0.0.0.0:8082
+  schema_registry_api: 
+  - address: "0.0.0.0"
+    name: internal
+    port: 8081
+  - address: "0.0.0.0"
+    name: external
+    port: 18081
+
+  # A list of TLS configurations for the Schema Registry API.
+  # Default: null
+  schema_registry_api_tls:
+  - name: external
+    # Whether to enable TLS.
+    enabled: false
+    # Require client authentication
+    require_client_auth: false
+    # The path to the server certificate PEM file.
+    cert_file: ""
+    # The path to the server key PEM file
+    key_file: ""
+    # The path to the truststore PEM file. Only required if client
+    # authentication is enabled.
+    truststore_file: ""
+  - name: internal
+    enabled: false
+
+# The Schema Registry client config
+# See pandaproxy_client for a list of options
+schema_registry_client:
+
 rpk:
   # Add optional flags to have rpk start redpanda with specific parameters.
   # The available start flags are found in: /src/v/config/configuration.cc

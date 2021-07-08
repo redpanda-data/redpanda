@@ -12,16 +12,18 @@ package config
 import "path"
 
 type Config struct {
-	NodeUuid         string                 `yaml:"node_uuid,omitempty" mapstructure:"node_uuid,omitempty" json:"nodeUuid"`
-	Organization     string                 `yaml:"organization,omitempty" mapstructure:"organization,omitempty" json:"organization"`
-	LicenseKey       string                 `yaml:"license_key,omitempty" mapstructure:"license_key,omitempty" json:"licenseKey"`
-	ClusterId        string                 `yaml:"cluster_id,omitempty" mapstructure:"cluster_id,omitempty" json:"clusterId"`
-	ConfigFile       string                 `yaml:"config_file" mapstructure:"config_file" json:"configFile"`
-	Redpanda         RedpandaConfig         `yaml:"redpanda" mapstructure:"redpanda" json:"redpanda"`
-	Rpk              RpkConfig              `yaml:"rpk" mapstructure:"rpk" json:"rpk"`
-	Pandaproxy       *Pandaproxy            `yaml:"pandaproxy,omitempty" mapstructure:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`
-	PandaproxyClient *PandaproxyClient      `yaml:"pandaproxy_client,omitempty" mapstructure:"pandaproxy_client,omitempty" json:"pandaproxyClient,omitempty"`
-	Other            map[string]interface{} `yaml:",inline" mapstructure:",remain"`
+	NodeUuid             string                 `yaml:"node_uuid,omitempty" mapstructure:"node_uuid,omitempty" json:"nodeUuid"`
+	Organization         string                 `yaml:"organization,omitempty" mapstructure:"organization,omitempty" json:"organization"`
+	LicenseKey           string                 `yaml:"license_key,omitempty" mapstructure:"license_key,omitempty" json:"licenseKey"`
+	ClusterId            string                 `yaml:"cluster_id,omitempty" mapstructure:"cluster_id,omitempty" json:"clusterId"`
+	ConfigFile           string                 `yaml:"config_file" mapstructure:"config_file" json:"configFile"`
+	Redpanda             RedpandaConfig         `yaml:"redpanda" mapstructure:"redpanda" json:"redpanda"`
+	Rpk                  RpkConfig              `yaml:"rpk" mapstructure:"rpk" json:"rpk"`
+	Pandaproxy           *Pandaproxy            `yaml:"pandaproxy,omitempty" mapstructure:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`
+	PandaproxyClient     *KafkaClient           `yaml:"pandaproxy_client,omitempty" mapstructure:"pandaproxy_client,omitempty" json:"pandaproxyClient,omitempty"`
+	SchemaRegistry       *SchemaRegistry        `yaml:"schema_registry,omitempty" mapstructure:"schema_registry,omitempty" json:"schemaRegistry,omitempty"`
+	SchemaRegistryClient *KafkaClient           `yaml:"schema_registry_client,omitempty" mapstructure:"schema_registry_client,omitempty" json:"schemaRegistryClient,omitempty"`
+	Other                map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 
 type RedpandaConfig struct {
@@ -61,7 +63,12 @@ type Pandaproxy struct {
 	Other                   map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 
-type PandaproxyClient struct {
+type SchemaRegistry struct {
+	SchemaRegistryAPI    []NamedSocketAddress `yaml:"schema_registry_api,omitempty" mapstructure:"schema_registry_api,omitempty" json:"schemaRegistryApi,omitempty"`
+	SchemaRegistryAPITLS []ServerTLS          `yaml:"schema_registry_api_tls,omitempty" mapstructure:"schema_registry_api_tls,omitempty" json:"schemaRegistryApiTls,omitempty"`
+}
+
+type KafkaClient struct {
 	Brokers       []SocketAddress        `yaml:"brokers,omitempty" mapstructure:"brokers,omitempty" json:"brokers,omitempty"`
 	BrokerTLS     ServerTLS              `yaml:"broker_tls,omitempty" mapstructure:"broker_tls,omitempty" json:"brokerTls,omitempty"`
 	SASLMechanism *string                `yaml:"sasl_mechanism,omitempty" mapstructure:"sasl_mechanism,omitempty" json:"saslMechanism,omitempty"`
