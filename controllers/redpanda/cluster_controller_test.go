@@ -14,7 +14,9 @@ import (
 	"time"
 
 	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
+	types2 "github.com/onsi/gomega/types"
 	"github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/controllers/redpanda"
 	res "github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
@@ -321,6 +323,30 @@ var _ = Describe("RedPandaCluster controller", func() {
 
 		})
 	})
+
+	DescribeTable("Image pull policy tests table", func(imagePullPolicy string, matcher types2.GomegaMatcher) {
+		k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
+			Scheme:             scheme.Scheme,
+			MetricsBindAddress: "0",
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		r := &redpanda.ClusterReconciler{
+			Client: fake.NewClientBuilder().Build(),
+			Log:    ctrl.Log,
+			Scheme: scheme.Scheme,
+		}
+
+		Expect(r.WithConfiguratorSettings(res.ConfiguratorSettings{
+			ImagePullPolicy: corev1.PullPolicy(imagePullPolicy),
+		}).SetupWithManager(k8sManager)).To(matcher)
+
+	},
+		Entry("Always image pull policy", "Always", Succeed()),
+		Entry("IfNotPresent image pull policy", "IfNotPresent", Succeed()),
+		Entry("Never image pull policy", "Never", Succeed()),
+		Entry("Empty image pull policy", "", Not(Succeed())),
+		Entry("Random image pull policy", "asdvasd", Not(Succeed())))
 })
 
 func findPort(ports []corev1.ServicePort, name string) int32 {

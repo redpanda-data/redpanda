@@ -20,7 +20,9 @@ import (
 	"github.com/onsi/gomega/gexec"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	redpandacontrollers "github.com/vectorizedio/redpanda/src/go/k8s/controllers/redpanda"
+	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -34,6 +36,7 @@ import (
 
 var k8sClient client.Client
 var testEnv *envtest.Environment
+var cfg *rest.Config
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -51,7 +54,8 @@ var _ = BeforeSuite(func(done Done) {
 		CRDDirectoryPaths: []string{filepath.Join("..", "..", "config", "crd", "bases")},
 	}
 
-	cfg, err := testEnv.Start()
+	var err error
+	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
@@ -73,6 +77,10 @@ var _ = BeforeSuite(func(done Done) {
 		Client: k8sManager.GetClient(),
 		Log:    ctrl.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
 		Scheme: k8sManager.GetScheme(),
+	}).WithConfiguratorSettings(resources.ConfiguratorSettings{
+		ConfiguratorBaseImage: "vectorized/configurator",
+		ConfiguratorTag:       "latest",
+		ImagePullPolicy:       "Always",
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
