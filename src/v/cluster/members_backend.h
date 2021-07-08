@@ -5,6 +5,7 @@
 #include "cluster/members_table.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
 
@@ -18,18 +19,24 @@ namespace cluster {
 class members_backend {
 public:
     enum class reallocation_state { initial, reassigned, requested, finished };
-    /**
-     * struct describing partition reallocation
-     */
-    struct reallocation_meta {
-        reallocation_meta(members_manager::node_update update, model::ntp ntp)
-          : update(update)
-          , ntp(std::move(ntp)) {}
+    struct partition_reallocation {
+        explicit partition_reallocation(model::ntp ntp)
+          : ntp(std::move(ntp)) {}
 
-        members_manager::node_update update;
         model::ntp ntp;
         std::optional<allocation_units> new_assignment;
         reallocation_state state = reallocation_state::initial;
+    };
+    /**
+     * struct describing partition reallocation
+     */
+    struct update_meta {
+        explicit update_meta(members_manager::node_update update)
+          : update(update) {}
+
+        members_manager::node_update update;
+        std::vector<partition_reallocation> partition_reallocations;
+        bool finished = false;
     };
 
     members_backend(
@@ -48,11 +55,12 @@ public:
 private:
     void start_reconciliation_loop();
     ss::future<> reconcile();
-    ss::future<> reallocate_replica_set(reallocation_meta&);
-    void mark_done_as_finished(reallocation_meta&);
+    ss::future<> reallocate_replica_set(partition_reallocation&);
+    void try_to_finish_update(update_meta&);
+    void calculate_reallocations(update_meta&);
 
     ss::future<> handle_updates();
-    void handle_decommissioned(const members_manager::node_update&);
+    ss::future<> handle_single_update(members_manager::node_update);
     void handle_recommissioned(const members_manager::node_update&);
 
     ss::sharded<topics_frontend>& _topics_frontend;
@@ -67,7 +75,7 @@ private:
     mutex _lock;
 
     // replicas reallocations in progress
-    std::vector<reallocation_meta> _reallocations;
+    std::vector<update_meta> _updates;
     std::chrono::milliseconds _retry_timeout;
     ss::timer<> _retry_timer;
     ss::condition_variable _new_updates;
