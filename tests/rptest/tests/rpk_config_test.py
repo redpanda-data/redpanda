@@ -70,6 +70,7 @@ rpk:
   tune_network: false
   tune_swappiness: false
   tune_transparent_hugepages: false
+schema_registry: {}
 '''
 
                 expected_config = yaml.load(expected_out)
