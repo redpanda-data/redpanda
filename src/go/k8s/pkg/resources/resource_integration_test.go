@@ -78,7 +78,11 @@ func TestEnsure_StatefulSet(t *testing.T) {
 		types.NamespacedName{},
 		types.NamespacedName{},
 		"",
-		"latest",
+		res.ConfiguratorSettings{
+			ConfiguratorBaseImage: "vectorized/configurator",
+			ConfiguratorTag:       "latest",
+			ImagePullPolicy:       "Always",
+		},
 		ctrl.Log.WithName("test"))
 
 	err := sts.Ensure(context.Background())
