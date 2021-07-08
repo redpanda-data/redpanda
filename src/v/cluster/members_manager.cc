@@ -667,6 +667,24 @@ members_manager::handle_configuration_update_request(
           return ss::make_ready_future<ret_t>(
             errc::join_request_dispatch_error);
       });
-} // namespace cluster
+}
+std::ostream&
+operator<<(std::ostream& o, const members_manager::node_update_type& tp) {
+    switch (tp) {
+    case members_manager::node_update_type::added:
+        return o << "added";
+    case members_manager::node_update_type::decommissioned:
+        return o << "decommissioned";
+    case members_manager::node_update_type::recommissioned:
+        return o << "recommissioned";
+    }
+    return o << "unknown";
+}
+
+std::ostream&
+operator<<(std::ostream& o, const members_manager::node_update& u) {
+    fmt::print(o, "{{node_id: {}, type: {}}}", u.id, u.type);
+    return o;
+}
 
 } // namespace cluster

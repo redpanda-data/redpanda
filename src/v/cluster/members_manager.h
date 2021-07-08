@@ -48,6 +48,7 @@ public:
     struct node_update {
         model::node_id id;
         node_update_type type;
+        friend std::ostream& operator<<(std::ostream&, const node_update&);
     };
 
     members_manager(
@@ -123,4 +124,7 @@ private:
     ss::queue<node_update> _update_queue;
     ss::abort_source::subscription _queue_abort_subscription;
 };
+
+std::ostream&
+operator<<(std::ostream&, const members_manager::node_update_type&);
 } // namespace cluster
