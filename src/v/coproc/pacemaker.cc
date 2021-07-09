@@ -79,7 +79,9 @@ ss::future<> pacemaker::reset() {
     auto removed = co_await remove_all_sources();
     vlog(coproclog.info, "Pacemaker reset {} scripts", removed.size());
     std::swap(_ntps, ncc);
-    _offs.timer.arm(_offs.duration);
+    if (!_offs.timer.armed()) {
+        _offs.timer.arm(_offs.duration);
+    }
 }
 
 ss::future<> pacemaker::stop() {
