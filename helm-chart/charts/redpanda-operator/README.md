@@ -63,6 +63,9 @@ Other instruction will be visible after installation.
 | config.leaderElection.resourceName | string | `"aa9fc693.vectorized.io"` |  |
 | config.metrics.bindAddress | string | `"127.0.0.1:8080"` |  |
 | config.webhook.port | int | `9443` |  |
+| configurator.pullPolicy | string | `"IfNotPresent"` | Define the pullPolicy for Redpanda configurator image |
+| configurator.repository | string | `"vectorized/configurator"` | Repository that Redpanda configurator image is available |
+| configurator.tag | string | `"{{ .Chart.AppVersion }}"` | Define the Redpanda configurator container tag |
 | fullnameOverride | string | `""` | Override the fully qualified app name |
 | image.pullPolicy | string | `"IfNotPresent"` | Define the pullPolicy for Redpanda Operator image |
 | image.repository | string | `"vectorized/redpanda-operator"` | Repository that Redpanda Operator image is available |
