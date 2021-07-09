@@ -57,7 +57,9 @@ spec:
         - --health-probe-bind-address=:8081
         - --metrics-bind-address=127.0.0.1:8080
         - --leader-elect
-        - --configurator-tag={{ tpl .Values.image.tag . }}
+        - --configurator-tag={{ tpl .Values.configurator.tag . }}
+        - --configurator-base-image={{ .Values.configurator.repository }}
+        - --configurator-image-pull-policy={{ .Values.configurator.pullPolicy }}
         {{- if .Values.webhook.enabled }}
         - --webhook-enabled=true
         {{- else }}

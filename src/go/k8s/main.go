@@ -15,6 +15,8 @@ import (
 	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	redpandacontrollers "github.com/vectorizedio/redpanda/src/go/k8s/controllers/redpanda"
+	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -22,6 +24,10 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+)
+
+const (
+	defaultConfiguratorContainerImage = "vectorized/configurator"
 )
 
 var (
@@ -39,11 +45,13 @@ func init() {
 
 func main() {
 	var (
-		metricsAddr          string
-		enableLeaderElection bool
-		probeAddr            string
-		webhookEnabled       bool
-		configuratorTag      string
+		metricsAddr                 string
+		enableLeaderElection        bool
+		probeAddr                   string
+		webhookEnabled              bool
+		configuratorBaseImage       string
+		configuratorTag             string
+		configuratorImagePullPolicy string
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -52,7 +60,9 @@ func main() {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&webhookEnabled, "webhook-enabled", false, "Enable webhook Manager")
+	flag.StringVar(&configuratorBaseImage, "configurator-base-image", defaultConfiguratorContainerImage, "Set the configurator base image")
 	flag.StringVar(&configuratorTag, "configurator-tag", "latest", "Set the configurator tag")
+	flag.StringVar(&configuratorImagePullPolicy, "configurator-image-pull-policy", "Always", "Set the configurator image pull policy")
 
 	opts := zap.Options{
 		Development: true,
@@ -77,11 +87,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	configurator := resources.ConfiguratorSettings{
+		ConfiguratorBaseImage: configuratorBaseImage,
+		ConfiguratorTag:       configuratorTag,
+		ImagePullPolicy:       corev1.PullPolicy(configuratorImagePullPolicy),
+	}
+
 	if err = (&redpandacontrollers.ClusterReconciler{
 		Client: mgr.GetClient(),
 		Log:    ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
 		Scheme: mgr.GetScheme(),
-	}).WithConfiguratorTag(configuratorTag).SetupWithManager(mgr); err != nil {
+	}).WithConfiguratorSettings(configurator).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
 		os.Exit(1)
 	}
