@@ -20,6 +20,15 @@ image:
   # image.pullPolicy -- Define the pullPolicy for Redpanda Operator image
   pullPolicy: IfNotPresent
 
+configurator:
+  # configurator.repository -- Repository that Redpanda configurator image is available
+  repository: vectorized/configurator
+  # configurator.tag -- Define the Redpanda configurator container tag
+  tag: |-
+    {{ .Chart.AppVersion }}
+  # configurator.pullPolicy -- Define the pullPolicy for Redpanda configurator image
+  pullPolicy: IfNotPresent
+
 config:
   apiVersion: controller-runtime.sigs.k8s.io/v1alpha1
   kind: ControllerManagerConfig
