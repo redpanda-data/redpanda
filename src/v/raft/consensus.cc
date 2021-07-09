@@ -1677,6 +1677,16 @@ ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
         if (cfg.last_included_index <= _last_snapshot_index) {
             return ss::now();
         }
+        auto max_offset = cfg.should_truncate ? _commit_index
+                                              : last_visible_index();
+
+        vassert(
+          cfg.last_included_index <= max_offset,
+          "Can not take snapshot, requested offset: {} is greater than max "
+          "snapshot offset: {}",
+          cfg.last_included_index,
+          _commit_index);
+
         return do_write_snapshot(cfg.last_included_index, std::move(cfg.data))
           .then([this, should_truncate = cfg.should_truncate] {
               if (!should_truncate) {
@@ -1690,12 +1700,6 @@ ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
 
 ss::future<>
 consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
-    vassert(
-      last_included_index <= _commit_index,
-      "Can not take snapshot that contains not commited batches, requested "
-      "offset: {}, commit_index: {}",
-      last_included_index,
-      _commit_index);
     vlog(
       _ctxlog.trace,
       "Persisting snapshot with last included offset {} of size {}",
