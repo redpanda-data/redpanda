@@ -52,7 +52,7 @@ describe("Logging Wrap", () => {
           assert(data.toString().includes("[test2] info: test2.2\n"));
           done();
         });
-      }, 10);
+      }, 100);
     });
   });
 });

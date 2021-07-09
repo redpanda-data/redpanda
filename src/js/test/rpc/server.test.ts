@@ -517,7 +517,10 @@ describe("Server", function () {
     it("shouldn't enable coprocessor if the coprocessor has invalid topics", () => {
       const server = new ProcessBatchServer();
       const coprocessor = createHandle().coprocessor;
-      coprocessor.inputTopics = [["topic.", PolicyInjection.Stored]];
+      // % isn't a available character for a topic name, for that reason
+      // 'topic%' should fail when we try to enable a coproc with that
+      // topic subscription
+      coprocessor.inputTopics = [["topic%", PolicyInjection.Stored]];
       server.loadCoprocFromString = (_, _2) => [coprocessor, undefined];
       server.listen(8080);
       return SupervisorClient.create(8080).then((client) => {
