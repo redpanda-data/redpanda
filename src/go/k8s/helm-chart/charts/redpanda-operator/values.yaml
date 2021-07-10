@@ -11,6 +11,9 @@ fullnameOverride: ""
 # replicaCount -- Number of instances of Redpanda Operator
 replicaCount: 1
 
+# Kubernetes Cluster Domain
+clusterDomain: cluster.local
+
 image:
   # image.repository -- Repository that Redpanda Operator image is available
   repository: vectorized/redpanda-operator

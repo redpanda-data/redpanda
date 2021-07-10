@@ -683,11 +683,9 @@ func (r *StatefulSetResource) Key() types.NamespacedName {
 
 func (r *StatefulSetResource) portsConfiguration() string {
 	rpcAPIPort := r.pandaCluster.Spec.Configuration.RPCServer.Port
-	svcName := r.serviceName
+	serviceFQDN := r.serviceFQDN
 
-	// In every dns name there is trailing dot to query absolute path
-	// For trailing dot explanation please visit http://www.dns-sd.org/trailingdotsindomainnames.html
-	return fmt.Sprintf("--advertise-rpc-addr=$(POD_NAME).%s.$(POD_NAMESPACE).svc.cluster.local.:%d", svcName, rpcAPIPort)
+	return fmt.Sprintf("--advertise-rpc-addr=$(POD_NAME).%s:%d", serviceFQDN, rpcAPIPort)
 }
 
 func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
