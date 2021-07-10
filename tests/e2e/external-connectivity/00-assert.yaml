@@ -25,16 +25,6 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: status.podIP
-          args:
-            - redpanda
-            - start
-            - --check=false
-            - --advertise-rpc-addr=$(POD_NAME).external-connectivity.$(POD_NAMESPACE).svc.cluster.local.:33145
-            - --overprovisioned
-            - --reserve-memory 1M
-            - --kernel-page-cache=true
-            - --default-log-level=debug
-            - --smp=1
 status:
   readyReplicas: 1
 ---
