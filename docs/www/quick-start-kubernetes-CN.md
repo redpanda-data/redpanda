@@ -102,7 +102,7 @@ helm install \
 2. 为了简化命令，请为版本号创建一个变量：
 
     ```
-    export VERSION=v21.4.15
+    export VERSION=$(curl -s https://api.github.com/repos/vectorizedio/redpanda/releases/latest | jq -r .tag_name)
     ```
 
     **_注意_** - 您可以在[operator版本列表](https://github.com/vectorizedio/redpanda/releases)中找到operator的最新版本号。
