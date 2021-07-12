@@ -24,6 +24,7 @@ func NewTopicCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		user           string
 		password       string
 		mechanism      string
+		enableTLS      bool
 		certFile       string
 		keyFile        string
 		truststoreFile string
@@ -33,7 +34,7 @@ func NewTopicCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		Short: "Create, delete, produce to and consume from Redpanda topics.",
 	}
 
-	common.AddKafkaFlags(command, &configFile, &user, &password, &mechanism, &certFile, &keyFile, &truststoreFile, &brokers)
+	common.AddKafkaFlags(command, &configFile, &user, &password, &mechanism, &enableTLS, &certFile, &keyFile, &truststoreFile, &brokers)
 
 	// The ideal way to pass common (global flags') values would be to
 	// declare PersistentPreRun hooks on each command root (such as rpk
@@ -56,7 +57,7 @@ func NewTopicCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		configClosure,
 		&brokers,
 	)
-	tlsClosure := common.BuildTLSConfig(&certFile, &keyFile, &truststoreFile)
+	tlsClosure := common.BuildKafkaTLSConfig(fs, &enableTLS, &certFile, &keyFile, &truststoreFile, configClosure)
 	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism)
 	adminClosure := common.CreateAdmin(brokersClosure, configClosure, tlsClosure, kAuthClosure)
 	clientClosure := common.CreateClient(brokersClosure, configClosure, tlsClosure, kAuthClosure)

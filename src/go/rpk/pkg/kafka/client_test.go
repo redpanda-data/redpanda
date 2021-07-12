@@ -1,6 +1,7 @@
 package kafka_test
 
 import (
+	"crypto/tls"
 	"testing"
 
 	"github.com/Shopify/sarama"
@@ -14,9 +15,11 @@ func Test_LoadConfig(t *testing.T) {
 
 	getCfg := func() *config.Config {
 		cfg := config.Default()
-		cfg.Rpk.SCRAM.User = "some_user"
-		cfg.Rpk.SCRAM.Password = "some_password"
-		cfg.Rpk.SCRAM.Type = sarama.SASLTypeSCRAMSHA256
+		cfg.Rpk.KafkaApi.SASL = &config.SASL{
+			User:      "some_user",
+			Password:  "some_password",
+			Mechanism: sarama.SASLTypeSCRAMSHA256,
+		}
 		return cfg
 	}
 
@@ -27,45 +30,45 @@ func Test_LoadConfig(t *testing.T) {
 	}{{
 		name: "it should load the SCRAM config",
 		check: func(st *testing.T, cfg *config.Config, c *sarama.Config) {
-			assert.Equal(t, cfg.Rpk.SCRAM.User, c.Net.SASL.User)
-			assert.Equal(t, cfg.Rpk.SCRAM.Password, c.Net.SASL.Password)
-			assert.Equal(t, sarama.SASLMechanism(cfg.Rpk.SCRAM.Type), c.Net.SASL.Mechanism)
+			assert.Equal(t, cfg.Rpk.KafkaApi.SASL.User, c.Net.SASL.User)
+			assert.Equal(t, cfg.Rpk.KafkaApi.SASL.Password, c.Net.SASL.Password)
+			assert.Equal(t, sarama.SASLMechanism(cfg.Rpk.KafkaApi.SASL.Mechanism), c.Net.SASL.Mechanism)
 		},
 	}, {
 		name: "it shouldn't load the SCRAM user if it's missing",
 		conf: func() *config.Config {
 			cfg := getCfg()
-			cfg.Rpk.SCRAM.User = ""
+			cfg.Rpk.KafkaApi.SASL.User = ""
 			return cfg
 		},
 		check: func(st *testing.T, cfg *config.Config, c *sarama.Config) {
-			assert.Equal(t, cfg.Rpk.SCRAM.User, c.Net.SASL.User)
-			assert.NotEqual(t, cfg.Rpk.SCRAM.Password, c.Net.SASL.Password)
-			assert.NotEqual(t, sarama.SASLMechanism(cfg.Rpk.SCRAM.Type), c.Net.SASL.Mechanism)
+			assert.Equal(t, cfg.Rpk.KafkaApi.SASL.User, c.Net.SASL.User)
+			assert.NotEqual(t, cfg.Rpk.KafkaApi.SASL.Password, c.Net.SASL.Password)
+			assert.NotEqual(t, sarama.SASLMechanism(cfg.Rpk.KafkaApi.SASL.Mechanism), c.Net.SASL.Mechanism)
 		},
 	}, {
 		name: "it shouldn't load the SCRAM password if it's missing",
 		conf: func() *config.Config {
 			cfg := getCfg()
-			cfg.Rpk.SCRAM.Password = ""
+			cfg.Rpk.KafkaApi.SASL.Password = ""
 			return cfg
 		},
 		check: func(st *testing.T, cfg *config.Config, c *sarama.Config) {
-			assert.NotEqual(t, cfg.Rpk.SCRAM.User, c.Net.SASL.User)
-			assert.Equal(t, cfg.Rpk.SCRAM.Password, c.Net.SASL.Password)
-			assert.NotEqual(t, sarama.SASLMechanism(cfg.Rpk.SCRAM.Type), c.Net.SASL.Mechanism)
+			assert.NotEqual(t, cfg.Rpk.KafkaApi.SASL.User, c.Net.SASL.User)
+			assert.Equal(t, cfg.Rpk.KafkaApi.SASL.Password, c.Net.SASL.Password)
+			assert.NotEqual(t, sarama.SASLMechanism(cfg.Rpk.KafkaApi.SASL.Mechanism), c.Net.SASL.Mechanism)
 		},
 	}, {
 		name: "it shouldn't load the SCRAM type if it's missing",
 		conf: func() *config.Config {
 			cfg := getCfg()
-			cfg.Rpk.SCRAM.Type = ""
+			cfg.Rpk.KafkaApi.SASL.Mechanism = ""
 			return cfg
 		},
 		check: func(st *testing.T, cfg *config.Config, c *sarama.Config) {
-			assert.NotEqual(t, cfg.Rpk.SCRAM.User, c.Net.SASL.User)
-			assert.NotEqual(t, cfg.Rpk.SCRAM.Password, c.Net.SASL.Password)
-			assert.Equal(t, sarama.SASLMechanism(cfg.Rpk.SCRAM.Type), c.Net.SASL.Mechanism)
+			assert.NotEqual(t, cfg.Rpk.KafkaApi.SASL.User, c.Net.SASL.User)
+			assert.NotEqual(t, cfg.Rpk.KafkaApi.SASL.Password, c.Net.SASL.Password)
+			assert.Equal(t, sarama.SASLMechanism(cfg.Rpk.KafkaApi.SASL.Mechanism), c.Net.SASL.Mechanism)
 		},
 	}}
 	for _, tt := range tests {
@@ -74,7 +77,7 @@ func Test_LoadConfig(t *testing.T) {
 			if tt.conf != nil {
 				conf = tt.conf()
 			}
-			c, err := kafka.LoadConfig(&conf.Rpk.TLS, &conf.Rpk.SCRAM)
+			c, err := kafka.LoadConfig(&tls.Config{}, conf.Rpk.KafkaApi.SASL)
 			require.NoError(t, err)
 			tt.check(st, conf, c)
 		})
@@ -84,22 +87,22 @@ func Test_LoadConfig(t *testing.T) {
 func TestConfigureSASL(t *testing.T) {
 	tests := []struct {
 		name           string
-		scram          *config.SCRAM
+		sasl           *config.SASL
 		check          func(*testing.T, *sarama.Config)
 		expectedErrMsg string
 	}{{
 		name: "it should fail if the mechanism is not supported",
-		scram: &config.SCRAM{
-			User:     "admin",
-			Password: "admin123",
-			Type:     "unsupported",
+		sasl: &config.SASL{
+			User:      "admin",
+			Password:  "admin123",
+			Mechanism: "unsupported",
 		},
 		expectedErrMsg: "unrecongnized Salted Challenge Response Authentication Mechanism (SCRAM): 'unsupported'.",
 	}, {
 		name: "it shouldn't enable SASL if user is empty",
-		scram: &config.SCRAM{
-			Password: "admin123",
-			Type:     "SCRAM-SHA-256",
+		sasl: &config.SASL{
+			Password:  "admin123",
+			Mechanism: "SCRAM-SHA-256",
 		},
 		check: func(st *testing.T, cfg *sarama.Config) {
 			require.False(st, cfg.Net.SASL.Enable, "cfg.Net.SASL.Enable")
@@ -110,9 +113,9 @@ func TestConfigureSASL(t *testing.T) {
 		},
 	}, {
 		name: "it shouldn't enable SASL if password is empty",
-		scram: &config.SCRAM{
-			User: "user1",
-			Type: "SCRAM-SHA-256",
+		sasl: &config.SASL{
+			User:      "user1",
+			Mechanism: "SCRAM-SHA-256",
 		},
 		check: func(st *testing.T, cfg *sarama.Config) {
 			require.False(st, cfg.Net.SASL.Enable, "cfg.Net.SASL.Enable")
@@ -123,7 +126,7 @@ func TestConfigureSASL(t *testing.T) {
 		},
 	}, {
 		name: "it shouldn't enable SASL if mechanism is empty",
-		scram: &config.SCRAM{
+		sasl: &config.SASL{
 			User:     "user1",
 			Password: "pass",
 		},
@@ -136,20 +139,20 @@ func TestConfigureSASL(t *testing.T) {
 		},
 	}, {
 		name: "it should set the appropriate mechanism for SCRAM-SHA-256",
-		scram: &config.SCRAM{
-			User:     "user1",
-			Password: "pass",
-			Type:     "SCRAM-SHA-256",
+		sasl: &config.SASL{
+			User:      "user1",
+			Password:  "pass",
+			Mechanism: "SCRAM-SHA-256",
 		},
 		check: func(st *testing.T, cfg *sarama.Config) {
 			require.Equal(st, sarama.SASLTypeSCRAMSHA256, string(cfg.Net.SASL.Mechanism))
 		},
 	}, {
 		name: "it should set the appropriate mechanism for SCRAM-SHA-512",
-		scram: &config.SCRAM{
-			User:     "user1",
-			Password: "pass",
-			Type:     "SCRAM-SHA-512",
+		sasl: &config.SASL{
+			User:      "user1",
+			Password:  "pass",
+			Mechanism: "SCRAM-SHA-512",
 		},
 		check: func(st *testing.T, cfg *sarama.Config) {
 			require.Equal(st, sarama.SASLTypeSCRAMSHA512, string(cfg.Net.SASL.Mechanism))
@@ -157,7 +160,7 @@ func TestConfigureSASL(t *testing.T) {
 	}}
 	for _, tt := range tests {
 		t.Run(tt.name, func(st *testing.T) {
-			res, err := kafka.ConfigureSASL(kafka.DefaultConfig(), tt.scram)
+			res, err := kafka.ConfigureSASL(kafka.DefaultConfig(), tt.sasl)
 			if tt.expectedErrMsg != "" {
 				require.EqualError(st, err, tt.expectedErrMsg)
 				return

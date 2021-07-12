@@ -19,14 +19,19 @@ import (
 
 func NewACLCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
-		brokers        []string
-		configFile     string
-		user           string
-		password       string
-		mechanism      string
-		certFile       string
-		keyFile        string
-		truststoreFile string
+		brokers                []string
+		configFile             string
+		user                   string
+		password               string
+		mechanism              string
+		enableTLS              bool
+		certFile               string
+		keyFile                string
+		truststoreFile         string
+		adminAPIEnableTLS      bool
+		adminAPICertFile       string
+		adminAPIKeyFile        string
+		adminAPITruststoreFile string
 	)
 	command := &cobra.Command{
 		Use:          "acl",
@@ -40,10 +45,18 @@ func NewACLCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		&user,
 		&password,
 		&mechanism,
+		&enableTLS,
 		&certFile,
 		&keyFile,
 		&truststoreFile,
 		&brokers,
+	)
+	common.AddAdminAPITLSFlags(
+		command,
+		&adminAPIEnableTLS,
+		&adminAPICertFile,
+		&adminAPIKeyFile,
+		&adminAPITruststoreFile,
 	)
 
 	configClosure := common.FindConfigFile(mgr, &configFile)
@@ -52,13 +65,21 @@ func NewACLCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		configClosure,
 		&brokers,
 	)
-	tlsClosure := common.BuildTLSConfig(&certFile, &keyFile, &truststoreFile)
+	kafkaTlsClosure := common.BuildKafkaTLSConfig(fs, &enableTLS, &certFile, &keyFile, &truststoreFile, configClosure)
+	adminTlsClosure := common.BuildAdminApiTLSConfig(
+		fs,
+		&adminAPIEnableTLS,
+		&adminAPICertFile,
+		&adminAPIKeyFile,
+		&adminAPITruststoreFile,
+		configClosure,
+	)
 	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism)
-	adminClosure := common.CreateAdmin(brokersClosure, configClosure, tlsClosure, kAuthClosure)
+	adminClosure := common.CreateAdmin(brokersClosure, configClosure, kafkaTlsClosure, kAuthClosure)
 
 	command.AddCommand(acl.NewCreateACLsCommand(adminClosure))
 	command.AddCommand(acl.NewListACLsCommand(adminClosure))
 	command.AddCommand(acl.NewDeleteACLsCommand(adminClosure))
-	command.AddCommand(acl.NewUserCommand(tlsClosure))
+	command.AddCommand(acl.NewUserCommand(adminTlsClosure))
 	return command
 }

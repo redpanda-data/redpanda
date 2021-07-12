@@ -516,16 +516,48 @@ rpk:
     - "--memory=4G"
     - "--default-log-level=info"
 
-  # TLS configuration to allow rpk to make requests to the redpanda API.
-  tls:
-    # The path to the root CA certificate (PEM).
-    truststore_file: ""
-    # The path to the client certificate (PEM). Only required if client authentication is
-    # enabled in the broker.
-    cert_file: ""
-    # The path to the client certificate key (PEM). Only required if client authentication is
-    # enabled in the broker.
-    key_file: ""
+  # The Kafka API configuration
+  kafka_api:
+    # A list of broker addresses that rpk will use
+    brokers:
+    - 192.168.72.34:9092
+    - 192.168.72.35:9092
+
+    # The TLS configuration to be used when interacting with the Kafka API.
+    # If present, TLS will be enabled. If missing or null, TLS will be disabled.
+    tls:
+      # The path to the client certificate (PEM). Only required if client authentication is
+      # enabled in the broker.
+      cert_file: ~/certs/cert.pem
+      # The path to the client certificate key (PEM). Only required if client authentication is
+      # enabled in the broker.
+      key_file: ~/certs/key.pem
+      # The path to the root CA certificate (PEM).
+      truststore_file: ~/certs/ca.pem
+
+    # The SASL config, if enabled in the brokers.
+    sasl:
+      user: user
+      password: pass
+      method: scram-sha256
+
+  # The Admin API configuration
+  admin_api:
+    # A list of the nodes' admin API addresses that rpk will use.
+    addresses:
+    - 192.168.72.34:9644
+    - 192.168.72.35:9644
+    # The TLS configuration to be used when with the Admin API.
+    # If present, TLS will be enabled. If missing or null, TLS will be disabled.
+    tls:
+      # The path to the client certificate (PEM). Only required if client authentication is
+      # enabled in the broker.
+      cert_file: ~/certs/admin-cert.pem
+      # The path to the client certificate key (PEM). Only required if client authentication is
+      # enabled in the broker.
+      key_file: ~/certs/admin-key.pem
+      # The path to the root CA certificate (PEM).
+      truststore_file: ~/certs/admin-ca.pem
 
   # Available tuners. Set to true to enable, false to disable.
 

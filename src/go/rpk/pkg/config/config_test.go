@@ -1636,9 +1636,11 @@ schema_registry: {}
 			name: "shall write a valid config file with scram configured",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Rpk.SCRAM.User = "scram_user"
-				c.Rpk.SCRAM.Password = "scram_password"
-				c.Rpk.SCRAM.Type = "SCRAM-SHA-256"
+				c.Rpk.KafkaApi.SASL = &SASL{
+					User:      "scram_user",
+					Password:  "scram_password",
+					Mechanism: "SCRAM-SHA-256",
+				}
 				return c
 			},
 			wantErr: false,
@@ -1668,11 +1670,12 @@ rpk:
   coredump_dir: /var/lib/redpanda/coredumps
   enable_memory_locking: true
   enable_usage_stats: true
+  kafka_api:
+    sasl:
+      password: scram_password
+      type: SCRAM-SHA-256
+      user: scram_user
   overprovisioned: false
-  scram:
-    password: scram_password
-    type: SCRAM-SHA-256
-    user: scram_user
   tune_aio_events: true
   tune_clocksource: true
   tune_coredump: true
