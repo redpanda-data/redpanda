@@ -67,6 +67,7 @@ static constexpr int8_t delete_acls_cmd_type = 9;
 // node management commands
 static constexpr int8_t decommission_node_cmd_type = 0;
 static constexpr int8_t recommission_node_cmd_type = 1;
+static constexpr int8_t finish_reallocations_cmd_type = 2;
 
 using create_topic_cmd = controller_command<
   model::topic_namespace,
@@ -137,6 +138,11 @@ using recommission_node_cmd = controller_command<
   model::node_id,
   int8_t, // unused
   recommission_node_cmd_type,
+  model::record_batch_type::node_management_cmd>;
+using finish_reallocations_cmd = controller_command<
+  model::node_id,
+  int8_t, // unused
+  finish_reallocations_cmd_type,
   model::record_batch_type::node_management_cmd>;
 
 // typelist utils
