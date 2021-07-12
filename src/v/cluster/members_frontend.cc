@@ -45,6 +45,36 @@ ss::future<> members_frontend::start() { return ss::now(); }
 ss::future<> members_frontend::stop() { return ss::now(); }
 
 ss::future<std::error_code>
+members_frontend::finish_node_reallocations(model::node_id id) {
+    auto leader = _leaders.local().get_leader(model::controller_ntp);
+    if (!leader) {
+        co_return errc::no_leader_controller;
+    }
+    if (leader == _self) {
+        co_return co_await do_replicate_node_command<finish_reallocations_cmd>(
+          id);
+    }
+    const std::chrono::duration timeout = _node_op_timeout;
+    auto res = co_await _connections.local()
+                 .with_node_client<cluster::controller_client_protocol>(
+                   _self,
+                   ss::this_shard_id(),
+                   *leader,
+                   timeout,
+                   [id, timeout](controller_client_protocol cp) mutable {
+                       return cp.finish_reallocation(
+                         finish_reallocation_request{.id = id},
+                         rpc::client_opts(
+                           model::timeout_clock::now() + timeout));
+                   });
+
+    if (res.has_error()) {
+        co_return res.error();
+    }
+    co_return res.value().data.error;
+}
+
+ss::future<std::error_code>
 members_frontend::decommission_node(model::node_id id) {
     auto leader = _leaders.local().get_leader(model::controller_ntp);
     if (!leader) {

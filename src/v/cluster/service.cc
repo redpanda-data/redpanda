@@ -237,4 +237,26 @@ ss::future<recommission_node_reply> service::recommission_node(
       });
 }
 
+ss::future<finish_reallocation_reply> service::finish_reallocation(
+  finish_reallocation_request&& req, rpc::streaming_context&) {
+    return ss::with_scheduling_group(
+      get_scheduling_group(),
+      [this, req]() mutable { return do_finish_reallocation(req); });
+}
+
+ss::future<finish_reallocation_reply>
+service::do_finish_reallocation(finish_reallocation_request req) {
+    auto ec = co_await _members_frontend.local().finish_node_reallocations(
+      req.id);
+    if (ec) {
+        if (ec.category() == error_category()) {
+            co_return finish_reallocation_reply{.error = errc(ec.value())};
+        } else {
+            co_return finish_reallocation_reply{
+              .error = errc::replication_error};
+        }
+    }
+
+    co_return finish_reallocation_reply{.error = errc::success};
+}
 } // namespace cluster

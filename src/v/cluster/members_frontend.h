@@ -41,6 +41,7 @@ public:
 
     ss::future<std::error_code> decommission_node(model::node_id);
     ss::future<std::error_code> recommission_node(model::node_id);
+    ss::future<std::error_code> finish_node_reallocations(model::node_id);
 
 private:
     template<typename T>

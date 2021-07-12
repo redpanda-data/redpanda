@@ -54,6 +54,11 @@
             "name": "recommission_node",
             "input_type": "recommission_node_request",
             "output_type": "recommission_node_reply"
+        },
+        {
+            "name": "finish_reallocation",
+            "input_type": "finish_reallocation_request",
+            "output_type": "finish_reallocation_reply"
         }
     ]
 }
