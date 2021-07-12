@@ -48,6 +48,9 @@ public:
     result<allocation_units>
     reassign_decommissioned_replicas(const partition_assignment&);
 
+    result<allocation_units>
+    reallocate_partition(partition_constraints, const partition_assignment&);
+
     /// best effort. Does not throw if we cannot find the old partition
     void deallocate(const std::vector<model::broker_shard>&);
 
@@ -95,7 +98,7 @@ private:
     result<std::vector<model::broker_shard>>
       allocate_partition(partition_constraints);
 
-    result<std::vector<model::broker_shard>> reallocate_partition(
+    result<std::vector<model::broker_shard>> do_reallocate_partition(
       partition_constraints, const std::vector<model::broker_shard>&);
 
     std::unique_ptr<allocation_state> _state;

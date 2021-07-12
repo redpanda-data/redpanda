@@ -100,7 +100,7 @@ partition_allocator::allocate(allocation_request request) {
 }
 
 result<std::vector<model::broker_shard>>
-partition_allocator::reallocate_partition(
+partition_allocator::do_reallocate_partition(
   partition_constraints p_constraints,
   const std::vector<model::broker_shard>& not_changed_replicas) {
     vlog(
@@ -131,6 +131,26 @@ partition_allocator::reallocate_partition(
     return new_replicas;
 }
 
+result<allocation_units> partition_allocator::reallocate_partition(
+  partition_constraints partition_constraints,
+  const partition_assignment& current_assignment) {
+    auto replicas = do_reallocate_partition(
+      std::move(partition_constraints), current_assignment.replicas);
+
+    if (!replicas) {
+        return replicas.error();
+    }
+
+    partition_assignment assignment{
+      .group = current_assignment.group,
+      .id = current_assignment.id,
+      .replicas = std::move(replicas.value()),
+    };
+
+    return allocation_units(
+      {std::move(assignment)}, current_assignment.replicas, _state.get());
+}
+
 result<allocation_units> partition_allocator::reassign_decommissioned_replicas(
   const partition_assignment& current_assignment) {
     uint16_t replication_factor = current_assignment.replicas.size();
@@ -146,7 +166,7 @@ result<allocation_units> partition_allocator::reassign_decommissioned_replicas(
       ss::make_lw_shared<hard_constraint_evaluator>(
         distinct_from(current_replicas)));
 
-    auto replicas = reallocate_partition(
+    auto replicas = do_reallocate_partition(
       partition_constraints(current_assignment.id, replication_factor),
       current_replicas);
 
