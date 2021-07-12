@@ -308,6 +308,10 @@ public:
         return _configuration_manager;
     }
 
+    offset_monitor& visible_offset_monitor() {
+        return _consumable_offset_monitor;
+    }
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
