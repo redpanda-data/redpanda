@@ -79,39 +79,43 @@ ss::future<> members_manager::start() {
 }
 
 ss::future<> members_manager::start_config_changes_watcher() {
-    (void)ss::with_gate(_gate, [this] {
-        return ss::do_until(
-          [this] { return _as.local().abort_requested(); },
-          [this]() {
-              return _raft0
-                ->wait_for_config_change(
-                  _last_seen_configuration_offset, _as.local())
-                .then([this](raft::offset_configuration oc) {
-                    return handle_raft0_cfg_update(std::move(oc.cfg))
-                      .then([this, offset = oc.offset] {
-                          _last_seen_configuration_offset = offset;
-                      });
-                })
-                .handle_exception_type(
-                  [](const ss::abort_requested_exception&) {});
-          });
-    }).handle_exception_type([](const ss::gate_closed_exception&) {});
-
     // handle initial configuration
-    return handle_raft0_cfg_update(_raft0->config()).then([this] {
-        if (is_already_member()) {
-            (void)ss::with_gate(_gate, [this] {
-                return maybe_update_current_node_configuration();
-            }).handle_exception_type([](const ss::gate_closed_exception& e) {
-                vlog(
-                  clusterlog.debug,
-                  "unable to update node configuration, gate closed - {}",
-                  e);
-            });
-        }
-        return ss::now();
-    });
-} // namespace cluster
+    auto offset = _raft0->get_latest_configuration_offset();
+    return handle_raft0_cfg_update(_raft0->config())
+      .then([this, offset] {
+          _last_seen_configuration_offset = offset;
+          if (is_already_member()) {
+              (void)ss::with_gate(_gate, [this] {
+                  return maybe_update_current_node_configuration();
+              }).handle_exception_type([](const ss::gate_closed_exception& e) {
+                  vlog(
+                    clusterlog.debug,
+                    "unable to update node configuration, gate closed - {}",
+                    e);
+              });
+          }
+          return ss::now();
+      })
+      .then([this] {
+          (void)ss::with_gate(_gate, [this] {
+              return ss::do_until(
+                [this] { return _as.local().abort_requested(); },
+                [this]() {
+                    return _raft0
+                      ->wait_for_config_change(
+                        _last_seen_configuration_offset, _as.local())
+                      .then([this](raft::offset_configuration oc) {
+                          return handle_raft0_cfg_update(std::move(oc.cfg))
+                            .then([this, offset = oc.offset] {
+                                _last_seen_configuration_offset = offset;
+                            });
+                      })
+                      .handle_exception_type(
+                        [](const ss::abort_requested_exception&) {});
+                });
+          }).handle_exception_type([](const ss::gate_closed_exception&) {});
+      });
+}
 
 ss::future<> members_manager::maybe_update_current_node_configuration() {
     auto active_configuration = _members_table.local().get_broker(_self.id());
