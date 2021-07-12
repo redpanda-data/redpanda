@@ -76,7 +76,7 @@ public:
      * This API is backed by the seastar::queue. It can not be called
      * concurrently from multiple fibers.
      */
-    ss::future<members_manager::node_update> get_node_update();
+    ss::future<std::vector<node_update>> get_node_updates();
 
 private:
     using seed_iterator = std::vector<config::seed_server>::const_iterator;

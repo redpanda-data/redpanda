@@ -66,11 +66,19 @@ ss::future<> members_backend::handle_updates() {
      * translate it into realocation meta, reallocation meta represents a
      * partition that needs reallocation
      */
+    using updates_t = std::vector<members_manager::node_update>;
     return _members_manager.local()
-      .get_node_update()
-      .then([this](members_manager::node_update update) {
-          vlog(clusterlog.debug, "membership update received: {}", update);
-          return handle_single_update(update);
+      .get_node_updates()
+      .then([this](updates_t updates) {
+          return _lock.with([this, updates = std::move(updates)]() mutable {
+              return ss::do_with(
+                std::move(updates), [this](updates_t& updates) {
+                    return ss::do_for_each(
+                      updates, [this](members_manager::node_update update) {
+                          return handle_single_update(update);
+                      });
+                });
+          });
       })
       .handle_exception([](const std::exception_ptr& e) {
           vlog(clusterlog.trace, "error waiting for members updates - {}", e);

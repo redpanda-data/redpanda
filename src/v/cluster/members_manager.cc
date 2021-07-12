@@ -233,8 +233,20 @@ members_manager::apply_update(model::record_batch b) {
       });
 }
 
-ss::future<members_manager::node_update> members_manager::get_node_update() {
-    return _update_queue.pop_eventually();
+ss::future<std::vector<members_manager::node_update>>
+members_manager::get_node_updates() {
+    if (_update_queue.empty()) {
+        return _update_queue.pop_eventually().then(
+          [](node_update update) { return std::vector<node_update>{update}; });
+    }
+
+    std::vector<node_update> ret;
+    ret.reserve(_update_queue.size());
+    while (!_update_queue.empty()) {
+        ret.push_back(_update_queue.pop());
+    }
+
+    return ss::make_ready_future<std::vector<node_update>>(std::move(ret));
 }
 
 template<typename Cmd>
