@@ -269,8 +269,8 @@ func TestEnsure_HeadlessService(t *testing.T) {
 			},
 			ctrl.Log.WithName("test"))
 
-		fqdn := hsvc.HeadlessServiceFQDN()
-		assert.Equal(t, "trailing-dot-headles-service.some-namespace.svc.cluster.local.", fqdn)
+		fqdn := hsvc.HeadlessServiceFQDN("some.domain")
+		assert.Equal(t, "trailing-dot-headles-service.some-namespace.svc.some.domain.", fqdn)
 	})
 
 	t.Run("HeadlessServiceFQDN without trailing dot", func(t *testing.T) {
@@ -288,8 +288,8 @@ func TestEnsure_HeadlessService(t *testing.T) {
 			},
 			ctrl.Log.WithName("test"))
 
-		fqdn := hsvc.HeadlessServiceFQDN()
-		assert.Equal(t, "without-trailing-dot-headles-service.different-namespace.svc.cluster.local", fqdn)
+		fqdn := hsvc.HeadlessServiceFQDN("some.domain")
+		assert.Equal(t, "without-trailing-dot-headles-service.different-namespace.svc.some.domain", fqdn)
 	})
 }
 

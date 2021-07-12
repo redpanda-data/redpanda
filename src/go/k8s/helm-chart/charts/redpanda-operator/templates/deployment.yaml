@@ -60,6 +60,7 @@ spec:
         - --configurator-tag={{ tpl .Values.configurator.tag . }}
         - --configurator-base-image={{ .Values.configurator.repository }}
         - --configurator-image-pull-policy={{ .Values.configurator.pullPolicy }}
+        - --cluster-domain={{ .Values.clusterDomain }}
         {{- if .Values.webhook.enabled }}
         - --webhook-enabled=true
         {{- else }}

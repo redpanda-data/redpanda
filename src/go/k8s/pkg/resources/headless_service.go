@@ -136,18 +136,25 @@ func serviceKind() string {
 // HeadlessServiceFQDN returns fully qualified domain name for headless service.
 // It can be used to communicate between namespaces if the network policy
 // allows it.
-func (r *HeadlessServiceResource) HeadlessServiceFQDN() string {
-	// TODO Retrieve cluster domain dynamically and remove hardcoded cluster.local
+func (r *HeadlessServiceResource) HeadlessServiceFQDN(
+	clusterDomain string,
+) string {
+	// In every dns name there is trailing dot to query absolute path
+	// For trailing dot explanation please visit http://www.dns-sd.org/trailingdotsindomainnames.html
 	if r.pandaCluster.Spec.DNSTrailingDotDisabled {
-		return fmt.Sprintf("%s%c%s.svc.cluster.local",
+		return fmt.Sprintf("%s%c%s.svc.%s",
 			r.Key().Name,
 			'.',
-			r.Key().Namespace)
+			r.Key().Namespace,
+			clusterDomain,
+		)
 	}
-	return fmt.Sprintf("%s%c%s.svc.cluster.local.",
+	return fmt.Sprintf("%s%c%s.svc.%s.",
 		r.Key().Name,
 		'.',
-		r.Key().Namespace)
+		r.Key().Namespace,
+		clusterDomain,
+	)
 }
 
 func (r *HeadlessServiceResource) getAnnotation() map[string]string {

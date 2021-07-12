@@ -19,7 +19,7 @@ metadata:
 spec:
   dnsNames:
     - {{ include "redpanda-operator.name" . }}-webhook-service.{{ .Release.Namespace }}.svc
-    - {{ include "redpanda-operator.name" . }}-webhook-service.{{ .Release.Namespace }}.svc.cluster.local
+    - {{ include "redpanda-operator.name" . }}-webhook-service.{{ .Release.Namespace }}.svc.{{ .Values.clusterDomain }}
   issuerRef:
     kind: Issuer
     name: {{ include "redpanda-operator.fullname" . }}-selfsigned-issuer

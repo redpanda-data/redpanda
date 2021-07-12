@@ -45,6 +45,7 @@ type ClusterReconciler struct {
 	client.Client
 	Log                  logr.Logger
 	configuratorSettings resources.ConfiguratorSettings
+	clusterDomain        string
 	Scheme               *runtime.Scheme
 }
 
@@ -145,13 +146,13 @@ func (r *ClusterReconciler) Reconcile(
 		resources.PandaproxyPortExternalName,
 		log)
 
-	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(), r.Scheme, log)
+	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), r.Scheme, log)
 	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
 	sts := resources.NewStatefulSet(
 		r.Client,
 		&redpandaCluster,
 		r.Scheme,
-		headlessSvc.HeadlessServiceFQDN(),
+		headlessSvc.HeadlessServiceFQDN(r.clusterDomain),
 		headlessSvc.Key().Name,
 		nodeportSvc.Key(),
 		pki.NodeCert(),
@@ -168,7 +169,7 @@ func (r *ClusterReconciler) Reconcile(
 		clusterSvc,
 		nodeportSvc,
 		ingress,
-		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(), log),
+		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), log),
 		pki,
 		sa,
 		resources.NewClusterRole(r.Client, &redpandaCluster, r.Scheme, log),
@@ -206,7 +207,7 @@ func (r *ClusterReconciler) Reconcile(
 		var urls []string
 		replicas := *redpandaCluster.Spec.Replicas
 		for i := int32(0); i < replicas; i++ {
-			urls = append(urls, fmt.Sprintf("%s-%d.%s:%d", redpandaCluster.Name, i, headlessSvc.HeadlessServiceFQDN(), redpandaCluster.AdminAPIInternal().Port))
+			urls = append(urls, fmt.Sprintf("%s-%d.%s:%d", redpandaCluster.Name, i, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), redpandaCluster.AdminAPIInternal().Port))
 		}
 
 		adminAPI, err := admin.NewAdminAPI(urls, nil)
@@ -222,7 +223,7 @@ func (r *ClusterReconciler) Reconcile(
 		}
 	}
 
-	err := r.reportStatus(ctx, &redpandaCluster, sts.LastObservedState, headlessSvc.HeadlessServiceFQDN(), nodeportSvc.Key())
+	err := r.reportStatus(ctx, &redpandaCluster, sts.LastObservedState, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), nodeportSvc.Key())
 	if err != nil {
 		log.Error(err, "Unable to report status")
 	}
@@ -326,11 +327,19 @@ func statusShouldBeUpdated(
 		status.Replicas != readyReplicas
 }
 
-// WithConfiguratorSettings set the configuratorTag
+// WithConfiguratorSettings set the configurator image settings
 func (r *ClusterReconciler) WithConfiguratorSettings(
 	configuratorSettings resources.ConfiguratorSettings,
 ) *ClusterReconciler {
 	r.configuratorSettings = configuratorSettings
+	return r
+}
+
+// WithClusterDomain set the clusterDomain
+func (r *ClusterReconciler) WithClusterDomain(
+	clusterDomain string,
+) *ClusterReconciler {
+	r.clusterDomain = clusterDomain
 	return r
 }
 
