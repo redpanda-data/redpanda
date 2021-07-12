@@ -50,6 +50,7 @@ public:
       ss::sharded<members_table>&,
       ss::sharded<controller_api>&,
       ss::sharded<members_manager>&,
+      ss::sharded<members_frontend>&,
       consensus_ptr,
       ss::sharded<ss::abort_source>&);
 
@@ -60,19 +61,23 @@ private:
     void start_reconciliation_loop();
     ss::future<> reconcile();
     ss::future<> reallocate_replica_set(partition_reallocation&);
-    void try_to_finish_update(update_meta&);
+
+    ss::future<> try_to_finish_update(update_meta&);
     void calculate_reallocations(update_meta&);
 
     ss::future<> handle_updates();
-    ss::future<> handle_single_update(members_manager::node_update);
+    void handle_single_update(members_manager::node_update);
     void handle_recommissioned(const members_manager::node_update&);
+    void handle_reallocation_finished(model::node_id);
     void reassign_replicas(partition_assignment&, partition_reallocation&);
+    void calculate_reallocations_after_node_added(update_meta&);
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<topic_table>& _topics;
     ss::sharded<partition_allocator>& _allocator;
     ss::sharded<members_table>& _members;
     ss::sharded<controller_api>& _api;
     ss::sharded<members_manager>& _members_manager;
+    ss::sharded<members_frontend>& _members_frontend;
     consensus_ptr _raft0;
     ss::sharded<ss::abort_source>& _as;
     ss::gate _bg;
