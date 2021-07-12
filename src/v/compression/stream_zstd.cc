@@ -16,6 +16,8 @@
 #include "units.h"
 #include "vlog.h"
 
+#include <seastar/core/aligned_buffer.hh>
+
 #include <fmt/format.h>
 
 #include <array>
@@ -24,12 +26,30 @@
 
 namespace compression {
 [[gnu::cold]] static void throw_zstd_err(size_t rc) {
-    throw std::runtime_error(
+    ss::throw_with_backtrace<std::runtime_error>(
       fmt::format("ZSTD error:{}", ZSTD_getErrorName(rc)));
 }
 static void throw_if_error(size_t rc) {
     if (unlikely(ZSTD_isError(rc))) {
         throw_zstd_err(rc);
+    }
+}
+
+// workspace and decompression buffer
+static thread_local size_t dctx_workspace_size = 0;
+static thread_local std::unique_ptr<char[], ss::free_deleter> dctx_workspace;
+static thread_local ss::temporary_buffer<char> d_buffer;
+
+void stream_zstd::init_workspace(size_t size) {
+    if (!dctx_workspace) {
+        dctx_workspace_size = ZSTD_estimateDStreamSize(size);
+        dctx_workspace = ss::allocate_aligned_buffer<char>(
+          dctx_workspace_size, 8); // zstd requires alignment
+        vassert(
+          dctx_workspace,
+          "Failed to allocate zstd workspace with {} bytes",
+          dctx_workspace_size);
+        d_buffer = ss::temporary_buffer<char>(64_KiB);
     }
 }
 
@@ -46,18 +66,19 @@ stream_zstd::zstd_compress_ctx& stream_zstd::compressor() {
     return _compress;
 }
 
-void stream_zstd::reset_decompressor() {
-    _decompress.reset(ZSTD_createDCtx());
-    if (!_decompress) {
-        throw std::bad_alloc{};
+ZSTD_DCtx* stream_zstd::decompressor() {
+    if (unlikely(!dctx_workspace)) {
+        /*
+         * init_workspace is normally called early during startup before
+         * fragmentation is a problem and the workspace created is usually
+         * larger. but we also handle it here for things like tests that don't
+         * exercise that startup code path.
+         */
+        init_workspace(2_MiB);
     }
-}
-
-stream_zstd::zstd_decompress_ctx& stream_zstd::decompressor() {
-    if (!_decompress) {
-        reset_decompressor();
-    }
-    return _decompress;
+    auto ctx = ZSTD_initStaticDCtx(dctx_workspace.get(), dctx_workspace_size);
+    vassert(ctx, "Could not initialize static decompression context");
+    return ctx;
 }
 
 iobuf stream_zstd::do_compress(const iobuf& x) {
@@ -133,10 +154,9 @@ iobuf stream_zstd::do_uncompress(const iobuf& x) {
         throw std::runtime_error(
           "Asked to stream_zstd::uncompress empty buffer");
     }
-    reset_decompressor();
-    ZSTD_DCtx* dctx = decompressor().get();
+    ZSTD_DCtx* dctx = decompressor();
     iobuf ret;
-    ss::temporary_buffer<char> obuf(decompression_step(x));
+    ss::temporary_buffer<char>& obuf = d_buffer;
     ZSTD_outBuffer out = {
       .dst = obuf.get_write(), .size = obuf.size(), .pos = 0};
     for (auto& ibuf : x) {
@@ -152,8 +172,7 @@ iobuf stream_zstd::do_uncompress(const iobuf& x) {
             }
         }
     }
-    obuf.trim(out.pos);
-    ret.append(std::move(obuf));
+    ret.append(obuf.get(), out.pos);
     return ret;
 }
 

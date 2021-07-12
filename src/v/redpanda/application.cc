@@ -169,6 +169,15 @@ void application::initialize(
   std::optional<YAML::Node> schema_reg_cfg,
   std::optional<YAML::Node> schema_reg_client_cfg,
   std::optional<scheduling_groups> groups) {
+    /*
+     * allocate per-core zstd decompression workspace. it can be several
+     * megabytes in size, so do it before memory becomes fragmented.
+     */
+    ss::smp::invoke_on_all([] {
+        compression::stream_zstd::init_workspace(
+          config::shard_local_cfg().zstd_decompress_workspace_bytes());
+    }).get0();
+
     if (config::shard_local_cfg().enable_pid_file()) {
         syschecks::pidfile_create(config::shard_local_cfg().pidfile_path());
     }

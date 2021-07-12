@@ -785,6 +785,12 @@ configuration::configuration()
       "Update frequency for kafka queue depth control.",
       required::no,
       7s)
+  , zstd_decompress_workspace_bytes(
+      *this,
+      "zstd_decompress_workspace_bytes",
+      "Size of the zstd decompression workspace",
+      required::no,
+      8_MiB)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",
