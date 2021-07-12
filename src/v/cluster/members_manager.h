@@ -35,14 +35,17 @@ namespace cluster {
 // for validation of node configuration invariants.
 class members_manager {
 public:
-    static constexpr auto accepted_commands
-      = make_commands_list<decommission_node_cmd, recommission_node_cmd>{};
+    static constexpr auto accepted_commands = make_commands_list<
+      decommission_node_cmd,
+      recommission_node_cmd,
+      finish_reallocations_cmd>{};
     static constexpr ss::shard_id shard = 0;
     static constexpr size_t max_updates_queue_size = 100;
     enum class node_update_type : int8_t {
         added,
         decommissioned,
-        recommissioned
+        recommissioned,
+        reallocation_finished,
     };
 
     struct node_update {

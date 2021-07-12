@@ -230,6 +230,15 @@ members_manager::apply_update(model::record_batch b) {
                 }
                 return f.then([error] { return error; });
             });
+      },
+      [this](finish_reallocations_cmd cmd) mutable {
+          // we do not have to dispatch this command to members table since this
+          // command is only used by a backend to signal successfully finished
+          // node reallocations
+          return _update_queue
+            .push_eventually(node_update{
+              .id = cmd.key, .type = node_update_type::reallocation_finished})
+            .then([] { return make_error_code(errc::success); });
       });
 }
 
@@ -699,6 +708,8 @@ operator<<(std::ostream& o, const members_manager::node_update_type& tp) {
         return o << "decommissioned";
     case members_manager::node_update_type::recommissioned:
         return o << "recommissioned";
+    case members_manager::node_update_type::reallocation_finished:
+        return o << "reallocation_finished";
     }
     return o << "unknown";
 }
