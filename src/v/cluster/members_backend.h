@@ -20,10 +20,14 @@ class members_backend {
 public:
     enum class reallocation_state { initial, reassigned, requested, finished };
     struct partition_reallocation {
-        explicit partition_reallocation(model::ntp ntp)
-          : ntp(std::move(ntp)) {}
+        explicit partition_reallocation(
+          model::ntp ntp, uint16_t replication_factor)
+          : ntp(std::move(ntp))
+          , constraints(ntp.tp.partition, replication_factor) {}
 
         model::ntp ntp;
+        partition_constraints constraints;
+        absl::node_hash_set<model::node_id> replicas_to_remove;
         std::optional<allocation_units> new_assignment;
         reallocation_state state = reallocation_state::initial;
     };
@@ -62,7 +66,7 @@ private:
     ss::future<> handle_updates();
     ss::future<> handle_single_update(members_manager::node_update);
     void handle_recommissioned(const members_manager::node_update&);
-
+    void reassign_replicas(partition_assignment&, partition_reallocation&);
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<topic_table>& _topics;
     ss::sharded<partition_allocator>& _allocator;

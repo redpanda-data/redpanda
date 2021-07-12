@@ -131,8 +131,12 @@ void members_backend::calculate_reallocations(update_meta& meta) {
         for (const auto& [tp_ns, cfg] : _topics.local().topics_map()) {
             for (auto& pas : cfg.assignments) {
                 if (is_in_replica_set(pas.replicas, meta.update.id)) {
-                    meta.partition_reallocations.emplace_back(
-                      model::ntp(tp_ns.ns, tp_ns.tp, pas.id));
+                    partition_reallocation reallocation(
+                      model::ntp(tp_ns.ns, tp_ns.tp, pas.id),
+                      pas.replicas.size());
+                    reallocation.replicas_to_remove.emplace(meta.update.id);
+                    meta.partition_reallocations.push_back(
+                      std::move(reallocation));
                 }
             }
         }
@@ -193,8 +197,7 @@ ss::future<> members_backend::reconcile() {
     }
 }
 
-void members_backend::try_to_finish_update(
-  members_backend::update_meta& meta) {
+void members_backend::try_to_finish_update(members_backend::update_meta& meta) {
     // broker was removed, finish
     if (!_members.local().contains(meta.update.id)) {
         meta.finished = true;
@@ -227,6 +230,29 @@ void members_backend::try_to_finish_update(
     }
 }
 
+void members_backend::reassign_replicas(
+  partition_assignment& current_assignment,
+  partition_reallocation& reallocation) {
+    vlog(
+      clusterlog.info,
+      "trying to reassign partition {} replicas, current assignment: {}",
+      reallocation.ntp,
+      current_assignment);
+
+    // remove nodes that are going to be reassigned from current assignment.
+    std::erase_if(
+      current_assignment.replicas,
+      [&reallocation](const model::broker_shard& bs) {
+          return reallocation.replicas_to_remove.contains(bs.node_id);
+      });
+
+    auto res = _allocator.local().reallocate_partition(
+      reallocation.constraints, current_assignment);
+    if (res.has_value()) {
+        reallocation.new_assignment = std::move(res.value());
+    }
+}
+
 ss::future<> members_backend::reallocate_replica_set(
   members_backend::partition_reallocation& meta) {
     auto current_assignment = _topics.local().get_partition_assignment(
@@ -240,21 +266,11 @@ ss::future<> members_backend::reallocate_replica_set(
     switch (meta.state) {
     case reallocation_state::initial: {
         // initial state, try to reassign partition replicas
-        vlog(
-          clusterlog.info,
-          "trying to reassign partition {} replicas, current assignment: {}",
-          meta.ntp,
-          *current_assignment);
-        auto new_assignment
-          = _allocator.local().reassign_decommissioned_replicas(
-            *current_assignment);
-        if (new_assignment.has_value()) {
-            meta.new_assignment = std::move(new_assignment.value());
-        }
 
+        reassign_replicas(*current_assignment, meta);
         if (!meta.new_assignment) {
-            // if partiton allocator failed to reassign partitions return and
-            // wait for next retry
+            // if partiton allocator failed to reassign partitions return
+            // and wait for next retry
             co_return;
         }
         // success, update state and move on
