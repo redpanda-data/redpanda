@@ -43,13 +43,13 @@ archival_policy::lookup_result archival_policy::find_segment(
   model::offset high_watermark,
   storage::log_manager& lm) {
     vlog(
-      archival_log.trace,
+      archival_log.debug,
       "Upload policy for {} invoked, last-offset: {}",
       _ntp,
       last_offset);
     std::optional<storage::log> log = lm.get(_ntp);
     if (!log) {
-        vlog(archival_log.trace, "Upload policy for {} no such ntp", _ntp);
+        vlog(archival_log.warn, "Upload policy for {} no such ntp", _ntp);
         return {};
     }
     auto plog = dynamic_cast<storage::disk_log_impl*>(log->get_impl());
@@ -58,7 +58,7 @@ archival_policy::lookup_result archival_policy::find_segment(
     // access individual log segments (disk backed).
     if (plog == nullptr || plog->segment_count() == 0) {
         vlog(
-          archival_log.trace,
+          archival_log.debug,
           "Upload policy for {} no segments or in-memory log",
           _ntp);
         return {};
@@ -68,6 +68,7 @@ archival_policy::lookup_result archival_policy::find_segment(
     if (last_offset <= high_watermark) {
         _ntp_probe.upload_lag(high_watermark - last_offset);
     }
+
     const auto& ntp_conf = plog->config();
     auto it = set.lower_bound(last_offset);
     if (it == set.end() || (*it)->is_compacted_segment()) {
@@ -162,9 +163,12 @@ static upload_candidate create_upload_candidate(
         auto orig_path = std::filesystem::path(segment->reader().filename());
         vlog(
           archival_log.debug,
-          "Uploading full segment {} offset {}",
+          "Uploading full segment {}, last_offset: {}, located segment: {}, "
+          "file size: {}",
           segment->reader().filename(),
-          off);
+          off,
+          segment->offsets(),
+          fsize);
         return {
           .source = segment,
           .exposed_name = segment_name(orig_path.filename().string()),
@@ -179,11 +183,11 @@ static upload_candidate create_upload_candidate(
       *ntp_conf, exposed_offset, term, version);
     vlog(
       archival_log.debug,
-      "Uploading part of the segment {} starting from offset {}, file offset: "
-      "{}, length: {}, new path: {}",
+      "Uploading part of the segment {}, last_offset: {}, located segment: {}, "
+      "file size: {}, starting from the offset {}",
       segment->reader().filename(),
-      exposed_offset,
-      pos,
+      off,
+      segment->offsets(),
       clen,
       path);
     return {
