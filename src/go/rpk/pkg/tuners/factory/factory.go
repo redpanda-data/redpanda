@@ -1,4 +1,4 @@
-// Copyright 2020 Vectorized, Inc.
+// Copyright 2021 Vectorized, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -21,6 +21,7 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/ballast"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/coredump"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/cpu"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/disk"
@@ -44,6 +45,7 @@ var (
 		"swappiness":            (*tunersFactory).newSwappinessTuner,
 		"transparent_hugepages": (*tunersFactory).newTHPTuner,
 		"coredump":              (*tunersFactory).newCoredumpTuner,
+		"ballast_file":          (*tunersFactory).newBallastFileTuner,
 	}
 )
 
@@ -154,6 +156,8 @@ func IsTunerEnabled(tuner string, rpkConfig config.RpkConfig) bool {
 		return rpkConfig.TuneTransparentHugePages
 	case "coredump":
 		return rpkConfig.TuneCoredump
+	case "ballast_file":
+		return rpkConfig.TuneBallastFile
 	}
 	return false
 }
@@ -282,6 +286,12 @@ func (factory *tunersFactory) newCoredumpTuner(
 	params *TunerParams,
 ) tuners.Tunable {
 	return coredump.NewCoredumpTuner(factory.fs, factory.conf, factory.executor)
+}
+
+func (factory *tunersFactory) newBallastFileTuner(
+	params *TunerParams,
+) tuners.Tunable {
+	return ballast.NewBallastFileTuner(factory.conf, factory.executor)
 }
 
 func MergeTunerParamsConfig(

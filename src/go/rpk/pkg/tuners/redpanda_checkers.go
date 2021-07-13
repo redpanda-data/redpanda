@@ -59,6 +59,7 @@ const (
 	Swappiness
 	KernelVersion
 	WriteCachePolicyChecker
+	BallastFileChecker
 )
 
 func NewConfigChecker(conf *config.Config) Checker {
@@ -158,6 +159,16 @@ func NewIOConfigFileExistanceChecker(fs afero.Fs, filePath string) Checker {
 		filePath)
 }
 
+func NewBallastFileChecker(fs afero.Fs, conf *config.Config) Checker {
+	return NewFileExistanceChecker(
+		fs,
+		IoConfigFileChecker,
+		"Ballast file present",
+		Warning,
+		conf.Rpk.BallastFilePath,
+	)
+}
+
 func NewNTPSyncChecker(timeout time.Duration, fs afero.Fs) Checker {
 	return NewEqualityChecker(
 		NtpChecker,
@@ -247,6 +258,7 @@ func RedpandaCheckers(
 		ClockSource:                   {NewClockSourceChecker(fs)},
 		Swappiness:                    {NewSwappinessChecker(fs)},
 		KernelVersion:                 {NewKernelVersionChecker(GetKernelVersion)},
+		BallastFileChecker:            {NewBallastFileChecker(fs, config)},
 	}
 
 	v, err := cloud.AvailableVendor()
