@@ -75,10 +75,6 @@ private:
       send_request(supervisor_client_protocol, process_batch_request);
 
     ss::future<> process_reply(process_batch_reply);
-    ss::future<> process_one_reply(process_batch_reply::data);
-    ss::future<bool> write_materialized(
-      const model::materialized_ntp&, model::record_batch_reader);
-    ss::future<bool> write_checked(storage::log, model::record_batch_reader);
 
 private:
     /// Killswitch for in-process reads
