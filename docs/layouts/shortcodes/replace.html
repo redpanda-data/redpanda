@@ -1,0 +1,4 @@
+{{- $query := (.Get 0) -}}
+{{- $new := (.Get 1) -}}
+
+{{ replace (index (findRE "[^#_#]*" .Inner) 0) $query (index (findRE "[^#_#]*$" .Inner) 0) }}

@@ -1,0 +1,30 @@
+{{ $filename := .Get 0 }}
+{{ $file := print "static/tables/" $filename}}
+{{ $data := getCSV "," $file }}
+{{ $columnCount := .Get 1 }}
+
+<table>
+    <thead>
+        {{ range $i, $r := $data }}
+        {{ if eq $i 0 }}
+        <tr>
+            {{ range $k := seq $columnCount }}
+            {{ $a := sub $k 1 }}
+            <th>{{ index $r $a}}</th>
+            {{ end }}
+        </tr>
+        {{ end }}
+    </thead>
+
+    <tbody>
+        {{ if gt $i 0 }}
+        <tr>
+            {{ range $kr := seq $columnCount }}
+            {{ $ar := sub $kr 1 }}
+            <td align='left'>{{ index $r $ar }}</td>
+            {{ end }}
+        </tr>
+        {{ end }}
+        {{ end }}
+    </tbody>
+</table>

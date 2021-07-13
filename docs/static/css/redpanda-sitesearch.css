@@ -1,0 +1,160 @@
+.redpanda-sitesearch-input {
+  border: 1px solid #eee;
+  border-radius: 8px;
+  max-width: 700px;
+  width: 100%;
+  padding: 12px 12px 12px 48px;
+  box-sizing: border-box;
+  position: relative;
+  font-size: 16px;
+  line-height: 1.5;
+  flex: 1;
+  background-color: #eee;
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNjY2IiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PGNpcmNsZSBjeD0iMTEiIGN5PSIxMSIgcj0iOCIvPjxwYXRoIGQ9Ik0yMSAyMWwtNC00Ii8+PC9zdmc+");
+  background-repeat: no-repeat;
+  background-position: 12px;
+  z-index: 100;
+}
+.redpanda-sitesearch-input:focus,
+.redpanda-sitesearch-input[aria-expanded="true"] {
+  border-color: rgba(0, 0, 0, 0.12);
+  background-color: #fff;
+  outline: none;
+  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.16);
+}
+[data-position="below"] .redpanda-sitesearch-input[aria-expanded="true"] {
+  border-bottom-color: transparent;
+  border-radius: 8px 8px 0 0;
+}
+[data-position="above"] .redpanda-sitesearch-input[aria-expanded="true"] {
+  border-top-color: transparent;
+  border-radius: 0 0 8px 8px;
+  z-index: 2;
+}
+.redpanda-sitesearch[data-loading="true"]:after {
+  content: "";
+  border: 3px solid rgba(0, 0, 0, 0.12);
+  border-right-color: rgba(0, 0, 0, 0.48);
+  border-radius: 100%;
+  width: 20px;
+  height: 20px;
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  animation: rotate 1s linear infinite;
+}
+.redpanda-sitesearch-result-list {
+  margin: 0;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  padding: 0;
+  box-sizing: border-box;
+  max-height: 296px;
+  overflow-y: auto;
+  background: #fff;
+  list-style: none;
+  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.16);
+}
+[data-position="below"] .redpanda-sitesearch-result-list {
+  margin-top: -1px;
+  border-top-color: transparent;
+  border-radius: 0 0 8px 8px;
+  padding-bottom: 8px;
+}
+[data-position="above"] .redpanda-sitesearch-result-list {
+  margin-bottom: -1px;
+  border-bottom-color: transparent;
+  border-radius: 8px 8px 0 0;
+  padding-top: 8px;
+}
+.redpanda-sitesearch-result {
+  cursor: default;
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjY2NjIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PGNpcmNsZSBjeD0iMTEiIGN5PSIxMSIgcj0iOCIvPjxwYXRoIGQ9Ik0yMSAyMWwtNC00Ii8+PC9zdmc+");
+  background-repeat: no-repeat;
+  background-position: 12px;
+  width: 100%;
+  padding: 11px 2.1em 11px 11px;
+  background: transparent;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+.redpanda-sitesearch-result:hover,
+.redpanda-sitesearch-result[aria-selected="true"] {
+  background-color: rgba(0, 0, 0, 0.06);
+}
+@keyframes rotate {
+  0% {
+    transform: translateY(-50%) rotate(0deg);
+  }
+  to {
+    transform: translateY(-50%) rotate(359deg);
+  }
+}
+.redpanda-sitesearch-result-list {
+  display: flex;
+  position: relative;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+.redpanda-sitesearch-result-list-wrapper .redpanda-sitesearch-result-list {
+  padding-bottom: 60px;
+}
+.redpanda-sitesearch-home {
+  max-width: 700px;
+  margin: 0 auto;
+}
+.redpanda-sitesearch-inline {
+  max-width: 100%;
+  margin-bottom: 1rem;
+}
+.redpanda-sitesearch-input-inline {
+  padding: 6px 6px 6px 48px;
+}
+.redpanda-sitesearch-result-list li:last-of-type {
+  padding-bottom: 80px !important;
+}
+.search-root {
+  font-size: 14px;
+  font-weight: 700;
+  width: 100%;
+}
+.search-root-item {
+  margin-bottom: 0;
+  border: 0;
+  cursor: default;
+  padding: 16px 16px 8px;
+  border-top: 1px solid #eee;
+  width: 100%;
+}
+.search-root-item::first {
+  border: 0;
+}
+.no-section-title {
+  margin-top: 0;
+}
+.search-title {
+  font-size: 14px;
+  margin-bottom: 10px;
+  color: #5961ff;
+  word-break: break-word;
+  text-align: right;
+  width: 100%;
+}
+.search-left {
+  width: 25%;
+  padding-right: 5px;
+}
+.search-right {
+  width: 70%;
+  padding-left: 15px;
+}
+.search-section-title {
+  font-size: 16px;
+  margin-bottom: 8px;
+  width: 100%;
+}
+.search-body {
+  font-size: 13px;
+  width: 100%;
+}

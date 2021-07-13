@@ -1,0 +1,157 @@
+{{ if eq (getenv "HUGO_ENV") "production" }}
+{{ with .Site.Params.googleTagManager }}
+{{ partial "gtm-body" . | safeHTML }}
+{{ end }}
+{{ end }}
+<div class="header-wrap-outer">
+  <header id="header">
+    <div class="header-wrap" style="display:unset">
+      <img src="/images/header_placeholder.png">
+      <!-- <div class="logo">
+        {{ partial "header.html" . }}
+      </div>
+      {{- with .Site.Menus.shortcuts}}
+      {{ partial "navigation.html" . }}
+      {{- end}}
+      <div class="container">
+        <nav class="css-1ermlmy e1px8kik1">
+          <div style="padding-top:20px"><a href="/"><img
+                src="data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHN2ZyB3aWR0aD0iODQycHgiIGhlaWdodD0iMTI2cHgiIHZpZXdCb3g9IjAgMCA4NDIgMTI2IiB2ZXJzaW9uPSIxLjEiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiPgogICAgPCEtLSBHZW5lcmF0b3I6IFNrZXRjaCA2MC4xICg4ODEzMykgLSBodHRwczovL3NrZXRjaC5jb20gLS0+CiAgICA8dGl0bGU+VmVjdG9yaXplZDwvdGl0bGU+CiAgICA8ZGVzYz5DcmVhdGVkIHdpdGggU2tldGNoLjwvZGVzYz4KICAgIDxnIGlkPSJWZWN0b3JpemVkIiBzdHJva2U9Im5vbmUiIHN0cm9rZS13aWR0aD0iMSIgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIj4KICAgICAgICA8ZyBpZD0iR3JvdXAtQ29weSI+CiAgICAgICAgICAgIDxwb2x5bGluZSBpZD0iRmlsbC0xOCIgZmlsbD0iIzI2MjQyMiIgcG9pbnRzPSIxNjYuNTMxIDE4LjQ0NiAxOTIuMzYxIDE4LjQ0NiAyMTYuNjUxIDgxLjY3MyAyMTcuNjgxIDg2LjE3IDIxOC44NDEgODEuNjczIDI0Mi44NzEgMTguNDQ2IDI2OC40NDEgMTguNDQ2IDIzMC42NjEgMTExLjYxNiAyMDQuNTcxIDExMS42MTYgMTY2LjUzMSAxOC40NDYiPjwvcG9seWxpbmU+CiAgICAgICAgICAgIDxwYXRoIGQ9Ik0zMDQuMTcxLDcxLjAwNiBDMzAzLjUzMSw2NS43MzggMjk5LjI5MSw2Mi41MjUgMjkzLjEyMSw2Mi41MjUgQzI4Ni44MjEsNjIuNTI1IDI4Mi44NDEsNjUuMjI0IDI4MS4xNzEsNzEuMDA2IEwzMDQuMTcxLDcxLjAwNiBaIE0zMjYuMDIxLDg1LjQgTDI4MC43ODEsODUuNCBDMjgyLjMzMSw5MS41NjggMjg2LjMxMSw5NC42NTMgMjkyLjg2MSw5NC42NTMgQzI5OC4zOTEsOTQuNjUzIDMwMS45OTEsOTIuNzI1IDMwMy43OTEsODguNzQxIEwzMjMuNTgxLDk3LjA5NCBDMzE2LjY0MSwxMDcuODg5IDMwNi4zNjEsMTEzLjAzIDI5Mi4zNTEsMTEzLjAzIEMyNzIuNDMxLDExMy4wMyAyNTguMDQxLDk4LjYzNiAyNTguMDQxLDc4Ljg0NiBDMjU4LjA0MSw1OS4zMTIgMjcyLjgyMSw0NC45MTkgMjkzLjM4MSw0NC45MTkgQzMxMy4wNDEsNDQuOTE5IDMyNi4yODEsNTkuMTg0IDMyNi4yODEsNzkuMTAzIEMzMjYuMjgxLDgyLjcwMSAzMjYuMDIxLDg1LjQgMzI2LjAyMSw4NS40IEwzMjYuMDIxLDg1LjQgWiIgaWQ9IkZpbGwtMTkiIGZpbGw9IiMyNjI0MjIiPjwvcGF0aD4KICAgICAgICAgICAgPHBhdGggZD0iTTMzMi45NjEsNzguODQ2IEMzMzIuOTYxLDU5LjY5OCAzNDcuODcxLDQ0LjkxOSAzNjguNDMxLDQ0LjkxOSBDMzgyLjQ0MSw0NC45MTkgMzkzLjQ5MSw1MS45ODcgMzk5LjY2MSw2NC4zMjUgTDM3OC40NTEsNzIuNDIgQzM3Ni41MzEsNjguNTY1IDM3My4wNjEsNjYuMTI0IDM2OC40MzEsNjYuMTI0IEMzNjEuMjMxLDY2LjEyNCAzNTYuMzUxLDcxLjM5MiAzNTYuMzUxLDc4LjcxNyBDMzU2LjM1MSw4Ni40MjggMzYwLjk4MSw5MS42OTcgMzY3LjkyMSw5MS42OTcgQzM3My40NDEsOTEuNjk3IDM3Ny4wNDEsODkuMjU1IDM3OS4xMDEsODQuNzU3IEw0MDAuMTcxLDkzLjExIEMzOTMuODcxLDEwNS45NjEgMzgyLjU3MSwxMTMuMDMgMzY3LjI3MSwxMTMuMDMgQzM0Ny43NDEsMTEzLjAzIDMzMi45NjEsOTguNzY1IDMzMi45NjEsNzguODQ2IiBpZD0iRmlsbC0yMCIgZmlsbD0iIzI2MjQyMiI+PC9wYXRoPgogICAgICAgICAgICA8cGF0aCBkPSJNNDYyLjM3MSwxMDguOTE3IEM0NjIuMzcxLDEwOC45MTcgNDU0LjY2MSwxMTMuMDMgNDQyLjIwMSwxMTMuMDMgQzQyMy40NDEsMTEzLjAzIDQxNC4zMTEsMTA0LjI5MSA0MTQuMzExLDg2LjE3IEw0MTQuMzExLDY1LjYwOSBMNDAzLjY0MSw2NS42MDkgTDQwMy42NDEsNDYuMzMzIEw0MTQuMzExLDQ2LjMzMyBMNDE0LjMxMSwyOS43NTUgTDQzNy4xOTEsMjkuNzU1IEw0MzcuMTkxLDQ2LjMzMyBMNDU2Ljg1MSw0Ni4zMzMgTDQ1Ni44NTEsNjUuNjA5IEw0MzcuMTkxLDY1LjYwOSBMNDM3LjE5MSw4NC4zNzIgQzQzNy4xOTEsOTAuNjY4IDQzOS4zNzEsOTIuOTgyIDQ0NS40MTEsOTIuOTgyIEM0NTEuMzIxLDkyLjk4MiA0NTUuNDMxLDg5LjY0IDQ1NS40MzEsODkuNjQgTDQ2Mi4zNzEsMTA4LjkxNyIgaWQ9IkZpbGwtMjEiIGZpbGw9IiMyNjI0MjIiPjwvcGF0aD4KICAgICAgICAgICAgPHBhdGggZD0iTTUxMi43NTEsNzguOTc0IEM1MTIuNzUxLDcxLjAwNiA1MDcuNjExLDY1Ljg2NyA0OTkuNzcxLDY1Ljg2NyBDNDkyLjA2MSw2NS44NjcgNDg2Ljc5MSw3MS4yNjQgNDg2Ljc5MSw3OC45NzQgQzQ4Ni43OTEsODYuNjg1IDQ5MS45MzEsOTIuMDgzIDQ5OS43NzEsOTIuMDgzIEM1MDcuNDgxLDkyLjA4MyA1MTIuNzUxLDg2LjY4NSA1MTIuNzUxLDc4Ljk3NCBaIE00NjMuNDExLDc4Ljk3NCBDNDYzLjQxMSw1OS40NDEgNDc4LjcwMSw0NC45MTkgNDk5Ljc3MSw0NC45MTkgQzUyMS4xMTEsNDQuOTE5IDUzNi4wMTEsNTkuMDU1IDUzNi4wMTEsNzguOTc0IEM1MzYuMDExLDk4LjYzNiA1MjAuNzIxLDExMy4wMyA0OTkuNzcxLDExMy4wMyBDNDc4LjQ0MSwxMTMuMDMgNDYzLjQxMSw5OC43NjUgNDYzLjQxMSw3OC45NzQgTDQ2My40MTEsNzguOTc0IFoiIGlkPSJGaWxsLTIyIiBmaWxsPSIjMjYyNDIyIj48L3BhdGg+CiAgICAgICAgICAgIDxwYXRoIGQ9Ik01NDUuOTExLDQ2LjMzMyBMNTY4LjAyMSw0Ni4zMzMgTDU2OC4wMjEsNTkuNjk4IEM1NzEuMzYxLDUwLjMxNyA1NzguMDQxLDQ1LjMwNSA1ODcuMjkxLDQ1LjMwNSBDNTg5LjA5MSw0NS4zMDUgNTkwLjYzMSw0NS40MzMgNTkxLjkyMSw0NS42OSBMNTkwLjUwMSw2OC40MzYgTDU4Ny45MzEsNjguNDM2IEM1NzMuOTMxLDY4LjQzNiA1NjguNzkxLDczLjgzMyA1NjguNzkxLDg4Ljc0MSBMNTY4Ljc5MSwxMTEuNjE2IEw1NDUuOTExLDExMS42MTYgTDU0NS45MTEsNDYuMzMzIiBpZD0iRmlsbC0yMyIgZmlsbD0iIzI2MjQyMiI+PC9wYXRoPgogICAgICAgICAgICA8cGF0aCBkPSJNNTk5LjM3MSwxMTEuNjE2IEw2MjIuMjUxLDExMS42MTYgTDYyMi4yNTEsNDYuMzMzIEw1OTkuMzcxLDQ2LjMzMyBMNTk5LjM3MSwxMTEuNjE2IFogTTU5Ny43MDEsMjYuMjg2IEM1OTcuNzAxLDE4LjgzMiA2MDMuMjMxLDEzLjMwNiA2MTAuODExLDEzLjMwNiBDNjE4LjM5MSwxMy4zMDYgNjIzLjc5MSwxOC41NzUgNjIzLjc5MSwyNi4yODYgQzYyMy43OTEsMzMuNDgyIDYxOC4zOTEsMzkuMDA4IDYxMC44MTEsMzkuMDA4IEM2MDMuMTAxLDM5LjAwOCA1OTcuNzAxLDMzLjczOSA1OTcuNzAxLDI2LjI4NiBMNTk3LjcwMSwyNi4yODYgWiIgaWQ9IkZpbGwtMjQiIGZpbGw9IiMyNjI0MjIiPjwvcGF0aD4KICAgICAgICAgICAgPHBvbHlsaW5lIGlkPSJGaWxsLTI1IiBmaWxsPSIjMjYyNDIyIiBwb2ludHM9IjYzMi4xNDEgOTQuMTM4IDY1OC42MjEgNjYuMjUxIDYzMi45MjEgNjYuMjUxIDYzMi45MjEgNDYuMzMzIDY4OC4zMDEgNDYuMzMzIDY4OC4zMDEgNjMuMTY3IDY2MS44MzEgOTEuMzExIDY4OC42OTEgOTEuMzExIDY4OC42OTEgMTExLjYxNiA2MzIuMTQxIDExMS42MTYgNjMyLjE0MSA5NC4xMzgiPjwvcG9seWxpbmU+CiAgICAgICAgICAgIDxwYXRoIGQ9Ik03NDEuNzcxLDcxLjAwNiBDNzQxLjEyMSw2NS43MzggNzM2Ljg4MSw2Mi41MjUgNzMwLjcxMSw2Mi41MjUgQzcyNC40MjEsNjIuNTI1IDcyMC40MzEsNjUuMjI0IDcxOC43NjEsNzEuMDA2IEw3NDEuNzcxLDcxLjAwNiBaIE03NjMuNjExLDg1LjQgTDcxOC4zODEsODUuNCBDNzE5LjkyMSw5MS41NjggNzIzLjkwMSw5NC42NTMgNzMwLjQ2MSw5NC42NTMgQzczNS45ODEsOTQuNjUzIDczOS41ODEsOTIuNzI1IDc0MS4zODEsODguNzQxIEw3NjEuMTcxLDk3LjA5NCBDNzU0LjIzMSwxMDcuODg5IDc0My45NTEsMTEzLjAzIDcyOS45NDEsMTEzLjAzIEM3MTAuMDIxLDExMy4wMyA2OTUuNjMxLDk4LjYzNiA2OTUuNjMxLDc4Ljg0NiBDNjk1LjYzMSw1OS4zMTIgNzEwLjQxMSw0NC45MTkgNzMwLjk3MSw0NC45MTkgQzc1MC42MzEsNDQuOTE5IDc2My44NzEsNTkuMTg0IDc2My44NzEsNzkuMTAzIEM3NjMuODcxLDgyLjcwMSA3NjMuNjExLDg1LjQgNzYzLjYxMSw4NS40IEw3NjMuNjExLDg1LjQgWiIgaWQ9IkZpbGwtMjYiIGZpbGw9IiMyNjI0MjIiPjwvcGF0aD4KICAgICAgICAgICAgPHBhdGggZD0iTTgxOS4zOTEsNzguOTc0IEM4MTkuMzkxLDcxLjM5MiA4MTMuOTkxLDY1Ljg2NyA4MDYuNTQxLDY1Ljg2NyBDNzk5LjA4MSw2NS44NjcgNzk0LjA3MSw3MS4xMzUgNzk0LjA3MSw3OC45NzQgQzc5NC4wNzEsODYuODEzIDc5OC45NjEsOTIuMDgzIDgwNi40MTEsOTIuMDgzIEM4MTMuOTkxLDkyLjA4MyA4MTkuMzkxLDg2LjgxMyA4MTkuMzkxLDc4Ljk3NCBaIE04NDEuNzUxLDE2LjI2MiBMODQxLjc1MSwxMTEuNjE2IEw4MTkuNjUxLDExMS42MTYgTDgxOS42NTEsMTAyLjc0OSBDODE1LjY2MSwxMDkuMTc0IDgwOS40OTEsMTEzLjAzIDgwMC43NTEsMTEzLjAzIEM3ODIuODkxLDExMy4wMyA3NzAuODExLDk5LjQwOCA3NzAuODExLDc4Ljk3NCBDNzcwLjgxMSw1OC42NyA3ODMuNTMxLDQ0LjkxOSA4MDEuMTQxLDQ0LjkxOSBDODA5LjExMSw0NC45MTkgODE1LjAyMSw0OC4yNjEgODE4Ljg3MSw1My45MTUgTDgxOC44NzEsMTYuMjYyIEw4NDEuNzUxLDE2LjI2MiBMODQxLjc1MSwxNi4yNjIgWiIgaWQ9IkZpbGwtMjciIGZpbGw9IiMyNjI0MjIiPjwvcGF0aD4KICAgICAgICAgICAgPHBvbHlsaW5lIGlkPSJGaWxsLTI4IiBmaWxsPSIjMjYyNDIyIiBwb2ludHM9IjUwLjYxMSAxMjUuNzYgLTUuNjg0MzQxODllLTE0IDEyNS43NiAtNS42ODQzNDE4OWUtMTQgMCAzNC43NDEgMCAzNC43NDEgMTUuMzM3IDE1LjM0MSAxNS4zMzcgMTUuMzQxIDExMC40MjMgNTAuNjExIDExMC40MjMgNTAuNjExIDEyNS43NiI+PC9wb2x5bGluZT4KICAgICAgICAgICAgPHBvbHlnb24gaWQ9IkZpbGwtMjkiIGZpbGw9IiMyNjI0MjIiIHBvaW50cz0iNDMuMDcxIDE1LjMzNyA0OS45MzEgMTUuMzM3IDQ5LjkzMSAwIDQzLjA3MSAwIj48L3BvbHlnb24+CiAgICAgICAgICAgIDxwb2x5bGluZSBpZD0iRmlsbC0zMCIgZmlsbD0iIzI2MjQyMiIgcG9pbnRzPSI3Mi4xNzEgMCAxMjIuNzgxIDAgMTIyLjc4MSAxMjUuNzYgODguMDQxIDEyNS43NiA4OC4wNDEgMTEwLjQyMyAxMDcuNDQxIDExMC40MjMgMTA3LjQ0MSAxNS4zMzcgNzIuMTcxIDE1LjMzNyA3Mi4xNzEgMCI+PC9wb2x5bGluZT4KICAgICAgICAgICAgPHBvbHlnb24gaWQ9IkZpbGwtMzEiIGZpbGw9IiMyNjI0MjIiIHBvaW50cz0iNzIuODUxIDEyNS43NiA3OS43MTEgMTI1Ljc2IDc5LjcxMSAxMTAuNDIzIDcyLjg1MSAxMTAuNDIzIj48L3BvbHlnb24+CiAgICAgICAgICAgIDxwb2x5bGluZSBpZD0iRmlsbC0zMiIgZmlsbD0iI0M4NTA1MSIgcG9pbnRzPSIzOC43NjEgMzEuOTIgMzguNzYxIDUxLjI1NiA2NS40OTEgNjMuMzkgODYuNzkxIDUzLjcyMyAzOC43NjEgMzEuOTIiPjwvcG9seWxpbmU+CiAgICAgICAgICAgIDxwb2x5bGluZSBpZD0iRmlsbC0zMyIgZmlsbD0iI0UwNTk1QiIgcG9pbnRzPSI4Ni43OTEgNTMuNzIzIDg2Ljc5MSA1My43MjMgNjUuNDkxIDYzLjM5IDM4Ljc2MSA3NS41MjUgMzguNzYxIDk0Ljg2MSA4Ni43OTEgNzMuMDU4IDg2Ljc5MSA1My43MjMiPjwvcG9seWxpbmU+CiAgICAgICAgPC9nPgogICAgPC9nPgo8L3N2Zz4="
+                alt="Vectorized logo" height="22px"></a></div>
+          <div
+            style="color:black;align-items:center;text-align:right;text-transform:capitalize;flex-grow:1;padding-top:3px">
+            <a class="css-i0mep1 e1px8kik3" href="/redpanda">Redpanda</a>
+            <a class="css-i0mep1 e1px8kik3" href="/cloud">Cloud</a>
+            <a class="css-i0mep1 e1px8kik3" href="/docs">Docs</a>
+            <a class="css-i0mep1 e1px8kik3" href="/team">Team</a>
+            <a class="css-i0mep1 e1px8kik3" href="/careers">Careers</a>
+            <a class="css-i0mep1 e1px8kik3" href="/blog">Blog</a>
+            <a href="https://join.slack.com/t/vectorizedcommunity/shared_invite/zt-ng2ze1uv-l5VMWSGQHB9gp47~kNnYGA"
+              rel="noopener noreferrer" class="css-i0mep1 e1px8kik3"><span style="color:#F15D61"><svg width="26"
+                  height="26" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg"
+                  style="position:relative;top:-2px">
+                  <path
+                    d="M10.5974 13.8726C9.401 13.8726 8.43018 14.8434 8.43018 16.0398V21.4579C8.43018 22.6543 9.401 23.6251 10.5974 23.6251C11.7938 23.6251 12.7647 22.6543 12.7647 21.4579V16.0398C12.7647 14.8434 11.7938 13.8726 10.5974 13.8726Z"
+                    fill="#F15D61"></path>
+                  <path
+                    d="M3.01611 16.0398C3.01611 17.2362 3.98694 18.207 5.18335 18.207C6.37977 18.207 7.35059 17.2362 7.35059 16.0398V13.8726H5.18335C3.98694 13.8726 3.01611 14.8434 3.01611 16.0398Z"
+                    fill="#F15D61"></path>
+                  <path
+                    d="M10.6014 3C10.6014 3 10.5974 3 10.6014 3C9.401 3 8.43018 3.97083 8.43018 5.16724C8.43018 6.36365 9.401 7.33448 10.5974 7.33448H12.7647C12.7647 6.10584 12.7647 6.40394 12.7647 5.16321C12.7647 3.9668 11.7938 3 10.6014 3Z"
+                    fill="#F15D61"></path>
+                  <path
+                    d="M5.16724 12.7727H10.5974C11.7938 12.7727 12.7647 11.8019 12.7647 10.6055C12.7647 9.40907 11.7938 8.43824 10.5974 8.43824H5.16724C3.97083 8.43422 3 9.40504 3 10.6055C3 11.8059 3.97083 12.7727 5.16724 12.7727Z"
+                    fill="#F15D61"></path>
+                  <path
+                    d="M21.4376 8.43433C20.2412 8.43433 19.2744 9.40113 19.2744 10.5975V10.6016V12.7688H21.4417C22.6381 12.7688 23.6089 11.798 23.6089 10.6016C23.6089 9.40515 22.6381 8.43433 21.4376 8.43433Z"
+                    fill="#F15D61"></path>
+                  <path
+                    d="M13.8604 5.16724V10.6015C13.8604 11.7979 14.8312 12.7687 16.0276 12.7687C17.224 12.7687 18.1948 11.7979 18.1948 10.6015V5.16724C18.1948 3.97083 17.224 3 16.0276 3C14.8312 3 13.8604 3.97083 13.8604 5.16724Z"
+                    fill="#F15D61"></path>
+                  <path
+                    d="M18.1948 21.4578C18.1948 20.2614 17.224 19.2905 16.0276 19.2905H13.8604V21.4578C13.8604 22.6542 14.8312 23.621 16.0276 23.621C17.224 23.625 18.1948 22.6542 18.1948 21.4578Z"
+                    fill="#F15D61"></path>
+                  <path
+                    d="M21.4578 13.8726H16.0276C14.8312 13.8726 13.8604 14.8434 13.8604 16.0398C13.8604 17.2362 14.8312 18.207 16.0276 18.207H21.4578C22.6542 18.207 23.625 17.2362 23.625 16.0398C23.625 14.8434 22.6542 13.8726 21.4578 13.8726Z"
+                    fill="#F15D61"></path>
+                </svg><span style="padding-left:4px">Slack</span></span></a><a
+              href="https://github.com/vectorizedio/redpanda" rel="noopener noreferrer"
+              class="css-i0mep1 e1px8kik3"><span style="color:#F15D61"><svg width="26" height="26" viewBox="0 0 26 26"
+                  fill="none" xmlns="http://www.w3.org/2000/svg" style="position:relative;top:-2px">
+                  <path
+                    d="M13 2C6.9225 2 2 6.84 2 12.8093C2 17.5861 5.1515 21.6368 9.52125 23.065C10.0712 23.1667 10.2729 22.8322 10.2729 22.5452C10.2729 22.2886 10.2638 21.6084 10.2592 20.7073C7.19933 21.3591 6.554 19.2572 6.554 19.2572C6.0535 18.0096 5.33025 17.6759 5.33025 17.6759C4.33383 17.0058 5.40725 17.0196 5.40725 17.0196C6.51183 17.0947 7.09208 18.1333 7.09208 18.1333C8.07292 19.7861 9.667 19.3085 10.2958 19.0326C10.3948 18.3332 10.6781 17.8574 10.9925 17.587C8.54958 17.3166 5.982 16.3871 5.982 12.2456C5.982 11.0658 6.40825 10.1015 7.11408 9.34525C6.99033 9.07208 6.61908 7.973 7.21033 6.48433C7.21033 6.48433 8.13158 6.19467 10.2353 7.59258C11.1153 7.35242 12.0503 7.23325 12.9853 7.22775C13.9203 7.23325 14.8553 7.35242 15.7353 7.59258C17.8253 6.19467 18.7466 6.48433 18.7466 6.48433C19.3378 7.973 18.9666 9.07208 18.8566 9.34525C19.5578 10.1015 19.9841 11.0658 19.9841 12.2456C19.9841 16.3981 17.4128 17.312 14.9653 17.5778C15.3503 17.9023 15.7078 18.5651 15.7078 19.578C15.7078 21.0245 15.6941 22.1868 15.6941 22.5379C15.6941 22.8212 15.8866 23.1594 16.4503 23.0512C20.8512 21.6322 24 17.5787 24 12.8093C24 6.84 19.0748 2 13 2Z"
+                    fill="#F15D61"></path>
+                </svg><span style="padding-left:4px">2352</span></span></a>
+          </div>
+        </nav>
+      </div> -->
+    </div>
+  </header>
+</div>
+<a id="top"></a>
+<article>
+  {{if not .IsHome}}
+  <aside>
+    <ul class="menu">
+      {{if .Params.categories}}
+      {{if eq (index .Params.categories 0) "RS"}}
+            <div id="versionSelector" class="menu__version-selector version-selector-control" onclick="_openVersionSelector()">
+        <button class="menu__version-selector-btn version-selector-control">
+          <span id="versionSelectorValue" class="version-selector-control"></span>
+          <span class="menu__version-selector__toggler opener version-selector-control">&#x25BC;</span>
+          <span class="menu__version-selector__toggler closer version-selector-control">&#x25B2;</span>
+        </button>
+        <!-- <div class="menu__version-selector__list version-selector-control">
+                <a href="https://docs.vectorized.io/6.0/rs" id="version-select-6.0" onclick="_setSelectedVersion('6.0', 'v6.0 (latest)')">v6.0 (latest)</a>
+                <a href="https://docs.vectorized.io/5.6/rs" id="version-select-5.6" onclick="_setSelectedVersion('5.6', 'v5.6')">v5.6</a>
+                <a href="https://docs.vectorized.io/5.4/rs" id="version-select-5.4" onclick="_setSelectedVersion('5.4', 'v5.4')">v5.4</a>
+                <a href="https://docs.vectorized.io/5.2/rs" id="version-select-5.2" onclick="_setSelectedVersion('5.2', 'v5.2 (and below)')">v5.2 (and below)</a>
+        </div> -->
+      </div>
+      {{end}}
+      {{end}}
+
+      {{- if not .Site.Params.disableHomeIcon}}
+            <li data-nav-id="{{"/" | relLangURL}}" class="dd-item">
+              <a href="{{"/" | relLangURL}}">
+          <i class="fa fa-fw fa-home"></i>
+        </a>
+      </li>
+      {{- end}}
+
+      {{- partial "menu.html" . }}
+
+    </ul>
+
+    {{- partial "language-selector.html" . }}
+    <section>
+      {{- partial "menu-footer.html" . }}
+    </section>
+  </aside>
+  <section class="page">
+    <div id="breadcrumbs" itemscope="" itemtype="http://data-vocabulary.org/Breadcrumb">
+      <span class="links">
+        {{ template "breadcrumb" dict "page" . "value" .Title }}
+      </span>
+    </div>
+
+    {{- if not .Site.Params.disableSearch}}
+    <div>
+        <div class="searchcontainer">
+          <i class="icon-Search searchicon"></i>
+          <input class="searchbox" data-search-input id="search-by" type="text" placeholder="{{T "Search-placeholder"}}">
+        </div>
+        <script type="text/javascript" src="{{"js/lunr.min.js" | relURL}}"></script>
+        <script type="text/javascript" src="{{"js/auto-complete.js" | relURL}}"></script>
+        <link href="{{"css/auto-complete.css" | relURL}}" rel="stylesheet">
+        <!-- <script type="text/javascript">
+          { { if .Site.IsMultiLingual } }
+          var baseurl = "{{.Site.BaseURL}}{{.Site.LanguagePrefix}}";
+          { { else } }
+          var baseurl = "{{.Site.BaseURL}}";
+          { { end } }
+        </script> -->
+        <script type="text/javascript" src="{{"js/search.js" | relURL}}"></script>
+      </div>
+      {{- end}}
+
+      <div class="chevrons">
+        {{ partial "next-prev-page.html" . }}
+      </div>
+      {{end}}
+
+      <div class="nav-select">
+        <center>
+          <select onchange="javascript:location.href = this.value;">
+            {{partial "flex/selectnavigation.html" .}}
+          </select>
+        </center>
+      </div>
+
+      {{if not .IsHome}}
+      <h1>{{.Title}}</h1>
+
+      {{if eq .RelPermalink "/rs/"}}
+      {{ partial "rs-hot-topics-table.html" . }}
+      {{end}}
+      {{end}}

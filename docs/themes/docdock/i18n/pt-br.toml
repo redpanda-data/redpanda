@@ -1,0 +1,44 @@
+[create-header-md]
+other = "Crie um arquivo content/_header.md para customizar isto"
+
+[create-footer-md]
+other = "Crie um arquivo content/_footer.md para customizar o conteúdo do rodapé"
+
+[Search-placeholder]
+other = "Buscar..."
+
+[Clear-History]
+other = "Limpar Histórico"
+
+[Page]
+other = "Página"
+
+[Next-Pages]
+other = "Próximas Páginas"
+
+[Previous-Pages]
+other = "Páginas Anteriores"
+
+[pagination-on]
+other = "de"
+
+[Attachments-label]
+other = "Anexos"
+
+[title-404]
+other = "Erro"
+
+[message-404]
+other = "Woops. Esta página não existe."
+
+[Go-to-homepage]
+other = "Página Principal"
+
+[Edit-this-page]
+other = "Melhorar esta página"
+
+[Expand-title]
+other = "Expandir..."
+
+[last-update-on]
+other = "Última atualização em"

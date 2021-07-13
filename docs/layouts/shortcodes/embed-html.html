@@ -1,0 +1,2 @@
+{{$file := .Get 0}}
+{{printf "./embeds/%s" $file  | readFile | safeHTML}}

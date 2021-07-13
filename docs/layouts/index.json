@@ -1,0 +1,15 @@
+[{{ range $index, $page := .Site.Pages }}
+{{- if ne $page.Type "json" -}}
+{{- if and $index (gt $index 0) -}},{{- end }}
+{
+    "uri": "{{ $page.Permalink }}",
+    "uriRel": "{{ $page.RelPermalink }}",
+    "title": "{{ htmlEscape $page.Title}}",
+    "tags": [{{ range $tindex, $tag := $page.Params.tags }}{{ if $tindex }}, {{ end }}"{{ $tag| htmlEscape }}"{{ end }}],
+    "keywords": [{{ range $kindex, $keyword := $page.Params.keywords }}{{ if $kindex }}, {{ end }}"{{ $keyword| htmlEscape }}"{{ end }}],
+    "description": "{{ htmlEscape .Description}}",
+    "content": {{$page.Plain | jsonify}},
+    "categories": [{{ range $cindex, $category := $page.Params.categories }}{{ if $cindex }}, {{ end }}"{{ $category| htmlEscape }}"{{ end }}]	
+}
+{{- end -}}
+{{- end -}}]

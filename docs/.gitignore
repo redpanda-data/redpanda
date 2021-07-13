@@ -1,0 +1,23 @@
+#git files
+/.github
+
+#Hugo output
+/public/*
+!/public/.gitkeep
+
+#Forestry config files
+/forestry
+
+# IDEA configuration
+.idea/
+
+# VSCode configuration
+.vscode/
+
+# Windows files
+Thumbs.db
+
+# MacOS files
+.DS_Store
+
+/resources

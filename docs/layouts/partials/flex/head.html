@@ -1,0 +1,37 @@
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+      {{ if ne (getenv "HUGO_ENV") "production" }}
+            {{- partial "noindex" . | safeHTML -}}
+      {{ end }}
+      {{- partial "canonical-url" . | safeHTML -}}
+      {{ hugo.Generator }}
+      <title>{{ .Title }} | {{ .Site.Title }}</title>
+      <link rel="shortcut icon" href="{{"/images/icon_logo/favicon-32x32.png" | relURL}}" type="image/x-icon" />
+      <link href="{{"css/font-awesome.min.css" | relURL}}" rel="stylesheet">
+      <link href="{{"css/nucleus.css" | relURL}}" rel="stylesheet">
+ 
+      {{ $style := resources.Get "theme-flex/style.css"  | resources.Fingerprint }}
+      <link href="{{$style.RelPermalink}}" rel="stylesheet">
+      <link href="{{"css/bootstrap.min.css" | relURL}}" rel="stylesheet">
+      <link href="{{"css/foundation-icons.css" | relURL}}" rel="stylesheet">
+      <script src="{{"theme-flex/modernizr-custom.js" | relURL}}"></script>
+      <script src="{{"theme-flex/classie.js" | relURL}}"></script>
+      <script src="{{"theme-flex/polyfills.js" | relURL}}"></script>
+      <link href="https://fonts.googleapis.com/css?family=Lato:300,400,400i,700,700i" rel="stylesheet">
+      <script src="{{"js/jquery-2.x.min.js" | relURL}}"></script>
+      <script src="{{"theme-flex/jquery.nice-select.min.js" | relURL}}"></script>
+      <script src="{{"theme-flex/custom.js" | relURL}}"></script>
+      <script type="text/javascript">
+            var baseurl = "{{.Site.BaseURL}}";
+      </script>
+      {{ partial "custom-head.html" . }}
+      
+      {{if .IsHome}}
+      <style>
+            @media screen and (max-width: 768px) {
+                  .nice-select {
+                  display: none !important;
+                  }
+            }
+      </style>
+      {{end}}

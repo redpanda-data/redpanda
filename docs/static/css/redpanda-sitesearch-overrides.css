@@ -1,0 +1,62 @@
+.redpanda-sitesearch-input {
+    max-width: 700px !important;
+}
+
+.redpanda-sitesearch .redpanda-sitesearch-result-list-wrapper {
+    max-width: 700px !important;
+    z-index: 10 !important;
+}
+
+.search-right {
+    width: 75%;
+}
+
+.redpanda-sitesearch .redpanda-sitesearch-result-list {
+    max-height: 60vh;
+}
+
+.redpanda-sitesearch-inline .redpanda-sitesearch-result-list {
+    max-height: 70vh;
+}
+
+@media screen and (max-width: 753px) {
+    .redpanda-sitesearch-inline {
+        margin-top: 1rem;
+    }
+}
+
+
+@media screen and (max-width: 376px) {
+    .redpanda-sitesearch .redpanda-sitesearch-result-list {
+        max-height: 40vh;
+    }
+
+    .redpanda-sitesearch-inline .redpanda-sitesearch-result-list  {
+        max-height: 70vh;
+    }
+
+    .search-left {
+        width: 30%;
+    }
+
+    .search-right {
+        width: 70%;
+    }
+
+    .redpanda-sitesearch-result {
+        padding: 9px 1.5em 9px 9px;
+    }
+}
+
+
+@media screen and (max-height: 750px) {
+    .redpanda-sitesearch .redpanda-sitesearch-result-list {
+        max-height: 50vh;
+    }
+
+    .redpanda-sitesearch-inline .redpanda-sitesearch-result-list  {
+        max-height: 70vh;
+    }
+
+
+}

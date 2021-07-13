@@ -1,0 +1,13 @@
+<p>
+    <select onchange="
+        var newVersion = this.options[this.selectedIndex].value;
+        window.location = '/' + newVersion;
+    ">
+        <option selected disabled value="select">Select version</option>
+        <option disabled value="5.3">5.3</option>
+        <option disabled value="5.2">5.2</option>
+        <option disabled value="5.0">5.0</option>
+        <option disabled value="4.5">4.5</option>
+        <option disabled value="4.4">4.4</option>
+    </select>
+</p>

@@ -1,0 +1,5 @@
+baseURL = "/original"
+publishDir = "public/original"
+[params]
+themeStyle = "original"
+themeVariant = "blue"

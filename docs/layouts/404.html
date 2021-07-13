@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>{{ block "title" . }}{{ .Site.Title }}{{ end }}</title>
+    {{ partial "flex/head.html" . }}
+  </head>
+  <body data-url="{{ .RelPermalink }}">
+    {{ partial "flex/body-beforecontent.html" . }}
+      
+	<h1><a href="https://github.com/vectorizedio/redpanda-docs/issues/new?assignees=bmansheim&labels=bug&template=got-a-404-.md&title=Got+a+404">How did you get here?</a></h1>
+	<p>
+	</p>
+	<p>{{T "message-404"}}</p>
+	<p><a href="{{.Site.BaseURL}}">{{T "Go-to-homepage"}}</a></p>
+	<!-- <p><img src="{{"images/gopher-404.jpg" | relURL}}" style="width:50%"></img></p>     -->
+    
+    {{ partial "flex/body-aftercontent.html" . }}
+    
+    {{ block "footer" . }}
+    {{ end }}
+
+    {{ partial "custom-footer.html" . }}
+  </body>
+</html>
+
+

@@ -1,0 +1,114 @@
+{{- $currentNode := . }}
+{{- $showvisitedlinks := .Site.Params.showVisitedLinks -}}
+{{- $isParentRoot := eq .Parent .FirstSection -}}
+{{- $numOfChildren := (add (len .Pages) (len .Sections)) -}}
+{{- $shouldCollapse := and $isParentRoot (eq $numOfChildren 0) -}}
+{{- $isCollapsed := (or $shouldCollapse (or (eq .RelPermalink "/rs/") (eq .RelPermalink "/rc/") (eq .RelPermalink "/platforms/") (eq .RelPermalink "/ri/") (eq .RelPermalink "/glossary") (eq .RelPermalink "/modules/"))) -}}
+
+{{- if eq .Site.Params.ordersectionsby "title"}}
+  {{- range .Site.Home.Sections.ByTitle}}
+  {{- template "section-tree-nav" dict "sect" . "currentnode" $currentNode "showvisitedlinks" $showvisitedlinks "isCollapsed" $isCollapsed}}
+  {{- end}}
+{{- else}}
+  {{- range .Site.Home.Sections.ByWeight}}
+  {{- template "section-tree-nav" dict "sect" . "currentnode" $currentNode "showvisitedlinks" $showvisitedlinks "isCollapsed" $isCollapsed}}
+  {{- end}}
+{{- end}}
+
+<!-- templates -->
+{{- define "section-tree-nav"}}
+{{- $showvisitedlinks := .showvisitedlinks }}
+{{- $isCollapsed := .isCollapsed }}
+{{- $currentNode := .currentnode }}
+ {{- with .sect}}
+  {{- if and .IsSection (or (not .Params.hidden) $.showhidden)}}
+    {{- $numberOfPages := (add (len .Pages) (len .Sections)) }}
+    {{- safeHTML .Params.head}}    
+    <li data-nav-id="{{.RelPermalink}}" class="dd-item
+        {{- if .IsAncestor $currentNode}} parent{{end -}}
+        {{- if eq .RelPermalink $currentNode.RelPermalink}} active{{end -}}
+        {{- if .Params.alwaysopen}} alwaysopen{{end -}}
+        {{- if ne $numberOfPages 0 }} haschildren{{end -}}
+        {{- if $isCollapsed}} menu-collapsed {{else}} menu-expanded{{end -}}
+        {{- if (or (eq .RelPermalink "/rs/") (eq .RelPermalink "/rc/") (eq .RelPermalink "/glossary/") (eq .RelPermalink "/platforms/") (eq .RelPermalink "/ri/") (eq .RelPermalink "/modules/"))}} menu-root {{end}}
+        ">
+        {{- if or (eq .RelPermalink "/rs/") (eq .RelPermalink "/rc/") (eq .RelPermalink "/glossary/") (eq .RelPermalink "/rv/") (eq .RelPermalink "/platforms/") (eq .RelPermalink "/ri/") (eq .RelPermalink "/modules/")}}
+          <a href="{{ .RelPermalink}}">{{safeHTML .Params.Pre}}{{.Title}}{{safeHTML .Params.Post}}</a>          
+        {{- end}}
+
+        {{- if not (eq .RelPermalink "/glossary/") }}
+          <!-- Child items -->          
+          {{if or (eq .RelPermalink "/rs/") }}
+            <div class="children has-version-selector">
+          {{else}}
+            <div class="children">
+          {{end}}
+              {{- if or (eq .RelPermalink "/rs/") (eq .RelPermalink "/rc/") (eq .RelPermalink "/platforms/") (eq .RelPermalink "/ri/") (eq .RelPermalink "/modules/")}}          
+                <div class="menu-divider"></div>
+                
+                <span class="SideMenuToggle expander">
+                  <a class="expander-title">
+                    <span class="SideMenuExpanderTitle expand-all-title">Expand all</span>
+                    <span class="SideMenuExpanderTitle collapse-all-title">Collapse all</span>
+                  </a>
+                  <i class="fa fa-angle-double-down fa-lg expand-all-icon"></i>
+                  <i class="fa fa-angle-double-up fa-lg collapse-all-icon"></i>
+                </span>                
+
+              {{- else}}
+                <a href="{{ .RelPermalink}}">{{safeHTML .Params.Pre}}{{.Title}}{{safeHTML .Params.Post}}</a>
+
+                {{- if ne $numberOfPages 0 }}
+                  {{- if or (.IsAncestor $currentNode) (.Params.alwaysopen) }}
+                    <i class="fa fa-angle-down fa-lg category-icon"></i>
+                  {{- else -}}
+                    <i class="fa fa-angle-right fa-lg category-icon"></i>
+                  {{- end}}
+                {{- end}}                
+              {{- end}}
+            
+            {{- if $showvisitedlinks}}<i class="fa fa-circle-thin read-icon"></i>{{end}}
+          </div>
+        {{- end}}
+
+      {{- if ne $numberOfPages 0 }}
+        <ul>
+          {{- $pages := .Pages }}
+          {{- if .Sections}}
+            {{- $pages = (.Pages | union .Sections) }}
+          {{- end}}
+
+        {{- if eq .Site.Params.ordersectionsby "title"}}
+          {{- range $pages.ByTitle }}
+            {{- if and .Params.hidden (not $.showhidden) }}
+            {{- else}}
+            {{- template "section-tree-nav" dict "sect" . "currentnode" $currentNode "showvisitedlinks" $showvisitedlinks "isCollapsed" $isCollapsed }}
+            {{- end}}
+          {{- end}}
+        {{- else}}
+          {{- range $pages.ByWeight }}
+            {{- if and .Params.hidden (not $.showhidden) }}
+            {{- else}}
+            {{- template "section-tree-nav" dict "sect" . "currentnode" $currentNode "showvisitedlinks" $showvisitedlinks "isCollapsed" $isCollapsed }}
+            {{- end}}
+          {{- end}}
+        {{- end}}
+        </ul>
+      {{- end}}
+    </li>
+  {{- else}}
+    {{- if not .Params.Hidden }}
+      <li data-nav-id="{{.RelPermalink}}" class="dd-item
+     {{- if eq .RelPermalink $currentNode.RelPermalink}} active{{end -}}
+      ">
+        <div>
+          <a href="{{ .RelPermalink}}">
+            {{safeHTML .Params.Pre}}{{.LinkTitle}}{{safeHTML .Params.Post}}
+          </a>
+          {{- if $showvisitedlinks}}<i class="fa fa-circle-thin read-icon"></i>{{end}}
+        </div>
+    </li>
+     {{- end}}
+  {{- end}}
+ {{- end}}
+{{- end}}

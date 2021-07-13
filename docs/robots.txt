@@ -1,0 +1,9 @@
+# Rule 1
+User-agent: *
+Disallow: /staging/
+
+# Rule 2
+User-agent: *
+Allow: /
+
+Sitemap: https://vectorized.io/sitemap.xml

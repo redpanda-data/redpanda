@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    {{ partial "flex/head" . }}
+  </head>
+  <body data-url="{{ .RelPermalink }}">
+    {{ partial "flex/body-beforecontent" . }}
+
+    {{if .IsHome}}
+      {{ partial "home/hero" . }}
+      {{ partial "home/options" . }}
+    {{end}}
+
+    {{if not .IsHome}}
+      <div class="main-content">
+          <div class="main-content-left">
+            {{ block "main" . }}
+            {{ end }}
+          </div>
+          <div class="main-content-right">
+            {{ partial "mini-toc" . }}
+          </div>
+      </div>
+      <div class="main-content-bottom">
+          {{ partial "post-bottom" . }}          
+      </div>
+    {{end}}
+    {{ partial "flex/body-aftercontent" . }}
+
+    {{ block "footer" . }}
+    {{ end }}
+
+    {{ partial "custom-footer" . }}
+
+    {{ if eq (getenv "HUGO_ENV") "production" }}
+        {{if not .IsHome}}
+        {{ partial "page-feedback" . }}
+        {{ end }}
+    {{ end }}
+  </body>
+</html>

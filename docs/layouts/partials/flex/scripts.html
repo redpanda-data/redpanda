@@ -1,0 +1,80 @@
+<!-- Version selector -->
+{{if .Params.categories}}
+{{if eq (index .Params.categories 0) "RS"}}
+<script>
+(function () {
+  var pa = window.location.pathname.split('/');
+  var pv = pa[1]; // latest, 5.4 or 5.2
+
+  if(pv == '6.0' || pv == 'latest') {
+    v = '6.0';
+    d = 'v6.0 (latest)';
+  } else if (pv == '5.6') {
+    v = '5.6';
+    d = 'v5.6';
+  } else if (pv == '5.4') {
+    v = '5.4';
+    d = 'v5.4';
+  } else if (pv == '5.2') {
+    v = '5.2';
+    d = 'v5.2 (and below)';
+  }
+
+  _setVersion(v, d);
+  _setSelectedVersion(v);
+})();
+
+function _setVersion(ver, displayName) {
+  document.getElementById('versionSelectorValue').innerText = displayName;
+}
+
+function _setSelectedVersion(ver) {
+  if(ver) {
+    var i = document.getElementById('version-select-' + ver);
+    if(i) {
+      i.classList.toggle('selected-version');
+    }
+  }
+}
+
+function _openVersionSelector() {
+    document.getElementById('versionSelector').classList.toggle('open');
+}
+
+window.onclick = function(e) {
+  if (!e.target.matches('.version-selector-control')) {
+    var d = document.getElementsByClassName('menu__version-selector');
+    var i;
+    for (i = 0; i < d.length; i++) {
+      if (d[i].classList.contains('open')) {
+        d[i].classList.remove('open');
+      }
+    }
+  }
+}</script>
+{{end}}
+{{end}}
+<!-- /Version selector -->
+
+<script>
+  // Set up GA Event tracking
+  setTimeout(function(){
+    if(window.ga) {
+      window.ga('create', 'UA-92003007-1', {
+          'clientId': window.ga.getAll()[0].get('clientId')
+      });
+    }
+  }, 400);
+</script>
+
+<script src="{{"js/clipboard.min.js" | relURL}}"></script>
+<script src="{{"js/bootstrap.min.js" | relURL}}"></script>
+<link href="{{"css/featherlight.min.css" | relURL}}" rel="stylesheet">
+<script src="{{"js/featherlight.min.js" | relURL}}"></script>
+
+{{if eq .Site.Params.highlightClientSide true}}
+<script src="{{"js/highlight.pack.js" | relURL}}"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+{{end}}
+
+<script src="{{(printf "theme-%s/script.js" (.Site.Params.themeStyle| default "flex")) | relURL}}"></script>

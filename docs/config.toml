@@ -1,0 +1,56 @@
+baseURL = "/"
+languageCode = "en-us"
+DefaultContentLanguage = "en"
+title = "Vectorized Documentation Center"
+theme = "docdock"
+assetDir = "static"
+# themesdir = "../.."
+pygmentsCodeFences = true
+pygmentsStyle = "monokailight"
+
+defaultContentLanguage = "en"
+defaultContentLanguageInSubdir = false
+enableMissingTranslationPlaceholders = false
+
+canonifyURLs = true
+relativeURLs = true
+
+# [Languages]
+# [Languages.en]
+# title = "Documentation for Hugo docDock"
+# weight = 1
+# languageName = "English"
+# 
+# [Languages.fr]
+# title = "Documentation du thème docDock"
+# weight = 2
+# languageName = "Français"
+
+[params]
+editURL = "https://github.com/vectorizedio/redpanda-docs/edit/branch/content/"
+showVisitedLinks = true # default is false
+themeStyle = "flex" # "original" or "flex" # default "flex"
+themeVariant = "" # choose theme variant "green", "gold" , "gray", "blue" (default)
+ordersectionsby = "weight" # ordersectionsby = "title"
+disableHomeIcon = true # default is false
+disableSearch = false # default is false
+disableNavChevron = false # set true to hide next/prev chevron, default is false
+highlightClientSide = false # set true to use highlight.pack.js instead of the default hugo chroma highlighter
+menushortcutsnewtab = false # set true to open shortcuts links to a new tab/window
+enableGitInfo = true
+googleAnalytics = ""
+googleTagManager = ""
+
+siteURL = "http://127.0.0.1:8001"
+
+[blackfriday]
+hrefTargetBlank = false
+smartypants = false
+
+[outputs]
+home = [ "HTML", "RSS", "JSON"]
+
+[taxonomies]
+
+[markup.goldmark.renderer]
+  unsafe = true

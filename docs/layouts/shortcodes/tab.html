@@ -1,0 +1,21 @@
+{{ $tab := .Get "tabNum" }}
+{{ $tabID := print (.Parent.Get "tabID") $tab }}
+{{ $tabName := (print "tabName" $tab) }}
+
+{{ if eq $tab "1" }}
+
+<div class="tab-pane fade show active" id="tab{{ $tabID }}" role="tabpanel" aria-labelledby="nav-{{ $tabName }}">
+
+	{{ $.Inner | markdownify }}
+
+</div>
+
+{{ else }}
+
+<div class="tab-pane fade" id="tab{{ $tabID }}" role="tabpanel" aria-labelledby="nav-{{ $tabName }}">
+
+	{{ $.Inner | markdownify }}
+
+</div>
+
+{{ end }}
