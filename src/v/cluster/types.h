@@ -313,6 +313,7 @@ struct topic_properties {
     std::optional<model::compaction_strategy> compaction_strategy;
     std::optional<model::timestamp_type> timestamp_type;
     std::optional<size_t> segment_size;
+    std::optional<model::topic> source_topic;
     tristate<size_t> retention_bytes{std::nullopt};
     tristate<std::chrono::milliseconds> retention_duration{std::nullopt};
 
