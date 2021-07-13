@@ -75,6 +75,7 @@ func TestSetCmd(t *testing.T) {
 				"enable_memory_locking":      false,
 				"tune_fstrim":                false,
 				"tune_coredump":              false,
+				"tune_ballast_file":          false,
 				"coredump_dir":               "/var/lib/redpanda/coredump",
 			},
 		},

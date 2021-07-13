@@ -30,6 +30,9 @@ const (
 	DefaultSchemaRegPort = 8081
 	DefaultProxyPort     = 8082
 	DefaultAdminPort     = 9644
+
+	DefaultBallastFilePath = "/var/lib/redpanda/data/ballast"
+	DefaultBallastFileSize = "1GiB"
 )
 
 func InitViper(fs afero.Fs) *viper.Viper {
@@ -167,6 +170,8 @@ func setDevelopment(conf *Config) *Config {
 		EnableUsageStats:     conf.Rpk.EnableUsageStats,
 		CoredumpDir:          conf.Rpk.CoredumpDir,
 		SMP:                  Default().Rpk.SMP,
+		BallastFilePath:      conf.Rpk.BallastFilePath,
+		BallastFileSize:      conf.Rpk.BallastFileSize,
 		Overprovisioned:      true,
 	}
 	return conf
@@ -185,6 +190,7 @@ func setProduction(conf *Config) *Config {
 	conf.Rpk.TuneSwappiness = true
 	conf.Rpk.Overprovisioned = false
 	conf.Rpk.TuneDiskWriteCache = true
+	conf.Rpk.TuneBallastFile = true
 	return conf
 }
 
