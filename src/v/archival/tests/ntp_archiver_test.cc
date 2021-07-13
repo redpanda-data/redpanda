@@ -414,3 +414,81 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
         BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
     }
 }
+
+// NOLINTNEXTLINE
+FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
+    // Test situation when the offset ranges of segments have some overlap.
+    // This shouldn't normally happen with committed offset but might be
+    // the case with dirty offset.
+    // For instance if we have segments A with base offset 0 committed offset
+    // 100 and dirty offset 101, and B with base offset 100 and committed offset
+    // 200, the archival_policy should return A and then B. Before the fix this
+    // is not the case and it always retuns A.
+    const auto offset1 = model::offset(1000);
+    const auto offset2 = model::offset(2000);
+    const auto offset3 = model::offset(3000);
+    std::vector<segment_desc> segments = {
+      {manifest_ntp, offset1, model::term_id(1)},
+      {manifest_ntp, offset2, model::term_id(1)},
+      {manifest_ntp, offset3, model::term_id(1)},
+    };
+    init_storage_api_local(segments);
+    auto& lm = get_local_storage_api().log_mgr();
+    ntp_level_probe ntp_probe(per_ntp_metrics_disabled::yes, manifest_ntp);
+    service_probe svc_probe(service_metrics_disabled::yes);
+    archival::archival_policy policy(manifest_ntp, svc_probe, ntp_probe);
+
+    // Patch segment offsets to create overlaps for the archival_policy.
+    // The archival_policy instance only touches the offsets, not the
+    // actual data so having them a bit inconsistent for the sake of testing
+    // is OK.
+    auto segment1 = get_segment(
+      manifest_ntp, archival::segment_name("1000-1-v1.log"));
+    auto& tracker1 = const_cast<storage::segment::offset_tracker&>(
+      segment1->offsets());
+    tracker1.dirty_offset = offset2 - model::offset(1);
+    auto segment2 = get_segment(
+      manifest_ntp, archival::segment_name("2000-1-v1.log"));
+    auto& tracker2 = const_cast<storage::segment::offset_tracker&>(
+      segment2->offsets());
+    tracker2.dirty_offset = offset3 - model::offset(1);
+
+    // Every segment should be returned once as we're calling the
+    // policy to get next candidate.
+    log_segment_set(lm);
+    model::offset high_watermark{9999};
+    // Starting offset is lower than offset1
+    auto upload1 = policy.get_next_candidate(
+      model::offset(0), high_watermark, lm);
+    log_upload_candidate(upload1);
+    BOOST_REQUIRE(upload1.source.get() != nullptr);
+    BOOST_REQUIRE(upload1.starting_offset == offset1);
+
+    auto upload2 = policy.get_next_candidate(
+      upload1.source->offsets().dirty_offset + model::offset(1),
+      high_watermark,
+      lm);
+    log_upload_candidate(upload2);
+    BOOST_REQUIRE(upload2.source.get() != nullptr);
+    BOOST_REQUIRE(upload2.starting_offset == offset2);
+    BOOST_REQUIRE(upload2.exposed_name != upload1.exposed_name);
+    BOOST_REQUIRE(upload2.source != upload1.source);
+    BOOST_REQUIRE(upload2.source->offsets().base_offset == offset2);
+
+    auto upload3 = policy.get_next_candidate(
+      upload2.source->offsets().dirty_offset + model::offset(1),
+      high_watermark,
+      lm);
+    log_upload_candidate(upload3);
+    BOOST_REQUIRE(upload3.source.get() != nullptr);
+    BOOST_REQUIRE(upload3.starting_offset == offset3);
+    BOOST_REQUIRE(upload3.exposed_name != upload2.exposed_name);
+    BOOST_REQUIRE(upload3.source != upload2.source);
+    BOOST_REQUIRE(upload3.source->offsets().base_offset == offset3);
+
+    auto upload4 = policy.get_next_candidate(
+      upload3.source->offsets().dirty_offset + model::offset(1),
+      high_watermark,
+      lm);
+    BOOST_REQUIRE(upload4.source.get() == nullptr);
+}
