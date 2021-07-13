@@ -35,6 +35,7 @@ set(srcs
     rm_stm_tests.cc
     controller_api_tests.cc
     decommissioning_tests.cc
+    replicas_rebalancing_tests.cc
     id_allocator_stm_test.cc)
 
 rp_test(
