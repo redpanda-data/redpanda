@@ -19,8 +19,11 @@
 #include "vlog.h"
 
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/util/log.hh>
 
 namespace archival {
+
+using namespace std::chrono_literals;
 
 std::ostream& operator<<(std::ostream& s, const upload_candidate& c) {
     s << "{ exposed_name: " << c.exposed_name
@@ -36,7 +39,9 @@ archival_policy::archival_policy(
   , _ntp_probe(ntp_probe) {}
 
 archival_policy::lookup_result archival_policy::find_segment(
-  model::offset last_offset, storage::log_manager& lm) {
+  model::offset last_offset,
+  model::offset high_watermark,
+  storage::log_manager& lm) {
     vlog(
       archival_log.trace,
       "Upload policy for {} invoked, last-offset: {}",
@@ -59,11 +64,9 @@ archival_policy::lookup_result archival_policy::find_segment(
         return {};
     }
     const auto& set = plog->segments();
-    if (!set.empty()) {
-        auto max_offset = set.back()->offsets().committed_offset;
-        if (last_offset < max_offset) {
-            _ntp_probe.upload_lag(max_offset - last_offset);
-        }
+
+    if (last_offset <= high_watermark) {
+        _ntp_probe.upload_lag(high_watermark - last_offset);
     }
     const auto& ntp_conf = plog->config();
     auto it = set.lower_bound(last_offset);
@@ -101,6 +104,17 @@ archival_policy::lookup_result archival_policy::find_segment(
         vlog(
           archival_log.trace,
           "Upload policy for {}, upload candidate is not closed",
+          _ntp);
+        return {};
+    }
+    auto dirty_offset = (*it)->offsets().dirty_offset;
+    if (dirty_offset > high_watermark) {
+        vlog(
+          archival_log.debug,
+          "Upload policy for {}, upload candidate offset {} is below high "
+          "watermark {}",
+          dirty_offset,
+          high_watermark,
           _ntp);
         return {};
     }
@@ -181,8 +195,10 @@ static upload_candidate create_upload_candidate(
 }
 
 upload_candidate archival_policy::get_next_candidate(
-  model::offset last_offset, storage::log_manager& lm) {
-    auto [segment, ntp_conf] = find_segment(last_offset, lm);
+  model::offset last_offset,
+  model::offset high_watermark,
+  storage::log_manager& lm) {
+    auto [segment, ntp_conf] = find_segment(last_offset, high_watermark, lm);
     if (segment.get() == nullptr || ntp_conf == nullptr) {
         return {};
     }

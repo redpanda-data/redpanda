@@ -397,6 +397,16 @@ scheduler_service_impl::remove_archivers(std::vector<model::ntp> to_remove) {
       .finally([g = std::move(g)] {});
 }
 
+std::optional<model::offset>
+scheduler_service_impl::get_high_watermark(const model::ntp& ntp) const {
+    cluster::partition_manager& pm = _partition_manager.local();
+    auto p = pm.get(ntp);
+    if (p) {
+        return p->high_watermark();
+    }
+    return std::nullopt;
+}
+
 ss::future<> scheduler_service_impl::reconcile_archivers() {
     gate_guard g(_gate);
     cluster::partition_manager& pm = _partition_manager.local();
@@ -462,6 +472,7 @@ ss::future<> scheduler_service_impl::run_uploads() {
               boost::make_counting_iterator(quota),
               std::back_inserter(flist),
               [this](int) {
+                  using result_t = ntp_archiver::batch_result;
                   auto archiver = _queue.get_upload_candidate();
                   storage::api& api = _storage_api.local();
                   storage::log_manager& lm = api.log_mgr();
@@ -470,7 +481,12 @@ ss::future<> scheduler_service_impl::run_uploads() {
                     "{} Checking {} for S3 upload candidates",
                     _rtcnode(),
                     archiver->get_ntp());
-                  return archiver->upload_next_candidates(lm, _rtcnode);
+                  auto hwm = get_high_watermark(archiver->get_ntp());
+                  if (hwm) {
+                      return archiver->upload_next_candidates(
+                        lm, *hwm, _rtcnode);
+                  }
+                  return ss::make_ready_future<result_t>(result_t{});
               });
 
             auto results = co_await ss::when_all_succeed(

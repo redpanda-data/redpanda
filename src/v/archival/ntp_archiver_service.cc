@@ -134,7 +134,9 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
 }
 
 ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
-  storage::log_manager& lm, retry_chain_node& parent) {
+  storage::log_manager& lm,
+  model::offset high_watermark,
+  retry_chain_node& parent) {
     gate_guard guard{_gate};
     auto mlock = co_await ss::get_units(_mutex, 1);
     vlog(
@@ -144,13 +146,13 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
       _ntp);
     ntp_archiver::batch_result total{};
     // We have to increment last offset to guarantee progress.
-    // The manifest's last offset contains committed_offset of the
+    // The manifest's last offset contains dirty_offset of the
     // latest uploaded segment but '_policy' requires offset that
     // belongs to the next offset or the gap. No need to do this
     // if there is no segments.
-    auto offset = _manifest.size()
-                    ? _manifest.get_last_offset() + model::offset(1)
-                    : model::offset(0);
+    auto last_uploaded_offset = _manifest.size() ? _manifest.get_last_offset()
+                                                     + model::offset(1)
+                                                 : model::offset(0);
     std::vector<ss::future<cloud_storage::upload_result>> flist;
     std::vector<cloud_storage::manifest::segment_meta> meta;
     std::vector<ss::sstring> names;
@@ -161,8 +163,9 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
           "{} Uploading next candidates for {}, trying offset {}",
           parent(),
           _ntp,
-          offset);
-        auto upload = _policy.get_next_candidate(offset, lm);
+          last_uploaded_offset);
+        auto upload = _policy.get_next_candidate(
+          last_uploaded_offset, high_watermark, lm);
         if (upload.source.get() == nullptr) {
             vlog(
               archival_log.debug,
@@ -195,43 +198,42 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
             //   - Same as previoius. We need to log error and continue with the
             //   largest offset.
             const auto& meta = _manifest.get(upload.exposed_name);
-            auto committed_offset = upload.source->offsets().committed_offset;
-            if (meta->committed_offset < committed_offset) {
+            auto dirty_offset = upload.source->offsets().dirty_offset;
+            if (meta->committed_offset < dirty_offset) {
                 vlog(
                   archival_log.info,
                   "{} Uploading next candidates for {}, attempt to re-upload "
-                  "{}, manifest committed offset {}, upload committed offset "
-                  "{}",
+                  "{}, manifest committed offset {}, upload dirty offset {}",
                   parent(),
                   _ntp,
                   upload,
                   meta->committed_offset,
-                  committed_offset);
-            } else if (meta->committed_offset >= committed_offset) {
+                  dirty_offset);
+            } else if (meta->committed_offset >= dirty_offset) {
                 vlog(
                   archival_log.warn,
                   "{} Skip upload for {} because it's already in the manifest "
-                  "{}, manifest committed offset {}, upload committed offset "
-                  "{}",
+                  "{}, manifest committed offset {}, upload dirty offset {}",
                   parent(),
                   _ntp,
                   upload,
                   meta->committed_offset,
-                  committed_offset);
-                offset = meta->committed_offset + model::offset(1);
+                  dirty_offset);
+                last_uploaded_offset = meta->committed_offset
+                                       + model::offset(1);
                 continue;
             }
         }
-        auto committed = upload.source->offsets().committed_offset;
+        auto offset = upload.source->offsets().dirty_offset;
         auto base = upload.source->offsets().base_offset;
-        offset = committed + model::offset(1);
-        deltas.push_back(committed - base);
+        last_uploaded_offset = offset + model::offset(1);
+        deltas.push_back(offset - base);
         flist.emplace_back(upload_segment(upload, parent));
         cloud_storage::manifest::segment_meta m{
           .is_compacted = upload.source->is_compacted_segment(),
           .size_bytes = upload.content_length,
           .base_offset = upload.starting_offset,
-          .committed_offset = upload.source->offsets().committed_offset,
+          .committed_offset = offset,
         };
         meta.emplace_back(m);
         names.emplace_back(upload.exposed_name);

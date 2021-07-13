@@ -157,6 +157,9 @@ private:
     /// Adds archiver to the reconciliation loop after fetching its manifest.
     ss::future<ss::stop_iteration>
     add_ntp_archiver(ss::lw_shared_ptr<ntp_archiver> archiver);
+    /// Returns high watermark for the partition
+    std::optional<model::offset>
+    get_high_watermark(const model::ntp& ntp) const;
 
     configuration _conf;
     ss::sharded<cluster::partition_manager>& _partition_manager;
