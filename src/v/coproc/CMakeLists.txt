@@ -13,6 +13,7 @@ v_cc_library(
     logger.cc
     script_context.cc
     script_context_frontend.cc
+    script_context_backend.cc
     pacemaker.cc
     offset_storage_utils.cc
     wasm_event.cc
