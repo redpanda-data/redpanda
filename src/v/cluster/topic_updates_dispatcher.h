@@ -11,7 +11,7 @@
 
 #pragma once
 #include "cluster/commands.h"
-#include "cluster/partition_allocator.h"
+#include "cluster/scheduling/partition_allocator.h"
 #include "cluster/topic_table.h"
 #include "model/record.h"
 

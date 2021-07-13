@@ -12,7 +12,6 @@
 #pragma once
 
 #include "cluster/commands.h"
-#include "cluster/partition_allocator.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "utils/expiring_promise.h"

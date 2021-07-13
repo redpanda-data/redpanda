@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cluster/partition_allocator.h"
+#include "cluster/scheduling/types.h"
 #include "cluster/tests/topic_table_fixture.h"
 #include "cluster/topic_updates_dispatcher.h"
 #include "model/metadata.h"
@@ -55,9 +55,27 @@ struct topic_table_updates_dispatcher_fixture : topic_table_fixture {
     cluster::topic_updates_dispatcher dispatcher;
 };
 
-uint64_t node_initial_capacity(uint32_t cores) {
+constexpr uint64_t node_initial_capacity(uint32_t cores) {
     return (cluster::allocation_node::max_allocations_per_core * cores)
            - cluster::allocation_node::core0_extra_weight;
+}
+
+uint64_t
+current_cluster_capacity(const cluster::allocation_state::underlying_t& nodes) {
+    return std::accumulate(
+      nodes.begin(),
+      nodes.end(),
+      0,
+      [](
+        uint64_t acc,
+        const cluster::allocation_state::underlying_t::value_type& p) {
+          return acc + p.second->partition_capacity();
+      });
+}
+
+constexpr uint64_t max_cluster_capacity() {
+    return node_initial_capacity(12) + node_initial_capacity(8)
+           + node_initial_capacity(4);
 }
 
 FIXTURE_TEST(
@@ -92,27 +110,9 @@ FIXTURE_TEST(
     // test_tp_2, partitions: 12, replication factor: 3
     // test_tp_3, partitions: 8, replication factor: 1
 
-    // check allocation state
     BOOST_REQUIRE_EQUAL(
-      allocator.local()
-        .allocation_nodes()
-        .at(model::node_id(1))
-        ->partition_capacity(),
-      node_initial_capacity(8) - (1 + 12 + 3));
-
-    BOOST_REQUIRE_EQUAL(
-      allocator.local()
-        .allocation_nodes()
-        .at(model::node_id(2))
-        ->partition_capacity(),
-      node_initial_capacity(12) - (1 + 12 + 3));
-
-    BOOST_REQUIRE_EQUAL(
-      allocator.local()
-        .allocation_nodes()
-        .at(model::node_id(3))
-        ->partition_capacity(),
-      node_initial_capacity(4) - (1 + 12 + 2));
+      current_cluster_capacity(allocator.local().state().allocation_nodes()),
+      max_cluster_capacity() - (1 * 3 + 12 * 3 + 8 * 1));
 }
 
 FIXTURE_TEST(
@@ -135,27 +135,10 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(md.size(), 1);
     BOOST_REQUIRE_EQUAL(md[0].tp_ns, make_tp_ns("test_tp_1"));
     BOOST_REQUIRE_EQUAL(md[0].partitions.size(), 1);
-    // check allocation state
-    BOOST_REQUIRE_EQUAL(
-      allocator.local()
-        .allocation_nodes()
-        .at(model::node_id(1))
-        ->partition_capacity(),
-      node_initial_capacity(8) - (1));
 
     BOOST_REQUIRE_EQUAL(
-      allocator.local()
-        .allocation_nodes()
-        .at(model::node_id(2))
-        ->partition_capacity(),
-      node_initial_capacity(12) - (1));
-
-    BOOST_REQUIRE_EQUAL(
-      allocator.local()
-        .allocation_nodes()
-        .at(model::node_id(3))
-        ->partition_capacity(),
-      node_initial_capacity(4) - (1));
+      current_cluster_capacity(allocator.local().state().allocation_nodes()),
+      max_cluster_capacity() - 3);
 }
 
 FIXTURE_TEST(
@@ -179,25 +162,7 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(res_2, cluster::errc::topic_already_exists);
     BOOST_REQUIRE_EQUAL(table.local().has_pending_changes(), false);
 
-    // check allocation state
     BOOST_REQUIRE_EQUAL(
-      allocator.local()
-        .allocation_nodes()
-        .at(model::node_id(1))
-        ->partition_capacity(),
-      node_initial_capacity(8) - (1 + 12 + 3));
-
-    BOOST_REQUIRE_EQUAL(
-      allocator.local()
-        .allocation_nodes()
-        .at(model::node_id(2))
-        ->partition_capacity(),
-      node_initial_capacity(12) - (1 + 12 + 3));
-
-    BOOST_REQUIRE_EQUAL(
-      allocator.local()
-        .allocation_nodes()
-        .at(model::node_id(3))
-        ->partition_capacity(),
-      node_initial_capacity(4) - (1 + 12 + 2));
+      current_cluster_capacity(allocator.local().state().allocation_nodes()),
+      max_cluster_capacity() - (1 * 3 + 12 * 3 + 8 * 1));
 }

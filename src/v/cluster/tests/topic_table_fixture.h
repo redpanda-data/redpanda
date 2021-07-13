@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "cluster/scheduling/allocation_node.h"
+#include "cluster/scheduling/partition_allocator.h"
 #include "cluster/tests/utils.h"
 #include "cluster/topic_table.h"
 #include "test_utils/fixture.h"
@@ -19,7 +21,7 @@
 static std::unique_ptr<cluster::allocation_node>
 create_allocation_node(model::node_id nid, uint32_t cores) {
     return std::make_unique<cluster::allocation_node>(
-      nid, cores, std::unordered_map<ss::sstring, ss::sstring>{});
+      nid, cores, absl::node_hash_map<ss::sstring, ss::sstring>{});
 }
 
 static void validate_delta(
@@ -41,7 +43,7 @@ static void validate_delta(
 struct topic_table_fixture {
     topic_table_fixture() {
         table.start().get0();
-        allocator.start_single(raft::group_id(0)).get0();
+        allocator.start_single().get0();
         allocator.local().register_node(
           create_allocation_node(model::node_id(1), 8));
         allocator.local().register_node(
@@ -57,11 +59,21 @@ struct topic_table_fixture {
     }
 
     cluster::topic_configuration_assignment make_tp_configuration(
-      const ss::sstring& topic, int partitions, int replication_factor) {
+      const ss::sstring& topic, int partitions, int16_t replication_factor) {
         cluster::topic_configuration cfg(
           test_ns, model::topic(topic), partitions, replication_factor);
 
-        auto pas = allocator.local().allocate(cfg).value().get_assignments();
+        cluster::allocation_request req;
+        req.partitions.reserve(partitions);
+        for (auto p = 0; p < partitions; ++p) {
+            req.partitions.emplace_back(
+              model::partition_id(p), replication_factor);
+        }
+
+        auto pas = allocator.local()
+                     .allocate(std::move(req))
+                     .value()
+                     .get_assignments();
 
         return cluster::topic_configuration_assignment(cfg, std::move(pas));
     }
@@ -105,7 +117,8 @@ struct topic_table_fixture {
 
     size_t total_capacity() {
         size_t total = 0;
-        for (const auto& [id, n] : allocator.local().allocation_nodes()) {
+        for (const auto& [id, n] :
+             allocator.local().state().allocation_nodes()) {
             total += n->partition_capacity();
         }
         return total;

@@ -33,7 +33,7 @@ v_cc_library(
   SRCS
     metadata_cache.cc
     partition_manager.cc
-    partition_allocator.cc
+    scheduling/partition_allocator.cc
     logger.cc
     cluster_utils.cc
     id_allocator.cc
@@ -66,6 +66,11 @@ v_cc_library(
     controller_api.cc
     members_frontend.cc
     members_backend.cc
+    scheduling/allocation_node.cc
+    scheduling/types.cc
+    scheduling/allocation_state.cc
+    scheduling/allocation_strategy.cc
+    scheduling/constraints.cc
   DEPS
     Seastar::seastar
     controller_rpc

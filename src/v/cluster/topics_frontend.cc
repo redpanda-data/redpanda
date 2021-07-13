@@ -14,10 +14,11 @@
 #include "cluster/controller_stm.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
-#include "cluster/partition_allocator.h"
 #include "cluster/partition_leaders_table.h"
+#include "cluster/scheduling/partition_allocator.h"
 #include "cluster/types.h"
 #include "model/errc.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/validation.h"
@@ -222,6 +223,25 @@ ss::future<std::error_code> topics_frontend::replicate_and_wait(
       });
 }
 
+topic_result
+make_error_result(const model::topic_namespace& tp_ns, std::error_code ec) {
+    if (ec.category() == cluster::error_category()) {
+        return topic_result(tp_ns, cluster::errc(ec.value()));
+    }
+
+    return topic_result(tp_ns, errc::topic_operation_error);
+}
+
+allocation_request make_allocation_request(const topic_configuration& cfg) {
+    allocation_request req;
+    req.partitions.reserve(cfg.partition_count);
+    for (auto p = 0; p < cfg.partition_count; ++p) {
+        req.partitions.emplace_back(
+          model::partition_id(p), cfg.replication_factor);
+    }
+    return req;
+}
+
 ss::future<topic_result> topics_frontend::do_create_topic(
   topic_configuration t_cfg, model::timeout_clock::time_point timeout) {
     if (!validate_topic_name(t_cfg.tp_ns)) {
@@ -231,24 +251,25 @@ ss::future<topic_result> topics_frontend::do_create_topic(
     return _allocator
       .invoke_on(
         partition_allocator::shard,
-        [t_cfg](partition_allocator& al) { return al.allocate(t_cfg); })
-      .then(
-        [this, t_cfg = std::move(t_cfg), timeout](
-          std::optional<partition_allocator::allocation_units> units) mutable {
-            // no assignments, error
-            if (!units) {
-                return ss::make_ready_future<topic_result>(
-                  topic_result(t_cfg.tp_ns, errc::topic_invalid_partitions));
-            }
+        [t_cfg](partition_allocator& al) {
+            return al.allocate(make_allocation_request(t_cfg));
+        })
+      .then([this, t_cfg = std::move(t_cfg), timeout](
+              result<allocation_units> units) mutable {
+          // no assignments, error
+          if (!units) {
+              return ss::make_ready_future<topic_result>(
+                make_error_result(t_cfg.tp_ns, units.error()));
+          }
 
-            return replicate_create_topic(
-              std::move(t_cfg), std::move(*units), timeout);
-        });
+          return replicate_create_topic(
+            std::move(t_cfg), std::move(units.value()), timeout);
+      });
 }
 
 ss::future<topic_result> topics_frontend::replicate_create_topic(
   topic_configuration cfg,
-  partition_allocator::allocation_units units,
+  allocation_units units,
   model::timeout_clock::time_point timeout) {
     auto tp_ns = cfg.tp_ns;
     create_topic_cmd cmd(

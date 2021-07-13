@@ -185,16 +185,20 @@ ss::future<> members_backend::reallocate_replica_set(reallocation_meta& meta) {
     }
 
     switch (meta.state) {
-    case reallocation_state::initial:
+    case reallocation_state::initial: {
         // initial state, try to reassign partition replicas
         vlog(
           clusterlog.info,
           "trying to reassign partition {} replicas, current assignment: {}",
           meta.ntp,
           *current_assignment);
-        meta.new_assignment
+        auto new_assignment
           = _allocator.local().reassign_decommissioned_replicas(
             *current_assignment);
+        if (new_assignment.has_value()) {
+            meta.new_assignment = std::move(new_assignment.value());
+        }
+
         if (!meta.new_assignment) {
             // if partiton allocator failed to reassign partitions return and
             // wait for next retry
@@ -203,6 +207,7 @@ ss::future<> members_backend::reallocate_replica_set(reallocation_meta& meta) {
         // success, update state and move on
         meta.state = reallocation_state::reassigned;
         [[fallthrough]];
+    }
     case reallocation_state::reassigned: {
         vassert(
           meta.new_assignment,

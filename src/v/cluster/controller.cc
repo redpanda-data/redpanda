@@ -23,6 +23,7 @@
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
 #include "cluster/raft0_utils.h"
+#include "cluster/scheduling/partition_allocator.h"
 #include "cluster/security_frontend.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
@@ -55,8 +56,7 @@ ss::future<> controller::wire_up() {
     return _as.start()
       .then([this] { return _members_table.start(); })
       .then([this] { return _partition_leaders.start(); })
-      .then(
-        [this] { return _partition_allocator.start_single(raft::group_id(0)); })
+      .then([this] { return _partition_allocator.start_single(); })
       .then([this] { return _credentials.start(); })
       .then([this] { return _authorizer.start(); })
       .then([this] { return _tp_state.start(); });

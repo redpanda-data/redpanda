@@ -3,7 +3,7 @@
 #include "cluster/fwd.h"
 #include "cluster/members_manager.h"
 #include "cluster/members_table.h"
-#include "cluster/partition_allocator.h"
+#include "cluster/scheduling/partition_allocator.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
@@ -28,7 +28,7 @@ public:
 
         members_manager::node_update update;
         model::ntp ntp;
-        std::optional<partition_allocator::allocation_units> new_assignment;
+        std::optional<allocation_units> new_assignment;
         reallocation_state state = reallocation_state::initial;
     };
 

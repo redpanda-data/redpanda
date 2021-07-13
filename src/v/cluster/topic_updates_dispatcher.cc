@@ -135,22 +135,16 @@ void topic_updates_dispatcher::deallocate_topic(
   const model::topic_metadata& tp_md) {
     // we have to deallocate topics
     for (auto& p : tp_md.partitions) {
-        for (auto& r : p.replicas) {
-            _partition_allocator.local().deallocate(r);
-        }
+        _partition_allocator.local().deallocate(p.replicas);
     }
 }
 
 void topic_updates_dispatcher::reallocate_partition(
   const std::vector<model::broker_shard>& previous,
   const std::vector<model::broker_shard>& current) {
-    for (auto& bs : previous) {
-        _partition_allocator.local().deallocate(bs);
-    }
     // we do not want to update group id in here as we are changing partition
     // that already exists, hence group id doesn't have to be updated.
-    _partition_allocator.local().update_allocation_state(
-      current, raft::group_id(0));
+    _partition_allocator.local().update_allocation_state(current, previous);
 }
 
 void topic_updates_dispatcher::update_allocations(const create_topic_cmd& cmd) {
