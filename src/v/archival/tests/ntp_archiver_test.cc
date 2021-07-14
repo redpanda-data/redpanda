@@ -373,23 +373,27 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     }
     BOOST_REQUIRE_EQUAL(get_requests().size(), 4);
     {
-        auto it = get_requests().at(0);
-        BOOST_REQUIRE(it._url == manifest_url);
-        BOOST_REQUIRE(it._method == "GET"); // NOLINT
+        auto [begin, end] = get_targets().equal_range(manifest_url);
+        size_t len = std::distance(begin, end);
+        BOOST_REQUIRE_EQUAL(len, 2);
+        std::set<ss::sstring> expected = {"PUT", "GET"};
+        for (auto it = begin; it != end; it++) {
+            auto key = it->second._method;
+            BOOST_REQUIRE(expected.contains(key));
+            expected.erase(key);
+        }
+        BOOST_REQUIRE(expected.empty());
     }
     {
-        auto it = get_requests().at(1);
-        BOOST_REQUIRE(it._url == segment3_url);
-        BOOST_REQUIRE(it._method == "PUT"); // NOLINT
+        auto [begin, end] = get_targets().equal_range(segment2_url);
+        size_t len = std::distance(begin, end);
+        BOOST_REQUIRE_EQUAL(len, 1);
+        BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
     }
     {
-        auto it = get_requests().at(2);
-        BOOST_REQUIRE(it._url == segment2_url);
-        BOOST_REQUIRE(it._method == "PUT"); // NOLINT
-    }
-    {
-        auto it = get_requests().at(3);
-        BOOST_REQUIRE(it._url == manifest_url);
-        BOOST_REQUIRE(it._method == "PUT"); // NOLINT
+        auto [begin, end] = get_targets().equal_range(segment3_url);
+        size_t len = std::distance(begin, end);
+        BOOST_REQUIRE_EQUAL(len, 1);
+        BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
     }
 }
