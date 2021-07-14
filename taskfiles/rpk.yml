@@ -55,6 +55,6 @@ tasks:
         cmd="$cmd -count=1"
       fi
       if [ '{{.FILTER}}' != '' ]; then
-        cmd="$cmd: -run {{.FILTER}}"
+        cmd="$cmd -run {{.FILTER}}"
       fi
       $cmd
