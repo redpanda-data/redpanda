@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "outcome.h"
+#include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/types.h"
 
 #include <avro/ValidSchema.hh>

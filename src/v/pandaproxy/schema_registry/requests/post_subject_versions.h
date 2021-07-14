@@ -11,24 +11,14 @@
 
 #pragma once
 
-#include "outcome.h"
-#include "pandaproxy/json/iobuf.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/rjson_util.h"
-#include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/schema_registry/util.h"
 #include "seastarx.h"
 #include "utils/string_switch.h"
 
-#include <seastar/core/future.hh>
 #include <seastar/core/sstring.hh>
-
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
-
-#include <atomic>
-#include <cstdint>
 
 namespace pandaproxy::schema_registry {
 

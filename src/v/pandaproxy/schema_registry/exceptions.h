@@ -11,36 +11,37 @@
 
 #pragma once
 
-#include "pandaproxy/schema_registry/error.h"
-
-#include <fmt/format.h>
-
-#include <stdexcept>
-#include <string>
 #include <system_error>
 
 namespace pandaproxy::schema_registry {
 
-struct exception_base : std::exception {
-    explicit exception_base(std::error_condition err)
+// Similar to std::system_error but with more control over the message
+class exception_base : public std::exception {
+public:
+    explicit exception_base(std::error_code ec)
       : std::exception{}
-      , error{err}
-      , msg{err.message()} {}
-    exception_base(std::error_condition err, std::string_view msg)
+      , _ec{ec}
+      , _msg{ec.message()} {}
+    exception_base(std::error_code ec, std::string msg)
       : std::exception{}
-      , error{err}
-      , msg{msg} {}
-    const char* what() const noexcept final { return msg.c_str(); }
-    std::error_condition error;
-    std::string msg;
+      , _ec{ec}
+      , _msg{std::move(msg)} {}
+
+    const char* what() const noexcept final { return _msg.c_str(); }
+    const std::string& message() const noexcept { return _msg; }
+    const std::error_code& code() const noexcept { return _ec; }
+
+private:
+    std::error_code _ec;
+    std::string _msg;
 };
 
 class exception final : public exception_base {
 public:
-    explicit exception(error_code ec)
-      : exception_base(make_error_code(ec).default_error_condition()) {}
-    exception(error_code ec, std::string_view msg)
-      : exception_base(make_error_code(ec).default_error_condition(), msg) {}
+    explicit exception(std::error_code ec)
+      : exception_base{ec} {}
+    exception(std::error_code ec, std::string msg)
+      : exception_base{ec, std::move(msg)} {}
 };
 
 } // namespace pandaproxy::schema_registry

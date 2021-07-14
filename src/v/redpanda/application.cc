@@ -465,6 +465,9 @@ void application::wire_up_services() {
           .get();
     }
     if (_schema_reg_config) {
+        _schema_registry_store.start(smp_service_groups.proxy_smp_sg()).get();
+        _deferred.emplace_back([this] { _schema_registry_store.stop().get(); });
+
         construct_service(
           _schema_registry_client, to_yaml(*_schema_reg_client_config))
           .get();
@@ -475,7 +478,8 @@ void application::wire_up_services() {
           // TODO: Improve memory budget for services
           // https://github.com/vectorizedio/redpanda/issues/1392
           memory_groups::kafka_total_memory(),
-          std::reference_wrapper(_schema_registry_client))
+          std::reference_wrapper(_schema_registry_client),
+          std::reference_wrapper(_schema_registry_store))
           .get();
     }
 }

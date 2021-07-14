@@ -53,5 +53,5 @@ BOOST_AUTO_TEST_CASE(test_make_schema_definition_failure) {
       "this should fail to parse");
 
     BOOST_REQUIRE(res.has_error());
-    BOOST_REQUIRE_EQUAL(res.error(), pps::error_code::schema_invalid);
+    BOOST_REQUIRE_EQUAL(res.error().code(), pps::error_code::schema_invalid);
 }

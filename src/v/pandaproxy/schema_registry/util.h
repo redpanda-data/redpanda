@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "json/json.h"
 #include "likely.h"
-#include "outcome.h"
-#include "pandaproxy/schema_registry/error.h"
+#include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "seastarx.h"
 
@@ -22,6 +22,7 @@
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <rapidjson/document.h>
+#include <rapidjson/error/en.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
@@ -44,7 +45,12 @@ result<schema_definition> make_schema_definition(std::string_view sv) {
     rapidjson::GenericDocument<Encoding> doc;
     doc.Parse(sv.data(), sv.size());
     if (doc.HasParseError()) {
-        return error_code::schema_invalid;
+        return error_info{
+          error_code::schema_invalid,
+          fmt::format(
+            "Invalid schema: {} at offset {}",
+            rapidjson::GetParseError_En(doc.GetParseError()),
+            doc.GetErrorOffset())};
     }
     rapidjson::GenericStringBuffer<Encoding> str_buf;
     str_buf.Reserve(sv.size());

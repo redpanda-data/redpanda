@@ -117,7 +117,9 @@ make_avro_schema_definition(std::string_view sv) {
         return avro_schema_definition{avro::compileJsonSchemaFromMemory(
           reinterpret_cast<const uint8_t*>(sv.data()), sv.length())};
     } catch (const avro::Exception& e) {
-        return error_code::schema_invalid;
+        return error_info{
+          error_code::schema_invalid,
+          fmt::format("Invalid schema {}", e.what())};
     }
 }
 
