@@ -129,7 +129,7 @@ void members_backend::calculate_reallocations(update_meta& meta) {
         // reallocate all partitons for which any of replicas is placed on
         // decommissioned node
         for (const auto& [tp_ns, cfg] : _topics.local().topics_map()) {
-            for (auto& pas : cfg.assignments) {
+            for (auto& pas : cfg.configuration.assignments) {
                 if (is_in_replica_set(pas.replicas, meta.update.id)) {
                     partition_reallocation reallocation(
                       model::ntp(tp_ns.ns, tp_ns.tp, pas.id),
