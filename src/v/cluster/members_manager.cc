@@ -81,7 +81,7 @@ ss::future<> members_manager::start() {
 ss::future<> members_manager::start_config_changes_watcher() {
     // handle initial configuration
     auto offset = _raft0->get_latest_configuration_offset();
-    return handle_raft0_cfg_update(_raft0->config())
+    return handle_raft0_cfg_update(_raft0->config(), offset)
       .then([this, offset] {
           _last_seen_configuration_offset = offset;
           if (is_already_member()) {
@@ -105,7 +105,8 @@ ss::future<> members_manager::start_config_changes_watcher() {
                       ->wait_for_config_change(
                         _last_seen_configuration_offset, _as.local())
                       .then([this](raft::offset_configuration oc) {
-                          return handle_raft0_cfg_update(std::move(oc.cfg))
+                          return handle_raft0_cfg_update(
+                                   std::move(oc.cfg), oc.offset)
                             .then([this, offset = oc.offset] {
                                 _last_seen_configuration_offset = offset;
                             });
@@ -152,8 +153,8 @@ calculate_brokers_diff(members_table& m, const raft::group_configuration& cfg) {
     return calculate_changed_brokers(std::move(new_list), std::move(old_list));
 }
 
-ss::future<>
-members_manager::handle_raft0_cfg_update(raft::group_configuration cfg) {
+ss::future<> members_manager::handle_raft0_cfg_update(
+  raft::group_configuration cfg, model::offset update_offset) {
     // distribute to all cluster::members_table
     return _allocator
       .invoke_on(
@@ -166,7 +167,7 @@ members_manager::handle_raft0_cfg_update(raft::group_configuration cfg) {
                 }
             });
         })
-      .then([this, cfg = std::move(cfg)]() mutable {
+      .then([this, cfg = std::move(cfg), update_offset]() mutable {
           auto diff = calculate_brokers_diff(_members_table.local(), cfg);
           auto added_brokers = diff.additions;
           return _members_table
@@ -177,15 +178,20 @@ members_manager::handle_raft0_cfg_update(raft::group_configuration cfg) {
                 // update internode connections
                 return update_connections(std::move(diff));
             })
-            .then([this, added_nodes = std::move(added_brokers)]() mutable {
+            .then([this,
+                   added_nodes = std::move(added_brokers),
+                   update_offset]() mutable {
                 return ss::do_with(
                   std::move(added_nodes),
-                  [this](std::vector<broker_ptr>& added_nodes) {
+                  [this, update_offset](std::vector<broker_ptr>& added_nodes) {
                       return ss::do_for_each(
-                        added_nodes, [this](const broker_ptr& broker) {
+                        added_nodes,
+                        [this, update_offset](const broker_ptr& broker) {
                             return _update_queue.push_eventually(node_update{
                               .id = broker->id(),
-                              .type = node_update_type::added});
+                              .type = node_update_type::added,
+                              .offset = update_offset,
+                            });
                         });
                   });
             });

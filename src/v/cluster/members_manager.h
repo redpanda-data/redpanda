@@ -48,6 +48,7 @@ public:
     struct node_update {
         model::node_id id;
         node_update_type type;
+        model::offset offset;
         friend std::ostream& operator<<(std::ostream&, const node_update&);
     };
 
@@ -95,7 +96,8 @@ private:
     auto dispatch_rpc_to_leader(rpc::clock_type::duration, Func&& f);
 
     // Raft 0 config updates
-    ss::future<> handle_raft0_cfg_update(raft::group_configuration);
+    ss::future<>
+      handle_raft0_cfg_update(raft::group_configuration, model::offset);
     ss::future<> update_connections(patch<broker_ptr>);
 
     ss::future<> start_config_changes_watcher();
