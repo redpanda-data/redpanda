@@ -1884,31 +1884,34 @@ func TestReadOrGenerate(t *testing.T) {
 }
 
 func TestSetMode(t *testing.T) {
-	fillRpkConfig := func(mode string) *Config {
-		conf := Default()
-		val := mode == ModeProd
-		conf.Redpanda.DeveloperMode = !val
-		conf.Rpk = RpkConfig{
-			TuneNetwork:        val,
-			TuneDiskScheduler:  val,
-			TuneNomerges:       val,
-			TuneDiskWriteCache: val,
-			TuneDiskIrq:        val,
-			TuneFstrim:         val,
-			TuneCpu:            val,
-			TuneAioEvents:      val,
-			TuneClocksource:    val,
-			TuneSwappiness:     val,
-			CoredumpDir:        conf.Rpk.CoredumpDir,
-			Overprovisioned:    !val,
+	fillRpkConfig := func(mode string) func() *Config {
+		return func() *Config {
+			conf := Default()
+			val := mode == ModeProd
+			conf.Redpanda.DeveloperMode = !val
+			conf.Rpk = RpkConfig{
+				TuneNetwork:        val,
+				TuneDiskScheduler:  val,
+				TuneNomerges:       val,
+				TuneDiskWriteCache: val,
+				TuneDiskIrq:        val,
+				TuneFstrim:         val,
+				TuneCpu:            val,
+				TuneAioEvents:      val,
+				TuneClocksource:    val,
+				TuneSwappiness:     val,
+				CoredumpDir:        conf.Rpk.CoredumpDir,
+				Overprovisioned:    !val,
+			}
+			return conf
 		}
-		return conf
 	}
 
 	tests := []struct {
 		name           string
 		mode           string
-		expectedConfig *Config
+		startingConf   func() *Config
+		expectedConfig func() *Config
 		expectedErrMsg string
 	}{
 		{
@@ -1941,18 +1944,55 @@ func TestSetMode(t *testing.T) {
 			mode:           "winning",
 			expectedErrMsg: "'winning' is not a supported mode. Available modes: dev, development, prod, production",
 		},
+		{
+			name: "it should preserve all the values that shouldn't be reset",
+			startingConf: func() *Config {
+				conf := Default()
+				conf.Rpk.AdminApi = RpkAdminApi{
+					Addresses: []SocketAddress{{Address: "some.addr.com", Port: 33145}},
+				}
+				conf.Rpk.KafkaApi = RpkKafkaApi{
+					Brokers: []string{"192.168.76.54:9092"},
+					TLS: &TLS{
+						KeyFile:  "some-key.pem",
+						CertFile: "some-cert.pem",
+					},
+				}
+				conf.Rpk.AdditionalStartFlags = []string{"--memory=3G"}
+				return conf
+			},
+			mode: ModeProd,
+			expectedConfig: func() *Config {
+				conf := fillRpkConfig(ModeProd)()
+				conf.Rpk.AdminApi = RpkAdminApi{
+					Addresses: []SocketAddress{{Address: "some.addr.com", Port: 33145}},
+				}
+				conf.Rpk.KafkaApi = RpkKafkaApi{
+					Brokers: []string{"192.168.76.54:9092"},
+					TLS: &TLS{
+						KeyFile:  "some-key.pem",
+						CertFile: "some-cert.pem",
+					},
+				}
+				conf.Rpk.AdditionalStartFlags = []string{"--memory=3G"}
+				return conf
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(st *testing.T) {
 			defaultConf := Default()
+			if tt.startingConf != nil {
+				defaultConf = tt.startingConf()
+			}
 			conf, err := SetMode(tt.mode, defaultConf)
 			if tt.expectedErrMsg != "" {
 				require.EqualError(t, err, tt.expectedErrMsg)
 				return
 			}
 			require.NoError(t, err)
-			require.Exactly(t, tt.expectedConfig, conf)
+			require.Exactly(t, tt.expectedConfig(), conf)
 		})
 	}
 }
