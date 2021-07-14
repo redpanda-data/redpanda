@@ -159,10 +159,15 @@ func setDevelopment(conf *Config) *Config {
 	conf.Redpanda.DeveloperMode = true
 	// Defaults to setting all tuners to false
 	conf.Rpk = RpkConfig{
-		EnableUsageStats: conf.Rpk.EnableUsageStats,
-		CoredumpDir:      conf.Rpk.CoredumpDir,
-		SMP:              Default().Rpk.SMP,
-		Overprovisioned:  true,
+		TLS:                  conf.Rpk.TLS,
+		SASL:                 conf.Rpk.SASL,
+		KafkaApi:             conf.Rpk.KafkaApi,
+		AdminApi:             conf.Rpk.AdminApi,
+		AdditionalStartFlags: conf.Rpk.AdditionalStartFlags,
+		EnableUsageStats:     conf.Rpk.EnableUsageStats,
+		CoredumpDir:          conf.Rpk.CoredumpDir,
+		SMP:                  Default().Rpk.SMP,
+		Overprovisioned:      true,
 	}
 	return conf
 }
