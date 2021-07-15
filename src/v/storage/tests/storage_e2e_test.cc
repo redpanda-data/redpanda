@@ -26,6 +26,7 @@
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/core/when_all.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 
@@ -1739,4 +1740,87 @@ FIXTURE_TEST(disposing_in_use_reader, storage_test_fixture) {
     // destroyed
     BOOST_REQUIRE(truncate_f.available());
     truncate_f.get();
+}
+
+model::record_batch make_batch() {
+    storage::record_batch_builder builder(
+      model::record_batch_type::raft_data, model::offset(0));
+    for (auto i = 0; i < 2; ++i) {
+        builder.add_raw_kv(
+          bytes_to_iobuf(random_generators::get_bytes(128)),
+          bytes_to_iobuf(random_generators::get_bytes(10_KiB)));
+    }
+    return std::move(builder).build();
+}
+
+FIXTURE_TEST(committed_offset_updates, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    cfg.cache = storage::with_cache::no;
+    cfg.max_segment_size = 500_MiB;
+    cfg.sanitize_fileops = storage::debug_sanitize_files::no;
+    storage::ntp_config::default_overrides overrides;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    info("config: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp,
+                   mgr.config().base_dir,
+                   std::make_unique<storage::ntp_config::default_overrides>(
+                     overrides)))
+                 .get0();
+
+    auto append = [&] {
+        // Append single batch
+        storage::log_appender appender = log.make_appender(
+          storage::log_append_config{
+            .should_fsync = storage::log_append_config::fsync::no,
+            .io_priority = ss::default_priority_class(),
+            .timeout = model::no_timeout});
+
+        ss::circular_buffer<model::record_batch> batches;
+        batches.push_back(
+          storage::test::make_random_batch(model::offset(0), 1, false));
+
+        auto rdr = model::make_memory_record_batch_reader(std::move(batches));
+        return std::move(rdr).for_each_ref(
+          std::move(appender), model::no_timeout);
+    };
+
+    mutex write_mutex;
+    /**
+     * Sequence of events is as follow:
+     *
+     * 1. acquire mutex
+     * 2. append batches to log
+     * 3. dispatch log flush
+     * 4. release mutex
+     * 5. when flush finishes validate if committed offset >= append result
+     *
+     */
+    auto append_with_lock = [&] {
+        return write_mutex.get_units().then([&](ss::semaphore_units<> u) {
+            return append().then(
+              [&, u = std::move(u)](storage::append_result res) mutable {
+                  auto f = log.flush();
+                  u.return_all();
+                  return f.then([&, dirty = res.last_offset] {
+                      auto lstats = log.offsets();
+                      BOOST_REQUIRE_GE(lstats.committed_offset, dirty);
+                  });
+              });
+        });
+    };
+
+    std::vector<ss::future<>> futures;
+    futures.reserve(100);
+
+    for (auto i = 0; i < 100; ++i) {
+        futures.push_back(append_with_lock());
+    }
+
+    ss::when_all_succeed(futures.begin(), futures.end()).get();
 }
