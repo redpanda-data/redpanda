@@ -34,9 +34,13 @@ namespace cluster {
 class topic_table {
 public:
     using delta = topic_table_delta;
+    struct topic_metadata {
+        topic_configuration_assignment configuration;
+        model::revision_id revision;
+    };
     using underlying_t = absl::flat_hash_map<
       model::topic_namespace,
-      topic_configuration_assignment,
+      topic_metadata,
       model::topic_namespace_hash,
       model::topic_namespace_eq>;
 

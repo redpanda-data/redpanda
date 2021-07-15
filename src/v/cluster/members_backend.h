@@ -5,6 +5,7 @@
 #include "cluster/members_table.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
 
@@ -18,18 +19,28 @@ namespace cluster {
 class members_backend {
 public:
     enum class reallocation_state { initial, reassigned, requested, finished };
+    struct partition_reallocation {
+        explicit partition_reallocation(
+          model::ntp ntp, uint16_t replication_factor)
+          : ntp(std::move(ntp))
+          , constraints(ntp.tp.partition, replication_factor) {}
+
+        model::ntp ntp;
+        partition_constraints constraints;
+        absl::node_hash_set<model::node_id> replicas_to_remove;
+        std::optional<allocation_units> new_assignment;
+        reallocation_state state = reallocation_state::initial;
+    };
     /**
      * struct describing partition reallocation
      */
-    struct reallocation_meta {
-        reallocation_meta(members_manager::node_update update, model::ntp ntp)
-          : update(update)
-          , ntp(std::move(ntp)) {}
+    struct update_meta {
+        explicit update_meta(members_manager::node_update update)
+          : update(update) {}
 
         members_manager::node_update update;
-        model::ntp ntp;
-        std::optional<allocation_units> new_assignment;
-        reallocation_state state = reallocation_state::initial;
+        std::vector<partition_reallocation> partition_reallocations;
+        bool finished = false;
     };
 
     members_backend(
@@ -39,6 +50,7 @@ public:
       ss::sharded<members_table>&,
       ss::sharded<controller_api>&,
       ss::sharded<members_manager>&,
+      ss::sharded<members_frontend>&,
       consensus_ptr,
       ss::sharded<ss::abort_source>&);
 
@@ -48,26 +60,31 @@ public:
 private:
     void start_reconciliation_loop();
     ss::future<> reconcile();
-    ss::future<> reallocate_replica_set(reallocation_meta&);
-    void mark_done_as_finished(reallocation_meta&);
+    ss::future<> reallocate_replica_set(partition_reallocation&);
+
+    ss::future<> try_to_finish_update(update_meta&);
+    void calculate_reallocations(update_meta&);
 
     ss::future<> handle_updates();
-    void handle_decommissioned(const members_manager::node_update&);
+    void handle_single_update(members_manager::node_update);
     void handle_recommissioned(const members_manager::node_update&);
-
+    void handle_reallocation_finished(model::node_id);
+    void reassign_replicas(partition_assignment&, partition_reallocation&);
+    void calculate_reallocations_after_node_added(update_meta&);
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<topic_table>& _topics;
     ss::sharded<partition_allocator>& _allocator;
     ss::sharded<members_table>& _members;
     ss::sharded<controller_api>& _api;
     ss::sharded<members_manager>& _members_manager;
+    ss::sharded<members_frontend>& _members_frontend;
     consensus_ptr _raft0;
     ss::sharded<ss::abort_source>& _as;
     ss::gate _bg;
     mutex _lock;
 
     // replicas reallocations in progress
-    std::vector<reallocation_meta> _reallocations;
+    std::vector<update_meta> _updates;
     std::chrono::milliseconds _retry_timeout;
     ss::timer<> _retry_timer;
     ss::condition_variable _new_updates;

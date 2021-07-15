@@ -61,6 +61,9 @@ public:
     ss::future<recommission_node_reply> recommission_node(
       recommission_node_request&&, rpc::streaming_context&) final;
 
+    ss::future<finish_reallocation_reply> finish_reallocation(
+      finish_reallocation_request&&, rpc::streaming_context&) final;
+
 private:
     std::
       pair<std::vector<model::topic_metadata>, std::vector<topic_configuration>>
@@ -74,6 +77,9 @@ private:
 
     ss::future<reconciliation_state_reply>
       do_get_reconciliation_state(reconciliation_state_request);
+
+    ss::future<finish_reallocation_reply>
+      do_finish_reallocation(finish_reallocation_request);
 
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<members_manager>& _members_manager;
