@@ -4,8 +4,8 @@ order: 7
 ---
 # RPK commands
 
-Commands marked with ![Linux][linux] are available on Linux.
-Commands marked with ![MacOS][mac] are available on Mac.
+Commands marked with ![Linux][linux] are available on Linux operating systems.
+Commands marked with ![MacOS][mac] are available on Mac operating systems.
 
 The global flags for the `rpk` command are:
 
@@ -14,7 +14,9 @@ The global flags for the `rpk` command are:
   -h, --help      help for info
 ```
 
-## version (![Linux][linux], ![MacOS][mac])
+## version 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Check the current version.
 
@@ -23,8 +25,14 @@ Usage:
   rpk version
 ```
 
-## redpanda (![Linux][linux])
-### redpanda tune (![Linux][linux])
+## redpanda 
+
+OS support: ![Linux][linux]
+
+### redpanda tune 
+
+OS support: ![Linux][linux]
+
 Run all (`rpk redpanda tune all`) or some (i.e. `rpk redpanda tune cpu network`) of the tuners
 available on `rpk`.
 
@@ -49,7 +57,10 @@ Flags:
       --timeout duration       The maximum time to wait for the tune processes to complete. The value passed is a sequence of decimal numbers, each with optional fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h' (default: 10s)
 ```
 
-### redpanda start (![Linux][linux])
+### redpanda start 
+
+OS support: ![Linux][linux]
+
 Start redpanda.
 
 ```cmd
@@ -74,7 +85,9 @@ Flags:
       --well-known-io string           The cloud vendor and VM type, in the format <vendor>:<vm type>:<storage type>
 ```
 
-### redpanda mode (![Linux][linux], ![MacOS][mac])
+### redpanda mode 
+
+OS support: ![Linux][linux]
 
 By default, Redpanda runs in development mode. For [production deployments](https://vectorized.io/docs/production-deployment/), set the redpanda mode to `production`.
 
@@ -87,10 +100,16 @@ Flags:
       --config string   Redpanda config file, if not set the file will be searched for in the default locations
 ```
 
-### redpanda config (![Linux][linux])
+### redpanda config 
+
+OS support: ![Linux][linux]
+
 Edit configuration.
 
-#### redpanda config set (![Linux][linux])
+#### redpanda config set 
+
+OS support: ![Linux][linux]
+
 Set configuration values, such as the node IDs or the list of seed servers
 
 ```cmd
@@ -102,7 +121,10 @@ Flags:
       --format string   The value format. Can be 'single', for single values such as '/etc/redpanda' or 100; and 'json' and 'yaml' when partially or completely setting config objects (default: "single")
 ```
 
-#### redpanda config bootstrap (![Linux][linux])
+#### redpanda config bootstrap 
+
+OS support: ![Linux][linux]
+
 Initialize the configuration to bootstrap a cluster. --id is mandatory. `bootstrap` will expect the machine it's running on to have only one non-loopback IP address associated to it, and use it in the configuration as the node's address. If it has multiple IPs, --self must be specified. In that case, the given IP will be used without checking whether it's among the machine's addresses or not. The elements in --ips must be separated by a comma, no spaces. If omitted, the node will be configured as a root node, that otherones can join later.
 
 ```cmd
@@ -116,7 +138,9 @@ Flags:
       --self string     Hint at this node's IP address from within the list passed in --ips
 ```
 
-## topic (![Linux][linux], ![MacOS][mac])
+## topic 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Interact with the Redpanda API to work with topics.
 
@@ -133,7 +157,9 @@ The global flags for the `rpk topic` command are:
       --tls-truststore string   The truststore to be used for TLS communication with the broker.
 ```
 
-### topic create (![Linux][linux], ![MacOS][mac])
+### topic create 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Create a topic.
 
@@ -148,7 +174,9 @@ Flags:
   -c, --topic-config stringArray   Config entries in the format <key>:<value>. May be used multiple times to add more entries.
 ```
 
-### topic delete (![Linux][linux], ![MacOS][mac])
+### topic delete 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Delete a topic.
 
@@ -157,7 +185,9 @@ Usage:
   rpk topic delete <topic name> [flags]
 ```
 
-### topic describe (![Linux][linux], ![MacOS][mac])
+### topic describe 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Describe a topic. Default values of the configuration are omitted.
 
@@ -171,7 +201,9 @@ Flags:
       --watermarks      If enabled, will display the topic's partitions' high watermarks (default: true)
 ```
 
-### topic produce (![Linux][linux], ![MacOS][mac])
+### topic produce 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Produce a record from data entered in stdin.
 
@@ -188,7 +220,9 @@ Flags:
   -t, --timestamp string     RFC3339-compliant timestamp for the record. If the value passed can't be parsed, the current time will be used.
 ```
 
-### topic consume (![Linux][linux], ![MacOS][mac])
+### topic consume 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Consume (read) records from a topic.
 
@@ -204,7 +238,9 @@ Flags:
       --pretty-print            Pretty-print the consumed messages. (default true)
 ```
 
-### topic list (![Linux][linux], ![MacOS][mac])
+### topic list 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 List topics.
 
@@ -216,7 +252,9 @@ Aliases:
   list, ls
 ```
 
-### topic set-config (![Linux][linux], ![MacOS][mac])
+### topic set-config 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Set the topic's config key/value pairs
 
@@ -225,9 +263,13 @@ Usage:
   rpk topic set-config <topic> <key> <value> [flags]
 ```
 
-## cluster (![Linux][linux], ![MacOS][mac])
+## cluster 
 
-### cluster info (![Linux][linux], ![MacOS][mac])
+OS support: ![Linux][linux] ![MacOS][mac]
+
+### cluster info 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Get the cluster's info
 
@@ -239,11 +281,15 @@ Aliases:
   info, status
 ```
 
-## container (![Linux][linux], ![MacOS][mac])
+## container 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Manage a local container cluster
 
-### container start (![Linux][linux], ![MacOS][mac])
+### container start 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Start a local container cluster
 
@@ -256,7 +302,9 @@ Flags:
       --retries uint   The amount of times to check for the cluster before considering it unstable and exiting. (default: 10)
 ```
 
-### container stop (![Linux][linux], ![MacOS][mac])
+### container stop 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Stop an existing local container cluster
 
@@ -265,7 +313,9 @@ Usage:
   rpk container stop [flags]
 ```
 
-### container purge (![Linux][linux], ![MacOS][mac])
+### container purge 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Stop and remove an existing local container cluster's data
 
@@ -274,7 +324,9 @@ Usage:
   rpk container purge [flags]
 ```
 
-## acl (![Linux][linux], ![MacOS][mac])
+## acl 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Manage ACLs
 
@@ -291,7 +343,9 @@ The global flags for `rpk acl` are:
   -v, --verbose                 enable verbose logging (default false)
 ```
 
-### acl create (![Linux][linux], ![MacOS][mac])
+### acl create 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Create ACLs
 
@@ -310,7 +364,9 @@ Flags:
       --resource-name string      The name of the target resource for the ACL.
 ```
 
-### acl delete (![Linux][linux], ![MacOS][mac])
+### acl delete 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Delete ACLs
 
@@ -329,7 +385,9 @@ Flags:
       --resource-name string      The name of the target resource for the ACL.
 ```
 
-### acl list (![Linux][linux], ![MacOS][mac])
+### acl list 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 List ACLs
 
@@ -350,7 +408,9 @@ Flags:
       --resource-name string   The name of the resource of the given type.
 ```
 
-### acl user (![Linux][linux], ![MacOS][mac])
+### acl user 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Manage users
 
@@ -360,7 +420,9 @@ The global flags for `rpk acl user` are:
       --api-url string   The Admin API URL (default "localhost:9644")
 ```
 
-#### acl user create (![Linux][linux], ![MacOS][mac])
+#### acl user create 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Create users
 
@@ -373,7 +435,9 @@ Flags:
       --new-username string   The user to be created
 ```
 
-#### acl user delete (![Linux][linux], ![MacOS][mac])
+#### acl user delete 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Delete users
 
@@ -385,7 +449,9 @@ Flags:
       --delete-username string   The user to be deleted
 ```
 
-#### acl user list (![Linux][linux], ![MacOS][mac])
+#### acl user list 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 List users
 
@@ -399,7 +465,9 @@ Aliases:
   list, ls
 ```
 
-## wasm (![Linux][linux], ![MacOS][mac])
+## wasm 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Deploy and remove inline WASM engine scripts
 
@@ -416,7 +484,9 @@ The global flags for `rpk wasm` are:
   -v, --verbose                 enable verbose logging (default false)
 ```
 
-### wasm generate (![Linux][linux], ![MacOS][mac])
+### wasm generate 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Create an npm template project for the inline WASM engine
 
@@ -426,7 +496,9 @@ Usage:
 ```
 
 
-### wasm deploy (![Linux][linux], ![MacOS][mac])
+### wasm deploy 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Deploy inline WASM scripts
 
@@ -438,7 +510,9 @@ Flags:
       --description string   Optional description about what the wasm function does, for reference.
 ```
 
-### wasm remove (![Linux][linux], ![MacOS][mac])
+### wasm remove 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Remove an inline WASM script
 
@@ -448,7 +522,10 @@ Usage:
 ```
 
 
-## iotune (![Linux][linux])
+## iotune 
+
+OS support: ![Linux][linux]
+
 Measure filesystem performance and create IO configuration file.
 
 ```cmd
@@ -463,11 +540,15 @@ Flags:
       --timeout duration      The maximum time after --duration to wait for iotune to complete. The value passed is a sequence of decimal numbers, each with optional fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h' (default: 1h0m0s)
 ```
 
-## generate (![Linux][linux], ![MacOS][mac])
+## generate 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Generate a configuration template for related services.
 
-### generate grafana-dashboard (![Linux][linux], ![MacOS][mac])
+### generate grafana-dashboard 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Generate a Grafana dashboard for redpanda metrics.
 
@@ -481,7 +562,9 @@ Flags:
       --prometheus-url string   The redpanda Prometheus URL from where to get the metrics metadata (default: "http://localhost:9644/metrics")
 ```
 
-### generate prometheus-config (![Linux][linux], ![MacOS][mac])
+### generate prometheus-config 
+
+OS support: ![Linux][linux] ![MacOS][mac]
 
 Generate the Prometheus configuration to scrape redpanda nodes. This command's
 output should be added to the `scrape_configs` array in your Prometheus
@@ -506,8 +589,14 @@ Flags:
       --seed-addr string     The URL of a redpanda node with which to discover the rest
 ```
 
-## debug (![Linux][linux])
-### debug info (![Linux][linux])
+## debug 
+
+OS support: ![Linux][linux]
+
+### debug info 
+
+OS support: ![Linux][linux]
+
 Check the resource usage in the system, and optionally send it to Vectorized.
 
 ```cmd
