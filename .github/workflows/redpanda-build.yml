@@ -40,19 +40,12 @@ jobs:
               --slave /usr/bin/g++ g++ /usr/bin/g++-11
             sudo update-alternatives --auto gcc
 
-        # there is no analog to ${{ github.workspace }} for the home directory
-        - name: prepare cache variables
-          id: prepare_cache_variables
-          run: |
-            echo ::set-output name=home::$HOME
-            echo ::set-output name=timestamp::$(date +'%Y-%m-%d-%H-%M-%S')
-
         - name: ccache cache files
           uses: actions/cache@v2
           with:
-            path: ${{ steps.prepare_cache_variables.outputs.home }}/.ccache
-            key: ${{ matrix.container }}-ccache-${{ steps.prepare_cache_variables.outputs.timestamp }}
-            restore-keys: ${{ matrix.container }}-ccache-
+            path: ~/.ccache
+            key: ccache-${{ github.ref }}
+            restore-keys: ccache
 
         # at the time of this writing the ccache for a full build is about
         # 70MB (due to the compression) but it may grow if there are many
@@ -62,6 +55,9 @@ jobs:
             export CCACHE_COMPRESS=true
             export CCACHE_COMPRESSLEVEL=6
             export CCACHE_MAXSIZE=200M
+            export CCACHE_DIR=~/.ccache
+
+            mkdir -p ~/.ccache
 
             ccache -p # print the config
             ccache -s # print the stats before reusing
