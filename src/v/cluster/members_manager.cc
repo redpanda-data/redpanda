@@ -448,6 +448,25 @@ members_manager::handle_join_request(model::broker broker) {
     vlog(clusterlog.info, "Processing node '{}' join request", broker.id());
     // curent node is a leader
     if (_raft0->is_leader()) {
+        // if configuration contains the broker already just update its config
+        // with data from join request
+
+        if (_raft0->config().contains_broker(broker.id())) {
+            vlog(
+              clusterlog.info,
+              "Broker {} is already member of a cluster, updating "
+              "configuration",
+              broker.id());
+            auto req = configuration_update_request(
+              std::move(broker), _self.id());
+            return handle_configuration_update_request(std::move(req))
+              .then([](result<configuration_update_reply> r) {
+                  if (r) {
+                      return ret_t(join_reply{.success = r.value().success});
+                  }
+                  return ret_t(r.error());
+              });
+        }
         // Just update raft0 configuration
         // we do not use revisions in raft0 configuration, it is always revision
         // 0 which is perfectly fine. this will work like revision less raft
