@@ -90,7 +90,7 @@ private:
 
     /// apply correct backpressure sequence
     ss::future<session_resources>
-    throttle_request(std::optional<std::string_view>, size_t sz);
+    throttle_request(const request_header&, size_t sz);
 
     ss::future<> dispatch_method_once(request_header, size_t sz);
     ss::future<> process_next_response();

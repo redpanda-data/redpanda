@@ -147,7 +147,7 @@ bool connection_context::is_finished_parsing() const {
 
 ss::future<connection_context::session_resources>
 connection_context::throttle_request(
-  std::optional<std::string_view> client_id, size_t request_size) {
+  const request_header& hdr, size_t request_size) {
     // update the throughput tracker for this client using the
     // size of the current request and return any computed delay
     // to apply for quota throttling.
@@ -160,25 +160,29 @@ connection_context::throttle_request(
     // applied to subsequent messages allow backpressure to take
     // affect.
     auto delay = _proto.quota_mgr().record_tp_and_throttle(
-      client_id, request_size);
+      hdr.client_id, request_size);
 
     auto fut = ss::now();
     if (!delay.first_violation) {
         fut = ss::sleep_abortable(delay.duration, _rs.abort_source());
     }
+    auto track = track_latency(hdr.key);
     return fut
       .then(
         [this, request_size] { return reserve_request_units(request_size); })
-      .then([this, delay](ss::semaphore_units<> units) {
+      .then([this, delay, track](ss::semaphore_units<> units) {
           return server().get_request_unit().then(
-            [this, delay, mem_units = std::move(units)](
+            [this, delay, mem_units = std::move(units), track](
               ss::semaphore_units<> qd_units) mutable {
-                return session_resources{
+                session_resources r{
                   .backpressure_delay = delay.duration,
                   .memlocks = std::move(mem_units),
                   .queue_units = std::move(qd_units),
-                  .method_latency = _rs.hist().auto_measure(),
                 };
+                if (track) {
+                    r.method_latency = _rs.hist().auto_measure();
+                }
+                return r;
             });
       });
 }
@@ -203,7 +207,7 @@ connection_context::reserve_request_units(size_t size) {
 
 ss::future<>
 connection_context::dispatch_method_once(request_header hdr, size_t size) {
-    return throttle_request(hdr.client_id, size)
+    return throttle_request(hdr, size)
       .then([this, hdr = std::move(hdr), size](session_resources sres) mutable {
           if (_rs.abort_requested()) {
               // protect against shutdown behavior
