@@ -11,6 +11,7 @@ from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.python_librdkafka import PythonLibrdkafka
+from rptest.services.redpanda import RedpandaService
 
 from rptest.tests.redpanda_test import RedpandaTest
 
@@ -120,3 +121,32 @@ class ConfigurationUpdateTest(RedpandaTest):
                    timeout_sec=60,
                    backoff_sec=2,
                    err_msg="Broker metadata aren't updated")
+
+    @cluster(num_nodes=3)
+    def test_updating_address_after_data_deletion(self):
+        node = self.redpanda.get_node(2)
+
+        def make_new_address(node, port):
+            return dict(address=node.name, port=port)
+
+        # stop node
+        self.redpanda.stop_node(node)
+
+        # change rpc port & kafka advertised address
+        altered_port_cfg_1 = dict(
+            rpc_server=dict(address="{}".format(node.name), port=54321),
+            kafka_api=make_new_address(node, 10091),
+            advertised_kafka_api=make_new_address(node, 10091))
+        # remove node data folder
+        node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/*")
+
+        # start node
+        self.redpanda.start_node(node, altered_port_cfg_1)
+
+        def broker_configuration_updated():
+            client = PythonLibrdkafka(self.redpanda)
+            brokers = client.brokers()
+            self.logger.debug(f"brokers metadata: {brokers}")
+            return brokers[2].port == 10091
+
+        wait_until(broker_configuration_updated, timeout_sec=60, backoff_sec=2)
