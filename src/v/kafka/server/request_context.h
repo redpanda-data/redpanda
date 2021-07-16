@@ -186,4 +186,6 @@ private:
 // Executes the API call identified by the specified request_context.
 process_result_stages process_request(request_context&&, ss::smp_service_group);
 
+bool track_latency(api_key);
+
 } // namespace kafka

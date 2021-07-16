@@ -199,6 +199,32 @@ handle_auth(request_context&& ctx, ss::smp_service_group g) {
     }
 }
 
+// do not track latency for admin apis
+bool track_latency(api_key key) {
+    switch (key) {
+    case metadata_handler::api::key:
+    case list_offsets_handler::api::key:
+    case list_groups_handler::api::key:
+    case api_versions_handler::api::key:
+    case create_topics_handler::api::key:
+    case describe_configs_handler::api::key:
+    case alter_configs_handler::api::key:
+    case delete_topics_handler::api::key:
+    case describe_groups_handler::api::key:
+    case sasl_handshake_handler::api::key:
+    case sasl_authenticate_handler::api::key:
+    case incremental_alter_configs_handler::api::key:
+    case delete_groups_handler::api::key:
+    case describe_acls_handler::api::key:
+    case describe_log_dirs_handler::api::key:
+    case create_acls_handler::api::key:
+    case delete_acls_handler::api::key:
+        return false;
+    default:
+        return true;
+    }
+}
+
 process_result_stages
 process_request(request_context&& ctx, ss::smp_service_group g) {
     /*

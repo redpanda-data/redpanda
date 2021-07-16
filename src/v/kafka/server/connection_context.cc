@@ -147,7 +147,7 @@ bool connection_context::is_finished_parsing() const {
 
 ss::future<connection_context::session_resources>
 connection_context::throttle_request(
-  std::optional<std::string_view> client_id, size_t request_size) {
+  const request_header& hdr, size_t request_size) {
     // update the throughput tracker for this client using the
     // size of the current request and return any computed delay
     // to apply for quota throttling.
@@ -160,25 +160,29 @@ connection_context::throttle_request(
     // applied to subsequent messages allow backpressure to take
     // affect.
     auto delay = _proto.quota_mgr().record_tp_and_throttle(
-      client_id, request_size);
+      hdr.client_id, request_size);
 
     auto fut = ss::now();
     if (!delay.first_violation) {
         fut = ss::sleep_abortable(delay.duration, _rs.abort_source());
     }
+    auto track = track_latency(hdr.key);
     return fut
       .then(
         [this, request_size] { return reserve_request_units(request_size); })
-      .then([this, delay](ss::semaphore_units<> units) {
+      .then([this, delay, track](ss::semaphore_units<> units) {
           return server().get_request_unit().then(
-            [this, delay, mem_units = std::move(units)](
+            [this, delay, mem_units = std::move(units), track](
               ss::semaphore_units<> qd_units) mutable {
-                return session_resources{
+                session_resources r{
                   .backpressure_delay = delay.duration,
                   .memlocks = std::move(mem_units),
                   .queue_units = std::move(qd_units),
-                  .method_latency = _rs.hist().auto_measure(),
                 };
+                if (track) {
+                    r.method_latency = _rs.hist().auto_measure();
+                }
+                return r;
             });
       });
 }
@@ -203,91 +207,87 @@ connection_context::reserve_request_units(size_t size) {
 
 ss::future<>
 connection_context::dispatch_method_once(request_header hdr, size_t size) {
-    return throttle_request(hdr.client_id, size)
-      .then([this, hdr = std::move(hdr), size](session_resources sres) mutable {
-          if (_rs.abort_requested()) {
-              // protect against shutdown behavior
-              return ss::make_ready_future<>();
-          }
-          auto remaining = size - sizeof(raw_request_header)
-                           - hdr.client_id_buffer.size();
-          return read_iobuf_exactly(_rs.conn->input(), remaining)
-            .then([this, hdr = std::move(hdr), sres = std::move(sres)](
-                    iobuf buf) mutable {
-                if (_rs.abort_requested()) {
-                    // _proto._cntrl etc might not be alive
-                    return ss::now();
-                }
-                auto self = shared_from_this();
-                auto rctx = request_context(
-                  self,
-                  std::move(hdr),
-                  std::move(buf),
-                  sres.backpressure_delay);
-                /*
-                 * we process requests in order since all subsequent requests
-                 * are dependent on authentication having completed.
-                 *
-                 * the other important reason for disabling pipeling is because
-                 * when a sasl handshake with version=0 is processed, the next
-                 * data on the wire is _not_ another request: it is a
-                 * size-prefixed authentication payload without a request
-                 * envelope, and requires special handling.
-                 *
-                 * a well behaved client should implicitly provide a data stream
-                 * that invokes this behavior in the server: that is, it won't
-                 * send auth data (or any other requests) until handshake or the
-                 * full auth-process completes, etc... but representing these
-                 * nuances of the protocol _explicitly_ in the server makes its
-                 * behavior easier to understand and avoids misbehaving clients
-                 * creating server-side errors that will appear as a corrupted
-                 * stream at best and at worst some odd behavior.
-                 */
+    return throttle_request(hdr, size).then([this, hdr = std::move(hdr), size](
+                                              session_resources sres) mutable {
+        if (_rs.abort_requested()) {
+            // protect against shutdown behavior
+            return ss::make_ready_future<>();
+        }
+        auto remaining = size - sizeof(raw_request_header)
+                         - hdr.client_id_buffer.size();
+        return read_iobuf_exactly(_rs.conn->input(), remaining)
+          .then([this, hdr = std::move(hdr), sres = std::move(sres)](
+                  iobuf buf) mutable {
+              if (_rs.abort_requested()) {
+                  // _proto._cntrl etc might not be alive
+                  return ss::now();
+              }
+              auto self = shared_from_this();
+              auto rctx = request_context(
+                self, std::move(hdr), std::move(buf), sres.backpressure_delay);
+              /*
+               * we process requests in order since all subsequent requests
+               * are dependent on authentication having completed.
+               *
+               * the other important reason for disabling pipeling is because
+               * when a sasl handshake with version=0 is processed, the next
+               * data on the wire is _not_ another request: it is a
+               * size-prefixed authentication payload without a request
+               * envelope, and requires special handling.
+               *
+               * a well behaved client should implicitly provide a data stream
+               * that invokes this behavior in the server: that is, it won't
+               * send auth data (or any other requests) until handshake or the
+               * full auth-process completes, etc... but representing these
+               * nuances of the protocol _explicitly_ in the server makes its
+               * behavior easier to understand and avoids misbehaving clients
+               * creating server-side errors that will appear as a corrupted
+               * stream at best and at worst some odd behavior.
+               */
 
-                const auto correlation = rctx.header().correlation;
-                const sequence_id seq = _seq_idx;
-                _seq_idx = _seq_idx + sequence_id(1);
-                auto res = kafka::process_request(
-                  std::move(rctx), _proto.smp_group());
-                /**
-                 * first stage processed in a foreground.
-                 */
-                return res.dispatched
-                  .then([this,
-                         f = std::move(res.response),
-                         seq,
-                         correlation,
-                         self,
-                         s = std::move(sres)]() mutable {
-                      /**
-                       * second stage processed in background.
-                       */
-                      (void)ss::try_with_gate(
-                        _rs.conn_gate(),
-                        [this, f = std::move(f), seq, correlation]() mutable {
-                            return f.then(
-                              [this, seq, correlation](response_ptr r) mutable {
-                                  r->set_correlation(correlation);
-                                  _responses.insert({seq, std::move(r)});
-                                  return process_next_response();
-                              });
-                        })
-                        .handle_exception([self](std::exception_ptr e) {
-                            vlog(
-                              klog.info,
-                              "Detected error processing request: {}",
-                              e);
-                            self->_rs.conn->shutdown_input();
-                        })
-                        .finally([s = std::move(s), self] {});
-                  })
-                  .handle_exception([self](std::exception_ptr e) {
-                      vlog(
-                        klog.info, "Detected error processing request: {}", e);
-                      self->_rs.conn->shutdown_input();
-                  });
-            });
-      });
+              const auto correlation = rctx.header().correlation;
+              const sequence_id seq = _seq_idx;
+              _seq_idx = _seq_idx + sequence_id(1);
+              auto res = kafka::process_request(
+                std::move(rctx), _proto.smp_group());
+              /**
+               * first stage processed in a foreground.
+               */
+              return res.dispatched
+                .then([this,
+                       f = std::move(res.response),
+                       seq,
+                       correlation,
+                       self,
+                       s = std::move(sres)]() mutable {
+                    /**
+                     * second stage processed in background.
+                     */
+                    (void)ss::try_with_gate(
+                      _rs.conn_gate(),
+                      [this, f = std::move(f), seq, correlation]() mutable {
+                          return f.then(
+                            [this, seq, correlation](response_ptr r) mutable {
+                                r->set_correlation(correlation);
+                                _responses.insert({seq, std::move(r)});
+                                return process_next_response();
+                            });
+                      })
+                      .handle_exception([self](std::exception_ptr e) {
+                          vlog(
+                            klog.info,
+                            "Detected error processing request: {}",
+                            e);
+                          self->_rs.conn->shutdown_input();
+                      })
+                      .finally([s = std::move(s), self] {});
+                })
+                .handle_exception([self](std::exception_ptr e) {
+                    vlog(klog.info, "Detected error processing request: {}", e);
+                    self->_rs.conn->shutdown_input();
+                });
+          });
+    });
 }
 
 ss::future<> connection_context::process_next_response() {
