@@ -103,6 +103,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> transactional_id_expiration_ms;
     property<bool> enable_idempotence;
     property<bool> enable_transactions;
+    property<uint32_t> abort_index_segment_size;
     // same as log.retention.ms in kafka
     property<std::chrono::milliseconds> delete_retention_ms;
     property<std::chrono::milliseconds> log_compaction_interval_ms;
