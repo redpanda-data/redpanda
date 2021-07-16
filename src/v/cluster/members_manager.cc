@@ -358,6 +358,18 @@ void members_manager::join_raft0() {
                            _join_retry_jitter.next_duration(), _as.local())
                     .then([] { return ss::stop_iteration::no; });
               });
+        })
+        .then([this] {
+            if (is_already_member()) {
+                return maybe_update_current_node_configuration();
+            }
+            return ss::now();
+        })
+        .handle_exception_type([](const ss::gate_closed_exception& e) {
+            vlog(
+              clusterlog.debug,
+              "unable to update node configuration, gate closed - {}",
+              e);
         });
     });
 }
