@@ -103,6 +103,8 @@ func FindConfigFile(
 //    `rpk container start`.
 // 4. A list of brokers from the `rpk.kafka_api.brokers` field in the
 //    config file.
+// 5. The listeners in `redpanda.kafka_api`, and any seed brokers
+//    (`redpanda.seed_servers`)
 //
 // If none of those sources yield a list of broker addresses, the default
 // local address (127.0.0.1:9092) is assumed.
@@ -112,7 +114,8 @@ func DeduceBrokers(
 	brokers *[]string,
 ) func() []string {
 	return func() []string {
-		defaultAddrs := []string{"127.0.0.1:9092"}
+		defaultAddr := "127.0.0.1:9092"
+		defaultAddrs := []string{defaultAddr}
 		bs := *brokers
 		// Prioritize brokers passed through --brokers
 		if len(bs) != 0 {
@@ -152,26 +155,59 @@ func DeduceBrokers(
 		// Otherwise, try to find an existing config file.
 		conf, err := configuration()
 		if err != nil {
-			log.Trace(
-				"Couldn't read the config file." +
-					" Assuming 127.0.0.1:9092.",
+			log.Debugf(
+				"Couldn't read the config file."+
+					" Assuming %s.",
+				defaultAddr,
 			)
 			log.Debug(err)
 			return defaultAddrs
 		}
 
-		if len(conf.Rpk.KafkaApi.Brokers) == 0 {
-			log.Debug(
-				"Empty rpk.kafka_api.brokers. Assuming 127.0.0.1:9092.",
+		// Check if the rpk config has a list of brokers.
+		if len(conf.Rpk.KafkaApi.Brokers) != 0 {
+			log.Debugf(
+				"Using rpk.kafka_api.brokers: %s",
+				strings.Join(conf.Rpk.KafkaApi.Brokers, ", "),
+			)
+			return conf.Rpk.KafkaApi.Brokers
+		}
+
+		log.Debug(
+			"Empty rpk.kafka_api.brokers. Checking redpanda.kafka_api.",
+		)
+		// If rpk.kafka_api.brokers is empty, check for a local broker's cluster configuration
+		if len(conf.Redpanda.KafkaApi) == 0 && len(conf.Redpanda.SeedServers) == 0 {
+			log.Debugf(
+				"Empty redpanda.kafka_api and redpanda.seed_servers."+
+					" Assuming %s.",
+				defaultAddr,
 			)
 			return defaultAddrs
 		}
-
+		// Add the seed servers' Kafka addrs.
+		for _, b := range conf.Redpanda.SeedServers {
+			addr := fmt.Sprintf(
+				"%s:%d",
+				b.Host.Address,
+				b.Host.Port,
+			)
+			bs = append(bs, addr)
+		}
+		if len(conf.Redpanda.KafkaApi) > 0 {
+			// Add the current node's 1st Kafka listener.
+			selfAddr := fmt.Sprintf(
+				"%s:%d",
+				conf.Redpanda.KafkaApi[0].Address,
+				conf.Redpanda.KafkaApi[0].Port,
+			)
+			bs = append(bs, selfAddr)
+		}
 		log.Debugf(
 			"Using brokers from config: %s",
-			strings.Join(conf.Rpk.KafkaApi.Brokers, ", "),
+			strings.Join(bs, ", "),
 		)
-		return conf.Rpk.KafkaApi.Brokers
+		return bs
 	}
 }
 

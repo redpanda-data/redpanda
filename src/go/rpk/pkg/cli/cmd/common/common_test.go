@@ -117,15 +117,41 @@ func TestDeduceBrokers(t *testing.T) {
 		},
 		expected: []string{"127.0.0.1:9092"},
 	}, {
-		name: "it should prioritize the config over the default broker addr",
+		name: "it should prioritize rpk.kafka_api.brokers over the redpanda.kafka_api",
 		config: func() (*config.Config, error) {
 			conf := config.Default()
+
 			conf.Rpk.KafkaApi.Brokers = []string{"192.168.25.87:1234", "192.168.26.98:9092"}
+
+			conf.Redpanda.KafkaApi = []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{"somedomain.co", 1234},
+			}, {
+				SocketAddress: config.SocketAddress{"anotherthing", 4321},
+			}}
 			return conf, nil
 		},
 		expected: []string{"192.168.25.87:1234", "192.168.26.98:9092"},
 	}, {
-		name:     "it should return 127.0.0.1:9092 if no config sources yield a brokers list",
+		name: "it should take the local broker's cluster addresses if rpk.kafka_api.brokers is empty",
+		config: func() (*config.Config, error) {
+			conf := config.Default()
+			conf.Redpanda.SeedServers = []config.SeedServer{{
+				Host: config.SocketAddress{"somedomain.co", 1234},
+			}}
+			conf.Redpanda.KafkaApi = []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{"anotherhost", 4321},
+			}}
+			return conf, nil
+		},
+		expected: []string{"somedomain.co:1234", "anotherhost:4321"},
+	}, {
+		name: "it should return 127.0.0.1:9092 if no config sources yield a brokers list",
+		config: func() (*config.Config, error) {
+			conf := config.Default()
+			conf.Redpanda.SeedServers = nil
+			conf.Redpanda.KafkaApi = nil
+			return conf, nil
+		},
 		expected: []string{"127.0.0.1:9092"},
 	}}
 
