@@ -345,20 +345,36 @@ void members_manager::join_raft0() {
     (void)ss::with_gate(_gate, [this] {
         vlog(clusterlog.debug, "Trying to join the cluster");
         return ss::repeat([this] {
-            return dispatch_join_to_seed_server(std::cbegin(_seed_servers))
-              .then([this](result<join_reply> r) {
-                  bool success = r && r.value().success;
-                  // stop on success or closed gate
-                  if (success || _gate.is_closed() || is_already_member()) {
-                      return ss::make_ready_future<ss::stop_iteration>(
-                        ss::stop_iteration::yes);
-                  }
+                   return dispatch_join_to_seed_server(
+                            std::cbegin(_seed_servers))
+                     .then([this](result<join_reply> r) {
+                         bool success = r && r.value().success;
+                         // stop on success or closed gate
+                         if (
+                           success || _gate.is_closed()
+                           || is_already_member()) {
+                             return ss::make_ready_future<ss::stop_iteration>(
+                               ss::stop_iteration::yes);
+                         }
 
-                  return wait_for_next_join_retry(
-                           _join_retry_jitter.next_duration(), _as.local())
-                    .then([] { return ss::stop_iteration::no; });
-              });
-        });
+                         return wait_for_next_join_retry(
+                                  _join_retry_jitter.next_duration(),
+                                  _as.local())
+                           .then([] { return ss::stop_iteration::no; });
+                     });
+               })
+          .then([this] {
+              if (is_already_member()) {
+                  return maybe_update_current_node_configuration();
+              }
+              return ss::now();
+          })
+          .handle_exception_type([](const ss::gate_closed_exception& e) {
+              vlog(
+                clusterlog.debug,
+                "unable to update node configuration, gate closed - {}",
+                e);
+          });
     });
 }
 
@@ -432,6 +448,25 @@ members_manager::handle_join_request(model::broker broker) {
     vlog(clusterlog.info, "Processing node '{}' join request", broker.id());
     // curent node is a leader
     if (_raft0->is_leader()) {
+        // if configuration contains the broker already just update its config
+        // with data from join request
+
+        if (_raft0->config().contains_broker(broker.id())) {
+            vlog(
+              clusterlog.info,
+              "Broker {} is already member of a cluster, updating "
+              "configuration",
+              broker.id());
+            auto req = configuration_update_request(
+              std::move(broker), _self.id());
+            return handle_configuration_update_request(std::move(req))
+              .then([](result<configuration_update_reply> r) {
+                  if (r) {
+                      return ret_t(join_reply{.success = r.value().success});
+                  }
+                  return ret_t(r.error());
+              });
+        }
         // Just update raft0 configuration
         // we do not use revisions in raft0 configuration, it is always revision
         // 0 which is perfectly fine. this will work like revision less raft
