@@ -126,8 +126,8 @@ private:
       model::producer_identity, model::tx_seq, model::timeout_clock::duration);
     ss::future<tx_errc> do_abort_tx(
       model::producer_identity, model::tx_seq, model::timeout_clock::duration);
-    void load_snapshot(stm_snapshot_header, iobuf&&) override;
-    stm_snapshot take_snapshot() override;
+    ss::future<> load_snapshot(stm_snapshot_header, iobuf&&) override;
+    ss::future<stm_snapshot> take_snapshot() override;
 
     bool check_seq(model::batch_identity);
 

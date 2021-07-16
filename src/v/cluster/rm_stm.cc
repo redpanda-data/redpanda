@@ -1126,7 +1126,7 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
     }
 }
 
-void rm_stm::load_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
+ss::future<> rm_stm::load_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     vassert(
       hdr.version == tx_snapshot_version,
       "unsupported seq_snapshot_header version {}",
@@ -1157,9 +1157,11 @@ void rm_stm::load_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
 
     _last_snapshot_offset = data.offset;
     _insync_offset = data.offset;
+
+    return ss::now();
 }
 
-stm_snapshot rm_stm::take_snapshot() {
+ss::future<stm_snapshot> rm_stm::take_snapshot() {
     tx_snapshot tx_ss;
 
     for (auto const& [k, v] : _log_state.fence_pid_epoch) {
@@ -1191,7 +1193,7 @@ stm_snapshot rm_stm::take_snapshot() {
     stx_ss.header = header;
     stx_ss.offset = _insync_offset;
     stx_ss.data = std::move(tx_ss_buf);
-    return stx_ss;
+    co_return stx_ss;
 }
 
 } // namespace cluster
