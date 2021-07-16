@@ -345,32 +345,36 @@ void members_manager::join_raft0() {
     (void)ss::with_gate(_gate, [this] {
         vlog(clusterlog.debug, "Trying to join the cluster");
         return ss::repeat([this] {
-            return dispatch_join_to_seed_server(std::cbegin(_seed_servers))
-              .then([this](result<join_reply> r) {
-                  bool success = r && r.value().success;
-                  // stop on success or closed gate
-                  if (success || _gate.is_closed() || is_already_member()) {
-                      return ss::make_ready_future<ss::stop_iteration>(
-                        ss::stop_iteration::yes);
-                  }
+                   return dispatch_join_to_seed_server(
+                            std::cbegin(_seed_servers))
+                     .then([this](result<join_reply> r) {
+                         bool success = r && r.value().success;
+                         // stop on success or closed gate
+                         if (
+                           success || _gate.is_closed()
+                           || is_already_member()) {
+                             return ss::make_ready_future<ss::stop_iteration>(
+                               ss::stop_iteration::yes);
+                         }
 
-                  return wait_for_next_join_retry(
-                           _join_retry_jitter.next_duration(), _as.local())
-                    .then([] { return ss::stop_iteration::no; });
-              });
-        })
-        .then([this] {
-            if (is_already_member()) {
-                return maybe_update_current_node_configuration();
-            }
-            return ss::now();
-        })
-        .handle_exception_type([](const ss::gate_closed_exception& e) {
-            vlog(
-              clusterlog.debug,
-              "unable to update node configuration, gate closed - {}",
-              e);
-        });
+                         return wait_for_next_join_retry(
+                                  _join_retry_jitter.next_duration(),
+                                  _as.local())
+                           .then([] { return ss::stop_iteration::no; });
+                     });
+               })
+          .then([this] {
+              if (is_already_member()) {
+                  return maybe_update_current_node_configuration();
+              }
+              return ss::now();
+          })
+          .handle_exception_type([](const ss::gate_closed_exception& e) {
+              vlog(
+                clusterlog.debug,
+                "unable to update node configuration, gate closed - {}",
+                e);
+          });
     });
 }
 
