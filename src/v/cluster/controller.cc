@@ -44,13 +44,15 @@ controller::controller(
   ss::sharded<rpc::connection_cache>& ccache,
   ss::sharded<partition_manager>& pm,
   ss::sharded<shard_table>& st,
-  ss::sharded<storage::api>& storage)
+  ss::sharded<storage::api>& storage,
+  ss::sharded<raft::group_manager>& raft_manager)
   : _connections(ccache)
   , _partition_manager(pm)
   , _shard_table(st)
   , _storage(storage)
   , _tp_updates_dispatcher(_partition_allocator, _tp_state)
-  , _security_manager(_credentials, _authorizer) {}
+  , _security_manager(_credentials, _authorizer)
+  , _raft_manager(raft_manager) {}
 
 ss::future<> controller::wire_up() {
     return _as.start()
@@ -180,6 +182,18 @@ ss::future<> controller::start() {
       .then([this] {
           return _members_backend.invoke_on(
             members_manager::shard, &members_backend::start);
+      })
+      .then([this] {
+          _leader_balancer = std::make_unique<leader_balancer>(
+            _tp_state.local(),
+            _partition_leaders.local(),
+            _raft_manager.local().raft_client(),
+            std::ref(_shard_table),
+            std::ref(_partition_manager),
+            std::ref(_raft_manager),
+            std::ref(_as),
+            _raft0);
+          return _leader_balancer->start();
       });
 }
 
@@ -199,7 +213,8 @@ ss::future<> controller::stop() {
     }
 
     return f.then([this] {
-        return _members_backend.stop()
+        return _leader_balancer->stop()
+          .then([this] { return _members_backend.stop(); })
           .then([this] { return _api.stop(); })
           .then([this] { return _backend.stop(); })
           .then([this] { return _tp_frontend.stop(); })

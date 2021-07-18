@@ -13,7 +13,9 @@
 
 #include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
+#include "cluster/scheduling/leader_balancer.h"
 #include "cluster/topic_updates_dispatcher.h"
+#include "raft/group_manager.h"
 #include "rpc/connection_cache.h"
 #include "security/authorizer.h"
 #include "security/credential_store.h"
@@ -31,7 +33,8 @@ public:
       ss::sharded<rpc::connection_cache>& ccache,
       ss::sharded<partition_manager>& pm,
       ss::sharded<shard_table>& st,
-      ss::sharded<storage::api>& storage);
+      ss::sharded<storage::api>& storage,
+      ss::sharded<raft::group_manager>&);
 
     model::node_id self() { return _raft0->self().id(); }
     ss::sharded<topics_frontend>& get_topics_frontend() { return _tp_frontend; }
@@ -92,6 +95,8 @@ private:
     security_manager _security_manager;
     ss::sharded<security_frontend> _security_frontend;
     ss::sharded<security::authorizer> _authorizer;
+    ss::sharded<raft::group_manager>& _raft_manager;
+    std::unique_ptr<leader_balancer> _leader_balancer;
     consensus_ptr _raft0;
 };
 
