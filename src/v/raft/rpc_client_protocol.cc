@@ -119,4 +119,19 @@ ss::future<bool> rpc_client_protocol::ensure_disconnect(model::node_id n) {
       });
 }
 
+ss::future<result<transfer_leadership_reply>>
+rpc_client_protocol::transfer_leadership(
+  model::node_id n, transfer_leadership_request&& r, rpc::client_opts opts) {
+    return _connection_cache.local().with_node_client<raftgen_client_protocol>(
+      _self,
+      ss::this_shard_id(),
+      n,
+      opts.timeout,
+      [r = std::move(r),
+       opts = std::move(opts)](raftgen_client_protocol client) mutable {
+          return client.transfer_leadership(std::move(r), std::move(opts))
+            .then(&rpc::get_ctx_data<transfer_leadership_reply>);
+      });
+}
+
 } // namespace raft
