@@ -354,6 +354,7 @@ func TestKafkaAuthConfig(t *testing.T) {
 		user           string
 		password       string
 		mechanism      string
+		config         func() (*config.Config, error)
 		before         func()
 		cleanup        func()
 		expected       *config.SASL
@@ -361,11 +362,11 @@ func TestKafkaAuthConfig(t *testing.T) {
 	}{{
 		name:           "it should fail if user is empty",
 		password:       "somethingsecure",
-		expectedErrMsg: "empty user. Pass --user to set a value.",
+		expectedErrMsg: "empty user. Pass --user or set rpk.kafka_api.sasl.user.",
 	}, {
 		name:           "it should fail if password is empty",
 		user:           "usuario",
-		expectedErrMsg: "empty password. Pass --password to set a value.",
+		expectedErrMsg: "empty password. Pass --password or set rpk.kafka_api.sasl.password.",
 	}, {
 		name:           "it should fail if both user and password are empty",
 		expectedErrMsg: ErrNoCredentials.Error(),
@@ -374,7 +375,7 @@ func TestKafkaAuthConfig(t *testing.T) {
 		user:      "usuario",
 		password:  "contraseño",
 		mechanism: "super-crypto-3000",
-		expectedErrMsg: "unsupported mechanism 'super-crypto-3000'. Pass --sasl-mechanism to set a value." +
+		expectedErrMsg: "unsupported mechanism 'super-crypto-3000'. Pass --sasl-mechanism or set rpk.kafka_api.sasl.mechanism." +
 			" Supported: SCRAM-SHA-256, SCRAM-SHA-512.",
 	}, {
 		name:      "it should support SCRAM-SHA-256",
@@ -418,6 +419,51 @@ func TestKafkaAuthConfig(t *testing.T) {
 		},
 		// Disregards the env vars' values
 		expected: &config.SASL{User: "usuario", Password: "contraseño", Mechanism: "SCRAM-SHA-512"},
+	}, {
+		name: "it should fall back to the config if no values were set through flags or env vars",
+		config: func() (*config.Config, error) {
+			conf := config.Default()
+			conf.Rpk.KafkaApi.SASL = &config.SASL{
+				User:      "config-user",
+				Password:  "config-password",
+				Mechanism: "SCRAM-SHA-512",
+			}
+			return conf, nil
+		},
+		expected: &config.SASL{User: "config-user", Password: "config-password", Mechanism: "SCRAM-SHA-512"},
+	}, {
+		name: "it should fall back to the deprecated config fields if rpk.kafka_api.sasl is missing",
+		config: func() (*config.Config, error) {
+			conf := config.Default()
+			conf.Rpk.SASL = &config.SASL{
+				User:      "depr-config-user",
+				Password:  "depr-config-password",
+				Mechanism: "SCRAM-SHA-256",
+			}
+			return conf, nil
+		},
+		expected: &config.SASL{User: "depr-config-user", Password: "depr-config-password", Mechanism: "SCRAM-SHA-256"},
+	}, {
+		name: "it should build a complete config from values set through different sources",
+		user: "flag-user",
+		before: func() {
+			os.Setenv("REDPANDA_SASL_PASSWORD", "verysecurenoonewillknow")
+			// REDPANDA_SASL_USERNAME is also set, but since user is passed
+			// directly, that one will be picked up.
+			os.Setenv("REDPANDA_SASL_USERNAME", "dang,Iwillbeignored")
+		},
+		cleanup: func() {
+			os.Unsetenv("REDPANDA_SASL_PASSWORD")
+			os.Unsetenv("REDPANDA_SASL_USERNAME")
+		},
+		config: func() (*config.Config, error) {
+			conf := config.Default()
+			conf.Rpk.SASL = &config.SASL{
+				Mechanism: "SCRAM-SHA-512",
+			}
+			return conf, nil
+		},
+		expected: &config.SASL{User: "flag-user", Password: "verysecurenoonewillknow", Mechanism: "SCRAM-SHA-512"},
 	}}
 
 	for _, tt := range tests {
@@ -428,7 +474,13 @@ func TestKafkaAuthConfig(t *testing.T) {
 			if tt.cleanup != nil {
 				defer tt.cleanup()
 			}
-			closure := KafkaAuthConfig(&tt.user, &tt.password, &tt.mechanism)
+			confClosure := func() (*config.Config, error) {
+				return config.Default(), nil
+			}
+			if tt.config != nil {
+				confClosure = tt.config
+			}
+			closure := KafkaAuthConfig(&tt.user, &tt.password, &tt.mechanism, confClosure)
 			res, err := closure()
 			if tt.expectedErrMsg != "" {
 				require.EqualError(st, err, tt.expectedErrMsg)

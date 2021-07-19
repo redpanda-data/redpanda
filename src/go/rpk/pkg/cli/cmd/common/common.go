@@ -343,8 +343,15 @@ func CreateAdmin(
 	}
 }
 
+// Returns the SASL Auth configuration for the Kafka API.
+// The configuration priority is as follows (highest to lowest):
+// 1. Values passed through flags
+// 2. A list of brokers set through environment variables (listed below)
+// 3. Values set in `rpk.kafka_api.sasl`.
+// 5. Values set in `rpk.sasl` (deprecated)
 func KafkaAuthConfig(
 	user, password, mechanism *string,
+	configuration func() (*config.Config, error),
 ) func() (*config.SASL, error) {
 	return func() (*config.SASL, error) {
 		u := *user
@@ -361,18 +368,49 @@ func KafkaAuthConfig(
 			m = os.Getenv("REDPANDA_SASL_MECHANISM")
 		}
 
+		// Then check the config if any of the values are empty.
+		if u == "" || p == "" || m == "" {
+			conf, err := configuration()
+			if err != nil {
+				return nil, err
+			}
+			// First check the recommended fields
+			if conf.Rpk.KafkaApi.SASL != nil {
+				if u == "" {
+					u = conf.Rpk.KafkaApi.SASL.User
+				}
+				if p == "" {
+					p = conf.Rpk.KafkaApi.SASL.Password
+				}
+				if m == "" {
+					m = conf.Rpk.KafkaApi.SASL.Mechanism
+				}
+			} else if conf.Rpk.SASL != nil {
+				// Otherwise, check the deprecated fields for backwards-compatibility
+				if u == "" {
+					u = conf.Rpk.SASL.User
+				}
+				if p == "" {
+					p = conf.Rpk.SASL.Password
+				}
+				if m == "" {
+					m = conf.Rpk.SASL.Mechanism
+				}
+			}
+		}
+
 		if u == "" && p == "" {
 			return nil, ErrNoCredentials
 		}
 		if u == "" && p != "" {
-			return nil, errors.New("empty user. Pass --user to set a value.")
+			return nil, errors.New("empty user. Pass --user or set rpk.kafka_api.sasl.user.")
 		}
 		if u != "" && p == "" {
-			return nil, errors.New("empty password. Pass --password to set a value.")
+			return nil, errors.New("empty password. Pass --password or set rpk.kafka_api.sasl.password.")
 		}
 		if m != sarama.SASLTypeSCRAMSHA256 && m != sarama.SASLTypeSCRAMSHA512 {
 			return nil, fmt.Errorf(
-				"unsupported mechanism '%s'. Pass --%s to set a value."+
+				"unsupported mechanism '%s'. Pass --%s or set rpk.kafka_api.sasl.mechanism."+
 					" Supported: %s, %s.",
 				m,
 				saslMechanismFlag,
