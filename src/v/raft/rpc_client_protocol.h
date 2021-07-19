@@ -48,6 +48,9 @@ public:
 
     ss::future<bool> ensure_disconnect(model::node_id) final;
 
+    ss::future<result<transfer_leadership_reply>> transfer_leadership(
+      model::node_id, transfer_leadership_request&&, rpc::client_opts) final;
+
 private:
     model::node_id _self;
     ss::sharded<rpc::connection_cache>& _connection_cache;

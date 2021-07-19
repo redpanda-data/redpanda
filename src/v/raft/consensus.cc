@@ -2211,8 +2211,31 @@ ss::future<timeout_now_reply> consensus::timeout_now(timeout_now_request&& r) {
     });
 }
 
+ss::future<transfer_leadership_reply>
+consensus::transfer_leadership(transfer_leadership_request req) {
+    transfer_leadership_reply reply;
+    auto err = co_await do_transfer_leadership(req.target);
+    if (err) {
+        vlog(
+          _ctxlog.warn,
+          "Unable to transfer leadership to {}: {}",
+          req.target,
+          err.message());
+
+        reply.success = false;
+        if (err.category() == raft::error_category()) {
+            reply.result = static_cast<errc>(err.value());
+        }
+        co_return reply;
+    }
+
+    reply.success = true;
+    reply.result = errc::success;
+    co_return reply;
+}
+
 ss::future<std::error_code>
-consensus::transfer_leadership(std::optional<model::node_id> target) {
+consensus::do_transfer_leadership(std::optional<model::node_id> target) {
     if (!is_leader()) {
         vlog(_ctxlog.debug, "Cannot transfer leadership from non-leader");
         return seastar::make_ready_future<std::error_code>(

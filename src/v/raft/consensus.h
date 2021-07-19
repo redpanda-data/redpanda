@@ -271,8 +271,10 @@ public:
      * Attempt to transfer leadership to another node in this raft group. If no
      * node is specified, the most up-to-date node will be selected.
      */
+    ss::future<transfer_leadership_reply>
+      transfer_leadership(transfer_leadership_request);
     ss::future<std::error_code>
-      transfer_leadership(std::optional<model::node_id>);
+      do_transfer_leadership(std::optional<model::node_id>);
 
     ss::future<> remove_persistent_state();
 
