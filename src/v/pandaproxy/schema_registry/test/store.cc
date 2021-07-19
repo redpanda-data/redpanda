@@ -63,19 +63,35 @@ BOOST_AUTO_TEST_CASE(test_store_insert) {
     BOOST_REQUIRE_EQUAL(ins_res.version, pps::schema_version{2});
 }
 
+/// Emulate how `sharded_store` does upserts on `store`
+bool upsert(
+  pps::store& store,
+  pps::subject sub,
+  pps::schema_definition def,
+  pps::schema_type type,
+  pps::schema_id id,
+  pps::schema_version version,
+  pps::is_deleted deleted) {
+    store.upsert_schema(id, std::move(def), type);
+    return store.upsert_subject(
+      pps::seq_marker{}, std::move(sub), version, id, deleted);
+}
+
 BOOST_AUTO_TEST_CASE(test_store_upsert_in_order) {
     const auto expected = std::vector<pps::schema_version>(
       {pps::schema_version{0}, pps::schema_version{1}});
 
     pps::store s;
-    BOOST_REQUIRE(s.upsert(
+    BOOST_REQUIRE(upsert(
+      s,
       subject0,
       string_def0,
       pps::schema_type::avro,
       pps::schema_id{0},
       pps::schema_version{0},
       pps::is_deleted::no));
-    BOOST_REQUIRE(s.upsert(
+    BOOST_REQUIRE(upsert(
+      s,
       subject0,
       string_def0,
       pps::schema_type::avro,
@@ -97,14 +113,16 @@ BOOST_AUTO_TEST_CASE(test_store_upsert_reverse_order) {
       {pps::schema_version{0}, pps::schema_version{1}});
 
     pps::store s;
-    BOOST_REQUIRE(s.upsert(
+    BOOST_REQUIRE(upsert(
+      s,
       subject0,
       string_def0,
       pps::schema_type::avro,
       pps::schema_id{1},
       pps::schema_version{1},
       pps::is_deleted::no));
-    BOOST_REQUIRE(s.upsert(
+    BOOST_REQUIRE(upsert(
+      s,
       subject0,
       string_def0,
       pps::schema_type::avro,
@@ -126,7 +144,8 @@ BOOST_AUTO_TEST_CASE(test_store_upsert_override) {
       {pps::schema_version{0}});
 
     pps::store s;
-    BOOST_REQUIRE(s.upsert(
+    BOOST_REQUIRE(upsert(
+      s,
       subject0,
       string_def0,
       pps::schema_type::avro,
@@ -134,7 +153,8 @@ BOOST_AUTO_TEST_CASE(test_store_upsert_override) {
       pps::schema_version{0},
       pps::is_deleted::no));
     // override schema and version (should return no insertion)
-    BOOST_REQUIRE(!s.upsert(
+    BOOST_REQUIRE(!upsert(
+      s,
       subject0,
       int_def0,
       pps::schema_type::avro,
@@ -305,22 +325,30 @@ BOOST_AUTO_TEST_CASE(test_store_subject_compat) {
     // Setting the retrieving a subject compatibility should be allowed multiple
     // times
 
+    pps::seq_marker dummy_marker;
+
     pps::compatibility_level global_expected{pps::compatibility_level::none};
     pps::store s;
     BOOST_REQUIRE(s.get_compatibility().value() == global_expected);
     s.insert(subject0, string_def0, pps::schema_type::avro);
 
     auto sub_expected = pps::compatibility_level::backward;
-    BOOST_REQUIRE(s.set_compatibility(subject0, sub_expected).value() == true);
+    BOOST_REQUIRE(
+      s.set_compatibility(dummy_marker, subject0, sub_expected).value()
+      == true);
     BOOST_REQUIRE(s.get_compatibility(subject0).value() == sub_expected);
 
     // duplicate should return false
     sub_expected = pps::compatibility_level::backward;
-    BOOST_REQUIRE(s.set_compatibility(subject0, sub_expected).value() == false);
+    BOOST_REQUIRE(
+      s.set_compatibility(dummy_marker, subject0, sub_expected).value()
+      == false);
     BOOST_REQUIRE(s.get_compatibility(subject0).value() == sub_expected);
 
     sub_expected = pps::compatibility_level::full_transitive;
-    BOOST_REQUIRE(s.set_compatibility(subject0, sub_expected).value() == true);
+    BOOST_REQUIRE(
+      s.set_compatibility(dummy_marker, subject0, sub_expected).value()
+      == true);
     BOOST_REQUIRE(s.get_compatibility(subject0).value() == sub_expected);
     BOOST_REQUIRE(s.get_compatibility().value() == global_expected);
 
@@ -346,6 +374,7 @@ BOOST_AUTO_TEST_CASE(test_store_invalid_subject_compat) {
     // Setting and getting a compatibility for a non-existant subject should
     // fail
 
+    pps::seq_marker dummy_marker;
     pps::compatibility_level expected{pps::compatibility_level::none};
     pps::store s;
 
@@ -355,7 +384,7 @@ BOOST_AUTO_TEST_CASE(test_store_invalid_subject_compat) {
 
     expected = pps::compatibility_level::backward;
     BOOST_REQUIRE_EQUAL(
-      s.set_compatibility(subject0, expected).error().code(),
+      s.set_compatibility(dummy_marker, subject0, expected).error().code(),
       pps::error_code::subject_not_found);
 }
 
@@ -366,12 +395,18 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject) {
     pps::store s;
     s.set_compatibility(pps::compatibility_level::none).value();
 
+    pps::seq_marker dummy_marker;
+
     BOOST_REQUIRE_EQUAL(
-      s.delete_subject(subject0, pps::permanent_delete::no).error().code(),
+      s.delete_subject(dummy_marker, subject0, pps::permanent_delete::no)
+        .error()
+        .code(),
       pps::error_code::subject_not_found);
 
     BOOST_REQUIRE_EQUAL(
-      s.delete_subject(subject0, pps::permanent_delete::yes).error().code(),
+      s.delete_subject(dummy_marker, subject0, pps::permanent_delete::yes)
+        .error()
+        .code(),
       pps::error_code::subject_not_found);
 
     // First insert, expect id{1}, version{1}
@@ -387,7 +422,8 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject) {
       expected_vers.cend());
 
     // permanent delete of not soft-deleted should fail
-    auto d_res = s.delete_subject(subject0, pps::permanent_delete::yes);
+    auto d_res = s.delete_subject(
+      dummy_marker, subject0, pps::permanent_delete::yes);
     BOOST_REQUIRE(d_res.has_error());
     BOOST_REQUIRE_EQUAL(
       d_res.error().code(), pps::error_code::subject_not_deleted);
@@ -404,7 +440,7 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject) {
     BOOST_REQUIRE_EQUAL(s.get_subjects(pps::include_deleted::no).size(), 1);
 
     // soft delete should return versions
-    d_res = s.delete_subject(subject0, pps::permanent_delete::no);
+    d_res = s.delete_subject(dummy_marker, subject0, pps::permanent_delete::no);
     BOOST_REQUIRE(d_res.has_value());
     BOOST_REQUIRE_EQUAL_COLLECTIONS(
       d_res.value().cbegin(),
@@ -422,7 +458,7 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject) {
     BOOST_REQUIRE_EQUAL(s.get_subjects(pps::include_deleted::yes).size(), 1);
 
     // Second soft delete should fail
-    d_res = s.delete_subject(subject0, pps::permanent_delete::no);
+    d_res = s.delete_subject(dummy_marker, subject0, pps::permanent_delete::no);
     BOOST_REQUIRE(d_res.has_error());
     BOOST_REQUIRE_EQUAL(
       d_res.error().code(), pps::error_code::subject_soft_deleted);
@@ -439,7 +475,8 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject) {
       expected_vers.cend());
 
     // permanent delete should return versions
-    d_res = s.delete_subject(subject0, pps::permanent_delete::yes);
+    d_res = s.delete_subject(
+      dummy_marker, subject0, pps::permanent_delete::yes);
     BOOST_REQUIRE(d_res.has_value());
     BOOST_REQUIRE_EQUAL_COLLECTIONS(
       d_res.value().cbegin(),
@@ -457,7 +494,8 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject) {
     BOOST_REQUIRE(s.get_subjects(pps::include_deleted::yes).empty());
 
     // Second permanant delete should fail
-    d_res = s.delete_subject(subject0, pps::permanent_delete::yes);
+    d_res = s.delete_subject(
+      dummy_marker, subject0, pps::permanent_delete::yes);
     BOOST_REQUIRE(d_res.has_error());
     BOOST_REQUIRE_EQUAL(
       d_res.error().code(), pps::error_code::subject_not_found);
@@ -472,28 +510,13 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject_version) {
     const std::vector<pps::schema_version> expected_vers{
       {pps::schema_version{1}, pps::schema_version{2}}};
 
+    pps::seq_marker dummy_marker;
     pps::store s;
     s.set_compatibility(pps::compatibility_level::none).value();
 
     // Test unknown subject
     BOOST_REQUIRE_EQUAL(
-      s.delete_subject_version(
-         subject0,
-         pps::schema_version{0},
-         pps::permanent_delete::no,
-         pps::include_deleted::no)
-        .error()
-        .code(),
-      pps::error_code::subject_not_found);
-
-    BOOST_REQUIRE_EQUAL(
-      s.delete_subject_version(
-         subject0,
-         pps::schema_version{0},
-         pps::permanent_delete::yes,
-         pps::include_deleted::no)
-        .error()
-        .code(),
+      s.delete_subject_version(subject0, pps::schema_version{0}).error().code(),
       pps::error_code::subject_not_found);
 
     // First insert, expect id{1}, version{1}
@@ -510,43 +533,23 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject_version) {
 
     // Test unknown versions
     BOOST_REQUIRE_EQUAL(
-      s.delete_subject_version(
-         subject0,
-         pps::schema_version{42},
-         pps::permanent_delete::no,
-         pps::include_deleted::no)
-        .error()
-        .code(),
-      pps::error_code::subject_version_not_found);
-
-    BOOST_REQUIRE_EQUAL(
-      s.delete_subject_version(
-         subject0,
-         pps::schema_version{42},
-         pps::permanent_delete::yes,
-         pps::include_deleted::no)
+      s.delete_subject_version(subject0, pps::schema_version{42})
         .error()
         .code(),
       pps::error_code::subject_version_not_found);
 
     // perm-delete before soft-delete should fail
     BOOST_REQUIRE_EQUAL(
-      s.delete_subject_version(
-         subject0,
-         pps::schema_version{1},
-         pps::permanent_delete::yes,
-         pps::include_deleted::no)
-        .error()
-        .code(),
+      s.delete_subject_version(subject0, pps::schema_version{1}).error().code(),
       pps::error_code::subject_version_not_deleted);
 
     // soft-delete version 1
-    BOOST_REQUIRE(s.delete_subject_version(
-                     subject0,
-                     pps::schema_version{1},
-                     pps::permanent_delete::no,
-                     pps::include_deleted::no)
-                    .value());
+    BOOST_REQUIRE_NO_THROW(s.upsert_subject(
+      dummy_marker,
+      subject0,
+      pps::schema_version{1},
+      pps::schema_id{1},
+      pps::is_deleted::yes));
 
     // expect [v2] for include_deleted::no
     v_res = s.get_versions(subject0, pps::include_deleted::no);
@@ -562,24 +565,9 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject_version) {
       expected_vers.cbegin(),
       expected_vers.cend());
 
-    // soft-delete version 1, second time should fail
-    BOOST_REQUIRE_EQUAL(
-      s.delete_subject_version(
-         subject0,
-         pps::schema_version{1},
-         pps::permanent_delete::no,
-         pps::include_deleted::no)
-        .error()
-        .code(),
-      pps::error_code::subject_version_soft_deleted);
-
     // perm-delete version 1
-    BOOST_REQUIRE(s.delete_subject_version(
-                     subject0,
-                     pps::schema_version{1},
-                     pps::permanent_delete::yes,
-                     pps::include_deleted::no)
-                    .value());
+    BOOST_REQUIRE(
+      s.delete_subject_version(subject0, pps::schema_version{1}).value());
 
     // expect [v2] for include_deleted::no
     v_res = s.get_versions(subject0, pps::include_deleted::no);
@@ -593,12 +581,6 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject_version) {
 
     // perm-delete version 1, second time should fail
     BOOST_REQUIRE_EQUAL(
-      s.delete_subject_version(
-         subject0,
-         pps::schema_version{1},
-         pps::permanent_delete::yes,
-         pps::include_deleted::no)
-        .error()
-        .code(),
+      s.delete_subject_version(subject0, pps::schema_version{1}).error().code(),
       pps::error_code::subject_version_not_found);
 }

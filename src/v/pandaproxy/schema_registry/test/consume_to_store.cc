@@ -47,6 +47,35 @@ constexpr pps::schema_version version1{1};
 constexpr pps::schema_id id0{0};
 constexpr pps::schema_id id1{1};
 
+inline model::record_batch
+make_delete_subject_batch(pps::subject sub, pps::schema_version version) {
+    storage::record_batch_builder rb{
+      model::record_batch_type::raft_data, model::offset{0}};
+
+    rb.add_raw_kv(
+      to_json_iobuf(pps::delete_subject_key{
+        .seq{model::offset{0}}, .node{model::node_id{0}}, .sub{sub}}),
+      to_json_iobuf(pps::delete_subject_value{.sub{sub}, .version{version}}));
+    return std::move(rb).build();
+}
+
+inline model::record_batch make_delete_subject_permanently_batch(
+  pps::subject sub, const std::vector<pps::schema_version>& versions) {
+    storage::record_batch_builder rb{
+      model::record_batch_type::raft_data, model::offset{0}};
+
+    std::for_each(versions.cbegin(), versions.cend(), [&](auto version) {
+        rb.add_raw_kv(
+          to_json_iobuf(pps::schema_key{
+            .seq{model::offset{0}},
+            .node{model::node_id{0}},
+            .sub{sub},
+            .version{version}}),
+          std::nullopt);
+    });
+    return std::move(rb).build();
+}
+
 SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
     pps::sharded_store s;
     s.start(ss::default_smp_service_group()).get();
@@ -115,7 +144,7 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
       s.get_subjects(pps::include_deleted::no).get().size(), 1);
     BOOST_REQUIRE_EQUAL(
       s.get_subjects(pps::include_deleted::yes).get().size(), 1);
-    auto delete_sub = pps::make_delete_subject_batch(subject0, version1);
+    auto delete_sub = make_delete_subject_batch(subject0, version1);
     BOOST_REQUIRE_NO_THROW(c(std::move(delete_sub)).get());
     BOOST_REQUIRE_EQUAL(
       s.get_subjects(pps::include_deleted::no).get().size(), 0);
@@ -125,29 +154,15 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
     // Test permanent delete
     auto v_res = s.get_versions(subject0, pps::include_deleted::yes).get();
     BOOST_REQUIRE_EQUAL(v_res.size(), 1);
-    auto perm_delete_sub = pps::make_delete_subject_permanently_batch(
+    auto perm_delete_sub = make_delete_subject_permanently_batch(
       subject0, v_res);
     BOOST_REQUIRE_NO_THROW(c(std::move(perm_delete_sub)).get());
-    v_res = s.get_versions(subject0, pps::include_deleted::yes).get();
-    BOOST_REQUIRE(v_res.empty());
+    // Perma-deleting all versions also deletes the subject
+    BOOST_REQUIRE_THROW(
+      s.get_versions(subject0, pps::include_deleted::yes).get(),
+      pps::exception);
 
     // Expect subject is deleted
     auto sub_res = s.get_subjects(pps::include_deleted::no).get();
     BOOST_REQUIRE_EQUAL(sub_res.size(), 0);
-
-    // Insert a deleted schema
-    good_schema_1 = pps::as_record_batch(
-      pps::schema_key{sequence, node_id, subject0, version0, magic1},
-      pps::schema_value{
-        subject0,
-        version0,
-        pps::schema_type::avro,
-        id0,
-        string_def0,
-        pps::is_deleted::yes});
-    BOOST_REQUIRE_NO_THROW(c(std::move(good_schema_1)).get());
-
-    // Expect subject not deleted
-    sub_res = s.get_subjects(pps::include_deleted::no).get();
-    BOOST_REQUIRE_EQUAL(sub_res.size(), 1);
 }

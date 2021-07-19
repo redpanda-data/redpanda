@@ -27,10 +27,13 @@ SEASTAR_THREAD_TEST_CASE(test_avro_basic_backwards_store_compat) {
     s.start(ss::default_smp_service_group()).get();
     auto stop_store = ss::defer([&s]() { s.stop().get(); });
 
+    pps::seq_marker dummy_marker;
+
     s.set_compatibility(pps::compatibility_level::backward).get();
     auto sub = pps::subject{"sub"};
     auto avro = pps::schema_type::avro;
     s.upsert(
+       dummy_marker,
        sub,
        pps::schema_definition{schema1},
        avro,
@@ -44,6 +47,7 @@ SEASTAR_THREAD_TEST_CASE(test_avro_basic_backwards_store_compat) {
          sub, pps::schema_version{1}, pps::schema_definition{schema2}, avro)
         .get());
     s.upsert(
+       dummy_marker,
        sub,
        pps::schema_definition{schema2},
        avro,
@@ -60,6 +64,7 @@ SEASTAR_THREAD_TEST_CASE(test_avro_basic_backwards_store_compat) {
 
     // Insert schema with non-defaulted field
     s.upsert(
+       dummy_marker,
        sub,
        pps::schema_definition{schema2},
        avro,

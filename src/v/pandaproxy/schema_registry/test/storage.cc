@@ -93,9 +93,13 @@ constexpr std::string_view delete_subject_key_sv{
   R"({
   "keytype": "DELETE_SUBJECT",
   "subject": "my-kafka-value",
-  "magic": 0
+  "magic": 0,
+  "seq": 42,
+  "node": 2
 })"};
 const pps::delete_subject_key delete_subject_key{
+  .seq{model::offset{42}},
+  .node{model::node_id{2}},
   .sub{pps::subject{"my-kafka-value"}}};
 
 constexpr std::string_view delete_subject_value_sv{

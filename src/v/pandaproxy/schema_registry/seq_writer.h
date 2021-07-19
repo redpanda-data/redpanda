@@ -46,6 +46,15 @@ public:
     ss::future<bool>
     write_config(std::optional<subject> sub, compatibility_level compat);
 
+    ss::future<bool>
+    delete_subject_version(subject sub, schema_version version);
+
+    ss::future<std::vector<schema_version>>
+    delete_subject_impermanent(subject sub);
+
+    ss::future<std::vector<schema_version>> delete_subject_permanent(
+      subject sub, std::optional<schema_version> version);
+
 private:
     ss::smp_submit_to_options _smp_opts;
 
@@ -55,6 +64,9 @@ private:
     model::node_id _node_id;
 
     void advance_offset_inner(model::offset offset);
+
+    ss::future<std::vector<schema_version>> delete_subject_permanent_inner(
+      subject sub, std::optional<schema_version> version);
 
     simple_time_jitter<ss::lowres_clock> _jitter{
       std::chrono::milliseconds{100}};

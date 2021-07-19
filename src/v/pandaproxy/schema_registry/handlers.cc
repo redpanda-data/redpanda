@@ -230,19 +230,11 @@ delete_subject(server::request_t rq, server::reply_t rp) {
         .value_or(permanent_delete::no)};
     rq.req.reset();
 
-    auto versions = co_await rq.service().schema_store().delete_subject(
-      sub, permanent);
-
-    auto batch = permanent
-                   ? make_delete_subject_permanently_batch(sub, versions)
-                   : make_delete_subject_batch(sub, versions.back());
-
-    auto res = co_await rq.service().client().local().produce_record_batch(
-      model::schema_registry_internal_tp, std::move(batch));
-
-    if (res.error_code != kafka::error_code::none) {
-        throw kafka::exception(res.error_code, *res.error_message);
-    }
+    auto versions
+      = permanent
+          ? co_await rq.service().writer().delete_subject_permanent(
+            sub, std::nullopt)
+          : co_await rq.service().writer().delete_subject_impermanent(sub);
 
     auto json_rslt{json::rjson_serialize(versions)};
     rp.rep->write_body("json", json_rslt);
@@ -259,38 +251,38 @@ delete_subject_version(server::request_t rq, server::reply_t rp) {
         .value_or(permanent_delete::no)};
     rq.req.reset();
 
+    // Must see latest data to know whether what we're deleting is the last
+    // version
+    co_await rq.service().writer().read_sync();
+
     auto version = invalid_schema_version;
+    bool final_version = false;
     if (ver == "latest") {
+        // Requests for 'latest' mean the latest which is not marked deleted
+        // (Clearly this will never succeed for permanent=true -- calling
+        //  with latest+permanent is a bad request per API docs)
         auto versions = co_await rq.service().schema_store().get_versions(
-          sub, include_deleted::yes);
+          sub, include_deleted::no);
         if (versions.empty()) {
             throw as_exception(not_found(sub, version));
         }
         version = versions.back();
     } else {
+        auto versions = co_await rq.service().schema_store().get_versions(
+          sub, include_deleted::yes);
+        if (versions.size() == 1) {
+            final_version = true;
+        }
         version = parse::from_chars<schema_version>{}(ver).value();
     }
 
-    auto d_res = co_await rq.service().schema_store().delete_subject_version(
-      sub, version, permanent, include_deleted::no);
-
-    if (d_res) {
-        std::optional<model::record_batch> batch;
-        if (permanent) {
-            batch.emplace(
-              make_delete_subject_version_permanently_batch(sub, version));
-        } else {
-            auto s_res
-              = co_await rq.service().schema_store().get_subject_schema(
-                sub, version, include_deleted::yes);
-            batch.emplace(make_delete_subject_version_batch(std::move(s_res)));
-        }
-        auto res = co_await rq.service().client().local().produce_record_batch(
-          model::schema_registry_internal_tp, std::move(batch).value());
-
-        if (res.error_code != kafka::error_code::none) {
-            throw kafka::exception(res.error_code, *res.error_message);
-        }
+    // A permanent deletion emits tombstones for prior schema_key messages
+    if (permanent) {
+        co_await rq.service().writer().delete_subject_permanent(
+          sub, final_version ? std::nullopt : std::make_optional(version));
+    } else {
+        // Upsert the version with is_deleted=1
+        co_await rq.service().writer().delete_subject_version(sub, version);
     }
 
     auto json_rslt{json::rjson_serialize(version)};
