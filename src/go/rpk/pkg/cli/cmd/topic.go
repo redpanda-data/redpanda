@@ -58,7 +58,7 @@ func NewTopicCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		&brokers,
 	)
 	tlsClosure := common.BuildKafkaTLSConfig(fs, &enableTLS, &certFile, &keyFile, &truststoreFile, configClosure)
-	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism)
+	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism, configClosure)
 	adminClosure := common.CreateAdmin(brokersClosure, configClosure, tlsClosure, kAuthClosure)
 	clientClosure := common.CreateClient(brokersClosure, configClosure, tlsClosure, kAuthClosure)
 	producerClosure := common.CreateProducer(brokersClosure, configClosure, tlsClosure, kAuthClosure)

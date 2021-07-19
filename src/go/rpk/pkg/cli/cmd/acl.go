@@ -74,7 +74,7 @@ func NewACLCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		&adminAPITruststoreFile,
 		configClosure,
 	)
-	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism)
+	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism, configClosure)
 	adminClosure := common.CreateAdmin(brokersClosure, configClosure, kafkaTlsClosure, kAuthClosure)
 
 	command.AddCommand(acl.NewCreateACLsCommand(adminClosure))

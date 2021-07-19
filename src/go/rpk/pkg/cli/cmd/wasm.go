@@ -56,7 +56,7 @@ func NewWasmCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		&brokers,
 	)
 	tlsClosure := common.BuildKafkaTLSConfig(fs, &enableTLS, &certFile, &keyFile, &truststoreFile, configClosure)
-	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism)
+	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism, configClosure)
 	producerClosure := common.CreateProducer(brokersClosure, configClosure, tlsClosure, kAuthClosure)
 	adminClosure := common.CreateAdmin(brokersClosure, configClosure, tlsClosure, kAuthClosure)
 
