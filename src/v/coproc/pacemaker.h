@@ -105,12 +105,12 @@ private:
     struct offset_flush_fiber_state {
         ss::timer<ss::lowres_clock> timer;
         model::timeout_clock::duration duration;
-        storage::snapshot_manager snap;
+        storage::simple_snapshot_manager snap;
 
         static ss::sstring snapshot_filename() {
             return fmt::format(
               "{}-{}",
-              storage::snapshot_manager::default_snapshot_filename,
+              storage::simple_snapshot_manager::default_snapshot_filename,
               ss::this_shard_id());
         }
 

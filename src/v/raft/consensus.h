@@ -553,7 +553,7 @@ private:
     ss::abort_source _as;
     storage::api& _storage;
     std::optional<std::reference_wrapper<recovery_throttle>> _recovery_throttle;
-    storage::snapshot_manager _snapshot_mgr;
+    storage::simple_snapshot_manager _snapshot_mgr;
     std::optional<storage::snapshot_writer> _snapshot_writer;
     model::offset _last_snapshot_index;
     model::term_id _last_snapshot_term;

@@ -18,7 +18,8 @@ class kvstore;
 class log_manager;
 class ntp_config;
 class segment;
-class snapshot_manager;
+class simple_snapshot_manager;
+class multi_snapshot_manager;
 class readers_cache;
 class compaction_controller;
 

@@ -29,7 +29,7 @@ public:
       , _api(make_api())
       , _snap(
           _base_dir,
-          storage::snapshot_manager::default_snapshot_filename,
+          storage::simple_snapshot_manager::default_snapshot_filename,
           ss::default_priority_class()) {
         _api.start().get();
     }
@@ -68,7 +68,7 @@ public:
     }
 
     storage::log_manager& log_mgr() { return _api.log_mgr(); }
-    storage::snapshot_manager& snapshot_mgr() { return _snap; }
+    storage::simple_snapshot_manager& snapshot_mgr() { return _snap; }
 
 private:
     static std::filesystem::path make_base_dir() {
@@ -90,7 +90,7 @@ private:
 
     std::filesystem::path _base_dir;
     storage::api _api;
-    storage::snapshot_manager _snap;
+    storage::simple_snapshot_manager _snap;
 };
 
 namespace coproc {

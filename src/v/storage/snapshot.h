@@ -88,11 +88,11 @@ class snapshot_writer;
  *
  *       mgr.remove_partial_snapshots();
  */
-class snapshot_manager {
+class simple_snapshot_manager {
 public:
     static constexpr const char* default_snapshot_filename = "snapshot";
 
-    snapshot_manager(
+    simple_snapshot_manager(
       std::filesystem::path dir,
       ss::sstring filename,
       ss::io_priority_class io_prio) noexcept

@@ -24,7 +24,7 @@
 
 namespace storage {
 
-ss::future<std::optional<snapshot_reader>> snapshot_manager::open_snapshot() {
+ss::future<std::optional<snapshot_reader>> simple_snapshot_manager::open_snapshot() {
     auto path = _dir / _filename.c_str();
     return ss::file_exists(path.string()).then([this, path](bool exists) {
         if (!exists) {
@@ -44,7 +44,7 @@ ss::future<std::optional<snapshot_reader>> snapshot_manager::open_snapshot() {
     });
 }
 
-ss::future<snapshot_writer> snapshot_manager::start_snapshot() {
+ss::future<snapshot_writer> simple_snapshot_manager::start_snapshot() {
     // the random suffix is added because the lowres clock doesn't produce
     // unique file names when tests run fast.
     auto filename = fmt::format(
@@ -69,12 +69,12 @@ ss::future<snapshot_writer> snapshot_manager::start_snapshot() {
       });
 }
 
-ss::future<> snapshot_manager::finish_snapshot(snapshot_writer& writer) {
+ss::future<> simple_snapshot_manager::finish_snapshot(snapshot_writer& writer) {
     return ss::rename_file(writer.path().string(), snapshot_path().string())
       .then([this] { return ss::sync_directory(_dir.string()); });
 }
 
-ss::future<> snapshot_manager::remove_partial_snapshots() {
+ss::future<> simple_snapshot_manager::remove_partial_snapshots() {
     std::regex re(
       fmt::format(R"(^{}\.partial\.(\d+)\.([a-zA-Z0-9]{{4}})$)", _filename));
     return directory_walker::walk(
@@ -91,7 +91,7 @@ ss::future<> snapshot_manager::remove_partial_snapshots() {
       });
 }
 
-ss::future<> snapshot_manager::remove_snapshot() {
+ss::future<> simple_snapshot_manager::remove_snapshot() {
     if (co_await ss::file_exists(snapshot_path().string())) {
         co_await ss::remove_file(snapshot_path().string());
     }

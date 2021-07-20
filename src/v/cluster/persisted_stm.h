@@ -123,7 +123,7 @@ protected:
     model::term_id _insync_term;
     model::offset _insync_offset;
     raft::consensus* _c;
-    storage::snapshot_manager _snapshot_mgr;
+    storage::simple_snapshot_manager _snapshot_mgr;
     ss::logger& _log;
     model::violation_recovery_policy _snapshot_recovery_policy;
 };

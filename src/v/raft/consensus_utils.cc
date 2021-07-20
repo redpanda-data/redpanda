@@ -211,7 +211,7 @@ ss::circular_buffer<model::record_batch> make_ghost_batches_in_gaps(
 }
 
 ss::future<> persist_snapshot(
-  storage::snapshot_manager& snapshot_manager,
+  storage::simple_snapshot_manager& snapshot_manager,
   snapshot_metadata md,
   iobuf&& data) {
     return snapshot_manager.start_snapshot().then(
