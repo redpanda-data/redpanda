@@ -329,7 +329,22 @@ client::create_consumer(const group_id& group_id, member_id name) {
     auto build_request = [group_id]() {
         return find_coordinator_request(group_id);
     };
-    return dispatch(build_request)
+    return gated_retry_with_mitigation(
+             [this, group_id, name, func{std::move(build_request)}]() {
+                 return _brokers.any()
+                   .then([func{std::move(func)}](shared_broker_t broker) {
+                       return broker->dispatch(func());
+                   })
+                   .then([group_id, name](find_coordinator_response res) {
+                       if (res.data.error_code != error_code::none) {
+                           return ss::make_exception_future<
+                             find_coordinator_response>(consumer_error(
+                             group_id, name, res.data.error_code));
+                       };
+                       return ss::make_ready_future<find_coordinator_response>(
+                         std::move(res));
+                   });
+             })
       .then([this](find_coordinator_response res) {
           return make_broker(
             res.data.node_id,
