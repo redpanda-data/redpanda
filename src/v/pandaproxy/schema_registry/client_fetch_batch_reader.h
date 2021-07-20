@@ -25,4 +25,14 @@ model::record_batch_reader make_client_fetch_batch_reader(
   model::offset first,
   model::offset last);
 
+struct consumer_batch_reader {
+    model::record_batch_reader rdr;
+    ss::future<model::offset> caught_up;
+};
+
+///\brief Adapt a kafka::client consumer to fetch from a tp as a
+/// kafka::record_batch_reader.
+ss::future<consumer_batch_reader> make_client_consumer_batch_reader(
+  kafka::client::client& client, model::topic_partition tp);
+
 } // namespace pandaproxy::schema_registry
