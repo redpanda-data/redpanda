@@ -49,7 +49,7 @@ ss::future<shared_broker_t> make_broker(
               return ss::make_exception_future<shared_broker_t>(
                 broker_error(node_id, error_code::network_exception));
           }
-          vlog(kclog.warn, "std::system_error: ", ex.what());
+          vlog(kclog.warn, "std::system_error: {}", ex.what());
           return ss::make_exception_future<shared_broker_t>(ex);
       })
       .then([&config](shared_broker_t broker) -> ss::future<shared_broker_t> {
