@@ -153,6 +153,15 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
                 return _wait_or_start_update_metadata();
             });
         }
+    } catch (const consumer_error& ex) {
+        switch (ex.error) {
+        case error_code::coordinator_not_available:
+            vlog(kclog.debug, "consumer_error: {}", ex);
+            return _wait_or_start_update_metadata();
+        default:
+            vlog(kclog.warn, "consumer_error: {}", ex);
+            return ss::make_exception_future(ex);
+        }
     } catch (const partition_error& ex) {
         switch (ex.error) {
         case error_code::unknown_topic_or_partition:
