@@ -18,6 +18,8 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/ragel.hh>
 
+#include <fmt/format.h>
+
 #include <limits>
 #include <variant>
 
@@ -167,7 +169,13 @@ retry_chain_node::~retry_chain_node() {
         parent->rem_child();
     }
 }
-ss::sstring retry_chain_node::operator()() const { return format(); }
+ss::sstring retry_chain_node::operator()() const {
+    fmt::memory_buffer buf;
+    buf.push_back('[');
+    format(buf);
+    buf.push_back(']');
+    return ss::sstring(buf.data(), buf.size());
+}
 
 retry_permit retry_chain_node::retry(retry_strategy st) {
     auto as = find_abort_source();
@@ -219,7 +227,7 @@ uint16_t retry_chain_node::get_len() const {
     return len;
 }
 
-ss::sstring retry_chain_node::format() const {
+void retry_chain_node::format(fmt::memory_buffer& str) const {
     std::array<uint16_t, max_retry_chain_depth> ids{_id};
     int ids_len = 1;
     auto next = get_parent();
@@ -228,13 +236,12 @@ ss::sstring retry_chain_node::format() const {
         ids_len++;
         next = next->get_parent();
     }
-    fmt::memory_buffer str;
     int ix = 0;
     for (auto id = ids.rbegin() + (max_retry_chain_depth - ids_len);
          id != ids.rend();
          ix++, id++) {
         if (ix == 0) {
-            fmt::format_to(str, "[fiber{}", *id);
+            fmt::format_to(str, "fiber{}", *id);
         } else {
             fmt::format_to(str, "~{}", *id);
         }
@@ -246,12 +253,8 @@ ss::sstring retry_chain_node::format() const {
             time_budget = _deadline - now;
         }
         // [fiber42~0~4|2|100ms]
-        fmt::format_to(str, "|{}|{}ms]", _retry, time_budget.count());
-    } else {
-        // [fiber42...]
-        fmt::format_to(str, "]");
+        fmt::format_to(str, "|{}|{}ms", _retry, time_budget.count());
     }
-    return ss::sstring(str.data(), str.size());
 }
 
 uint16_t retry_chain_node::add_child() {

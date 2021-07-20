@@ -19,6 +19,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/loop.hh>
 
 namespace cloud_storage {
 
@@ -41,7 +42,13 @@ public:
     /// On success it should return content_length. On failure it should
     /// allow the exception from the input_stream to propagate.
     using try_consume_stream
-      = std::function<ss::future<uint64_t>(ss::input_stream<char>)>;
+      = std::function<ss::future<uint64_t>(uint64_t, ss::input_stream<char>)>;
+
+    /// Functor that should be provided by user when list_objects api is called.
+    /// It receives every key that matches the query as well as it's modifiation
+    /// time, size in bytes, and etag.
+    using list_objects_consumer = std::function<ss::stop_iteration(
+      ss::sstring, std::chrono::system_clock::time_point, size_t, ss::sstring)>;
 
     /// \brief Initialize 'remote'
     ///
@@ -65,10 +72,12 @@ public:
     /// Method downloads the manifest and handles backpressure and
     /// errors. It retries multiple times until timeout excedes.
     /// \param bucket is a bucket name
+    /// \param key is an object key of the manifest
     /// \param manifest is a manifest to download
     /// \return future that returns success code
     ss::future<download_result> download_manifest(
       const s3::bucket_name& bucket,
+      const remote_manifest_path& key,
       base_manifest& manifest,
       retry_chain_node& parent);
 
@@ -109,8 +118,15 @@ public:
     ss::future<download_result> download_segment(
       const s3::bucket_name& bucket,
       const segment_name& name,
-      manifest& manifest,
+      const manifest& manifest,
       const try_consume_stream& cons_str,
+      retry_chain_node& parent);
+
+    ss::future<download_result> list_objects(
+      const list_objects_consumer& cons,
+      const s3::bucket_name& bucktet,
+      const std::optional<s3::object_key>& prefix,
+      const std::optional<size_t>& max_keys,
       retry_chain_node& parent);
 
 private:

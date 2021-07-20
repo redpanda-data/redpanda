@@ -314,6 +314,8 @@ static client::list_bucket_result iobuf_to_list_bucket_result(iobuf&& buf) {
                     } else if (item_tag == "LastModified") {
                         item.last_modified = parse_timestamp(
                           item_value.get_value<ss::sstring>());
+                    } else if (item_tag == "ETag") {
+                        item.etag = item_value.get_value<ss::sstring>();
                     }
                 }
                 result.contents.push_back(std::move(item));

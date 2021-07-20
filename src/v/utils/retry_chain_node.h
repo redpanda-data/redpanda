@@ -134,11 +134,16 @@
 
 #include "random/fast_prng.h"
 #include "seastarx.h"
+#include "ssx/sformat.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/weak_ptr.hh>
+#include <seastar/util/log.hh>
+
+#include <fmt/format.h>
+#include <fmt/ostream.h>
 
 #include <variant>
 
@@ -245,6 +250,19 @@ public:
     /// (0 - no retries), and 100ms is a remaining time budget.
     ss::sstring operator()() const;
 
+    /// Generate formattend log prefix and add custom string into it:
+    /// Example: [fiber42~3~1|2|100ms ns/topic/42]
+    template<typename... Args>
+    ss::sstring operator()(const char* format_str, Args&&... args) const {
+        fmt::memory_buffer mbuf;
+        mbuf.push_back('[');
+        format(mbuf);
+        mbuf.push_back(' ');
+        fmt::format_to(mbuf, format_str, std::forward<Args>(args)...);
+        mbuf.push_back(']');
+        return ss::sstring(mbuf.data(), mbuf.size());
+    }
+
     /// \brief Request retry
     ///
     /// The retry can be allowed or disallowed. The caller can call this
@@ -278,7 +296,7 @@ public:
     ss::lowres_clock::duration get_timeout();
 
 private:
-    ss::sstring format() const;
+    void format(fmt::memory_buffer& str) const;
 
     uint16_t add_child();
 
@@ -315,4 +333,57 @@ private:
     ss::lowres_clock::time_point _deadline;
     /// optional parent node or (if root) abort source for all fibers
     std::variant<std::monostate, retry_chain_node*, ss::abort_source*> _parent;
+};
+
+/// Logger that adds context from retry_chain_node to the output
+class retry_chain_logger final {
+public:
+    /// Make logger that adds retry_chain_node id to every message
+    retry_chain_logger(ss::logger& log, retry_chain_node& node)
+      : _log(log)
+      , _node(node) {}
+    /// Make logger that adds retry_chain_node id and custom string
+    /// to every message
+    retry_chain_logger(
+      ss::logger& log, retry_chain_node& node, ss::sstring context)
+      : _log(log)
+      , _node(node)
+      , _ctx(std::move(context)) {}
+    template<typename... Args>
+    void log(ss::log_level lvl, const char* format, Args&&... args) {
+        if (_log.is_enabled(lvl)) {
+            auto msg = ssx::sformat(format, std::forward<Args>(args)...);
+            if (_ctx) {
+                _log.log(
+                  lvl, "{} - {}", _node("{}", _ctx.value()), std::move(msg));
+            } else {
+                _log.log(lvl, "{} - {}", _node(), std::move(msg));
+            }
+        }
+    }
+    template<typename... Args>
+    void error(const char* format, Args&&... args) {
+        log(ss::log_level::error, format, std::forward<Args>(args)...);
+    }
+    template<typename... Args>
+    void warn(const char* format, Args&&... args) {
+        log(ss::log_level::warn, format, std::forward<Args>(args)...);
+    }
+    template<typename... Args>
+    void info(const char* format, Args&&... args) {
+        log(ss::log_level::info, format, std::forward<Args>(args)...);
+    }
+    template<typename... Args>
+    void debug(const char* format, Args&&... args) {
+        log(ss::log_level::debug, format, std::forward<Args>(args)...);
+    }
+    template<typename... Args>
+    void trace(const char* format, Args&&... args) {
+        log(ss::log_level::trace, format, std::forward<Args>(args)...);
+    }
+
+private:
+    ss::logger& _log;
+    const retry_chain_node& _node;
+    std::optional<ss::sstring> _ctx;
 };

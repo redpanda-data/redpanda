@@ -182,6 +182,7 @@ public:
         ss::sstring key;
         std::chrono::system_clock::time_point last_modified;
         size_t size_bytes;
+        ss::sstring etag;
     };
     struct list_bucket_result {
         bool is_truncated;

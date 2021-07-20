@@ -17,6 +17,7 @@
 #include "utils/intrusive_list_helpers.h"
 #include "utils/string_switch.h"
 
+#include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/timed_out_error.hh>
@@ -158,21 +159,22 @@ ss::future<> remote::stop() {
 
 ss::future<download_result> remote::download_manifest(
   const s3::bucket_name& bucket,
+  const remote_manifest_path& key,
   base_manifest& manifest,
   retry_chain_node& parent) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
-    auto key = manifest.get_manifest_path();
-    auto path = s3::object_key(key().string());
+    retry_chain_logger ctxlog(cst_log, fib);
+    auto path = s3::object_key(key().native());
     auto [client, deleter] = co_await _pool.acquire();
     auto retry_permit = fib.retry();
-    vlog(cst_log.debug, "{} Download manifest {}", fib(), key());
+    vlog(ctxlog.debug, "Download manifest {}", key());
     while (!_gate.is_closed() && retry_permit.is_allowed) {
         std::exception_ptr eptr = nullptr;
         try {
             auto resp = co_await client->get_object(
               bucket, path, fib.get_timeout());
-            vlog(cst_log.debug, "{} Receive OK response from {}", fib(), path);
+            vlog(ctxlog.debug, "Receive OK response from {}", path);
             co_await manifest.update(resp->as_input_stream());
             switch (manifest.get_manifest_type()) {
             case manifest_type::partition:
@@ -200,9 +202,8 @@ ss::future<download_result> remote::download_manifest(
             [[fallthrough]];
         case error_outcome::retry:
             vlog(
-              cst_log.debug,
-              "{} Downloading manifest from {}, {}ms backoff required",
-              fib(),
+              ctxlog.debug,
+              "Downloading manifest from {}, {}ms backoff required",
               bucket,
               retry_permit.delay.count());
             _probe.manifest_download_backoff();
@@ -216,10 +217,9 @@ ss::future<download_result> remote::download_manifest(
         }
     }
     vlog(
-      cst_log.warn,
-      "{} Downloading manifest from {}, backoff quota exceded, manifest at {} "
-      "not available",
-      fib(),
+      ctxlog.warn,
+      "Downloading manifest from {}, backoff quota exceded, manifest at {} not "
+      "available",
       bucket,
       path);
     _probe.failed_manifest_download();
@@ -232,28 +232,20 @@ ss::future<upload_result> remote::upload_manifest(
   retry_chain_node& parent) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
+    retry_chain_logger ctxlog(cst_log, fib);
     auto key = manifest.get_manifest_path();
     auto path = s3::object_key(key().string());
     std::vector<s3::object_tag> tags = {{"rp-type", "partition-manifest"}};
     auto [client, deleter] = co_await _pool.acquire();
     auto permit = fib.retry();
-    vlog(
-      cst_log.debug,
-      "{} Uploading manifest {} to the {}",
-      fib(),
-      path,
-      bucket());
+    vlog(ctxlog.debug, "Uploading manifest {} to the {}", path, bucket());
     while (!_gate.is_closed() && permit.is_allowed) {
         std::exception_ptr eptr = nullptr;
         try {
             auto [is, size] = manifest.serialize();
             co_await client->put_object(
               bucket, path, size, std::move(is), tags, fib.get_timeout());
-            vlog(
-              cst_log.debug,
-              "{} Successfuly uploaded manifest to {}",
-              fib(),
-              path);
+            vlog(ctxlog.debug, "Successfuly uploaded manifest to {}", path);
             switch (manifest.get_manifest_type()) {
             case manifest_type::partition:
                 _probe.partition_manifest_upload();
@@ -273,9 +265,8 @@ ss::future<upload_result> remote::upload_manifest(
             [[fallthrough]];
         case error_outcome::retry:
             vlog(
-              cst_log.debug,
-              "{} Uploading manifest {} to {}, {}ms backoff required",
-              fib(),
+              ctxlog.debug,
+              "Uploading manifest {} to {}, {}ms backoff required",
               path,
               bucket,
               permit.delay.count());
@@ -290,10 +281,9 @@ ss::future<upload_result> remote::upload_manifest(
         }
     }
     vlog(
-      cst_log.warn,
-      "{} Uploading manifest {} to {}, backoff quota exceded, manifest not "
+      ctxlog.warn,
+      "Uploading manifest {} to {}, backoff quota exceded, manifest not "
       "uploaded",
-      fib(),
       path,
       bucket);
     _probe.failed_manifest_upload();
@@ -309,13 +299,13 @@ ss::future<upload_result> remote::upload_segment(
   retry_chain_node& parent) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
+    retry_chain_logger ctxlog(cst_log, fib);
     auto s3path = manifest.get_remote_segment_path(exposed_name);
     std::vector<s3::object_tag> tags = {{"rp-type", "segment"}};
     auto permit = fib.retry();
     vlog(
-      cst_log.debug,
-      "{} Uploading segment for {}, exposed name {}, length {}",
-      fib(),
+      ctxlog.debug,
+      "Uploading segment for {}, exposed name {}, length {}",
       manifest.get_ntp(),
       exposed_name,
       content_length);
@@ -324,9 +314,8 @@ ss::future<upload_result> remote::upload_segment(
         auto stream = reset_str();
         auto path = s3::object_key(s3path().string());
         vlog(
-          cst_log.debug,
-          "{} Uploading segment for {}, path {}",
-          fib(),
+          ctxlog.debug,
+          "Uploading segment for {}, path {}",
           manifest.get_ntp(),
           s3path);
         std::exception_ptr eptr = nullptr;
@@ -351,9 +340,8 @@ ss::future<upload_result> remote::upload_segment(
             [[fallthrough]];
         case error_outcome::retry:
             vlog(
-              cst_log.debug,
-              "{} Uploading segment {} to {}, {}ms backoff required",
-              fib(),
+              ctxlog.debug,
+              "Uploading segment {} to {}, {}ms backoff required",
               path,
               bucket,
               permit.delay.count());
@@ -368,10 +356,8 @@ ss::future<upload_result> remote::upload_segment(
         }
     }
     vlog(
-      cst_log.warn,
-      "{} Uploading segment {} to {}, backoff quota exceded, segment not "
-      "uploaded",
-      fib(),
+      ctxlog.warn,
+      "Uploading segment {} to {}, backoff quota exceded, segment not uploaded",
       s3path,
       bucket);
     _probe.failed_upload(content_length);
@@ -381,24 +367,27 @@ ss::future<upload_result> remote::upload_segment(
 ss::future<download_result> remote::download_segment(
   const s3::bucket_name& bucket,
   const segment_name& name,
-  manifest& manifest,
+  const manifest& manifest,
   const try_consume_stream& cons_str,
   retry_chain_node& parent) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
+    retry_chain_logger ctxlog(cst_log, fib);
     auto s3path = manifest.get_remote_segment_path(name);
     auto path = s3::object_key(s3path().string());
     auto [client, deleter] = co_await _pool.acquire();
     auto permit = fib.retry();
-    vlog(cst_log.debug, "{} Download segment {}", fib(), path);
+    vlog(ctxlog.debug, "Download segment {}", path);
     while (!_gate.is_closed() && permit.is_allowed) {
         std::exception_ptr eptr = nullptr;
         try {
             auto resp = co_await client->get_object(
               bucket, path, fib.get_timeout());
-            vlog(cst_log.debug, "{} Receive OK response from {}", fib(), path);
+            vlog(ctxlog.debug, "Receive OK response from {}", path);
+            auto length = boost::lexical_cast<uint64_t>(resp->get_headers().at(
+              boost::beast::http::field::content_length));
             uint64_t content_length = co_await cons_str(
-              resp->as_input_stream());
+              length, resp->as_input_stream());
             _probe.successful_download(content_length);
             co_return download_result::success;
         } catch (...) {
@@ -411,9 +400,8 @@ ss::future<download_result> remote::download_segment(
             [[fallthrough]];
         case error_outcome::retry:
             vlog(
-              cst_log.debug,
-              "{} Downloading segment from {}, {}ms backoff required",
-              fib(),
+              ctxlog.debug,
+              "Downloading segment from {}, {}ms backoff required",
               bucket,
               permit.delay.count());
             _probe.download_backoff();
@@ -427,12 +415,85 @@ ss::future<download_result> remote::download_segment(
         }
     }
     vlog(
-      cst_log.warn,
-      "{} Downloading segment from {}, backoff quota exceded, segment at {} "
+      ctxlog.warn,
+      "Downloading segment from {}, backoff quota exceded, segment at {} "
       "not available",
-      fib(),
       bucket,
       path);
+    _probe.failed_download();
+    co_return download_result::timedout;
+}
+
+static const s3::object_key empty_object_key = s3::object_key();
+
+ss::future<download_result> remote::list_objects(
+  const list_objects_consumer& cons,
+  const s3::bucket_name& bucket,
+  const std::optional<s3::object_key>& prefix,
+  const std::optional<size_t>& max_keys,
+  retry_chain_node& parent) {
+    gate_guard guard{_gate};
+    retry_chain_node fib(&parent);
+    retry_chain_logger ctxlog(cst_log, fib);
+    auto permit = fib.retry();
+    auto [client, deleter] = co_await _pool.acquire();
+    std::optional<s3::object_key> last_key;
+    s3::client::list_bucket_result res{
+      .is_truncated = true, .prefix = {}, .contents = {}};
+    while (res.is_truncated) {
+        std::exception_ptr eptr;
+        try {
+            auto res = co_await client->list_objects_v2(
+              bucket, prefix, last_key, max_keys, fib.get_timeout());
+            vlog(
+              ctxlog.debug,
+              "ListObjectV2 response, is_truncated {}, prefix {}, num-keys {}",
+              res.is_truncated,
+              res.prefix,
+              res.contents.size());
+            ss::stop_iteration cons_res = ss::stop_iteration::no;
+            for (auto&& it : res.contents) {
+                vlog(ctxlog.debug, "Response object key {}", it.key);
+                cons_res = cons(
+                  std::move(it.key),
+                  it.last_modified,
+                  it.size_bytes,
+                  std::move(it.etag));
+                if (cons_res == ss::stop_iteration::yes) {
+                    break;
+                }
+            }
+            if (!res.contents.empty()) {
+                last_key = s3::object_key(
+                  std::filesystem::path(res.contents.back().key));
+            }
+            if (!res.is_truncated || cons_res == ss::stop_iteration::yes) {
+                co_return download_result::success;
+            }
+        } catch (...) {
+            eptr = std::current_exception();
+        }
+        auto outcome = categorize_error(eptr, fib, bucket, empty_object_key);
+        switch (outcome) {
+        case error_outcome::retry_slowdown:
+            co_await client->shutdown();
+            [[fallthrough]];
+        case error_outcome::retry:
+            vlog(
+              ctxlog.debug,
+              "Listing objects in {}, {}ms backoff required",
+              bucket,
+              permit.delay.count());
+            _probe.download_backoff();
+            co_await ss::sleep_abortable(permit.delay, _as);
+            permit = fib.retry();
+            break;
+        case error_outcome::fail:
+        case error_outcome::notfound:
+            co_return download_result::failed;
+        }
+    }
+    vlog(ctxlog.warn, "ListObjectsV2 backoff quota exceded");
     _probe.failed_download();
     co_return download_result::timedout;
 }
