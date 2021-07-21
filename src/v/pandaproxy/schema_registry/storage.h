@@ -929,15 +929,16 @@ struct consume_to_store {
       : _store{s} {}
 
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
-        if (!b.header().attrs.is_control()) {
-            co_await model::for_each_record(b, [this](model::record& rec) {
-                return (*this)(std::move(rec));
-            });
-        }
+        auto base_offset = b.base_offset();
+        co_await model::for_each_record(
+          b, [this, base_offset](model::record& rec) {
+              auto offset = base_offset + model::offset(rec.offset_delta());
+              return (*this)(std::move(rec), offset);
+          });
         co_return ss::stop_iteration::no;
     }
 
-    ss::future<> operator()(model::record record) {
+    ss::future<> operator()(model::record record, model::offset offset) {
         auto key = record.release_key();
         auto key_type_str = from_json_iobuf<topic_key_type_handler<>>(
           key.share(0, key.size_bytes()));
