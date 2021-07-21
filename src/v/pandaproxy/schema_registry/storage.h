@@ -13,6 +13,7 @@
 
 #include "bytes/iobuf_parser.h"
 #include "json/json.h"
+#include "model/metadata.h"
 #include "model/record_utils.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/rjson_util.h"
@@ -119,17 +120,21 @@ struct schema_key {
     subject sub;
     schema_version version;
     topic_key_magic magic{1};
+    std::optional<model::offset> seq;
+    std::optional<model::node_id> node_id;
 
     friend bool operator==(const schema_key&, const schema_key&) = default;
 
     friend std::ostream& operator<<(std::ostream& os, const schema_key& v) {
         fmt::print(
           os,
-          "keytype: {}, subject: {}, version: {}, magic: {}",
+          "keytype: {}, subject: {}, version: {}, magic: {}, seq: {}, node: {}",
           to_string_view(v.keytype),
           v.sub,
           v.version,
-          v.magic);
+          v.magic,
+          v.seq.value_or(model::offset{-1}),
+          v.node_id.value_or(model::node_id{-1}));
         return os;
     }
 };
@@ -146,6 +151,14 @@ inline void rjson_serialize(
     ::json::rjson_serialize(w, key.version);
     w.Key("magic");
     ::json::rjson_serialize(w, key.magic);
+    if (key.seq) {
+        w.Key("seq");
+        ::json::rjson_serialize(w, key.seq.value());
+    }
+    if (key.node_id) {
+        w.Key("node");
+        ::json::rjson_serialize(w, key.node_id.value());
+    }
     w.EndObject();
 }
 
@@ -158,6 +171,8 @@ class schema_key_handler : public json::base_handler<Encoding> {
         subject,
         version,
         magic,
+        seq,
+        node,
     };
     state _state = state::empty;
 
@@ -178,6 +193,8 @@ public:
                                      .match("subject", state::subject)
                                      .match("version", state::version)
                                      .match("magic", state::magic)
+                                     .match("seq", state::seq)
+                                     .match("node", state::node)
                                      .default_match(std::nullopt)};
             if (s.has_value()) {
                 _state = *s;
@@ -189,6 +206,8 @@ public:
         case state::subject:
         case state::version:
         case state::magic:
+        case state::seq:
+        case state::node:
             return false;
         }
         return false;
@@ -203,6 +222,16 @@ public:
         }
         case state::magic: {
             result.magic = topic_key_magic{i};
+            _state = state::object;
+            return true;
+        }
+        case state::seq: {
+            result.seq = model::offset{i};
+            _state = state::object;
+            return true;
+        }
+        case state::node: {
+            result.node_id = model::node_id{i};
             _state = state::object;
             return true;
         }
@@ -232,6 +261,8 @@ public:
         case state::object:
         case state::version:
         case state::magic:
+        case state::seq:
+        case state::node:
             return false;
         }
         return false;
@@ -242,7 +273,8 @@ public:
     }
 
     bool EndObject(rapidjson::SizeType) {
-        return std::exchange(_state, state::empty) == state::object;
+        return std::exchange(_state, state::empty) == state::object
+               && result.seq.has_value() == result.node_id.has_value();
     }
 };
 
