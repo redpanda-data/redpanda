@@ -46,6 +46,14 @@ ss::future<> sharded_store::start(ss::smp_service_group sg) {
 
 ss::future<> sharded_store::stop() { return _store.stop(); }
 
+ss::future<sharded_store::insert_result> sharded_store::would_insert(
+  const subject& sub, const schema_definition& def, schema_type type) {
+    auto id = (co_await would_insert_schema(def, type)).id;
+    auto [version, would_insert] = co_await _store.invoke_on(
+      shard_for(sub), &store::would_insert_subject, sub, id);
+    co_return insert_result{version, id, would_insert};
+}
+
 ss::future<sharded_store::insert_result>
 sharded_store::insert(subject sub, schema_definition def, schema_type type) {
     auto id = (co_await insert_schema(std::move(def), type)).id;
@@ -174,7 +182,8 @@ ss::future<bool> sharded_store::clear_compatibility(const subject& sub) {
 }
 
 ss::future<sharded_store::insert_schema_result>
-sharded_store::insert_schema(schema_definition def, schema_type type) {
+sharded_store::would_insert_schema(
+  const schema_definition& def, schema_type type) {
     auto map = [&def, type](store& s) { return s.get_schema_id(def, type); };
     auto reduce = [](
                     std::optional<schema_id> acc,
@@ -186,8 +195,14 @@ sharded_store::insert_schema(schema_definition def, schema_type type) {
     }
 
     auto new_s_id = co_await allocate_schema_id();
-    auto inserted = co_await upsert_schema(new_s_id, std::move(def), type);
-    co_return insert_schema_result{new_s_id, inserted};
+    co_return insert_schema_result{new_s_id, true};
+}
+
+ss::future<sharded_store::insert_schema_result>
+sharded_store::insert_schema(schema_definition def, schema_type type) {
+    auto res = co_await would_insert_schema(def, type);
+    auto inserted = co_await upsert_schema(res.id, std::move(def), type);
+    co_return insert_schema_result{res.id, inserted};
 }
 
 ss::future<bool> sharded_store::upsert_schema(

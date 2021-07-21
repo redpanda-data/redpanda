@@ -31,6 +31,10 @@ public:
         schema_id id;
         bool inserted;
     };
+    ///\brief Return what would happen if insert was called.
+    ss::future<insert_result> would_insert(
+      const subject& sub, const schema_definition& def, schema_type type);
+    ///\brief Insert a schema for the subject.
     ss::future<insert_result>
     insert(subject sub, schema_definition def, schema_type type);
 
@@ -99,6 +103,8 @@ private:
         schema_id id;
         bool inserted;
     };
+    ss::future<insert_schema_result>
+    would_insert_schema(const schema_definition& def, schema_type type);
     ss::future<insert_schema_result>
     insert_schema(schema_definition def, schema_type type);
 

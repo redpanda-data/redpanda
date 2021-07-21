@@ -280,23 +280,34 @@ public:
         schema_version version;
         bool inserted;
     };
-    insert_subject_result insert_subject(subject sub, schema_id id) {
-        auto& subject_entry = _subjects[std::move(sub)];
-        subject_entry.deleted = is_deleted::no;
+    insert_subject_result
+    would_insert_subject(const subject& sub, schema_id id) const {
+        auto sub_it = _subjects.find(sub);
+        if (sub_it == _subjects.end()) {
+            return {schema_version{1}, true};
+        }
+        auto& subject_entry = sub_it->second;
         auto& versions = subject_entry.versions;
         const auto v_it = std::find_if(
           versions.begin(), versions.end(), [id](auto v) {
               return v.id == id;
           });
         if (v_it != versions.cend()) {
-            auto inserted = std::exchange(v_it->deleted, is_deleted::no);
+            auto inserted = v_it->deleted;
             return {v_it->version, bool(inserted)};
         }
 
         const auto version = versions.empty() ? schema_version{1}
                                               : versions.back().version + 1;
-        versions.emplace_back(version, id, is_deleted::no);
         return {version, true};
+    }
+
+    insert_subject_result insert_subject(subject sub, schema_id id) {
+        auto res = would_insert_subject(sub, id);
+        if (res.inserted) {
+            upsert_subject(std::move(sub), res.version, id, is_deleted::no);
+        }
+        return res;
     }
 
     bool upsert_subject(
