@@ -80,6 +80,6 @@ func NewACLCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	command.AddCommand(acl.NewCreateACLsCommand(adminClosure))
 	command.AddCommand(acl.NewListACLsCommand(adminClosure))
 	command.AddCommand(acl.NewDeleteACLsCommand(adminClosure))
-	command.AddCommand(acl.NewUserCommand(adminTlsClosure))
+	command.AddCommand(acl.NewUserCommand(configClosure, adminTlsClosure))
 	return command
 }

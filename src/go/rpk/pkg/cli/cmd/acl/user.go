@@ -11,12 +11,13 @@ package acl
 
 import (
 	"crypto/tls"
-	"errors"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/ui"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 )
 
 const (
@@ -26,7 +27,9 @@ const (
 	deleteUsernameFlag = "delete-username"
 )
 
-func NewUserCommand(tls func() (*tls.Config, error)) *cobra.Command {
+func NewUserCommand(
+	conf func() (*config.Config, error), tls func() (*tls.Config, error),
+) *cobra.Command {
 	var apiUrls []string
 
 	command := &cobra.Command{
@@ -42,7 +45,7 @@ func NewUserCommand(tls func() (*tls.Config, error)) *cobra.Command {
 			" You must specify one for each node.",
 	)
 
-	adminApi := buildAdminAPI(&apiUrls, tls)
+	adminApi := buildAdminAPI(conf, &apiUrls, tls)
 
 	command.AddCommand(NewCreateUserCommand(adminApi))
 	command.AddCommand(NewDeleteUserCommand(adminApi))
@@ -177,17 +180,17 @@ func printUsernames(usernames []string) {
 }
 
 func buildAdminAPI(
-	apiUrls *[]string, tls func() (*tls.Config, error),
+	conf func() (*config.Config, error),
+	apiUrls *[]string,
+	tls func() (*tls.Config, error),
 ) func() (admin.AdminAPI, error) {
 	return func() (admin.AdminAPI, error) {
-		if len(*apiUrls) == 0 {
-			return nil, errors.New("--api-urls is required")
-		}
+		addrs := common.DeduceAdminApiAddrs(conf, apiUrls)
 		tlsConfig, err := tls()
 		if err != nil {
 			return nil, err
 		}
 
-		return admin.NewAdminAPI(*apiUrls, tlsConfig)
+		return admin.NewAdminAPI(addrs, tlsConfig)
 	}
 }
