@@ -142,8 +142,8 @@ type RpkKafkaApi struct {
 }
 
 type RpkAdminApi struct {
-	Addresses []SocketAddress `yaml:"addresses,omitempty" mapstructure:"addresses,omitempty" json:"addresses"`
-	TLS       *TLS            `yaml:"tls,omitempty" mapstructure:"tls,omitempty" json:"tls"`
+	Addresses []string `yaml:"addresses,omitempty" mapstructure:"addresses,omitempty" json:"addresses"`
+	TLS       *TLS     `yaml:"tls,omitempty" mapstructure:"tls,omitempty" json:"tls"`
 }
 
 type SASL struct {
