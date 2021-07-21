@@ -12,6 +12,7 @@ package debug
 import (
 	"crypto/tls"
 	"fmt"
+	"net"
 	"sort"
 	"strconv"
 	"strings"
@@ -275,10 +276,9 @@ func getKafkaInfo(
 		kafkaInfoCh <- kInfo
 		return nil
 	}
-	addr := fmt.Sprintf(
-		"%s:%d",
+	addr := net.JoinHostPort(
 		conf.Redpanda.KafkaApi[0].Address,
-		conf.Redpanda.KafkaApi[0].Port,
+		strconv.Itoa(conf.Redpanda.KafkaApi[0].Port),
 	)
 	var tlsConfig *tls.Config
 	var t *config.TLS

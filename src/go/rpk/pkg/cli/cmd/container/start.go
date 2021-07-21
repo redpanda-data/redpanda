@@ -13,7 +13,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -25,7 +27,7 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/ui"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/net"
+	vnet "github.com/vectorizedio/redpanda/src/go/rpk/pkg/net"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -173,23 +175,23 @@ func startCluster(
 
 	// Start a seed node.
 	seedID := uint(0)
-	seedKafkaPort, err := net.GetFreePort()
+	seedKafkaPort, err := vnet.GetFreePort()
 	if err != nil {
 		return err
 	}
-	seedProxyPort, err := net.GetFreePort()
+	seedProxyPort, err := vnet.GetFreePort()
 	if err != nil {
 		return err
 	}
-	seedSchemaRegPort, err := net.GetFreePort()
+	seedSchemaRegPort, err := vnet.GetFreePort()
 	if err != nil {
 		return err
 	}
-	seedRPCPort, err := net.GetFreePort()
+	seedRPCPort, err := vnet.GetFreePort()
 	if err != nil {
 		return err
 	}
-	seedMetricsPort, err := net.GetFreePort()
+	seedMetricsPort, err := vnet.GetFreePort()
 	if err != nil {
 		return err
 	}
@@ -232,32 +234,31 @@ func startCluster(
 	for nodeID := uint(1); nodeID < n; nodeID++ {
 		id := nodeID
 		grp.Go(func() error {
-			kafkaPort, err := net.GetFreePort()
+			kafkaPort, err := vnet.GetFreePort()
 			if err != nil {
 				return err
 			}
-			proxyPort, err := net.GetFreePort()
+			proxyPort, err := vnet.GetFreePort()
 			if err != nil {
 				return err
 			}
-			schemaRegPort, err := net.GetFreePort()
+			schemaRegPort, err := vnet.GetFreePort()
 			if err != nil {
 				return err
 			}
-			rpcPort, err := net.GetFreePort()
+			rpcPort, err := vnet.GetFreePort()
 			if err != nil {
 				return err
 			}
-			metricsPort, err := net.GetFreePort()
+			metricsPort, err := vnet.GetFreePort()
 			if err != nil {
 				return err
 			}
 			args := []string{
 				"--seeds",
-				fmt.Sprintf(
-					"%s:%d",
+				net.JoinHostPort(
 					seedState.ContainerIP,
-					config.Default().Redpanda.RPCServer.Port,
+					strconv.Itoa(config.Default().Redpanda.RPCServer.Port),
 				),
 			}
 			state, err := common.CreateNode(

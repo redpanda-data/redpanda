@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
 	fp "path/filepath"
@@ -171,10 +172,9 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 			}
 			for i, s := range *seeds {
 				key := fmt.Sprintf("%s.%d", k, i)
-				flatMap[key] = fmt.Sprintf(
-					"%s:%d",
+				flatMap[key] = net.JoinHostPort(
 					s.Host.Address,
-					s.Host.Port,
+					strconv.Itoa(s.Host.Port),
 				)
 			}
 			continue
@@ -187,10 +187,9 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 			}
 			for i, a := range addrs {
 				key := fmt.Sprintf("%s.%d", k, i)
-				str := fmt.Sprintf(
-					"%s:%d",
+				str := net.JoinHostPort(
 					a.Address,
-					a.Port,
+					strconv.Itoa(a.Port),
 				)
 				if a.Name != "" {
 					str = fmt.Sprintf("%s://%s", a.Name, str)
@@ -231,7 +230,7 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		flatMap[k] = fmt.Sprintf("%s:%d", sa.Address, sa.Port)
+		flatMap[k] = net.JoinHostPort(sa.Address, strconv.Itoa(sa.Port))
 	}
 	return flatMap, nil
 }
