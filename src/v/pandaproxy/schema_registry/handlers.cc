@@ -203,24 +203,6 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
     auto ins_res = co_await rq.service().schema_store().insert(
       req.sub, req.payload.schema, req.payload.type);
 
-    if (ins_res.inserted) {
-        auto batch = make_schema_batch(
-          req.sub,
-          ins_res.version,
-          ins_res.id,
-          req.payload.schema,
-          req.payload.type,
-          is_deleted::no);
-
-        auto res = co_await rq.service().client().local().produce_record_batch(
-          model::schema_registry_internal_tp, std::move(batch));
-
-        // TODO(Ben): Check the error reporting here
-        if (res.error_code != kafka::error_code::none) {
-            throw kafka::exception(res.error_code, *res.error_message);
-        }
-    }
-
     auto json_rslt{
       json::rjson_serialize(post_subject_versions_response{.id{ins_res.id}})};
     rp.rep->write_body("json", json_rslt);

@@ -109,6 +109,9 @@ public:
     ss::future<offset_conflict> wait(model::offset offset);
 
 private:
+    ss::future<insert_result>
+    do_insert(subject sub, schema_definition def, schema_type type);
+
     sharded_store& _store;
     ss::sharded<kafka::client::client>& _client;
 

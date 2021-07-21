@@ -13,18 +13,18 @@
 
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/storage.h"
+#include "utils/retry.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/std-coroutine.hh>
 
+#include <system_error>
+
 namespace pandaproxy::schema_registry {
 
 ss::future<> backed_store::start(ss::smp_service_group sg) {
-    // error: private field '_client' is not used
-    // [-Werror,-Wunused-private-field]
-    (void)_client;
     return _store.start(sg);
 }
 
@@ -32,7 +32,30 @@ ss::future<> backed_store::stop() { return _store.stop(); }
 
 ss::future<backed_store::insert_result>
 backed_store::insert(subject sub, schema_definition def, schema_type type) {
-    return _store.insert(std::move(sub), std::move(def), type);
+    return retry_with_backoff(
+      5, [this, sub, def, type]() { return do_insert(sub, def, type); });
+}
+
+ss::future<backed_store::insert_result>
+backed_store::do_insert(subject sub, schema_definition def, schema_type type) {
+    auto res = co_await _store.would_insert(sub, def, type);
+    if (res.inserted) {
+        auto batch = make_schema_batch(
+          sub, res.version, res.id, def, type, is_deleted::no);
+
+        auto res = co_await _client.local().produce_record_batch(
+          model::schema_registry_internal_tp, std::move(batch));
+
+        if (res.error_code != kafka::error_code::none) {
+            throw kafka::exception(res.error_code, *res.error_message);
+        }
+
+        auto conflicted = co_await wait(res.base_offset);
+        if (conflicted) {
+            throw exception(error_code::write_conflict);
+        }
+    }
+    co_return res;
 }
 
 ss::future<bool> backed_store::upsert(
