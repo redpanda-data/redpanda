@@ -29,6 +29,7 @@ namespace pandaproxy::schema_registry {
 using permanent_delete = ss::bool_class<struct delete_tag>;
 using include_deleted = ss::bool_class<struct include_deleted_tag>;
 using is_deleted = ss::bool_class<struct is_deleted_tag>;
+using offset_conflict = ss::bool_class<struct offset_conflict_tag>;
 
 template<typename E>
 std::enable_if_t<std::is_enum_v<E>, std::optional<E>>
