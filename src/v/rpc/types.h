@@ -111,6 +111,9 @@ struct client_opts {
     explicit client_opts(clock_type::time_point client_send_timeout) noexcept
       : client_opts(client_send_timeout, compression_type::none, 1024) {}
 
+    explicit client_opts(clock_type::duration client_send_timeout) noexcept
+      : client_opts(clock_type::now() + client_send_timeout) {}
+
     client_opts(const client_opts&) = delete;
     client_opts(client_opts&&) = default;
 
