@@ -2133,19 +2133,6 @@ group_configuration consensus::config() const {
     return _configuration_manager.get_latest();
 }
 
-static std::ostream&
-operator<<(std::ostream& os, const consensus::vote_state& state) {
-    switch (state) {
-    case consensus::vote_state::leader:
-        return os << "{leader}";
-    case consensus::vote_state::follower:
-        return os << "{follower}";
-    case consensus::vote_state::candidate:
-        return os << "{candidate}";
-    }
-    std::terminate(); // make gcc happy
-}
-
 ss::future<timeout_now_reply> consensus::timeout_now(timeout_now_request&& r) {
     if (unlikely(is_request_target_node_invalid("timeout_now", r))) {
         return ss::make_ready_future<timeout_now_reply>(timeout_now_reply{
