@@ -12,6 +12,7 @@
 #pragma once
 
 #include "bytes/iobuf_parser.h"
+#include "config/configuration.h"
 #include "json/json.h"
 #include "model/metadata.h"
 #include "model/record_utils.h"
@@ -985,14 +986,20 @@ struct consume_to_store {
         case topic_key_type::noop:
             co_return;
         case topic_key_type::schema: {
+            auto schema_key = from_json_iobuf<schema_key_handler<>>(
+              std::move(key));
+            if (schema_key.seq.has_value() && schema_key.seq != offset) {
+                vlog(plog.error, "Ignoring key: {} at offset {}", key, offset);
+                co_return co_await _store.signal(offset, offset_conflict::yes);
+            }
+
             std::optional<schema_value> val;
             if (!record.value().empty()) {
                 val.emplace(from_json_iobuf<schema_value_handler<>>(
                   record.release_value()));
             }
-            co_return co_await apply(
-              from_json_iobuf<schema_key_handler<>>(std::move(key)),
-              std::move(val));
+            co_await apply(std::move(schema_key), std::move(val));
+            co_return co_await _store.signal(offset, offset_conflict::no);
         }
         case topic_key_type::config: {
             std::optional<config_value> val;
