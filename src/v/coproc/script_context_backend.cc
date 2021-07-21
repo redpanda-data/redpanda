@@ -78,16 +78,16 @@ get_log(storage::log_manager& log_mgr, const model::ntp& ntp) {
 }
 
 static ss::future<bool> write_materialized_partition(
-  const model::materialized_ntp& m_ntp,
+  const model::ntp& ntp,
   model::record_batch_reader reader,
   output_write_args args) {
-    auto found = args.locks.find(m_ntp.input_ntp());
+    auto found = args.locks.find(ntp);
     if (found == args.locks.end()) {
-        found = args.locks.emplace(m_ntp.input_ntp(), mutex()).first;
+        found = args.locks.emplace(ntp, mutex()).first;
     }
     return found->second.with(
-      [m_ntp, args, reader = std::move(reader)]() mutable {
-          return get_log(args.log_manager, m_ntp.input_ntp())
+      [args, ntp, reader = std::move(reader)]() mutable {
+          return get_log(args.log_manager, ntp)
             .then([reader = std::move(reader)](storage::log log) mutable {
                 return do_write_materialized_partition(
                   std::move(log), std::move(reader));
@@ -119,19 +119,15 @@ process_one_reply(process_batch_reply::data e, output_write_args args) {
     }
     /// Use the source topic portion of the materialized topic to perform a
     /// lookup for the relevent 'ntp_context'
-    auto materialized_ntp = model::materialized_ntp(e.ntp);
-    auto found = args.inputs.find(materialized_ntp.source_ntp());
+    auto found = args.inputs.find(e.ntp);
     if (found == args.inputs.end()) {
         vlog(
-          coproclog.warn,
-          "script {} unknown source ntp: {}",
-          args.id,
-          materialized_ntp.source_ntp());
+          coproclog.warn, "script {} unknown source ntp: {}", args.id, e.ntp);
         co_return;
     }
     auto ntp_ctx = found->second;
     auto success = co_await write_materialized_partition(
-      materialized_ntp, std::move(*e.reader), args);
+      e.ntp, std::move(*e.reader), args);
     if (!success) {
         vlog(coproclog.warn, "record_batch failed to pass crc checks");
         co_return;

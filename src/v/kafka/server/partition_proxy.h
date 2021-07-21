@@ -82,7 +82,7 @@ partition_proxy make_partition_proxy(Args&&... args) {
 }
 
 std::optional<partition_proxy> make_partition_proxy(
-  const model::materialized_ntp&,
+  const model::ntp&,
   ss::lw_shared_ptr<cluster::partition>,
   cluster::partition_manager&);
 

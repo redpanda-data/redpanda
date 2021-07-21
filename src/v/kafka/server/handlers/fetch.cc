@@ -193,38 +193,34 @@ static ss::future<read_result> do_read_from_ntp(
           error_code::not_leader_for_partition);
     }
 
-    auto kafka_partition = make_partition_proxy(
-      ntp_config.materialized_ntp, partition, mgr);
-    if (!kafka_partition) {
-        return ss::make_ready_future<read_result>(
-          error_code::unknown_topic_or_partition);
-    }
+    auto kafka_partition = make_partition_proxy<replicated_partition>(
+      partition);
 
     if (config::shard_local_cfg().enable_transactions.value()) {
         if (
           ntp_config.cfg.isolation_level
           == model::isolation_level::read_committed) {
-            ntp_config.cfg.max_offset = kafka_partition->last_stable_offset();
+            ntp_config.cfg.max_offset = kafka_partition.last_stable_offset();
         }
     }
 
-    if (ntp_config.cfg.start_offset < kafka_partition->start_offset()) {
+    if (ntp_config.cfg.start_offset < kafka_partition.start_offset()) {
         return ss::make_ready_future<read_result>(
           error_code::offset_out_of_range);
     }
 
     return read_from_partition(
-      std::move(*kafka_partition), ntp_config.cfg, foreign_read, deadline);
+      std::move(kafka_partition), ntp_config.cfg, foreign_read, deadline);
 }
 
-static ntp_fetch_config make_ntp_fetch_config(
-  const model::materialized_ntp& m_ntp, const fetch_config& fetch_cfg) {
-    return ntp_fetch_config(m_ntp, fetch_cfg);
+static ntp_fetch_config
+make_ntp_fetch_config(const model::ntp& ntp, const fetch_config& fetch_cfg) {
+    return ntp_fetch_config(ntp, fetch_cfg);
 }
 
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager& pm,
-  const model::materialized_ntp& ntp,
+  const model::ntp& ntp,
   fetch_config config,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
@@ -425,10 +421,7 @@ class simple_fetch_planner final : public fetch_planner::impl {
               auto ntp = model::ntp(
                 model::kafka_namespace, fp.topic, fp.partition);
 
-              auto materialized_ntp = model::materialized_ntp(ntp);
-
-              auto shard = octx.rctx.shards().shard_for(
-                materialized_ntp.source_ntp());
+              auto shard = octx.rctx.shards().shard_for(ntp);
               if (!shard) {
                   // no shard found, set error, do not include into a plan
                   (resp_it).set(make_partition_response_error(
@@ -458,7 +451,7 @@ class simple_fetch_planner final : public fetch_planner::impl {
               };
 
               plan.fetches_per_shard[*shard].push_back(
-                make_ntp_fetch_config(materialized_ntp, config),
+                make_ntp_fetch_config(ntp, config),
                 resp_it++,
                 octx.rctx.probe().auto_fetch_measurement());
           });
