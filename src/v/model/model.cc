@@ -67,36 +67,6 @@ make_materialized_topic(const model::topic& topic) {
     return materialized_topic{.src = src_tv, .dest = dest_tv};
 }
 
-materialized_ntp::materialized_ntp(model::ntp ntp) noexcept
-  : _input(std::move(ntp))
-  , _maybe_source(make_materialized_src_ntp(_input))
-  , _source_or_input(_maybe_source ? *_maybe_source : _input) {}
-
-materialized_ntp::materialized_ntp(const materialized_ntp& other) noexcept
-  : _input(other._input)
-  , _maybe_source(other._maybe_source)
-  , _source_or_input(_maybe_source ? *_maybe_source : _input) {}
-
-materialized_ntp::materialized_ntp(materialized_ntp&& other) noexcept
-  : _input(std::move(other._input))
-  , _maybe_source(std::move(other._maybe_source))
-  , _source_or_input(_maybe_source ? *_maybe_source : _input) {}
-
-std::optional<model::ntp>
-materialized_ntp::make_materialized_src_ntp(const model::ntp& ntp) {
-    if (auto mt = make_materialized_topic(ntp.tp.topic)) {
-        return std::optional<model::ntp>(
-          model::ntp(ntp.ns, mt->src, ntp.tp.partition));
-    }
-    return std::nullopt;
-}
-
-std::ostream& operator<<(std::ostream& os, const materialized_ntp& m) {
-    os << "Original ntp: " << m.input_ntp() << " is_materialized: {}"
-       << m.is_materialized() << " reference content: " << m.source_ntp();
-    return os;
-}
-
 std::ostream& operator<<(std::ostream& os, timestamp ts) {
     if (ts != timestamp::missing()) {
         return ss::fmt_print(os, "{{timestamp: {}}}", ts.value());

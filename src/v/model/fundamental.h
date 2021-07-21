@@ -206,38 +206,6 @@ struct ntp {
     friend std::ostream& operator<<(std::ostream&, const ntp&);
 };
 
-class materialized_ntp {
-public:
-    explicit materialized_ntp(model::ntp ntp) noexcept;
-    materialized_ntp(const materialized_ntp& other) noexcept;
-    materialized_ntp(materialized_ntp&& other) noexcept;
-
-    materialized_ntp& operator=(const materialized_ntp&) = delete;
-    materialized_ntp& operator=(materialized_ntp&&) = delete;
-
-    ~materialized_ntp() = default;
-
-    const model::ntp& input_ntp() const { return _input; }
-    const model::ntp& source_ntp() const { return _source_or_input; }
-    bool is_materialized() const { return _maybe_source.has_value(); }
-
-    bool operator==(const materialized_ntp& other) const {
-        return _input == other._input && _maybe_source == other._maybe_source;
-    }
-    bool operator!=(const materialized_ntp& other) const {
-        return !(*this == other);
-    }
-
-    friend std::ostream& operator<<(std::ostream&, const ntp&);
-
-private:
-    std::optional<model::ntp> make_materialized_src_ntp(const model::ntp& ntp);
-
-    model::ntp _input;
-    std::optional<model::ntp> _maybe_source;
-    const model::ntp& _source_or_input;
-};
-
 /**
  * Enum describing Kafka's control record types. The Control record key schema
  * is defined as a tuple of [version: int16_t, type: control_record_type].
