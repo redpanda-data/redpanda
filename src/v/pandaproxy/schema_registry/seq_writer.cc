@@ -182,4 +182,40 @@ ss::future<schema_id> seq_writer::write_subject_version(
     return sequenced_write(do_write);
 }
 
+ss::future<bool> seq_writer::write_config(
+  std::optional<subject> sub, compatibility_level compat) {
+    auto do_write = [sub, compat](
+                      model::offset write_at,
+                      seq_writer& seq) -> ss::future<std::optional<bool>> {
+        // Check for no-op case
+        compatibility_level existing;
+        if (sub.has_value()) {
+            existing = co_await seq._store.get_compatibility(sub.value());
+        } else {
+            existing = co_await seq._store.get_compatibility();
+        }
+        if (existing == compat) {
+            co_return false;
+        }
+
+        auto key = config_key{.seq{write_at}, .node{seq._node_id}, .sub{sub}};
+        auto value = config_value{.compat = compat};
+        auto batch = as_record_batch(key, value);
+
+        auto success = co_await seq.produce_and_check(
+          write_at, std::move(batch));
+        if (success) {
+            auto applier = consume_to_store(seq._store, seq);
+            co_await applier.apply(write_at, key, value);
+            seq.advance_offset_inner(write_at);
+            co_return true;
+        } else {
+            // Pass up a None, our caller's cue to retry
+            co_return std::nullopt;
+        }
+    };
+
+    co_return co_await sequenced_write(do_write);
+}
+
 } // namespace pandaproxy::schema_registry

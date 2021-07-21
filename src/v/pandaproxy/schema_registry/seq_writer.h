@@ -43,6 +43,9 @@ public:
     ss::future<schema_id>
     write_subject_version(subject sub, schema_definition def, schema_type type);
 
+    ss::future<bool>
+    write_config(std::optional<subject> sub, compatibility_level compat);
+
 private:
     ss::smp_submit_to_options _smp_opts;
 

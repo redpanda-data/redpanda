@@ -57,19 +57,30 @@ const pps::schema_value avro_schema_value{
 constexpr std::string_view config_key_sv{
   R"({
   "keytype": "CONFIG",
+  "seq": 0,
+  "node": 0,
   "subject": null,
   "magic": 0
 })"};
-const pps::config_key config_key{.sub{}, .magic{pps::topic_key_magic{0}}};
+const pps::config_key config_key{
+  .seq{model::offset{0}},
+  .node{model::node_id{0}},
+  .sub{},
+  .magic{pps::topic_key_magic{0}}};
 
 constexpr std::string_view config_key_sub_sv{
   R"({
   "keytype": "CONFIG",
+  "seq": 0,
+  "node": 0,
   "subject": "my-kafka-value",
   "magic": 0
 })"};
 const pps::config_key config_key_sub{
-  .sub{pps::subject{"my-kafka-value"}}, .magic{pps::topic_key_magic{0}}};
+  .seq{model::offset{0}},
+  .node{model::node_id{0}},
+  .sub{pps::subject{"my-kafka-value"}},
+  .magic{pps::topic_key_magic{0}}};
 
 constexpr std::string_view config_value_sv{
   R"({

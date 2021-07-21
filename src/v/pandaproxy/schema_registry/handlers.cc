@@ -75,19 +75,7 @@ put_config(server::request_t rq, server::reply_t rp) {
       rq.req->content.data(), put_config_handler<>{});
     rq.req.reset();
 
-    auto res = co_await rq.service().schema_store().set_compatibility(
-      config.compat);
-
-    if (res) {
-        auto res = co_await rq.service().client().local().produce_record_batch(
-          model::schema_registry_internal_tp,
-          make_config_batch(std::nullopt, config.compat));
-
-        // TODO(Ben): Check the error reporting here
-        if (res.error_code != kafka::error_code::none) {
-            throw kafka::exception(res.error_code, *res.error_message);
-        }
-    }
+    co_await rq.service().writer().write_config(std::nullopt, config.compat);
 
     auto json_rslt = ppj::rjson_serialize(config);
     rp.rep->write_body("json", json_rslt);
@@ -115,19 +103,7 @@ put_config_subject(server::request_t rq, server::reply_t rp) {
       rq.req->content.data(), put_config_handler<>{});
     rq.req.reset();
 
-    auto res = co_await rq.service().schema_store().set_compatibility(
-      sub, config.compat);
-
-    if (res) {
-        auto res = co_await rq.service().client().local().produce_record_batch(
-          model::schema_registry_internal_tp,
-          make_config_batch(sub, config.compat));
-
-        // TODO(Ben): Check the error reporting here
-        if (res.error_code != kafka::error_code::none) {
-            throw kafka::exception(res.error_code, *res.error_message);
-        }
-    }
+    co_await rq.service().writer().write_config(sub, config.compat);
 
     auto json_rslt = ppj::rjson_serialize(config);
     rp.rep->write_body("json", json_rslt);

@@ -460,6 +460,8 @@ public:
 
 struct config_key {
     static constexpr topic_key_type keytype{topic_key_type::config};
+    model::offset seq;
+    model::node_id node;
     std::optional<subject> sub;
     topic_key_magic magic{0};
 
@@ -468,7 +470,9 @@ struct config_key {
     friend std::ostream& operator<<(std::ostream& os, const config_key& v) {
         fmt::print(
           os,
-          "keytype: {}, subject: {}, magic: {}",
+          "seq: {} node: {} keytype: {}, subject: {}, magic: {}",
+          v.seq,
+          v.node,
           to_string_view(v.keytype),
           v.sub.value_or(invalid_subject),
           v.magic);
@@ -482,6 +486,10 @@ inline void rjson_serialize(
     w.StartObject();
     w.Key("keytype");
     ::json::rjson_serialize(w, to_string_view(key.keytype));
+    w.Key("seq");
+    ::json::rjson_serialize(w, key.seq);
+    w.Key("node");
+    ::json::rjson_serialize(w, key.node);
     w.Key("subject");
     if (key.sub) {
         ::json::rjson_serialize(w, key.sub.value());
@@ -499,6 +507,8 @@ class config_key_handler : public json::base_handler<Encoding> {
         empty = 0,
         object,
         keytype,
+        seq,
+        node,
         subject,
         magic,
     };
@@ -516,6 +526,8 @@ public:
         auto sv = std::string_view{str, len};
         std::optional<state> s{string_switch<std::optional<state>>(sv)
                                  .match("keytype", state::keytype)
+                                 .match("seq", state::seq)
+                                 .match("node", state::node)
                                  .match("subject", state::subject)
                                  .match("magic", state::magic)
                                  .default_match(std::nullopt)};
@@ -523,8 +535,29 @@ public:
     }
 
     bool Uint(int i) {
-        result.magic = topic_key_magic{i};
-        return std::exchange(_state, state::object) == state::magic;
+        switch (_state) {
+        case state::magic: {
+            result.magic = topic_key_magic{i};
+            _state = state::object;
+            return true;
+        }
+        case state::seq: {
+            result.seq = model::offset{i};
+            _state = state::object;
+            return true;
+        }
+        case state::node: {
+            result.node = model::node_id{i};
+            _state = state::object;
+            return true;
+        }
+        case state::empty:
+        case state::subject:
+        case state::keytype:
+        case state::object:
+            return false;
+        }
+        return false;
     }
 
     bool String(const Ch* str, rapidjson::SizeType len, bool) {
@@ -541,6 +574,8 @@ public:
             return true;
         }
         case state::empty:
+        case state::seq:
+        case state::node:
         case state::object:
         case state::magic:
             return false;
@@ -880,12 +915,6 @@ model::record_batch as_record_batch(Key key, Value val) {
 }
 
 inline model::record_batch
-make_config_batch(std::optional<subject> sub, compatibility_level compat) {
-    return as_record_batch(
-      config_key{.sub{std::move(sub)}}, config_value{.compat = compat});
-}
-
-inline model::record_batch
 make_delete_subject_batch(subject sub, schema_version version) {
     storage::record_batch_builder rb{
       model::record_batch_type::raft_data, model::offset{0}};
@@ -989,11 +1018,14 @@ struct consume_to_store {
         case topic_key_type::config: {
             std::optional<config_value> val;
             if (!record.value().empty()) {
-                val.emplace(from_json_iobuf<config_value_handler<>>(
-                  record.release_value()));
+                auto value = record.release_value();
+                val.emplace(
+                  from_json_iobuf<config_value_handler<>>(std::move(value)));
             }
             co_await apply(
-              from_json_iobuf<config_key_handler<>>(std::move(key)), val);
+              offset,
+              from_json_iobuf<config_key_handler<>>(std::move(key)),
+              val);
             break;
         }
         case topic_key_type::delete_subject:
@@ -1053,7 +1085,18 @@ struct consume_to_store {
         }
     }
 
-    ss::future<> apply(config_key key, std::optional<config_value> val) {
+    ss::future<> apply(
+      model::offset offset, config_key key, std::optional<config_value> val) {
+        // Drop out-of-sequence messages
+        if (val && offset != key.seq) {
+            vlog(
+              plog.debug,
+              "Ignoring out of order {} (at offset {})",
+              key,
+              offset);
+            co_return;
+        }
+
         if (key.magic != 0) {
             throw exception(
               error_code::topic_parse_error,
