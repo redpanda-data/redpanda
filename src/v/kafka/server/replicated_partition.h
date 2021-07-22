@@ -78,6 +78,8 @@ public:
 
     cluster::partition_probe& probe() final { return _partition->probe(); }
 
+    bool is_leader() const override { return _partition->is_leader(); }
+
 private:
     ss::lw_shared_ptr<cluster::partition> _partition;
     ss::lw_shared_ptr<offset_translator> _translator;
