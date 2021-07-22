@@ -192,6 +192,7 @@ struct configuration final : public config_store {
     property<size_t> kafka_qdc_max_depth;
     property<std::chrono::milliseconds> kafka_qdc_depth_update_ms;
     property<size_t> zstd_decompress_workspace_bytes;
+    one_or_many_property<ss::sstring> full_raft_configuration_recovery_pattern;
 
     configuration();
 
