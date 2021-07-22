@@ -178,27 +178,22 @@ static ss::future<read_result> read_from_partition(
  */
 static ss::future<read_result> do_read_from_ntp(
   cluster::partition_manager& mgr,
+  cluster::metadata_cache& md_cache,
   ntp_fetch_config ntp_config,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
     /*
      * lookup the ntp's partition
      */
-    auto partition = mgr.get(ntp_config.ntp());
-    if (unlikely(!partition)) {
+    auto kafka_partition = make_partition_proxy(
+      ntp_config.ntp(), md_cache, mgr);
+    if (unlikely(!kafka_partition)) {
         return ss::make_ready_future<read_result>(
           error_code::unknown_topic_or_partition);
     }
-    if (unlikely(!partition->is_leader())) {
+    if (unlikely(!kafka_partition->is_leader())) {
         return ss::make_ready_future<read_result>(
           error_code::not_leader_for_partition);
-    }
-
-    auto kafka_partition = make_partition_proxy(
-      ntp_config.materialized_ntp, partition, mgr);
-    if (!kafka_partition) {
-        return ss::make_ready_future<read_result>(
-          error_code::unknown_topic_or_partition);
     }
 
     if (config::shard_local_cfg().enable_transactions.value()) {
@@ -218,19 +213,20 @@ static ss::future<read_result> do_read_from_ntp(
       std::move(*kafka_partition), ntp_config.cfg, foreign_read, deadline);
 }
 
-static ntp_fetch_config make_ntp_fetch_config(
-  const model::materialized_ntp& m_ntp, const fetch_config& fetch_cfg) {
-    return ntp_fetch_config(m_ntp, fetch_cfg);
+static ntp_fetch_config
+make_ntp_fetch_config(const model::ntp& ntp, const fetch_config& fetch_cfg) {
+    return ntp_fetch_config(ntp, fetch_cfg);
 }
 
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager& pm,
-  const model::materialized_ntp& ntp,
+  cluster::metadata_cache& md_cache,
+  const model::ntp& ntp,
   fetch_config config,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
     return do_read_from_ntp(
-      pm, make_ntp_fetch_config(ntp, config), foreign_read, deadline);
+      pm, md_cache, make_ntp_fetch_config(ntp, config), foreign_read, deadline);
 }
 
 static void fill_fetch_responses(
@@ -312,14 +308,17 @@ static void fill_fetch_responses(
 
 static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
   cluster::partition_manager& mgr,
+  cluster::metadata_cache& md_cache,
   std::vector<ntp_fetch_config> ntp_fetch_configs,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
     return ssx::parallel_transform(
       std::move(ntp_fetch_configs),
-      [&mgr, deadline, foreign_read](const ntp_fetch_config& ntp_cfg) {
+      [&mgr, &md_cache, deadline, foreign_read](
+        const ntp_fetch_config& ntp_cfg) {
           auto p_id = ntp_cfg.ntp().tp.partition;
-          return do_read_from_ntp(mgr, ntp_cfg, foreign_read, deadline)
+          return do_read_from_ntp(
+                   mgr, md_cache, ntp_cfg, foreign_read, deadline)
             .then([p_id](read_result res) {
                 res.partition = p_id;
                 return res;
@@ -353,11 +352,16 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
         shard,
         octx.ssg,
         [foreign_read,
+         &octx,
          deadline = octx.deadline,
          configs = std::move(fetch.requests)](
           cluster::partition_manager& mgr) mutable {
             return fetch_ntps_in_parallel(
-              mgr, std::move(configs), foreign_read, deadline);
+              mgr,
+              octx.rctx.metadata_cache(),
+              std::move(configs),
+              foreign_read,
+              deadline);
         })
       .then([responses = std::move(fetch.responses),
              metrics = std::move(fetch.metrics),
@@ -426,20 +430,16 @@ class simple_fetch_planner final : public fetch_planner::impl {
               auto ntp = model::ntp(
                 model::kafka_namespace, fp.topic, fp.partition);
 
-              auto materialized_ntp = model::materialized_ntp(ntp);
-
               // there is given partition in topic metadata, return
               // unknown_topic_or_partition error
-              if (unlikely(!octx.rctx.metadata_cache().contains(
-                    materialized_ntp.source_ntp()))) {
+              if (unlikely(!octx.rctx.metadata_cache().contains(ntp))) {
                   (resp_it).set(make_partition_response_error(
                     fp.partition, error_code::unknown_topic_or_partition));
                   ++resp_it;
                   return;
               }
 
-              auto shard = octx.rctx.shards().shard_for(
-                materialized_ntp.source_ntp());
+              auto shard = octx.rctx.shards().shard_for(ntp);
               if (!shard) {
                   /**
                    * no shard is found on current node, but topic exists in
@@ -474,7 +474,7 @@ class simple_fetch_planner final : public fetch_planner::impl {
               };
 
               plan.fetches_per_shard[*shard].push_back(
-                make_ntp_fetch_config(materialized_ntp, config),
+                make_ntp_fetch_config(ntp, config),
                 resp_it++,
                 octx.rctx.probe().auto_fetch_measurement());
           });

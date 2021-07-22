@@ -161,13 +161,13 @@ struct fetch_config {
 };
 
 struct ntp_fetch_config {
-    ntp_fetch_config(const model::materialized_ntp& ntp, fetch_config cfg)
-      : materialized_ntp(std::move(ntp))
+    ntp_fetch_config(model::ntp n, fetch_config cfg)
+      : _ntp(std::move(n))
       , cfg(cfg) {}
-    model::materialized_ntp materialized_ntp;
+    model::ntp _ntp;
     fetch_config cfg;
 
-    const model::ntp& ntp() const { return materialized_ntp.source_ntp(); }
+    const model::ntp& ntp() const { return _ntp; }
 
     friend std::ostream&
     operator<<(std::ostream& o, const ntp_fetch_config& ntp_fetch) {
@@ -307,14 +307,10 @@ struct fetch_plan {
     }
 };
 
-std::optional<partition_proxy> make_partition_proxy(
-  const model::materialized_ntp&,
-  ss::lw_shared_ptr<cluster::partition>,
-  cluster::partition_manager& pm);
-
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager&,
-  const model::materialized_ntp&,
+  cluster::metadata_cache&,
+  const model::ntp&,
   fetch_config,
   bool,
   std::optional<model::timeout_clock::time_point>);
