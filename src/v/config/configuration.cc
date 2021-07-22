@@ -791,6 +791,12 @@ configuration::configuration()
       "Size of the zstd decompression workspace",
       required::no,
       8_MiB)
+  , full_raft_configuration_recovery_pattern(
+      *this,
+      "full_raft_configuration_recovery_pattern",
+      "Recovery raft configuration on start for NTPs matching pattern",
+      required::no,
+      {})
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",

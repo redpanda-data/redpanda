@@ -34,6 +34,7 @@
 
 #include <fmt/ostream.h>
 
+#include <algorithm>
 #include <iterator>
 
 namespace raft {
@@ -909,9 +910,45 @@ ss::future<> consensus::start() {
     return _op_lock.with([this] {
         read_voted_for();
 
-        return _configuration_manager
-          .start(is_initial_state(), _self.revision())
-          .then([this] { return hydrate_snapshot(); })
+        /*
+         * temporary workaround:
+         *
+         * if the group's ntp matches the pattern, then do not load the initial
+         * configuration snapshto from the keyvalue store. more info here:
+         *
+         * https://github.com/vectorizedio/redpanda/issues/1870
+         */
+        const auto& ntp = _log.config().ntp();
+        const auto normalized_ntp = fmt::format(
+          "{}.{}.{}", ntp.ns(), ntp.tp.topic(), ntp.tp.partition());
+        const auto& patterns = config::shard_local_cfg()
+                                 .full_raft_configuration_recovery_pattern();
+        auto initial_state = std::any_of(
+          patterns.cbegin(),
+          patterns.cend(),
+          [&normalized_ntp](const ss::sstring& pattern) {
+              return pattern == "*" || normalized_ntp.starts_with(pattern);
+          });
+        if (!initial_state) {
+            initial_state = is_initial_state();
+        }
+
+        vlog(
+          _ctxlog.info,
+          "Starting with voted_for {} term {} initial_state {}",
+          _voted_for,
+          _term,
+          initial_state);
+
+        return _configuration_manager.start(initial_state, _self.revision())
+          .then([this] {
+              vlog(
+                _ctxlog.trace,
+                "Configuration manager started: {}",
+                _configuration_manager);
+
+              return hydrate_snapshot();
+          })
           .then([this] {
               vlog(
                 _ctxlog.debug,
@@ -925,18 +962,28 @@ ss::future<> consensus::start() {
           })
           .then([this](configuration_bootstrap_state st) {
               auto lstats = _log.offsets();
+
+              vlog(_ctxlog.info, "Read bootstrap state: {}", st);
+              vlog(_ctxlog.info, "Current log offsets: {}", lstats);
+
               // if log term is newer than the one comming from voted_for state,
               // we reset voted_for state
               if (lstats.dirty_offset_term > _term) {
                   _term = lstats.dirty_offset_term;
                   _voted_for = {};
               }
+
               /**
                * The configuration manager state may be divereged from the log
                * state, as log is flushed lazily, we have to make sure that the
                * log and configuration manager has exactly the same offsets
                * range
                */
+              vlog(
+                _ctxlog.info,
+                "Truncating configurations at {}",
+                lstats.dirty_offset);
+
               auto f = _configuration_manager.truncate(
                 details::next_offset(lstats.dirty_offset));
 

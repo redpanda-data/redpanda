@@ -101,10 +101,10 @@ void configuration_manager::add_configuration(
     auto idx = _next_index++;
     vlog(
       _ctxlog.trace,
-      "Adding configuration: {}, offset: {}, index: {}",
-      cfg,
+      "Adding configuration at offset {} index {}: {}",
       offset,
-      idx);
+      idx,
+      cfg);
     auto [_, success] = _configurations.try_emplace(
       offset, indexed_configuration(std::move(cfg), idx));
     if (!success) {
