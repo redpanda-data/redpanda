@@ -77,10 +77,12 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
       *shard,
       octx.ssg,
       [timestamp,
+       &octx,
        ntp = std::move(ntp),
        isolation_lvl = model::isolation_level(
          octx.request.data.isolation_level)](cluster::partition_manager& mgr) {
-          auto partition = mgr.get(ntp);
+          auto partition = make_partition_proxy(
+            ntp, octx.rctx.metadata_cache(), mgr);
           if (!partition) {
               return ss::make_ready_future<list_offset_partition_response>(
                 list_offsets_response::make_partition(
@@ -92,8 +94,6 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
                 list_offsets_response::make_partition(
                   ntp.tp.partition, error_code::not_leader_for_partition));
           }
-          auto k_partition = make_partition_proxy<replicated_partition>(
-            partition);
 
           /*
            * the responses for earliest/latest timestamp queries do not require
@@ -104,23 +104,21 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
                 list_offsets_response::make_partition(
                   ntp.tp.partition,
                   model::timestamp(-1),
-                  k_partition.start_offset()));
+                  partition->start_offset()));
 
           } else if (timestamp == list_offsets_request::latest_timestamp) {
               const auto offset = isolation_lvl
                                       == model::isolation_level::read_committed
-                                    ? k_partition.last_stable_offset()
-                                    : k_partition.high_watermark();
+                                    ? partition->last_stable_offset()
+                                    : partition->high_watermark();
 
               return ss::make_ready_future<list_offset_partition_response>(
                 list_offsets_response::make_partition(
                   ntp.tp.partition, model::timestamp(-1), offset));
           }
 
-          return k_partition.timequery(timestamp, kafka_read_priority())
-            .then([partition,
-                   id = ntp.tp.partition,
-                   k_partition = std::move(k_partition)](
+          return partition->timequery(timestamp, kafka_read_priority())
+            .then([partition = std::move(partition), id = ntp.tp.partition](
                     std::optional<storage::timequery_result> res) {
                 if (res) {
                     return ss::make_ready_future<
@@ -130,9 +128,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
                 }
                 return ss::make_ready_future<list_offset_partition_response>(
                   list_offsets_response::make_partition(
-                    id,
-                    model::timestamp(-1),
-                    k_partition.last_stable_offset()));
+                    id, model::timestamp(-1), partition->last_stable_offset()));
             });
       });
 }

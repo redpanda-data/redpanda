@@ -14,8 +14,7 @@
 #include "config/configuration.h"
 #include "coproc/logger.h"
 #include "coproc/tests/fixtures/fixture_utils.h"
-#include "kafka/server/materialized_partition.h"
-#include "kafka/server/replicated_partition.h"
+#include "kafka/server/partition_proxy.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
@@ -104,16 +103,15 @@ coproc_test_fixture::drain(
       *shard_id,
       limit);
     using ret_t = std::optional<model::record_batch_reader::data_t>;
+    auto& cache = _root_fixture->app.metadata_cache;
     return _root_fixture->app.partition_manager.invoke_on(
-      *shard_id, [ntp, limit, offset, timeout](cluster::partition_manager& pm) {
+      *shard_id,
+      [&cache, ntp, limit, offset, timeout](cluster::partition_manager& pm) {
           return tests::cooperative_spin_wait_with_timeout(
-                   60s,
-                   [&pm, ntp] {
-                       auto partition = pm.get(ntp);
-                       return partition && partition->is_leader();
-                   })
-            .then([&pm, ntp, limit, offset, timeout] {
-                auto partition = pm.get(ntp);
+                   60s, [&pm, ntp] { return pm.log(ntp) != std::nullopt; })
+            .then([&pm, &cache, ntp, limit, offset, timeout] {
+                auto partition = kafka::make_partition_proxy(
+                  ntp, cache.local(), pm);
                 if (!partition) {
                     return ss::make_ready_future<ret_t>(std::nullopt);
                 }
@@ -121,7 +119,8 @@ coproc_test_fixture::drain(
                          offset,
                          limit,
                          timeout,
-                         [partition](model::offset next_offset) mutable {
+                         [partition = std::move(partition)](
+                           model::offset next_offset) mutable {
                              return partition->make_reader(
                                log_rdr_cfg(next_offset));
                          })
