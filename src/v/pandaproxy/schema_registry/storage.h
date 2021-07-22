@@ -17,9 +17,9 @@
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/logger.h"
+#include "pandaproxy/schema_registry/backed_store.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/exceptions.h"
-#include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "raft/types.h"
 #include "storage/record_batch_builder.h"
@@ -925,7 +925,7 @@ inline model::record_batch make_delete_subject_version_permanently_batch(
 }
 
 struct consume_to_store {
-    explicit consume_to_store(sharded_store& s)
+    explicit consume_to_store(backed_store& s)
       : _store{s} {}
 
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
@@ -1041,7 +1041,7 @@ struct consume_to_store {
     }
 
     void end_of_stream() {}
-    sharded_store& _store;
+    backed_store& _store;
 };
 
 } // namespace pandaproxy::schema_registry

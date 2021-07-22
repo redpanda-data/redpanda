@@ -12,8 +12,8 @@
 #pragma once
 
 #include "kafka/client/client.h"
+#include "pandaproxy/schema_registry/backed_store.h"
 #include "pandaproxy/schema_registry/configuration.h"
-#include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/util.h"
 #include "pandaproxy/server.h"
 #include "seastarx.h"
@@ -42,7 +42,7 @@ public:
     configuration& config();
     kafka::client::configuration& client_config();
     ss::sharded<kafka::client::client>& client() { return _client; }
-    sharded_store& schema_store() { return _store; }
+    backed_store& schema_store() { return _backed_store; }
 
 private:
     ss::future<> do_start();
@@ -55,6 +55,7 @@ private:
     ctx_server<service>::context_t _ctx;
     ctx_server<service> _server;
     sharded_store& _store;
+    backed_store _backed_store;
     one_shot _ensure_started;
 };
 

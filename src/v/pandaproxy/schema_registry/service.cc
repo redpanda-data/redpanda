@@ -172,7 +172,7 @@ ss::future<> service::fetch_internal_topic() {
       model::schema_registry_internal_tp,
       model::offset{0},
       max_offset)
-      .consume(consume_to_store{_store}, model::no_timeout);
+      .consume(consume_to_store{_backed_store}, model::no_timeout);
 }
 
 service::service(
@@ -192,6 +192,7 @@ service::service(
       "/schema_registry_definitions",
       _ctx)
   , _store(store)
+  , _backed_store(_store, _client)
   , _ensure_started{[this]() { return do_start(); }} {}
 
 ss::future<> service::start() {

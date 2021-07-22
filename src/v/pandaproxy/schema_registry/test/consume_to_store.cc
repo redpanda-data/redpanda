@@ -46,11 +46,13 @@ constexpr pps::schema_id id0{0};
 constexpr pps::schema_id id1{1};
 
 SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
+    ss::sharded<kafka::client::client> client;
     pps::sharded_store s;
+    pps::backed_store b(s, client);
     s.start(ss::default_smp_service_group()).get();
     auto stop_store = ss::defer([&s]() { s.stop().get(); });
 
-    auto c = pps::consume_to_store(s);
+    auto c = pps::consume_to_store(b);
 
     auto good_schema_1 = pps::as_record_batch(
       pps::schema_key{subject0, version0, magic1},
