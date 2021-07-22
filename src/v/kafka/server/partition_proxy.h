@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "cluster/metadata_cache.h"
 #include "cluster/partition.h"
 #include "model/fundamental.h"
 #include "storage/types.h"
@@ -85,8 +86,6 @@ partition_proxy make_partition_proxy(Args&&... args) {
 }
 
 std::optional<partition_proxy> make_partition_proxy(
-  const model::materialized_ntp&,
-  ss::lw_shared_ptr<cluster::partition>,
-  cluster::partition_manager&);
+  const model::ntp&, cluster::metadata_cache&, cluster::partition_manager&);
 
 } // namespace kafka

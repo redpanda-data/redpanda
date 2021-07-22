@@ -14,8 +14,7 @@
 #include "config/configuration.h"
 #include "coproc/logger.h"
 #include "coproc/tests/fixtures/fixture_utils.h"
-#include "kafka/server/materialized_partition.h"
-#include "kafka/server/replicated_partition.h"
+#include "kafka/server/partition_proxy.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
@@ -82,21 +81,6 @@ ss::future<> coproc_test_fixture::restart() {
     co_await _root_fixture->wait_for_controller_leadership();
 }
 
-/// TODO: Code duplication remove after a rebase of dev
-static std::optional<kafka::partition_proxy> make_partition_proxy(
-  const model::materialized_ntp& ntp,
-  ss::lw_shared_ptr<cluster::partition> partition,
-  cluster::partition_manager& pm) {
-    if (!ntp.is_materialized()) {
-        return kafka::make_partition_proxy<kafka::replicated_partition>(
-          partition);
-    }
-    if (auto log = pm.log(ntp.input_ntp()); log) {
-        return kafka::make_partition_proxy<kafka::materialized_partition>(*log);
-    }
-    return std::nullopt;
-}
-
 static ss::future<std::optional<ss::shard_id>>
 wait_for_partition(const model::ntp& ntp, cluster::shard_table& shard_table) {
     return ss::do_with(
@@ -118,9 +102,8 @@ coproc_test_fixture::drain(
   std::size_t limit,
   model::offset offset,
   model::timeout_clock::time_point timeout) {
-    const auto m_ntp = model::materialized_ntp(std::move(ntp));
     auto shard_id = co_await wait_for_partition(
-      m_ntp.source_ntp(), _root_fixture->app.shard_table.local());
+      ntp, _root_fixture->app.shard_table.local());
     if (!shard_id) {
         vlog(
           coproc::coproclog.error,
@@ -131,18 +114,17 @@ coproc_test_fixture::drain(
     vlog(
       coproc::coproclog.info,
       "searching for ntp {} on shard id {} ...with value for limit: {}",
-      m_ntp.input_ntp(),
+      ntp,
       *shard_id,
       limit);
     using ret_t = std::optional<model::record_batch_reader::data_t>;
+    auto& cache = _root_fixture->app.metadata_cache;
     co_return co_await _root_fixture->app.partition_manager.invoke_on(
       *shard_id,
-      [this, m_ntp, limit, offset, timeout](
+      [this, ntp, limit, offset, timeout, &cache](
         cluster::partition_manager& pm) -> ss::future<ret_t> {
-          auto partition = pm.get(m_ntp.source_ntp());
-          vassert(
-            partition, "Shard_table has entity for which pm or cache doesn't");
-          auto partition_proxy = make_partition_proxy(m_ntp, partition, pm);
+          auto partition_proxy = kafka::make_partition_proxy(
+            ntp, cache.local(), pm);
           auto r = co_await do_drain(
             offset,
             limit,
