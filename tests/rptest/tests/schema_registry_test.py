@@ -14,10 +14,10 @@ import uuid
 import requests
 import time
 import random
-import threading
+import os
 
 from ducktape.mark.resource import cluster
-from ducktape.utils.util import wait_until
+from ducktape.services.background_thread import BackgroundThreadService
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -44,7 +44,6 @@ class SchemaRegistryTest(RedpandaTest):
     """
     Test schema registry against a redpanda cluster.
     """
-
     def __init__(self, context):
         super(SchemaRegistryTest, self).__init__(
             context,
@@ -60,7 +59,9 @@ class SchemaRegistryTest(RedpandaTest):
         requests_log.setLevel(logging.getLogger().level)
         requests_log.propagate = True
 
-    def _request(self, verb, path, **kwargs):
+        self._ctx = context
+
+    def _request(self, verb, path, hostname=None, **kwargs):
         """
 
         :param verb: String, as for first arg to requests.request
@@ -68,13 +69,15 @@ class SchemaRegistryTest(RedpandaTest):
         :param timeout: Optional requests timeout in seconds
         :return:
         """
-        # Pick hostname once: we will retry the same place we got an error,
-        # to avoid silently skipping hosts that are persistently broken
-        nodes = [n for n in self.redpanda.nodes]
-        random.shuffle(nodes)
-        node = nodes[0]
 
-        hostname = node.account.hostname
+        if hostname is None:
+            # Pick hostname once: we will retry the same place we got an error,
+            # to avoid silently skipping hosts that are persistently broken
+            nodes = [n for n in self.redpanda.nodes]
+            random.shuffle(nodes)
+            node = nodes[0]
+            hostname = node.account.hostname
+
         uri = f"http://{hostname}:8081/{path}"
 
         if 'timeout' not in kwargs:
@@ -161,11 +164,13 @@ class SchemaRegistryTest(RedpandaTest):
     def _post_subjects_subject_versions(self,
                                         subject,
                                         data,
-                                        headers=HTTP_POST_HEADERS):
+                                        headers=HTTP_POST_HEADERS,
+                                        **kwargs):
         return self._request("POST",
                              f"subjects/{subject}/versions",
                              headers=headers,
-                             data=data)
+                             data=data,
+                             **kwargs)
 
     def _get_subjects_subject_versions_version(self,
                                                subject,
@@ -312,7 +317,7 @@ class SchemaRegistryTest(RedpandaTest):
         result = result_raw.json()
         assert result["error_code"] == 40401
         assert result[
-                   "message"] == f"Subject '{topic}-key' Version 2 not found."
+            "message"] == f"Subject '{topic}-key' Version 2 not found."
 
         self.logger.debug("Get schema version 1 for subject key")
         result_raw = self._get_subjects_subject_versions_version(
@@ -574,3 +579,43 @@ class SchemaRegistryTest(RedpandaTest):
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json() == [1, 2, 3]
+
+    @cluster(num_nodes=4)
+    def test_concurrent_writes(self):
+        # Warm up the servers (schema_registry doesn't create topic etc before first access)
+        for node in self.redpanda.nodes:
+            r = self._request("GET",
+                              "subjects",
+                              hostname=node.account.hostname)
+            assert r.status_code == requests.codes.ok
+
+        node_names = [n.account.hostname for n in self.redpanda.nodes]
+
+        # Expose into StressTest
+        logger = self.logger
+        python = "python3.8"
+        script_name = "schema_registry_test_helper.py"
+
+        dir = os.path.dirname(os.path.realpath(__file__))
+        src_path = os.path.join(dir, script_name)
+        dest_path = os.path.join("/tmp", script_name)
+
+        class StressTest(BackgroundThreadService):
+            def __init__(self, context):
+                super(StressTest, self).__init__(context, num_nodes=1)
+
+            def _worker(self, idx, node):
+                node.account.copy_to(src_path, dest_path)
+                ssh_output = node.account.ssh_capture(
+                    f"{python} {dest_path} {' '.join(node_names)}")
+                for line in ssh_output:
+                    logger.info(line)
+
+            def clean_nodes(selfself, nodes):
+                # Remove our remote script
+                for n in nodes:
+                    n.account.remove(dest_path, True)
+
+        svc = StressTest(self._ctx)
+        svc.start()
+        svc.wait()
