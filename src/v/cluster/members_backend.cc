@@ -181,7 +181,10 @@ std::ostream& operator<<(std::ostream& o, const replicas_to_move& r) {
 };
 
 void members_backend::calculate_reallocations_after_node_added(
-  members_backend::update_meta& meta) {
+  members_backend::update_meta& meta) const {
+    if (!config::shard_local_cfg().enable_auto_rebalance_on_node_add()) {
+        return;
+    }
     auto& topics = _topics.local().topics_map();
     struct node_info {
         size_t replicas_count;

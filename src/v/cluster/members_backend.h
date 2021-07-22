@@ -70,7 +70,7 @@ private:
     void handle_recommissioned(const members_manager::node_update&);
     void handle_reallocation_finished(model::node_id);
     void reassign_replicas(partition_assignment&, partition_reallocation&);
-    void calculate_reallocations_after_node_added(update_meta&);
+    void calculate_reallocations_after_node_added(update_meta&) const;
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<topic_table>& _topics;
     ss::sharded<partition_allocator>& _allocator;

@@ -797,6 +797,12 @@ configuration::configuration()
       "Recovery raft configuration on start for NTPs matching pattern",
       required::no,
       {})
+  , enable_auto_rebalance_on_node_add(
+      *this,
+      "enable_auto_rebalance_on_node_add",
+      "Enable automatic partition rebalancing when new nodes are added",
+      required::no,
+      false)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",
