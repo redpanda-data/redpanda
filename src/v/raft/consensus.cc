@@ -908,10 +908,23 @@ ss::future<> consensus::start() {
     vlog(_ctxlog.info, "Starting");
     return _op_lock.with([this] {
         read_voted_for();
+        const bool initial_state = is_initial_state();
+        vlog(
+          _ctxlog.info,
+          "Starting with voted_for {} term {} initial_state {}",
+          _voted_for,
+          _term,
+          initial_state);
 
-        return _configuration_manager
-          .start(is_initial_state(), _self.revision())
-          .then([this] { return hydrate_snapshot(); })
+        return _configuration_manager.start(initial_state, _self.revision())
+          .then([this] {
+              vlog(
+                _ctxlog.trace,
+                "Configuration manager started: {}",
+                _configuration_manager);
+
+              return hydrate_snapshot();
+          })
           .then([this] {
               vlog(
                 _ctxlog.debug,
@@ -925,18 +938,28 @@ ss::future<> consensus::start() {
           })
           .then([this](configuration_bootstrap_state st) {
               auto lstats = _log.offsets();
+
+              vlog(_ctxlog.info, "Read bootstrap state: {}", st);
+              vlog(_ctxlog.info, "Current log offsets: {}", lstats);
+
               // if log term is newer than the one comming from voted_for state,
               // we reset voted_for state
               if (lstats.dirty_offset_term > _term) {
                   _term = lstats.dirty_offset_term;
                   _voted_for = {};
               }
+
               /**
                * The configuration manager state may be divereged from the log
                * state, as log is flushed lazily, we have to make sure that the
                * log and configuration manager has exactly the same offsets
                * range
                */
+              vlog(
+                _ctxlog.info,
+                "Truncating configurations at {}",
+                lstats.dirty_offset);
+
               auto f = _configuration_manager.truncate(
                 details::next_offset(lstats.dirty_offset));
 
