@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -54,15 +55,23 @@ type NodeState struct {
 }
 
 func HostAddr(port uint) string {
-	return fmt.Sprintf("127.0.0.1:%d", port)
+	return net.JoinHostPort("127.0.0.1", fmt.Sprint(port))
 }
 
 func ListenAddresses(ip string, internalPort, externalPort uint) string {
-	return fmt.Sprintf("internal://0.0.0.0:%d,external://%s:%d", internalPort, ip, externalPort)
+	return fmt.Sprintf(
+		"internal://%s,external://%s",
+		net.JoinHostPort("0.0.0.0", fmt.Sprint(internalPort)),
+		net.JoinHostPort(ip, fmt.Sprint(externalPort)),
+	)
 }
 
 func AdvertiseAddresses(ip string, internalPort, externalPort uint) string {
-	return fmt.Sprintf("internal://%s:%d,external://127.0.0.1:%d", ip, internalPort, externalPort)
+	return fmt.Sprintf(
+		"internal://%s,external://%s",
+		net.JoinHostPort(ip, fmt.Sprint(internalPort)),
+		net.JoinHostPort("127.0.0.1", fmt.Sprint(externalPort)),
+	)
 }
 
 // Returns the container name for the given node ID.
@@ -266,15 +275,15 @@ func CreateNode(
 		"--pandaproxy-addr",
 		ListenAddresses(ip, config.DefaultProxyPort, proxyPort),
 		"--schema-registry-addr",
-		fmt.Sprintf("%s:%d", ip, config.DefaultSchemaRegPort),
+		net.JoinHostPort(ip, strconv.Itoa(config.DefaultSchemaRegPort)),
 		"--rpc-addr",
-		fmt.Sprintf("%s:%d", ip, config.Default().Redpanda.RPCServer.Port),
+		net.JoinHostPort(ip, strconv.Itoa(config.Default().Redpanda.RPCServer.Port)),
 		"--advertise-kafka-addr",
 		AdvertiseAddresses(ip, config.DefaultKafkaPort, kafkaPort),
 		"--advertise-pandaproxy-addr",
 		AdvertiseAddresses(ip, config.DefaultProxyPort, proxyPort),
 		"--advertise-rpc-addr",
-		fmt.Sprintf("%s:%d", ip, config.Default().Redpanda.RPCServer.Port),
+		net.JoinHostPort(ip, strconv.Itoa(config.Default().Redpanda.RPCServer.Port)),
 		"--smp 1 --memory 1G --reserve-memory 0M",
 	}
 	containerConfig := container.Config{

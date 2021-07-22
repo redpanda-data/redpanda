@@ -11,6 +11,7 @@ package generate
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -148,7 +149,7 @@ func renderConfig(jobName string, targets []string) ([]byte, error) {
 
 func discoverHosts(url string, port int) ([]string, error) {
 	hosts := []string{}
-	addr := fmt.Sprintf("%s:%d", url, port)
+	addr := net.JoinHostPort(url, strconv.Itoa(port))
 	client, err := kafka.InitClient(addr)
 	if err != nil {
 		return hosts, err
@@ -159,7 +160,10 @@ func discoverHosts(url string, port int) ([]string, error) {
 		if err != nil {
 			return hosts, err
 		}
-		hosts = append(hosts, fmt.Sprintf("%s:%d", host, 9644))
+		hosts = append(
+			hosts,
+			net.JoinHostPort(host, strconv.Itoa(config.DefaultAdminPort)),
+		)
 	}
 	return hosts, nil
 }
