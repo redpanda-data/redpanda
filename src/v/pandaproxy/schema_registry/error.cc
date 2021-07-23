@@ -44,6 +44,8 @@ struct error_category final : std::error_category {
             return "Version not deleted before being permanently deleted";
         case error_code::topic_parse_error:
             return "Unexpected data found in topic";
+        case error_code::write_conflict:
+            return "Write conflict";
         }
         return "(unrecognized error)";
     }
@@ -68,6 +70,8 @@ struct error_category final : std::error_category {
             return reply_error_code::unprocessable_entity;
         case error_code::topic_parse_error:
             return reply_error_code::zookeeper_error; // 50001
+        case error_code::write_conflict:
+            return reply_error_code::kafka_retriable_error; // 50003
         }
         return {};
     }

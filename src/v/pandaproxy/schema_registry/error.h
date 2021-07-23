@@ -26,6 +26,7 @@ enum class error_code {
     subject_version_soft_deleted,
     subject_version_not_deleted,
     topic_parse_error,
+    write_conflict,
 };
 
 std::error_code make_error_code(error_code);
