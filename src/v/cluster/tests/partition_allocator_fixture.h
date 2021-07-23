@@ -17,8 +17,17 @@
 #include "model/fundamental.h"
 #include "random/fast_prng.h"
 #include "random/generators.h"
+#include "redpanda/application.h"
 
 struct partition_allocator_fixture {
+    partition_allocator_fixture() {
+        ss::smp::invoke_on_all([] {
+            config::shard_local_cfg()
+              .get("enable_auto_rebalance_on_node_add")
+              .set_value(true);
+        }).get0();
+    }
+
     void register_node(int id, int core_count) {
         allocator.register_node(std::make_unique<cluster::allocation_node>(
           model::node_id(id),
