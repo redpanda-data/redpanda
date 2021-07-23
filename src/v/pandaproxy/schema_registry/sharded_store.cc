@@ -13,9 +13,11 @@
 
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
+#include "kafka/protocol/errors.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/avro.h"
 #include "pandaproxy/schema_registry/errors.h"
+#include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/store.h"
 #include "pandaproxy/schema_registry/types.h"
 
@@ -48,6 +50,25 @@ ss::future<> sharded_store::stop() { return _store.stop(); }
 
 ss::future<sharded_store::insert_result>
 sharded_store::insert(subject sub, schema_definition def, schema_type type) {
+    std::vector<schema_version> versions;
+    try {
+        versions = co_await get_versions(sub, include_deleted::no);
+    } catch (const exception& e) {
+        if (e.code() != error_code::subject_not_found) {
+            throw;
+        }
+    }
+    if (!versions.empty()) {
+        auto compat = co_await is_compatible(sub, versions.back(), def, type);
+        if (!compat) {
+            throw exception(
+              error_code::schema_incompatible,
+              fmt::format(
+                "Schema being registered is incompatible with an earlier "
+                "schema for subject \"{}\"",
+                sub));
+        }
+    }
     auto id = (co_await insert_schema(std::move(def), type)).id;
     auto [version, inserted] = co_await _store.invoke_on(
       shard_for(sub), &store::insert_subject, sub, id);

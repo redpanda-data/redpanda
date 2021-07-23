@@ -370,6 +370,17 @@ class SchemaRegistryTest(RedpandaTest):
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json()["is_compatible"] == False
 
+        self.logger.debug("Posting incompatible schema 3 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_3_data)
+        assert result_raw.status_code == requests.codes.conflict
+        assert result_raw.json()["error_code"] == 409
+
+        self.logger.debug("Posting compatible schema 2 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_2_data)
+        assert result_raw.status_code == requests.codes.ok
+
     @cluster(num_nodes=3)
     def test_delete_subject(self):
         """
