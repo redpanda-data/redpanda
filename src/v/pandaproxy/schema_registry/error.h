@@ -19,6 +19,7 @@ enum class error_code {
     // 0 is success
     schema_id_not_found = 1,
     schema_invalid,
+    schema_incompatible,
     subject_not_found,
     subject_version_not_found,
     subject_soft_deleted,
