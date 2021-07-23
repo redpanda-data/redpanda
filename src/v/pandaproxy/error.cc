@@ -24,6 +24,8 @@ struct reply_error_category final : std::error_category {
         switch (static_cast<reply_error_code>(ev)) {
         case reply_error_code::not_acceptable:
             return "HTTP 406 Not Acceptable";
+        case reply_error_code::conflict:
+            return "HTTP 409 Conflict";
         case reply_error_code::unsupported_media_type:
             return "HTTP 415 Unsupported Media Type";
         case reply_error_code::unprocessable_entity:
