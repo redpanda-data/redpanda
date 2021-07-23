@@ -254,6 +254,7 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version(
 
     auto json_rslt{json::rjson_serialize(post_subject_versions_version_response{
       .sub = sub,
+      .id = get_res.id,
       .version = version,
       .definition = std::move(get_res.definition)})};
     rp.rep->write_body("json", json_rslt);
