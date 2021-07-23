@@ -31,8 +31,9 @@ public:
         schema_id id;
         bool inserted;
     };
+
     ss::future<insert_result>
-    insert(subject sub, schema_definition def, schema_type type);
+    project_ids(subject sub, schema_definition def, schema_type type);
 
     ss::future<bool> upsert(
       subject sub,
@@ -95,13 +96,6 @@ public:
       schema_type new_schema_type);
 
 private:
-    struct insert_schema_result {
-        schema_id id;
-        bool inserted;
-    };
-    ss::future<insert_schema_result>
-    insert_schema(schema_definition def, schema_type type);
-
     ss::future<bool>
     upsert_schema(schema_id id, schema_definition def, schema_type type);
 
@@ -114,11 +108,13 @@ private:
     ss::future<bool> upsert_subject(
       subject sub, schema_version version, schema_id id, is_deleted deleted);
 
-    ss::future<schema_id> allocate_schema_id();
     ss::future<> maybe_update_max_schema_id(schema_id id);
+
+    ss::future<schema_id> project_schema_id();
 
     ss::smp_submit_to_options _smp_opts;
     ss::sharded<store> _store;
+
     ///\brief Access must occur only on shard 0.
     schema_id _next_schema_id{1};
 };

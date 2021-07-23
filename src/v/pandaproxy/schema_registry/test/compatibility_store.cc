@@ -30,13 +30,27 @@ SEASTAR_THREAD_TEST_CASE(test_avro_basic_backwards_store_compat) {
     s.set_compatibility(pps::compatibility_level::backward).get();
     auto sub = pps::subject{"sub"};
     auto avro = pps::schema_type::avro;
-    auto res = s.insert(sub, pps::schema_definition{schema1}, avro).get();
+    s.upsert(
+       sub,
+       pps::schema_definition{schema1},
+       avro,
+       pps::schema_id{1},
+       pps::schema_version{1},
+       pps::is_deleted::no)
+      .get();
     // add a defaulted field
     BOOST_REQUIRE(
       s.is_compatible(
          sub, pps::schema_version{1}, pps::schema_definition{schema2}, avro)
         .get());
-    res = s.insert(sub, pps::schema_definition{schema2}, avro).get();
+    s.upsert(
+       sub,
+       pps::schema_definition{schema2},
+       avro,
+       pps::schema_id{2},
+       pps::schema_version{2},
+       pps::is_deleted::no)
+      .get();
 
     // Test non-defaulted field
     BOOST_REQUIRE(
@@ -45,7 +59,14 @@ SEASTAR_THREAD_TEST_CASE(test_avro_basic_backwards_store_compat) {
          .get());
 
     // Insert schema with non-defaulted field
-    res = s.insert(sub, pps::schema_definition{schema2}, avro).get();
+    s.upsert(
+       sub,
+       pps::schema_definition{schema2},
+       avro,
+       pps::schema_id{2},
+       pps::schema_version{2},
+       pps::is_deleted::no)
+      .get();
 
     // Test Remove defaulted field to previous
     BOOST_REQUIRE(

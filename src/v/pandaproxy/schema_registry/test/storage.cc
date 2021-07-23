@@ -27,9 +27,13 @@ constexpr std::string_view avro_schema_key_sv{
   "keytype": "SCHEMA",
   "subject": "my-kafka-value",
   "version": 1,
-  "magic": 1
+  "magic": 1,
+  "seq": 42,
+  "node": 2
 })"};
 const pps::schema_key avro_schema_key{
+  .seq{model::offset{42}},
+  .node{model::node_id{2}},
   .sub{pps::subject{"my-kafka-value"}},
   .version{pps::schema_version{1}},
   .magic{pps::topic_key_magic{1}}};

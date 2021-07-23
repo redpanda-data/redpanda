@@ -117,6 +117,15 @@ public:
 
 struct schema_key {
     static constexpr topic_key_type keytype{topic_key_type::schema};
+
+    // The record is only valid if its offset in the topic matches `seq`
+    model::offset seq;
+
+    // The node differentiates conflicting writes to the same seq,
+    // to prevent compaction from collapsing invalid writes into
+    // preceding valid writes.
+    model::node_id node;
+
     subject sub;
     schema_version version;
     topic_key_magic magic{1};
@@ -126,7 +135,9 @@ struct schema_key {
     friend std::ostream& operator<<(std::ostream& os, const schema_key& v) {
         fmt::print(
           os,
-          "keytype: {}, subject: {}, version: {}, magic: {}",
+          "seq: {}, node: {}, keytype: {}, subject: {}, version: {}, magic: {}",
+          v.seq,
+          v.node,
           to_string_view(v.keytype),
           v.sub,
           v.version,
@@ -147,6 +158,10 @@ inline void rjson_serialize(
     ::json::rjson_serialize(w, key.version);
     w.Key("magic");
     ::json::rjson_serialize(w, key.magic);
+    w.Key("seq");
+    ::json::rjson_serialize(w, key.seq);
+    w.Key("node");
+    ::json::rjson_serialize(w, key.node);
     w.EndObject();
 }
 
@@ -158,6 +173,8 @@ class schema_key_handler : public json::base_handler<Encoding> {
         keytype,
         subject,
         version,
+        seq,
+        node,
         magic,
     };
     state _state = state::empty;
@@ -179,6 +196,8 @@ public:
                                      .match("subject", state::subject)
                                      .match("version", state::version)
                                      .match("magic", state::magic)
+                                     .match("seq", state::seq)
+                                     .match("node", state::node)
                                      .default_match(std::nullopt)};
             if (s.has_value()) {
                 _state = *s;
@@ -190,6 +209,8 @@ public:
         case state::subject:
         case state::version:
         case state::magic:
+        case state::seq:
+        case state::node:
             return false;
         }
         return false;
@@ -204,6 +225,16 @@ public:
         }
         case state::magic: {
             result.magic = topic_key_magic{i};
+            _state = state::object;
+            return true;
+        }
+        case state::seq: {
+            result.seq = model::offset{i};
+            _state = state::object;
+            return true;
+        }
+        case state::node: {
+            result.node = model::node_id{i};
             _state = state::object;
             return true;
         }
@@ -233,6 +264,8 @@ public:
         case state::object:
         case state::version:
         case state::magic:
+        case state::seq:
+        case state::node:
             return false;
         }
         return false;
@@ -823,11 +856,11 @@ public:
     }
 };
 
-template<typename Handler>
-auto from_json_iobuf(iobuf&& iobuf) {
+template<typename Handler, typename... Args>
+auto from_json_iobuf(iobuf&& iobuf, Args&&... args) {
     auto p = iobuf_parser(std::move(iobuf));
     auto str = p.read_string(p.bytes_left());
-    return json::rjson_parse(str.data(), Handler{});
+    return json::rjson_parse(str.data(), Handler{std::forward<Args>(args)...});
 }
 
 template<typename T>
@@ -844,25 +877,6 @@ model::record_batch as_record_batch(Key key, Value val) {
       model::record_batch_type::raft_data, model::offset{0}};
     rb.add_raw_kv(to_json_iobuf(std::move(key)), to_json_iobuf(std::move(val)));
     return std::move(rb).build();
-}
-
-inline model::record_batch make_schema_batch(
-  subject sub,
-  schema_version ver,
-  schema_id id,
-  schema_definition schema,
-  schema_type type,
-  is_deleted deleted) {
-    schema_key key{.sub{sub}, .version{ver}};
-    return as_record_batch(
-      std::move(key),
-      schema_value{
-        .sub{std::move(sub)},
-        .version{ver},
-        .type = type,
-        .id{id},
-        .schema{std::move(schema)},
-        .deleted = deleted});
 }
 
 inline model::record_batch
@@ -890,7 +904,8 @@ inline model::record_batch make_delete_subject_permanently_batch(
 
     std::for_each(versions.cbegin(), versions.cend(), [&](auto version) {
         rb.add_raw_kv(
-          to_json_iobuf(schema_key{.sub{sub}, .version{version}}),
+          to_json_iobuf(
+            schema_key{.seq{0}, .node{0}, .sub{sub}, .version{version}}),
           std::nullopt);
     });
     return std::move(rb).build();
@@ -901,8 +916,8 @@ make_delete_subject_version_batch(subject_schema schema) {
     storage::record_batch_builder rb{
       model::record_batch_type::raft_data, model::offset{0}};
 
-    auto key = to_json_iobuf(
-      schema_key{.sub{schema.sub}, .version{schema.version}});
+    auto key = to_json_iobuf(schema_key{
+      .seq{0}, .node{0}, .sub{schema.sub}, .version{schema.version}});
     rb.add_raw_kv(
       std::move(key),
       to_json_iobuf(schema_value{
@@ -921,7 +936,9 @@ inline model::record_batch make_delete_subject_version_permanently_batch(
       model::record_batch_type::raft_data, model::offset{0}};
 
     rb.add_raw_kv(
-      to_json_iobuf(schema_key{.sub{sub}, .version{version}}), std::nullopt);
+      to_json_iobuf(
+        schema_key{.seq{0}, .node{0}, .sub{sub}, .version{version}}),
+      std::nullopt);
     return std::move(rb).build();
 }
 
@@ -932,14 +949,17 @@ struct consume_to_store {
 
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
         if (!b.header().attrs.is_control()) {
-            co_await model::for_each_record(b, [this](model::record& rec) {
-                return (*this)(std::move(rec));
-            });
+            auto base_offset = b.base_offset();
+            co_await model::for_each_record(
+              b, [this, base_offset](model::record& rec) {
+                  auto offset = base_offset + model::offset(rec.offset_delta());
+                  return (*this)(std::move(rec), offset);
+              });
         }
         co_return ss::stop_iteration::no;
     }
 
-    ss::future<> operator()(model::record record) {
+    ss::future<> operator()(model::record record, model::offset offset) {
         auto key = record.release_key();
         auto key_type_str = from_json_iobuf<topic_key_type_handler<>>(
           key.share(0, key.size_bytes()));
@@ -947,21 +967,24 @@ struct consume_to_store {
         auto key_type = from_string_view<topic_key_type>(key_type_str);
         if (!key_type.has_value()) {
             vlog(plog.error, "Ignoring keytype: {}", key_type_str);
+            co_await _sequencer.advance_offset(offset);
             co_return;
         }
 
         switch (*key_type) {
         case topic_key_type::noop:
-            co_return;
+            break;
         case topic_key_type::schema: {
             std::optional<schema_value> val;
             if (!record.value().empty()) {
                 val.emplace(from_json_iobuf<schema_value_handler<>>(
                   record.release_value()));
             }
-            co_return co_await apply(
+            co_await apply(
+              offset,
               from_json_iobuf<schema_key_handler<>>(std::move(key)),
               std::move(val));
+            break;
         }
         case topic_key_type::config: {
             std::optional<config_value> val;
@@ -969,25 +992,47 @@ struct consume_to_store {
                 val.emplace(from_json_iobuf<config_value_handler<>>(
                   record.release_value()));
             }
-            co_return co_await apply(
+            co_await apply(
               from_json_iobuf<config_key_handler<>>(std::move(key)), val);
+            break;
         }
         case topic_key_type::delete_subject:
-            co_return co_await apply(
+            co_await apply(
               from_json_iobuf<delete_subject_key_handler<>>(std::move(key)),
               from_json_iobuf<delete_subject_value_handler<>>(
                 record.release_value()));
+            break;
         }
+
+        co_await _sequencer.advance_offset(offset);
     }
 
-    ss::future<> apply(schema_key key, std::optional<schema_value> val) {
+    ss::future<> apply(
+      model::offset offset, schema_key key, std::optional<schema_value> val) {
         if (key.magic != 0 && key.magic != 1) {
             throw exception(
               error_code::topic_parse_error,
               fmt::format("Unexpected magic: {}", key));
         }
+
+        // Out-of-place events happen when two writers collide.  First writer
+        // wins: disregard subsequent events whose seq field doesn't match
+        // their actually offset.
+        if (offset != key.seq) {
+            vlog(
+              plog.debug,
+              "Ignoring out of order {} (at offset {})",
+              key,
+              offset);
+            co_return;
+        }
+
         try {
-            vlog(plog.debug, "Applying: {}", key);
+            vlog(
+              plog.debug,
+              "Applying: {} (at offset {})",
+              key,
+              offset);
             if (!val) {
                 co_await _store.delete_subject_version(
                   key.sub,

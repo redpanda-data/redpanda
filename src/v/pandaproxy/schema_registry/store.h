@@ -149,6 +149,32 @@ public:
         return res;
     }
 
+    ///\brief If this schema ID isn't already in the version list, return
+    ///       what the version number will be if it is inserted.
+    std::optional<schema_version>
+    project_version(const subject& sub, schema_id sid) const {
+        auto subject_iter = _subjects.find(sub);
+        if (subject_iter == _subjects.end()) {
+            // Subject doesn't exist yet.  First version will be 1.
+            return schema_version{1};
+        }
+
+        auto& versions = subject_iter->second.versions;
+
+        schema_version maxver{0};
+        for (auto v : versions) {
+            if (v.id == sid) {
+                // No version to project, the schema is already
+                // present in this subject.
+                return std::nullopt;
+            } else {
+                maxver = std::max(maxver, v.version);
+            }
+        }
+
+        return maxver + 1;
+    }
+
     ///\brief Return a list of versions and associated schema_id.
     result<std::vector<subject_version_id>>
     get_version_ids(const subject& sub, include_deleted inc_del) const {

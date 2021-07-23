@@ -151,10 +151,10 @@ get_schemas_ids_id(server::request_t rq, server::reply_t rp) {
     auto id = parse::request_param<schema_id>(*rq.req, "id");
     rq.req.reset();
 
-    auto schema = co_await rq.service().schema_store().get_schema(id);
+    auto schema_val = co_await rq.service().schema_store().get_schema(id);
 
-    auto json_rslt = ppj::rjson_serialize(
-      get_schemas_ids_id_response{.definition{std::move(schema.definition)}});
+    auto json_rslt = ppj::rjson_serialize(get_schemas_ids_id_response{
+      .definition{std::move(schema_val.definition)}});
     rp.rep->write_body("json", json_rslt);
     co_return rp;
 }
@@ -194,35 +194,19 @@ ss::future<server::reply_t>
 post_subject_versions(server::request_t rq, server::reply_t rp) {
     parse_content_type_header(rq);
     parse_accept_header(rq, rp);
+    auto sub = parse::request_param<subject>(*rq.req, "subject");
+    vlog(plog.debug, "post_subject_versions subject='{}'", sub);
     auto req = post_subject_versions_request{
-      .sub = parse::request_param<subject>(*rq.req, "subject"),
+      .sub = sub,
       .payload = ppj::rjson_parse(
         rq.req->content.data(), post_subject_versions_request_handler<>{})};
     rq.req.reset();
 
-    auto ins_res = co_await rq.service().schema_store().insert(
+    auto schema_id = co_await rq.service().writer().write_subject_version(
       req.sub, req.payload.schema, req.payload.type);
 
-    if (ins_res.inserted) {
-        auto batch = make_schema_batch(
-          req.sub,
-          ins_res.version,
-          ins_res.id,
-          req.payload.schema,
-          req.payload.type,
-          is_deleted::no);
-
-        auto res = co_await rq.service().client().local().produce_record_batch(
-          model::schema_registry_internal_tp, std::move(batch));
-
-        // TODO(Ben): Check the error reporting here
-        if (res.error_code != kafka::error_code::none) {
-            throw kafka::exception(res.error_code, *res.error_message);
-        }
-    }
-
     auto json_rslt{
-      json::rjson_serialize(post_subject_versions_response{.id{ins_res.id}})};
+      json::rjson_serialize(post_subject_versions_response{.id{schema_id}})};
     rp.rep->write_body("json", json_rslt);
     co_return rp;
 }

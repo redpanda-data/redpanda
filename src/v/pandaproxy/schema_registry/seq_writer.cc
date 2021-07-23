@@ -128,4 +128,58 @@ void seq_writer::advance_offset_inner(model::offset offset) {
     }
 }
 
+ss::future<schema_id> seq_writer::write_subject_version(
+  subject sub, schema_definition def, schema_type type) {
+    auto do_write = [sub, def, type](
+                      model::offset write_at,
+                      seq_writer& seq) -> ss::future<std::optional<schema_id>> {
+        // Check if store already contains this data: if
+        // so, we do no I/O and return the schema ID.
+        auto projected = co_await seq._store.project_ids(sub, def, type);
+
+        if (!projected.inserted) {
+            vlog(plog.debug, "write_subject_version: no-op");
+            co_return projected.id;
+        } else {
+            vlog(
+              plog.debug,
+              "seq_writer::write_subject_version project offset={} subject={} "
+              "schema={} "
+              "version={}",
+              write_at,
+              sub,
+              projected.id,
+              projected.version);
+
+            auto key = schema_key{
+              .seq{write_at},
+              .node{_node_id},
+              .sub{sub},
+              .version{projected.version}};
+            auto value = schema_value{
+              .sub{sub},
+              .version{projected.version},
+              .type = type,
+              .id{projected.id},
+              .schema{def},
+              .deleted = is_deleted::no};
+
+            auto batch = as_record_batch(key, value);
+
+            auto success = co_await seq.produce_and_check(
+              write_at, std::move(batch));
+            if (success) {
+                auto applier = consume_to_store(seq._store, seq);
+                co_await applier.apply(write_at, key, value);
+                seq.advance_offset_inner(write_at);
+                co_return projected.id;
+            } else {
+                co_return std::nullopt;
+            }
+        }
+    };
+
+    return sequenced_write(do_write);
+}
+
 } // namespace pandaproxy::schema_registry

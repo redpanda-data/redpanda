@@ -40,6 +40,9 @@ public:
     // API for readers: notify us when they have read and applied an offset
     ss::future<> advance_offset(model::offset offset);
 
+    ss::future<schema_id>
+    write_subject_version(subject sub, schema_definition def, schema_type type);
+
 private:
     ss::smp_submit_to_options _smp_opts;
 
@@ -71,6 +74,8 @@ private:
         return container().invoke_on(0, _smp_opts, remote);
     }
 
+    /// The part of sequenced_write that runs on shard zero
+    ///
     /// This is declared as a separate member function rather than
     /// inline in sequenced_write, to avoid compiler issues (and resulting
     /// crashes) seen when passing in a coroutine lambda.
