@@ -50,7 +50,7 @@ ss::future<sharded_store::insert_result>
 sharded_store::insert(subject sub, schema_definition def, schema_type type) {
     auto id = (co_await insert_schema(std::move(def), type)).id;
     auto [version, inserted] = co_await _store.invoke_on(
-      shard_for(sub), &store::insert_subject, sub, id);
+      shard_for(sub), _smp_opts, &store::insert_subject, sub, id);
     co_return insert_result{version, id, inserted};
 }
 
@@ -67,7 +67,7 @@ ss::future<bool> sharded_store::upsert(
 
 ss::future<schema> sharded_store::get_schema(const schema_id& id) {
     auto schema = co_await _store.invoke_on(
-      shard_for(id), &store::get_schema, id);
+      shard_for(id), _smp_opts, &store::get_schema, id);
     co_return std::move(schema).value();
 }
 
@@ -75,6 +75,7 @@ ss::future<subject_schema> sharded_store::get_subject_schema(
   const subject& sub, schema_version version, include_deleted inc_del) {
     auto v_id = (co_await _store.invoke_on(
                    shard_for(sub),
+                   _smp_opts,
                    &store::get_subject_version_id,
                    sub,
                    version,
@@ -107,14 +108,14 @@ sharded_store::get_subjects(include_deleted inc_del) {
 ss::future<std::vector<schema_version>>
 sharded_store::get_versions(const subject& sub, include_deleted inc_del) {
     auto versions = co_await _store.invoke_on(
-      shard_for(sub), &store::get_versions, sub, inc_del);
+      shard_for(sub), _smp_opts, &store::get_versions, sub, inc_del);
     co_return std::move(versions).value();
 }
 
 ss::future<std::vector<schema_version>>
 sharded_store::delete_subject(const subject& sub, permanent_delete permanent) {
     auto versions = co_await _store.invoke_on(
-      shard_for(sub), &store::delete_subject, sub, permanent);
+      shard_for(sub), _smp_opts, &store::delete_subject, sub, permanent);
     co_return std::move(versions).value();
 }
 
@@ -125,6 +126,7 @@ ss::future<bool> sharded_store::delete_subject_version(
   include_deleted inc_del) {
     auto deleted = co_await _store.invoke_on(
       shard_for(sub),
+      _smp_opts,
       &store::delete_subject_version,
       sub,
       version,
@@ -142,7 +144,10 @@ sharded_store::get_compatibility(const subject& sub) {
     using overload_t = result<compatibility_level> (store::*)(const subject&)
       const;
     auto level = co_await _store.invoke_on(
-      shard_for(sub), static_cast<overload_t>(&store::get_compatibility), sub);
+      shard_for(sub),
+      _smp_opts,
+      static_cast<overload_t>(&store::get_compatibility),
+      sub);
     co_return level.value();
 }
 
@@ -161,6 +166,7 @@ ss::future<bool> sharded_store::set_compatibility(
       const subject&, compatibility_level);
     auto set = co_await _store.invoke_on(
       shard_for(sub),
+      _smp_opts,
       static_cast<overload_t>(&store::set_compatibility),
       sub,
       compatibility);
@@ -169,7 +175,7 @@ ss::future<bool> sharded_store::set_compatibility(
 
 ss::future<bool> sharded_store::clear_compatibility(const subject& sub) {
     auto cleared = co_await _store.invoke_on(
-      shard_for(sub), &store::clear_compatibility, sub);
+      shard_for(sub), _smp_opts, &store::clear_compatibility, sub);
     co_return cleared.value();
 }
 
@@ -194,20 +200,31 @@ ss::future<bool> sharded_store::upsert_schema(
   schema_id id, schema_definition def, schema_type type) {
     co_await maybe_update_max_schema_id(id);
     co_return co_await _store.invoke_on(
-      shard_for(id), &store::upsert_schema, id, std::move(def), type);
+      shard_for(id),
+      _smp_opts,
+      &store::upsert_schema,
+      id,
+      std::move(def),
+      type);
 }
 
 ss::future<sharded_store::insert_subject_result>
 sharded_store::insert_subject(subject sub, schema_id id) {
     auto [version, inserted] = co_await _store.invoke_on(
-      shard_for(sub), &store::insert_subject, sub, id);
+      shard_for(sub), _smp_opts, &store::insert_subject, sub, id);
     co_return insert_subject_result{version, inserted};
 }
 
 ss::future<bool> sharded_store::upsert_subject(
   subject sub, schema_version version, schema_id id, is_deleted deleted) {
     co_return co_await _store.invoke_on(
-      shard_for(sub), &store::upsert_subject, sub, version, id, deleted);
+      shard_for(sub),
+      _smp_opts,
+      &store::upsert_subject,
+      sub,
+      version,
+      id,
+      deleted);
 }
 
 ss::future<schema_id> sharded_store::allocate_schema_id() {
