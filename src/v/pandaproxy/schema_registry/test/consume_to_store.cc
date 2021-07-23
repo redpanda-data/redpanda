@@ -50,7 +50,25 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
     s.start(ss::default_smp_service_group()).get();
     auto stop_store = ss::defer([&s]() { s.stop().get(); });
 
-    auto c = pps::consume_to_store(s);
+    // This kafka client will not be used by the sequencer
+    // (which itself is only instantiated to receive consume_to_store's
+    //  offset updates), is just needed for constructor;
+    ss::sharded<kafka::client::client> dummy_kafka_client;
+    dummy_kafka_client.start(to_yaml(kafka::client::configuration{})).get();
+    auto stop_kafka_client = ss::defer(
+      [&dummy_kafka_client]() { dummy_kafka_client.stop().get(); });
+
+    ss::sharded<pps::seq_writer> seq;
+    seq
+      .start(
+        model::node_id{0},
+        ss::default_smp_service_group(),
+        std::reference_wrapper(dummy_kafka_client),
+        std::reference_wrapper(s))
+      .get();
+    auto stop_seq = ss::defer([&seq]() { seq.stop().get(); });
+
+    auto c = pps::consume_to_store(s, seq.local());
 
     auto good_schema_1 = pps::as_record_batch(
       pps::schema_key{subject0, version0, magic1},

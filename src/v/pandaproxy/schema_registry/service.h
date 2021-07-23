@@ -13,6 +13,7 @@
 
 #include "kafka/client/client.h"
 #include "pandaproxy/schema_registry/configuration.h"
+#include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/util.h"
 #include "pandaproxy/server.h"
@@ -34,7 +35,8 @@ public:
       ss::smp_service_group smp_sg,
       size_t max_memory,
       ss::sharded<kafka::client::client>& client,
-      sharded_store& store);
+      sharded_store& store,
+      ss::sharded<seq_writer>& sequencer);
 
     ss::future<> start();
     ss::future<> stop();
@@ -42,6 +44,7 @@ public:
     configuration& config();
     kafka::client::configuration& client_config();
     ss::sharded<kafka::client::client>& client() { return _client; }
+    seq_writer& writer() { return _writer.local(); }
     sharded_store& schema_store() { return _store; }
 
 private:
@@ -55,6 +58,8 @@ private:
     ctx_server<service>::context_t _ctx;
     ctx_server<service> _server;
     sharded_store& _store;
+    ss::sharded<seq_writer>& _writer;
+
     one_shot _ensure_started;
 };
 

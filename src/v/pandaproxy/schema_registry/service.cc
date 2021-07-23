@@ -189,7 +189,7 @@ ss::future<> service::fetch_internal_topic() {
       model::schema_registry_internal_tp,
       model::offset{0},
       max_offset)
-      .consume(consume_to_store{_store}, model::no_timeout);
+      .consume(consume_to_store{_store, writer()}, model::no_timeout);
 }
 
 service::service(
@@ -197,7 +197,8 @@ service::service(
   ss::smp_service_group smp_sg,
   size_t max_memory,
   ss::sharded<kafka::client::client>& client,
-  sharded_store& store)
+  sharded_store& store,
+  ss::sharded<seq_writer>& sequencer)
   : _config(config)
   , _mem_sem(max_memory)
   , _client(client)
@@ -209,6 +210,7 @@ service::service(
       "/schema_registry_definitions",
       _ctx)
   , _store(store)
+  , _writer(sequencer)
   , _ensure_started{[this]() { return do_start(); }} {}
 
 ss::future<> service::start() {

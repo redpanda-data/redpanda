@@ -19,6 +19,7 @@
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/exceptions.h"
+#include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "raft/types.h"
@@ -925,8 +926,9 @@ inline model::record_batch make_delete_subject_version_permanently_batch(
 }
 
 struct consume_to_store {
-    explicit consume_to_store(sharded_store& s)
-      : _store{s} {}
+    explicit consume_to_store(sharded_store& s, seq_writer& seq)
+      : _store{s}
+      , _sequencer(seq) {}
 
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
         if (!b.header().attrs.is_control()) {
@@ -1042,6 +1044,7 @@ struct consume_to_store {
 
     void end_of_stream() {}
     sharded_store& _store;
+    seq_writer& _sequencer;
 };
 
 } // namespace pandaproxy::schema_registry
