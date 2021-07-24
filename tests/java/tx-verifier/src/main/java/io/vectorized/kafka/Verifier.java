@@ -19,8 +19,16 @@ class Verifier {
     abortPasses(args[0]);
     commutingTxesPass(args[0]);
     conflictingTxFails(args[0]);
+    readCommittedSeekTest(args[0]);
+    readUncommittedSeekTest(args[0]);
+    readCommittedTxSeekTest(args[0]);
+    readUncommittedTxSeekTest(args[0]);
     fetchReadsCommittedTxsTest(args[0]);
     fetchDoesntReadAbortedTxsTest(args[0]);
+    readCommittedSeekRespectsOngoingTx(args[0]);
+    readCommittedSeekRespectsLongHangingTx(args[0]);
+    readCommittedSeekDoesntRespectShortHangingTx(args[0]);
+    readUncommittedSeekDoesntRespectOngoingTx(args[0]);
   }
 
   static void initPasses(String connection) throws Exception {
@@ -82,6 +90,67 @@ class Verifier {
     p2.commitTransaction();
     p2.close();
     p1.close();
+  }
+
+  static void seekTest(String connection, boolean isReadComitted)
+      throws Exception {
+    var producer = new SimpleProducer(connection);
+    long offset = producer.send(topic1, "key1", "value1");
+    producer.close();
+
+    var consumer = new TxConsumer(connection, topic1, isReadComitted);
+    consumer.seekToEnd();
+
+    int retries = 8;
+    while (offset >= consumer.position() && retries > 0) {
+      // partitions lag behind a coordinator
+      // we can't avoid sleep :(
+      Thread.sleep(500);
+      consumer.seekToEnd();
+      retries--;
+    }
+    assertLess(offset, consumer.position());
+
+    consumer.close();
+  }
+
+  static void readCommittedSeekTest(String connection) throws Exception {
+    seekTest(connection, true);
+  }
+
+  static void readUncommittedSeekTest(String connection) throws Exception {
+    seekTest(connection, false);
+  }
+
+  static void txSeekTest(String connection, boolean isReadComitted)
+      throws Exception {
+    var producer = new TxProducer(connection, txId1);
+    producer.initTransactions();
+    long offset = producer.commitTx(topic1, "key1", "value1");
+    producer.close();
+
+    var consumer = new TxConsumer(connection, topic1, isReadComitted);
+    consumer.seekToEnd();
+
+    int retries = 8;
+    while (offset >= consumer.position() && retries > 0) {
+      // partitions lag behind a coordinator
+      // we can't avoid sleep :(
+      Thread.sleep(500);
+      consumer.seekToEnd();
+      retries--;
+    }
+    assertLess(offset, consumer.position());
+
+    consumer.close();
+  }
+
+  static void readCommittedTxSeekTest(String connection) throws Exception {
+    txSeekTest(connection, true);
+  }
+
+  static void readUncommittedTxSeekTest(String connection) throws Exception {
+    txSeekTest(connection, false);
   }
 
   static void fetchReadsCommittedTxsTest(String connection) throws Exception {
@@ -152,6 +221,97 @@ class Verifier {
         fail("Unexpected key: " + record.key);
       }
     }
+  }
+
+  static void readCommittedSeekRespectsOngoingTx(String connection)
+      throws Exception {
+    var producer = new TxProducer(connection, txId1);
+    producer.initTransactions();
+    producer.beginTransaction();
+    long offset = producer.send(topic1, "key1", "value1");
+
+    var consumer = new TxConsumer(connection, topic1, true);
+    consumer.seekToEnd();
+    assertLessOrEqual(consumer.position(), offset);
+
+    producer.commitTransaction();
+    producer.close();
+    consumer.close();
+  }
+
+  static void readCommittedSeekRespectsLongHangingTx(String connection)
+      throws Exception {
+    var producer = new TxProducer(connection, txId1, Integer.MAX_VALUE);
+    producer.initTransactions();
+    producer.beginTransaction();
+    long offset = producer.send(topic1, "key1", "value1");
+
+    var consumer = new TxConsumer(connection, topic1, true);
+    int retries = 8;
+    while (offset >= consumer.position() && retries > 0) {
+      // partitions lag behind a coordinator
+      // we can't avoid sleep :(
+      Thread.sleep(500);
+      consumer.seekToEnd();
+      retries--;
+    }
+    assertLessOrEqual(consumer.position(), offset);
+
+    producer.commitTransaction();
+    producer.close();
+    consumer.close();
+  }
+
+  static void readCommittedSeekDoesntRespectShortHangingTx(String connection)
+      throws Exception {
+    var producer = new TxProducer(connection, txId1, 100);
+    producer.initTransactions();
+    producer.beginTransaction();
+    long offset = producer.send(topic1, "key1", "value1");
+
+    var consumer = new TxConsumer(connection, topic1, true);
+    int retries = 8;
+    while (offset >= consumer.position() && retries > 0) {
+      // partitions lag behind a coordinator
+      // we can't avoid sleep :(
+      Thread.sleep(500);
+      consumer.seekToEnd();
+      retries--;
+    }
+    assertLess(offset, consumer.position());
+
+    try {
+      producer.commitTransaction();
+      fail("commit must fail because tx is already aborted");
+    } catch (KafkaException e) {
+    }
+
+    producer.close();
+    consumer.close();
+  }
+
+  static void readUncommittedSeekDoesntRespectOngoingTx(String connection)
+      throws Exception {
+    var producer = new TxProducer(connection, txId1);
+    producer.initTransactions();
+    producer.beginTransaction();
+    long offset = producer.send(topic1, "key1", "value1");
+
+    var consumer = new TxConsumer(connection, topic1, false);
+
+    int retries = 8;
+    while (offset >= consumer.position() && retries > 0) {
+      // partitions lag behind a coordinator
+      // we can't avoid sleep :(
+      Thread.sleep(500);
+      consumer.seekToEnd();
+      retries--;
+    }
+    assertLess(offset, consumer.position());
+
+    producer.commitTransaction();
+    producer.close();
+    consumer.close();
   }
 
   static void assertLessOrEqual(long lesser, long sameOrGreater)
