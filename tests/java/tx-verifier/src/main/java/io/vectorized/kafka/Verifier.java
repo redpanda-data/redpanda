@@ -19,6 +19,8 @@ class Verifier {
     abortPasses(args[0]);
     commutingTxesPass(args[0]);
     conflictingTxFails(args[0]);
+    fetchReadsCommittedTxsTest(args[0]);
+    fetchDoesntReadAbortedTxsTest(args[0]);
   }
 
   static void initPasses(String connection) throws Exception {
@@ -80,5 +82,112 @@ class Verifier {
     p2.commitTransaction();
     p2.close();
     p1.close();
+  }
+
+  static void fetchReadsCommittedTxsTest(String connection) throws Exception {
+    Map<String, Long> offsets = new HashMap<>();
+    var producer = new TxProducer(connection, txId1);
+    producer.initTransactions();
+    long first_offset = producer.commitTx(topic1, "key1", "value1");
+    offsets.put("key1", first_offset);
+    for (int i = 2; i < 10; i++) {
+      long offset = producer.commitTx(topic1, "key" + i, "value" + i);
+      offsets.put("key" + i, offset);
+    }
+    long last_offset = producer.commitTx(topic1, "key10", "value10");
+    offsets.put("key10", last_offset);
+    producer.close();
+
+    var consumer = new TxConsumer(connection, topic1, true);
+    consumer.seekToEnd();
+    int retries = 8;
+    while (last_offset >= consumer.position() && retries > 0) {
+      // partitions lag behind a coordinator
+      // we can't avoid sleep :(
+      Thread.sleep(500);
+      consumer.seekToEnd();
+      retries--;
+    }
+    assertLess(last_offset, consumer.position());
+
+    var records = consumer.read(first_offset, last_offset, 1);
+    consumer.close();
+    assertEquals(records.size(), offsets.size());
+    for (var record : records) {
+      assertTrue(offsets.containsKey(record.key));
+      assertEquals(offsets.get(record.key), record.offset);
+    }
+  }
+
+  static void fetchDoesntReadAbortedTxsTest(String connection)
+      throws Exception {
+    var producer = new TxProducer(connection, txId1);
+    producer.initTransactions();
+    long first_offset = producer.commitTx(topic1, "key1", "value1");
+    producer.abortTx(topic1, "key2", "value2");
+    long last_offset = producer.commitTx(topic1, "key3", "value3");
+    producer.close();
+
+    var consumer = new TxConsumer(connection, topic1, true);
+    consumer.seekToEnd();
+    int retries = 8;
+    while (last_offset >= consumer.position() && retries > 0) {
+      // partitions lag behind a coordinator
+      // we can't avoid sleep :(
+      Thread.sleep(500);
+      consumer.seekToEnd();
+      retries--;
+    }
+    assertLess(last_offset, consumer.position());
+
+    var records = consumer.read(first_offset, last_offset, 1);
+    consumer.close();
+    assertEquals(records.size(), 2);
+    for (var record : records) {
+      if (record.key.equals("key1")) {
+        assertEquals(first_offset, record.offset);
+      } else if (record.key.equals("key3")) {
+        assertEquals(last_offset, record.offset);
+      } else {
+        fail("Unexpected key: " + record.key);
+      }
+    }
+  }
+
+  static void assertLessOrEqual(long lesser, long sameOrGreater)
+      throws Exception {
+    if (lesser > sameOrGreater) {
+      throw new Exception(
+          "Expected " + lesser + " to be less than or equal to "
+          + sameOrGreater);
+    }
+  }
+
+  static void assertTrue(boolean x) throws Exception {
+    if (!x) {
+      throw new Exception("Expected true got false");
+    }
+  }
+
+  static void assertLess(long lesser, long greater) throws Exception {
+    if (lesser >= greater) {
+      throw new Exception("Expected " + lesser + " to be less than " + greater);
+    }
+  }
+
+  static void assertEquals(long a, long b) throws Exception {
+    if (a != b) {
+      throw new Exception("Expected " + a + " to be equal to " + b);
+    }
+  }
+
+  static void assertEquals(String a, String b) throws Exception {
+    if (!a.equals(b)) {
+      throw new Exception("Expected " + a + " to be equal to " + b);
+    }
+  }
+
+  static void fail(String message) throws Exception {
+    throw new Exception(message);
   }
 }
