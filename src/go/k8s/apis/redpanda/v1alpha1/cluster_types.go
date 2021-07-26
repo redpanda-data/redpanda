@@ -239,6 +239,9 @@ type PandaproxyAPI struct {
 
 // SchemaRegistryAPI configures the schema registry API
 type SchemaRegistryAPI struct {
+	// Port will set the schema registry listener port in Redpanda
+	// configuration.
+	// If not set the default will be 8081
 	Port int `json:"port"`
 	// External enables user to expose Redpanda
 	// nodes outside of a Kubernetes cluster. For more
