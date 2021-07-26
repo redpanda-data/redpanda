@@ -168,7 +168,7 @@ rm_stm::rm_stm(
   ss::logger& logger,
   raft::consensus* c,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend)
-  : persisted_stm("rm", logger, c)
+  : persisted_stm("tx.snapshot", logger, c)
   , _oldest_session(model::timestamp::now())
   , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.value())
   , _tx_timeout_delay(config::shard_local_cfg().tx_timeout_delay_ms.value())
