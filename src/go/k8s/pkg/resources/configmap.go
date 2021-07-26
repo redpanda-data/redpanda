@@ -453,7 +453,7 @@ func (r *ConfigMapResource) prepareSchemaRegistryClient(
 
 	// Retrieve SCRAM credentials
 	var secret corev1.Secret
-	err := r.Get(ctx, SchemaRegistryKeySASL(r.pandaCluster), &secret)
+	err := r.Get(ctx, r.schemaRegistrySASLUser, &secret)
 	if err != nil {
 		return err
 	}
