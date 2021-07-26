@@ -123,3 +123,25 @@ func (r *ClusterServiceResource) obj() (k8sclient.Object, error) {
 func (r *ClusterServiceResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: r.pandaCluster.Name + "-cluster", Namespace: r.pandaCluster.Namespace}
 }
+
+// ServiceFQDN returns fully qualified domain name for cluster service.
+// It can be used to communicate between namespaces if the network policy
+// allows it.
+func (r *ClusterServiceResource) ServiceFQDN(clusterDomain string) string {
+	// In every dns name there is trailing dot to query absolute path
+	// For trailing dot explanation please visit http://www.dns-sd.org/trailingdotsindomainnames.html
+	if r.pandaCluster.Spec.DNSTrailingDotDisabled {
+		return fmt.Sprintf("%s%c%s.svc.%s",
+			r.Key().Name,
+			'.',
+			r.Key().Namespace,
+			clusterDomain,
+		)
+	}
+	return fmt.Sprintf("%s%c%s.svc.%s.",
+		r.Key().Name,
+		'.',
+		r.Key().Namespace,
+		clusterDomain,
+	)
+}

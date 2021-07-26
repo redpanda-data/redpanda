@@ -153,7 +153,7 @@ func (r *ClusterReconciler) Reconcile(
 		resources.PandaproxyPortExternalName,
 		log)
 
-	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), r.Scheme, log)
+	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
 	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
 	sts := resources.NewStatefulSet(
 		r.Client,
