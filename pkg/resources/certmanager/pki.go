@@ -51,7 +51,7 @@ func NewPki(
 }
 
 func (r *PkiReconciler) prepareRoot(
-	prefix string,
+	prefix string, san []string,
 ) ([]resources.Resource, *cmmetav1.ObjectReference) {
 	toApply := []resources.Resource{}
 
@@ -64,11 +64,12 @@ func (r *PkiReconciler) prepareRoot(
 
 	rootCn := NewCommonName(r.pandaCluster.Name, prefix+"-root-certificate")
 	rootKey := types.NamespacedName{Name: string(rootCn), Namespace: r.pandaCluster.Namespace}
-	rootCertificate := NewCertificate(r.Client,
+	rootCertificate := NewNodeCertificate(r.Client,
 		r.scheme,
 		r.pandaCluster,
 		rootKey,
 		selfSignedIssuer.objRef(),
+		san,
 		rootCn,
 		true,
 		nil,
@@ -98,7 +99,7 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 	toApply = append(toApply, keystoreSecret)
 
 	if tlsListener != nil {
-		toApplyRootKafka, kafkaIssuerRef := r.prepareRoot(kafkaAPI)
+		toApplyRootKafka, kafkaIssuerRef := r.prepareRoot(kafkaAPI, []string{r.internalFQDN})
 		toApplyKafka, err := r.prepareKafkaAPI(ctx, kafkaIssuerRef, &tlsListener.TLS, &keystoreKey)
 		if err != nil {
 			return err
@@ -108,13 +109,13 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 	}
 
 	if r.pandaCluster.AdminAPITLS() != nil {
-		toApplyRootAdmin, adminIssuerRef := r.prepareRoot(adminAPI)
+		toApplyRootAdmin, adminIssuerRef := r.prepareRoot(adminAPI, []string{r.internalFQDN})
 		toApply = append(toApply, toApplyRootAdmin...)
 		toApply = append(toApply, r.prepareAdminAPI(adminIssuerRef, &keystoreKey)...)
 	}
 
 	if r.pandaCluster.PandaproxyAPITLS() != nil {
-		toApplyRootPandaproxy, pandaproxyIssuerRef := r.prepareRoot(pandaproxyAPI)
+		toApplyRootPandaproxy, pandaproxyIssuerRef := r.prepareRoot(pandaproxyAPI, []string{r.internalFQDN})
 		toApply = append(toApply, toApplyRootPandaproxy...)
 		toApply = append(toApply, r.preparePandaproxyAPI(pandaproxyIssuerRef, &keystoreKey)...)
 	}

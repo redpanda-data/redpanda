@@ -76,10 +76,10 @@ func (r *PkiReconciler) prepareKafkaAPI(
 			nodeIssuerRef = externalIssuerRef
 		}
 
-		dnsName := r.internalFQDN
+		dnsName := []string{r.internalFQDN}
 		externalListener := r.pandaCluster.ExternalListener()
 		if externalListener != nil && externalListener.External.Subdomain != "" {
-			dnsName = externalListener.External.Subdomain
+			dnsName = append(dnsName, externalListener.External.Subdomain)
 		}
 
 		redpandaCert := NewNodeCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, nodeIssuerRef, dnsName, cn, false, keystoreSecret, r.logger)
