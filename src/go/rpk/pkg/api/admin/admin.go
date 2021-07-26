@@ -33,13 +33,7 @@ const (
 	httpsPrefix   = "https://"
 )
 
-type AdminAPI interface {
-	CreateUser(username, password string) error
-	DeleteUser(username string) error
-	ListUsers() ([]string, error)
-}
-
-type adminAPI struct {
+type AdminAPI struct {
 	urls   []string
 	client *http.Client
 }
@@ -50,7 +44,7 @@ type newUser struct {
 	Algorithm string `json:"algorithm"`
 }
 
-func NewAdminAPI(urls []string, tlsConfig *tls.Config) (AdminAPI, error) {
+func NewAdminAPI(urls []string, tlsConfig *tls.Config) (*AdminAPI, error) {
 	adminUrls := make([]string, len(urls))
 	for i := 0; i < len(urls); i++ {
 		prefix := ""
@@ -76,10 +70,10 @@ func NewAdminAPI(urls []string, tlsConfig *tls.Config) (AdminAPI, error) {
 	}
 
 	client := &http.Client{Transport: tr}
-	return &adminAPI{urls: adminUrls, client: client}, nil
+	return &AdminAPI{urls: adminUrls, client: client}, nil
 }
 
-func (a *adminAPI) CreateUser(username, password string) error {
+func (a *AdminAPI) CreateUser(username, password string) error {
 	if username == "" {
 		return errors.New("empty username")
 	}
@@ -99,7 +93,7 @@ func (a *adminAPI) CreateUser(username, password string) error {
 	return err
 }
 
-func (a *adminAPI) DeleteUser(username string) error {
+func (a *AdminAPI) DeleteUser(username string) error {
 	if username == "" {
 		return errors.New("empty username")
 	}
@@ -112,7 +106,7 @@ func (a *adminAPI) DeleteUser(username string) error {
 	return err
 }
 
-func (a *adminAPI) ListUsers() ([]string, error) {
+func (a *AdminAPI) ListUsers() ([]string, error) {
 	urls := make([]string, len(a.urls))
 	for i := 0; i < len(a.urls); i++ {
 		urls[i] = fmt.Sprintf("%s%s", a.urls[i], usersEndpoint)
@@ -193,7 +187,6 @@ func send(
 	req.Header.Set("Content-Type", "application/json")
 
 	res, err := client.Do(req)
-
 	if err != nil {
 		// When the server expects a TLS connection, but the TLS config isn't
 		// set/ passed, The client returns an error like
