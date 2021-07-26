@@ -179,6 +179,7 @@ func (r *ClusterReconciler) Reconcile(
 		pki.AdminAPINodeCert(),
 		pki.AdminAPIClientCert(),
 		pki.PandaproxyAPINodeCert(),
+		pki.SchemaRegistryAPINodeCert(),
 		sa.Key().Name,
 		r.configuratorSettings,
 		log)
