@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"time"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -153,6 +152,18 @@ func (r *ClusterReconciler) Reconcile(
 		resources.PandaproxyPortExternalName,
 		log)
 
+	var proxySu *resources.SuperUsersResource
+	var proxySuKey types.NamespacedName
+	if redpandaCluster.Spec.EnableSASL && redpandaCluster.PandaproxyAPIInternal() != nil {
+		proxySu = resources.NewSuperUsers(r.Client, &redpandaCluster, r.Scheme, resources.ScramPandaproxyUsername, resources.PandaProxySuffix, log)
+		proxySuKey = proxySu.Key()
+	}
+	var schemaRegistrySu *resources.SuperUsersResource
+	var schemaRegistrySuKey types.NamespacedName
+	if redpandaCluster.Spec.EnableSASL && redpandaCluster.Spec.Configuration.SchemaRegistry != nil {
+		schemaRegistrySu = resources.NewSuperUsers(r.Client, &redpandaCluster, r.Scheme, resources.ScramSchemaRegistryUsername, resources.SchemaRegistrySuffix, log)
+		schemaRegistrySuKey = schemaRegistrySu.Key()
+	}
 	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
 	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
 	sts := resources.NewStatefulSet(
@@ -171,12 +182,15 @@ func (r *ClusterReconciler) Reconcile(
 		sa.Key().Name,
 		r.configuratorSettings,
 		log)
+
 	toApply := []resources.Reconciler{
 		headlessSvc,
 		clusterSvc,
 		nodeportSvc,
 		ingress,
-		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), log),
+		proxySu,
+		schemaRegistrySu,
+		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log),
 		pki,
 		sa,
 		resources.NewClusterRole(r.Client, &redpandaCluster, r.Scheme, log),
@@ -199,38 +213,28 @@ func (r *ClusterReconciler) Reconcile(
 		}
 	}
 
-	// When pandaproxy and SASL are enabled we need to create a user for the
-	// pandaproxy client. We use the superuser usename added to the configuration
-	// by the operator to create a user.
-	if internal := redpandaCluster.PandaproxyAPIInternal(); internal != nil && redpandaCluster.Spec.EnableSASL {
-		var secret corev1.Secret
-		err := r.Get(ctx, resources.KeySASL(&redpandaCluster), &secret)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		username := string(secret.Data[corev1.BasicAuthUsernameKey])
-		password := string(secret.Data[corev1.BasicAuthPasswordKey])
-
-		var urls []string
-		replicas := *redpandaCluster.Spec.Replicas
-		for i := int32(0); i < replicas; i++ {
-			urls = append(urls, fmt.Sprintf("%s-%d.%s:%d", redpandaCluster.Name, i, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), redpandaCluster.AdminAPIInternal().Port))
-		}
-
-		adminAPI, err := admin.NewAdminAPI(urls, nil)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-
-		err = adminAPI.CreateUser(username, password)
-		// {"message": "Creating user: User already exists", "code": 400}
-		if err != nil && !strings.Contains(err.Error(), "already exists") { // TODO if user already exists, we only receive "400". Check for specific error code when available.
-			log.Info("Could not create user: " + err.Error())
-			return ctrl.Result{RequeueAfter: time.Second * 10}, nil
-		}
+	var secrets []types.NamespacedName
+	if proxySu != nil {
+		secrets = append(secrets, proxySu.Key())
+	}
+	if schemaRegistrySu != nil {
+		secrets = append(secrets, schemaRegistrySu.Key())
 	}
 
-	err := r.reportStatus(ctx, &redpandaCluster, sts.LastObservedState, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), nodeportSvc.Key())
+	err := r.setInitialSuperUserPassword(ctx, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), secrets)
+
+	var e *resources.RequeueAfterError
+	if errors.As(err, &e) {
+		log.Info(e.Error())
+		return ctrl.Result{RequeueAfter: e.RequeueAfter}, nil
+	}
+
+	if err != nil {
+		log.Error(err, "Failed to set up initial super user password")
+		return ctrl.Result{}, err
+	}
+
+	err = r.reportStatus(ctx, &redpandaCluster, sts.LastObservedState, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), nodeportSvc.Key())
 	if err != nil {
 		log.Error(err, "Unable to report status")
 	}
@@ -430,6 +434,54 @@ func (r *ClusterReconciler) createExternalNodesList(
 	}
 
 	return observedNodesExternal, observedNodesExternalAdmin, observedNodesExternalProxy, proxyIngress, nil
+}
+
+func (r *ClusterReconciler) setInitialSuperUserPassword(
+	ctx context.Context,
+	redpandaCluster *redpandav1alpha1.Cluster,
+	fqdn string,
+	objs []types.NamespacedName,
+) error {
+	adminInternal := redpandaCluster.AdminAPIInternal()
+	if adminInternal == nil {
+		return nil
+	}
+
+	adminInternalPort := adminInternal.Port
+
+	var urls []string
+	replicas := *redpandaCluster.Spec.Replicas
+
+	for i := int32(0); i < replicas; i++ {
+		urls = append(urls, fmt.Sprintf("%s-%d.%s:%d", redpandaCluster.Name, i, fqdn, adminInternalPort))
+	}
+
+	adminAPI, err := admin.NewAdminAPI(urls, nil)
+	if err != nil {
+		return fmt.Errorf("creating admin api: %w", err)
+	}
+
+	for _, obj := range objs {
+		var secret corev1.Secret
+		err = r.Get(ctx, types.NamespacedName{
+			Namespace: obj.Namespace,
+			Name:      obj.Name,
+		}, &secret)
+		if err != nil {
+			return fmt.Errorf("fetching Secret (%s) from namespace (%s): %w", obj.Name, obj.Namespace, err)
+		}
+
+		username := string(secret.Data[corev1.BasicAuthUsernameKey])
+		password := string(secret.Data[corev1.BasicAuthPasswordKey])
+
+		err = adminAPI.CreateUser(username, password)
+		// {"message": "Creating user: User already exists", "code": 400}
+		if err != nil && !strings.Contains(err.Error(), "already exists") { // TODO if user already exists, we only receive "400". Check for specific error code when available.
+			return &resources.RequeueAfterError{RequeueAfter: resources.RequeueDuration,
+				Msg: fmt.Sprintf("could not create user: %v", err)}
+		}
+	}
+	return nil
 }
 
 func needExternalIP(external redpandav1alpha1.ExternalConnectivityConfig) bool {

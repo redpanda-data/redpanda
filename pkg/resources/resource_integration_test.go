@@ -114,6 +114,8 @@ func TestEnsure_ConfigMap(t *testing.T) {
 		cluster,
 		scheme.Scheme,
 		"cluster.local",
+		types.NamespacedName{},
+		types.NamespacedName{},
 		ctrl.Log.WithName("test"))
 
 	err := cm.Ensure(context.Background())

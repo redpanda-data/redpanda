@@ -39,7 +39,7 @@ const (
 	PandaproxyPortInternalName = "proxy"
 	// PandaproxyPortExternalName is the name of the pandaproxy external port
 	PandaproxyPortExternalName = "proxy-external"
-	// SchemaRegistryPortName is the name of the schema registry port
+	// SchemaRegistryPortName is the name of the schema registry port internal and external
 	SchemaRegistryPortName = "schema-registry"
 
 	scramPasswordLength = 16
