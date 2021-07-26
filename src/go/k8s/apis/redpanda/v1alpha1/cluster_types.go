@@ -158,7 +158,8 @@ type ClusterStatus struct {
 	Upgrading bool `json:"upgrading"`
 }
 
-// NodesList shows where client can find Redpanda brokers
+// NodesList shows where client of Cluster custom resource can reach
+// various listeners of Redpanda cluster
 type NodesList struct {
 	Internal           []string `json:"internal,omitempty"`
 	External           []string `json:"external,omitempty"`
@@ -201,18 +202,18 @@ type RedpandaConfig struct {
 	AutoCreateTopics bool `json:"autoCreateTopics,omitempty"`
 }
 
-// AdminAPI is configuration of the redpanda Admin API
+// AdminAPI configures listener for the Redpanda Admin API
 type AdminAPI struct {
 	Port int `json:"port,omitempty"`
-	// Configuration of TLS for Admin API
-	TLS AdminAPITLS `json:"tls,omitempty"`
 	// External enables user to expose Redpanda
 	// admin API outside of a Kubernetes cluster. For more
 	// information please go to ExternalConnectivityConfig
 	External ExternalConnectivityConfig `json:"external,omitempty"`
+	// Configuration of TLS for Admin API
+	TLS AdminAPITLS `json:"tls,omitempty"`
 }
 
-// KafkaAPI listener information for Kafka API
+// KafkaAPI configures listener for the Kafka API
 type KafkaAPI struct {
 	Port int `json:"port,omitempty"`
 	// External enables user to expose Redpanda
@@ -223,7 +224,7 @@ type KafkaAPI struct {
 	TLS KafkaAPITLS `json:"tls,omitempty"`
 }
 
-// PandaproxyAPI configures the Pandaproxy API
+// PandaproxyAPI configures listener for the Pandaproxy API
 type PandaproxyAPI struct {
 	Port int `json:"port,omitempty"`
 	// External enables user to expose Redpanda
@@ -408,7 +409,7 @@ func (r *Cluster) AdminAPITLS() *AdminAPI {
 	return nil
 }
 
-// PandaproxyAPIInternal returns internal admin listener
+// PandaproxyAPIInternal returns internal pandaproxy listener
 func (r *Cluster) PandaproxyAPIInternal() *PandaproxyAPI {
 	for _, el := range r.Spec.Configuration.PandaproxyAPI {
 		if !el.External.Enabled {
