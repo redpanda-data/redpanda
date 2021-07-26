@@ -38,8 +38,9 @@ const (
 	tlsDir   = "/etc/tls/certs"
 	tlsDirCA = "/etc/tls/certs/ca"
 
-	tlsAdminDir      = "/etc/tls/certs/admin"
-	tlsPandaproxyDir = "/etc/tls/certs/pandaproxy"
+	tlsAdminDir          = "/etc/tls/certs/admin"
+	tlsPandaproxyDir     = "/etc/tls/certs/pandaproxy"
+	tlsSchemaRegistryDir = "/etc/tls/certs/schema-registry"
 
 	oneMB          = 1024 * 1024
 	logSegmentSize = 512 * oneMB
@@ -289,6 +290,22 @@ func (r *ConfigMapResource) createConfiguration(
 		return nil, err
 	}
 
+	if sr := r.pandaCluster.Spec.Configuration.SchemaRegistry; sr != nil {
+		cfgRpk.SchemaRegistry.SchemaRegistryAPI = []config.NamedSocketAddress{
+			{
+				SocketAddress: config.SocketAddress{
+					Address: "0.0.0.0",
+					Port:    sr.Port,
+				},
+				Name: SchemaRegistryPortName,
+			}}
+	}
+	r.prepareSchemaRegistryTLS(cfgRpk)
+	err = r.prepareSchemaRegistryClient(ctx, cfgRpk)
+	if err != nil {
+		return nil, err
+	}
+
 	mgr := config.NewManager(afero.NewOsFs())
 	err = mgr.Merge(cfgRpk)
 	if err != nil {
@@ -414,6 +431,47 @@ func (r *ConfigMapResource) preparePandaproxyClient(
 	return nil
 }
 
+func (r *ConfigMapResource) prepareSchemaRegistryClient(
+	ctx context.Context, cfgRpk *config.Config,
+) error {
+	if r.pandaCluster.Spec.Configuration.SchemaRegistry == nil {
+		return nil
+	}
+
+	replicas := *r.pandaCluster.Spec.Replicas
+	cfgRpk.SchemaRegistryClient = &config.KafkaClient{}
+	for i := int32(0); i < replicas; i++ {
+		cfgRpk.SchemaRegistryClient.Brokers = append(cfgRpk.SchemaRegistryClient.Brokers, config.SocketAddress{
+			Address: fmt.Sprintf("%s-%d.%s", r.pandaCluster.Name, i, r.serviceFQDN),
+			Port:    r.pandaCluster.InternalListener().Port,
+		})
+	}
+
+	if !r.pandaCluster.Spec.EnableSASL {
+		return nil
+	}
+
+	// Retrieve SCRAM credentials
+	var secret corev1.Secret
+	err := r.Get(ctx, SchemaRegistryKeySASL(r.pandaCluster), &secret)
+	if err != nil {
+		return err
+	}
+
+	// Populate configuration with SCRAM credentials
+	username := string(secret.Data[corev1.BasicAuthUsernameKey])
+	password := string(secret.Data[corev1.BasicAuthPasswordKey])
+	mechanism := saslMechanism
+	cfgRpk.SchemaRegistryClient.SCRAMUsername = &username
+	cfgRpk.SchemaRegistryClient.SCRAMPassword = &password
+	cfgRpk.SchemaRegistryClient.SASLMechanism = &mechanism
+
+	// Add username as superuser
+	cfgRpk.Redpanda.Superusers = append(cfgRpk.Redpanda.Superusers, username)
+
+	return nil
+}
+
 func (r *ConfigMapResource) preparePandaproxyTLS(cfgRpk *config.Config) {
 	tlsListener := r.pandaCluster.PandaproxyAPITLS()
 	if tlsListener != nil {
@@ -434,6 +492,25 @@ func (r *ConfigMapResource) preparePandaproxyTLS(cfgRpk *config.Config) {
 			tls.TruststoreFile = fmt.Sprintf("%s/%s", tlsPandaproxyDir, cmetav1.TLSCAKey)
 		}
 		cfgRpk.Pandaproxy.PandaproxyAPITLS = []config.ServerTLS{tls}
+	}
+}
+
+func (r *ConfigMapResource) prepareSchemaRegistryTLS(cfgRpk *config.Config) {
+	if r.pandaCluster.Spec.Configuration.SchemaRegistry != nil &&
+		r.pandaCluster.Spec.Configuration.SchemaRegistry.TLS != nil {
+		name := SchemaRegistryPortName
+
+		tls := config.ServerTLS{
+			Name:              name,
+			KeyFile:           fmt.Sprintf("%s/%s", tlsSchemaRegistryDir, corev1.TLSPrivateKeyKey), // tls.key
+			CertFile:          fmt.Sprintf("%s/%s", tlsSchemaRegistryDir, corev1.TLSCertKey),       // tls.crt
+			Enabled:           true,
+			RequireClientAuth: r.pandaCluster.Spec.Configuration.SchemaRegistry.TLS.RequireClientAuth,
+		}
+		if r.pandaCluster.Spec.Configuration.SchemaRegistry.TLS.RequireClientAuth {
+			tls.TruststoreFile = fmt.Sprintf("%s/%s", tlsSchemaRegistryDir, cmetav1.TLSCAKey)
+		}
+		cfgRpk.SchemaRegistry.SchemaRegistryAPITLS = []config.ServerTLS{tls}
 	}
 }
 
