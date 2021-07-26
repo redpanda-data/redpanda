@@ -40,6 +40,8 @@ var _ = Describe("RedPandaCluster controller", func() {
 
 		adminPort                 = 9644
 		kafkaPort                 = 9092
+		pandaProxyPort            = 8082
+		schemaRegistryPort        = 8081
 		redpandaConfigurationFile = "redpanda.yaml"
 		replicas                  = 1
 		redpandaContainerTag      = "x"
@@ -87,6 +89,18 @@ var _ = Describe("RedPandaCluster controller", func() {
 							{External: v1alpha1.ExternalConnectivityConfig{
 								Enabled: true,
 							}},
+						},
+						PandaproxyAPI: []v1alpha1.PandaproxyAPI{
+							{Port: pandaProxyPort},
+							{External: v1alpha1.ExternalConnectivityConfig{
+								Enabled: true,
+							}},
+						},
+						SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
+							Port: schemaRegistryPort,
+							External: &v1alpha1.ExternalConnectivityConfig{
+								Enabled: true,
+							},
 						},
 					},
 					Resources: corev1.ResourceRequirements{
