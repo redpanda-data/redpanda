@@ -24,8 +24,9 @@
 
 namespace storage {
 
-ss::future<std::optional<snapshot_reader>> snapshot_manager::open_snapshot() {
-    auto path = _dir / _filename.c_str();
+ss::future<std::optional<snapshot_reader>>
+snapshot_manager::open_snapshot(ss::sstring filename) {
+    auto path = snapshot_path(filename);
     return ss::file_exists(path.string()).then([this, path](bool exists) {
         if (!exists) {
             return ss::make_ready_future<std::optional<snapshot_reader>>(
@@ -44,12 +45,13 @@ ss::future<std::optional<snapshot_reader>> snapshot_manager::open_snapshot() {
     });
 }
 
-ss::future<snapshot_writer> snapshot_manager::start_snapshot() {
+ss::future<snapshot_writer>
+snapshot_manager::start_snapshot(ss::sstring target) {
     // the random suffix is added because the lowres clock doesn't produce
     // unique file names when tests run fast.
     auto filename = fmt::format(
       "{}.partial.{}.{}",
-      _filename,
+      _partial_prefix,
       ss::lowres_system_clock::now().time_since_epoch().count(),
       random_generators::gen_alphanum_string(4));
 
@@ -64,19 +66,20 @@ ss::future<snapshot_writer> snapshot_manager::start_snapshot() {
           options.io_priority_class = _io_prio;
           return ss::make_file_output_stream(std::move(file), options);
       })
-      .then([path](ss::output_stream<char> output) {
-          return snapshot_writer(std::move(output), path);
+      .then([this, target, path](ss::output_stream<char> output) {
+          return snapshot_writer(
+            std::move(output), path, snapshot_path(target));
       });
 }
 
 ss::future<> snapshot_manager::finish_snapshot(snapshot_writer& writer) {
-    return ss::rename_file(writer.path().string(), snapshot_path().string())
+    return ss::rename_file(writer.path().string(), writer.target().string())
       .then([this] { return ss::sync_directory(_dir.string()); });
 }
 
 ss::future<> snapshot_manager::remove_partial_snapshots() {
-    std::regex re(
-      fmt::format(R"(^{}\.partial\.(\d+)\.([a-zA-Z0-9]{{4}})$)", _filename));
+    std::regex re(fmt::format(
+      R"(^{}\.partial\.(\d+)\.([a-zA-Z0-9]{{4}})$)", _partial_prefix));
     return directory_walker::walk(
       _dir.string(), [this, re = std::move(re)](ss::directory_entry ent) {
           if (!ent.type || *ent.type != ss::directory_entry_type::regular) {
@@ -91,9 +94,9 @@ ss::future<> snapshot_manager::remove_partial_snapshots() {
       });
 }
 
-ss::future<> snapshot_manager::remove_snapshot() {
-    if (co_await ss::file_exists(snapshot_path().string())) {
-        co_await ss::remove_file(snapshot_path().string());
+ss::future<> snapshot_manager::remove_snapshot(ss::sstring target) {
+    if (co_await ss::file_exists(snapshot_path(target).string())) {
+        co_await ss::remove_file(snapshot_path(target).string());
     }
 
     co_return;
@@ -217,9 +220,18 @@ snapshot_writer::~snapshot_writer() noexcept {
     vassert(_closed, "snapshot writer has to be closed before destruction");
 }
 
+snapshot_writer::snapshot_writer(
+  ss::output_stream<char> output,
+  std::filesystem::path path,
+  std::filesystem::path target) noexcept
+  : _path(std::move(path))
+  , _output(std::move(output))
+  , _target(std::move(target)) {}
+
 snapshot_writer::snapshot_writer(snapshot_writer&& o) noexcept
   : _path(std::move(o._path))
   , _output(std::move(o._output))
+  , _target(std::move(o._target))
   , _closed(o._closed) {
     o._closed = true;
 }

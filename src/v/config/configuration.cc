@@ -348,6 +348,12 @@ configuration::configuration()
       false)
   , enable_transactions(
       *this, "enable_transactions", "Enable transactions", required::no, false)
+  , abort_index_segment_size(
+      *this,
+      "abort_index_segment_size",
+      "Capacity (in number of txns) of an abort index segment",
+      required::no,
+      50000)
   , delete_retention_ms(
       *this,
       "delete_retention_ms",

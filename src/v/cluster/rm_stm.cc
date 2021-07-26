@@ -168,15 +168,21 @@ rm_stm::rm_stm(
   ss::logger& logger,
   raft::consensus* c,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend)
-  : persisted_stm("rm", logger, c)
+  : persisted_stm("tx.snapshot", logger, c)
   , _oldest_session(model::timestamp::now())
   , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.value())
   , _tx_timeout_delay(config::shard_local_cfg().tx_timeout_delay_ms.value())
+  , _abort_index_segment_size(
+      config::shard_local_cfg().abort_index_segment_size.value())
   , _recovery_policy(
       config::shard_local_cfg().rm_violation_recovery_policy.value())
   , _transactional_id_expiration(
       config::shard_local_cfg().transactional_id_expiration_ms.value())
-  , _tx_gateway_frontend(tx_gateway_frontend) {
+  , _tx_gateway_frontend(tx_gateway_frontend)
+  , _abort_snapshot_mgr(
+      "abort.idx",
+      std::filesystem::path(c->log_config().work_directory()),
+      ss::default_priority_class()) {
     if (_recovery_policy != crash && _recovery_policy != best_effort) {
         vassert(false, "Unknown recovery policy: {}", _recovery_policy);
     }
@@ -750,18 +756,46 @@ model::offset rm_stm::last_stable_offset() {
     return raft::details::next_offset(last_visible_index);
 }
 
-ss::future<std::vector<rm_stm::tx_range>>
-rm_stm::aborted_transactions(model::offset from, model::offset to) {
-    std::vector<rm_stm::tx_range> result;
-    for (auto& range : _log_state.aborted) {
+static void filter_intersecting(
+  std::vector<rm_stm::tx_range>& target,
+  const std::vector<rm_stm::tx_range>& source,
+  model::offset from,
+  model::offset to) {
+    for (auto& range : source) {
         if (range.last < from) {
             continue;
         }
         if (range.first > to) {
             continue;
         }
-        result.push_back(range);
+        target.push_back(range);
     }
+}
+
+ss::future<std::vector<rm_stm::tx_range>>
+rm_stm::aborted_transactions(model::offset from, model::offset to) {
+    std::vector<rm_stm::tx_range> result;
+
+    for (auto& idx : _log_state.abort_indexes) {
+        if (idx.last < from) {
+            continue;
+        }
+        if (idx.first > to) {
+            continue;
+        }
+        std::optional<abort_snapshot> opt;
+        if (_log_state.last_abort_snapshot.match(idx)) {
+            opt = _log_state.last_abort_snapshot;
+        } else {
+            opt = co_await load_abort_snapshot(idx);
+        }
+        if (opt) {
+            filter_intersecting(result, opt->aborted, from, to);
+        }
+    }
+
+    filter_intersecting(result, _log_state.aborted, from, to);
+
     co_return result;
 }
 
@@ -1026,7 +1060,7 @@ ss::future<> rm_stm::apply(model::record_batch b) {
     } else if (hdr.type == model::record_batch_type::raft_data) {
         auto bid = model::batch_identity::from(hdr);
         if (hdr.attrs.is_control()) {
-            apply_control(bid.pid, parse_control_batch(b));
+            co_await apply_control(bid.pid, parse_control_batch(b));
         } else {
             apply_data(bid, last_offset);
         }
@@ -1034,7 +1068,6 @@ ss::future<> rm_stm::apply(model::record_batch b) {
 
     compact_snapshot();
     _insync_offset = last_offset;
-    return ss::now();
 }
 
 void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
@@ -1044,7 +1077,7 @@ void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
     _mem_state.preparing.erase(pid);
 }
 
-void rm_stm::apply_control(
+ss::future<> rm_stm::apply_control(
   model::producer_identity pid, model::control_record_type crt) {
     // either epoch is the same as fencing or it's lesser in the latter
     // case we don't fence off aborts and commits because transactional
@@ -1061,6 +1094,10 @@ void rm_stm::apply_control(
         }
 
         _mem_state.forget(pid);
+
+        if (_log_state.aborted.size() > _abort_index_segment_size) {
+            co_await make_snapshot();
+        }
     } else if (crt == model::control_record_type::tx_commit) {
         _log_state.prepared.erase(pid);
         auto offset_it = _log_state.ongoing_map.find(pid);
@@ -1071,6 +1108,8 @@ void rm_stm::apply_control(
 
         _mem_state.forget(pid);
     }
+
+    co_return;
 }
 
 void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
@@ -1126,7 +1165,7 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
     }
 }
 
-void rm_stm::load_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
+ss::future<> rm_stm::load_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     vassert(
       hdr.version == tx_snapshot_version,
       "unsupported seq_snapshot_header version {}",
@@ -1148,6 +1187,10 @@ void rm_stm::load_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
       _log_state.aborted.end(),
       std::make_move_iterator(data.aborted.begin()),
       std::make_move_iterator(data.aborted.end()));
+    _log_state.abort_indexes.insert(
+      _log_state.abort_indexes.end(),
+      std::make_move_iterator(data.abort_indexes.begin()),
+      std::make_move_iterator(data.abort_indexes.end()));
     for (auto& entry : data.seqs) {
         auto [seq_it, _] = _log_state.seq_table.try_emplace(entry.pid, entry);
         if (seq_it->second.seq < entry.seq) {
@@ -1155,11 +1198,48 @@ void rm_stm::load_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         }
     }
 
+    abort_index last{.last = model::offset(-1)};
+    for (auto& entry : _log_state.abort_indexes) {
+        if (entry.last > last.last) {
+            last = entry;
+        }
+    }
+    if (last.last > model::offset(0)) {
+        auto snapshot_opt = co_await load_abort_snapshot(last);
+        if (snapshot_opt) {
+            _log_state.last_abort_snapshot = snapshot_opt.value();
+        }
+    }
+
     _last_snapshot_offset = data.offset;
     _insync_offset = data.offset;
 }
 
-stm_snapshot rm_stm::take_snapshot() {
+ss::future<stm_snapshot> rm_stm::take_snapshot() {
+    if (_log_state.aborted.size() > _abort_index_segment_size) {
+        std::sort(
+          std::begin(_log_state.aborted),
+          std::end(_log_state.aborted),
+          [](tx_range a, tx_range b) { return a.first < b.first; });
+
+        abort_snapshot snapshot{
+          .first = model::offset::max(), .last = model::offset::min()};
+        for (auto const& entry : _log_state.aborted) {
+            snapshot.first = std::min(snapshot.first, entry.first);
+            snapshot.last = std::max(snapshot.last, entry.last);
+            snapshot.aborted.push_back(entry);
+            if (snapshot.aborted.size() == _abort_index_segment_size) {
+                auto idx = abort_index{
+                  .first = snapshot.first, .last = snapshot.last};
+                _log_state.abort_indexes.push_back(idx);
+                co_await save_abort_snapshot(snapshot);
+                snapshot = abort_snapshot{
+                  .first = model::offset::max(), .last = model::offset::min()};
+            }
+        }
+        _log_state.aborted = snapshot.aborted;
+    }
+
     tx_snapshot tx_ss;
 
     for (auto const& [k, v] : _log_state.fence_pid_epoch) {
@@ -1174,6 +1254,9 @@ stm_snapshot rm_stm::take_snapshot() {
     }
     for (auto& entry : _log_state.aborted) {
         tx_ss.aborted.push_back(entry);
+    }
+    for (auto& entry : _log_state.abort_indexes) {
+        tx_ss.abort_indexes.push_back(entry);
     }
     for (auto& entry : _log_state.seq_table) {
         tx_ss.seqs.push_back(entry.second);
@@ -1191,7 +1274,62 @@ stm_snapshot rm_stm::take_snapshot() {
     stx_ss.header = header;
     stx_ss.offset = _insync_offset;
     stx_ss.data = std::move(tx_ss_buf);
-    return stx_ss;
+    co_return stx_ss;
+}
+
+ss::future<> rm_stm::save_abort_snapshot(abort_snapshot snapshot) {
+    iobuf snapshot_data;
+    reflection::adl<abort_snapshot>{}.to(snapshot_data, snapshot);
+    int32_t snapshot_size = snapshot_data.size_bytes();
+
+    auto filename = fmt::format(
+      "abort.idx.{}.{}", snapshot.first, snapshot.last);
+    auto writer = co_await _abort_snapshot_mgr.start_snapshot(filename);
+
+    iobuf metadata_buf;
+    reflection::serialize(metadata_buf, abort_snapshot_version, snapshot_size);
+    co_await writer.write_metadata(std::move(metadata_buf));
+    co_await write_iobuf_to_output_stream(
+      std::move(snapshot_data), writer.output());
+    co_await writer.close();
+    co_await _abort_snapshot_mgr.finish_snapshot(writer);
+}
+
+ss::future<std::optional<rm_stm::abort_snapshot>>
+rm_stm::load_abort_snapshot(abort_index index) {
+    auto filename = fmt::format("abort.idx.{}.{}", index.first, index.last);
+
+    auto reader = co_await _abort_snapshot_mgr.open_snapshot(filename);
+    if (!reader) {
+        co_return std::nullopt;
+    }
+
+    auto meta_buf = co_await reader->read_metadata();
+    iobuf_parser meta_parser(std::move(meta_buf));
+
+    auto version = reflection::adl<int8_t>{}.from(meta_parser);
+    vassert(
+      version == abort_snapshot_version,
+      "Only support abort_snapshot_version {} but got {}",
+      abort_snapshot_version,
+      version);
+
+    auto snapshot_size = reflection::adl<int32_t>{}.from(meta_parser);
+    vassert(
+      meta_parser.bytes_left() == 0,
+      "Not all metadata content of {} were consumed, {} bytes left. "
+      "This is an indication of the serialization save/load mismatch",
+      filename,
+      meta_parser.bytes_left());
+
+    auto data_buf = co_await read_iobuf_exactly(reader->input(), snapshot_size);
+    co_await reader->close();
+    co_await _abort_snapshot_mgr.remove_partial_snapshots();
+
+    iobuf_parser data_parser(std::move(data_buf));
+    auto data = reflection::adl<abort_snapshot>{}.from(data_parser);
+
+    co_return data;
 }
 
 } // namespace cluster

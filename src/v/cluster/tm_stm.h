@@ -149,8 +149,8 @@ public:
     }
 
 private:
-    void load_snapshot(stm_snapshot_header, iobuf&&) override;
-    stm_snapshot take_snapshot() override;
+    ss::future<> load_snapshot(stm_snapshot_header, iobuf&&) override;
+    ss::future<stm_snapshot> take_snapshot() override;
 
     void expire_old_txs();
 

@@ -70,7 +70,7 @@ consensus::consensus(
   , _recovery_throttle(recovery_throttle)
   , _snapshot_mgr(
       std::filesystem::path(_log.config().work_directory()),
-      storage::snapshot_manager::default_snapshot_filename,
+      storage::simple_snapshot_manager::default_snapshot_filename,
       _scheduling.default_iopc)
   , _configuration_manager(std::move(initial_cfg), _group, _storage, _ctxlog)
   , _append_requests_buffer(*this, 256) {

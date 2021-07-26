@@ -33,8 +33,8 @@ class snapshot_writer;
  * raft group. Snapshots are organized into a directory:
  *
  *    <dir>/
- *      - snapshot              <- current snapshot (optional)
- *      - snapshot.partial.ts   <- partially written snapshot
+ *      - snapshot            <- current snapshot (optional)
+ *      - prefix.partial.ts   <- partially written snapshot
  *      - ...
  *
  * Snapshots are initially created as `snapshot.partial.*` files. When a
@@ -63,18 +63,26 @@ class snapshot_writer;
  *
  *    Create a manager instance:
  *
- *       snapshot_manager mgr("/path/to/ntp/", io_priority);
+ *       snapshot_manager mgr(prefix, "/path/to/ntp/", io_priority);
+ *
+ *    Snapshot manager saves snapshots atomicly by writing data to temp files
+ *    and then using atomic `mv` to replace older snapshots. Prefix is a name
+ *    prefix for the temporary files (suffix is unique, mix of time and salt).
+ *    It's needed to avoid collision when several snapshot_managers points to
+ *    the same directory. In this case when one manager does
+ *    remove_partial_snapshots it may accidentally remove a wip snapshot of an
+ *    another manager.
  *
  *    All snapshots will be stored in the provided directory, and snapshot
  *    readers and writers will be created using the given io priority.
  *
  *    Open the current snapshot.
  *
- *       snapshot_reader reader = mgr.open_snapshot();
+ *       snapshot_reader reader = mgr.open_snapshot(file_name);
  *
  *    Snapshots are created by creating a new snapshot writer:
  *
- *       snapshot_writer writer = mgr.start_snapshot();
+ *       snapshot_writer writer = mgr.start_snapshot(file_name);
  *
  *    And once a snapshot has been fully written pass the writer back to the
  *    snapshot manager which will detect if the snapshot should replace the
@@ -90,31 +98,29 @@ class snapshot_writer;
  */
 class snapshot_manager {
 public:
-    static constexpr const char* default_snapshot_filename = "snapshot";
-
     snapshot_manager(
+      ss::sstring partial_prefix,
       std::filesystem::path dir,
-      ss::sstring filename,
       ss::io_priority_class io_prio) noexcept
-      : _filename(std::move(filename))
+      : _partial_prefix(partial_prefix)
       , _dir(std::move(dir))
       , _io_prio(io_prio) {}
 
-    ss::future<std::optional<snapshot_reader>> open_snapshot();
+    ss::future<std::optional<snapshot_reader>> open_snapshot(ss::sstring);
 
-    ss::future<snapshot_writer> start_snapshot();
+    ss::future<snapshot_writer> start_snapshot(ss::sstring);
     ss::future<> finish_snapshot(snapshot_writer&);
 
-    std::filesystem::path snapshot_path() const {
-        return _dir / _filename.c_str();
+    std::filesystem::path snapshot_path(ss::sstring filename) const {
+        return _dir / filename.c_str();
     }
 
     ss::future<> remove_partial_snapshots();
 
-    ss::future<> remove_snapshot();
+    ss::future<> remove_snapshot(ss::sstring);
 
 private:
-    ss::sstring _filename;
+    ss::sstring _partial_prefix;
     std::filesystem::path _dir;
     ss::io_priority_class _io_prio;
 };
@@ -212,9 +218,9 @@ private:
 class snapshot_writer {
 public:
     snapshot_writer(
-      ss::output_stream<char> output, std::filesystem::path path) noexcept
-      : _path(std::move(path))
-      , _output(std::move(output)) {}
+      ss::output_stream<char>,
+      std::filesystem::path,
+      std::filesystem::path) noexcept;
 
     ~snapshot_writer() noexcept;
     snapshot_writer(const snapshot_writer&) = delete;
@@ -228,10 +234,52 @@ public:
 
     const std::filesystem::path& path() const { return _path; }
 
+    const std::filesystem::path& target() const { return _target; }
+
 private:
     std::filesystem::path _path;
     ss::output_stream<char> _output;
+    std::filesystem::path _target;
     bool _closed = false;
+};
+
+class simple_snapshot_manager {
+public:
+    static constexpr const char* default_snapshot_filename = "snapshot";
+
+    simple_snapshot_manager(
+      std::filesystem::path dir,
+      ss::sstring filename,
+      ss::io_priority_class io_prio) noexcept
+      : _filename(filename)
+      , _snapshot(filename, std::move(dir), io_prio) {}
+
+    ss::future<std::optional<snapshot_reader>> open_snapshot() {
+        return _snapshot.open_snapshot(_filename);
+    }
+
+    ss::future<snapshot_writer> start_snapshot() {
+        return _snapshot.start_snapshot(_filename);
+    }
+    ss::future<> finish_snapshot(snapshot_writer& writer) {
+        return _snapshot.finish_snapshot(writer);
+    }
+
+    std::filesystem::path snapshot_path() const {
+        return _snapshot.snapshot_path(_filename);
+    }
+
+    ss::future<> remove_partial_snapshots() {
+        return _snapshot.remove_partial_snapshots();
+    }
+
+    ss::future<> remove_snapshot() {
+        return _snapshot.remove_snapshot(_filename);
+    }
+
+private:
+    ss::sstring _filename;
+    snapshot_manager _snapshot;
 };
 
 } // namespace storage

@@ -14,6 +14,7 @@
 #include "raft/types.h"
 #include "storage/record_batch_builder.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 
 #include <filesystem>
@@ -50,7 +51,7 @@ ss::future<> persisted_stm::hydrate_snapshot(storage::snapshot_reader& reader) {
 
           return read_iobuf_exactly(reader.input(), hdr.snapshot_size)
             .then([this, hdr](iobuf data_buf) {
-                load_snapshot(hdr, std::move(data_buf));
+                return load_snapshot(hdr, std::move(data_buf));
             })
             .then(
               [this]() { return _snapshot_mgr.remove_partial_snapshots(); });
@@ -124,12 +125,11 @@ ss::future<> persisted_stm::persist_snapshot(stm_snapshot&& snapshot) {
 }
 
 ss::future<> persisted_stm::do_make_snapshot() {
-    auto snapshot = take_snapshot();
+    auto snapshot = co_await take_snapshot();
     auto offset = snapshot.offset;
 
-    return persist_snapshot(std::move(snapshot)).then([this, offset] {
-        _last_snapshot_offset = std::max(_last_snapshot_offset, offset);
-    });
+    co_await persist_snapshot(std::move(snapshot));
+    _last_snapshot_offset = std::max(_last_snapshot_offset, offset);
 }
 
 ss::future<> persisted_stm::make_snapshot() {

@@ -49,8 +49,14 @@ public:
     using duration_type = clock_type::duration;
 
     static constexpr const int8_t tx_snapshot_version = 0;
+    static constexpr const int8_t abort_snapshot_version = 0;
     struct tx_range {
         model::producer_identity pid;
+        model::offset first;
+        model::offset last;
+    };
+
+    struct abort_index {
         model::offset first;
         model::offset last;
     };
@@ -75,8 +81,19 @@ public:
         std::vector<tx_range> ongoing;
         std::vector<prepare_marker> prepared;
         std::vector<tx_range> aborted;
+        std::vector<abort_index> abort_indexes;
         model::offset offset;
         std::vector<seq_entry> seqs;
+    };
+
+    struct abort_snapshot {
+        model::offset first;
+        model::offset last;
+        std::vector<tx_range> aborted;
+
+        bool match(abort_index idx) {
+            return idx.first == first && idx.last == last;
+        }
     };
 
     static constexpr int8_t prepare_control_record_version{0};
@@ -126,8 +143,10 @@ private:
       model::producer_identity, model::tx_seq, model::timeout_clock::duration);
     ss::future<tx_errc> do_abort_tx(
       model::producer_identity, model::tx_seq, model::timeout_clock::duration);
-    void load_snapshot(stm_snapshot_header, iobuf&&) override;
-    stm_snapshot take_snapshot() override;
+    ss::future<> load_snapshot(stm_snapshot_header, iobuf&&) override;
+    ss::future<stm_snapshot> take_snapshot() override;
+    ss::future<std::optional<abort_snapshot>> load_abort_snapshot(abort_index);
+    ss::future<> save_abort_snapshot(abort_snapshot);
 
     bool check_seq(model::batch_identity);
 
@@ -165,7 +184,8 @@ private:
     ss::future<> apply(model::record_batch) override;
     void apply_fence(model::record_batch&&);
     void apply_prepare(rm_stm::prepare_marker);
-    void apply_control(model::producer_identity, model::control_record_type);
+    ss::future<>
+      apply_control(model::producer_identity, model::control_record_type);
     void apply_data(model::batch_identity, model::offset);
 
     // The state of this state machine maybe change via two paths
@@ -195,6 +215,8 @@ private:
         absl::btree_set<model::offset> ongoing_set;
         absl::flat_hash_map<model::producer_identity, prepare_marker> prepared;
         std::vector<tx_range> aborted;
+        std::vector<abort_index> abort_indexes;
+        abort_snapshot last_abort_snapshot{.last = model::offset(-1)};
         // the only piece of data which we update on replay and before
         // replicating the command. we use the highest seq number to resolve
         // conflicts. if the replication fails we reject a command but clients
@@ -264,11 +286,13 @@ private:
     model::timestamp _oldest_session;
     std::chrono::milliseconds _sync_timeout;
     std::chrono::milliseconds _tx_timeout_delay;
+    uint32_t _abort_index_segment_size;
     model::violation_recovery_policy _recovery_policy;
     std::chrono::milliseconds _transactional_id_expiration;
     bool _is_leader{false};
     bool _is_autoabort_enabled{true};
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
+    storage::snapshot_manager _abort_snapshot_mgr;
 };
 
 } // namespace cluster
