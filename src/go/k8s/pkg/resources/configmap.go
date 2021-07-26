@@ -44,7 +44,6 @@ const (
 	oneMB          = 1024 * 1024
 	logSegmentSize = 512 * oneMB
 
-	scramUsername = "pandaproxy_client"
 	saslMechanism = "SCRAM-SHA-256"
 )
 
@@ -60,8 +59,10 @@ type ConfigMapResource struct {
 	scheme       *runtime.Scheme
 	pandaCluster *redpandav1alpha1.Cluster
 
-	serviceFQDN string
-	logger      logr.Logger
+	serviceFQDN            string
+	pandaproxySASLUser     types.NamespacedName
+	schemaRegistrySASLUser types.NamespacedName
+	logger                 logr.Logger
 }
 
 // NewConfigMap creates ConfigMapResource
@@ -70,6 +71,8 @@ func NewConfigMap(
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
 	serviceFQDN string,
+	pandaproxySASLUser types.NamespacedName,
+	schemaRegistrySASLUser types.NamespacedName,
 	logger logr.Logger,
 ) *ConfigMapResource {
 	return &ConfigMapResource{
@@ -77,6 +80,8 @@ func NewConfigMap(
 		scheme,
 		pandaCluster,
 		serviceFQDN,
+		pandaproxySASLUser,
+		schemaRegistrySASLUser,
 		logger.WithValues("Kind", configMapKind()),
 	}
 }
@@ -388,28 +393,16 @@ func (r *ConfigMapResource) preparePandaproxyClient(
 		return nil
 	}
 
-	username := scramUsername
-	password, err := generatePassword(scramPasswordLength)
-	if err != nil {
-		return fmt.Errorf("could not generate SASL password: %w", err)
-	}
-
-	// Create secret with SCRAM credentials if it does not exist
-	err = r.createBasicAuthSecret(ctx, username, password)
-	if err != nil {
-		return err
-	}
-
 	// Retrieve SCRAM credentials
 	var secret corev1.Secret
-	err = r.Get(ctx, r.keySASL(), &secret)
+	err := r.Get(ctx, r.pandaproxySASLUser, &secret)
 	if err != nil {
 		return err
 	}
 
 	// Populate configuration with SCRAM credentials
-	username = string(secret.Data[corev1.BasicAuthUsernameKey])
-	password = string(secret.Data[corev1.BasicAuthPasswordKey])
+	username := string(secret.Data[corev1.BasicAuthUsernameKey])
+	password := string(secret.Data[corev1.BasicAuthPasswordKey])
 	mechanism := saslMechanism
 	cfgRpk.PandaproxyClient.SCRAMUsername = &username
 	cfgRpk.PandaproxyClient.SCRAMPassword = &password
@@ -419,26 +412,6 @@ func (r *ConfigMapResource) preparePandaproxyClient(
 	cfgRpk.Redpanda.Superusers = append(cfgRpk.Redpanda.Superusers, username)
 
 	return nil
-}
-
-func (r *ConfigMapResource) createBasicAuthSecret(
-	ctx context.Context, username, password string,
-) error {
-	key := r.keySASL()
-	obj := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      key.Name,
-			Namespace: key.Namespace,
-		},
-		Type: corev1.SecretTypeBasicAuth,
-		Data: map[string][]byte{
-			corev1.BasicAuthUsernameKey: []byte(username),
-			corev1.BasicAuthPasswordKey: []byte(password),
-		},
-	}
-
-	_, err := CreateIfNotExists(ctx, r, obj, r.logger)
-	return err
 }
 
 func (r *ConfigMapResource) preparePandaproxyTLS(cfgRpk *config.Config) {
@@ -492,15 +465,6 @@ func clusterCRPortOrRPKDefault(clusterPort, defaultPort int) int {
 // For reference please visit types.NamespacedName docs in k8s.io/apimachinery
 func (r *ConfigMapResource) Key() types.NamespacedName {
 	return ConfigMapKey(r.pandaCluster)
-}
-
-// KeySASL returns namespace/name used for the SASL secret of superuser
-func KeySASL(pandaCluster *redpandav1alpha1.Cluster) types.NamespacedName {
-	return types.NamespacedName{Name: pandaCluster.Name + "-sasl", Namespace: pandaCluster.Namespace}
-}
-
-func (r *ConfigMapResource) keySASL() types.NamespacedName {
-	return KeySASL(r.pandaCluster)
 }
 
 // ConfigMapKey provides config map name that derived from redpanda.vectorized.io CR

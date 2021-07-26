@@ -26,8 +26,12 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-const requeueDuration = time.Second * 10
-const adminAPITimeout = time.Millisecond * 100
+const (
+	// RequeueDuration is the time controller should
+	// requeue resource reconciliation.
+	RequeueDuration = time.Second * 10
+	adminAPITimeout = time.Millisecond * 100
+)
 
 var errRedpandaNotReady = errors.New("redpanda not ready")
 
@@ -136,7 +140,7 @@ func (r *StatefulSetResource) partitionUpdateImage(
 		// Before continuing to update the ith Pod, verify that the previously updated
 		// Pod (if any) has rejoined its groups after restarting, i.e., is ready for I/O.
 		if err := r.ensureRedpandaGroupsReady(ctx, sts, replicas, ordinal+1); err != nil {
-			return &RequeueAfterError{RequeueAfter: requeueDuration,
+			return &RequeueAfterError{RequeueAfter: RequeueDuration,
 				Msg: fmt.Sprintf("redpanda on pod (ordinal: %d) not ready: %s", ordinal, err)}
 		}
 
@@ -145,13 +149,13 @@ func (r *StatefulSetResource) partitionUpdateImage(
 		}
 
 		// Restarting the Pod takes enough time to warrant a requeue.
-		return &RequeueAfterError{RequeueAfter: requeueDuration,
+		return &RequeueAfterError{RequeueAfter: RequeueDuration,
 			Msg: fmt.Sprintf("wait for pod (ordinal: %d) to restart", ordinal)}
 	}
 
 	// Ensure 0th Pod is ready for I/O before completing the upgrade.
 	if err := r.ensureRedpandaGroupsReady(ctx, sts, replicas, 0); err != nil {
-		return &RequeueAfterError{RequeueAfter: requeueDuration,
+		return &RequeueAfterError{RequeueAfter: RequeueDuration,
 			Msg: fmt.Sprintf("redpanda on pod (ordinal: %d) not ready: %s", 0, err)}
 	}
 
