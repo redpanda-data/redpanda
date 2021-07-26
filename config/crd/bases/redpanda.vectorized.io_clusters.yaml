@@ -356,6 +356,9 @@ spec:
                             type: string
                         type: object
                       port:
+                        description: Port will set the schema registry listener port
+                          in Redpanda configuration. If not set the default will be
+                          8081
                         type: integer
                       tls:
                         description: TLS is the configuration for schema registry

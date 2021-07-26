@@ -31,6 +31,8 @@ const (
 	minimumReplicas               = 3
 
 	defaultTopicReplicationKey = "redpanda.default_topic_replication"
+
+	defaultSchemaRegistryPort = 8081
 )
 
 // log is for logging in this package.
@@ -51,6 +53,9 @@ var _ webhook.Defaulter = &Cluster{}
 // TODO(user): fill in your defaulting logic.
 func (r *Cluster) Default() {
 	log.Info("default", "name", r.Name)
+	if r.Spec.Configuration.SchemaRegistry != nil && r.Spec.Configuration.SchemaRegistry.Port == 0 {
+		r.Spec.Configuration.SchemaRegistry.Port = defaultSchemaRegistryPort
+	}
 
 	if *r.Spec.Replicas >= minimumReplicas {
 		if r.Spec.AdditionalConfiguration == nil {

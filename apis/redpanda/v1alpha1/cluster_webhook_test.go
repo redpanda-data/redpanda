@@ -23,6 +23,7 @@ import (
 	"k8s.io/utils/pointer"
 )
 
+// nolint:funlen // this is ok for a test
 func TestDefault(t *testing.T) {
 	type test struct {
 		name                           string
@@ -71,6 +72,97 @@ func TestDefault(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("missing schema registry does not set default port", func(t *testing.T) {
+		redpandaCluster := &v1alpha1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "",
+			},
+			Spec: v1alpha1.ClusterSpec{
+				Replicas:      pointer.Int32Ptr(1),
+				Configuration: v1alpha1.RedpandaConfig{},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
+					},
+				},
+			},
+		}
+
+		redpandaCluster.Default()
+		assert.Nil(t, redpandaCluster.Spec.Configuration.SchemaRegistry)
+	})
+	t.Run("if schema registry exist, but the port is 0 the default is set", func(t *testing.T) {
+		redpandaCluster := &v1alpha1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "",
+			},
+			Spec: v1alpha1.ClusterSpec{
+				Replicas: pointer.Int32Ptr(1),
+				Configuration: v1alpha1.RedpandaConfig{
+					SchemaRegistry: &v1alpha1.SchemaRegistryAPI{},
+				},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
+					},
+				},
+			},
+		}
+
+		redpandaCluster.Default()
+		assert.Equal(t, 8081, redpandaCluster.Spec.Configuration.SchemaRegistry.Port)
+	})
+	t.Run("if schema registry exist and port have not zero value the default will not be used", func(t *testing.T) {
+		redpandaCluster := &v1alpha1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "",
+			},
+			Spec: v1alpha1.ClusterSpec{
+				Replicas: pointer.Int32Ptr(1),
+				Configuration: v1alpha1.RedpandaConfig{
+					SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
+						Port: 999,
+					},
+				},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
+					},
+				},
+			},
+		}
+
+		redpandaCluster.Default()
+		assert.Equal(t, 999, redpandaCluster.Spec.Configuration.SchemaRegistry.Port)
+	})
+	t.Run("if schema registry is defined as rest of external listeners the default port is used", func(t *testing.T) {
+		redpandaCluster := &v1alpha1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "",
+			},
+			Spec: v1alpha1.ClusterSpec{
+				Replicas: pointer.Int32Ptr(1),
+				Configuration: v1alpha1.RedpandaConfig{
+					SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
+						External: &v1alpha1.ExternalConnectivityConfig{Enabled: true},
+					},
+				},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
+					},
+				},
+			},
+		}
+
+		redpandaCluster.Default()
+		assert.Equal(t, 8081, redpandaCluster.Spec.Configuration.SchemaRegistry.Port)
+	})
 }
 
 func TestValidateUpdate(t *testing.T) {
