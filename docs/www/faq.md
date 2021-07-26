@@ -14,7 +14,7 @@ which we have tested with:
 | -------- | ------ | ---- |
 | Java | Apache Kafka Java Client | https://github.com/apache/kafka |
 | C/C++ | librdkafka | https://github.com/edenhill/librdkafka |
-| Go | Sarama | https://github.com/Shopify/sarama |
+| Go | franz-go | https://github.com/twmb/franz-go |
 | Python | kafka-python | https://pypi.org/project/kafka-python |
 | JS | KafkaJS | https://kafka.js.org |
 | PHP | php-simple-kafka-client | https://github.com/php-kafka/php-simple-kafka-client |
