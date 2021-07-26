@@ -34,6 +34,7 @@ type PkiReconciler struct {
 	scheme       *runtime.Scheme
 	pandaCluster *redpandav1alpha1.Cluster
 	internalFQDN string
+	clusterFQDN  string
 	logger       logr.Logger
 }
 
@@ -42,11 +43,12 @@ func NewPki(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	fqdn string,
+	clusterFQDN string,
 	scheme *runtime.Scheme,
 	logger logr.Logger,
 ) *PkiReconciler {
 	return &PkiReconciler{
-		client, scheme, pandaCluster, fqdn, logger.WithValues("Reconciler", "pki"),
+		client, scheme, pandaCluster, fqdn, clusterFQDN, logger.WithValues("Reconciler", "pki"),
 	}
 }
 
@@ -118,6 +120,18 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 		toApplyRootPandaproxy, pandaproxyIssuerRef := r.prepareRoot(pandaproxyAPI, []string{r.internalFQDN})
 		toApply = append(toApply, toApplyRootPandaproxy...)
 		toApply = append(toApply, r.preparePandaproxyAPI(pandaproxyIssuerRef, &keystoreKey)...)
+	}
+
+	if r.pandaCluster.Spec.Configuration.SchemaRegistry != nil && r.pandaCluster.Spec.Configuration.SchemaRegistry.TLS != nil {
+		san := []string{r.clusterFQDN}
+		if r.pandaCluster.Spec.Configuration.SchemaRegistry != nil &&
+			r.pandaCluster.Spec.Configuration.SchemaRegistry.External != nil &&
+			r.pandaCluster.Spec.Configuration.SchemaRegistry.External.Subdomain != "" {
+			san = append(san, r.pandaCluster.Spec.Configuration.SchemaRegistry.External.Subdomain)
+		}
+		toApplyRootPandaproxy, schemaRegistryIssuerRef := r.prepareRoot(schemaRegistryAPI, san)
+		toApply = append(toApply, toApplyRootPandaproxy...)
+		toApply = append(toApply, r.prepareSchemaRegistryAPI(schemaRegistryIssuerRef, &keystoreKey)...)
 	}
 
 	for _, res := range toApply {
