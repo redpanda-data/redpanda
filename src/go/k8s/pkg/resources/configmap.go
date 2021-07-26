@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	baseSuffix    = "-base"
+	baseSuffix    = "base"
 	dataDirectory = "/var/lib/redpanda/data"
 
 	tlsDir   = "/etc/tls/certs"
@@ -44,9 +44,8 @@ const (
 	oneMB          = 1024 * 1024
 	logSegmentSize = 512 * oneMB
 
-	scramUsername       = "pandaproxy_client"
-	scramPasswordLength = 16
-	saslMechanism       = "SCRAM-SHA-256"
+	scramUsername = "pandaproxy_client"
+	saslMechanism = "SCRAM-SHA-256"
 )
 
 var errKeyDoesNotExistInSecretData = errors.New("cannot find key in secret data")
@@ -506,7 +505,7 @@ func (r *ConfigMapResource) keySASL() types.NamespacedName {
 
 // ConfigMapKey provides config map name that derived from redpanda.vectorized.io CR
 func ConfigMapKey(pandaCluster *redpandav1alpha1.Cluster) types.NamespacedName {
-	return types.NamespacedName{Name: pandaCluster.Name + baseSuffix, Namespace: pandaCluster.Namespace}
+	return types.NamespacedName{Name: resourceNameTrim(pandaCluster.Name, baseSuffix), Namespace: pandaCluster.Namespace}
 }
 
 func configMapKind() string {
