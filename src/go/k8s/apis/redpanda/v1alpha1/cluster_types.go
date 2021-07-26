@@ -493,3 +493,11 @@ func (r *Cluster) PandaproxyAPITLS() *PandaproxyAPI {
 	}
 	return nil
 }
+
+// IsSchemaRegistryExternallyAvailable returns true if schema registry
+// is enabled with external connectivity
+func (r *Cluster) IsSchemaRegistryExternallyAvailable() bool {
+	return r.Spec.Configuration.SchemaRegistry != nil &&
+		r.Spec.Configuration.SchemaRegistry.External != nil &&
+		r.Spec.Configuration.SchemaRegistry.External.Enabled
+}

@@ -118,6 +118,9 @@ func (r *ClusterReconciler) Reconcile(
 	if proxyAPIExternal != nil {
 		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.PandaproxyPortExternalName, Port: proxyAPIInternal.Port + 1})
 	}
+	if redpandaCluster.IsSchemaRegistryExternallyAvailable() {
+		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.SchemaRegistryPortName, Port: redpandaCluster.Spec.Configuration.SchemaRegistry.Port})
+	}
 	headlessPorts := []resources.NamedServicePort{
 		{Name: resources.AdminPortName, Port: adminAPIInternal.Port},
 		{Name: resources.InternalListenerName, Port: internalListener.Port},
@@ -132,6 +135,10 @@ func (r *ClusterReconciler) Reconcile(
 	clusterPorts := []resources.NamedServicePort{}
 	if proxyAPIExternal != nil && proxyAPIInternal != nil {
 		clusterPorts = append(clusterPorts, resources.NamedServicePort{Name: resources.PandaproxyPortExternalName, Port: proxyAPIInternal.Port + 1})
+	}
+	if redpandaCluster.Spec.Configuration.SchemaRegistry != nil {
+		port := redpandaCluster.Spec.Configuration.SchemaRegistry.Port
+		clusterPorts = append(clusterPorts, resources.NamedServicePort{Name: resources.SchemaRegistryPortName, Port: port})
 	}
 	clusterSvc := resources.NewClusterService(r.Client, &redpandaCluster, r.Scheme, clusterPorts, log)
 	subdomain := ""
