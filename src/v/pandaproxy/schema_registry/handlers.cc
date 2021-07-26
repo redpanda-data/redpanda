@@ -278,6 +278,38 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version(
     co_return rp;
 }
 
+ss::future<ctx_server<service>::reply_t> get_subject_versions_version_schema(
+  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp) {
+    parse_accept_header(rq, rp);
+    auto sub = parse::request_param<subject>(*rq.req, "subject");
+    auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
+    auto inc_del{
+      parse::query_param<std::optional<include_deleted>>(*rq.req, "deleted")
+        .value_or(include_deleted::no)};
+    rq.req.reset();
+
+    auto version = invalid_schema_version;
+    if (ver == "latest") {
+        // We must sync to reliably say what is 'latest'
+        co_await rq.service().writer().read_sync();
+
+        auto versions = co_await rq.service().schema_store().get_versions(
+          sub, inc_del);
+        if (versions.empty()) {
+            throw as_exception(not_found(sub, version));
+        }
+        version = versions.back();
+    } else {
+        version = parse::from_chars<schema_version>{}(ver).value();
+    }
+
+    auto get_res = co_await rq.service().schema_store().get_subject_schema(
+      sub, version, inc_del);
+
+    rp.rep->write_body("json", get_res.definition());
+    co_return rp;
+}
+
 ss::future<server::reply_t>
 delete_subject(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
