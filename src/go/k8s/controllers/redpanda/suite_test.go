@@ -77,7 +77,7 @@ var _ = BeforeSuite(func(done Done) {
 		Client: k8sManager.GetClient(),
 		Log:    ctrl.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
 		Scheme: k8sManager.GetScheme(),
-	}).WithConfiguratorSettings(resources.ConfiguratorSettings{
+	}).WithClusterDomain("cluster.local").WithConfiguratorSettings(resources.ConfiguratorSettings{
 		ConfiguratorBaseImage: "vectorized/configurator",
 		ConfiguratorTag:       "latest",
 		ImagePullPolicy:       "Always",
