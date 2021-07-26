@@ -13,6 +13,7 @@
 
 #include "cluster/fwd.h"
 #include "config/configuration.h"
+#include "kafka/latency_probe.h"
 #include "kafka/server/fetch_metadata_cache.hh"
 #include "kafka/server/fwd.h"
 #include "kafka/server/queue_depth_monitor.h"
@@ -116,6 +117,8 @@ public:
         return _fetch_metadata_cache;
     }
 
+    latency_probe& probe() { return _probe; }
+
 private:
     ss::smp_service_group _smp_group;
     ss::sharded<cluster::topics_frontend>& _topics_frontend;
@@ -136,6 +139,8 @@ private:
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     std::optional<qdc_monitor> _qdc_mon;
     kafka::fetch_metadata_cache _fetch_metadata_cache;
+
+    latency_probe _probe;
 };
 
 } // namespace kafka
