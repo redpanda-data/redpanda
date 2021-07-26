@@ -38,6 +38,8 @@ const (
 	PandaproxyPortInternalName = "proxy"
 	// PandaproxyPortExternalName is the name of the pandaproxy external port
 	PandaproxyPortExternalName = "proxy-external"
+	// SchemaRegistryPortName is the name of the schema registry port
+	SchemaRegistryPortName = "schema-registry"
 )
 
 // NamedServicePort allows to pass name ports, e.g., to service resources
