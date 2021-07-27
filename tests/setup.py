@@ -15,7 +15,8 @@ setup(
     install_requires=[
         'ducktape@git+https://github.com/vectorizedio/ducktape.git@master',
         'prometheus-client==0.9.0', 'pyyaml==5.3.1', 'kafka-python==2.0.2',
-        'crc32c==2.2', 'confluent-kafka==1.6.1', 'zstandard==0.15.2'
+        'crc32c==2.2', 'confluent-kafka==1.6.1', 'zstandard==0.15.2',
+        'xxhash==2.0.2'
     ],
     scripts=[],
 )

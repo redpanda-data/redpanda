@@ -148,7 +148,7 @@ class ArchivalTest(RedpandaTest):
         if self.real_thing:
             extra_rp_conf = dict(
                 developer_mode=True,
-                disable_metrics=False,
+                disable_metrics=True,
                 cloud_storage_enabled=True,
                 cloud_storage_access_key=self.s3_access_key,
                 cloud_storage_secret_key=self.s3_secret_key,
@@ -167,7 +167,7 @@ class ArchivalTest(RedpandaTest):
             self.s3_secret_key = ArchivalTest.MINIO_SECRET_KEY
             extra_rp_conf = dict(
                 developer_mode=True,
-                disable_metrics=False,
+                disable_metrics=True,
                 cloud_storage_enabled=True,
                 cloud_storage_access_key=ArchivalTest.MINIO_ACCESS_KEY,
                 cloud_storage_secret_key=ArchivalTest.MINIO_SECRET_KEY,

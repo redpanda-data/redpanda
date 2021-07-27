@@ -179,16 +179,17 @@ class RedpandaService(Service):
             client.create_topic(spec)
 
     def start_redpanda(self, node):
-        cmd = (f"nohup {self.find_binary('redpanda')}"
-               f" --redpanda-cfg {RedpandaService.CONFIG_FILE}"
-               f" --default-log-level {self._log_level}"
-               f" --logger-log-level=exception=debug:archival=debug:io=debug "
-               f" --kernel-page-cache=true "
-               f" --overprovisioned "
-               f" --smp {self._num_cores} "
-               f" --memory 6G "
-               f" --reserve-memory 0M "
-               f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
+        cmd = (
+            f"nohup {self.find_binary('redpanda')}"
+            f" --redpanda-cfg {RedpandaService.CONFIG_FILE}"
+            f" --default-log-level {self._log_level}"
+            f" --logger-log-level=exception=debug:archival=debug:io=debug:cloud_storage=debug "
+            f" --kernel-page-cache=true "
+            f" --overprovisioned "
+            f" --smp {self._num_cores} "
+            f" --memory 6G "
+            f" --reserve-memory 0M "
+            f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
         # set llvm_profile var for code coverage
         # each node will create its own copy of the .profraw file
         # since each node creates a redpanda broker.
@@ -283,7 +284,7 @@ class RedpandaService(Service):
 
     def clean_node(self, node):
         node.account.kill_process("redpanda", clean_shutdown=False)
-        node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/*")
+        node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/data/*")
         node.account.remove(f"{RedpandaService.CONFIG_FILE}")
 
     def redpanda_pid(self, node):
