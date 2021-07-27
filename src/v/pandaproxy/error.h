@@ -38,6 +38,7 @@ enum class reply_error_code : uint16_t {
     subject_not_deleted = 40405,
     subject_version_soft_deleted = 40406,
     subject_version_not_deleted = 40407,
+    write_collision = 50301,
     zookeeper_error = 50001,
     kafka_error = 50002,
     kafka_retriable_error = 50003,
