@@ -34,7 +34,7 @@
 namespace cluster {
 
 struct tm_transaction {
-    static constexpr uint8_t version = 0;
+    static constexpr uint8_t version = 1;
 
     enum tx_status {
         ongoing,
@@ -180,6 +180,77 @@ private:
           model::make_memory_record_batch_reader(std::move(batch)),
           raft::replicate_options{raft::consistency_level::quorum_ack});
     }
+};
+
+struct tm_transaction_v0 {
+    static constexpr uint8_t version = 0;
+
+    enum tx_status {
+        ongoing,
+        preparing,
+        prepared,
+        aborting,
+        killed,
+        ready,
+    };
+
+    struct tx_partition {
+        model::ntp ntp;
+        model::term_id etag;
+    };
+
+    struct tx_group {
+        kafka::group_id group_id;
+        model::term_id etag;
+    };
+
+    kafka::transactional_id id;
+    model::producer_identity pid;
+    model::tx_seq tx_seq;
+    model::term_id etag;
+    tx_status status;
+    std::chrono::milliseconds timeout_ms;
+    std::vector<tx_partition> partitions;
+    std::vector<tx_group> groups;
+
+    tm_transaction::tx_status upcast(tx_status status) {
+        switch (status) {
+        case tx_status::ongoing:
+            return tm_transaction::tx_status::ongoing;
+        case tx_status::preparing:
+            return tm_transaction::tx_status::preparing;
+        case tx_status::prepared:
+            return tm_transaction::tx_status::prepared;
+        case tx_status::aborting:
+            return tm_transaction::tx_status::aborting;
+        case tx_status::killed:
+            return tm_transaction::tx_status::killed;
+        case tx_status::ready:
+            return tm_transaction::tx_status::ready;
+        default:
+            vassert(false, "unknown status: {}", status);
+        }
+    };
+
+    tm_transaction upcast() {
+        tm_transaction result;
+        result.id = id;
+        result.pid = pid;
+        result.tx_seq = tx_seq;
+        result.etag = etag;
+        result.status = upcast(status);
+        result.timeout_ms = timeout_ms;
+        result.last_update_ts = tm_stm::clock_type::now();
+        for (auto& partition : partitions) {
+            result.partitions.push_back(tm_transaction::tx_partition{
+              .ntp = partition.ntp, .etag = partition.etag});
+        }
+        for (auto& group : groups) {
+            result.groups.push_back(tm_transaction::tx_group{
+              .group_id = group.group_id, .etag = group.etag});
+        }
+        return result;
+    };
 };
 
 } // namespace cluster
