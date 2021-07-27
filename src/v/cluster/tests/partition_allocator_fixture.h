@@ -14,10 +14,10 @@
 #include "cluster/scheduling/allocation_node.h"
 #include "cluster/scheduling/allocation_strategy.h"
 #include "cluster/scheduling/partition_allocator.h"
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "random/fast_prng.h"
 #include "random/generators.h"
-#include "redpanda/application.h"
 
 struct partition_allocator_fixture {
     partition_allocator_fixture() {
