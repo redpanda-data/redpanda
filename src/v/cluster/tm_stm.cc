@@ -49,7 +49,7 @@ std::ostream& operator<<(std::ostream& o, const tm_transaction& tx) {
 }
 
 tm_stm::tm_stm(ss::logger& logger, raft::consensus* c)
-  : persisted_stm("tm", logger, c)
+  : persisted_stm("tx.coordinator.snapshot", logger, c)
   , _sync_timeout(config::shard_local_cfg().tm_sync_timeout_ms.value())
   , _transactional_id_expiration(
       config::shard_local_cfg().transactional_id_expiration_ms.value())
