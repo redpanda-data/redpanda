@@ -355,11 +355,12 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
                       storage::api& api = _storage_api.local();
                       storage::log_manager& lm = api.log_mgr();
                       auto log = lm.get(ntp);
-                      if (!log.has_value()) {
+                      auto part = _partition_manager.local().get(ntp);
+                      if (!log.has_value() || !part) {
                           return ss::now();
                       }
                       auto svc = ss::make_lw_shared<ntp_archiver>(
-                        log->config(), _conf, _remote, _probe);
+                        log->config(), _conf, _remote, part, _probe);
                       return ss::repeat([this, svc = std::move(svc)] {
                           return add_ntp_archiver(svc);
                       });
@@ -387,16 +388,6 @@ scheduler_service_impl::remove_archivers(std::vector<model::ntp> to_remove) {
                    });
              })
       .finally([g = std::move(g)] {});
-}
-
-std::optional<model::offset>
-scheduler_service_impl::get_last_stable_offset(const model::ntp& ntp) const {
-    cluster::partition_manager& pm = _partition_manager.local();
-    auto p = pm.get(ntp);
-    if (p) {
-        return p->last_stable_offset();
-    }
-    return std::nullopt;
 }
 
 ss::future<> scheduler_service_impl::reconcile_archivers() {
@@ -447,6 +438,16 @@ ss::future<> scheduler_service_impl::reconcile_archivers() {
     }
 }
 
+cloud_storage::remote& scheduler_service_impl::get_remote() { return _remote; }
+
+size_t scheduler_service_impl::get_connection_limit() const {
+    return _conf.connection_limit();
+}
+
+s3::bucket_name scheduler_service_impl::get_bucket() const {
+    return _conf.bucket_name;
+}
+
 ss::future<> scheduler_service_impl::run_uploads() {
     gate_guard g(_gate);
     try {
@@ -462,7 +463,6 @@ ss::future<> scheduler_service_impl::run_uploads() {
               boost::make_counting_iterator(quota),
               std::back_inserter(flist),
               [this](int) {
-                  using result_t = ntp_archiver::batch_result;
                   auto archiver = _queue.get_upload_candidate();
                   storage::api& api = _storage_api.local();
                   storage::log_manager& lm = api.log_mgr();
@@ -470,12 +470,7 @@ ss::future<> scheduler_service_impl::run_uploads() {
                     _rtclog.debug,
                     "Checking {} for S3 upload candidates",
                     archiver->get_ntp());
-                  auto lso = get_last_stable_offset(archiver->get_ntp());
-                  if (lso) {
-                      return archiver->upload_next_candidates(
-                        lm, *lso, _rtcnode);
-                  }
-                  return ss::make_ready_future<result_t>(result_t{});
+                  return archiver->upload_next_candidates(lm, _rtcnode);
               });
 
             auto results = co_await ss::when_all_succeed(

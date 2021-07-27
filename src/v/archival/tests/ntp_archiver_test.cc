@@ -168,7 +168,7 @@ FIXTURE_TEST(test_download_manifest, s3_imposter_fixture) { // NOLINT
     cloud_storage::remote remote(
       conf.connection_limit, conf.client_config, probe);
     archival::ntp_archiver archiver(
-      get_ntp_conf(), get_configuration(), remote, probe);
+      get_ntp_conf(), get_configuration(), remote, nullptr, probe);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
     retry_chain_node fib;
     auto res = archiver.download_manifest(fib).get0();
@@ -184,7 +184,7 @@ FIXTURE_TEST(test_upload_manifest, s3_imposter_fixture) { // NOLINT
     cloud_storage::remote remote(
       conf.connection_limit, conf.client_config, probe);
     archival::ntp_archiver archiver(
-      get_ntp_conf(), get_configuration(), remote, probe);
+      get_ntp_conf(), get_configuration(), remote, nullptr, probe);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
     auto pm = const_cast<cloud_storage::manifest*>( // NOLINT
       &archiver.get_remote_manifest());
@@ -219,21 +219,34 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     service_probe probe(service_metrics_disabled::yes);
     cloud_storage::remote remote(
       conf.connection_limit, conf.client_config, probe);
-    archival::ntp_archiver archiver(
-      get_ntp_conf(), get_configuration(), remote, probe);
-    auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
-    model::offset lso = model::offset::max();
     std::vector<segment_desc> segments = {
       {manifest_ntp, model::offset(1), model::term_id(2)},
       {manifest_ntp, model::offset(1000), model::term_id(4)},
     };
     init_storage_api_local(segments);
+    vlog(test_log.info, "Initialized, start waiting for partition leadership");
+
+    wait_for_partition_leadership(manifest_ntp);
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    tests::cooperative_spin_wait_with_timeout(10s, [this, part]() mutable {
+        return part->high_watermark() >= model::offset(1);
+    }).get();
+
+    vlog(
+      test_log.info,
+      "Partition is a leader, HW {}, CO {}, partition: {}",
+      part->high_watermark(),
+      part->committed_offset(),
+      *part);
+
+    archival::ntp_archiver archiver(
+      get_ntp_conf(), get_configuration(), remote, part, probe);
+    auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
     auto res = archiver
-                 .upload_next_candidates(
-                   get_local_storage_api().log_mgr(), lso, fib)
+                 .upload_next_candidates(get_local_storage_api().log_mgr(), fib)
                  .get0();
     BOOST_REQUIRE_EQUAL(res.num_succeded, 2);
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
@@ -343,6 +356,19 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
       {manifest_ntp, model::offset(1000), model::term_id(4)},
     };
     init_storage_api_local(segments);
+    wait_for_partition_leadership(manifest_ntp);
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    tests::cooperative_spin_wait_with_timeout(10s, [this, part]() mutable {
+        return part->high_watermark() >= model::offset(1);
+    }).get();
+
+    vlog(
+      test_log.info,
+      "Partition is a leader, HW {}, CO {}, partition: {}",
+      part->high_watermark(),
+      part->committed_offset(),
+      *part);
+
     auto s1name = archival::segment_name("1-2-v1.log");
     auto s2name = archival::segment_name("1000-4-v1.log");
     auto segment1 = get_segment(manifest_ntp, s1name);
@@ -350,7 +376,6 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     auto segment2 = get_segment(manifest_ntp, s2name);
     BOOST_REQUIRE(static_cast<bool>(segment2));
 
-    //
     cloud_storage::manifest old_manifest(manifest_ntp, manifest_revision);
     cloud_storage::manifest::segment_meta old_meta{
       .is_compacted = false,
@@ -377,7 +402,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     cloud_storage::remote remote(
       conf.connection_limit, conf.client_config, probe);
     archival::ntp_archiver archiver(
-      get_ntp_conf(), get_configuration(), remote, probe);
+      get_ntp_conf(), get_configuration(), remote, part, probe);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
@@ -385,8 +410,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     archiver.download_manifest(fib).get();
 
     auto res = archiver
-                 .upload_next_candidates(
-                   get_local_storage_api().log_mgr(), lso, fib)
+                 .upload_next_candidates(get_local_storage_api().log_mgr(), fib)
                  .get0();
     BOOST_REQUIRE_EQUAL(res.num_succeded, 2);
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
@@ -497,6 +521,12 @@ static void test_partial_upload_impl(
     };
 
     test.init_storage_api_local(segments);
+    test.wait_for_partition_leadership(manifest_ntp);
+    auto part = test.app.partition_manager.local().get(manifest_ntp);
+    tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
+        return part->high_watermark() >= model::offset(1);
+    }).get();
+
     auto s1name = archival::segment_name("0-1-v1.log");
 
     auto segment1 = test.get_segment(manifest_ntp, s1name);
@@ -581,7 +611,8 @@ static void test_partial_upload_impl(
       conf.connection_limit, conf.client_config, probe);
     auto config = get_configuration();
     config.time_limit = segment_time_limit(0s);
-    archival::ntp_archiver archiver(get_ntp_conf(), config, remote, probe);
+    archival::ntp_archiver archiver(
+      get_ntp_conf(), config, remote, part, probe);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
@@ -590,7 +621,7 @@ static void test_partial_upload_impl(
 
     auto res = archiver
                  .upload_next_candidates(
-                   test.get_local_storage_api().log_mgr(), lso, fib)
+                   test.get_local_storage_api().log_mgr(), fib, lso)
                  .get0();
     BOOST_REQUIRE_EQUAL(res.num_succeded, 1);
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
@@ -624,11 +655,12 @@ static void test_partial_upload_impl(
         BOOST_REQUIRE_EQUAL(stats.max_offset, last_upl1);
     }
 
-    lso = model::offset::max();
+    lso = last_upl2 + model::offset(1);
     res = archiver
             .upload_next_candidates(
-              test.get_local_storage_api().log_mgr(), lso, fib)
+              test.get_local_storage_api().log_mgr(), fib, lso)
             .get0();
+
     BOOST_REQUIRE_EQUAL(res.num_succeded, 1);
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
 

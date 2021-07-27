@@ -15,6 +15,7 @@
 #include "cloud_storage/manifest.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
+#include "cluster/partition.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "s3/client.h"
@@ -85,6 +86,7 @@ public:
       const storage::ntp_config& ntp,
       const configuration& conf,
       cloud_storage::remote& remote,
+      ss::lw_shared_ptr<cluster::partition> part,
       service_probe& svc_probe);
 
     /// Stop archiver.
@@ -125,13 +127,13 @@ public:
     /// uploading them.
     ///
     /// \param lm is a log manager instance
-    /// \param last_stable_offset is a last_stable_offset offset of the
-    /// partition \param parent is a retry chain node of the caller \return
-    /// future that returns number of uploaded/failed segments
+    /// \param parent is a retry chain node of the caller
+    /// \param lso_override last stable offset override
+    /// \return future that returns number of uploaded/failed segments
     ss::future<batch_result> upload_next_candidates(
       storage::log_manager& lm,
-      model::offset last_stable_offset,
-      retry_chain_node& parent);
+      retry_chain_node& parent,
+      std::optional<model::offset> last_stable_offset_override = std::nullopt);
 
 private:
     /// Information about started upload
@@ -154,6 +156,7 @@ private:
         /// again anyway.
         ss::stop_iteration stop;
     };
+
     /// Start upload without waiting for it to complete
     ss::future<scheduled_upload> schedule_single_upload(
       storage::log_manager& lm,
@@ -185,6 +188,7 @@ private:
     model::ntp _ntp;
     model::revision_id _rev;
     cloud_storage::remote& _remote;
+    ss::lw_shared_ptr<cluster::partition> _partition;
     archival_policy _policy;
     s3::bucket_name _bucket;
     /// Remote manifest contains representation of the data stored in S3 (it

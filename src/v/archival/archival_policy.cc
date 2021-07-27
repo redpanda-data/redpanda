@@ -203,6 +203,8 @@ static ss::future<> get_file_range(
     upl.content_length = fsize;
     upl.final_offset = segment->offsets().dirty_offset;
     upl.final_file_offset = fsize;
+    upl.base_timestamp = segment->index().base_timestamp();
+    upl.max_timestamp = segment->index().max_timestamp();
     if (!end_inclusive && segment->offsets().base_offset == begin_inclusive) {
         // Fast path, the upload is started at the begining of the segment
         // and not truncted at the end.
@@ -234,10 +236,11 @@ static ss::future<> get_file_range(
         auto ostr = make_null_output_stream();
 
         size_t bytes_to_skip = 0;
+        model::timestamp ts = upl.base_timestamp;
         auto res = co_await storage::transform_stream(
           std::move(istr),
           std::move(ostr),
-          [begin_inclusive, &sto](model::record_batch_header& hdr) {
+          [begin_inclusive, &sto, &ts](model::record_batch_header& hdr) {
               if (hdr.last_offset() < begin_inclusive) {
                   // The current record batch is accepted and will contribute to
                   // skipped length. This means that if we will read segment
@@ -249,6 +252,7 @@ static ss::future<> get_file_range(
                   // TODO: update base_timestamp
                   return storage::batch_consumer::consume_result::accept_batch;
               }
+              ts = hdr.first_timestamp;
               return storage::batch_consumer::consume_result::stop_parser;
           });
         if (res.has_error()) {
@@ -271,7 +275,7 @@ static ss::future<> get_file_range(
         upl.starting_offset = sto;
         upl.file_offset = bytes_to_skip;
         upl.content_length -= bytes_to_skip;
-        // TODO: adjust base_timestamp
+        upl.base_timestamp = ts;
     }
     if (end_inclusive) {
         // Handle truncated segment upload (if the upload was triggered by time
@@ -306,12 +310,13 @@ static ss::future<> get_file_range(
         auto istr = segment->reader().data_stream(
           scan_from, ss::default_priority_class());
         auto ostr = make_null_output_stream();
+        model::timestamp ts = upl.max_timestamp;
         size_t stop_at = 0;
         auto res = co_await storage::transform_stream(
           std::move(istr),
           std::move(ostr),
-          [off_end = end_inclusive.value(),
-           &fo](model::record_batch_header& hdr) {
+          [off_end = end_inclusive.value(), &fo, &ts](
+            model::record_batch_header& hdr) {
               if (hdr.last_offset() <= off_end) {
                   // If last offset of the record batch is within the range
                   // we need to add it to the output stream (to calculate the
@@ -320,6 +325,7 @@ static ss::future<> get_file_range(
                   // TODO: update max_timestamp
                   return storage::batch_consumer::consume_result::accept_batch;
               }
+              ts = hdr.max_timestamp;
               return storage::batch_consumer::consume_result::stop_parser;
           });
         if (res.has_error()) {
@@ -341,7 +347,7 @@ static ss::future<> get_file_range(
         upl.final_offset = fo;
         upl.final_file_offset = stop_at;
         upl.content_length -= std::min(upl.content_length, (fsize - stop_at));
-        // TODO: adjust max_timestamp
+        upl.max_timestamp = ts;
     }
     vlog(
       archival_log.debug,

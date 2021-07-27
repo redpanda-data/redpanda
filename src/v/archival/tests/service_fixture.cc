@@ -13,6 +13,7 @@
 #include "archival/types.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
+#include "cluster/members_table.h"
 #include "random/generators.h"
 #include "s3/client.h"
 #include "seastarx.h"
@@ -303,13 +304,24 @@ void archiver_fixture::initialize_shard(
         seg->close().get();
         all_ntp[d.ntp] += 1;
     }
+    wait_for_controller_leadership().get();
+    auto broker = app.controller->get_members_table().local().get_broker(
+      model::node_id(1));
     for (const auto& ntp : all_ntp) {
-        vlog(fixt_log.trace, "manage {}", ntp.first);
-        api.log_mgr()
-          .manage(storage::ntp_config(ntp.first, data_dir.string()))
+        vlog(
+          fixt_log.trace,
+          "manage {}, data-dir {}",
+          ntp.first,
+          data_dir.string());
+        app.partition_manager.local()
+          .manage(
+            storage::ntp_config(ntp.first, data_dir.string()),
+            raft::group_id(1),
+            {*broker.value()})
           .get();
         BOOST_CHECK_EQUAL(
           api.log_mgr().get(ntp.first)->segment_count(), ntp.second);
+        vlog(fixt_log.trace, "storage log {}", *api.log_mgr().get(ntp.first));
     }
     BOOST_CHECK(all_ntp.size() <= api.log_mgr().size()); // NOLINT
 }

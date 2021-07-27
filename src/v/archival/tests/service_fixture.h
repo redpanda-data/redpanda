@@ -169,7 +169,12 @@ public:
         return layouts.find(ntp)->second;
     }
 
-protected:
+    ss::future<> add_topic_with_single_partition(model::ntp ntp) {
+        co_await wait_for_controller_leadership();
+        co_await add_topic(model::topic_namespace_view(
+          model::topic_namespace(ntp.ns, ntp.tp.topic)));
+    }
+
 private:
     void
     initialize_shard(storage::api& api, const std::vector<segment_desc>& segm);
