@@ -540,6 +540,9 @@ func newGraphPanel(
 func newDefaultTemplateVar(
 	name, label string, multi bool, opts ...graf.Option,
 ) graf.TemplateVar {
+	if opts == nil {
+		opts = []graf.Option{}
+	}
 	return graf.TemplateVar{
 		Name:       name,
 		Datasource: datasource,
