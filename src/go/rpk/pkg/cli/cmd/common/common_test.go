@@ -135,15 +135,12 @@ func TestDeduceBrokers(t *testing.T) {
 		name: "it should take the local broker's cluster addresses if rpk.kafka_api.brokers is empty",
 		config: func() (*config.Config, error) {
 			conf := config.Default()
-			conf.Redpanda.SeedServers = []config.SeedServer{{
-				Host: config.SocketAddress{"somedomain.co", 1234},
-			}}
 			conf.Redpanda.KafkaApi = []config.NamedSocketAddress{{
 				SocketAddress: config.SocketAddress{"anotherhost", 4321},
 			}}
 			return conf, nil
 		},
-		expected: []string{"somedomain.co:1234", "anotherhost:4321"},
+		expected: []string{"anotherhost:4321"},
 	}, {
 		name: "it should return 127.0.0.1:9092 if no config sources yield a brokers list",
 		config: func() (*config.Config, error) {

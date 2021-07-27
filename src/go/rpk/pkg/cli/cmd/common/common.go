@@ -187,14 +187,6 @@ func DeduceBrokers(
 			)
 			return defaultAddrs
 		}
-		// Add the seed servers' Kafka addrs.
-		for _, b := range conf.Redpanda.SeedServers {
-			addr := net.JoinHostPort(
-				b.Host.Address,
-				strconv.Itoa(b.Host.Port),
-			)
-			bs = append(bs, addr)
-		}
 		if len(conf.Redpanda.KafkaApi) > 0 {
 			// Add the current node's 1st Kafka listener.
 			selfAddr := net.JoinHostPort(
