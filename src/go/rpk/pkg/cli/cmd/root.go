@@ -27,6 +27,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
+	plugincmd "github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/plugin"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/plugin"
 	"golang.org/x/crypto/ssh/terminal"
@@ -82,6 +83,8 @@ func Execute() {
 	rootCmd.AddCommand(NewClusterCommand(fs, mgr))
 	rootCmd.AddCommand(NewACLCommand(fs, mgr))
 
+	rootCmd.AddCommand(plugincmd.NewCommand(fs))
+
 	addPlatformDependentCmds(fs, mgr, rootCmd)
 
 	// To support autocompletion even for plugins, we list all plugins now
@@ -101,7 +104,7 @@ func Execute() {
 	// is ensured by the return from listPlugins, but we can also ensure
 	// that here by only adding a plugin with exec if a command does not
 	// exist yet.
-	for _, plugin := range plugin.ListPlugins(fs, filepath.SplitList(os.Getenv("PATH"))) {
+	for _, plugin := range plugin.ListPlugins(fs, plugin.UserPaths()) {
 		if _, _, err := rootCmd.Find(plugin.Arguments); err != nil {
 			addPluginWithExec(rootCmd, plugin.Arguments, plugin.Path)
 		}
