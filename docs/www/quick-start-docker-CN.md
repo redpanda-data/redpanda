@@ -30,6 +30,7 @@ Redpanda是用于任务关键型工作负载的现代[流媒体平台](/blog/int
 ```bash
 docker run -d --pull=always --name=redpanda-1 --rm \
 -p 9092:9092 \
+-p 9644:9644 \
 vectorized/redpanda:latest \
 redpanda start \
 --overprovisioned \
@@ -72,6 +73,7 @@ docker run -d \
 --net=redpandanet \
 -p 8082:8082 \
 -p 9092:9092 \
+-p 9644:9644 \
 -v "redpanda1:/var/lib/redpanda/data" \
 vectorized/redpanda redpanda start \
 --smp 1  \
