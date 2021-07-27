@@ -46,6 +46,17 @@ class Admin:
         self.redpanda.logger.debug(ret)
         return ret
 
+    def decommission_broker(self, id, node=None):
+        """
+        Decommission broker
+        """
+        node = node or self.redpanda.controller()
+        url = self._url(node, f"brokers/{id}/decommission")
+        self.redpanda.logger.debug(f"decommissioning URL: {url}")
+        ret = requests.put(url)
+        self.redpanda.logger.debug(f"decommissioning response: {ret}")
+        return ret
+
     def get_partitions(self,
                        topic=None,
                        partition=None,

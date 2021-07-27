@@ -19,6 +19,19 @@ void follower_stats::update_with_configuration(const group_configuration& cfg) {
         }
         _followers.emplace(rni, follower_index_metadata(rni));
     });
+    // update learner state
+    cfg.for_each_voter([this](const vnode& rni) {
+        if (rni == _self) {
+            return;
+        }
+
+        auto it = _followers.find(rni);
+        vassert(
+          it != _followers.end(),
+          "voter {} have to exists in follower stats",
+          rni);
+        it->second.is_learner = false;
+    });
 
     absl::erase_if(_followers, [&cfg](const container_t::value_type& p) {
         return !cfg.contains(p.first);

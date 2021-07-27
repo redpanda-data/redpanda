@@ -103,6 +103,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> transactional_id_expiration_ms;
     property<bool> enable_idempotence;
     property<bool> enable_transactions;
+    property<uint32_t> abort_index_segment_size;
     // same as log.retention.ms in kafka
     property<std::chrono::milliseconds> delete_retention_ms;
     property<std::chrono::milliseconds> log_compaction_interval_ms;
@@ -123,6 +124,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> replicate_append_timeout_ms;
     property<std::chrono::milliseconds> recovery_append_timeout_ms;
     property<size_t> raft_replicate_batch_window_size;
+    property<size_t> raft_learner_recovery_rate;
 
     property<size_t> reclaim_min_size;
     property<size_t> reclaim_max_size;
@@ -156,6 +158,7 @@ struct configuration final : public config_store {
     property<int16_t> compaction_ctrl_min_shares;
     property<int16_t> compaction_ctrl_max_shares;
     property<std::optional<size_t>> compaction_ctrl_backlog_size;
+    property<std::chrono::milliseconds> members_backend_retry_ms;
 
     // Archival storage
     property<bool> cloud_storage_enabled;
@@ -169,6 +172,11 @@ struct configuration final : public config_store {
     property<bool> cloud_storage_disable_tls;
     property<int16_t> cloud_storage_api_endpoint_port;
     property<std::optional<ss::sstring>> cloud_storage_trust_file;
+    property<std::chrono::milliseconds> cloud_storage_initial_backoff_ms;
+    property<std::chrono::milliseconds> cloud_storage_segment_upload_timeout_ms;
+    property<std::chrono::milliseconds>
+      cloud_storage_manifest_upload_timeout_ms;
+
     one_or_many_property<ss::sstring> superusers;
 
     // kakfa queue depth control: latency ewma
@@ -184,6 +192,9 @@ struct configuration final : public config_store {
     property<size_t> kafka_qdc_min_depth;
     property<size_t> kafka_qdc_max_depth;
     property<std::chrono::milliseconds> kafka_qdc_depth_update_ms;
+    property<size_t> zstd_decompress_workspace_bytes;
+    one_or_many_property<ss::sstring> full_raft_configuration_recovery_pattern;
+    property<bool> enable_auto_rebalance_on_node_add;
 
     configuration();
 

@@ -31,7 +31,7 @@ Redpanda是用于任务关键型工作负载的现代[流媒体平台](/blog/int
 docker run -d --pull=always --name=redpanda-1 --rm \
 -p 9092:9092 \
 vectorized/redpanda:latest \
-start \
+redpanda start \
 --overprovisioned \
 --smp 1  \
 --memory 1G \
@@ -73,7 +73,7 @@ docker run -d \
 -p 8082:8082 \
 -p 9092:9092 \
 -v "redpanda1:/var/lib/redpanda/data" \
-vectorized/redpanda start \
+vectorized/redpanda redpanda start \
 --smp 1  \
 --memory 1G  \
 --reserve-memory 0M \
@@ -94,7 +94,7 @@ docker run -d \
 --net=redpandanet \
 -p 9093:9093 \
 -v "redpanda2:/var/lib/redpanda/data" \
-vectorized/redpanda start \
+vectorized/redpanda redpanda start \
 --smp 1  \
 --memory 1G  \
 --reserve-memory 0M \
@@ -116,7 +116,7 @@ docker run -d \
 --net=redpandanet \
 -p 9094:9094 \
 -v "redpanda3:/var/lib/redpanda/data" \
-vectorized/redpanda start \
+vectorized/redpanda redpanda start \
 --smp 1  \
 --memory 1G  \
 --reserve-memory 0M \
@@ -157,9 +157,8 @@ status命令的输出如下所示：
     ```yaml
     version: '3.7'
     services:
-    redpanda:
-        entrypoint:
-        - /usr/bin/rpk
+      redpanda:
+        command:
         - redpanda
         - start
         - --smp

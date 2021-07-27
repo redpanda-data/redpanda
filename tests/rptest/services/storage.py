@@ -50,8 +50,9 @@ class Segment:
 
 
 class Partition:
-    def __init__(self, num, node, path):
-        self.num = num
+    def __init__(self, idx, rev, node, path):
+        self.num = idx
+        self.rev = rev
         self.node = node
         self.path = path
         self.files = set()
@@ -88,8 +89,8 @@ class Topic:
         self.partitions = dict()
 
     def add_partition(self, num, node_id, path):
-        num = int(num)
-        p = Partition(num, node_id, path)
+        (idx, rev) = num.split("_")
+        p = Partition(int(idx), int(rev), node_id, path)
         self.partitions[num] = p
         return p
 

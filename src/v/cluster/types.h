@@ -608,6 +608,14 @@ struct recommission_node_reply {
     errc error;
 };
 
+struct finish_reallocation_request {
+    model::node_id id;
+};
+
+struct finish_reallocation_reply {
+    errc error;
+};
+
 } // namespace cluster
 namespace std {
 template<>

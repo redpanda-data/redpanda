@@ -272,6 +272,16 @@ void metadata_dissemination_service::collect_pending_updates() {
         }
         auto non_overlapping = calculate_non_overlapping_nodes(
           get_partition_members(ntp_leader.ntp.tp.partition, *tp_md), brokers);
+
+        /**
+         * remove current node from non overlapping list, current node may be
+         * included into non overlapping node when new metadata set is used to
+         * calculate non overlapping nodes but partition replica still exists on
+         * current node (it is being moved)
+         */
+        std::erase_if(non_overlapping, [this](model::node_id n) {
+            return n == _self.id();
+        });
         for (auto& id : non_overlapping) {
             if (!_pending_updates.contains(id)) {
                 _pending_updates.emplace(id, update_retry_meta{ntp_leaders{}});
@@ -285,8 +295,10 @@ void metadata_dissemination_service::collect_pending_updates() {
 void metadata_dissemination_service::cleanup_finished_updates() {
     std::vector<model::node_id> _to_remove;
     _to_remove.reserve(_pending_updates.size());
+    auto brokers = _members_table.local().all_broker_ids();
     for (auto& [node_id, meta] : _pending_updates) {
-        if (meta.finished) {
+        auto it = std::find(brokers.begin(), brokers.end(), node_id);
+        if (meta.finished || it == brokers.end()) {
             _to_remove.push_back(node_id);
         }
     }

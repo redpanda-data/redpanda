@@ -2,6 +2,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME pandaproxy_schema_registry_unit
   SOURCES
+    compatibility_avro.cc
     util.cc
     storage.cc
     store.cc
@@ -16,6 +17,7 @@ rp_test(
   SOURCES
     one_shot.cc
     consume_to_store.cc
+    compatibility_store.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main v_pandaproxy_schema_registry
   ARGS "-- -c 1"

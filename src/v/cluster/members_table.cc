@@ -49,7 +49,18 @@ std::optional<broker_ptr> members_table::get_broker(model::node_id id) const {
 
 void members_table::update_brokers(patch<broker_ptr> patch) {
     for (auto& br : patch.additions) {
-        _brokers.insert_or_assign(br->id(), br);
+        /**
+         * broker properties may be updated event if it is draining partitions,
+         * we have to preserve its membership_state.
+         */
+        auto it = _brokers.find(br->id());
+        if (it != _brokers.end()) {
+            auto membership_state = it->second->get_membership_state();
+            it->second = br;
+            // do not override membership state of brokers
+            it->second->set_membership_state(membership_state);
+        }
+        _brokers.emplace(br->id(), br);
     }
 
     for (auto& br : patch.deletions) {
@@ -90,6 +101,21 @@ std::error_code members_table::apply(recommission_node_cmd cmd) {
         return errc::success;
     }
     return errc::node_does_not_exists;
+}
+
+std::vector<model::node_id> members_table::get_decommissioned() const {
+    std::vector<model::node_id> ret;
+    for (const auto& [id, broker] : _brokers) {
+        if (
+          broker->get_membership_state() == model::membership_state::draining) {
+            ret.push_back(id);
+        }
+    }
+    return ret;
+}
+
+bool members_table::contains(model::node_id id) const {
+    return _brokers.contains(id);
 }
 
 } // namespace cluster

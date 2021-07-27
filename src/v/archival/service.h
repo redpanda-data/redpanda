@@ -94,10 +94,6 @@ void ntp_upload_queue::copy_if(FwdIt out, const Func& pred) const {
 /// - Re-upload manifest(s)
 /// - Reset timer
 class scheduler_service_impl {
-    static constexpr ss::lowres_clock::duration
-      max_topic_manifest_upload_backoff
-      = 60s;
-
 public:
     /// \brief create scheduler service
     ///
@@ -161,6 +157,9 @@ private:
     /// Adds archiver to the reconciliation loop after fetching its manifest.
     ss::future<ss::stop_iteration>
     add_ntp_archiver(ss::lw_shared_ptr<ntp_archiver> archiver);
+    /// Returns high watermark for the partition
+    std::optional<model::offset>
+    get_high_watermark(const model::ntp& ntp) const;
 
     configuration _conf;
     ss::sharded<cluster::partition_manager>& _partition_manager;
@@ -174,8 +173,11 @@ private:
     ntp_upload_queue _queue;
     simple_time_jitter<ss::lowres_clock> _backoff{100ms};
     retry_chain_node _rtcnode;
+    retry_chain_logger _rtclog;
     service_probe _probe;
     cloud_storage::remote _remote;
+    ss::lowres_clock::duration _topic_manifest_upload_timeout;
+    ss::lowres_clock::duration _initial_backoff;
 };
 
 } // namespace internal

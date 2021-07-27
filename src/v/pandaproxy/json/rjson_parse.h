@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "json/json.h"
 #include "pandaproxy/json/types.h"
 
 #include <rapidjson/encodings.h>

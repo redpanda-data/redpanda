@@ -323,6 +323,15 @@ struct broker_v0 {
 } // namespace model
 
 namespace std {
+template<>
+struct hash<model::broker_shard> {
+    size_t operator()(const model::broker_shard& bs) const {
+        size_t h = 0;
+        boost::hash_combine(h, std::hash<model::node_id>()(bs.node_id));
+        boost::hash_combine(h, std::hash<uint32_t>()(bs.shard));
+        return h;
+    }
+};
 
 template<>
 struct hash<model::broker_endpoint> {

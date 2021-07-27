@@ -122,7 +122,7 @@ ExternalProject_Add(boost
   PATCH_COMMAND
     ./bootstrap.sh
     --prefix=@REDPANDA_DEPS_INSTALL_DIR@
-    --with-libraries=atomic,chrono,date_time,filesystem,program_options,system,test,thread
+    --with-libraries=atomic,chrono,date_time,filesystem,iostreams,program_options,regex,system,test,thread
     &&
     echo
     "${boost_user_config_jam}"
@@ -351,4 +351,17 @@ BUILD_COMMAND
 INSTALL_COMMAND
   COMMAND ${CMAKE_COMMAND} -E copy <BINARY_DIR>/obj/libv8_monolith.a <INSTALL_DIR>/lib/libv8_monolith.a
   COMMAND ${CMAKE_COMMAND} -E copy_directory <SOURCE_DIR>/include <INSTALL_DIR>/include
+)
+
+ExternalProject_Add(avro
+  GIT_REPOSITORY https://github.com/apache/avro.git
+  GIT_TAG release-1.10.2
+  INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  CMAKE_ARGS
+    -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=true
+    ${common_cmake_args}
+  SOURCE_SUBDIR lang/c++
+  BUILD_COMMAND ninja avrocpp avrocpp_s avrogencpp
+  DEPENDS ${default_depends} boost
 )

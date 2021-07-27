@@ -153,6 +153,15 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
                 return _wait_or_start_update_metadata();
             });
         }
+    } catch (const consumer_error& ex) {
+        switch (ex.error) {
+        case error_code::coordinator_not_available:
+            vlog(kclog.debug, "consumer_error: {}", ex);
+            return _wait_or_start_update_metadata();
+        default:
+            vlog(kclog.warn, "consumer_error: {}", ex);
+            return ss::make_exception_future(ex);
+        }
     } catch (const partition_error& ex) {
         switch (ex.error) {
         case error_code::unknown_topic_or_partition:
@@ -320,7 +329,22 @@ client::create_consumer(const group_id& group_id, member_id name) {
     auto build_request = [group_id]() {
         return find_coordinator_request(group_id);
     };
-    return dispatch(build_request)
+    return gated_retry_with_mitigation(
+             [this, group_id, name, func{std::move(build_request)}]() {
+                 return _brokers.any()
+                   .then([func{std::move(func)}](shared_broker_t broker) {
+                       return broker->dispatch(func());
+                   })
+                   .then([group_id, name](find_coordinator_response res) {
+                       if (res.data.error_code != error_code::none) {
+                           return ss::make_exception_future<
+                             find_coordinator_response>(consumer_error(
+                             group_id, name, res.data.error_code));
+                       };
+                       return ss::make_ready_future<find_coordinator_response>(
+                         std::move(res));
+                   });
+             })
       .then([this](find_coordinator_response res) {
           return make_broker(
             res.data.node_id,

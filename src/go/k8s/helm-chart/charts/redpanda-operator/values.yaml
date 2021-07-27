@@ -11,6 +11,9 @@ fullnameOverride: ""
 # replicaCount -- Number of instances of Redpanda Operator
 replicaCount: 1
 
+# Kubernetes Cluster Domain
+clusterDomain: cluster.local
+
 image:
   # image.repository -- Repository that Redpanda Operator image is available
   repository: vectorized/redpanda-operator
@@ -18,6 +21,15 @@ image:
   tag: |-
     {{ .Chart.AppVersion }}
   # image.pullPolicy -- Define the pullPolicy for Redpanda Operator image
+  pullPolicy: IfNotPresent
+
+configurator:
+  # configurator.repository -- Repository that Redpanda configurator image is available
+  repository: vectorized/configurator
+  # configurator.tag -- Define the Redpanda configurator container tag
+  tag: |-
+    {{ .Chart.AppVersion }}
+  # configurator.pullPolicy -- Define the pullPolicy for Redpanda configurator image
   pullPolicy: IfNotPresent
 
 config:

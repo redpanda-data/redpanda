@@ -7,6 +7,19 @@ tasks:
     status:
     - test -f bin/task
 
+  stop-containers:
+    desc: stop all running container
+    cmds:
+    - docker stop -t 1 $(docker ps -qa)
+    ignore_error: true
+
+  purge:
+    desc: remove all unused containers, networks, images and volumes
+    deps:
+    - stop-containers
+    cmds:
+    - docker system prune --force --volumes
+
   task:
     desc: run Task within a docker image
     summary: |

@@ -52,7 +52,7 @@ ss::circular_buffer<model::record_batch> make_ghost_batches_in_gaps(
 
 /// writes snapshot with given data to disk
 ss::future<>
-persist_snapshot(storage::snapshot_manager&, snapshot_metadata, iobuf&&);
+persist_snapshot(storage::simple_snapshot_manager&, snapshot_metadata, iobuf&&);
 
 /// looks up for the broker with request id in a vector of brokers
 template<typename Iterator>

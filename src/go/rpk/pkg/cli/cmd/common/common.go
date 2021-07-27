@@ -10,28 +10,38 @@
 package common
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/Shopify/sarama"
 	"github.com/burdiyan/kafkautil"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
+	vtls "github.com/vectorizedio/redpanda/src/go/rpk/pkg/tls"
 )
 
 const FeedbackMsg = `We'd love to hear about your experience with redpanda:
 https://vectorized.io/feedback`
 
 const (
-	saslMechanismFlag  = "sasl-mechanism"
-	certFileFlag       = "tls-cert"
-	keyFileFlag        = "tls-key"
-	truststoreFileFlag = "tls-truststore"
+	saslMechanismFlag          = "sasl-mechanism"
+	enableTLSFlag              = "tls-enabled"
+	certFileFlag               = "tls-cert"
+	keyFileFlag                = "tls-key"
+	truststoreFileFlag         = "tls-truststore"
+	adminAPIEnableTLSFlag      = "admin-api-tls-enabled"
+	adminAPICertFileFlag       = "admin-api-tls-cert"
+	adminAPIKeyFileFlag        = "admin-api-tls-key"
+	adminAPITruststoreFileFlag = "admin-api-tls-truststore"
 )
 
 var ErrNoCredentials = errors.New("empty username and password")
@@ -86,12 +96,28 @@ func FindConfigFile(
 	}
 }
 
+// Returns the configured brokers list.
+// The configuration priority is as follows (highest to lowest):
+// 1. Values passed through flags (`brokers`)
+// 2. A list of brokers set through the `REDPANDA_BROKERS` environment
+//    variable
+// 3. The addresses of a running local container cluster deployed with
+//    `rpk container start`.
+// 4. A list of brokers from the `rpk.kafka_api.brokers` field in the
+//    config file.
+// 5. The listeners in `redpanda.kafka_api`, and any seed brokers
+//    (`redpanda.seed_servers`)
+//
+// If none of those sources yield a list of broker addresses, the default
+// local address (127.0.0.1:9092) is assumed.
 func DeduceBrokers(
 	client func() (common.Client, error),
 	configuration func() (*config.Config, error),
 	brokers *[]string,
 ) func() []string {
 	return func() []string {
+		defaultAddr := "127.0.0.1:9092"
+		defaultAddrs := []string{defaultAddr}
 		bs := *brokers
 		// Prioritize brokers passed through --brokers
 		if len(bs) != 0 {
@@ -131,40 +157,52 @@ func DeduceBrokers(
 		// Otherwise, try to find an existing config file.
 		conf, err := configuration()
 		if err != nil {
-			log.Trace(
-				"Couldn't read the config file." +
-					" Assuming 127.0.0.1:9092",
+			log.Debugf(
+				"Couldn't read the config file."+
+					" Assuming %s.",
+				defaultAddr,
 			)
 			log.Debug(err)
-			return []string{"127.0.0.1:9092"}
+			return defaultAddrs
 		}
 
-		if len(conf.Redpanda.KafkaApi) == 0 {
-			log.Trace(
-				"The config file contains no kafka listeners." +
-					" Empty redpanda.kafka_api.",
+		// Check if the rpk config has a list of brokers.
+		if len(conf.Rpk.KafkaApi.Brokers) != 0 {
+			log.Debugf(
+				"Using rpk.kafka_api.brokers: %s",
+				strings.Join(conf.Rpk.KafkaApi.Brokers, ", "),
 			)
-			return []string{}
+			return conf.Rpk.KafkaApi.Brokers
 		}
 
-		// Add the seed servers' Kafka addrs.
-		if len(conf.Redpanda.SeedServers) > 0 {
-			for _, b := range conf.Redpanda.SeedServers {
-				addr := fmt.Sprintf(
-					"%s:%d",
-					b.Host.Address,
-					conf.Redpanda.KafkaApi[0].Port,
-				)
-				bs = append(bs, addr)
-			}
-		}
-		// Add the current node's Kafka addr.
-		selfAddr := fmt.Sprintf(
-			"%s:%d",
-			conf.Redpanda.KafkaApi[0].Address,
-			conf.Redpanda.KafkaApi[0].Port,
+		log.Debug(
+			"Empty rpk.kafka_api.brokers. Checking redpanda.kafka_api.",
 		)
-		bs = append(bs, selfAddr)
+		// If rpk.kafka_api.brokers is empty, check for a local broker's cluster configuration
+		if len(conf.Redpanda.KafkaApi) == 0 && len(conf.Redpanda.SeedServers) == 0 {
+			log.Debugf(
+				"Empty redpanda.kafka_api and redpanda.seed_servers."+
+					" Assuming %s.",
+				defaultAddr,
+			)
+			return defaultAddrs
+		}
+		// Add the seed servers' Kafka addrs.
+		for _, b := range conf.Redpanda.SeedServers {
+			addr := net.JoinHostPort(
+				b.Host.Address,
+				strconv.Itoa(b.Host.Port),
+			)
+			bs = append(bs, addr)
+		}
+		if len(conf.Redpanda.KafkaApi) > 0 {
+			// Add the current node's 1st Kafka listener.
+			selfAddr := net.JoinHostPort(
+				conf.Redpanda.KafkaApi[0].Address,
+				strconv.Itoa(conf.Redpanda.KafkaApi[0].Port),
+			)
+			bs = append(bs, selfAddr)
+		}
 		log.Debugf(
 			"Using brokers from config: %s",
 			strings.Join(bs, ", "),
@@ -176,8 +214,8 @@ func DeduceBrokers(
 func CreateProducer(
 	brokers func() []string,
 	configuration func() (*config.Config, error),
-	tlsConfig func() (*config.TLS, error),
-	authConfig func() (*config.SCRAM, error),
+	tlsConfig func() (*tls.Config, error),
+	authConfig func() (*config.SASL, error),
 ) func(bool, int32) (sarama.SyncProducer, error) {
 	return func(jvmPartitioner bool, partition int32) (sarama.SyncProducer, error) {
 		conf, err := configuration()
@@ -189,25 +227,24 @@ func CreateProducer(
 		if err != nil {
 			return nil, err
 		}
-		// If no TLS config was set, try to look for TLS config in the
-		// config file.
-		if tls == nil {
-			tls = &conf.Rpk.TLS
-		}
 
-		scram, err := authConfig()
+		sasl, err := authConfig()
 		if err != nil {
 			// If the user passed the credentials and there was still an
 			// error, return it.
 			if !errors.Is(err, ErrNoCredentials) {
 				return nil, err
 			}
-			// If no SCRAM config was set, try to look for it in the
+			// If no SASL config was set, try to look for it in the
 			// config file.
-			scram = &conf.Rpk.SCRAM
+			if conf.Rpk.KafkaApi.SASL != nil {
+				sasl = conf.Rpk.KafkaApi.SASL
+			} else {
+				sasl = conf.Rpk.SASL
+			}
 		}
 
-		cfg, err := kafka.LoadConfig(tls, scram)
+		cfg, err := kafka.LoadConfig(tls, sasl)
 		if err != nil {
 			return nil, err
 		}
@@ -226,8 +263,8 @@ func CreateProducer(
 func CreateClient(
 	brokers func() []string,
 	configuration func() (*config.Config, error),
-	tlsConfig func() (*config.TLS, error),
-	authConfig func() (*config.SCRAM, error),
+	tlsConfig func() (*tls.Config, error),
+	authConfig func() (*config.SASL, error),
 ) func() (sarama.Client, error) {
 	return func() (sarama.Client, error) {
 		conf, err := configuration()
@@ -238,26 +275,25 @@ func CreateClient(
 		if err != nil {
 			return nil, err
 		}
-		// If no TLS config was set, try to look for TLS config in the
-		// config file.
-		if tls == nil {
-			tls = &conf.Rpk.TLS
-		}
 
-		scram, err := authConfig()
+		sasl, err := authConfig()
 		if err != nil {
 			// If the user passed the credentials and there was still an
 			// error, return it.
 			if !errors.Is(err, ErrNoCredentials) {
 				return nil, err
 			}
-			// If no SCRAM config was set, try to look for it in the
+			// If no SASL config was set, try to look for it in the
 			// config file.
-			scram = &conf.Rpk.SCRAM
+			if conf.Rpk.KafkaApi.SASL != nil {
+				sasl = conf.Rpk.KafkaApi.SASL
+			} else {
+				sasl = conf.Rpk.SASL
+			}
 		}
 
 		bs := brokers()
-		client, err := kafka.InitClientWithConf(tls, scram, bs...)
+		client, err := kafka.InitClientWithConf(tls, sasl, bs...)
 		return client, wrapConnErr(err, bs)
 	}
 }
@@ -265,8 +301,8 @@ func CreateClient(
 func CreateAdmin(
 	brokers func() []string,
 	configuration func() (*config.Config, error),
-	tlsConfig func() (*config.TLS, error),
-	authConfig func() (*config.SCRAM, error),
+	tlsConfig func() (*tls.Config, error),
+	authConfig func() (*config.SASL, error),
 ) func() (sarama.ClusterAdmin, error) {
 	return func() (sarama.ClusterAdmin, error) {
 		var err error
@@ -279,25 +315,24 @@ func CreateAdmin(
 		if err != nil {
 			return nil, err
 		}
-		// If no TLS config was set, try to look for TLS config in the
-		// config file.
-		if tls == nil {
-			tls = &conf.Rpk.TLS
-		}
 
-		scram, err := authConfig()
+		sasl, err := authConfig()
 		if err != nil {
 			// If the user passed the credentials and there was still an
 			// error, return it.
 			if !errors.Is(err, ErrNoCredentials) {
 				return nil, err
 			}
-			// If no SCRAM config was set, try to look for it in the
+			// If no SASL config was set, try to look for it in the
 			// config file.
-			scram = &conf.Rpk.SCRAM
+			if conf.Rpk.KafkaApi.SASL != nil {
+				sasl = conf.Rpk.KafkaApi.SASL
+			} else {
+				sasl = conf.Rpk.SASL
+			}
 		}
 
-		cfg, err := kafka.LoadConfig(tls, scram)
+		cfg, err := kafka.LoadConfig(tls, sasl)
 		if err != nil {
 			return nil, err
 		}
@@ -308,10 +343,17 @@ func CreateAdmin(
 	}
 }
 
+// Returns the SASL Auth configuration for the Kafka API.
+// The configuration priority is as follows (highest to lowest):
+// 1. Values passed through flags
+// 2. A list of brokers set through environment variables (listed below)
+// 3. Values set in `rpk.kafka_api.sasl`.
+// 5. Values set in `rpk.sasl` (deprecated)
 func KafkaAuthConfig(
 	user, password, mechanism *string,
-) func() (*config.SCRAM, error) {
-	return func() (*config.SCRAM, error) {
+	configuration func() (*config.Config, error),
+) func() (*config.SASL, error) {
+	return func() (*config.SASL, error) {
 		u := *user
 		p := *password
 		m := *mechanism
@@ -326,18 +368,49 @@ func KafkaAuthConfig(
 			m = os.Getenv("REDPANDA_SASL_MECHANISM")
 		}
 
+		// Then check the config if any of the values are empty.
+		if u == "" || p == "" || m == "" {
+			conf, err := configuration()
+			if err != nil {
+				return nil, err
+			}
+			// First check the recommended fields
+			if conf.Rpk.KafkaApi.SASL != nil {
+				if u == "" {
+					u = conf.Rpk.KafkaApi.SASL.User
+				}
+				if p == "" {
+					p = conf.Rpk.KafkaApi.SASL.Password
+				}
+				if m == "" {
+					m = conf.Rpk.KafkaApi.SASL.Mechanism
+				}
+			} else if conf.Rpk.SASL != nil {
+				// Otherwise, check the deprecated fields for backwards-compatibility
+				if u == "" {
+					u = conf.Rpk.SASL.User
+				}
+				if p == "" {
+					p = conf.Rpk.SASL.Password
+				}
+				if m == "" {
+					m = conf.Rpk.SASL.Mechanism
+				}
+			}
+		}
+
 		if u == "" && p == "" {
 			return nil, ErrNoCredentials
 		}
 		if u == "" && p != "" {
-			return nil, errors.New("empty user. Pass --user to set a value.")
+			return nil, errors.New("empty user. Pass --user or set rpk.kafka_api.sasl.user.")
 		}
 		if u != "" && p == "" {
-			return nil, errors.New("empty password. Pass --password to set a value.")
+			return nil, errors.New("empty password. Pass --password or set rpk.kafka_api.sasl.password.")
 		}
 		if m != sarama.SASLTypeSCRAMSHA256 && m != sarama.SASLTypeSCRAMSHA512 {
 			return nil, fmt.Errorf(
-				"unsupported mechanism '%s'. Pass --%s to set a value."+
+				"unsupported mechanism '%s'. Pass --%s or set rpk.kafka_api.sasl.mechanism."+
 					" Supported: %s, %s.",
 				m,
 				saslMechanismFlag,
@@ -345,66 +418,128 @@ func KafkaAuthConfig(
 				sarama.SASLTypeSCRAMSHA512,
 			)
 		}
-		return &config.SCRAM{
-			User:     u,
-			Password: p,
-			Type:     m,
+		return &config.SASL{
+			User:      u,
+			Password:  p,
+			Mechanism: m,
 		}, nil
 	}
 }
 
-func BuildTLSConfig(
-	certFile,
-	keyFile,
-	truststoreFile *string,
-) func() (*config.TLS, error) {
-	return func() (*config.TLS, error) {
-		c := *certFile
-		k := *keyFile
-		t := *truststoreFile
-
-		if c == "" {
-			c = os.Getenv("REDPANDA_TLS_CERT")
+func BuildAdminApiTLSConfig(
+	fs afero.Fs,
+	enableTLS *bool,
+	certFile, keyFile, truststoreFile *string,
+	configuration func() (*config.Config, error),
+) func() (*tls.Config, error) {
+	return func() (*tls.Config, error) {
+		defaultVal := func() (*config.TLS, error) {
+			conf, err := configuration()
+			if err != nil {
+				return nil, err
+			}
+			// If the specific field is there, return it.
+			if conf.Rpk.AdminApi.TLS != nil {
+				return conf.Rpk.AdminApi.TLS, nil
+			}
+			// Otherwise return the general purpose TLS field (deprecated).
+			return conf.Rpk.TLS, nil
 		}
-		if k == "" {
-			k = os.Getenv("REDPANDA_TLS_KEY")
-		}
-		if t == "" {
-			t = os.Getenv("REDPANDA_TLS_TRUSTSTORE")
-		}
-
-		if t == "" && c == "" && k == "" {
-			return nil, nil
-		}
-		if t == "" && (c != "" || k != "") {
-			return nil, fmt.Errorf(
-				"--%s is required to enable TLS",
-				truststoreFileFlag,
-			)
-		}
-		if c != "" && k == "" {
-			return nil, fmt.Errorf(
-				"if --%s is passed, then --%s must be passed to enable"+
-					" TLS authentication",
-				certFileFlag,
-				keyFileFlag,
-			)
-		}
-		if k != "" && c == "" {
-			return nil, fmt.Errorf(
-				"if --%s is passed, then --%s must be passed to enable"+
-					" TLS authentication",
-				keyFileFlag,
-				certFileFlag,
-			)
-		}
-		tls := &config.TLS{
-			KeyFile:        k,
-			CertFile:       c,
-			TruststoreFile: t,
-		}
-		return tls, nil
+		return buildTLS(
+			fs,
+			enableTLS,
+			certFile,
+			keyFile,
+			truststoreFile,
+			"REDPANDA_ADMIN_TLS_CERT",
+			"REDPANDA_ADMIN_TLS_KEY",
+			"REDPANDA_ADMIN_TLS_TRUSTSTORE",
+			defaultVal,
+		)
 	}
+}
+
+func BuildKafkaTLSConfig(
+	fs afero.Fs,
+	enableTLS *bool,
+	certFile, keyFile, truststoreFile *string,
+	configuration func() (*config.Config, error),
+) func() (*tls.Config, error) {
+	return func() (*tls.Config, error) {
+		defaultVal := func() (*config.TLS, error) {
+			conf, err := configuration()
+			if err != nil {
+				return nil, err
+			}
+			// If the specific field is there, return it.
+			if conf.Rpk.KafkaApi.TLS != nil {
+				return conf.Rpk.KafkaApi.TLS, nil
+			}
+			// Otherwise return the general purpose TLS field (deprecated).
+			return conf.Rpk.TLS, nil
+		}
+		return buildTLS(
+			fs,
+			enableTLS,
+			certFile,
+			keyFile,
+			truststoreFile,
+			"REDPANDA_TLS_CERT",
+			"REDPANDA_TLS_KEY",
+			"REDPANDA_TLS_TRUSTSTORE",
+			defaultVal,
+		)
+	}
+}
+
+// Builds an instance of config.TLS.
+// If certFile, keyFile or truststoreFile are nil, then their corresponding
+// env vars are checked (given by certEnvVar, keyEnvVar & truststoreEnvVar).
+// If after that no value is found for any of them, the result of calling
+// defaultVal is returned.
+func buildTLS(
+	fs afero.Fs,
+	enableTLS *bool,
+	certFile, keyFile, truststoreFile *string,
+	certEnvVar, keyEnvVar, truststoreEnvVar string,
+	defaultVal func() (*config.TLS, error),
+) (*tls.Config, error) {
+	// Give priority to building the TLS config with args that were passed
+	// directly or as env vars.
+	enable := *enableTLS
+	c := *certFile
+	k := *keyFile
+	t := *truststoreFile
+
+	if c == "" {
+		c = os.Getenv(certEnvVar)
+	}
+	if k == "" {
+		k = os.Getenv(keyEnvVar)
+	}
+	if t == "" {
+		t = os.Getenv(truststoreEnvVar)
+	}
+	if t == "" && c == "" && k == "" {
+		// If the values weren't set with flags nor env vars,
+		// return the TLS config for the Admin API from the config
+		defaultTLS, err := defaultVal()
+		if err != nil {
+			return nil, err
+		}
+		if defaultTLS != nil {
+			c = defaultTLS.CertFile
+			k = defaultTLS.KeyFile
+			t = defaultTLS.TruststoreFile
+		}
+	}
+	return vtls.BuildTLSConfig(
+		fs,
+		enable,
+		c,
+		k,
+		t,
+	)
 }
 
 func CreateDockerClient() (common.Client, error) {
@@ -436,7 +571,9 @@ func ContainerBrokers(c common.Client) ([]string, []string) {
 
 func AddKafkaFlags(
 	command *cobra.Command,
-	configFile, user, password, saslMechanism, certFile, keyFile, truststoreFile *string,
+	configFile, user, password, saslMechanism *string,
+	enableTLS *bool,
+	certFile, keyFile, truststoreFile *string,
 	brokers *[]string,
 ) *cobra.Command {
 	command.PersistentFlags().StringSliceVar(
@@ -478,16 +615,22 @@ func AddKafkaFlags(
 		),
 	)
 
-	AddTLSFlags(command, certFile, keyFile, truststoreFile)
+	AddTLSFlags(command, enableTLS, certFile, keyFile, truststoreFile)
 
 	return command
 }
 
 func AddTLSFlags(
-	command *cobra.Command, certFile,
-	keyFile,
-	truststoreFile *string,
+	command *cobra.Command,
+	enableTLS *bool,
+	certFile, keyFile, truststoreFile *string,
 ) *cobra.Command {
+	command.PersistentFlags().BoolVar(
+		enableTLS,
+		enableTLSFlag,
+		false,
+		"Enable TLS for the Kafka API (not necessary if specifying custom certs).",
+	)
 	command.PersistentFlags().StringVar(
 		certFile,
 		certFileFlag,
@@ -505,6 +648,39 @@ func AddTLSFlags(
 		truststoreFileFlag,
 		"",
 		"The truststore to be used for TLS communication with the broker.",
+	)
+
+	return command
+}
+
+func AddAdminAPITLSFlags(
+	command *cobra.Command,
+	enableTLS *bool,
+	certFile, keyFile, truststoreFile *string,
+) *cobra.Command {
+	command.PersistentFlags().BoolVar(
+		enableTLS,
+		adminAPIEnableTLSFlag,
+		false,
+		"Enable TLS for the Admin API (not necessary if specifying custom certs).",
+	)
+	command.PersistentFlags().StringVar(
+		certFile,
+		adminAPICertFileFlag,
+		"",
+		"The certificate to be used for TLS authentication with the Admin API.",
+	)
+	command.PersistentFlags().StringVar(
+		keyFile,
+		adminAPIKeyFileFlag,
+		"",
+		"The certificate key to be used for TLS authentication with the Admin API.",
+	)
+	command.PersistentFlags().StringVar(
+		truststoreFile,
+		adminAPITruststoreFileFlag,
+		"",
+		"The truststore to be used for TLS communication with the Admin API.",
 	)
 
 	return command

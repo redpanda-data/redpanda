@@ -63,7 +63,7 @@ log_eviction_stm::handle_deletion_notification(model::offset last_evicted) {
     // in an abort source
     _previous_eviction_offset = last_evicted;
 
-    return _raft->events()
+    return _raft->visible_offset_monitor()
       .wait(last_evicted, model::no_timeout, _as)
       .then([this, last_evicted]() mutable {
           auto f = ss::now();

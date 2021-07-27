@@ -18,7 +18,7 @@ ss::future<> event_manager::start() {
         return ss::do_until(
           [this] { return _gate.is_closed(); },
           [this] {
-              // we won't miss an update because notify is synrhonous. if there
+              // we won't miss an update because notify is synchronous. If there
               // is a new commit index getting ready to be set, it won't signal
               // until after we've waited.
               _commit_index.notify(_consensus->committed_offset());

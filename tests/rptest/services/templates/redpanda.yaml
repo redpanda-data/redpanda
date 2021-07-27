@@ -32,6 +32,8 @@ redpanda:
 
   superusers: {{superuser[0]}}
 
+  enable_auto_rebalance_on_node_add: true
+
 {% if node_id > 1 %}
   seed_servers:
     - host:

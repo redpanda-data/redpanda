@@ -23,6 +23,9 @@ public:
     ss::io_priority_class controller_priority() { return _controller_priority; }
     ss::io_priority_class kafka_read_priority() { return _kafka_read_priority; }
     ss::io_priority_class compaction_priority() { return _compaction_priority; }
+    ss::io_priority_class raft_learner_recovery_priority() {
+        return _raft_learner_recovery_priority;
+    }
 
     static priority_manager& local() {
         static thread_local priority_manager pm = priority_manager();
@@ -37,12 +40,16 @@ private:
       , _kafka_read_priority(
           ss::engine().register_one_priority_class("kafka_read", 1000))
       , _compaction_priority(
-          ss::engine().register_one_priority_class("compaction", 200)) {}
+          ss::engine().register_one_priority_class("compaction", 200))
+      , _raft_learner_recovery_priority(
+          ss::engine().register_one_priority_class(
+            "raft-learner-recovery", 100)) {}
 
     ss::io_priority_class _raft_priority;
     ss::io_priority_class _controller_priority;
     ss::io_priority_class _kafka_read_priority;
     ss::io_priority_class _compaction_priority;
+    ss::io_priority_class _raft_learner_recovery_priority;
 };
 
 inline ss::io_priority_class raft_priority() {
@@ -59,4 +66,8 @@ inline ss::io_priority_class kafka_read_priority() {
 
 inline ss::io_priority_class compaction_priority() {
     return priority_manager::local().compaction_priority();
+}
+
+inline ss::io_priority_class raft_learner_recovery_priority() {
+    return priority_manager::local().raft_learner_recovery_priority();
 }

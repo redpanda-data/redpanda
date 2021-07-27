@@ -10,14 +10,13 @@
 package acl
 
 import (
+	"crypto/tls"
 	"errors"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/ui"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
-	vtls "github.com/vectorizedio/redpanda/src/go/rpk/pkg/tls"
 )
 
 const (
@@ -27,7 +26,7 @@ const (
 	deleteUsernameFlag = "delete-username"
 )
 
-func NewUserCommand(tls func() (*config.TLS, error)) *cobra.Command {
+func NewUserCommand(tls func() (*tls.Config, error)) *cobra.Command {
 	var apiUrls []string
 
 	command := &cobra.Command{
@@ -178,25 +177,13 @@ func printUsernames(usernames []string) {
 }
 
 func buildAdminAPI(
-	apiUrls *[]string, tls func() (*config.TLS, error),
+	apiUrls *[]string, tls func() (*tls.Config, error),
 ) func() (admin.AdminAPI, error) {
 	return func() (admin.AdminAPI, error) {
 		if len(*apiUrls) == 0 {
 			return nil, errors.New("--api-urls is required")
 		}
-		tlsFiles, err := tls()
-		if err != nil {
-			return nil, err
-		}
-		if tlsFiles == nil {
-			return admin.NewAdminAPI(*apiUrls, nil)
-		}
-
-		tlsConfig, err := vtls.BuildTLSConfig(
-			tlsFiles.CertFile,
-			tlsFiles.KeyFile,
-			tlsFiles.TruststoreFile,
-		)
+		tlsConfig, err := tls()
 		if err != nil {
 			return nil, err
 		}

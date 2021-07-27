@@ -65,7 +65,7 @@ func TestConsumeMessages(t *testing.T) {
 				errs <- tt.err
 			}
 
-			consumeMessages(msgs, errs, &sync.Mutex{}, ctx, false)
+			consumeMessages(msgs, errs, &sync.Mutex{}, ctx, false, false)
 
 			if tt.err != nil {
 				errMsg := fmt.Sprintf(

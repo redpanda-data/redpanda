@@ -117,7 +117,7 @@ private:
     ntp_config _ntpc;
     ss::gate _gate;
     ss::abort_source _as;
-    snapshot_manager _snap;
+    simple_snapshot_manager _snap;
     bool _started{false};
 
     /**

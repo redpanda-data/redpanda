@@ -25,9 +25,10 @@ inline std::filesystem::path offsets_snapshot_path() {
 /// Reads the snapshot on disk (if one exists) and returns an initialized
 /// ntp_context_cache with all proper storage::logs and stored offsets
 ss::future<ntp_context_cache>
-recover_offsets(storage::snapshot_manager&, storage::log_manager&);
+recover_offsets(storage::simple_snapshot_manager&, storage::log_manager&);
 
 /// Writes all offsets to disk using the snapshot manager
-ss::future<> save_offsets(storage::snapshot_manager&, const ntp_context_cache&);
+ss::future<>
+save_offsets(storage::simple_snapshot_manager&, const ntp_context_cache&);
 
 } // namespace coproc

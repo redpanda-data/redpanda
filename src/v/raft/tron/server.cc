@@ -119,7 +119,9 @@ public:
                         raft::timeout_jitter(
                           config::shard_local_cfg().raft_election_timeout_ms()),
                         log,
-                        ss::default_priority_class(),
+                        raft::scheduling_config(
+                          seastar::default_scheduling_group(),
+                          seastar::default_priority_class()),
                         std::chrono::seconds(1),
                         _consensus_client_protocol,
                         [this](raft::leadership_status st) {
@@ -136,7 +138,8 @@ public:
                               st.current_leader.value(),
                               st.group);
                         },
-                        _storage);
+                        _storage,
+                        std::nullopt);
                       return _consensus->start().then(
                         [this] { return _hbeats.register_group(_consensus); });
                   });

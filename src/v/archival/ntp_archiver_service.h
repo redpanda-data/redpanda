@@ -42,10 +42,14 @@ struct configuration {
     s3::bucket_name bucket_name;
     /// Time interval to run uploads & deletes
     ss::lowres_clock::duration interval;
-    /// Time interval to run GC
-    ss::lowres_clock::duration gc_interval;
     /// Number of simultaneous S3 uploads
     s3_connection_limit connection_limit;
+    /// Initial backoff for uploads
+    ss::lowres_clock::duration initial_backoff;
+    /// Long upload timeout
+    ss::lowres_clock::duration segment_upload_timeout;
+    /// Shor upload timeout
+    ss::lowres_clock::duration manifest_upload_timeout;
     /// Flag that indicates that service level metrics are disabled
     service_metrics_disabled svc_metrics_disabled;
     /// Flag that indicates that ntp-archiver level metrics are disabled
@@ -63,11 +67,6 @@ std::ostream& operator<<(std::ostream& o, const configuration& cfg);
 /// generation of per-ntp candidate set. The actual file uploads are
 /// handled by 'archiver_service'.
 class ntp_archiver {
-    /// Timeout value used for manifest uploads and downloads.
-    static constexpr ss::lowres_clock::duration manifest_upload_timeout = 10s;
-    /// Timeout value used for segment uploads.
-    static constexpr ss::lowres_clock::duration segment_upload_timeout = 30s;
-
 public:
     /// Iterator type used to retrieve candidates for upload
     using back_insert_iterator
@@ -123,9 +122,13 @@ public:
     /// uploading them.
     ///
     /// \param lm is a log manager instance
+    /// \param high_watermark is a high watermark offset of the partition
+    /// \param parent is a retry chain node of the caller
     /// \return future that returns number of uploaded/failed segments
-    ss::future<batch_result>
-    upload_next_candidates(storage::log_manager& lm, retry_chain_node& parent);
+    ss::future<batch_result> upload_next_candidates(
+      storage::log_manager& lm,
+      model::offset high_watermark,
+      retry_chain_node& parent);
 
 private:
     /// Upload individual segment to S3.
@@ -150,6 +153,9 @@ private:
     simple_time_jitter<ss::lowres_clock> _backoff{100ms};
     size_t _concurrency{4};
     ss::lowres_clock::time_point _last_upload_time;
+    ss::lowres_clock::duration _initial_backoff;
+    ss::lowres_clock::duration _segment_upload_timeout;
+    ss::lowres_clock::duration _manifest_upload_timeout;
 };
 
 } // namespace archival

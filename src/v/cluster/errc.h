@@ -43,7 +43,11 @@ enum class errc : int16_t {
     generic_tx_error,
     node_does_not_exists,
     invalid_node_opeartion,
-    invalid_configuration_update
+    invalid_configuration_update,
+    topic_operation_error,
+    no_eligible_allocation_nodes,
+    allocation_error
+
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -114,6 +118,13 @@ struct errc_category final : public std::error_category {
             return "Requested node opeartion is invalid";
         case errc::invalid_configuration_update:
             return "Requested configuration update is invalid";
+        case errc::topic_operation_error:
+            return "Unable to perform requested topic operation ";
+        case errc::no_eligible_allocation_nodes:
+            return "No nodes are available to perform allocation after hard "
+                   "constrains were solved";
+        case errc::allocation_error:
+            return "Exception was thrown when allocating partitions ";
         }
         return "cluster::errc::unknown";
     }

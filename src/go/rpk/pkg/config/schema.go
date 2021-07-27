@@ -12,16 +12,18 @@ package config
 import "path"
 
 type Config struct {
-	NodeUuid         string                 `yaml:"node_uuid,omitempty" mapstructure:"node_uuid,omitempty" json:"nodeUuid"`
-	Organization     string                 `yaml:"organization,omitempty" mapstructure:"organization,omitempty" json:"organization"`
-	LicenseKey       string                 `yaml:"license_key,omitempty" mapstructure:"license_key,omitempty" json:"licenseKey"`
-	ClusterId        string                 `yaml:"cluster_id,omitempty" mapstructure:"cluster_id,omitempty" json:"clusterId"`
-	ConfigFile       string                 `yaml:"config_file" mapstructure:"config_file" json:"configFile"`
-	Redpanda         RedpandaConfig         `yaml:"redpanda" mapstructure:"redpanda" json:"redpanda"`
-	Rpk              RpkConfig              `yaml:"rpk" mapstructure:"rpk" json:"rpk"`
-	Pandaproxy       *Pandaproxy            `yaml:"pandaproxy,omitempty" mapstructure:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`
-	PandaproxyClient *PandaproxyClient      `yaml:"pandaproxy_client,omitempty" mapstructure:"pandaproxy_client,omitempty" json:"pandaproxyClient,omitempty"`
-	Other            map[string]interface{} `yaml:",inline" mapstructure:",remain"`
+	NodeUuid             string                 `yaml:"node_uuid,omitempty" mapstructure:"node_uuid,omitempty" json:"nodeUuid"`
+	Organization         string                 `yaml:"organization,omitempty" mapstructure:"organization,omitempty" json:"organization"`
+	LicenseKey           string                 `yaml:"license_key,omitempty" mapstructure:"license_key,omitempty" json:"licenseKey"`
+	ClusterId            string                 `yaml:"cluster_id,omitempty" mapstructure:"cluster_id,omitempty" json:"clusterId"`
+	ConfigFile           string                 `yaml:"config_file" mapstructure:"config_file" json:"configFile"`
+	Redpanda             RedpandaConfig         `yaml:"redpanda" mapstructure:"redpanda" json:"redpanda"`
+	Rpk                  RpkConfig              `yaml:"rpk" mapstructure:"rpk" json:"rpk"`
+	Pandaproxy           *Pandaproxy            `yaml:"pandaproxy,omitempty" mapstructure:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`
+	PandaproxyClient     *KafkaClient           `yaml:"pandaproxy_client,omitempty" mapstructure:"pandaproxy_client,omitempty" json:"pandaproxyClient,omitempty"`
+	SchemaRegistry       *SchemaRegistry        `yaml:"schema_registry,omitempty" mapstructure:"schema_registry,omitempty" json:"schemaRegistry,omitempty"`
+	SchemaRegistryClient *KafkaClient           `yaml:"schema_registry_client,omitempty" mapstructure:"schema_registry_client,omitempty" json:"schemaRegistryClient,omitempty"`
+	Other                map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 
 type RedpandaConfig struct {
@@ -61,7 +63,12 @@ type Pandaproxy struct {
 	Other                   map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 
-type PandaproxyClient struct {
+type SchemaRegistry struct {
+	SchemaRegistryAPI    []NamedSocketAddress `yaml:"schema_registry_api,omitempty" mapstructure:"schema_registry_api,omitempty" json:"schemaRegistryApi,omitempty"`
+	SchemaRegistryAPITLS []ServerTLS          `yaml:"schema_registry_api_tls,omitempty" mapstructure:"schema_registry_api_tls,omitempty" json:"schemaRegistryApiTls,omitempty"`
+}
+
+type KafkaClient struct {
 	Brokers       []SocketAddress        `yaml:"brokers,omitempty" mapstructure:"brokers,omitempty" json:"brokers,omitempty"`
 	BrokerTLS     ServerTLS              `yaml:"broker_tls,omitempty" mapstructure:"broker_tls,omitempty" json:"brokerTls,omitempty"`
 	SASLMechanism *string                `yaml:"sasl_mechanism,omitempty" mapstructure:"sasl_mechanism,omitempty" json:"saslMechanism,omitempty"`
@@ -100,33 +107,49 @@ type ServerTLS struct {
 }
 
 type RpkConfig struct {
-	TLS                      TLS      `yaml:"tls,omitempty" mapstructure:"tls,omitempty" json:"tls"`
-	AdditionalStartFlags     []string `yaml:"additional_start_flags,omitempty" mapstructure:"additional_start_flags,omitempty" json:"additionalStartFlags"`
-	EnableUsageStats         bool     `yaml:"enable_usage_stats" mapstructure:"enable_usage_stats" json:"enableUsageStats"`
-	TuneNetwork              bool     `yaml:"tune_network" mapstructure:"tune_network" json:"tuneNetwork"`
-	TuneDiskScheduler        bool     `yaml:"tune_disk_scheduler" mapstructure:"tune_disk_scheduler" json:"tuneDiskScheduler"`
-	TuneNomerges             bool     `yaml:"tune_disk_nomerges" mapstructure:"tune_disk_nomerges" json:"tuneNomerges"`
-	TuneDiskWriteCache       bool     `yaml:"tune_disk_write_cache" mapstructure:"tune_disk_write_cache" json:"tuneDiskWriteCache"`
-	TuneDiskIrq              bool     `yaml:"tune_disk_irq" mapstructure:"tune_disk_irq" json:"tuneDiskIrq"`
-	TuneFstrim               bool     `yaml:"tune_fstrim" mapstructure:"tune_fstrim" json:"tuneFstrim"`
-	TuneCpu                  bool     `yaml:"tune_cpu" mapstructure:"tune_cpu" json:"tuneCpu"`
-	TuneAioEvents            bool     `yaml:"tune_aio_events" mapstructure:"tune_aio_events" json:"tuneAioEvents"`
-	TuneClocksource          bool     `yaml:"tune_clocksource" mapstructure:"tune_clocksource" json:"tuneClocksource"`
-	TuneSwappiness           bool     `yaml:"tune_swappiness" mapstructure:"tune_swappiness" json:"tuneSwappiness"`
-	TuneTransparentHugePages bool     `yaml:"tune_transparent_hugepages" mapstructure:"tune_transparent_hugepages" json:"tuneTransparentHugePages"`
-	EnableMemoryLocking      bool     `yaml:"enable_memory_locking" mapstructure:"enable_memory_locking" json:"enableMemoryLocking"`
-	TuneCoredump             bool     `yaml:"tune_coredump" mapstructure:"tune_coredump" json:"tuneCoredump"`
-	CoredumpDir              string   `yaml:"coredump_dir,omitempty" mapstructure:"coredump_dir,omitempty" json:"coredumpDir"`
-	WellKnownIo              string   `yaml:"well_known_io,omitempty" mapstructure:"well_known_io,omitempty" json:"wellKnownIo"`
-	Overprovisioned          bool     `yaml:"overprovisioned" mapstructure:"overprovisioned" json:"overprovisioned"`
-	SMP                      *int     `yaml:"smp,omitempty" mapstructure:"smp,omitempty" json:"smp,omitempty"`
-	SCRAM                    SCRAM    `yaml:"scram,omitempty" mapstructure:"scram,omitempty" json:"scram,omitempty"`
+	// Deprecated 2021-07-1
+	TLS *TLS `yaml:"tls,omitempty" mapstructure:"tls,omitempty" json:"tls"`
+	// Deprecated 2021-07-1
+	SASL *SASL `yaml:"sasl,omitempty" mapstructure:"sasl,omitempty" json:"sasl,omitempty"`
+
+	KafkaApi                 RpkKafkaApi `yaml:"kafka_api,omitempty" mapstructure:"kafka_api,omitempty" json:"kafkaApi"`
+	AdminApi                 RpkAdminApi `yaml:"admin_api,omitempty" mapstructure:"admin_api,omitempty" json:"adminApi"`
+	AdditionalStartFlags     []string    `yaml:"additional_start_flags,omitempty" mapstructure:"additional_start_flags,omitempty" json:"additionalStartFlags"`
+	EnableUsageStats         bool        `yaml:"enable_usage_stats" mapstructure:"enable_usage_stats" json:"enableUsageStats"`
+	TuneNetwork              bool        `yaml:"tune_network" mapstructure:"tune_network" json:"tuneNetwork"`
+	TuneDiskScheduler        bool        `yaml:"tune_disk_scheduler" mapstructure:"tune_disk_scheduler" json:"tuneDiskScheduler"`
+	TuneNomerges             bool        `yaml:"tune_disk_nomerges" mapstructure:"tune_disk_nomerges" json:"tuneNomerges"`
+	TuneDiskWriteCache       bool        `yaml:"tune_disk_write_cache" mapstructure:"tune_disk_write_cache" json:"tuneDiskWriteCache"`
+	TuneDiskIrq              bool        `yaml:"tune_disk_irq" mapstructure:"tune_disk_irq" json:"tuneDiskIrq"`
+	TuneFstrim               bool        `yaml:"tune_fstrim" mapstructure:"tune_fstrim" json:"tuneFstrim"`
+	TuneCpu                  bool        `yaml:"tune_cpu" mapstructure:"tune_cpu" json:"tuneCpu"`
+	TuneAioEvents            bool        `yaml:"tune_aio_events" mapstructure:"tune_aio_events" json:"tuneAioEvents"`
+	TuneClocksource          bool        `yaml:"tune_clocksource" mapstructure:"tune_clocksource" json:"tuneClocksource"`
+	TuneSwappiness           bool        `yaml:"tune_swappiness" mapstructure:"tune_swappiness" json:"tuneSwappiness"`
+	TuneTransparentHugePages bool        `yaml:"tune_transparent_hugepages" mapstructure:"tune_transparent_hugepages" json:"tuneTransparentHugePages"`
+	EnableMemoryLocking      bool        `yaml:"enable_memory_locking" mapstructure:"enable_memory_locking" json:"enableMemoryLocking"`
+	TuneCoredump             bool        `yaml:"tune_coredump" mapstructure:"tune_coredump" json:"tuneCoredump"`
+	CoredumpDir              string      `yaml:"coredump_dir,omitempty" mapstructure:"coredump_dir,omitempty" json:"coredumpDir"`
+	WellKnownIo              string      `yaml:"well_known_io,omitempty" mapstructure:"well_known_io,omitempty" json:"wellKnownIo"`
+	Overprovisioned          bool        `yaml:"overprovisioned" mapstructure:"overprovisioned" json:"overprovisioned"`
+	SMP                      *int        `yaml:"smp,omitempty" mapstructure:"smp,omitempty" json:"smp,omitempty"`
 }
 
-type SCRAM struct {
-	User     string `yaml:"user,omitempty" mapstructure:"user,omitempty" json:"user,omitempty"`
-	Password string `yaml:"password,omitempty" mapstructure:"password,omitempty" json:"password,omitempty"`
-	Type     string `yaml:"type,omitempty" mapstructure:"type,omitempty" json:"type,omitempty"`
+type RpkKafkaApi struct {
+	Brokers []string `yaml:"brokers,omitempty" mapstructure:"brokers,omitempty" json:"brokers"`
+	TLS     *TLS     `yaml:"tls,omitempty" mapstructure:"tls,omitempty" json:"tls"`
+	SASL    *SASL    `yaml:"sasl,omitempty" mapstructure:"sasl,omitempty" json:"sasl,omitempty"`
+}
+
+type RpkAdminApi struct {
+	Addresses []SocketAddress `yaml:"addresses,omitempty" mapstructure:"addresses,omitempty" json:"addresses"`
+	TLS       *TLS            `yaml:"tls,omitempty" mapstructure:"tls,omitempty" json:"tls"`
+}
+
+type SASL struct {
+	User      string `yaml:"user,omitempty" mapstructure:"user,omitempty" json:"user,omitempty"`
+	Password  string `yaml:"password,omitempty" mapstructure:"password,omitempty" json:"password,omitempty"`
+	Mechanism string `yaml:"type,omitempty" mapstructure:"type,omitempty" json:"type,omitempty"`
 }
 
 func (conf *Config) PIDFile() string {

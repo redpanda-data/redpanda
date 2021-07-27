@@ -86,6 +86,18 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
       ss::httpd::schema_registry_json::get_subject_versions_version,
       wrap(gate, es, get_subject_versions_version)});
 
+    routes.routes.emplace_back(server::route_t{
+      ss::httpd::schema_registry_json::delete_subject,
+      wrap(gate, es, delete_subject)});
+
+    routes.routes.emplace_back(server::route_t{
+      ss::httpd::schema_registry_json::delete_subject_version,
+      wrap(gate, es, delete_subject_version)});
+
+    routes.routes.emplace_back(server::route_t{
+      ss::httpd::schema_registry_json::compatibility_subject_version,
+      wrap(gate, es, compatibility_subject_version)});
+
     return routes;
 }
 
@@ -167,7 +179,8 @@ service::service(
   const YAML::Node& config,
   ss::smp_service_group smp_sg,
   size_t max_memory,
-  ss::sharded<kafka::client::client>& client)
+  ss::sharded<kafka::client::client>& client,
+  sharded_store& store)
   : _config(config)
   , _mem_sem(max_memory)
   , _client(client)
@@ -176,8 +189,9 @@ service::service(
       "schema_registry",
       ss::api_registry_builder20(_config.api_doc_dir(), "/v1"),
       "schema_registry_header",
-      "/definitions",
+      "/schema_registry_definitions",
       _ctx)
+  , _store(store)
   , _ensure_started{[this]() { return do_start(); }} {}
 
 ss::future<> service::start() {

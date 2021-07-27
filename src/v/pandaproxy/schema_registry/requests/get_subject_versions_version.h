@@ -11,28 +11,14 @@
 
 #pragma once
 
-#include "outcome.h"
-#include "pandaproxy/json/iobuf.h"
-#include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/rjson_util.h"
-#include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/types.h"
-#include "seastarx.h"
-#include "utils/string_switch.h"
-
-#include <seastar/core/future.hh>
-#include <seastar/core/sstring.hh>
-
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
-
-#include <atomic>
-#include <cstdint>
 
 namespace pandaproxy::schema_registry {
 
 struct post_subject_versions_version_response {
     subject sub;
+    schema_id id;
     schema_version version;
     schema_definition definition;
 };
@@ -43,6 +29,8 @@ inline void rjson_serialize(
     w.StartObject();
     w.Key("name");
     ::json::rjson_serialize(w, res.sub);
+    w.Key("id");
+    ::json::rjson_serialize(w, res.id);
     w.Key("version");
     ::json::rjson_serialize(w, res.version);
     w.Key("schema");

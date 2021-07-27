@@ -23,32 +23,49 @@
 #include <chrono>
 
 namespace cluster {
+
+/**
+ * Broker patch should included all nodes which properties changed as additions
+ * (connections may require update after addresses changed, etc) and nodes that
+ * were deleted as deletions. We keep `membership_state` in model::broker. This
+ * state must not be included into comparision when calculating added brokers.
+ * Previous implementation used equality operator from `model::broker` type
+ * which lead to propagating broker added events when their internal state was
+ * updated.
+ */
 patch<broker_ptr> calculate_changed_brokers(
-  std::vector<broker_ptr> new_list, std::vector<broker_ptr> old_list) {
+  const std::vector<broker_ptr>& new_list,
+  const std::vector<broker_ptr>& old_list) {
     patch<broker_ptr> patch;
-    auto compare_by_id = [](const broker_ptr& lhs, const broker_ptr& rhs) {
-        return *lhs < *rhs;
-    };
-    // updated/added brokers
-    std::sort(new_list.begin(), new_list.end(), compare_by_id);
-    std::sort(old_list.begin(), old_list.end(), compare_by_id);
-    std::set_difference(
-      std::cbegin(new_list),
-      std::cend(new_list),
-      std::cbegin(old_list),
-      std::cend(old_list),
-      std::back_inserter(patch.additions),
-      [](const broker_ptr& lhs, const broker_ptr& rhs) {
-          return *lhs != *rhs;
-      });
-    // removed brokers
-    std::set_difference(
-      std::cbegin(old_list),
-      std::cend(old_list),
-      std::cbegin(new_list),
-      std::cend(new_list),
-      std::back_inserter(patch.deletions),
-      compare_by_id);
+
+    for (auto br : new_list) {
+        auto it = std::find_if(
+          old_list.begin(), old_list.end(), [&br](const broker_ptr& ptr) {
+              // compare only those properties which have to cause update
+              return br->id() == ptr->id()
+                     && br->kafka_advertised_listeners()
+                          == ptr->kafka_advertised_listeners()
+                     && br->rpc_address() == ptr->rpc_address()
+                     && br->properties() == ptr->properties();
+          });
+
+        if (it == old_list.end()) {
+            patch.additions.push_back(br);
+        }
+    }
+
+    for (auto br : old_list) {
+        auto it = std::find_if(
+          new_list.begin(), new_list.end(), [&br](const broker_ptr& ptr) {
+              // it is enough to compare ids since other properties does not
+              // influence deletion
+              return br->id() == ptr->id();
+          });
+
+        if (it == new_list.end()) {
+            patch.deletions.push_back(br);
+        }
+    }
 
     return patch;
 }
@@ -112,7 +129,7 @@ ss::future<> maybe_create_tcp_client(
                     .disable_metrics = rpc::metrics_disabled(
                       config::shard_local_cfg().disable_metrics)},
                   rpc::make_exponential_backoff_policy<rpc::clock_type>(
-                    std::chrono::seconds(1), std::chrono::seconds(60)));
+                    std::chrono::seconds(1), std::chrono::seconds(15)));
             });
     });
 }

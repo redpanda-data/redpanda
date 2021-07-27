@@ -4,6 +4,9 @@ order: 7
 ---
 # RPK commands
 
+Commands marked with ![linux icon][linux] are available on Linux.
+Commands marked with ![mac icon][mac] are available on Mac.
+
 The global flags for the `rpk` command are:
 
 ```cmd
@@ -11,7 +14,7 @@ The global flags for the `rpk` command are:
   -h, --help      help for info
 ```
 
-## version
+## version ![linux icon][linux] ![mac icon][mac]
 
 Check the current version.
 
@@ -20,9 +23,9 @@ Usage:
   rpk version
 ```
 
-## redpanda
+## redpanda ![linux icon][linux]
 
-### redpanda tune
+### redpanda tune ![linux icon][linux]
 
 Run all (`rpk redpanda tune all`) or some (i.e. `rpk redpanda tune cpu network`) of the tuners
 available on `rpk`.
@@ -48,7 +51,7 @@ Flags:
       --timeout duration       The maximum time to wait for the tune processes to complete. The value passed is a sequence of decimal numbers, each with optional fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h' (default: 10s)
 ```
 
-### redpanda start
+### redpanda start ![linux icon][linux]
 
 Start redpanda.
 
@@ -67,13 +70,14 @@ Flags:
       --node-id int                    The node ID. Must be an integer and must be unique within a cluster
       --pandaproxy-addr                A comma-separated list of Pandaproxy listener addresses to bind to (<name>://<host>:<port>)
       --rpc-addr string                The RPC address to bind to (<host>:<port>)
+      --schema-registry-addr           A comma-separated list of Schema Registry listener addresses to bind to (<name>://<host>:<port>)
   -s, --seeds strings                  A comma-separated list of seed node addresses (<host>[:<port>]) to connect to
       --timeout duration               The maximum time to wait for the checks and tune processes to complete. The value passed is a sequence of decimal numbers, each with optional fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h' (default: 10s)
       --tune                           When present will enable tuning before starting redpanda
       --well-known-io string           The cloud vendor and VM type, in the format <vendor>:<vm type>:<storage type>
 ```
 
-### redpanda mode
+### redpanda mode ![linux icon][linux] ![mac icon][mac]
 
 By default, Redpanda runs in development mode. For [production deployments](https://vectorized.io/docs/production-deployment/), set the redpanda mode to `production`.
 
@@ -86,11 +90,11 @@ Flags:
       --config string   Redpanda config file, if not set the file will be searched for in the default locations
 ```
 
-### redpanda config
+### redpanda config ![linux icon][linux]
 
 Edit configuration.
 
-#### redpanda config set
+#### redpanda config set ![linux icon][linux]
 
 Set configuration values, such as the node IDs or the list of seed servers
 
@@ -103,7 +107,7 @@ Flags:
       --format string   The value format. Can be 'single', for single values such as '/etc/redpanda' or 100; and 'json' and 'yaml' when partially or completely setting config objects (default: "single")
 ```
 
-#### redpanda config bootstrap
+#### redpanda config bootstrap ![linux icon][linux]
 
 Initialize the configuration to bootstrap a cluster. --id is mandatory. `bootstrap` will expect the machine it's running on to have only one non-loopback IP address associated to it, and use it in the configuration as the node's address. If it has multiple IPs, --self must be specified. In that case, the given IP will be used without checking whether it's among the machine's addresses or not. The elements in --ips must be separated by a comma, no spaces. If omitted, the node will be configured as a root node, that otherones can join later.
 
@@ -118,7 +122,7 @@ Flags:
       --self string     Hint at this node's IP address from within the list passed in --ips
 ```
 
-## topic
+## topic ![linux icon][linux] ![mac icon][mac]
 
 Interact with the Redpanda API to work with topics.
 
@@ -135,7 +139,7 @@ The global flags for the `rpk topic` command are:
       --tls-truststore string   The truststore to be used for TLS communication with the broker.
 ```
 
-### topic create
+### topic create ![linux icon][linux] ![mac icon][mac]
 
 Create a topic.
 
@@ -150,7 +154,7 @@ Flags:
   -c, --topic-config stringArray   Config entries in the format <key>:<value>. May be used multiple times to add more entries.
 ```
 
-### topic delete
+### topic delete ![linux icon][linux] ![mac icon][mac]
 
 Delete a topic.
 
@@ -159,7 +163,7 @@ Usage:
   rpk topic delete <topic name> [flags]
 ```
 
-### topic describe
+### topic describe ![linux icon][linux] ![mac icon][mac]
 
 Describe a topic. Default values of the configuration are omitted.
 
@@ -173,7 +177,7 @@ Flags:
       --watermarks      If enabled, will display the topic's partitions' high watermarks (default: true)
 ```
 
-### topic produce
+### topic produce ![linux icon][linux] ![mac icon][mac]
 
 Produce a record from data entered in stdin.
 
@@ -190,7 +194,7 @@ Flags:
   -t, --timestamp string     RFC3339-compliant timestamp for the record. If the value passed can't be parsed, the current time will be used.
 ```
 
-### topic consume
+### topic consume ![linux icon][linux] ![mac icon][mac]
 
 Consume (read) records from a topic.
 
@@ -206,7 +210,7 @@ Flags:
       --pretty-print            Pretty-print the consumed messages. (default true)
 ```
 
-### topic list
+### topic list ![linux icon][linux] ![mac icon][mac]
 
 List topics.
 
@@ -218,7 +222,7 @@ Aliases:
   list, ls
 ```
 
-### topic set-config
+### topic set-config ![linux icon][linux] ![mac icon][mac]
 
 Set the topic's config key/value pairs
 
@@ -227,9 +231,9 @@ Usage:
   rpk topic set-config <topic> <key> <value> [flags]
 ```
 
-## cluster
+## cluster ![linux icon][linux] ![mac icon][mac]
 
-### cluster info
+### cluster info ![linux icon][linux] ![mac icon][mac]
 
 Get the cluster's info
 
@@ -241,11 +245,11 @@ Aliases:
   info, status
 ```
 
-## container
+## container ![linux icon][linux] ![mac icon][mac]
 
 Manage a local container cluster
 
-### container start
+### container start ![linux icon][linux] ![mac icon][mac]
 
 Start a local container cluster
 
@@ -258,7 +262,7 @@ Flags:
       --retries uint   The amount of times to check for the cluster before considering it unstable and exiting. (default: 10)
 ```
 
-### container stop
+### container stop ![linux icon][linux] ![mac icon][mac]
 
 Stop an existing local container cluster
 
@@ -267,7 +271,7 @@ Usage:
   rpk container stop [flags]
 ```
 
-### container purge
+### container purge ![linux icon][linux] ![mac icon][mac]
 
 Stop and remove an existing local container cluster's data
 
@@ -276,7 +280,7 @@ Usage:
   rpk container purge [flags]
 ```
 
-## acl
+## acl ![linux icon][linux] ![mac icon][mac]
 
 Manage ACLs
 
@@ -293,7 +297,7 @@ The global flags for `rpk acl` are:
   -v, --verbose                 enable verbose logging (default false)
 ```
 
-### acl create
+### acl create ![linux icon][linux] ![mac icon][mac]
 
 Create ACLs
 
@@ -312,7 +316,7 @@ Flags:
       --resource-name string      The name of the target resource for the ACL.
 ```
 
-### acl delete
+### acl delete ![linux icon][linux] ![mac icon][mac]
 
 Delete ACLs
 
@@ -331,7 +335,7 @@ Flags:
       --resource-name string      The name of the target resource for the ACL.
 ```
 
-### acl list
+### acl list ![linux icon][linux] ![mac icon][mac]
 
 List ACLs
 
@@ -352,7 +356,7 @@ Flags:
       --resource-name string   The name of the resource of the given type.
 ```
 
-### acl user
+### acl user ![linux icon][linux] ![mac icon][mac]
 
 Manage users
 
@@ -362,7 +366,7 @@ The global flags for `rpk acl user` are:
       --api-url string   The Admin API URL (default "localhost:9644")
 ```
 
-#### acl user create
+#### acl user create ![linux icon][linux] ![mac icon][mac]
 
 Create users
 
@@ -375,7 +379,7 @@ Flags:
       --new-username string   The user to be created
 ```
 
-#### acl user delete
+#### acl user delete ![linux icon][linux] ![mac icon][mac]
 
 Delete users
 
@@ -387,7 +391,7 @@ Flags:
       --delete-username string   The user to be deleted
 ```
 
-#### acl user list
+#### acl user list ![linux icon][linux] ![mac icon][mac]
 
 List users
 
@@ -401,7 +405,7 @@ Aliases:
   list, ls
 ```
 
-## wasm
+## wasm ![linux icon][linux] ![mac icon][mac]
 
 Deploy and remove inline WASM engine scripts
 
@@ -418,7 +422,7 @@ The global flags for `rpk wasm` are:
   -v, --verbose                 enable verbose logging (default false)
 ```
 
-### wasm generate
+### wasm generate ![linux icon][linux] ![mac icon][mac]
 
 Create an npm template project for the inline WASM engine
 
@@ -428,7 +432,7 @@ Usage:
 ```
 
 
-### wasm deploy
+### wasm deploy ![linux icon][linux] ![mac icon][mac]
 
 Deploy inline WASM scripts
 
@@ -440,7 +444,7 @@ Flags:
       --description string   Optional description about what the wasm function does, for reference.
 ```
 
-### wasm remove
+### wasm remove ![linux icon][linux] ![mac icon][mac]
 
 Remove an inline WASM script
 
@@ -450,7 +454,7 @@ Usage:
 ```
 
 
-## iotune
+## iotune ![linux icon][linux]
 
 Measure filesystem performance and create IO configuration file.
 
@@ -466,11 +470,11 @@ Flags:
       --timeout duration      The maximum time after --duration to wait for iotune to complete. The value passed is a sequence of decimal numbers, each with optional fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h' (default: 1h0m0s)
 ```
 
-## generate
+## generate ![linux icon][linux] ![mac icon][mac]
 
 Generate a configuration template for related services.
 
-### generate grafana-dashboard
+### generate grafana-dashboard ![linux icon][linux] ![mac icon][mac]
 
 Generate a Grafana dashboard for redpanda metrics.
 
@@ -484,7 +488,7 @@ Flags:
       --prometheus-url string   The redpanda Prometheus URL from where to get the metrics metadata (default: "http://localhost:9644/metrics")
 ```
 
-### generate prometheus-config
+### generate prometheus-config ![linux icon][linux] ![mac icon][mac]
 
 Generate the Prometheus configuration to scrape redpanda nodes. This command's
 output should be added to the `scrape_configs` array in your Prometheus
@@ -509,9 +513,9 @@ Flags:
       --seed-addr string     The URL of a redpanda node with which to discover the rest
 ```
 
-## debug
+## debug ![linux icon][linux]
 
-### debug info
+### debug info ![linux icon][linux]
 
 Check the resource usage in the system, and optionally send it to Vectorized.
 
@@ -527,3 +531,5 @@ Flags:
       --send rpk debug info   Tells `rpk debug info` whether to send the gathered resource usage data to Vectorized
       --timeout duration      The maximum amount of time to wait for the metrics to be gathered. The value passed is a sequence of decimal numbers, each with optional fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h' (default: 2s)
 ```
+[linux]: https://vectorized.io/images/icon-linux.svg "Available on Linux"
+[mac]: https://vectorized.io/images/icon-mac.svg "Available on Mac"

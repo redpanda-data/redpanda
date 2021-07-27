@@ -13,7 +13,9 @@
 #include "cluster/controller_api.h"
 #include "cluster/controller_backend.h"
 #include "cluster/controller_service.h"
+#include "cluster/fwd.h"
 #include "cluster/logger.h"
+#include "cluster/members_backend.h"
 #include "cluster/members_frontend.h"
 #include "cluster/members_manager.h"
 #include "cluster/members_table.h"
@@ -21,6 +23,7 @@
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
 #include "cluster/raft0_utils.h"
+#include "cluster/scheduling/partition_allocator.h"
 #include "cluster/security_frontend.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
@@ -53,8 +56,7 @@ ss::future<> controller::wire_up() {
     return _as.start()
       .then([this] { return _members_table.start(); })
       .then([this] { return _partition_leaders.start(); })
-      .then(
-        [this] { return _partition_allocator.start_single(raft::group_id(0)); })
+      .then([this] { return _partition_allocator.start_single(); })
       .then([this] { return _credentials.start(); })
       .then([this] { return _authorizer.start(); })
       .then([this] { return _tp_state.start(); });
@@ -120,6 +122,18 @@ ss::future<> controller::start() {
             std::ref(_as));
       })
       .then([this] {
+          return _members_backend.start_single(
+            std::ref(_tp_frontend),
+            std::ref(_tp_state),
+            std::ref(_partition_allocator),
+            std::ref(_members_table),
+            std::ref(_api),
+            std::ref(_members_manager),
+            std::ref(_members_frontend),
+            _raft0,
+            std::ref(_as));
+      })
+      .then([this] {
           return _backend.start(
             std::ref(_tp_state),
             std::ref(_shard_table),
@@ -162,6 +176,10 @@ ss::future<> controller::start() {
             std::ref(_shard_table),
             std::ref(_connections),
             std::ref(_as));
+      })
+      .then([this] {
+          return _members_backend.invoke_on(
+            members_manager::shard, &members_backend::start);
       });
 }
 
@@ -181,7 +199,8 @@ ss::future<> controller::stop() {
     }
 
     return f.then([this] {
-        return _api.stop()
+        return _members_backend.stop()
+          .then([this] { return _api.stop(); })
           .then([this] { return _backend.stop(); })
           .then([this] { return _tp_frontend.stop(); })
           .then([this] { return _security_frontend.stop(); })

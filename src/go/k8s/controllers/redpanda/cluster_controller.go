@@ -37,14 +37,16 @@ import (
 var (
 	errNonexistentLastObservesState = errors.New("expecting to have statefulset LastObservedState set but it's nil")
 	errNodePortMissing              = errors.New("the node port is missing from the service")
+	errInvalidImagePullPolicy       = errors.New("invalid image pull policy")
 )
 
 // ClusterReconciler reconciles a Cluster object
 type ClusterReconciler struct {
 	client.Client
-	Log             logr.Logger
-	configuratorTag string
-	Scheme          *runtime.Scheme
+	Log                  logr.Logger
+	configuratorSettings resources.ConfiguratorSettings
+	clusterDomain        string
+	Scheme               *runtime.Scheme
 }
 
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
@@ -144,13 +146,13 @@ func (r *ClusterReconciler) Reconcile(
 		resources.PandaproxyPortExternalName,
 		log)
 
-	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(), r.Scheme, log)
+	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), r.Scheme, log)
 	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
 	sts := resources.NewStatefulSet(
 		r.Client,
 		&redpandaCluster,
 		r.Scheme,
-		headlessSvc.HeadlessServiceFQDN(),
+		headlessSvc.HeadlessServiceFQDN(r.clusterDomain),
 		headlessSvc.Key().Name,
 		nodeportSvc.Key(),
 		pki.NodeCert(),
@@ -160,14 +162,14 @@ func (r *ClusterReconciler) Reconcile(
 		pki.AdminAPIClientCert(),
 		pki.PandaproxyAPINodeCert(),
 		sa.Key().Name,
-		r.configuratorTag,
+		r.configuratorSettings,
 		log)
 	toApply := []resources.Reconciler{
 		headlessSvc,
 		clusterSvc,
 		nodeportSvc,
 		ingress,
-		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(), log),
+		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), log),
 		pki,
 		sa,
 		resources.NewClusterRole(r.Client, &redpandaCluster, r.Scheme, log),
@@ -205,7 +207,7 @@ func (r *ClusterReconciler) Reconcile(
 		var urls []string
 		replicas := *redpandaCluster.Spec.Replicas
 		for i := int32(0); i < replicas; i++ {
-			urls = append(urls, fmt.Sprintf("%s-%d.%s:%d", redpandaCluster.Name, i, headlessSvc.HeadlessServiceFQDN(), redpandaCluster.AdminAPIInternal().Port))
+			urls = append(urls, fmt.Sprintf("%s-%d.%s:%d", redpandaCluster.Name, i, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), redpandaCluster.AdminAPIInternal().Port))
 		}
 
 		adminAPI, err := admin.NewAdminAPI(urls, nil)
@@ -221,7 +223,7 @@ func (r *ClusterReconciler) Reconcile(
 		}
 	}
 
-	err := r.reportStatus(ctx, &redpandaCluster, sts.LastObservedState, headlessSvc.HeadlessServiceFQDN(), nodeportSvc.Key())
+	err := r.reportStatus(ctx, &redpandaCluster, sts.LastObservedState, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), nodeportSvc.Key())
 	if err != nil {
 		log.Error(err, "Unable to report status")
 	}
@@ -231,11 +233,26 @@ func (r *ClusterReconciler) Reconcile(
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if err := validateImagePullPolicy(r.configuratorSettings.ImagePullPolicy); err != nil {
+		return fmt.Errorf("invalid image pull policy \"%s\": %w", r.configuratorSettings.ImagePullPolicy, err)
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&redpandav1alpha1.Cluster{}).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
 		Complete(r)
+}
+
+func validateImagePullPolicy(imagePullPolicy corev1.PullPolicy) error {
+	switch imagePullPolicy {
+	case corev1.PullAlways:
+	case corev1.PullIfNotPresent:
+	case corev1.PullNever:
+	default:
+		return fmt.Errorf("available image pull policy: \"%s\", \"%s\" or \"%s\": %w", corev1.PullAlways, corev1.PullIfNotPresent, corev1.PullNever, errInvalidImagePullPolicy)
+	}
+	return nil
 }
 
 func (r *ClusterReconciler) reportStatus(
@@ -310,11 +327,19 @@ func statusShouldBeUpdated(
 		status.Replicas != readyReplicas
 }
 
-// WithConfiguratorTag set the configuratorTag
-func (r *ClusterReconciler) WithConfiguratorTag(
-	configuratorTag string,
+// WithConfiguratorSettings set the configurator image settings
+func (r *ClusterReconciler) WithConfiguratorSettings(
+	configuratorSettings resources.ConfiguratorSettings,
 ) *ClusterReconciler {
-	r.configuratorTag = configuratorTag
+	r.configuratorSettings = configuratorSettings
+	return r
+}
+
+// WithClusterDomain set the clusterDomain
+func (r *ClusterReconciler) WithClusterDomain(
+	clusterDomain string,
+) *ClusterReconciler {
+	r.clusterDomain = clusterDomain
 	return r
 }
 

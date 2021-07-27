@@ -5,18 +5,25 @@ order: 5
 # Custom configuration
 
 The redpanda configuration is by default loaded from and persisted to
-`/etc/redpanda/redpanda.yaml`. It is broadly divided into 2 sections, `redpanda`
-and `rpk`.
+`/etc/redpanda/redpanda.yaml`. It is broadly divided into a few sections:
 
-The `redpanda` section contains all the runtime configuration, such as the
-cluster member IPs, the node ID, data directory, and so on. The `rpk` section
-contains configuration related to tuning the machine that redpanda will run on.
+- `redpanda` - The runtime configuration parameters, such as the cluster member IPs, the node ID, data directory
+- `pandaproxy` - Parameters for the Redpanda REST API
+- `pandaproxy_client` - Parameters for the REST API client that Redpanda uses to make calls to other nodes
+- `rpk` - Configuration related to tuning the container that redpanda
+
+To create a simple config file that you can customize, run:
+
+```
+rpk config init
+```
 
 ## Sample configuration
 
 Here’s a sample of the config. The [configuration reference](#config-parameter-reference) shows a more complete list of the configuration options.
 
-Only include in your `redpanda.yaml` file the sections that you want to customize.
+This is not a valid Redpanda configuration file, but it shows the parameters that you can configure in the config file.
+Only include the sections that you want to customize.
 
 ```yaml
 # organization and cluster_id help Vectorized identify your system.
@@ -465,17 +472,92 @@ pandaproxy_client:
   # Default: ""
   scram_password: ""
 
-rpk:
-  # TLS configuration to allow rpk to make requests to the redpanda API.
-  tls:
-    # The path to the root CA certificate (PEM).
-    truststore_file: ""
-    # The path to the client certificate (PEM). Only required if client authentication is
-    # enabled in the broker.
+# The Schema Registry provides a RESTful interface for Schema storage, retrieval, and compatibility.
+# To disable the Schema Registry, remove this top-level config node
+schema_registry:
+  # A list of address and port to listen for Schema Registry API requests.
+  # Default: 0.0.0.0:8082
+  schema_registry_api: 
+  - address: "0.0.0.0"
+    name: internal
+    port: 8081
+  - address: "0.0.0.0"
+    name: external
+    port: 18081
+
+  # A list of TLS configurations for the Schema Registry API.
+  # Default: null
+  schema_registry_api_tls:
+  - name: external
+    # Whether to enable TLS.
+    enabled: false
+    # Require client authentication
+    require_client_auth: false
+    # The path to the server certificate PEM file.
     cert_file: ""
-    # The path to the client certificate key (PEM). Only required if client authentication is
-    # enabled in the broker.
+    # The path to the server key PEM file
     key_file: ""
+    # The path to the truststore PEM file. Only required if client
+    # authentication is enabled.
+    truststore_file: ""
+  - name: internal
+    enabled: false
+
+# The Schema Registry client config
+# See pandaproxy_client for a list of options
+schema_registry_client:
+
+rpk:
+  # Add optional flags to have rpk start redpanda with specific parameters.
+  # The available start flags are found in: /src/v/config/configuration.cc
+  additional_start_flags:
+    - "--overprovisioned"
+    - "--smp=2"
+    - "--memory=4G"
+    - "--default-log-level=info"
+
+  # The Kafka API configuration
+  kafka_api:
+    # A list of broker addresses that rpk will use
+    brokers:
+    - 192.168.72.34:9092
+    - 192.168.72.35:9092
+
+    # The TLS configuration to be used when interacting with the Kafka API.
+    # If present, TLS will be enabled. If missing or null, TLS will be disabled.
+    tls:
+      # The path to the client certificate (PEM). Only required if client authentication is
+      # enabled in the broker.
+      cert_file: ~/certs/cert.pem
+      # The path to the client certificate key (PEM). Only required if client authentication is
+      # enabled in the broker.
+      key_file: ~/certs/key.pem
+      # The path to the root CA certificate (PEM).
+      truststore_file: ~/certs/ca.pem
+
+    # The SASL config, if enabled in the brokers.
+    sasl:
+      user: user
+      password: pass
+      method: scram-sha256
+
+  # The Admin API configuration
+  admin_api:
+    # A list of the nodes' admin API addresses that rpk will use.
+    addresses:
+    - 192.168.72.34:9644
+    - 192.168.72.35:9644
+    # The TLS configuration to be used when with the Admin API.
+    # If present, TLS will be enabled. If missing or null, TLS will be disabled.
+    tls:
+      # The path to the client certificate (PEM). Only required if client authentication is
+      # enabled in the broker.
+      cert_file: ~/certs/admin-cert.pem
+      # The path to the client certificate key (PEM). Only required if client authentication is
+      # enabled in the broker.
+      key_file: ~/certs/admin-key.pem
+      # The path to the root CA certificate (PEM).
+      truststore_file: ~/certs/admin-ca.pem
 
   # Available tuners. Set to true to enable, false to disable.
 

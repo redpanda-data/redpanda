@@ -122,6 +122,7 @@ func NewStartCommand(
 		seeds           []string
 		kafkaAddr       []string
 		proxyAddr       []string
+		schemaRegAddr   []string
 		rpcAddr         string
 		advertisedKafka []string
 		advertisedProxy []string
@@ -221,6 +222,28 @@ func NewStartCommand(
 					conf.Pandaproxy = config.Default().Pandaproxy
 				}
 				conf.Pandaproxy.PandaproxyAPI = proxyApi
+			}
+
+			schemaRegAddr = stringSliceOr(
+				schemaRegAddr,
+				strings.Split(
+					os.Getenv("REDPANDA_SCHEMA_REGISTRY_ADDRESS"),
+					",",
+				),
+			)
+			schemaRegApi, err := parseNamedAddresses(
+				schemaRegAddr,
+				config.DefaultSchemaRegPort,
+			)
+			if err != nil {
+				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
+				return err
+			}
+			if schemaRegApi != nil && len(schemaRegApi) > 0 {
+				if conf.SchemaRegistry == nil {
+					conf.SchemaRegistry = config.Default().SchemaRegistry
+				}
+				conf.SchemaRegistry.SchemaRegistryAPI = schemaRegApi
 			}
 
 			rpcAddr = stringOr(
@@ -372,6 +395,12 @@ func NewStartCommand(
 		"pandaproxy-addr",
 		[]string{},
 		"A comma-separated list of Pandaproxy listener addresses to bind to (<name>://<host>:<port>)",
+	)
+	command.Flags().StringSliceVar(
+		&schemaRegAddr,
+		"schema-registry-addr",
+		[]string{},
+		"A comma-separated list of Schema Registry listener addresses to bind to (<name>://<host>:<port>)",
 	)
 	command.Flags().StringVar(
 		&rpcAddr,
@@ -788,7 +817,9 @@ func parseFlags(flags []string) map[string]string {
 		}
 
 		// Check if it's in name=value format
-		parts := strings.Split(trimmed, "=")
+		// Split only into 2 tokens, since some flags can have multiple '='
+		// in them, like --logger-log-level=archival=debug:cloud_storage=debug
+		parts := strings.SplitN(trimmed, "=", 2)
 		if len(parts) >= 2 {
 			name := strings.Trim(parts[0], " ")
 			value := strings.Trim(parts[1], " ")

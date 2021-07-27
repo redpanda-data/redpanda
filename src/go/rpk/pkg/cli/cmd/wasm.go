@@ -24,6 +24,7 @@ func NewWasmCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		user           string
 		password       string
 		mechanism      string
+		enableTLS      bool
 		certFile       string
 		keyFile        string
 		truststoreFile string
@@ -39,6 +40,7 @@ func NewWasmCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		&user,
 		&password,
 		&mechanism,
+		&enableTLS,
 		&certFile,
 		&keyFile,
 		&truststoreFile,
@@ -53,8 +55,8 @@ func NewWasmCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		configClosure,
 		&brokers,
 	)
-	tlsClosure := common.BuildTLSConfig(&certFile, &keyFile, &truststoreFile)
-	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism)
+	tlsClosure := common.BuildKafkaTLSConfig(fs, &enableTLS, &certFile, &keyFile, &truststoreFile, configClosure)
+	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism, configClosure)
 	producerClosure := common.CreateProducer(brokersClosure, configClosure, tlsClosure, kAuthClosure)
 	adminClosure := common.CreateAdmin(brokersClosure, configClosure, tlsClosure, kAuthClosure)
 

@@ -106,8 +106,8 @@ public:
     wait_no_throw(model::offset offset, model::timeout_clock::duration);
 
 protected:
-    virtual void load_snapshot(stm_snapshot_header, iobuf&&) = 0;
-    virtual stm_snapshot take_snapshot() = 0;
+    virtual ss::future<> load_snapshot(stm_snapshot_header, iobuf&&) = 0;
+    virtual ss::future<stm_snapshot> take_snapshot() = 0;
     ss::future<> hydrate_snapshot(storage::snapshot_reader&);
     ss::future<> wait_for_snapshot_hydrated();
     ss::future<> persist_snapshot(stm_snapshot&&);
@@ -123,7 +123,7 @@ protected:
     model::term_id _insync_term;
     model::offset _insync_offset;
     raft::consensus* _c;
-    storage::snapshot_manager _snapshot_mgr;
+    storage::simple_snapshot_manager _snapshot_mgr;
     ss::logger& _log;
     model::violation_recovery_policy _snapshot_recovery_policy;
 };

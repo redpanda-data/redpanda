@@ -24,6 +24,7 @@
 #include "raft/mutex_buffer.h"
 #include "raft/prevote_stm.h"
 #include "raft/probe.h"
+#include "raft/recovery_throttle.h"
 #include "raft/replicate_batcher.h"
 #include "raft/timeout_jitter.h"
 #include "raft/types.h"
@@ -84,11 +85,12 @@ public:
       group_configuration,
       timeout_jitter,
       storage::log,
-      ss::io_priority_class io_priority,
+      scheduling_config,
       model::timeout_clock::duration disk_timeout,
       consensus_client_protocol,
       leader_cb_t,
-      storage::api&);
+      storage::api&,
+      std::optional<std::reference_wrapper<recovery_throttle>>);
 
     /// Initial call. Allow for internal state recovery
     ss::future<> start();
@@ -306,6 +308,10 @@ public:
         return _configuration_manager;
     }
 
+    offset_monitor& visible_offset_monitor() {
+        return _consumable_offset_monitor;
+    }
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
@@ -501,7 +507,7 @@ private:
     raft::group_id _group;
     timeout_jitter _jit;
     storage::log _log;
-    ss::io_priority_class _io_priority;
+    scheduling_config _scheduling;
     model::timeout_clock::duration _disk_timeout;
     consensus_client_protocol _client_protocol;
     leader_cb_t _leader_notification;
@@ -546,7 +552,8 @@ private:
     ss::metrics::metric_groups _metrics;
     ss::abort_source _as;
     storage::api& _storage;
-    storage::snapshot_manager _snapshot_mgr;
+    std::optional<std::reference_wrapper<recovery_throttle>> _recovery_throttle;
+    storage::simple_snapshot_manager _snapshot_mgr;
     std::optional<storage::snapshot_writer> _snapshot_writer;
     model::offset _last_snapshot_index;
     model::term_id _last_snapshot_term;

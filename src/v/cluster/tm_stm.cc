@@ -278,7 +278,7 @@ bool tm_stm::add_group(
     return true;
 }
 
-void tm_stm::load_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
+ss::future<> tm_stm::load_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
     vassert(
       hdr.version == supported_version,
       "unsupported seq_snapshot_header version {}",
@@ -292,9 +292,11 @@ void tm_stm::load_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
     }
     _last_snapshot_offset = data.offset;
     _insync_offset = data.offset;
+
+    return ss::now();
 }
 
-stm_snapshot tm_stm::take_snapshot() {
+ss::future<stm_snapshot> tm_stm::take_snapshot() {
     tm_snapshot tm_ss;
     tm_ss.offset = _insync_offset;
     for (auto& entry : _tx_table) {
@@ -312,7 +314,7 @@ stm_snapshot tm_stm::take_snapshot() {
     stm_ss.header = header;
     stm_ss.offset = _insync_offset;
     stm_ss.data = std::move(tm_ss_buf);
-    return stm_ss;
+    co_return stm_ss;
 }
 
 ss::future<> tm_stm::apply(model::record_batch b) {

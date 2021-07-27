@@ -35,9 +35,26 @@ namespace cluster {
 // for validation of node configuration invariants.
 class members_manager {
 public:
-    static constexpr auto accepted_commands
-      = make_commands_list<decommission_node_cmd, recommission_node_cmd>{};
+    static constexpr auto accepted_commands = make_commands_list<
+      decommission_node_cmd,
+      recommission_node_cmd,
+      finish_reallocations_cmd>{};
     static constexpr ss::shard_id shard = 0;
+    static constexpr size_t max_updates_queue_size = 100;
+    enum class node_update_type : int8_t {
+        added,
+        decommissioned,
+        recommissioned,
+        reallocation_finished,
+    };
+
+    struct node_update {
+        model::node_id id;
+        node_update_type type;
+        model::offset offset;
+        friend std::ostream& operator<<(std::ostream&, const node_update&);
+    };
+
     members_manager(
       consensus_ptr,
       ss::sharded<members_table>&,
@@ -58,6 +75,11 @@ public:
     bool is_batch_applicable(const model::record_batch& b) {
         return b.header().type == model::record_batch_type::node_management_cmd;
     }
+    /**
+     * This API is backed by the seastar::queue. It can not be called
+     * concurrently from multiple fibers.
+     */
+    ss::future<std::vector<node_update>> get_node_updates();
 
 private:
     using seed_iterator = std::vector<config::seed_server>::const_iterator;
@@ -77,7 +99,8 @@ private:
     auto dispatch_rpc_to_leader(rpc::clock_type::duration, Func&& f);
 
     // Raft 0 config updates
-    ss::future<> handle_raft0_cfg_update(raft::group_configuration);
+    ss::future<>
+      handle_raft0_cfg_update(raft::group_configuration, model::offset);
     ss::future<> update_connections(patch<broker_ptr>);
 
     ss::future<> start_config_changes_watcher();
@@ -103,5 +126,10 @@ private:
     ss::sharded<ss::abort_source>& _as;
     config::tls_config _rpc_tls_config;
     ss::gate _gate;
+    ss::queue<node_update> _update_queue;
+    ss::abort_source::subscription _queue_abort_subscription;
 };
+
+std::ostream&
+operator<<(std::ostream&, const members_manager::node_update_type&);
 } // namespace cluster

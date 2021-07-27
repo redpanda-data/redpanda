@@ -25,6 +25,8 @@
 #include "utils/named_type.h"
 
 #include <seastar/core/condition-variable.hh>
+#include <seastar/core/io_priority_class.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/net/socket_defs.hh>
 #include <seastar/util/bool_class.hh>
 
@@ -127,7 +129,7 @@ struct follower_index_metadata {
 
     follower_req_seq last_sent_seq{0};
     follower_req_seq last_received_seq{0};
-    bool is_learner = false;
+    bool is_learner = true;
     bool is_recovering = false;
 
     /*
@@ -475,6 +477,31 @@ using voter_priority = named_type<uint32_t, struct voter_priority_tag>;
 static constexpr voter_priority zero_voter_priority = voter_priority{0};
 // 1 is smallest possible priority allowing node to become a leader
 static constexpr voter_priority min_voter_priority = voter_priority{1};
+
+/**
+ * Raft scheduling_config contains Seastar scheduling and IO priority
+ * controlling primitives.
+ */
+struct scheduling_config {
+    scheduling_config(
+      ss::scheduling_group default_sg,
+      ss::io_priority_class default_iopc,
+      ss::scheduling_group learner_recovery_sg,
+      ss::io_priority_class learner_recovery_iopc)
+      : default_sg(default_sg)
+      , default_iopc(default_iopc)
+      , learner_recovery_sg(learner_recovery_sg)
+      , learner_recovery_iopc(learner_recovery_iopc) {}
+
+    scheduling_config(
+      ss::scheduling_group default_sg, ss::io_priority_class default_iopc)
+      : scheduling_config(default_sg, default_iopc, default_sg, default_iopc) {}
+
+    ss::scheduling_group default_sg;
+    ss::io_priority_class default_iopc;
+    ss::scheduling_group learner_recovery_sg;
+    ss::io_priority_class learner_recovery_iopc;
+};
 
 std::ostream& operator<<(std::ostream& o, const vnode& r);
 std::ostream& operator<<(std::ostream& o, const consistency_level& l);

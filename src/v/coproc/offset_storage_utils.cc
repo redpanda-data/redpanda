@@ -34,7 +34,7 @@ using iresults_map
   = absl::flat_hash_map<model::ntp, ntp_context::offset_tracker>;
 
 ss::future<ntp_context_cache> recover_offsets(
-  storage::snapshot_manager& snap, storage::log_manager& log_mgr) {
+  storage::simple_snapshot_manager& snap, storage::log_manager& log_mgr) {
     ntp_context_cache recovered;
     auto optional_snap_reader = co_await snap.open_snapshot();
     if (!optional_snap_reader) {
@@ -78,7 +78,7 @@ ss::future<ntp_context_cache> recover_offsets(
 }
 
 ss::future<> save_offsets(
-  storage::snapshot_manager& snap, const ntp_context_cache& ntp_cache) {
+  storage::simple_snapshot_manager& snap, const ntp_context_cache& ntp_cache) {
     vlog(
       coproclog.info,
       "Saving {} coprocessor offsets to disk....",
@@ -97,7 +97,7 @@ ss::future<> save_offsets(
     iobuf data;
     co_await reflection::async_adl<iresults_map>{}.to(data, std::move(irm_map));
 
-    /// Serialize this to disk via the snapshot_manager
+    /// Serialize this to disk via the simple_snapshot_manager
     storage::snapshot_writer writer = co_await snap.start_snapshot();
     co_await writer.write_metadata(std::move(metadata));
     co_await write_iobuf_to_output_stream(std::move(data), writer.output());

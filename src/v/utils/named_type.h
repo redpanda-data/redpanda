@@ -63,6 +63,15 @@ public:
         ++_value;
         return copy;
     }
+    constexpr base_named_type& operator--() {
+        --_value;
+        return *this;
+    }
+    constexpr const base_named_type operator--(int) {
+        auto cp = *this;
+        --_value;
+        return cp;
+    }
     constexpr base_named_type operator+(const base_named_type& val) const {
         return base_named_type(_value + val()); // not mutable
     }

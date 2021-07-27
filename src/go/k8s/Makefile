@@ -5,6 +5,12 @@ CONFIGURATOR_IMG_LATEST ?= "vectorized/configurator:latest"
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 
+# The BUILDKITE_JOB_ID is used to create unique kind cluster.
+# BUILDKITE_JOB_ID is set in the buildkite runner for every CI run.
+#
+# https://buildkite.com/docs/pipelines/environment-variables#bk-env-vars-buildkite-job-id
+BUILDKITE_JOB_ID ?= "kind"
+
 ifeq (aarch64,$(uname -m))
 TARGETARCH = arm64
 else
@@ -96,11 +102,11 @@ push-to-kind:
 
 # Execute end to end tests
 e2e-tests: kuttl test docker-build docker-build-configurator
-	$(KUTTL) test $(TEST_ONLY_FLAG)
+	$(KUTTL) test $(TEST_ONLY_FLAG) --kind-context $(BUILDKITE_JOB_ID)
 
 # Execute end to end tests using helm as an installation
 helm-e2e-tests: kuttl test docker-build docker-build-configurator
-	$(KUTTL) test --config kuttl-helm-test.yaml $(TEST_ONLY_FLAG)
+	$(KUTTL) test --config kuttl-helm-test.yaml $(TEST_ONLY_FLAG) --kind-context $(BUILDKITE_JOB_ID)-helm
 
 # Download controller-gen locally if necessary
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen

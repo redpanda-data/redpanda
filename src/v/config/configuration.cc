@@ -348,6 +348,12 @@ configuration::configuration()
       false)
   , enable_transactions(
       *this, "enable_transactions", "Enable transactions", required::no, false)
+  , abort_index_segment_size(
+      *this,
+      "abort_index_segment_size",
+      "Capacity (in number of txns) of an abort index segment",
+      required::no,
+      50000)
   , delete_retention_ms(
       *this,
       "delete_retention_ms",
@@ -451,6 +457,12 @@ configuration::configuration()
       "Max size of requests cached for replication",
       required::no,
       1_MiB)
+  , raft_learner_recovery_rate(
+      *this,
+      "raft_learner_recovery_rate",
+      "Raft learner recovery rate limit in bytes per sec",
+      required::no,
+      100_MiB)
   , reclaim_min_size(
       *this,
       "reclaim_min_size",
@@ -626,6 +638,12 @@ configuration::configuration()
       "target compaction backlog would be equal to ",
       required::no,
       std::nullopt)
+  , members_backend_retry_ms(
+      *this,
+      "members_backend_retry_ms",
+      "Time between members backend reconciliation loop retries ",
+      required::no,
+      5s)
   , cloud_storage_enabled(
       *this,
       "cloud_storage_enabled",
@@ -693,6 +711,24 @@ configuration::configuration()
       "during TLS handshake",
       required::no,
       std::nullopt)
+  , cloud_storage_initial_backoff_ms(
+      *this,
+      "cloud_storage_initial_backoff_ms",
+      "Initial backoff time for exponetial backoff algorithm (ms)",
+      required::no,
+      100ms)
+  , cloud_storage_segment_upload_timeout_ms(
+      *this,
+      "cloud_storage_segment_upload_timeout_ms",
+      "Log segment upload timeout (ms)",
+      required::no,
+      30s)
+  , cloud_storage_manifest_upload_timeout_ms(
+      *this,
+      "cloud_storage_manifest_upload_timeout_ms",
+      "Manifest upload timeout (ms)",
+      required::no,
+      10s)
   , superusers(
       *this, "superusers", "List of superuser usernames", required::no, {})
   , kafka_qdc_latency_alpha(
@@ -755,6 +791,24 @@ configuration::configuration()
       "Update frequency for kafka queue depth control.",
       required::no,
       7s)
+  , zstd_decompress_workspace_bytes(
+      *this,
+      "zstd_decompress_workspace_bytes",
+      "Size of the zstd decompression workspace",
+      required::no,
+      8_MiB)
+  , full_raft_configuration_recovery_pattern(
+      *this,
+      "full_raft_configuration_recovery_pattern",
+      "Recovery raft configuration on start for NTPs matching pattern",
+      required::no,
+      {})
+  , enable_auto_rebalance_on_node_add(
+      *this,
+      "enable_auto_rebalance_on_node_add",
+      "Enable automatic partition rebalancing when new nodes are added",
+      required::no,
+      false)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",

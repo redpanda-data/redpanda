@@ -73,6 +73,10 @@ void append_entries_buffer::start() {
 }
 
 ss::future<> append_entries_buffer::flush() {
+    // empty requests, do nothing
+    if (_requests.empty()) {
+        return ss::now();
+    }
     auto requests = std::exchange(_requests, {});
     auto response_promises = std::exchange(_responses, {});
 

@@ -49,6 +49,9 @@ redpanda:
 # Enable Pandaproxy
 pandaproxy:
 
+# Enable Schema Registry
+schema_registry:
+
 rpk:
   # TLS configuration.
   tls:

@@ -13,7 +13,7 @@
 
 #include "kafka/client/client.h"
 #include "pandaproxy/schema_registry/configuration.h"
-#include "pandaproxy/schema_registry/store.h"
+#include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/util.h"
 #include "pandaproxy/server.h"
 #include "seastarx.h"
@@ -33,7 +33,8 @@ public:
       const YAML::Node& config,
       ss::smp_service_group smp_sg,
       size_t max_memory,
-      ss::sharded<kafka::client::client>& client);
+      ss::sharded<kafka::client::client>& client,
+      sharded_store& store);
 
     ss::future<> start();
     ss::future<> stop();
@@ -41,7 +42,7 @@ public:
     configuration& config();
     kafka::client::configuration& client_config();
     ss::sharded<kafka::client::client>& client() { return _client; }
-    store& schema_store() { return _store; }
+    sharded_store& schema_store() { return _store; }
 
 private:
     ss::future<> do_start();
@@ -53,7 +54,7 @@ private:
     ss::sharded<kafka::client::client>& _client;
     ctx_server<service>::context_t _ctx;
     ctx_server<service> _server;
-    store _store;
+    sharded_store& _store;
     one_shot _ensure_started;
 };
 

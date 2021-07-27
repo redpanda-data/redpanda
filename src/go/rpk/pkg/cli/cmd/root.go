@@ -79,7 +79,6 @@ func Execute() {
 	rootCmd.AddCommand(NewContainerCommand())
 	rootCmd.AddCommand(NewTopicCommand(fs, mgr))
 	rootCmd.AddCommand(NewClusterCommand(fs, mgr))
-	rootCmd.AddCommand(NewCloudCommand(fs))
 	rootCmd.AddCommand(NewACLCommand(fs, mgr))
 
 	addPlatformDependentCmds(fs, mgr, rootCmd)
@@ -192,8 +191,10 @@ func tryExecPlugin(h pluginHandler, args []string) (string, error) {
 	return foundPath, h.exec(foundPath, args[len(pieces):])
 }
 
-const pluginPrefix = "rpk-"                // does not support --help-autocomplete
-const pluginPrefixAutoComplete = "rpk.ac-" // supports --help-autocomplete
+const (
+	pluginPrefix             = "rpk-"    // does not support --help-autocomplete
+	pluginPrefixAutoComplete = "rpk.ac-" // supports --help-autocomplete
+)
 
 // A plugin is made up of the "pieces" that are used to call it, and the binary
 // path for the plugin on disk. Reversing the documentation on tryExecPlugin,
@@ -211,7 +212,7 @@ type plugin struct {
 // plugins. That is, we do not allow rpk_foo_bar to be an additional plugin on
 // top of rpk_foo.
 //
-// We do support plugins defining themselves as "rpk_foo_bar", even though that
+// We do support plugins defining themselves as "rpk-foo_bar", even though that
 // reserves the "foo" plugin namespace.
 func listPlugins(fs afero.Fs, searchDirs []string) []plugin {
 	searchDirs = uniqueTrimmedStrs(searchDirs)
@@ -317,8 +318,9 @@ func addPluginWithExec(
 	// then childCmd is equal to parentCmd. We also check nil to be sure.
 	if err != nil || childCmd == nil || parentCmd == childCmd {
 		childCmd = &cobra.Command{
-			Use:   p0,
-			Short: fmt.Sprintf("%s external plugin", p0),
+			Use:                p0,
+			Short:              fmt.Sprintf("%s external plugin", p0),
+			DisableFlagParsing: true,
 		}
 		parentCmd.AddCommand(childCmd)
 	}
@@ -370,8 +372,10 @@ type pluginHelp struct {
 	Args    []string `json:"args"`
 }
 
-var rePluginString = "^[A-Za-z0-9_-]+$"
-var rePlugin = regexp.MustCompile(rePluginString)
+var (
+	rePluginString = "^[A-Za-z0-9_-]+$"
+	rePlugin       = regexp.MustCompile(rePluginString)
+)
 
 const flagHelpAutocomplete = "--help-autocomplete"
 
@@ -383,8 +387,8 @@ const flagHelpAutocomplete = "--help-autocomplete"
 //
 // We expect similar paths to the binary path of a plugin itself:
 //
-//     cloud-foo-bar corresponds to "rpk cloud foo bar"
-//     cloud-foo_bar corresponds to "rpk cloud foo-bar"
+//     cloud_foo-bar corresponds to "rpk cloud foo bar"
+//     cloud_foo_bar corresponds to "rpk cloud foo-bar"
 //     cloud         corresponds to "rpk cloud"
 //
 // For sanity, all returned paths must begin with the plugin name itself and a
@@ -393,7 +397,7 @@ const flagHelpAutocomplete = "--help-autocomplete"
 func addPluginHelp(
 	cmd *cobra.Command, pluginName string, helps []pluginHelp, execPath string,
 ) {
-	childPrefix := pluginName + "-"
+	childPrefix := pluginName + "_"
 	uniques := make(map[string]pluginHelp, len(helps))
 	for _, h := range helps {
 		if _, exists := uniques[h.Path]; exists {
@@ -479,7 +483,8 @@ func addPluginSubcommands(
 ) {
 	for childUse, childHelp := range parentHelp.inner {
 		childCmd := &cobra.Command{
-			Short: fmt.Sprintf("%s external plugin", childUse),
+			Short:              fmt.Sprintf("%s external plugin", childUse),
+			DisableFlagParsing: true,
 			Run: func(cmd *cobra.Command, args []string) {
 				new(osPluginHandler).exec(execPath, append(append(leadingPieces, cmd.Use), args...))
 			},
@@ -516,6 +521,7 @@ func (*osPluginHandler) lookPath(file string) (string, bool) {
 	path, err := exec.LookPath(file)
 	return path, err == nil
 }
+
 func (*osPluginHandler) exec(path string, args []string) error {
 	args = append([]string{path}, args...)
 	env := os.Environ()

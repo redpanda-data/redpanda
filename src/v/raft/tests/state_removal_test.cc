@@ -56,6 +56,7 @@ bool snapshot_exists(raft_node& n) {
 }
 
 void stop_node(raft_node& node) {
+    node.recovery_throttle.stop().get();
     node.server.stop().get0();
     node._as.request_abort();
     if (node._nop_stm != nullptr) {

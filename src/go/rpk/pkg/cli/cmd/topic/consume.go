@@ -31,15 +31,17 @@ type header struct {
 type message struct {
 	Headers   []header  `json:"headers,omitempty"`
 	Key       string    `json:"key,omitempty"`
-	Message   string    `json:"message"`
+	Message   *string   `json:"message,omitempty"`
 	Partition int32     `json:"partition"`
 	Offset    int64     `json:"offset"`
+	Size      int       `json:"size"`
 	Timestamp time.Time `json:"timestamp"`
 }
 
 type consumerGroupHandler struct {
 	commit      bool
 	prettyPrint bool
+	metaOnly    bool
 }
 
 func (g *consumerGroupHandler) Setup(s sarama.ConsumerGroupSession) error {
@@ -54,13 +56,14 @@ func (g *consumerGroupHandler) ConsumeClaim(
 	s sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim,
 ) error {
 	mu := sync.Mutex{} // Synchronizes stdout.
-	consumeMessages(claim.Messages(), nil, &mu, s.Context(), g.prettyPrint)
+	consumeMessages(claim.Messages(), nil, &mu, s.Context(), g.prettyPrint, g.metaOnly)
 	return nil
 }
 
 func NewConsumeCommand(client func() (sarama.Client, error)) *cobra.Command {
 	var (
 		prettyPrint bool
+		metaOnly    bool
 		offset      string
 		group       string
 		groupCommit bool
@@ -95,6 +98,7 @@ func NewConsumeCommand(client func() (sarama.Client, error)) *cobra.Command {
 					off,
 					groupCommit,
 					prettyPrint,
+					metaOnly,
 				)
 			}
 
@@ -104,6 +108,7 @@ func NewConsumeCommand(client func() (sarama.Client, error)) *cobra.Command {
 				partitions,
 				off,
 				prettyPrint,
+				metaOnly,
 			)
 		},
 	}
@@ -113,6 +118,12 @@ func NewConsumeCommand(client func() (sarama.Client, error)) *cobra.Command {
 		"pretty-print",
 		true,
 		"Pretty-print the consumed messages.",
+	)
+	cmd.Flags().BoolVar(
+		&metaOnly,
+		"meta-only",
+		false,
+		"Print record metadata like partiton, offset, key, headers, size etc when enabled. Record payload will not be printed",
 	)
 	cmd.Flags().StringVar(
 		&offset,
@@ -148,7 +159,7 @@ func withConsumerGroup(
 	client sarama.Client,
 	topic, group string,
 	offset int64,
-	commit, prettyPrint bool,
+	commit, prettyPrint, metaOnly bool,
 ) error {
 	cg, err := sarama.NewConsumerGroupFromClient(group, client)
 	if err != nil {
@@ -162,7 +173,7 @@ func withConsumerGroup(
 	err = cg.Consume(
 		ctx,
 		[]string{topic},
-		&consumerGroupHandler{commit, prettyPrint},
+		&consumerGroupHandler{commit, prettyPrint, metaOnly},
 	)
 	if err != nil {
 		cancel()
@@ -176,7 +187,7 @@ func withoutConsumerGroup(
 	topic string,
 	partitions []int32,
 	offset int64,
-	prettyPrint bool,
+	prettyPrint, metaOnly bool,
 ) error {
 	var err error
 	consumer, err := sarama.NewConsumerFromClient(client)
@@ -209,7 +220,7 @@ func withoutConsumerGroup(
 				return err
 			}
 
-			consumeMessages(pc.Messages(), pc.Errors(), &mu, ctx, prettyPrint)
+			consumeMessages(pc.Messages(), pc.Errors(), &mu, ctx, prettyPrint, metaOnly)
 
 			return err
 
@@ -223,14 +234,14 @@ func consumeMessages(
 	errs <-chan *sarama.ConsumerError,
 	mu *sync.Mutex,
 	ctx context.Context,
-	prettyPrint bool,
+	prettyPrint, metaOnly bool,
 ) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case msg := <-msgs:
-			handleMessage(msg, mu, prettyPrint)
+			handleMessage(msg, mu, prettyPrint, metaOnly)
 		case err := <-errs:
 			if err != nil {
 				log.Errorf(
@@ -245,18 +256,27 @@ func consumeMessages(
 }
 
 func handleMessage(
-	msg *sarama.ConsumerMessage, mu *sync.Mutex, prettyPrint bool,
+	msg *sarama.ConsumerMessage, mu *sync.Mutex, prettyPrint, metaOnly bool,
 ) {
 	// Sometimes sarama will send nil messages.
 	if msg == nil {
 		log.Debug("Got a nil message")
 		return
 	}
+
+	var payloadPtr *string
+
+	if !metaOnly {
+		payload := string(msg.Value)
+		payloadPtr = &payload
+	}
+
 	m := message{
 		Headers:   make([]header, 0, len(msg.Headers)),
-		Message:   string(msg.Value),
+		Message:   payloadPtr,
 		Partition: msg.Partition,
 		Offset:    msg.Offset,
+		Size:      len(msg.Value),
 		Timestamp: msg.Timestamp,
 	}
 	for _, h := range msg.Headers {

@@ -36,9 +36,8 @@ var _ Resource = &StatefulSetResource{}
 var errNodePortMissing = errors.New("the node port is missing from the service")
 
 const (
-	redpandaContainerName      = "redpanda"
-	configuratorContainerName  = "redpanda-configurator"
-	configuratorContainerImage = "vectorized/configurator"
+	redpandaContainerName     = "redpanda"
+	configuratorContainerName = "redpanda-configurator"
 
 	userID  = 101
 	groupID = 101
@@ -51,6 +50,14 @@ const (
 	datadirName            = "datadir"
 	defaultDatadirCapacity = "100Gi"
 )
+
+// ConfiguratorSettings holds settings related to configurator container and deployment
+// strategy
+type ConfiguratorSettings struct {
+	ConfiguratorBaseImage string
+	ConfiguratorTag       string
+	ImagePullPolicy       corev1.PullPolicy
+}
 
 // StatefulSetResource is part of the reconciliation of redpanda.vectorized.io CRD
 // focusing on the management of redpanda cluster
@@ -69,7 +76,7 @@ type StatefulSetResource struct {
 	adminAPIClientCertSecretKey    types.NamespacedName // TODO this is unused, can be removed
 	pandaproxyAPINodeCertSecretKey types.NamespacedName
 	serviceAccountName             string
-	configuratorTag                string
+	configuratorSettings           ConfiguratorSettings
 	logger                         logr.Logger
 
 	LastObservedState *appsv1.StatefulSet
@@ -90,7 +97,7 @@ func NewStatefulSet(
 	adminAPIClientCertSecretKey types.NamespacedName,
 	pandaproxyAPINodeCertSecretKey types.NamespacedName,
 	serviceAccountName string,
-	configuratorTag string,
+	configuratorSettings ConfiguratorSettings,
 	logger logr.Logger,
 ) *StatefulSetResource {
 	return &StatefulSetResource{
@@ -108,7 +115,7 @@ func NewStatefulSet(
 		adminAPIClientCertSecretKey,
 		pandaproxyAPINodeCertSecretKey,
 		serviceAccountName,
-		configuratorTag,
+		configuratorSettings,
 		logger.WithValues("Kind", statefulSetKind()),
 		nil,
 	}
@@ -288,7 +295,7 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 						{
 							Name:            configuratorContainerName,
 							Image:           r.fullConfiguratorImage(),
-							ImagePullPolicy: corev1.PullIfNotPresent,
+							ImagePullPolicy: r.configuratorSettings.ImagePullPolicy,
 							Env: append([]corev1.EnvVar{
 								{
 									Name:  "SERVICE_FQDN",
@@ -676,11 +683,9 @@ func (r *StatefulSetResource) Key() types.NamespacedName {
 
 func (r *StatefulSetResource) portsConfiguration() string {
 	rpcAPIPort := r.pandaCluster.Spec.Configuration.RPCServer.Port
-	svcName := r.serviceName
+	serviceFQDN := r.serviceFQDN
 
-	// In every dns name there is trailing dot to query absolute path
-	// For trailing dot explanation please visit http://www.dns-sd.org/trailingdotsindomainnames.html
-	return fmt.Sprintf("--advertise-rpc-addr=$(POD_NAME).%s.$(POD_NAMESPACE).svc.cluster.local.:%d", svcName, rpcAPIPort)
+	return fmt.Sprintf("--advertise-rpc-addr=$(POD_NAME).%s:%d", serviceFQDN, rpcAPIPort)
 }
 
 func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
@@ -728,5 +733,5 @@ func statefulSetKind() string {
 }
 
 func (r *StatefulSetResource) fullConfiguratorImage() string {
-	return fmt.Sprintf("%s:%s", configuratorContainerImage, r.configuratorTag)
+	return fmt.Sprintf("%s:%s", r.configuratorSettings.ConfiguratorBaseImage, r.configuratorSettings.ConfiguratorTag)
 }

@@ -26,9 +26,10 @@ const (
 	ModeDev  = "dev"
 	ModeProd = "prod"
 
-	DefaultKafkaPort = 9092
-	DefaultProxyPort = 8082
-	DefaultAdminPort = 9644
+	DefaultKafkaPort     = 9092
+	DefaultSchemaRegPort = 8081
+	DefaultProxyPort     = 8082
+	DefaultAdminPort     = 9644
 )
 
 func InitViper(fs afero.Fs) *viper.Viper {
@@ -91,8 +92,9 @@ func defaultMap() map[string]interface{} {
 	}
 	var defaultAdminListeners []interface{} = []interface{}{defaultAdminListener}
 	return map[string]interface{}{
-		"config_file": "/etc/redpanda/redpanda.yaml",
-		"pandaproxy":  Pandaproxy{},
+		"config_file":     "/etc/redpanda/redpanda.yaml",
+		"pandaproxy":      Pandaproxy{},
+		"schema_registry": SchemaRegistry{},
 		"redpanda": map[string]interface{}{
 			"data_directory": "/var/lib/redpanda/data",
 			"rpc_server": map[string]interface{}{
@@ -157,10 +159,15 @@ func setDevelopment(conf *Config) *Config {
 	conf.Redpanda.DeveloperMode = true
 	// Defaults to setting all tuners to false
 	conf.Rpk = RpkConfig{
-		EnableUsageStats: conf.Rpk.EnableUsageStats,
-		CoredumpDir:      conf.Rpk.CoredumpDir,
-		SMP:              Default().Rpk.SMP,
-		Overprovisioned:  true,
+		TLS:                  conf.Rpk.TLS,
+		SASL:                 conf.Rpk.SASL,
+		KafkaApi:             conf.Rpk.KafkaApi,
+		AdminApi:             conf.Rpk.AdminApi,
+		AdditionalStartFlags: conf.Rpk.AdditionalStartFlags,
+		EnableUsageStats:     conf.Rpk.EnableUsageStats,
+		CoredumpDir:          conf.Rpk.CoredumpDir,
+		SMP:                  Default().Rpk.SMP,
+		Overprovisioned:      true,
 	}
 	return conf
 }

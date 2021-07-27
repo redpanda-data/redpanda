@@ -11,9 +11,10 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
+#include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
-#include "cluster/partition_allocator.h"
+#include "cluster/scheduling/partition_allocator.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
@@ -53,7 +54,19 @@ members_manager::members_manager(
   , _allocator(allocator)
   , _storage(storage)
   , _as(as)
-  , _rpc_tls_config(config::shard_local_cfg().rpc_server_tls()) {}
+  , _rpc_tls_config(config::shard_local_cfg().rpc_server_tls())
+  , _update_queue(max_updates_queue_size) {
+    auto sub = _as.local().subscribe([this]() noexcept {
+        _update_queue.abort(
+          std::make_exception_ptr(ss::abort_requested_exception{}));
+    });
+    if (!sub) {
+        _update_queue.abort(
+          std::make_exception_ptr(ss::abort_requested_exception{}));
+    } else {
+        _queue_abort_subscription = std::move(*sub);
+    }
+}
 
 ss::future<> members_manager::start() {
     vlog(clusterlog.info, "starting cluster::members_manager...");
@@ -66,39 +79,44 @@ ss::future<> members_manager::start() {
 }
 
 ss::future<> members_manager::start_config_changes_watcher() {
-    (void)ss::with_gate(_gate, [this] {
-        return ss::do_until(
-          [this] { return _as.local().abort_requested(); },
-          [this]() {
-              return _raft0
-                ->wait_for_config_change(
-                  _last_seen_configuration_offset, _as.local())
-                .then([this](raft::offset_configuration oc) {
-                    return handle_raft0_cfg_update(std::move(oc.cfg))
-                      .then([this, offset = oc.offset] {
-                          _last_seen_configuration_offset = offset;
-                      });
-                })
-                .handle_exception_type(
-                  [](const ss::abort_requested_exception&) {});
-          });
-    }).handle_exception_type([](const ss::gate_closed_exception&) {});
-
     // handle initial configuration
-    return handle_raft0_cfg_update(_raft0->config()).then([this] {
-        if (is_already_member()) {
-            (void)ss::with_gate(_gate, [this] {
-                return maybe_update_current_node_configuration();
-            }).handle_exception_type([](const ss::gate_closed_exception& e) {
-                vlog(
-                  clusterlog.debug,
-                  "unable to update node configuration, gate closed - {}",
-                  e);
-            });
-        }
-        return ss::now();
-    });
-} // namespace cluster
+    auto offset = _raft0->get_latest_configuration_offset();
+    return handle_raft0_cfg_update(_raft0->config(), offset)
+      .then([this, offset] {
+          _last_seen_configuration_offset = offset;
+          if (is_already_member()) {
+              (void)ss::with_gate(_gate, [this] {
+                  return maybe_update_current_node_configuration();
+              }).handle_exception_type([](const ss::gate_closed_exception& e) {
+                  vlog(
+                    clusterlog.debug,
+                    "unable to update node configuration, gate closed - {}",
+                    e);
+              });
+          }
+          return ss::now();
+      })
+      .then([this] {
+          (void)ss::with_gate(_gate, [this] {
+              return ss::do_until(
+                [this] { return _as.local().abort_requested(); },
+                [this]() {
+                    return _raft0
+                      ->wait_for_config_change(
+                        _last_seen_configuration_offset, _as.local())
+                      .then([this](raft::offset_configuration oc) {
+                          return handle_raft0_cfg_update(
+                                   std::move(oc.cfg), oc.offset)
+                            .then([this, offset = oc.offset] {
+                                _last_seen_configuration_offset = offset;
+                            });
+                      })
+                      .handle_exception_type(
+                        [](const ss::abort_requested_exception&) {});
+                });
+          }).handle_exception_type([](const ss::gate_closed_exception&) {});
+      });
+}
 
 ss::future<> members_manager::maybe_update_current_node_configuration() {
     auto active_configuration = _members_table.local().get_broker(_self.id());
@@ -135,8 +153,8 @@ calculate_brokers_diff(members_table& m, const raft::group_configuration& cfg) {
     return calculate_changed_brokers(std::move(new_list), std::move(old_list));
 }
 
-ss::future<>
-members_manager::handle_raft0_cfg_update(raft::group_configuration cfg) {
+ss::future<> members_manager::handle_raft0_cfg_update(
+  raft::group_configuration cfg, model::offset update_offset) {
     // distribute to all cluster::members_table
     return _allocator
       .invoke_on(
@@ -149,8 +167,9 @@ members_manager::handle_raft0_cfg_update(raft::group_configuration cfg) {
                 }
             });
         })
-      .then([this, cfg = std::move(cfg)]() mutable {
+      .then([this, cfg = std::move(cfg), update_offset]() mutable {
           auto diff = calculate_brokers_diff(_members_table.local(), cfg);
+          auto added_brokers = diff.additions;
           return _members_table
             .invoke_on_all([cfg = std::move(cfg)](members_table& m) mutable {
                 m.update_brokers(calculate_brokers_diff(m, cfg));
@@ -158,6 +177,23 @@ members_manager::handle_raft0_cfg_update(raft::group_configuration cfg) {
             .then([this, diff = std::move(diff)]() mutable {
                 // update internode connections
                 return update_connections(std::move(diff));
+            })
+            .then([this,
+                   added_nodes = std::move(added_brokers),
+                   update_offset]() mutable {
+                return ss::do_with(
+                  std::move(added_nodes),
+                  [this, update_offset](std::vector<broker_ptr>& added_nodes) {
+                      return ss::do_for_each(
+                        added_nodes,
+                        [this, update_offset](const broker_ptr& broker) {
+                            return _update_queue.push_eventually(node_update{
+                              .id = broker->id(),
+                              .type = node_update_type::added,
+                              .offset = update_offset,
+                            });
+                        });
+                  });
             });
       });
 }
@@ -170,11 +206,56 @@ members_manager::apply_update(model::record_batch b) {
     co_return co_await ss::visit(
       cmd,
       [this](decommission_node_cmd cmd) mutable {
-          return dispatch_updates_to_cores(cmd);
+          auto id = cmd.key;
+          return dispatch_updates_to_cores(cmd).then(
+            [this, id](std::error_code error) {
+                auto f = ss::now();
+                if (!error) {
+                    _allocator.local().decommission_node(id);
+                    f = _update_queue.push_eventually(node_update{
+                      .id = id, .type = node_update_type::decommissioned});
+                }
+                return f.then([error] { return error; });
+            });
       },
       [this](recommission_node_cmd cmd) mutable {
-          return dispatch_updates_to_cores(cmd);
+          auto id = cmd.key;
+          return dispatch_updates_to_cores(cmd).then(
+            [this, id](std::error_code error) {
+                auto f = ss::now();
+                if (!error) {
+                    _allocator.local().recommission_node(id);
+                    f = _update_queue.push_eventually(node_update{
+                      .id = id, .type = node_update_type::recommissioned});
+                }
+                return f.then([error] { return error; });
+            });
+      },
+      [this](finish_reallocations_cmd cmd) mutable {
+          // we do not have to dispatch this command to members table since this
+          // command is only used by a backend to signal successfully finished
+          // node reallocations
+          return _update_queue
+            .push_eventually(node_update{
+              .id = cmd.key, .type = node_update_type::reallocation_finished})
+            .then([] { return make_error_code(errc::success); });
       });
+}
+
+ss::future<std::vector<members_manager::node_update>>
+members_manager::get_node_updates() {
+    if (_update_queue.empty()) {
+        return _update_queue.pop_eventually().then(
+          [](node_update update) { return std::vector<node_update>{update}; });
+    }
+
+    std::vector<node_update> ret;
+    ret.reserve(_update_queue.size());
+    while (!_update_queue.empty()) {
+        ret.push_back(_update_queue.pop());
+    }
+
+    return ss::make_ready_future<std::vector<node_update>>(std::move(ret));
 }
 
 template<typename Cmd>
@@ -264,20 +345,36 @@ void members_manager::join_raft0() {
     (void)ss::with_gate(_gate, [this] {
         vlog(clusterlog.debug, "Trying to join the cluster");
         return ss::repeat([this] {
-            return dispatch_join_to_seed_server(std::cbegin(_seed_servers))
-              .then([this](result<join_reply> r) {
-                  bool success = r && r.value().success;
-                  // stop on success or closed gate
-                  if (success || _gate.is_closed() || is_already_member()) {
-                      return ss::make_ready_future<ss::stop_iteration>(
-                        ss::stop_iteration::yes);
-                  }
+                   return dispatch_join_to_seed_server(
+                            std::cbegin(_seed_servers))
+                     .then([this](result<join_reply> r) {
+                         bool success = r && r.value().success;
+                         // stop on success or closed gate
+                         if (
+                           success || _gate.is_closed()
+                           || is_already_member()) {
+                             return ss::make_ready_future<ss::stop_iteration>(
+                               ss::stop_iteration::yes);
+                         }
 
-                  return wait_for_next_join_retry(
-                           _join_retry_jitter.next_duration(), _as.local())
-                    .then([] { return ss::stop_iteration::no; });
-              });
-        });
+                         return wait_for_next_join_retry(
+                                  _join_retry_jitter.next_duration(),
+                                  _as.local())
+                           .then([] { return ss::stop_iteration::no; });
+                     });
+               })
+          .then([this] {
+              if (is_already_member()) {
+                  return maybe_update_current_node_configuration();
+              }
+              return ss::now();
+          })
+          .handle_exception_type([](const ss::gate_closed_exception& e) {
+              vlog(
+                clusterlog.debug,
+                "unable to update node configuration, gate closed - {}",
+                e);
+          });
     });
 }
 
@@ -351,6 +448,25 @@ members_manager::handle_join_request(model::broker broker) {
     vlog(clusterlog.info, "Processing node '{}' join request", broker.id());
     // curent node is a leader
     if (_raft0->is_leader()) {
+        // if configuration contains the broker already just update its config
+        // with data from join request
+
+        if (_raft0->config().contains_broker(broker.id())) {
+            vlog(
+              clusterlog.info,
+              "Broker {} is already member of a cluster, updating "
+              "configuration",
+              broker.id());
+            auto req = configuration_update_request(
+              std::move(broker), _self.id());
+            return handle_configuration_update_request(std::move(req))
+              .then([](result<configuration_update_reply> r) {
+                  if (r) {
+                      return ret_t(join_reply{.success = r.value().success});
+                  }
+                  return ret_t(r.error());
+              });
+        }
         // Just update raft0 configuration
         // we do not use revisions in raft0 configuration, it is always revision
         // 0 which is perfectly fine. this will work like revision less raft
@@ -617,6 +733,26 @@ members_manager::handle_configuration_update_request(
           return ss::make_ready_future<ret_t>(
             errc::join_request_dispatch_error);
       });
-} // namespace cluster
+}
+std::ostream&
+operator<<(std::ostream& o, const members_manager::node_update_type& tp) {
+    switch (tp) {
+    case members_manager::node_update_type::added:
+        return o << "added";
+    case members_manager::node_update_type::decommissioned:
+        return o << "decommissioned";
+    case members_manager::node_update_type::recommissioned:
+        return o << "recommissioned";
+    case members_manager::node_update_type::reallocation_finished:
+        return o << "reallocation_finished";
+    }
+    return o << "unknown";
+}
+
+std::ostream&
+operator<<(std::ostream& o, const members_manager::node_update& u) {
+    fmt::print(o, "{{node_id: {}, type: {}}}", u.id, u.type);
+    return o;
+}
 
 } // namespace cluster

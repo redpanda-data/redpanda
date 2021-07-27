@@ -45,8 +45,8 @@ func checkGeneratedFiles(fs afero.Fs, t *testing.T, basePath string) {
 	checkFilesExist(fs, t, []string{
 		filepath.Join(basePath, "package.json"),
 		filepath.Join(basePath, "webpack.js"),
-		filepath.Join(basePath, "src", "wasm.js"),
-		filepath.Join(basePath, "test", "wasm.test.js"),
+		filepath.Join(basePath, "src", "main.js"),
+		filepath.Join(basePath, "test", "main.test.js"),
 	})
 }
 

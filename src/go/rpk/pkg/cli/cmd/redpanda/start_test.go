@@ -1333,6 +1333,26 @@ func TestStartCommand(t *testing.T) {
 			require.Equal(st, "55", rpArgs.SeastarFlags["smp"])
 		},
 	}, {
+		name: "it should allow setting flags with multiple key=values in rpk.additional_start_flags",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+		},
+		before: func(fs afero.Fs) error {
+			mgr := config.NewManager(fs)
+			conf := config.Default()
+			conf.Rpk.AdditionalStartFlags = []string{
+				"--logger-log-level=archival=debug:cloud_storage=debug",
+			}
+			return mgr.Write(conf)
+		},
+		postCheck: func(
+			_ afero.Fs,
+			rpArgs *rp.RedpandaArgs,
+			st *testing.T,
+		) {
+			require.Equal(st, "archival=debug:cloud_storage=debug", rpArgs.SeastarFlags["logger-log-level"])
+		},
+	}, {
 		name: "it should pass the last instance of a duplicate flag passed to rpk start",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",

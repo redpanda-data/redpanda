@@ -169,6 +169,15 @@ void application::initialize(
   std::optional<YAML::Node> schema_reg_cfg,
   std::optional<YAML::Node> schema_reg_client_cfg,
   std::optional<scheduling_groups> groups) {
+    /*
+     * allocate per-core zstd decompression workspace. it can be several
+     * megabytes in size, so do it before memory becomes fragmented.
+     */
+    ss::smp::invoke_on_all([] {
+        compression::stream_zstd::init_workspace(
+          config::shard_local_cfg().zstd_decompress_workspace_bytes());
+    }).get0();
+
     if (config::shard_local_cfg().enable_pid_file()) {
         syschecks::pidfile_create(config::shard_local_cfg().pidfile_path());
     }
@@ -456,6 +465,9 @@ void application::wire_up_services() {
           .get();
     }
     if (_schema_reg_config) {
+        _schema_registry_store.start(smp_service_groups.proxy_smp_sg()).get();
+        _deferred.emplace_back([this] { _schema_registry_store.stop().get(); });
+
         construct_service(
           _schema_registry_client, to_yaml(*_schema_reg_client_config))
           .get();
@@ -466,7 +478,8 @@ void application::wire_up_services() {
           // TODO: Improve memory budget for services
           // https://github.com/vectorizedio/redpanda/issues/1392
           memory_groups::kafka_total_memory(),
-          std::reference_wrapper(_schema_registry_client))
+          std::reference_wrapper(_schema_registry_client),
+          std::reference_wrapper(_schema_registry_store))
           .get();
     }
 }
@@ -498,16 +511,33 @@ void application::wire_up_redpanda_services() {
           .get();
     }
 
-    syschecks::systemd_message("Intializing raft group manager").get();
-    construct_service(
-      raft_group_manager,
-      model::node_id(config::shard_local_cfg().node_id()),
-      config::shard_local_cfg().raft_io_timeout_ms(),
-      config::shard_local_cfg().raft_heartbeat_interval_ms(),
-      config::shard_local_cfg().raft_heartbeat_timeout_ms(),
-      std::ref(_raft_connection_cache),
-      std::ref(storage))
+    syschecks::systemd_message("Intializing raft recovery throttle").get();
+    recovery_throttle
+      .start(
+        config::shard_local_cfg().raft_learner_recovery_rate() / ss::smp::count)
       .get();
+
+    syschecks::systemd_message("Intializing raft group manager").get();
+    raft_group_manager
+      .start(
+        model::node_id(config::shard_local_cfg().node_id()),
+        config::shard_local_cfg().raft_io_timeout_ms(),
+        _scheduling_groups.raft_sg(),
+        config::shard_local_cfg().raft_heartbeat_interval_ms(),
+        config::shard_local_cfg().raft_heartbeat_timeout_ms(),
+        std::ref(_raft_connection_cache),
+        std::ref(storage),
+        std::ref(recovery_throttle))
+      .get();
+
+    // custom handling for recovery_throttle and raft group manager shutdown.
+    // the former needs to happen first in order to ensure that any raft groups
+    // that are being throttled are released so that they can make be quickly
+    // shutdown by the group manager.
+    _deferred.emplace_back([this] {
+        recovery_throttle.stop().get();
+        raft_group_manager.stop().get();
+    });
 
     syschecks::systemd_message("Adding partition manager").get();
     construct_service(

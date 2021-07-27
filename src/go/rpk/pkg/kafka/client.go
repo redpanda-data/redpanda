@@ -10,6 +10,7 @@
 package kafka
 
 import (
+	"crypto/tls"
 	"fmt"
 	"sync"
 	"time"
@@ -18,7 +19,6 @@ import (
 	"github.com/avast/retry-go"
 	log "github.com/sirupsen/logrus"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
-	vtls "github.com/vectorizedio/redpanda/src/go/rpk/pkg/tls"
 )
 
 func DefaultConfig() *sarama.Config {
@@ -44,7 +44,7 @@ func DefaultConfig() *sarama.Config {
 }
 
 // Overrides the default config with the redpanda config values, such as TLS.
-func LoadConfig(tls *config.TLS, scram *config.SCRAM) (*sarama.Config, error) {
+func LoadConfig(tls *tls.Config, sasl *config.SASL) (*sarama.Config, error) {
 	var err error
 	c := DefaultConfig()
 
@@ -55,8 +55,8 @@ func LoadConfig(tls *config.TLS, scram *config.SCRAM) (*sarama.Config, error) {
 		}
 	}
 
-	if scram != nil {
-		return ConfigureSASL(c, scram)
+	if sasl != nil {
+		return ConfigureSASL(c, sasl)
 	}
 	return c, nil
 }
@@ -68,9 +68,9 @@ func InitClient(brokers ...string) (sarama.Client, error) {
 
 // Initializes a client using values from the configuration when possible.
 func InitClientWithConf(
-	tls *config.TLS, scram *config.SCRAM, brokers ...string,
+	tls *tls.Config, sasl *config.SASL, brokers ...string,
 ) (sarama.Client, error) {
-	c, err := LoadConfig(tls, scram)
+	c, err := LoadConfig(tls, sasl)
 	if err != nil {
 		return nil, err
 	}
@@ -182,17 +182,17 @@ func RetrySend(
 }
 
 func ConfigureSASL(
-	saramaConf *sarama.Config, scram *config.SCRAM,
+	saramaConf *sarama.Config, sasl *config.SASL,
 ) (*sarama.Config, error) {
-	if scram.Password == "" || scram.User == "" || scram.Type == "" {
+	if sasl.Password == "" || sasl.User == "" || sasl.Mechanism == "" {
 		return saramaConf, nil
 	}
 
 	saramaConf.Net.SASL.Enable = true
 	saramaConf.Net.SASL.Handshake = true
-	saramaConf.Net.SASL.User = scram.User
-	saramaConf.Net.SASL.Password = scram.Password
-	switch scram.Type {
+	saramaConf.Net.SASL.User = sasl.User
+	saramaConf.Net.SASL.Password = sasl.Password
+	switch sasl.Mechanism {
 	case sarama.SASLTypeSCRAMSHA256:
 		saramaConf.Net.SASL.SCRAMClientGeneratorFunc =
 			func() sarama.SCRAMClient {
@@ -207,7 +207,7 @@ func ConfigureSASL(
 		saramaConf.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
 	default:
 		return nil, fmt.Errorf("unrecongnized Salted Challenge Response "+
-			"Authentication Mechanism (SCRAM): '%s'.", scram.Type)
+			"Authentication Mechanism (SCRAM): '%s'.", sasl.Mechanism)
 	}
 	return saramaConf, nil
 }
@@ -216,18 +216,8 @@ func ConfigureSASL(
 // redpanda.kafka_api_tls are set in the configuration. Doesn't modify the
 // configuration otherwise.
 func configureTLS(
-	saramaConf *sarama.Config, tlsConf *config.TLS,
+	saramaConf *sarama.Config, tlsConfig *tls.Config,
 ) (*sarama.Config, error) {
-	tlsConfig, err := vtls.BuildTLSConfig(
-		tlsConf.CertFile,
-		tlsConf.KeyFile,
-		tlsConf.TruststoreFile,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
 	if tlsConfig != nil {
 		saramaConf.Net.TLS.Config = tlsConfig
 		saramaConf.Net.TLS.Enable = true
