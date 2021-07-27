@@ -764,15 +764,22 @@ func (r *StatefulSetResource) portsConfiguration() string {
 }
 
 func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
-	ports := []corev1.ContainerPort{{
-		Name:          AdminPortName,
-		ContainerPort: int32(r.pandaCluster.AdminAPIInternal().Port),
-	}}
-	internalListener := r.pandaCluster.InternalListener()
-	ports = append(ports, corev1.ContainerPort{
-		Name:          InternalListenerName,
-		ContainerPort: int32(internalListener.Port),
-	})
+	ports := []corev1.ContainerPort{}
+
+	if adminAPIInternal := r.pandaCluster.AdminAPIInternal(); adminAPIInternal != nil {
+		ports = append(ports, corev1.ContainerPort{
+			Name:          AdminPortName,
+			ContainerPort: int32(adminAPIInternal.Port),
+		})
+	}
+
+	if internalListener := r.pandaCluster.InternalListener(); internalListener != nil {
+		ports = append(ports, corev1.ContainerPort{
+			Name:          InternalListenerName,
+			ContainerPort: int32(internalListener.Port),
+		})
+	}
+
 	if internalProxy := r.pandaCluster.PandaproxyAPIInternal(); internalProxy != nil {
 		ports = append(ports, corev1.ContainerPort{
 			Name:          PandaproxyPortInternalName,
