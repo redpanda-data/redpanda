@@ -158,8 +158,10 @@ class SchemaRegistryTest(RedpandaTest):
     def _get_schemas_ids_id(self, id, headers=HTTP_GET_HEADERS):
         return self._request("GET", f"schemas/ids/{id}", headers=headers)
 
-    def _get_subjects(self, headers=HTTP_GET_HEADERS):
-        return self._request("GET", f"subjects", headers=headers)
+    def _get_subjects(self, deleted=False, headers=HTTP_GET_HEADERS):
+        return self._request("GET",
+                             f"subjects{'?deleted=true' if deleted else ''}",
+                             headers=headers)
 
     def _post_subjects_subject_versions(self,
                                         subject,
@@ -579,6 +581,90 @@ class SchemaRegistryTest(RedpandaTest):
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json() == [1, 2, 3]
+
+    @cluster(num_nodes=3)
+    def test_mixed_deletes(self):
+        """
+        Exercise unfriendly ordering of soft/hard version deletes
+        """
+        topic = create_topic_names(1)[0]
+        subject = f"{topic}-key"
+        schema_1_data = json.dumps({"schema": schema1_def})
+        schema_2_data = json.dumps({"schema": schema2_def})
+
+        result_raw = self._post_subjects_subject_versions(subject=subject,
+                                                          data=schema_1_data)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == {"id": 1}
+
+        result_raw = self._post_subjects_subject_versions(subject=subject,
+                                                          data=schema_2_data)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == {"id": 2}
+
+        # A 'latest' hard deletion will always fail because it tries
+        # to delete the latest non-soft-deleted version
+        r = self._delete_subject_version(subject=subject,
+                                         version="latest",
+                                         permanent=True)
+        assert r.status_code == requests.codes.not_found
+        assert r.json()['error_code'] == 40407
+
+        # Latest soft deletions are okay
+        r = self._delete_subject_version(subject=subject,
+                                         version="latest",
+                                         permanent=False)
+        assert r.status_code == requests.codes.ok
+
+        # A latest hard deletion still fails, because the 'latest' is
+        # version 1
+        r = self._delete_subject_version(subject=subject,
+                                         version="latest",
+                                         permanent=True)
+        assert r.status_code == requests.codes.not_found
+        assert r.json()['error_code'] == 40407
+
+        # Latest soft deletions are okay
+        r = self._delete_subject_version(subject=subject,
+                                         version="latest",
+                                         permanent=False)
+        assert r.status_code == requests.codes.ok
+
+        # Subject should still be visible with deleted=true
+        r = self._get_subjects(deleted=True)
+        assert r.status_code == requests.codes.ok
+        assert r.json() == [subject]
+
+        # Subject with all versions deleted should be invisible to normal listing
+        r = self._get_subjects()
+        assert r.status_code == requests.codes.ok
+        assert r.json() == []
+
+        # Hard-deleting by specific version number & having already soft deleted it
+        r = self._delete_subject_version(subject=subject,
+                                         version="2",
+                                         permanent=True)
+        assert r.status_code == requests.codes.ok
+
+        # Hard-deleting by specific version number & having already soft deleted it
+        r = self._delete_subject_version(subject=subject,
+                                         version="1",
+                                         permanent=True)
+        assert r.status_code == requests.codes.ok
+
+        # Hard deleting all versions is equivalent to hard deleting the subject,
+        # so a subsequent attempt to delete latest version on subject
+        # gives a subject_not_found error
+        r = self._delete_subject_version(subject=subject,
+                                         version="latest",
+                                         permanent=True)
+        assert r.status_code == requests.codes.not_found
+        assert r.json()['error_code'] == 40401
+
+        # Subject is now truly gone, not even visible with deleted=true
+        r = self._get_subjects(deleted=True)
+        assert r.status_code == requests.codes.ok
+        assert r.json() == []
 
     @cluster(num_nodes=4)
     def test_concurrent_writes(self):
