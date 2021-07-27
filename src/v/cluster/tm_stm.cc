@@ -334,12 +334,19 @@ ss::future<> tm_stm::apply(model::record_batch b) {
 
     iobuf_parser val_reader(std::move(val_buf));
     auto version = reflection::adl<int8_t>{}.from(val_reader);
-    vassert(
-      version == tm_transaction::version,
-      "unknown group inflight tx record version: {} expected: {}",
-      version,
-      tm_transaction::version);
-    auto tx = reflection::adl<tm_transaction>{}.from(val_reader);
+
+    tm_transaction tx;
+    if (version == tm_transaction_v0::version) {
+        auto tx0 = reflection::adl<tm_transaction_v0>{}.from(val_reader);
+        tx = tx0.upcast();
+    } else {
+        vassert(
+          version == tm_transaction::version,
+          "unknown group inflight tx record version: {} expected: {}",
+          version,
+          tm_transaction::version);
+        tx = reflection::adl<tm_transaction>{}.from(val_reader);
+    }
 
     auto key_buf = record.release_key();
     iobuf_parser key_reader(std::move(key_buf));
