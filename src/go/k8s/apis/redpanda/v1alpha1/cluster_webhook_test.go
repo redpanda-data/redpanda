@@ -23,6 +23,56 @@ import (
 	"k8s.io/utils/pointer"
 )
 
+func TestDefault(t *testing.T) {
+	type test struct {
+		name                           string
+		replicas                       int32
+		additionalConfigurationPresent bool
+	}
+	tests := []test{
+		{
+			name:                           "do not set default topic replication when there is less than 3 replicas",
+			replicas:                       0,
+			additionalConfigurationPresent: false,
+		},
+		{
+			name:                           "do not set default topic replication when there is less than 3 replicas",
+			replicas:                       1,
+			additionalConfigurationPresent: false,
+		},
+		{
+			name:                           "do not set default topic replication when there is less than 3 replicas",
+			replicas:                       2,
+			additionalConfigurationPresent: false,
+		},
+		{
+			name:                           "do not set default topic replication when there is less than 3 replicas",
+			replicas:                       3,
+			additionalConfigurationPresent: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			redpandaCluster := &v1alpha1.Cluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "",
+				},
+				Spec: v1alpha1.ClusterSpec{
+					Replicas:      pointer.Int32Ptr(tt.replicas),
+					Configuration: v1alpha1.RedpandaConfig{},
+				},
+			}
+
+			redpandaCluster.Default()
+			_, exist := redpandaCluster.Spec.AdditionalConfiguration["redpanda.default_topic_replication"]
+			if exist != tt.additionalConfigurationPresent {
+				t.Fail()
+			}
+		})
+	}
+}
+
 func TestValidateUpdate(t *testing.T) {
 	var replicas1 int32 = 1
 	var replicas2 int32 = 2
