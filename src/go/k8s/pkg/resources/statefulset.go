@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -411,6 +412,7 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 									ContainerPort: int32(r.pandaCluster.Spec.Configuration.RPCServer.Port),
 								},
 							}, r.getPorts()...),
+							StartupProbe: r.getStartupProbe(),
 							Resources: corev1.ResourceRequirements{
 								Limits:   r.pandaCluster.Spec.Resources.Limits,
 								Requests: r.pandaCluster.Spec.Resources.Requests,
@@ -815,6 +817,40 @@ func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
 	}
 
 	return ports
+}
+
+func (r *StatefulSetResource) getStartupProbe() *corev1.Probe {
+	adminApi := r.pandaCluster.AdminAPIInternal()
+	if adminApi == nil {
+		r.logger.Info("BUG! an internal listener for admin API is required")
+		return nil
+	}
+	// TODO: add support for installations with TLS on internal admin API
+	if adminApi.TLS.Enabled || adminApi.TLS.RequireClientAuth {
+		r.logger.Info("WARNING! with TLS enabled for the internal adminAPI, the operator won't add a Startup probe to Redpanda nodes which might be problematic during upgrades or when adding nodes to the cluster")
+		return nil
+	}
+
+	baseProbe := corev1.Probe{
+		Handler: corev1.Handler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path:   "v1/status/started",
+				Port:   intstr.FromInt(adminApi.Port),
+				Scheme: "HTTP",
+			},
+		},
+		// TODO: make max retries configurable
+		//
+		// For clusters with large amounts of data, the startup of a new node can take 10s of minutes.
+		// As a measure of precaution, we're setting the min time for the probe to fail to ~1h.
+		InitialDelaySeconds: 1,
+		TimeoutSeconds:      1,
+		PeriodSeconds:       1,
+		SuccessThreshold:    1, // Once the node is in "started" state, it won't go back to "booting" state
+		FailureThreshold:    3000,
+	}
+
+	return &baseProbe
 }
 
 func statefulSetKind() string {
