@@ -216,7 +216,25 @@ class RedpandaService(Service):
         if self.coproc_enabled():
             self.start_wasm_engine(node)
 
-        self.start_redpanda(node)
+        cmd = (
+            f"nohup {self.find_binary('redpanda')}"
+            f" --redpanda-cfg {RedpandaService.CONFIG_FILE}"
+            f" --default-log-level {self._log_level}"
+            f" --logger-log-level=exception=debug:archival=debug:io=debug:cloud_storage=debug "
+            f" --kernel-page-cache=true "
+            f" --overprovisioned "
+            f" --smp {self._num_cores} "
+            f" --memory 6G "
+            f" --reserve-memory 0M "
+            f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
+
+        # set llvm_profile var for code coverage
+        # each node will create its own copy of the .profraw file
+        # since each node creates a redpanda broker.
+        if self.cov_enabled():
+            cmd = f"LLVM_PROFILE_FILE=\"{RedpandaService.COVERAGE_PROFRAW_CAPTURE}\" " + cmd
+
+        node.account.ssh(cmd)
 
         wait_until(
             lambda: Admin.ready(node).get("status") == "ready",
