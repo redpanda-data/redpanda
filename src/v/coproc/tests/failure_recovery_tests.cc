@@ -35,7 +35,7 @@ FIXTURE_TEST(test_wasm_engine_restart, coproc_test_fixture) {
           model::kafka_namespace, single_input, model::partition_id(i));
         outputs.emplace_back(
           model::kafka_namespace,
-          model::to_materialized_topic(
+          to_materialized_topic(
             single_input, identity_coprocessor::identity_topic),
           model::partition_id(i));
     }

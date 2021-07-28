@@ -148,8 +148,7 @@ list_offsets_topic(list_offsets_ctx& octx, list_offset_topic& topic) {
         }
 
         if (!octx.rctx.metadata_cache().contains(
-              model::topic_namespace_view(
-                model::kafka_namespace, model::get_source_topic(topic.name)),
+              model::topic_namespace_view(model::kafka_namespace, topic.name),
               part.partition_index)) {
             partitions.push_back(
               ss::make_ready_future<list_offset_partition_response>(

@@ -163,25 +163,21 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
     std::vector<ss::future<metadata_response::topic>> new_topics;
 
     for (auto& topic : *request.data.topics) {
-        auto source_topic = model::get_source_topic(topic.name);
         /**
          * Authorize source topic in case if we deal with materialized one
          */
-        if (!ctx.authorized(security::acl_operation::describe, source_topic)) {
+        if (!ctx.authorized(security::acl_operation::describe, topic.name)) {
             // not authorized, return authorization error
             res.push_back(make_error_topic_response(
               std::move(topic.name), error_code::topic_authorization_failed));
             continue;
         }
         if (auto md = ctx.metadata_cache().get_topic_metadata(
-              model::topic_namespace_view(
-                model::kafka_namespace, source_topic));
+              model::topic_namespace_view(model::kafka_namespace, topic.name));
             md) {
             auto src_topic_response = make_topic_response(
               ctx, request, std::move(*md));
-            if (model::is_materialized_topic(topic.name)) {
-                src_topic_response.name = std::move(topic.name);
-            }
+            src_topic_response.name = std::move(topic.name);
             res.push_back(std::move(src_topic_response));
             continue;
         }
@@ -196,7 +192,7 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
         /**
          * check if authorized to create
          */
-        if (!ctx.authorized(security::acl_operation::create, source_topic)) {
+        if (!ctx.authorized(security::acl_operation::create, topic.name)) {
             res.push_back(make_error_topic_response(
               std::move(topic.name), error_code::topic_authorization_failed));
             continue;

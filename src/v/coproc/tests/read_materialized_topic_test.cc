@@ -27,7 +27,7 @@ static kafka::client::transport make_kafka_client() {
 
 FIXTURE_TEST(test_metadata_request, coproc_test_fixture) {
     model::topic input_topic("intpc1");
-    model::topic output_topic = model::to_materialized_topic(
+    model::topic output_topic = to_materialized_topic(
       input_topic, identity_coprocessor::identity_topic);
     setup({{input_topic, 1}}).get();
     model::ntp input_ntp(
@@ -69,7 +69,7 @@ FIXTURE_TEST(test_metadata_request, coproc_test_fixture) {
 
 FIXTURE_TEST(test_read_from_materialized_topic, coproc_test_fixture) {
     model::topic input_topic("foo");
-    model::topic output_topic = model::to_materialized_topic(
+    model::topic output_topic = to_materialized_topic(
       input_topic, identity_coprocessor::identity_topic);
     setup({{input_topic, 1}}).get();
     model::ntp input_ntp(
