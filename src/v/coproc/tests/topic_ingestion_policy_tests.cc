@@ -64,8 +64,7 @@ public:
 
         model::ntp output_ntp(
           model::kafka_namespace,
-          model::to_materialized_topic(
-            infoo, identity_coprocessor::identity_topic),
+          to_materialized_topic(infoo, identity_coprocessor::identity_topic),
           model::partition_id(0));
         auto r = drain(output_ntp, drain_n).get();
         return !r.has_value() ? std::nullopt
@@ -91,7 +90,7 @@ FIXTURE_TEST(test_copro_tip_stored, coproc_test_fixture) {
     model::ntp sttp_ntp(model::kafka_namespace, sttp, model::partition_id(0));
     model::ntp output_ntp(
       model::kafka_namespace,
-      model::to_materialized_topic(sttp, identity_coprocessor::identity_topic),
+      to_materialized_topic(sttp, identity_coprocessor::identity_topic),
       model::partition_id(0));
     setup({{sttp, 1}}).get();
 
