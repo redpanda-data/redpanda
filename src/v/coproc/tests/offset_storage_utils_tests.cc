@@ -114,8 +114,7 @@ FIXTURE_TEST(offset_keeper_saved_offsets, offset_keeper_fixture) {
       .get();
 
     wait_on(
-      model::to_materialized_topic(foo, identity_coprocessor::identity_topic),
-      50)
+      to_materialized_topic(foo, identity_coprocessor::identity_topic), 50)
       .get();
 
     /// Attempt to retrieve the data that should have been written to disk

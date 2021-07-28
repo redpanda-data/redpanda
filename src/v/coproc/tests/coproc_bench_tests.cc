@@ -26,13 +26,13 @@ FIXTURE_TEST(test_coproc_router_multi_route, coproc_bench_fixture) {
     const model::topic input_one("one");
     const model::topic input_two("two");
     /// Expected topics coprocessors will produce onto
-    const model::topic even_mt_one = model::to_materialized_topic(
+    const model::topic even_mt_one = to_materialized_topic(
       input_one, two_way_split_copro::even);
-    const model::topic odd_mt_one = model::to_materialized_topic(
+    const model::topic odd_mt_one = to_materialized_topic(
       input_one, two_way_split_copro::odd);
-    const model::topic even_mt_two = model::to_materialized_topic(
+    const model::topic even_mt_two = to_materialized_topic(
       input_two, two_way_split_copro::even);
-    const model::topic odd_mt_two = model::to_materialized_topic(
+    const model::topic odd_mt_two = to_materialized_topic(
       input_two, two_way_split_copro::odd);
 
     /// Deploy coprocessors and prime v::storage with logs
@@ -75,7 +75,7 @@ FIXTURE_TEST(test_coproc_router_giant_fanin, coproc_bench_fixture) {
     const std::size_t n_copros = 50;
     const std::size_t n_partitions = 10;
     const model::topic source_topic("sole_input");
-    const model::topic output_topic = model::to_materialized_topic(
+    const model::topic output_topic = to_materialized_topic(
       source_topic, identity_coprocessor::identity_topic);
     std::vector<coproc_test_fixture::deploy> deploys;
     for (uint64_t i = 0; i < n_copros; ++i) {
@@ -123,7 +123,7 @@ FIXTURE_TEST(test_coproc_router_giant_one_to_many, coproc_bench_fixture) {
     log_layout_map inputs = {{source_topic, n_partitions}};
     log_layout_map outputs;
     for (std::size_t i = 0; i < n_copros; ++i) {
-        auto materialized_topic = model::to_materialized_topic(
+        auto materialized_topic = to_materialized_topic(
           source_topic, model::topic(ssx::sformat("identity_topic_{}", i)));
         outputs.emplace(materialized_topic, n_partitions);
     }
