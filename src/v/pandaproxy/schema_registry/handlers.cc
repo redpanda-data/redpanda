@@ -142,8 +142,12 @@ put_config_subject(server::request_t rq, server::reply_t rp) {
 
     // get_or_load because we might be modifying a subject we don't have
     // in cache yet
-    co_await get_or_load(rq, [&rq, sub, config]() {
-        return rq.service().writer().write_config(sub, config.compat);
+    co_await get_or_load(rq, [&rq, sub, config]() -> ss::future<bool> {
+        // Throw if it's not found
+        co_await rq.service().schema_store().get_compatibility(sub);
+
+        co_return co_await rq.service().writer().write_config(
+          sub, config.compat);
     });
 
     auto json_rslt = ppj::rjson_serialize(config);
