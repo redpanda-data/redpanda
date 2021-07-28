@@ -53,7 +53,8 @@ enum class errc : int16_t {
     partition_configuration_differs,
     data_policy_already_exists,
     data_policy_not_exists,
-    missing_materialized_source_topic
+    missing_materialized_source_topic,
+    invalid_delete_topic_request
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -147,6 +148,8 @@ struct errc_category final : public std::error_category {
         case errc::missing_materialized_source_topic:
             return "Attempted to create a materialized log for a source topic "
                    "that does not exist";
+        case errc::invalid_delete_topic_request:
+            return "Requested to delete a materialized topic is invalid";
         }
         return "cluster::errc::unknown";
     }

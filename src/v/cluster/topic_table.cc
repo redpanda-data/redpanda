@@ -70,6 +70,10 @@ ss::future<> topic_table::stop() {
 ss::future<std::error_code>
 topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
     if (auto tp = _topics.find(cmd.value); tp != _topics.end()) {
+        if (is_topic_materialized(tp->second.configuration.cfg)) {
+            return ss::make_ready_future<std::error_code>(
+              errc::invalid_delete_topic_request);
+        }
         for (auto& p : tp->second.configuration.assignments) {
             auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, p.id);
             _pending_deltas.emplace_back(

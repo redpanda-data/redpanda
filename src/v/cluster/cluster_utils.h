@@ -56,6 +56,11 @@ std::vector<topic_result> create_topic_results(
     return results;
 }
 
+/// Checks if topic is materialized by looking at topic property cfg
+inline bool is_topic_materialized(const topic_configuration& cfg) {
+    return cfg.properties.source_topic.has_value();
+}
+
 std::vector<topic_result> create_topic_results(
   const std::vector<model::topic_namespace>& topics, errc error_code);
 
