@@ -366,6 +366,9 @@ seq_writer::delete_subject_permanent_inner(
         }
     }
 
+    // Stash the list of versions to return at end
+    auto versions = co_await _store.get_versions(sub, include_deleted::yes);
+
     // Produce tombstones.  We do not need to check where they landed,
     // because these can arrive in any order and be safely repeated.
     auto batch = std::move(rb).build();
@@ -400,7 +403,7 @@ seq_writer::delete_subject_permanent_inner(
         advance_offset_inner(offset);
         offset++;
     }
-    co_return std::vector<schema_version>();
+    co_return versions;
 }
 
 } // namespace pandaproxy::schema_registry
