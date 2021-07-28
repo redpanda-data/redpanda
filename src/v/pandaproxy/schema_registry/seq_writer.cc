@@ -201,7 +201,8 @@ ss::future<bool> seq_writer::write_config(
             // Check for no-op case
             compatibility_level existing;
             if (sub.has_value()) {
-                existing = co_await seq._store.get_compatibility(sub.value());
+                existing = co_await seq._store.get_compatibility(
+                  sub.value(), default_to_global::no);
             } else {
                 existing = co_await seq._store.get_compatibility();
             }

@@ -326,6 +326,7 @@ BOOST_AUTO_TEST_CASE(test_store_subject_compat) {
     // times
 
     pps::seq_marker dummy_marker;
+    auto fallback = pps::default_to_global::yes;
 
     pps::compatibility_level global_expected{pps::compatibility_level::none};
     pps::store s;
@@ -336,50 +337,56 @@ BOOST_AUTO_TEST_CASE(test_store_subject_compat) {
     BOOST_REQUIRE(
       s.set_compatibility(dummy_marker, subject0, sub_expected).value()
       == true);
-    BOOST_REQUIRE(s.get_compatibility(subject0).value() == sub_expected);
+    BOOST_REQUIRE(
+      s.get_compatibility(subject0, fallback).value() == sub_expected);
 
     // duplicate should return false
     sub_expected = pps::compatibility_level::backward;
     BOOST_REQUIRE(
       s.set_compatibility(dummy_marker, subject0, sub_expected).value()
       == false);
-    BOOST_REQUIRE(s.get_compatibility(subject0).value() == sub_expected);
+    BOOST_REQUIRE(
+      s.get_compatibility(subject0, fallback).value() == sub_expected);
 
     sub_expected = pps::compatibility_level::full_transitive;
     BOOST_REQUIRE(
       s.set_compatibility(dummy_marker, subject0, sub_expected).value()
       == true);
-    BOOST_REQUIRE(s.get_compatibility(subject0).value() == sub_expected);
+    BOOST_REQUIRE(
+      s.get_compatibility(subject0, fallback).value() == sub_expected);
     BOOST_REQUIRE(s.get_compatibility().value() == global_expected);
 
     // Clearing compatibility should fallback to global
     BOOST_REQUIRE(s.clear_compatibility(subject0).value() == true);
-    BOOST_REQUIRE(s.get_compatibility(subject0).value() == global_expected);
+    BOOST_REQUIRE(
+      s.get_compatibility(subject0, fallback).value() == global_expected);
 }
 
 BOOST_AUTO_TEST_CASE(test_store_subject_compat_fallback) {
     // A Subject should fallback to the current global setting
+    auto fallback = pps::default_to_global::yes;
 
     pps::compatibility_level expected{pps::compatibility_level::none};
     pps::store s;
     s.insert(subject0, string_def0, pps::schema_type::avro);
-    BOOST_REQUIRE(s.get_compatibility(subject0).value() == expected);
+    BOOST_REQUIRE(s.get_compatibility(subject0, fallback).value() == expected);
 
     expected = pps::compatibility_level::backward;
     BOOST_REQUIRE(s.set_compatibility(expected).value() == true);
-    BOOST_REQUIRE(s.get_compatibility(subject0).value() == expected);
+    BOOST_REQUIRE(s.get_compatibility(subject0, fallback).value() == expected);
 }
 
 BOOST_AUTO_TEST_CASE(test_store_invalid_subject_compat) {
     // Setting and getting a compatibility for a non-existant subject should
     // fail
+    auto fallback = pps::default_to_global::yes;
 
     pps::seq_marker dummy_marker;
     pps::compatibility_level expected{pps::compatibility_level::none};
     pps::store s;
 
     BOOST_REQUIRE_EQUAL(
-      s.get_compatibility(subject0).error().code(),
+      s.get_compatibility(subject0, fallback).error().code(),
       pps::error_code::subject_not_found);
 
     expected = pps::compatibility_level::backward;

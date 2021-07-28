@@ -216,15 +216,12 @@ ss::future<compatibility_level> sharded_store::get_compatibility() {
     co_return _store.local().get_compatibility().value();
 }
 
-ss::future<compatibility_level>
-sharded_store::get_compatibility(const subject& sub) {
-    using overload_t = result<compatibility_level> (store::*)(const subject&)
-      const;
-    auto level = co_await _store.invoke_on(
-      shard_for(sub),
-      _smp_opts,
-      static_cast<overload_t>(&store::get_compatibility),
-      sub);
+ss::future<compatibility_level> sharded_store::get_compatibility(
+  const subject& sub, default_to_global fallback) {
+    auto get = [sub, fallback](store& s) {
+        return s.get_compatibility(sub, fallback);
+    };
+    auto level = co_await _store.invoke_on(shard_for(sub), get);
     co_return level.value();
 }
 
@@ -354,7 +351,7 @@ ss::future<bool> sharded_store::is_compatible(
     }
 
     // Lookup the compatibility level
-    auto compat = co_await get_compatibility(sub);
+    auto compat = co_await get_compatibility(sub, default_to_global::yes);
 
     if (compat == compatibility_level::none) {
         co_return true;

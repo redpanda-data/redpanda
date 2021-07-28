@@ -83,7 +83,8 @@ public:
     ss::future<compatibility_level> get_compatibility();
 
     ///\brief Get the compatibility level for a subject, or fallback to global.
-    ss::future<compatibility_level> get_compatibility(const subject& sub);
+    ss::future<compatibility_level>
+    get_compatibility(const subject& sub, default_to_global fallback);
 
     ///\brief Set the global compatibility level.
     ss::future<bool> set_compatibility(compatibility_level compatibility);

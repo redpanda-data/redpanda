@@ -90,12 +90,16 @@ ss::future<server::reply_t>
 get_config_subject(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto sub = parse::request_param<subject>(*rq.req, "subject");
+    auto fallback = parse::query_param<std::optional<default_to_global>>(
+                      *rq.req, "defaultToGlobal")
+                      .value_or(default_to_global::no);
     rq.req.reset();
 
     // Ensure we see latest writes
     co_await rq.service().writer().read_sync();
 
-    auto res = co_await rq.service().schema_store().get_compatibility(sub);
+    auto res = co_await rq.service().schema_store().get_compatibility(
+      sub, fallback);
 
     auto json_rslt = ppj::rjson_serialize(get_config_req_rep{.compat = res});
     rp.rep->write_body("json", json_rslt);
