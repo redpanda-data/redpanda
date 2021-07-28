@@ -69,3 +69,27 @@ const auto schema8
       .value();
 const auto badDefaultNullString_def = pps::make_avro_schema_definition(
   R"({"type":"record","name":"myrecord","fields":[{"type":["null","string"],"name":"f1","default":"null"},{"type":"string","name":"f2","default":"foo"},{"type":"string","name":"f3","default":"bar"}]})");
+const auto schema_int
+  = pps::make_avro_schema_definition(
+      R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"int"}]})")
+      .value();
+const auto schema_long
+  = pps::make_avro_schema_definition(
+      R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"long"}]})")
+      .value();
+const auto schema_float
+  = pps::make_avro_schema_definition(
+      R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"float"}]})")
+      .value();
+const auto schema_double
+  = pps::make_avro_schema_definition(
+      R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"double"}]})")
+      .value();
+const auto schema_bytes
+  = pps::make_avro_schema_definition(
+      R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"bytes"}]})")
+      .value();
+const auto schema_string
+  = pps::make_avro_schema_definition(
+      R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"}]})")
+      .value();

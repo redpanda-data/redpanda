@@ -17,6 +17,20 @@
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
 
+BOOST_AUTO_TEST_CASE(test_avro_type_promotion) {
+    BOOST_REQUIRE(check_compatible(schema_long, schema_int));
+    BOOST_REQUIRE(check_compatible(schema_float, schema_int));
+    BOOST_REQUIRE(check_compatible(schema_double, schema_int));
+
+    BOOST_REQUIRE(check_compatible(schema_float, schema_long));
+    BOOST_REQUIRE(check_compatible(schema_double, schema_long));
+
+    BOOST_REQUIRE(check_compatible(schema_double, schema_float));
+
+    BOOST_REQUIRE(check_compatible(schema_string, schema_bytes));
+    BOOST_REQUIRE(check_compatible(schema_bytes, schema_string));
+}
+
 BOOST_AUTO_TEST_CASE(test_avro_enum) {
     // Adding an enum field is ok
     BOOST_REQUIRE(check_compatible(enum3, enum2));
