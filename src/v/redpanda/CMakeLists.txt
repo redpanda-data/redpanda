@@ -56,7 +56,7 @@ seastar_generate_swagger(
 
 v_cc_library(
   NAME application
-  SRCS 
+  SRCS
     admin_server.cc
     application.cc
   DEPS
@@ -68,6 +68,7 @@ v_cc_library(
     v::pandaproxy_rest
     v::pandaproxy_schema_registry
     v::archival
+    v::v8_engine
   )
 
 add_executable(redpanda

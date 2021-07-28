@@ -36,6 +36,8 @@
 #include "security/credential_store.h"
 #include "storage/compaction_controller.h"
 #include "storage/fwd.h"
+#include "v8_engine/environment.h"
+#include "v8_engine/executor.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/metrics_registration.hh>
@@ -108,6 +110,11 @@ private:
         return cfg.developer_mode() && cfg.enable_coproc();
     }
 
+    bool v8_enabled() {
+        const auto& cfg = config::shard_local_cfg();
+        return cfg.developer_mode() && cfg.enable_v8();
+    }
+
     bool archival_storage_enabled();
 
     template<typename Service, typename... Args>
@@ -135,6 +142,8 @@ private:
 
     // coproc stuff
     std::unique_ptr<coproc::wasm::async_event_handler> _async_handler;
+    std::unique_ptr<coproc::wasm::data_policy_event_handler>
+      _data_policy_handler;
     std::unique_ptr<coproc::wasm::event_listener> _wasm_event_listener;
 
     ss::sharded<rpc::connection_cache> _raft_connection_cache;
@@ -150,6 +159,9 @@ private:
     ss::sharded<pandaproxy::schema_registry::seq_writer>
       _schema_registry_sequencer;
     ss::sharded<storage::compaction_controller> _compaction_controller;
+
+    std::optional<v8_engine::enviroment> _v8_env;
+    std::unique_ptr<v8_engine::executor_wrapper> _executor;
 
     ss::metrics::metric_groups _metrics;
     kafka::rm_group_proxy_impl _rm_group_proxy;

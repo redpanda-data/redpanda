@@ -21,6 +21,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/internal/pollable_fd.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/util/later.hh>
 
@@ -31,6 +32,7 @@
 #include <condition_variable>
 #include <exception>
 #include <mutex>
+#include <utility>
 
 namespace v8_engine {
 
@@ -223,6 +225,42 @@ private:
     ss::timer<ss::lowres_clock> _watchdog;
 
     ss::shard_id _watchdog_shard;
+};
+
+class executor_wrapper {
+public:
+    executor_wrapper(ss::alien::instance& instance, unsigned core, int64_t size)
+      : _instance(instance)
+      , _core(core)
+      , _size(size) {}
+
+    ss::future<> start() {
+        return _executor_wrapper.start_single(
+          std::ref(_instance), _core, _size);
+    }
+
+    template<typename WrapperFuncForExecutor>
+    ss::future<> submit(
+      WrapperFuncForExecutor&& func_for_executor,
+      std::chrono::milliseconds timeout) {
+        return _executor_wrapper.invoke_on(
+          0,
+          [func_for_executor = std::forward<WrapperFuncForExecutor>(
+             func_for_executor),
+           timeout](executor& exec) mutable {
+              return exec.submit(
+                std::forward<WrapperFuncForExecutor>(func_for_executor),
+                timeout);
+          });
+    }
+
+    ss::future<> stop() { return _executor_wrapper.stop(); }
+
+private:
+    ss::alien::instance& _instance;
+    unsigned _core;
+    int64_t _size;
+    ss::sharded<executor> _executor_wrapper;
 };
 
 } // namespace v8_engine

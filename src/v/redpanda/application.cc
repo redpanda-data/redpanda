@@ -521,6 +521,22 @@ void application::wire_up_redpanda_services() {
           .get();
     }
 
+    if (v8_enabled()) {
+        syschecks::systemd_message("Intializing v8 enviroment").get();
+        _v8_env.emplace();
+
+        auto& cfg = config::shard_local_cfg();
+        construct_single_service(
+          _executor,
+          std::ref(ss::engine().alien()),
+          cfg.core_for_executor,
+          cfg.max_executor_queue_size);
+        _executor->start().get();
+
+        _data_policy_handler
+          = std::make_unique<coproc::wasm::data_policy_event_handler>();
+    }
+
     syschecks::systemd_message("Intializing raft recovery throttle").get();
     recovery_throttle
       .start(
@@ -999,18 +1015,31 @@ void application::start_redpanda() {
     vlog(
       _log.info, "Started Kafka API server listening at {}", conf.kafka_api());
 
-    if (coproc_enabled()) {
+    if (coproc_enabled() || v8_enabled()) {
         construct_single_service(_wasm_event_listener);
 
-        _async_handler = std::make_unique<coproc::wasm::async_event_handler>(
-          std::ref(pacemaker));
+        if (coproc_enabled()) {
+            _async_handler
+              = std::make_unique<coproc::wasm::async_event_handler>(
+                std::ref(pacemaker));
 
-        _wasm_event_listener->register_handler(
-          coproc::wasm::event_type::async, _async_handler.get());
+            _wasm_event_listener->register_handler(
+              coproc::wasm::event_type::async, _async_handler.get());
+        }
+
+        if (v8_enabled()) {
+            _wasm_event_listener->register_handler(
+              coproc::wasm::event_type::data_policy,
+              _data_policy_handler.get());
+        }
 
         _wasm_event_listener->start().get();
+    }
+
+    if (coproc_enabled()) {
         pacemaker.invoke_on_all(&coproc::pacemaker::start).get();
     }
+
     if (config::shard_local_cfg().enable_admin_api()) {
         _admin.invoke_on_all(&admin_server::start).get0();
     }
