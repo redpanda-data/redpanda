@@ -21,7 +21,7 @@ namespace pandaproxy::schema_registry {
 
 using namespace std::chrono_literals;
 
-static const int max_retries = 32;
+static const int max_retries = 4;
 
 class seq_writer final : public ss::peering_sharded_service<seq_writer> {
 public:
@@ -68,8 +68,7 @@ private:
     ss::future<std::vector<schema_version>> delete_subject_permanent_inner(
       subject sub, std::optional<schema_version> version);
 
-    simple_time_jitter<ss::lowres_clock> _jitter{
-      std::chrono::milliseconds{100}};
+    simple_time_jitter<ss::lowres_clock> _jitter{std::chrono::milliseconds{50}};
 
     /// Helper for write paths that use sequence+retry logic to synchronize
     /// multiple writing nodes.
