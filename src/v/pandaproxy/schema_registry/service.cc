@@ -117,12 +117,24 @@ ss::future<> service::do_start() {
 }
 
 ss::future<> service::create_internal_topic() {
-    vlog(plog.debug, "Schema registry: attempting to create internal topic");
-    static constexpr auto make_internal_topic = []() {
+    // Use the default topic replica count, unless our specific setting
+    // for the schema registry chooses to override it.
+    int16_t replication_factor = _config.schema_registry_replication_factor();
+    if (replication_factor == -1) {
+        replication_factor
+          = config::shard_local_cfg().default_topic_replication();
+    }
+
+    vlog(
+      plog.debug,
+      "Schema registry: attempting to create internal topic (replication={})",
+      replication_factor);
+
+    auto make_internal_topic = [replication_factor]() {
         return kafka::creatable_topic{
           .name{model::schema_registry_internal_tp.topic},
           .num_partitions = 1,
-          .replication_factor = 1, // TODO(Ben): Make configurable
+          .replication_factor = replication_factor,
           .assignments{},
           .configs{
             {.name{ss::sstring{kafka::topic_property_cleanup_policy}},
@@ -151,6 +163,11 @@ ss::future<> service::create_internal_topic() {
 }
 
 ss::future<> service::fetch_internal_topic() {
+    vlog(plog.debug, "Schema registry: loading internal topic");
+
+    // TODO: should check the replication_factor of the topic is
+    // what our config calls for
+
     auto offset_res = co_await _client.local().list_offsets(
       model::schema_registry_internal_tp);
     const auto& topics = offset_res.data.topics;
@@ -172,7 +189,7 @@ ss::future<> service::fetch_internal_topic() {
       model::schema_registry_internal_tp,
       model::offset{0},
       max_offset)
-      .consume(consume_to_store{_store}, model::no_timeout);
+      .consume(consume_to_store{_store, writer()}, model::no_timeout);
 }
 
 service::service(
@@ -180,7 +197,8 @@ service::service(
   ss::smp_service_group smp_sg,
   size_t max_memory,
   ss::sharded<kafka::client::client>& client,
-  sharded_store& store)
+  sharded_store& store,
+  ss::sharded<seq_writer>& sequencer)
   : _config(config)
   , _mem_sem(max_memory)
   , _client(client)
@@ -192,6 +210,7 @@ service::service(
       "/schema_registry_definitions",
       _ctx)
   , _store(store)
+  , _writer(sequencer)
   , _ensure_started{[this]() { return do_start(); }} {}
 
 ss::future<> service::start() {

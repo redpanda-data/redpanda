@@ -485,6 +485,9 @@ schema_registry:
     name: external
     port: 18081
 
+  # The replication factor of Schema Registry's internal storage topic
+  schema_registry_replication_factor: 3
+
   # A list of TLS configurations for the Schema Registry API.
   # Default: null
   schema_registry_api_tls:

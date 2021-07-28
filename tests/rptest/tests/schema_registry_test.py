@@ -12,11 +12,14 @@ import json
 import logging
 import uuid
 import requests
+import time
+import random
+import os
+
 from ducktape.mark.resource import cluster
-from ducktape.utils.util import wait_until
+from ducktape.services.background_thread import BackgroundThreadService
 
 from rptest.clients.types import TopicSpec
-from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.tests.redpanda_test import RedpandaTest
 
@@ -56,6 +59,62 @@ class SchemaRegistryTest(RedpandaTest):
         requests_log.setLevel(logging.getLogger().level)
         requests_log.propagate = True
 
+        self._ctx = context
+
+    def _request(self, verb, path, hostname=None, **kwargs):
+        """
+
+        :param verb: String, as for first arg to requests.request
+        :param path: URI path without leading slash
+        :param timeout: Optional requests timeout in seconds
+        :return:
+        """
+
+        if hostname is None:
+            # Pick hostname once: we will retry the same place we got an error,
+            # to avoid silently skipping hosts that are persistently broken
+            nodes = [n for n in self.redpanda.nodes]
+            random.shuffle(nodes)
+            node = nodes[0]
+            hostname = node.account.hostname
+
+        uri = f"http://{hostname}:8081/{path}"
+
+        if 'timeout' not in kwargs:
+            kwargs['timeout'] = 60
+
+        # Error codes that may appear during normal API operation, do not
+        # indicate an issue with the service
+        acceptable_errors = {409, 422, 404}
+
+        def accept_response(resp):
+            return 200 <= resp.status_code < 300 or resp.status_code in acceptable_errors
+
+        self.logger.debug(f"{verb} hostname={hostname} {path} {kwargs}")
+
+        # This is not a retry loop: you get *one* retry to handle issues
+        # during startup, after that a failure is a failure.
+        r = requests.request(verb, uri, **kwargs)
+        if not accept_response(r):
+            self.logger.info(
+                f"Retrying for error {r.status_code} on {verb} {path} ({r.text})"
+            )
+            time.sleep(10)
+            r = requests.request(verb, uri, **kwargs)
+            if accept_response(r):
+                self.logger.info(
+                    f"OK after retry {r.status_code} on {verb} {path} ({r.text})"
+                )
+            else:
+                self.logger.info(
+                    f"Error after retry {r.status_code} on {verb} {path} ({r.text})"
+                )
+
+        self.logger.info(
+            f"{r.status_code} {verb} hostname={hostname} {path} {kwargs}")
+
+        return r
+
     def _base_uri(self):
         return f"http://{self.redpanda.nodes[0].account.hostname}:8081"
 
@@ -79,81 +138,92 @@ class SchemaRegistryTest(RedpandaTest):
         return names
 
     def _get_config(self, headers=HTTP_GET_HEADERS):
-        return requests.get(f"{self._base_uri()}/config", headers=headers)
+        return self._request("GET", "config", headers=headers)
 
     def _set_config(self, data, headers=HTTP_POST_HEADERS):
-        return requests.put(f"{self._base_uri()}/config",
-                            headers=headers,
-                            data=data)
+        return self._request("PUT", f"config", headers=headers, data=data)
 
     def _get_config_subject(self, subject, headers=HTTP_GET_HEADERS):
-        return requests.get(f"{self._base_uri()}/config/{subject}",
-                            headers=headers)
+        return self._request("GET", f"config/{subject}", headers=headers)
 
     def _set_config_subject(self, subject, data, headers=HTTP_POST_HEADERS):
-        return requests.put(f"{self._base_uri()}/config/{subject}",
-                            headers=headers,
-                            data=data)
+        return self._request("PUT",
+                             f"config/{subject}",
+                             headers=headers,
+                             data=data)
 
     def _get_schemas_types(self, headers=HTTP_GET_HEADERS):
-        return requests.get(f"{self._base_uri()}/schemas/types",
-                            headers=headers)
+        return self._request("GET", f"schemas/types", headers=headers)
 
     def _get_schemas_ids_id(self, id, headers=HTTP_GET_HEADERS):
-        return requests.get(f"{self._base_uri()}/schemas/ids/{id}",
-                            headers=headers)
+        return self._request("GET", f"schemas/ids/{id}", headers=headers)
 
-    def _get_subjects(self, headers=HTTP_GET_HEADERS):
-        return requests.get(f"{self._base_uri()}/subjects", headers=headers)
+    def _get_subjects(self, deleted=False, headers=HTTP_GET_HEADERS):
+        return self._request("GET",
+                             f"subjects{'?deleted=true' if deleted else ''}",
+                             headers=headers)
 
     def _post_subjects_subject_versions(self,
                                         subject,
                                         data,
-                                        headers=HTTP_POST_HEADERS):
-        return requests.post(f"{self._base_uri()}/subjects/{subject}/versions",
+                                        headers=HTTP_POST_HEADERS,
+                                        **kwargs):
+        return self._request("POST",
+                             f"subjects/{subject}/versions",
                              headers=headers,
-                             data=data)
+                             data=data,
+                             **kwargs)
 
     def _get_subjects_subject_versions_version(self,
                                                subject,
                                                version,
                                                headers=HTTP_GET_HEADERS):
-        return requests.get(
-            f"{self._base_uri()}/subjects/{subject}/versions/{version}",
-            headers=headers)
+        return self._request("GET",
+                             f"subjects/{subject}/versions/{version}",
+                             headers=headers)
 
     def _get_subjects_subject_versions(self,
                                        subject,
                                        deleted=False,
-                                       headers=HTTP_GET_HEADERS):
-        return requests.get(
-            f"{self._base_uri()}/subjects/{subject}/versions{'?deleted=true' if deleted else ''}",
-            headers=headers)
+                                       headers=HTTP_GET_HEADERS,
+                                       **kwargs):
+        return self._request(
+            "GET",
+            f"subjects/{subject}/versions{'?deleted=true' if deleted else ''}",
+            headers=headers,
+            **kwargs)
 
     def _delete_subject(self,
                         subject,
                         permanent=False,
-                        headers=HTTP_GET_HEADERS):
-        return requests.delete(
-            f"{self._base_uri()}/subjects/{subject}{'?permanent=true' if permanent else ''}",
-            headers=headers)
+                        headers=HTTP_GET_HEADERS,
+                        **kwargs):
+        return self._request(
+            "DELETE",
+            f"subjects/{subject}{'?permanent=true' if permanent else ''}",
+            headers=headers,
+            **kwargs)
 
     def _delete_subject_version(self,
                                 subject,
                                 version,
                                 permanent=False,
-                                headers=HTTP_GET_HEADERS):
-        return requests.delete(
-            f"{self._base_uri()}/subjects/{subject}/versions/{version}{'?permanent=true' if permanent else ''}",
-            headers=headers)
+                                headers=HTTP_GET_HEADERS,
+                                **kwargs):
+        return self._request(
+            "DELETE",
+            f"subjects/{subject}/versions/{version}{'?permanent=true' if permanent else ''}",
+            headers=headers,
+            **kwargs)
 
     def _post_compatibility_subject_version(self,
                                             subject,
                                             version,
                                             data,
                                             headers=HTTP_POST_HEADERS):
-        return requests.post(
-            f"{self._base_uri()}/compatibility/subjects/{subject}/versions/{version}",
+        return self._request(
+            "POST",
+            f"compatibility/subjects/{subject}/versions/{version}",
             headers=headers,
             data=data)
 
@@ -185,6 +255,8 @@ class SchemaRegistryTest(RedpandaTest):
 
         self.logger.debug("Get empty subjects")
         result_raw = self._get_subjects()
+        if result_raw.json() != []:
+            self.logger.error(result_raw.json)
         assert result_raw.json() == []
 
         self.logger.debug("Posting schema 1 as a subject key")
@@ -254,7 +326,7 @@ class SchemaRegistryTest(RedpandaTest):
             subject=f"{topic}-key", version=1)
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
-        assert result["name"] == f"{topic}-key"
+        assert result["subject"] == f"{topic}-key"
         assert result["version"] == 1
         # assert result["schema"] == json.dumps(schema_def)
 
@@ -263,7 +335,7 @@ class SchemaRegistryTest(RedpandaTest):
             subject=f"{topic}-key", version="latest")
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
-        assert result["name"] == f"{topic}-key"
+        assert result["subject"] == f"{topic}-key"
         assert result["version"] == 1
         # assert result["schema"] == json.dumps(schema_def)
 
@@ -294,6 +366,12 @@ class SchemaRegistryTest(RedpandaTest):
             data=json.dumps({"compatibility": "FULL"}))
         assert result_raw.json()["compatibility"] == "FULL"
 
+        # Check out set write shows up in a read
+        result_raw = self._get_config()
+        self.logger.debug(
+            f"response {result_raw.status_code} {result_raw.text}")
+        assert result_raw.json()["compatibilityLevel"] == "FULL"
+
         self.logger.debug("Get invalid subject config")
         result_raw = self._get_config_subject(subject="invalid_subject")
         assert result_raw.status_code == requests.codes.not_found
@@ -315,6 +393,7 @@ class SchemaRegistryTest(RedpandaTest):
         result_raw = self._set_config_subject(
             subject=f"{topic}-key",
             data=json.dumps({"compatibility": "BACKWARD_TRANSITIVE"}))
+        assert result_raw.status_code == requests.codes.ok
         assert result_raw.json()["compatibility"] == "BACKWARD_TRANSITIVE"
 
         self.logger.debug("Get subject config - should be overriden")
@@ -407,7 +486,8 @@ class SchemaRegistryTest(RedpandaTest):
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
 
-        self.logger.debug("Permanently delete subject")
+        # Check that permanent delete is refused before soft delete
+        self.logger.debug("Prematurely permanently delete subject")
         result_raw = self._delete_subject(subject=f"{topic}-key",
                                           permanent=True)
         self.logger.debug(result_raw)
@@ -415,7 +495,6 @@ class SchemaRegistryTest(RedpandaTest):
 
         self.logger.debug("Soft delete subject")
         result_raw = self._delete_subject(subject=f"{topic}-key")
-        self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
 
         self.logger.debug("Get versions")
@@ -502,3 +581,127 @@ class SchemaRegistryTest(RedpandaTest):
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json() == [1, 2, 3]
+
+    @cluster(num_nodes=3)
+    def test_mixed_deletes(self):
+        """
+        Exercise unfriendly ordering of soft/hard version deletes
+        """
+        topic = create_topic_names(1)[0]
+        subject = f"{topic}-key"
+        schema_1_data = json.dumps({"schema": schema1_def})
+        schema_2_data = json.dumps({"schema": schema2_def})
+
+        result_raw = self._post_subjects_subject_versions(subject=subject,
+                                                          data=schema_1_data)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == {"id": 1}
+
+        result_raw = self._post_subjects_subject_versions(subject=subject,
+                                                          data=schema_2_data)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == {"id": 2}
+
+        # A 'latest' hard deletion will always fail because it tries
+        # to delete the latest non-soft-deleted version
+        r = self._delete_subject_version(subject=subject,
+                                         version="latest",
+                                         permanent=True)
+        assert r.status_code == requests.codes.not_found
+        assert r.json()['error_code'] == 40407
+
+        # Latest soft deletions are okay
+        r = self._delete_subject_version(subject=subject,
+                                         version="latest",
+                                         permanent=False)
+        assert r.status_code == requests.codes.ok
+
+        # A latest hard deletion still fails, because the 'latest' is
+        # version 1
+        r = self._delete_subject_version(subject=subject,
+                                         version="latest",
+                                         permanent=True)
+        assert r.status_code == requests.codes.not_found
+        assert r.json()['error_code'] == 40407
+
+        # Latest soft deletions are okay
+        r = self._delete_subject_version(subject=subject,
+                                         version="latest",
+                                         permanent=False)
+        assert r.status_code == requests.codes.ok
+
+        # Subject should still be visible with deleted=true
+        r = self._get_subjects(deleted=True)
+        assert r.status_code == requests.codes.ok
+        assert r.json() == [subject]
+
+        # Subject with all versions deleted should be invisible to normal listing
+        r = self._get_subjects()
+        assert r.status_code == requests.codes.ok
+        assert r.json() == []
+
+        # Hard-deleting by specific version number & having already soft deleted it
+        r = self._delete_subject_version(subject=subject,
+                                         version="2",
+                                         permanent=True)
+        assert r.status_code == requests.codes.ok
+
+        # Hard-deleting by specific version number & having already soft deleted it
+        r = self._delete_subject_version(subject=subject,
+                                         version="1",
+                                         permanent=True)
+        assert r.status_code == requests.codes.ok
+
+        # Hard deleting all versions is equivalent to hard deleting the subject,
+        # so a subsequent attempt to delete latest version on subject
+        # gives a subject_not_found error
+        r = self._delete_subject_version(subject=subject,
+                                         version="latest",
+                                         permanent=True)
+        assert r.status_code == requests.codes.not_found
+        assert r.json()['error_code'] == 40401
+
+        # Subject is now truly gone, not even visible with deleted=true
+        r = self._get_subjects(deleted=True)
+        assert r.status_code == requests.codes.ok
+        assert r.json() == []
+
+    @cluster(num_nodes=4)
+    def test_concurrent_writes(self):
+        # Warm up the servers (schema_registry doesn't create topic etc before first access)
+        for node in self.redpanda.nodes:
+            r = self._request("GET",
+                              "subjects",
+                              hostname=node.account.hostname)
+            assert r.status_code == requests.codes.ok
+
+        node_names = [n.account.hostname for n in self.redpanda.nodes]
+
+        # Expose into StressTest
+        logger = self.logger
+        python = "python3.8"
+        script_name = "schema_registry_test_helper.py"
+
+        dir = os.path.dirname(os.path.realpath(__file__))
+        src_path = os.path.join(dir, script_name)
+        dest_path = os.path.join("/tmp", script_name)
+
+        class StressTest(BackgroundThreadService):
+            def __init__(self, context):
+                super(StressTest, self).__init__(context, num_nodes=1)
+
+            def _worker(self, idx, node):
+                node.account.copy_to(src_path, dest_path)
+                ssh_output = node.account.ssh_capture(
+                    f"{python} {dest_path} {' '.join(node_names)}")
+                for line in ssh_output:
+                    logger.info(line)
+
+            def clean_nodes(selfself, nodes):
+                # Remove our remote script
+                for n in nodes:
+                    n.account.remove(dest_path, True)
+
+        svc = StressTest(self._ctx)
+        svc.start()
+        svc.wait()

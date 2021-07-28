@@ -27,9 +27,13 @@ constexpr std::string_view avro_schema_key_sv{
   "keytype": "SCHEMA",
   "subject": "my-kafka-value",
   "version": 1,
-  "magic": 1
+  "magic": 1,
+  "seq": 42,
+  "node": 2
 })"};
 const pps::schema_key avro_schema_key{
+  .seq{model::offset{42}},
+  .node{model::node_id{2}},
   .sub{pps::subject{"my-kafka-value"}},
   .version{pps::schema_version{1}},
   .magic{pps::topic_key_magic{1}}};
@@ -53,19 +57,30 @@ const pps::schema_value avro_schema_value{
 constexpr std::string_view config_key_sv{
   R"({
   "keytype": "CONFIG",
+  "seq": 0,
+  "node": 0,
   "subject": null,
   "magic": 0
 })"};
-const pps::config_key config_key{.sub{}, .magic{pps::topic_key_magic{0}}};
+const pps::config_key config_key{
+  .seq{model::offset{0}},
+  .node{model::node_id{0}},
+  .sub{},
+  .magic{pps::topic_key_magic{0}}};
 
 constexpr std::string_view config_key_sub_sv{
   R"({
   "keytype": "CONFIG",
+  "seq": 0,
+  "node": 0,
   "subject": "my-kafka-value",
   "magic": 0
 })"};
 const pps::config_key config_key_sub{
-  .sub{pps::subject{"my-kafka-value"}}, .magic{pps::topic_key_magic{0}}};
+  .seq{model::offset{0}},
+  .node{model::node_id{0}},
+  .sub{pps::subject{"my-kafka-value"}},
+  .magic{pps::topic_key_magic{0}}};
 
 constexpr std::string_view config_value_sv{
   R"({
@@ -78,9 +93,13 @@ constexpr std::string_view delete_subject_key_sv{
   R"({
   "keytype": "DELETE_SUBJECT",
   "subject": "my-kafka-value",
-  "magic": 0
+  "magic": 0,
+  "seq": 42,
+  "node": 2
 })"};
 const pps::delete_subject_key delete_subject_key{
+  .seq{model::offset{42}},
+  .node{model::node_id{2}},
   .sub{pps::subject{"my-kafka-value"}}};
 
 constexpr std::string_view delete_subject_value_sv{

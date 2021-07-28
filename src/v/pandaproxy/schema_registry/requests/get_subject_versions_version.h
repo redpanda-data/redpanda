@@ -27,7 +27,7 @@ inline void rjson_serialize(
   rapidjson::Writer<rapidjson::StringBuffer>& w,
   const post_subject_versions_version_response& res) {
     w.StartObject();
-    w.Key("name");
+    w.Key("subject");
     ::json::rjson_serialize(w, res.sub);
     w.Key("id");
     ::json::rjson_serialize(w, res.id);

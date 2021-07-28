@@ -134,7 +134,7 @@ public:
                                 seed_servers = std::move(seed_servers),
                                 base_path]() mutable {
             auto& config = config::shard_local_cfg();
-            config.get("node_id").set_value(node_id());
+            config.get("node_id").set_value(node_id);
 
             config.get("rpc_server")
               .set_value(unresolved_address("127.0.0.1", rpc_port));
@@ -183,6 +183,7 @@ public:
         cfg.get("schema_registry_api")
           .set_value(std::vector<model::broker_endpoint>{model::broker_endpoint(
             unresolved_address("127.0.0.1", listen_port))});
+        cfg.get("schema_registry_replication_factor").set_value(int16_t{1});
         return to_yaml(cfg);
     }
 

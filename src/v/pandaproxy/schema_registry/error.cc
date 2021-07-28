@@ -33,15 +33,17 @@ struct error_category final : std::error_category {
         case error_code::subject_version_not_found:
             return "Subject version not found";
         case error_code::subject_soft_deleted:
-            return "Subject was soft deleted. Set permanent=true to delete "
+            return "Subject was soft deleted.Set permanent=true to delete "
                    "permanently";
         case error_code::subject_not_deleted:
             return "Subject not deleted before being permanently deleted";
         case error_code::subject_version_soft_deleted:
-            return "Version was soft deleted. Set permanent=true to delete "
+            return "Version was soft deleted.Set permanent=true to delete "
                    "permanently";
         case error_code::subject_version_not_deleted:
             return "Version not deleted before being permanently deleted";
+        case error_code::write_collision:
+            return "Too many retries on write collision";
         case error_code::topic_parse_error:
             return "Unexpected data found in topic";
         }
@@ -64,6 +66,8 @@ struct error_category final : std::error_category {
             return reply_error_code::subject_version_soft_deleted; // 40406
         case error_code::subject_version_not_deleted:
             return reply_error_code::subject_version_not_deleted; // 40407
+        case error_code::write_collision:
+            return reply_error_code::write_collision; // 50301
         case error_code::schema_invalid:
             return reply_error_code::unprocessable_entity;
         case error_code::topic_parse_error:
