@@ -326,7 +326,7 @@ class SchemaRegistryTest(RedpandaTest):
             subject=f"{topic}-key", version=1)
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
-        assert result["name"] == f"{topic}-key"
+        assert result["subject"] == f"{topic}-key"
         assert result["version"] == 1
         # assert result["schema"] == json.dumps(schema_def)
 
@@ -335,7 +335,7 @@ class SchemaRegistryTest(RedpandaTest):
             subject=f"{topic}-key", version="latest")
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
-        assert result["name"] == f"{topic}-key"
+        assert result["subject"] == f"{topic}-key"
         assert result["version"] == 1
         # assert result["schema"] == json.dumps(schema_def)
 

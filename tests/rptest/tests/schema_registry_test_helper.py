@@ -156,7 +156,8 @@ class WriteWorker(threading.Thread):
 
             self._check_eq(subject, version, "subject_retcode", r.status_code,
                            200)
-            self._check_eq(subject, version, "name", r.json()['name'], subject)
+            self._check_eq(subject, version, "subject",
+                           r.json()['subject'], subject)
             self._check_eq(subject, version, "version",
                            r.json()['version'], version)
             self._check_eq(subject, version, "schema",
