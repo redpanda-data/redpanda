@@ -142,6 +142,16 @@ public:
         return sub_it->second.deleted;
     }
 
+    ///\brief Return the value of the 'deleted' field on a subject
+    result<is_deleted> is_subject_version_deleted(
+      const subject& sub, const schema_version version) const {
+        auto sub_it = BOOST_OUTCOME_TRYX(
+          get_subject_iter(sub, include_deleted::yes));
+        auto v_it = BOOST_OUTCOME_TRYX(
+          get_version_iter(*sub_it, version, include_deleted::yes));
+        return v_it->deleted;
+    }
+
     /// \brief Return the seq_marker write history of a subject
     ///
     /// \return A vector with at least one element

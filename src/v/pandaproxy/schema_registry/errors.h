@@ -76,7 +76,7 @@ inline error_info soft_deleted(const subject& sub) {
     return error_info{
       error_code::subject_soft_deleted,
       fmt::format(
-        "Subject '{}' was soft deleted. Set permanent=true to delete "
+        "Subject '{}' was soft deleted.Set permanent=true to delete "
         "permanently",
         sub())};
 }
@@ -93,7 +93,7 @@ inline error_info soft_deleted(const subject& sub, schema_version version) {
     return error_info{
       error_code::subject_version_soft_deleted,
       fmt::format(
-        "Subject '{}' Version {} was soft deleted. Set permanent=true to "
+        "Subject '{}' Version {} was soft deleted.Set permanent=true to "
         "delete permanently",
         sub(),
         version())};

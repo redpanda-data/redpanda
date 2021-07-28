@@ -33,12 +33,12 @@ struct error_category final : std::error_category {
         case error_code::subject_version_not_found:
             return "Subject version not found";
         case error_code::subject_soft_deleted:
-            return "Subject was soft deleted. Set permanent=true to delete "
+            return "Subject was soft deleted.Set permanent=true to delete "
                    "permanently";
         case error_code::subject_not_deleted:
             return "Subject not deleted before being permanently deleted";
         case error_code::subject_version_soft_deleted:
-            return "Version was soft deleted. Set permanent=true to delete "
+            return "Version was soft deleted.Set permanent=true to delete "
                    "permanently";
         case error_code::subject_version_not_deleted:
             return "Version not deleted before being permanently deleted";

@@ -342,6 +342,12 @@ delete_subject_version(server::request_t rq, server::reply_t rp) {
         co_await rq.service().writer().delete_subject_permanent(
           sub, final_version ? std::nullopt : std::make_optional(version));
     } else {
+        // Refuse to soft-delete the same thing twice
+        if (co_await rq.service().schema_store().is_subject_version_deleted(
+              sub, version)) {
+            throw as_exception(soft_deleted(sub, version));
+        }
+
         // Upsert the version with is_deleted=1
         co_await rq.service().writer().delete_subject_version(sub, version);
     }

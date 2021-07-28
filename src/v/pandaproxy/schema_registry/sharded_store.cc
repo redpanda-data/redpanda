@@ -149,6 +149,18 @@ ss::future<is_deleted> sharded_store::is_subject_deleted(const subject& sub) {
     co_return std::move(deleted).value();
 }
 
+ss::future<is_deleted> sharded_store::is_subject_version_deleted(
+  const subject& sub, const schema_version version) {
+    auto deleted = co_await _store.invoke_on(
+      shard_for(sub),
+      _smp_opts,
+      &store::is_subject_version_deleted,
+      sub,
+      version);
+
+    co_return std::move(deleted).value();
+}
+
 ss::future<std::vector<seq_marker>>
 sharded_store::get_subject_written_at(const subject& sub) {
     auto history = co_await _store.invoke_on(
