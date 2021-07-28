@@ -73,6 +73,7 @@ get_config(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 put_config(server::request_t rq, server::reply_t rp) {
+    parse_content_type_header(rq);
     parse_accept_header(rq, rp);
     auto config = ppj::rjson_parse(
       rq.req->content.data(), put_config_handler<>{});
@@ -134,6 +135,7 @@ std::invoke_result_t<F> get_or_load(server::request_t& rq, F f) {
 
 ss::future<server::reply_t>
 put_config_subject(server::request_t rq, server::reply_t rp) {
+    parse_content_type_header(rq);
     parse_accept_header(rq, rp);
     auto sub = parse::request_param<subject>(*rq.req, "subject");
     auto config = ppj::rjson_parse(
