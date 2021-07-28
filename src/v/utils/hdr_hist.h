@@ -42,7 +42,7 @@ inline hdr_histogram_ptr make_unique_hdr_histogram(
 }
 } // namespace hist_internal
 
-// VERY Expensive object. At default granularity is about 185KB
+// Potentially VERY expensive object. At default granularity is about 4k bytes
 class hdr_hist {
 public:
     using clock_type = std::chrono::high_resolution_clock;
@@ -107,7 +107,7 @@ public:
     hdr_hist(
       int64_t max_value = 3600000000,
       int64_t min = 1,
-      int32_t significant_figures = 3)
+      int32_t significant_figures = 1)
       : _hist(hist_internal::make_unique_hdr_histogram(
         max_value, min, significant_figures)) {}
     hdr_hist(hdr_hist&& o) noexcept
