@@ -216,9 +216,11 @@ public:
 
         schema_version maxver{0};
         for (auto v : versions) {
-            if (v.id == sid) {
+            if (v.id == sid && !(v.deleted || subject_iter->second.deleted)) {
                 // No version to project, the schema is already
-                // present in this subject.
+                // present (and not deleted) in this subject.
+                // For a present-but-deleted case, we proceed
+                // to allocate a new version number.
                 return std::nullopt;
             } else {
                 maxver = std::max(maxver, v.version);
@@ -252,7 +254,7 @@ public:
         sub_it->second.written_at.push_back(marker);
         sub_it->second.deleted = is_deleted::yes;
 
-        const auto& versions = sub_it->second.versions;
+        auto& versions = sub_it->second.versions;
         std::vector<schema_version> res;
         res.reserve(versions.size());
         std::transform(
@@ -263,6 +265,13 @@ public:
 
         if (permanent) {
             _subjects.erase(sub_it);
+        } else {
+            // Mark all versions within the store deleted too: this matters
+            // if someone revives the subject with new versions later, as
+            // these older versions should remain deleted.
+            for (auto& v : versions) {
+                v.deleted = is_deleted::yes;
+            }
         }
 
         return res;
@@ -420,6 +429,7 @@ public:
           std::all_of(versions.begin(), versions.end(), [](const auto& v) {
               return v.deleted;
           }));
+
         if (deleted == all_deleted) {
             // - If we're deleting and all are deleted, subject is deleted
             // - If we're not deleting and some are not deleted, the subject
