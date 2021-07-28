@@ -10,6 +10,8 @@
 package v1alpha1
 
 import (
+	"strconv"
+
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -23,6 +25,11 @@ const (
 	kb = 1024
 	mb = 1024 * kb
 	gb = 1024 * mb
+
+	defaultTopicReplicationNumber = 3
+	minimumReplicas               = 3
+
+	defaultTopicReplicationKey = "redpanda.default_topic_replication"
 )
 
 // log is for logging in this package.
@@ -43,6 +50,16 @@ var _ webhook.Defaulter = &Cluster{}
 // TODO(user): fill in your defaulting logic.
 func (r *Cluster) Default() {
 	log.Info("default", "name", r.Name)
+
+	if *r.Spec.Replicas >= minimumReplicas {
+		if r.Spec.AdditionalConfiguration == nil {
+			r.Spec.AdditionalConfiguration = make(map[string]string)
+		}
+		_, ok := r.Spec.AdditionalConfiguration[defaultTopicReplicationKey]
+		if !ok {
+			r.Spec.AdditionalConfiguration[defaultTopicReplicationKey] = strconv.Itoa(defaultTopicReplicationNumber)
+		}
+	}
 }
 
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
