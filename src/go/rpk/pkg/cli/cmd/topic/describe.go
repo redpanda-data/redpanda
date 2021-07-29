@@ -137,7 +137,7 @@ func NewDescribeCommand(
 			})
 			t.Render()
 			t.ClearRows()
-			partitionHeaders := []string{"Partition", "Leader", "Replicas", "In-Sync Replicas"}
+			partitionHeaders := []string{"Partition", "Leader", "Replicas"}
 			if includeWatermarks {
 				partitionHeaders = append(partitionHeaders, "High Watermark")
 			}
@@ -159,16 +159,10 @@ func NewDescribeCommand(
 				sort.Slice(sortedReplicas, func(i, j int) bool {
 					return sortedReplicas[i] < sortedReplicas[j]
 				})
-
-				sortedISR := partition.Isr
-				sort.Slice(sortedISR, func(i, j int) bool {
-					return sortedISR[i] < sortedISR[j]
-				})
 				row := []string{
 					strconv.Itoa(int(partition.ID)),
 					strconv.Itoa(int(partition.Leader)),
 					fmt.Sprintf("%v", sortedReplicas),
-					fmt.Sprintf("%v", sortedISR),
 				}
 				if includeWatermarks {
 					row = append(
