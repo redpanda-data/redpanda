@@ -175,6 +175,7 @@ tm_stm::mark_tx_ongoing(kafka::transactional_id tx_id) {
     ptx->second.partitions.clear();
     ptx->second.groups.clear();
     ptx->second.last_update_ts = clock_type::now();
+    ptx->second.etag = _insync_term;
     return ptx->second;
 }
 
