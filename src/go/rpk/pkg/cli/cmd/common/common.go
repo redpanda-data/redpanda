@@ -203,6 +203,53 @@ func DeduceBrokers(
 	}
 }
 
+func DeduceAdminApiAddrs(
+	configuration func() (*config.Config, error), addresses *[]string,
+) []string {
+	defaultAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(config.DefaultAdminPort))
+	defaultAddrs := []string{defaultAddr}
+	as := *addresses
+	// Prioritize addresses passed through the flag
+	if len(as) != 0 {
+		log.Debugf("Using Admin API addresses: %s", strings.Join(as, ", "))
+		return as
+	}
+	// If no values were passed directly, look for the env vars.
+	envVar := "REDPANDA_API_ADMIN_ADDRS"
+	envAddrs := os.Getenv(envVar)
+	if envAddrs != "" {
+		log.Debugf("Using %s: %s", envVar, envAddrs)
+		return strings.Split(envAddrs, ",")
+	}
+
+	// Otherwise, try to find an existing config file.
+	conf, err := configuration()
+	if err != nil {
+		log.Debugf(
+			"Couldn't read the config file."+
+				" Assuming Admin API address %s.", defaultAddr,
+		)
+		log.Debug(err)
+		return defaultAddrs
+	}
+
+	// Check rpk.admin_api.addresses
+	if len(conf.Rpk.AdminApi.Addresses) == 0 {
+		// If empty, return the default address
+		log.Debugf(
+			"Empty rpk.admin_api.addresses. Assuming  %s.",
+			defaultAddr,
+		)
+		return defaultAddrs
+	}
+
+	log.Debugf(
+		"Using rpk.admin_api.addresses: %s",
+		strings.Join(conf.Rpk.AdminApi.Addresses, ", "),
+	)
+	return conf.Rpk.AdminApi.Addresses
+}
+
 func CreateProducer(
 	brokers func() []string,
 	configuration func() (*config.Config, error),

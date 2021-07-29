@@ -1949,7 +1949,7 @@ func TestSetMode(t *testing.T) {
 			startingConf: func() *Config {
 				conf := Default()
 				conf.Rpk.AdminApi = RpkAdminApi{
-					Addresses: []SocketAddress{{Address: "some.addr.com", Port: 33145}},
+					Addresses: []string{"some.addr.com:33145"},
 				}
 				conf.Rpk.KafkaApi = RpkKafkaApi{
 					Brokers: []string{"192.168.76.54:9092"},
@@ -1965,7 +1965,7 @@ func TestSetMode(t *testing.T) {
 			expectedConfig: func() *Config {
 				conf := fillRpkConfig(ModeProd)()
 				conf.Rpk.AdminApi = RpkAdminApi{
-					Addresses: []SocketAddress{{Address: "some.addr.com", Port: 33145}},
+					Addresses: []string{"some.addr.com:33145"},
 				}
 				conf.Rpk.KafkaApi = RpkKafkaApi{
 					Brokers: []string{"192.168.76.54:9092"},

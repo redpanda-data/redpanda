@@ -184,6 +184,91 @@ func TestDeduceBrokers(t *testing.T) {
 	}
 }
 
+func TestDeduceAdminApiAddrs(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   func() (*config.Config, error)
+		addrs    []string
+		before   func()
+		cleanup  func()
+		expected []string
+	}{
+		{
+			name: "it should prioritize the flag value over the env vars & config",
+			config: func() (*config.Config, error) {
+				conf := config.Default()
+				conf.Redpanda.AdminApi = []config.NamedSocketAddress{{
+					SocketAddress: config.SocketAddress{"192.168.76.54", 33146},
+				}}
+				return conf, nil
+			},
+			before: func() {
+				os.Setenv("REDPANDA_API_ADMIN_ADDRS", "192.168.34.12:33145,123.4.5.78:33145")
+			},
+			cleanup: func() {
+				os.Unsetenv("REDPANDA_API_ADMIN_ADDRS")
+			},
+			addrs:    []string{"192.168.34.12:33145"},
+			expected: []string{"192.168.34.12:33145"},
+		}, {
+			name: "it should prioritize the env var over the config",
+			config: func() (*config.Config, error) {
+				conf := config.Default()
+				conf.Redpanda.AdminApi = []config.NamedSocketAddress{{
+					SocketAddress: config.SocketAddress{"192.168.76.54", 9466},
+				}}
+				return conf, nil
+			},
+			before: func() {
+				os.Setenv("REDPANDA_API_ADMIN_ADDRS", "192.168.34.12:33145,123.4.5.78:33145")
+			},
+			cleanup: func() {
+				os.Unsetenv("REDPANDA_API_ADMIN_ADDRS")
+			},
+			expected: []string{"192.168.34.12:33145", "123.4.5.78:33145"},
+		}, {
+			name: "it should prioritize rpk.admin_api.addresses over redpanda.admin_api",
+			config: func() (*config.Config, error) {
+				conf := config.Default()
+				conf.Rpk.AdminApi.Addresses = []string{
+					"192.168.67.54:9644",
+					"192.168.67.55:9644",
+					"192.168.67.56:9644",
+				}
+				return conf, nil
+			},
+			expected: []string{
+				"192.168.67.54:9644",
+				"192.168.67.55:9644",
+				"192.168.67.56:9644",
+			},
+		}}
+	for _, tt := range tests {
+		t.Run(tt.name, func(st *testing.T) {
+			if tt.before != nil {
+				tt.before()
+			}
+			if tt.cleanup != nil {
+				defer tt.cleanup()
+			}
+			conf := func() (*config.Config, error) {
+				return config.Default(), nil
+			}
+			if tt.config != nil {
+				conf = tt.config
+			}
+
+			addrs := &[]string{}
+
+			if tt.addrs != nil {
+				addrs = &tt.addrs
+			}
+			as := DeduceAdminApiAddrs(conf, addrs)
+			require.Exactly(st, tt.expected, as)
+		})
+	}
+}
+
 func TestAddKafkaFlags(t *testing.T) {
 	var (
 		brokers        []string
