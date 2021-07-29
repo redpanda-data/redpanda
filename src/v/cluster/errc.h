@@ -46,7 +46,11 @@ enum class errc : int16_t {
     invalid_configuration_update,
     topic_operation_error,
     no_eligible_allocation_nodes,
-    allocation_error
+    allocation_error,
+    partition_configuration_revision_not_updated,
+    partition_configuration_in_joint_mode,
+    partition_configuration_leader_config_not_committed,
+    partition_configuration_differs,
 
 };
 struct errc_category final : public std::error_category {
@@ -125,6 +129,15 @@ struct errc_category final : public std::error_category {
                    "constrains were solved";
         case errc::allocation_error:
             return "Exception was thrown when allocating partitions ";
+        case errc::partition_configuration_revision_not_updated:
+            return "Partition configuration revision wasn't yet updated with "
+                   "operation revision";
+        case errc::partition_configuration_in_joint_mode:
+            return "Partition configuration still in joint consensus mode";
+        case errc::partition_configuration_leader_config_not_committed:
+            return "Partition configuration wasn't committed on the leader";
+        case errc::partition_configuration_differs:
+            return "Current and requested partition configuration differs";
         }
         return "cluster::errc::unknown";
     }
