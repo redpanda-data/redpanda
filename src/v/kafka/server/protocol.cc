@@ -72,6 +72,7 @@ protocol::protocol(
     if (qdc_config) {
         _qdc_mon.emplace(*qdc_config);
     }
+    _probe.setup_metrics();
 }
 
 ss::future<> protocol::apply(rpc::server::resources rs) {

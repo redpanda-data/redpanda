@@ -251,9 +251,13 @@ struct read_result {
 // struct aggregating fetch requests and corresponding response iterators for
 // the same shard
 struct shard_fetch {
-    void push_back(ntp_fetch_config config, op_context::response_iterator it) {
+    void push_back(
+      ntp_fetch_config config,
+      op_context::response_iterator it,
+      std::unique_ptr<hdr_hist::measurement> m) {
         requests.push_back(std::move(config));
         responses.push_back(it);
+        metrics.push_back(std::move(m));
     }
 
     bool empty() const {
@@ -269,6 +273,7 @@ struct shard_fetch {
     ss::shard_id shard;
     std::vector<ntp_fetch_config> requests;
     std::vector<op_context::response_iterator> responses;
+    std::vector<std::unique_ptr<hdr_hist::measurement>> metrics;
 
     friend std::ostream& operator<<(std::ostream& o, const shard_fetch& sf) {
         fmt::print(o, "{}", sf.requests);

@@ -239,6 +239,7 @@ static partition_produce_stages produce_topic_partition(
 
     auto dispatch = std::make_unique<ss::promise<>>();
     auto dispatch_f = dispatch->get_future();
+    auto m = octx.rctx.probe().auto_produce_measurement();
     auto f
       = octx.rctx.partition_manager()
           .invoke_on(
@@ -309,10 +310,13 @@ static partition_produce_stages produce_topic_partition(
                       return std::move(f);
                   });
             })
-          .then([&octx, start](produce_response::partition p) {
+          .then([&octx, start, m = std::move(m)](
+                  produce_response::partition p) {
               if (p.error_code == error_code::none) {
                   auto dur = std::chrono::steady_clock::now() - start;
                   octx.rctx.connection()->server().update_produce_latency(dur);
+              } else {
+                  m->set_trace(false);
               }
               return p;
           });

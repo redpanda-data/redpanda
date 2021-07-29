@@ -235,16 +235,19 @@ ss::future<read_result> read_from_ntp(
 static void fill_fetch_responses(
   op_context& octx,
   std::vector<read_result> results,
-  std::vector<op_context::response_iterator> responses) {
+  std::vector<op_context::response_iterator> responses,
+  std::vector<std::unique_ptr<hdr_hist::measurement>> metrics) {
     auto range = boost::irange<size_t>(0, results.size());
     for (auto idx : range) {
         auto& res = results[idx];
         auto& resp_it = responses[idx];
+        auto& metric = metrics[idx];
 
         // error case
         if (unlikely(res.error != error_code::none)) {
             resp_it.set(
               make_partition_response_error(res.partition, res.error));
+            metric->set_trace(false);
             continue;
         }
 
@@ -302,6 +305,7 @@ static void fill_fetch_responses(
         }
 
         resp_it.set(std::move(resp));
+        metric = nullptr;
     }
 }
 
@@ -355,8 +359,10 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
               mgr, std::move(configs), foreign_read, deadline);
         })
       .then([responses = std::move(fetch.responses),
+             metrics = std::move(fetch.metrics),
              &octx](std::vector<read_result> results) mutable {
-          fill_fetch_responses(octx, std::move(results), std::move(responses));
+          fill_fetch_responses(
+            octx, std::move(results), std::move(responses), std::move(metrics));
       });
 }
 
@@ -372,8 +378,8 @@ class parallel_fetch_plan_executor final : public fetch_plan_executor::impl {
         for (size_t i = 0; i < ss::smp::count; ++i) {
             auto shard = (start_shard_idx + i) % ss::smp::count;
 
-            fetches.push_back(
-              handle_shard_fetch(shard, octx, plan.fetches_per_shard[shard]));
+            fetches.push_back(handle_shard_fetch(
+              shard, octx, std::move(plan.fetches_per_shard[shard])));
         }
 
         return ss::when_all_succeed(fetches.begin(), fetches.end());
@@ -452,7 +458,9 @@ class simple_fetch_planner final : public fetch_planner::impl {
               };
 
               plan.fetches_per_shard[*shard].push_back(
-                make_ntp_fetch_config(materialized_ntp, config), resp_it++);
+                make_ntp_fetch_config(materialized_ntp, config),
+                resp_it++,
+                octx.rctx.probe().auto_fetch_measurement());
           });
 
         return plan;
