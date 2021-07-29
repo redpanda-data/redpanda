@@ -349,12 +349,13 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
             if (ec) {
                 vlog(
                   clusterlog.info,
-                  "partition operation error: {} - {}",
+                  "partition operation {} result: {}",
                   *it,
                   ec.message());
                 stop = true;
                 continue;
             }
+            vlog(clusterlog.info, "partition operation {} finished", *it);
         } catch (...) {
             vlog(
               clusterlog.error,
