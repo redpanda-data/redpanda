@@ -201,6 +201,6 @@ class RpkToolTest(RedpandaTest):
             return True
 
         wait_until(cond,
-                   timeout_sec=15,
+                   timeout_sec=25,
                    backoff_sec=5,
                    err_msg="Message didn't appear.")
