@@ -327,10 +327,16 @@ public:
     }
 
     ///\brief Get the compatibility level for a subject, or fallback to global.
-    result<compatibility_level> get_compatibility(const subject& sub) const {
+    result<compatibility_level>
+    get_compatibility(const subject& sub, default_to_global fallback) const {
         auto sub_it = BOOST_OUTCOME_TRYX(
           get_subject_iter(sub, include_deleted::no));
-        return sub_it->second.compatibility.value_or(_compatibility);
+        if (fallback) {
+            return sub_it->second.compatibility.value_or(_compatibility);
+        } else if (sub_it->second.compatibility) {
+            return sub_it->second.compatibility.value();
+        }
+        return not_found(sub);
     }
 
     ///\brief Set the global compatibility level.

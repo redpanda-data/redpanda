@@ -12,6 +12,7 @@
 #include "pandaproxy/error.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/client_fetch_batch_reader.h"
+#include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/storage.h"
 #include "random/simple_time_jitter.h"
 #include "vassert.h"
@@ -196,15 +197,20 @@ ss::future<bool> seq_writer::write_config(
           to_string_view(compat),
           write_at);
 
-        // Check for no-op case
-        compatibility_level existing;
-        if (sub.has_value()) {
-            existing = co_await seq._store.get_compatibility(sub.value());
-        } else {
-            existing = co_await seq._store.get_compatibility();
-        }
-        if (existing == compat) {
-            co_return false;
+        try {
+            // Check for no-op case
+            compatibility_level existing;
+            if (sub.has_value()) {
+                existing = co_await seq._store.get_compatibility(
+                  sub.value(), default_to_global::no);
+            } else {
+                existing = co_await seq._store.get_compatibility();
+            }
+            if (existing == compat) {
+                co_return false;
+            }
+        } catch (const exception&) {
+            // ignore
         }
 
         auto key = config_key{.seq{write_at}, .node{seq._node_id}, .sub{sub}};

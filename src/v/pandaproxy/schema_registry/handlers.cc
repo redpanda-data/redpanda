@@ -73,6 +73,7 @@ get_config(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 put_config(server::request_t rq, server::reply_t rp) {
+    parse_content_type_header(rq);
     parse_accept_header(rq, rp);
     auto config = ppj::rjson_parse(
       rq.req->content.data(), put_config_handler<>{});
@@ -89,12 +90,16 @@ ss::future<server::reply_t>
 get_config_subject(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto sub = parse::request_param<subject>(*rq.req, "subject");
+    auto fallback = parse::query_param<std::optional<default_to_global>>(
+                      *rq.req, "defaultToGlobal")
+                      .value_or(default_to_global::no);
     rq.req.reset();
 
     // Ensure we see latest writes
     co_await rq.service().writer().read_sync();
 
-    auto res = co_await rq.service().schema_store().get_compatibility(sub);
+    auto res = co_await rq.service().schema_store().get_compatibility(
+      sub, fallback);
 
     auto json_rslt = ppj::rjson_serialize(get_config_req_rep{.compat = res});
     rp.rep->write_body("json", json_rslt);
@@ -134,21 +139,16 @@ std::invoke_result_t<F> get_or_load(server::request_t& rq, F f) {
 
 ss::future<server::reply_t>
 put_config_subject(server::request_t rq, server::reply_t rp) {
+    parse_content_type_header(rq);
     parse_accept_header(rq, rp);
     auto sub = parse::request_param<subject>(*rq.req, "subject");
     auto config = ppj::rjson_parse(
       rq.req->content.data(), put_config_handler<>{});
     rq.req.reset();
 
-    // get_or_load because we might be modifying a subject we don't have
-    // in cache yet
-    co_await get_or_load(rq, [&rq, sub, config]() -> ss::future<bool> {
-        // Throw if it's not found
-        co_await rq.service().schema_store().get_compatibility(sub);
-
-        co_return co_await rq.service().writer().write_config(
-          sub, config.compat);
-    });
+    // Ensure we see latest writes
+    co_await rq.service().writer().read_sync();
+    co_await rq.service().writer().write_config(sub, config.compat);
 
     auto json_rslt = ppj::rjson_serialize(config);
     rp.rep->write_body("json", json_rslt);
@@ -275,6 +275,38 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version(
       .version = version,
       .definition = std::move(get_res.definition)})};
     rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
+ss::future<ctx_server<service>::reply_t> get_subject_versions_version_schema(
+  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp) {
+    parse_accept_header(rq, rp);
+    auto sub = parse::request_param<subject>(*rq.req, "subject");
+    auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
+    auto inc_del{
+      parse::query_param<std::optional<include_deleted>>(*rq.req, "deleted")
+        .value_or(include_deleted::no)};
+    rq.req.reset();
+
+    auto version = invalid_schema_version;
+    if (ver == "latest") {
+        // We must sync to reliably say what is 'latest'
+        co_await rq.service().writer().read_sync();
+
+        auto versions = co_await rq.service().schema_store().get_versions(
+          sub, inc_del);
+        if (versions.empty()) {
+            throw as_exception(not_found(sub, version));
+        }
+        version = versions.back();
+    } else {
+        version = parse::from_chars<schema_version>{}(ver).value();
+    }
+
+    auto get_res = co_await rq.service().schema_store().get_subject_schema(
+      sub, version, inc_del);
+
+    rp.rep->write_body("json", get_res.definition());
     co_return rp;
 }
 

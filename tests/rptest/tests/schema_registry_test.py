@@ -143,8 +143,14 @@ class SchemaRegistryTest(RedpandaTest):
     def _set_config(self, data, headers=HTTP_POST_HEADERS):
         return self._request("PUT", f"config", headers=headers, data=data)
 
-    def _get_config_subject(self, subject, headers=HTTP_GET_HEADERS):
-        return self._request("GET", f"config/{subject}", headers=headers)
+    def _get_config_subject(self,
+                            subject,
+                            fallback=False,
+                            headers=HTTP_GET_HEADERS):
+        return self._request(
+            "GET",
+            f"config/{subject}{'?defaultToGlobal=true' if fallback else ''}",
+            headers=headers)
 
     def _set_config_subject(self, subject, data, headers=HTTP_POST_HEADERS):
         return self._request("PUT",
@@ -385,8 +391,15 @@ class SchemaRegistryTest(RedpandaTest):
         result_raw = self._post_subjects_subject_versions(
             subject=f"{topic}-key", data=schema_1_data)
 
-        self.logger.debug("Get subject config - should be same as global")
+        self.logger.debug("Get subject config - should fail")
         result_raw = self._get_config_subject(subject=f"{topic}-key")
+        assert result_raw.status_code == requests.codes.not_found
+        assert result_raw.json()["error_code"] == 40401
+
+        self.logger.debug("Get subject config - fallback to global")
+        result_raw = self._get_config_subject(subject=f"{topic}-key",
+                                              fallback=True)
+        assert result_raw.status_code == requests.codes.ok
         assert result_raw.json()["compatibilityLevel"] == "FULL"
 
         self.logger.debug("Set subject config")
@@ -448,6 +461,17 @@ class SchemaRegistryTest(RedpandaTest):
             subject=f"{topic}-key", version=1, data=schema_3_data)
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json()["is_compatible"] == False
+
+        self.logger.debug("Posting incompatible schema 3 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_3_data)
+        assert result_raw.status_code == requests.codes.conflict
+        assert result_raw.json()["error_code"] == 409
+
+        self.logger.debug("Posting compatible schema 2 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_2_data)
+        assert result_raw.status_code == requests.codes.ok
 
     @cluster(num_nodes=3)
     def test_delete_subject(self):

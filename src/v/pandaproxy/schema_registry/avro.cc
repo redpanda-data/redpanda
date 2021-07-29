@@ -16,11 +16,54 @@
 #include <avro/Compiler.hh>
 #include <avro/Exception.hh>
 #include <avro/GenericDatum.hh>
+#include <avro/Types.hh>
 #include <avro/ValidSchema.hh>
 
 namespace pandaproxy::schema_registry {
 
 namespace {
+
+bool can_promote(avro::Node& writer, avro::Node& reader) {
+    switch (writer.type()) {
+    case avro::AVRO_INT: {
+        switch (reader.type()) {
+        case avro::AVRO_LONG:
+        case avro::AVRO_FLOAT:
+        case avro::AVRO_DOUBLE:
+            return true;
+        default:
+            return false;
+        }
+        return false;
+    }
+    case avro::AVRO_LONG: {
+        switch (reader.type()) {
+        case avro::AVRO_FLOAT:
+        case avro::AVRO_DOUBLE:
+            return true;
+        default:
+            return false;
+        }
+        return false;
+    }
+    case avro::AVRO_FLOAT: {
+        switch (reader.type()) {
+        case avro::AVRO_DOUBLE:
+            return true;
+        default:
+            return false;
+        }
+        return false;
+    }
+    case avro::AVRO_STRING:
+        return reader.type() == avro::AVRO_BYTES;
+    case avro::AVRO_BYTES:
+        return reader.type() == avro::AVRO_STRING;
+    default:
+        return false;
+    }
+    return false;
+}
 
 bool check_compatible(avro::Node& reader, avro::Node& writer) {
     if (reader.type() == writer.type()) {
@@ -104,6 +147,8 @@ bool check_compatible(avro::Node& reader, avro::Node& writer) {
                 return false;
             }
         }
+        return true;
+    } else if (can_promote(writer, reader)) {
         return true;
     }
     return writer.resolve(reader) == avro::RESOLVE_MATCH;

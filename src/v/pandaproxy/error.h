@@ -26,6 +26,7 @@ namespace pandaproxy {
 // error_codes to this, override its error_category::default_error_condition().
 enum class reply_error_code : uint16_t {
     not_acceptable = 406,
+    conflict = 409,
     unsupported_media_type = 415,
     unprocessable_entity = 422,
     kafka_bad_request = 40002,

@@ -13,9 +13,11 @@
 
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
+#include "kafka/protocol/errors.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/avro.h"
 #include "pandaproxy/schema_registry/errors.h"
+#include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/store.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "vlog.h"
@@ -48,6 +50,27 @@ ss::future<> sharded_store::stop() { return _store.stop(); }
 
 ss::future<sharded_store::insert_result> sharded_store::project_ids(
   subject sub, schema_definition def, schema_type type) {
+    // Check compatibility
+    std::vector<schema_version> versions;
+    try {
+        versions = co_await get_versions(sub, include_deleted::no);
+    } catch (const exception& e) {
+        if (e.code() != error_code::subject_not_found) {
+            throw;
+        }
+    }
+    if (!versions.empty()) {
+        auto compat = co_await is_compatible(sub, versions.back(), def, type);
+        if (!compat) {
+            throw exception(
+              error_code::schema_incompatible,
+              fmt::format(
+                "Schema being registered is incompatible with an earlier "
+                "schema for subject \"{}\"",
+                sub));
+        }
+    }
+
     // Figure out if the definition already exists
     auto map = [&def, type](store& s) { return s.get_schema_id(def, type); };
     auto reduce = [](
@@ -193,15 +216,12 @@ ss::future<compatibility_level> sharded_store::get_compatibility() {
     co_return _store.local().get_compatibility().value();
 }
 
-ss::future<compatibility_level>
-sharded_store::get_compatibility(const subject& sub) {
-    using overload_t = result<compatibility_level> (store::*)(const subject&)
-      const;
-    auto level = co_await _store.invoke_on(
-      shard_for(sub),
-      _smp_opts,
-      static_cast<overload_t>(&store::get_compatibility),
-      sub);
+ss::future<compatibility_level> sharded_store::get_compatibility(
+  const subject& sub, default_to_global fallback) {
+    auto get = [sub, fallback](store& s) {
+        return s.get_compatibility(sub, fallback);
+    };
+    auto level = co_await _store.invoke_on(shard_for(sub), get);
     co_return level.value();
 }
 
@@ -331,7 +351,7 @@ ss::future<bool> sharded_store::is_compatible(
     }
 
     // Lookup the compatibility level
-    auto compat = co_await get_compatibility(sub);
+    auto compat = co_await get_compatibility(sub, default_to_global::yes);
 
     if (compat == compatibility_level::none) {
         co_return true;
