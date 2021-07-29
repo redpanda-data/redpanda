@@ -229,9 +229,7 @@ ss::future<try_abort_reply> tx_gateway_frontend::dispatch_try_abort(
       .then([](result<try_abort_reply> r) {
           if (r.has_error()) {
               vlog(
-                clusterlog.warn,
-                "got error {} on remote init tm tx",
-                r.error());
+                clusterlog.warn, "got error {} on remote try abort", r.error());
               return try_abort_reply{.ec = tx_errc::unknown_server_error};
           }
 
