@@ -18,21 +18,19 @@ import (
 )
 
 const (
-	pandaproxyAPI = "proxy"
-	// PandaproxyAPIClientCert cert name - client certificate for Pandaproxy API
-	PandaproxyAPIClientCert = "proxy-api-client"
-	// PandaproxyAPINodeCert cert name - node certificate for Pandaproxy API
-	PandaproxyAPINodeCert = "proxy-api-node"
+	pandaproxyAPI           = "proxy"
+	pandaproxyAPIClientCert = "proxy-api-client"
+	pandaproxyAPINodeCert   = "proxy-api-node"
 )
 
 // PandaproxyAPINodeCert returns the namespaced name for the Pandaproxy API certificate used by nodes
 func (r *PkiReconciler) PandaproxyAPINodeCert() types.NamespacedName {
-	return types.NamespacedName{Name: r.pandaCluster.Name + "-" + PandaproxyAPINodeCert, Namespace: r.pandaCluster.Namespace}
+	return types.NamespacedName{Name: r.pandaCluster.Name + "-" + pandaproxyAPINodeCert, Namespace: r.pandaCluster.Namespace}
 }
 
 // PandaproxyAPIClientCert returns the namespaced name for the Pandaproxy API certificate used by clients
 func (r *PkiReconciler) PandaproxyAPIClientCert() types.NamespacedName {
-	return types.NamespacedName{Name: r.pandaCluster.Name + "-" + PandaproxyAPIClientCert, Namespace: r.pandaCluster.Namespace}
+	return types.NamespacedName{Name: r.pandaCluster.Name + "-" + pandaproxyAPIClientCert, Namespace: r.pandaCluster.Namespace}
 }
 
 func (r *PkiReconciler) preparePandaproxyAPI(
@@ -41,13 +39,13 @@ func (r *PkiReconciler) preparePandaproxyAPI(
 	toApply := []resources.Resource{}
 
 	// Redpanda cluster certificate for Pandaproxy API - to be provided to each broker
-	cn := NewCommonName(r.pandaCluster.Name, PandaproxyAPINodeCert)
+	cn := NewCommonName(r.pandaCluster.Name, pandaproxyAPINodeCert)
 	certsKey := types.NamespacedName{Name: string(cn), Namespace: r.pandaCluster.Namespace}
 
-	dnsName := r.internalFQDN
-	externalListener := r.pandaCluster.ExternalListener()
+	dnsName := []string{r.internalFQDN}
+	externalListener := r.pandaCluster.PandaproxyAPIExternal()
 	if externalListener != nil && externalListener.External.Subdomain != "" {
-		dnsName = externalListener.External.Subdomain
+		dnsName = append(dnsName, externalListener.External.Subdomain)
 	}
 
 	nodeCert := NewNodeCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, issuerRef, dnsName, cn, false, keystoreSecret, r.logger)
@@ -55,7 +53,7 @@ func (r *PkiReconciler) preparePandaproxyAPI(
 
 	if r.pandaCluster.PandaproxyAPITLS() != nil && r.pandaCluster.PandaproxyAPITLS().TLS.RequireClientAuth {
 		// Certificate for calling the Pandaproxy API on any broker
-		cn := NewCommonName(r.pandaCluster.Name, PandaproxyAPIClientCert)
+		cn := NewCommonName(r.pandaCluster.Name, pandaproxyAPIClientCert)
 		clientCertsKey := types.NamespacedName{Name: string(cn), Namespace: r.pandaCluster.Namespace}
 		proxyClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, clientCertsKey, issuerRef, cn, false, keystoreSecret, r.logger)
 

@@ -40,6 +40,8 @@ var _ = Describe("RedPandaCluster controller", func() {
 
 		adminPort                 = 9644
 		kafkaPort                 = 9092
+		pandaProxyPort            = 8082
+		schemaRegistryPort        = 8081
 		redpandaConfigurationFile = "redpanda.yaml"
 		replicas                  = 1
 		redpandaContainerTag      = "x"
@@ -87,6 +89,18 @@ var _ = Describe("RedPandaCluster controller", func() {
 							{External: v1alpha1.ExternalConnectivityConfig{
 								Enabled: true,
 							}},
+						},
+						PandaproxyAPI: []v1alpha1.PandaproxyAPI{
+							{Port: pandaProxyPort},
+							{External: v1alpha1.ExternalConnectivityConfig{
+								Enabled: true,
+							}},
+						},
+						SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
+							Port: schemaRegistryPort,
+							External: &v1alpha1.ExternalConnectivityConfig{
+								Enabled: true,
+							},
 						},
 					},
 					Resources: corev1.ResourceRequirements{
@@ -216,7 +230,12 @@ var _ = Describe("RedPandaCluster controller", func() {
 				return err == nil &&
 					len(rc.Status.Nodes.Internal) == 1 &&
 					len(rc.Status.Nodes.External) == 1 &&
-					len(rc.Status.Nodes.ExternalAdmin) == 1
+					len(rc.Status.Nodes.ExternalAdmin) == 1 &&
+					len(rc.Status.Nodes.ExternalPandaproxy) == 1 &&
+					len(rc.Status.Nodes.SchemaRegistry.ExternalNodeIPs) == 1 &&
+					len(rc.Status.Nodes.SchemaRegistry.Internal) > 0 &&
+					rc.Status.Nodes.SchemaRegistry.External == "" // Without subdomain the external address is empty
+
 			}, timeout, interval).Should(BeTrue())
 		})
 		It("creates redpanda cluster with tls enabled", func() {
@@ -301,6 +320,80 @@ var _ = Describe("RedPandaCluster controller", func() {
 								},
 								DefaultMode: &defaultMode,
 							}}}))
+		})
+		It("creates redpanda cluster without external connectivity", func() {
+			resources := corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			}
+
+			key := types.NamespacedName{
+				Name:      "internal-redpanda",
+				Namespace: "default",
+			}
+			redpandaCluster := &v1alpha1.Cluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      key.Name,
+					Namespace: key.Namespace,
+				},
+				Spec: v1alpha1.ClusterSpec{
+					Image:    redpandaContainerImage,
+					Version:  redpandaContainerTag,
+					Replicas: pointer.Int32Ptr(replicas),
+					Configuration: v1alpha1.RedpandaConfig{
+						KafkaAPI: []v1alpha1.KafkaAPI{
+							{
+								Port: kafkaPort,
+							},
+						},
+						AdminAPI: []v1alpha1.AdminAPI{{Port: adminPort}},
+					},
+					Resources: corev1.ResourceRequirements{
+						Limits:   resources,
+						Requests: resources,
+					},
+				},
+			}
+			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
+
+			redpandaPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      key.Name,
+					Namespace: key.Namespace,
+					Labels: map[string]string{
+						"app.kubernetes.io/component": "redpanda",
+						"app.kubernetes.io/instance":  "internal-redpanda",
+						"app.kubernetes.io/name":      "redpanda",
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Containers: []corev1.Container{{
+						Name:  "test",
+						Image: "test",
+					}},
+				},
+				Status: corev1.PodStatus{},
+			}
+			Expect(k8sClient.Create(context.Background(), redpandaPod)).Should(Succeed())
+
+			By("Creating StatefulSet")
+			var sts appsv1.StatefulSet
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), key, &sts)
+				return err == nil &&
+					*sts.Spec.Replicas == replicas
+			}, timeout, interval).Should(BeTrue())
+
+			By("report only internal address")
+			var cluster v1alpha1.Cluster
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), key, &cluster)
+				return err == nil &&
+					cluster.Status.Nodes.SchemaRegistry != nil &&
+					len(cluster.Status.Nodes.SchemaRegistry.Internal) > 0 &&
+					len(cluster.Status.Nodes.Internal) > 0
+			}, timeout, interval).Should(BeTrue())
 		})
 	})
 

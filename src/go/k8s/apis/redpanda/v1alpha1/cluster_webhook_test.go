@@ -23,6 +23,7 @@ import (
 	"k8s.io/utils/pointer"
 )
 
+// nolint:funlen // this is ok for a test
 func TestDefault(t *testing.T) {
 	type test struct {
 		name                           string
@@ -71,6 +72,97 @@ func TestDefault(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("missing schema registry does not set default port", func(t *testing.T) {
+		redpandaCluster := &v1alpha1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "",
+			},
+			Spec: v1alpha1.ClusterSpec{
+				Replicas:      pointer.Int32Ptr(1),
+				Configuration: v1alpha1.RedpandaConfig{},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
+					},
+				},
+			},
+		}
+
+		redpandaCluster.Default()
+		assert.Nil(t, redpandaCluster.Spec.Configuration.SchemaRegistry)
+	})
+	t.Run("if schema registry exist, but the port is 0 the default is set", func(t *testing.T) {
+		redpandaCluster := &v1alpha1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "",
+			},
+			Spec: v1alpha1.ClusterSpec{
+				Replicas: pointer.Int32Ptr(1),
+				Configuration: v1alpha1.RedpandaConfig{
+					SchemaRegistry: &v1alpha1.SchemaRegistryAPI{},
+				},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
+					},
+				},
+			},
+		}
+
+		redpandaCluster.Default()
+		assert.Equal(t, 8081, redpandaCluster.Spec.Configuration.SchemaRegistry.Port)
+	})
+	t.Run("if schema registry exist and port have not zero value the default will not be used", func(t *testing.T) {
+		redpandaCluster := &v1alpha1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "",
+			},
+			Spec: v1alpha1.ClusterSpec{
+				Replicas: pointer.Int32Ptr(1),
+				Configuration: v1alpha1.RedpandaConfig{
+					SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
+						Port: 999,
+					},
+				},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
+					},
+				},
+			},
+		}
+
+		redpandaCluster.Default()
+		assert.Equal(t, 999, redpandaCluster.Spec.Configuration.SchemaRegistry.Port)
+	})
+	t.Run("if schema registry is defined as rest of external listeners the default port is used", func(t *testing.T) {
+		redpandaCluster := &v1alpha1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "",
+			},
+			Spec: v1alpha1.ClusterSpec{
+				Replicas: pointer.Int32Ptr(1),
+				Configuration: v1alpha1.RedpandaConfig{
+					SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
+						External: &v1alpha1.ExternalConnectivityConfig{Enabled: true},
+					},
+				},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
+					},
+				},
+			},
+		}
+
+		redpandaCluster.Default()
+		assert.Equal(t, 8081, redpandaCluster.Spec.Configuration.SchemaRegistry.Port)
+	})
 }
 
 func TestValidateUpdate(t *testing.T) {
@@ -153,9 +245,11 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		Spec: v1alpha1.ClusterSpec{
 			Replicas: pointer.Int32Ptr(replicas2),
 			Configuration: v1alpha1.RedpandaConfig{
-				KafkaAPI:  []v1alpha1.KafkaAPI{{Port: 123}},
-				AdminAPI:  []v1alpha1.AdminAPI{{Port: 125}},
-				RPCServer: v1alpha1.SocketAddress{Port: 126},
+				KafkaAPI:       []v1alpha1.KafkaAPI{{Port: 124}},
+				AdminAPI:       []v1alpha1.AdminAPI{{Port: 125}},
+				RPCServer:      v1alpha1.SocketAddress{Port: 126},
+				SchemaRegistry: &v1alpha1.SchemaRegistryAPI{Port: 127},
+				PandaproxyAPI:  []v1alpha1.PandaproxyAPI{{Port: 128}},
 			},
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
@@ -192,6 +286,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		updatePort.Spec.Configuration.KafkaAPI[0].Port = 200
 		updatePort.Spec.Configuration.AdminAPI[0].Port = 200
 		updatePort.Spec.Configuration.RPCServer.Port = 200
+		updatePort.Spec.Configuration.SchemaRegistry.Port = 200
 
 		err := updatePort.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
@@ -199,14 +294,30 @@ func TestValidateUpdate_NoError(t *testing.T) {
 
 	t.Run("collision in the port when external connectivity is enabled", func(t *testing.T) {
 		updatePort := redpandaCluster.DeepCopy()
-		updatePort.Spec.Configuration.KafkaAPI[0].Port = 200
 		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
-		updatePort.Spec.Configuration.AdminAPI[0].Port = 201
-		updatePort.Spec.Configuration.RPCServer.Port = 300
+		updatePort.Spec.Configuration.AdminAPI = append(updatePort.Spec.Configuration.AdminAPI,
+			v1alpha1.AdminAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+		updatePort.Spec.Configuration.PandaproxyAPI = append(updatePort.Spec.Configuration.PandaproxyAPI,
+			v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 
 		err := updatePort.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
+	})
+
+	t.Run("no collision when schema registry has the next port to panda proxy", func(t *testing.T) {
+		updatePort := redpandaCluster.DeepCopy()
+		updatePort.Spec.Configuration.KafkaAPI[0].Port = 200
+		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+		updatePort.Spec.Configuration.PandaproxyAPI = append(updatePort.Spec.Configuration.PandaproxyAPI,
+			v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+		updatePort.Spec.Configuration.SchemaRegistry.External = &v1alpha1.ExternalConnectivityConfig{
+			Enabled: true,
+		}
+
+		err := updatePort.ValidateUpdate(redpandaCluster)
+		assert.NoError(t, err)
 	})
 
 	t.Run("collision in the port when external connectivity is enabled", func(t *testing.T) {
@@ -229,6 +340,14 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		updatePort.Spec.Configuration.AdminAPI[0].Port = 300
 		updatePort.Spec.Configuration.AdminAPI[0].External.Enabled = true
 		updatePort.Spec.Configuration.RPCServer.Port = 301
+
+		err := updatePort.ValidateUpdate(redpandaCluster)
+		assert.Error(t, err)
+	})
+
+	t.Run("port collision with proxy and schema registry", func(t *testing.T) {
+		updatePort := redpandaCluster.DeepCopy()
+		updatePort.Spec.Configuration.SchemaRegistry.Port = updatePort.Spec.Configuration.PandaproxyAPI[0].Port
 
 		err := updatePort.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
@@ -391,9 +510,11 @@ func TestCreation(t *testing.T) {
 		},
 		Spec: v1alpha1.ClusterSpec{
 			Configuration: v1alpha1.RedpandaConfig{
-				KafkaAPI:  []v1alpha1.KafkaAPI{{Port: 123}},
-				AdminAPI:  []v1alpha1.AdminAPI{{Port: 125}},
-				RPCServer: v1alpha1.SocketAddress{Port: 126},
+				KafkaAPI:       []v1alpha1.KafkaAPI{{Port: 124}},
+				AdminAPI:       []v1alpha1.AdminAPI{{Port: 125}},
+				RPCServer:      v1alpha1.SocketAddress{Port: 126},
+				SchemaRegistry: &v1alpha1.SchemaRegistryAPI{Port: 127},
+				PandaproxyAPI:  []v1alpha1.PandaproxyAPI{{Port: 128}},
 			},
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
@@ -417,6 +538,7 @@ func TestCreation(t *testing.T) {
 		newPort.Spec.Configuration.KafkaAPI[0].Port = 200
 		newPort.Spec.Configuration.AdminAPI[0].Port = 200
 		newPort.Spec.Configuration.RPCServer.Port = 200
+		newPort.Spec.Configuration.SchemaRegistry.Port = 200
 
 		err := newPort.ValidateCreate()
 		assert.Error(t, err)
@@ -426,9 +548,33 @@ func TestCreation(t *testing.T) {
 		newPort := redpandaCluster.DeepCopy()
 		newPort.Spec.Configuration.KafkaAPI = append(newPort.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+		newPort.Spec.Configuration.AdminAPI = append(newPort.Spec.Configuration.AdminAPI,
+			v1alpha1.AdminAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+		newPort.Spec.Configuration.PandaproxyAPI = append(newPort.Spec.Configuration.PandaproxyAPI,
+			v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+
+		err := newPort.ValidateCreate()
+		assert.Error(t, err)
+	})
+
+	t.Run("no collision when schema registry has the next port to panda proxy", func(t *testing.T) {
+		newPort := redpandaCluster.DeepCopy()
 		newPort.Spec.Configuration.KafkaAPI[0].Port = 200
-		newPort.Spec.Configuration.AdminAPI[0].Port = 300
-		newPort.Spec.Configuration.RPCServer.Port = 201
+		newPort.Spec.Configuration.KafkaAPI = append(newPort.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+		newPort.Spec.Configuration.PandaproxyAPI = append(newPort.Spec.Configuration.PandaproxyAPI,
+			v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+		newPort.Spec.Configuration.SchemaRegistry.External = &v1alpha1.ExternalConnectivityConfig{
+			Enabled: true,
+		}
+
+		err := newPort.ValidateCreate()
+		assert.NoError(t, err)
+	})
+
+	t.Run("port collision with proxy and schema registry", func(t *testing.T) {
+		newPort := redpandaCluster.DeepCopy()
+		newPort.Spec.Configuration.SchemaRegistry.Port = newPort.Spec.Configuration.PandaproxyAPI[0].Port
 
 		err := newPort.ValidateCreate()
 		assert.Error(t, err)

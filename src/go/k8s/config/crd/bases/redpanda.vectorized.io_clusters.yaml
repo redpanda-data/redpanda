@@ -140,7 +140,7 @@ spec:
                 properties:
                   adminApi:
                     items:
-                      description: AdminAPI is configuration of the redpanda Admin
+                      description: AdminAPI configures listener for the Redpanda Admin
                         API
                       properties:
                         external:
@@ -185,7 +185,7 @@ spec:
                     type: integer
                   kafkaApi:
                     items:
-                      description: KafkaAPI listener information for Kafka API
+                      description: KafkaAPI configures listener for the Kafka API
                       properties:
                         external:
                           description: External enables user to expose Redpanda nodes
@@ -292,7 +292,8 @@ spec:
                     type: array
                   pandaproxyApi:
                     items:
-                      description: PandaproxyAPI configures the Pandaproxy API
+                      description: PandaproxyAPI configures listener for the Pandaproxy
+                        API
                       properties:
                         external:
                           description: External enables user to expose Redpanda nodes
@@ -330,6 +331,45 @@ spec:
                     properties:
                       port:
                         type: integer
+                    type: object
+                  schemaRegistry:
+                    description: SchemaRegistryAPI configures the schema registry
+                      API
+                    properties:
+                      external:
+                        description: External enables user to expose Redpanda nodes
+                          outside of a Kubernetes cluster. For more information please
+                          go to ExternalConnectivityConfig
+                        properties:
+                          enabled:
+                            description: Enabled enables the external connectivity
+                              feature
+                            type: boolean
+                          subdomain:
+                            description: Subdomain can be used to change the behavior
+                              of an advertised KafkaAPI. Each broker advertises Kafka
+                              API as follows BROKER_ID.SUBDOMAIN:EXTERNAL_KAFKA_API_PORT.
+                              If Subdomain is empty then each broker advertises Kafka
+                              API as PUBLIC_NODE_IP:EXTERNAL_KAFKA_API_PORT. If TLS
+                              is enabled then this subdomain will be requested as
+                              a subject alternative name.
+                            type: string
+                        type: object
+                      port:
+                        description: Port will set the schema registry listener port
+                          in Redpanda configuration. If not set the default will be
+                          8081
+                        type: integer
+                      tls:
+                        description: TLS is the configuration for schema registry
+                        properties:
+                          enabled:
+                            type: boolean
+                          requireClientAuth:
+                            type: boolean
+                        type: object
+                    required:
+                    - port
                     type: object
                 type: object
               dnsTrailingDotDisabled:
@@ -476,6 +516,27 @@ spec:
                     type: array
                   pandaproxyIngress:
                     type: string
+                  schemaRegistry:
+                    description: SchemaRegistryStatus reports addresses where schema
+                      registry can be reached
+                    properties:
+                      external:
+                        description: "External address should be registered in DNS
+                          provider using all public IP of a nodes that Redpanda is
+                          scheduled on. \n The External is empty when subdomain is
+                          not provided."
+                        type: string
+                      externalNodeIPs:
+                        description: ExternalNodeIPs is only filled when the Schema
+                          Registry external connectivity feature flag is enabled,
+                          but the subdomain is empty. This gives user ability to register
+                          all addresses individually in DNS provider of choice.
+                        items:
+                          type: string
+                        type: array
+                      internal:
+                        type: string
+                    type: object
                 type: object
               replicas:
                 description: Replicas show how many nodes are working in the cluster

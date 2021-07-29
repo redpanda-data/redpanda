@@ -77,6 +77,7 @@ func TestEnsure_StatefulSet(t *testing.T) {
 		types.NamespacedName{},
 		types.NamespacedName{},
 		types.NamespacedName{},
+		types.NamespacedName{},
 		"",
 		res.ConfiguratorSettings{
 			ConfiguratorBaseImage: "vectorized/configurator",
@@ -114,6 +115,8 @@ func TestEnsure_ConfigMap(t *testing.T) {
 		cluster,
 		scheme.Scheme,
 		"cluster.local",
+		types.NamespacedName{},
+		types.NamespacedName{},
 		ctrl.Log.WithName("test"))
 
 	err := cm.Ensure(context.Background())

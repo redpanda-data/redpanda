@@ -34,6 +34,7 @@ type PkiReconciler struct {
 	scheme       *runtime.Scheme
 	pandaCluster *redpandav1alpha1.Cluster
 	internalFQDN string
+	clusterFQDN  string
 	logger       logr.Logger
 }
 
@@ -42,16 +43,17 @@ func NewPki(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	fqdn string,
+	clusterFQDN string,
 	scheme *runtime.Scheme,
 	logger logr.Logger,
 ) *PkiReconciler {
 	return &PkiReconciler{
-		client, scheme, pandaCluster, fqdn, logger.WithValues("Reconciler", "pki"),
+		client, scheme, pandaCluster, fqdn, clusterFQDN, logger.WithValues("Reconciler", "pki"),
 	}
 }
 
 func (r *PkiReconciler) prepareRoot(
-	prefix string,
+	prefix string, san []string,
 ) ([]resources.Resource, *cmmetav1.ObjectReference) {
 	toApply := []resources.Resource{}
 
@@ -64,11 +66,12 @@ func (r *PkiReconciler) prepareRoot(
 
 	rootCn := NewCommonName(r.pandaCluster.Name, prefix+"-root-certificate")
 	rootKey := types.NamespacedName{Name: string(rootCn), Namespace: r.pandaCluster.Namespace}
-	rootCertificate := NewCertificate(r.Client,
+	rootCertificate := NewNodeCertificate(r.Client,
 		r.scheme,
 		r.pandaCluster,
 		rootKey,
 		selfSignedIssuer.objRef(),
+		san,
 		rootCn,
 		true,
 		nil,
@@ -98,7 +101,7 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 	toApply = append(toApply, keystoreSecret)
 
 	if tlsListener != nil {
-		toApplyRootKafka, kafkaIssuerRef := r.prepareRoot(kafkaAPI)
+		toApplyRootKafka, kafkaIssuerRef := r.prepareRoot(kafkaAPI, []string{r.internalFQDN})
 		toApplyKafka, err := r.prepareKafkaAPI(ctx, kafkaIssuerRef, &tlsListener.TLS, &keystoreKey)
 		if err != nil {
 			return err
@@ -108,15 +111,27 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 	}
 
 	if r.pandaCluster.AdminAPITLS() != nil {
-		toApplyRootAdmin, adminIssuerRef := r.prepareRoot(adminAPI)
+		toApplyRootAdmin, adminIssuerRef := r.prepareRoot(adminAPI, []string{r.internalFQDN})
 		toApply = append(toApply, toApplyRootAdmin...)
 		toApply = append(toApply, r.prepareAdminAPI(adminIssuerRef, &keystoreKey)...)
 	}
 
 	if r.pandaCluster.PandaproxyAPITLS() != nil {
-		toApplyRootPandaproxy, pandaproxyIssuerRef := r.prepareRoot(pandaproxyAPI)
+		toApplyRootPandaproxy, pandaproxyIssuerRef := r.prepareRoot(pandaproxyAPI, []string{r.internalFQDN})
 		toApply = append(toApply, toApplyRootPandaproxy...)
 		toApply = append(toApply, r.preparePandaproxyAPI(pandaproxyIssuerRef, &keystoreKey)...)
+	}
+
+	if r.pandaCluster.Spec.Configuration.SchemaRegistry != nil && r.pandaCluster.Spec.Configuration.SchemaRegistry.TLS != nil {
+		san := []string{r.clusterFQDN}
+		if r.pandaCluster.Spec.Configuration.SchemaRegistry != nil &&
+			r.pandaCluster.Spec.Configuration.SchemaRegistry.External != nil &&
+			r.pandaCluster.Spec.Configuration.SchemaRegistry.External.Subdomain != "" {
+			san = append(san, r.pandaCluster.Spec.Configuration.SchemaRegistry.External.Subdomain)
+		}
+		toApplyRootPandaproxy, schemaRegistryIssuerRef := r.prepareRoot(schemaRegistryAPI, san)
+		toApply = append(toApply, toApplyRootPandaproxy...)
+		toApply = append(toApply, r.prepareSchemaRegistryAPI(schemaRegistryIssuerRef, &keystoreKey)...)
 	}
 
 	for _, res := range toApply {
