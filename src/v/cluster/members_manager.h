@@ -85,9 +85,7 @@ private:
     using seed_iterator = std::vector<config::seed_server>::const_iterator;
     // Cluster join
     void join_raft0();
-    bool is_already_member() const {
-        return _raft0->config().contains_broker(_self.id());
-    }
+    bool is_already_member() const;
 
     ss::future<result<join_reply>>
     dispatch_join_to_seed_server(seed_iterator it);

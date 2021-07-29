@@ -78,6 +78,10 @@ ss::future<> members_manager::start() {
     return start_config_changes_watcher();
 }
 
+bool members_manager::is_already_member() const {
+    return _members_table.local().get_broker(_self.id()).has_value();
+}
+
 ss::future<> members_manager::start_config_changes_watcher() {
     // handle initial configuration
     auto offset = _raft0->get_latest_configuration_offset();
