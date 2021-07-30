@@ -302,6 +302,10 @@ public:
     void update_suppress_heartbeats(
       vnode, follower_req_seq, heartbeats_suppressed);
 
+    void update_heartbeat_status(vnode, bool);
+
+    bool should_reconnect_follower(vnode);
+
     std::vector<follower_metrics> get_follower_metrics() const;
 
     const configuration_manager& get_configuration_manager() const {
@@ -549,6 +553,7 @@ private:
 
     std::chrono::milliseconds _replicate_append_timeout;
     std::chrono::milliseconds _recovery_append_timeout;
+    size_t _heartbeat_disconnect_failures;
     ss::metrics::metric_groups _metrics;
     ss::abort_source _as;
     storage::api& _storage;
