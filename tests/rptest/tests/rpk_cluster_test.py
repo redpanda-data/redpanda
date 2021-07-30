@@ -23,6 +23,7 @@ class RpkClusterTest(RedpandaTest):
         self._ctx = ctx
         self._rpk = RpkTool(self.redpanda)
 
+    @cluster(num_nodes=3)
     def test_cluster_info(self):
         def condition():
             brokers = self._rpk.cluster_info()

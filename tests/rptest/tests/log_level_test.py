@@ -18,6 +18,7 @@ import random
 
 
 class LogLevelTest(RedpandaTest):
+    @cluster(num_nodes=3)
     def test_log_level_control(self):
         admin = Admin(self.redpanda)
         node = self.redpanda.nodes[0]

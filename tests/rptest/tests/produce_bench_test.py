@@ -48,6 +48,7 @@ class ProduceBenchTest(Test):
         self.trogdor.stop()
         self.redpanda.stop()
 
+    @cluster(num_nodes=3)
     def test_produce_bench(self):
         spec = ProduceBenchWorkloadSpec(
             0,

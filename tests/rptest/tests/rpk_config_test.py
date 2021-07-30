@@ -25,6 +25,7 @@ class RpkConfigTest(RedpandaTest):
         super(RpkConfigTest, self).__init__(test_context=ctx)
         self._ctx = ctx
 
+    @cluster(num_nodes=3)
     def test_config_init(self):
         n = random.randint(0, len(self.redpanda.nodes))
         node = self.redpanda.get_node(n)
@@ -84,6 +85,7 @@ schema_registry: {}
 
                 assert actual_config == expected_config
 
+    @cluster(num_nodes=3)
     def test_config_set_single_number(self):
         n = random.randint(1, len(self.redpanda.nodes))
         node = self.redpanda.get_node(n)
@@ -101,6 +103,7 @@ schema_registry: {}
                 actual_config = yaml.load(f.read())
                 assert f"{actual_config['redpanda']['admin']['port']}" == value
 
+    @cluster(num_nodes=3)
     def test_config_set_yaml(self):
         n = random.randint(1, len(self.redpanda.nodes))
         node = self.redpanda.get_node(n)
@@ -132,6 +135,7 @@ schema_registry: {}
                 assert actual_config['redpanda'][
                     'seed_servers'] == expected_config
 
+    @cluster(num_nodes=3)
     def test_config_set_json(self):
         n = random.randint(1, len(self.redpanda.nodes))
         node = self.redpanda.get_node(n)
@@ -165,6 +169,7 @@ tune_swappiness: false
 
                 assert actual_config['rpk'] == expected_config
 
+    @cluster(num_nodes=3)
     def test_config_change_then_restart_node(self):
         for node in self.redpanda.nodes:
             rpk = RpkRemoteTool(self.redpanda, node)
