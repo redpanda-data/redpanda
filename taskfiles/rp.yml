@@ -93,8 +93,8 @@ tasks:
     - cp '{{.SRC_DIR}}/tests/docker/Dockerfile.dockerignore' '{{.SRC_DIR}}/.dockerignore'
     - |
       if [ '{{.CI}}' == 'true' ]; then
-        chmod 644 '{{.SRC_DIR}}/tests/docker/ssh/'* '{{.SRC_DIR}}/tests/setup.py'
-        chmod 755 '{{.SRC_DIR}}/tests/docker/ssh'
+        find {{.SRC_DIR}}/tests/ -type d -exec chmod 0755 {} \;
+        find {{.SRC_DIR}}/tests/ -type f -exec chmod 0644 {} \;
         docker pull docker.io/vectorized/redpanda-test-node:cache-{{ARCH}} || true
         docker build \
           --tag vectorized/redpanda-test-node \
