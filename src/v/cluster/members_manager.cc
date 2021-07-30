@@ -471,6 +471,18 @@ members_manager::handle_join_request(model::broker broker) {
                   return ret_t(r.error());
               });
         }
+
+        if (_raft0->config().contains_address(broker.rpc_address())) {
+            vlog(
+              clusterlog.info,
+              "Broker {} address ({}) conflicts with the address of another "
+              "node",
+              broker.id(),
+              broker.rpc_address());
+            return ss::make_ready_future<result<join_reply>>(
+              ret_t(join_reply{.success = false}));
+        }
+
         // Just update raft0 configuration
         // we do not use revisions in raft0 configuration, it is always revision
         // 0 which is perfectly fine. this will work like revision less raft
