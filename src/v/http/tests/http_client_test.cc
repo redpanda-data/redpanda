@@ -83,6 +83,13 @@ void set_routes(ss::httpd::routes& r) {
         return ss::sstring();
     });
     r.add(operation_type::PUT, url("/put"), put_handler);
+    auto empty_handler = new function_handler([](const_req req) {
+        // Return empty body
+        BOOST_REQUIRE(req.content.empty());
+        BOOST_REQUIRE(req.content_length == 0);
+        return ss::sstring();
+    });
+    r.add(operation_type::PUT, url("/empty"), empty_handler);
 }
 
 /// Http server and client
@@ -148,6 +155,27 @@ void test_http_request(
     // Check response
     check_reply(resp_stream->get_headers(), std::move(response_body));
 
+    server->stop().get();
+}
+
+/// Test success path (should run in ss::async)
+template<class Func>
+void test_http_request(
+  const rpc::base_transport::configuration& conf,
+  http::client::request_header&& header,
+  ss::input_stream<char> request_data,
+  const Func& check_reply) {
+    auto [server, client] = started_client_and_server(conf);
+    // Send request
+    auto resp_stream = client->request(std::move(header), request_data).get();
+    // Receive response
+    iobuf response_body;
+    while (!resp_stream->is_done()) {
+        iobuf res = resp_stream->recv_some().get0();
+        response_body.append(std::move(res));
+    }
+    // Check response
+    check_reply(resp_stream->get_headers(), std::move(response_body));
     server->stop().get();
 }
 
@@ -328,6 +356,32 @@ SEASTAR_THREAD_TEST_CASE(test_http_PUT_roundtrip) {
       config,
       std::move(header),
       ss::sstring(httpd_server_reply),
+      [](http::client::response_header const& header, iobuf&& body) {
+          BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);
+          iobuf_parser parser(std::move(body));
+          std::string actual = parser.read_string(parser.bytes_left());
+          std::string expected = "\"\"";
+          BOOST_REQUIRE_EQUAL(expected, actual);
+      });
+}
+
+SEASTAR_THREAD_TEST_CASE(test_http_PUT_empty_roundtrip) {
+    // Send data and recv empty response
+    auto config = transport_configuration();
+    http::client::request_header header;
+    header.method(boost::beast::http::verb::put);
+    header.target("/empty");
+    header.insert(
+      boost::beast::http::field::content_length,
+      boost::beast::to_static_string(0));
+    header_set_host(header, config.server_addr);
+    header.insert(boost::beast::http::field::content_type, "application/json");
+    iobuf empty;
+    auto stream = make_iobuf_input_stream(std::move(empty));
+    test_http_request(
+      config,
+      std::move(header),
+      std::move(stream),
       [](http::client::response_header const& header, iobuf&& body) {
           BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);
           iobuf_parser parser(std::move(body));

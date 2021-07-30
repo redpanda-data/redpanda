@@ -509,16 +509,31 @@ ss::future<client::response_stream_ref> client::request(
   client::request_header&& header,
   ss::input_stream<char>& input,
   ss::lowres_clock::duration timeout) {
+    bool empty_input_stream = false;
+    auto plen = header.find(boost::beast::http::field::content_length);
+    if (plen != header.cend()) {
+        empty_input_stream = plen->value() == "0";
+    }
     return make_request(std::move(header), timeout)
-      .then([&input](request_response_t reqresp) mutable {
+      .then([&input, empty_input_stream](request_response_t reqresp) mutable {
           auto [request, response] = std::move(reqresp);
-          auto fsend = ss::do_with(
-            request->as_output_stream(),
-            [&input](ss::output_stream<char>& output) {
-                return ss::copy(input, output).then([&output] {
-                    return output.close();
+          auto fsend = ss::now();
+          if (empty_input_stream) {
+              // special case - empty input stream, don't use ss::copy
+              // since it won't invoke the underlying implementation
+              fsend = request->send_some(iobuf()).then(
+                [request = request]() { return request->send_eof(); });
+          } else {
+              // since the input stream has some data we can use
+              // output_stream interace of the request
+              fsend = ss::do_with(
+                request->as_output_stream(),
+                [&input](ss::output_stream<char>& output) {
+                    return ss::copy(input, output).then([&output] {
+                        return output.close();
+                    });
                 });
-            });
+          }
           return fsend.then([response = response]() {
               return ss::make_ready_future<response_stream_ref>(response);
           });
