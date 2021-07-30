@@ -334,8 +334,10 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
       _gate, [this, to_create = std::move(to_create)]() mutable {
           return ss::do_with(
             std::move(to_create), [this](std::vector<model::ntp>& to_create) {
-                return ss::parallel_for_each(
-                  to_create, [this](const model::ntp& ntp) {
+                // add_ntp_archiver can potentially use two connections
+                auto concurrency = std::max(1UL, _conf.connection_limit() / 2);
+                return ss::max_concurrent_for_each(
+                  to_create, concurrency, [this](const model::ntp& ntp) {
                       storage::api& api = _storage_api.local();
                       storage::log_manager& lm = api.log_mgr();
                       auto log = lm.get(ntp);
