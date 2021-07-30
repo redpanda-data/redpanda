@@ -15,6 +15,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
 class KafkaClientCompatTest(RedpandaTest):
+    @cluster(num_nodes=3)
     def test_create_topic(self):
         for client_factory in KafkaCliTools.instances():
             client = client_factory(self.redpanda)
@@ -25,6 +26,7 @@ class KafkaClientCompatTest(RedpandaTest):
                 spec = client.describe_topic(topic.name)
                 assert spec == topic
 
+    @cluster(num_nodes=3)
     def test_describe_broker_configs(self):
         # this uses the latest kafka client. older clients still need some work.
         # it seems as though at the protocol layer things work fine, but the
