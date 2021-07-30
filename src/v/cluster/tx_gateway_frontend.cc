@@ -279,9 +279,27 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
                     try_abort_reply{.aborted = true, .ec = tx_errc::none});
               }
               auto tx_id = tx_id_opt.value();
-              return stm->get_tx_lock(tx_id)->with(
-                [&self, stm, tx_id, pid, tx_seq, timeout]() {
-                    return self.do_try_abort(stm, tx_id, pid, tx_seq, timeout);
+
+              auto tx_opt = stm->get_tx_by_id(tx_id);
+              if (!tx_opt) {
+                  return ss::make_ready_future<try_abort_reply>(
+                    try_abort_reply{.aborted = true, .ec = tx_errc::none});
+              }
+              auto tx = tx_opt.value();
+              if (tx.pid != pid || tx.tx_seq != tx_seq) {
+                  return ss::make_ready_future<try_abort_reply>(
+                    try_abort_reply{.aborted = true, .ec = tx_errc::none});
+              }
+
+              return stm->get_tx_lock(tx_id)
+                ->with(
+                  timeout,
+                  [&self, stm, tx_id, pid, tx_seq, timeout]() {
+                      return self.do_try_abort(
+                        stm, tx_id, pid, tx_seq, timeout);
+                  })
+                .handle_exception_type([](const ss::semaphore_timed_out&) {
+                    return try_abort_reply{.ec = tx_errc::unknown_server_error};
                 });
           });
       });
@@ -301,18 +319,11 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
 
     auto tx = maybe_tx.value();
 
-    if (tx.pid != pid) {
-        // well, that's wierd, it may happen when the coordinator ended
-        // a transaction and initiated a new session for the same tx.id
-        // while the `try_abort` request was inflight
-        co_return try_abort_reply{.ec = tx_errc::request_rejected};
-    }
-
-    if (tx.tx_seq != tx_seq) {
-        // well, that's wierd, it may happen when the coordinator ended
-        // a transaction and started a new one when the `try_abort`
-        // request was inflight
-        co_return try_abort_reply{.ec = tx_errc::request_rejected};
+    if (tx.pid != pid || tx.tx_seq != tx_seq) {
+        // tx coordinator issued prepare_tx and died before writing
+        // preparing status, so it could not be committed => it's
+        // safe to abort
+        co_return try_abort_reply{.aborted = true, .ec = tx_errc::none};
     }
 
     if (tx.status == tm_transaction::tx_status::prepared) {
