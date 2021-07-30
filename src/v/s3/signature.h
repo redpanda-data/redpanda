@@ -100,13 +100,7 @@ public:
       std::string_view region,
       std::string_view service);
 
-    /// Checks if credentials are too old and updates them if this is the case
-    void update_credentials_if_outdated();
-
 private:
-    /// Re-generate credentials used to sign headers
-    void update_credentials();
-
     /// \brief Calculate SHA256 digest
     ///
     /// \param payload is ref to payload of the query
@@ -122,12 +116,6 @@ private:
     public_key_str _access_key;
     /// Secret key
     private_key_str _private_key;
-    /// Service specific signing key
-    ss::sstring _sign_key;
-    /// Scope of the key (part of the header digest)
-    ss::sstring _cred_scope;
-    /// Time of the last credentials update
-    ss::lowres_clock::time_point _last_update;
 };
 
 template<class Fn>
