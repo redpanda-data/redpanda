@@ -601,6 +601,8 @@ void admin_server::register_broker_routes() {
               auto& b = res.emplace_back();
               b.node_id = broker->id();
               b.num_cores = broker->properties().cores;
+              b.membership_status = fmt::format(
+                "{}", broker->get_membership_state());
           }
           return ss::make_ready_future<ss::json::json_return_type>(
             std::move(res));
