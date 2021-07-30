@@ -11,4 +11,35 @@
         }
       }
     }
+  },
+  "/v1/status/started": {
+    "get": {
+      "summary": "redpanda started",
+      "operationId": "started",
+      "responses": {
+        "200": {
+          "description": "Redpanda is actively participating in the cluster",
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "code": {
+              "type": "integer"
+            }
+          }
+        },
+        "503": {
+          "description": "Redpanda is booting",
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "code": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    }
   }

@@ -559,6 +559,25 @@ void admin_server::register_status_routes() {
             {"status", _ready ? "ready" : "booting"}};
           return ss::make_ready_future<ss::json::json_return_type>(status_map);
       });
+
+    ss::httpd::status_json::started.set(
+      _server._routes, [this](std::unique_ptr<ss::httpd::request>) {
+          using futurator = ss::futurize<ss::json::json_return_type>;
+          return _controller->get_members_frontend()
+            .local()
+            .get_under_replicated(_controller->self())
+            .then([](auto rep) {
+                const auto started = !rep.error && !rep.under_replicated;
+                return started
+                         ? futurator::convert(
+                           ss::httpd::json_exception(ss::httpd::base_exception(
+                             "started", ss::reply::status_type::ok)))
+                         : futurator::make_exception_future(
+                           ss::httpd::base_exception(
+                             "booting",
+                             ss::reply::status_type::service_unavailable));
+            });
+      });
 }
 
 void map_broker_state_update_error(model::node_id id, std::error_code ec) {
