@@ -14,4 +14,4 @@ tasks:
     deps:
     - :dev:install-yapf
     cmds:
-    - '"{{.BUILD_ROOT}}/venv/yapf/bin/yapf" -i -r -e "{{.BUILD_ROOT}}/*" "{{.SRC_DIR}}"'
+    - '{{.BUILD_ROOT}}/venv/yapf/bin/yapf -ir .'
