@@ -176,7 +176,7 @@ You can easily try out different docker configuration parameters with a docker-c
         - --advertise-kafka-addr
         - PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
         # NOTE: Please use the latest version here!
-        image: docker.vectorized.io/vectorized/redpanda:v21.4.13
+        image: docker.vectorized.io/vectorized/redpanda:v21.7.6
         container_name: redpanda-1
         ports:
         - 9092:9092

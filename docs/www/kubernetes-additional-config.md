@@ -28,7 +28,7 @@ kind: Cluster
 metadata:
   name: one-node-cluster
 spec:
-  image: "vectorized/redpanda"
+  image: "docker.vectorized.io/vectorized/redpanda"
   version: "latest"
   replicas: 1
   resources:
