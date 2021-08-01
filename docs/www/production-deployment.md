@@ -52,8 +52,8 @@ sudo -E bash && sudo apt install redpanda -y
 
 ### Step 2: Set Redpanda production mode
 
-By default Redpanda is installed in **Development** mode, to we next need to
-set Redpanda to run in **Production** mode. This is done with:
+By default Redpanda is installed in **development** mode, which turns off hardware optimization.
+To enable hardware optimization, set Redpanda to run in **production** mode:
 
 ```
 sudo rpk redpanda mode production
