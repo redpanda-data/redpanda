@@ -166,7 +166,7 @@ Let's try setting up a Redpanda topic to handle a stream of events from a chat a
 
         kubectl -n chat-with-me run -ti --rm \
         --restart=Never \
-        --image vectorized/redpanda:$VERSION \
+        --image docker.vectorized.io/vectorized/redpanda:$VERSION \
         -- rpk --brokers one-node-cluster-0.one-node-cluster.chat-with-me.svc.cluster.local:9092 \
         cluster info
     
@@ -174,7 +174,7 @@ Let's try setting up a Redpanda topic to handle a stream of events from a chat a
 
         kubectl -n chat-with-me run -ti --rm \
         --restart=Never \
-        --image vectorized/redpanda:$VERSION \
+        --image docker.vectorized.io/vectorized/redpanda:$VERSION \
         -- rpk --brokers one-node-cluster-0.one-node-cluster.chat-with-me.svc.cluster.local:9092 \
         topic create chat-rooms -p 5
 
@@ -182,7 +182,7 @@ Let's try setting up a Redpanda topic to handle a stream of events from a chat a
 
         kubectl -n chat-with-me run -ti --rm \
         --restart=Never \
-        --image vectorized/redpanda:$VERSION \
+        --image docker.vectorized.io/vectorized/redpanda:$VERSION \
         -- rpk --brokers one-node-cluster-0.one-node-cluster.chat-with-me.svc.cluster.local:9092 \
         topic list
 
