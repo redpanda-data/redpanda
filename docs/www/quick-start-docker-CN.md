@@ -31,7 +31,7 @@ Redpanda是用于任务关键型工作负载的现代[流媒体平台](/blog/int
 docker run -d --pull=always --name=redpanda-1 --rm \
 -p 9092:9092 \
 -p 9644:9644 \
-vectorized/redpanda:latest \
+docker.vectorized.io/vectorized/redpanda:latest \
 redpanda start \
 --overprovisioned \
 --smp 1  \
@@ -75,7 +75,7 @@ docker run -d \
 -p 9092:9092 \
 -p 9644:9644 \
 -v "redpanda1:/var/lib/redpanda/data" \
-vectorized/redpanda redpanda start \
+docker.vectorized.io/vectorized/redpanda redpanda start \
 --smp 1  \
 --memory 1G  \
 --reserve-memory 0M \
@@ -96,7 +96,7 @@ docker run -d \
 --net=redpandanet \
 -p 9093:9093 \
 -v "redpanda2:/var/lib/redpanda/data" \
-vectorized/redpanda redpanda start \
+docker.vectorized.io/vectorized/redpanda redpanda start \
 --smp 1  \
 --memory 1G  \
 --reserve-memory 0M \
@@ -118,7 +118,7 @@ docker run -d \
 --net=redpandanet \
 -p 9094:9094 \
 -v "redpanda3:/var/lib/redpanda/data" \
-vectorized/redpanda redpanda start \
+docker.vectorized.io/vectorized/redpanda redpanda start \
 --smp 1  \
 --memory 1G  \
 --reserve-memory 0M \
@@ -175,7 +175,7 @@ status命令的输出如下所示：
         - --advertise-kafka-addr
         - PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
         # NOTE: Please use the latest version here!
-        image: vectorized/redpanda:v21.4.13
+        image: docker.vectorized.io/vectorized/redpanda:v21.7.6
         container_name: redpanda-1
         ports:
         - 9092:9092
