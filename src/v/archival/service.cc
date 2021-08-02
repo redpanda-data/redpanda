@@ -136,6 +136,9 @@ scheduler_service_impl::get_archival_service_config() {
         overrides.trust_file = s3::ca_trust_file(std::filesystem::path(*cert));
     }
     overrides.port = config::shard_local_cfg().cloud_storage_api_endpoint_port;
+    overrides.max_idle_time
+      = config::shard_local_cfg()
+          .cloud_storage_max_connection_idle_time_ms.value();
 
     auto s3_conf = co_await s3::configuration::make_configuration(
       access_key, secret_key, region, overrides, disable_metrics);

@@ -176,6 +176,8 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> cloud_storage_segment_upload_timeout_ms;
     property<std::chrono::milliseconds>
       cloud_storage_manifest_upload_timeout_ms;
+    property<std::chrono::milliseconds>
+      cloud_storage_max_connection_idle_time_ms;
 
     one_or_many_property<ss::sstring> superusers;
 
