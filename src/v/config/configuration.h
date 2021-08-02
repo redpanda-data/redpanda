@@ -485,7 +485,7 @@ struct convert<std::optional<T>> {
     }
 
     static bool decode(const Node& node, type& rhs) {
-        if (node) {
+        if (node && !node.IsNull()) {
             rhs = std::make_optional<T>(node.as<T>());
         } else {
             rhs = std::nullopt;
