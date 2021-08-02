@@ -33,6 +33,10 @@ partition::partition(
   , _probe(std::make_unique<replicated_partition_probe>(*this))
   , _tx_gateway_frontend(tx_gateway_frontend) {
     auto stm_manager = _raft->log().stm_manager();
+    bool is_idempotence_enabled
+      = config::shard_local_cfg().enable_idempotence.value();
+    bool is_tx_enabled = config::shard_local_cfg().enable_transactions.value();
+
     if (is_id_allocator_topic(_raft->ntp())) {
         _id_allocator_stm = ss::make_lw_shared<cluster::id_allocator_stm>(
           clusterlog, _raft.get(), config::shard_local_cfg());
@@ -41,18 +45,18 @@ partition::partition(
             _nop_stm = ss::make_lw_shared<raft::log_eviction_stm>(
               _raft.get(), clusterlog, stm_manager, _as);
         }
-        _tm_stm = ss::make_shared<cluster::tm_stm>(clusterlog, _raft.get());
-        stm_manager->add_stm(_tm_stm);
+
+        if (is_tx_enabled) {
+            _tm_stm = ss::make_shared<cluster::tm_stm>(clusterlog, _raft.get());
+            stm_manager->add_stm(_tm_stm);
+        }
     } else {
         if (_raft->log_config().is_collectable()) {
             _nop_stm = ss::make_lw_shared<raft::log_eviction_stm>(
               _raft.get(), clusterlog, stm_manager, _as);
         }
 
-        auto has_rm_stm
-          = config::shard_local_cfg().enable_idempotence.value()
-            || config::shard_local_cfg().enable_transactions.value();
-        if (has_rm_stm) {
+        if (is_tx_enabled || is_idempotence_enabled) {
             _rm_stm = ss::make_shared<cluster::rm_stm>(
               clusterlog, _raft.get(), _tx_gateway_frontend);
             stm_manager->add_stm(_rm_stm);

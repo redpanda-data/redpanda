@@ -178,11 +178,15 @@ rm_stm::rm_stm(
       config::shard_local_cfg().rm_violation_recovery_policy.value())
   , _transactional_id_expiration(
       config::shard_local_cfg().transactional_id_expiration_ms.value())
+  , _is_tx_enabled(config::shard_local_cfg().enable_transactions.value())
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _abort_snapshot_mgr(
       "abort.idx",
       std::filesystem::path(c->log_config().work_directory()),
       ss::default_priority_class()) {
+    if (!_is_tx_enabled) {
+        _is_autoabort_enabled = false;
+    }
     if (_recovery_policy != crash && _recovery_policy != best_effort) {
         vassert(false, "Unknown recovery policy: {}", _recovery_policy);
     }
@@ -735,17 +739,19 @@ ss::future<result<raft::replicate_result>> rm_stm::replicate_seq(
 model::offset rm_stm::last_stable_offset() {
     auto first_tx_start = model::offset::max();
 
-    if (!_log_state.ongoing_set.empty()) {
-        first_tx_start = *_log_state.ongoing_set.begin();
-    }
+    if (_is_tx_enabled) {
+        if (!_log_state.ongoing_set.empty()) {
+            first_tx_start = *_log_state.ongoing_set.begin();
+        }
 
-    if (!_mem_state.tx_starts.empty()) {
-        first_tx_start = std::min(
-          first_tx_start, *_mem_state.tx_starts.begin());
-    }
+        if (!_mem_state.tx_starts.empty()) {
+            first_tx_start = std::min(
+              first_tx_start, *_mem_state.tx_starts.begin());
+        }
 
-    for (auto& entry : _mem_state.estimated) {
-        first_tx_start = std::min(first_tx_start, entry.second);
+        for (auto& entry : _mem_state.estimated) {
+            first_tx_start = std::min(first_tx_start, entry.second);
+        }
     }
 
     auto last_visible_index = _c->last_visible_index();
@@ -775,7 +781,9 @@ static void filter_intersecting(
 ss::future<std::vector<rm_stm::tx_range>>
 rm_stm::aborted_transactions(model::offset from, model::offset to) {
     std::vector<rm_stm::tx_range> result;
-
+    if (!_is_tx_enabled) {
+        co_return result;
+    }
     for (auto& idx : _log_state.abort_indexes) {
         if (idx.last < from) {
             continue;
