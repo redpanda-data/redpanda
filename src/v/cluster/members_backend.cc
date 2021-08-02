@@ -105,7 +105,11 @@ void members_backend::handle_single_update(
     case update_t::reallocation_finished:
         handle_reallocation_finished(update.id);
         return;
-
+    case update_t::added:
+        stop_node_decommissioning(update.id);
+        _updates.emplace_back(update);
+        _new_updates.signal();
+        return;
     default:
         _updates.emplace_back(update);
         _new_updates.signal();
@@ -490,11 +494,15 @@ ss::future<> members_backend::reallocate_replica_set(
 
 void members_backend::handle_recommissioned(
   const members_manager::node_update& update) {
-    if (_members.local().get_broker(update.id) == std::nullopt) {
+    stop_node_decommissioning(update.id);
+}
+
+void members_backend::stop_node_decommissioning(model::node_id id) {
+    if (_members.local().get_broker(id) == std::nullopt) {
         return;
     }
     // remove all pending decommissioned updates for this node
-    std::erase_if(_updates, [id = update.id](update_meta& meta) {
+    std::erase_if(_updates, [id](update_meta& meta) {
         return meta.update.id == id
                && meta.update.type
                     == members_manager::node_update_type::decommissioned;
