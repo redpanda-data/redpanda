@@ -119,7 +119,13 @@ process_one_reply(process_batch_reply::data e, output_write_args args) {
     }
     /// Use the source topic portion of the materialized topic to perform a
     /// lookup for the relevent 'ntp_context'
-    auto materialized_ntp = model::materialized_ntp(e.ntp);
+    auto topic = model::to_materialized_topic(
+      e.source.tp.topic, e.ntp.tp.topic);
+    vassert(
+      e.source.ns == e.ntp.ns && e.source.tp.partition == e.ntp.tp.partition,
+      "Wasm engine failure");
+    auto materialized_ntp = model::materialized_ntp(
+      model::ntp(e.ntp.ns, topic, e.ntp.tp.partition));
     auto found = args.inputs.find(materialized_ntp.source_ntp());
     if (found == args.inputs.end()) {
         vlog(
