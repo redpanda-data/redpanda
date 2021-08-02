@@ -48,6 +48,7 @@ struct configuration final : public config_store {
     // Network
     property<unresolved_address> rpc_server;
     property<tls_config> rpc_server_tls;
+    property<std::optional<int>> rpc_server_listen_backlog;
     // Coproc
     property<bool> enable_coproc;
     property<unresolved_address> coproc_supervisor_server;
