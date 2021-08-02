@@ -233,7 +233,7 @@ void heartbeat_manager::process_reply(
     if (!r) {
         vlog(
           hbeatlog.trace,
-          "Could not send hearbeats to node:{}, reason:{}, message:{}",
+          "Could not send heartbeats to node:{}, reason:{}, message:{}",
           n,
           r,
           r.error().message());
@@ -287,7 +287,7 @@ void heartbeat_manager::dispatch_heartbeats() {
             });
         });
     }).handle_exception([](const std::exception_ptr& e) {
-        vlog(hbeatlog.warn, "Error dispatching hearbeats - {}", e);
+        vlog(hbeatlog.warn, "Error dispatching heartbeats - {}", e);
     });
     // update last
     _hbeat = clock_type::now();

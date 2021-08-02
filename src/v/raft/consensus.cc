@@ -235,7 +235,7 @@ consensus::success_reply consensus::update_follower_index(
       && reply.last_dirty_log_index < _log.offsets().dirty_offset) {
         vlog(
           _ctxlog.trace,
-          "ignorring reordered reply {} from node {} - last: {} current: {} ",
+          "ignoring reordered reply {} from node {} - last: {} current: {} ",
           reply,
           reply.node_id,
           idx.last_received_seq,
@@ -266,7 +266,7 @@ consensus::success_reply consensus::update_follower_index(
 
     // check preconditions for processing the reply
     if (!is_leader()) {
-        vlog(_ctxlog.debug, "ignorring append entries reply, not leader");
+        vlog(_ctxlog.debug, "ignoring append entries reply, not leader");
         return success_reply::no;
     }
     // If RPC request or response contains term T > currentTerm:
@@ -390,7 +390,7 @@ void consensus::successfull_append_entries_reply(
     idx.next_index = details::next_offset(idx.last_dirty_log_index);
     vlog(
       _ctxlog.trace,
-      "Updated node {} match {} and next {} indicies",
+      "Updated node {} match {} and next {} indices",
       idx.node_id,
       idx.match_index,
       idx.next_index);
@@ -1244,7 +1244,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     if (n_priority < _target_priority && !r.leadership_transfer) {
         vlog(
           _ctxlog.info,
-          "not grainting vote to node {}, it has priority {} which is lower "
+          "not granting vote to node {}, it has priority {} which is lower "
           "than current target priority {}",
           r.node_id,
           n_priority,
@@ -1428,7 +1428,7 @@ consensus::do_append_entries(append_entries_request&& r) {
       && r.meta.prev_log_term != last_log_term) {
         vlog(
           _ctxlog.debug,
-          "Rejecting append entries. missmatching entry term at offset: "
+          "Rejecting append entries. mismatching entry term at offset: "
           "{}, current term: {} request term: {}",
           r.meta.prev_log_index,
           last_log_term,
