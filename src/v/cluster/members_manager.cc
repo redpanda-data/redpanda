@@ -642,6 +642,12 @@ bool is_result_configuration_valid(
      */
     for (auto& current : current_brokers) {
         if (current->id() == to_update.id()) {
+            /**
+             * do no allow to decrease node core count
+             */
+            if (current->properties().cores > to_update.properties().cores) {
+                return false;
+            }
             continue;
         }
         // error, nodes would point to the same addresses
