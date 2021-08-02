@@ -385,6 +385,29 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
         try {
             auto ec = co_await execute_partitition_op(*it);
             if (ec) {
+                if (it->type == topic_table_delta::op_type::update) {
+                    /**
+                     * check if pending update isn't already finished, if so it
+                     * is safe to proceed to the next step
+                     */
+                    auto fit = std::find_if(
+                      it, deltas.end(), [&it](const topic_table::delta& d) {
+                          return d.type
+                                   == topic_table::delta::op_type::
+                                     update_finished
+                                 && d.new_assignment.replicas
+                                      == it->new_assignment.replicas;
+                      });
+                    vassert(
+                      fit == std::next(it),
+                      "finish operation command, if present have to be the one "
+                      "that follows update operation");
+
+                    if (fit != deltas.end()) {
+                        it = fit;
+                        continue;
+                    }
+                }
                 vlog(
                   clusterlog.info,
                   "partition operation {} result: {}",
