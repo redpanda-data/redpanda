@@ -119,6 +119,16 @@ bool group_configuration::contains_broker(model::node_id id) const {
     return it != std::cend(_brokers);
 }
 
+bool group_configuration::contains_address(
+  const unresolved_address& address) const {
+    return std::any_of(
+      std::cbegin(_brokers),
+      std::cend(_brokers),
+      [&address](const model::broker& broker) {
+          return address == broker.rpc_address();
+      });
+}
+
 configuration_type group_configuration::type() const {
     if (_old) {
         return configuration_type::joint;
