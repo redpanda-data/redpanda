@@ -339,7 +339,10 @@ ss::future<> members_backend::reconcile() {
         if (is_draining && _allocator.local().is_empty(meta.update.id)) {
             // we can safely discard the result since action is going to be
             // retried if it fails
-
+            vlog(
+              clusterlog.info,
+              "decommissioning finished, removing node {} from cluster",
+              meta.update.id);
             // workaround: https://github.com/vectorizedio/redpanda/issues/891
             std::vector<model::node_id> ids{meta.update.id};
             co_await _raft0
