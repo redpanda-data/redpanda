@@ -130,6 +130,8 @@ public:
 
     void testing_only_disable_auto_abort() { _is_autoabort_enabled = false; }
 
+    void testing_only_enable_transactions() { _is_tx_enabled = true; }
+
 private:
     ss::future<checked<model::term_id, tx_errc>> do_begin_tx(
       model::producer_identity, model::tx_seq, std::chrono::milliseconds);
@@ -291,6 +293,7 @@ private:
     std::chrono::milliseconds _transactional_id_expiration;
     bool _is_leader{false};
     bool _is_autoabort_enabled{true};
+    bool _is_tx_enabled{false};
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     storage::snapshot_manager _abort_snapshot_mgr;
 };
