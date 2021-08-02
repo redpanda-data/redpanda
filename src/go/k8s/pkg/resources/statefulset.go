@@ -38,6 +38,7 @@ var errNodePortMissing = errors.New("the node port is missing from the service")
 const (
 	redpandaContainerName     = "redpanda"
 	configuratorContainerName = "redpanda-configurator"
+	rpkStatusContainerName    = "rpk-status"
 
 	userID  = 101
 	groupID = 101
@@ -464,12 +465,47 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 		},
 	}
 
+	rpkStatusContainer := r.rpkStatusContainer()
+	if rpkStatusContainer != nil {
+		ss.Spec.Template.Spec.Containers = append(ss.Spec.Template.Spec.Containers, *rpkStatusContainer)
+	}
+
 	err := controllerutil.SetControllerReference(r.pandaCluster, ss, r.scheme)
 	if err != nil {
 		return nil, err
 	}
 
 	return ss, nil
+}
+func (r *StatefulSetResource) rpkStatusContainer() *corev1.Container {
+	if r.pandaCluster.Spec.Sidecars.RpkStatus == nil {
+		r.logger.Info("BUG! No resources found for rpk status - this should never happen with defaulting webhook enabled - please consider enabling the webhook")
+		r.pandaCluster.Spec.Sidecars.RpkStatus = &redpandav1alpha1.Sidecar{
+			Enabled:   true,
+			Resources: redpandav1alpha1.DefaultRpkStatusResources,
+		}
+	}
+	if !r.pandaCluster.Spec.Sidecars.RpkStatus.Enabled {
+		return nil
+	}
+	return &corev1.Container{
+		Name:    rpkStatusContainerName,
+		Image:   r.pandaCluster.FullImageName(),
+		Command: []string{"/usr/local/bin/rpk-status.sh"},
+		Env: []corev1.EnvVar{
+			{
+				Name:  "REDPANDA_ENVIRONMENT",
+				Value: "kubernetes",
+			},
+		},
+		Resources: *r.pandaCluster.Spec.Sidecars.RpkStatus.Resources,
+		VolumeMounts: append([]corev1.VolumeMount{
+			{
+				Name:      "config-dir",
+				MountPath: configDestinationDir,
+			},
+		}, r.secretVolumeMounts()...),
+	}
 }
 
 func prepareAdditionalArguments(
@@ -484,8 +520,6 @@ func prepareAdditionalArguments(
 	if developerMode {
 		args := []string{
 			"--overprovisioned",
-			// sometimes a little bit of memory is consumed by other processes than seastar
-			"--reserve-memory " + redpandav1alpha1.ReserveMemoryString,
 			"--kernel-page-cache=true",
 			"--default-log-level=debug",
 		}
