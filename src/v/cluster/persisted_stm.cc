@@ -193,6 +193,7 @@ ss::future<bool> persisted_stm::sync(model::timeout_clock::duration timeout) {
           if (is_synced) {
               _insync_term = term;
           }
+          _is_catching_up = false;
           for (auto& sync_waiter : _sync_waiters) {
               sync_waiter->set_value(is_synced);
           }
