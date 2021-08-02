@@ -31,6 +31,7 @@ struct test_config : public config::config_store {
     config::property<int64_t> an_int64_t;
     config::property<custom_aggregate> an_aggregate;
     config::property<std::vector<ss::sstring>> strings;
+    config::property<std::optional<int16_t>> nullable_int;
 
     test_config()
       : optional_int(
@@ -48,7 +49,13 @@ struct test_config : public config::config_store {
           "Aggregate type",
           config::required::no,
           custom_aggregate{"str", 10})
-      , strings(*this, "strings", "Required strings vector") {}
+      , strings(*this, "strings", "Required strings vector")
+      , nullable_int(
+          *this,
+          "nullable_int",
+          "A nullable (std::optional) int value",
+          config::required::no,
+          std::nullopt) {}
 };
 
 YAML::Node minimal_valid_configuration() {
@@ -69,7 +76,8 @@ YAML::Node valid_configuration() {
                       "strings:\n"
                       " - one\n"
                       " - two\n"
-                      " - three\n");
+                      " - three\n"
+                      "nullable_int: 111\n");
 }
 
 } // namespace
@@ -79,6 +87,17 @@ static inline ostream& operator<<(ostream& o, const custom_aggregate& c) {
     o << "int_value=" << c.int_value << ", string_value=" << c.string_value;
     return o;
 }
+
+static inline std::ostream&
+operator<<(std::ostream& ostr, const std::optional<int16_t>& rhs) {
+    if (rhs.has_value()) {
+        ostr << rhs.value();
+    } else {
+        ostr << "~";
+    }
+    return ostr;
+}
+
 } // namespace std
 
 namespace YAML {
@@ -117,6 +136,7 @@ SEASTAR_THREAD_TEST_CASE(read_minimal_valid_configuration) {
     BOOST_TEST(cfg.strings().at(0) == "first");
     BOOST_TEST(cfg.strings().at(1) == "second");
     BOOST_TEST(cfg.strings().at(2) == "third");
+    BOOST_TEST(cfg.nullable_int() == std::nullopt);
 };
 
 SEASTAR_THREAD_TEST_CASE(read_valid_configuration) {
@@ -131,6 +151,7 @@ SEASTAR_THREAD_TEST_CASE(read_valid_configuration) {
     BOOST_TEST(cfg.strings().at(0) == "one");
     BOOST_TEST(cfg.strings().at(1) == "two");
     BOOST_TEST(cfg.strings().at(2) == "three");
+    BOOST_TEST(cfg.nullable_int() == std::make_optional(111));
 };
 
 SEASTAR_THREAD_TEST_CASE(update_property_value) {
@@ -169,7 +190,8 @@ SEASTAR_THREAD_TEST_CASE(config_json_serialization) {
                                   "\"string_value\": \"some_value\","
                                   "\"int_value\": 88"
                                   "},"
-                                  "\"required_string\": \"test_value_2\""
+                                  "\"required_string\": \"test_value_2\","
+                                  "\"nullable_int\": 111"
                                   "}";
 
     // cfg -> json string
@@ -213,4 +235,25 @@ SEASTAR_THREAD_TEST_CASE(config_json_serialization) {
       == exp_doc["an_aggregate"]["string_value"].GetString());
 
     BOOST_TEST(res_doc["strings"].IsArray());
+
+    BOOST_TEST(res_doc["nullable_int"].IsInt());
+    BOOST_TEST(
+      res_doc["nullable_int"].GetInt() == exp_doc["nullable_int"].GetInt());
+}
+
+/// Test that unset std::optional options are decoded correctly
+/// when given as 'null', not just when absent.
+SEASTAR_THREAD_TEST_CASE(deserialize_explicit_null) {
+    auto with_null = YAML::Load("required_string: test_value_1\n"
+                                "strings:\n"
+                                " - first\n"
+                                " - second\n"
+                                " - third\n"
+                                "nullable_int: ~\n");
+
+    auto cfg = test_config();
+    cfg.read_yaml(with_null);
+    auto errors = cfg.validate();
+    BOOST_TEST(errors.size() == 0);
+    BOOST_TEST(cfg.nullable_int() == std::nullopt);
 }
