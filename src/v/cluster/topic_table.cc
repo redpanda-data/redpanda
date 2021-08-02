@@ -9,6 +9,7 @@
 
 #include "cluster/topic_table.h"
 
+#include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
 #include "cluster/logger.h"
 #include "cluster/types.h"
@@ -102,6 +103,13 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
 
     if (_update_in_progress.contains(cmd.key)) {
         return ss::make_ready_future<std::error_code>(errc::update_in_progress);
+    }
+
+    // assignment is already up to date, this operation is NOP do not propagate
+    // delta
+
+    if (are_replica_sets_equal(current_assignment_it->replicas, cmd.value)) {
+        return ss::make_ready_future<std::error_code>(errc::success);
     }
 
     _update_in_progress.insert(cmd.key);
