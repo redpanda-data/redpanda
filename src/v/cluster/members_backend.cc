@@ -310,7 +310,9 @@ ss::future<> members_backend::reconcile() {
     if (meta.partition_reallocations.empty()) {
         calculate_reallocations(meta);
         // if there is nothing to reallocate, just finish this update
-        if (meta.partition_reallocations.empty()) {
+        if (
+          meta.partition_reallocations.empty()
+          && meta.update.type == members_manager::node_update_type::added) {
             auto err = co_await _members_frontend.local()
                          .finish_node_reallocations(meta.update.id);
             if (!err) {
