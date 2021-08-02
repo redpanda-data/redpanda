@@ -312,9 +312,12 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
     auto maybe_tx = co_await stm->get_actual_tx(transactional_id);
-    if (!maybe_tx) {
-        // unknown tx => state was lost => can't be comitted => aborted
-        co_return try_abort_reply{.aborted = true, .ec = tx_errc::none};
+    if (!maybe_tx.has_value()) {
+        if (maybe_tx.error() == tm_stm::op_status::not_found) {
+            // missing tx => state was lost => can't be comitted => aborted
+            co_return try_abort_reply{.aborted = true, .ec = tx_errc::none};
+        }
+        co_return try_abort_reply{.ec = tx_errc::unknown_server_error};
     }
 
     auto tx = maybe_tx.value();
@@ -363,8 +366,11 @@ tx_gateway_frontend::do_commit_tm_tx(
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
     auto maybe_tx = co_await stm->get_actual_tx(tx_id);
-    if (!maybe_tx) {
-        co_return tx_errc::request_rejected;
+    if (!maybe_tx.has_value()) {
+        if (maybe_tx.error() == tm_stm::op_status::not_found) {
+            co_return tx_errc::request_rejected;
+        }
+        co_return tx_errc::unknown_server_error;
     }
     auto tx = maybe_tx.value();
     if (tx.pid != pid) {
@@ -527,7 +533,11 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
   model::timeout_clock::duration timeout) {
     auto maybe_tx = co_await stm->get_actual_tx(tx_id);
 
-    if (!maybe_tx) {
+    if (!maybe_tx.has_value()) {
+        if (maybe_tx.error() != tm_stm::op_status::not_found) {
+            co_return init_tm_tx_reply{.ec = tx_errc::unknown_server_error};
+        }
+
         allocate_id_reply pid_reply
           = co_await _id_allocator_frontend.local().allocate_id(timeout);
         if (pid_reply.ec != errc::success) {
@@ -916,9 +926,13 @@ tx_gateway_frontend::do_end_txn(
   model::timeout_clock::duration timeout,
   ss::lw_shared_ptr<available_promise<tx_errc>> outcome) {
     auto maybe_tx = co_await stm->get_actual_tx(request.transactional_id);
-    if (!maybe_tx) {
-        outcome->set_value(tx_errc::request_rejected);
-        co_return tx_errc::request_rejected;
+    if (!maybe_tx.has_value()) {
+        if (maybe_tx.error() == tm_stm::op_status::not_found) {
+            outcome->set_value(tx_errc::request_rejected);
+            co_return tx_errc::request_rejected;
+        }
+        outcome->set_value(tx_errc::unknown_server_error);
+        co_return tx_errc::unknown_server_error;
     }
 
     model::producer_identity pid{
@@ -940,11 +954,13 @@ tx_gateway_frontend::do_end_txn(
             r = co_await do_commit_tm_tx(stm, tx, timeout, outcome);
         } else {
             outcome->set_value(tx_errc::request_rejected);
-            r = tx_errc::request_rejected;
+            co_return tx_errc::request_rejected;
         }
     } else {
         r = co_await do_abort_tm_tx(stm, tx, timeout, outcome);
     }
+    // starting from this point we don't need to set outcome on return because
+    // we shifted this responsibility to do_commit_tm_tx & do_abort_tm_tx
     if (!r.has_value()) {
         co_return r;
     }
@@ -1187,8 +1203,11 @@ tx_gateway_frontend::get_ongoing_tx(
   kafka::transactional_id transactional_id,
   model::timeout_clock::duration timeout) {
     auto maybe_tx = co_await stm->get_actual_tx(transactional_id);
-    if (!maybe_tx) {
-        co_return tx_errc::request_rejected;
+    if (!maybe_tx.has_value()) {
+        if (maybe_tx.error() == tm_stm::op_status::not_found) {
+            co_return tx_errc::request_rejected;
+        }
+        co_return tx_errc::unknown_server_error;
     }
 
     auto tx = maybe_tx.value();
