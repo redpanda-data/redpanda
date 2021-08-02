@@ -360,8 +360,9 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 					},
 					Containers: []corev1.Container{
 						{
-							Name:  redpandaContainerName,
-							Image: r.pandaCluster.FullImageName(),
+							Name:    redpandaContainerName,
+							Image:   r.pandaCluster.FullImageName(),
+							Command: []string{"/usr/bin/rpk"},
 							Args: append([]string{
 								"redpanda",
 								"start",
