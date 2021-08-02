@@ -119,7 +119,7 @@ process_one_reply(process_batch_reply::data e, output_write_args args) {
     }
     /// Use the source topic portion of the materialized topic to perform a
     /// lookup for the relevent 'ntp_context'
-    auto found = args.inputs.find(e.ntp);
+    auto found = args.inputs.find(e.source);
     if (found == args.inputs.end()) {
         vlog(
           coproclog.warn, "script {} unknown source ntp: {}", args.id, e.ntp);
