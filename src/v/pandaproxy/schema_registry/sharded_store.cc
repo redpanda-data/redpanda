@@ -359,10 +359,7 @@ ss::future<bool> sharded_store::is_compatible(
 
     // Currently only support AVRO
     if (new_schema_type != schema_type::avro) {
-        throw as_exception(error_info{
-          error_code::schema_invalid,
-          fmt::format(
-            "Invalid schema type {}", to_string_view(new_schema_type))});
+        throw as_exception(invalid_schema_type(new_schema_type));
     }
 
     // if transitive, search all, otherwise seach forwards from version
