@@ -56,6 +56,10 @@ struct configuration final : public config_store {
     property<std::size_t> coproc_max_ingest_bytes;
     property<std::size_t> coproc_max_batch_size;
     property<std::chrono::milliseconds> coproc_offset_flush_interval_ms;
+    // Inline wasm
+    property<bool> enable_v8;
+    property<uint8_t> core_for_executor;
+    property<uint64_t> max_executor_queue_size;
 
     // Raft
     property<model::node_id> node_id;
