@@ -82,6 +82,21 @@ private:
     ss::sharded<cluster::rm_partition_frontend>& _rm_partition_frontend;
     int16_t _metadata_dissemination_retries;
     std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
+    ss::timer<model::timeout_clock> _expire_timer;
+    std::chrono::milliseconds _transactional_id_expiration;
+
+    void start_expire_timer();
+
+    void rearm_expire_timer() {
+        if (!_expire_timer.armed() && !_gate.is_closed()) {
+            // we need to expire transactional ids which were inactive more than
+            // transactional_id_expiration period. if we check for the expired
+            // transactions twice during the period then in the worst case an
+            // expired id lives at most 1.5 x transactional_id_expiration
+            auto delay = _transactional_id_expiration / 2;
+            _expire_timer.arm(model::timeout_clock::now() + delay);
+        }
+    }
 
     ss::future<bool> try_create_tx_topic();
 
@@ -165,6 +180,16 @@ private:
       ss::shared_ptr<tm_stm>,
       add_offsets_tx_request,
       model::timeout_clock::duration);
+
+    void expire_old_txs();
+    ss::future<> do_expire_old_txs();
+    ss::future<> expire_old_txs(ss::shared_ptr<tm_stm>);
+    ss::future<> expire_old_tx(ss::shared_ptr<tm_stm>, kafka::transactional_id);
+    ss::future<> do_expire_old_tx(
+      ss::shared_ptr<tm_stm>,
+      kafka::transactional_id,
+      model::timeout_clock::duration);
+
     friend tx_gateway;
 };
 } // namespace cluster
