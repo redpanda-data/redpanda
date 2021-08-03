@@ -59,6 +59,8 @@ tasks:
       TOTAL_PHYSICAL_MEMORY:
         sh: free -g | awk '/^Mem:/{print $2}'
       GB_PER_BUILD_CORE: '{{default "2" .GB_PER_BUILD_CORE}}'
+    env:
+      CCACHE_DIR: '{{default "/dev/shm/ccache/v" .CCACHE_DIR}}'
     deps:
     - configure
     cmds:
