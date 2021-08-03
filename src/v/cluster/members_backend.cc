@@ -338,7 +338,15 @@ ss::future<> members_backend::reconcile() {
         }
         const auto is_draining = node.value()->get_membership_state()
                                  == model::membership_state::draining;
-        if (is_draining && _allocator.local().is_empty(meta.update.id)) {
+        const auto all_reallocations_finished = std::all_of(
+          meta.partition_reallocations.begin(),
+          meta.partition_reallocations.end(),
+          [](const partition_reallocation& r) {
+              return r.state == reallocation_state::finished;
+          });
+        if (
+          is_draining && all_reallocations_finished
+          && _allocator.local().is_empty(meta.update.id)) {
             // we can safely discard the result since action is going to be
             // retried if it fails
             vlog(
