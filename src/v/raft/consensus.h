@@ -316,6 +316,8 @@ public:
         return _consumable_offset_monitor;
     }
 
+    ss::future<> refresh_commit_index();
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
