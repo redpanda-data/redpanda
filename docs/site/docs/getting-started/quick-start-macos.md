@@ -1,8 +1,8 @@
 ---
-title: Linux Quick Start Guide
-order: 0
+sidebar_position: 4
 ---
-# Linux Quick Start Guide
+
+# MacOS Quick Start Guide
 
 Redpanda is a modern [streaming platform](/blog/intelligent-data-api/) for mission critical workloads.
 With Redpanda you can get up and running with streaming quickly
@@ -11,43 +11,35 @@ and be fully compatible with the [Kafka ecosystem](https://cwiki.apache.org/conf
 This quick start guide can help you get started with Redpanda for development and testing purposes.
 For production or benchmarking, set up a [production deployment](/docs/production-deployment).
 
-## Install and run Redpanda
+## Getting Redpanda running
 
-We've simplified the installation process down to a few commands:
+To run Redpanda on MacOS, we'll use `rpk` to bring up Redpanda nodes in Docker containers.
+Make sure that you install [Docker](https://docs.docker.com/docker-for-mac/install/) first.
 
-- On Fedora/RedHat systems:
+If you want to customize the containers, you can also set up your own [Redpanda containers in Docker](/docs/quick-start-docker).
 
-     ```bash
-     ## Run the setup script to download and install the repo
-     curl -1sLf 'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.rpm.sh' | sudo -E bash && \
-     ## Use yum to install redpanda
-     sudo yum install redpanda -y && \
-     ## Start redpanda as a service 
-     sudo systemctl start redpanda
-     ```
+### Installing rpk
 
-- On Debian/Ubuntu systems:
+You can install `rpk` on MacOS from either with [Homebrew](https://brew.sh/) or you can just download the binary.
 
-     ```bash
-     ## Run the setup script to download and install the repo
-     curl -1sLf 'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.deb.sh' | sudo -E bash && \
-     ## Use apt to install redpanda
-     sudo apt install redpanda -y && \
-     ## Start redpanda as a service 
-     sudo systemctl start redpanda
-     ```
+- To install `rpk` with Homebrew, run: `brew install vectorizedio/tap/redpanda`
+- To download the `rpk` binary:
 
-To see that Redpanda is up and running, run: `sudo systemctl status redpanda`
+    1. Download the [rpk archive](https://github.com/vectorizedio/redpanda/releases/latest/download/rpk-darwin-amd64.zip) with: `curl -LO https://github.com/vectorizedio/redpanda/releases/latest/download/rpk-darwin-amd64.zip`
+    1. Unpack the archive to `/usr/local/bin` or any location in your `$PATH` with: `unzip rpk-darwin-amd64.zip`
 
-The output should look like:
+### Running a redpanda cluster
+
+To run Redpanda in a 3-node cluster, run: `rpk container start -n 3`
+
+The first time you run `rpk`, it downloads the latest version of Redpanda.
+You now have a 3-node cluster running Redpanda!
+
+You can run `rpk` commands to interact with the cluster, for example:
 
 ```bash
-● redpanda.service - Redpanda, the fastest queue in the West.
-     Loaded: loaded (/lib/systemd/system/redpanda.service; enabled; vendor preset: enabled)
-     Active: active (running)
+rpk cluster info
 ```
-
-You now have a single-node cluster running Redpanda!
 
 ## Do some streaming
 
@@ -88,10 +80,17 @@ Here are the basic commands to produce and consume streams:
 
 You've just installed Redpanda and done streaming in a few easy steps.
 
+## Clean Up
+
+When you are finished with the cluster, you can shutdown and delete the nodes with:
+
+```bash
+rpk container purge
+```
+
 ## What's Next?
 
 - Our [FAQ](/docs/faq) page shows all of the clients that you can use to do streaming with Redpanda.
-     (Spoiler: Any Kafka-compatible client!)
-- Get a multi-node cluster up and running using [`rpk container`](/docs/guide-rpk-container).
+    (Spoiler: Any Kafka-compatible client!)
 - Use the [Quick Start Docker Guide](/docs/quick-start-docker) to try out Redpanda using Docker.
 - Want to setup a production cluster? Check out our [Production Deployment Guide](/docs/production-deployment).

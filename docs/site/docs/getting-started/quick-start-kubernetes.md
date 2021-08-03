@@ -1,7 +1,7 @@
 ---
-title: Kubernetes Quick Start Guide
-order: 0
+sidebar_position: 3
 ---
+
 # Kubernetes Quick Start Guide
 
 Redpanda is a modern [streaming platform](/blog/intelligent-data-api/) for mission critical workloads.

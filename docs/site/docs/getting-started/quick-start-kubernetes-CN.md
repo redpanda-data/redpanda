@@ -1,6 +1,5 @@
 ---
-title: Kubernetes快速入门指南
-order: 0
+sidebar_position: 10
 ---
 
 # Kubernetes快速入门指南
