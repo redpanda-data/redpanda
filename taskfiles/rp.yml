@@ -142,7 +142,7 @@ tasks:
     - start-compose-cluster
     - :wasm:publish-local
     vars:
-      DUCKTAPE_ARGS: '{{default "--exit-first tests/rptest/test_suite_quick.yml" .DUCKTAPE_ARGS}}'
+      DUCKTAPE_ARGS: '{{default "tests/rptest/test_suite_quick.yml" .DUCKTAPE_ARGS}}'
       DUCKTAPE_MAX_PARALLEL: '{{default "1" .DUCKTAPE_MAX_PARALLEL}}'
       RP_INSTALL_DIR_DEFAULT: '{{.BUILD_DIR}}'
       RP_INSTALL_DIR: '{{default .RP_INSTALL_DIR_DEFAULT .RP_INSTALL_DIR}}'
