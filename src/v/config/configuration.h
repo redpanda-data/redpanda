@@ -474,26 +474,6 @@ struct convert<config::tls_config> {
     }
 };
 
-template<typename T>
-struct convert<std::optional<T>> {
-    using type = std::optional<T>;
-
-    static Node encode(const type& rhs) {
-        if (rhs) {
-            return Node(*rhs);
-        }
-    }
-
-    static bool decode(const Node& node, type& rhs) {
-        if (node) {
-            rhs = std::make_optional<T>(node.as<T>());
-        } else {
-            rhs = std::nullopt;
-        }
-        return true;
-    }
-};
-
 template<typename T, typename Tag>
 struct convert<named_type<T, Tag>> {
     using type = named_type<T, Tag>;
