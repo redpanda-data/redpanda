@@ -26,9 +26,9 @@ import (
 )
 
 type Metrics struct {
-	CpuPercentage float64
-	FreeMemoryMB  float64
-	FreeSpaceMB   float64
+	CpuPercentage float64 `json:"cpuPercentage"`
+	FreeMemoryMB  float64 `json:"freeMemoryMB"`
+	FreeSpaceMB   float64 `json:"freeSpaceMB"`
 }
 
 type stat struct {

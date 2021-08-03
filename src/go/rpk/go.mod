@@ -7,6 +7,7 @@ require (
 	github.com/Shopify/sarama v1.28.1-0.20210318150015-41df78df10a9
 	github.com/avast/retry-go v2.6.0+incompatible
 	github.com/aws/aws-sdk-go v1.25.43
+	github.com/beevik/ntp v0.3.0
 	github.com/burdiyan/kafkautil v0.0.0-20190131162249-eaf83ed22d5b
 	github.com/cespare/xxhash v1.1.0
 	github.com/cockroachdb/crlfmt v0.0.0-20210128092314-b3eff0b87c79
