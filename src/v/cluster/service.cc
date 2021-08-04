@@ -207,14 +207,7 @@ ss::future<decommission_node_reply> service::decommission_node(
       get_scheduling_group(), [this, req]() mutable {
           return _members_frontend.local().decommission_node(req.id).then(
             [](std::error_code ec) {
-                if (!ec) {
-                    return decommission_node_reply{.error = errc::success};
-                }
-                if (ec.category() == cluster::error_category()) {
-                    return decommission_node_reply{.error = errc(ec.value())};
-                }
-                return decommission_node_reply{
-                  .error = errc::replication_error};
+                return decommission_node_reply{.error = map_errc(ec)};
             });
       });
 }
@@ -225,14 +218,7 @@ ss::future<recommission_node_reply> service::recommission_node(
       get_scheduling_group(), [this, req]() mutable {
           return _members_frontend.local().recommission_node(req.id).then(
             [](std::error_code ec) {
-                if (!ec) {
-                    return recommission_node_reply{.error = errc::success};
-                }
-                if (ec.category() == cluster::error_category()) {
-                    return recommission_node_reply{.error = errc(ec.value())};
-                }
-                return recommission_node_reply{
-                  .error = errc::replication_error};
+                return recommission_node_reply{.error = map_errc(ec)};
             });
       });
 }
@@ -248,15 +234,6 @@ ss::future<finish_reallocation_reply>
 service::do_finish_reallocation(finish_reallocation_request req) {
     auto ec = co_await _members_frontend.local().finish_node_reallocations(
       req.id);
-    if (ec) {
-        if (ec.category() == error_category()) {
-            co_return finish_reallocation_reply{.error = errc(ec.value())};
-        } else {
-            co_return finish_reallocation_reply{
-              .error = errc::replication_error};
-        }
-    }
-
-    co_return finish_reallocation_reply{.error = errc::success};
+    co_return finish_reallocation_reply{.error = map_errc(ec)};
 }
 } // namespace cluster
