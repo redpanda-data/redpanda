@@ -200,7 +200,7 @@ private:
 
 inline model::topic
 to_materialized_topic(const model::topic& src, const model::topic& dest) {
-    return model::topic(ssx::sformat("{}.${}$", src(), dest()));
+    return model::topic(ssx::sformat("{}._{}_", src(), dest()));
 }
 
 namespace coproc::registry {

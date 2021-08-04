@@ -154,7 +154,7 @@ class Repository {
           source: requestItem.ntp,
           ntp: {
             ...requestItem.ntp,
-            topic: `${requestItem.ntp.topic}.$${key}$`,
+            topic: `${requestItem.ntp.topic}._${key}_`,
           },
           resultRecordBatch: [value],
         });
