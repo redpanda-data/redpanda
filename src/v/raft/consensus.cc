@@ -2549,6 +2549,27 @@ model::offset consensus::get_latest_configuration_offset() const {
     return _configuration_manager.get_latest_offset();
 }
 
+result<bool> consensus::is_under_replicated(model::node_id node_id) const {
+    if (!is_leader()) {
+        return errc::not_leader;
+    }
+    auto it = std::find_if(
+      _fstats.begin(), _fstats.end(), [node_id](const auto& s) {
+          return s.first.id() == node_id;
+      });
+    if (it == _fstats.end()) {
+        return errc::node_does_not_exists;
+    }
+
+    auto dirty_offset = _log.offsets().dirty_offset;
+    auto now = clock_type::now();
+    auto last_hbeat = it->second.last_hbeat_timestamp;
+    auto is_live = last_hbeat + _jit.base_duration() > now;
+
+    return (it->second.is_recovering || !is_live)
+           && it->second.match_index < dirty_offset;
+}
+
 std::vector<follower_metrics> consensus::get_follower_metrics() const {
     // if not leader return empty vector, as metrics wouldn't have any sense
     if (!is_leader()) {

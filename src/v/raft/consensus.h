@@ -308,6 +308,11 @@ public:
 
     bool should_reconnect_follower(vnode);
 
+    /**
+     * Return whether any partition is under_replicated by the provided node.
+     */
+    result<bool> is_under_replicated(model::node_id) const;
+
     std::vector<follower_metrics> get_follower_metrics() const;
 
     const configuration_manager& get_configuration_manager() const {
