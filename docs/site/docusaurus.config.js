@@ -20,16 +20,9 @@ module.exports = {
         src: 'img/Vectorized Logo Vertical.svg',
       },
       items: [
-        {
-          type: 'doc',
-          docId: 'intro',
-          position: 'left',
-          label: 'Docs',
-        },
-        // {to: '/blog', label: 'Blog', position: 'left'},
         { href: 'https://vectorized.io/redpanda', label: 'Redpanda', position: 'right' },
         { href: 'https://vectorized.io/cloud', label: 'Cloud', position: 'right' },
-        { href: 'https://vectorized.io/docs', label: 'Docs', position: 'right' },
+        { href: '/docs/intro', label: 'Docs', position: 'right' },
         { href: 'https://vectorized.io/team', label: 'Team', position: 'right' },
         { href: 'https://vectorized.io/careers', label: 'Careers', position: 'right' },
         { href: 'https://vectorized.io/blog', label: 'Blog', position: 'right' },
