@@ -14,11 +14,11 @@ module.exports = {
   projectName: 'redpanda', // Usually your repo name.
   themeConfig: {
     navbar: {
-      // title: 'Vectorized Docs',
-      // logo: {
-      //   alt: 'Vectorized Logo',
-      //   src: 'img/Vectorized Logo Vertical.svg',
-      // },
+      title: '',
+      logo: {
+        alt: 'Vectorized Logo',
+        src: 'img/Vectorized Logo Vertical.svg',
+      },
       items: [
         {
           type: 'doc',
