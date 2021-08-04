@@ -48,6 +48,28 @@
             ]
         },
         {
+            "path": "/v1/brokers/{id}/abdicate",
+            "operations": [
+                {
+                    "method": "PUT",
+                    "summary": "Relinquish leadership",
+                    "type": "void",
+                    "nickname": "abdicate",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": true,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
             "path": "/v1/brokers/{id}/decommission",
             "operations": [
                 {

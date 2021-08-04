@@ -40,6 +40,7 @@
 #include "rpc/dns.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
+#include "ssx/future-util.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
@@ -671,6 +672,27 @@ void admin_server::register_broker_routes() {
                 return ss::make_ready_future<ss::json::json_return_type>(
                   ss::json::json_void());
             });
+      });
+
+    ss::httpd::broker_json::abdicate.set(
+      _server._routes,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          model::node_id id = parse_broker_id(*req);
+
+          auto err = co_await _controller->get_members_frontend()
+                       .local()
+                       .abdicate_node(id);
+          if (err == cluster::errc::invalid_node_opeartion) {
+              throw ss::httpd::base_exception(
+                "Command issued to wrong node",
+                ss::reply::status_type::bad_request);
+          } else if (err) {
+              throw ss::httpd::base_exception(
+                "Failed to hand-off leadership",
+                ss::reply::status_type::internal_server_error);
+          }
+          co_return ss::json::json_return_type(ss::json::json_void());
       });
 }
 
