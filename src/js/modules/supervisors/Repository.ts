@@ -152,7 +152,7 @@ class Repository {
           coprocessorId: BigInt(handle.coprocessor.globalId),
           ntp: {
             ...requestItem.ntp,
-            topic: `${requestItem.ntp.topic}.$${key}$`,
+            topic: `${requestItem.ntp.topic}._${key}_`,
           },
           resultRecordBatch: [value],
         });
