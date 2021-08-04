@@ -4,32 +4,31 @@ import styles from './HomepageFeatures.module.css';
 
 const FeatureList = [
   {
-    title: 'Easy to Use',
-    Svg: require('../../static/img/undraw_docusaurus_mountain.svg').default,
+    title: 'Get started with Redpanda',
+    Svg: require('../../static/img/Redpanda Rocket.svg').default,
     description: (
       <>
-        Docusaurus was designed from the ground up to be easily installed and
-        used to get your website up and running quickly.
+        Redpanda was designed from the ground up to be easily installed
+        to get streaming up and running quickly.
       </>
     ),
   },
   {
-    title: 'Focus on What Matters',
-    Svg: require('../../static/img/undraw_docusaurus_tree.svg').default,
+    title: 'Production Redpanda deployments',
+    Svg: require('../../static/img/Redpanda Sitting.svg').default,
+    href: `/docs/deploy-self-hosted/production-deployment`,
     description: (
       <>
-        Docusaurus lets you focus on your docs, and we&apos;ll do the chores. Go
-        ahead and move your docs into the <code>docs</code> directory.
+        After you see its power, put Redpanda to the real test in production.
       </>
     ),
   },
   {
-    title: 'Powered by React',
-    Svg: require('../../static/img/undraw_docusaurus_react.svg').default,
+    title: 'Deeper dive into Redpanda',
+    Svg: require('../../static/img/Redpanda Transporter.svg').default,
     description: (
       <>
-        Extend or customize your website layout by reusing React. Docusaurus can
-        be extended while reusing the same header and footer.
+        When you want to use the more advanced Redpanda features...
       </>
     ),
   },

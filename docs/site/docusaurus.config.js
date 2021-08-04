@@ -17,7 +17,7 @@ module.exports = {
       title: '',
       logo: {
         alt: 'Vectorized Logo',
-        src: 'img/Vectorized Logo Vertical.svg',
+        src: 'img/Vectorized Logo Horizontal.png',
       },
       items: [
         { href: 'https://vectorized.io/redpanda', label: 'Redpanda', position: 'right' },
