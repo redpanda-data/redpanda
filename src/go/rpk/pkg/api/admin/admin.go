@@ -18,9 +18,11 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/hashicorp/go-multierror"
 )
@@ -70,6 +72,44 @@ func (a *AdminAPI) urlsWithPath(path string) []string {
 		urls[i] = fmt.Sprintf("%s%s", a.urls[i], path)
 	}
 	return urls
+}
+
+// rng is a package-scoped, mutex guarded, seeded *rand.Rand.
+var rng = func() func(int) int {
+	var mu sync.Mutex
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	return func(n int) int {
+		mu.Lock()
+		defer mu.Unlock()
+		return rng.Intn(n)
+	}
+}()
+
+// sendAny sends a single request to one of the client's urls and unmarshals
+// the body into into, which is expected to be a pointer to a struct.
+func (a *AdminAPI) sendAny(method, path string, body, into interface{}) error {
+	pick := rng(len(a.urls))
+	fmt.Println(pick)
+	url := a.urls[pick] + path
+	res, err := a.sendAndReceive(context.Background(), method, url, body)
+	if err != nil {
+		return err
+	}
+	return maybeUnmarshalRespInto(method, url, res, into)
+}
+
+// sendOne sends a request with sendAndReceive and unmarshals the body into
+// into, which is expected to be a pointer to a struct.
+func (a *AdminAPI) sendOne(method, path string, body, into interface{}) error {
+	if len(a.urls) != 1 {
+		return fmt.Errorf("unable to issue a single-admin-endpoint request to %d admin endpoints", len(a.urls))
+	}
+	url := a.urls[0] + path
+	res, err := a.sendAndReceive(context.Background(), method, url, body)
+	if err != nil {
+		return err
+	}
+	return maybeUnmarshalRespInto(method, url, res, into)
 }
 
 // sendAll sends a request to all URLs in the admin client. The first successful
