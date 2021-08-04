@@ -207,6 +207,7 @@ struct server_endpoint {
 struct server_configuration {
     std::vector<server_endpoint> addrs;
     int64_t max_service_memory_per_core;
+    std::optional<int> listen_backlog;
     metrics_disabled disable_metrics = metrics_disabled::no;
     ss::sstring name;
     // we use the same default as seastar for load balancing algorithm
