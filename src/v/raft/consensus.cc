@@ -2557,9 +2557,10 @@ std::vector<follower_metrics> consensus::get_follower_metrics() const {
     std::vector<follower_metrics> ret;
     ret.reserve(_fstats.size());
     auto dirty_offset = _log.offsets().dirty_offset;
+    auto now = clock_type::now();
     for (const auto& f : _fstats) {
         auto last_hbeat = f.second.last_hbeat_timestamp;
-        auto is_live = last_hbeat + _jit.base_duration() > clock_type::now();
+        auto is_live = last_hbeat + _jit.base_duration() > now;
         ret.push_back(follower_metrics{
           .id = f.first.id(),
           .is_learner = f.second.is_learner,
