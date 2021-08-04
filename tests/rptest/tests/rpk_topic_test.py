@@ -9,6 +9,7 @@
 
 from ducktape.utils.util import wait_until
 from ducktape.mark.resource import cluster
+import ducktape.errors
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool
@@ -200,7 +201,18 @@ class RpkToolTest(RedpandaTest):
 
             return True
 
-        wait_until(cond,
-                   timeout_sec=25,
-                   backoff_sec=5,
-                   err_msg="Message didn't appear.")
+        # timeout loop, but reset the timeout if we appear to be making progress
+        retries = 10
+        prev_msg_count = len(c.messages)
+        while retries > 0:
+            self.redpanda.logger.debug(
+                f"Message count {len(c.messages)} retries {retries}")
+            if cond():
+                return
+            if len(c.messages) > prev_msg_count:
+                prev_msg_count = len(c.messages)
+                retries = 10
+            time.sleep(1)
+            retries -= 1
+
+        raise ducktape.errors.TimeoutError("Message didn't appear")
