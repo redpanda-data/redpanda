@@ -1,7 +1,6 @@
 ---
-title: Deploying Redpanda for production
-order: 0
 ---
+
 
 # Deploying for production
 

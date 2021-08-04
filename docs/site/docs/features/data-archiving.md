@@ -1,7 +1,6 @@
 ---
-title: Data archiving
-order: 0
 ---
+
 
 # Data archiving
 

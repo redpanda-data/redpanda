@@ -1,7 +1,6 @@
 ---
-title: Using Terraform and Ansible to deploy Redpanda
-order: 0
 ---
+
 
 # Using Terraform and Ansible to deploy Redpanda
 

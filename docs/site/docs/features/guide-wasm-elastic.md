@@ -1,7 +1,6 @@
 ---
-title: Transforming data with WebAssembly (Wasm) - Elasticsearch tutorial
-order: 0
 ---
+
 # Transforming data with WebAssembly (Wasm)
 
 When your application components send records to Redpanda,

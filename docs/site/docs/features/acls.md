@@ -1,7 +1,6 @@
 ---
-title: Authorization & authentication
-order: 1
 ---
+
 
 # Authorization & authentication
 

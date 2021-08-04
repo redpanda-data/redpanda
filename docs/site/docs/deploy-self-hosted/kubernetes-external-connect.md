@@ -1,7 +1,6 @@
 ---
-title: Kubernetes Quick Start Guide with external connectivity
-order: 0
 ---
+
 
 # Kubernetes Quick Start Guide with external connectivity
 

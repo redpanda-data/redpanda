@@ -1,6 +1,4 @@
 ---
-title: Frequently Asked Questions
-order: 0
 ---
 # Frequently Asked Questions
 

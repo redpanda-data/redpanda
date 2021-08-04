@@ -1,7 +1,6 @@
 ---
-title: Monitoring
-order: 2
 ---
+
 # Monitoring
 
 ## Prometheus Configuration

@@ -1,7 +1,6 @@
 ---
-title: RPK commands
-order: 7
 ---
+
 # RPK commands
 
 Commands marked with ![linux icon][linux] are available on Linux.

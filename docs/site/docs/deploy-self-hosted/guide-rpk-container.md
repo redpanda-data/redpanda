@@ -1,7 +1,6 @@
 ---
-title: Starting a local cluster
-order: 0
 ---
+
 # Starting a local cluster
 
 `rpk container` is a simple and quick way to stand up a local multi node cluster
