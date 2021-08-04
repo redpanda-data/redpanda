@@ -35,41 +35,6 @@
 
 namespace cluster {
 
-// TODO: possibly generalize with other error mapping routines in cluster::*
-// on the other hand, these mappings may be partially specialized for each case
-// (e.g. topic-creation, or error-creation).
-static inline cluster::errc map_errc(std::error_code ec) {
-    if (ec == errc::success) {
-        return errc::success;
-    }
-
-    if (ec.category() == raft::error_category()) {
-        switch (static_cast<raft::errc>(ec.value())) {
-        case raft::errc::timeout:
-            return errc::timeout;
-        case raft::errc::not_leader:
-            return errc::not_leader_controller;
-        default:
-            return errc::replication_error;
-        }
-    }
-
-    if (ec.category() == rpc::error_category()) {
-        switch (static_cast<rpc::errc>(ec.value())) {
-        case rpc::errc::client_request_timeout:
-            return errc::timeout;
-        default:
-            return errc::replication_error;
-        }
-    }
-
-    if (ec.category() == cluster::error_category()) {
-        return static_cast<errc>(ec.value());
-    }
-
-    return errc::replication_error;
-}
-
 security_frontend::security_frontend(
   model::node_id self,
   ss::sharded<controller_stm>& s,

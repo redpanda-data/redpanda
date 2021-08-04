@@ -38,8 +38,6 @@ static ss::future<bool> sleep_abortable(std::chrono::milliseconds dur) {
     }
 }
 
-cluster::errc map_errc_fixme(std::error_code ec);
-
 id_allocator_frontend::id_allocator_frontend(
   ss::smp_service_group ssg,
   ss::sharded<cluster::partition_manager>& partition_manager,

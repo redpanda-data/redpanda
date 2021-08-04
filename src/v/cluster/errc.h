@@ -149,6 +149,9 @@ inline const std::error_category& error_category() noexcept {
 inline std::error_code make_error_code(errc e) noexcept {
     return std::error_code(static_cast<int>(e), error_category());
 }
+
+errc map_errc(std::error_code);
+
 } // namespace cluster
 namespace std {
 template<>

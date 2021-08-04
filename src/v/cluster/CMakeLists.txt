@@ -31,6 +31,7 @@ rpcgen(
 v_cc_library(
   NAME cluster
   SRCS
+    errc.cc
     metadata_cache.cc
     partition_manager.cc
     scheduling/partition_allocator.cc

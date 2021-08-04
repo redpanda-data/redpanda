@@ -104,39 +104,6 @@ ss::future<std::vector<topic_result>> topics_frontend::create_topics(
       });
 }
 
-cluster::errc map_errc(std::error_code ec) {
-    if (ec == errc::success) {
-        return errc::success;
-    }
-    // error comming from raft
-    if (ec.category() == raft::error_category()) {
-        switch (static_cast<raft::errc>(ec.value())) {
-        case raft::errc::timeout:
-            return errc::timeout;
-        case raft::errc::not_leader:
-            return errc::not_leader_controller;
-        default:
-            return errc::replication_error;
-        }
-    }
-
-    // error comming from raft
-    if (ec.category() == rpc::error_category()) {
-        switch (static_cast<rpc::errc>(ec.value())) {
-        case rpc::errc::client_request_timeout:
-            return errc::timeout;
-        default:
-            return errc::replication_error;
-        }
-    }
-    // cluster errors, just forward
-    if (ec.category() == cluster::error_category()) {
-        return static_cast<errc>(ec.value());
-    }
-
-    return errc::replication_error;
-}
-
 ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
   std::vector<topic_properties_update> updates,
   model::timeout_clock::time_point timeout) {
