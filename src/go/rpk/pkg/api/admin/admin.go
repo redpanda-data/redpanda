@@ -20,10 +20,9 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
-	"time"
+	"sync"
 
 	"github.com/hashicorp/go-multierror"
-	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -65,91 +64,129 @@ func NewAdminAPI(urls []string, tlsConfig *tls.Config) (*AdminAPI, error) {
 	return &AdminAPI{urls: adminUrls, client: client}, nil
 }
 
+func (a *AdminAPI) urlsWithPath(path string) []string {
+	urls := make([]string, len(a.urls))
+	for i := 0; i < len(a.urls); i++ {
+		urls[i] = fmt.Sprintf("%s%s", a.urls[i], path)
+	}
+	return urls
+}
+
+// sendAll sends a request to all URLs in the admin client. The first successful
+// response will be unmarshaled into into if it is non-nil.
+//
 // As of v21.4.15, the Redpanda admin API doesn't do request forwarding, which
 // means that some requests (such as the ones made to /users) will fail unless
 // the reached node is the leader. Therefore, a request needs to be made to
 // each node, and of those requests at least one should succeed.
 // FIXME (@david): when https://github.com/vectorizedio/redpanda/issues/1265
 // is fixed.
-func sendToMultiple(
-	urls []string, method string, body interface{}, client *http.Client,
-) (*http.Response, error) {
-	sendClosure := func(url string, res chan<- *http.Response) func() error {
-		return func() error {
-			r, err := send(url, method, body, client)
-			res <- r
-			return err
-		}
-	}
+func (a *AdminAPI) sendAll(method, path string, body, into interface{}) error {
+	var (
+		once   sync.Once
+		resURL string
+		res    *http.Response
+		grp    multierror.Group
 
-	res := make(chan *http.Response, len(urls))
-	grp := multierror.Group{}
-	for _, url := range urls {
-		grp.Go(sendClosure(url, res))
+		ctx, cancel = context.WithCancel(context.Background())
+	)
+
+	defer cancel()
+	for _, url := range a.urlsWithPath(path) {
+		myURL := url
+		grp.Go(func() error {
+			myRes, err := a.sendAndReceive(ctx, method, myURL, body)
+			if err != nil {
+				return err
+			}
+			cancel() // kill all other requests
+
+			// Only one request should be successful, but for
+			// paranoia, we guard keeping the first successful
+			// response.
+			once.Do(func() { resURL, res = myURL, myRes })
+			return nil
+		})
 	}
 
 	err := grp.Wait()
-	close(res)
-
-	if err == nil || len(err.Errors) < len(urls) {
-		for r := range res {
-			if r != nil && r.StatusCode < 400 {
-				return r, nil
-			}
-		}
+	if res != nil {
+		return maybeUnmarshalRespInto(method, resURL, res, into)
 	}
-	return nil, err.ErrorOrNil()
+	return err
 }
 
-func send(
-	url, method string, body interface{}, client *http.Client,
+// Unmarshals a response body into `into`, if it is non-nil.
+//
+// * If into is a *[]byte, the raw response put directly into `into`.
+// * If into is a *string, the raw response put directly into `into` as a string.
+// * Otherwise, the response is json unmarshaled into `into`.
+func maybeUnmarshalRespInto(
+	method, url string, resp *http.Response, into interface{},
+) error {
+	if into == nil {
+		return nil
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("unable to read %s %s response body: %w", method, url, err)
+	}
+	switch t := into.(type) {
+	case *[]byte:
+		*t = body
+	case *string:
+		*t = string(body)
+	default:
+		if err := json.Unmarshal(body, into); err != nil {
+			return fmt.Errorf("unable to decode %s %s response body: %w", method, url, err)
+		}
+	}
+	return nil
+}
+
+// sendAndReceive sends a request and returns the response. If body is
+// non-nil, this json encodes the body and sends it with the request.
+func (a *AdminAPI) sendAndReceive(
+	ctx context.Context, method, url string, body interface{},
 ) (*http.Response, error) {
-	var bodyBuffer io.Reader
+	var r io.Reader
 	if body != nil {
 		bs, err := json.Marshal(body)
 		if err != nil {
-			return nil, fmt.Errorf("couldn't encode request: %v", err)
+			return nil, fmt.Errorf("unable to encode request body for %s %s: %w", method, url, err) // should not happen
 		}
-		bodyBuffer = bytes.NewBuffer(bs)
+		r = bytes.NewBuffer(bs)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(
-		ctx,
-		method,
-		url,
-		bodyBuffer,
-	)
+	req, err := http.NewRequestWithContext(ctx, method, url, r)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
 
-	res, err := client.Do(req)
+	const applicationJson = "application/json"
+	req.Header.Set("Content-Type", applicationJson)
+	req.Header.Set("Accept", applicationJson)
+
+	res, err := a.client.Do(req)
 	if err != nil {
 		// When the server expects a TLS connection, but the TLS config isn't
 		// set/ passed, The client returns an error like
 		// Get "http://localhost:9644/v1/security/users": EOF
 		// which doesn't make it obvious to the user what's going on.
-		if strings.Contains(err.Error(), "EOF") {
-			log.Debug(err)
-			return nil, errors.New("the server expected a TLS connection")
+		if errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("%s to server %s expected a tls connection: %w", method, url, err)
 		}
+		return nil, err
 	}
 
-	if res != nil && res.StatusCode >= 400 {
+	if res.StatusCode/100 != 2 {
 		resBody, err := ioutil.ReadAll(res.Body)
+		status := http.StatusText(res.StatusCode)
 		if err != nil {
-			log.Error(err)
+			return nil, fmt.Errorf("request %s %s failed: %s, unable to read body: %w", method, url, status, err)
 		}
-		return res, fmt.Errorf(
-			"Request failed with status %d: %s",
-			res.StatusCode,
-			string(resBody),
-		)
+		return nil, fmt.Errorf("request %s %s failed: %s, body: %q", method, url, status, resBody)
 	}
 
-	return res, err
+	return res, nil
 }
