@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+// Package admin provides a client to interact with Redpanda's admin server.
 package admin
 
 import (
@@ -20,50 +21,55 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/net"
 )
 
-const (
-	httpPrefix  = "http://"
-	httpsPrefix = "https://"
-)
-
+// AdminAPI is a client to interact with Redpanda's admin server.
 type AdminAPI struct {
 	urls   []string
 	client *http.Client
 }
 
+// NewAdminAPI returns client that talks to each of the input URLs.
+//
+// If tlsConfig is non-nil, the client talks to the URLs over https with the
+// given tls configuration.
 func NewAdminAPI(urls []string, tlsConfig *tls.Config) (*AdminAPI, error) {
-	adminUrls := make([]string, len(urls))
-	for i := 0; i < len(urls); i++ {
-		prefix := ""
-		url := urls[i]
-		// Go's http library requires that the URL have a protocol.
-		if !(strings.HasPrefix(url, httpPrefix) ||
-			strings.HasPrefix(url, httpsPrefix)) {
+	if len(urls) == 0 {
+		return nil, errors.New("at least one url is required for the admin api")
+	}
 
-			prefix = httpPrefix
+	a := &AdminAPI{
+		urls:   make([]string, len(urls)),
+		client: &http.Client{Timeout: 10 * time.Second},
+	}
+	if tlsConfig != nil {
+		a.client.Transport = &http.Transport{TLSClientConfig: tlsConfig}
+	}
 
-			if tlsConfig != nil {
-				// If TLS will be enabled, use HTTPS as the protocol
-				prefix = httpsPrefix
-			}
-
-			url = strings.TrimRight(url, "/")
+	for i, u := range urls {
+		scheme, host, err := net.ParseHostMaybeScheme(u)
+		if err != nil {
+			return nil, err
 		}
-		adminUrls[i] = fmt.Sprintf("%s%s", prefix, url)
+		switch scheme {
+		case "", "http":
+			scheme = "http"
+			if tlsConfig != nil {
+				scheme = "https"
+			}
+		case "https":
+		default:
+			return nil, fmt.Errorf("unrecognized scheme %q in host %q", scheme, u)
+		}
+		a.urls[i] = fmt.Sprintf("%s://%s", scheme, host)
 	}
 
-	tr := &http.Transport{
-		TLSClientConfig: tlsConfig,
-	}
-
-	client := &http.Client{Transport: tr}
-	return &AdminAPI{urls: adminUrls, client: client}, nil
+	return a, nil
 }
 
 func (a *AdminAPI) urlsWithPath(path string) []string {
