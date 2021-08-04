@@ -25,7 +25,7 @@ class RpkToolTest(RedpandaTest):
         self._ctx = ctx
         self._rpk = RpkTool(self.redpanda)
 
-    @cluster(nodes=3)
+    @cluster(num_nodes=3)
     def test_create_topic(self):
         self._rpk.create_topic("topic")
 
@@ -34,7 +34,7 @@ class RpkToolTest(RedpandaTest):
                    backoff_sec=1,
                    err_msg="Topic never appeared.")
 
-    @cluster(nodes=3)
+    @cluster(num_nodes=4)
     def test_produce(self):
         topic = 'topic'
         message = 'message'
@@ -63,7 +63,7 @@ class RpkToolTest(RedpandaTest):
                    backoff_sec=30,
                    err_msg="Message didn't appear.")
 
-    @cluster(nodes=3)
+    @cluster(num_nodes=4)
     def test_consume_as_group(self):
         topic = 'topic_group'
         message = 'message'
@@ -93,7 +93,7 @@ class RpkToolTest(RedpandaTest):
                    backoff_sec=15,
                    err_msg="Message didn't appear.")
 
-    @cluster(nodes=3)
+    @cluster(num_nodes=4)
     def test_consume_newest(self):
         topic = 'topic_newest'
         message = 'newest message'
@@ -123,7 +123,7 @@ class RpkToolTest(RedpandaTest):
                    backoff_sec=30,
                    err_msg="Message didn't appear.")
 
-    @cluster(nodes=3)
+    @cluster(num_nodes=4)
     def test_consume_oldest(self):
         topic = 'topic'
 
@@ -161,7 +161,7 @@ class RpkToolTest(RedpandaTest):
                    backoff_sec=20,
                    err_msg="Message didn't appear.")
 
-    @cluster(nodes=3)
+    @cluster(num_nodes=4)
     def test_consume_from_partition(self):
         topic = 'topic_partition'
 
