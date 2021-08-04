@@ -37,7 +37,8 @@ set(srcs
     decommissioning_tests.cc
     replicas_rebalancing_tests.cc
     create_partitions_test.cc
-    id_allocator_stm_test.cc)
+    id_allocator_stm_test.cc
+    startup_tests.cc)
 
 rp_test(
   UNIT_TEST
