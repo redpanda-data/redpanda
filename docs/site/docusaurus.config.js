@@ -27,57 +27,48 @@ module.exports = {
           label: 'Docs',
         },
         // {to: '/blog', label: 'Blog', position: 'left'},
-        {
-          href: 'https://github.com/vectorizedio/redpanda',
-          label: 'GitHub',
-          position: 'right',
-        },
+        { href: 'https://vectorized.io/redpanda', label: 'Redpanda', position: 'right' },
+        { href: 'https://vectorized.io/cloud', label: 'Cloud', position: 'right' },
+        { href: 'https://vectorized.io/docs', label: 'Docs', position: 'right' },
+        { href: 'https://vectorized.io/team', label: 'Team', position: 'right' },
+        { href: 'https://vectorized.io/careers', label: 'Careers', position: 'right' },
+        { href: 'https://vectorized.io/blog', label: 'Blog', position: 'right' },
+        { href: 'https://join.slack.com/t/vectorizedcommunity/shared_invite/zt-ng2ze1uv-l5VMWSGQHB9gp47~kNnYGA', label: 'Slack', position: 'right' },
+        { href: 'https://github.com/vectorizedio/redpanda', label: 'Github', position: 'right' },
       ],
     },
     footer: {
       style: 'dark',
       links: [
         {
-          title: 'Docs',
+          title: 'Product',
           items: [
-            {
-              label: 'Tutorial',
-              to: '/docs/intro',
-            },
+            { label: 'Redpanda', to: 'https://vectorized.io/redpanda' },
+            { label: 'Cloud', to: 'https://vectorized.io/cloud' },
+            { label: 'Documentation', to: 'https://vectorized.io/docs' },
+            { label: 'Blog', to: 'https://vectorized.io/blog' },
+            { label: 'Events', to: 'https://vectorized.io/events' },
+            { label: 'Support', to: 'https://support.vectorized.io' },
           ],
         },
         {
-          title: 'Community',
+          title: 'Company',
           items: [
-            {
-              label: 'Stack Overflow',
-              href: 'https://stackoverflow.com/questions/tagged/docusaurus',
-            },
-            {
-              label: 'Discord',
-              href: 'https://discordapp.com/invite/docusaurus',
-            },
-            {
-              label: 'Twitter',
-              href: 'https://twitter.com/docusaurus',
-            },
+            { label: 'Team', to: 'https://vectorized.io/team' },
+            { label: 'Careers', to: 'https://vectorized.io/careers' },
+            { label: 'Press & Media', to: 'https://vectorized.io/press' },
+            { label: 'Privacy Policy', to: 'https://vectorized.io/privacy-policy' },
           ],
         },
         {
-          title: 'More',
+          title: 'Connect',
           items: [
-            {
-              label: 'Blog',
-              to: '/blog',
-            },
-            {
-              label: 'GitHub',
-              href: 'https://github.com/facebook/docusaurus',
-            },
+            { label: 'Contact', to: 'https://vectorized.io/contact' },
+            { label: 'Feedback', to: 'https://vectorized.io/feedback' },
+            { label: 'h4ck::73h::pl4n37 scholarship', to: 'https://vectorized.io/scholarship' },
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} My Project, Inc. Built with Docusaurus.`,
     },
     prism: {
       theme: lightCodeTheme,
