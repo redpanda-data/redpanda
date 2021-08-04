@@ -22,26 +22,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Shopify/sarama"
 	"github.com/hashicorp/go-multierror"
 	log "github.com/sirupsen/logrus"
 )
 
 const (
-	usersEndpoint = "/v1/security/users"
-	httpPrefix    = "http://"
-	httpsPrefix   = "https://"
+	httpPrefix  = "http://"
+	httpsPrefix = "https://"
 )
 
 type AdminAPI struct {
 	urls   []string
 	client *http.Client
-}
-
-type newUser struct {
-	User      string `json:"username"`
-	Password  string `json:"password"`
-	Algorithm string `json:"algorithm"`
 }
 
 func NewAdminAPI(urls []string, tlsConfig *tls.Config) (*AdminAPI, error) {
@@ -71,57 +63,6 @@ func NewAdminAPI(urls []string, tlsConfig *tls.Config) (*AdminAPI, error) {
 
 	client := &http.Client{Transport: tr}
 	return &AdminAPI{urls: adminUrls, client: client}, nil
-}
-
-func (a *AdminAPI) CreateUser(username, password string) error {
-	if username == "" {
-		return errors.New("empty username")
-	}
-	if password == "" {
-		return errors.New("empty password")
-	}
-	u := newUser{
-		User:      username,
-		Password:  password,
-		Algorithm: sarama.SASLTypeSCRAMSHA256,
-	}
-	urls := make([]string, len(a.urls))
-	for i := 0; i < len(a.urls); i++ {
-		urls[i] = fmt.Sprintf("%s%s", a.urls[i], usersEndpoint)
-	}
-	_, err := sendToMultiple(urls, http.MethodPost, u, a.client)
-	return err
-}
-
-func (a *AdminAPI) DeleteUser(username string) error {
-	if username == "" {
-		return errors.New("empty username")
-	}
-
-	urls := make([]string, len(a.urls))
-	for i := 0; i < len(a.urls); i++ {
-		urls[i] = fmt.Sprintf("%s%s/%s", a.urls[i], usersEndpoint, username)
-	}
-	_, err := sendToMultiple(urls, http.MethodDelete, nil, a.client)
-	return err
-}
-
-func (a *AdminAPI) ListUsers() ([]string, error) {
-	urls := make([]string, len(a.urls))
-	for i := 0; i < len(a.urls); i++ {
-		urls[i] = fmt.Sprintf("%s%s", a.urls[i], usersEndpoint)
-	}
-	res, err := sendToMultiple(urls, http.MethodGet, nil, a.client)
-	if err != nil {
-		return nil, err
-	}
-	bs, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return nil, err
-	}
-	usernames := []string{}
-	err = json.Unmarshal(bs, &usernames)
-	return usernames, err
 }
 
 // As of v21.4.15, the Redpanda admin API doesn't do request forwarding, which
