@@ -15,7 +15,7 @@
 namespace cluster {
 
 cluster::errc map_errc(std::error_code ec) {
-    if (ec == errc::success) {
+    if (!ec) {
         return errc::success;
     }
 
