@@ -67,7 +67,7 @@ function main() {
 
   readConfigFile(configPath)
     .then((config) => {
-      const port = config?.redpanda?.coproc_supervisor_server || 43189;
+      const port = config?.redpanda?.coproc_supervisor_server?.port || 43189;
       const logFilePath = config?.coproc_engine?.logFilePath || defaultLogFile;
       LogService.setPath(logFilePath);
       const logger = LogService.createLogger("service");
