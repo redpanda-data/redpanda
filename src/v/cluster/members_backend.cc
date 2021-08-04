@@ -222,6 +222,15 @@ void members_backend::calculate_reallocations_after_node_added(
         to_move_from_node.emplace_back(id, to_move);
     }
 
+    auto all_empty = std::all_of(
+      to_move_from_node.begin(),
+      to_move_from_node.end(),
+      [](const replicas_to_move& m) { return m.left_to_move == 0; });
+    // nothing to do, exit early
+    if (all_empty) {
+        return;
+    }
+
     vlog(
       clusterlog.info,
       "Targeting to move {} partitions and reallocate them to node {}",
