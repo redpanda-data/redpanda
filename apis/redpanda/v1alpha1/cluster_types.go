@@ -32,10 +32,15 @@ type ClusterSpec struct {
 	// Replicas determine how big the cluster will be.
 	// +kubebuilder:validation:Minimum=0
 	Replicas *int32 `json:"replicas,omitempty"`
-	// Resources used by each Redpanda container
-	// To calculate overall resource consumption one need to
-	// multiply replicas against limits
+	// Resources used by redpanda process running in container. Beware that
+	// there are multiple containers running in the redpanda pod and these can
+	// be enabled/disabled and configured from the `sidecars` field. These
+	// containers have separate resources settings and the amount of resources
+	// assigned to these containers will be required on the cluster on top of
+	// the resources defined here
 	Resources corev1.ResourceRequirements `json:"resources"`
+	// Sidecars is list of sidecars run alongside redpanda container
+	Sidecars Sidecars `json:"sidecars,omitempty"`
 	// Configuration represent redpanda specific configuration
 	Configuration RedpandaConfig `json:"configuration,omitempty"`
 	// If specified, Redpanda Pod tolerations
@@ -73,6 +78,23 @@ type ClusterSpec struct {
 	// DNS name.
 	// http://www.dns-sd.org/trailingdotsindomainnames.html
 	DNSTrailingDotDisabled bool `json:"dnsTrailingDotDisabled,omitempty"`
+}
+
+// Sidecars is definition of sidecars running alongside redpanda process
+type Sidecars struct {
+	// RpkStatus is sidecar running rpk status collecting status information
+	// from the running node
+	RpkStatus *Sidecar `json:"rpkStatus,omitempty"`
+}
+
+// Sidecar is a container running alongside redpanda, there's couple of them
+// added by default via defaulting webhook
+type Sidecar struct {
+	// Enabled if false, the sidecar won't be added to the pod running redpanda node
+	Enabled bool `json:"enabled,omitempty"`
+	// Resources are resource requirements and limits for the container running
+	// this sidecar. For the default sidecars this is defaulted
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 // Superuser has full access to the Redpanda cluster
