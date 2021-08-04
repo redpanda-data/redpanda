@@ -48,6 +48,7 @@ public:
         std::error_code error;
     };
     ss::future<get_under_replicated_reply> get_under_replicated(model::node_id);
+    ss::future<std::error_code> abdicate_node(model::node_id);
 
 private:
     template<typename T>

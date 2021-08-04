@@ -213,4 +213,25 @@ members_frontend::is_node_under_replicated(model::node_id id) const {
       any_partition_under_replicated, false, std::logical_or<>{});
 }
 
+ss::future<std::error_code> members_frontend::abdicate_node(model::node_id id) {
+    if (_self != id) {
+        co_return errc::invalid_node_opeartion;
+    }
+    constexpr auto abdicate_leadership = [](const auto& part) {
+        return part.second->transfer_leadership(std::nullopt);
+    };
+
+    auto results = co_await ssx::parallel_transform(
+      _partition_manager.local().partitions(), abdicate_leadership);
+
+    if (auto it = std::find_if(
+          results.begin(),
+          results.end(),
+          [](std::error_code ec) { return ec; });
+        it != results.end()) {
+        co_return *it;
+    }
+    co_return errc::success;
+}
+
 } // namespace cluster
