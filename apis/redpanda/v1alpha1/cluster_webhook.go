@@ -15,6 +15,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -33,6 +34,20 @@ const (
 	defaultTopicReplicationKey = "redpanda.default_topic_replication"
 
 	defaultSchemaRegistryPort = 8081
+)
+
+var (
+	// DefaultRpkStatusResources is default resources setting for rpk debug
+	DefaultRpkStatusResources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("10M"),
+			corev1.ResourceCPU:    resource.MustParse("0.2"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("10M"),
+			corev1.ResourceCPU:    resource.MustParse("0.2"),
+		},
+	}
 )
 
 type resourceField struct {
@@ -65,6 +80,8 @@ func allResourceFields(c *Cluster) []resourceField {
 	return resources
 }
 
+// Default implements defaulting webhook logic - all defaults that should be
+// applied to cluster CRD after user submits it should be put in here
 func (r *Cluster) Default() {
 	log.Info("default", "name", r.Name)
 	if r.Spec.Configuration.SchemaRegistry != nil && r.Spec.Configuration.SchemaRegistry.Port == 0 {
@@ -78,6 +95,13 @@ func (r *Cluster) Default() {
 		_, ok := r.Spec.AdditionalConfiguration[defaultTopicReplicationKey]
 		if !ok {
 			r.Spec.AdditionalConfiguration[defaultTopicReplicationKey] = strconv.Itoa(defaultTopicReplicationNumber)
+		}
+	}
+
+	if r.Spec.Sidecars.RpkStatus == nil {
+		r.Spec.Sidecars.RpkStatus = &Sidecar{
+			Enabled:   true,
+			Resources: DefaultRpkStatusResources,
 		}
 	}
 }
