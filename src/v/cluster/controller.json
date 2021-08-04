@@ -59,6 +59,11 @@
             "name": "finish_reallocation",
             "input_type": "finish_reallocation_request",
             "output_type": "finish_reallocation_reply"
+        },
+        {
+            "name": "get_under_replicated",
+            "input_type": "get_under_replicated_request",
+            "output_type": "get_under_replicated_reply"
         }
     ]
 }

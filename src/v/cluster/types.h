@@ -648,6 +648,15 @@ struct finish_reallocation_reply {
     errc error;
 };
 
+struct get_under_replicated_request {
+    model::node_id id;
+};
+
+struct get_under_replicated_reply {
+    bool under_replicated{false};
+    errc error{errc::success};
+};
+
 } // namespace cluster
 namespace std {
 template<>

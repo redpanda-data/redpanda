@@ -34,6 +34,7 @@ public:
       ss::sharded<controller_stm>&,
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_leaders_table>&,
+      ss::sharded<partition_manager>&,
       ss::sharded<ss::abort_source>&);
 
     ss::future<> start();
@@ -42,6 +43,11 @@ public:
     ss::future<std::error_code> decommission_node(model::node_id);
     ss::future<std::error_code> recommission_node(model::node_id);
     ss::future<std::error_code> finish_node_reallocations(model::node_id);
+    struct get_under_replicated_reply {
+        bool under_replicated{false};
+        std::error_code error;
+    };
+    ss::future<get_under_replicated_reply> get_under_replicated(model::node_id);
 
 private:
     template<typename T>
@@ -58,11 +64,13 @@ private:
                 });
           });
     }
+    ss::future<bool> is_node_under_replicated(model::node_id) const;
     model::node_id _self;
     std::chrono::milliseconds _node_op_timeout;
     ss::sharded<controller_stm>& _stm;
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_leaders_table>& _leaders;
+    ss::sharded<partition_manager>& _partition_manager;
     ss::sharded<ss::abort_source>& _as;
 };
 } // namespace cluster

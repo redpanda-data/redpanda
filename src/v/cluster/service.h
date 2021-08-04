@@ -64,6 +64,9 @@ public:
     ss::future<finish_reallocation_reply> finish_reallocation(
       finish_reallocation_request&&, rpc::streaming_context&) final;
 
+    ss::future<get_under_replicated_reply> get_under_replicated(
+      get_under_replicated_request&&, rpc::streaming_context&) final;
+
 private:
     std::
       pair<std::vector<model::topic_metadata>, std::vector<topic_configuration>>

@@ -236,4 +236,12 @@ service::do_finish_reallocation(finish_reallocation_request req) {
       req.id);
     co_return finish_reallocation_reply{.error = map_errc(ec)};
 }
+
+ss::future<get_under_replicated_reply> service::get_under_replicated(
+  get_under_replicated_request&& req, rpc::streaming_context&) {
+    auto [ur, ec] = co_await _members_frontend.local().get_under_replicated(
+      req.id);
+    co_return get_under_replicated_reply{
+      .under_replicated = ur, .error = map_errc(ec)};
+}
 } // namespace cluster
