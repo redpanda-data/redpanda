@@ -219,7 +219,8 @@ ss::future<> group_manager::handle_partition_leader_change(
     p->loading = true;
     if (leader_id != _self.id()) {
         // TODO: we are not yet handling group / partition deletion
-        klog.trace("ignorning group/partition deletion on node {}", _self.id());
+        p->loading = false;
+        return ss::make_ready_future<>();
     }
 
     auto timeout
