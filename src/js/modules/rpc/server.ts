@@ -179,7 +179,9 @@ export class ProcessBatchServer extends SupervisorServer {
         logger.info(`invalid topic on wasm script: ${handleDef.id}`);
         return errors.createResponseScriptInvalidTopic(handle);
       }
-      logger.info(`wasm script loaded on nodejs engine : ${handleDef.id}`);
+      logger.info(
+        `wasm script loaded on nodejs engine : ${handleDef.id} with topics ${handle.coprocessor.inputTopics}`
+      );
       this.repository.add(handle);
       return errors.createResponseSuccess(handle);
     }
