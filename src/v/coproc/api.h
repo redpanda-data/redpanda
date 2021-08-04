@@ -21,6 +21,8 @@ public:
     api(
       unresolved_address,
       ss::sharded<storage::api>&,
+      ss::sharded<cluster::topics_frontend>&,
+      ss::sharded<cluster::metadata_cache>&,
       ss::sharded<cluster::partition_manager>&) noexcept;
 
     ~api();
@@ -34,8 +36,10 @@ public:
 private:
     unresolved_address _engine_addr;
     sys_refs _rs;
-    std::unique_ptr<wasm::event_listener> _listener; /// one instance
-    ss::sharded<pacemaker> _pacemaker;               /// one per core
+
+    std::unique_ptr<wasm::event_listener> _listener;        /// one instance
+    ss::sharded<pacemaker> _pacemaker;                      /// one per core
+    ss::sharded<materialized_topics_frontend> _mt_frontend; /// one instance
 };
 
 } // namespace coproc

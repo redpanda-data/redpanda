@@ -15,6 +15,7 @@ namespace coproc {
 
 class pacemaker;
 class script_context;
+class materialized_topics_frontend;
 
 namespace wasm {
 

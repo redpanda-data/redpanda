@@ -25,7 +25,8 @@ ss::future<> materialized_topics_frontend::topic_creation_resolved(
   std::vector<cluster::topic_result> results) {
     for (const auto& result : results) {
         auto found = _topics.find(result.tp_ns);
-        vassert(found != _topics.end(), "HUH");
+        vassert(
+          found != _topics.end(), "Missing promise with associated event");
         if (result.ec == cluster::errc::success) {
             vlog(
               coproclog.info, "Materialized topic created: {}", result.tp_ns);
