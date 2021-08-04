@@ -173,7 +173,7 @@ class RpkToolTest(RedpandaTest):
         for i in range(n):
             msgs['key-' + str(i)] = 'message-' + str(i)
 
-        part = random.randint(0, n_parts)
+        part = random.randint(0, n_parts - 1)
         # Produce messages to a random partition
         for k in msgs:
             self._rpk.produce(topic, k, msgs[k], partition=part)
