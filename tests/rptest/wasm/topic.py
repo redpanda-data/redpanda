@@ -42,5 +42,5 @@ def construct_materialized_topic(source, destination):
             return False
         return True
 
-    return f"{source}.${destination}$" if is_valid_kafka_topic(
-        source) and is_valid_kafka_topic(destination) else None
+    return (f"{source}._{destination}_" if is_valid_kafka_topic(source)
+            and is_valid_kafka_topic(destination) else None)
