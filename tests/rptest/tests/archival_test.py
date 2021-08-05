@@ -204,7 +204,7 @@ class ArchivalTest(RedpandaTest):
         """Verify that our isolate/rejoin facilities actually work"""
         with firewall_blocked(self.redpanda.nodes, self._get_s3_endpoint_ip()):
             self.kafka_tools.produce(self.topic, 10000, 1024)
-            time.sleep(10)  # can't busy wait here
+            time.sleep(120)  # can't busy wait here
             self._check_bucket_is_emtpy()
 
     @cluster(num_nodes=3)
