@@ -352,7 +352,7 @@ class SchemaRegistryTest(RedpandaTest):
         result_raw = self._get_schemas_ids_id(id=2)
         assert result_raw.status_code == requests.codes.not_found
         result = result_raw.json()
-        assert result["error_code"] == 40401
+        assert result["error_code"] == 40403
         assert result["message"] == "Schema 2 not found"
 
         self.logger.debug("Get schema version 1")
