@@ -35,8 +35,11 @@ class CoordinatorLoadInProgressTest(RedpandaTest):
 
         #Run the example
         #Here, we're not using a BackgroundThreadService
-        #because the example runs in the foreground
+        #because the clojure script runs in the foreground.
+        #Also, allow failure because we want to inspect the
+        #result. Ducktape will auto-fail the test if the
+        #remote account has non-zero exit status.
         result = node.account.ssh_output(cmd, allow_fail=True,
-                                         timeout_sec=30).decode()
+                                         timeout_sec=120).decode()
 
-        assert "[GroupMetadata(test-kpow-group)]" in result, "coordinator load in progress test failed"
+        assert "TimeoutException" not in result, "coordinator load in progress test failed"
