@@ -21,7 +21,6 @@ require (
 	github.com/hashicorp/go-multierror v1.1.0
 	github.com/icza/dyno v0.0.0-20200205103839-49cb13720835
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
-	github.com/lestrrat-go/jwx v1.1.7
 	github.com/lorenzosaino/go-sysctl v0.1.0
 	github.com/lovoo/goka v1.0.6 // indirect
 	github.com/mattn/go-colorable v0.1.2 // indirect
@@ -37,7 +36,7 @@ require (
 	github.com/prometheus/common v0.9.1
 	github.com/safchain/ethtool v0.0.0-20190326074333-42ed695e3de8
 	github.com/sirupsen/logrus v1.4.2
-	github.com/spf13/afero v1.2.2
+	github.com/spf13/afero v1.6.0
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.7.0
@@ -45,8 +44,11 @@ require (
 	github.com/tklauser/go-sysconf v0.1.0
 	github.com/xdg/scram v1.0.3
 	golang.org/x/crypto v0.0.0-20210220033148-5ea612d1eb83
+	golang.org/x/mod v0.4.1 // indirect
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	golang.org/x/sys v0.0.0-20210112091331-59c308dcf3cc
+	golang.org/x/text v0.3.6 // indirect
+	golang.org/x/tools v0.0.0-20210114065538-d78b04bdf963 // indirect
 	gopkg.in/yaml.v2 v2.4.0
 	gotest.tools/v3 v3.0.3 // indirect
 	mvdan.cc/sh/v3 v3.2.1
