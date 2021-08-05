@@ -9,3 +9,6 @@ spec:
         - resources:
             requests:
               memory: 99M
+        - resources:
+            requests:
+              memory: 10M
