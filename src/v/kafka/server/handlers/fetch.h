@@ -317,6 +317,7 @@ ss::future<read_result> read_from_ntp(
   const model::materialized_ntp&,
   fetch_config,
   bool,
-  std::optional<model::timeout_clock::time_point>);
+  std::optional<model::timeout_clock::time_point>,
+  ss::sharded<v8_engine::scripts_table>& v8_scripts_dispatcher);
 
 } // namespace kafka

@@ -21,6 +21,7 @@
 #include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "seastarx.h"
+#include "v8_engine/scripts_dispatcher.h"
 #include "vlog.h"
 
 #include <seastar/core/future.hh>
@@ -176,6 +177,10 @@ public:
 
     cluster::controller_api& controller_api() {
         return _conn->server().controller_api();
+    }
+
+    ss::sharded<v8_engine::scripts_table>& v8_scripts_dispatcher() {
+        return _conn->server().v8_scripts_dispatcher();
     }
 
 private:

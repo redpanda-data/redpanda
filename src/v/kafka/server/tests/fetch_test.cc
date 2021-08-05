@@ -163,19 +163,22 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
           .timeout = model::no_timeout,
         };
         auto rctx = make_request_context();
+        auto& v8_script_dispatcher = rctx.v8_scripts_dispatcher();
         auto octx = kafka::op_context(
           std::move(rctx), ss::default_smp_service_group());
         auto shard = octx.rctx.shards().shard_for(ntp).value();
         return octx.rctx.partition_manager()
           .invoke_on(
             shard,
-            [ntp, config](cluster::partition_manager& pm) {
+            [ntp, config, &v8_script_dispatcher](
+              cluster::partition_manager& pm) {
                 return kafka::read_from_ntp(
                   pm,
                   model::materialized_ntp(ntp),
                   config,
                   true,
-                  model::no_timeout);
+                  model::no_timeout,
+                  v8_script_dispatcher);
             })
           .get0();
     };
