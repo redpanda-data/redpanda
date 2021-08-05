@@ -23,7 +23,7 @@ metadata:
   name: update-image-cluster-and-node-port
 spec:
   image: "vectorized/redpanda"
-  version: "v21.4.10"
+  version: "v21.6.6"
   replicas: 2
   resources:
     requests:
