@@ -2,29 +2,6 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: cluster-sample
-spec:
-  template:
-    spec:
-      containers:
-        - name: redpanda
-          env:
-            - name: REDPANDA_ENVIRONMENT
-              value: kubernetes
-            - name: POD_NAME
-              valueFrom:
-                fieldRef:
-                  apiVersion: v1
-                  fieldPath: metadata.name
-            - name: POD_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  apiVersion: v1
-                  fieldPath: metadata.namespace
-            - name: POD_IP
-              valueFrom:
-                fieldRef:
-                  apiVersion: v1
-                  fieldPath: status.podIP
 status:
   readyReplicas: 1
 ---
