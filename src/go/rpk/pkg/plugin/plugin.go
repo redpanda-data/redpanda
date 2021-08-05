@@ -184,3 +184,42 @@ func Sha256Path(fs afero.Fs, path string) (string, error) {
 
 	return hex.EncodeToString(h.Sum(nil)[:]), nil
 }
+
+// WriteBinary writes a plugin with the given name into the destination
+// directory with the provided binary contents.
+//
+// This returns the filepath that was written, or an error if any step of the
+// process fails. If the process fails after the binary has been written to a
+// temporary directory, the file is left on disk for user inspection.
+func WriteBinary(
+	fs afero.Fs, name, dstDir string, contents []byte, autocomplete bool,
+) (string, error) {
+	tmp, err := afero.TempFile(fs, "", fmt.Sprintf("rpk-plugin-%s-*", name))
+	if err != nil {
+		return "", fmt.Errorf("unable to create temp file for plugin %q: %v", name, err)
+	}
+	_, err = tmp.Write(contents)
+	tmp.Close()
+	if err != nil {
+		if removeErr := fs.Remove(tmp.Name()); removeErr != nil {
+			return "", fmt.Errorf("unable to write plugin %q: %v; unable to remove temporary file %s: %v", name, err, tmp.Name(), removeErr)
+		}
+		return "", fmt.Errorf("unable to write plugin %q: %v; temporary file has been removed", name, err)
+	}
+
+	dstBase := "rpk-" + name
+	if autocomplete {
+		dstBase = "rpk.ac-" + name
+	}
+	dst := filepath.Join(dstDir, dstBase)
+
+	if err = fs.Chmod(tmp.Name(), 0o755); err != nil {
+		return "", fmt.Errorf("unable to add executable permissions to plugin file %s: %w; plugin remains on disk", tmp.Name(), err)
+	}
+
+	if err = fs.Rename(tmp.Name(), dst); err != nil {
+		return "", fmt.Errorf("unable to rename temporary plugin file %s to %s: %w; plugin renames on disk", tmp.Name(), dst, err)
+	}
+
+	return dst, nil
+}
