@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/testfs"
 )
 
 func TestLogOutput(t *testing.T) {
@@ -137,69 +136,6 @@ func (t testPluginHandler) exec(path string, args []string) error {
 	joined := strings.Join(args, "\x00")
 	argHits[joined]++
 	return nil
-}
-
-func TestListPlugins(t *testing.T) {
-	fs := testfs.FromMap(map[string]testfs.Fmode{
-		"/usr/local/sbin/rpk-non_executable":    {0666, ""},
-		"/usr/local/sbin/rpk-barely_executable": {0100, ""},
-		"/bin/rpk-barely_executable":            {0100, "shadowed!"},
-		"/bin/rpk.ac-barely_executable":         {0100, "also shadowed!"},
-		"/bin/rpk.ac-auto_completed":            {0777, ""},
-		"/bin/has/dir/":                         {0777, ""},
-		"/bin/rpk.ac-":                          {0777, "empty name ignored"},
-		"/bin/rpk-":                             {0777, "empty name ignored"},
-		"/bin/rpkunrelated":                     {0777, ""},
-		"/unsearched/rpk-valid_unused":          {0777, ""},
-	})
-
-	got := listPlugins(fs, []string{
-		"   /usr/local/sbin   ", // space trimmed
-		"",                      // empty path, ignored
-		"/usr/local/sbin",       // dup ignored
-		"/bin",
-	})
-
-	exp := []plugin{
-		{
-			pieces: []string{"barely", "executable"},
-			path:   "/usr/local/sbin/rpk-barely_executable",
-		},
-		{
-			pieces: []string{"auto", "completed"},
-			path:   "/bin/rpk.ac-auto_completed",
-		},
-	}
-
-	require.Equal(t, exp, got, "got plugins != expected")
-}
-
-func TestUniqueTrimmedStrs(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		in   []string
-		exp  []string
-	}{
-		{"empty",
-			[]string{},
-			[]string{},
-		},
-
-		{"duplicated",
-			[]string{"foo", "bar", "foo", "biz", "baz"},
-			[]string{"foo", "bar", "biz", "baz"},
-		},
-
-		{"trimmed and empty dropped",
-			[]string{"", "    bar ", "foo", "biz", "baz", "foo   "},
-			[]string{"bar", "foo", "biz", "baz"},
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			got := uniqueTrimmedStrs(test.in)
-			require.Equal(t, test.exp, got, "got unique trimmed strs != expected")
-		})
-	}
 }
 
 func TestAddPluginWithExec(t *testing.T) {
