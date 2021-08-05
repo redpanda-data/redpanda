@@ -12,6 +12,7 @@ package executors
 import (
 	"bufio"
 	"fmt"
+	"os"
 
 	"github.com/spf13/afero"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors/commands"
@@ -25,14 +26,7 @@ type scriptRenderingExecutor struct {
 // FIXME: @david
 // This should also return an error.
 func NewScriptRenderingExecutor(fs afero.Fs, filename string) Executor {
-	file, err := fs.Create(filename)
-	if err != nil {
-		return &scriptRenderingExecutor{
-			deffered: err,
-			writer:   nil,
-		}
-	}
-	err = fs.Chmod(filename, 0755)
+	file, err := fs.OpenFile(filename, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0755)
 	if err != nil {
 		return &scriptRenderingExecutor{
 			deffered: err,

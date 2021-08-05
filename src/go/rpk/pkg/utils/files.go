@@ -74,29 +74,11 @@ func CopyFile(fs afero.Fs, src string, dst string) error {
 }
 
 func WriteFileLines(fs afero.Fs, lines []string, path string) error {
-	file, err := fs.Create(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	w := bufio.NewWriter(file)
-	for _, line := range lines {
-		_, err := fmt.Fprintln(w, line)
-		if err != nil {
-			return err
-		}
-	}
-	return w.Flush()
+	return afero.WriteFile(fs, path, []byte(strings.Join(lines, "\n")+"\n"), 0o600)
 }
 
 func WriteBytes(fs afero.Fs, bs []byte, path string) (int, error) {
-	file, err := fs.Create(path)
-	if err != nil {
-		return 0, err
-	}
-	defer file.Close()
-	return file.Write(bs)
+	return len(bs), afero.WriteFile(fs, path, bs, 0o600)
 }
 
 func FileMd5(fs afero.Fs, filePath string) (string, error) {
