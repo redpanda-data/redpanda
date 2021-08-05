@@ -66,16 +66,16 @@ func NewGenerateCommand(fs afero.Fs) *cobra.Command {
 	return command
 }
 
-func createIfNotExist(fs afero.Fs, path string) (afero.File, error) {
+func checkIfExists(fs afero.Fs, path string) error {
 	exist, err := afero.Exists(fs, path)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if exist {
 		folderPath, filePath := filepath.Split(path)
-		return nil, fmt.Errorf("The directory %s contains files that could conflict: \n %s", folderPath, filePath)
+		return fmt.Errorf("The directory %s contains files that could conflict: \n %s", folderPath, filePath)
 	}
-	return fs.Create(path)
+	return nil
 }
 
 func GetLatestClientApiVersion() string {
@@ -114,7 +114,7 @@ func executeGenerate(fs afero.Fs, path string) error {
 		}
 		for _, templateFile := range templates {
 			filePath := filepath.Join(folderPath, templateFile.name)
-			_, err := createIfNotExist(fs, filePath)
+			err := checkIfExists(fs, filePath)
 			if err != nil {
 				return err
 			}
@@ -122,6 +122,7 @@ func executeGenerate(fs afero.Fs, path string) error {
 			if err != nil {
 				return err
 			}
+
 			if templateFile.permission > 0 {
 				err = fs.Chmod(filePath, templateFile.permission)
 				if err != nil {
