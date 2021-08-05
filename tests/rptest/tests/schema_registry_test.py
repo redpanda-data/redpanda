@@ -327,7 +327,7 @@ class SchemaRegistryTest(RedpandaTest):
             subject=f"{topic}-key", version=2)
         assert result_raw.status_code == requests.codes.not_found
         result = result_raw.json()
-        assert result["error_code"] == 40401
+        assert result["error_code"] == 40402
         assert result[
             "message"] == f"Subject '{topic}-key' Version 2 not found."
 
