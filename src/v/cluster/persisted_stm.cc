@@ -222,10 +222,7 @@ ss::future<> persisted_stm::start() {
     if (maybe_reader) {
         storage::snapshot_reader& reader = *maybe_reader;
         co_await hydrate_snapshot(reader);
-        auto offset = std::max(_insync_offset, _c->start_offset());
-        if (offset >= model::offset(0)) {
-            set_next(offset);
-        }
+        set_next(raft::details::next_offset(_last_snapshot_offset));
         _resolved_when_snapshot_hydrated.set_value();
         co_await reader.close();
     } else {
