@@ -38,6 +38,7 @@ HTTP_POST_HEADERS = {
 schema1_def = '{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"}]}'
 schema2_def = '{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2","default":"foo"}]}'
 schema3_def = '{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2"}]}'
+invalid_avro = '{"type":"notatype","name":"myrecord","fields":[{"type":"string","name":"f1"}]}'
 
 
 class SchemaRegistryTest(RedpandaTest):
@@ -264,6 +265,12 @@ class SchemaRegistryTest(RedpandaTest):
         if result_raw.json() != []:
             self.logger.error(result_raw.json)
         assert result_raw.json() == []
+
+        self.logger.debug("Posting invalid schema as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=json.dumps({"schema": invalid_avro}))
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.unprocessable_entity
 
         self.logger.debug("Posting schema 1 as a subject key")
         result_raw = self._post_subjects_subject_versions(

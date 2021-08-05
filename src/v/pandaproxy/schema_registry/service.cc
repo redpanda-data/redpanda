@@ -110,7 +110,8 @@ ss::future<> service::do_start() {
     try {
         co_await create_internal_topic();
         co_await fetch_internal_topic();
-        vlog(plog.error, "service::ensure_started() - success");
+        vlog(
+          plog.info, "Schema registry successfully initialized internal topic");
     } catch (...) {
         vlog(
           plog.error,
