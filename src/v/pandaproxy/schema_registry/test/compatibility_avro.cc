@@ -43,6 +43,12 @@ BOOST_AUTO_TEST_CASE(test_avro_enum) {
     // BOOST_REQUIRE(check_compatible(enum3, enum2_def));
 }
 
+BOOST_AUTO_TEST_CASE(test_avro_union) {
+    BOOST_REQUIRE(check_compatible(union2, union0));
+
+    BOOST_REQUIRE(!check_compatible(union1, union0));
+}
+
 BOOST_AUTO_TEST_CASE(test_avro_basic_backwards_compat) {
     // Backward compatibility: A new schema is backward compatible if it can be
     // used to read the data written in the previous schema.
