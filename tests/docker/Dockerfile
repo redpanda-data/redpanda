@@ -65,8 +65,9 @@ RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFK
     ldconfig
 
 # install dependencies for kafka clients
-RUN mkdir -p /opt/operatrio
-COPY tests/rptest/tests/compatibility/operatrio.py /opt/operatrio/operatrio.py
+RUN curl -SL https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein -o /usr/local/bin/lein && \
+    chmod a+x /usr/local/bin/lein && lein && \
+    git -C /opt clone --branch compat-test https://github.com/vectorizedio/redpanda-reproducer-1.git
 
 # copy source of test (java) programs
 COPY --chown=0:0 tests/java /tmp/java
