@@ -105,7 +105,7 @@ public:
 protected:
     virtual ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) = 0;
     virtual ss::future<stm_snapshot> take_snapshot() = 0;
-    ss::future<> hydrate_snapshot(storage::snapshot_reader&);
+    ss::future<std::optional<stm_snapshot>> load_snapshot();
     ss::future<> wait_for_snapshot_hydrated();
     ss::future<> persist_snapshot(stm_snapshot&&);
     ss::future<> do_make_snapshot();

@@ -31,32 +31,33 @@ persisted_stm::persisted_stm(
       ss::default_priority_class())
   , _log(logger) {}
 
-ss::future<> persisted_stm::hydrate_snapshot(storage::snapshot_reader& reader) {
-    return reader.read_metadata()
-      .then([this, &reader](iobuf meta_buf) {
-          iobuf_parser meta_parser(std::move(meta_buf));
+ss::future<std::optional<stm_snapshot>> persisted_stm::load_snapshot() {
+    auto maybe_reader = co_await _snapshot_mgr.open_snapshot();
+    if (!maybe_reader) {
+        co_return std::nullopt;
+    }
 
-          auto version = reflection::adl<int8_t>{}.from(meta_parser);
-          vassert(
-            version == snapshot_version,
-            "Only support persisted_snapshot_version {} but got {}",
-            snapshot_version,
-            version);
+    storage::snapshot_reader& reader = *maybe_reader;
+    iobuf meta_buf = co_await reader.read_metadata();
+    iobuf_parser meta_parser(std::move(meta_buf));
 
-          stm_snapshot_header hdr;
-          hdr.version = reflection::adl<int8_t>{}.from(meta_parser);
-          hdr.snapshot_size = reflection::adl<int32_t>{}.from(meta_parser);
+    auto version = reflection::adl<int8_t>{}.from(meta_parser);
+    vassert(
+      version == snapshot_version,
+      "Only support persisted_snapshot_version {} but got {}",
+      snapshot_version,
+      version);
 
-          return read_iobuf_exactly(reader.input(), hdr.snapshot_size)
-            .then([this, hdr](iobuf data_buf) {
-                return apply_snapshot(hdr, std::move(data_buf));
-            })
-            .then(
-              [this]() { return _snapshot_mgr.remove_partial_snapshots(); });
-      })
-      .handle_exception([this](std::exception_ptr e) {
-          vassert(false, "Can't hydrate from {} error {}", _snapshot_mgr.snapshot_path(), e);
-      });
+    stm_snapshot snapshot;
+    snapshot.header.version = reflection::adl<int8_t>{}.from(meta_parser);
+    snapshot.header.snapshot_size = reflection::adl<int32_t>{}.from(
+      meta_parser);
+    snapshot.data = co_await read_iobuf_exactly(
+      reader.input(), snapshot.header.snapshot_size);
+    co_await reader.close();
+    co_await _snapshot_mgr.remove_partial_snapshots();
+
+    co_return snapshot;
 }
 
 ss::future<> persisted_stm::wait_for_snapshot_hydrated() {
@@ -192,13 +193,23 @@ ss::future<bool> persisted_stm::wait_no_throw(
 }
 
 ss::future<> persisted_stm::start() {
-    auto maybe_reader = co_await _snapshot_mgr.open_snapshot();
-    if (maybe_reader) {
-        storage::snapshot_reader& reader = *maybe_reader;
-        co_await hydrate_snapshot(reader);
+    std::optional<stm_snapshot> maybe_snapshot;
+
+    try {
+        maybe_snapshot = co_await load_snapshot();
+    } catch (...) {
+        vassert(
+          false,
+          "Can't load snapshot from '{}'. Got error: {}",
+          _snapshot_mgr.snapshot_path(),
+          std::current_exception());
+    }
+
+    if (maybe_snapshot) {
+        stm_snapshot& snapshot = *maybe_snapshot;
+        co_await apply_snapshot(snapshot.header, std::move(snapshot.data));
         set_next(raft::details::next_offset(_last_snapshot_offset));
         _resolved_when_snapshot_hydrated.set_value();
-        co_await reader.close();
     } else {
         auto offset = _c->start_offset();
         if (offset >= model::offset(0)) {
