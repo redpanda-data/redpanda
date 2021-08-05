@@ -331,8 +331,7 @@ class SchemaRegistryTest(RedpandaTest):
         assert result_raw.status_code == requests.codes.not_found
         result = result_raw.json()
         assert result["error_code"] == 40402
-        assert result[
-            "message"] == f"Subject '{topic}-key' Version 2 not found."
+        assert result["message"] == f"Version 2 not found."
 
         self.logger.debug("Get schema version 1 for subject key")
         result_raw = self._get_subjects_subject_versions_version(
