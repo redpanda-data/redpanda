@@ -18,6 +18,7 @@
 #include "pandaproxy/schema_registry/avro.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/exceptions.h"
+#include "pandaproxy/schema_registry/schema_util.h"
 #include "pandaproxy/schema_registry/store.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "vlog.h"
@@ -50,6 +51,9 @@ ss::future<> sharded_store::stop() { return _store.stop(); }
 
 ss::future<sharded_store::insert_result> sharded_store::project_ids(
   subject sub, schema_definition def, schema_type type) {
+    // Validate the schema (may throw)
+    validate(def(), type).value();
+
     // Check compatibility
     std::vector<schema_version> versions;
     try {
@@ -359,10 +363,7 @@ ss::future<bool> sharded_store::is_compatible(
 
     // Currently only support AVRO
     if (new_schema_type != schema_type::avro) {
-        throw as_exception(error_info{
-          error_code::schema_invalid,
-          fmt::format(
-            "Invalid schema type {}", to_string_view(new_schema_type))});
+        throw as_exception(invalid_schema_type(new_schema_type));
     }
 
     // if transitive, search all, otherwise seach forwards from version

@@ -109,4 +109,10 @@ inline error_info not_deleted(const subject& sub, schema_version version) {
         version())};
 }
 
+inline error_info invalid_schema_type(schema_type type) {
+    return {
+      error_code::schema_invalid,
+      fmt::format("Invalid schema type {}", to_string_view(type))};
+}
+
 } // namespace pandaproxy::schema_registry
