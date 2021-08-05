@@ -386,9 +386,8 @@ BOOST_AUTO_TEST_CASE(test_store_invalid_subject_compat) {
       pps::error_code::subject_not_found);
 
     expected = pps::compatibility_level::backward;
-    BOOST_REQUIRE_EQUAL(
-      s.set_compatibility(dummy_marker, subject0, expected).error().code(),
-      pps::error_code::subject_not_found);
+    BOOST_REQUIRE(
+      s.set_compatibility(dummy_marker, subject0, expected).value());
 }
 
 BOOST_AUTO_TEST_CASE(test_store_delete_subject) {
