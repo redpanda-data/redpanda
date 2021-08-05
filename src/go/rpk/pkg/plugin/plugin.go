@@ -3,7 +3,13 @@
 package plugin
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/afero"
@@ -44,9 +50,36 @@ type Plugin struct {
 	ShadowedPaths []string
 }
 
+// Name returns the name of the plugin, which is simply the plugin's first
+// argument.
+func (p *Plugin) Name() string { return p.Arguments[0] }
+
+// Plugins is a handy alias for a slice of plugins.
+type Plugins []Plugin
+
+// Sort sorts a slice of plugins.
+func (ps Plugins) Sort() {
+	sort.Slice(ps, func(i, j int) bool { return ps[i].Name() < ps[j].Name() })
+}
+
+// Find returns the given plugin if it exists.
+func (ps Plugins) Find(name string) (*Plugin, bool) {
+	for _, p := range ps {
+		if p.Name() == name {
+			return &p, true
+		}
+	}
+	return nil, false
+}
+
 // NameToArgs converts a plugin command name into its arguments.
 func NameToArgs(command string) []string {
 	return strings.Split(command, "_")
+}
+
+// UserPaths returns the user PATH list.
+func UserPaths() []string {
+	return filepath.SplitList(os.Getenv("PATH"))
 }
 
 // ListPlugins returns all plugins found in fs across the given search
@@ -58,7 +91,7 @@ func NameToArgs(command string) []string {
 //
 // We do support plugins defining themselves as "rpk-foo_bar", even though that
 // reserves the "foo" plugin namespace.
-func ListPlugins(fs afero.Fs, searchDirs []string) []Plugin {
+func ListPlugins(fs afero.Fs, searchDirs []string) Plugins {
 	searchDirs = uniqueTrimmedStrs(searchDirs)
 
 	uniquePlugins := make(map[string]int) // plugin name (e.g., mm3 or cloud) => index into plugins
@@ -133,4 +166,21 @@ func uniqueTrimmedStrs(in []string) []string {
 		keep = append(keep, path)
 	}
 	return keep
+}
+
+// Sha256Path returns the sha256sum for the file at path.
+//
+// The intent of this function is to shasum plugin binaries.
+func Sha256Path(fs afero.Fs, path string) (string, error) {
+	f, err := fs.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("unable to open %q: %v", path, err)
+	}
+
+	h := sha256.New()
+	if _, err = io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("unable to sha256sum %q: %v", path, err)
+	}
+
+	return hex.EncodeToString(h.Sum(nil)[:]), nil
 }

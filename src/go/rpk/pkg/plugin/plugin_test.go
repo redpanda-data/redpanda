@@ -28,7 +28,7 @@ func TestListPlugins(t *testing.T) {
 		"/bin",
 	})
 
-	exp := []Plugin{
+	exp := Plugins{
 		{
 			Path:      "/usr/local/sbin/rpk-barely_executable",
 			Arguments: []string{"barely", "executable"},
