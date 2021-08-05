@@ -217,32 +217,24 @@ ss::future<bool> persisted_stm::wait_no_throw(
 }
 
 ss::future<> persisted_stm::start() {
-    return _snapshot_mgr.open_snapshot().then(
-      [this](std::optional<storage::snapshot_reader> reader) {
-          auto f = ss::now();
-          if (reader) {
-              f = ss::do_with(
-                std::move(*reader), [this](storage::snapshot_reader& reader) {
-                    return hydrate_snapshot(reader).then([this, &reader] {
-                        auto offset = std::max(
-                          _insync_offset, _c->start_offset());
-                        if (offset >= model::offset(0)) {
-                            set_next(offset);
-                        }
-                        _resolved_when_snapshot_hydrated.set_value();
-                        return reader.close();
-                    });
-                });
-          } else {
-              auto offset = _c->start_offset();
-              if (offset >= model::offset(0)) {
-                  set_next(offset);
-              }
-              _resolved_when_snapshot_hydrated.set_value();
-          }
-
-          return state_machine::start();
-      });
+    auto maybe_reader = co_await _snapshot_mgr.open_snapshot();
+    if (maybe_reader) {
+        storage::snapshot_reader& reader = *maybe_reader;
+        co_await hydrate_snapshot(reader);
+        auto offset = std::max(_insync_offset, _c->start_offset());
+        if (offset >= model::offset(0)) {
+            set_next(offset);
+        }
+        _resolved_when_snapshot_hydrated.set_value();
+        co_await reader.close();
+    } else {
+        auto offset = _c->start_offset();
+        if (offset >= model::offset(0)) {
+            set_next(offset);
+        }
+        _resolved_when_snapshot_hydrated.set_value();
+    }
+    co_await state_machine::start();
 }
 
 } // namespace cluster
