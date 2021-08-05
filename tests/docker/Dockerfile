@@ -64,6 +64,10 @@ RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFK
     make install && \
     ldconfig
 
+# install dependencies for kafka clients
+RUN mkdir -p /opt/operatrio
+COPY tests/rptest/tests/compatibility/operatrio.py /opt/operatrio/operatrio.py
+
 # copy source of test (java) programs
 COPY --chown=0:0 tests/java /tmp/java
 RUN mvn clean package --batch-mode --file /tmp/java/kafka-verifier --define buildDir=/opt/kafka-verifier/ && \
