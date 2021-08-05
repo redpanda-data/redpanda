@@ -72,8 +72,10 @@ bool spsc_queue::empty() { return _items.empty(); }
 
 // executor
 
-executor::executor(uint8_t cpu_id, size_t queue_size)
-  : _thread([this, cpu_id] {
+executor::executor(
+  ss::alien::instance& instance, uint8_t cpu_id, size_t queue_size)
+  : _alien_instance(instance)
+  , _thread([this, cpu_id] {
       pin(cpu_id);
       loop();
   })
@@ -121,17 +123,25 @@ void executor::loop() {
         internal::work_item* item = _tasks.pop();
 
         if (item) {
-            ss::alien::submit_to(_watchdog_shard, [this, item] {
-                rearm_watchdog(*item, item->get_timeout());
-                return ss::now();
-            }).wait();
+            ss::alien::submit_to(
+              _alien_instance,
+              _watchdog_shard,
+              [this, item] {
+                  rearm_watchdog(*item, item->get_timeout());
+                  return ss::now();
+              })
+              .wait();
 
             item->process();
 
-            ss::alien::submit_to(_watchdog_shard, [this, item] {
-                cancel_watchdog(*item);
-                return ss::now();
-            }).wait();
+            ss::alien::submit_to(
+              _alien_instance,
+              _watchdog_shard,
+              [this, item] {
+                  cancel_watchdog(*item);
+                  return ss::now();
+              })
+              .wait();
 
             item->done();
         }
