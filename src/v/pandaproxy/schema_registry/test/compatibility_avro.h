@@ -74,6 +74,20 @@ const auto union2 = pps::make_avro_schema_definition(R"({
 })")
                       .value();
 
+const auto int_array = pps::make_avro_schema_definition(R"({
+  "name": "test2",
+  "type": "array",
+  "items": "int"
+})")
+                         .value();
+
+const auto long_array = pps::make_avro_schema_definition(R"({
+  "name": "test2",
+  "type": "array",
+  "items": "long"
+})")
+                          .value();
+
 // Schemas defined in AvroCompatibilityTest.java. Used here to ensure
 // compatibility with the schema-registry
 const auto schema1
