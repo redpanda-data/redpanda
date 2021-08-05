@@ -1,6 +1,11 @@
 package plugin
 
 import (
+	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -112,6 +117,167 @@ plugins:
 			}
 
 			require.Equal(t, test.exp, m, "received manifest is not equal to expected manifest")
+		})
+	}
+}
+
+func TestManifestPluginDownload(t *testing.T) {
+	t.Parallel()
+
+	var (
+		pluginName     = "name"
+		pluginPath     = "path/to"
+		pluginArch     = "os_arg"
+		pluginContents = "foo"
+		pluginSha256   = sha256.Sum256([]byte(pluginContents))
+		pluginSha      = hex.EncodeToString(pluginSha256[:])
+	)
+
+	for _, test := range []struct {
+		name   string
+		plugin ManifestPlugin
+
+		failSha         bool
+		failCompression bool
+		expErr          bool
+	}{
+		{
+			name: "valid no compression",
+			plugin: ManifestPlugin{
+				Name: pluginName,
+				Path: pluginPath,
+				OSArchShas: map[string]string{
+					pluginArch: pluginSha,
+				},
+			},
+		},
+
+		{
+			name: "valid with compression",
+			plugin: ManifestPlugin{
+				Name:        pluginName,
+				Path:        pluginPath,
+				Compression: "gzip",
+				OSArchShas:  map[string]string{pluginArch: pluginSha},
+			},
+		},
+
+		{
+			name: "invalid missing name",
+			plugin: ManifestPlugin{
+				Path:       pluginPath,
+				OSArchShas: map[string]string{pluginArch: pluginSha},
+			},
+		},
+
+		{
+			name: "invalid missing path",
+			plugin: ManifestPlugin{
+				Name:       pluginName,
+				OSArchShas: map[string]string{pluginArch: pluginSha},
+			},
+		},
+
+		{
+			name: "invalid missing os_arch",
+			plugin: ManifestPlugin{
+				Name: pluginName,
+				Path: pluginPath,
+			},
+			expErr: true,
+		},
+
+		{
+			name: "invalid os_arch",
+			plugin: ManifestPlugin{
+				Name:       pluginName,
+				Path:       pluginPath,
+				OSArchShas: map[string]string{"unknown": pluginSha},
+			},
+			expErr: true,
+		},
+
+		{
+			name: "unknown compression",
+			plugin: ManifestPlugin{
+				Name:        pluginName,
+				Path:        pluginPath,
+				Compression: "unknown",
+				OSArchShas:  map[string]string{pluginArch: pluginSha},
+			},
+			expErr: true,
+		},
+
+		{
+			name: "failed sha",
+			plugin: ManifestPlugin{
+				Name:       pluginName,
+				Path:       pluginPath,
+				OSArchShas: map[string]string{pluginArch: pluginSha},
+			},
+			failSha: true,
+			expErr:  true,
+		},
+
+		{
+			name: "failed gzip",
+			plugin: ManifestPlugin{
+				Name:        pluginName,
+				Path:        pluginPath,
+				Compression: "gzip",
+				OSArchShas:  map[string]string{pluginArch: pluginSha},
+			},
+			failCompression: true,
+			expErr:          true,
+		},
+
+		//
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			// First determine what we will serve to the user. If
+			// the test indicates to fail the sha, we modify what
+			// we serve pre-compression. If the test indicates to
+			// fail compression, we modify what we compress.
+			serve := []byte(pluginContents)
+			if test.failSha {
+				serve[0]++
+			}
+			if test.plugin.Compression == "gzip" {
+				b := new(bytes.Buffer)
+				gz := gzip.NewWriter(b) // errors skipped; cannot fail
+				gz.Write(serve)
+				gz.Close()
+				serve = b.Bytes()
+
+				if test.failCompression {
+					serve[0]++
+				}
+			}
+
+			svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				path := fmt.Sprintf("/%s/%s/%s/%s", pluginPath, pluginArch, pluginSha, pluginName)
+				if r.URL.Path != path {
+					t.Errorf("invalid request path %s != exp %s", r.URL.Path, path)
+				}
+				w.Write(serve)
+			}))
+			defer svr.Close()
+
+			got, err := test.plugin.Download(svr.URL, "os", "arch")
+
+			if gotErr := err != nil; gotErr != test.expErr {
+				t.Errorf("got err? %v != exp err? %v", gotErr, test.expErr)
+				return
+			}
+			if test.expErr {
+				return
+			}
+
+			if string(got) != pluginContents {
+				t.Errorf("got %s != exp %s", got, pluginContents)
+			}
 		})
 	}
 }
