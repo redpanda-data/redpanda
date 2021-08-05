@@ -56,8 +56,14 @@ partition::partition(
               _raft.get(), clusterlog, stm_manager, _as);
         }
 
+        bool is_group_ntp = _raft->ntp().ns == model::kafka_internal_namespace
+                            && _raft->ntp().tp.topic
+                                 == model::kafka_group_topic;
+
         bool has_rm_stm = !_raft->log_config().is_compacted()
-                          && (_is_tx_enabled || _is_idempotence_enabled);
+                          && (_is_tx_enabled || _is_idempotence_enabled)
+                          && model::controller_ntp != _raft->ntp()
+                          && !is_group_ntp;
 
         if (has_rm_stm) {
             _rm_stm = ss::make_shared<cluster::rm_stm>(
