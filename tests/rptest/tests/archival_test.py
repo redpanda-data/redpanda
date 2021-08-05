@@ -155,7 +155,7 @@ class ArchivalTest(RedpandaTest):
 
     def __init__(self, test_context):
         self.s3_bucket_name = f"panda-bucket-{uuid.uuid1()}"
-        extra_rp_conf = dict(
+        self._extra_rp_conf = dict(
             developer_mode=True,
             cloud_storage_enabled=True,
             cloud_storage_access_key=ArchivalTest.s3_access_key,
@@ -170,7 +170,7 @@ class ArchivalTest(RedpandaTest):
             log_segment_size=1048576  # 1MB
         )
         super(ArchivalTest, self).__init__(test_context=test_context,
-                                           extra_rp_conf=extra_rp_conf)
+                                           extra_rp_conf=self._extra_rp_conf)
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
         self.s3_client = S3Client(
@@ -181,11 +181,10 @@ class ArchivalTest(RedpandaTest):
             logger=self.logger)
 
     def setUp(self):
-        self.s3_client.empty_bucket(self.s3_bucket_name)
+        self.s3_bucket_name = f"panda-bucket-{uuid.uuid1()}"
         self.s3_client.create_bucket(self.s3_bucket_name)
-        # Deletes in S3 are eventually consistent so we might still
-        # see previously removed objects for a while.
-        validate(self._check_bucket_is_emtpy, self.logger, 300)
+        self._extra_rp_conf.update(
+            dict(cloud_storage_bucket=self.s3_bucket_name))
         super().setUp()
 
     def tearDown(self):
@@ -199,7 +198,6 @@ class ArchivalTest(RedpandaTest):
         self.kafka_tools.produce(self.topic, 10000, 1024)
         validate(self._quick_verify, self.logger, 90)
 
-    @ignore
     @cluster(num_nodes=3)
     def test_isolate(self):
         """Verify that our isolate/rejoin facilities actually work"""
@@ -467,8 +465,11 @@ class ArchivalTest(RedpandaTest):
                                 )
                                 if actual_hash == msegm.md5:
                                     manifest_segments[mix] = None
-                                    self.logger.info(f"partial match for segment {msegm.ntp} {msegm.base_offset}-" +\
-                                                    f"{msegm.committed_offset} on {node_key}")
+                                    self.logger.info(
+                                        f"partial match for segment {msegm.ntp} {msegm.base_offset}-"
+                                        +
+                                        f"{msegm.committed_offset} on {node_key}"
+                                    )
                                     found = True
                                     break
                         if not found:
