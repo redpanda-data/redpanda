@@ -8,6 +8,8 @@ import (
 )
 
 func TestListPlugins(t *testing.T) {
+	t.Parallel()
+
 	fs := testfs.FromMap(map[string]testfs.Fmode{
 		"/usr/local/sbin/rpk-non_executable":    {0666, ""},
 		"/usr/local/sbin/rpk-barely_executable": {0100, ""},
@@ -47,6 +49,8 @@ func TestListPlugins(t *testing.T) {
 }
 
 func TestUniqueTrimmedStrs(t *testing.T) {
+	t.Parallel()
+
 	for _, test := range []struct {
 		name string
 		in   []string
@@ -75,4 +79,29 @@ func TestUniqueTrimmedStrs(t *testing.T) {
 			require.Equal(t, test.exp, got, "got unique trimmed strs != expected")
 		})
 	}
+}
+
+func TestWriteBinary(t *testing.T) {
+	t.Parallel()
+
+	fs := testfs.FromMap(map[string]testfs.Fmode{
+		"/bin/":     {},
+		"/usr/bin/": {},
+	})
+
+	{
+		dst, err := WriteBinary(fs, "autocomplete", "/bin/", []byte("ac"), true)
+		require.NoError(t, err, "creating an autocomplete binary failed")
+		require.Equal(t, dst, "/bin/rpk.ac-autocomplete", "binary path not as expected")
+	}
+	{
+		dst, err := WriteBinary(fs, "non-auto", "/usr/bin", []byte("nonac"), false)
+		require.NoError(t, err, "creating a non-autocomplete binary failed")
+		require.Equal(t, dst, "/usr/bin/rpk-non-auto", "binary path not as expected")
+	}
+
+	testfs.Expect(t, fs, map[string]testfs.Fmode{
+		"/bin/rpk.ac-autocomplete": {0o755, "ac"},
+		"/usr/bin/rpk-non-auto":    {0o755, "nonac"},
+	})
 }
