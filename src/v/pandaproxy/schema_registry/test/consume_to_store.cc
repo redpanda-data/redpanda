@@ -122,10 +122,10 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
     BOOST_REQUIRE_THROW(c(std::move(bad_schema_magic)).get(), pps::exception);
 
     BOOST_REQUIRE(
-      s.get_compatibility().get() == pps::compatibility_level::none);
+      s.get_compatibility().get() == pps::compatibility_level::backward);
     BOOST_REQUIRE(
       s.get_compatibility(subject0, pps::default_to_global::yes).get()
-      == pps::compatibility_level::none);
+      == pps::compatibility_level::backward);
 
     auto good_config = pps::as_record_batch(
       pps::config_key{sequence, node_id, subject0, magic0},

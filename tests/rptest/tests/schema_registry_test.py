@@ -369,7 +369,7 @@ class SchemaRegistryTest(RedpandaTest):
         """
         self.logger.debug("Get initial global config")
         result_raw = self._get_config()
-        assert result_raw.json()["compatibilityLevel"] == "NONE"
+        assert result_raw.json()["compatibilityLevel"] == "BACKWARD"
 
         self.logger.debug("Set global config")
         result_raw = self._set_config(

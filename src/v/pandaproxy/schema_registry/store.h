@@ -530,7 +530,7 @@ private:
 
     schema_map _schemas;
     subject_map _subjects;
-    compatibility_level _compatibility{compatibility_level::none};
+    compatibility_level _compatibility{compatibility_level::backward};
 };
 
 } // namespace pandaproxy::schema_registry
