@@ -278,9 +278,6 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
             continue;
         }
 
-        co_await _stm_manager->ensure_snapshot_exists(
-          seg->offsets().committed_offset);
-
         auto result = co_await storage::internal::self_compact_segment(
           seg, cfg, _probe, *_readers_cache);
         vlog(
