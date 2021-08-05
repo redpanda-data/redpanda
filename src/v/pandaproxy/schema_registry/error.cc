@@ -59,8 +59,9 @@ struct error_category final : std::error_category {
         switch (static_cast<error_code>(ec)) {
         case error_code::schema_id_not_found:
         case error_code::subject_not_found:
-        case error_code::subject_version_not_found:
             return reply_error_code::topic_not_found; // 40401
+        case error_code::subject_version_not_found:
+            return reply_error_code::partition_not_found; // 40402
         case error_code::subject_soft_deleted:
             return reply_error_code::subject_soft_deleted; // 40404
         case error_code::subject_not_deleted:
