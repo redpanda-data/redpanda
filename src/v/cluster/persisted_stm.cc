@@ -210,7 +210,6 @@ ss::future<bool> persisted_stm::wait_no_throw(
 
 ss::future<> persisted_stm::start() {
     std::optional<stm_snapshot> maybe_snapshot;
-
     try {
         maybe_snapshot = co_await load_snapshot();
     } catch (...) {
@@ -223,8 +222,19 @@ ss::future<> persisted_stm::start() {
 
     if (maybe_snapshot) {
         stm_snapshot& snapshot = *maybe_snapshot;
-        co_await apply_snapshot(snapshot.header, std::move(snapshot.data));
-        set_next(raft::details::next_offset(_last_snapshot_offset));
+
+        auto next_offset = raft::details::next_offset(snapshot.header.offset);
+        if (next_offset >= _c->start_offset()) {
+            co_await apply_snapshot(snapshot.header, std::move(snapshot.data));
+            set_next(next_offset);
+        } else {
+            vlog(
+              clusterlog.warn,
+              "Skipping snapshot {} since it's out of sync with the log",
+              _snapshot_mgr.snapshot_path());
+            set_next(_c->start_offset());
+        }
+
         _resolved_when_snapshot_hydrated.set_value();
     } else {
         auto offset = _c->start_offset();
