@@ -647,6 +647,8 @@ void application::wire_up_redpanda_services() {
               c.max_service_memory_per_core = memory_groups::rpc_total_memory();
               c.disable_metrics = rpc::metrics_disabled(
                 config::shard_local_cfg().disable_metrics());
+              c.listen_backlog
+                = config::shard_local_cfg().rpc_server_listen_backlog;
               auto rpc_builder = config::shard_local_cfg()
                                    .rpc_server_tls()
                                    .get_credentials_builder()
@@ -741,6 +743,8 @@ void application::wire_up_redpanda_services() {
           return ss::async([this, &c] {
               c.max_service_memory_per_core
                 = memory_groups::kafka_total_memory();
+              c.listen_backlog
+                = config::shard_local_cfg().rpc_server_listen_backlog;
               auto& tls_config
                 = config::shard_local_cfg().kafka_api_tls.value();
               for (const auto& ep : config::shard_local_cfg().kafka_api()) {

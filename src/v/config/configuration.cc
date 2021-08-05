@@ -61,6 +61,12 @@ configuration::configuration()
       required::no,
       tls_config(),
       tls_config::validate)
+  , rpc_server_listen_backlog(
+      *this,
+      "rpc_server_listen_backlog",
+      "TCP connection queue length for Kafka server and internal RPC server",
+      required::no,
+      std::nullopt)
   , enable_coproc(
       *this, "enable_coproc", "Enable coprocessing mode", required::no, false)
   , coproc_supervisor_server(
