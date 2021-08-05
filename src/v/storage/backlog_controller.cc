@@ -127,7 +127,7 @@ ss::future<> backlog_controller::update() {
 ss::future<> backlog_controller::set() {
     vlog(_log.debug, "updating shares {}", _current_shares);
     _scheduling_group.set_shares(static_cast<float>(_current_shares));
-    return ss::engine().update_shares_for_class(_io_priority, _current_shares);
+    return _io_priority.update_shares(_current_shares);
 }
 
 void backlog_controller::setup_metrics(const ss::sstring& controller_label) {
