@@ -46,6 +46,9 @@ void server::start() {
             ss::listen_options lo;
             lo.reuse_address = true;
             lo.lba = cfg.load_balancing_algo;
+            if (cfg.listen_backlog.has_value()) {
+                lo.listen_backlog = cfg.listen_backlog.value();
+            }
 
             if (!endpoint.credentials) {
                 ss = ss::engine().listen(endpoint.addr, lo);

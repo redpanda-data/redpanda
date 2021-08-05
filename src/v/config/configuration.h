@@ -48,6 +48,7 @@ struct configuration final : public config_store {
     // Network
     property<unresolved_address> rpc_server;
     property<tls_config> rpc_server_tls;
+    property<std::optional<int>> rpc_server_listen_backlog;
     // Coproc
     property<bool> enable_coproc;
     property<unresolved_address> coproc_supervisor_server;
@@ -469,26 +470,6 @@ struct convert<config::tls_config> {
               to_absolute(read_optional(node, "truststore_file")),
               node["require_client_auth"]
                 && node["require_client_auth"].as<bool>());
-        }
-        return true;
-    }
-};
-
-template<typename T>
-struct convert<std::optional<T>> {
-    using type = std::optional<T>;
-
-    static Node encode(const type& rhs) {
-        if (rhs) {
-            return Node(*rhs);
-        }
-    }
-
-    static bool decode(const Node& node, type& rhs) {
-        if (node) {
-            rhs = std::make_optional<T>(node.as<T>());
-        } else {
-            rhs = std::nullopt;
         }
         return true;
     }

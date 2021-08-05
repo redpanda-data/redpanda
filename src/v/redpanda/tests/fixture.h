@@ -183,7 +183,8 @@ public:
         cfg.get("schema_registry_api")
           .set_value(std::vector<model::broker_endpoint>{model::broker_endpoint(
             unresolved_address("127.0.0.1", listen_port))});
-        cfg.get("schema_registry_replication_factor").set_value(int16_t{1});
+        cfg.get("schema_registry_replication_factor")
+          .set_value(std::make_optional<int16_t>(1));
         return to_yaml(cfg);
     }
 

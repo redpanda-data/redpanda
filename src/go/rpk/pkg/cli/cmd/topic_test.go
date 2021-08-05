@@ -299,17 +299,17 @@ func TestDescribeTopic(t *testing.T) {
   Name            Value     Read-only  Sensitive  
   key             value     false      false      
   Partitions      1 - 10 out of 10  
-  Partition       Leader            Replicas   In-Sync Replicas  
-  0               1                 [1]        [1]               
-  1               1                 [1]        [1]               
-  2               1                 [1]        [1]               
-  3               1                 [1]        [1]               
-  4               1                 [1]        [1]               
-  5               1                 [1]        [1]               
-  6               1                 [1]        [1]               
-  7               1                 [1]        [1]               
-  8               1                 [1]        [1]               
-  9               1                 [1]        [1]               
+  Partition       Leader            Replicas   
+  0               1                 [1]        
+  1               1                 [1]        
+  2               1                 [1]        
+  3               1                 [1]        
+  4               1                 [1]        
+  5               1                 [1]        
+  6               1                 [1]        
+  7               1                 [1]        
+  8               1                 [1]        
+  9               1                 [1]        
 `,
 		},
 		{
@@ -338,8 +338,8 @@ func TestDescribeTopic(t *testing.T) {
   Internal        false     
   Cleanup policy  delete    
   Partitions      1 - 1 out of 1  
-  Partition       Leader          Replicas  In-Sync Replicas  
-  0               1               [1]       [1]               
+  Partition       Leader          Replicas  
+  0               1               [1]       
 `,
 		},
 		{
@@ -362,13 +362,13 @@ func TestDescribeTopic(t *testing.T) {
   Name            Value    Read-only  Sensitive  
   key             value    false      false      
   Partitions      7 - 12 out of 12  
-  Partition       Leader            Replicas   In-Sync Replicas  
-  6               1                 [1]        [1]               
-  7               1                 [1]        [1]               
-  8               1                 [1]        [1]               
-  9               1                 [1]        [1]               
-  10              1                 [1]        [1]               
-  11              1                 [1]        [1]               
+  Partition       Leader            Replicas   
+  6               1                 [1]        
+  7               1                 [1]        
+  8               1                 [1]        
+  9               1                 [1]        
+  10              1                 [1]        
+  11              1                 [1]        
 `,
 		},
 		{
@@ -391,10 +391,10 @@ func TestDescribeTopic(t *testing.T) {
   Name            Value    Read-only  Sensitive  
   key             value    false      false      
   Partitions      10 - 12 out of 12  
-  Partition       Leader             Replicas   In-Sync Replicas  
-  9               1                  [1]        [1]               
-  10              1                  [1]        [1]               
-  11              1                  [1]        [1]               
+  Partition       Leader             Replicas   
+  9               1                  [1]        
+  10              1                  [1]        
+  11              1                  [1]        
 `,
 		},
 		{
@@ -417,19 +417,19 @@ func TestDescribeTopic(t *testing.T) {
   Name            Value    Read-only  Sensitive  
   key             value    false      false      
   Partitions      1 - 12 out of 12  
-  Partition       Leader            Replicas   In-Sync Replicas  
-  0               1                 [1]        [1]               
-  1               1                 [1]        [1]               
-  2               1                 [1]        [1]               
-  3               1                 [1]        [1]               
-  4               1                 [1]        [1]               
-  5               1                 [1]        [1]               
-  6               1                 [1]        [1]               
-  7               1                 [1]        [1]               
-  8               1                 [1]        [1]               
-  9               1                 [1]        [1]               
-  10              1                 [1]        [1]               
-  11              1                 [1]        [1]               
+  Partition       Leader            Replicas   
+  0               1                 [1]        
+  1               1                 [1]        
+  2               1                 [1]        
+  3               1                 [1]        
+  4               1                 [1]        
+  5               1                 [1]        
+  6               1                 [1]        
+  7               1                 [1]        
+  8               1                 [1]        
+  9               1                 [1]        
+  10              1                 [1]        
+  11              1                 [1]        
 `,
 		},
 		{
@@ -452,12 +452,12 @@ func TestDescribeTopic(t *testing.T) {
   Name            Value    Read-only  Sensitive  
   key             value    false      false      
   Partitions      1 - 5 out of 5  
-  Partition       Leader          Replicas   In-Sync Replicas  
-  0               1               [1]        [1]               
-  1               1               [1]        [1]               
-  2               1               [1]        [1]               
-  3               1               [1]        [1]               
-  4               1               [1]        [1]               
+  Partition       Leader          Replicas   
+  0               1               [1]        
+  1               1               [1]        
+  2               1               [1]        
+  3               1               [1]        
+  4               1               [1]        
 `,
 		},
 	}

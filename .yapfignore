@@ -1,0 +1,5 @@
+vbuild/*
+build/*
+vtools/*
+depot_tools/*
+src/v/dashboard/node_modules/*

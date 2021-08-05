@@ -115,4 +115,25 @@ struct convert<ss::sstring> {
         return true;
     }
 };
+
+template<typename T>
+struct convert<std::optional<T>> {
+    using type = std::optional<T>;
+
+    static Node encode(const type& rhs) {
+        if (rhs) {
+            return Node(*rhs);
+        }
+    }
+
+    static bool decode(const Node& node, type& rhs) {
+        if (node && !node.IsNull()) {
+            rhs = std::make_optional<T>(node.as<T>());
+        } else {
+            rhs = std::nullopt;
+        }
+        return true;
+    }
+};
+
 }; // namespace YAML

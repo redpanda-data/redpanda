@@ -110,7 +110,8 @@ ss::future<> service::do_start() {
     try {
         co_await create_internal_topic();
         co_await fetch_internal_topic();
-        vlog(plog.error, "service::ensure_started() - success");
+        vlog(
+          plog.info, "Schema registry successfully initialized internal topic");
     } catch (...) {
         vlog(
           plog.error,
@@ -123,11 +124,9 @@ ss::future<> service::do_start() {
 ss::future<> service::create_internal_topic() {
     // Use the default topic replica count, unless our specific setting
     // for the schema registry chooses to override it.
-    int16_t replication_factor = _config.schema_registry_replication_factor();
-    if (replication_factor == -1) {
-        replication_factor
-          = config::shard_local_cfg().default_topic_replication();
-    }
+    int16_t replication_factor
+      = _config.schema_registry_replication_factor().value_or(
+        config::shard_local_cfg().default_topic_replication());
 
     vlog(
       plog.debug,

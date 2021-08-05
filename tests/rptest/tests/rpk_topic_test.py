@@ -10,6 +10,7 @@
 from ducktape.utils.util import wait_until
 from ducktape.mark import ignore
 from ducktape.mark.resource import cluster
+import ducktape.errors
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool
@@ -26,7 +27,7 @@ class RpkToolTest(RedpandaTest):
         self._ctx = ctx
         self._rpk = RpkTool(self.redpanda)
 
-    @cluster(nodes=3)
+    @cluster(num_nodes=3)
     def test_create_topic(self):
         self._rpk.create_topic("topic")
 
@@ -35,7 +36,7 @@ class RpkToolTest(RedpandaTest):
                    backoff_sec=1,
                    err_msg="Topic never appeared.")
 
-    @cluster(nodes=3)
+    @cluster(num_nodes=4)
     def test_produce(self):
         topic = 'topic'
         message = 'message'
@@ -64,7 +65,7 @@ class RpkToolTest(RedpandaTest):
                    backoff_sec=30,
                    err_msg="Message didn't appear.")
 
-    @cluster(nodes=3)
+    @cluster(num_nodes=4)
     def test_consume_as_group(self):
         topic = 'topic_group'
         message = 'message'
@@ -94,7 +95,7 @@ class RpkToolTest(RedpandaTest):
                    backoff_sec=15,
                    err_msg="Message didn't appear.")
 
-    @cluster(nodes=3)
+    @cluster(num_nodes=4)
     def test_consume_newest(self):
         topic = 'topic_newest'
         message = 'newest message'
@@ -124,7 +125,7 @@ class RpkToolTest(RedpandaTest):
                    backoff_sec=30,
                    err_msg="Message didn't appear.")
 
-    @cluster(nodes=3)
+    @cluster(num_nodes=4)
     def test_consume_oldest(self):
         topic = 'topic'
 
@@ -163,7 +164,7 @@ class RpkToolTest(RedpandaTest):
                    err_msg="Message didn't appear.")
 
     @ignore
-    @cluster(nodes=3)
+    @cluster(num_nodes=4)
     def test_consume_from_partition(self):
         topic = 'topic_partition'
 
@@ -175,7 +176,7 @@ class RpkToolTest(RedpandaTest):
         for i in range(n):
             msgs['key-' + str(i)] = 'message-' + str(i)
 
-        part = random.randint(0, n_parts)
+        part = random.randint(0, n_parts - 1)
         # Produce messages to a random partition
         for k in msgs:
             self._rpk.produce(topic, k, msgs[k], partition=part)
@@ -202,7 +203,18 @@ class RpkToolTest(RedpandaTest):
 
             return True
 
-        wait_until(cond,
-                   timeout_sec=25,
-                   backoff_sec=5,
-                   err_msg="Message didn't appear.")
+        # timeout loop, but reset the timeout if we appear to be making progress
+        retries = 10
+        prev_msg_count = len(c.messages)
+        while retries > 0:
+            self.redpanda.logger.debug(
+                f"Message count {len(c.messages)} retries {retries}")
+            if cond():
+                return
+            if len(c.messages) > prev_msg_count:
+                prev_msg_count = len(c.messages)
+                retries = 10
+            time.sleep(1)
+            retries -= 1
+
+        raise ducktape.errors.TimeoutError("Message didn't appear")

@@ -59,6 +59,8 @@ tasks:
       TOTAL_PHYSICAL_MEMORY:
         sh: free -g | awk '/^Mem:/{print $2}'
       GB_PER_BUILD_CORE: '{{default "2" .GB_PER_BUILD_CORE}}'
+    env:
+      CCACHE_DIR: '{{default "/dev/shm/ccache/v" .CCACHE_DIR}}'
     deps:
     - configure
     cmds:
@@ -93,8 +95,8 @@ tasks:
     - cp '{{.SRC_DIR}}/tests/docker/Dockerfile.dockerignore' '{{.SRC_DIR}}/.dockerignore'
     - |
       if [ '{{.CI}}' == 'true' ]; then
-        chmod 644 '{{.SRC_DIR}}/tests/docker/ssh/'* '{{.SRC_DIR}}/tests/setup.py'
-        chmod 755 '{{.SRC_DIR}}/tests/docker/ssh'
+        find {{.SRC_DIR}}/tests/ -type d -exec chmod 0755 {} \;
+        find {{.SRC_DIR}}/tests/ -type f -exec chmod 0644 {} \;
         docker pull docker.io/vectorized/redpanda-test-node:cache-{{ARCH}} || true
         docker build \
           --tag vectorized/redpanda-test-node \
@@ -140,7 +142,8 @@ tasks:
     - start-compose-cluster
     - :wasm:publish-local
     vars:
-      DUCKTAPE_ARGS: '{{default "--exit-first tests/rptest/test_suite_quick.yml" .DUCKTAPE_ARGS}}'
+      DUCKTAPE_ARGS: '{{default "tests/rptest/test_suite_quick.yml" .DUCKTAPE_ARGS}}'
+      DUCKTAPE_MAX_PARALLEL: '{{default "1" .DUCKTAPE_MAX_PARALLEL}}'
       RP_INSTALL_DIR_DEFAULT: '{{.BUILD_DIR}}'
       RP_INSTALL_DIR: '{{default .RP_INSTALL_DIR_DEFAULT .RP_INSTALL_DIR}}'
       REDPANDA_LOG_LEVEL: '{{default "info" .REDPANDA_LOG_LEVEL}}'
@@ -168,6 +171,7 @@ tasks:
           --cluster=ducktape.cluster.json.JsonCluster
           --cluster-file=/cluster.json
           --results-root=/build/tests/results
+          --max-parallel={{.DUCKTAPE_MAX_PARALLEL}}
           --globals='{"rp_install_path_root":"{{.RP_INSTALL_DIR}}","redpanda_log_level":"{{.REDPANDA_LOG_LEVEL}}","s3_bucket":"{{.S3_BUCKET}}","s3_region":"{{.S3_REGION}}","s3_access_key":"{{.S3_ACCESS_KEY}}","s3_secret_key":"{{.S3_SECRET_KEY}}"}'
           {{.DUCKTAPE_ARGS}}
 
