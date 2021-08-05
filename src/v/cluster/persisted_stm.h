@@ -31,11 +31,11 @@ namespace cluster {
 struct stm_snapshot_header {
     int8_t version{0};
     int32_t snapshot_size{0};
+    model::offset offset;
 };
 
 struct stm_snapshot {
     stm_snapshot_header header;
-    model::offset offset;
     iobuf data;
 };
 
@@ -68,7 +68,8 @@ class persisted_stm
   : public raft::state_machine
   , public storage::snapshotable_stm {
 public:
-    static constexpr const int8_t snapshot_version = 0;
+    static constexpr const int8_t snapshot_version_v0 = 0;
+    static constexpr const int8_t snapshot_version = 1;
     explicit persisted_stm(ss::sstring, ss::logger&, raft::consensus*);
 
     ss::future<> make_snapshot() final;

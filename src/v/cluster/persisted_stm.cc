@@ -43,12 +43,25 @@ ss::future<std::optional<stm_snapshot>> persisted_stm::load_snapshot() {
 
     auto version = reflection::adl<int8_t>{}.from(meta_parser);
     vassert(
-      version == snapshot_version,
-      "Only support persisted_snapshot_version {} but got {}",
-      snapshot_version,
+      version == snapshot_version || version == snapshot_version_v0,
+      "Unsupported persisted_stm snapshot_version {}",
       version);
 
+    if (version == snapshot_version_v0) {
+        vlog(
+          clusterlog.warn,
+          "Skipping snapshot {} due to old format",
+          _snapshot_mgr.snapshot_path());
+
+        // can't load old format of the snapshot, since snapshot is missing
+        // it will be reconstructed by replaying the log
+        co_await reader.close();
+        co_return std::nullopt;
+    }
+
     stm_snapshot snapshot;
+    snapshot.header.offset = model::offset(
+      reflection::adl<int64_t>{}.from(meta_parser));
     snapshot.header.version = reflection::adl<int8_t>{}.from(meta_parser);
     snapshot.header.snapshot_size = reflection::adl<int32_t>{}.from(
       meta_parser);
@@ -70,11 +83,13 @@ ss::future<> persisted_stm::wait_for_snapshot_hydrated() {
 
 ss::future<> persisted_stm::persist_snapshot(stm_snapshot&& snapshot) {
     iobuf data_size_buf;
+
+    int8_t version = snapshot_version;
+    int64_t offset = snapshot.header.offset();
+    int8_t data_version = snapshot.header.version;
+    int32_t data_size = snapshot.header.snapshot_size;
     reflection::serialize(
-      data_size_buf,
-      snapshot_version,
-      snapshot.header.version,
-      snapshot.header.snapshot_size);
+      data_size_buf, version, offset, data_version, data_size);
 
     return _snapshot_mgr.start_snapshot().then(
       [this,
@@ -102,7 +117,7 @@ ss::future<> persisted_stm::persist_snapshot(stm_snapshot&& snapshot) {
 
 ss::future<> persisted_stm::do_make_snapshot() {
     auto snapshot = co_await take_snapshot();
-    auto offset = snapshot.offset;
+    auto offset = snapshot.header.offset;
 
     co_await persist_snapshot(std::move(snapshot));
     _last_snapshot_offset = std::max(_last_snapshot_offset, offset);

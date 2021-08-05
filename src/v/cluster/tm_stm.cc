@@ -311,10 +311,10 @@ ss::future<stm_snapshot> tm_stm::take_snapshot() {
     stm_snapshot_header header;
     header.version = supported_version;
     header.snapshot_size = tm_ss_buf.size_bytes();
+    header.offset = _insync_offset;
 
     stm_snapshot stm_ss;
     stm_ss.header = header;
-    stm_ss.offset = _insync_offset;
     stm_ss.data = std::move(tm_ss_buf);
     co_return stm_ss;
 }
