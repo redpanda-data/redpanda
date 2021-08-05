@@ -1,12 +1,18 @@
 package plugin
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"runtime"
 	"sort"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v2"
@@ -139,4 +145,76 @@ func (p *ManifestPlugin) PathSha(
 	}
 
 	return fmt.Sprintf("/%s/%s/%s/%s", p.Path, need, sha, p.Name), sha, nil
+}
+
+// DownloadForUser is a shortcut for Download for the current user's
+// os / arch.
+func (p *ManifestPlugin) DownloadForUser(baseURL string) ([]byte, error) {
+	return p.Download(baseURL, runtime.GOOS, runtime.GOARCH)
+}
+
+// Download downloads and decompresses the plugin represented by this manifest
+// entry.
+func (p *ManifestPlugin) Download(baseURL, os, host string) ([]byte, error) {
+	var decompress bool
+	switch p.Compression {
+	case "":
+		// do nothing
+	case "gzip":
+		decompress = true
+	default:
+		return nil, fmt.Errorf("plugin uses compression %q, which is not supported", p.Compression)
+	}
+
+	path, sha, err := p.PathSha(os, host)
+	if err != nil {
+		return nil, err // error already annotated
+	}
+
+	u := baseURL + path
+	req, err := http.NewRequestWithContext(
+		context.Background(),
+		http.MethodGet,
+		u,
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create request %s: %v", u, err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("unable to issue request to %s: %v", u, err)
+	}
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("unsuccessful plugin response from %s, status: %s", u, http.StatusText(resp.StatusCode))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read response from %s: %v", u, err)
+	}
+
+	if decompress {
+		gzr, err := gzip.NewReader(bytes.NewBuffer(body))
+		if err != nil {
+			return nil, fmt.Errorf("unable to create gzip reader: %w", err)
+		}
+		if body, err = io.ReadAll(gzr); err != nil {
+			return nil, fmt.Errorf("unable to gzip decompress plugin: %w", err)
+		}
+		if err = gzr.Close(); err != nil {
+			return nil, fmt.Errorf("unable to close gzip reader: %w", err)
+		}
+	}
+
+	shasum := sha256.Sum256(body)
+	gotsha := strings.ToLower(hex.EncodeToString(shasum[:]))
+	expsha := strings.ToLower(sha)
+
+	if gotsha != expsha {
+		return nil, fmt.Errorf("checksum of plugin %s does not match what the manifest specifies (downloaded sha256sum: %s, manifest specified sha256sum: %s)", u, gotsha, expsha)
+	}
+
+	return body, nil
 }
