@@ -8,7 +8,7 @@
 
 from rptest.clients.kafka_cat import KafkaCat
 from ducktape.mark.resource import cluster
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ignore
 from ducktape.utils.util import wait_until
 from ducktape.errors import DucktapeError
 from rptest.tests.redpanda_test import RedpandaTest
@@ -199,6 +199,7 @@ class ArchivalTest(RedpandaTest):
         self.kafka_tools.produce(self.topic, 10000, 1024)
         validate(self._quick_verify, self.logger, 90)
 
+    @ignore
     @cluster(num_nodes=3)
     def test_isolate(self):
         """Verify that our isolate/rejoin facilities actually work"""
