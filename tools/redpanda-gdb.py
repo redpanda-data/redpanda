@@ -824,12 +824,14 @@ class redpanda_memory(gdb.Command):
         storage = find_storage_api()
         kvstore = std_unique_ptr(storage["_kvstore"]).dereference()
         db = absl_flat_hash_map(kvstore["_db"])
+        print(f"# Key value store")
         gdb.write("key-value store:\n")
         gdb.write("      size: {}\n".format(len(db)))
         gdb.write("  capacity: {}\n".format(db.capacity()))
         gdb.write("size bytes: {}\n".format(kvstore["_probe"]["cached_bytes"]))
 
     def print_segment_memory(self):
+        print(f"# Log segments")
         sizes = []
         capacities = []
         contigs = []
