@@ -50,7 +50,7 @@ tasks:
     dir: "{{.SRC_DIR}}/src/go/rpk"
     cmds:
     - |
-      cmd="{{.GO_BUILD_ROOT}}/bin/go test ./..."
+      cmd="{{.GO_BUILD_ROOT}}/bin/go test -modcacherw ./..."
       if [ '{{.CACHE_TESTS}}' != 'true' ]; then
         cmd="$cmd -count=1"
       fi
