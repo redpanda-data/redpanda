@@ -708,6 +708,82 @@ class segment_set:
             yield segment(seastar_lw_shared_ptr(ptr).get())
 
 
+def template_arguments(gdb_type):
+    n = 0
+    while True:
+        try:
+            yield gdb_type.template_argument(n)
+            n += 1
+        except RuntimeError:
+            return
+
+
+def get_template_arg_with_prefix(gdb_type, prefix):
+    for arg in template_arguments(gdb_type):
+        if str(arg).startswith(prefix):
+            return arg
+
+
+def get_field_offset(gdb_type, name):
+    for field in gdb_type.fields():
+        if field.name == name:
+            return int(field.bitpos / 8)
+
+
+def get_base_class_offset(gdb_type, base_class_name):
+    name_pattern = re.escape(base_class_name) + "(<.*>)?$"
+    for field in gdb_type.fields():
+        if field.is_base_class and re.match(name_pattern,
+                                            field.type.strip_typedefs().name):
+            return int(field.bitpos / 8)
+
+
+class boost_intrusive_list:
+    size_t = gdb.lookup_type('size_t')
+
+    def __init__(self, list_ref, link=None):
+        list_type = list_ref.type.strip_typedefs()
+        self.node_type = list_type.template_argument(0)
+        rps = list_ref['data_']['root_plus_size_']
+        try:
+            self.root = rps['root_']
+        except gdb.error:
+            # Some boost versions have this instead
+            self.root = rps['m_header']
+        if link is not None:
+            self.link_offset = get_field_offset(self.node_type, link)
+        else:
+            member_hook = get_template_arg_with_prefix(
+                list_type, "boost::intrusive::member_hook")
+
+            if not member_hook:
+                member_hook = get_template_arg_with_prefix(
+                    list_type, "struct boost::intrusive::member_hook")
+            if member_hook:
+                self.link_offset = member_hook.template_argument(2).cast(
+                    self.size_t)
+            else:
+                self.link_offset = get_base_class_offset(
+                    self.node_type, "boost::intrusive::list_base_hook")
+                if self.link_offset is None:
+                    raise Exception("Class does not extend list_base_hook: " +
+                                    str(self.node_type))
+
+    def __iter__(self):
+        hook = self.root['next_']
+        while hook and hook != self.root.address:
+            node_ptr = hook.cast(self.size_t) - self.link_offset
+            yield node_ptr.cast(self.node_type.pointer()).dereference()
+            hook = hook['next_']
+
+    def __nonzero__(self):
+        return self.root['next_'] != self.root.address
+
+    def __bool__(self):
+        return self.__nonzero__()
+
+    def __len__(self):
+        return len(list(iter(self)))
 class disk_log_impl:
     disk_log_impl_t = gdb.lookup_type("storage::disk_log_impl")
 
