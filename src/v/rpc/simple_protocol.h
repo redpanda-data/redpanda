@@ -14,6 +14,7 @@
 #include "rpc/server.h"
 #include "rpc/service.h"
 namespace rpc {
+struct server_context_impl;
 class simple_protocol final : public server::protocol {
 public:
     template<typename T, typename... Args>
@@ -29,6 +30,8 @@ public:
 
 private:
     ss::future<> dispatch_method_once(header, server::resources);
+    void dispatch_in_background(
+      uint32_t, server::resources, ss::lw_shared_ptr<server_context_impl>);
 
     std::vector<std::unique_ptr<service>> _services;
 };

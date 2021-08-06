@@ -61,27 +61,24 @@ struct service::execution_helper {
       streaming_context& ctx,
       uint32_t method_id,
       Func&& f) {
-        return ctx.permanent_memory_reservation(ctx.get_header().payload_size)
-          .then([f = std::forward<Func>(f), method_id, &in, &ctx]() mutable {
-              return parse_type<Input>(in, ctx.get_header())
-                .then_wrapped([f = std::forward<Func>(f),
-                               &ctx](ss::future<Input> input_f) mutable {
-                    if (input_f.failed()) {
-                        throw rpc_internal_body_parsing_exception(
-                          input_f.get_exception());
-                    }
-                    ctx.signal_body_parse();
-                    auto input = input_f.get0();
-                    return f(std::move(input), ctx);
-                })
-                .then([method_id](Output out) mutable {
-                    auto b = std::make_unique<netbuf>();
-                    auto raw_b = b.get();
-                    raw_b->set_service_method_id(method_id);
-                    return reflection::async_adl<Output>{}
-                      .to(raw_b->buffer(), std::move(out))
-                      .then([b = std::move(b)] { return std::move(*b); });
-                });
+        return parse_type<Input>(in, ctx.get_header())
+          .then_wrapped([f = std::forward<Func>(f),
+                         &ctx](ss::future<Input> input_f) mutable {
+              if (input_f.failed()) {
+                  throw rpc_internal_body_parsing_exception(
+                    input_f.get_exception());
+              }
+              ctx.signal_body_parse();
+              auto input = input_f.get0();
+              return f(std::move(input), ctx);
+          })
+          .then([method_id](Output out) mutable {
+              auto b = std::make_unique<netbuf>();
+              auto raw_b = b.get();
+              raw_b->set_service_method_id(method_id);
+              return reflection::async_adl<Output>{}
+                .to(raw_b->buffer(), std::move(out))
+                .then([b = std::move(b)] { return std::move(*b); });
           });
     }
 };

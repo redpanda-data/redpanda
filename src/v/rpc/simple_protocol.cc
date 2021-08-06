@@ -13,6 +13,7 @@
 #include "rpc/types.h"
 
 #include <seastar/core/future-util.hh>
+#include <seastar/core/gate.hh>
 
 #include <exception>
 
@@ -87,9 +88,21 @@ simple_protocol::dispatch_method_once(header h, server::resources rs) {
     }
 
     auto fut = ctx->pr.get_future();
+    return ctx->permanent_memory_reservation(h.payload_size)
+      .then([this, method_id, rs, ctx]() mutable {
+          dispatch_in_background(method_id, rs, std::move(ctx));
+      })
+      .then([fut = std::move(fut)]() mutable { return std::move(fut); })
+      .finally([ctx] {});
+}
 
+void simple_protocol::dispatch_in_background(
+  uint32_t method_id,
+  server::resources rs,
+  ss::lw_shared_ptr<server_context_impl> ctx) {
     // background!
-    (void)with_gate(rs.conn_gate(), [this, method_id, rs, ctx]() mutable {
+    (void)with_gate(
+      rs.conn_gate(), [this, method_id, rs, ctx = std::move(ctx)]() mutable {
         auto it = std::find_if(
           _services.begin(),
           _services.end(),
@@ -135,6 +148,5 @@ simple_protocol::dispatch_method_once(header h, server::resources rs) {
                 .finally([m = std::move(m)] {});
           });
     });
-    return fut;
 }
 } // namespace rpc
