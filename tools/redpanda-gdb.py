@@ -28,7 +28,7 @@ import uuid
 import argparse
 import re
 from operator import attrgetter
-from collections import defaultdict
+from collections import defaultdict, Counter
 import sys
 import struct
 import random
@@ -608,19 +608,27 @@ def find_storage_api(shard=None):
 class index_state:
     def __init__(self, ref):
         self.ref = ref
+        self.offset = std_vector(self.ref["relative_offset_index"])
+        self.time = std_vector(self.ref["relative_time_index"])
+        self.pos = std_vector(self.ref["position_index"])
 
-    def size_bytes(self):
-        offset = std_vector(self.ref["relative_offset_index"])
-        time = std_vector(self.ref["relative_time_index"])
-        pos = std_vector(self.ref["position_index"])
-        return offset.size_bytes() + time.size_bytes() + pos.size_bytes()
+    def size(self):
+        return int(self.offset.size_bytes() + self.time.size_bytes() +
+                   self.pos.size_bytes())
 
-    def size_bytes_capacity(self):
-        offset = std_vector(self.ref["relative_offset_index"])
-        time = std_vector(self.ref["relative_time_index"])
-        pos = std_vector(self.ref["position_index"])
-        return offset.size_bytes_capacity() + time.size_bytes_capacity(
-        ) + pos.size_bytes_capacity()
+    def capacities(self):
+        return (int(x) for x in (self.offset.size_bytes_capacity(),
+                                 self.time.size_bytes_capacity(),
+                                 self.pos.size_bytes_capacity()))
+
+    def capacity(self):
+        return int(sum(self.capacities()))
+
+    def __str__(self):
+        s = self.size() // 1024
+        c = self.capacity() // 1024
+        p = [x // 1024 for x in self.capacities()]
+        return f"Size (KB) {s:4} Capacity {c:4} (Contig off={p[0]:4} time={p[1]:4} pos={p[2]:4})"
 
 
 class segment_index:
@@ -746,34 +754,24 @@ class redpanda_memory(gdb.Command):
         gdb.write("size bytes: {}\n".format(kvstore["_probe"]["cached_bytes"]))
 
     def print_segment_memory(self):
-        count = 0
-        size = 0
-        indexes = 0
+        sizes = []
+        capacities = []
+        contigs = []
         for ntp, log in find_logs():
             for segment in log.segments():
-                index = segment.index().state().size_bytes()
-                print(index)
-                cache = segment.batch_cache_index()
-                if cache:
-                    print(cache.size())
-                writer = segment.compacted_index_writer()
-                if writer:
-                    index = writer.index()
-                    indexes += 1
-                    print(writer.name(), len(index), index.capacity())
-                    for k, v in index:
-                        count += 1
-                        # TODO; this is bytes, so it also has 31 byte min small
-                        # string optimization
-                        # 31 + 8 + 4 = 43
-                        #
-                        # 8191 capacity * 43 bytes is around 300k -> 512kb
-                        # allocation per index/segment/leader. that's pretty big
-                        # overhead.
-                        size += len(seastar_sstring(k))
-        print(count)
-        print(size)
-        print("indexes", indexes)
+                index = segment.index().state()
+                contigs += index.capacities()
+                size, capacity = index.size(), index.capacity()
+                sizes.append(size)
+                capacities.append(capacity)
+                print(f"Partition {index} @ {ntp}")
+
+        print(f"Number of segments: {len(sizes)}")
+        print(f"Total capacity: {sum(capacities)//1024} KB")
+        print("Contiguous allocations (KB)")
+        contig_kb_counts = Counter((x // 1024 for x in contigs))
+        for size, freq in contig_kb_counts.most_common():
+            print(f"Size {size:4} Freq {freq}")
 
     def invoke(self, arg, from_tty):
         self.print_kvstore_memory()
@@ -1446,10 +1444,27 @@ class sstring_printer(gdb.printing.PrettyPrinter):
         return 'string'
 
 
+class model_ntp_printer(gdb.printing.PrettyPrinter):
+    'print a model::ntp'
+
+    def __init__(self, val):
+        self.val = val
+
+    def to_string(self):
+        ns = self.val['ns']['_value']
+        topic = self.val['tp']['topic']['_value']
+        partition = self.val['tp']['partition']['_value']
+        return f"{{{ns}}}.{{{topic}}}.{{{partition}}}"
+
+    def display_hint(self):
+        return 'model::ntp'
+
+
 def build_pretty_printer():
     pp = gdb.printing.RegexpCollectionPrettyPrinter('redpanda')
     pp.add_printer('sstring', r'^seastar::basic_sstring<char,.*>$',
                    sstring_printer)
+    pp.add_printer('model::ntp', r'^model::ntp$', model_ntp_printer)
     return pp
 
 
