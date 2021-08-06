@@ -74,7 +74,38 @@ void allocation_state::register_node(allocation_state::node_ptr n) {
     _nodes.emplace(id, std::move(n));
 }
 
-void allocation_state::unregister_node(model::node_id id) { _nodes.erase(id); }
+void allocation_state::update_allocation_nodes(
+  const std::vector<model::broker>& brokers) {
+    // deletions
+    for (auto& [id, node] : _nodes) {
+        auto it = std::find_if(
+          brokers.begin(), brokers.end(), [id = id](const model::broker& b) {
+              return b.id() == id;
+          });
+        if (it == brokers.end()) {
+            node->mark_as_removed();
+        }
+    }
+
+    // updates & additions
+    for (auto& b : brokers) {
+        auto it = _nodes.find(b.id());
+        if (it == _nodes.end()) {
+            _nodes.emplace(
+              b.id(),
+              std::make_unique<allocation_node>(
+                b.id(),
+                b.properties().cores,
+                absl::node_hash_map<ss::sstring, ss::sstring>{}));
+        } else {
+            it->second->update_core_count(b.properties().cores);
+            // node was added back to the cluster
+            if (it->second->is_removed()) {
+                it->second->mark_as_active();
+            }
+        }
+    }
+}
 
 void allocation_state::decommission_node(model::node_id id) {
     auto it = _nodes.find(id);

@@ -164,12 +164,7 @@ ss::future<> members_manager::handle_raft0_cfg_update(
       .invoke_on(
         partition_allocator::shard,
         [cfg](partition_allocator& allocator) {
-            cfg.for_each_broker([&allocator](const model::broker& n) {
-                if (!allocator.contains_node(n.id())) {
-                    allocator.register_node(std::make_unique<allocation_node>(
-                      allocation_node(n.id(), n.properties().cores, {})));
-                }
-            });
+            allocator.update_allocation_nodes(cfg.brokers());
         })
       .then([this, cfg = std::move(cfg), update_offset]() mutable {
           auto diff = calculate_brokers_diff(_members_table.local(), cfg);
