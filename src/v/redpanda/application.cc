@@ -969,7 +969,8 @@ void application::start_redpanda() {
           proto->register_service<cluster::metadata_dissemination_handler>(
             _scheduling_groups.cluster_sg(),
             smp_service_groups.cluster_smp_sg(),
-            std::ref(controller->get_partition_leaders()));
+            std::ref(controller->get_partition_leaders()),
+            std::ref(controller->get_topics_state()));
           if (!config::shard_local_cfg().disable_metrics()) {
               proto->setup_metrics();
           }

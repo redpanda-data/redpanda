@@ -21,12 +21,32 @@
 #include "rpc/connection_cache.h"
 
 namespace cluster {
+static ntp_leaders
+expand_leaders(const topic_table& topics, ntp_leaders current) {
+    ntp_leaders all_leaders;
+    all_leaders.reserve(current.size());
+    for (auto& leader : current) {
+        auto materialized_leaders = topics.materialized_children(leader.ntp);
+        for (auto& materialized_leader : materialized_leaders) {
+            ntp_leader new_leader{
+              .ntp = std::move(materialized_leader),
+              .term = leader.term,
+              .leader_id = leader.leader_id};
+            all_leaders.push_back(std::move(new_leader));
+        }
+        all_leaders.push_back(std::move(leader));
+    }
+    return all_leaders;
+}
+
 metadata_dissemination_handler::metadata_dissemination_handler(
   ss::scheduling_group sg,
   ss::smp_service_group ssg,
-  ss::sharded<partition_leaders_table>& leaders)
+  ss::sharded<partition_leaders_table>& leaders,
+  ss::sharded<topic_table>& topics)
   : metadata_dissemination_rpc_service(sg, ssg)
-  , _leaders(leaders) {}
+  , _leaders(leaders)
+  , _topics(topics) {}
 
 ss::future<update_leadership_reply>
 metadata_dissemination_handler::update_leadership(
@@ -42,8 +62,10 @@ metadata_dissemination_handler::do_update_leadership(
   update_leadership_request&& req) {
     return _leaders
       .invoke_on_all(
-        [req = std::move(req)](partition_leaders_table& pl) mutable {
-            for (auto& leader : req.leaders) {
+        [this, req = std::move(req)](partition_leaders_table& pl) mutable {
+            auto leaders = expand_leaders(
+              _topics.local(), std::move(req.leaders));
+            for (auto& leader : leaders) {
                 pl.update_partition_leader(
                   leader.ntp, leader.term, leader.leader_id);
             }

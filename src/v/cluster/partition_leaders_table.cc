@@ -31,6 +31,19 @@ ss::future<> partition_leaders_table::stop() {
     return ss::now();
 }
 
+std::vector<std::pair<model::ntp, model::node_id>>
+partition_leaders_table::get_leaders(model::topic_namespace_view tp_ns) const {
+    std::vector<std::pair<model::ntp, model::node_id>> r;
+    for (const auto& leader : _leaders) {
+        if (leader.first.tp_ns == tp_ns && leader.second.id.has_value()) {
+            r.emplace_back(
+              model::ntp(tp_ns.ns, tp_ns.tp, leader.first.pid),
+              *leader.second.id);
+        }
+    }
+    return r;
+}
+
 std::optional<model::node_id> partition_leaders_table::get_leader(
   model::topic_namespace_view tp_ns, model::partition_id pid) const {
     if (auto it = _leaders.find(leader_key_view{tp_ns, pid});

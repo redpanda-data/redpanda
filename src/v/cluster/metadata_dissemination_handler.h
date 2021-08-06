@@ -13,6 +13,7 @@
 
 #include "cluster/fwd.h"
 #include "cluster/metadata_dissemination_rpc_service.h"
+#include "cluster/topic_table.h"
 #include "raft/types.h"
 #include "rpc/connection_cache.h"
 
@@ -37,7 +38,8 @@ public:
     metadata_dissemination_handler(
       ss::scheduling_group,
       ss::smp_service_group,
-      ss::sharded<partition_leaders_table>&);
+      ss::sharded<partition_leaders_table>&,
+      ss::sharded<topic_table>&);
 
     ss::future<update_leadership_reply> update_leadership(
       update_leadership_request&&, rpc::streaming_context&) final;
@@ -50,6 +52,7 @@ private:
     do_update_leadership(update_leadership_request&&);
 
     ss::sharded<partition_leaders_table>& _leaders;
+    ss::sharded<topic_table>& _topics;
 }; // namespace cluster
 
 } // namespace cluster

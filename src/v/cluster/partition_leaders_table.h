@@ -67,6 +67,9 @@ public:
     void update_partition_leader(
       const model::ntp&, model::term_id, std::optional<model::node_id>);
 
+    std::vector<std::pair<model::ntp, model::node_id>>
+    get_leaders(model::topic_namespace_view tp_ns) const;
+
 private:
     // optimized to reduce number of ntp copies
     struct leader_key {

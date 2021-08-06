@@ -230,6 +230,14 @@ ss::future<topic_result> topics_frontend::do_create_materialized_topic(
     try {
         auto ec = co_await replicate_and_wait(
           _stm, _as, std::move(cmd), timeout);
+        if (!ec) {
+            std::vector<ntp_leader> leaders;
+            for (auto& leader : _leaders.local().get_leaders(source)) {
+                leader.first.tp.topic = materialized.tp;
+                leaders.emplace_back(std::move(leader.first), leader.second);
+            }
+            co_await update_leaders_with_estimates(leaders);
+        }
         co_return topic_result(materialized, map_errc(ec));
     } catch (const std::exception& ex) {
         vlog(
