@@ -30,7 +30,7 @@ void allocation_state::rollback(const std::vector<model::broker_shard>& v) {
 int16_t allocation_state::available_nodes() const {
     return std::count_if(
       _nodes.begin(), _nodes.end(), [](const underlying_t::value_type& p) {
-          return !p.second->is_decommissioned();
+          return p.second->is_active();
       });
 }
 
