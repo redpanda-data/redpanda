@@ -589,6 +589,7 @@ class SchemaRegistryTest(RedpandaTest):
                                                   permanent=True)
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.not_found
+        assert result_raw.json()["error_code"] == 40407
 
         self.logger.debug("Soft delete version 2")
         result_raw = self._delete_subject_version(
@@ -597,6 +598,15 @@ class SchemaRegistryTest(RedpandaTest):
         )
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Soft delete version 2 - second time")
+        result_raw = self._delete_subject_version(
+            subject=f"{topic}-key",
+            version=2,
+        )
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.not_found
+        assert result_raw.json()["error_code"] == 40406
 
         self.logger.debug("Get versions")
         result_raw = self._get_subjects_subject_versions(
@@ -611,6 +621,21 @@ class SchemaRegistryTest(RedpandaTest):
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json() == [1, 2, 3]
+
+        self.logger.debug("Permanently delete version 2")
+        result_raw = self._delete_subject_version(subject=f"{topic}-key",
+                                                  version=2,
+                                                  permanent=True)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Permanently delete version 2 - second time")
+        result_raw = self._delete_subject_version(subject=f"{topic}-key",
+                                                  version=2,
+                                                  permanent=True)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.not_found
+        assert result_raw.json()["error_code"] == 40402
 
     @cluster(num_nodes=3)
     def test_mixed_deletes(self):
