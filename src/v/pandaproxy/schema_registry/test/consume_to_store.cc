@@ -47,15 +47,14 @@ constexpr pps::schema_version version1{1};
 constexpr pps::schema_id id0{0};
 constexpr pps::schema_id id1{1};
 
-inline model::record_batch
-make_delete_subject_batch(pps::subject sub, pps::schema_version version) {
+inline model::record_batch make_delete_subject_batch(pps::subject sub) {
     storage::record_batch_builder rb{
       model::record_batch_type::raft_data, model::offset{0}};
 
     rb.add_raw_kv(
       to_json_iobuf(pps::delete_subject_key{
         .seq{model::offset{0}}, .node{model::node_id{0}}, .sub{sub}}),
-      to_json_iobuf(pps::delete_subject_value{.sub{sub}, .version{version}}));
+      to_json_iobuf(pps::delete_subject_value{.sub{sub}}));
     return std::move(rb).build();
 }
 
@@ -146,7 +145,7 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
       s.get_subjects(pps::include_deleted::no).get().size(), 1);
     BOOST_REQUIRE_EQUAL(
       s.get_subjects(pps::include_deleted::yes).get().size(), 1);
-    auto delete_sub = make_delete_subject_batch(subject0, version1);
+    auto delete_sub = make_delete_subject_batch(subject0);
     BOOST_REQUIRE_NO_THROW(c(std::move(delete_sub)).get());
     BOOST_REQUIRE_EQUAL(
       s.get_subjects(pps::include_deleted::no).get().size(), 0);
