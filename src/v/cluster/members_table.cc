@@ -15,28 +15,32 @@
 #include "model/metadata.h"
 #include "vlog.h"
 
+#include <algorithm>
+#include <vector>
+
 namespace cluster {
 
 std::vector<broker_ptr> members_table::all_brokers() const {
     std::vector<broker_ptr> brokers;
     brokers.reserve(_brokers.size());
-    std::transform(
-      std::cbegin(_brokers),
-      std::cend(_brokers),
-      std::back_inserter(brokers),
-      [](const broker_cache_t::value_type& b) { return b.second; });
+    for (auto& [id, broker] : _brokers) {
+        if (
+          broker->get_membership_state() != model::membership_state::removed) {
+            brokers.push_back(broker);
+        }
+    }
 
     return brokers;
 }
 std::vector<model::node_id> members_table::all_broker_ids() const {
     std::vector<model::node_id> ids;
     ids.reserve(_brokers.size());
-    std::transform(
-      std::cbegin(_brokers),
-      std::cend(_brokers),
-      std::back_inserter(ids),
-      [](const broker_cache_t::value_type& b) { return b.second->id(); });
-
+    for (auto& [id, broker] : _brokers) {
+        if (
+          broker->get_membership_state() != model::membership_state::removed) {
+            ids.push_back(id);
+        }
+    }
     return ids;
 }
 
@@ -47,24 +51,36 @@ std::optional<broker_ptr> members_table::get_broker(model::node_id id) const {
     return std::nullopt;
 }
 
-void members_table::update_brokers(patch<broker_ptr> patch) {
-    for (auto& br : patch.additions) {
+void members_table::update_brokers(
+  const std::vector<model::broker>& new_brokers) {
+    for (auto& br : new_brokers) {
         /**
          * broker properties may be updated event if it is draining partitions,
          * we have to preserve its membership_state.
          */
-        auto it = _brokers.find(br->id());
+        auto it = _brokers.find(br.id());
         if (it != _brokers.end()) {
             auto membership_state = it->second->get_membership_state();
-            it->second = br;
-            // do not override membership state of brokers
-            it->second->set_membership_state(membership_state);
+            _brokers.insert_or_assign(
+              br.id(), ss::make_lw_shared<model::broker>(br));
+
+            if (membership_state != model::membership_state::removed) {
+                // do not override membership state of brokers
+                it->second->set_membership_state(membership_state);
+            }
+        } else {
+            _brokers.emplace(br.id(), ss::make_lw_shared<model::broker>(br));
         }
-        _brokers.emplace(br->id(), br);
     }
 
-    for (auto& br : patch.deletions) {
-        _brokers.erase(br->id());
+    for (auto& [id, br] : _brokers) {
+        auto it = std::find_if(
+          new_brokers.begin(),
+          new_brokers.end(),
+          [id = id](const model::broker& br) { return br.id() == id; });
+        if (it == new_brokers.end()) {
+            br->set_membership_state(model::membership_state::removed);
+        }
     }
 }
 std::error_code members_table::apply(decommission_node_cmd cmd) {
@@ -115,7 +131,9 @@ std::vector<model::node_id> members_table::get_decommissioned() const {
 }
 
 bool members_table::contains(model::node_id id) const {
-    return _brokers.contains(id);
+    return _brokers.contains(id)
+           && _brokers.find(id)->second->get_membership_state()
+                != model::membership_state::removed;
 }
 
 } // namespace cluster

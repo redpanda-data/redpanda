@@ -171,7 +171,7 @@ ss::future<> members_manager::handle_raft0_cfg_update(
           auto added_brokers = diff.additions;
           return _members_table
             .invoke_on_all([cfg = std::move(cfg)](members_table& m) mutable {
-                m.update_brokers(calculate_brokers_diff(m, cfg));
+                m.update_brokers(cfg.brokers());
             })
             .then([this, diff = std::move(diff)]() mutable {
                 // update internode connections
