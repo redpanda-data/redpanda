@@ -103,50 +103,49 @@ void simple_protocol::dispatch_in_background(
     // background!
     (void)with_gate(
       rs.conn_gate(), [this, method_id, rs, ctx = std::move(ctx)]() mutable {
-        auto it = std::find_if(
-          _services.begin(),
-          _services.end(),
-          [method_id](std::unique_ptr<service>& srvc) {
-              return srvc->method_from_id(method_id) != nullptr;
-          });
-        if (unlikely(it == _services.end())) {
-            rs.probe().method_not_found();
-            netbuf reply_buf;
-            reply_buf.set_status(rpc::status::method_not_found);
-            return send_reply(ctx, std::move(reply_buf)).then([ctx]() mutable {
-                ctx->signal_body_parse();
+          auto it = std::find_if(
+            _services.begin(),
+            _services.end(),
+            [method_id](std::unique_ptr<service>& srvc) {
+                return srvc->method_from_id(method_id) != nullptr;
             });
-        }
-
-        method* m = it->get()->method_from_id(method_id);
-
-        return (*m)(ctx->res.conn->input(), *ctx)
-          .then_wrapped([ctx, m = ctx->res.hist().auto_measure(), rs](
-                          ss::future<netbuf> fut) mutable {
+          if (unlikely(it == _services.end())) {
+              rs.probe().method_not_found();
               netbuf reply_buf;
-              try {
-                  reply_buf = fut.get0();
-                  reply_buf.set_status(rpc::status::success);
-              } catch (const rpc_internal_body_parsing_exception& e) {
-                  // We have to distinguish between exceptions thrown by the
-                  // service handler and the one caused by the corrupted
-                  // payload. Data corruption on the wire may lead to the
-                  // situation where connection is not longer usable and so it
-                  // have to be terminated.
-                  ctx->pr.set_exception(e);
-                  return ss::now();
-              } catch (const ss::timed_out_error& e) {
-                  reply_buf.set_status(rpc::status::request_timeout);
-              } catch (...) {
-                  rpclog.error(
-                    "Service handler thrown an exception - {}",
-                    std::current_exception());
-                  rs.probe().service_error();
-                  reply_buf.set_status(rpc::status::server_error);
-              }
+              reply_buf.set_status(rpc::status::method_not_found);
               return send_reply(ctx, std::move(reply_buf))
-                .finally([m = std::move(m)] {});
-          });
-    });
+                .then([ctx]() mutable { ctx->signal_body_parse(); });
+          }
+
+          method* m = it->get()->method_from_id(method_id);
+
+          return (*m)(ctx->res.conn->input(), *ctx)
+            .then_wrapped([ctx, m = ctx->res.hist().auto_measure(), rs](
+                            ss::future<netbuf> fut) mutable {
+                netbuf reply_buf;
+                try {
+                    reply_buf = fut.get0();
+                    reply_buf.set_status(rpc::status::success);
+                } catch (const rpc_internal_body_parsing_exception& e) {
+                    // We have to distinguish between exceptions thrown by the
+                    // service handler and the one caused by the corrupted
+                    // payload. Data corruption on the wire may lead to the
+                    // situation where connection is not longer usable and so it
+                    // have to be terminated.
+                    ctx->pr.set_exception(e);
+                    return ss::now();
+                } catch (const ss::timed_out_error& e) {
+                    reply_buf.set_status(rpc::status::request_timeout);
+                } catch (...) {
+                    rpclog.error(
+                      "Service handler thrown an exception - {}",
+                      std::current_exception());
+                    rs.probe().service_error();
+                    reply_buf.set_status(rpc::status::server_error);
+                }
+                return send_reply(ctx, std::move(reply_buf))
+                  .finally([m = std::move(m)] {});
+            });
+      });
 }
 } // namespace rpc
