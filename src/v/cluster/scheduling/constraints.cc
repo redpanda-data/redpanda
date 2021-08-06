@@ -32,15 +32,15 @@ hard_constraint_evaluator not_fully_allocated() {
     return hard_constraint_evaluator(std::make_unique<impl>());
 }
 
-hard_constraint_evaluator not_decommissioned() {
+hard_constraint_evaluator is_active() {
     class impl : public hard_constraint_evaluator::impl {
     public:
         bool evaluate(const allocation_node& node) const final {
-            return !node.is_decommissioned();
+            return node.is_active();
         }
 
         void print(std::ostream& o) const final {
-            fmt::print(o, "node must not be decommissioned");
+            fmt::print(o, "node must be active");
         }
     };
 

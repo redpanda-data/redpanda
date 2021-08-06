@@ -33,7 +33,7 @@ allocation_constraints default_constraints() {
     req.hard_constraints.push_back(
       ss::make_lw_shared<hard_constraint_evaluator>(not_fully_allocated()));
     req.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint_evaluator>(not_decommissioned()));
+      ss::make_lw_shared<hard_constraint_evaluator>(is_active()));
     req.soft_constraints.push_back(
       ss::make_lw_shared<soft_constraint_evaluator>(least_allocated()));
     return req;
