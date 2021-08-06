@@ -128,10 +128,7 @@ class PandaProxyTest(RedpandaTest):
             extra_rp_conf={"auto_create_topics_enabled": False})
 
         http.client.HTTPConnection.debuglevel = 1
-        logging.basicConfig()
-        requests_log = logging.getLogger("requests.packages.urllib3")
-        requests_log.setLevel(logging.getLogger().level)
-        requests_log.propagate = True
+        http.client.print = lambda *args: self.logger.debug(" ".join(args))
 
     def _base_uri(self):
         return f"http://{self.redpanda.nodes[0].account.hostname}:8082"
@@ -798,10 +795,7 @@ class PandaProxySASLTest(RedpandaTest):
                                                  extra_rp_conf=extra_rp_conf)
 
         http.client.HTTPConnection.debuglevel = 1
-        logging.basicConfig()
-        requests_log = logging.getLogger("requests.packages.urllib3")
-        requests_log.setLevel(logging.getLogger().level)
-        requests_log.propagate = True
+        http.client.print = lambda *args: self.logger.debug(" ".join(args))
 
     def _get_super_client(self):
         user, password, _ = self.redpanda.SUPERUSER_CREDENTIALS
