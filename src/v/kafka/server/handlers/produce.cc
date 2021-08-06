@@ -10,6 +10,7 @@
 #include "kafka/server/handlers/produce.h"
 
 #include "bytes/iobuf.h"
+#include "cluster/cluster_utils.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
@@ -332,6 +333,13 @@ static partition_produce_stages produce_topic_partition(
  */
 static topic_produce_stages
 produce_topic(produce_ctx& octx, produce_request::topic& topic) {
+    /// If topic configuration does not permit, cannot produce onto this topic
+    const model::topic_namespace_view tns_view{
+      model::kafka_namespace, topic.name};
+    const auto topic_cfg = octx.rctx.metadata_cache().get_topic_cfg(tns_view);
+    const bool materialized = topic_cfg ? is_topic_materialized(*topic_cfg)
+                                        : false;
+
     std::vector<ss::future<produce_response::partition>> partitions_produced;
     std::vector<ss::future<>> partitions_dispatched;
     partitions_produced.reserve(topic.partitions.size());
@@ -348,9 +356,18 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
             continue;
         }
 
+        if (materialized) {
+            partitions_dispatched.push_back(ss::now());
+            partitions_produced.push_back(
+              ss::make_ready_future<produce_response::partition>(
+                produce_response::partition{
+                  .partition_index = part.partition_index,
+                  .error_code = error_code::invalid_topic_exception}));
+            continue;
+        }
+
         if (!octx.rctx.metadata_cache().contains(
-              model::topic_namespace_view(model::kafka_namespace, topic.name),
-              part.partition_index)) {
+              tns_view, part.partition_index)) {
             partitions_dispatched.push_back(ss::now());
             partitions_produced.push_back(
               ss::make_ready_future<produce_response::partition>(
