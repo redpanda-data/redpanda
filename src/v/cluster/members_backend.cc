@@ -214,8 +214,8 @@ void members_backend::calculate_reallocations_after_node_added(
 
     // 2. calculate number of replicas per node leading to even replica per node
     // distribution
-    auto target_replicas_per_node = total_replicas
-                                    / _members.local().all_brokers().size();
+    auto target_replicas_per_node
+      = total_replicas / _allocator.local().state().available_nodes();
 
     // 3. calculate how many replicas have to be moved from each node
     std::vector<replicas_to_move> to_move_from_node;
