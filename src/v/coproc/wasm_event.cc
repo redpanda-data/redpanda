@@ -37,6 +37,8 @@ std::string_view header_as_string_view(event_header header) {
         return "description";
     case event_header::checksum:
         return "sha256";
+    case event_header::type:
+        return "type";
     }
     __builtin_unreachable();
 }
@@ -57,6 +59,23 @@ get_value_for_event_header(const model::record& r, event_header header) {
       r.headers().cbegin(),
       r.headers().cend(),
       [&match](const model::record_header& rh) { return rh.key() == match; });
+}
+
+std::variant<wasm::errc, event_type> get_coproc_type(const model::record& r) {
+    auto itr = get_value_for_event_header(r, event_header::type);
+    if (itr == r.headers().cend()) {
+        return event_type::async; // support old msgs from topic
+    }
+
+    const auto& type_raw = itr->value();
+    auto type = iobuf_const_parser(type_raw).read_bytes(type_raw.size_bytes());
+    if (type == "async") {
+        return event_type::async;
+    }
+    if (type == "data-policy") {
+        return event_type::data_policy;
+    }
+    return wasm::errc::unexpected_coproc_type;
 }
 
 std::variant<wasm::errc, event_action>
@@ -95,7 +114,8 @@ wasm::errc verify_event_checksum(const model::record& r) {
              : wasm::errc::mismatched_checksum;
 }
 
-wasm::errc validate_event(const model::record& r) {
+wasm::errc
+validate_event(const model::record& r, parsed_event::event_header& header) {
     /// A key field is mandatory for all types of expected events
     if (!get_event_id(r)) {
         return wasm::errc::empty_mandatory_field;
@@ -107,6 +127,13 @@ wasm::errc validate_event(const model::record& r) {
     if (auto errc = std::get_if<wasm::errc>(&action)) {
         return *errc;
     }
+
+    auto get_type_res = get_coproc_type(r);
+    if (auto err = std::get_if<wasm::errc>(&get_type_res)) {
+        return wasm::errc::unexpected_coproc_type;
+    }
+    header.type = std::get<event_type>(get_type_res);
+
     /// Technically all a 'remove' event needs to be valid, is a non-empty
     /// key field
     auto wasm_action = std::get<event_action>(action);
@@ -114,23 +141,28 @@ wasm::errc validate_event(const model::record& r) {
         if (r.value_size() == 0) {
             return wasm::errc::empty_mandatory_field;
         }
+        header.action = event_action::deploy;
+
         return verify_event_checksum(r);
     } else {
         if (r.value_size() > 0) {
             /// A 'remove' should have an empty body
             return wasm::errc::unexpected_value;
         }
+
+        header.action = event_action::remove;
     }
     /// A description isn't neccessary for either event type
     return wasm::errc::none;
 }
 
-absl::btree_map<script_id, iobuf>
+absl::btree_map<script_id, parsed_event>
 reconcile_events(std::vector<model::record_batch> events) {
-    absl::btree_map<script_id, iobuf> wsas;
+    absl::btree_map<script_id, parsed_event> wsas;
     for (auto& record_batch : events) {
         record_batch.for_each_record([&wsas](model::record r) {
-            auto mb_error = wasm::validate_event(r);
+            parsed_event new_event;
+            auto mb_error = wasm::validate_event(r, new_event.header);
             if (mb_error != wasm::errc::none) {
                 vlog(
                   coproclog.error,
@@ -139,8 +171,9 @@ reconcile_events(std::vector<model::record_batch> events) {
                 return;
             }
             auto id = wasm::get_event_id(r);
+            new_event.data = r.share_value();
             /// Update or insert, preferring the newest
-            wsas.insert_or_assign(*id, r.share_value());
+            wsas.insert_or_assign(*id, std::move(new_event));
         });
     }
     return wsas;

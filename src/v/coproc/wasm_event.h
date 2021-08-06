@@ -25,7 +25,10 @@
 namespace coproc::wasm {
 
 /// Enumerations for all possible values for keys within the record headers
-enum class event_header { action, description, checksum };
+enum class event_header { action, description, checksum, type };
+
+/// Enumerations for all possible coproc_type
+enum class event_type { async, data_policy };
 
 /// Enumerations for all possible values for the 'action' key within the headers
 enum class event_action { deploy, remove };
@@ -46,12 +49,25 @@ std::variant<wasm::errc, event_action> get_event_action(const model::record&);
 /// \brief errc::none if the record is valid AND the checksum passes validation
 wasm::errc verify_event_checksum(const model::record&);
 
-/// \brief performs the strictest form of validation, 'none' if all checks pass
-wasm::errc validate_event(const model::record&);
+/// \brief Structure for parsed event from model::record. It contains raw data
+/// of the event and header with action and coproc_type
+struct parsed_event {
+    struct event_header {
+        event_action action;
+        event_type type;
+    };
 
-/// \brief Returns the newest events and their data blobs if the event has
-/// passed all validators
-absl::btree_map<script_id, iobuf>
+    event_header header;
+    iobuf data;
+};
+
+/// \brief performs the strictest form of validation and fill header for event,
+/// 'none' if all checks pass
+wasm::errc validate_event(const model::record&, parsed_event::event_header&);
+
+/// \brief Returns the newest parsed events with their data blobs and headers if
+/// the event has passed all validators
+absl::btree_map<script_id, parsed_event>
   reconcile_events(std::vector<model::record_batch>);
 
 } // namespace coproc::wasm

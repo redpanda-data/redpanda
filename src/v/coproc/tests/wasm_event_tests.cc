@@ -43,7 +43,9 @@ SEASTAR_THREAD_TEST_CASE(verify_make_event) {
                      .get0();
     for (auto& record_batch : batches) {
         record_batch.for_each_record([](model::record r) {
-            BOOST_CHECK_EQUAL(cp_errc::none, coproc::wasm::validate_event(r));
+            coproc::wasm::parsed_event::event_header header;
+            BOOST_CHECK_EQUAL(
+              cp_errc::none, coproc::wasm::validate_event(r, header));
         });
     }
 }
@@ -53,8 +55,10 @@ BOOST_AUTO_TEST_CASE(verify_make_event_failures) {
         /// Empty event
         model::record r = coproc::wasm::make_record(coproc::wasm::event{});
         BOOST_CHECK(!coproc::wasm::get_event_id(r));
+        coproc::wasm::parsed_event::event_header header;
         BOOST_CHECK_EQUAL(
-          cp_errc::empty_mandatory_field, coproc::wasm::validate_event(r));
+          cp_errc::empty_mandatory_field,
+          coproc::wasm::validate_event(r, header));
     }
     {
         /// Missing 'script' field
@@ -66,8 +70,10 @@ BOOST_AUTO_TEST_CASE(verify_make_event_failures) {
         BOOST_CHECK_EQUAL(
           cp_errc::empty_mandatory_field,
           coproc::wasm::verify_event_checksum(r));
+        coproc::wasm::parsed_event::event_header header;
         BOOST_CHECK_EQUAL(
-          cp_errc::empty_mandatory_field, coproc::wasm::validate_event(r));
+          cp_errc::empty_mandatory_field,
+          coproc::wasm::validate_event(r, header));
     }
     {
         /// Erroneous checksum
@@ -107,7 +113,8 @@ SEASTAR_THREAD_TEST_CASE(verify_event_reconciliation) {
         std::make_move_iterator(batches.end())));
     BOOST_CHECK_EQUAL(results.size(), 3);
     BOOST_CHECK(
-      results.find(coproc::script_id(123))->second.empty()); /// 'remove' event
+      results.find(coproc::script_id(123))->second.header.action
+      == coproc::wasm::event_action::remove);
     BOOST_CHECK(results.find(coproc::script_id(123)) != results.end());
     BOOST_CHECK(results.find(coproc::script_id(456)) != results.end());
     BOOST_CHECK(results.find(coproc::script_id(789)) != results.end());
