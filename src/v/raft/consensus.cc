@@ -38,6 +38,7 @@
 #include <iterator>
 
 namespace raft {
+
 consensus::consensus(
   model::node_id nid,
   group_id group,
@@ -66,6 +67,8 @@ consensus::consensus(
       config::shard_local_cfg().replicate_append_timeout_ms())
   , _recovery_append_timeout(
       config::shard_local_cfg().recovery_append_timeout_ms())
+  , _heartbeat_disconnect_failures(
+      config::shard_local_cfg().raft_heartbeat_disconnect_failures())
   , _storage(storage)
   , _recovery_throttle(recovery_throttle)
   , _snapshot_mgr(
@@ -2434,6 +2437,43 @@ void consensus::update_suppress_heartbeats(
             it->second.suppress_heartbeats = suppressed;
         }
     }
+}
+
+void consensus::update_heartbeat_status(vnode id, bool success) {
+    if (auto it = _fstats.find(id); it != _fstats.end()) {
+        if (success) {
+            it->second.heartbeats_failed = 0;
+        } else {
+            it->second.heartbeats_failed++;
+        }
+    }
+}
+
+bool consensus::should_reconnect_follower(vnode id) {
+    if (_heartbeat_disconnect_failures == 0) {
+        // Force disconnection is disabled
+        return false;
+    }
+
+    if (auto it = _fstats.find(id); it != _fstats.end()) {
+        auto last_at = it->second.last_hbeat_timestamp;
+        const auto fail_count = it->second.heartbeats_failed;
+
+        auto is_live = last_at + _jit.base_duration() > clock_type::now();
+        auto since = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       clock_type::now() - last_at)
+                       .count();
+        vlog(
+          _ctxlog.trace,
+          "should_reconnect_follower({}): {}/{} fails, last ok {}ms ago",
+          id,
+          fail_count,
+          _heartbeat_disconnect_failures,
+          since);
+        return fail_count > _heartbeat_disconnect_failures && !is_live;
+    }
+
+    return false;
 }
 
 voter_priority consensus::next_target_priority() {
