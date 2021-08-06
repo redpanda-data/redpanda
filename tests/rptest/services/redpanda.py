@@ -476,3 +476,8 @@ class RedpandaService(Service):
         client = self._client_type(self)
         self.logger.debug(f"Creating topic {spec}")
         client.create_topic(spec)
+
+    def delete_topic(self, name):
+        client = self._client_type(self)
+        self.logger.debug(f"Deleting topic {name}")
+        client.delete_topic(name)
