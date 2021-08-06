@@ -784,6 +784,15 @@ class boost_intrusive_list:
 
     def __len__(self):
         return len(list(iter(self)))
+
+
+class readers_cache:
+    def __init__(self, ref):
+        self.ref = ref
+        self.readers = boost_intrusive_list(self.ref['_readers'], "_hook")
+        self.in_use = boost_intrusive_list(self.ref['_in_use'], "_hook")
+
+
 class disk_log_impl:
     disk_log_impl_t = gdb.lookup_type("storage::disk_log_impl")
 
@@ -792,6 +801,9 @@ class disk_log_impl:
 
     def segments(self):
         return segment_set(self.ref["_segs"])
+
+    def readers_cache(self):
+        return readers_cache(std_unique_ptr(self.ref["_readers_cache"]).get())
 
 
 def find_logs(shard=None):
@@ -851,9 +863,22 @@ class redpanda_memory(gdb.Command):
         for size, freq in contig_kb_counts.most_common():
             print(f"Size {size:4} Freq {freq}")
 
+    def print_readers_cache_memory(self):
+        print(f"# Readers cache")
+        total_readers = 0
+        for ntp, log in find_logs():
+            readers = len(log.readers_cache().readers)
+            in_use = len(log.readers_cache().in_use)
+            print(f"readers: {readers}, readers_in_use: {in_use} @ {ntp}")
+            total_readers += in_use
+            total_readers += readers
+
+        print(f"Total cached readers: {total_readers}")
+
     def invoke(self, arg, from_tty):
         self.print_kvstore_memory()
         self.print_segment_memory()
+        self.print_readers_cache_memory()
 
         cpu_mem = gdb.parse_and_eval('\'seastar::memory::cpu_mem\'')
         page_size = int(gdb.parse_and_eval('\'seastar::memory::page_size\''))
@@ -1775,6 +1800,7 @@ class redpanda_heapprof(gdb.Command):
 
 redpanda()
 redpanda_memory()
+redpanda_rpc()
 redpanda_task_queues()
 redpanda_smp_queues()
 redpanda_small_objects()
