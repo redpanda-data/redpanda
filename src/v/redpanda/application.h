@@ -133,7 +133,10 @@ private:
     scheduling_groups _scheduling_groups;
     ss::logger _log;
 
+    // coproc stuff
+    std::unique_ptr<coproc::wasm::async_event_handler> _async_handler;
     std::unique_ptr<coproc::wasm::event_listener> _wasm_event_listener;
+
     ss::sharded<rpc::connection_cache> _raft_connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<rpc::server> _rpc;

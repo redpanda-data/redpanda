@@ -21,14 +21,17 @@
 
 namespace coproc::wasm {
 
-event::event(uint64_t id)
+event::event(uint64_t id, std::optional<event_type> wasm_type)
   : id(id)
-  , action(event_action::remove) {}
+  , action(event_action::remove)
+  , type(wasm_type) {}
 
-event::event(uint64_t id, cpp_enable_payload ep)
+event::event(
+  uint64_t id, cpp_enable_payload ep, std::optional<event_type> wasm_type)
   : id(id)
   , desc(random_generators::get_bytes(64))
-  , action(event_action::deploy) {
+  , action(event_action::deploy)
+  , type(wasm_type) {
     iobuf payload;
     reflection::serialize(payload, ep.tid, std::move(ep.topics));
     script = iobuf_to_bytes(payload);
@@ -76,6 +79,10 @@ void serialize_event(storage::record_batch_builder& rbb, const event& e) {
             return (action == event_action::deploy) ? "deploy" : "remove";
         };
         headers.emplace_back(create_header("action", action_to_str(*e.action)));
+    }
+    if (e.type) {
+        headers.emplace_back(create_header(
+          "type", ss::sstring(coproc_type_as_string_view(e.type.value()))));
     }
     rbb.add_raw_kw(std::move(key), std::move(value), std::move(headers));
 }

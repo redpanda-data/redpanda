@@ -1000,7 +1000,14 @@ void application::start_redpanda() {
       _log.info, "Started Kafka API server listening at {}", conf.kafka_api());
 
     if (coproc_enabled()) {
-        construct_single_service(_wasm_event_listener, std::ref(pacemaker));
+        construct_single_service(_wasm_event_listener);
+
+        _async_handler = std::make_unique<coproc::wasm::async_event_handler>(
+          std::ref(pacemaker));
+
+        _wasm_event_listener->register_handler(
+          coproc::wasm::event_type::async, _async_handler.get());
+
         _wasm_event_listener->start().get();
         pacemaker.invoke_on_all(&coproc::pacemaker::start).get();
     }

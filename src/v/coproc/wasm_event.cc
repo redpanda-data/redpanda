@@ -43,6 +43,16 @@ std::string_view header_as_string_view(event_header header) {
     __builtin_unreachable();
 }
 
+std::string_view coproc_type_as_string_view(event_type header) {
+    switch (header) {
+    case event_type::async:
+        return "async";
+    case event_type::data_policy:
+        return "data-policy";
+    }
+    __builtin_unreachable();
+}
+
 std::optional<script_id> get_event_id(const model::record& r) {
     if (r.key_size() != sizeof(script_id::type)) {
         return std::nullopt;
@@ -158,9 +168,9 @@ validate_event(const model::record& r, parsed_event::event_header& header) {
 
 absl::btree_map<script_id, parsed_event>
 reconcile_events(std::vector<model::record_batch> events) {
-    absl::btree_map<script_id, parsed_event> wsas;
+    absl::btree_map<script_id, parsed_event> script_id_to_event;
     for (auto& record_batch : events) {
-        record_batch.for_each_record([&wsas](model::record r) {
+        record_batch.for_each_record([&script_id_to_event](model::record r) {
             parsed_event new_event;
             auto mb_error = wasm::validate_event(r, new_event.header);
             if (mb_error != wasm::errc::none) {
@@ -170,11 +180,20 @@ reconcile_events(std::vector<model::record_batch> events) {
                   mb_error);
                 return;
             }
-            auto id = wasm::get_event_id(r);
+            auto id = wasm::get_event_id(r).value();
             new_event.data = r.share_value();
             /// Update or insert, preferring the newest
-            wsas.insert_or_assign(*id, std::move(new_event));
+            script_id_to_event.insert_or_assign(id, std::move(new_event));
         });
+    }
+    return script_id_to_event;
+}
+
+event_batch reconcile_events_by_type(std::vector<model::record_batch> events) {
+    auto parsed_events = reconcile_events(std::move(events));
+    event_batch wsas;
+    for (auto& [id, event] : parsed_events) {
+        wsas[event.header.type].emplace(id, std::move(event));
     }
     return wsas;
 }

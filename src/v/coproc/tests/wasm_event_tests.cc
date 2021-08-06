@@ -95,8 +95,17 @@ SEASTAR_THREAD_TEST_CASE(verify_event_reconciliation) {
       .topics = {std::make_pair<>(
         model::topic("ABC"), coproc::topic_ingestion_policy::earliest)}};
     std::vector<std::vector<coproc::wasm::event>> events{
-      {{123, deploy}, {456, deploy}, {123}, {456, deploy}},
-      {{789, deploy}, {123}}};
+      {{123, deploy},
+       {456, deploy},
+       {123},
+       {456, deploy},
+       {666, deploy, coproc::wasm::event_type::data_policy},
+       {333, deploy, coproc::wasm::event_type::data_policy}},
+      {{789, deploy},
+       {123},
+       {333, deploy, coproc::wasm::event_type::data_policy},
+       {888, deploy, coproc::wasm::event_type::data_policy},
+       {666, coproc::wasm::event_type::data_policy}}};
 
     auto rbr = make_event_record_batch_reader(std::move(events))
                  .for_each_ref(
@@ -107,15 +116,28 @@ SEASTAR_THREAD_TEST_CASE(verify_event_reconciliation) {
                      std::move(rbr), model::no_timeout)
                      .get0();
 
-    auto results = coproc::wasm::reconcile_events(
+    auto results = coproc::wasm::reconcile_events_by_type(
       std::vector<model::record_batch>(
         std::make_move_iterator(batches.begin()),
         std::make_move_iterator(batches.end())));
-    BOOST_CHECK_EQUAL(results.size(), 3);
+    BOOST_CHECK_EQUAL(results.size(), 2);
+    auto& res_async = results[coproc::wasm::event_type::async];
+    BOOST_CHECK_EQUAL(res_async.size(), 3);
     BOOST_CHECK(
-      results.find(coproc::script_id(123))->second.header.action
+      res_async.find(coproc::script_id(123))->second.header.action
       == coproc::wasm::event_action::remove);
-    BOOST_CHECK(results.find(coproc::script_id(123)) != results.end());
-    BOOST_CHECK(results.find(coproc::script_id(456)) != results.end());
-    BOOST_CHECK(results.find(coproc::script_id(789)) != results.end());
+    BOOST_CHECK(res_async.find(coproc::script_id(123)) != res_async.end());
+    BOOST_CHECK(res_async.find(coproc::script_id(456)) != res_async.end());
+    BOOST_CHECK(res_async.find(coproc::script_id(789)) != res_async.end());
+    BOOST_CHECK(res_async.find(coproc::script_id(333)) == res_async.end());
+
+    auto& res_data_policy = results[coproc::wasm::event_type::data_policy];
+    BOOST_CHECK_EQUAL(res_data_policy.size(), 3);
+    BOOST_CHECK(
+      res_data_policy.find(coproc::script_id(666))->second.header.action
+      == coproc::wasm::event_action::remove);
+    BOOST_CHECK(
+      res_data_policy.find(coproc::script_id(888)) != res_data_policy.end());
+    BOOST_CHECK(
+      res_data_policy.find(coproc::script_id(333)) != res_data_policy.end());
 }

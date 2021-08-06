@@ -28,6 +28,8 @@
 #include <seastar/core/seastar.hh>
 #include <seastar/core/sleep.hh>
 
+#include <absl/container/flat_hash_map.h>
+
 #include <exception>
 #include <system_error>
 
@@ -48,93 +50,48 @@ namespace coproc::wasm {
 ss::future<> event_listener::stop() {
     vlog(coproclog.info, "Stopping coproc::wasm::event_listener");
     _abort_source.request_abort();
-    return _gate.close().then([this] { return _client.stop(); });
+    co_await ss::parallel_for_each(
+      _handlers.begin(),
+      _handlers.end(),
+      [](std::pair<const event_type, wasm::event_handler*>& type_and_handler) {
+          return type_and_handler.second->stop();
+      });
+    co_await _gate.close().then([this] { return _client.stop(); });
 }
 
-ss::future<> event_listener::persist_actions(
-  absl::btree_map<script_id, parsed_event> wsas, model::offset last_offset) {
-    std::vector<enable_copros_request::data> enables;
-    std::vector<script_id> disables;
-    for (auto& [id, event] : wsas) {
-        /// Keeping the active_ids cache up to date solves the issue of issuing
-        /// a bunch of remove commands for scripts that aren't deployed (this
-        /// could occur during bootstrapping)
-        auto found = _active_ids.find(id);
-        if (event.header.actoin == event_action::remove) {
-            if (found != _active_ids.end()) {
-                disables.emplace_back(id);
-            }
-        } else {
-            /// ... or in the case if deploys are performed using the same key.
-            /// This would normally be resolved if the events came in the same
-            /// record batch by the reconcile events function, but not if they
-            /// arrived in separate batches.
-            if (found == _active_ids.end()) {
-                enables.emplace_back(enable_copros_request::data{
-                  .id = id, .source_code = std::move(event.data)});
-            }
-        }
-    }
-    /// TODO: In the future, maybe it would be cleaner to have a add/remove
-    /// endpoint, instead of two seperate RPC endpoints
-    if (!enables.empty()) {
-        enable_copros_request req{.inputs = std::move(enables)};
-        auto resp = co_await _dispatcher.enable_coprocessors(std::move(req));
-        if (resp.has_error()) {
-            vlog(
-              coproclog.error,
-              "Failed to register coprocessors with the wasm engine: {}",
-              resp.error());
-            _offset = last_offset;
-            co_return;
-        } else {
-            for (script_id id : resp.value()) {
-                vlog(
-                  coproclog.info,
-                  "Successfully registered script with id: {}",
-                  id);
-                _active_ids.insert(id);
-            }
-        }
-    }
-    if (!disables.empty()) {
-        disable_copros_request req{.ids = std::move(disables)};
-        auto resp = co_await _dispatcher.disable_coprocessors(std::move(req));
-        if (resp.has_error()) {
-            vlog(
-              coproclog.error,
-              "Failed to make disable request to the wasm engine: {}",
-              resp.error());
-            /// In this case the code will follow a path that re-enters this
-            /// method with the same inputs, and the call to enable_copros above
-            /// succeeded but the call to disable_coprocessors failed, double
-            /// registrations will be avoided because the ids have entered the
-            /// \ref active_ids cache and will not be queued for re-registration
-            _offset = last_offset;
-        } else {
-            for (script_id id : resp.value()) {
-                _active_ids.erase(id);
-            }
-        }
-    }
-}
-
-event_listener::event_listener(ss::sharded<pacemaker>& pacemaker)
-  : _client(make_client())
-  , _dispatcher(pacemaker, _abort_source) {}
+event_listener::event_listener()
+  : _client(make_client()) {}
 
 ss::future<> event_listener::start() {
     (void)ss::with_gate(_gate, [this] {
-        return ss::do_until(
-          [this] { return _abort_source.abort_requested(); },
-          [this] {
-              return do_start().then([this] {
-                  return ss::sleep_abortable(1s, _abort_source)
-                    .handle_exception_type([](const ss::sleep_aborted&) {});
-              });
+        return ss::parallel_for_each(
+                 _handlers.begin(),
+                 _handlers.end(),
+                 [](std::pair<const event_type, event_handler*>&
+                      type_and_handler) {
+                     return type_and_handler.second->start();
+                 })
+          .then([this] {
+              return ss::do_until(
+                [this] { return _abort_source.abort_requested(); },
+                [this] {
+                    return do_start().then([this] {
+                        return ss::sleep_abortable(1s, _abort_source)
+                          .handle_exception_type(
+                            [](const ss::sleep_aborted&) {});
+                    });
+                });
           });
     });
     return ss::now();
+}
+
+void event_listener::register_handler(event_type type, event_handler* handler) {
+    _handlers[type] = handler;
+    vlog(
+      coproclog.info,
+      "Register new handler for wasm_event_type: {}",
+      coproc_type_as_string_view(type));
 }
 
 static ss::future<std::vector<model::record_batch>>
@@ -161,33 +118,22 @@ ss::future<> event_listener::do_start() {
             co_return;
         }
     }
-    auto heartbeat = co_await _dispatcher.heartbeat();
-    if (heartbeat.has_error()) {
-        std::error_code err = heartbeat.error();
-        if (
-          err == rpc::errc::client_request_timeout
-          || err == rpc::errc::disconnected_endpoint) {
-            vlog(
-              coproclog.error,
-              "Wasm engine failed to reply to heartbeat within the "
-              "expected "
-              "interval");
+
+    for (auto& [_, handler] : _handlers) {
+        auto cron_res = co_await handler->cron();
+        switch (cron_res) {
+        case event_handler::cron_finish_status::skip_pull: {
             co_return;
         }
-    } else if (heartbeat.value().data != _active_ids.size()) {
-        /// There is a discrepency between the number of registered coprocs
-        /// according to redpanda and according to the wasm engine.
-        /// Reconcile all state from offset 0.
-        vlog(coproclog.info, "Replaying coprocessor state...");
-        if (co_await _dispatcher.disable_all_coprocessors()) {
-            vlog(
-              coproclog.error,
-              "Failed to reset wasm_engine state, will keep retrying...");
-        } else {
-            _active_ids.clear();
+        case event_handler::replay_topic: {
             _offset = model::offset(0);
+            break;
+        }
+        default:
+            break;
         }
     }
+
     co_await do_ingest();
 }
 
@@ -203,8 +149,8 @@ ss::future<> event_listener::do_ingest() {
         stop = co_await poll_topic(events);
     }
     auto decompressed = co_await decompress_wasm_events(std::move(events));
-    auto reconciled = wasm::reconcile_events(std::move(decompressed));
-    co_await persist_actions(std::move(reconciled), last_offset);
+    auto reconciled = wasm::reconcile_events_by_type(std::move(decompressed));
+    co_await process_events(std::move(reconciled), last_offset);
 }
 
 ss::future<ss::stop_iteration>
@@ -241,5 +187,39 @@ event_listener::poll_topic(model::record_batch_reader::data_t& events) {
     co_return initial == _offset ? ss::stop_iteration::yes
                                  : ss::stop_iteration::no;
 };
+
+ss::future<>
+event_listener::process_events(event_batch events, model::offset last_offset) {
+    for (auto& [type, prepared_events] : events) {
+        auto it = _handlers.find(type);
+        if (it == _handlers.end()) {
+            vlog(
+              coproclog.warn,
+              "Can not find handler for coproc_type: {}",
+              coproc_type_as_string_view(type));
+            continue;
+        }
+
+        try {
+            co_await it->second->process(std::move(prepared_events));
+        } catch (const event_handler_exception& ex) {
+            switch (type) {
+            case event_type::async: {
+                _offset = last_offset;
+                break;
+            }
+            case event_type::data_policy: {
+                break;
+            }
+            default:
+                vlog(
+                  coproclog.error,
+                  "Unexpected coproc type, but we tried to process this event");
+            }
+
+            vlog(coproclog.error, "{}", ex.what());
+        }
+    }
+}
 
 } // namespace coproc::wasm

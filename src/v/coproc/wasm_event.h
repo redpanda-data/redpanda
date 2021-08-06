@@ -30,6 +30,8 @@ enum class event_header { action, description, checksum, type };
 /// Enumerations for all possible coproc_type
 enum class event_type { async, data_policy };
 
+std::string_view coproc_type_as_string_view(event_type header);
+
 /// Enumerations for all possible values for the 'action' key within the headers
 enum class event_action { deploy, remove };
 
@@ -69,5 +71,10 @@ wasm::errc validate_event(const model::record&, parsed_event::event_header&);
 /// the event has passed all validators
 absl::btree_map<script_id, parsed_event>
   reconcile_events(std::vector<model::record_batch>);
+
+/// \brief Returns the newest parsed events grouped by type
+using event_batch
+  = absl::btree_map<event_type, absl::btree_map<script_id, parsed_event>>;
+event_batch reconcile_events_by_type(std::vector<model::record_batch>);
 
 } // namespace coproc::wasm
