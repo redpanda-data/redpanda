@@ -28,8 +28,9 @@ public:
     void register_node(allocation_state::node_ptr n) {
         _state->register_node(std::move(n));
     }
-    void unregister_node(model::node_id id) {
-        return _state->unregister_node(id);
+
+    void update_allocation_nodes(const std::vector<model::broker>& brokers) {
+        _state->update_allocation_nodes(brokers);
     }
     void decommission_node(model::node_id id) { _state->decommission_node(id); }
     void recommission_node(model::node_id id) { _state->recommission_node(id); }
