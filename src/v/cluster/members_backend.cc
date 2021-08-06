@@ -481,10 +481,6 @@ ss::future<> members_backend::reallocate_replica_set(
         [[fallthrough]];
     }
     case reallocation_state::requested: {
-        vlog(
-          clusterlog.info,
-          "waiting for partition {} replicas to be moved",
-          meta.ntp);
         // wait for partition replicas to be moved
         auto reconciliation_state
           = co_await _api.local().get_reconciliation_state(meta.ntp);
@@ -495,6 +491,10 @@ ss::future<> members_backend::reallocate_replica_set(
           reconciliation_state.status(),
           reconciliation_state.pending_operations());
         if (reconciliation_state.status() != reconciliation_status::done) {
+            vlog(
+              clusterlog.info,
+              "waiting for partition {} replicas to be moved",
+              meta.ntp);
             co_return;
         }
         meta.state = reallocation_state::finished;
