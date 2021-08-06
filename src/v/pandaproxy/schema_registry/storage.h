@@ -814,7 +814,6 @@ public:
 
 struct delete_subject_value {
     subject sub;
-    schema_version version;
 
     friend bool
     operator==(const delete_subject_value&, const delete_subject_value&)
@@ -822,7 +821,7 @@ struct delete_subject_value {
 
     friend std::ostream&
     operator<<(std::ostream& os, const delete_subject_value& v) {
-        fmt::print(os, "subject: {}, version: {}", v.sub, v.version);
+        fmt::print(os, "subject: {}", v.sub);
         return os;
     }
 };
@@ -833,8 +832,6 @@ inline void rjson_serialize(
     w.StartObject();
     w.Key("subject");
     ::json::rjson_serialize(w, val.sub);
-    w.Key("version");
-    ::json::rjson_serialize(w, val.version);
     w.EndObject();
 }
 
@@ -844,7 +841,6 @@ class delete_subject_value_handler : public json::base_handler<Encoding> {
         empty = 0,
         object,
         subject,
-        version,
     };
     state _state = state::empty;
 
@@ -862,7 +858,6 @@ public:
         case state::object: {
             std::optional<state> s{string_switch<std::optional<state>>(sv)
                                      .match("subject", state::subject)
-                                     .match("version", state::version)
                                      .default_match(std::nullopt)};
             if (s.has_value()) {
                 _state = *s;
@@ -870,22 +865,6 @@ public:
             return s.has_value();
         }
         case state::empty:
-        case state::subject:
-        case state::version:
-            return false;
-        }
-        return false;
-    }
-
-    bool Uint(int i) {
-        switch (_state) {
-        case state::version: {
-            result.version = schema_version{i};
-            _state = state::object;
-            return true;
-        }
-        case state::empty:
-        case state::object:
         case state::subject:
             return false;
         }
@@ -902,7 +881,6 @@ public:
         }
         case state::empty:
         case state::object:
-        case state::version:
             return false;
         }
         return false;

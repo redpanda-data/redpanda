@@ -278,7 +278,7 @@ seq_writer::delete_subject_impermanent(subject sub) {
     auto do_write = [sub](model::offset write_at, seq_writer& seq)
       -> ss::future<std::optional<std::vector<schema_version>>> {
         // Grab the versions before they're gone.
-        std::vector<schema_version> versions = co_await seq._store.get_versions(
+        auto versions = co_await seq._store.get_versions(
           sub, include_deleted::yes);
 
         // Inspect the subject to see if its already deleted
@@ -287,10 +287,9 @@ seq_writer::delete_subject_impermanent(subject sub) {
         }
 
         // Proceed to write
-        auto version = versions.back();
         auto key = delete_subject_key{
           .seq{write_at}, .node{seq._node_id}, .sub{sub}};
-        auto value = delete_subject_value{.sub{sub}, .version{version}};
+        auto value = delete_subject_value{.sub{sub}};
         auto batch = as_record_batch(key, value);
 
         auto success = co_await seq.produce_and_check(

@@ -104,11 +104,10 @@ const pps::delete_subject_key delete_subject_key{
 
 constexpr std::string_view delete_subject_value_sv{
   R"({
-  "subject": "my-kafka-value",
-  "version": 2
+  "subject": "my-kafka-value"
 })"};
 const pps::delete_subject_value delete_subject_value{
-  .sub{pps::subject{"my-kafka-value"}}, .version{pps::schema_version{2}}};
+  .sub{pps::subject{"my-kafka-value"}}};
 
 BOOST_AUTO_TEST_CASE(test_storage_serde) {
     {
