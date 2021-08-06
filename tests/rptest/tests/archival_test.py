@@ -8,7 +8,7 @@
 
 from rptest.clients.kafka_cat import KafkaCat
 from ducktape.mark.resource import cluster
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ignore
 from ducktape.utils.util import wait_until
 from ducktape.errors import DucktapeError
 from rptest.tests.redpanda_test import RedpandaTest
@@ -23,6 +23,7 @@ import time
 import os
 import json
 import traceback
+import uuid
 import sys
 
 NTP = namedtuple("NTP", ['ns', 'topic', 'partition', 'revision'])
@@ -144,7 +145,6 @@ def _parse_manifest_segment(manifest, sname, meta, remote_set, logger):
 
 class ArchivalTest(RedpandaTest):
     s3_host_name = "minio-s3"
-    s3_bucket_name = "panda-bucket"
     s3_access_key = "panda-user"
     s3_secret_key = "panda-secret"
     s3_region = "panda-region"
@@ -154,13 +154,14 @@ class ArchivalTest(RedpandaTest):
                         replication_factor=3), )
 
     def __init__(self, test_context):
+        self.s3_bucket_name = f"panda-bucket-{uuid.uuid1()}"
         extra_rp_conf = dict(
             developer_mode=True,
             cloud_storage_enabled=True,
             cloud_storage_access_key=ArchivalTest.s3_access_key,
             cloud_storage_secret_key=ArchivalTest.s3_secret_key,
             cloud_storage_region=ArchivalTest.s3_region,
-            cloud_storage_bucket=ArchivalTest.s3_bucket_name,
+            cloud_storage_bucket=self.s3_bucket_name,
             cloud_storage_disable_tls=True,
             cloud_storage_api_endpoint=ArchivalTest.s3_host_name,
             cloud_storage_api_endpoint_port=9000,
@@ -180,15 +181,15 @@ class ArchivalTest(RedpandaTest):
             logger=self.logger)
 
     def setUp(self):
-        self.s3_client.empty_bucket(ArchivalTest.s3_bucket_name)
-        self.s3_client.create_bucket(ArchivalTest.s3_bucket_name)
+        self.s3_client.empty_bucket(self.s3_bucket_name)
+        self.s3_client.create_bucket(self.s3_bucket_name)
         # Deletes in S3 are eventually consistent so we might still
         # see previously removed objects for a while.
         validate(self._check_bucket_is_emtpy, self.logger, 300)
         super().setUp()
 
     def tearDown(self):
-        self.s3_client.empty_bucket(ArchivalTest.s3_bucket_name)
+        self.s3_client.empty_bucket(self.s3_bucket_name)
         super().tearDown()
 
     @cluster(num_nodes=3)
@@ -198,6 +199,7 @@ class ArchivalTest(RedpandaTest):
         self.kafka_tools.produce(self.topic, 10000, 1024)
         validate(self._quick_verify, self.logger, 90)
 
+    @ignore
     @cluster(num_nodes=3)
     def test_isolate(self):
         """Verify that our isolate/rejoin facilities actually work"""
@@ -297,7 +299,7 @@ class ArchivalTest(RedpandaTest):
         allobj = self._list_objects()
         for obj in allobj:
             self.logger.debug(
-                f"found object {obj} in bucket {ArchivalTest.s3_bucket_name}")
+                f"found object {obj} in bucket {self.s3_bucket_name}")
         assert len(allobj) == 0
 
     def _get_partition_leaders(self):
@@ -343,8 +345,7 @@ class ArchivalTest(RedpandaTest):
                 f"expected path {expected} is not found in the bucket, bucket content: \n{objlist}"
             )
             assert not id is None
-        manifest = self.s3_client.get_object_data(ArchivalTest.s3_bucket_name,
-                                                  id)
+        manifest = self.s3_client.get_object_data(self.s3_bucket_name, id)
         self.logger.info(f"manifest found: {manifest}")
         return json.loads(manifest)
 
@@ -516,16 +517,16 @@ class ArchivalTest(RedpandaTest):
         try:
             topic_manifest_id = "d0000000/meta/kafka/panda-topic/topic_manifest.json"
             partition_manifest_id = "d0000000/meta/kafka/panda-topic/0_9/manifest.json"
-            manifest = self.s3_client.get_object_data(
-                ArchivalTest.s3_bucket_name, partition_manifest_id)
+            manifest = self.s3_client.get_object_data(self.s3_bucket_name,
+                                                      partition_manifest_id)
             results = [topic_manifest_id, partition_manifest_id]
             for id in manifest['segments'].keys():
                 results.append(id)
             self.logger.debug(f"ListObjects(source: manifest): {results}")
         except:
             results = [
-                loc.Key for loc in self.s3_client.list_objects(
-                    ArchivalTest.s3_bucket_name)
+                loc.Key
+                for loc in self.s3_client.list_objects(self.s3_bucket_name)
             ]
             self.logger.debug(f"ListObjects: {results}")
         return results
@@ -643,7 +644,7 @@ class ArchivalTest(RedpandaTest):
 
         return {
             normalize(it.Key): (it.ETag, it.ContentLength)
-            for it in self.s3_client.list_objects(ArchivalTest.s3_bucket_name)
+            for it in self.s3_client.list_objects(self.s3_bucket_name)
             if included(it.Key)
         }
 

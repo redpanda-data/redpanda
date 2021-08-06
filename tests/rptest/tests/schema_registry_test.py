@@ -55,10 +55,7 @@ class SchemaRegistryTest(RedpandaTest):
             num_cores=1)
 
         http.client.HTTPConnection.debuglevel = 1
-        logging.basicConfig()
-        requests_log = logging.getLogger("requests.packages.urllib3")
-        requests_log.setLevel(logging.getLogger().level)
-        requests_log.propagate = True
+        http.client.print = lambda *args: self.logger.debug(" ".join(args))
 
         self._ctx = context
 

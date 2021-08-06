@@ -23,6 +23,7 @@ import time
 import os
 import json
 import traceback
+import uuid
 import sys
 
 NTP = namedtuple("NTP", ['ns', 'topic', 'partition', 'revision'])
@@ -159,7 +160,8 @@ class ArchivalTest(RedpandaTest):
                 log_segment_size=32 * 1048576  # 32MB
             )
         else:
-            self.s3_bucket = ArchivalTest.MINIO_BUCKET_NAME
+            bucket_name = f"{ArchivalTest.MINIO_BUCKET_NAME}-{uuid.uuid1()}"
+            self.s3_bucket = bucket_name
             self.s3_region = ArchivalTest.MINIO_REGION
             self.s3_access_key = ArchivalTest.MINIO_ACCESS_KEY
             self.s3_secret_key = ArchivalTest.MINIO_SECRET_KEY
@@ -170,7 +172,7 @@ class ArchivalTest(RedpandaTest):
                 cloud_storage_access_key=ArchivalTest.MINIO_ACCESS_KEY,
                 cloud_storage_secret_key=ArchivalTest.MINIO_SECRET_KEY,
                 cloud_storage_region=ArchivalTest.MINIO_REGION,
-                cloud_storage_bucket=ArchivalTest.MINIO_BUCKET_NAME,
+                cloud_storage_bucket=bucket_name,
                 cloud_storage_disable_tls=True,
                 cloud_storage_api_endpoint=ArchivalTest.MINIO_HOST_NAME,
                 cloud_storage_api_endpoint_port=9000,
