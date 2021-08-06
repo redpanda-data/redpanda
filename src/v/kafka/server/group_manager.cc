@@ -216,10 +216,9 @@ ss::future<> group_manager::handle_partition_leader_change(
      * otherwise, we can remove any groups and commits that map to this
      * partition.
      */
-    p->loading = true;
-    if (leader_id != _self.id()) {
+    p->loading = leader_id == _self.id();
+    if (!p->loading) {
         // TODO: we are not yet handling group / partition deletion
-        p->loading = false;
         return ss::make_ready_future<>();
     }
 
