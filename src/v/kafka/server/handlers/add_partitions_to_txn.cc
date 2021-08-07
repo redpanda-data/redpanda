@@ -64,6 +64,9 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
                           partition.error_code
                             = error_code::invalid_producer_epoch;
                           break;
+                      case cluster::tx_errc::invalid_txn_state:
+                          partition.error_code = error_code::invalid_txn_state;
+                          break;
                       default:
                           partition.error_code
                             = error_code::unknown_server_error;
