@@ -427,6 +427,12 @@ configuration::configuration()
       "How large in bytes should each log segment be (default 1G)",
       required::no,
       1_GiB)
+  , abort_timed_out_transactions_interval_ms(
+      *this,
+      "abort_timed_out_transactions_interval_ms",
+      "How often look for the inactive transactions and abort them",
+      required::no,
+      1min)
   , create_topic_timeout_ms(
       *this,
       "create_topic_timeout_ms",
