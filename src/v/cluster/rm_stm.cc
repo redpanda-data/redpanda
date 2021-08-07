@@ -172,6 +172,8 @@ rm_stm::rm_stm(
   , _oldest_session(model::timestamp::now())
   , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.value())
   , _tx_timeout_delay(config::shard_local_cfg().tx_timeout_delay_ms.value())
+  , _abort_interval_ms(config::shard_local_cfg()
+                         .abort_timed_out_transactions_interval_ms.value())
   , _abort_index_segment_size(
       config::shard_local_cfg().abort_index_segment_size.value())
   , _recovery_policy(
@@ -835,29 +837,8 @@ ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {
             _mem_state = mem_state{.term = _insync_term};
         }
     }
-    if (ready && !_is_leader) {
-        _is_leader = true;
-        became_leader();
-    } else if (!ready && _is_leader) {
-        _is_leader = false;
-        lost_leadership();
-    }
     co_return ready;
 }
-
-void rm_stm::became_leader() {
-    if (_gate.is_closed()) {
-        return;
-    }
-    if (!_is_autoabort_enabled) {
-        return;
-    }
-    if (!auto_abort_timer.armed()) {
-        abort_old_txes();
-    }
-}
-
-void rm_stm::lost_leadership() { auto_abort_timer.cancel(); }
 
 void rm_stm::track_tx(
   model::producer_identity pid,
@@ -871,48 +852,52 @@ void rm_stm::track_tx(
         return;
     }
     auto deadline = _mem_state.expiration[pid].deadline();
-    if (auto_abort_timer.armed() && auto_abort_timer.get_timeout() > deadline) {
-        auto_abort_timer.cancel();
-        auto_abort_timer.arm(deadline);
-    } else if (!auto_abort_timer.armed()) {
-        auto_abort_timer.arm(deadline);
-    }
+    try_arm(deadline);
 }
 
 void rm_stm::abort_old_txes() {
+    _is_autoabort_active = true;
     (void)ss::with_gate(_gate, [this] {
-        std::vector<model::producer_identity> pids;
-        for (auto& [k, _] : _mem_state.estimated) {
-            pids.push_back(k);
-        }
-        for (auto& [k, _] : _mem_state.tx_start) {
-            pids.push_back(k);
-        }
-        for (auto& [k, _] : _log_state.ongoing_map) {
-            pids.push_back(k);
-        }
-        absl::btree_set<model::producer_identity> expired;
-        for (auto pid : pids) {
-            auto expiration_it = _mem_state.expiration.find(pid);
-            if (expiration_it != _mem_state.expiration.end()) {
-                if (expiration_it->second.deadline() > clock_type::now()) {
-                    continue;
-                }
-            }
-            expired.insert(pid);
-        }
-        return abort_old_txes(std::move(expired));
+        return do_abort_old_txes().finally(
+          [this] { try_arm(clock_type::now() + _abort_interval_ms); });
     });
 }
 
-ss::future<>
-rm_stm::abort_old_txes(absl::btree_set<model::producer_identity> pids) {
+ss::future<> rm_stm::do_abort_old_txes() {
+    if (!co_await sync(_sync_timeout)) {
+        co_return;
+    }
+
+    std::vector<model::producer_identity> pids;
+    for (auto& [k, _] : _mem_state.estimated) {
+        pids.push_back(k);
+    }
+    for (auto& [k, _] : _mem_state.tx_start) {
+        pids.push_back(k);
+    }
+    for (auto& [k, _] : _log_state.ongoing_map) {
+        pids.push_back(k);
+    }
+    absl::btree_set<model::producer_identity> expired;
     for (auto pid : pids) {
+        auto expiration_it = _mem_state.expiration.find(pid);
+        if (expiration_it != _mem_state.expiration.end()) {
+            if (expiration_it->second.deadline() > clock_type::now()) {
+                continue;
+            }
+        }
+        expired.insert(pid);
+    }
+
+    for (auto pid : expired) {
         co_await try_abort_old_tx(pid);
     }
 
     std::optional<time_point_type> earliest_deadline;
-    for (auto& [_, expiration] : _mem_state.expiration) {
+    for (auto& [pid, expiration] : _mem_state.expiration) {
+        if (!is_known_session(pid)) {
+            continue;
+        }
         auto candidate = expiration.deadline();
         if (earliest_deadline) {
             earliest_deadline = std::min(earliest_deadline.value(), candidate);
@@ -924,14 +909,7 @@ rm_stm::abort_old_txes(absl::btree_set<model::producer_identity> pids) {
     if (earliest_deadline) {
         auto deadline = std::max(
           earliest_deadline.value(), clock_type::now() + _tx_timeout_delay);
-        if (
-          auto_abort_timer.armed()
-          && auto_abort_timer.get_timeout() > deadline) {
-            auto_abort_timer.cancel();
-            auto_abort_timer.arm(deadline);
-        } else if (!auto_abort_timer.armed()) {
-            auto_abort_timer.arm(deadline);
-        }
+        try_arm(deadline);
     }
 }
 
@@ -1012,6 +990,15 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
     }
 }
 
+void rm_stm::try_arm(time_point_type deadline) {
+    if (auto_abort_timer.armed() && auto_abort_timer.get_timeout() > deadline) {
+        auto_abort_timer.cancel();
+        auto_abort_timer.arm(deadline);
+    } else if (!auto_abort_timer.armed()) {
+        auto_abort_timer.arm(deadline);
+    }
+}
+
 void rm_stm::apply_fence(model::record_batch&& b) {
     const auto& hdr = b.header();
     auto bid = model::batch_identity::from(hdr);
@@ -1076,6 +1063,9 @@ ss::future<> rm_stm::apply(model::record_batch b) {
 
     compact_snapshot();
     _insync_offset = last_offset;
+    if (_is_autoabort_enabled && !_is_autoabort_active) {
+        abort_old_txes();
+    }
 }
 
 void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
