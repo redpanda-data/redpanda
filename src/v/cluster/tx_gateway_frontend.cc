@@ -1314,6 +1314,10 @@ ss::future<bool> tx_gateway_frontend::try_create_tx_topic() {
       1,
       config::shard_local_cfg().transaction_coordinator_replication()};
 
+    topic.properties.segment_size
+      = config::shard_local_cfg().transaction_coordinator_log_segment_size;
+    topic.properties.retention_duration = tristate<std::chrono::milliseconds>(
+      config::shard_local_cfg().transaction_coordinator_delete_retention_ms());
     topic.properties.cleanup_policy_bitflags
       = config::shard_local_cfg().transaction_coordinator_cleanup_policy();
 
