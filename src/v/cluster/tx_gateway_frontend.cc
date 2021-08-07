@@ -1241,7 +1241,7 @@ tx_gateway_frontend::get_ongoing_tx(
             // a previous leader. Failing this request since it has a chance of
             // being a part of that transaction. We expect client to abort on
             // error and the abort will bump the tx's term (etag)
-            co_return tx_errc::request_rejected;
+            co_return tx_errc::invalid_txn_state;
         }
     } else if (tx.status == tm_transaction::tx_status::ongoing) {
         if (!stm->is_actual_term(tx.etag)) {
@@ -1264,13 +1264,13 @@ tx_gateway_frontend::get_ongoing_tx(
         //
         // it violates the docs, the producer is expected to call abort
         // https://kafka.apache.org/23/javadoc/org/apache/kafka/clients/producer/KafkaProducer.html
-        co_return tx_errc::request_rejected;
+        co_return tx_errc::invalid_txn_state;
     } else if (tx.status == tm_transaction::tx_status::killed) {
         // a tx was timed out, can't treat it as ::aborting because
         // from the client perspective it will look like a tx wasn't
         // failed at all but in fact the second part of the tx will
         // start a new transactions
-        co_return tx_errc::request_rejected;
+        co_return tx_errc::invalid_txn_state;
     } else {
         // A previous transaction has failed after its status has been
         // decided, rolling it forward.
@@ -1298,7 +1298,7 @@ tx_gateway_frontend::get_ongoing_tx(
             // tx in current ready state with current term means we abort a tx
             // which wasn't started and it leads to an error.
             (void)co_await stm->mark_tx_ready(tx.id, tx.etag);
-            co_return tx_errc::unknown_server_error;
+            co_return tx_errc::invalid_txn_state;
         }
     }
 
