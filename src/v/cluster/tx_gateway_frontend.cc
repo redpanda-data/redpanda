@@ -680,8 +680,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
       stm, pid, request.transactional_id, timeout);
 
     if (!r.has_value()) {
-        co_return make_add_partitions_error_response(
-          request, tx_errc::unknown_server_error);
+        co_return make_add_partitions_error_response(request, r.error());
     }
 
     auto tx = r.value();
@@ -824,8 +823,7 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
     auto r = co_await get_ongoing_tx(
       stm, pid, request.transactional_id, timeout);
     if (!r.has_value()) {
-        co_return add_offsets_tx_reply{
-          .error_code = tx_errc::unknown_server_error};
+        co_return add_offsets_tx_reply{.error_code = r.error()};
     }
     auto tx = r.value();
 
@@ -935,8 +933,8 @@ tx_gateway_frontend::do_end_txn(
     }
     if (!maybe_tx.has_value()) {
         if (maybe_tx.error() == tm_stm::op_status::not_found) {
-            outcome->set_value(tx_errc::request_rejected);
-            co_return tx_errc::request_rejected;
+            outcome->set_value(tx_errc::invalid_producer_id_mapping);
+            co_return tx_errc::invalid_producer_id_mapping;
         }
         outcome->set_value(tx_errc::unknown_server_error);
         co_return tx_errc::unknown_server_error;
@@ -951,8 +949,8 @@ tx_gateway_frontend::do_end_txn(
             co_return tx_errc::fenced;
         }
 
-        outcome->set_value(tx_errc::request_rejected);
-        co_return tx_errc::request_rejected;
+        outcome->set_value(tx_errc::invalid_producer_id_mapping);
+        co_return tx_errc::invalid_producer_id_mapping;
     }
 
     checked<cluster::tm_transaction, tx_errc> r(tx_errc::unknown_server_error);
@@ -1222,7 +1220,7 @@ tx_gateway_frontend::get_ongoing_tx(
     auto maybe_tx = co_await stm->get_actual_tx(transactional_id);
     if (!maybe_tx.has_value()) {
         if (maybe_tx.error() == tm_stm::op_status::not_found) {
-            co_return tx_errc::request_rejected;
+            co_return tx_errc::invalid_producer_id_mapping;
         }
         co_return tx_errc::unknown_server_error;
     }
@@ -1230,7 +1228,11 @@ tx_gateway_frontend::get_ongoing_tx(
     auto tx = maybe_tx.value();
 
     if (tx.pid != pid) {
-        co_return tx_errc::request_rejected;
+        if (tx.pid.id == pid.id && tx.pid.epoch > pid.epoch) {
+            co_return tx_errc::fenced;
+        }
+
+        co_return tx_errc::invalid_producer_id_mapping;
     }
 
     if (tx.status == tm_transaction::tx_status::ready) {

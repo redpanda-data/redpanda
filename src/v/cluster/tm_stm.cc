@@ -43,7 +43,7 @@ static model::record_batch serialize_tx(tm_transaction tx) {
 
 std::ostream& operator<<(std::ostream& o, const tm_transaction& tx) {
     return o << "{tm_transaction: id=" << tx.id << ", status=" << tx.status
-             << ", pid=" << tx.pid
+             << ", pid=" << tx.pid << ", etag=" << tx.etag
              << ", size(partitions)=" << tx.partitions.size()
              << ", tx_seq=" << tx.tx_seq << "}";
 }
