@@ -708,6 +708,91 @@ class segment_set:
             yield segment(seastar_lw_shared_ptr(ptr).get())
 
 
+def template_arguments(gdb_type):
+    n = 0
+    while True:
+        try:
+            yield gdb_type.template_argument(n)
+            n += 1
+        except RuntimeError:
+            return
+
+
+def get_template_arg_with_prefix(gdb_type, prefix):
+    for arg in template_arguments(gdb_type):
+        if str(arg).startswith(prefix):
+            return arg
+
+
+def get_field_offset(gdb_type, name):
+    for field in gdb_type.fields():
+        if field.name == name:
+            return int(field.bitpos / 8)
+
+
+def get_base_class_offset(gdb_type, base_class_name):
+    name_pattern = re.escape(base_class_name) + "(<.*>)?$"
+    for field in gdb_type.fields():
+        if field.is_base_class and re.match(name_pattern,
+                                            field.type.strip_typedefs().name):
+            return int(field.bitpos / 8)
+
+
+class boost_intrusive_list:
+    size_t = gdb.lookup_type('size_t')
+
+    def __init__(self, list_ref, link=None):
+        list_type = list_ref.type.strip_typedefs()
+        self.node_type = list_type.template_argument(0)
+        rps = list_ref['data_']['root_plus_size_']
+        try:
+            self.root = rps['root_']
+        except gdb.error:
+            # Some boost versions have this instead
+            self.root = rps['m_header']
+        if link is not None:
+            self.link_offset = get_field_offset(self.node_type, link)
+        else:
+            member_hook = get_template_arg_with_prefix(
+                list_type, "boost::intrusive::member_hook")
+
+            if not member_hook:
+                member_hook = get_template_arg_with_prefix(
+                    list_type, "struct boost::intrusive::member_hook")
+            if member_hook:
+                self.link_offset = member_hook.template_argument(2).cast(
+                    self.size_t)
+            else:
+                self.link_offset = get_base_class_offset(
+                    self.node_type, "boost::intrusive::list_base_hook")
+                if self.link_offset is None:
+                    raise Exception("Class does not extend list_base_hook: " +
+                                    str(self.node_type))
+
+    def __iter__(self):
+        hook = self.root['next_']
+        while hook and hook != self.root.address:
+            node_ptr = hook.cast(self.size_t) - self.link_offset
+            yield node_ptr.cast(self.node_type.pointer()).dereference()
+            hook = hook['next_']
+
+    def __nonzero__(self):
+        return self.root['next_'] != self.root.address
+
+    def __bool__(self):
+        return self.__nonzero__()
+
+    def __len__(self):
+        return len(list(iter(self)))
+
+
+class readers_cache:
+    def __init__(self, ref):
+        self.ref = ref
+        self.readers = boost_intrusive_list(self.ref['_readers'], "_hook")
+        self.in_use = boost_intrusive_list(self.ref['_in_use'], "_hook")
+
+
 class disk_log_impl:
     disk_log_impl_t = gdb.lookup_type("storage::disk_log_impl")
 
@@ -716,6 +801,9 @@ class disk_log_impl:
 
     def segments(self):
         return segment_set(self.ref["_segs"])
+
+    def readers_cache(self):
+        return readers_cache(std_unique_ptr(self.ref["_readers_cache"]).get())
 
 
 def find_logs(shard=None):
@@ -748,12 +836,14 @@ class redpanda_memory(gdb.Command):
         storage = find_storage_api()
         kvstore = std_unique_ptr(storage["_kvstore"]).dereference()
         db = absl_flat_hash_map(kvstore["_db"])
+        print(f"# Key value store")
         gdb.write("key-value store:\n")
         gdb.write("      size: {}\n".format(len(db)))
         gdb.write("  capacity: {}\n".format(db.capacity()))
         gdb.write("size bytes: {}\n".format(kvstore["_probe"]["cached_bytes"]))
 
     def print_segment_memory(self):
+        print(f"# Log segments")
         sizes = []
         capacities = []
         contigs = []
@@ -773,9 +863,22 @@ class redpanda_memory(gdb.Command):
         for size, freq in contig_kb_counts.most_common():
             print(f"Size {size:4} Freq {freq}")
 
+    def print_readers_cache_memory(self):
+        print(f"# Readers cache")
+        total_readers = 0
+        for ntp, log in find_logs():
+            readers = len(log.readers_cache().readers)
+            in_use = len(log.readers_cache().in_use)
+            print(f"readers: {readers}, readers_in_use: {in_use} @ {ntp}")
+            total_readers += in_use
+            total_readers += readers
+
+        print(f"Total cached readers: {total_readers}")
+
     def invoke(self, arg, from_tty):
         self.print_kvstore_memory()
         self.print_segment_memory()
+        self.print_readers_cache_memory()
 
         cpu_mem = gdb.parse_and_eval('\'seastar::memory::cpu_mem\'')
         page_size = int(gdb.parse_and_eval('\'seastar::memory::page_size\''))
@@ -1697,6 +1800,7 @@ class redpanda_heapprof(gdb.Command):
 
 redpanda()
 redpanda_memory()
+redpanda_rpc()
 redpanda_task_queues()
 redpanda_smp_queues()
 redpanda_small_objects()
