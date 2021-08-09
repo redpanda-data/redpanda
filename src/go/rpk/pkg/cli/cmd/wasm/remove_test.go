@@ -22,11 +22,15 @@ func TestNewRemoveCommand(t *testing.T) {
 	}{
 		{
 			name: "it should publish a message with correct format",
-			args: []string{"bar"},
+			args: []string{"bar", "--type", "async"},
 		}, {
 			name:        "it should a error if the name arg isn't set",
 			args:        []string{},
 			expectedErr: "no wasm script name specified",
+		}, {
+			name:        "it should fail if the type is not correct",
+			args:        []string{"bar", "--type", "test"},
+			expectedErr: "Unexpected coproc type: 'test'",
 		}, {
 			name: "it should publish a message with correct format with valid headers",
 			args: []string{"foo"},
@@ -37,6 +41,9 @@ func TestNewRemoveCommand(t *testing.T) {
 						{
 							Key:   []byte("action"),
 							Value: []byte("remove"),
+						}, {
+							Key:   []byte("type"),
+							Value: []byte("async"),
 						},
 					}
 					require.Equal(t, expectHeader, msg.Headers)

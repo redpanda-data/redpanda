@@ -12,6 +12,7 @@ func NewRemoveCommand(
 	createProduce func(bool, int32) (sarama.SyncProducer, error),
 	adminCreate func() (sarama.ClusterAdmin, error),
 ) *cobra.Command {
+	var coprocType string
 
 	command := &cobra.Command{
 		Use:   "remove <name>",
@@ -26,6 +27,10 @@ func NewRemoveCommand(
 		},
 		RunE: func(_ *cobra.Command, args []string) error {
 			name := args[0]
+			err := CheckCoprocType(coprocType)
+			if err != nil {
+				return err
+			}
 			producer, err := createProduce(false, -1)
 			if err != nil {
 				return err
@@ -36,11 +41,14 @@ func NewRemoveCommand(
 			}
 			return remove(
 				name,
+				coprocType,
 				producer,
 				admin,
 			)
 		},
 	}
+
+	AddTypeFlag(command, &coprocType)
 
 	return command
 }
@@ -52,11 +60,15 @@ message format:
 	key: <name>,
 	header: {
 		action: "remove"
+		type: <coproc type>
 	}
 }
 */
 func remove(
-	name string, producer sarama.SyncProducer, admin sarama.ClusterAdmin,
+	name string,
+	coprocType string,
+	producer sarama.SyncProducer,
+	admin sarama.ClusterAdmin,
 ) error {
 	exist, err := ExistingTopic(admin, kafka.CoprocessorTopic)
 	if err != nil {
@@ -69,7 +81,7 @@ func remove(
 		}
 	}
 	// create message
-	message := CreateRemoveMsg(name)
+	message := CreateRemoveMsg(name, coprocType)
 	//publish message
 	return kafka.PublishMessage(producer, &message)
 }
