@@ -25,6 +25,11 @@ def create_topic_names(count):
     return list(f"pandaproxy-topic-{uuid.uuid4()}" for _ in range(count))
 
 
+HTTP_GET_BROKERS_HEADERS = {
+    "Accept": "application/vnd.kafka.v2+json",
+    "Content-Type": "application/vnd.kafka.v2+json"
+}
+
 HTTP_GET_TOPICS_HEADERS = {
     "Accept": "application/vnd.kafka.v2+json",
     "Content-Type": "application/vnd.kafka.v2+json"
@@ -133,6 +138,9 @@ class PandaProxyTest(RedpandaTest):
     def _base_uri(self):
         return f"http://{self.redpanda.nodes[0].account.hostname}:8082"
 
+    def _get_brokers(self, headers=HTTP_GET_BROKERS_HEADERS):
+        return requests.get(f"{self._base_uri()}/brokers", headers=headers)
+
     def _create_topics(self,
                        names=create_topic_names(1),
                        partitions=1,
@@ -181,6 +189,19 @@ class PandaProxyTest(RedpandaTest):
             }''',
                             headers=headers)
         return res
+
+    @cluster(num_nodes=3)
+    def test_get_brokers(self):
+        """
+        Test get_brokers returns the set of node_ids
+        """
+        brokers_raw = self._get_brokers()
+        brokers = brokers_raw.json()["brokers"]
+
+        nodes = enumerate(self.redpanda.nodes, 1)
+        node_idxs = [node[0] for node in nodes]
+
+        assert sorted(brokers) == sorted(node_idxs)
 
     @cluster(num_nodes=3)
     def test_list_topics_validation(self):
