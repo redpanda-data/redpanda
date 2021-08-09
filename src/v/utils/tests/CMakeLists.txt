@@ -35,6 +35,7 @@ rp_test(
     tristate_test.cc
     moving_average_test.cc
     human_test.cc
+    fragmented_vector_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::utils
   LABELS utils

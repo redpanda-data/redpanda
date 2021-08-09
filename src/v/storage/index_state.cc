@@ -158,9 +158,6 @@ std::optional<index_state> index_state::hydrate_from_buffer(iobuf b) {
 
     const uint32_t vsize = ss::le_to_cpu(
       reflection::adl<uint32_t>{}.from(parser));
-    retval.relative_offset_index.reserve(vsize);
-    retval.relative_time_index.reserve(vsize);
-    retval.position_index.reserve(vsize);
     for (auto i = 0U; i < vsize; ++i) {
         retval.relative_offset_index.push_back(
           reflection::adl<uint32_t>{}.from(parser));
@@ -173,6 +170,9 @@ std::optional<index_state> index_state::hydrate_from_buffer(iobuf b) {
         retval.position_index.push_back(
           reflection::adl<uint64_t>{}.from(parser));
     }
+    retval.relative_offset_index.shrink_to_fit();
+    retval.relative_time_index.shrink_to_fit();
+    retval.position_index.shrink_to_fit();
     const auto computed_checksum = storage::index_state::checksum_state(retval);
     if (unlikely(retval.checksum != computed_checksum)) {
         vlog(
