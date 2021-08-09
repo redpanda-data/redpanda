@@ -112,7 +112,11 @@ ss::future<bool> rpc_client_protocol::ensure_disconnect(model::node_id n) {
             r.transport.shutdown();
             return was_valid;
         })
-      .then([]([[maybe_unused]] result<bool> r) { return r.value(); });
+      .then([]([[maybe_unused]] result<bool> r) {
+          // if result contains an error no connection was shut down, return
+          // false
+          return r.has_value() ? r.value() : false;
+      });
 }
 
 } // namespace raft
