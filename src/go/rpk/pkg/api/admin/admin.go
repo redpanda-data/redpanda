@@ -95,7 +95,6 @@ var rng = func() func(int) int {
 // the body into into, which is expected to be a pointer to a struct.
 func (a *AdminAPI) sendAny(method, path string, body, into interface{}) error {
 	pick := rng(len(a.urls))
-	fmt.Println(pick)
 	url := a.urls[pick] + path
 	res, err := a.sendAndReceive(context.Background(), method, url, body)
 	if err != nil {

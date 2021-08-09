@@ -30,15 +30,7 @@ func (a *AdminAPI) Brokers() ([]Broker, error) {
 	defer func() {
 		sort.Slice(bs, func(i, j int) bool { return bs[i].NodeID < bs[j].NodeID })
 	}()
-	a.Broker(0)
 	return bs, a.sendAny(http.MethodGet, brokersEndpoint, nil, &bs)
-}
-
-// Broker returns the status of a single broker, which includes membership
-// status.
-func (a *AdminAPI) Broker(node int) (Broker, error) {
-	var b Broker
-	return b, a.sendAny(http.MethodGet, fmt.Sprintf("%s/%d", brokersEndpoint, node), nil, &b)
 }
 
 // DecommissionBroker issues a decommission request for the given broker.
