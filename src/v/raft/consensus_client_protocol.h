@@ -45,6 +45,8 @@ public:
         timeout_now(model::node_id, timeout_now_request&&, rpc::client_opts)
           = 0;
 
+        virtual ss::future<bool> ensure_disconnect(model::node_id) = 0;
+
         virtual ~impl() noexcept = default;
     };
 
@@ -84,6 +86,10 @@ public:
       timeout_now_request&& r,
       rpc::client_opts opts) {
         return _impl->timeout_now(target_node, std::move(r), std::move(opts));
+    }
+
+    ss::future<bool> ensure_disconnect(model::node_id target_node) {
+        return _impl->ensure_disconnect(target_node);
     }
 
 private:

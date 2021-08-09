@@ -46,6 +46,8 @@ public:
     ss::future<result<timeout_now_reply>>
     timeout_now(model::node_id, timeout_now_request&&, rpc::client_opts) final;
 
+    ss::future<bool> ensure_disconnect(model::node_id) final;
+
 private:
     model::node_id _self;
     ss::sharded<rpc::connection_cache>& _connection_cache;
