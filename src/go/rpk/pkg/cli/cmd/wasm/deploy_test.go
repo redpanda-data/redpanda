@@ -32,7 +32,7 @@ func TestNewDeployCommand(t *testing.T) {
 	}{
 		{
 			name: "it should publish a message with correct format",
-			args: []string{"--description", "coprocessor description", "--name", "foo"},
+			args: []string{"--description", "coprocessor description", "--name", "foo", "--type", "data-policy"},
 			fileInformation: fileInfo{
 				name:    "fileName.js",
 				content: "let s = 'text'",
@@ -47,6 +47,17 @@ func TestNewDeployCommand(t *testing.T) {
 				name: "fileName.html",
 			},
 			expectedErr: "can't deploy 'fileName.html': only .js files are supported.",
+		}, {
+			name: "it should fail if the type is not correct",
+			args: []string{"--name", "foo", "--type", "test"},
+			fileInformation: fileInfo{
+				name:    "fileName.js",
+				content: "let s = 'text'",
+			},
+			pre: func(fs afero.Fs, fileInformation fileInfo) error {
+				return createMockFile(fs, fileInformation.name, fileInformation.content)
+			},
+			expectedErr: "Unexpected coproc type: 'test'",
 		}, {
 			name: "it should fail if the file doesn't exist",
 			args: []string{"--name", "foo"},
@@ -141,6 +152,9 @@ func TestNewDeployCommand(t *testing.T) {
 						}, {
 							Key:   []byte("sha256"),
 							Value: hashContent[:],
+						}, {
+							Key:   []byte("type"),
+							Value: []byte("async"),
 						},
 					}
 					require.Equal(t, expectHeader, msg.Headers)
