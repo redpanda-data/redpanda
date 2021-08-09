@@ -2,6 +2,7 @@ module github.com/vectorizedio/redpanda/src/go/rpk
 
 require (
 	cloud.google.com/go v0.46.3
+	github.com/AlecAivazis/survey/v2 v2.2.16 // indirect
 	github.com/Microsoft/go-winio v0.4.12 // indirect
 	github.com/Shopify/sarama v1.28.1-0.20210318150015-41df78df10a9
 	github.com/avast/retry-go v2.6.0+incompatible
@@ -24,8 +25,10 @@ require (
 	github.com/lestrrat-go/jwx v1.1.7
 	github.com/lorenzosaino/go-sysctl v0.1.0
 	github.com/lovoo/goka v1.0.6 // indirect
-	github.com/mattn/go-colorable v0.1.2 // indirect
+	github.com/mattn/go-colorable v0.1.8 // indirect
+	github.com/mattn/go-isatty v0.0.13 // indirect
 	github.com/mattn/go-runewidth v0.0.4 // indirect
+	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
 	github.com/mitchellh/mapstructure v1.4.1
 	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635 // indirect
 	github.com/morikuni/aec v0.0.0-20170113033406-39771216ff4c // indirect
@@ -46,7 +49,9 @@ require (
 	github.com/xdg/scram v1.0.3
 	golang.org/x/crypto v0.0.0-20210220033148-5ea612d1eb83
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
-	golang.org/x/sys v0.0.0-20210112091331-59c308dcf3cc
+	golang.org/x/sys v0.0.0-20210806184541-e5e7981a1069
+	golang.org/x/term v0.0.0-20210615171337-6886f2dfbf5b // indirect
+	golang.org/x/text v0.3.6 // indirect
 	gopkg.in/yaml.v2 v2.4.0
 	gotest.tools/v3 v3.0.3 // indirect
 	mvdan.cc/sh/v3 v3.2.1
