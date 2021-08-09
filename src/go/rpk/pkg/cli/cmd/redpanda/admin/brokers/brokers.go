@@ -33,7 +33,6 @@ func NewCommand(
 	closures := closures{hostsClosure, tlsClosure}
 	cmd.AddCommand(
 		newListCommand(closures),
-		newDescribeCommand(closures),
 		newDecommissionBroker(closures),
 		newRecommissionBroker(closures),
 	)
@@ -67,44 +66,11 @@ func newListCommand(closures closures) *cobra.Command {
 			bs, err := cl.Brokers()
 			out.MaybeDie(err, "unable to request brokers: %v", err)
 
-			tw := out.NewTable("Node ID", "Num Cores")
-			defer tw.Flush()
-			for _, b := range bs {
-				tw.Print(b.NodeID, b.NumCores)
-			}
-		},
-	}
-}
-
-func newDescribeCommand(closures closures) *cobra.Command {
-	return &cobra.Command{
-		Use:   "describe [BROKER ID]",
-		Short: "Describe a single broker in your cluster.",
-		Long: `Describe a single broker in your cluster.
-
-Descrbing a single broker prints a little bit more information than listing all
-brokers.
-`,
-		Args: cobra.ExactArgs(1),
-		Run: func(_ *cobra.Command, args []string) {
-			broker, err := strconv.Atoi(args[0])
-			out.MaybeDie(err, "invalid broker %s: %v", args[0], err)
-			if broker < 0 {
-				out.Die("invalid negative broker id %v", broker)
-			}
-
-			hosts, tls, err := closures.eval()
-			out.MaybeDie(err, "unable to load configuration: %v", err)
-
-			cl, err := admin.NewAdminAPI(hosts, tls)
-			out.MaybeDie(err, "unable to initialize admin client: %v", err)
-
-			b, err := cl.Broker(broker)
-			out.MaybeDie(err, "unable to request broker: %v", err)
-
 			tw := out.NewTable("Node ID", "Num Cores", "Membership Status")
 			defer tw.Flush()
-			tw.Print(b.NodeID, b.NumCores, b.MembershipStatus)
+			for _, b := range bs {
+				tw.Print(b.NodeID, b.NumCores, b.MembershipStatus)
+			}
 		},
 	}
 }
