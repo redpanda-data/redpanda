@@ -37,6 +37,57 @@ const auto enum_2def = pps::make_avro_schema_definition(
 })")
                          .value();
 
+const auto union0 = pps::make_avro_schema_definition(R"({
+    "name": "init",
+    "type": "record",
+    "fields": [{
+        "name": "inner",
+        "type": ["string", "int"]}]
+})")
+                      .value();
+
+const auto union1 = pps::make_avro_schema_definition(R"({
+    "name": "init",
+    "type": "record",
+    "fields": [{
+        "name": "inner",
+        "type": ["null", "string"]}]
+})")
+                      .value();
+
+const auto union2 = pps::make_avro_schema_definition(R"({
+    "name": "init",
+    "type": "record",
+    "fields": [{
+        "name": "inner",
+        "type": [
+            "int", "string", {
+                "type": "record",
+                "name": "foobar_fields",
+                "fields": [{
+                    "name": "foo",
+                    "type": "string"
+                }]
+            }
+        ]
+    }]
+})")
+                      .value();
+
+const auto int_array = pps::make_avro_schema_definition(R"({
+  "name": "test2",
+  "type": "array",
+  "items": "int"
+})")
+                         .value();
+
+const auto long_array = pps::make_avro_schema_definition(R"({
+  "name": "test2",
+  "type": "array",
+  "items": "long"
+})")
+                          .value();
+
 // Schemas defined in AvroCompatibilityTest.java. Used here to ensure
 // compatibility with the schema-registry
 const auto schema1
