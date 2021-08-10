@@ -52,6 +52,15 @@ add_offsets_to_txn_handler::handle(request_context ctx, ss::smp_service_group) {
             case cluster::tx_errc::coordinator_load_in_progress:
                 data.error_code = error_code::coordinator_load_in_progress;
                 break;
+            case cluster::tx_errc::invalid_producer_id_mapping:
+                data.error_code = error_code::invalid_producer_id_mapping;
+                break;
+            case cluster::tx_errc::fenced:
+                data.error_code = error_code::invalid_producer_epoch;
+                break;
+            case cluster::tx_errc::invalid_txn_state:
+                data.error_code = error_code::invalid_txn_state;
+                break;
             default:
                 data.error_code = error_code::unknown_server_error;
                 break;

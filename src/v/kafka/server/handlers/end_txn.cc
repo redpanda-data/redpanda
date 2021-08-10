@@ -47,6 +47,9 @@ ss::future<response_ptr> end_txn_handler::handle(
               case cluster::tx_errc::fenced:
                   data.error_code = error_code::invalid_producer_epoch;
                   break;
+              case cluster::tx_errc::invalid_producer_id_mapping:
+                  data.error_code = error_code::invalid_producer_id_mapping;
+                  break;
               default:
                   data.error_code = error_code::unknown_server_error;
                   break;

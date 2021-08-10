@@ -117,6 +117,11 @@ struct configuration final : public config_store {
     property<int16_t> id_allocator_replication;
     property<model::cleanup_policy_bitflags>
       transaction_coordinator_cleanup_policy;
+    property<std::chrono::milliseconds>
+      transaction_coordinator_delete_retention_ms;
+    property<uint64_t> transaction_coordinator_log_segment_size;
+    property<std::chrono::milliseconds>
+      abort_timed_out_transactions_interval_ms;
     property<std::chrono::milliseconds> create_topic_timeout_ms;
     property<std::chrono::milliseconds> wait_for_leader_timeout_ms;
     property<int32_t> default_topic_partitions;
