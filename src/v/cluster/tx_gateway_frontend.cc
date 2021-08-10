@@ -925,7 +925,14 @@ tx_gateway_frontend::do_end_txn(
   ss::shared_ptr<cluster::tm_stm> stm,
   model::timeout_clock::duration timeout,
   ss::lw_shared_ptr<available_promise<tx_errc>> outcome) {
-    auto maybe_tx = co_await stm->get_actual_tx(request.transactional_id);
+    checked<tm_transaction, tm_stm::op_status> maybe_tx
+      = tm_stm::op_status::unknown;
+    try {
+        maybe_tx = co_await stm->get_actual_tx(request.transactional_id);
+    } catch (...) {
+        outcome->set_value(tx_errc::unknown_server_error);
+        throw;
+    }
     if (!maybe_tx.has_value()) {
         if (maybe_tx.error() == tm_stm::op_status::not_found) {
             outcome->set_value(tx_errc::request_rejected);
@@ -979,39 +986,44 @@ tx_gateway_frontend::do_abort_tm_tx(
   cluster::tm_transaction tx,
   model::timeout_clock::duration timeout,
   ss::lw_shared_ptr<available_promise<tx_errc>> outcome) {
-    if (tx.status == tm_transaction::tx_status::ready) {
-        if (stm->is_actual_term(tx.etag)) {
-            // client should start a transaction before attempting to
-            // abort it. since tx has actual term we know for sure it
-            // wasn't start on a different leader
-            outcome->set_value(tx_errc::request_rejected);
-            co_return tx_errc::request_rejected;
-        }
+    try {
+        if (tx.status == tm_transaction::tx_status::ready) {
+            if (stm->is_actual_term(tx.etag)) {
+                // client should start a transaction before attempting to
+                // abort it. since tx has actual term we know for sure it
+                // wasn't start on a different leader
+                outcome->set_value(tx_errc::request_rejected);
+                co_return tx_errc::request_rejected;
+            }
 
-        // writing ready status to overwrite an ongoing transaction if
-        // it exists on an older leader
-        auto ready_tx = co_await stm->mark_tx_ready(tx.id);
-        if (!ready_tx.has_value()) {
+            // writing ready status to overwrite an ongoing transaction if
+            // it exists on an older leader
+            auto ready_tx = co_await stm->mark_tx_ready(tx.id);
+            if (!ready_tx.has_value()) {
+                outcome->set_value(tx_errc::unknown_server_error);
+                co_return tx_errc::unknown_server_error;
+            }
+            outcome->set_value(tx_errc::none);
+            co_return ready_tx.value();
+        } else if (
+          tx.status != tm_transaction::tx_status::ongoing
+          && tx.status != tm_transaction::tx_status::killed) {
             outcome->set_value(tx_errc::unknown_server_error);
             co_return tx_errc::unknown_server_error;
         }
-        outcome->set_value(tx_errc::none);
-        co_return ready_tx.value();
-    } else if (
-      tx.status != tm_transaction::tx_status::ongoing
-      && tx.status != tm_transaction::tx_status::killed) {
+
+        if (tx.status == tm_transaction::tx_status::ongoing) {
+            auto changed_tx = co_await stm->try_change_status(
+              tx.id, cluster::tm_transaction::tx_status::aborting);
+            if (!changed_tx.has_value()) {
+                outcome->set_value(tx_errc::unknown_server_error);
+                co_return tx_errc::unknown_server_error;
+            }
+            tx = changed_tx.value();
+        }
+    } catch (...) {
         outcome->set_value(tx_errc::unknown_server_error);
-        co_return tx_errc::unknown_server_error;
-    }
-
-    if (tx.status == tm_transaction::tx_status::ongoing) {
-        auto changed_tx = co_await stm->try_change_status(
-          tx.id, cluster::tm_transaction::tx_status::aborting);
-        if (!changed_tx.has_value()) {
-            outcome->set_value(tx_errc::unknown_server_error);
-            co_return tx_errc::unknown_server_error;
-        }
-        tx = changed_tx.value();
+        throw;
     }
     outcome->set_value(tx_errc::none);
 
@@ -1046,65 +1058,70 @@ tx_gateway_frontend::do_commit_tm_tx(
   cluster::tm_transaction tx,
   model::timeout_clock::duration timeout,
   ss::lw_shared_ptr<available_promise<tx_errc>> outcome) {
-    if (
-      tx.status != tm_transaction::tx_status::ongoing
-      && tx.status != tm_transaction::tx_status::preparing) {
-        outcome->set_value(tx_errc::request_rejected);
-        co_return tx_errc::request_rejected;
-    }
+    try {
+        if (
+          tx.status != tm_transaction::tx_status::ongoing
+          && tx.status != tm_transaction::tx_status::preparing) {
+            outcome->set_value(tx_errc::request_rejected);
+            co_return tx_errc::request_rejected;
+        }
 
-    std::vector<ss::future<prepare_tx_reply>> pfs;
-    for (auto rm : tx.partitions) {
-        pfs.push_back(_rm_partition_frontend.local().prepare_tx(
-          rm.ntp,
-          rm.etag,
-          model::tx_manager_ntp.tp.partition,
-          tx.pid,
-          tx.tx_seq,
-          timeout));
-    }
+        std::vector<ss::future<prepare_tx_reply>> pfs;
+        for (auto rm : tx.partitions) {
+            pfs.push_back(_rm_partition_frontend.local().prepare_tx(
+              rm.ntp,
+              rm.etag,
+              model::tx_manager_ntp.tp.partition,
+              tx.pid,
+              tx.tx_seq,
+              timeout));
+        }
 
-    std::vector<ss::future<prepare_group_tx_reply>> pgfs;
-    for (auto group : tx.groups) {
-        pgfs.push_back(_rm_group_proxy->prepare_group_tx(
-          group.group_id, group.etag, tx.pid, tx.tx_seq, timeout));
-    }
+        std::vector<ss::future<prepare_group_tx_reply>> pgfs;
+        for (auto group : tx.groups) {
+            pgfs.push_back(_rm_group_proxy->prepare_group_tx(
+              group.group_id, group.etag, tx.pid, tx.tx_seq, timeout));
+        }
 
-    if (tx.status == tm_transaction::tx_status::ongoing) {
-        auto became_preparing_tx = co_await stm->try_change_status(
-          tx.id, cluster::tm_transaction::tx_status::preparing);
-        if (!became_preparing_tx.has_value()) {
+        if (tx.status == tm_transaction::tx_status::ongoing) {
+            auto became_preparing_tx = co_await stm->try_change_status(
+              tx.id, cluster::tm_transaction::tx_status::preparing);
+            if (!became_preparing_tx.has_value()) {
+                outcome->set_value(tx_errc::unknown_server_error);
+                co_return tx_errc::unknown_server_error;
+            }
+            tx = became_preparing_tx.value();
+        }
+
+        auto ok = true;
+        auto rejected = false;
+        auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
+        for (const auto& r : prs) {
+            ok = ok && (r.ec == tx_errc::none);
+            rejected = rejected || (r.ec == tx_errc::request_rejected);
+        }
+        auto pgrs = co_await when_all_succeed(pgfs.begin(), pgfs.end());
+        for (const auto& r : pgrs) {
+            ok = ok && (r.ec == tx_errc::none);
+            rejected = rejected || (r.ec == tx_errc::request_rejected);
+        }
+        if (rejected) {
+            auto became_aborting_tx = co_await stm->try_change_status(
+              tx.id, cluster::tm_transaction::tx_status::killed);
+            if (!became_aborting_tx.has_value()) {
+                outcome->set_value(tx_errc::unknown_server_error);
+                co_return tx_errc::unknown_server_error;
+            }
+            outcome->set_value(tx_errc::request_rejected);
+            co_return tx_errc::request_rejected;
+        }
+        if (!ok) {
             outcome->set_value(tx_errc::unknown_server_error);
             co_return tx_errc::unknown_server_error;
         }
-        tx = became_preparing_tx.value();
-    }
-
-    auto ok = true;
-    auto rejected = false;
-    auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
-    for (const auto& r : prs) {
-        ok = ok && (r.ec == tx_errc::none);
-        rejected = rejected || (r.ec == tx_errc::request_rejected);
-    }
-    auto pgrs = co_await when_all_succeed(pgfs.begin(), pgfs.end());
-    for (const auto& r : pgrs) {
-        ok = ok && (r.ec == tx_errc::none);
-        rejected = rejected || (r.ec == tx_errc::request_rejected);
-    }
-    if (rejected) {
-        auto became_aborting_tx = co_await stm->try_change_status(
-          tx.id, cluster::tm_transaction::tx_status::killed);
-        if (!became_aborting_tx.has_value()) {
-            outcome->set_value(tx_errc::unknown_server_error);
-            co_return tx_errc::unknown_server_error;
-        }
-        outcome->set_value(tx_errc::request_rejected);
-        co_return tx_errc::request_rejected;
-    }
-    if (!ok) {
+    } catch (...) {
         outcome->set_value(tx_errc::unknown_server_error);
-        co_return tx_errc::unknown_server_error;
+        throw;
     }
     outcome->set_value(tx_errc::none);
 
@@ -1125,7 +1142,7 @@ tx_gateway_frontend::do_commit_tm_tx(
         cfs.push_back(_rm_partition_frontend.local().commit_tx(
           rm.ntp, tx.pid, tx.tx_seq, timeout));
     }
-    ok = true;
+    auto ok = true;
     auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
     for (const auto& r : grs) {
         ok = ok && (r.ec == tx_errc::none);
