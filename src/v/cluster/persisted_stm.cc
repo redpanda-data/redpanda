@@ -242,17 +242,7 @@ ss::future<> persisted_stm::start() {
               _resolved_when_snapshot_hydrated.set_value();
           }
 
-          return f.then([this]() { return state_machine::start(); })
-            .then([this]() {
-                auto offset = _c->meta().commit_index;
-                if (offset >= model::offset(0)) {
-                    (void)ss::with_gate(_gate, [this, offset] {
-                        // saving a snapshot after catchup with the tip of the
-                        // log
-                        return ensure_snapshot_exists(offset);
-                    });
-                }
-            });
+          return state_machine::start();
       });
 }
 
