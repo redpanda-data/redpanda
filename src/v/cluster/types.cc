@@ -12,6 +12,7 @@
 #include "cluster/fwd.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "reflection/adl.h"
 #include "security/acl.h"
 #include "tristate.h"
 #include "utils/to_string.h"
@@ -20,6 +21,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 
 namespace cluster {
@@ -136,6 +138,11 @@ ntp_reconciliation_state::ntp_reconciliation_state(
   model::ntp ntp, cluster::errc ec)
   : ntp_reconciliation_state(
     std::move(ntp), {}, reconciliation_status::error, ec) {}
+
+create_partititions_configuration::create_partititions_configuration(
+  model::topic_namespace tp_ns, int32_t cnt)
+  : tp_ns(std::move(tp_ns))
+  , partition_count(cnt) {}
 
 std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
     fmt::print(
@@ -254,6 +261,24 @@ operator<<(std::ostream& o, const ntp_reconciliation_state& state) {
       state._backend_operations,
       state._error,
       state._status);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const create_partititions_configuration& cfg) {
+    fmt::print(
+      o,
+      "{{topic: {}, partition count: {}, custom assignments: {}}}",
+      cfg.tp_ns,
+      cfg.partition_count,
+      cfg.custom_assignments);
+    return o;
+}
+
+std::ostream& operator<<(
+  std::ostream& o, const create_partititions_configuration_assignment& cpca) {
+    fmt::print(
+      o, "{{configuration: {}, assignments: {}}}", cpca.cfg, cpca.assignments);
     return o;
 }
 
@@ -719,4 +744,39 @@ adl<cluster::ntp_reconciliation_state>::from(iobuf_parser& in) {
     return cluster::ntp_reconciliation_state(
       std::move(ntp), std::move(ops), status, error);
 }
+
+void adl<cluster::create_partititions_configuration>::to(
+  iobuf& out, cluster::create_partititions_configuration&& pc) {
+    return serialize(out, pc.tp_ns, pc.partition_count, pc.custom_assignments);
+}
+
+cluster::create_partititions_configuration
+adl<cluster::create_partititions_configuration>::from(iobuf_parser& in) {
+    auto tp_ns = adl<model::topic_namespace>{}.from(in);
+    auto partition_count = adl<int32_t>{}.from(in);
+    auto custom_assignment = adl<std::vector<
+      cluster::create_partititions_configuration::custom_assignment>>{}
+                               .from(in);
+
+    cluster::create_partititions_configuration ret(
+      std::move(tp_ns), partition_count);
+    ret.custom_assignments = std::move(custom_assignment);
+    return ret;
+}
+
+void adl<cluster::create_partititions_configuration_assignment>::to(
+  iobuf& out, cluster::create_partititions_configuration_assignment&& ca) {
+    return serialize(out, std::move(ca.cfg), std::move(ca.assignments));
+}
+
+cluster::create_partititions_configuration_assignment
+adl<cluster::create_partititions_configuration_assignment>::from(
+  iobuf_parser& in) {
+    auto cfg = adl<cluster::create_partititions_configuration>{}.from(in);
+    auto p_as = adl<std::vector<cluster::partition_assignment>>{}.from(in);
+
+    return cluster::create_partititions_configuration_assignment(
+      std::move(cfg), std::move(p_as));
+};
+
 } // namespace reflection
