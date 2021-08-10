@@ -51,6 +51,21 @@ const ss::sstring avro_int_payload{
 })"};
 const ss::sstring expected_avro_int_def{R"({"int"})"};
 
+const ss::sstring avro_long_payload{
+  R"(
+{
+  "schema": "\"long\"",
+  "schemaType": "AVRO",
+  "references": [
+    {
+       "name": "com.acme.Referenced",
+       "subject":  "childSubject",
+       "version": 1
+    }
+  ]
+})"};
+const ss::sstring expected_avro_long_def{R"({"long"})"};
+
 iobuf make_body(const ss::sstring& body) {
     iobuf buf;
     buf.append(body.data(), body.size());
@@ -114,7 +129,7 @@ FIXTURE_TEST(
     {
         info("Post a new schema as key (expect schema_id=2)");
         auto res = post_schema(
-          client, pps::subject{"test-key"}, avro_string_payload);
+          client, pps::subject{"test-key"}, avro_long_payload);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(res.body, R"({"id":2})");

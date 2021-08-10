@@ -327,9 +327,8 @@ class SchemaRegistryTest(RedpandaTest):
             subject=f"{topic}-key", version=2)
         assert result_raw.status_code == requests.codes.not_found
         result = result_raw.json()
-        assert result["error_code"] == 40401
-        assert result[
-            "message"] == f"Subject '{topic}-key' Version 2 not found."
+        assert result["error_code"] == 40402
+        assert result["message"] == f"Version 2 not found."
 
         self.logger.debug("Get schema version 1 for subject key")
         result_raw = self._get_subjects_subject_versions_version(
@@ -353,7 +352,7 @@ class SchemaRegistryTest(RedpandaTest):
         result_raw = self._get_schemas_ids_id(id=2)
         assert result_raw.status_code == requests.codes.not_found
         result = result_raw.json()
-        assert result["error_code"] == 40401
+        assert result["error_code"] == 40403
         assert result["message"] == "Schema 2 not found"
 
         self.logger.debug("Get schema version 1")
@@ -369,7 +368,7 @@ class SchemaRegistryTest(RedpandaTest):
         """
         self.logger.debug("Get initial global config")
         result_raw = self._get_config()
-        assert result_raw.json()["compatibilityLevel"] == "NONE"
+        assert result_raw.json()["compatibilityLevel"] == "BACKWARD"
 
         self.logger.debug("Set global config")
         result_raw = self._set_config(
@@ -587,6 +586,7 @@ class SchemaRegistryTest(RedpandaTest):
                                                   permanent=True)
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.not_found
+        assert result_raw.json()["error_code"] == 40407
 
         self.logger.debug("Soft delete version 2")
         result_raw = self._delete_subject_version(
@@ -595,6 +595,15 @@ class SchemaRegistryTest(RedpandaTest):
         )
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Soft delete version 2 - second time")
+        result_raw = self._delete_subject_version(
+            subject=f"{topic}-key",
+            version=2,
+        )
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.not_found
+        assert result_raw.json()["error_code"] == 40406
 
         self.logger.debug("Get versions")
         result_raw = self._get_subjects_subject_versions(
@@ -609,6 +618,21 @@ class SchemaRegistryTest(RedpandaTest):
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json() == [1, 2, 3]
+
+        self.logger.debug("Permanently delete version 2")
+        result_raw = self._delete_subject_version(subject=f"{topic}-key",
+                                                  version=2,
+                                                  permanent=True)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Permanently delete version 2 - second time")
+        result_raw = self._delete_subject_version(subject=f"{topic}-key",
+                                                  version=2,
+                                                  permanent=True)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.not_found
+        assert result_raw.json()["error_code"] == 40402
 
     @cluster(num_nodes=3)
     def test_mixed_deletes(self):

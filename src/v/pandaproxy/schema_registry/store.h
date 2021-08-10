@@ -349,13 +349,9 @@ public:
       seq_marker marker,
       const subject& sub,
       compatibility_level compatibility) {
-        auto sub_it = BOOST_OUTCOME_TRYX(
-          get_subject_iter(sub, include_deleted::no));
-
-        sub_it->second.written_at.push_back(marker);
-
-        // TODO(Ben): Check needs to be made here?
-        return std::exchange(sub_it->second.compatibility, compatibility)
+        auto& sub_entry = _subjects[sub];
+        sub_entry.written_at.push_back(marker);
+        return std::exchange(sub_entry.compatibility, compatibility)
                != compatibility;
     }
 
@@ -530,7 +526,7 @@ private:
 
     schema_map _schemas;
     subject_map _subjects;
-    compatibility_level _compatibility{compatibility_level::none};
+    compatibility_level _compatibility{compatibility_level::backward};
 };
 
 } // namespace pandaproxy::schema_registry
