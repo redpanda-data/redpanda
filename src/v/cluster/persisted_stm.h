@@ -31,14 +31,11 @@ namespace cluster {
 struct stm_snapshot_header {
     int8_t version{0};
     int32_t snapshot_size{0};
-
-    static constexpr const size_t ondisk_size = sizeof(version)
-                                                + sizeof(snapshot_size);
+    model::offset offset;
 };
 
 struct stm_snapshot {
     stm_snapshot_header header;
-    model::offset offset;
     iobuf data;
 };
 
@@ -71,7 +68,8 @@ class persisted_stm
   : public raft::state_machine
   , public storage::snapshotable_stm {
 public:
-    static constexpr const int8_t snapshot_version = 0;
+    static constexpr const int8_t snapshot_version_v0 = 0;
+    static constexpr const int8_t snapshot_version = 1;
     explicit persisted_stm(ss::sstring, ss::logger&, raft::consensus*);
 
     ss::future<> make_snapshot() final;
@@ -106,9 +104,9 @@ public:
     wait_no_throw(model::offset offset, model::timeout_clock::duration);
 
 protected:
-    virtual ss::future<> load_snapshot(stm_snapshot_header, iobuf&&) = 0;
+    virtual ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) = 0;
     virtual ss::future<stm_snapshot> take_snapshot() = 0;
-    ss::future<> hydrate_snapshot(storage::snapshot_reader&);
+    ss::future<std::optional<stm_snapshot>> load_snapshot();
     ss::future<> wait_for_snapshot_hydrated();
     ss::future<> persist_snapshot(stm_snapshot&&);
     ss::future<> do_make_snapshot();
@@ -125,7 +123,6 @@ protected:
     raft::consensus* _c;
     storage::simple_snapshot_manager _snapshot_mgr;
     ss::logger& _log;
-    model::violation_recovery_policy _snapshot_recovery_policy;
 };
 
 } // namespace cluster

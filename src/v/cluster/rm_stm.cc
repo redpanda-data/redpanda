@@ -1163,7 +1163,8 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
     }
 }
 
-ss::future<> rm_stm::load_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
+ss::future<>
+rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     vassert(
       hdr.version == tx_snapshot_version,
       "unsupported seq_snapshot_header version {}",
@@ -1267,10 +1268,10 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
     stm_snapshot_header header;
     header.version = tx_snapshot_version;
     header.snapshot_size = tx_ss_buf.size_bytes();
+    header.offset = _insync_offset;
 
     stm_snapshot stx_ss;
     stx_ss.header = header;
-    stx_ss.offset = _insync_offset;
     stx_ss.data = std::move(tx_ss_buf);
     co_return stx_ss;
 }

@@ -754,7 +754,6 @@ Here is a more comprehensive view of the configration so that you can see all of
 | `seed_server_meta_topic_partitions` | Number of partitions in internal raft metadata topic | 7 |
 | `seed_servers` | List of the seed servers used to join current cluster; If the seed_server list is empty the node will be a cluster root and it will form a new cluster | None |
 | `segment_appender_flush_timeout_ms` | Maximum delay until buffered data is written | 1sms |
-| `stm_snapshot_recovery_policy` | Describes how to recover from an invariant violation happened during reading a stm snapshot | crash |
 | `superusers` | List of superuser usernames | None |
 | `target_quota_byte_rate` | Target quota byte rate in bytes per second | 2GB |
 | `tm_sync_timeout_ms` | Time to wait state catch up before rejecting a request | 2000ms |
