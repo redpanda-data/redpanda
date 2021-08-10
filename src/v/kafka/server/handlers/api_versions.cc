@@ -53,7 +53,8 @@ using request_types = make_request_types<
   add_partitions_to_txn_handler,
   txn_offset_commit_handler,
   add_offsets_to_txn_handler,
-  end_txn_handler>;
+  end_txn_handler,
+  create_partitions_handler>;
 
 template<typename RequestType>
 static auto make_api() {
