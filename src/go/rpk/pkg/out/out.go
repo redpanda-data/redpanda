@@ -7,7 +7,23 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+
+	"github.com/AlecAivazis/survey/v2"
 )
+
+// Pick prompts the user to pick one of many options, returning the selected
+// option or an error.
+func Pick(options []string, msg string, args ...interface{}) (string, error) {
+	var selected int
+	err := survey.AskOne(&survey.Select{
+		Message: fmt.Sprintf(msg, args...),
+		Options: options,
+	}, &selected)
+	if err != nil {
+		return "", err
+	}
+	return options[selected], nil
+}
 
 // Die formats the message with a suffixed newline to stderr and exits the
 // process with 1.

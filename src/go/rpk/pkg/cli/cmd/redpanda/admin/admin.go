@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/admin/brokers"
+	configcmd "github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/admin/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 )
 
@@ -76,6 +77,7 @@ func NewCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 
 	cmd.AddCommand(
 		brokers.NewCommand(hostsClosure, tlsClosure),
+		configcmd.NewCommand(hostsClosure, tlsClosure),
 	)
 
 	return cmd
