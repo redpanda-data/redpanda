@@ -349,7 +349,6 @@ delete_subject_version(server::request_t rq, server::reply_t rp) {
     co_await rq.service().writer().read_sync();
 
     auto version = invalid_schema_version;
-    bool final_version = false;
     if (ver == "latest") {
         // Requests for 'latest' mean the latest which is not marked deleted
         // (Clearly this will never succeed for permanent=true -- calling
@@ -361,18 +360,12 @@ delete_subject_version(server::request_t rq, server::reply_t rp) {
         }
         version = versions.back();
     } else {
-        auto versions = co_await rq.service().schema_store().get_versions(
-          sub, include_deleted::yes);
-        if (versions.size() == 1) {
-            final_version = true;
-        }
         version = parse::from_chars<schema_version>{}(ver).value();
     }
 
     // A permanent deletion emits tombstones for prior schema_key messages
     if (permanent) {
-        co_await rq.service().writer().delete_subject_permanent(
-          sub, final_version ? std::nullopt : std::make_optional(version));
+        co_await rq.service().writer().delete_subject_permanent(sub, version);
     } else {
         // Refuse to soft-delete the same thing twice
         if (co_await rq.service().schema_store().is_subject_version_deleted(

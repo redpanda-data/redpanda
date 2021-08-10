@@ -12,7 +12,9 @@
 #include "reflection/adl.h"
 #include "storage/kvstore.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/testing/thread_test_case.hh>
+#include <seastar/util/file.hh>
 
 template<typename T>
 static void set_configuration(ss::sstring p_name, T v) {
@@ -21,8 +23,25 @@ static void set_configuration(ss::sstring p_name, T v) {
     }).get0();
 }
 
-static storage::kvstore_config get_conf(ss::sstring dir) {
-    return storage::kvstore_config(
+/// Call this at end of tests to avoid leaving garbage
+/// directories behind
+static ss::future<> cleanup_store(ss::sstring& dir) {
+    std::filesystem::path dir_path{dir};
+    return ss::recursive_remove_directory(dir_path);
+}
+
+/// Remove any existing store at this path, and return a config
+/// for constructing a new store.
+static ss::future<storage::kvstore_config> prepare_store(ss::sstring dir) {
+    if (co_await ss::file_exists(dir)) {
+        // Tests can fail in mysterious ways if there's already a store
+        // in the location they're trying to use.  Even though tests
+        // clean up on success, they might leave directories behind
+        // on failure.
+        co_await cleanup_store(dir);
+    }
+
+    co_return storage::kvstore_config(
       8192,
       std::chrono::milliseconds(10),
       dir,
@@ -35,7 +54,7 @@ SEASTAR_THREAD_TEST_CASE(key_space) {
     auto dir = ssx::sformat(
       "kvstore_test_{}", random_generators::get_int(4000));
 
-    auto conf = get_conf(dir);
+    auto conf = prepare_store(dir).get();
 
     // empty started then stopped
     auto kvs = std::make_unique<storage::kvstore>(conf);
@@ -86,6 +105,8 @@ SEASTAR_THREAD_TEST_CASE(key_space) {
       == value_d);
 
     kvs->stop().get();
+
+    cleanup_store(dir).get();
 }
 
 SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
@@ -94,7 +115,7 @@ SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
     auto dir = ssx::sformat(
       "kvstore_test_{}", random_generators::get_int(4000));
 
-    auto conf = get_conf(dir);
+    auto conf = prepare_store(dir).get();
 
     // empty started then stopped
     auto kvs = std::make_unique<storage::kvstore>(conf);
@@ -153,6 +174,8 @@ SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
     kvs->start().get();
     BOOST_REQUIRE(kvs->empty());
     kvs->stop().get();
+
+    cleanup_store(dir).get();
 }
 
 SEASTAR_THREAD_TEST_CASE(kvstore) {
@@ -161,7 +184,7 @@ SEASTAR_THREAD_TEST_CASE(kvstore) {
     auto dir = ssx::sformat(
       "kvstore_test_{}", random_generators::get_int(4000));
 
-    auto conf = get_conf(dir);
+    auto conf = prepare_store(dir).get();
 
     std::unordered_map<bytes, iobuf> truth;
 
@@ -204,4 +227,6 @@ SEASTAR_THREAD_TEST_CASE(kvstore) {
           == e.second);
     }
     kvs->stop().get();
+
+    cleanup_store(dir).get();
 }

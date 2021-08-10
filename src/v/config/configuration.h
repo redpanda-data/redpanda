@@ -62,6 +62,7 @@ struct configuration final : public config_store {
     property<int32_t> seed_server_meta_topic_partitions;
     property<std::chrono::milliseconds> raft_heartbeat_interval_ms;
     property<std::chrono::milliseconds> raft_heartbeat_timeout_ms;
+    property<size_t> raft_heartbeat_disconnect_failures;
     property<std::vector<seed_server>> seed_servers;
     property<int16_t> min_version;
     property<int16_t> max_version;

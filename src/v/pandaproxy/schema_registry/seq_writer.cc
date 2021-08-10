@@ -278,7 +278,7 @@ seq_writer::delete_subject_impermanent(subject sub) {
     auto do_write = [sub](model::offset write_at, seq_writer& seq)
       -> ss::future<std::optional<std::vector<schema_version>>> {
         // Grab the versions before they're gone.
-        std::vector<schema_version> versions = co_await seq._store.get_versions(
+        auto versions = co_await seq._store.get_versions(
           sub, include_deleted::yes);
 
         // Inspect the subject to see if its already deleted
@@ -287,10 +287,9 @@ seq_writer::delete_subject_impermanent(subject sub) {
         }
 
         // Proceed to write
-        auto version = versions.back();
         auto key = delete_subject_key{
           .seq{write_at}, .node{seq._node_id}, .sub{sub}};
-        auto value = delete_subject_value{.sub{sub}, .version{version}};
+        auto value = delete_subject_value{.sub{sub}};
         auto batch = as_record_batch(key, value);
 
         auto success = co_await seq.produce_and_check(
@@ -330,9 +329,16 @@ seq_writer::delete_subject_permanent_inner(
     /// within these store functions (will throw a 404-equivalent if so)
     vlog(plog.debug, "delete_subject_permanent sub={}", sub);
     if (version.has_value()) {
+        // Check version first to see if the version exists
         sequences = co_await _store.get_subject_version_written_at(
           sub, version.value());
-    } else {
+    }
+
+    // Stash the list of versions to return at end
+    auto versions = co_await _store.get_versions(sub, include_deleted::yes);
+
+    // Deleting the subject, or the last version, deletes the subject
+    if (!version.has_value() || versions.size() == 1) {
         sequences = co_await _store.get_subject_written_at(sub);
     }
 
@@ -371,9 +377,6 @@ seq_writer::delete_subject_permanent_inner(
             vassert(false, "Unknown key type");
         }
     }
-
-    // Stash the list of versions to return at end
-    auto versions = co_await _store.get_versions(sub, include_deleted::yes);
 
     // Produce tombstones.  We do not need to check where they landed,
     // because these can arrive in any order and be safely repeated.

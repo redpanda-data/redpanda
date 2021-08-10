@@ -26,7 +26,6 @@ RUN apt update && \
       default-jdk \
       cmake \
       git \
-      golang \
       iptables \
       libatomic1 \
       libyajl-dev \
@@ -39,6 +38,15 @@ RUN apt update && \
       python3-pip && \
     rm -rf /var/lib/apt/lists/* && \
     echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config
+
+#Install task and the latest version of golang since apt links to an
+#old version of golang.
+COPY taskfiles/dev.yml /opt/Taskfile.yml
+RUN curl -SL https://taskfile.dev/install.sh -o /opt/task-install.sh && \
+    cd /opt && chmod a+x task-install.sh && \
+    ./task-install.sh && \
+    ./bin/task install-go GO_BUILD_ROOT=/usr/local
+ENV PATH="${PATH}:/usr/local/go/bin"
 
 # install kafka binary dependencies, librdkafka dev, kafkacat and kaf tools
 ENV KAFKA_MIRROR="https://s3-us-west-2.amazonaws.com/kafka-packages"
@@ -54,7 +62,7 @@ RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFK
     make install && \
     cd /opt/librdkafka/tests && \
     make build -j$(nproc) && \
-    go get -u github.com/birdayz/kaf/cmd/kaf && \
+    go get github.com/birdayz/kaf/cmd/kaf && \
     mv /root/go/bin/kaf /usr/local/bin/ && \
     mkdir /tmp/kafkacat && \
     curl -SL "https://github.com/edenhill/kafkacat/archive/1.6.0.tar.gz" | tar -xz --strip-components=1 -C /tmp/kafkacat && \
@@ -63,6 +71,16 @@ RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFK
     make -j$(nproc) && \
     make install && \
     ldconfig
+
+# Install dependencies for kafka clients such as sarama.
+RUN git -C /opt clone https://github.com/Shopify/sarama.git && \
+    cd /opt/sarama/examples/interceptors && go mod tidy && go build && \
+    cd /opt/sarama/examples/http_server && go mod tidy && go build && \
+    cd /opt/sarama/examples/consumergroup && go mod tidy && go build && \
+    cd /opt/sarama/examples/sasl_scram_client && go mod tidy && go build
+
+# Expose port 8080 for any http examples within clients
+EXPOSE 8080
 
 # copy source of test (java) programs
 COPY --chown=0:0 tests/java /tmp/java

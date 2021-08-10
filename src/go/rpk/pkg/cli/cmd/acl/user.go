@@ -53,9 +53,14 @@ func NewUserCommand(
 	return command
 }
 
-func NewCreateUserCommand(
-	adminApi func() (admin.AdminAPI, error),
-) *cobra.Command {
+// UserAPI encapsulates functions needed for a user API.
+type UserAPI interface {
+	CreateUser(username, password string) error
+	DeleteUser(username string) error
+	ListUsers() ([]string, error)
+}
+
+func NewCreateUserCommand(adminApi func() (UserAPI, error)) *cobra.Command {
 	var (
 		newUser     string
 		newPassword string
@@ -98,12 +103,8 @@ func NewCreateUserCommand(
 	return command
 }
 
-func NewDeleteUserCommand(
-	adminApi func() (admin.AdminAPI, error),
-) *cobra.Command {
-	var (
-		username string
-	)
+func NewDeleteUserCommand(adminApi func() (UserAPI, error)) *cobra.Command {
+	var username string
 	command := &cobra.Command{
 		Use:          "delete",
 		Short:        "Delete users",
@@ -135,9 +136,7 @@ func NewDeleteUserCommand(
 	return command
 }
 
-func NewListUsersCommand(
-	adminApi func() (admin.AdminAPI, error),
-) *cobra.Command {
+func NewListUsersCommand(adminApi func() (UserAPI, error)) *cobra.Command {
 	command := &cobra.Command{
 		Use:          "list",
 		Aliases:      []string{"ls"},
@@ -183,8 +182,8 @@ func buildAdminAPI(
 	conf func() (*config.Config, error),
 	apiUrls *[]string,
 	tls func() (*tls.Config, error),
-) func() (admin.AdminAPI, error) {
-	return func() (admin.AdminAPI, error) {
+) func() (UserAPI, error) {
+	return func() (UserAPI, error) {
 		addrs := common.DeduceAdminApiAddrs(conf, apiUrls)
 		tlsConfig, err := tls()
 		if err != nil {

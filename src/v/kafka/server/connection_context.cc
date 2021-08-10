@@ -254,12 +254,32 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                * first stage processed in a foreground.
                */
               return res.dispatched
-                .then([this,
-                       f = std::move(res.response),
-                       seq,
-                       correlation,
-                       self,
-                       s = std::move(sres)]() mutable {
+                .then_wrapped([this,
+                               f = std::move(res.response),
+                               seq,
+                               correlation,
+                               self,
+                               s = std::move(sres)](ss::future<> d) mutable {
+                    /*
+                     * if the dispatch/first stage failed, then we need to
+                     * need to consume the second stage since it might be
+                     * an exceptional future. if we captured `f` in the
+                     * lambda but didn't use `then_wrapped` then the
+                     * lambda would be destroyed and an ignored
+                     * exceptional future would be caught by seastar.
+                     */
+                    if (d.failed()) {
+                        return f.discard_result()
+                          .handle_exception([](std::exception_ptr e) {
+                              vlog(
+                                klog.info,
+                                "Discarding second stage failure {}",
+                                e);
+                          })
+                          .finally([d = std::move(d)]() mutable {
+                              return std::move(d);
+                          });
+                    }
                     /**
                      * second stage processed in background.
                      */
@@ -281,9 +301,11 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                           self->_rs.conn->shutdown_input();
                       })
                       .finally([s = std::move(s), self] {});
+                    return d;
                 })
                 .handle_exception([self](std::exception_ptr e) {
-                    vlog(klog.info, "Detected error processing request: {}", e);
+                    vlog(
+                      klog.info, "Detected error dispatching request: {}", e);
                     self->_rs.conn->shutdown_input();
                 });
           });

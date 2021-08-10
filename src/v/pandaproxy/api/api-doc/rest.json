@@ -1,4 +1,21 @@
-"/consumers/{group_name}": {
+"/brokers": {
+        "get": {
+          "summary": "Get a list of brokers.",
+          "operationId": "get_brokers",
+          "responses": {
+            "200": {
+              "description": "Array of topic names",
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "/consumers/{group_name}": {
         "post": {
           "summary": "Create a consumer for the group",
           "operationId": "create_consumer",

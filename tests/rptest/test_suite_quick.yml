@@ -22,3 +22,4 @@ quick:
   - tests/wasm_failure_recovery_test.py
   - tests/wasm_redpanda_failure_recovery_test.py
   - tests/archival_upload_test.py
+  - tests/compatibility/

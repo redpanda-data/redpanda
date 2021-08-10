@@ -66,10 +66,10 @@ inline error_info not_found(const subject& sub) {
       fmt::format("Subject '{}' not found.", sub())};
 }
 
-inline error_info not_found(const subject& sub, schema_version id) {
+inline error_info not_found(const subject&, schema_version id) {
     return error_info{
       error_code::subject_version_not_found,
-      fmt::format("Subject '{}' Version {} not found.", sub(), id())};
+      fmt::format("Version {} not found.", id())};
 }
 
 inline error_info soft_deleted(const subject& sub) {

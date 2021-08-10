@@ -6,8 +6,9 @@ spec:
   template:
     spec:
       initContainers:
-        - image: "vectorized/configurator:v21.4.11"
+        - image: "vectorized/configurator:v21.6.6"
       containers:
+        - image: "vectorized/redpanda:latest"
         - image: "vectorized/redpanda:latest"
 status:
   readyReplicas: 2

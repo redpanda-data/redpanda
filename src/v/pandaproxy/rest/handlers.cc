@@ -19,6 +19,7 @@
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "pandaproxy/json/exceptions.h"
+#include "pandaproxy/json/requests/brokers.h"
 #include "pandaproxy/json/requests/create_consumer.h"
 #include "pandaproxy/json/requests/fetch.h"
 #include "pandaproxy/json/requests/offset_commit.h"
@@ -62,6 +63,43 @@ ss::shard_id consumer_shard(const kafka::group_id& g_id) {
 }
 
 } // namespace
+
+ss::future<server::reply_t>
+get_brokers(server::request_t rq, server::reply_t rp) {
+    parse::content_type_header(
+      *rq.req,
+      {json::serialization_format::v2, json::serialization_format::none});
+    auto res_fmt = parse::accept_header(
+      *rq.req,
+      {json::serialization_format::v2, json::serialization_format::none});
+    rq.req.reset();
+    auto make_metadata_req = []() {
+        return kafka::metadata_request{.list_all_topics = false};
+    };
+    return rq.service()
+      .client()
+      .local()
+      .dispatch(make_metadata_req)
+      .then([res_fmt, rp = std::move(rp)](
+              kafka::metadata_request::api_type::response_type res) mutable {
+          json::get_brokers_res brokers;
+          brokers.ids.reserve(res.data.brokers.size());
+
+          std::transform(
+            res.data.brokers.begin(),
+            res.data.brokers.end(),
+            std::back_inserter(brokers.ids),
+            [](const kafka::metadata_response::broker& b) {
+                return b.node_id;
+            });
+
+          auto json_rslt = ppj::rjson_serialize(brokers);
+          rp.rep->write_body("json", json_rslt);
+
+          rp.mime_type = res_fmt;
+          return std::move(rp);
+      });
+}
 
 ss::future<server::reply_t>
 get_topics_names(server::request_t rq, server::reply_t rp) {

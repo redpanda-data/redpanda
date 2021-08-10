@@ -122,6 +122,13 @@ configuration::configuration()
       "raft heartbeat RPC timeout",
       required::no,
       3s)
+  , raft_heartbeat_disconnect_failures(
+      *this,
+      "raft_heartbeat_disconnect_failures",
+      "After how many failed heartbeats to forcibly close an unresponsive TCP "
+      "connection.  Set to 0 to disable force disconnection.",
+      required::no,
+      3)
   , seed_servers(
       *this,
       "seed_servers",
