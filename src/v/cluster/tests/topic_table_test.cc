@@ -9,6 +9,8 @@
 
 #include "cluster/tests/topic_table_fixture.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
+#include "raft/types.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
@@ -116,4 +118,47 @@ FIXTURE_TEST(test_wait_aborted, topic_table_fixture) {
     BOOST_REQUIRE_THROW(
       table.local().wait_for_changes(local_as).get0(),
       ss::abort_requested_exception);
+}
+
+FIXTURE_TEST(test_adding_partition, topic_table_fixture) {
+    // discard create delta
+    create_topics();
+    table.local().wait_for_changes(as).get0();
+    cluster::create_partititions_configuration cfg(make_tp_ns("test_tp_2"), 3);
+    std::vector<cluster::partition_assignment> p_as{
+      cluster::partition_assignment{
+        .group = raft::group_id(10),
+        .id = model::partition_id(0),
+        .replicas
+        = {model::broker_shard{model::node_id(0), 0}, model::broker_shard{model::node_id(1), 1}, model::broker_shard{model::node_id(2), 2}},
+      },
+      cluster::partition_assignment{
+        .group = raft::group_id(11),
+        .id = model::partition_id(1),
+        .replicas
+        = {model::broker_shard{model::node_id(0), 0}, model::broker_shard{model::node_id(1), 1}, model::broker_shard{model::node_id(2), 2}},
+      },
+      cluster::partition_assignment{
+        .group = raft::group_id(12),
+        .id = model::partition_id(2),
+        .replicas
+        = {model::broker_shard{model::node_id(0), 0}, model::broker_shard{model::node_id(1), 1}, model::broker_shard{model::node_id(2), 2}},
+      }};
+    cluster::create_partititions_configuration_assignment pca(
+      std::move(cfg), std::move(p_as));
+
+    auto res_1 = table.local()
+                   .apply(
+                     cluster::create_partition_cmd(
+                       make_tp_ns("test_tp_2"), std::move(pca)),
+                     model::offset(0))
+                   .get0();
+
+    auto md = table.local().get_topic_metadata(make_tp_ns("test_tp_2"));
+
+    BOOST_REQUIRE_EQUAL(md->partitions.size(), 15);
+    // check delta
+    auto d = table.local().wait_for_changes(as).get0();
+    // require 3 partition additions
+    validate_delta(d, 3, 0);
 }
