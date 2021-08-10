@@ -248,6 +248,9 @@ path_type_map = {
     "InitProducerIdRequestData": {
         "TransactionTimeoutMs": ("std::chrono::milliseconds", "int32")
     },
+    "CreatePartitionsRequestData": {
+        "TimeoutMs": ("std::chrono::milliseconds", "int32")
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -380,6 +383,9 @@ STRUCT_TYPES = [
     "FetchableTopicResponse",
     "FetchablePartitionResponse",
     "AbortedTransaction",
+    "CreatePartitionsTopic",
+    "CreatePartitionsTopicResult",
+    "CreatePartitionsAssignment",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())
