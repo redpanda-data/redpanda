@@ -103,7 +103,7 @@ public:
     wait_no_throw(model::offset offset, model::timeout_clock::duration);
 
 protected:
-    virtual ss::future<> load_snapshot(stm_snapshot_header, iobuf&&) = 0;
+    virtual ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) = 0;
     virtual ss::future<stm_snapshot> take_snapshot() = 0;
     ss::future<> hydrate_snapshot(storage::snapshot_reader&);
     ss::future<> wait_for_snapshot_hydrated();

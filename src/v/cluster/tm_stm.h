@@ -158,7 +158,7 @@ public:
     std::vector<kafka::transactional_id> get_expired_txs();
 
 private:
-    ss::future<> load_snapshot(stm_snapshot_header, iobuf&&) override;
+    ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_snapshot() override;
 
     std::chrono::milliseconds _sync_timeout;

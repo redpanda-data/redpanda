@@ -278,7 +278,8 @@ bool tm_stm::add_group(
     return true;
 }
 
-ss::future<> tm_stm::load_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
+ss::future<>
+tm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
     vassert(
       hdr.version == supported_version,
       "unsupported seq_snapshot_header version {}",
