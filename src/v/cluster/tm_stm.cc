@@ -43,7 +43,7 @@ static model::record_batch serialize_tx(tm_transaction tx) {
 
 std::ostream& operator<<(std::ostream& o, const tm_transaction& tx) {
     return o << "{tm_transaction: id=" << tx.id << ", status=" << tx.status
-             << ", pid=" << tx.pid
+             << ", pid=" << tx.pid << ", etag=" << tx.etag
              << ", size(partitions)=" << tx.partitions.size()
              << ", tx_seq=" << tx.tx_seq << "}";
 }
@@ -129,11 +129,11 @@ tm_stm::try_change_status(
     co_return co_await update_tx(tx, tx.etag);
 }
 
-ss::future<std::optional<tm_transaction>>
+ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::get_actual_tx(kafka::transactional_id tx_id) {
     auto is_ready = co_await sync(_sync_timeout);
     if (!is_ready) {
-        co_return std::nullopt;
+        co_return tm_stm::op_status::unknown;
     }
 
     auto tx = _tx_table.find(tx_id);
@@ -141,7 +141,7 @@ tm_stm::get_actual_tx(kafka::transactional_id tx_id) {
         co_return tx->second;
     }
 
-    co_return std::nullopt;
+    co_return tm_stm::op_status::not_found;
 }
 
 ss::future<checked<tm_transaction, tm_stm::op_status>>
@@ -175,6 +175,7 @@ tm_stm::mark_tx_ongoing(kafka::transactional_id tx_id) {
     ptx->second.partitions.clear();
     ptx->second.groups.clear();
     ptx->second.last_update_ts = clock_type::now();
+    ptx->second.etag = _insync_term;
     return ptx->second;
 }
 

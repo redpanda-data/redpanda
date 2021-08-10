@@ -44,7 +44,7 @@ this Agreement, to the exclusion of all other terms.
 
 (n) “You” (or “Your”) shall mean an individual or Legal Entity exercising permissions granted by this License.
 
-1.  **<span class="smallcaps">Licenses</span>**.
+2.  **<span class="smallcaps">Licenses</span>**.
 
     1.  **License to Redpanda Core.** The License for Redpanda Core is
         the Business Source License v.1.1 ("BSL License"). Please see
@@ -118,12 +118,12 @@ this Agreement, to the exclusion of all other terms.
             in connection with a broader service offering to customers
             or subscribers of such of such third party’s core services.
 
-2.  **<span class="smallcaps">Support</span>.** From time to time, in
+3.  **<span class="smallcaps">Support</span>.** From time to time, in
     its sole discretion, Vectorized may offer professional services or
     support for Redpanda, which may now or in the future be subject to
     additional fees.
 
-3.  **<span class="smallcaps">Fees for Redpanda Enterprise Edition or
+4.  **<span class="smallcaps">Fees for Redpanda Enterprise Edition or
     Redpanda Support.</span>**
 
     1.  **Fees.** The License to Redpanda Enterprise Edition is
@@ -161,7 +161,7 @@ this Agreement, to the exclusion of all other terms.
         this Agreement, then You shall pay for such additional usage at
         Vectorized’s then-current rates.
 
-4.  **<span class="smallcaps">Trial License.</span>** If You have signed
+5.  **<span class="smallcaps">Trial License.</span>** If You have signed
     up for a trial or evaluation of Redpanda Enterprise Edition, Your
     License to Redpanda Enterprise Edition is granted without charge for
     the trial or evaluation period specified when You signed up, or if
@@ -174,7 +174,7 @@ this Agreement, to the exclusion of all other terms.
     any time and for any reason. Sections 3, 4, 9 and 11 of this
     Agreement do not apply to Trial Licenses.
 
-5.  **<span class="smallcaps">Redistribution.</span>** You may reproduce
+6.  **<span class="smallcaps">Redistribution.</span>** You may reproduce
     and distribute copies of the Work or Derivative Works thereof in any
     medium, with or without modifications, and in Source or Object form,
     provided that You meet the following conditions:
@@ -224,7 +224,7 @@ this Agreement, to the exclusion of all other terms.
         to the payment of fees to Vectorized by any user of the
         Enterprise Derivative Work.
 
-6.  **<span class="smallcaps">Submission of Contributions.</span>**
+7.  **<span class="smallcaps">Submission of Contributions.</span>**
     Unless You explicitly state otherwise, any Contribution
     intentionally submitted for inclusion in Redpanda by You to
     Vectorized shall be under the terms and conditions of
@@ -235,13 +235,13 @@ this Agreement, to the exclusion of all other terms.
     separate license agreement You may have executed with Vectorized
     regarding such Contributions.
 
-7.  **<span class="smallcaps">Trademarks.</span>** This License does not
+8.  **<span class="smallcaps">Trademarks.</span>** This License does not
     grant permission to use the trade names, trademarks, service marks,
     or product names of Licensor, except as required for reasonable and
     customary use in describing the origin of the Work and reproducing
     the content of the NOTICE file.
 
-8.  **<span class="smallcaps">Limited Warranty.</span>**
+9.  **<span class="smallcaps">Limited Warranty.</span>**
 
     1.  **Warranties.** Vectorized warrants to You that: (i) Redpanda
         Enterprise Edition will materially perform in accordance with
@@ -271,7 +271,7 @@ this Agreement, to the exclusion of all other terms.
         Your exclusive remedy, and Vectorized’s sole liability, arising
         in connection with the limited warranties herein.
 
-9.  **<span class="smallcaps">Disclaimer of Warranty.</span>** EXCEPT AS
+10.  **<span class="smallcaps">Disclaimer of Warranty.</span>** EXCEPT AS
     SET OUT IN SECTION 9, UNLESS REQUIRED BY APPLICABLE LAW, LICENSOR
     PROVIDES THE WORK (AND EACH CONTRIBUTOR PROVIDES ITS CONTRIBUTIONS)
     ON AN “AS IS” BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
@@ -284,7 +284,7 @@ this Agreement, to the exclusion of all other terms.
     REDISTRIBUTING WORKS AND ASSUME ANY RISKS ASSOCIATED WITH YOUR
     EXERCISE OF PERMISSIONS UNDER THE APPLICABLE LICENSE FOR SUCH WORKS.
 
-10. **<span class="smallcaps">Limited Indemnity.</span>**
+11. **<span class="smallcaps">Limited Indemnity.</span>**
 
     1.  **Indemnity.** Vectorized will defend, indemnify and hold You
         harmless against any third party claims, liabilities or expenses
@@ -328,7 +328,7 @@ this Agreement, to the exclusion of all other terms.
         allegation, subject to conditions reciprocal to those in Section
         11(a).
 
-11. **<span class="smallcaps">Limitation of Liability.</span>** In no
+12. **<span class="smallcaps">Limitation of Liability.</span>** In no
     event and under no legal or equitable theory, whether in tort
     (including negligence), contract, or otherwise, unless required by
     applicable law (such as deliberate and grossly negligent acts), and
@@ -348,7 +348,7 @@ this Agreement, to the exclusion of all other terms.
     LIMITATIONS SHALL APPLY NOTWITHSTANDING THE FAILURE OF THE ESSENTIAL
     PURPOSE OF ANY LIMITED REMEDY.
 
-12. **<span class="smallcaps">Accepting Warranty or Additional
+13. **<span class="smallcaps">Accepting Warranty or Additional
     Liability.</span>** While redistributing Works or Derivative Works
     thereof, and without limiting your obligations under Section 6, You
     may choose to offer, and charge a fee for, acceptance of support,
@@ -361,7 +361,7 @@ this Agreement, to the exclusion of all other terms.
     asserted against, such Contributor by reason of your accepting any
     such warranty or additional liability.
 
-13. **<span class="smallcaps">General.</span>**
+14. **<span class="smallcaps">General.</span>**
 
     1.  **Relationship of Parties.** You and Vectorized are independent
         contractors, and nothing herein shall be deemed to constitute

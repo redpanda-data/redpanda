@@ -111,7 +111,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::dispatch_begin_tx(
       .then([ntp](result<begin_tx_reply> r) {
           if (r.has_error()) {
               vlog(
-                clusterlog.warn, "got error {} on remote abort tx", r.error());
+                clusterlog.warn, "got error {} on remote begin tx", r.error());
               return begin_tx_reply{.ntp = ntp, .ec = tx_errc::timeout};
           }
 

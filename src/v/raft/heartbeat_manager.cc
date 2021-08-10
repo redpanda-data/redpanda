@@ -22,11 +22,13 @@
 #include "rpc/types.h"
 #include "vlog.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/with_timeout.hh>
 
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <bits/stdint-uintn.h>
 #include <boost/range/iterator_range.hpp>
 
@@ -35,7 +37,16 @@ ss::logger hbeatlog{"r/heartbeat"};
 using consensus_ptr = heartbeat_manager::consensus_ptr;
 using consensus_set = heartbeat_manager::consensus_set;
 
-static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
+struct heartbeat_requests {
+    /// Requests to dispatch.  Can include request to self.
+    std::vector<heartbeat_manager::node_heartbeat> requests;
+
+    /// These nodes' heartbeat status indicates they need
+    /// a transport reconnection before sending next heartbeat
+    absl::flat_hash_set<model::node_id> reconnect_nodes;
+};
+
+static heartbeat_requests requests_for_range(
   const consensus_set& c, clock_type::duration heartbeat_interval) {
     absl::flat_hash_map<
       model::node_id,
@@ -44,6 +55,11 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
     if (c.empty()) {
         return {};
     }
+
+    // Set of follower nodes whose heartbeat_failed status indicates
+    // that we should tear down their TCP connection before next heartbeat
+    absl::flat_hash_set<model::node_id> reconnect_nodes;
+
     auto last_heartbeat = clock_type::now() - heartbeat_interval;
     for (auto& ptr : c) {
         if (!ptr->is_leader()) {
@@ -52,7 +68,8 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
 
         auto maybe_create_follower_request = [ptr,
                                               last_heartbeat,
-                                              &pending_beats](
+                                              &pending_beats,
+                                              &reconnect_nodes](
                                                const vnode& rni) mutable {
             // special case self beat
             // self beat is used to make sure that the protocol will make
@@ -86,6 +103,10 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
               rni, seq_id, heartbeats_suppressed::yes);
             pending_beats[rni.id()].emplace_back(
               heartbeat_metadata{ptr->meta(), ptr->self(), rni}, seq_id);
+
+            if (ptr->should_reconnect_follower(rni)) {
+                reconnect_nodes.insert(rni.id());
+            }
         };
 
         auto group = ptr->config();
@@ -114,7 +135,8 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
           p.first, heartbeat_request{std::move(requests)}, std::move(meta_map));
     }
 
-    return reqs;
+    return heartbeat_requests{
+      .requests{reqs}, .reconnect_nodes{reconnect_nodes}};
 }
 
 heartbeat_manager::heartbeat_manager(
@@ -150,7 +172,15 @@ heartbeat_manager::send_heartbeats(std::vector<node_heartbeat> reqs) {
 
 ss::future<> heartbeat_manager::do_dispatch_heartbeats() {
     auto reqs = requests_for_range(_consensus_groups, _heartbeat_interval);
-    return send_heartbeats(std::move(reqs));
+
+    for (const auto& node_id : reqs.reconnect_nodes) {
+        if (co_await _client_protocol.ensure_disconnect(node_id)) {
+            vlog(
+              hbeatlog.info, "Closed unresponsive connection to {}", node_id);
+        };
+    }
+
+    co_await send_heartbeats(std::move(reqs.requests));
 }
 
 ss::future<> heartbeat_manager::do_self_heartbeat(node_heartbeat&& r) {
@@ -213,6 +243,9 @@ void heartbeat_manager::process_reply(
                 vlog(hbeatlog.error, "cannot find consensus group:{}", g);
                 continue;
             }
+
+            (*it)->update_heartbeat_status(req_meta.follower_vnode, false);
+
             (*it)->update_suppress_heartbeats(
               req_meta.follower_vnode, req_meta.seq, heartbeats_suppressed::no);
             // propagate error
@@ -233,6 +266,7 @@ void heartbeat_manager::process_reply(
             continue;
         }
         auto meta = groups.find(m.group)->second;
+        (*it)->update_heartbeat_status(meta.follower_vnode, true);
         (*it)->update_suppress_heartbeats(
           meta.follower_vnode, meta.seq, heartbeats_suppressed::no);
         (*it)->process_append_entries_reply(

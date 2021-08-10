@@ -69,7 +69,9 @@ log_eviction_stm::handle_deletion_notification(model::offset last_evicted) {
           auto f = ss::now();
 
           if (_stm_manager) {
-              f = _stm_manager->ensure_snapshot_exists(last_evicted);
+              f = _raft->refresh_commit_index().then([this, last_evicted] {
+                  return _stm_manager->ensure_snapshot_exists(last_evicted);
+              });
           }
 
           return f.then([this, last_evicted]() {

@@ -123,9 +123,18 @@ public:
         return r;
     }
 
+    std::optional<tm_transaction> get_tx_by_id(kafka::transactional_id id) {
+        auto tx_it = _tx_table.find(id);
+        std::optional<tm_transaction> r;
+        if (tx_it != _tx_table.end()) {
+            r = tx_it->second;
+        }
+        return r;
+    }
+
     ss::future<bool> barrier();
 
-    ss::future<std::optional<tm_transaction>>
+    ss::future<checked<tm_transaction, tm_stm::op_status>>
       get_actual_tx(kafka::transactional_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       mark_tx_ready(kafka::transactional_id);

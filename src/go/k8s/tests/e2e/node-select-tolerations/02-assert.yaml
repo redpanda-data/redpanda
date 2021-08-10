@@ -12,9 +12,6 @@ kind: Pod
 metadata:
   name: node-select-tolerations-cluster-0
 spec:
-  containers:
-    - name: redpanda
-      image: "vectorized/redpanda:latest"
   nodeName: kind-worker
   nodeSelector:
     redpanda-node: "true"

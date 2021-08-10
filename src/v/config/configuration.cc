@@ -122,6 +122,13 @@ configuration::configuration()
       "raft heartbeat RPC timeout",
       required::no,
       3s)
+  , raft_heartbeat_disconnect_failures(
+      *this,
+      "raft_heartbeat_disconnect_failures",
+      "After how many failed heartbeats to forcibly close an unresponsive TCP "
+      "connection.  Set to 0 to disable force disconnection.",
+      required::no,
+      3)
   , seed_servers(
       *this,
       "seed_servers",
@@ -400,7 +407,25 @@ configuration::configuration()
       "transaction_coordinator_cleanup_policy",
       "Cleanup policy for a transaction coordinator topic",
       required::no,
-      model::cleanup_policy_bitflags::compaction)
+      model::cleanup_policy_bitflags::deletion)
+  , transaction_coordinator_delete_retention_ms(
+      *this,
+      "transaction_coordinator_delete_retention_ms",
+      "delete segments older than this - default 1 week",
+      required::no,
+      10080min)
+  , transaction_coordinator_log_segment_size(
+      *this,
+      "transaction_coordinator_log_segment_size",
+      "How large in bytes should each log segment be (default 1G)",
+      required::no,
+      1_GiB)
+  , abort_timed_out_transactions_interval_ms(
+      *this,
+      "abort_timed_out_transactions_interval_ms",
+      "How often look for the inactive transactions and abort them",
+      required::no,
+      1min)
   , create_topic_timeout_ms(
       *this,
       "create_topic_timeout_ms",

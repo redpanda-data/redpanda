@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+// Package admin provides a client to interact with Redpanda's admin server.
 package admin
 
 import (
@@ -18,204 +19,219 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
-	"strings"
+	"sync"
 	"time"
 
-	"github.com/Shopify/sarama"
 	"github.com/hashicorp/go-multierror"
-	log "github.com/sirupsen/logrus"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/net"
 )
 
-const (
-	usersEndpoint = "/v1/security/users"
-	httpPrefix    = "http://"
-	httpsPrefix   = "https://"
-)
-
-type AdminAPI interface {
-	CreateUser(username, password string) error
-	DeleteUser(username string) error
-	ListUsers() ([]string, error)
-}
-
-type adminAPI struct {
+// AdminAPI is a client to interact with Redpanda's admin server.
+type AdminAPI struct {
 	urls   []string
 	client *http.Client
 }
 
-type newUser struct {
-	User      string `json:"username"`
-	Password  string `json:"password"`
-	Algorithm string `json:"algorithm"`
-}
+// NewAdminAPI returns client that talks to each of the input URLs.
+//
+// If tlsConfig is non-nil, the client talks to the URLs over https with the
+// given tls configuration.
+func NewAdminAPI(urls []string, tlsConfig *tls.Config) (*AdminAPI, error) {
+	if len(urls) == 0 {
+		return nil, errors.New("at least one url is required for the admin api")
+	}
 
-func NewAdminAPI(urls []string, tlsConfig *tls.Config) (AdminAPI, error) {
-	adminUrls := make([]string, len(urls))
-	for i := 0; i < len(urls); i++ {
-		prefix := ""
-		url := urls[i]
-		// Go's http library requires that the URL have a protocol.
-		if !(strings.HasPrefix(url, httpPrefix) ||
-			strings.HasPrefix(url, httpsPrefix)) {
+	a := &AdminAPI{
+		urls:   make([]string, len(urls)),
+		client: &http.Client{Timeout: 10 * time.Second},
+	}
+	if tlsConfig != nil {
+		a.client.Transport = &http.Transport{TLSClientConfig: tlsConfig}
+	}
 
-			prefix = httpPrefix
-
-			if tlsConfig != nil {
-				// If TLS will be enabled, use HTTPS as the protocol
-				prefix = httpsPrefix
-			}
-
-			url = strings.TrimRight(url, "/")
+	for i, u := range urls {
+		scheme, host, err := net.ParseHostMaybeScheme(u)
+		if err != nil {
+			return nil, err
 		}
-		adminUrls[i] = fmt.Sprintf("%s%s", prefix, url)
+		switch scheme {
+		case "", "http":
+			scheme = "http"
+			if tlsConfig != nil {
+				scheme = "https"
+			}
+		case "https":
+		default:
+			return nil, fmt.Errorf("unrecognized scheme %q in host %q", scheme, u)
+		}
+		a.urls[i] = fmt.Sprintf("%s://%s", scheme, host)
 	}
 
-	tr := &http.Transport{
-		TLSClientConfig: tlsConfig,
-	}
-
-	client := &http.Client{Transport: tr}
-	return &adminAPI{urls: adminUrls, client: client}, nil
+	return a, nil
 }
 
-func (a *adminAPI) CreateUser(username, password string) error {
-	if username == "" {
-		return errors.New("empty username")
-	}
-	if password == "" {
-		return errors.New("empty password")
-	}
-	u := newUser{
-		User:      username,
-		Password:  password,
-		Algorithm: sarama.SASLTypeSCRAMSHA256,
-	}
+func (a *AdminAPI) urlsWithPath(path string) []string {
 	urls := make([]string, len(a.urls))
 	for i := 0; i < len(a.urls); i++ {
-		urls[i] = fmt.Sprintf("%s%s", a.urls[i], usersEndpoint)
+		urls[i] = fmt.Sprintf("%s%s", a.urls[i], path)
 	}
-	_, err := sendToMultiple(urls, http.MethodPost, u, a.client)
-	return err
+	return urls
 }
 
-func (a *adminAPI) DeleteUser(username string) error {
-	if username == "" {
-		return errors.New("empty username")
+// rng is a package-scoped, mutex guarded, seeded *rand.Rand.
+var rng = func() func(int) int {
+	var mu sync.Mutex
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	return func(n int) int {
+		mu.Lock()
+		defer mu.Unlock()
+		return rng.Intn(n)
 	}
+}()
 
-	urls := make([]string, len(a.urls))
-	for i := 0; i < len(a.urls); i++ {
-		urls[i] = fmt.Sprintf("%s%s/%s", a.urls[i], usersEndpoint, username)
-	}
-	_, err := sendToMultiple(urls, http.MethodDelete, nil, a.client)
-	return err
-}
-
-func (a *adminAPI) ListUsers() ([]string, error) {
-	urls := make([]string, len(a.urls))
-	for i := 0; i < len(a.urls); i++ {
-		urls[i] = fmt.Sprintf("%s%s", a.urls[i], usersEndpoint)
-	}
-	res, err := sendToMultiple(urls, http.MethodGet, nil, a.client)
+// sendAny sends a single request to one of the client's urls and unmarshals
+// the body into into, which is expected to be a pointer to a struct.
+func (a *AdminAPI) sendAny(method, path string, body, into interface{}) error {
+	pick := rng(len(a.urls))
+	url := a.urls[pick] + path
+	res, err := a.sendAndReceive(context.Background(), method, url, body)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	bs, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return nil, err
-	}
-	usernames := []string{}
-	err = json.Unmarshal(bs, &usernames)
-	return usernames, err
+	return maybeUnmarshalRespInto(method, url, res, into)
 }
 
+// sendOne sends a request with sendAndReceive and unmarshals the body into
+// into, which is expected to be a pointer to a struct.
+func (a *AdminAPI) sendOne(method, path string, body, into interface{}) error {
+	if len(a.urls) != 1 {
+		return fmt.Errorf("unable to issue a single-admin-endpoint request to %d admin endpoints", len(a.urls))
+	}
+	url := a.urls[0] + path
+	res, err := a.sendAndReceive(context.Background(), method, url, body)
+	if err != nil {
+		return err
+	}
+	return maybeUnmarshalRespInto(method, url, res, into)
+}
+
+// sendAll sends a request to all URLs in the admin client. The first successful
+// response will be unmarshaled into into if it is non-nil.
+//
 // As of v21.4.15, the Redpanda admin API doesn't do request forwarding, which
 // means that some requests (such as the ones made to /users) will fail unless
 // the reached node is the leader. Therefore, a request needs to be made to
 // each node, and of those requests at least one should succeed.
 // FIXME (@david): when https://github.com/vectorizedio/redpanda/issues/1265
 // is fixed.
-func sendToMultiple(
-	urls []string, method string, body interface{}, client *http.Client,
-) (*http.Response, error) {
-	sendClosure := func(url string, res chan<- *http.Response) func() error {
-		return func() error {
-			r, err := send(url, method, body, client)
-			res <- r
-			return err
-		}
-	}
+func (a *AdminAPI) sendAll(method, path string, body, into interface{}) error {
+	var (
+		once   sync.Once
+		resURL string
+		res    *http.Response
+		grp    multierror.Group
 
-	res := make(chan *http.Response, len(urls))
-	grp := multierror.Group{}
-	for _, url := range urls {
-		grp.Go(sendClosure(url, res))
+		ctx, cancel = context.WithCancel(context.Background())
+	)
+
+	defer cancel()
+	for _, url := range a.urlsWithPath(path) {
+		myURL := url
+		grp.Go(func() error {
+			myRes, err := a.sendAndReceive(ctx, method, myURL, body)
+			if err != nil {
+				return err
+			}
+			cancel() // kill all other requests
+
+			// Only one request should be successful, but for
+			// paranoia, we guard keeping the first successful
+			// response.
+			once.Do(func() { resURL, res = myURL, myRes })
+			return nil
+		})
 	}
 
 	err := grp.Wait()
-	close(res)
-
-	if err == nil || len(err.Errors) < len(urls) {
-		for r := range res {
-			if r != nil && r.StatusCode < 400 {
-				return r, nil
-			}
-		}
+	if res != nil {
+		return maybeUnmarshalRespInto(method, resURL, res, into)
 	}
-	return nil, err.ErrorOrNil()
+	return err
 }
 
-func send(
-	url, method string, body interface{}, client *http.Client,
+// Unmarshals a response body into `into`, if it is non-nil.
+//
+// * If into is a *[]byte, the raw response put directly into `into`.
+// * If into is a *string, the raw response put directly into `into` as a string.
+// * Otherwise, the response is json unmarshaled into `into`.
+func maybeUnmarshalRespInto(
+	method, url string, resp *http.Response, into interface{},
+) error {
+	if into == nil {
+		return nil
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("unable to read %s %s response body: %w", method, url, err)
+	}
+	switch t := into.(type) {
+	case *[]byte:
+		*t = body
+	case *string:
+		*t = string(body)
+	default:
+		if err := json.Unmarshal(body, into); err != nil {
+			return fmt.Errorf("unable to decode %s %s response body: %w", method, url, err)
+		}
+	}
+	return nil
+}
+
+// sendAndReceive sends a request and returns the response. If body is
+// non-nil, this json encodes the body and sends it with the request.
+func (a *AdminAPI) sendAndReceive(
+	ctx context.Context, method, url string, body interface{},
 ) (*http.Response, error) {
-	var bodyBuffer io.Reader
+	var r io.Reader
 	if body != nil {
 		bs, err := json.Marshal(body)
 		if err != nil {
-			return nil, fmt.Errorf("couldn't encode request: %v", err)
+			return nil, fmt.Errorf("unable to encode request body for %s %s: %w", method, url, err) // should not happen
 		}
-		bodyBuffer = bytes.NewBuffer(bs)
+		r = bytes.NewBuffer(bs)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(
-		ctx,
-		method,
-		url,
-		bodyBuffer,
-	)
+	req, err := http.NewRequestWithContext(ctx, method, url, r)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
 
-	res, err := client.Do(req)
+	const applicationJson = "application/json"
+	req.Header.Set("Content-Type", applicationJson)
+	req.Header.Set("Accept", applicationJson)
 
+	res, err := a.client.Do(req)
 	if err != nil {
 		// When the server expects a TLS connection, but the TLS config isn't
 		// set/ passed, The client returns an error like
 		// Get "http://localhost:9644/v1/security/users": EOF
 		// which doesn't make it obvious to the user what's going on.
-		if strings.Contains(err.Error(), "EOF") {
-			log.Debug(err)
-			return nil, errors.New("the server expected a TLS connection")
+		if errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("%s to server %s expected a tls connection: %w", method, url, err)
 		}
+		return nil, err
 	}
 
-	if res != nil && res.StatusCode >= 400 {
+	if res.StatusCode/100 != 2 {
 		resBody, err := ioutil.ReadAll(res.Body)
+		status := http.StatusText(res.StatusCode)
 		if err != nil {
-			log.Error(err)
+			return nil, fmt.Errorf("request %s %s failed: %s, unable to read body: %w", method, url, status, err)
 		}
-		return res, fmt.Errorf(
-			"Request failed with status %d: %s",
-			res.StatusCode,
-			string(resBody),
-		)
+		return nil, fmt.Errorf("request %s %s failed: %s, body: %q", method, url, status, resBody)
 	}
 
-	return res, err
+	return res, nil
 }

@@ -16,6 +16,8 @@
 #include "rpc/transport.h"
 #include "rpc/types.h"
 
+#include <seastar/core/coroutine.hh>
+
 namespace raft {
 
 ss::future<result<vote_reply>> rpc_client_protocol::vote(
@@ -86,6 +88,34 @@ ss::future<result<timeout_now_reply>> rpc_client_protocol::timeout_now(
        opts = std::move(opts)](raftgen_client_protocol client) mutable {
           return client.timeout_now(std::move(r), std::move(opts))
             .then(&rpc::get_ctx_data<timeout_now_reply>);
+      });
+}
+
+ss::future<bool> rpc_client_protocol::ensure_disconnect(model::node_id n) {
+    struct resetter {
+        rpc::transport& transport;
+        resetter(rpc::transport& t)
+          : transport(t) {}
+    };
+
+    return _connection_cache.local()
+      .with_node_client<resetter>(
+        _self,
+        ss::this_shard_id(),
+        n,
+        std::chrono::milliseconds(100),
+        [](resetter r) {
+            // Give the caller a bool clue as to whether we really shut
+            // anything down (false indicates this was a no-op)
+            bool was_valid = r.transport.is_valid();
+
+            r.transport.shutdown();
+            return was_valid;
+        })
+      .then([]([[maybe_unused]] result<bool> r) {
+          // if result contains an error no connection was shut down, return
+          // false
+          return r.has_value() ? r.value() : false;
       });
 }
 

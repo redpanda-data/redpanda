@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/redpanda"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/admin"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	rp "github.com/vectorizedio/redpanda/src/go/rpk/pkg/redpanda"
 )
@@ -31,6 +32,8 @@ func NewRedpandaCommand(
 	command.AddCommand(redpanda.NewTuneCommand(fs, mgr))
 	command.AddCommand(redpanda.NewModeCommand(mgr))
 	command.AddCommand(redpanda.NewConfigCommand(fs, mgr))
+
+	command.AddCommand(admin.NewCommand(fs, mgr))
 
 	return command
 }

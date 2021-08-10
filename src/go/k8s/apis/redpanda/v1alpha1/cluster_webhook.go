@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strconv"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -35,6 +36,25 @@ const (
 	defaultSchemaRegistryPort = 8081
 )
 
+var (
+	// DefaultRpkStatusResources is default resources setting for rpk debug
+	DefaultRpkStatusResources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("10M"),
+			corev1.ResourceCPU:    resource.MustParse("0.2"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("10M"),
+			corev1.ResourceCPU:    resource.MustParse("0.2"),
+		},
+	}
+)
+
+type resourceField struct {
+	resources *corev1.ResourceRequirements
+	path      *field.Path
+}
+
 // log is for logging in this package.
 var log = logf.Log.WithName("cluster-resource")
 
@@ -49,8 +69,19 @@ func (r *Cluster) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 var _ webhook.Defaulter = &Cluster{}
 
-// Default implements webhook.Defaulter so a webhook will be registered for the type
-// TODO(user): fill in your defaulting logic.
+func allResourceFields(c *Cluster) []resourceField {
+	resources := []resourceField{
+		{&c.Spec.Resources, field.NewPath("spec").Child("resources")},
+	}
+
+	if c.Spec.Sidecars.RpkStatus != nil && c.Spec.Sidecars.RpkStatus.Enabled {
+		resources = append(resources, resourceField{c.Spec.Sidecars.RpkStatus.Resources, field.NewPath("spec").Child("resourcesRpkStatus")})
+	}
+	return resources
+}
+
+// Default implements defaulting webhook logic - all defaults that should be
+// applied to cluster CRD after user submits it should be put in here
 func (r *Cluster) Default() {
 	log.Info("default", "name", r.Name)
 	if r.Spec.Configuration.SchemaRegistry != nil && r.Spec.Configuration.SchemaRegistry.Port == 0 {
@@ -64,6 +95,13 @@ func (r *Cluster) Default() {
 		_, ok := r.Spec.AdditionalConfiguration[defaultTopicReplicationKey]
 		if !ok {
 			r.Spec.AdditionalConfiguration[defaultTopicReplicationKey] = strconv.Itoa(defaultTopicReplicationNumber)
+		}
+	}
+
+	if r.Spec.Sidecars.RpkStatus == nil {
+		r.Spec.Sidecars.RpkStatus = &Sidecar{
+			Enabled:   true,
+			Resources: DefaultRpkStatusResources,
 		}
 	}
 }
@@ -87,9 +125,11 @@ func (r *Cluster) ValidateCreate() error {
 
 	allErrs = append(allErrs, r.checkCollidingPorts()...)
 
-	allErrs = append(allErrs, r.validateMemory()...)
+	allErrs = append(allErrs, r.validateRedpandaMemory()...)
 
-	allErrs = append(allErrs, r.validateCPU()...)
+	for _, rf := range allResourceFields(r) {
+		allErrs = append(allErrs, r.validateResources(rf)...)
+	}
 
 	allErrs = append(allErrs, r.validateArchivalStorage()...)
 
@@ -114,7 +154,6 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 				r.Spec.Replicas,
 				"scaling down is not supported"))
 	}
-
 	allErrs = append(allErrs, r.validateKafkaListeners()...)
 
 	allErrs = append(allErrs, r.validateAdminListeners()...)
@@ -123,9 +162,11 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 
 	allErrs = append(allErrs, r.checkCollidingPorts()...)
 
-	allErrs = append(allErrs, r.validateMemory()...)
+	allErrs = append(allErrs, r.validateRedpandaMemory()...)
 
-	allErrs = append(allErrs, r.validateCPU()...)
+	for _, rf := range allResourceFields(r) {
+		allErrs = append(allErrs, r.validateResources(rf)...)
+	}
 
 	allErrs = append(allErrs, r.validateArchivalStorage()...)
 
@@ -137,9 +178,6 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 		r.GroupVersionKind().GroupKind(),
 		r.Name, allErrs)
 }
-
-// ReserveMemoryString is amount of memory that we reserve for other processes than redpanda in the container
-const ReserveMemoryString = "1M"
 
 func (r *Cluster) validateAdminListeners() field.ErrorList {
 	var allErrs field.ErrorList
@@ -308,57 +346,53 @@ func (r *Cluster) validatePandaproxyListeners() field.ErrorList {
 	return allErrs
 }
 
-func (r *Cluster) validateCPU() field.ErrorList {
+func (r *Cluster) validateResources(rf resourceField) field.ErrorList {
+	if rf.resources == nil {
+		return nil
+	}
 	var allErrs field.ErrorList
 
-	// CPU limit (if set) cannot be lower than the requested
-	if !r.Spec.Resources.Requests.Cpu().IsZero() && !r.Spec.Resources.Limits.Cpu().IsZero() &&
-		r.Spec.Resources.Limits.Cpu().Cmp(*r.Spec.Resources.Requests.Cpu()) == -1 {
+	// Memory limit (if set) cannot be lower than the requested
+	if !rf.resources.Limits.Memory().IsZero() && rf.resources.Limits.Memory().Cmp(*rf.resources.Requests.Memory()) == -1 {
 		allErrs = append(allErrs,
 			field.Invalid(
-				field.NewPath("spec").Child("resources").Child("requests").Child("cpu"),
-				r.Spec.Resources.Requests.Cpu(),
+				rf.path.Child("requests").Child("memory"),
+				rf.resources.Requests.Memory(),
+				"Memory limit cannot be lower than the request, either increase the limit or remove it"))
+	}
+
+	// CPU limit (if set) cannot be lower than the requested
+	if !rf.resources.Requests.Cpu().IsZero() && !rf.resources.Limits.Cpu().IsZero() &&
+		rf.resources.Limits.Cpu().Cmp(*rf.resources.Requests.Cpu()) == -1 {
+		allErrs = append(allErrs,
+			field.Invalid(
+				rf.path.Child("requests").Child("cpu"),
+				rf.resources.Requests.Cpu(),
 				"CPU limit cannot be lower than the request, either increase the limit or remove it"))
 	}
 
 	return allErrs
 }
 
-// validateMemory verifies that memory limits are aligned with the minimal requirement of redpanda
-// which is 1GB per core. To verify this, we need to subtract the 1M we reserve currently for other processes
-func (r *Cluster) validateMemory() field.ErrorList {
-	var allErrs field.ErrorList
-
-	// Ensure spare memory for other processes
-	quantity := resource.MustParse(ReserveMemoryString)
-	if !r.Spec.Configuration.DeveloperMode && (r.Spec.Resources.Requests.Memory().Value()-quantity.Value()) < gb {
-		allErrs = append(allErrs,
-			field.Invalid(
-				field.NewPath("spec").Child("resources").Child("requests").Child("memory"),
-				r.Spec.Resources.Limits.Memory(),
-				"need minimum request of 1GB + 1MB of memory"))
+// validateRedpandaMemory verifies that memory limits are aligned with the minimal requirement of redpanda
+// which is defined in `MinimumMemoryPerCore` constant
+func (r *Cluster) validateRedpandaMemory() field.ErrorList {
+	if r.Spec.Configuration.DeveloperMode {
+		// for developer mode we don't enforce any memory limits
+		return nil
 	}
+	var allErrs field.ErrorList
 
 	// Ensure a requested 2GB of memory per core
 	requests := r.Spec.Resources.Requests.DeepCopy()
 	requests.Cpu().RoundUp(0)
 	requestedCores := requests.Cpu().Value()
-	if !r.Spec.Configuration.DeveloperMode && r.Spec.Resources.Requests.Memory().Value() < requestedCores*MinimumMemoryPerCore {
+	if r.Spec.Resources.Requests.Memory().Value() < requestedCores*MinimumMemoryPerCore {
 		allErrs = append(allErrs,
 			field.Invalid(
 				field.NewPath("spec").Child("resources").Child("requests").Child("memory"),
 				r.Spec.Resources.Requests.Memory(),
 				"need 2GB of memory per core; need to decrease the requested CPU or increase the memory request"))
-	}
-
-	// Memory limit (if set) cannot be lower than the requested
-	if !r.Spec.Configuration.DeveloperMode &&
-		!r.Spec.Resources.Limits.Memory().IsZero() && r.Spec.Resources.Limits.Memory().Cmp(*r.Spec.Resources.Requests.Memory()) == -1 {
-		allErrs = append(allErrs,
-			field.Invalid(
-				field.NewPath("spec").Child("resources").Child("requests").Child("memory"),
-				r.Spec.Resources.Requests.Memory(),
-				"Memory limit cannot be lower than the request, either increase the limit or remove it"))
 	}
 
 	return allErrs

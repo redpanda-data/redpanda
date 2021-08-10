@@ -26,6 +26,9 @@ server::routes_t get_proxy_routes() {
     server::routes_t routes;
     routes.api = ss::httpd::rest_json::name;
 
+    routes.routes.emplace_back(
+      server::route_t{ss::httpd::rest_json::get_brokers, get_brokers});
+
     routes.routes.emplace_back(server::route_t{
       ss::httpd::rest_json::get_topics_names, get_topics_names});
 

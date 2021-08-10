@@ -394,9 +394,12 @@ spec:
                 minimum: 0
                 type: integer
               resources:
-                description: Resources used by each Redpanda container To calculate
-                  overall resource consumption one need to multiply replicas against
-                  limits
+                description: Resources used by redpanda process running in container.
+                  Beware that there are multiple containers running in the redpanda
+                  pod and these can be enabled/disabled and configured from the `sidecars`
+                  field. These containers have separate resources settings and the
+                  amount of resources assigned to these containers will be required
+                  on the cluster on top of the resources defined here
                 properties:
                   limits:
                     additionalProperties:
@@ -419,6 +422,48 @@ spec:
                       resources required. If Requests is omitted for a container,
                       it defaults to Limits if that is explicitly specified, otherwise
                       to an implementation-defined value. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
+                    type: object
+                type: object
+              sidecars:
+                description: Sidecars is list of sidecars run alongside redpanda container
+                properties:
+                  rpkStatus:
+                    description: RpkStatus is sidecar running rpk status collecting
+                      status information from the running node
+                    properties:
+                      enabled:
+                        description: Enabled if false, the sidecar won't be added
+                          to the pod running redpanda node
+                        type: boolean
+                      resources:
+                        description: Resources are resource requirements and limits
+                          for the container running this sidecar. For the default
+                          sidecars this is defaulted
+                        properties:
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Limits describes the maximum amount of compute
+                              resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Requests describes the minimum amount of
+                              compute resources required. If Requests is omitted for
+                              a container, it defaults to Limits if that is explicitly
+                              specified, otherwise to an implementation-defined value.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
+                            type: object
+                        type: object
                     type: object
                 type: object
               storage:

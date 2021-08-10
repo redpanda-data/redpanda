@@ -179,7 +179,8 @@ func TestValidateUpdate(t *testing.T) {
 			Configuration: v1alpha1.RedpandaConfig{},
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceMemory: resource.MustParse("1Gi"),
+					corev1.ResourceCPU:    resource.MustParse("1"),
+					corev1.ResourceMemory: resource.MustParse("0.9Gi"),
 				},
 			},
 		},
@@ -499,6 +500,43 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		err := tls.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
 	})
+
+	t.Run("resource limits/requests on redpanda resources", func(t *testing.T) {
+		c := redpandaCluster.DeepCopy()
+		c.Spec.Resources.Limits = corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("1Gi"),
+			corev1.ResourceCPU:    resource.MustParse("1"),
+		}
+		c.Spec.Resources.Requests = corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("2Gi"),
+			corev1.ResourceCPU:    resource.MustParse("1"),
+		}
+
+		err := c.ValidateUpdate(redpandaCluster)
+		assert.Error(t, err)
+	})
+
+	t.Run("resource limits/requests on rpk status resources", func(t *testing.T) {
+		c := redpandaCluster.DeepCopy()
+		c.Spec.Sidecars = v1alpha1.Sidecars{
+			RpkStatus: &v1alpha1.Sidecar{
+				Enabled: true,
+				Resources: &corev1.ResourceRequirements{
+					Limits: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
+						corev1.ResourceCPU:    resource.MustParse("1"),
+					},
+					Requests: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("2Gi"),
+						corev1.ResourceCPU:    resource.MustParse("1"),
+					},
+				},
+			},
+		}
+
+		err := c.ValidateUpdate(redpandaCluster)
+		assert.Error(t, err)
+	})
 }
 
 //nolint:funlen // this is ok for a test
@@ -613,7 +651,7 @@ func TestCreation(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("incorrect memory", func(t *testing.T) {
+	t.Run("incorrect memory (need 2GB per core)", func(t *testing.T) {
 		memory := redpandaCluster.DeepCopy()
 		memory.Spec.Resources = corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
@@ -624,6 +662,20 @@ func TestCreation(t *testing.T) {
 
 		err := memory.ValidateCreate()
 		assert.Error(t, err)
+	})
+
+	t.Run("no 2GB per core required when in developer mode", func(t *testing.T) {
+		memory := redpandaCluster.DeepCopy()
+		memory.Spec.Resources = corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("1Gi"),
+				corev1.ResourceCPU:    resource.MustParse("2"),
+			},
+		}
+		memory.Spec.Configuration.DeveloperMode = true
+
+		err := memory.ValidateCreate()
+		assert.NoError(t, err)
 	})
 
 	t.Run("tls properly configured", func(t *testing.T) {

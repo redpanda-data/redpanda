@@ -19,6 +19,9 @@
 
 namespace pandaproxy::rest {
 
+ss::future<ctx_server<proxy>::reply_t>
+get_brokers(ctx_server<proxy>::request_t rq, ctx_server<proxy>::reply_t rp);
+
 ss::future<ctx_server<proxy>::reply_t> get_topics_names(
   ctx_server<proxy>::request_t rq, ctx_server<proxy>::reply_t rp);
 

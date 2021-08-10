@@ -50,6 +50,12 @@ func TestEnsure(t *testing.T) {
 	resourcesUpdatedSts.Spec.Template.Spec.InitContainers[0].Resources.Requests = newResources
 	resourcesUpdatedSts.Spec.Template.Spec.Containers[0].Resources.Requests = newResources
 
+	noSidecarCluster := cluster.DeepCopy()
+	noSidecarCluster.Spec.Sidecars.RpkStatus = &redpandav1alpha1.Sidecar{
+		Enabled: false,
+	}
+	noSidecarSts := stsFromCluster(noSidecarCluster)
+
 	var tests = []struct {
 		name           string
 		existingObject client.Object
@@ -59,6 +65,7 @@ func TestEnsure(t *testing.T) {
 		{"none existing", nil, cluster, stsResource},
 		{"update replicas", stsResource, replicasUpdatedCluster, replicasUpdatedSts},
 		{"update resources", stsResource, resourcesUpdatedCluster, resourcesUpdatedSts},
+		{"disabled sidecar", nil, noSidecarCluster, noSidecarSts},
 	}
 
 	for _, tt := range tests {
@@ -126,7 +133,7 @@ func TestEnsure(t *testing.T) {
 func stsFromCluster(pandaCluster *redpandav1alpha1.Cluster) *v1.StatefulSet {
 	fileSystemMode := corev1.PersistentVolumeFilesystem
 
-	return &v1.StatefulSet{
+	sts := &v1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: pandaCluster.Namespace,
 			Name:      pandaCluster.Name,
@@ -179,6 +186,14 @@ func stsFromCluster(pandaCluster *redpandav1alpha1.Cluster) *v1.StatefulSet {
 			},
 		},
 	}
+	if pandaCluster.Spec.Sidecars.RpkStatus.Enabled {
+		sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, corev1.Container{
+			Name:      "rpk-status",
+			Image:     "image:latest",
+			Resources: *pandaCluster.Spec.Sidecars.RpkStatus.Resources,
+		})
+	}
+	return sts
 }
 
 func pandaCluster() *redpandav1alpha1.Cluster {
@@ -213,6 +228,15 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 			Resources: corev1.ResourceRequirements{
 				Limits:   resources,
 				Requests: resources,
+			},
+			Sidecars: redpandav1alpha1.Sidecars{
+				RpkStatus: &redpandav1alpha1.Sidecar{
+					Enabled: true,
+					Resources: &corev1.ResourceRequirements{
+						Limits:   resources,
+						Requests: resources,
+					},
+				},
 			},
 			Storage: redpandav1alpha1.StorageSpec{
 				Capacity:         resource.MustParse("10Gi"),
