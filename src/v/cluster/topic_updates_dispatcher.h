@@ -58,7 +58,8 @@ public:
       delete_topic_cmd,
       move_partition_replicas_cmd,
       finish_moving_partition_replicas_cmd,
-      update_topic_properties_cmd>();
+      update_topic_properties_cmd,
+      create_partition_cmd>();
 
     bool is_batch_applicable(const model::record_batch& batch) const {
         return batch.header().type
@@ -70,6 +71,7 @@ private:
     ss::future<std::error_code> dispatch_updates_to_cores(Cmd, model::offset);
 
     void update_allocations(const create_topic_cmd&);
+    void update_allocations(const create_partition_cmd&);
     void deallocate_topic(const model::topic_metadata&);
     void reallocate_partition(
       const std::vector<model::broker_shard>&,

@@ -86,6 +86,15 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
             },
             [this, base_offset](update_topic_properties_cmd cmd) {
                 return dispatch_updates_to_cores(std::move(cmd), base_offset);
+            },
+            [this, base_offset](create_partition_cmd cmd) {
+                return dispatch_updates_to_cores(cmd, base_offset)
+                  .then([this, cmd](std::error_code ec) {
+                      if (ec == errc::success) {
+                          update_allocations(cmd);
+                      }
+                      return ec;
+                  });
             });
       });
 }
@@ -159,6 +168,20 @@ void topic_updates_dispatcher::update_allocations(const create_topic_cmd& cmd) {
 
     _partition_allocator.local().update_allocation_state(
       std::move(shards), max_group_id);
+}
+
+void topic_updates_dispatcher::update_allocations(
+  const create_partition_cmd& cmd) {
+    // for create topics we update allocation state
+    std::vector<model::broker_shard> shards;
+    raft::group_id max_group_id = raft::group_id(0);
+    for (auto& pas : cmd.value.assignments) {
+        max_group_id = std::max(max_group_id, pas.group);
+        std::move(
+          pas.replicas.begin(), pas.replicas.end(), std::back_inserter(shards));
+    }
+
+    _partition_allocator.local().update_allocation_state(shards, max_group_id);
 }
 
 } // namespace cluster
