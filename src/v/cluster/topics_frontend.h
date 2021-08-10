@@ -14,6 +14,7 @@
 #include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/scheduling/types.h"
+#include "cluster/topic_table.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
@@ -36,6 +37,7 @@ public:
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_allocator>&,
       ss::sharded<partition_leaders_table>&,
+      ss::sharded<topic_table>&,
       ss::sharded<ss::abort_source>&);
 
     ss::future<std::vector<topic_result>> create_topics(
@@ -59,6 +61,10 @@ public:
 
     ss::future<std::vector<topic_result>> update_topic_properties(
       std::vector<topic_properties_update>, model::timeout_clock::time_point);
+
+    ss::future<std::vector<topic_result>> create_partitions(
+      std::vector<create_partititions_configuration>,
+      model::timeout_clock::time_point);
 
 private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
@@ -90,11 +96,15 @@ private:
     // returns true if the topic name is valid
     static bool validate_topic_name(const model::topic_namespace&);
 
+    ss::future<topic_result> do_create_partition(
+      create_partititions_configuration, model::timeout_clock::time_point);
+
     model::node_id _self;
     ss::sharded<controller_stm>& _stm;
     ss::sharded<partition_allocator>& _allocator;
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_leaders_table>& _leaders;
+    ss::sharded<topic_table>& _topics;
     ss::sharded<ss::abort_source>& _as;
 };
 
