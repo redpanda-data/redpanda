@@ -31,9 +31,6 @@ namespace cluster {
 struct stm_snapshot_header {
     int8_t version{0};
     int32_t snapshot_size{0};
-
-    static constexpr const size_t ondisk_size = sizeof(version)
-                                                + sizeof(snapshot_size);
 };
 
 struct stm_snapshot {
