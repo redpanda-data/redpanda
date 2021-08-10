@@ -29,9 +29,7 @@ persisted_stm::persisted_stm(
       std::filesystem::path(c->log_config().work_directory()),
       snapshot_mgr_name,
       ss::default_priority_class())
-  , _log(logger)
-  , _snapshot_recovery_policy(
-      config::shard_local_cfg().stm_snapshot_recovery_policy.value()) {}
+  , _log(logger) {}
 
 ss::future<> persisted_stm::hydrate_snapshot(storage::snapshot_reader& reader) {
     return reader.read_metadata()
@@ -57,30 +55,7 @@ ss::future<> persisted_stm::hydrate_snapshot(storage::snapshot_reader& reader) {
               [this]() { return _snapshot_mgr.remove_partial_snapshots(); });
       })
       .handle_exception([this](std::exception_ptr e) {
-          vlog(
-            clusterlog.error,
-            "Can't hydrate from {} error {}",
-            _snapshot_mgr.snapshot_path(),
-            e);
-          if (
-            _snapshot_recovery_policy
-            == model::violation_recovery_policy::crash) {
-              vassert(
-                false,
-                "Can't hydrate from {} error {}",
-                _snapshot_mgr.snapshot_path(),
-                e);
-          } else if (
-            _snapshot_recovery_policy
-            == model::violation_recovery_policy::best_effort) {
-              vlog(
-                clusterlog.warn,
-                "Rolling back to an empty snapshot (potential consistency "
-                "violation)");
-          } else {
-              vassert(
-                false, "Unknown recovery policy {}", _snapshot_recovery_policy);
-          }
+          vassert(false, "Can't hydrate from {} error {}", _snapshot_mgr.snapshot_path(), e);
       });
 }
 

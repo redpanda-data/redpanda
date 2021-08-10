@@ -122,7 +122,6 @@ protected:
     raft::consensus* _c;
     storage::simple_snapshot_manager _snapshot_mgr;
     ss::logger& _log;
-    model::violation_recovery_policy _snapshot_recovery_policy;
 };
 
 } // namespace cluster
