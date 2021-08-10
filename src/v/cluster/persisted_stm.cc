@@ -51,7 +51,7 @@ ss::future<> persisted_stm::hydrate_snapshot(storage::snapshot_reader& reader) {
 
           return read_iobuf_exactly(reader.input(), hdr.snapshot_size)
             .then([this, hdr](iobuf data_buf) {
-                return load_snapshot(hdr, std::move(data_buf));
+                return apply_snapshot(hdr, std::move(data_buf));
             })
             .then(
               [this]() { return _snapshot_mgr.remove_partial_snapshots(); });
