@@ -542,7 +542,7 @@ rpk:
     sasl:
       user: user
       password: pass
-      method: scram-sha256
+      type: SCRAM-SHA-256
 
   # The Admin API configuration
   admin_api:
