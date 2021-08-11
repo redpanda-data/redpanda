@@ -7,7 +7,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-
+import signal
 import sys
 import os
 import logging
@@ -17,6 +17,8 @@ import random
 import string
 import shutil
 import subprocess
+import threading
+import re
 from string import Template
 
 sys.path.append(os.path.dirname(__file__))
@@ -30,40 +32,83 @@ for h in logging.getLogger().handlers:
 COMMON_TEST_ARGS = ["--blocked-reactor-notify-ms 2000000"]
 
 
-class TestRunner():
-    def __init__(self, prepare_command, post_command, binary, repeat,
-                 copy_files, *args):
-        self.prepare_command = prepare_command
-        self.post_command = post_command
+class BacktraceCapture(threading.Thread):
+    """
+    Class for capturing stderr into a string, while also
+    emitting it to out own stderr stream as it comes in,
+    and then analyzing it for seastar backtraces on nonzero
+    exit.
+    """
+
+    BACKTRACE_START = re.compile(
+        "(^Backtrace:|.+Sanitizer.*|.+Backtrace below:$)")
+    BACKTRACE_BODY = re.compile("^(  |==|0x)")
+
+    def __init__(self, binary, process):
+        super(BacktraceCapture, self).__init__()
+        self.process = process
         self.binary = binary
-        self.repeat = repeat
-        self.copy_files = copy_files
-        self.root = "/dev/shm/vectorized_io"
-        os.makedirs(self.root, exist_ok=True)
 
-        # make args a list
-        if len(args) == 0: args = []
-        else: args = list(map(str, args))
+    def run(self):
+        try:
+            self._run()
+        except Exception as e:
+            logger.exception("Error capturing test stderr")
 
-        if "rpunit" in binary:
-            unit_args = [
-                "--overprovisioned", "--unsafe-bypass-fsync 1",
-                "--default-log-level=trace", "--logger-log-level='io=debug'",
-                "--logger-log-level='exception=debug'"
-            ] + COMMON_TEST_ARGS
-            if "--" in args: args = args + unit_args
-            else: args = args + ["--"] + unit_args
-        elif "rpbench" in binary:
-            args = args + COMMON_TEST_ARGS
-        # aggregated args for test
-        self.test_args = " ".join(args)
+    def _run(self):
+        """
+        Grab blocks of lines that look like backtrace.
 
-    def _gen_alphanum(self, x=16):
-        return ''.join(random.choice(string.ascii_letters) for _ in range(x))
+        Example 1: Sanitizer detects null pointer deref in a debug build
 
-    def _gen_testdir(self):
-        return tempfile.mkdtemp(suffix=self._gen_alphanum(),
-                                prefix="%s/test." % self.root)
+        AddressSanitizer:DEADLYSIGNAL
+        =================================================================
+        ==1799059==ERROR: AddressSanitizer: SEGV on unknown address 0x000000000000 (pc 0x5634332b2b5a bp 0x7fe9bd0edb70 sp 0x7fe9bd0ed5a0 T1)
+        ==1799059==The signal is caused by a READ memory access.
+        ==1799059==Hint: address points to the zero page.
+            #0 0x5634332b2b5a  (/home/vectorized/redpanda/vbuild/debug/clang/bin/ssx_unit_rpunit+0x29e5b5a)
+            #1 0x5634333064df  (/home/vectorized/redpanda/vbuild/debug/clang/bin/ssx_unit_rpunit+0x2a394df)
+
+        Example 2: SEGV backtrace on null pointer deref in a release build
+
+        Backtrace:
+          0x2221078a
+          0x2d04f624
+          0x2d04f243
+          0x2ce52589
+          0x2ce7fbe5
+        """
+
+        blocks = []
+
+        accumulator = None
+        while True:
+            line = self.process.stderr.readline()
+            if line:
+                sys.stderr.write(line)
+                if accumulator is not None and self.BACKTRACE_BODY.search(
+                        line):
+                    # Mid-backtrace
+                    accumulator.append(line)
+                elif accumulator is not None:
+                    # End of backtrace
+                    if accumulator:
+                        blocks.append(accumulator)
+                    accumulator = None
+                elif self.BACKTRACE_START.search(line):
+                    accumulator = []
+            else:
+                break
+
+        if accumulator:
+            blocks.append(accumulator)
+
+        if self.process.returncode != 0:
+            # If there was at least one test failure, process the output
+            # to extract Seastar backtraces, and run them through
+            # seastar-addr2line to produce human readable output.
+            for block in blocks:
+                self._addr2lines(block)
 
     def _addr2lines(self, backtrace):
         if not backtrace:
@@ -77,7 +122,7 @@ class TestRunner():
             vbuild = "/".join(path_parts[0:path_parts.index("vbuild") + 3])
         except (ValueError, IndexError):
             sys.stderr.write(
-                f"Could not find vbuild in binary path {self.binary}")
+                f"Could not find vbuild in binary path {self.binary}\n")
             return
         else:
             addr2line_script = os.path.join(
@@ -95,20 +140,45 @@ class TestRunner():
         sys.stderr.write(ran.stderr)
         sys.stderr.write(ran.stdout)
 
-    def _capture_backtraces(self, stderr):
-        backtrace = None
-        for line in stderr.split("\n"):
-            if backtrace is None and line.startswith("Backtrace:"):
-                backtrace = []
-            elif backtrace is not None:
-                if line.startswith("  "):
-                    backtrace.append(line)
-                else:
-                    self._addr2lines(backtrace)
-                    backtrace = None
 
-        if backtrace:
-            self._addr2lines(backtrace)
+class TestRunner():
+    def __init__(self, prepare_command, post_command, binary, repeat,
+                 copy_files, *args):
+        self.prepare_command = prepare_command
+        self.post_command = post_command
+        self.binary = binary
+        self.repeat = repeat
+        self.copy_files = copy_files
+        self.root = "/dev/shm/vectorized_io"
+        os.makedirs(self.root, exist_ok=True)
+
+        # make args a list
+        if len(args) == 0:
+            args = []
+        else:
+            args = list(map(str, args))
+
+        if "rpunit" in binary:
+            unit_args = [
+                "--overprovisioned", "--unsafe-bypass-fsync 1",
+                "--default-log-level=trace", "--logger-log-level='io=debug'",
+                "--logger-log-level='exception=debug'"
+            ] + COMMON_TEST_ARGS
+            if "--" in args:
+                args = args + unit_args
+            else:
+                args = args + ["--"] + unit_args
+        elif "rpbench" in binary:
+            args = args + COMMON_TEST_ARGS
+        # aggregated args for test
+        self.test_args = " ".join(args)
+
+    def _gen_alphanum(self, x=16):
+        return ''.join(random.choice(string.ascii_letters) for _ in range(x))
+
+    def _gen_testdir(self):
+        return tempfile.mkdtemp(suffix=self._gen_alphanum(),
+                                prefix="%s/test." % self.root)
 
     def run(self):
         test_dir = self._gen_testdir()
@@ -144,22 +214,33 @@ class TestRunner():
                      binary=self.binary,
                      args=self.test_args)
         logger.info(cmd)
-        # os.execle("/bin/bash", "/bin/bash", "-exc", cmd, env)
 
         # We only capture stderr becasuse that's where backtraces go
-        ran = subprocess.run(cmd,
+        p = subprocess.Popen(cmd,
                              shell=True,
                              stderr=subprocess.PIPE,
                              encoding='utf-8')
-        sys.stderr.write(ran.stderr)
 
-        if ran.returncode != 0:
-            # If there was at least one test failure, process the output
-            # to extract Seastar backtraces, and run them through
-            # seastar-addr2line to produce human readable output.
-            self._capture_backtraces(ran.stderr)
+        def on_signal(signal, _frame):
+            logger.warning(f"Passing signal {signal} to unit test binary")
+            p.stderr.close()
+            p.send_signal(signal)
+            try:
+                p.wait(5)
+            except subprocess.TimeoutExpired:
+                logger.warning(
+                    f"Child process didn't terminate on signal {signal}")
+                p.kill()
 
-        sys.exit(ran.returncode)
+        t = BacktraceCapture(self.binary, p)
+
+        # Pass ctrl-C etc through to the captive binary
+        signal.signal(signal.SIGINT, on_signal)
+        signal.signal(signal.SIGTERM, on_signal)
+        t.start()
+        t.join()
+
+        sys.exit(p.returncode)
 
 
 def main():
