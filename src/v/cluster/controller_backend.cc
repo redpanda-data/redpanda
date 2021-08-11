@@ -526,6 +526,14 @@ controller_backend::ask_remote_shard_for_initail_rev(
       });
 }
 
+bool are_assignments_equal(
+  const partition_assignment& requested, const partition_assignment& previous) {
+    if (requested.id != previous.id || requested.group != previous.group) {
+        return false;
+    }
+    return are_replica_sets_equal(requested.replicas, previous.replicas);
+}
+
 ss::future<std::error_code> controller_backend::process_partition_update(
   model::ntp ntp,
   const partition_assignment& requested,
@@ -602,6 +610,14 @@ ss::future<std::error_code> controller_backend::process_partition_update(
      * be applied
      */
     if (partition) {
+        // if requested assignment is equal to current one, just finish the
+        // update
+        if (are_assignments_equal(requested, previous)) {
+            if (requested.replicas.front().node_id == _self) {
+                co_return co_await dispatch_update_finished(
+                  std::move(ntp), requested);
+            }
+        }
         auto ec = co_await update_partition_replica_set(
           ntp, requested.replicas, rev);
 
