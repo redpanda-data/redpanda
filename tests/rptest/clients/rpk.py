@@ -38,9 +38,10 @@ class RpkTool:
     def __init__(self, redpanda):
         self._redpanda = redpanda
 
-    def create_topic(self, topic, partitions=1):
+    def create_topic(self, topic, partitions=None):
         cmd = ["create", topic]
-        cmd += ["--partitions", str(partitions)]
+        if partitions is not None:
+            cmd += ["--partitions", str(partitions)]
         return self._run_topic(cmd)
 
     def list_topics(self):
