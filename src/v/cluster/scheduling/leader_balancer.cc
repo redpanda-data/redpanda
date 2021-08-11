@@ -54,7 +54,11 @@ leader_balancer::leader_balancer(
   , _group_manager(group_manager)
   , _as(as)
   , _raft0(std::move(raft0))
-  , _timer([this] { trigger_balance(); }) {}
+  , _timer([this] { trigger_balance(); }) {
+    if (!config::shard_local_cfg().disable_metrics()) {
+        _probe.setup_metrics();
+    }
+}
 
 ss::future<> leader_balancer::start() {
     /*
@@ -225,6 +229,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         if (!_timer.armed()) {
             _timer.arm(_idle_timeout);
         }
+        _probe.leader_transfer_no_improvement();
         co_return ss::stop_iteration::yes;
     }
 
@@ -244,6 +249,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
          * to avoid spinning on sending transfer requests to a failed node. of
          * course failure can happen for other reasons, so don't delay a lot.
          */
+        _probe.leader_transfer_error();
         co_await ss::sleep_abortable(5s, _as.local());
         _muted.try_emplace(transfer->group, clock_type::now() + mute_timeout);
         co_return ss::stop_iteration::no;
@@ -305,6 +311,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
     }
 
     if (leader_shard && *leader_shard != transfer->from) {
+        _probe.leader_transfer_succeeded();
         vlog(
           clusterlog.info,
           "Leadership for group {} moved from {} to {} (target {}). Error {}",
@@ -314,6 +321,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
           transfer->to,
           error);
     } else {
+        _probe.leader_transfer_timeout();
         vlog(
           clusterlog.info,
           "Leadership movement for group {} from {} to {} timed out "

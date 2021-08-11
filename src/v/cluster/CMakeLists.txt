@@ -72,6 +72,7 @@ v_cc_library(
     scheduling/allocation_strategy.cc
     scheduling/constraints.cc
     scheduling/leader_balancer.cc
+    scheduling/leader_balancer_probe.cc
   DEPS
     Seastar::seastar
     controller_rpc
