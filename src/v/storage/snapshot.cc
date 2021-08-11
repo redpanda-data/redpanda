@@ -14,6 +14,7 @@
 #include "hashing/crc32c.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
+#include "storage/segment_utils.h"
 #include "utils/directory_walker.h"
 
 #include <seastar/core/coroutine.hh>
@@ -60,7 +61,7 @@ snapshot_manager::start_snapshot(ss::sstring target) {
     const auto flags = ss::open_flags::wo | ss::open_flags::create
                        | ss::open_flags::exclusive;
 
-    return ss::open_file_dma(path.string(), flags)
+    return internal::make_handle(path, flags, {}, {})
       .then([this, path](ss::file file) {
           ss::file_output_stream_options options;
           options.io_priority_class = _io_prio;

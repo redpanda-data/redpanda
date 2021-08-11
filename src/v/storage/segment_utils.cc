@@ -611,12 +611,11 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
     // build an empty index for the segment
     auto index_name = path;
     index_name.replace_extension("base_index");
-    auto index_fd = co_await ss::open_file_dma(
-      index_name.string(), ss::open_flags::create | ss::open_flags::rw);
-    if (cfg.sanitize) {
-        index_fd = ss::file(
-          ss::make_shared(file_io_sanitizer(std::move(index_fd))));
-    }
+    auto index_fd = co_await make_handle(
+      index_name.string(),
+      ss::open_flags::create | ss::open_flags::rw,
+      {},
+      cfg.sanitize);
     segment_index index(
       index_name.string(),
       index_fd,

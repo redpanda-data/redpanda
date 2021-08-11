@@ -576,11 +576,14 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
           auto index_name = std::filesystem::path(ptr->filename().c_str())
                               .replace_extension("base_index")
                               .string();
-          return ss::open_file_dma(
-                   index_name, ss::open_flags::create | ss::open_flags::rw)
+
+          return internal::make_handle(
+                   index_name,
+                   ss::open_flags::create | ss::open_flags::rw,
+                   {},
+                   sanitize_fileops)
             .then_wrapped([batch_cache = std::move(batch_cache),
                            ptr,
-                           sanitize_fileops,
                            rdr = std::move(rdr),
                            index_name,
                            meta](ss::future<ss::file> f) mutable {
@@ -593,10 +596,6 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
                           return ss::make_exception_future<
                             ss::lw_shared_ptr<segment>>(e);
                       });
-                }
-                if (sanitize_fileops) {
-                    fd = ss::file(
-                      ss::make_shared(file_io_sanitizer(std::move(fd))));
                 }
                 auto idx = segment_index(
                   index_name,
