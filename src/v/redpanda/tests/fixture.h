@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
@@ -189,13 +190,15 @@ public:
     }
 
     ss::future<> wait_for_controller_leadership() {
-        return app.controller->get_partition_leaders()
-          .local()
-          .wait_for_leader(
-            model::controller_ntp,
-            ss::lowres_clock::now() + std::chrono::seconds(10),
-            {})
-          .discard_result();
+        auto tout = ss::lowres_clock::now() + std::chrono::seconds(10);
+        auto id = co_await app.controller->get_partition_leaders()
+                    .local()
+                    .wait_for_leader(model::controller_ntp, tout, {});
+
+        co_await tests::cooperative_spin_wait_with_timeout(10s, [this, id] {
+            auto& members = app.controller->get_members_table();
+            return members.local().contains(id);
+        });
     }
 
     ss::future<kafka::client::transport> make_kafka_client() {
