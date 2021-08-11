@@ -1,3 +1,4 @@
+#include "cluster/cluster_utils.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition.h"
@@ -162,15 +163,17 @@ public:
                        nodes.cbegin(),
                        [this, ntp = std::move(ntp), &replica_set](
                          model::node_id nid) mutable {
-                           auto& md_cache = get_local_cache(nid);
-                           auto md = md_cache.get_topic_metadata(
-                             model::topic_namespace_view(ntp));
+                           auto app = get_node_application(nid);
+                           auto md = app->controller->get_topics_state()
+                                       .local()
+                                       .get_partition_assignment(ntp);
 
                            if (!md) {
                                return false;
                            }
 
-                           return true;
+                           return cluster::are_replica_sets_equal(
+                             replica_set, md->replicas);
                        });
                  })
           .handle_exception([&replica_set](const std::exception_ptr&) {
