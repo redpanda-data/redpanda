@@ -184,6 +184,9 @@ ss::future<> controller::start() {
             members_manager::shard, &members_backend::start);
       })
       .then([this] {
+          if (!config::shard_local_cfg().enable_leader_balancer()) {
+              return ss::now();
+          }
           _leader_balancer = std::make_unique<leader_balancer>(
             _tp_state.local(),
             _partition_leaders.local(),
@@ -213,7 +216,9 @@ ss::future<> controller::stop() {
     }
 
     return f.then([this] {
-        return _leader_balancer->stop()
+        auto stop_leader_balancer = _leader_balancer ? _leader_balancer->stop()
+                                                     : ss::now();
+        return stop_leader_balancer
           .then([this] { return _members_backend.stop(); })
           .then([this] { return _api.stop(); })
           .then([this] { return _backend.stop(); })

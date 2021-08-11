@@ -202,6 +202,8 @@ struct configuration final : public config_store {
     one_or_many_property<ss::sstring> full_raft_configuration_recovery_pattern;
     property<bool> enable_auto_rebalance_on_node_add;
 
+    property<bool> enable_leader_balancer;
+
     configuration();
 
     void read_yaml(const YAML::Node& root_node) override;
