@@ -312,12 +312,12 @@ class RedpandaService(Service):
         self.logger.debug(conf)
         node.account.create_file(RedpandaService.CONFIG_FILE, conf)
 
-    def restart_nodes(self, nodes):
+    def restart_nodes(self, nodes, override_cfg_params=None):
         nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
         for node in nodes:
             self.stop_node(node)
         for node in nodes:
-            self.start_node(node)
+            self.start_node(node, override_cfg_params)
 
     def registered(self, node):
         idx = self.idx(node)
