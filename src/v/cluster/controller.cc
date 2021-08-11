@@ -195,6 +195,7 @@ ss::future<> controller::start() {
             std::ref(_partition_manager),
             std::ref(_raft_manager),
             std::ref(_as),
+            config::shard_local_cfg().leader_balancer_idle_timeout(),
             _raft0);
           return _leader_balancer->start();
       });

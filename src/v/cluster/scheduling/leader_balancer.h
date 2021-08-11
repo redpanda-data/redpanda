@@ -62,27 +62,6 @@ class leader_balancer {
     static constexpr clock_type::duration leader_transfer_rpc_timeout = 30s;
 
     /*
-     * the balancer will go idle in different scenarios such as losing raft0
-     * leadership, or when leadership balance cannot be improved.  for good
-     * responsivenss, sub-system upcalls may wake-up the balancer when
-     * leadership is regained or some threshold set of leadership change is
-     * identified. as a defensive measure, we set an idle timeout to run a
-     * balancing tick at low frequency in case some upcall is missed.
-     *
-     * TODO:
-     *   - raft0 leadership upcall is active, but we require polling to wake-up
-     *   the balancer when it has gone idel because balancing completed. for
-     *   this we need ot add an upcall notification mechanism to the leaders
-     *   table / dissemination framework.
-     *
-     *      See: https://github.com/vectorizedio/redpanda/issues/2031
-     *
-     *   Once this item is complete it would also make sense to increase this
-     *   timeout to something larger like 5 minutes.
-     */
-    static constexpr clock_type::duration idle_timeout = 2min;
-
-    /*
      * timeout used to mute groups. groups are muted in various scenarios such
      * as if they experience errors being moved, but also if they are moved
      * successfully so that we do not pertrub them too much on accident.
@@ -98,6 +77,7 @@ public:
       ss::sharded<partition_manager>&,
       ss::sharded<raft::group_manager>&,
       ss::sharded<ss::abort_source>&,
+      std::chrono::milliseconds,
       consensus_ptr);
 
     ss::future<> start();
@@ -117,6 +97,27 @@ private:
 
     void trigger_balance();
     ss::future<ss::stop_iteration> balance();
+
+    /*
+     * the balancer will go idle in different scenarios such as losing raft0
+     * leadership, or when leadership balance cannot be improved.  for good
+     * responsivenss, sub-system upcalls may wake-up the balancer when
+     * leadership is regained or some threshold set of leadership change is
+     * identified. as a defensive measure, we set an idle timeout to run a
+     * balancing tick at low frequency in case some upcall is missed.
+     *
+     * TODO:
+     *   - raft0 leadership upcall is active, but we require polling to wake-up
+     *   the balancer when it has gone idel because balancing completed. for
+     *   this we need ot add an upcall notification mechanism to the leaders
+     *   table / dissemination framework.
+     *
+     *      See: https://github.com/vectorizedio/redpanda/issues/2031
+     *
+     *   Once this item is complete it would also make sense to increase this
+     *   timeout to something larger like 5 minutes.
+     */
+    clock_type::duration _idle_timeout;
 
     struct last_known_leader {
         model::broker_shard shard;

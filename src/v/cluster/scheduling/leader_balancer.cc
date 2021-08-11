@@ -43,8 +43,10 @@ leader_balancer::leader_balancer(
   ss::sharded<partition_manager>& partition_manager,
   ss::sharded<raft::group_manager>& group_manager,
   ss::sharded<ss::abort_source>& as,
+  std::chrono::milliseconds idle_timeout,
   consensus_ptr raft0)
-  : _topics(topics)
+  : _idle_timeout(idle_timeout)
+  , _topics(topics)
   , _leaders(leaders)
   , _client(std::move(client))
   , _shard_table(shard_table)
@@ -82,7 +84,7 @@ ss::future<> leader_balancer::start() {
                   "Leader balancer: controller leadership lost");
                 _need_controller_refresh = true;
                 _timer.cancel();
-                _timer.arm(idle_timeout);
+                _timer.arm(_idle_timeout);
             }
         });
 
@@ -91,7 +93,7 @@ ss::future<> leader_balancer::start() {
      * during registration, so make sure the timer is unarmed before arming.
      */
     if (!_timer.armed()) {
-        _timer.arm(idle_timeout);
+        _timer.arm(_idle_timeout);
     }
 
     co_return;
@@ -117,7 +119,7 @@ void leader_balancer::trigger_balance() {
     if (_gate.get_count()) {
         vlog(
           clusterlog.info, "Cannot start rebalance until previous fiber exits");
-        _timer.arm(idle_timeout);
+        _timer.arm(_idle_timeout);
     }
 
     (void)ss::try_with_gate(_gate, [this] {
@@ -135,10 +137,10 @@ void leader_balancer::trigger_balance() {
                 "Leadership rebalance experienced an unhandled error: {}. "
                 "Retrying in {} seconds",
                 e,
-                std::chrono::duration_cast<std::chrono::seconds>(idle_timeout)
+                std::chrono::duration_cast<std::chrono::seconds>(_idle_timeout)
                   .count());
               _timer.cancel();
-              _timer.arm(idle_timeout);
+              _timer.arm(_idle_timeout);
           });
     }).handle_exception_type([](const ss::gate_closed_exception&) {});
 }
@@ -157,7 +159,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
     if (!_raft0->is_leader()) {
         vlog(clusterlog.debug, "Leadership balancer tick: not leader");
         if (!_timer.armed()) {
-            _timer.arm(idle_timeout);
+            _timer.arm(_idle_timeout);
         }
         _need_controller_refresh = true;
         co_return ss::stop_iteration::yes;
@@ -221,7 +223,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
           "No leadership balance improvements found with total error {}",
           error);
         if (!_timer.armed()) {
-            _timer.arm(idle_timeout);
+            _timer.arm(_idle_timeout);
         }
         co_return ss::stop_iteration::yes;
     }

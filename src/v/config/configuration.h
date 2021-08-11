@@ -203,6 +203,7 @@ struct configuration final : public config_store {
     property<bool> enable_auto_rebalance_on_node_add;
 
     property<bool> enable_leader_balancer;
+    property<std::chrono::milliseconds> leader_balancer_idle_timeout;
 
     configuration();
 
