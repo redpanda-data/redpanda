@@ -11,6 +11,7 @@
 #pragma once
 #include "absl/container/node_hash_map.h"
 #include "cluster/partition_manager.h"
+#include "cluster/scheduling/leader_balancer_probe.h"
 #include "cluster/scheduling/leader_balancer_strategy.h"
 #include "cluster/types.h"
 #include "raft/consensus.h"
@@ -125,6 +126,7 @@ private:
     };
     absl::btree_map<raft::group_id, last_known_leader> _last_leader;
 
+    leader_balancer_probe _probe;
     bool _need_controller_refresh{true};
     absl::btree_map<raft::group_id, clock_type::time_point> _muted;
     cluster::notification_id_type _leader_notify_handle;
