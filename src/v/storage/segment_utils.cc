@@ -89,15 +89,19 @@ static inline ss::file wrap_handle(ss::file f, debug_sanitize_files debug) {
     }
     return f;
 }
-static inline ss::future<ss::file> make_handle(
-  const std::filesystem::path& path,
+
+ss::future<ss::file> make_handle(
+  const std::filesystem::path path,
   ss::open_flags flags,
   ss::file_open_options opt,
   debug_sanitize_files debug) {
-    return ss::open_file_dma(path.string(), flags, opt)
-      .then([debug](ss::file writer) {
-          return wrap_handle(std::move(writer), debug);
-      });
+    auto file = co_await ss::open_file_dma(path.string(), flags, opt);
+
+    if ((flags & ss::open_flags::create) == ss::open_flags::create) {
+        co_await maybe_disable_cow(path, file);
+    }
+
+    co_return wrap_handle(std::move(file), debug);
 }
 
 static inline ss::file_open_options writer_opts() {

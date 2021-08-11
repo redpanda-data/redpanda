@@ -89,6 +89,11 @@ make_writer_handle(const std::filesystem::path&, storage::debug_sanitize_files);
 /// make file handle with default opts
 ss::future<ss::file>
 make_reader_handle(const std::filesystem::path&, storage::debug_sanitize_files);
+ss::future<ss::file> make_handle(
+  const std::filesystem::path path,
+  ss::open_flags flags,
+  ss::file_open_options opt,
+  debug_sanitize_files debug);
 
 ss::future<compacted_index_writer> make_compacted_index_writer(
   const std::filesystem::path& path,
