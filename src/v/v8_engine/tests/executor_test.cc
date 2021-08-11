@@ -11,7 +11,9 @@
 #include "seastarx.h"
 #include "v8_engine/executor.h"
 
+#include <seastar/core/app-template.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/reactor.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/smp.hh>
@@ -52,7 +54,7 @@ SEASTAR_THREAD_TEST_CASE(task_queue_full_test) {
         void on_timeout() {}
     };
 
-    v8_engine::executor test_executor(1, ss::smp::count);
+    v8_engine::executor test_executor(ss::engine().alien(), 1, ss::smp::count);
 
     std::vector<ss::future<>> futures;
     futures.reserve(3);
@@ -75,7 +77,7 @@ SEASTAR_THREAD_TEST_CASE(simple_stop_executor_test) {
         void on_timeout() {}
     };
 
-    v8_engine::executor test_executor(1, ss::smp::count);
+    v8_engine::executor test_executor(ss::engine().alien(), 1, ss::smp::count);
     test_executor.stop().get();
     auto fut = test_executor.submit(
       task_for_test(), std::chrono::milliseconds(5000));
@@ -115,7 +117,7 @@ SEASTAR_THREAD_TEST_CASE(task_with_exception_test) {
         }
     };
 
-    v8_engine::executor test_executor(1, ss::smp::count);
+    v8_engine::executor test_executor(ss::engine().alien(), 1, ss::smp::count);
 
     auto fut_process = test_executor.submit(
       task_for_test_with_process_exception(), std::chrono::milliseconds(20));
@@ -163,7 +165,7 @@ SEASTAR_THREAD_TEST_CASE(stop_executor_with_finish_item_test) {
         char& _is_finish;
     };
 
-    v8_engine::executor test_executor(1, ss::smp::count);
+    v8_engine::executor test_executor(ss::engine().alien(), 1, ss::smp::count);
 
     const size_t futures_count = 5;
 
@@ -211,7 +213,7 @@ SEASTAR_THREAD_TEST_CASE(stress_test) {
     std::vector<size_t> queue_size = {1, 10, 1000};
 
     for (auto size : queue_size) {
-        v8_engine::executor test_executor(1, size);
+        v8_engine::executor test_executor(ss::engine().alien(), 1, size);
 
         std::unordered_map<size_t, char> finish_flags;
         std::vector<ss::future<>> futures;

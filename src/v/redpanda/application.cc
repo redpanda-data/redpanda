@@ -126,7 +126,12 @@ int application::run(int ac, char** av) {
       buf.release,
       buf.nodename,
       buf.machine);
-    ss::app_template app = setup_app_template();
+    ss::app_template app(setup_app_config());
+    app.add_options()(
+      "redpanda-cfg",
+      po::value<std::string>(),
+      ".yaml file config for redpanda");
+
     return app.run(ac, av, [this, &app] {
         auto& cfg = app.configuration();
         log_system_resources(_log, cfg);
@@ -254,18 +259,13 @@ void application::validate_arguments(const po::variables_map& cfg) {
 
 void application::init_env() { std::setvbuf(stdout, nullptr, _IOLBF, 1024); }
 
-ss::app_template application::setup_app_template() {
+ss::app_template::config application::setup_app_config() {
     ss::app_template::config app_cfg;
     app_cfg.name = "Redpanda";
     using namespace std::literals::chrono_literals; // NOLINT
     app_cfg.default_task_quota = 500us;
     app_cfg.auto_handle_sigint_sigterm = false;
-    auto app = ss::app_template(app_cfg);
-    app.add_options()(
-      "redpanda-cfg",
-      po::value<std::string>(),
-      ".yaml file config for redpanda");
-    return app;
+    return app_cfg;
 }
 
 void application::hydrate_config(const po::variables_map& cfg) {

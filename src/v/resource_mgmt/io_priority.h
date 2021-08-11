@@ -15,6 +15,7 @@
 
 #include <seastar/core/distributed.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/io_priority_class.hh>
 #include <seastar/core/reactor.hh>
 
 class priority_manager {
@@ -34,16 +35,15 @@ public:
 
 private:
     priority_manager()
-      : _raft_priority(ss::engine().register_one_priority_class("raft", 1000))
+      : _raft_priority(ss::io_priority_class::register_one("raft", 1000))
       , _controller_priority(
-          ss::engine().register_one_priority_class("controller", 1000))
+          ss::io_priority_class::register_one("controller", 1000))
       , _kafka_read_priority(
-          ss::engine().register_one_priority_class("kafka_read", 1000))
+          ss::io_priority_class::register_one("kafka_read", 1000))
       , _compaction_priority(
-          ss::engine().register_one_priority_class("compaction", 200))
+          ss::io_priority_class::register_one("compaction", 200))
       , _raft_learner_recovery_priority(
-          ss::engine().register_one_priority_class(
-            "raft-learner-recovery", 100)) {}
+          ss::io_priority_class::register_one("raft-learner-recovery", 100)) {}
 
     ss::io_priority_class _raft_priority;
     ss::io_priority_class _controller_priority;

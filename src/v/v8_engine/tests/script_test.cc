@@ -14,6 +14,8 @@
 #include "v8_engine/executor.h"
 #include "v8_engine/script.h"
 
+#include <seastar/core/app-template.hh>
+#include <seastar/core/reactor.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/testing/thread_test_case.hh>
 
@@ -23,7 +25,7 @@
 class executor_wrapper_for_test {
 public:
     executor_wrapper_for_test()
-      : _executor(1, ss::smp::count) {}
+      : _executor(ss::engine().alien(), 1, ss::smp::count) {}
 
     ~executor_wrapper_for_test() { _executor.stop().get(); }
 

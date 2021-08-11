@@ -15,6 +15,7 @@
 #include "utils/gate_guard.h"
 #include "utils/mutex.h"
 
+#include <seastar/core/alien.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
@@ -155,7 +156,7 @@ private:
 // executor_sharded.invoke_on(<core with executor>)
 class executor {
 public:
-    executor(uint8_t cpu_id, size_t queue_size);
+    executor(ss::alien::instance& instance, uint8_t cpu_id, size_t queue_size);
 
     executor(const executor& other) = delete;
     executor& operator=(const executor& other) = delete;
@@ -209,6 +210,8 @@ private:
 
     // Main loop for threads in executor
     void loop();
+
+    ss::alien::instance& _alien_instance;
 
     std::atomic<bool> _is_stopped{false};
 
