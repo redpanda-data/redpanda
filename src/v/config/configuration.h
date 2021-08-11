@@ -89,7 +89,6 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> metadata_dissemination_interval_ms;
     property<std::chrono::milliseconds> metadata_dissemination_retry_delay_ms;
     property<int16_t> metadata_dissemination_retries;
-    property<model::violation_recovery_policy> stm_snapshot_recovery_policy;
     property<std::chrono::milliseconds> tm_sync_timeout_ms;
     property<model::violation_recovery_policy> tm_violation_recovery_policy;
     property<std::chrono::milliseconds> rm_sync_timeout_ms;
@@ -117,6 +116,11 @@ struct configuration final : public config_store {
     property<int16_t> id_allocator_replication;
     property<model::cleanup_policy_bitflags>
       transaction_coordinator_cleanup_policy;
+    property<std::chrono::milliseconds>
+      transaction_coordinator_delete_retention_ms;
+    property<uint64_t> transaction_coordinator_log_segment_size;
+    property<std::chrono::milliseconds>
+      abort_timed_out_transactions_interval_ms;
     property<std::chrono::milliseconds> create_topic_timeout_ms;
     property<std::chrono::milliseconds> wait_for_leader_timeout_ms;
     property<int32_t> default_topic_partitions;

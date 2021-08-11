@@ -130,6 +130,8 @@ public:
 
     void testing_only_disable_auto_abort() { _is_autoabort_enabled = false; }
 
+    void testing_only_enable_transactions() { _is_tx_enabled = true; }
+
 private:
     ss::future<checked<model::term_id, tx_errc>> do_begin_tx(
       model::producer_identity, model::tx_seq, std::chrono::milliseconds);
@@ -143,7 +145,7 @@ private:
       model::producer_identity, model::tx_seq, model::timeout_clock::duration);
     ss::future<tx_errc> do_abort_tx(
       model::producer_identity, model::tx_seq, model::timeout_clock::duration);
-    ss::future<> load_snapshot(stm_snapshot_header, iobuf&&) override;
+    ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_snapshot() override;
     ss::future<std::optional<abort_snapshot>> load_abort_snapshot(abort_index);
     ss::future<> save_abort_snapshot(abort_snapshot);
@@ -161,14 +163,13 @@ private:
     void compact_snapshot();
 
     ss::future<bool> sync(model::timeout_clock::duration);
-    void became_leader();
-    void lost_leadership();
 
     void track_tx(model::producer_identity, std::chrono::milliseconds);
     void abort_old_txes();
-    ss::future<> abort_old_txes(absl::btree_set<model::producer_identity>);
+    ss::future<> do_abort_old_txes();
     ss::future<> try_abort_old_tx(model::producer_identity);
     ss::future<> do_try_abort_old_tx(model::producer_identity);
+    void try_arm(time_point_type);
 
     bool is_known_session(model::producer_identity pid) const {
         auto is_known = false;
@@ -286,11 +287,13 @@ private:
     model::timestamp _oldest_session;
     std::chrono::milliseconds _sync_timeout;
     std::chrono::milliseconds _tx_timeout_delay;
+    std::chrono::milliseconds _abort_interval_ms;
     uint32_t _abort_index_segment_size;
     model::violation_recovery_policy _recovery_policy;
     std::chrono::milliseconds _transactional_id_expiration;
-    bool _is_leader{false};
     bool _is_autoabort_enabled{true};
+    bool _is_autoabort_active{false};
+    bool _is_tx_enabled{false};
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     storage::snapshot_manager _abort_snapshot_mgr;
 };

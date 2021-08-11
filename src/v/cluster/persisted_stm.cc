@@ -29,59 +29,48 @@ persisted_stm::persisted_stm(
       std::filesystem::path(c->log_config().work_directory()),
       snapshot_mgr_name,
       ss::default_priority_class())
-  , _log(logger)
-  , _snapshot_recovery_policy(
-      config::shard_local_cfg().stm_snapshot_recovery_policy.value()) {}
+  , _log(logger) {}
 
-ss::future<> persisted_stm::hydrate_snapshot(storage::snapshot_reader& reader) {
-    return reader.read_metadata()
-      .then([this, &reader](iobuf meta_buf) {
-          iobuf_parser meta_parser(std::move(meta_buf));
+ss::future<std::optional<stm_snapshot>> persisted_stm::load_snapshot() {
+    auto maybe_reader = co_await _snapshot_mgr.open_snapshot();
+    if (!maybe_reader) {
+        co_return std::nullopt;
+    }
 
-          auto version = reflection::adl<int8_t>{}.from(meta_parser);
-          vassert(
-            version == snapshot_version,
-            "Only support persisted_snapshot_version {} but got {}",
-            snapshot_version,
-            version);
+    storage::snapshot_reader& reader = *maybe_reader;
+    iobuf meta_buf = co_await reader.read_metadata();
+    iobuf_parser meta_parser(std::move(meta_buf));
 
-          stm_snapshot_header hdr;
-          hdr.version = reflection::adl<int8_t>{}.from(meta_parser);
-          hdr.snapshot_size = reflection::adl<int32_t>{}.from(meta_parser);
+    auto version = reflection::adl<int8_t>{}.from(meta_parser);
+    vassert(
+      version == snapshot_version || version == snapshot_version_v0,
+      "Unsupported persisted_stm snapshot_version {}",
+      version);
 
-          return read_iobuf_exactly(reader.input(), hdr.snapshot_size)
-            .then([this, hdr](iobuf data_buf) {
-                return load_snapshot(hdr, std::move(data_buf));
-            })
-            .then(
-              [this]() { return _snapshot_mgr.remove_partial_snapshots(); });
-      })
-      .handle_exception([this](std::exception_ptr e) {
-          vlog(
-            clusterlog.error,
-            "Can't hydrate from {} error {}",
-            _snapshot_mgr.snapshot_path(),
-            e);
-          if (
-            _snapshot_recovery_policy
-            == model::violation_recovery_policy::crash) {
-              vassert(
-                false,
-                "Can't hydrate from {} error {}",
-                _snapshot_mgr.snapshot_path(),
-                e);
-          } else if (
-            _snapshot_recovery_policy
-            == model::violation_recovery_policy::best_effort) {
-              vlog(
-                clusterlog.warn,
-                "Rolling back to an empty snapshot (potential consistency "
-                "violation)");
-          } else {
-              vassert(
-                false, "Unknown recovery policy {}", _snapshot_recovery_policy);
-          }
-      });
+    if (version == snapshot_version_v0) {
+        vlog(
+          clusterlog.warn,
+          "Skipping snapshot {} due to old format",
+          _snapshot_mgr.snapshot_path());
+
+        // can't load old format of the snapshot, since snapshot is missing
+        // it will be reconstructed by replaying the log
+        co_await reader.close();
+        co_return std::nullopt;
+    }
+
+    stm_snapshot snapshot;
+    snapshot.header.offset = model::offset(
+      reflection::adl<int64_t>{}.from(meta_parser));
+    snapshot.header.version = reflection::adl<int8_t>{}.from(meta_parser);
+    snapshot.header.snapshot_size = reflection::adl<int32_t>{}.from(
+      meta_parser);
+    snapshot.data = co_await read_iobuf_exactly(
+      reader.input(), snapshot.header.snapshot_size);
+    co_await reader.close();
+    co_await _snapshot_mgr.remove_partial_snapshots();
+
+    co_return snapshot;
 }
 
 ss::future<> persisted_stm::wait_for_snapshot_hydrated() {
@@ -94,11 +83,13 @@ ss::future<> persisted_stm::wait_for_snapshot_hydrated() {
 
 ss::future<> persisted_stm::persist_snapshot(stm_snapshot&& snapshot) {
     iobuf data_size_buf;
+
+    int8_t version = snapshot_version;
+    int64_t offset = snapshot.header.offset();
+    int8_t data_version = snapshot.header.version;
+    int32_t data_size = snapshot.header.snapshot_size;
     reflection::serialize(
-      data_size_buf,
-      snapshot_version,
-      snapshot.header.version,
-      snapshot.header.snapshot_size);
+      data_size_buf, version, offset, data_version, data_size);
 
     return _snapshot_mgr.start_snapshot().then(
       [this,
@@ -126,7 +117,7 @@ ss::future<> persisted_stm::persist_snapshot(stm_snapshot&& snapshot) {
 
 ss::future<> persisted_stm::do_make_snapshot() {
     auto snapshot = co_await take_snapshot();
-    auto offset = snapshot.offset;
+    auto offset = snapshot.header.offset;
 
     co_await persist_snapshot(std::move(snapshot));
     _last_snapshot_offset = std::max(_last_snapshot_offset, offset);
@@ -193,6 +184,7 @@ ss::future<bool> persisted_stm::sync(model::timeout_clock::duration timeout) {
           if (is_synced) {
               _insync_term = term;
           }
+          _is_catching_up = false;
           for (auto& sync_waiter : _sync_waiters) {
               sync_waiter->set_value(is_synced);
           }
@@ -217,42 +209,41 @@ ss::future<bool> persisted_stm::wait_no_throw(
 }
 
 ss::future<> persisted_stm::start() {
-    return _snapshot_mgr.open_snapshot().then(
-      [this](std::optional<storage::snapshot_reader> reader) {
-          auto f = ss::now();
-          if (reader) {
-              f = ss::do_with(
-                std::move(*reader), [this](storage::snapshot_reader& reader) {
-                    return hydrate_snapshot(reader).then([this, &reader] {
-                        auto offset = std::max(
-                          _insync_offset, _c->start_offset());
-                        if (offset >= model::offset(0)) {
-                            set_next(offset);
-                        }
-                        _resolved_when_snapshot_hydrated.set_value();
-                        return reader.close();
-                    });
-                });
-          } else {
-              auto offset = _c->start_offset();
-              if (offset >= model::offset(0)) {
-                  set_next(offset);
-              }
-              _resolved_when_snapshot_hydrated.set_value();
-          }
+    std::optional<stm_snapshot> maybe_snapshot;
+    try {
+        maybe_snapshot = co_await load_snapshot();
+    } catch (...) {
+        vassert(
+          false,
+          "Can't load snapshot from '{}'. Got error: {}",
+          _snapshot_mgr.snapshot_path(),
+          std::current_exception());
+    }
 
-          return f.then([this]() { return state_machine::start(); })
-            .then([this]() {
-                auto offset = _c->meta().commit_index;
-                if (offset >= model::offset(0)) {
-                    (void)ss::with_gate(_gate, [this, offset] {
-                        // saving a snapshot after catchup with the tip of the
-                        // log
-                        return ensure_snapshot_exists(offset);
-                    });
-                }
-            });
-      });
+    if (maybe_snapshot) {
+        stm_snapshot& snapshot = *maybe_snapshot;
+
+        auto next_offset = raft::details::next_offset(snapshot.header.offset);
+        if (next_offset >= _c->start_offset()) {
+            co_await apply_snapshot(snapshot.header, std::move(snapshot.data));
+            set_next(next_offset);
+        } else {
+            vlog(
+              clusterlog.warn,
+              "Skipping snapshot {} since it's out of sync with the log",
+              _snapshot_mgr.snapshot_path());
+            set_next(_c->start_offset());
+        }
+
+        _resolved_when_snapshot_hydrated.set_value();
+    } else {
+        auto offset = _c->start_offset();
+        if (offset >= model::offset(0)) {
+            set_next(offset);
+        }
+        _resolved_when_snapshot_hydrated.set_value();
+    }
+    co_await state_machine::start();
 }
 
 } // namespace cluster

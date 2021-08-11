@@ -172,17 +172,23 @@ rm_stm::rm_stm(
   , _oldest_session(model::timestamp::now())
   , _sync_timeout(config::shard_local_cfg().rm_sync_timeout_ms.value())
   , _tx_timeout_delay(config::shard_local_cfg().tx_timeout_delay_ms.value())
+  , _abort_interval_ms(config::shard_local_cfg()
+                         .abort_timed_out_transactions_interval_ms.value())
   , _abort_index_segment_size(
       config::shard_local_cfg().abort_index_segment_size.value())
   , _recovery_policy(
       config::shard_local_cfg().rm_violation_recovery_policy.value())
   , _transactional_id_expiration(
       config::shard_local_cfg().transactional_id_expiration_ms.value())
+  , _is_tx_enabled(config::shard_local_cfg().enable_transactions.value())
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _abort_snapshot_mgr(
       "abort.idx",
       std::filesystem::path(c->log_config().work_directory()),
       ss::default_priority_class()) {
+    if (!_is_tx_enabled) {
+        _is_autoabort_enabled = false;
+    }
     if (_recovery_policy != crash && _recovery_policy != best_effort) {
         vassert(false, "Unknown recovery policy: {}", _recovery_policy);
     }
@@ -735,17 +741,19 @@ ss::future<result<raft::replicate_result>> rm_stm::replicate_seq(
 model::offset rm_stm::last_stable_offset() {
     auto first_tx_start = model::offset::max();
 
-    if (!_log_state.ongoing_set.empty()) {
-        first_tx_start = *_log_state.ongoing_set.begin();
-    }
+    if (_is_tx_enabled) {
+        if (!_log_state.ongoing_set.empty()) {
+            first_tx_start = *_log_state.ongoing_set.begin();
+        }
 
-    if (!_mem_state.tx_starts.empty()) {
-        first_tx_start = std::min(
-          first_tx_start, *_mem_state.tx_starts.begin());
-    }
+        if (!_mem_state.tx_starts.empty()) {
+            first_tx_start = std::min(
+              first_tx_start, *_mem_state.tx_starts.begin());
+        }
 
-    for (auto& entry : _mem_state.estimated) {
-        first_tx_start = std::min(first_tx_start, entry.second);
+        for (auto& entry : _mem_state.estimated) {
+            first_tx_start = std::min(first_tx_start, entry.second);
+        }
     }
 
     auto last_visible_index = _c->last_visible_index();
@@ -775,7 +783,9 @@ static void filter_intersecting(
 ss::future<std::vector<rm_stm::tx_range>>
 rm_stm::aborted_transactions(model::offset from, model::offset to) {
     std::vector<rm_stm::tx_range> result;
-
+    if (!_is_tx_enabled) {
+        co_return result;
+    }
     for (auto& idx : _log_state.abort_indexes) {
         if (idx.last < from) {
             continue;
@@ -827,29 +837,8 @@ ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {
             _mem_state = mem_state{.term = _insync_term};
         }
     }
-    if (ready && !_is_leader) {
-        _is_leader = true;
-        became_leader();
-    } else if (!ready && _is_leader) {
-        _is_leader = false;
-        lost_leadership();
-    }
     co_return ready;
 }
-
-void rm_stm::became_leader() {
-    if (_gate.is_closed()) {
-        return;
-    }
-    if (!_is_autoabort_enabled) {
-        return;
-    }
-    if (!auto_abort_timer.armed()) {
-        abort_old_txes();
-    }
-}
-
-void rm_stm::lost_leadership() { auto_abort_timer.cancel(); }
 
 void rm_stm::track_tx(
   model::producer_identity pid,
@@ -863,48 +852,52 @@ void rm_stm::track_tx(
         return;
     }
     auto deadline = _mem_state.expiration[pid].deadline();
-    if (auto_abort_timer.armed() && auto_abort_timer.get_timeout() > deadline) {
-        auto_abort_timer.cancel();
-        auto_abort_timer.arm(deadline);
-    } else if (!auto_abort_timer.armed()) {
-        auto_abort_timer.arm(deadline);
-    }
+    try_arm(deadline);
 }
 
 void rm_stm::abort_old_txes() {
+    _is_autoabort_active = true;
     (void)ss::with_gate(_gate, [this] {
-        std::vector<model::producer_identity> pids;
-        for (auto& [k, _] : _mem_state.estimated) {
-            pids.push_back(k);
-        }
-        for (auto& [k, _] : _mem_state.tx_start) {
-            pids.push_back(k);
-        }
-        for (auto& [k, _] : _log_state.ongoing_map) {
-            pids.push_back(k);
-        }
-        absl::btree_set<model::producer_identity> expired;
-        for (auto pid : pids) {
-            auto expiration_it = _mem_state.expiration.find(pid);
-            if (expiration_it != _mem_state.expiration.end()) {
-                if (expiration_it->second.deadline() > clock_type::now()) {
-                    continue;
-                }
-            }
-            expired.insert(pid);
-        }
-        return abort_old_txes(std::move(expired));
+        return do_abort_old_txes().finally(
+          [this] { try_arm(clock_type::now() + _abort_interval_ms); });
     });
 }
 
-ss::future<>
-rm_stm::abort_old_txes(absl::btree_set<model::producer_identity> pids) {
+ss::future<> rm_stm::do_abort_old_txes() {
+    if (!co_await sync(_sync_timeout)) {
+        co_return;
+    }
+
+    std::vector<model::producer_identity> pids;
+    for (auto& [k, _] : _mem_state.estimated) {
+        pids.push_back(k);
+    }
+    for (auto& [k, _] : _mem_state.tx_start) {
+        pids.push_back(k);
+    }
+    for (auto& [k, _] : _log_state.ongoing_map) {
+        pids.push_back(k);
+    }
+    absl::btree_set<model::producer_identity> expired;
     for (auto pid : pids) {
+        auto expiration_it = _mem_state.expiration.find(pid);
+        if (expiration_it != _mem_state.expiration.end()) {
+            if (expiration_it->second.deadline() > clock_type::now()) {
+                continue;
+            }
+        }
+        expired.insert(pid);
+    }
+
+    for (auto pid : expired) {
         co_await try_abort_old_tx(pid);
     }
 
     std::optional<time_point_type> earliest_deadline;
-    for (auto& [_, expiration] : _mem_state.expiration) {
+    for (auto& [pid, expiration] : _mem_state.expiration) {
+        if (!is_known_session(pid)) {
+            continue;
+        }
         auto candidate = expiration.deadline();
         if (earliest_deadline) {
             earliest_deadline = std::min(earliest_deadline.value(), candidate);
@@ -916,14 +909,7 @@ rm_stm::abort_old_txes(absl::btree_set<model::producer_identity> pids) {
     if (earliest_deadline) {
         auto deadline = std::max(
           earliest_deadline.value(), clock_type::now() + _tx_timeout_delay);
-        if (
-          auto_abort_timer.armed()
-          && auto_abort_timer.get_timeout() > deadline) {
-            auto_abort_timer.cancel();
-            auto_abort_timer.arm(deadline);
-        } else if (!auto_abort_timer.armed()) {
-            auto_abort_timer.arm(deadline);
-        }
+        try_arm(deadline);
     }
 }
 
@@ -1004,6 +990,15 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
     }
 }
 
+void rm_stm::try_arm(time_point_type deadline) {
+    if (auto_abort_timer.armed() && auto_abort_timer.get_timeout() > deadline) {
+        auto_abort_timer.cancel();
+        auto_abort_timer.arm(deadline);
+    } else if (!auto_abort_timer.armed()) {
+        auto_abort_timer.arm(deadline);
+    }
+}
+
 void rm_stm::apply_fence(model::record_batch&& b) {
     const auto& hdr = b.header();
     auto bid = model::batch_identity::from(hdr);
@@ -1068,6 +1063,9 @@ ss::future<> rm_stm::apply(model::record_batch b) {
 
     compact_snapshot();
     _insync_offset = last_offset;
+    if (_is_autoabort_enabled && !_is_autoabort_active) {
+        abort_old_txes();
+    }
 }
 
 void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
@@ -1165,7 +1163,8 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
     }
 }
 
-ss::future<> rm_stm::load_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
+ss::future<>
+rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     vassert(
       hdr.version == tx_snapshot_version,
       "unsupported seq_snapshot_header version {}",
@@ -1269,10 +1268,10 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
     stm_snapshot_header header;
     header.version = tx_snapshot_version;
     header.snapshot_size = tx_ss_buf.size_bytes();
+    header.offset = _insync_offset;
 
     stm_snapshot stx_ss;
     stx_ss.header = header;
-    stx_ss.offset = _insync_offset;
     stx_ss.data = std::move(tx_ss_buf);
     co_return stx_ss;
 }

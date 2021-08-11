@@ -17,6 +17,7 @@
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/timestamp.h"
 #include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
@@ -33,7 +34,7 @@
 namespace cluster {
 
 struct tm_transaction {
-    static constexpr uint8_t version = 0;
+    static constexpr uint8_t version = 1;
 
     enum tx_status {
         ongoing,
@@ -42,6 +43,7 @@ struct tm_transaction {
         aborting, // abort is initiated by a client
         killed,   // abort is initiated by a timeout
         ready,
+        tombstone,
     };
 
     struct tx_partition {
@@ -72,6 +74,7 @@ struct tm_transaction {
     model::term_id etag;
     tx_status status;
     std::chrono::milliseconds timeout_ms;
+    ss::lowres_system_clock::time_point last_update_ts;
     std::vector<tx_partition> partitions;
     std::vector<tx_group> groups;
 
@@ -91,6 +94,7 @@ struct tm_snapshot {
  */
 class tm_stm final : public persisted_stm {
 public:
+    using clock_type = ss::lowres_system_clock;
     static constexpr const int8_t supported_version = 0;
 
     enum op_status {
@@ -119,9 +123,18 @@ public:
         return r;
     }
 
+    std::optional<tm_transaction> get_tx_by_id(kafka::transactional_id id) {
+        auto tx_it = _tx_table.find(id);
+        std::optional<tm_transaction> r;
+        if (tx_it != _tx_table.end()) {
+            r = tx_it->second;
+        }
+        return r;
+    }
+
     ss::future<bool> barrier();
 
-    ss::future<std::optional<tm_transaction>>
+    ss::future<checked<tm_transaction, tm_stm::op_status>>
       get_actual_tx(kafka::transactional_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       mark_tx_ready(kafka::transactional_id);
@@ -137,6 +150,9 @@ public:
       kafka::transactional_id,
       std::chrono::milliseconds,
       model::producer_identity);
+    ss::future<> expire_tx(kafka::transactional_id);
+
+    bool is_expired(const tm_transaction&);
 
     // before calling a tm_stm modifying operation a caller should
     // take get_tx_lock mutex
@@ -148,13 +164,14 @@ public:
         return lock_it->second;
     }
 
+    std::vector<kafka::transactional_id> get_expired_txs();
+
 private:
-    ss::future<> load_snapshot(stm_snapshot_header, iobuf&&) override;
+    ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_snapshot() override;
 
-    void expire_old_txs();
-
     std::chrono::milliseconds _sync_timeout;
+    std::chrono::milliseconds _transactional_id_expiration;
     model::violation_recovery_policy _recovery_policy;
     absl::flat_hash_map<kafka::transactional_id, tm_transaction> _tx_table;
     absl::flat_hash_map<model::producer_identity, kafka::transactional_id>
@@ -172,6 +189,77 @@ private:
           model::make_memory_record_batch_reader(std::move(batch)),
           raft::replicate_options{raft::consistency_level::quorum_ack});
     }
+};
+
+struct tm_transaction_v0 {
+    static constexpr uint8_t version = 0;
+
+    enum tx_status {
+        ongoing,
+        preparing,
+        prepared,
+        aborting,
+        killed,
+        ready,
+    };
+
+    struct tx_partition {
+        model::ntp ntp;
+        model::term_id etag;
+    };
+
+    struct tx_group {
+        kafka::group_id group_id;
+        model::term_id etag;
+    };
+
+    kafka::transactional_id id;
+    model::producer_identity pid;
+    model::tx_seq tx_seq;
+    model::term_id etag;
+    tx_status status;
+    std::chrono::milliseconds timeout_ms;
+    std::vector<tx_partition> partitions;
+    std::vector<tx_group> groups;
+
+    tm_transaction::tx_status upcast(tx_status status) {
+        switch (status) {
+        case tx_status::ongoing:
+            return tm_transaction::tx_status::ongoing;
+        case tx_status::preparing:
+            return tm_transaction::tx_status::preparing;
+        case tx_status::prepared:
+            return tm_transaction::tx_status::prepared;
+        case tx_status::aborting:
+            return tm_transaction::tx_status::aborting;
+        case tx_status::killed:
+            return tm_transaction::tx_status::killed;
+        case tx_status::ready:
+            return tm_transaction::tx_status::ready;
+        default:
+            vassert(false, "unknown status: {}", status);
+        }
+    };
+
+    tm_transaction upcast() {
+        tm_transaction result;
+        result.id = id;
+        result.pid = pid;
+        result.tx_seq = tx_seq;
+        result.etag = etag;
+        result.status = upcast(status);
+        result.timeout_ms = timeout_ms;
+        result.last_update_ts = tm_stm::clock_type::now();
+        for (auto& partition : partitions) {
+            result.partitions.push_back(tm_transaction::tx_partition{
+              .ntp = partition.ntp, .etag = partition.etag});
+        }
+        for (auto& group : groups) {
+            result.groups.push_back(tm_transaction::tx_group{
+              .group_id = group.group_id, .etag = group.etag});
+        }
+        return result;
+    };
 };
 
 } // namespace cluster

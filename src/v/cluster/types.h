@@ -64,7 +64,9 @@ enum class tx_errc {
     unknown_server_error,
     // an unspecified error happened, a client may assume it had zero effect on
     // the target node
-    request_rejected
+    request_rejected,
+    invalid_producer_id_mapping,
+    invalid_txn_state
 };
 struct tx_errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::tx_errc"; }

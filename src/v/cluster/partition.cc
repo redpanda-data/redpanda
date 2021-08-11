@@ -31,8 +31,12 @@ partition::partition(
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend)
   : _raft(r)
   , _probe(std::make_unique<replicated_partition_probe>(*this))
-  , _tx_gateway_frontend(tx_gateway_frontend) {
+  , _tx_gateway_frontend(tx_gateway_frontend)
+  , _is_tx_enabled(config::shard_local_cfg().enable_transactions.value())
+  , _is_idempotence_enabled(
+      config::shard_local_cfg().enable_idempotence.value()) {
     auto stm_manager = _raft->log().stm_manager();
+
     if (is_id_allocator_topic(_raft->ntp())) {
         _id_allocator_stm = ss::make_lw_shared<cluster::id_allocator_stm>(
           clusterlog, _raft.get(), config::shard_local_cfg());
@@ -41,17 +45,26 @@ partition::partition(
             _nop_stm = ss::make_lw_shared<raft::log_eviction_stm>(
               _raft.get(), clusterlog, stm_manager, _as);
         }
-        _tm_stm = ss::make_shared<cluster::tm_stm>(clusterlog, _raft.get());
-        stm_manager->add_stm(_tm_stm);
+
+        if (_is_tx_enabled) {
+            _tm_stm = ss::make_shared<cluster::tm_stm>(clusterlog, _raft.get());
+            stm_manager->add_stm(_tm_stm);
+        }
     } else {
         if (_raft->log_config().is_collectable()) {
             _nop_stm = ss::make_lw_shared<raft::log_eviction_stm>(
               _raft.get(), clusterlog, stm_manager, _as);
         }
 
-        auto has_rm_stm
-          = config::shard_local_cfg().enable_idempotence.value()
-            || config::shard_local_cfg().enable_transactions.value();
+        bool is_group_ntp = _raft->ntp().ns == model::kafka_internal_namespace
+                            && _raft->ntp().tp.topic
+                                 == model::kafka_group_topic;
+
+        bool has_rm_stm = !_raft->log_config().is_compacted()
+                          && (_is_tx_enabled || _is_idempotence_enabled)
+                          && model::controller_ntp != _raft->ntp()
+                          && !is_group_ntp;
+
         if (has_rm_stm) {
             _rm_stm = ss::make_shared<cluster::rm_stm>(
               clusterlog, _raft.get(), _tx_gateway_frontend);
@@ -77,10 +90,91 @@ ss::future<result<raft::replicate_result>> partition::replicate(
     return _raft->replicate(term, std::move(r), opts);
 }
 
+ss::shared_ptr<cluster::rm_stm> partition::rm_stm() {
+    if (!_rm_stm) {
+        if (!_is_tx_enabled && !_is_idempotence_enabled) {
+            vlog(
+              clusterlog.error,
+              "Can't process transactional and idempotent requests to {}. The "
+              "feature is disabled.",
+              _raft->ntp());
+        } else if (_raft->log_config().is_compacted()) {
+            vlog(
+              clusterlog.error,
+              "Can't process transactional and idempotent requests to {}. "
+              "Compacted topics are not supported.",
+              _raft->ntp());
+        } else {
+            vlog(
+              clusterlog.error,
+              "Topic {} doesn't support idempotency and transactional "
+              "processing.",
+              _raft->ntp());
+        }
+    }
+    return _rm_stm;
+}
+
 raft::replicate_stages partition::replicate_in_stages(
   model::batch_identity bid,
   model::record_batch_reader&& r,
   raft::replicate_options opts) {
+    if (bid.is_transactional) {
+        if (!_is_tx_enabled) {
+            vlog(
+              clusterlog.error,
+              "Can't process a transactional request to {}. Transactional "
+              "processing isn't enabled.",
+              _raft->ntp());
+            return raft::replicate_stages(raft::errc::timeout);
+        }
+
+        if (_raft->log_config().is_compacted()) {
+            vlog(
+              clusterlog.error,
+              "Can't process a transactional request to {}. Compacted topic "
+              "doesn't support transactional processing.",
+              _raft->ntp());
+            return raft::replicate_stages(raft::errc::timeout);
+        }
+
+        if (!_rm_stm) {
+            vlog(
+              clusterlog.error,
+              "Topic {} doesn't support transactional processing.",
+              _raft->ntp());
+            return raft::replicate_stages(raft::errc::timeout);
+        }
+    }
+
+    if (bid.has_idempotent()) {
+        if (!_is_idempotence_enabled) {
+            vlog(
+              clusterlog.error,
+              "Can't process an idempotent request to {}. Idempotency isn't "
+              "enabled.",
+              _raft->ntp());
+            return raft::replicate_stages(raft::errc::timeout);
+        }
+
+        if (_raft->log_config().is_compacted()) {
+            vlog(
+              clusterlog.error,
+              "Can't process an idempotent request to {}. Compacted topic "
+              "doesn't support idempotency.",
+              _raft->ntp());
+            return raft::replicate_stages(raft::errc::timeout);
+        }
+
+        if (!_rm_stm) {
+            vlog(
+              clusterlog.error,
+              "Topic {} doesn't support idempotency.",
+              _raft->ntp());
+            return raft::replicate_stages(raft::errc::timeout);
+        }
+    }
+
     if (bid.is_transactional || bid.has_idempotent()) {
         ss::promise<> p;
         auto f = p.get_future();
@@ -103,6 +197,68 @@ ss::future<result<raft::replicate_result>> partition::replicate(
   model::batch_identity bid,
   model::record_batch_reader&& r,
   raft::replicate_options opts) {
+    if (bid.is_transactional) {
+        if (!_is_tx_enabled) {
+            vlog(
+              clusterlog.error,
+              "Can't process a transactional request to {}. Transactional "
+              "processing isn't enabled.",
+              _raft->ntp());
+            return ss::make_ready_future<result<raft::replicate_result>>(
+              raft::errc::timeout);
+        }
+
+        if (_raft->log_config().is_compacted()) {
+            vlog(
+              clusterlog.error,
+              "Can't process a transactional request to {}. Compacted topic "
+              "doesn't support transactional processing.",
+              _raft->ntp());
+            return ss::make_ready_future<result<raft::replicate_result>>(
+              raft::errc::timeout);
+        }
+
+        if (!_rm_stm) {
+            vlog(
+              clusterlog.error,
+              "Topic {} doesn't support transactional processing.",
+              _raft->ntp());
+            return ss::make_ready_future<result<raft::replicate_result>>(
+              raft::errc::timeout);
+        }
+    }
+
+    if (bid.has_idempotent()) {
+        if (!_is_idempotence_enabled) {
+            vlog(
+              clusterlog.error,
+              "Can't process an idempotent request to {}. Idempotency isn't "
+              "enabled.",
+              _raft->ntp());
+            return ss::make_ready_future<result<raft::replicate_result>>(
+              raft::errc::timeout);
+        }
+
+        if (_raft->log_config().is_compacted()) {
+            vlog(
+              clusterlog.error,
+              "Can't process an idempotent request to {}. Compacted topic "
+              "doesn't support idempotency.",
+              _raft->ntp());
+            return ss::make_ready_future<result<raft::replicate_result>>(
+              raft::errc::timeout);
+        }
+
+        if (!_rm_stm) {
+            vlog(
+              clusterlog.error,
+              "Topic {} doesn't support idempotency.",
+              _raft->ntp());
+            return ss::make_ready_future<result<raft::replicate_result>>(
+              raft::errc::timeout);
+        }
+    }
+
     if (bid.is_transactional || bid.has_idempotent()) {
         return _rm_stm->replicate(bid, std::move(r), opts);
     } else {
