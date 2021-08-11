@@ -839,6 +839,12 @@ configuration::configuration()
       "Enable automatic leadership rebalancing",
       required::no,
       true)
+  , leader_balancer_idle_timeout(
+      *this,
+      "leader_balancer_idle_timeout",
+      "Leadership rebalancing idle timeout",
+      required::no,
+      2min)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",
