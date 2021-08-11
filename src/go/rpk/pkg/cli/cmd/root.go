@@ -27,7 +27,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
+	plugincmd "github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/plugin"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/plugin"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -81,6 +83,8 @@ func Execute() {
 	rootCmd.AddCommand(NewClusterCommand(fs, mgr))
 	rootCmd.AddCommand(NewACLCommand(fs, mgr))
 
+	rootCmd.AddCommand(plugincmd.NewCommand(fs))
+
 	addPlatformDependentCmds(fs, mgr, rootCmd)
 
 	// To support autocompletion even for plugins, we list all plugins now
@@ -100,9 +104,9 @@ func Execute() {
 	// is ensured by the return from listPlugins, but we can also ensure
 	// that here by only adding a plugin with exec if a command does not
 	// exist yet.
-	for _, plugin := range listPlugins(fs, filepath.SplitList(os.Getenv("PATH"))) {
-		if _, _, err := rootCmd.Find(plugin.pieces); err != nil {
-			addPluginWithExec(rootCmd, plugin.pieces, plugin.path)
+	for _, plugin := range plugin.ListPlugins(fs, plugin.UserPaths()) {
+		if _, _, err := rootCmd.Find(plugin.Arguments); err != nil {
+			addPluginWithExec(rootCmd, plugin.Arguments, plugin.Path)
 		}
 	}
 
@@ -174,11 +178,11 @@ func tryExecPlugin(h pluginHandler, args []string) (string, error) {
 	foundPath := ""
 	for len(pieces) > 0 {
 		joined := strings.Join(pieces, "_")
-		if path, ok := h.lookPath(pluginPrefix + joined); ok {
+		if path, ok := h.lookPath(plugin.NamePrefix + joined); ok {
 			foundPath = path
 			break
 		}
-		if path, ok := h.lookPath(pluginPrefixAutoComplete + joined); ok {
+		if path, ok := h.lookPath(plugin.NamePrefixAutoComplete + joined); ok {
 			foundPath = path
 			break
 		}
@@ -189,113 +193,6 @@ func tryExecPlugin(h pluginHandler, args []string) (string, error) {
 	}
 
 	return foundPath, h.exec(foundPath, args[len(pieces):])
-}
-
-const (
-	pluginPrefix             = "rpk-"    // does not support --help-autocomplete
-	pluginPrefixAutoComplete = "rpk.ac-" // supports --help-autocomplete
-)
-
-// A plugin is made up of the "pieces" that are used to call it, and the binary
-// path for the plugin on disk. Reversing the documentation on tryExecPlugin,
-// if a plugin filepath is /foo/bar/rpk.ac-baz-boz_biz, then the pieces will be
-// baz-boz biz.
-type plugin struct {
-	pieces []string
-	path   string
-}
-
-// listPlugins returns all plugins found in fs across the given search
-// directories.
-//
-// Unlike kubectl, we do not allow plugins to be tacked on paths within other
-// plugins. That is, we do not allow rpk_foo_bar to be an additional plugin on
-// top of rpk_foo.
-//
-// We do support plugins defining themselves as "rpk-foo_bar", even though that
-// reserves the "foo" plugin namespace.
-func listPlugins(fs afero.Fs, searchDirs []string) []plugin {
-	searchDirs = uniqueTrimmedStrs(searchDirs)
-
-	uniquePlugins := make(map[string]int) // plugin name (e.g., mm3 or cloud) => index into plugins
-	var plugins []plugin
-	for _, searchDir := range searchDirs {
-		infos, err := afero.ReadDir(fs, searchDir)
-		if err != nil {
-			log.Debugf("unable to read dir %s from PATH: %v", searchDir, err)
-			continue
-		}
-		for _, info := range infos {
-			if info.IsDir() {
-				continue
-			}
-
-			name := info.Name()
-			if !strings.HasPrefix(name, pluginPrefix) && !strings.HasPrefix(name, pluginPrefixAutoComplete) {
-				continue
-			}
-
-			fullPath := filepath.Join(searchDir, name)
-
-			if info.Mode()&0111 == 0 {
-				log.Debugf("matching plugin path %s is not executable, skipping", fullPath)
-				continue
-			}
-
-			// Reverse our args-to-plugin-binary logic to get the
-			// "pieces" that are used to call this plugin.
-			if strings.HasPrefix(name, pluginPrefix) {
-				name = strings.TrimPrefix(name, pluginPrefix)
-			} else {
-				name = strings.TrimPrefix(name, pluginPrefixAutoComplete)
-			}
-			if len(name) == 0 { // e.g., "rpk-"
-				log.Debugf("invalid empty plugin name at path %s", fullPath)
-				continue
-			}
-
-			pieces := toPieces(name)
-			pluginName := pieces[0]
-
-			if priorAt, exists := uniquePlugins[pluginName]; exists {
-				log.Debugf("skipping duplicate plugin %s at path %s, because it is previously overshadowed by path %s", pluginName, fullPath, plugins[priorAt].path)
-				continue
-			}
-
-			uniquePlugins[pluginName] = len(plugins)
-			plugins = append(plugins, plugin{
-				pieces: pieces,
-				path:   fullPath,
-			})
-
-		}
-	}
-
-	return plugins
-}
-
-// Converts a command name to its argument pieces.
-func toPieces(command string) []string {
-	return strings.Split(command, "_")
-}
-
-// Returns the unique strings in `in`, preserving order.
-//
-// Order preservation is important for search paths: a higher priority plugin
-// (path search wise) will shadow a lower priority one.
-func uniqueTrimmedStrs(in []string) []string {
-	seen := make(map[string]bool)
-	keep := in[:0]
-	for i := 0; i < len(in); i++ {
-		path := in[i]
-		path = strings.TrimSpace(path)
-		if seen[path] || len(path) == 0 {
-			continue
-		}
-		seen[path] = true
-		keep = append(keep, path)
-	}
-	return keep
 }
 
 // This recursive function recursively adds commands to parent commands,
@@ -338,26 +235,26 @@ func addPluginWithExec(
 	// If the exec command has the rpk.ac- prefix, then the plugin
 	// signifies that it supports --help-autocomplete, and we can exec it
 	// quickly to get useful fields for the command.
-	if !strings.HasPrefix(filepath.Base(execPath), pluginPrefixAutoComplete) {
+	if !strings.HasPrefix(filepath.Base(execPath), plugin.NamePrefixAutoComplete) {
 		return
 	}
 
 	out, err := (&exec.Cmd{
 		Path: execPath,
-		Args: append([]string{execPath, flagHelpAutocomplete}),
+		Args: append([]string{execPath, plugin.FlagAutoComplete}),
 		Env:  os.Environ(),
 	}).Output()
 	if err != nil {
-		log.Debugf("unable to run %s: %v", flagHelpAutocomplete, err)
+		log.Debugf("unable to run %s: %v", plugin.FlagAutoComplete, err)
 		return
 	}
 	var helps []pluginHelp
 	if err = json.Unmarshal(out, &helps); err != nil {
-		log.Debugf("unable to parse %s return: %v", flagHelpAutocomplete, err)
+		log.Debugf("unable to parse %s return: %v", plugin.FlagAutoComplete, err)
 		return
 	}
 	if len(helps) == 0 {
-		log.Debugf("plugin that supports %s did not return any help", flagHelpAutocomplete)
+		log.Debugf("plugin that supports %s did not return any help", plugin.FlagAutoComplete)
 		return
 	}
 
@@ -376,8 +273,6 @@ var (
 	rePluginString = "^[A-Za-z0-9_-]+$"
 	rePlugin       = regexp.MustCompile(rePluginString)
 )
-
-const flagHelpAutocomplete = "--help-autocomplete"
 
 // If a plugin supports --help-autocomplete, we exec it and add its commands to
 // rpk itself. This allows autocompletion to work across plugins.
@@ -422,7 +317,7 @@ func addPluginHelp(
 	for path, help := range uniques {
 		trackHelp(
 			&subcommands,
-			toPieces(path),
+			plugin.NameToArgs(path), // path here is the argument path (foo_bar_baz)
 			help,
 		)
 	}

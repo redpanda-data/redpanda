@@ -39,7 +39,7 @@ require (
 	github.com/prometheus/common v0.9.1
 	github.com/safchain/ethtool v0.0.0-20190326074333-42ed695e3de8
 	github.com/sirupsen/logrus v1.4.2
-	github.com/spf13/afero v1.2.2
+	github.com/spf13/afero v1.6.0
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.7.0
@@ -49,8 +49,7 @@ require (
 	golang.org/x/crypto v0.0.0-20210220033148-5ea612d1eb83
 	golang.org/x/mod v0.4.1 // indirect
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
-	golang.org/x/sys v0.0.0-20210806184541-e5e7981a1069
-	golang.org/x/term v0.0.0-20210615171337-6886f2dfbf5b // indirect
+	golang.org/x/sys v0.0.0-20210112091331-59c308dcf3cc
 	golang.org/x/text v0.3.6 // indirect
 	golang.org/x/tools v0.0.0-20210114065538-d78b04bdf963 // indirect
 	gopkg.in/yaml.v2 v2.4.0

@@ -53,6 +53,23 @@ tasks:
     status:
     - test -f '{{.GO_BUILD_ROOT}}/bin/go'
 
+  install-crlfmt:
+    desc: install crlfmt go formater
+    summary: |
+      Install crlfmt go formater tool in the build directory ($BUILD_ROOT/bin/go),
+      only if it does not exist on the host already. Checking whether is
+      available on the host is done so that this task can also run in
+      containerized environments.
+    cmds:
+    - |
+      TMP_DIR=$(mktemp -d)
+      cd $TMP_DIR
+      go mod init tmp
+      GOBIN={{ .BUILD_ROOT }}/bin/go go install github.com/cockroachdb/crlfmt@latest
+      rm -rf $TMP_DIR
+    status:
+    - "[ -f '{{ .BUILD_ROOT }}/bin/go' ] || command -v {{ .BUILD_ROOT }}/bin/go/crlfmt >/dev/null 2>&1"
+
   install-kubectl:
     desc: install kubectl
     vars:

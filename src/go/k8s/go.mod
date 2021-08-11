@@ -10,7 +10,7 @@ require (
 	github.com/onsi/ginkgo v1.14.1
 	github.com/onsi/gomega v1.10.2
 	github.com/prometheus/client_golang v1.10.0
-	github.com/spf13/afero v1.2.2
+	github.com/spf13/afero v1.6.0
 	github.com/stretchr/testify v1.7.0
 	github.com/vectorizedio/redpanda/src/go/rpk v0.0.0-00010101000000-000000000000
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
