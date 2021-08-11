@@ -61,6 +61,28 @@ data_segment_staging_name(const ss::lw_shared_ptr<segment>& s) {
       fmt::format("{}.staging", s->reader().filename()));
 }
 
+/// Check if the file is on BTRFS, and disable copy-on-write if so.  COW
+/// is not useful for logs and can cause issues.
+static ss::future<>
+maybe_disable_cow(const std::filesystem::path& path, ss::file& file) {
+    if (co_await ss::file_system_at(path.string()) == ss::fs_type::btrfs) {
+        try {
+            int flags = -1;
+            // ss::syscall_result throws on errors, so not checking returns.
+            co_await file.ioctl(FS_IOC_GETFLAGS, (void*)&flags);
+            if ((flags & FS_NOCOW_FL) == 0) {
+                flags |= FS_NOCOW_FL;
+                co_await file.ioctl(FS_IOC_SETFLAGS, (void*)&flags);
+                vlog(stlog.trace, "Disabled COW on BTRFS segment {}", path);
+            }
+        } catch (std::system_error& e) {
+            // Non-fatal, user will just get degraded behaviour
+            // when btrfs tries to COW on a journal.
+            vlog(stlog.info, "Error disabling COW on {}: {}", path, e);
+        }
+    }
+}
+
 static inline ss::file wrap_handle(ss::file f, debug_sanitize_files debug) {
     if (debug) {
         return ss::file(ss::make_shared(file_io_sanitizer(std::move(f))));
