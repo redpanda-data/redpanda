@@ -24,8 +24,7 @@ These APIs support connections from any Kafka-compatible client.
 
 ## Producer API
 
-The Producer API allows applications to send streams of data to topics in the Kafka cluster.
-Examples showing how to use the producer are given in the javadocs.
+With the Producer API you can send streams of data to topics in the Redpanda cluster.
 
 To use the producer, you can use the following maven dependency:
 
@@ -38,8 +37,6 @@ To use the producer, you can use the following maven dependency:
 ## Consumer API
 
 The Consumer API allows applications to read streams of data from topics in the Kafka cluster.
-Examples showing how to use the consumer are given in the javadocs.
-
 To use the consumer, you can use the following maven dependency:
 
 		<dependency>
@@ -47,12 +44,10 @@ To use the consumer, you can use the following maven dependency:
 			<artifactId>kafka-clients</artifactId>
 			<version>2.8.0</version>
 		</dependency>
-#### Streams API
+
+## Streams API
+
 The Streams API allows transforming streams of data from input topics to output topics.
-Examples showing how to use this library are given in the javadocs
-
-Additional documentation on using the Streams API is available here.
-
 To use Kafka Streams you can use the following maven dependency:
 
 		<dependency>
@@ -60,6 +55,7 @@ To use Kafka Streams you can use the following maven dependency:
 			<artifactId>kafka-streams</artifactId>
 			<version>2.8.0</version>
 		</dependency>
+
 When using Scala you may optionally include the kafka-streams-scala library. Additional documentation on using the Kafka Streams DSL for Scala is available in the developer guide.
 
 To use Kafka Streams DSL for Scala for Scala 2.13 you can use the following maven dependency:
@@ -69,6 +65,7 @@ To use Kafka Streams DSL for Scala for Scala 2.13 you can use the following mave
 			<artifactId>kafka-streams-scala_2.13</artifactId>
 			<version>2.8.0</version>
 		</dependency>
+
 #### Connect API
 The Connect API allows implementing connectors that continually pull from some source data system into Kafka or push from Kafka into some sink data system.
 Many users of Connect won't need to use this API directly, though, they can use pre-built connectors without needing to write any code. Additional information on using Connect is available here.
@@ -77,34 +74,6 @@ Those who want to implement custom connectors can see the javadoc.
 
 #### Admin API
 The Admin API supports managing and inspecting topics, brokers, acls, and other Kafka objects.
-To use the Admin API, add the following Maven dependency:
-
-		<dependency>
-			<groupId>org.apache.kafka</groupId>
-			<artifactId>kafka-clients</artifactId>
-			<version>2.8.0</version>
-		</dependency>
-For more information about the Admin APIs, see the javadoc.
-
-## Configuration
-
-## Design
-
-## Implementation
-
-## Operations
-
-Here is some information on actually running Kafka as a production
-system based on usage and experience at LinkedIn. Please send us any
-additional tips you know of.
-
-### Basic Kafka Operations
-
-This section will review the most common operations you will perform on
-your Kafka cluster. All of the tools reviewed in this section are
-available under the `bin/` directory of the Kafka distribution and each
-tool will print details on all possible commandline options if it is run
-with no arguments.
 
 #### Adding and removing topics
 
@@ -151,8 +120,7 @@ be retained. The complete set of per-topic configurations is documented
 
 #### Modifying topics
 
-You can change the configuration or partitioning of a topic using the
-same topic tool.
+You can change the configuration or partitioning of a topic using the same topic tool.
 
 To add partitions you can do
 
@@ -192,38 +160,13 @@ topic.
 Instructions for changing the replication factor of a topic can be found
 [here](#basic_ops_increase_replication_factor).
 
-<!-- 
-#### Rack Awareness [Simplify, Q2]
+## Configuration
 
-The rack awareness feature spreads replicas of the same partition across
-different racks. This extends the guarantees Kafka provides for
-broker-failure to cover rack-failure, limiting the risk of data loss
-should all the brokers on a rack fail at once. The feature can also be
-applied to other broker groupings such as availability zones in EC2.
+## Design
 
-You can specify that a broker belongs to a particular rack by adding a
-property to the broker config:
+## Implementation
 
-``` language-text
-  broker.rack=my-rack-id
-```
 
-When a topic is [created](#basic_ops_add_topic),
-[modified](#basic_ops_modify_topic) or replicas are
-[redistributed](#basic_ops_cluster_expansion), the rack constraint will
-be honoured, ensuring replicas span as many racks as they can (a
-partition will span min(\#racks, replication-factor) different racks).
-
-The algorithm used to assign replicas to brokers ensures that the number
-of leaders per broker will be constant, regardless of how brokers are
-distributed across racks. This ensures balanced throughput.
-
-However if racks are assigned different numbers of brokers, the
-assignment of replicas will not be even. Racks with fewer brokers will
-get more replicas, meaning they will use more storage and put more
-resources into replication. Hence it is sensible to configure an equal
-number of brokers per rack.
--->
 
 #### Mirroring data between clusters & Geo-replication
 
