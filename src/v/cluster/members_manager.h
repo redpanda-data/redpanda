@@ -73,7 +73,9 @@ public:
       handle_configuration_update_request(configuration_update_request);
 
     bool is_batch_applicable(const model::record_batch& b) {
-        return b.header().type == model::record_batch_type::node_management_cmd;
+        return b.header().type == model::record_batch_type::node_management_cmd
+               || b.header().type
+                    == model::record_batch_type::raft_configuration;
     }
     /**
      * This API is backed by the seastar::queue. It can not be called
@@ -101,8 +103,6 @@ private:
       handle_raft0_cfg_update(raft::group_configuration, model::offset);
     ss::future<> update_connections(patch<broker_ptr>);
 
-    ss::future<> start_config_changes_watcher();
-
     ss::future<> maybe_update_current_node_configuration();
     ss::future<> dispatch_configuration_update(model::broker);
     ss::future<result<configuration_update_reply>>
@@ -110,6 +110,9 @@ private:
 
     template<typename Cmd>
     ss::future<std::error_code> dispatch_updates_to_cores(Cmd);
+
+    ss::future<std::error_code>
+      apply_raft_configuration_batch(model::record_batch);
 
     model::offset _last_seen_configuration_offset;
     std::vector<config::seed_server> _seed_servers;
