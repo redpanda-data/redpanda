@@ -169,4 +169,7 @@ auto do_with_client_one_shot(
 bool has_local_replicas(
   model::node_id, const std::vector<model::broker_shard>&);
 
+bool are_replica_sets_equal(
+  const std::vector<model::broker_shard>&,
+  const std::vector<model::broker_shard>&);
 } // namespace cluster
