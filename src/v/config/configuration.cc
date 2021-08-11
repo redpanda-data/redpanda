@@ -833,6 +833,12 @@ configuration::configuration()
       "Enable automatic partition rebalancing when new nodes are added",
       required::no,
       false)
+  , enable_leader_balancer(
+      *this,
+      "enable_leader_balancer",
+      "Enable automatic leadership rebalancing",
+      required::no,
+      true)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",
