@@ -137,7 +137,7 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
     if (tp == _topics.end()) {
         return ss::make_ready_future<std::error_code>(errc::topic_not_exists);
     }
-    _update_in_progress.erase(cmd.key);
+
     // calculate deleta for backend
     auto current_assignment_it = std::find_if(
       tp->second.configuration.assignments.begin(),
@@ -150,6 +150,14 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
         return ss::make_ready_future<std::error_code>(
           errc::partition_not_exists);
     }
+
+    if (current_assignment_it->replicas != cmd.value) {
+        return ss::make_ready_future<std::error_code>(
+          errc::invalid_node_opeartion);
+    }
+
+    _update_in_progress.erase(cmd.key);
+
     partition_assignment delta_assignment{
       .group = current_assignment_it->group,
       .id = current_assignment_it->id,
