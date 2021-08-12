@@ -204,6 +204,7 @@ struct configuration final : public config_store {
 
     property<bool> enable_leader_balancer;
     property<std::chrono::milliseconds> leader_balancer_idle_timeout;
+    property<std::chrono::milliseconds> leader_balancer_mute_timeout;
 
     configuration();
 

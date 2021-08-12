@@ -845,6 +845,12 @@ configuration::configuration()
       "Leadership rebalancing idle timeout",
       required::no,
       2min)
+  , leader_balancer_mute_timeout(
+      *this,
+      "leader_balancer_mute_timeout",
+      "Leadership rebalancing mute timeout",
+      required::no,
+      5min)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",

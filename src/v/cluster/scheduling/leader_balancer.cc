@@ -44,8 +44,10 @@ leader_balancer::leader_balancer(
   ss::sharded<raft::group_manager>& group_manager,
   ss::sharded<ss::abort_source>& as,
   std::chrono::milliseconds idle_timeout,
+  std::chrono::milliseconds mute_timeout,
   consensus_ptr raft0)
   : _idle_timeout(idle_timeout)
+  , _mute_timeout(mute_timeout)
   , _topics(topics)
   , _leaders(leaders)
   , _client(std::move(client))
@@ -251,7 +253,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
          */
         _probe.leader_transfer_error();
         co_await ss::sleep_abortable(5s, _as.local());
-        _muted.try_emplace(transfer->group, clock_type::now() + mute_timeout);
+        _muted.try_emplace(transfer->group, clock_type::now() + _mute_timeout);
         co_return ss::stop_iteration::no;
     }
 
@@ -286,7 +288,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
           "Leadership balancer muting group {} not found in topics table",
           transfer->group);
         co_await ss::sleep_abortable(5s, _as.local());
-        _muted.try_emplace(transfer->group, clock_type::now() + mute_timeout);
+        _muted.try_emplace(transfer->group, clock_type::now() + _mute_timeout);
         co_return ss::stop_iteration::no;
     }
 
@@ -339,7 +341,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
      * thrashing (we'll still mute the group), but also because we may have
      * simply been racing with organic leadership movement.
      */
-    _muted.try_emplace(transfer->group, clock_type::now() + mute_timeout);
+    _muted.try_emplace(transfer->group, clock_type::now() + _mute_timeout);
     co_return ss::stop_iteration::no;
 }
 
@@ -442,7 +444,7 @@ leader_balancer::index_type leader_balancer::build_index() {
                     _last_leader.insert_or_assign(
                       partition.group,
                       last_known_leader{
-                        *leader_core, clock_type::now() + mute_timeout});
+                        *leader_core, clock_type::now() + _mute_timeout});
                 } else {
                     vlog(
                       clusterlog.info,
