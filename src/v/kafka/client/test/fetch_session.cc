@@ -153,6 +153,7 @@ SEASTAR_THREAD_TEST_CASE(test_fetch_session_make_offset_commit_request_all) {
     BOOST_REQUIRE_EQUAL(req[0].partitions.size(), 1);
     const auto partition = req[0].partitions[0];
     BOOST_REQUIRE_EQUAL(partition.partition_index, ctx.tp.partition);
-    BOOST_REQUIRE_EQUAL(partition.committed_leader_epoch, ctx.expected_epoch);
+    BOOST_REQUIRE_EQUAL(
+      partition.committed_leader_epoch, kafka::invalid_leader_epoch);
     BOOST_REQUIRE_EQUAL(partition.committed_offset, ctx.expected_offset - 1);
 }

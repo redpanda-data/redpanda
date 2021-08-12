@@ -68,6 +68,7 @@ path_type_map = {
             "Partitions": {
                 "PartitionIndex": ("model::partition_id", "int32"),
                 "CommittedOffset": ("model::offset", "int64"),
+                "CommittedLeaderEpoch": ("kafka::leader_epoch", "int32"),
             },
         }
     },
@@ -76,6 +77,7 @@ path_type_map = {
             "Partitions": {
                 "PartitionIndex": ("model::partition_id", "int32"),
                 "CommittedOffset": ("model::offset", "int64"),
+                "CommittedLeaderEpoch": ("kafka::leader_epoch", "int32"),
             },
         },
         "MemberId": ("kafka::member_id", "string"),
@@ -97,6 +99,7 @@ path_type_map = {
             "Partitions": {
                 "PartitionIndex": ("model::partition_id", "int32"),
                 "CommittedOffset": ("model::offset", "int64"),
+                "CommittedLeaderEpoch": ("kafka::leader_epoch", "int32"),
             },
         }
     },
@@ -163,6 +166,7 @@ path_type_map = {
             "Partitions": {
                 "PartitionIndex": ("model::partition_id", "int32"),
                 "Timestamp": ("model::timestamp", "int64"),
+                "CurrentLeaderEpoch": ("kafka::leader_epoch", "int32"),
             },
         },
     },
@@ -172,6 +176,7 @@ path_type_map = {
                 "PartitionIndex": ("model::partition_id", "int32"),
                 "Timestamp": ("model::timestamp", "int64"),
                 "Offset": ("model::offset", "int64"),
+                "LeaderEpoch": ("kafka::leader_epoch", "int32"),
             },
         },
     },
@@ -221,6 +226,7 @@ path_type_map = {
             "Partitions": {
                 "PartitionIndex": ("model::partition_id", "int32"),
                 "IsrNodes": ("model::node_id", "int32"),
+                "LeaderEpoch": ("kafka::leader_epoch", "int32"),
             },
         },
     },
@@ -231,6 +237,7 @@ path_type_map = {
             "FetchPartitions": {
                 "PartitionIndex": ("model::partition_id", "int32"),
                 "FetchOffset": ("model::offset", "int64"),
+                "CurrentLeaderEpoch": ("kafka::leader_epoch", "int32"),
             },
         },
     },
