@@ -62,13 +62,6 @@ class leader_balancer {
      */
     static constexpr clock_type::duration leader_transfer_rpc_timeout = 30s;
 
-    /*
-     * timeout used to mute groups. groups are muted in various scenarios such
-     * as if they experience errors being moved, but also if they are moved
-     * successfully so that we do not pertrub them too much on accident.
-     */
-    static constexpr clock_type::duration mute_timeout = 5min;
-
 public:
     leader_balancer(
       topic_table&,
@@ -78,6 +71,7 @@ public:
       ss::sharded<partition_manager>&,
       ss::sharded<raft::group_manager>&,
       ss::sharded<ss::abort_source>&,
+      std::chrono::milliseconds,
       std::chrono::milliseconds,
       consensus_ptr);
 
@@ -119,6 +113,14 @@ private:
      *   timeout to something larger like 5 minutes.
      */
     clock_type::duration _idle_timeout;
+
+    /*
+     * timeout used to mute groups. groups are muted in various scenarios such
+     * as if they experience errors being moved, but also if they are moved
+     * successfully so that we do not pertrub them too much on accident.
+     */
+    clock_type::duration _mute_timeout;
+
 
     struct last_known_leader {
         model::broker_shard shard;
