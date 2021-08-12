@@ -15,7 +15,7 @@
 
 namespace raft {
 
-enum class errc {
+enum class errc : int16_t {
     success = 0, // must be 0
     disconnected_endpoint,
     exponential_backoff,
