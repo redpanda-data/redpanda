@@ -341,10 +341,7 @@ consumer::offset_commit(std::vector<offset_commit_request_topic> topics) {
     } else { // set epoch for requests tps
         for (auto& t : topics) {
             for (auto& p : t.partitions) {
-                auto tp = model::topic_partition{t.name, p.partition_index};
-                auto leader = co_await _topic_cache.leader(tp);
-                auto broker = co_await _brokers.find(leader);
-                p.committed_leader_epoch = _fetch_sessions[broker].epoch();
+                p.committed_leader_epoch = kafka::invalid_leader_epoch;
             }
         }
     }
