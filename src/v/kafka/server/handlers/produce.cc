@@ -125,6 +125,7 @@ static error_code map_produce_error_code(std::error_code ec) {
     if (ec.category() == raft::error_category()) {
         switch (static_cast<raft::errc>(ec.value())) {
         case raft::errc::not_leader:
+        case raft::errc::replicated_entry_truncated:
             return error_code::not_leader_for_partition;
         default:
             return error_code::unknown_server_error;
