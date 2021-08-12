@@ -61,6 +61,12 @@ public:
         set_configuration("disable_metrics", true);
     }
 
+    void remove_node(int id) {
+        auto nid = model::node_id(id);
+        remove_node_application(nid);
+        apps.erase(nid);
+    }
+
     cluster::topic_configuration create_topic_cfg(
       ss::sstring topic, int partitions, int replication_factor) {
         model::topic_namespace tp_ns(
@@ -227,6 +233,16 @@ public:
               std::find(ids.begin(), ids.end(), id) == ids.end());
         });
     }
+
+    ss::future<bool> is_node_under_replicated(
+      model::node_id query_node, model::node_id target_node) {
+        return get_node_application(query_node)
+          ->controller->get_members_frontend()
+          .local()
+          .get_under_replicated(target_node)
+          .then([](auto res) { return res.under_replicated; });
+    }
+
     ss::logger test_logger;
     absl::node_hash_map<model::node_id, application*> apps;
 };
