@@ -5,6 +5,7 @@ vars:
   GO_BUILD_ROOT: '{{.BUILD_ROOT}}/go/{{.GO_VERSION}}'
   KUBECTL_VERSION: '1.21.0'
   GOLANGCI_LINT_VERSION: '1.40.1'
+  HELM_VERSION: '3.6.3'
 
 tasks:
   install-deps:
@@ -81,6 +82,17 @@ tasks:
     - chmod +x '{{.BUILD_ROOT}}/bin/kubectl'
     status:
     - test -f '{{.BUILD_ROOT}}/bin/kubectl'
+
+  install-helm:
+    desc: install helm
+    vars:
+      HELM_URL_DEFAULT: 'https://get.helm.sh/helm-v{{.HELM_VERSION}}-linux-{{ARCH}}.tar.gz'
+      HELM_URL: '{{default .HELM_URL_DEFAULT .HELM_URL}}'
+    cmds:
+    - mkdir -p '{{.BUILD_ROOT}}/bin'
+    - curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 '{{.HELM_URL}}' | tar -xz -C '{{.BUILD_ROOT}}/bin' --strip 1 --wildcards '*/helm'
+    status:
+    - test -f '{{.BUILD_ROOT}}/bin/helm'
 
   install-golangci-lint:
     desc: install golangci-lint
