@@ -54,6 +54,11 @@ inline void outcome_throw_as_system_error_with_payload(const error_info& ei) {
 template<typename T>
 using result = result<T, error_info>;
 
+inline error_info schema_not_found() {
+    return error_info{
+      error_code::schema_id_not_found, fmt::format("Schema not found")};
+}
+
 inline error_info not_found(schema_id id) {
     return error_info{
       error_code::schema_id_not_found,
@@ -113,6 +118,12 @@ inline error_info invalid_schema_type(schema_type type) {
     return {
       error_code::schema_invalid,
       fmt::format("Invalid schema type {}", to_string_view(type))};
+}
+
+inline error_info invalid_subject_schema(const subject& sub) {
+    return {
+      error_code::subject_schema_invalid,
+      fmt::format("Error while looking up schema under subject {}", sub())};
 }
 
 } // namespace pandaproxy::schema_registry
