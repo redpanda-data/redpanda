@@ -12,6 +12,7 @@ tasks:
     dir: 'src/go/k8s'
     deps:
     - task: :dev:install-go
+    - task: :dev:install-helm
     - task: :dev:install-kubectl
     cmds:
     - |
