@@ -167,6 +167,17 @@ class SchemaRegistryTest(RedpandaTest):
                              f"subjects{'?deleted=true' if deleted else ''}",
                              headers=headers)
 
+    def _post_subjects_subject(self,
+                               subject,
+                               data,
+                               headers=HTTP_POST_HEADERS,
+                               **kwargs):
+        return self._request("POST",
+                             f"subjects/{subject}",
+                             headers=headers,
+                             data=data,
+                             **kwargs)
+
     def _post_subjects_subject_versions(self,
                                         subject,
                                         data,
@@ -360,6 +371,84 @@ class SchemaRegistryTest(RedpandaTest):
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
         # assert result["schema"] == json.dumps(schema_def)
+
+    @cluster(num_nodes=3)
+    def test_post_subjects_subject(self):
+        """
+        Verify posting a schema
+        """
+
+        topic = create_topic_names(1)[0]
+        subject = f"{topic}-key"
+
+        self.logger.info(
+            "Posting against non-existant subject should be 40401")
+        result_raw = self._post_subjects_subject(subject=subject,
+                                                 data=json.dumps(
+                                                     {"schema": schema1_def}))
+        self.logger.info(result_raw)
+        self.logger.info(result_raw.content)
+        assert result_raw.status_code == requests.codes.not_found
+        result = result_raw.json()
+        assert result["error_code"] == 40401
+        assert result["message"] == f"Subject '{subject}' not found."
+
+        self.logger.info(
+            "Posting invalid schema to non-existant subject should be 40401")
+        result_raw = self._post_subjects_subject(subject=subject,
+                                                 data=json.dumps(
+                                                     {"schema": invalid_avro}))
+        self.logger.info(result_raw)
+        self.logger.info(result_raw.content)
+        assert result_raw.status_code == requests.codes.not_found
+        result = result_raw.json()
+        assert result["error_code"] == 40401
+        assert result["message"] == f"Subject '{subject}' not found."
+
+        self.logger.info("Posting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=subject, data=json.dumps({"schema": schema1_def}))
+        self.logger.info(result_raw)
+        self.logger.info(result_raw.content)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == 1
+
+        self.logger.info(
+            "Posting invalid schema to existing subject should be 500")
+        result_raw = self._post_subjects_subject(subject=subject,
+                                                 data=json.dumps(
+                                                     {"schema": invalid_avro}))
+        self.logger.info(result_raw)
+        self.logger.info(result_raw.content)
+        assert result_raw.status_code == requests.codes.internal_server_error
+        result = result_raw.json()
+        assert result["error_code"] == 500
+        assert result[
+            "message"] == f"Error while looking up schema under subject {subject}"
+
+        self.logger.info("Posting existing schema should be success")
+        result_raw = self._post_subjects_subject(subject=subject,
+                                                 data=json.dumps(
+                                                     {"schema": schema1_def}))
+        self.logger.info(result_raw)
+        self.logger.info(result_raw.content)
+        assert result_raw.status_code == requests.codes.ok
+        result = result_raw.json()
+        assert result["subject"] == subject
+        assert result["id"] == 1
+        assert result["version"] == 1
+        assert result["schema"]
+
+        self.logger.info("Posting new schema should be 40403")
+        result_raw = self._post_subjects_subject(subject=subject,
+                                                 data=json.dumps(
+                                                     {"schema": schema3_def}))
+        self.logger.info(result_raw)
+        self.logger.info(result_raw.content)
+        assert result_raw.status_code == requests.codes.not_found
+        result = result_raw.json()
+        assert result["error_code"] == 40403
+        assert result["message"] == f"Schema not found"
 
     @cluster(num_nodes=3)
     def test_config(self):
