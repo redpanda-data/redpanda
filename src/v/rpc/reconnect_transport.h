@@ -44,6 +44,8 @@ public:
         return _transport.server_address();
     }
 
+    void reset_backoff() { _backoff_policy.reset(); }
+
     ss::future<> stop();
 
 private:
