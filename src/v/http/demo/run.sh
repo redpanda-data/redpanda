@@ -17,17 +17,31 @@ echo "Starting web server..."
 sleep 3
 
 demo_client_bin=
-if [[ -f "./build/release/gcc/bin/http_demo_client" ]]; then
-  demo_client_bin="./build/release/gcc/bin/http_demo_client"
+if [[ -f "./vbuild/release/gcc/bin/http_demo_client" ]]; then
+  demo_client_bin="./vbuild/release/gcc/bin/http_demo_client"
 fi
-if [[ -f "./build/release/clang/bin/http_demo_client" ]]; then
-  demo_client_bin=${demo_client_bin:-"./build/release/clang/bin/http_demo_client"}
+if [[ -f "./vbuild/release/clang/bin/http_demo_client" ]]; then
+  demo_client_bin=${demo_client_bin:-"./vbuild/release/clang/bin/http_demo_client"}
 fi
-if [[ -f "./build/debug/gcc/bin/http_demo_client" ]]; then
-  demo_client_bin=${demo_client_bin:-"./build/debug/gcc/bin/http_demo_client"}
+if [[ -f "./vbuild/debug/gcc/bin/http_demo_client" ]]; then
+  demo_client_bin=${demo_client_bin:-"./vbuild/debug/gcc/bin/http_demo_client"}
 fi
-if [[ -f "./build/debug/clang/bin/http_demo_client" ]]; then
-  demo_client_bin=${demo_client_bin:-"./build/debug/clang/bin/http_demo_client"}
+if [[ -f "./vbuild/debug/clang/bin/http_demo_client" ]]; then
+  demo_client_bin=${demo_client_bin:-"./vbuild/debug/clang/bin/http_demo_client"}
+fi
+
+# ./vbuild is a build path used by vtools
+if [[ -f "./vbuild/release/gcc/bin/http_demo_client" ]]; then
+  demo_client_bin="./vbuild/release/gcc/bin/http_demo_client"
+fi
+if [[ -f "./vbuild/release/clang/bin/http_demo_client" ]]; then
+  demo_client_bin=${demo_client_bin:-"./vbuild/release/clang/bin/http_demo_client"}
+fi
+if [[ -f "./vbuild/debug/gcc/bin/http_demo_client" ]]; then
+  demo_client_bin=${demo_client_bin:-"./vbuild/debug/gcc/bin/http_demo_client"}
+fi
+if [[ -f "./vbuild/debug/clang/bin/http_demo_client" ]]; then
+  demo_client_bin=${demo_client_bin:-"./vbuild/debug/clang/bin/http_demo_client"}
 fi
 
 ${demo_client_bin} --port=8080 --target=/echo --method=POST --data="Hello World"

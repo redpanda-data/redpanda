@@ -12,6 +12,7 @@ package kafka
 import (
 	"crypto/tls"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -192,7 +193,8 @@ func ConfigureSASL(
 	saramaConf.Net.SASL.Handshake = true
 	saramaConf.Net.SASL.User = sasl.User
 	saramaConf.Net.SASL.Password = sasl.Password
-	switch sasl.Mechanism {
+
+	switch strings.ToUpper(sasl.Mechanism) {
 	case sarama.SASLTypeSCRAMSHA256:
 		saramaConf.Net.SASL.SCRAMClientGeneratorFunc =
 			func() sarama.SCRAMClient {

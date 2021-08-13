@@ -148,11 +148,31 @@ func TestConfigureSASL(t *testing.T) {
 			require.Equal(st, sarama.SASLTypeSCRAMSHA256, string(cfg.Net.SASL.Mechanism))
 		},
 	}, {
+		name: "it should set the appropriate mechanism for SCRAM-SHA-256 (lowercase)",
+		sasl: &config.SASL{
+			User:      "user1",
+			Password:  "pass",
+			Mechanism: "scram-sha-256",
+		},
+		check: func(st *testing.T, cfg *sarama.Config) {
+			require.Equal(st, sarama.SASLTypeSCRAMSHA256, string(cfg.Net.SASL.Mechanism))
+		},
+	}, {
 		name: "it should set the appropriate mechanism for SCRAM-SHA-512",
 		sasl: &config.SASL{
 			User:      "user1",
 			Password:  "pass",
 			Mechanism: "SCRAM-SHA-512",
+		},
+		check: func(st *testing.T, cfg *sarama.Config) {
+			require.Equal(st, sarama.SASLTypeSCRAMSHA512, string(cfg.Net.SASL.Mechanism))
+		},
+	}, {
+		name: "it should set the appropriate mechanism for SCRAM-SHA-512 (lowercase)",
+		sasl: &config.SASL{
+			User:      "user1",
+			Password:  "pass",
+			Mechanism: "scram-sha-512",
 		},
 		check: func(st *testing.T, cfg *sarama.Config) {
 			require.Equal(st, sarama.SASLTypeSCRAMSHA512, string(cfg.Net.SASL.Mechanism))
