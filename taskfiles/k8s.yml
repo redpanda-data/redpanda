@@ -29,3 +29,12 @@ tasks:
     - |
       PATH="{{.BUILD_ROOT}}/bin:{{.GO_BUILD_ROOT}}/bin:$PATH"
       golangci-lint run --timeout 8m
+
+  run-ct-lint:
+    desc: run ct lint test
+    summary: |
+      NOTE: assumes ct is installed already
+    dir: 'src/go/k8s/helm-chart/charts'
+    cmds:
+    - helm repo add prom https://prometheus-community.github.io/helm-charts
+    - ct lint --debug --config ci/ct.yaml
