@@ -106,6 +106,7 @@ e2e-tests: kuttl test docker-build docker-build-configurator
 
 # Execute end to end tests using helm as an installation
 helm-e2e-tests: kuttl test docker-build docker-build-configurator
+	helm repo add prom https://prometheus-community.github.io/helm-charts
 	$(KUTTL) test --config kuttl-helm-test.yaml $(TEST_ONLY_FLAG) --kind-context $(BUILDKITE_JOB_ID)-helm
 
 # Download controller-gen locally if necessary
