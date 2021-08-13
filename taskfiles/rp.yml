@@ -151,6 +151,7 @@ tasks:
       S3_REGION: '{{default "" .S3_REGION}}'
       S3_ACCESS_KEY: '{{default "" .S3_ACCESS_KEY}}'
       S3_SECRET_KEY: '{{default "" .S3_SECRET_KEY}}'
+      DUCKTAPE_SCALE: '{{default "local" .DUCKTAPE_SCALE}}'
     env:
       CI: "1"
     ignore_error: true
@@ -172,7 +173,7 @@ tasks:
           --cluster-file=/cluster.json
           --results-root=/build/tests/results
           --max-parallel={{.DUCKTAPE_MAX_PARALLEL}}
-          --globals='{"rp_install_path_root":"{{.RP_INSTALL_DIR}}","redpanda_log_level":"{{.REDPANDA_LOG_LEVEL}}","s3_bucket":"{{.S3_BUCKET}}","s3_region":"{{.S3_REGION}}","s3_access_key":"{{.S3_ACCESS_KEY}}","s3_secret_key":"{{.S3_SECRET_KEY}}"}'
+          --globals='{"rp_install_path_root":"{{.RP_INSTALL_DIR}}","redpanda_log_level":"{{.REDPANDA_LOG_LEVEL}}","s3_bucket":"{{.S3_BUCKET}}","s3_region":"{{.S3_REGION}}","s3_access_key":"{{.S3_ACCESS_KEY}}","s3_secret_key":"{{.S3_SECRET_KEY}}","scale":"{{.DUCKTAPE_SCALE}}"}'
           {{.DUCKTAPE_ARGS}}
 
   stop-compose-cluster:
