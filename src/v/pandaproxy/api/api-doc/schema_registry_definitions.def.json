@@ -37,4 +37,21 @@
           }
         }
       }
+    },
+    "subject_schema": {
+      "type": "object",
+      "properties": {
+        "subject": {
+          "type": "string"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "schema": {
+          "type": "string"
+        }
+      }
     }
