@@ -121,7 +121,6 @@ private:
      */
     clock_type::duration _mute_timeout;
 
-
     struct last_known_leader {
         model::broker_shard shard;
         clock_type::time_point expires;
