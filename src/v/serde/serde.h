@@ -27,6 +27,11 @@
 
 namespace serde {
 
+struct header {
+    version_t _version, _compat_version;
+    size_t _bytes_left_limit;
+};
+
 template<typename T, typename = void>
 struct help_has_serde_read : std::false_type {};
 
@@ -35,9 +40,7 @@ struct help_has_serde_read<
   T,
   std::void_t<decltype(std::declval<T>().serde_read(
     std::declval<std::add_lvalue_reference_t<iobuf_parser>>(),
-    version_t{0},
-    version_t{0},
-    size_t{0U}))>> : std::true_type {};
+    std::declval<header>()))>> : std::true_type {};
 
 template<typename T>
 inline constexpr auto const has_serde_read = help_has_serde_read<T>::value;
@@ -62,9 +65,7 @@ struct help_has_serde_async_read<
   T,
   std::void_t<decltype(std::declval<T>().serde_async_read(
     std::declval<std::add_lvalue_reference_t<iobuf_parser>>(),
-    version_t{0},
-    version_t{0},
-    size_t{0U}))>> : std::true_type {};
+    std::declval<header>()))>> : std::true_type {};
 
 template<typename T>
 inline constexpr auto const has_serde_async_read
@@ -85,11 +86,18 @@ inline constexpr auto const has_serde_async_write
 
 template<typename T>
 inline constexpr auto const is_serde_compatible_v
-  = is_envelope_v<T> || (std::is_scalar_v<T> && !std::is_enum_v<T>)
-    || reflection::is_std_vector_v<
-      T> || reflection::is_named_type_v<T> || reflection::is_ss_bool_v<T> || std::is_same_v<T, std::chrono::milliseconds> || std::is_same_v<T, iobuf> || std::is_same_v<T, ss::sstring> || reflection::is_std_optional_v<T>;
-
-using header_t = std::tuple<version_t, version_t, size_t>;
+  = is_envelope_v<T>
+    || (std::is_scalar_v<T>  //
+         && (!std::is_same_v<float, T> || std::numeric_limits<float>::is_iec559)
+         && (!std::is_same_v<double, T> || std::numeric_limits<double>::is_iec559)
+         && !std::is_enum_v<T>)
+    || reflection::is_std_vector_v<T>
+    || reflection::is_named_type_v<T>
+    || reflection::is_ss_bool_v<T>
+    || reflection::is_std_optional_v<T>
+    || std::is_same_v<T, std::chrono::milliseconds>
+    || std::is_same_v<T, iobuf>
+    || std::is_same_v<T, ss::sstring>;
 
 #if defined(SERDE_TEST)
 using serde_size_t = uint16_t;
@@ -132,6 +140,14 @@ void write(iobuf& out, T t) {
     } else if constexpr (std::is_scalar_v<Type> && !std::is_enum_v<Type>) {
         if constexpr (sizeof(Type) == 1) {
             out.append(reinterpret_cast<char const*>(&t), sizeof(t));
+        } else if constexpr (std::is_same_v<float, Type>) {
+            auto const le_t = htole32(t);
+            static_assert(sizeof(le_t) == sizeof(Type));
+            out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
+        } else if constexpr (std::is_same_v<double, Type>) {
+            auto const le_t = htole64(t);
+            static_assert(sizeof(le_t) == sizeof(Type));
+            out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
         } else {
             auto const le_t = ss::cpu_to_le(t);
             static_assert(sizeof(le_t) == sizeof(Type));
@@ -145,8 +161,8 @@ void write(iobuf& out, T t) {
               t.size()));
         }
         write(out, static_cast<serde_size_t>(t.size()));
-        for (auto const& el : t) {
-            write(out, el);
+        for (auto& el : t) {
+            write(out, std::move(el));
         }
     } else if constexpr (reflection::is_named_type_v<Type>) {
         return write(out, static_cast<typename Type::type>(t));
@@ -163,7 +179,7 @@ void write(iobuf& out, T t) {
     } else if constexpr (reflection::is_std_optional_v<Type>) {
         if (t) {
             write(out, true);
-            write(out, t.value());
+            write(out, std::move(t.value()));
         } else {
             write(out, false);
         }
@@ -171,24 +187,28 @@ void write(iobuf& out, T t) {
 }
 
 template<typename T>
-std::decay_t<T> read(iobuf_parser&);
+std::decay_t<T> read_nested(iobuf_parser&, std::size_t bytes_left_limit);
 
 template<typename T>
-header_t read_header(iobuf_parser& in) {
+std::decay_t<T> read(iobuf_parser& in) {
+    auto ret = read_nested<T>(in, 0U);
+    if (unlikely(in.bytes_left() != 0)) {
+        throw serde_exception{fmt_with_ctx(
+          ssx::sformat,
+          "serde: not all bytes consumed after read<{}>(), bytes_left={}",
+          type_str<T>(),
+          in.bytes_left())};
+    }
+    return std::move(ret);
+}
+
+template<typename T>
+header read_header(iobuf_parser& in, std::size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
 
-    auto const version = read<version_t>(in);
-    auto const compat_version = read<version_t>(in);
-    auto const size = read<serde_size_t>(in);
-
-    if (unlikely(compat_version > Type::redpanda_serde_version)) {
-        throw serde_exception(fmt_with_ctx(
-          ssx::sformat,
-          "read compat_version={} > {}::version={}",
-          static_cast<int>(compat_version),
-          type_str<T>(),
-          static_cast<int>(Type::redpanda_serde_version)));
-    }
+    auto const version = read_nested<version_t>(in, bytes_left_limit);
+    auto const compat_version = read_nested<version_t>(in, bytes_left_limit);
+    auto const size = read_nested<serde_size_t>(in, bytes_left_limit);
 
     if (unlikely(in.bytes_left() < size)) {
         throw serde_exception(fmt_with_ctx(
@@ -198,26 +218,68 @@ header_t read_header(iobuf_parser& in) {
           static_cast<int>(size)));
     }
 
-    return std::make_tuple(version, compat_version, size);
+    if (unlikely(in.bytes_left() - size < bytes_left_limit)) {
+        throw serde_exception(fmt_with_ctx(
+          ssx::sformat,
+          "envelope does not fit into bytes left: bytes_left={}, size={}, "
+          "bytes_left_limit={}",
+          in.bytes_left(),
+          static_cast<int>(size),
+          bytes_left_limit));
+    }
+
+    if (unlikely(compat_version > Type::redpanda_serde_version)) {
+        throw serde_exception(fmt_with_ctx(
+          ssx::sformat,
+          "read {}: compat_version={} > {}::version={}",
+          type_str<Type>(),
+          static_cast<int>(compat_version),
+          type_str<T>(),
+          static_cast<int>(Type::redpanda_serde_version)));
+    }
+
+    return header{
+      ._version = version,
+      ._compat_version = compat_version,
+      ._bytes_left_limit = in.bytes_left() - size};
 }
 
 template<typename T>
-std::decay_t<T> read(iobuf_parser& in) {
+std::decay_t<T>
+read_nested(iobuf_parser& in, std::size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
     static_assert(has_serde_read<T> || is_serde_compatible_v<Type>);
 
     auto t = Type();
     if constexpr (is_envelope_v<Type>) {
-        [[maybe_unused]] auto const [version, compat_version, size]
-          = read_header<Type>(in);
+        auto const h = read_header<Type>(in, bytes_left_limit);
         if constexpr (has_serde_read<Type>) {
-            t.serde_read(in, version, compat_version, size);
+            t.serde_read(in, h);
         } else {
-            envelope_for_each_field(
-              t, [&](auto& f) { f = read<std::decay_t<decltype(f)>>(in); });
+            envelope_for_each_field(t, [&](auto& f) {
+                using FieldType = std::decay_t<decltype(f)>;
+                if (h._bytes_left_limit == in.bytes_left()) {
+                    return false;
+                }
+                if (unlikely(in.bytes_left() < h._bytes_left_limit)) {
+                    throw serde_exception(fmt_with_ctx(
+                      ssx::sformat,
+                      "field spill over in {}, field type {}: envelope_end={}, "
+                      "in.bytes_left()={}",
+                      type_str<Type>(),
+                      type_str<FieldType>(),
+                      h._bytes_left_limit,
+                      in.bytes_left()));
+                }
+                f = read_nested<FieldType>(in, bytes_left_limit);
+                return true;
+            });
+            if (in.bytes_left() > h._bytes_left_limit) {
+                in.skip(in.bytes_left() - h._bytes_left_limit);
+            }
         }
     } else if constexpr (std::is_same_v<Type, bool>) {
-        t = read<int8_t>(in) != 0;
+        t = read_nested<int8_t>(in, bytes_left_limit) != 0;
     } else if constexpr (std::is_scalar_v<Type> && !std::is_enum_v<Type>) {
         if (unlikely(in.bytes_left() < sizeof(Type))) {
             throw serde_exception{"message too short"};
@@ -225,46 +287,72 @@ std::decay_t<T> read(iobuf_parser& in) {
 
         if constexpr (sizeof(Type) == 1) {
             t = in.consume_type<Type>();
+        } else if constexpr (std::is_same_v<float, Type>) {
+            t = le32toh(in.consume_type<Type>());
+        } else if constexpr (std::is_same_v<double, Type>) {
+            t = le64toh(in.consume_type<Type>());
         } else {
             t = ss::le_to_cpu(in.consume_type<Type>());
         }
     } else if constexpr (reflection::is_std_vector_v<Type>) {
         using value_type = typename Type::value_type;
-        t.resize(read<serde_size_t>(in));
+        t.resize(read_nested<serde_size_t>(in, bytes_left_limit));
         for (auto i = 0U; i < t.size(); ++i) {
-            t[i] = read<value_type>(in);
+            t[i] = read_nested<value_type>(in, bytes_left_limit);
         }
     } else if constexpr (reflection::is_named_type_v<Type>) {
-        t = Type{read<typename Type::type>(in)};
+        t = Type{read_nested<typename Type::type>(in, bytes_left_limit)};
     } else if constexpr (reflection::is_ss_bool_v<Type>) {
-        t = Type{read<int8_t>(in) != 0};
+        t = Type{read_nested<int8_t>(in, bytes_left_limit) != 0};
     } else if constexpr (std::is_same_v<Type, std::chrono::milliseconds>) {
-        t = std::chrono::milliseconds(read<int64_t>(in));
+        t = std::chrono::milliseconds{
+          read_nested<int64_t>(in, bytes_left_limit)};
     } else if constexpr (std::is_same_v<Type, iobuf>) {
-        return in.share(read<serde_size_t>(in));
+        return in.share(read_nested<serde_size_t>(in, bytes_left_limit));
     } else if constexpr (std::is_same_v<Type, ss::sstring>) {
-        return in.read_string(read<serde_size_t>(in));
+        auto str = ss::uninitialized_string(
+          read_nested<serde_size_t>(in, bytes_left_limit));
+        in.consume_to(str.size(), str.begin());
+        return str;
     } else if constexpr (reflection::is_std_optional_v<Type>) {
-        return read<bool>(in) ? Type{read<typename Type::value_type>(in)}
-                              : std::nullopt;
+        return read_nested<bool>(in, bytes_left_limit)
+                 ? Type{read<typename Type::value_type>(in)}
+                 : std::nullopt;
     }
 
     return t;
 }
 
 template<typename T>
-ss::future<std::decay_t<T>> read_async(iobuf_parser& in) {
+ss::future<std::decay_t<T>>
+read_async_nested(iobuf_parser& in, size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
     if constexpr (has_serde_async_read<Type>) {
-        auto const h = read_header<Type>(in);
+        auto const h = read_header<Type>(in, bytes_left_limit);
         return ss::do_with(Type{}, [&in, h](Type& t) {
-            auto const& [version, compat_version, size] = h;
-            return t.serde_async_read(in, version, compat_version, size)
-              .then([&t]() { return std::move(t); });
+            return t.serde_async_read(in, h).then(
+              [&t]() { return std::move(t); });
         });
     } else {
         return ss::make_ready_future<std::decay_t<T>>(read<T>(in));
     }
+}
+
+template<typename T>
+ss::future<std::decay_t<T>> read_async(iobuf_parser& in) {
+    return read_async_nested<T>(in, 0).then([&](std::decay_t<T>&& t) {
+        if (likely(in.bytes_left() == 0)) {
+            return ss::make_ready_future<std::decay_t<T>>(t);
+        } else {
+            return ss::make_exception_future<std::decay_t<T>>(
+              serde_exception{fmt_with_ctx(
+                ssx::sformat,
+                "serde: not all bytes consumed after read_async<{}>(), "
+                "bytes_left={}",
+                type_str<T>(),
+                in.bytes_left())});
+        }
+    });
 }
 
 template<typename T>

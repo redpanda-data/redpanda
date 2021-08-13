@@ -183,9 +183,18 @@ inline auto envelope_to_tuple(T& t) {
 }
 
 template<typename T, typename Fn>
-inline void envelope_for_each_field(T& t, Fn&& fn) {
+inline auto envelope_for_each_field(T& t, Fn&& fn) -> std::enable_if_t<
+  !std::is_convertible_v<decltype(fn(std::declval<int&>())), bool>> {
     static_assert(is_envelope_v<std::decay_t<T>>);
     std::apply([&](auto&&... args) { (fn(args), ...); }, envelope_to_tuple(t));
+}
+
+template<typename T, typename Fn>
+inline auto envelope_for_each_field(T& t, Fn&& fn) -> std::enable_if_t<
+  std::is_convertible_v<decltype(fn(std::declval<int&>())), bool>> {
+    static_assert(is_envelope_v<std::decay_t<T>>);
+    std::apply(
+      [&](auto&&... args) { (fn(args) && ...); }, envelope_to_tuple(t));
 }
 
 } // namespace serde
