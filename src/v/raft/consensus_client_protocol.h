@@ -52,6 +52,8 @@ public:
           model::node_id, transfer_leadership_request&&, rpc::client_opts)
           = 0;
 
+        virtual ss::future<> reset_backoff(model::node_id) = 0;
+
         virtual ~impl() noexcept = default;
     };
 
@@ -103,6 +105,10 @@ public:
       rpc::client_opts opts) {
         return _impl->transfer_leadership(
           target_node, std::move(r), std::move(opts));
+    }
+
+    ss::future<> reset_backoff(model::node_id target_node) {
+        return _impl->reset_backoff(target_node);
     }
 
 private:

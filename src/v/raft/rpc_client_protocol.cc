@@ -91,6 +91,11 @@ ss::future<result<timeout_now_reply>> rpc_client_protocol::timeout_now(
       });
 }
 
+ss::future<> rpc_client_protocol::reset_backoff(model::node_id n) {
+    return _connection_cache.local().reset_client_backoff(
+      _self, ss::this_shard_id(), n);
+}
+
 ss::future<bool> rpc_client_protocol::ensure_disconnect(model::node_id n) {
     struct resetter {
         rpc::transport& transport;
