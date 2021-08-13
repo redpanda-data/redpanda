@@ -1289,13 +1289,6 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         }
     }
 
-    /// set to true if the caller's log is as up to date as the recipient's
-    /// - extension on raft. see Diego's phd dissertation, section 9.6
-    /// - "Preventing disruptions when a server rejoins the cluster"
-    reply.log_ok
-      = r.prev_log_term > last_entry_term
-        || (r.prev_log_term == last_entry_term && r.prev_log_index >= last_log_index);
-
     // raft.pdf: reply false if term < currentTerm (§5.1)
     if (r.term < _term) {
         return ss::make_ready_future<vote_reply>(std::move(reply));
@@ -1334,6 +1327,13 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         reply.granted = false;
         return ss::make_ready_future<vote_reply>(std::move(reply));
     }
+
+    /// set to true if the caller's log is as up to date as the recipient's
+    /// - extension on raft. see Diego's phd dissertation, section 9.6
+    /// - "Preventing disruptions when a server rejoins the cluster"
+    reply.log_ok
+      = r.prev_log_term > last_entry_term
+        || (r.prev_log_term == last_entry_term && r.prev_log_index >= last_log_index);
 
     if (r.term > _term) {
         vlog(
