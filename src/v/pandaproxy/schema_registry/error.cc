@@ -45,6 +45,8 @@ struct error_category final : std::error_category {
                    "permanently";
         case error_code::subject_version_not_deleted:
             return "Version not deleted before being permanently deleted";
+        case error_code::subject_schema_invalid:
+            return "Error while looking up schema under subject";
         case error_code::write_collision:
             return "Too many retries on write collision";
         case error_code::topic_parse_error:
@@ -71,6 +73,8 @@ struct error_category final : std::error_category {
             return reply_error_code::subject_version_soft_deleted; // 40406
         case error_code::subject_version_not_deleted:
             return reply_error_code::subject_version_not_deleted; // 40407
+        case error_code::subject_schema_invalid:
+            return reply_error_code::internal_server_error; // 500
         case error_code::write_collision:
             return reply_error_code::write_collision; // 50301
         case error_code::schema_invalid:
