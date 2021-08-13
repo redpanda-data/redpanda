@@ -101,9 +101,7 @@ class AutomaticLeadershipBalancingTest(RedpandaTest):
     topics = (TopicSpec(partition_count=63, replication_factor=3), )
 
     def __init__(self, test_context):
-        extra_rp_conf = dict(
-            leader_balancer_idle_timeout=20000,
-        )
+        extra_rp_conf = dict(leader_balancer_idle_timeout=20000, )
 
         super(AutomaticLeadershipBalancingTest,
               self).__init__(test_context=test_context,
