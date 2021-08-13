@@ -1,4 +1,4 @@
 apiVersion: kuttl.dev/v1beta1
 kind: TestStep
 commands:
-  - command: helm test --namespace helm-test redpanda-operator
+  - command: helm test --timeout 10m0s --namespace helm-test redpanda-operator
