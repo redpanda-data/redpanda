@@ -88,6 +88,11 @@ public:
         return _in.consume(n, std::forward<Consumer>(f));
     }
 
+    template<typename Output>
+    [[gnu::always_inline]] void consume_to(size_t n, Output out) {
+        return _in.template consume_to(n, std::forward<Output>(out));
+    }
+
     iobuf copy(size_t len) { return iobuf_copy(_in, len); }
 
 protected:

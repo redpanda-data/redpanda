@@ -138,16 +138,10 @@ SEASTAR_THREAD_TEST_CASE(envelope_test_buffer_too_short) {
       test_msg1_new{
         ._a = 55, ._m = {._i = 'i', ._j = 'j'}, ._b = 33, ._c = 44});
 
-    b.pop_back(); // introduce length mismatch
+    b.trim_back(1); // introduce length mismatch
     auto parser = iobuf_parser{std::move(b)};
 
-    auto throws = false;
-    try {
-        serde::read<test_msg1_new>(parser);
-    } catch (std::exception const& e) {
-        throws = true;
-    }
-    BOOST_CHECK(throws);
+    BOOST_CHECK_THROW(serde::read<test_msg1_new>(parser), std::exception);
 }
 
 SEASTAR_THREAD_TEST_CASE(vector_test) {
@@ -264,8 +258,7 @@ struct test_snapshot_header
       test_snapshot_header,
       serde::version<1>,
       serde::compat_version<0>> {
-    ss::future<>
-    serde_async_read(iobuf_parser&, serde::version_t, serde::version_t, size_t);
+    ss::future<> serde_async_read(iobuf_parser&, serde::header const&);
     ss::future<> serde_async_write(iobuf&) const;
 
     int32_t header_crc;
@@ -279,11 +272,14 @@ static_assert(serde::has_serde_async_read<test_snapshot_header>);
 static_assert(serde::has_serde_async_write<test_snapshot_header>);
 
 ss::future<> test_snapshot_header::serde_async_read(
-  iobuf_parser& in, serde::version_t, serde::version_t, size_t) {
-    header_crc = serde::read<decltype(header_crc)>(in);
-    metadata_crc = serde::read<decltype(metadata_crc)>(in);
-    version = serde::read<decltype(version)>(in);
-    metadata_size = serde::read<decltype(metadata_size)>(in);
+  iobuf_parser& in, serde::header const& h) {
+    header_crc = serde::read_nested<decltype(header_crc)>(
+      in, h._bytes_left_limit);
+    metadata_crc = serde::read_nested<decltype(metadata_crc)>(
+      in, h._bytes_left_limit);
+    version = serde::read_nested<decltype(version)>(in, h._bytes_left_limit);
+    metadata_size = serde::read_nested<decltype(metadata_size)>(
+      in, h._bytes_left_limit);
 
     vassert(metadata_size >= 0, "Invalid metadata size {}", metadata_size);
 
@@ -328,4 +324,93 @@ SEASTAR_THREAD_TEST_CASE(snapshot_test) {
         BOOST_CHECK(
           std::string_view{e.what()}.starts_with("Corrupt snapshot."));
     }
+}
+
+struct small
+  : public serde::envelope<small, serde::version<0>, serde::compat_version<0>> {
+    int a, b, c;
+};
+
+struct big
+  : public serde::envelope<big, serde::version<1>, serde::compat_version<0>> {
+    int a, b, c, d{0x1234};
+};
+
+SEASTAR_THREAD_TEST_CASE(compat_test_added_field) {
+    auto b = serde::to_iobuf(small{.a = 1, .b = 2, .c = 3});
+    auto const deserialized = serde::from_iobuf<big>(std::move(b));
+    BOOST_CHECK(deserialized.a == 1);
+    BOOST_CHECK(deserialized.b == 2);
+    BOOST_CHECK(deserialized.c == 3);
+    BOOST_CHECK(deserialized.d == 0x1234);
+}
+
+SEASTAR_THREAD_TEST_CASE(compat_test_added_field_vector) {
+    auto b = serde::to_iobuf(
+      std::vector<small>{{.a = 1, .b = 2, .c = 3}, {.a = 4, .b = 5, .c = 6}});
+    auto const deserialized = serde::from_iobuf<std::vector<big>>(std::move(b));
+    BOOST_CHECK(deserialized.at(0).a == 1);
+    BOOST_CHECK(deserialized.at(0).b == 2);
+    BOOST_CHECK(deserialized.at(0).c == 3);
+    BOOST_CHECK(deserialized.at(0).d == 0x1234);
+    BOOST_CHECK(deserialized.at(1).a == 4);
+    BOOST_CHECK(deserialized.at(1).b == 5);
+    BOOST_CHECK(deserialized.at(1).c == 6);
+    BOOST_CHECK(deserialized.at(1).d == 0x1234);
+}
+
+SEASTAR_THREAD_TEST_CASE(compat_test_removed_field) {
+    auto b = serde::to_iobuf(big{.a = 1, .b = 2, .c = 3, .d = 4});
+    auto const deserialized = serde::from_iobuf<small>(std::move(b));
+    BOOST_CHECK(deserialized.a == 1);
+    BOOST_CHECK(deserialized.b == 2);
+    BOOST_CHECK(deserialized.c == 3);
+}
+
+SEASTAR_THREAD_TEST_CASE(compat_test_removed_field_vector) {
+    auto b = serde::to_iobuf(std::vector<big>{
+      {.a = 1, .b = 2, .c = 3, .d = 0x77},
+      {.a = 123, .b = 456, .c = 789, .d = 0x77}});
+    auto const deserialized = serde::from_iobuf<std::vector<small>>(
+      std::move(b));
+    BOOST_CHECK(deserialized.at(0).a == 1);
+    BOOST_CHECK(deserialized.at(0).b == 2);
+    BOOST_CHECK(deserialized.at(0).c == 3);
+    BOOST_CHECK(deserialized.at(1).a == 123);
+    BOOST_CHECK(deserialized.at(1).b == 456);
+    BOOST_CHECK(deserialized.at(1).c == 789);
+}
+
+SEASTAR_THREAD_TEST_CASE(compat_test_half_field_1) {
+    struct half_field_1
+      : public serde::envelope<
+          half_field_1,
+          serde::version<1>,
+          serde::compat_version<
+            0 /* Actually not compatible! Just to catch errors. */>> {
+        int a, b;
+        short c;
+    };
+
+    auto b = serde::to_iobuf(half_field_1{.a = 1, .b = 2, .c = 3});
+    BOOST_CHECK_THROW(serde::from_iobuf<small>(std::move(b)), std::exception);
+}
+
+SEASTAR_THREAD_TEST_CASE(compat_test_half_field_2) {
+    struct half_field_2
+      : public serde::
+          envelope<half_field_2, serde::version<1>, serde::compat_version<0>> {
+        int a, b, c;
+        short d;
+    };
+
+    auto b = serde::to_iobuf(half_field_2{.a = 1, .b = 2, .c = 3, .d = 0x1234});
+    auto const deserialized = serde::from_iobuf<small>(std::move(b));
+    BOOST_CHECK(deserialized.a == 1);
+    BOOST_CHECK(deserialized.b == 2);
+    BOOST_CHECK(deserialized.c == 3);
+
+    auto b1 = serde::to_iobuf(
+      half_field_2{.a = 1, .b = 2, .c = 3, .d = 0x1234});
+    BOOST_CHECK_THROW(serde::from_iobuf<big>(std::move(b1)), std::exception);
 }
