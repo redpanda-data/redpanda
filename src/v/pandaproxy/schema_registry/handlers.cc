@@ -219,6 +219,42 @@ get_subject_versions(server::request_t rq, server::reply_t rp) {
 }
 
 ss::future<server::reply_t>
+post_subject(server::request_t rq, server::reply_t rp) {
+    parse_content_type_header(rq);
+    parse_accept_header(rq, rp);
+    auto sub = parse::request_param<subject>(*rq.req, "subject");
+    vlog(plog.debug, "post_subject subject='{}'", sub);
+    // We must sync
+    co_await rq.service().writer().read_sync();
+
+    // Force 40401 if no subject
+    co_await rq.service().schema_store().get_versions(sub, include_deleted::no);
+
+    post_subject_versions_request req{};
+    try {
+        req = post_subject_versions_request{
+          .sub = sub,
+          .payload = ppj::rjson_parse(
+            rq.req->content.data(), post_subject_versions_request_handler<>{})};
+    } catch (const ppj::parse_error&) {
+        throw as_exception(invalid_subject_schema(sub));
+    }
+
+    rq.req.reset();
+
+    auto sub_schema = co_await rq.service().schema_store().has_schema(
+      req.sub, req.payload.schema, req.payload.type);
+
+    auto json_rslt{json::rjson_serialize(post_subject_versions_version_response{
+      .sub{std::move(sub_schema.sub)},
+      .id{sub_schema.id},
+      .version{sub_schema.version},
+      .definition{std::move(sub_schema.definition)}})};
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
+ss::future<server::reply_t>
 post_subject_versions(server::request_t rq, server::reply_t rp) {
     parse_content_type_header(rq);
     parse_accept_header(rq, rp);
