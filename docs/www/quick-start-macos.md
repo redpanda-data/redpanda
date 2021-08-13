@@ -32,7 +32,7 @@ You can install `rpk` on MacOS from either with [Homebrew](https://brew.sh/) or 
 
 To run Redpanda in a 3-node cluster, run: `rpk container start -n 3`
 
-The first time you run `rpk`, it downloads the latest version of Redpanda.
+The first time you run `rpk container start`, it downloads an image matching the rpk version (you can check it by running `rpk version`).
 You now have a 3-node cluster running Redpanda!
 
 You can run `rpk` commands to interact with the cluster, for example:
