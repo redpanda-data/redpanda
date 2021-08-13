@@ -458,18 +458,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string"
-                },
-                "version": {
-                  "type": "integer"
-                },
-                "schema": {
-                  "type": "string"
-                }
-              }
+              "$ref": "#/definitions/subject_schema"
             }
           },
           "404": {
