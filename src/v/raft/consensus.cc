@@ -1266,6 +1266,29 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         reply.granted = false;
         return ss::make_ready_future<vote_reply>(reply);
     }
+
+    // Optimization: for vote requests from nodes that are likely
+    // to have been recently restarted (have failed heartbeats
+    // and an <= present term), reset their RPC backoff to get
+    // a heartbeat sent out sooner.
+    if (is_leader() and r.term <= _term) {
+        // Look up follower stats for the requester
+        if (auto it = _fstats.find(r.node_id); it != _fstats.end()) {
+            auto& fstats = it->second;
+            if (fstats.heartbeats_failed) {
+                vlog(
+                  _ctxlog.debug,
+                  "Vote request from peer {} with heartbeat failures, "
+                  "resetting backoff",
+                  r.node_id);
+                return _client_protocol.reset_backoff(r.node_id.id())
+                  .then([reply]() {
+                      return ss::make_ready_future<vote_reply>(reply);
+                  });
+            }
+        }
+    }
+
     /// set to true if the caller's log is as up to date as the recipient's
     /// - extension on raft. see Diego's phd dissertation, section 9.6
     /// - "Preventing disruptions when a server rejoins the cluster"
