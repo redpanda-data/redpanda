@@ -53,6 +53,7 @@ tasks:
         -e "CI={{.CI}}" \
         -e "TAG_NAME={{.TAG_NAME}}" \
         -e "BRANCH_NAME={{.BRANCH_NAME}}" \
+        -e "PULL_REQUEST={{.PULL_REQUEST}}" \
         -e "COMPILER={{.COMPILER}}" \
         -e "BUILD_TYPE={{.BUILD_TYPE}}" \
         -e "PWD={{.PWD}}" \
