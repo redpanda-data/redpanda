@@ -31,7 +31,7 @@ const (
 	defaultTopicReplicationNumber = 3
 	minimumReplicas               = 3
 
-	defaultTopicReplicationKey = "redpanda.default_topic_replication"
+	defaultTopicReplicationKey = "redpanda.default_topic_replications"
 
 	defaultSchemaRegistryPort = 8081
 )
