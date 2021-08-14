@@ -8,11 +8,11 @@ spec:
   replicas: 1
   resources:
     requests:
-      cpu: 100m
-      memory: 100Mi
+      cpu: 1
+      memory: 2Gi
     limits:
       cpu: 1
-      memory: 100Mi
+      memory: 2Gi
   configuration:
     rpcServer:
       port: 33145
@@ -20,4 +20,4 @@ spec:
     - port: 9092
     adminApi:
     - port: 9644
-    developerMode: true
+    developerMode: false
