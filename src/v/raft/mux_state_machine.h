@@ -281,17 +281,19 @@ ss::future<> mux_state_machine<T...>::apply(model::record_batch b) {
           *state);
 
         return result_f.then([this, last_offset](std::error_code ec) {
-            auto f = _mutex.with([this, last_offset, ec] {
+            return _mutex.with([this, last_offset, ec] {
                 if (auto it = _promises.find(last_offset);
                     it != _promises.end()) {
                     it->second.set_value(ec);
                 }
+                if (
+                  _persist_last_applied
+                  && last_offset > _c->read_last_applied()) {
+                    (void)ss::with_gate(_gate, [this, last_offset] {
+                        return _c->write_last_applied(last_offset);
+                    });
+                }
             });
-            if (!_persist_last_applied) {
-                return f;
-            }
-            return f.then(
-              [this, last_offset] { return write_last_applied(last_offset); });
         });
     });
 }

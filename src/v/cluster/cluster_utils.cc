@@ -235,4 +235,19 @@ bool has_local_replicas(
            != replicas.cend();
 }
 
+bool are_replica_sets_equal(
+  const std::vector<model::broker_shard>& lhs,
+  const std::vector<model::broker_shard>& rhs) {
+    auto l_sorted = lhs;
+    auto r_sorted = rhs;
+    static const auto cmp =
+      [](const model::broker_shard& lhs, const model::broker_shard& rhs) {
+          return lhs.node_id < rhs.node_id;
+      };
+    std::sort(l_sorted.begin(), l_sorted.end(), cmp);
+    std::sort(r_sorted.begin(), r_sorted.end(), cmp);
+
+    return l_sorted == r_sorted;
+}
+
 } // namespace cluster
