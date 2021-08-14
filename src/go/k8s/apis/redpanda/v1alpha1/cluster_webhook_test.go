@@ -66,7 +66,7 @@ func TestDefault(t *testing.T) {
 			}
 
 			redpandaCluster.Default()
-			_, exist := redpandaCluster.Spec.AdditionalConfiguration["redpanda.default_topic_replication"]
+			_, exist := redpandaCluster.Spec.AdditionalConfiguration["redpanda.default_topic_replications"]
 			if exist != tt.additionalConfigurationPresent {
 				t.Fail()
 			}
