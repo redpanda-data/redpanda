@@ -62,6 +62,7 @@ ss::future<> connection_context::process_one_request() {
                         "could not parse header from client: {}",
                         _rs.conn->addr);
                       _rs.probe().header_corrupted();
+                      _rs.probe().request_completed();
                       return ss::make_ready_future<>();
                   }
                   return dispatch_method_once(std::move(h.value()), s);
@@ -210,6 +211,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
     return throttle_request(hdr, size).then([this, hdr = std::move(hdr), size](
                                               session_resources sres) mutable {
         if (_rs.abort_requested()) {
+            _rs.probe().request_completed();
             // protect against shutdown behavior
             return ss::make_ready_future<>();
         }
@@ -276,7 +278,9 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                 "Discarding second stage failure {}",
                                 e);
                           })
-                          .finally([d = std::move(d)]() mutable {
+                          .finally([self, d = std::move(d)]() mutable {
+                              self->_rs.probe().service_error();
+                              self->_rs.probe().request_completed();
                               return std::move(d);
                           });
                     }
@@ -298,15 +302,19 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                             klog.info,
                             "Detected error processing request: {}",
                             e);
+                          self->_rs.probe().service_error();
                           self->_rs.conn->shutdown_input();
                       })
-                      .finally([s = std::move(s), self] {});
+                      .finally([s = std::move(s), self] {
+                          self->_rs.probe().request_completed();
+                      });
                     return d;
                 })
                 .handle_exception([self](std::exception_ptr e) {
                     vlog(
                       klog.info, "Detected error dispatching request: {}", e);
                     self->_rs.conn->shutdown_input();
+                    self->_rs.probe().request_completed();
                 });
           });
     });
@@ -324,7 +332,6 @@ ss::future<> connection_context::process_next_response() {
 
         auto r = std::move(it->second);
         _responses.erase(it);
-        _rs.probe().request_completed();
 
         if (r->is_noop()) {
             return ss::make_ready_future<ss::stop_iteration>(
