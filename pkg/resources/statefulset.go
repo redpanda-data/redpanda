@@ -532,7 +532,7 @@ func prepareAdditionalArguments(
 
 	args := []string{
 		"--default-log-level=info",
-		"--reserve-memory 0M",
+		"--reserve-memory=0M",
 	}
 
 	/*
