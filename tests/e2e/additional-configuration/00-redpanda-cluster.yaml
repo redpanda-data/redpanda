@@ -13,7 +13,7 @@ spec:
       memory: 100Mi
     limits:
       cpu: 1
-      memory: 100Mi
+      memory: 500Mi
   configuration:
     rpcServer:
       port: 33145
