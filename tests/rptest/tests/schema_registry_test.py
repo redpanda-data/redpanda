@@ -162,6 +162,11 @@ class SchemaRegistryTest(RedpandaTest):
     def _get_schemas_ids_id(self, id, headers=HTTP_GET_HEADERS):
         return self._request("GET", f"schemas/ids/{id}", headers=headers)
 
+    def _get_schemas_ids_id_versions(self, id, headers=HTTP_GET_HEADERS):
+        return self._request("GET",
+                             f"schemas/ids/{id}/versions",
+                             headers=headers)
+
     def _get_subjects(self, deleted=False, headers=HTTP_GET_HEADERS):
         return self._request("GET",
                              f"subjects{'?deleted=true' if deleted else ''}",
@@ -256,6 +261,76 @@ class SchemaRegistryTest(RedpandaTest):
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
         assert result == ["AVRO"]
+
+    @cluster(num_nodes=3)
+    def test_get_schema_id_versions(self):
+        """
+        Verify schema versions
+        """
+
+        self.logger.debug("Checking schema 1 versions - expect 40403")
+        result_raw = self._get_schemas_ids_id_versions(id=1)
+        assert result_raw.status_code == requests.codes.not_found
+        assert result_raw.json()["error_code"] == 40403
+        assert result_raw.json()["message"] == "Schema 1 not found"
+
+        topic = create_topic_names(1)[0]
+        subject = f"{topic}-key"
+
+        schema_1_data = json.dumps({"schema": schema1_def})
+        schema_2_data = json.dumps({"schema": schema2_def})
+
+        self.logger.debug("Posting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(subject=subject,
+                                                          data=schema_1_data)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == 1
+
+        self.logger.debug("Checking schema 1 versions")
+        result_raw = self._get_schemas_ids_id_versions(id=1)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == [{"subject": subject, "version": 1}]
+
+        self.logger.debug("Posting schema 2 as a subject key")
+        result_raw = self._post_subjects_subject_versions(subject=subject,
+                                                          data=schema_2_data)
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == 2
+
+        self.logger.debug("Checking schema 2 versions")
+        result_raw = self._get_schemas_ids_id_versions(id=2)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == [{"subject": subject, "version": 2}]
+
+        self.logger.debug("Deleting version 1")
+        result_raw = self._delete_subject_version(subject=subject, version=1)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Checking schema 1 versions is empty")
+        result_raw = self._get_schemas_ids_id_versions(id=1)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == []
+
+        self.logger.debug("Checking schema 2 versions")
+        result_raw = self._get_schemas_ids_id_versions(id=2)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == [{"subject": subject, "version": 2}]
+
+        self.logger.debug("Deleting subject")
+        result_raw = self._delete_subject(subject=subject)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Checking schema 1 versions is empty")
+        result_raw = self._get_schemas_ids_id_versions(id=1)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == []
+
+        self.logger.debug("Checking schema 2 versions is empty")
+        result_raw = self._get_schemas_ids_id_versions(id=2)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == []
 
     @cluster(num_nodes=3)
     def test_post_subjects_subject_versions(self):
