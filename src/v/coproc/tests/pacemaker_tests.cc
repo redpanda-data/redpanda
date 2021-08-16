@@ -17,6 +17,7 @@
 #include "model/record_batch_reader.h"
 #include "storage/tests/utils/random_batch.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/when_all.hh>
 
 #include <boost/test/tools/old/interface.hpp>
@@ -95,25 +96,18 @@ FIXTURE_TEST(test_coproc_router_off_by_one, coproc_test_fixture) {
           .topics = {std::make_pair<>(
             src_topic, coproc::topic_ingestion_policy::stored)}}}})
       .get();
-    auto fn = [this, input_ntp, output_ntp]() -> ss::future<size_t> {
-        return push(input_ntp, single_record_record_batch_reader())
-          .then([this, input_ntp, output_ntp](auto) {
-              return drain(output_ntp, 1)
-                .then([input_ntp, output_ntp](
-                        std::optional<model::record_batch_reader::data_t> r) {
-                    BOOST_CHECK(r);
-                    return r->size();
-                });
-          });
+    auto fn =
+      [this, input_ntp, output_ntp](model::offset start) -> ss::future<size_t> {
+        co_await push(input_ntp, single_record_record_batch_reader());
+        auto r = co_await drain(output_ntp, 1, start);
+        BOOST_REQUIRE(r);
+        co_return r->size();
     };
     // Perform push/drain twice
-    size_t result = fn()
-                      .then([&fn](size_t sz) {
-                          return fn().then(
-                            [sz](size_t sz2) { return sz + sz2; });
-                      })
-                      .get0();
-    BOOST_CHECK_EQUAL(result, 2);
+    size_t wr = fn(model::offset(0)).get();
+    BOOST_CHECK_EQUAL(wr, 1);
+    size_t wr2 = fn(model::offset(1)).get();
+    BOOST_CHECK_EQUAL(wr2, 1);
 }
 
 FIXTURE_TEST(test_coproc_router_double, coproc_test_fixture) {
