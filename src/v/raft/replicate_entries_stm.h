@@ -81,6 +81,7 @@ namespace raft {
 
 class replicate_entries_stm {
 public:
+    using units_t = std::vector<ss::semaphore_units<>>;
     replicate_entries_stm(
       consensus*,
       append_entries_request,
@@ -111,13 +112,14 @@ private:
     ss::future<result<storage::append_result>> append_to_self();
     consensus* _ptr;
     /// we keep a copy around until we finish the retries
-    append_entries_request _req;
+    std::unique_ptr<append_entries_request> _req;
     absl::flat_hash_map<vnode, follower_req_seq> _followers_seq;
     ss::semaphore _share_sem;
     ss::semaphore _dispatch_sem{0};
     ss::gate _req_bg;
     ctx_log _ctxlog;
     model::offset _dirty_offset;
+    ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> _units;
 };
 
 } // namespace raft
