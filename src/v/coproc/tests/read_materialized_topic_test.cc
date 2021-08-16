@@ -51,6 +51,9 @@ FIXTURE_TEST(test_metadata_request, coproc_test_fixture) {
         model::offset(0), 4, 4))
       .get();
 
+    /// Wait until the topic is available before making the kafka request
+    drain(output_ntp, 1).get();
+
     /// Make a metadata request specifically for the materialized topic
     kafka::metadata_request req{
       .data = {.topics = {{{output_topic}}}},
