@@ -51,7 +51,6 @@ make_topic_response_from_topic_metadata(model::topic_metadata&& tp_md) {
           p.error_code = error_code::none;
           p.partition_index = p_md.id;
           p.leader_id = p_md.leader_node.value_or(model::node_id(-1));
-          p.leader_epoch = 0;
           p.replica_nodes = std::move(replicas);
           p.isr_nodes = p.replica_nodes;
           p.offline_replicas = {};

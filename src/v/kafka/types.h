@@ -83,6 +83,13 @@ enum class coordinator_type : int8_t {
     transaction = 1,
 };
 
+using leader_epoch = named_type<int32_t, struct leader_epoch_tag>;
+/**
+ * Used to mark that leader epoch is not intended to be used (Kafka protocol
+ * specific)
+ */
+static constexpr leader_epoch invalid_leader_epoch(-1);
+
 // TODO Ben: Why is this an undefined reference for pandaproxy when defined in
 // kafka/requests.cc
 inline std::ostream& operator<<(std::ostream& os, coordinator_type t) {
