@@ -129,7 +129,7 @@ public:
 
     ss::future<std::error_code>
     transfer_leadership(std::optional<model::node_id> target) {
-        return _raft->transfer_leadership(target);
+        return _raft->do_transfer_leadership(target);
     }
 
     ss::future<std::error_code> update_replica_set(

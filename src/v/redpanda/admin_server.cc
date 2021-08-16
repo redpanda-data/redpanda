@@ -347,7 +347,7 @@ void admin_server::register_raft_routes() {
                 if (!consensus) {
                     throw ss::httpd::not_found_exception();
                 }
-                return consensus->transfer_leadership(target).then(
+                return consensus->do_transfer_leadership(target).then(
                   [](std::error_code err) {
                       if (err) {
                           throw ss::httpd::server_error_exception(fmt::format(

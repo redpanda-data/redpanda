@@ -29,6 +29,11 @@
             "name": "timeout_now",
             "input_type": "timeout_now_request",
             "output_type": "timeout_now_reply"
+        },
+        {
+            "name": "transfer_leadership",
+            "input_type": "transfer_leadership_request",
+            "output_type": "transfer_leadership_reply"
         }
     ]
 }

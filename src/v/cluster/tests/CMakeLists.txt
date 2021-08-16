@@ -62,3 +62,12 @@ rp_test(
   DEFINITIONS SEASTAR_TESTING_MAIN
   LABELS cluster
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME leader_balancer_test
+  SOURCES leader_balancer_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Boost::unit_test_framework v::cluster
+  LABELS cluster
+)
