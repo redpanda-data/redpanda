@@ -61,21 +61,47 @@ data_segment_staging_name(const ss::lw_shared_ptr<segment>& s) {
       fmt::format("{}.staging", s->reader().filename()));
 }
 
+/// Check if the file is on BTRFS, and disable copy-on-write if so.  COW
+/// is not useful for logs and can cause issues.
+static ss::future<>
+maybe_disable_cow(const std::filesystem::path& path, ss::file& file) {
+    if (co_await ss::file_system_at(path.string()) == ss::fs_type::btrfs) {
+        try {
+            int flags = -1;
+            // ss::syscall_result throws on errors, so not checking returns.
+            co_await file.ioctl(FS_IOC_GETFLAGS, (void*)&flags);
+            if ((flags & FS_NOCOW_FL) == 0) {
+                flags |= FS_NOCOW_FL;
+                co_await file.ioctl(FS_IOC_SETFLAGS, (void*)&flags);
+                vlog(stlog.trace, "Disabled COW on BTRFS segment {}", path);
+            }
+        } catch (std::system_error& e) {
+            // Non-fatal, user will just get degraded behaviour
+            // when btrfs tries to COW on a journal.
+            vlog(stlog.info, "Error disabling COW on {}: {}", path, e);
+        }
+    }
+}
+
 static inline ss::file wrap_handle(ss::file f, debug_sanitize_files debug) {
     if (debug) {
         return ss::file(ss::make_shared(file_io_sanitizer(std::move(f))));
     }
     return f;
 }
-static inline ss::future<ss::file> make_handle(
-  const std::filesystem::path& path,
+
+ss::future<ss::file> make_handle(
+  const std::filesystem::path path,
   ss::open_flags flags,
   ss::file_open_options opt,
   debug_sanitize_files debug) {
-    return ss::open_file_dma(path.string(), flags, opt)
-      .then([debug](ss::file writer) {
-          return wrap_handle(std::move(writer), debug);
-      });
+    auto file = co_await ss::open_file_dma(path.string(), flags, opt);
+
+    if ((flags & ss::open_flags::create) == ss::open_flags::create) {
+        co_await maybe_disable_cow(path, file);
+    }
+
+    co_return wrap_handle(std::move(file), debug);
 }
 
 static inline ss::file_open_options writer_opts() {
@@ -585,12 +611,11 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
     // build an empty index for the segment
     auto index_name = path;
     index_name.replace_extension("base_index");
-    auto index_fd = co_await ss::open_file_dma(
-      index_name.string(), ss::open_flags::create | ss::open_flags::rw);
-    if (cfg.sanitize) {
-        index_fd = ss::file(
-          ss::make_shared(file_io_sanitizer(std::move(index_fd))));
-    }
+    auto index_fd = co_await make_handle(
+      index_name.string(),
+      ss::open_flags::create | ss::open_flags::rw,
+      {},
+      cfg.sanitize);
     segment_index index(
       index_name.string(),
       index_fd,
