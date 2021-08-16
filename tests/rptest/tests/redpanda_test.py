@@ -11,6 +11,7 @@ import os
 from ducktape.tests.test import Test
 from rptest.services.redpanda import RedpandaService
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.util import Scale
 
 
 class RedpandaTest(Test):
@@ -31,7 +32,7 @@ class RedpandaTest(Test):
                  enable_sr=False,
                  num_cores=3):
         super(RedpandaTest, self).__init__(test_context)
-
+        self.scale = Scale(test_context)
         self.redpanda = RedpandaService(test_context,
                                         num_brokers,
                                         KafkaCliTools,
