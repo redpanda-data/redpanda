@@ -279,7 +279,7 @@ seq_writer::delete_subject_impermanent(subject sub) {
       -> ss::future<std::optional<std::vector<schema_version>>> {
         // Grab the versions before they're gone.
         auto versions = co_await seq._store.get_versions(
-          sub, include_deleted::yes);
+          sub, include_deleted::no);
 
         // Inspect the subject to see if its already deleted
         if (co_await seq._store.is_subject_deleted(sub)) {
