@@ -280,11 +280,11 @@ public:
         auto& versions = sub_it->second.versions;
         std::vector<schema_version> res;
         res.reserve(versions.size());
-        std::transform(
-          versions.begin(),
-          versions.end(),
-          std::back_inserter(res),
-          [](const auto& v) { return v.version; });
+        for (const auto& ver : versions) {
+            if (permanent || !ver.deleted) {
+                res.push_back(ver.version);
+            }
+        }
 
         if (permanent) {
             _subjects.erase(sub_it);

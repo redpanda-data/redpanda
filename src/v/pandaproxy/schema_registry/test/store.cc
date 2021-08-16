@@ -635,3 +635,43 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject_version) {
       s.delete_subject_version(subject0, pps::schema_version{1}).error().code(),
       pps::error_code::subject_version_not_found);
 }
+
+BOOST_AUTO_TEST_CASE(test_store_delete_subject_after_delete_version) {
+    std::vector<pps::schema_version> expected_vers{{pps::schema_version{2}}};
+
+    pps::store s;
+    s.set_compatibility(pps::compatibility_level::none).value();
+
+    pps::seq_marker dummy_marker;
+
+    // First insert, expect id{1}, version{1}
+    s.insert(subject0, string_def0, pps::schema_type::avro);
+    s.insert(subject0, int_def0, pps::schema_type::avro);
+
+    // delete version 1
+    s.upsert_subject(
+      dummy_marker,
+      subject0,
+      pps::schema_version{1},
+      pps::schema_id{1},
+      pps::is_deleted::yes);
+
+    auto del_res = s.delete_subject(
+      dummy_marker, subject0, pps::permanent_delete::no);
+    BOOST_REQUIRE(del_res.has_value());
+    BOOST_REQUIRE_EQUAL_COLLECTIONS(
+      del_res.value().cbegin(),
+      del_res.value().cend(),
+      expected_vers.cbegin(),
+      expected_vers.cend());
+
+    expected_vers = {{pps::schema_version{1}}, {pps::schema_version{2}}};
+    del_res = s.delete_subject(
+      dummy_marker, subject0, pps::permanent_delete::yes);
+    BOOST_REQUIRE(del_res.has_value());
+    BOOST_REQUIRE_EQUAL_COLLECTIONS(
+      del_res.value().cbegin(),
+      del_res.value().cend(),
+      expected_vers.cbegin(),
+      expected_vers.cend());
+}

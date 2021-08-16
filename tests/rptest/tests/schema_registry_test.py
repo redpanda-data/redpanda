@@ -684,9 +684,15 @@ class SchemaRegistryTest(RedpandaTest):
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.not_found
 
-        self.logger.debug("Soft delete subject")
+        self.logger.debug("delete version 2")
+        result_raw = self._delete_subject_version(subject=f"{topic}-key",
+                                                  version=2)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Soft delete subject - expect 1,3")
         result_raw = self._delete_subject(subject=f"{topic}-key")
         assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == [1, 3]
 
         self.logger.debug("Get versions")
         result_raw = self._get_subjects_subject_versions(
@@ -706,6 +712,7 @@ class SchemaRegistryTest(RedpandaTest):
                                           permanent=True)
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == [1, 2, 3]
 
     @cluster(num_nodes=3)
     def test_delete_subject_version(self):
