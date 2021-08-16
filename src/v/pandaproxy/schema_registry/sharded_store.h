@@ -50,6 +50,10 @@ public:
     ///\brief Return a schema by id.
     ss::future<schema> get_schema(const schema_id& id);
 
+    ///\brief Return a list of subject-versions for the shema id.
+    ss::future<std::vector<subject_version>>
+    get_schema_subject_versions(schema_id id);
+
     ///\brief Return a schema by subject and version.
     ss::future<subject_schema> get_subject_schema(
       const subject& sub, schema_version version, include_deleted inc_dec);

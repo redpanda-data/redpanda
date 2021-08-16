@@ -148,6 +148,18 @@ ss::future<schema> sharded_store::get_schema(const schema_id& id) {
     co_return std::move(schema).value();
 }
 
+ss::future<std::vector<subject_version>>
+sharded_store::get_schema_subject_versions(schema_id id) {
+    auto map = [id](store& s) { return s.get_schema_subject_versions(id); };
+    auto reduce =
+      [](std::vector<subject_version> acc, std::vector<subject_version> svs) {
+          acc.insert(acc.end(), svs.begin(), svs.end());
+          return acc;
+      };
+    co_return co_await _store.map_reduce0(
+      map, std::vector<subject_version>{}, reduce);
+}
+
 ss::future<subject_schema> sharded_store::get_subject_schema(
   const subject& sub, schema_version version, include_deleted inc_del) {
     auto v_id = (co_await _store.invoke_on(
