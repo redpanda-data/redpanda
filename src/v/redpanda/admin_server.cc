@@ -136,12 +136,11 @@ void admin_server::configure_admin_routes() {
 
 void admin_server::configure_dashboard() {
     if (_cfg.dashboard_dir) {
-        _dashboard_handler = std::make_unique<dashboard_handler>(
-          *_cfg.dashboard_dir);
+        auto handler = std::make_unique<dashboard_handler>(*_cfg.dashboard_dir);
         _server._routes.add(
           ss::httpd::operation_type::GET,
           ss::httpd::url("/dashboard").remainder("path"),
-          _dashboard_handler.get());
+          handler.release());
     }
 }
 

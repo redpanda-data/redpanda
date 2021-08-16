@@ -102,7 +102,6 @@ private:
     ss::sharded<cluster::partition_manager>& _partition_manager;
     cluster::controller* _controller;
     ss::sharded<cluster::shard_table>& _shard_table;
-    std::unique_ptr<dashboard_handler> _dashboard_handler;
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
     bool _ready{false};
 };
