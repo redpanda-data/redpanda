@@ -12,6 +12,7 @@
 
 #include "model/record.h"
 #include "utils/file_io.h"
+#include "v8_engine/record_batch_wrapper.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -100,7 +101,7 @@ void script::set_function(std::string_view name) {
     _function.Reset(_isolate.get(), function_val.As<v8::Function>());
 }
 
-void script::run_internal(model::record_batch) {
+void script::run_internal(model::record_batch& raw_batch) {
     v8::Locker locker(_isolate.get());
     v8::Isolate::Scope isolate_scope(_isolate.get());
     v8::HandleScope handle_scope(_isolate.get());
@@ -109,8 +110,26 @@ void script::run_internal(model::record_batch) {
       _isolate.get(), _context);
     v8::Context::Scope context_scope(local_ctx);
 
-    const int argc = 0;
-    v8::Local<v8::Value> argv[argc] = {};
+    const int argc = 1;
+
+    v8::Local<v8::ObjectTemplate> obj_templ = v8::ObjectTemplate::New(
+      _isolate.get());
+    obj_templ->SetInternalFieldCount(1);
+
+    obj_templ->Set(
+      v8::String::NewFromUtf8(_isolate.get(), "consume").ToLocalChecked(),
+      v8::FunctionTemplate::New(_isolate.get(), record_batch_wrapper::consume));
+    obj_templ->Set(
+      v8::String::NewFromUtf8(_isolate.get(), "produce").ToLocalChecked(),
+      v8::FunctionTemplate::New(_isolate.get(), record_batch_wrapper::produce));
+
+    record_batch_wrapper batch(raw_batch);
+
+    v8::Local<v8::Object> obj
+      = obj_templ->NewInstance(local_ctx).ToLocalChecked();
+    obj->SetInternalField(0, v8::External::New(_isolate.get(), &batch));
+
+    v8::Local<v8::Value> argv[argc] = {obj};
     v8::Local<v8::Value> result;
 
     v8::Local<v8::Function> local_function = v8::Local<v8::Function>::New(
@@ -124,6 +143,8 @@ void script::run_internal(model::record_batch) {
             throw_exception_from_v8(try_catch, "Can not run function");
         }
     }
+
+    raw_batch = batch.get_output_batch();
 }
 
 void script::throw_exception_from_v8(std::string_view msg) {

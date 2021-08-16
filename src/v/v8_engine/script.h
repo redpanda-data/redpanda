@@ -68,10 +68,7 @@ public:
     /// temporary_buffer. Maybe better use iobuf and use non-seastar memory for
     /// data in v8 script. \param executor for compile script
     template<typename Executor>
-    ss::future<> init(
-      ss::sstring name,
-      iobuf js_code,
-      Executor& executor) {
+    ss::future<> init(ss::sstring name, iobuf js_code, Executor& executor) {
         compile_task task(*this, std::move(js_code));
         return add_future_handlers(
                  executor.submit(std::move(task), _first_run_timeout_ms))
@@ -83,8 +80,8 @@ public:
     /// \param data for js script..
     /// \param executor for run script
     template<typename Executor>
-    ss::future<> run(model::record_batch _batch, Executor& executor) {
-        run_task task(*this, std::move(_batch));
+    ss::future<> run(model::record_batch& batch, Executor& executor) {
+        run_task task(*this, batch);
         return add_future_handlers(
           executor.submit(std::move(task), _timeout_ms));
     }
@@ -103,7 +100,7 @@ private:
     /// We need to controle execution time for js function
 
     /// \param record_batch fot js script.
-    void run_internal(model::record_batch _batch);
+    void run_internal(model::record_batch& _batch);
 
     // Throw c++ exception from v8::TryCatch
     void throw_exception_from_v8(std::string_view msg);
@@ -172,14 +169,14 @@ private:
 
     class run_task : public task_for_executor {
     public:
-        run_task(script& script, model::record_batch _batch)
+        run_task(script& script, model::record_batch& batch)
           : task_for_executor(script)
-          , _batch(std::move(_batch)) {}
+          , _batch(batch) {}
 
-        void operator()() override { _script.run_internal(std::move(_batch)); }
+        void operator()() override { _script.run_internal(_batch); }
 
     private:
-        model::record_batch _batch;
+        model::record_batch& _batch;
     };
 };
 
