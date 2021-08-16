@@ -21,6 +21,7 @@
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/timer.hh>
 #include <seastar/net/api.hh>
 #include <seastar/net/socket_defs.hh>
@@ -100,13 +101,17 @@ static_assert(
 uint32_t checksum_header_only(const header& h);
 
 struct client_opts {
+    using resource_units_t
+      = ss::foreign_ptr<ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>>;
     client_opts(
       clock_type::time_point client_send_timeout,
       compression_type ct,
-      size_t compression_bytes) noexcept
+      size_t compression_bytes,
+      resource_units_t resource_u = nullptr) noexcept
       : timeout(client_send_timeout)
       , compression(ct)
-      , min_compression_bytes(compression_bytes) {}
+      , min_compression_bytes(compression_bytes)
+      , resource_units(std::move(resource_u)) {}
 
     explicit client_opts(clock_type::time_point client_send_timeout) noexcept
       : client_opts(client_send_timeout, compression_type::none, 1024) {}
@@ -121,6 +126,12 @@ struct client_opts {
     clock_type::time_point timeout;
     compression_type compression;
     size_t min_compression_bytes;
+    /**
+     * Resource protecting semaphore units, those units will be relased after
+     * data are sent over the wire and send buffer is released. May be helpful
+     * to control caller resources.
+     */
+    resource_units_t resource_units;
 };
 
 /// \brief used to pass environment context to the class

@@ -231,10 +231,19 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
           // send
           auto sz = b.buffer().size_bytes();
           return get_units(_memory, sz)
-            .then([this, b = std::move(b), f = std::move(f), seq](
+            .then([this,
+                   b = std::move(b),
+                   f = std::move(f),
+                   seq,
+                   u = std::move(opts.resource_units)](
                     ss::semaphore_units<> units) mutable {
+                auto e = entry{
+                  .buffer = std::make_unique<netbuf>(std::move(b)),
+                  .resource_units = std::move(u),
+                };
+
                 _requests_queue.emplace(
-                  seq, std::make_unique<netbuf>(std::move(b)));
+                  seq, std::make_unique<entry>(std::move(e)));
                 dispatch_send();
                 return std::move(f).finally([u = std::move(units)] {});
             })
@@ -258,13 +267,15 @@ void transport::dispatch_send() {
           [this] {
               auto it = _requests_queue.begin();
               _last_seq = it->first;
-              auto buffer = std::move(it->second).get();
+              auto buffer = std::move(it->second->buffer).get();
+              auto units = std::move(it->second->resource_units);
               auto v = std::move(*buffer).as_scattered();
               auto msg_size = v.size();
               _requests_queue.erase(it->first);
-              return _out.write(std::move(v)).finally([this, msg_size] {
-                  _probe.add_bytes_sent(msg_size);
-              });
+              return _out.write(std::move(v))
+                .finally([this, msg_size, units = std::move(units)] {
+                    _probe.add_bytes_sent(msg_size);
+                });
           });
     }).handle_exception([this](std::exception_ptr e) {
         vlog(rpclog.info, "Error dispatching socket write:{}", e);
