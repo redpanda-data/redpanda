@@ -44,6 +44,9 @@ public:
       schema_version version,
       is_deleted deleted);
 
+    ss::future<subject_schema>
+    has_schema(subject sub, schema_definition def, schema_type type);
+
     ///\brief Return a schema by id.
     ss::future<schema> get_schema(const schema_id& id);
 

@@ -26,6 +26,7 @@ enum class error_code {
     subject_not_deleted,
     subject_version_soft_deleted,
     subject_version_not_deleted,
+    subject_schema_invalid,
     write_collision,
     topic_parse_error,
 };

@@ -79,6 +79,10 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
       wrap(gate, es, get_subject_versions)});
 
     routes.routes.emplace_back(server::route_t{
+      ss::httpd::schema_registry_json::post_subject,
+      wrap(gate, es, post_subject)});
+
+    routes.routes.emplace_back(server::route_t{
       ss::httpd::schema_registry_json::post_subject_versions,
       wrap(gate, es, post_subject_versions)});
 

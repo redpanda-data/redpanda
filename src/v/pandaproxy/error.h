@@ -29,6 +29,7 @@ enum class reply_error_code : uint16_t {
     conflict = 409,
     unsupported_media_type = 415,
     unprocessable_entity = 422,
+    internal_server_error = 500,
     kafka_bad_request = 40002,
     kafka_authentication_error = 40101,
     kafka_authorization_error = 40301,
