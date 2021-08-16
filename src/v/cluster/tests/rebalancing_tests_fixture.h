@@ -64,7 +64,7 @@ public:
     cluster::topic_configuration create_topic_cfg(
       ss::sstring topic, int partitions, int replication_factor) {
         model::topic_namespace tp_ns(
-          model::ns("test"), model::topic(std::move(topic)));
+          model::kafka_namespace, model::topic(std::move(topic)));
 
         return cluster::topic_configuration(
           tp_ns.ns, tp_ns.tp, partitions, replication_factor);

@@ -81,6 +81,30 @@ topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
     }
     return ss::make_ready_future<std::error_code>(errc::topic_not_exists);
 }
+ss::future<std::error_code>
+topic_table::apply(create_partition_cmd cmd, model::offset offset) {
+    auto tp = _topics.find(cmd.key);
+    if (tp == _topics.end()) {
+        co_return errc::topic_not_exists;
+    }
+
+    // add partitions
+    auto prev_partition_count = tp->second.configuration.cfg.partition_count;
+    tp->second.configuration.cfg.partition_count
+      += cmd.value.cfg.partition_count;
+    // add assignments
+    for (auto& p_as : cmd.value.assignments) {
+        p_as.id += model::partition_id(prev_partition_count);
+        tp->second.configuration.assignments.push_back(p_as);
+        // propagate deltas
+        auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, p_as.id);
+        _pending_deltas.emplace_back(
+          std::move(ntp), std::move(p_as), offset, delta::op_type::add);
+    }
+
+    notify_waiters();
+    co_return errc::success;
+}
 
 ss::future<std::error_code>
 topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {

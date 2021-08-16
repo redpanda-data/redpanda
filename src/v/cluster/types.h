@@ -386,7 +386,23 @@ struct topic_configuration {
     friend std::ostream& operator<<(std::ostream&, const topic_configuration&);
 };
 
+struct create_partititions_configuration {
+    using custom_assignment = std::vector<model::node_id>;
+    create_partititions_configuration(model::topic_namespace, int32_t);
+
+    model::topic_namespace tp_ns;
+    int32_t partition_count;
+
+    // TODO: use when we will start supporting custom partitions assignment
+    std::vector<custom_assignment> custom_assignments;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const create_partititions_configuration&);
+};
+
 struct topic_configuration_assignment {
+    topic_configuration_assignment() = delete;
+
     topic_configuration_assignment(
       topic_configuration cfg, std::vector<partition_assignment> pas)
       : cfg(std::move(cfg))
@@ -396,6 +412,20 @@ struct topic_configuration_assignment {
     std::vector<partition_assignment> assignments;
 
     model::topic_metadata get_metadata() const;
+};
+
+struct create_partititions_configuration_assignment {
+    create_partititions_configuration_assignment(
+      create_partititions_configuration cfg,
+      std::vector<partition_assignment> pas)
+      : cfg(std::move(cfg))
+      , assignments(std::move(pas)) {}
+
+    create_partititions_configuration cfg;
+    std::vector<partition_assignment> assignments;
+
+    friend std::ostream& operator<<(
+      std::ostream&, const create_partititions_configuration_assignment&);
 };
 
 struct topic_result {
@@ -712,6 +742,18 @@ template<>
 struct adl<cluster::delete_acls_result> {
     void to(iobuf&, cluster::delete_acls_result&&);
     cluster::delete_acls_result from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::create_partititions_configuration> {
+    void to(iobuf&, cluster::create_partititions_configuration&&);
+    cluster::create_partititions_configuration from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::create_partititions_configuration_assignment> {
+    void to(iobuf&, cluster::create_partititions_configuration_assignment&&);
+    cluster::create_partititions_configuration_assignment from(iobuf_parser&);
 };
 
 } // namespace reflection

@@ -27,9 +27,12 @@
 #include "random/generators.h"
 #include "rpc/errc.h"
 #include "rpc/types.h"
+#include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>
 
+#include <algorithm>
+#include <iterator>
 #include <regex>
 
 namespace cluster {
@@ -40,12 +43,14 @@ topics_frontend::topics_frontend(
   ss::sharded<rpc::connection_cache>& con,
   ss::sharded<partition_allocator>& pal,
   ss::sharded<partition_leaders_table>& l,
+  ss::sharded<topic_table>& topics,
   ss::sharded<ss::abort_source>& as)
   : _self(self)
   , _stm(s)
   , _allocator(pal)
   , _connections(con)
   , _leaders(l)
+  , _topics(topics)
   , _as(as) {}
 
 static bool
@@ -496,6 +501,79 @@ ss::future<result<model::offset>> topics_frontend::stm_linearizable_barrier(
     return _stm.invoke_on(controller_stm_shard, [timeout](controller_stm& stm) {
         return stm.instert_linerizable_barrier(timeout);
     });
+}
+
+ss::future<std::vector<topic_result>> topics_frontend::create_partitions(
+  std::vector<create_partititions_configuration> partitions,
+  model::timeout_clock::time_point timeout) {
+    auto r = co_await stm_linearizable_barrier(timeout);
+    if (!r) {
+        std::vector<topic_result> results;
+        results.reserve(partitions.size());
+        std::transform(
+          partitions.begin(),
+          partitions.end(),
+          std::back_inserter(results),
+          [err = r.error()](const create_partititions_configuration& cfg) {
+              return make_error_result(cfg.tp_ns, err);
+          });
+        co_return results;
+    }
+
+    auto result = co_await ssx::parallel_transform(
+      partitions.begin(),
+      partitions.end(),
+      [this, timeout](create_partititions_configuration cfg) {
+          return do_create_partition(std::move(cfg), timeout);
+      });
+
+    co_return result;
+}
+
+allocation_request make_allocation_request(
+  int16_t replication_factor, const create_partititions_configuration& cfg) {
+    allocation_request req;
+    req.partitions.reserve(cfg.partition_count);
+    for (auto p = 0; p < cfg.partition_count; ++p) {
+        req.partitions.emplace_back(model::partition_id(p), replication_factor);
+    }
+    return req;
+}
+
+ss::future<topic_result> topics_frontend::do_create_partition(
+  create_partititions_configuration p_cfg,
+  model::timeout_clock::time_point timeout) {
+    auto tp_cfg = _topics.local().get_topic_cfg(p_cfg.tp_ns);
+    if (!tp_cfg) {
+        co_return make_error_result(p_cfg.tp_ns, errc::topic_not_exists);
+    }
+    auto units = co_await _allocator.invoke_on(
+      partition_allocator::shard,
+      [p_cfg, rf = tp_cfg->replication_factor](partition_allocator& al) {
+          return al.allocate(make_allocation_request(rf, p_cfg));
+      });
+
+    // no assignments, error
+    if (!units) {
+        co_return make_error_result(p_cfg.tp_ns, units.error());
+    }
+
+    auto tp_ns = p_cfg.tp_ns;
+    create_partititions_configuration_assignment payload(
+      std::move(p_cfg), units.value().get_assignments());
+    create_partition_cmd cmd = create_partition_cmd(tp_ns, std::move(payload));
+
+    try {
+        auto ec = co_await replicate_and_wait(std::move(cmd), timeout);
+        co_return topic_result(tp_ns, map_errc(ec));
+    } catch (...) {
+        vlog(
+          clusterlog.warn,
+          "Unable to create topic {} partitions - {}",
+          tp_ns,
+          std::current_exception());
+        co_return topic_result(std::move(tp_ns), errc::replication_error);
+    }
 }
 
 } // namespace cluster
