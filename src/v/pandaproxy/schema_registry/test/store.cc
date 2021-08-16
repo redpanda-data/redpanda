@@ -10,6 +10,7 @@
 #include "pandaproxy/schema_registry/store.h"
 
 #include "pandaproxy/schema_registry/error.h"
+#include "pandaproxy/schema_registry/test/compatibility_avro.h"
 #include "pandaproxy/schema_registry/util.h"
 
 #include <absl/algorithm/container.h>
@@ -196,6 +197,54 @@ BOOST_AUTO_TEST_CASE(test_store_get_schema) {
     BOOST_REQUIRE_EQUAL(val.id, ins_res.id);
     BOOST_REQUIRE_EQUAL(val.definition(), string_def0());
     BOOST_REQUIRE(val.type == pps::schema_type::avro);
+}
+
+BOOST_AUTO_TEST_CASE(test_store_get_schema_subject_versions) {
+    pps::store s;
+
+    pps::seq_marker dummy_marker;
+
+    // First insert, expect id{1}
+    auto ins_res = s.insert(
+      subject0, pps::schema_definition(schema1), pps::schema_type::avro);
+    BOOST_REQUIRE(ins_res.inserted);
+    BOOST_REQUIRE_EQUAL(ins_res.id, pps::schema_id{1});
+    BOOST_REQUIRE_EQUAL(ins_res.version, pps::schema_version{1});
+
+    auto versions = s.get_schema_subject_versions(pps::schema_id{1});
+    BOOST_REQUIRE_EQUAL(versions.size(), 1);
+    BOOST_REQUIRE_EQUAL(versions[0].sub, subject0);
+    BOOST_REQUIRE_EQUAL(versions[0].version, pps::schema_version{1});
+
+    versions = s.get_schema_subject_versions(pps::schema_id{2});
+    BOOST_REQUIRE(versions.empty());
+
+    // Second insert, expect id{2}
+    ins_res = s.insert(
+      subject0, pps::schema_definition(schema2), pps::schema_type::avro);
+    BOOST_REQUIRE(ins_res.inserted);
+    BOOST_REQUIRE_EQUAL(ins_res.id, pps::schema_id{2});
+    BOOST_REQUIRE_EQUAL(ins_res.version, pps::schema_version{2});
+
+    // expect [{schema 2, version 2}]
+    versions = s.get_schema_subject_versions(pps::schema_id{2});
+    BOOST_REQUIRE_EQUAL(versions.size(), 1);
+    BOOST_REQUIRE_EQUAL(versions[0].sub, subject0);
+    BOOST_REQUIRE_EQUAL(versions[0].version, pps::schema_version{2});
+
+    // delete version 1
+    s.upsert_subject(
+      dummy_marker,
+      subject0,
+      pps::schema_version{1},
+      pps::schema_id{1},
+      pps::is_deleted::yes);
+
+    // expect [{{schema 2, version 2}]
+    versions = s.get_schema_subject_versions(pps::schema_id{2});
+    BOOST_REQUIRE_EQUAL(versions.size(), 1);
+    BOOST_REQUIRE_EQUAL(versions[0].sub, subject0);
+    BOOST_REQUIRE_EQUAL(versions[0].version, pps::schema_version{2});
 }
 
 BOOST_AUTO_TEST_CASE(test_store_get_subject_schema) {

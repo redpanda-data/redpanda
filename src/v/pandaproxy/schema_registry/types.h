@@ -86,6 +86,14 @@ static constexpr schema_version invalid_schema_version{-1};
 using schema_id = named_type<int32_t, struct schema_id_tag>;
 static constexpr schema_id invalid_schema_id{-1};
 
+struct subject_version {
+    subject_version(subject s, schema_version v)
+      : sub{std::move(s)}
+      , version{v} {}
+    subject sub;
+    schema_version version;
+};
+
 // Very similar to topic_key_type, separate to avoid intermingling storage code
 enum class seq_marker_key_type { invalid = 0, schema, delete_subject, config };
 

@@ -20,6 +20,7 @@
 #include "pandaproxy/schema_registry/requests/compatibility.h"
 #include "pandaproxy/schema_registry/requests/config.h"
 #include "pandaproxy/schema_registry/requests/get_schemas_ids_id.h"
+#include "pandaproxy/schema_registry/requests/get_schemas_ids_id_versions.h"
 #include "pandaproxy/schema_registry/requests/get_subject_versions_version.h"
 #include "pandaproxy/schema_registry/requests/post_subject_versions.h"
 #include "pandaproxy/schema_registry/storage.h"
@@ -177,6 +178,27 @@ get_schemas_ids_id(server::request_t rq, server::reply_t rp) {
 
     auto json_rslt = ppj::rjson_serialize(get_schemas_ids_id_response{
       .definition{std::move(schema_val.definition)}});
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
+ss::future<server::reply_t>
+get_schemas_ids_id_versions(server::request_t rq, server::reply_t rp) {
+    parse_accept_header(rq, rp);
+    auto id = parse::request_param<schema_id>(*rq.req, "id");
+    rq.req.reset();
+
+    // List-type request: must ensure we see latest writes
+    co_await rq.service().writer().read_sync();
+
+    // Force early 40403 if the schema id isn't found
+    co_await rq.service().schema_store().get_schema(id);
+
+    auto svs = co_await rq.service().schema_store().get_schema_subject_versions(
+      id);
+
+    auto json_rslt = ppj::rjson_serialize(
+      get_schemas_ids_id_versions_response{.subject_versions{std::move(svs)}});
     rp.rep->write_body("json", json_rslt);
     co_return rp;
 }
