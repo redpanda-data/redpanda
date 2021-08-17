@@ -12,6 +12,7 @@ const FeatureList = [
         to get streaming up and running quickly.
       </>
     ),
+    url: '/',
   },
   {
     title: 'Production Redpanda deployments',
@@ -22,6 +23,7 @@ const FeatureList = [
         After you see its power, put Redpanda to the real test in production.
       </>
     ),
+    url: '/',
   },
   {
     title: 'Deeper dive into Redpanda',
@@ -31,17 +33,22 @@ const FeatureList = [
         When you want to use the more advanced Redpanda features...
       </>
     ),
+    url: '/',
   },
 ];
 
-function Feature({Svg, title, description}) {
+function Feature({Svg, title, description, url}) {
   return (
     <div className={clsx('col col--4')}>
-      <div className="text--center">
-        <Svg className={styles.featureSvg} alt={title} />
-      </div>
+      <a href={url}>
+        <div className="text--center">
+          <Svg className={styles.featureSvg} alt={title} />
+        </div>
+      </a>
       <div className="text--center padding-horiz--md">
-        <h3>{title}</h3>
+        <a href={url}>
+          <h3>{title}</h3>
+        </a>
         <p>{description}</p>
       </div>
     </div>

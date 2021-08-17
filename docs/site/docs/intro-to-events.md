@@ -1,4 +1,5 @@
 ---
+title: Intro to events and streaming
 sidebar_position: 2
 ---
 

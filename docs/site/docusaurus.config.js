@@ -15,20 +15,44 @@ module.exports = {
   themeConfig: {
     navbar: {
       title: '',
+      hideOnScroll: true,
       logo: {
         alt: 'Vectorized Logo',
-        src: 'img/Vectorized Logo Horizontal.png',
+        src: 'img/VectorizedDocsLogo.svg',
+        srcDark: 'img/VectorizedDocsLogoInverted.svg',
       },
       items: [
-        { href: 'https://vectorized.io/redpanda', label: 'Redpanda', position: 'right' },
-        { href: 'https://vectorized.io/cloud', label: 'Cloud', position: 'right' },
-        { href: '/docs/intro', label: 'Docs', position: 'right' },
-        { href: 'https://vectorized.io/team', label: 'Team', position: 'right' },
-        { href: 'https://vectorized.io/careers', label: 'Careers', position: 'right' },
-        { href: 'https://vectorized.io/blog', label: 'Blog', position: 'right' },
-        { href: 'https://join.slack.com/t/vectorizedcommunity/shared_invite/zt-ng2ze1uv-l5VMWSGQHB9gp47~kNnYGA', label: 'Slack', position: 'right' },
-        { href: 'https://github.com/vectorizedio/redpanda', label: 'Github', position: 'right' },
+        // Left
+        { href: '/', label: 'Docs', position: 'left' },
+        { href: '/docs/getting-started/quick-start-docker', label: 'Quick Start', position: 'left' },
+        // { href: 'https://vectorized.io/blog', label: 'Blog', position: 'left' },
+        // Right
+        { 
+          href: 'https://join.slack.com/t/vectorizedcommunity/shared_invite/zt-ng2ze1uv-l5VMWSGQHB9gp47~kNnYGA', 
+          position: 'right',
+          label: 'Slack',
+          className: 'header-icon header-icon-slack',
+          'aria-label': 'Slack',
+        },
+        {
+          href: 'https://github.com/vectorizedio/redpanda',
+          position: 'right',
+          label: 'Github',
+          className: 'header-icon header-icon-github',
+          'aria-label': 'GitHub repository',
+        },
       ],
+      // General Nav
+      // items: [
+      //   { href: 'https://vectorized.io/redpanda', label: 'Redpanda', position: 'right' },
+      //   { href: 'https://vectorized.io/cloud', label: 'Cloud', position: 'right' },
+      //   { href: '/docs/intro', label: 'Docs', position: 'right' },
+      //   { href: 'https://vectorized.io/team', label: 'Team', position: 'right' },
+      //   { href: 'https://vectorized.io/careers', label: 'Careers', position: 'right' },
+      //   { href: 'https://vectorized.io/blog', label: 'Blog', position: 'right' },
+      //   { href: 'https://join.slack.com/t/vectorizedcommunity/shared_invite/zt-ng2ze1uv-l5VMWSGQHB9gp47~kNnYGA', label: 'Slack', position: 'right' },
+      //   { href: 'https://github.com/vectorizedio/redpanda', label: 'Github', position: 'right' },
+      // ],
     },
     footer: {
       style: 'dark',
@@ -38,7 +62,7 @@ module.exports = {
           items: [
             { label: 'Redpanda', to: 'https://vectorized.io/redpanda' },
             { label: 'Cloud', to: 'https://vectorized.io/cloud' },
-            { label: 'Documentation', to: 'https://vectorized.io/docs' },
+            // { label: 'Documentation', to: 'https://vectorized.io/docs' },
             { label: 'Blog', to: 'https://vectorized.io/blog' },
             { label: 'Events', to: 'https://vectorized.io/events' },
             { label: 'Support', to: 'https://support.vectorized.io' },
