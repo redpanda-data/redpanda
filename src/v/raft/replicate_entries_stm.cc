@@ -30,13 +30,13 @@ using namespace std::chrono_literals;
 ss::future<append_entries_request> replicate_entries_stm::share_request() {
     // one extra copy is needed for retries
     return with_semaphore(_share_sem, 1, [this] {
-        return details::foreign_share_n(std::move(_req.batches), 2)
+        return details::foreign_share_n(std::move(_req->batches), 2)
           .then([this](std::vector<model::record_batch_reader> readers) {
               // keep a copy around until the end
-              _req.batches = std::move(readers.back());
+              _req->batches = std::move(readers.back());
               readers.pop_back();
               return append_entries_request{
-                _req.node_id, _req.meta, std::move(readers.back())};
+                _req->node_id, _req->meta, std::move(readers.back())};
           });
     });
 }
@@ -85,11 +85,12 @@ replicate_entries_stm::send_append_entries_request(
     vlog(_ctxlog.trace, "Sending append entries request {} to {}", req.meta, n);
 
     req.target_node_id = n;
+
+    auto opts = rpc::client_opts(append_entries_timeout());
+    opts.resource_units = ss::make_foreign<ss::lw_shared_ptr<units_t>>(_units);
+
     auto f = _ptr->_client_protocol
-               .append_entries(
-                 n.id(),
-                 std::move(req),
-                 rpc::client_opts(append_entries_timeout()))
+               .append_entries(n.id(), std::move(req), std::move(opts))
                .then([this](result<append_entries_reply> reply) {
                    return _ptr->validate_reply_target_node(
                      "append_entries_replicate", std::move(reply));
@@ -192,8 +193,7 @@ inline bool replicate_entries_stm::should_skip_follower_request(vnode id) {
     return false;
 }
 
-ss::future<result<replicate_result>>
-replicate_entries_stm::apply(std::vector<ss::semaphore_units<>> u) {
+ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
     // first append lo leader log, no flushing
     auto cfg = _ptr->config();
     cfg.for_each_broker_id([this](const vnode& rni) {
@@ -203,8 +203,9 @@ replicate_entries_stm::apply(std::vector<ss::semaphore_units<>> u) {
               rni, _followers_seq[rni], heartbeats_suppressed::yes);
         }
     });
+    _units = ss::make_lw_shared<units_t>(std::move(u));
     return append_to_self()
-      .then([this, u = std::move(u), cfg = std::move(cfg)](
+      .then([this, cfg = std::move(cfg)](
               result<storage::append_result> append_result) mutable {
           if (!append_result) {
               return ss::make_ready_future<result<storage::append_result>>(
@@ -230,7 +231,9 @@ replicate_entries_stm::apply(std::vector<ss::semaphore_units<>> u) {
           });
           // Wait until all RPCs will be dispatched
           return _dispatch_sem.wait(requests_count)
-            .then([append_result, u = std::move(u)]() mutable {
+            .then([this, append_result]() mutable {
+                _req.reset();
+                _units.release();
                 return append_result;
             });
       })
@@ -296,7 +299,7 @@ replicate_entries_stm::replicate_entries_stm(
   append_entries_request r,
   absl::flat_hash_map<vnode, follower_req_seq> seqs)
   : _ptr(p)
-  , _req(std::move(r))
+  , _req(std::make_unique<append_entries_request>(std::move(r)))
   , _followers_seq(std::move(seqs))
   , _share_sem(1)
   , _ctxlog(_ptr->_ctxlog) {}
