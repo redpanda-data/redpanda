@@ -2458,7 +2458,13 @@ heartbeats_suppressed consensus::are_heartbeats_suppressed(vnode id) const {
 void consensus::update_suppress_heartbeats(
   vnode id, follower_req_seq last_seq, heartbeats_suppressed suppressed) {
     if (auto it = _fstats.find(id); it != _fstats.end()) {
-        if (last_seq <= it->second.last_sent_seq) {
+        /**
+         * Since there may be concurrent sources causing heartbeats suppression
+         * we use last_suppress_heartbeats_seq to control concurrency of
+         * heartbeats state update
+         */
+        if (last_seq >= it->second.last_suppress_heartbeats_seq) {
+            it->second.last_suppress_heartbeats_seq = last_seq;
             it->second.suppress_heartbeats = suppressed;
         }
     }

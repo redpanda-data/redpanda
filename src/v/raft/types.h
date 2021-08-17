@@ -149,10 +149,11 @@ struct follower_index_metadata {
      */
     ss::condition_variable follower_state_change;
     /**
-     * We prevent race conditions accessing suppress_heartbeats flag using the
-     * `last_sent_seq` value for version control.
+     * We prevent race conditions accessing suppress_heartbeats with MVCC based
+     * on last_suppress_heartbeats_seq field.
      */
     heartbeats_suppressed suppress_heartbeats = heartbeats_suppressed::no;
+    follower_req_seq last_suppress_heartbeats_seq{0};
 };
 /**
  * class containing follower statistics, this may be helpful for debugging,
