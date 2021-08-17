@@ -139,7 +139,7 @@ private:
     leader_balancer_probe _probe;
     bool _need_controller_refresh{true};
     absl::btree_map<raft::group_id, clock_type::time_point> _muted;
-    cluster::notification_id_type _leader_notify_handle;
+    model::notification_id_type _leader_notify_handle;
     topic_table& _topics;
     partition_leaders_table& _leaders;
     raft::consensus_client_protocol _client;

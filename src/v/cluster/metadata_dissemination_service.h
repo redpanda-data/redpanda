@@ -142,7 +142,7 @@ private:
     ss::timer<> _dispatch_timer;
     ss::abort_source _as;
     ss::gate _bg;
-    cluster::notification_id_type _notification_handle;
+    model::notification_id_type _notification_handle;
 };
 
 } // namespace cluster
