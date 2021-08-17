@@ -182,6 +182,11 @@ struct broker_shard {
     uint32_t shard;
     friend std::ostream& operator<<(std::ostream&, const broker_shard&);
     bool operator==(const broker_shard&) const = default;
+
+    template<typename H>
+    friend H AbslHashValue(H h, const broker_shard& s) {
+        return H::combine(std::move(h), s.node_id(), s.shard);
+    }
 };
 
 struct partition_metadata {

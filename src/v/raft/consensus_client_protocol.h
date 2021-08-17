@@ -47,6 +47,11 @@ public:
 
         virtual ss::future<bool> ensure_disconnect(model::node_id) = 0;
 
+        virtual ss::future<result<transfer_leadership_reply>>
+        transfer_leadership(
+          model::node_id, transfer_leadership_request&&, rpc::client_opts)
+          = 0;
+
         virtual ~impl() noexcept = default;
     };
 
@@ -90,6 +95,14 @@ public:
 
     ss::future<bool> ensure_disconnect(model::node_id target_node) {
         return _impl->ensure_disconnect(target_node);
+    }
+
+    ss::future<result<transfer_leadership_reply>> transfer_leadership(
+      model::node_id target_node,
+      transfer_leadership_request&& r,
+      rpc::client_opts opts) {
+        return _impl->transfer_leadership(
+          target_node, std::move(r), std::move(opts));
     }
 
 private:

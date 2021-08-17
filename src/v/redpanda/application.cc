@@ -567,7 +567,8 @@ void application::wire_up_redpanda_services() {
       _raft_connection_cache,
       partition_manager,
       shard_table,
-      storage);
+      storage,
+      std::ref(raft_group_manager));
 
     controller->wire_up().get0();
     syschecks::systemd_message("Creating kafka metadata cache").get();

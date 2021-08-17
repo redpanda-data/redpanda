@@ -833,6 +833,24 @@ configuration::configuration()
       "Enable automatic partition rebalancing when new nodes are added",
       required::no,
       false)
+  , enable_leader_balancer(
+      *this,
+      "enable_leader_balancer",
+      "Enable automatic leadership rebalancing",
+      required::no,
+      true)
+  , leader_balancer_idle_timeout(
+      *this,
+      "leader_balancer_idle_timeout",
+      "Leadership rebalancing idle timeout",
+      required::no,
+      2min)
+  , leader_balancer_mute_timeout(
+      *this,
+      "leader_balancer_mute_timeout",
+      "Leadership rebalancing mute timeout",
+      required::no,
+      5min)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",

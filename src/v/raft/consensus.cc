@@ -2133,19 +2133,6 @@ group_configuration consensus::config() const {
     return _configuration_manager.get_latest();
 }
 
-static std::ostream&
-operator<<(std::ostream& os, const consensus::vote_state& state) {
-    switch (state) {
-    case consensus::vote_state::leader:
-        return os << "{leader}";
-    case consensus::vote_state::follower:
-        return os << "{follower}";
-    case consensus::vote_state::candidate:
-        return os << "{candidate}";
-    }
-    std::terminate(); // make gcc happy
-}
-
 ss::future<timeout_now_reply> consensus::timeout_now(timeout_now_request&& r) {
     if (unlikely(is_request_target_node_invalid("timeout_now", r))) {
         return ss::make_ready_future<timeout_now_reply>(timeout_now_reply{
@@ -2211,10 +2198,33 @@ ss::future<timeout_now_reply> consensus::timeout_now(timeout_now_request&& r) {
     });
 }
 
+ss::future<transfer_leadership_reply>
+consensus::transfer_leadership(transfer_leadership_request req) {
+    transfer_leadership_reply reply;
+    auto err = co_await do_transfer_leadership(req.target);
+    if (err) {
+        vlog(
+          _ctxlog.warn,
+          "Unable to transfer leadership to {}: {}",
+          req.target,
+          err.message());
+
+        reply.success = false;
+        if (err.category() == raft::error_category()) {
+            reply.result = static_cast<errc>(err.value());
+        }
+        co_return reply;
+    }
+
+    reply.success = true;
+    reply.result = errc::success;
+    co_return reply;
+}
+
 ss::future<std::error_code>
-consensus::transfer_leadership(std::optional<model::node_id> target) {
+consensus::do_transfer_leadership(std::optional<model::node_id> target) {
     if (!is_leader()) {
-        vlog(_ctxlog.debug, "Cannot transfer leadership from non-leader");
+        vlog(_ctxlog.warn, "Cannot transfer leadership from non-leader");
         return seastar::make_ready_future<std::error_code>(
           make_error_code(errc::not_leader));
     }
@@ -2229,7 +2239,7 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
 
         if (unlikely(it == _fstats.end())) {
             vlog(
-              _ctxlog.debug,
+              _ctxlog.warn,
               "Cannot transfer leadership. No suitable target node found");
             return seastar::make_ready_future<std::error_code>(
               make_error_code(errc::node_does_not_exists));
@@ -2239,14 +2249,14 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
     }
 
     if (*target == _self.id()) {
-        vlog(_ctxlog.debug, "Cannot transfer leadership to self");
+        vlog(_ctxlog.warn, "Cannot transfer leadership to self");
         return seastar::make_ready_future<std::error_code>(
           make_error_code(errc::not_leader));
     }
 
     if (_configuration_manager.get_latest_offset() > _commit_index) {
         vlog(
-          _ctxlog.debug,
+          _ctxlog.warn,
           "Cannot transfer leadership during configuration change");
         return ss::make_ready_future<std::error_code>(
           make_error_code(errc::configuration_change_in_progress));
@@ -2256,7 +2266,7 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
 
     if (!target_rni) {
         vlog(
-          _ctxlog.debug,
+          _ctxlog.warn,
           "Cannot transfer leadership to node {} not found in configuration",
           *target);
         return seastar::make_ready_future<std::error_code>(
@@ -2265,7 +2275,7 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
 
     if (!conf.is_voter(*target_rni)) {
         vlog(
-          _ctxlog.debug,
+          _ctxlog.warn,
           "Cannot transfer leadership to node {} which is a learner",
           *target_rni);
         return seastar::make_ready_future<std::error_code>(
@@ -2274,7 +2284,7 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
 
     vlog(
       _ctxlog.info,
-      "Transferring leadership from {} to {} in term {}",
+      "Starting leadership transfer from {} to {} in term {}",
       _self,
       *target_rni,
       _term);
@@ -2282,7 +2292,7 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
     auto f = ss::with_gate(_bg, [this, target_rni = *target_rni] {
         if (_transferring_leadership) {
             vlog(
-              _ctxlog.info,
+              _ctxlog.warn,
               "Cannot transfer leadership. Transfer already in "
               "progress.");
             return seastar::make_ready_future<std::error_code>(
@@ -2328,7 +2338,7 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
         auto f = ss::now();
         if (meta.is_recovering) {
             vlog(
-              _ctxlog.info,
+              _ctxlog.warn,
               "Waiting on node to recover before requesting election");
             auto timeout = ss::semaphore::clock::duration(
               config::shard_local_cfg()
@@ -2348,7 +2358,7 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
              */
             if (!is_leader()) {
                 vlog(
-                  _ctxlog.debug, "Cannot transfer leadership from non-leader");
+                  _ctxlog.warn, "Cannot transfer leadership from non-leader");
                 return seastar::make_ready_future<std::error_code>(
                   make_error_code(errc::not_leader));
             }

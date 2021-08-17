@@ -460,6 +460,18 @@ struct timeout_now_reply {
     status result;
 };
 
+// if not target is specified then the most up-to-date node will be selected
+struct transfer_leadership_request {
+    group_id group;
+    std::optional<model::node_id> target;
+    raft::group_id target_group() const { return group; }
+};
+
+struct transfer_leadership_reply {
+    bool success{false};
+    raft::errc result;
+};
+
 // key types used to store data in key-value store
 enum class metadata_key : int8_t {
     voted_for = 0,

@@ -170,6 +170,20 @@ public:
         });
     }
 
+    [[gnu::always_inline]] ss::future<transfer_leadership_reply>
+    transfer_leadership(
+      transfer_leadership_request&& r, rpc::streaming_context&) final {
+        return _probe.transfer_leadership().then(
+          [this, r = std::move(r)]() mutable {
+              return dispatch_request(
+                std::move(r),
+                &service::make_failed_transfer_leadership_reply,
+                [](transfer_leadership_request&& r, consensus_ptr c) {
+                    return c->transfer_leadership(std::move(r));
+                });
+          });
+    }
+
 private:
     using consensus_ptr = seastar::lw_shared_ptr<consensus>;
     using hbeats_t = std::vector<append_entries_request>;
@@ -200,6 +214,12 @@ private:
 
     static ss::future<timeout_now_reply> make_failed_timeout_now_reply() {
         return ss::make_ready_future<timeout_now_reply>(timeout_now_reply{});
+    }
+
+    static ss::future<transfer_leadership_reply>
+    make_failed_transfer_leadership_reply() {
+        return ss::make_ready_future<transfer_leadership_reply>(
+          transfer_leadership_reply{});
     }
 
     template<typename Req, typename ErrorFactory, typename Func>
