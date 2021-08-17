@@ -110,10 +110,54 @@ ss::future<bool> sharded_store::upsert(
     co_return co_await upsert_subject(marker, sub, version, id, deleted);
 }
 
+ss::future<subject_schema> sharded_store::has_schema(
+  subject sub, schema_definition def, schema_type type) {
+    auto versions = co_await get_versions(sub, include_deleted::no);
+
+    if (validate(def(), type).has_error()) {
+        throw as_exception(invalid_subject_schema(sub));
+    }
+
+    std::optional<subject_schema> sub_schema;
+    for (auto ver : versions) {
+        try {
+            auto res = co_await get_subject_schema(
+              sub, ver, include_deleted::no);
+            if (def == res.definition) {
+                sub_schema.emplace(std::move(res));
+                break;
+            }
+        } catch (const exception& e) {
+            if (
+              e.code() == error_code::subject_not_found
+              || e.code() == error_code::subject_version_not_found) {
+            } else {
+                throw;
+            }
+        }
+    };
+    if (!sub_schema.has_value()) {
+        throw as_exception(schema_not_found());
+    }
+    co_return std::move(sub_schema).value();
+}
+
 ss::future<schema> sharded_store::get_schema(const schema_id& id) {
     auto schema = co_await _store.invoke_on(
       shard_for(id), _smp_opts, &store::get_schema, id);
     co_return std::move(schema).value();
+}
+
+ss::future<std::vector<subject_version>>
+sharded_store::get_schema_subject_versions(schema_id id) {
+    auto map = [id](store& s) { return s.get_schema_subject_versions(id); };
+    auto reduce =
+      [](std::vector<subject_version> acc, std::vector<subject_version> svs) {
+          acc.insert(acc.end(), svs.begin(), svs.end());
+          return acc;
+      };
+    co_return co_await _store.map_reduce0(
+      map, std::vector<subject_version>{}, reduce);
 }
 
 ss::future<subject_schema> sharded_store::get_subject_schema(

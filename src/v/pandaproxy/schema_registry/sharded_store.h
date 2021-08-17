@@ -44,8 +44,15 @@ public:
       schema_version version,
       is_deleted deleted);
 
+    ss::future<subject_schema>
+    has_schema(subject sub, schema_definition def, schema_type type);
+
     ///\brief Return a schema by id.
     ss::future<schema> get_schema(const schema_id& id);
+
+    ///\brief Return a list of subject-versions for the shema id.
+    ss::future<std::vector<subject_version>>
+    get_schema_subject_versions(schema_id id);
 
     ///\brief Return a schema by subject and version.
     ss::future<subject_schema> get_subject_schema(

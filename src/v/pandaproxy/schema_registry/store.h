@@ -78,6 +78,19 @@ public:
                                       : s_it->first;
     }
 
+    ///\brief Return a list of subject-versions for the shema id.
+    std::vector<subject_version> get_schema_subject_versions(schema_id id) {
+        std::vector<subject_version> svs;
+        for (const auto& s : _subjects) {
+            for (const auto& vs : s.second.versions) {
+                if (vs.id == id && !vs.deleted) {
+                    svs.emplace_back(s.first, vs.version);
+                }
+            }
+        }
+        return svs;
+    }
+
     ///\brief Return subject_version_id for a subject and version
     result<subject_version_id> get_subject_version_id(
       const subject& sub,
@@ -267,11 +280,11 @@ public:
         auto& versions = sub_it->second.versions;
         std::vector<schema_version> res;
         res.reserve(versions.size());
-        std::transform(
-          versions.begin(),
-          versions.end(),
-          std::back_inserter(res),
-          [](const auto& v) { return v.version; });
+        for (const auto& ver : versions) {
+            if (permanent || !ver.deleted) {
+                res.push_back(ver.version);
+            }
+        }
 
         if (permanent) {
             _subjects.erase(sub_it);

@@ -20,6 +20,7 @@
 #include "pandaproxy/schema_registry/requests/compatibility.h"
 #include "pandaproxy/schema_registry/requests/config.h"
 #include "pandaproxy/schema_registry/requests/get_schemas_ids_id.h"
+#include "pandaproxy/schema_registry/requests/get_schemas_ids_id_versions.h"
 #include "pandaproxy/schema_registry/requests/get_subject_versions_version.h"
 #include "pandaproxy/schema_registry/requests/post_subject_versions.h"
 #include "pandaproxy/schema_registry/storage.h"
@@ -182,6 +183,27 @@ get_schemas_ids_id(server::request_t rq, server::reply_t rp) {
 }
 
 ss::future<server::reply_t>
+get_schemas_ids_id_versions(server::request_t rq, server::reply_t rp) {
+    parse_accept_header(rq, rp);
+    auto id = parse::request_param<schema_id>(*rq.req, "id");
+    rq.req.reset();
+
+    // List-type request: must ensure we see latest writes
+    co_await rq.service().writer().read_sync();
+
+    // Force early 40403 if the schema id isn't found
+    co_await rq.service().schema_store().get_schema(id);
+
+    auto svs = co_await rq.service().schema_store().get_schema_subject_versions(
+      id);
+
+    auto json_rslt = ppj::rjson_serialize(
+      get_schemas_ids_id_versions_response{.subject_versions{std::move(svs)}});
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
+ss::future<server::reply_t>
 get_subjects(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto inc_del{
@@ -214,6 +236,42 @@ get_subject_versions(server::request_t rq, server::reply_t rp) {
       sub, inc_del);
 
     auto json_rslt{json::rjson_serialize(versions)};
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
+ss::future<server::reply_t>
+post_subject(server::request_t rq, server::reply_t rp) {
+    parse_content_type_header(rq);
+    parse_accept_header(rq, rp);
+    auto sub = parse::request_param<subject>(*rq.req, "subject");
+    vlog(plog.debug, "post_subject subject='{}'", sub);
+    // We must sync
+    co_await rq.service().writer().read_sync();
+
+    // Force 40401 if no subject
+    co_await rq.service().schema_store().get_versions(sub, include_deleted::no);
+
+    post_subject_versions_request req{};
+    try {
+        req = post_subject_versions_request{
+          .sub = sub,
+          .payload = ppj::rjson_parse(
+            rq.req->content.data(), post_subject_versions_request_handler<>{})};
+    } catch (const ppj::parse_error&) {
+        throw as_exception(invalid_subject_schema(sub));
+    }
+
+    rq.req.reset();
+
+    auto sub_schema = co_await rq.service().schema_store().has_schema(
+      req.sub, req.payload.schema, req.payload.type);
+
+    auto json_rslt{json::rjson_serialize(post_subject_versions_version_response{
+      .sub{std::move(sub_schema.sub)},
+      .id{sub_schema.id},
+      .version{sub_schema.version},
+      .definition{std::move(sub_schema.definition)}})};
     rp.rep->write_body("json", json_rslt);
     co_return rp;
 }

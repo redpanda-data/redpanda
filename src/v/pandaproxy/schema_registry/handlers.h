@@ -37,10 +37,16 @@ ss::future<ctx_server<service>::reply_t> get_schemas_types(
 ss::future<ctx_server<service>::reply_t> get_schemas_ids_id(
   ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
 
+ss::future<ctx_server<service>::reply_t> get_schemas_ids_id_versions(
+  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
+
 ss::future<ctx_server<service>::reply_t> get_subjects(
   ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
 
 ss::future<ctx_server<service>::reply_t> get_subject_versions(
+  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
+
+ss::future<ctx_server<service>::reply_t> post_subject(
   ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp);
 
 ss::future<ctx_server<service>::reply_t> post_subject_versions(
