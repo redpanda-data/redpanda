@@ -9,7 +9,7 @@ CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 # BUILDKITE_JOB_ID is set in the buildkite runner for every CI run.
 #
 # https://buildkite.com/docs/pipelines/environment-variables#bk-env-vars-buildkite-job-id
-BUILDKITE_JOB_ID ?= "kind"
+BUILDKITE_JOB_ID ?= kind
 
 ifeq (aarch64,$(uname -m))
 TARGETARCH = arm64
