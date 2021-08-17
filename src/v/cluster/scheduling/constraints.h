@@ -16,7 +16,7 @@
 namespace cluster {
 
 hard_constraint_evaluator not_fully_allocated();
-hard_constraint_evaluator not_decommissioned();
+hard_constraint_evaluator is_active();
 
 hard_constraint_evaluator on_node(model::node_id);
 

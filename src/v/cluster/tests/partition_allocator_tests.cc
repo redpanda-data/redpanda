@@ -9,6 +9,7 @@
 
 #include "cluster/scheduling/types.h"
 #include "cluster/tests/partition_allocator_fixture.h"
+#include "model/metadata.h"
 #include "raft/types.h"
 #include "random/fast_prng.h"
 #include "random/generators.h"
@@ -43,13 +44,29 @@ FIXTURE_TEST(register_node, partition_allocator_fixture) {
     BOOST_REQUIRE_EQUAL(allocator.state().available_nodes(), 3);
 }
 
+model::broker create_broker(int node_id, uint32_t core_count) {
+    return model::broker(
+      model::node_id(node_id),
+      unresolved_address("localhost", 1024),
+      unresolved_address("localhost", 1024),
+      std::nullopt,
+      model::broker_properties{.cores = core_count});
+}
+
 FIXTURE_TEST(unregister_node, partition_allocator_fixture) {
     register_node(0, 32);
     register_node(1, 64);
     register_node(2, 12);
-    allocator.unregister_node(model::node_id(1));
+
+    allocator.update_allocation_nodes(
+      std::vector<model::broker>{create_broker(0, 32), create_broker(2, 12)});
     BOOST_REQUIRE(allocator.contains_node(model::node_id(0)));
-    BOOST_REQUIRE(!allocator.contains_node(model::node_id(1)));
+    // allocator MUST still contain the node. it has to be marked as removed
+    BOOST_REQUIRE(allocator.contains_node(model::node_id(1)));
+    BOOST_REQUIRE(allocator.state()
+                    .allocation_nodes()
+                    .find(model::node_id(1))
+                    ->second->is_removed());
     BOOST_REQUIRE(allocator.contains_node(model::node_id(2)));
     BOOST_REQUIRE_EQUAL(allocator.state().available_nodes(), 2);
 }
@@ -434,4 +451,36 @@ FIXTURE_TEST(allocator_exception_safety_test, partition_allocator_fixture) {
         }
         BOOST_REQUIRE_EQUAL(capacity, max_capacity());
     }
+}
+
+FIXTURE_TEST(updating_nodes_core_count, partition_allocator_fixture) {
+    register_node(0, 2);
+    register_node(1, 4);
+    register_node(2, 7);
+
+    auto capacity = max_capacity();
+
+    // change node 1 core coung from 4 to 10
+    for (int i = 0; i < 50; ++i) {
+        // try to allocate single partition
+        auto req = make_allocation_request(1, 1);
+        auto res = allocator.allocate(std::move(req));
+        if (res) {
+            capacity--;
+            for (auto& as : res.value().get_assignments()) {
+                allocator.update_allocation_state(as.replicas, as.group);
+            }
+        }
+    }
+    auto it = allocator.state().allocation_nodes().find(model::node_id(1));
+    auto allocated = it->second->allocated_partitions();
+    allocator.update_allocation_nodes(std::vector<model::broker>{
+      create_broker(0, 2), create_broker(1, 10), create_broker(2, 7)});
+    BOOST_REQUIRE_EQUAL(it->second->cpus(), 10);
+    // changing core count doesn't change number of allocated partitions
+    BOOST_REQUIRE_EQUAL(it->second->allocated_partitions(), allocated);
+    BOOST_REQUIRE_EQUAL(
+      it->second->max_capacity(),
+      10 * cluster::allocation_node::max_allocations_per_core
+        - cluster::allocation_node::core0_extra_weight);
 }

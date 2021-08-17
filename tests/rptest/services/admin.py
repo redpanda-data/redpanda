@@ -127,7 +127,7 @@ class Admin:
 
     def _send_request(self, handler):
         def try_send():
-            nodes = [n for n in self.redpanda.nodes]
+            nodes = [n for n in self.redpanda.started_nodes()]
             random.shuffle(nodes)
             for node in nodes:
                 if handler(node):

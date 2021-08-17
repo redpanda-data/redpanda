@@ -22,6 +22,8 @@ FIXTURE_TEST(test_join_single_node, cluster_test_fixture) {
     auto app = create_node_application(id);
     wait_for_controller_leadership(id).get();
 
+    wait_for_all_members(3s).get();
+
     auto brokers = get_local_cache(model::node_id{0}).all_brokers();
 
     // single broker

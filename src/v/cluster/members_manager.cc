@@ -71,71 +71,50 @@ members_manager::members_manager(
 ss::future<> members_manager::start() {
     vlog(clusterlog.info, "starting cluster::members_manager...");
     // join raft0
-    if (!is_already_member()) {
-        join_raft0();
+    for (auto& b : _raft0->config().brokers()) {
+        if (b.id() == _self.id()) {
+            continue;
+        }
+        co_await update_broker_client(
+          _self.id(),
+          _connection_cache,
+          b.id(),
+          b.rpc_address(),
+          _rpc_tls_config);
     }
 
-    return start_config_changes_watcher();
+    if (is_already_member()) {
+        (void)ss::try_with_gate(_gate, [this] {
+            return maybe_update_current_node_configuration();
+        }).handle_exception_type([](const ss::gate_closed_exception& e) {
+            vlog(
+              clusterlog.debug,
+              "unable to update node configuration, gate closed - {}",
+              e);
+        });
+    } else {
+        join_raft0();
+    }
 }
 
 bool members_manager::is_already_member() const {
-    return _members_table.local().get_broker(_self.id()).has_value();
-}
-
-ss::future<> members_manager::start_config_changes_watcher() {
-    // handle initial configuration
-    auto offset = _raft0->get_latest_configuration_offset();
-    return handle_raft0_cfg_update(_raft0->config(), offset)
-      .then([this, offset] {
-          _last_seen_configuration_offset = offset;
-          if (is_already_member()) {
-              (void)ss::with_gate(_gate, [this] {
-                  return maybe_update_current_node_configuration();
-              }).handle_exception_type([](const ss::gate_closed_exception& e) {
-                  vlog(
-                    clusterlog.debug,
-                    "unable to update node configuration, gate closed - {}",
-                    e);
-              });
-          }
-          return ss::now();
-      })
-      .then([this] {
-          (void)ss::with_gate(_gate, [this] {
-              return ss::do_until(
-                [this] { return _as.local().abort_requested(); },
-                [this]() {
-                    return _raft0
-                      ->wait_for_config_change(
-                        _last_seen_configuration_offset, _as.local())
-                      .then([this](raft::offset_configuration oc) {
-                          return handle_raft0_cfg_update(
-                                   std::move(oc.cfg), oc.offset)
-                            .then([this, offset = oc.offset] {
-                                _last_seen_configuration_offset = offset;
-                            });
-                      })
-                      .handle_exception_type(
-                        [](const ss::abort_requested_exception&) {});
-                });
-          }).handle_exception_type([](const ss::gate_closed_exception&) {});
-      });
+    return _raft0->config().contains_broker(_self.id());
 }
 
 ss::future<> members_manager::maybe_update_current_node_configuration() {
-    auto active_configuration = _members_table.local().get_broker(_self.id());
+    auto active_configuration = _raft0->config().find_broker(_self.id());
     vassert(
       active_configuration.has_value(),
       "Current broker is expected to be present in members configuration");
 
     // configuration is up to date, do nothing
-    if (*active_configuration.value() == _self) {
+    if (active_configuration.value() == _self) {
         return ss::now();
     }
     vlog(
       clusterlog.debug,
       "Redpanda broker configuration changed from {} to {}",
-      *active_configuration.value(),
+      active_configuration.value(),
       _self);
     return dispatch_configuration_update(_self)
       .then([] {
@@ -160,23 +139,22 @@ calculate_brokers_diff(members_table& m, const raft::group_configuration& cfg) {
 ss::future<> members_manager::handle_raft0_cfg_update(
   raft::group_configuration cfg, model::offset update_offset) {
     // distribute to all cluster::members_table
+    vlog(
+      clusterlog.debug,
+      "updating cluster configuration with {}",
+      cfg.brokers());
     return _allocator
       .invoke_on(
         partition_allocator::shard,
         [cfg](partition_allocator& allocator) {
-            cfg.for_each_broker([&allocator](const model::broker& n) {
-                if (!allocator.contains_node(n.id())) {
-                    allocator.register_node(std::make_unique<allocation_node>(
-                      allocation_node(n.id(), n.properties().cores, {})));
-                }
-            });
+            allocator.update_allocation_nodes(cfg.brokers());
         })
       .then([this, cfg = std::move(cfg), update_offset]() mutable {
           auto diff = calculate_brokers_diff(_members_table.local(), cfg);
           auto added_brokers = diff.additions;
           return _members_table
             .invoke_on_all([cfg = std::move(cfg)](members_table& m) mutable {
-                m.update_brokers(calculate_brokers_diff(m, cfg));
+                m.update_brokers(cfg.brokers());
             })
             .then([this, diff = std::move(diff)]() mutable {
                 // update internode connections
@@ -204,6 +182,9 @@ ss::future<> members_manager::handle_raft0_cfg_update(
 
 ss::future<std::error_code>
 members_manager::apply_update(model::record_batch b) {
+    if (b.header().type == model::record_batch_type::raft_configuration) {
+        co_return co_await apply_raft_configuration_batch(std::move(b));
+    }
     // handle node managements command
     auto cmd = co_await cluster::deserialize(std::move(b), accepted_commands);
 
@@ -244,6 +225,26 @@ members_manager::apply_update(model::record_batch b) {
               .id = cmd.key, .type = node_update_type::reallocation_finished})
             .then([] { return make_error_code(errc::success); });
       });
+}
+ss::future<std::error_code>
+members_manager::apply_raft_configuration_batch(model::record_batch b) {
+    vassert(
+      b.record_count() == 1,
+      "raft configuration batches are expected to have exactly one record. "
+      "Current batch contains {} records",
+      b.record_count());
+
+    // members manager already seen this configuration, skip
+    if (b.base_offset() < _last_seen_configuration_offset) {
+        co_return make_error_code(errc::success);
+    }
+
+    auto cfg = reflection::from_iobuf<raft::group_configuration>(
+      b.copy_records().front().release_value());
+
+    co_await handle_raft0_cfg_update(std::move(cfg), b.base_offset());
+
+    co_return make_error_code(errc::success);
 }
 
 ss::future<std::vector<members_manager::node_update>>
@@ -463,7 +464,8 @@ members_manager::handle_join_request(model::broker broker) {
               broker.id());
             auto req = configuration_update_request(
               std::move(broker), _self.id());
-            return handle_configuration_update_request(std::move(req))
+            co_return co_await handle_configuration_update_request(
+              std::move(req))
               .then([](result<configuration_update_reply> r) {
                   if (r) {
                       return ret_t(join_reply{.success = r.value().success});
@@ -479,15 +481,22 @@ members_manager::handle_join_request(model::broker broker) {
               "node",
               broker.id(),
               broker.rpc_address());
-            return ss::make_ready_future<result<join_reply>>(
-              ret_t(join_reply{.success = false}));
+            co_return ret_t(join_reply{.success = false});
         }
-
+        if (broker.id() != _self.id()) {
+            co_await update_broker_client(
+              _self.id(),
+              _connection_cache,
+              broker.id(),
+              broker.rpc_address(),
+              _rpc_tls_config);
+        }
         // Just update raft0 configuration
         // we do not use revisions in raft0 configuration, it is always revision
         // 0 which is perfectly fine. this will work like revision less raft
         // protocol.
-        return _raft0->add_group_members({broker}, model::revision_id(0))
+        co_return co_await _raft0
+          ->add_group_members({broker}, model::revision_id(0))
           .then([broker](std::error_code ec) {
               if (!ec) {
                   return ret_t(join_reply{true});
@@ -502,16 +511,14 @@ members_manager::handle_join_request(model::broker broker) {
     }
     // Current node is not the leader have to send an RPC to leader
     // controller
-    return dispatch_rpc_to_leader(
-             _join_timeout,
-             [broker = std::move(broker),
-              tout = rpc::clock_type::now()
-                     + _join_timeout](controller_client_protocol c) mutable {
-                 return c
-                   .join(
-                     join_request(std::move(broker)), rpc::client_opts(tout))
-                   .then(&rpc::get_ctx_data<join_reply>);
-             })
+    co_return co_await dispatch_rpc_to_leader(
+      _join_timeout,
+      [broker = std::move(broker),
+       tout = rpc::clock_type::now()
+              + _join_timeout](controller_client_protocol c) mutable {
+          return c.join(join_request(std::move(broker)), rpc::client_opts(tout))
+            .then(&rpc::get_ctx_data<join_reply>);
+      })
       .handle_exception([](const std::exception_ptr& e) {
           vlog(
             clusterlog.warn,
@@ -596,20 +603,20 @@ members_manager::do_dispatch_configuration_update(
 
 model::broker get_update_request_target(
   std::optional<model::node_id> current_leader,
-  const std::vector<broker_ptr>& brokers) {
+  const std::vector<model::broker>& brokers) {
     if (current_leader) {
         auto it = std::find_if(
           brokers.cbegin(),
           brokers.cend(),
-          [current_leader](const broker_ptr& b) {
-              return b->id() == current_leader;
+          [current_leader](const model::broker& b) {
+              return b.id() == current_leader;
           });
 
         if (it != brokers.cend()) {
-            return **it;
+            return *it;
         }
     }
-    return *brokers[random_generators::get_int(brokers.size() - 1)];
+    return brokers[random_generators::get_int(brokers.size() - 1)];
 }
 
 ss::future<>
@@ -620,7 +627,7 @@ members_manager::dispatch_configuration_update(model::broker broker) {
     // forward it to current leader
     bool update_success = false;
     while (!update_success) {
-        auto brokers = _members_table.local().all_brokers();
+        auto brokers = _raft0->config().brokers();
         auto target = get_update_request_target(
           _raft0->get_leader_id(), brokers);
         auto r = co_await do_dispatch_configuration_update(target, broker);

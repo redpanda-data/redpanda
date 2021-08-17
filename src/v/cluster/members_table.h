@@ -37,7 +37,7 @@ public:
 
     bool contains(model::node_id) const;
 
-    void update_brokers(patch<broker_ptr>);
+    void update_brokers(const std::vector<model::broker>&);
 
     std::error_code apply(decommission_node_cmd);
     std::error_code apply(recommission_node_cmd);
