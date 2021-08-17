@@ -240,7 +240,7 @@ class TestRunner():
         t.start()
         t.join()
 
-        sys.exit(p.returncode)
+        sys.exit(p.wait())
 
 
 def main():
