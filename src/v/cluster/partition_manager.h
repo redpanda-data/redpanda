@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "cluster/ntp_callbacks.h"
 #include "cluster/partition.h"
 #include "model/metadata.h"
 #include "raft/consensus_client_protocol.h"
@@ -19,6 +18,7 @@
 #include "raft/heartbeat_manager.h"
 #include "storage/api.h"
 #include "utils/named_type.h"
+#include "utils/ntp_callbacks.h"
 
 #include <absl/container/flat_hash_map.h>
 
@@ -86,7 +86,7 @@ public:
      * we don't currently have any mechanism for un-managing partitions, so that
      * interface is non-existent.
      */
-    notification_id_type register_manage_notification(
+    model::notification_id_type register_manage_notification(
       const model::ns& ns, const model::topic& topic, manage_cb_t cb) {
         /*
          * first create a cb filter and apply all existing partitions. this
@@ -114,15 +114,16 @@ public:
      * we don't currently have any mechanism for un-managing partitions, so that
      * interface is non-existent.
      */
-    notification_id_type register_unmanage_notification(
+    model::notification_id_type register_unmanage_notification(
       const model::ns& ns, const model::topic& topic, unmanage_cb_t cb) {
         return _unmanage_watchers.register_notify(ns, topic, std::move(cb));
     }
 
-    void unregister_manage_notification(notification_id_type id) {
+    void unregister_manage_notification(model::notification_id_type id) {
         _manage_watchers.unregister_notify(id);
     }
-    void unregister_unmanage_notification(notification_id_type id) {
+
+    void unregister_unmanage_notification(model::notification_id_type id) {
         _unmanage_watchers.unregister_notify(id);
     }
 

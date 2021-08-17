@@ -179,8 +179,8 @@ private:
         return nullptr;
     }
 
-    cluster::notification_id_type _manage_notify_handle;
-    cluster::notification_id_type _unmanage_notify_handle;
+    model::notification_id_type _manage_notify_handle;
+    model::notification_id_type _unmanage_notify_handle;
     ss::gate _gate;
 
     void attach_partition(ss::lw_shared_ptr<cluster::partition>);
@@ -199,8 +199,8 @@ private:
           , partition(std::move(p)) {}
     };
 
-    cluster::notification_id_type _leader_notify_handle;
-    cluster::notification_id_type _topic_table_notify_handle;
+    model::notification_id_type _leader_notify_handle;
+    model::notification_id_type _topic_table_notify_handle;
 
     void handle_leader_change(
       model::term_id,

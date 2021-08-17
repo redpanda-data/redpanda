@@ -10,12 +10,9 @@
  */
 
 #pragma once
-#include "cluster/partition.h"
-#include "cluster/types.h"
+#include "model/fundamental.h"
 
 #include <absl/container/flat_hash_map.h>
-
-namespace cluster {
 
 /**
  * A compact trie-like index for ntp callback management.
@@ -33,25 +30,27 @@ template<typename Callback>
 class ntp_callbacks {
 public:
     /// Register for all ntp notifications.
-    notification_id_type register_notify(Callback cb) {
+    model::notification_id_type register_notify(Callback cb) {
         return register_callback(_root.callbacks, std::move(cb));
     }
 
     /// Register for ntp notification for a specific namespace.
-    notification_id_type register_notify(const model::ns& ns, Callback cb) {
+    model::notification_id_type
+    register_notify(const model::ns& ns, Callback cb) {
         auto& callbacks = _root.next[ns].callbacks;
         return register_callback(callbacks, std::move(cb));
     }
 
     /// Register for ntp notification for a specific topic.
-    notification_id_type register_notify(
+    model::notification_id_type register_notify(
       const model::ns& ns, const model::topic& topic, Callback cb) {
         auto& callbacks = _root.next[ns].next[topic].callbacks;
         return register_callback(callbacks, std::move(cb));
     }
 
     /// Register for notifications about a specific ntp.
-    notification_id_type register_notify(const model::ntp& ntp, Callback cb) {
+    model::notification_id_type
+    register_notify(const model::ntp& ntp, Callback cb) {
         const auto& topic = ntp.tp.topic;
         const auto& part = ntp.tp.partition;
         auto& callbacks = _root.next[ntp.ns].next[topic].next[part];
@@ -89,7 +88,7 @@ public:
     }
 
     /// Remove the callback for the given id.
-    void unregister_notify(notification_id_type id) {
+    void unregister_notify(model::notification_id_type id) {
         if (_root.callbacks.erase(id)) {
             return;
         }
@@ -111,7 +110,8 @@ public:
     }
 
 private:
-    using callbacks_t = absl::flat_hash_map<notification_id_type, Callback>;
+    using callbacks_t
+      = absl::flat_hash_map<model::notification_id_type, Callback>;
 
     // current level callbacks and next-level index
     template<typename Key, typename Value>
@@ -120,7 +120,7 @@ private:
         absl::flat_hash_map<Key, Value> next;
     };
 
-    notification_id_type
+    model::notification_id_type
     register_callback(callbacks_t& callbacks, Callback&& cb) {
         auto id = _notification_id++;
         callbacks.emplace(id, std::move(cb));
@@ -140,7 +140,5 @@ private:
             node<model::partition_id, callbacks_t>>> _root;
     // clang-format on
 
-    notification_id_type _notification_id{0};
+    model::notification_id_type _notification_id{0};
 };
-
-} // namespace cluster

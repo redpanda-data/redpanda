@@ -59,16 +59,16 @@ public:
     using delta_cb_t
       = ss::noncopyable_function<void(const std::vector<delta>&)>;
 
-    cluster::notification_id_type register_delta_notification(delta_cb_t cb) {
+    model::notification_id_type register_delta_notification(delta_cb_t cb) {
         auto id = _notification_id++;
         _notifications.emplace_back(id, std::move(cb));
         return id;
     }
 
-    void unregister_delta_notification(cluster::notification_id_type id) {
+    void unregister_delta_notification(model::notification_id_type id) {
         std::erase_if(
           _notifications,
-          [id](const std::pair<cluster::notification_id_type, delta_cb_t>& n) {
+          [id](const std::pair<model::notification_id_type, delta_cb_t>& n) {
               return n.first == id;
           });
     }
@@ -171,8 +171,8 @@ private:
 
     std::vector<delta> _pending_deltas;
     std::vector<std::unique_ptr<waiter>> _waiters;
-    cluster::notification_id_type _notification_id{0};
-    std::vector<std::pair<cluster::notification_id_type, delta_cb_t>>
+    model::notification_id_type _notification_id{0};
+    std::vector<std::pair<model::notification_id_type, delta_cb_t>>
       _notifications;
     uint64_t _waiter_id{0};
 };

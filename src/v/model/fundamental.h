@@ -196,6 +196,9 @@ enum class control_record_type : int16_t {
 using control_record_version
   = named_type<int16_t, struct control_record_version_tag>;
 
+// generic type used for various registration handles such as in ntp_callbacks.h
+using notification_id_type = named_type<int32_t, struct notification_id>;
+
 static constexpr control_record_version current_control_record_version{0};
 
 } // namespace model

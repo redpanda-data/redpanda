@@ -55,7 +55,7 @@ public:
 
     ss::future<> remove(ss::lw_shared_ptr<raft::consensus>);
 
-    cluster::notification_id_type
+    model::notification_id_type
     register_leadership_notification(leader_cb_t cb) {
         auto id = _notification_id++;
         // call notification for all the groups
@@ -66,11 +66,11 @@ public:
         return id;
     }
 
-    void unregister_leadership_notification(cluster::notification_id_type id) {
+    void unregister_leadership_notification(model::notification_id_type id) {
         auto it = std::find_if(
           _notifications.begin(),
           _notifications.end(),
-          [id](const std::pair<cluster::notification_id_type, leader_cb_t>& n) {
+          [id](const std::pair<model::notification_id_type, leader_cb_t>& n) {
               return n.first == id;
           });
         if (it != _notifications.end()) {
@@ -91,8 +91,8 @@ private:
     raft::heartbeat_manager _heartbeats;
     ss::gate _gate;
     std::vector<ss::lw_shared_ptr<raft::consensus>> _groups;
-    cluster::notification_id_type _notification_id{0};
-    std::vector<std::pair<cluster::notification_id_type, leader_cb_t>>
+    model::notification_id_type _notification_id{0};
+    std::vector<std::pair<model::notification_id_type, leader_cb_t>>
       _notifications;
     ss::metrics::metric_groups _metrics;
     storage::api& _storage;
