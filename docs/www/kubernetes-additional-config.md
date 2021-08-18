@@ -10,7 +10,7 @@ including the cluster name and namespace, and the configuration for the APIs lik
 
 The [Kubernetes Quick Start Guide](/docs/kubernetes-deployment) walks you through the steps to set up the Redpanda operator and a Redpanda cluster.
 
-In addition to the basic cluster specifications, you can add other parameters ([Custom configuration](/docs/configuration) that are typically defined in the Redpanda configuration file.
+In addition to the basic cluster specifications, you can add other parameters that are typically defined in the Redpanda [configuration file](/docs/configuration).
 The custom parameters are added to the `additionalConfiguration` section of the CR.
 
 For example, using the `single-node` sample from [our CR sample files](https://github.com/vectorizedio/redpanda/tree/dev/src/go/k8s/config/samples), here we add some custom parameters in the `additionalConfiguration` section:
