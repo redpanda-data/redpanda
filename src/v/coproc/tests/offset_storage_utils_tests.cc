@@ -96,7 +96,7 @@ FIXTURE_TEST(offset_keeper_saved_offsets, offset_keeper_fixture) {
         return storage::test::make_random_memory_record_batch_reader(
           model::offset{0}, 5, 1);
     }).get();
-    push_all(foo, 50, []() {
+    push_all(bar, 50, []() {
         return storage::test::make_random_memory_record_batch_reader(
           model::offset{0}, 10, 1);
     }).get();
@@ -115,6 +115,10 @@ FIXTURE_TEST(offset_keeper_saved_offsets, offset_keeper_fixture) {
 
     wait_on(
       to_materialized_topic(foo, identity_coprocessor::identity_topic), 50)
+      .get();
+
+    wait_on(
+      to_materialized_topic(bar, identity_coprocessor::identity_topic), 50)
       .get();
 
     /// Attempt to retrieve the data that should have been written to disk
