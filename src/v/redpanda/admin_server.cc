@@ -567,7 +567,7 @@ void map_broker_state_update_error(model::node_id id, std::error_code ec) {
         case cluster::errc::node_does_not_exists:
             throw ss::httpd::not_found_exception(
               fmt::format("broker with id {} not found", id));
-        case cluster::errc::invalid_node_opeartion:
+        case cluster::errc::invalid_node_operation:
             throw ss::httpd::bad_request_exception(fmt::format(
               "can not update broker {} state, ivalid state transition "
               "requested",

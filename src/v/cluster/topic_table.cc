@@ -177,7 +177,7 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
 
     if (current_assignment_it->replicas != cmd.value) {
         return ss::make_ready_future<std::error_code>(
-          errc::invalid_node_opeartion);
+          errc::invalid_node_operation);
     }
 
     _update_in_progress.erase(cmd.key);
