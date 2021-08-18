@@ -3,4 +3,5 @@ kind: Cluster
 metadata:
   name: up-img
 spec:
-  version: "latest"
+  image: "localhost/redpanda"
+  version: "dev"

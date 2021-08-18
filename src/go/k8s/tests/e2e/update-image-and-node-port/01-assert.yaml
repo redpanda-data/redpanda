@@ -14,9 +14,9 @@ metadata:
 spec:
   containers:
     - name: redpanda
-      image: "vectorized/redpanda:latest"
+      image: "localhost/redpanda:dev"
     - name: rpk-status
-      image: "vectorized/redpanda:latest"
+      image: "localhost/redpanda:dev"
 status:
   phase: "Running"
 
@@ -29,9 +29,9 @@ metadata:
 spec:
   containers:
     - name: redpanda
-      image: "vectorized/redpanda:latest"
+      image: "localhost/redpanda:dev"
     - name: rpk-status
-      image: "vectorized/redpanda:latest"
+      image: "localhost/redpanda:dev"
 status:
   phase: "Running"
 

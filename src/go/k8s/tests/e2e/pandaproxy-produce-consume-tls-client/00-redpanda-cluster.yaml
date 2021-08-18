@@ -3,7 +3,7 @@ kind: Cluster
 metadata:
   name: cluster-proxy
 spec:
-  image: "vectorized/redpanda"
+  image: "localhost/redpanda"
   version: "dev"
   replicas: 1
   resources:
