@@ -8,7 +8,7 @@ spec:
       initContainers:
         - image: "vectorized/configurator:v21.6.6"
       containers:
-        - image: "vectorized/redpanda:latest"
-        - image: "vectorized/redpanda:latest"
+        - image: "localhost/redpanda:dev"
+        - image: "localhost/redpanda:dev"
 status:
   readyReplicas: 2
