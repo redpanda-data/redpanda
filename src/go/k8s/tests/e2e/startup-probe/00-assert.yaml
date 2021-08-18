@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cluster
+status:
+  readyReplicas: 1
+spec:
+  template:
+    spec:
+      containers:
+      - name: redpanda
+        startupProbe:
+          failureThreshold: 3000
+          httpGet:
+            path: v1/status/started
+            port: 9644
+            scheme: HTTP
+          initialDelaySeconds: 1
+          periodSeconds: 1
+          successThreshold: 1
+          timeoutSeconds: 1
+      - name: rpk-status
