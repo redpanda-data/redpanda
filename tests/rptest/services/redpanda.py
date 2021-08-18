@@ -41,7 +41,7 @@ class RedpandaService(Service):
     WASM_STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT,
                                               "wasm_engine.log")
     CLUSTER_NAME = "my_cluster"
-    READY_TIMEOUT_SEC = 10
+    READY_TIMEOUT_SEC = 20
 
     LOG_LEVEL_KEY = "redpanda_log_level"
     DEFAULT_LOG_LEVEL = "info"
@@ -192,7 +192,7 @@ class RedpandaService(Service):
         node.account.ssh(cmd)
 
         wait_until(
-            lambda: Admin.ready(node).get("status") == "ready",
+            lambda: Admin.started(node),
             timeout_sec=RedpandaService.READY_TIMEOUT_SEC,
             err_msg=f"Redpanda service {node.account.hostname} failed to start",
             retry_on_exc=True)

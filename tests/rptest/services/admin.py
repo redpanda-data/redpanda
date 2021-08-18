@@ -20,6 +20,10 @@ class Admin:
         url = f"http://{node.account.hostname}:9644/v1/status/ready"
         return requests.get(url).json()
 
+    def started(node):
+        url = f"http://{node.account.hostname}:9644/v1/status/started"
+        return requests.get(url).status_code == requests.codes.ok
+
     @staticmethod
     def _url(node, path):
         return f"http://{node.account.hostname}:9644/v1/{path}"
