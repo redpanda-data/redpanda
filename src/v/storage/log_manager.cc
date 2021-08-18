@@ -208,6 +208,7 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
         auto path = cfg.work_directory();
         auto l = storage::make_memory_backed_log(std::move(cfg));
         _logs.emplace(l.config().ntp(), l);
+        _manage_watchers.notify(l.config().ntp(), l);
         // in-memory needs to write vote_for configuration
         return ss::recursive_touch_directory(path).then([l] { return l; });
     }
@@ -225,6 +226,7 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
               auto l = storage::make_disk_backed_log(
                 std::move(cfg), *this, std::move(segments), _kvstore);
               auto [_, success] = _logs.emplace(l.config().ntp(), l);
+              _manage_watchers.notify(l.config().ntp(), l);
               vassert(
                 success, "Could not keep track of:{} - concurrency issue", l);
               return l;

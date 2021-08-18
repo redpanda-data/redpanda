@@ -23,6 +23,7 @@
 #include "storage/version.h"
 #include "units.h"
 #include "utils/mutex.h"
+#include "utils/ntp_callbacks.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
@@ -170,6 +171,8 @@ struct log_config {
  */
 class log_manager {
 public:
+    using manage_cb_t = ss::noncopyable_function<void(log)>;
+
     explicit log_manager(log_config, kvstore& kvstore) noexcept;
 
     ss::future<log> manage(ntp_config);
@@ -210,6 +213,15 @@ public:
         return std::nullopt;
     }
 
+    model::notification_id_type
+    register_manage_notification(const model::ntp& ntp, manage_cb_t cb) {
+        return _manage_watchers.register_notify(ntp, std::move(cb));
+    }
+
+    void unregister_manage_notification(model::notification_id_type id) {
+        _manage_watchers.unregister_notify(id);
+    }
+
     /// Returns all ntp's managed by this instance
     absl::flat_hash_set<model::ntp> get_all_ntps() const;
 
@@ -241,6 +253,7 @@ private:
     batch_cache _batch_cache;
     ss::gate _open_gate;
     ss::abort_source _abort_source;
+    ntp_callbacks<manage_cb_t> _manage_watchers;
 
     friend std::ostream& operator<<(std::ostream&, const log_manager&);
 };
