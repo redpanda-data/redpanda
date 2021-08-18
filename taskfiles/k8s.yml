@@ -17,6 +17,7 @@ tasks:
     - |
       PATH="{{.BUILD_ROOT}}/bin:{{.GO_BUILD_ROOT}}/bin:$PATH"
       make {{.CLI_ARGS}}
+    - tar -czvf e2e-artifacts.tar.gz tests/_e2e_artifacts
 
   run-golangci-lint:
     desc: run golangci-lint
