@@ -530,10 +530,7 @@ ss::future<compaction_result> self_compact_segment(
           case compacted_index::recovery_state::missing:
               [[fallthrough]];
           case compacted_index::recovery_state::needsrebuild: {
-              vlog(
-                stlog.warn,
-                "Detected corrupt or missing index file:{}, recovering...",
-                idx_path);
+              vlog(stlog.info, "Rebuilding index file... ({})", idx_path);
               pb.corrupted_compaction_index();
               return s->read_lock()
                 .then([s, cfg, &pb, idx_path](ss::rwlock::holder h) {
@@ -545,7 +542,7 @@ ss::future<compaction_result> self_compact_segment(
                 .then([s, cfg, &pb, idx_path, &readers_cache] {
                     vlog(
                       stlog.info,
-                      "recovered index: {}, attempting compaction again",
+                      "rebuilt index: {}, attempting compaction again",
                       idx_path);
                     return self_compact_segment(s, cfg, pb, readers_cache);
                 });
