@@ -61,13 +61,12 @@ public:
     ss::future<> restart();
 
     /// \brief Write records to storage::api
-    ss::future<model::offset>
-    push(const model::ntp&, model::record_batch_reader);
+    ss::future<model::offset> push(model::ntp, model::record_batch_reader);
 
     /// \brief Read records from storage::api up until 'limit' or 'time'
     /// starting at 'offset'
     ss::future<std::optional<model::record_batch_reader::data_t>> drain(
-      const model::ntp&,
+      model::ntp,
       std::size_t,
       model::offset = model::offset(0),
       model::timeout_clock::time_point = model::timeout_clock::now()
@@ -82,6 +81,8 @@ protected:
     }
 
 private:
+    ss::future<std::optional<ss::shard_id>> wait_for_ntp(model::ntp);
+
     coproc::wasm::event_publisher _publisher;
 
     std::unique_ptr<redpanda_thread_fixture> _root_fixture;
