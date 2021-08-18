@@ -42,7 +42,7 @@ enum class errc : int16_t {
     sequence_out_of_order,
     generic_tx_error,
     node_does_not_exists,
-    invalid_node_opeartion,
+    invalid_node_operation,
     invalid_configuration_update,
     topic_operation_error,
     no_eligible_allocation_nodes,
@@ -118,7 +118,7 @@ struct errc_category final : public std::error_category {
             return "Generic error when processing transactional requests";
         case errc::node_does_not_exists:
             return "Requested node does not exists";
-        case errc::invalid_node_opeartion:
+        case errc::invalid_node_operation:
             return "Requested node opeartion is invalid";
         case errc::invalid_configuration_update:
             return "Requested configuration update is invalid";

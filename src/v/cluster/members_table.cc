@@ -88,7 +88,7 @@ std::error_code members_table::apply(decommission_node_cmd cmd) {
         if (
           it->second->get_membership_state()
           != model::membership_state::active) {
-            return errc::invalid_node_opeartion;
+            return errc::invalid_node_operation;
         }
         vlog(
           clusterlog.info,
@@ -106,7 +106,7 @@ std::error_code members_table::apply(recommission_node_cmd cmd) {
         if (
           it->second->get_membership_state()
           != model::membership_state::draining) {
-            return errc::invalid_node_opeartion;
+            return errc::invalid_node_operation;
         }
         vlog(
           clusterlog.info,

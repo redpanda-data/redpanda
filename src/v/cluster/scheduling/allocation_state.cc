@@ -145,7 +145,7 @@ void allocation_state::deallocate(const model::broker_shard& replica) {
 result<uint32_t> allocation_state::allocate(model::node_id id) {
     if (auto it = _nodes.find(id); it != _nodes.end()) {
         if (it->second->is_full()) {
-            return errc::invalid_node_opeartion;
+            return errc::invalid_node_operation;
         }
         return it->second->allocate();
     }
