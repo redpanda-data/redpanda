@@ -81,28 +81,28 @@ class ConfigurationUpdateTest(RedpandaTest):
         node_2 = self.redpanda.get_node(2)
         node_3 = self.redpanda.get_node(3)
 
-        # stop all nodes
-        self.redpanda.stop_node(node_1)
-        self.redpanda.stop_node(node_2)
-        self.redpanda.stop_node(node_3)
-
         def make_new_address(node, port):
             return dict(address=node.name, port=port)
 
-        # change ports
+        # node 1 - stop, reconfigure port, start
+        self.redpanda.stop_node(node_1)
         altered_cfg_1 = dict(kafka_api=make_new_address(node_1, 10091),
                              advertised_kafka_api=make_new_address(
                                  node_1, 10091))
+        self.redpanda.start_node(node_1, override_cfg_params=altered_cfg_1)
+
+        # node 2 - stop, reconfigure port, start
+        self.redpanda.stop_node(node_2)
         altered_cfg_2 = dict(kafka_api=make_new_address(node_2, 10092),
                              advertised_kafka_api=make_new_address(
                                  node_2, 10092))
+        self.redpanda.start_node(node_2, override_cfg_params=altered_cfg_2)
+
+        # node 3 - stop, reconfigure port, start
+        self.redpanda.stop_node(node_3)
         altered_cfg_3 = dict(kafka_api=make_new_address(node_3, 10093),
                              advertised_kafka_api=make_new_address(
                                  node_3, 10093))
-
-        # start all
-        self.redpanda.start_node(node_1, override_cfg_params=altered_cfg_1)
-        self.redpanda.start_node(node_2, override_cfg_params=altered_cfg_2)
         self.redpanda.start_node(node_3, override_cfg_params=altered_cfg_3)
 
         def metadata_updated():
