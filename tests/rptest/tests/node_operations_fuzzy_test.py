@@ -164,6 +164,8 @@ class NodeOperationFuzzyTest(EndToEndTest):
             if cleanup:
                 self.redpanda.clean_node(self.redpanda.nodes[node_id - 1])
             self.redpanda.start_node(self.redpanda.nodes[node_id - 1])
+            admin = Admin(self.redpanda)
+            admin.set_log_level("cluster", "trace")
 
             def has_new_replicas():
                 per_node = replicas_per_node()
@@ -172,6 +174,8 @@ class NodeOperationFuzzyTest(EndToEndTest):
 
             wait_until(has_new_replicas, timeout_sec=240, backoff_sec=2)
 
+        admin = Admin(self.redpanda)
+        admin.set_log_level("cluster", "trace")
         work = self.generate_random_workload(10)
         self.redpanda.logger.info(f"node operations to execute: {work}")
         for op in work:
