@@ -63,6 +63,34 @@ Install sample RedpandaCluster custom resource
 kubectl apply -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/one_node_cluster.yaml
 ```
 
+#### Developing
+
+
+Create kind cluster
+
+```
+make kind-create
+```
+
+Install cert manager
+
+```
+make certmanager-install
+```
+
+Build docker images for manager and configurator
+
+```
+make docker-build
+make docker-build-configurator
+```
+
+Deploy operator to kind
+
+```
+make deploy-to-kind
+```
+
 #### Clean up
 
 To remove all resources even the running Redpanda cluster
