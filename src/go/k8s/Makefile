@@ -83,6 +83,14 @@ vet:
 generate: controller-gen
 	$(CONTROLLER_GEN) object:headerFile="../../../licenses/boilerplate.go.txt" paths="./..."
 
+# Creates kind cluster
+kind-create:
+	(kind get clusters | grep kind && echo "kind cluster already exists") || (kind create cluster --config kind.yaml && echo "kind cluster created")
+
+# Install cert-manager
+certmanager-install: kind-create
+	./hack/install-cert-manager.sh
+
 prepare-dockerfile:
 	echo "ARG BUILDPLATFORM" > Dockerfile
 	cat Dockerfile.in >> Dockerfile
@@ -96,7 +104,7 @@ docker-build-configurator: prepare-dockerfile
 	docker build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=configurator -f Dockerfile -t ${CONFIGURATOR_IMG_LATEST} ../
 
 # Preload controller image to kind cluster
-push-to-kind:
+push-to-kind: kind-create certmanager-install
 	kind load docker-image ${OPERATOR_IMG_LATEST}
 	kind load docker-image ${CONFIGURATOR_IMG_LATEST}
 
