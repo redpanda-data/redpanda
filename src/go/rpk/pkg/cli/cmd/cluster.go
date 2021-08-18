@@ -10,7 +10,6 @@
 package cmd
 
 import (
-	"github.com/Shopify/sarama"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/cluster"
@@ -74,11 +73,7 @@ func NewClusterCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	command.AddCommand(cluster.NewInfoCommand(adminClosure))
 
 	// NewOffsetsCommand takes client and admin factories so we can mock both
-	clientClosure := common.CreateClient(brokersClosure, configClosure, tlsClosure, kAuthClosure)
-	adminWrapperClosure := func(client sarama.Client) (sarama.ClusterAdmin, error) {
-		return sarama.NewClusterAdminFromClient(client)
-	}
-	command.AddCommand(cluster.NewOffsetsCommand(clientClosure, adminWrapperClosure))
+	command.AddCommand(cluster.NewOffsetsCommand(fs))
 
 	return command
 }
