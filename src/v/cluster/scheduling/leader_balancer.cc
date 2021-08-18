@@ -590,6 +590,7 @@ ss::future<bool> leader_balancer::do_transfer_remote(reassignment transfer) {
         vlog(
           clusterlog.info,
           "Leadership transfer of group {} failed with error: {}",
+          transfer.group,
           res.error().message());
         co_return false;
     }
@@ -601,6 +602,7 @@ ss::future<bool> leader_balancer::do_transfer_remote(reassignment transfer) {
     vlog(
       clusterlog.info,
       "Leadership transfer of group {} failed with error: {}",
+      transfer.group,
       raft::make_error_code(res.value().result));
 
     co_return false;
