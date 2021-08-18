@@ -6,8 +6,8 @@ metadata:
     app.kubernetes.io/name: "redpanda"
     app.kubernetes.io/instance: "cluster-tls"
 spec:
-  image: "vectorized/redpanda"
-  version: "latest"
+  image: "localhost/redpanda"
+  version: "dev"
   replicas: 1
   resources:
     requests:

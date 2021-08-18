@@ -3,4 +3,5 @@ kind: Cluster
 metadata:
   name: update-image-cluster-and-node-port
 spec:
-  version: "latest"
+  image: "localhost/redpanda"
+  version: "dev"
