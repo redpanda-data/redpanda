@@ -123,7 +123,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
         # select one of the topics to use in consumer/producer
         self.topic = random.choice(topics).name
 
-        self.start_producer(1)
+        self.start_producer(1, throughput=100)
         self.start_consumer(1)
         self.await_startup()
 
