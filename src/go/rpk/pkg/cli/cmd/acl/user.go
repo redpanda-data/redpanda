@@ -39,7 +39,7 @@ func NewUserCommand(
 	}
 	command.PersistentFlags().StringSliceVar(
 		&apiUrls,
-		"api-urls",
+		config.FlagAdminHosts2,
 		[]string{},
 		"The comma-separated list of Admin API addresses (<IP>:<port>)."+
 			" You must specify one for each node.",
