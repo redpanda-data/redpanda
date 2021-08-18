@@ -9,7 +9,13 @@
 
 package config
 
-import "path"
+import (
+	"crypto/tls"
+	"path"
+
+	"github.com/spf13/afero"
+	"github.com/twmb/tlscfg"
+)
 
 type Config struct {
 	NodeUuid             string                 `yaml:"node_uuid,omitempty" mapstructure:"node_uuid,omitempty" json:"nodeUuid"`
@@ -96,6 +102,27 @@ type TLS struct {
 	KeyFile        string `yaml:"key_file,omitempty" mapstructure:"key_file,omitempty" json:"keyFile"`
 	CertFile       string `yaml:"cert_file,omitempty" mapstructure:"cert_file,omitempty" json:"certFile"`
 	TruststoreFile string `yaml:"truststore_file,omitempty" mapstructure:"truststore_file,omitempty" json:"truststoreFile"`
+}
+
+func (t *TLS) Config(fs afero.Fs) (*tls.Config, error) {
+	if t == nil {
+		return nil, nil
+	}
+	return tlscfg.New(
+		tlscfg.WithFS(
+			tlscfg.FuncFS(func(path string) ([]byte, error) {
+				return afero.ReadFile(fs, path)
+			}),
+		),
+		tlscfg.MaybeWithDiskCA(
+			t.TruststoreFile,
+			tlscfg.ForClient,
+		),
+		tlscfg.MaybeWithDiskKeyPair(
+			t.CertFile,
+			t.KeyFile,
+		),
+	)
 }
 
 type ServerTLS struct {
