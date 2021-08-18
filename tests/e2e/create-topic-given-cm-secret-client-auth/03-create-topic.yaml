@@ -22,7 +22,7 @@ spec:
             name: rpk-config
       containers:
         - name: rpk
-          image: vectorized/redpanda:latest
+          image: localhost/redpanda:dev
           env:
             - name: POD_NAMESPACE
               valueFrom:
