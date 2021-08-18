@@ -226,7 +226,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
     if (!transfer) {
         vlog(
           clusterlog.info,
-          "No leadership balance improvements found with total error {}",
+          "No leadership balance improvements found with total delta {}",
           error);
         if (!_timer.armed()) {
             _timer.arm(_idle_timeout);
@@ -316,7 +316,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         _probe.leader_transfer_succeeded();
         vlog(
           clusterlog.info,
-          "Leadership for group {} moved from {} to {} (target {}). Error {}",
+          "Leadership for group {} moved from {} to {} (target {}). Delta {}",
           transfer->group,
           transfer->from,
           *leader_shard,
