@@ -101,9 +101,9 @@ static error_outcome categorize_error(
         // - any filesystem error
         // - broken-pipe
         // - any other network error (no memory, bad socket, etc)
-        if (auto code = cerr.code(); code.value() != ECONNREFUSED
-                                     && code.value() != ENETUNREACH
-                                     && code.value() != ECONNRESET) {
+        if (auto code = cerr.code();
+            code.value() != ECONNREFUSED && code.value() != ENETUNREACH
+            && code.value() != ETIMEDOUT && code.value() != ECONNRESET) {
             vlog(cst_log.error, "{} System error {}", fib(), cerr);
             result = error_outcome::fail;
         } else {
