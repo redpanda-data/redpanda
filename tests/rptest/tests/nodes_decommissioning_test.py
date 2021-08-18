@@ -62,7 +62,7 @@ class NodesDecommissioningTest(EndToEndTest):
                     return False
             return True
 
-        wait_until(node_removed, timeout_sec=30, backoff_sec=1)
+        wait_until(node_removed, timeout_sec=120, backoff_sec=2)
 
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
 
@@ -101,6 +101,6 @@ class NodesDecommissioningTest(EndToEndTest):
                     return False
             return True
 
-        wait_until(node_removed, timeout_sec=30, backoff_sec=1)
+        wait_until(node_removed, timeout_sec=120, backoff_sec=2)
 
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)

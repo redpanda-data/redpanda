@@ -14,6 +14,7 @@
 #include "kafka/client/exceptions.h"
 #include "kafka/client/logger.h"
 #include "kafka/protocol/types.h"
+#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastar/core/gate.hh"
 
@@ -27,7 +28,7 @@ fetch_request make_fetch_request(
     std::vector<fetch_request::partition> partitions;
     partitions.push_back(fetch_request::partition{
       .partition_index{tp.partition},
-      .current_leader_epoch = 0,
+      .current_leader_epoch = kafka::invalid_leader_epoch,
       .fetch_offset{offset},
       .log_start_offset{model::offset{-1}},
       .max_bytes = max_bytes});

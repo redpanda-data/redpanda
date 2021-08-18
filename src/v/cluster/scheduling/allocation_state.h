@@ -27,7 +27,7 @@ public:
 
     // Allocation nodes
     void register_node(node_ptr);
-    void unregister_node(model::node_id);
+    void update_allocation_nodes(const std::vector<model::broker>&);
     void decommission_node(model::node_id);
     void recommission_node(model::node_id);
     bool is_empty(model::node_id) const;

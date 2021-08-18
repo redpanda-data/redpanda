@@ -41,7 +41,7 @@ class RedpandaService(Service):
     WASM_STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT,
                                               "wasm_engine.log")
     CLUSTER_NAME = "my_cluster"
-    READY_TIMEOUT_SEC = 5
+    READY_TIMEOUT_SEC = 10
 
     LOG_LEVEL_KEY = "redpanda_log_level"
     DEFAULT_LOG_LEVEL = "info"
@@ -81,6 +81,7 @@ class RedpandaService(Service):
         self._topics = topics or ()
         self._num_cores = num_cores
         self._admin = Admin(self)
+        self._started = []
 
         # client is intiialized after service starts
         self._client = None
@@ -91,15 +92,46 @@ class RedpandaService(Service):
         return self._extra_rp_conf and self._extra_rp_conf.get(
             "enable_sasl", False)
 
-    def start(self):
-        super(RedpandaService, self).start()
+    def start(self, nodes=None, clean_nodes=True):
+        """Start the service on all nodes."""
+        to_start = nodes if nodes is not None else self.nodes
+        assert all((node in self.nodes for node in to_start))
+        self.logger.info("%s: starting service" % self.who_am_i())
+        if self._start_time < 0:
+            # Set self._start_time only the first time self.start is invoked
+            self._start_time = time.time()
+
+        self.logger.debug(
+            self.who_am_i() +
+            ": killing processes and attempting to clean up before starting")
+        for node in to_start:
+            try:
+                self.stop_node(node)
+            except Exception:
+                pass
+
+            try:
+                if clean_nodes:
+                    self.clean_node(node)
+                else:
+                    self.logger.debug("%s: skip cleaning node" %
+                                      self.who_am_i(node))
+            except Exception:
+                pass
+
+        for node in to_start:
+            self.logger.debug("%s: starting node" % self.who_am_i(node))
+            self.start_node(node)
+
+        if self._start_duration_seconds < 0:
+            self._start_duration_seconds = time.time() - self._start_time
 
         self._admin.create_user(*self.SUPERUSER_CREDENTIALS)
 
         self.logger.info("Waiting for all brokers to join cluster")
-        expected = set(self.nodes)
+        expected = set(self._started)
         wait_until(lambda: {n
-                            for n in self.nodes
+                            for n in self._started
                             if self.registered(n)} == expected,
                    timeout_sec=30,
                    backoff_sec=1,
@@ -164,6 +196,7 @@ class RedpandaService(Service):
             timeout_sec=RedpandaService.READY_TIMEOUT_SEC,
             err_msg=f"Redpanda service {node.account.hostname} failed to start",
             retry_on_exc=True)
+        self._started.append(node)
 
     def coproc_enabled(self):
         coproc = self._extra_rp_conf.get('enable_coproc')
@@ -197,7 +230,7 @@ class RedpandaService(Service):
             )
 
     def monitor_log(self, node):
-        assert node in self.nodes
+        assert node in self._started
         return node.account.monitor_log(RedpandaService.STDOUT_STDERR_CAPTURE)
 
     def find_wasm_root(self):
@@ -214,7 +247,8 @@ class RedpandaService(Service):
         pids = self.pids(node)
 
         for pid in pids:
-            node.account.signal(pid, signal.SIGTERM, allow_fail=False)
+            # TODO: change SIGKILL back to SIGTERM after we solve graceful shutdown issue
+            node.account.signal(pid, signal.SIGKILL, allow_fail=False)
 
         timeout_sec = 30
         wait_until(lambda: len(self.pids(node)) == 0,
@@ -238,6 +272,9 @@ class RedpandaService(Service):
             return pid_arr
         except (RemoteCommandError, ValueError):
             return []
+
+    def started_nodes(self):
+        return self._started
 
     def write_conf_file(self, node, override_cfg_params):
         node_info = {self.idx(n): n for n in self.nodes}
@@ -327,7 +364,7 @@ class RedpandaService(Service):
 
     def storage(self):
         store = ClusterStorage()
-        for node in self.nodes:
+        for node in self._started:
             s = self.node_storage(node)
             store.add_node(s)
         return store
@@ -355,27 +392,27 @@ class RedpandaService(Service):
         }
 
     def broker_address(self, node):
-        assert node in self.nodes
+        assert node in self._started
         cfg = self.read_configuration(node)
         return f"{node.account.hostname}:{cfg['redpanda']['kafka_api']['port']}"
 
     def brokers(self, limit=None):
         brokers = ",".join(
-            map(lambda n: self.broker_address(n), self.nodes[:limit]))
+            map(lambda n: self.broker_address(n), self._started[:limit]))
         return brokers
 
     def brokers_list(self, limit=None):
-        return [self.broker_address(n) for n in self.nodes[:limit]]
+        return [self.broker_address(n) for n in self._started[:limit]]
 
     def metrics(self, node):
-        assert node in self.nodes
+        assert node in self._started
         url = f"http://{node.account.hostname}:9644/metrics"
         resp = requests.get(url)
         assert resp.status_code == 200
         return text_string_to_metric_families(resp.text)
 
     def read_configuration(self, node):
-        assert node in self.nodes
+        assert node in self._started
         with self.config_file_lock:
             with node.account.open(RedpandaService.CONFIG_FILE) as f:
                 return yaml.full_load(f.read())
@@ -385,7 +422,7 @@ class RedpandaService(Service):
         Fetch the max shard id for each node.
         """
         shards_per_node = {}
-        for node in self.nodes:
+        for node in self._started:
             num_shards = 0
             metrics = self.metrics(node)
             for family in metrics:
@@ -440,3 +477,8 @@ class RedpandaService(Service):
         client = self._client_type(self)
         self.logger.debug(f"Creating topic {spec}")
         client.create_topic(spec)
+
+    def delete_topic(self, name):
+        client = self._client_type(self)
+        self.logger.debug(f"Deleting topic {name}")
+        client.delete_topic(name)

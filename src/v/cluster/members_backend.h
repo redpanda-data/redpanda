@@ -68,6 +68,7 @@ private:
     ss::future<> handle_updates();
     void handle_single_update(members_manager::node_update);
     void handle_recommissioned(const members_manager::node_update&);
+    void stop_node_decommissioning(model::node_id);
     void handle_reallocation_finished(model::node_id);
     void reassign_replicas(partition_assignment&, partition_reallocation&);
     void calculate_reallocations_after_node_added(update_meta&) const;

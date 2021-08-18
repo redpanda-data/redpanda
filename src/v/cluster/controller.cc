@@ -155,11 +155,15 @@ ss::future<> controller::start() {
           });
       })
       .then([this] {
-          return _stm.invoke_on(controller_stm_shard, &controller_stm::start);
-      })
-      .then([this] {
           return _members_manager.invoke_on(
             members_manager::shard, &members_manager::start);
+      })
+      .then([this] {
+          /**
+           * Controller state machine MUST be started after all entities that
+           * receives `apply_update` notifications
+           */
+          return _stm.invoke_on(controller_stm_shard, &controller_stm::start);
       })
       .then([this] {
           return _stm.invoke_on(controller_stm_shard, [](controller_stm& stm) {

@@ -105,7 +105,11 @@ void members_backend::handle_single_update(
     case update_t::reallocation_finished:
         handle_reallocation_finished(update.id);
         return;
-
+    case update_t::added:
+        stop_node_decommissioning(update.id);
+        _updates.emplace_back(update);
+        _new_updates.signal();
+        return;
     default:
         _updates.emplace_back(update);
         _new_updates.signal();
@@ -210,8 +214,8 @@ void members_backend::calculate_reallocations_after_node_added(
 
     // 2. calculate number of replicas per node leading to even replica per node
     // distribution
-    auto target_replicas_per_node = total_replicas
-                                    / _members.local().all_brokers().size();
+    auto target_replicas_per_node
+      = total_replicas / _allocator.local().state().available_nodes();
 
     // 3. calculate how many replicas have to be moved from each node
     std::vector<replicas_to_move> to_move_from_node;
@@ -220,6 +224,15 @@ void members_backend::calculate_reallocations_after_node_added(
                        - std::min(
                          target_replicas_per_node, info.replicas_count);
         to_move_from_node.emplace_back(id, to_move);
+    }
+
+    auto all_empty = std::all_of(
+      to_move_from_node.begin(),
+      to_move_from_node.end(),
+      [](const replicas_to_move& m) { return m.left_to_move == 0; });
+    // nothing to do, exit early
+    if (all_empty) {
+        return;
     }
 
     vlog(
@@ -297,7 +310,9 @@ ss::future<> members_backend::reconcile() {
     if (meta.partition_reallocations.empty()) {
         calculate_reallocations(meta);
         // if there is nothing to reallocate, just finish this update
-        if (meta.partition_reallocations.empty()) {
+        if (
+          meta.partition_reallocations.empty()
+          && meta.update.type == members_manager::node_update_type::added) {
             auto err = co_await _members_frontend.local()
                          .finish_node_reallocations(meta.update.id);
             if (!err) {
@@ -323,10 +338,21 @@ ss::future<> members_backend::reconcile() {
         }
         const auto is_draining = node.value()->get_membership_state()
                                  == model::membership_state::draining;
-        if (is_draining && _allocator.local().is_empty(meta.update.id)) {
+        const auto all_reallocations_finished = std::all_of(
+          meta.partition_reallocations.begin(),
+          meta.partition_reallocations.end(),
+          [](const partition_reallocation& r) {
+              return r.state == reallocation_state::finished;
+          });
+        if (
+          is_draining && all_reallocations_finished
+          && _allocator.local().is_empty(meta.update.id)) {
             // we can safely discard the result since action is going to be
             // retried if it fails
-
+            vlog(
+              clusterlog.info,
+              "decommissioning finished, removing node {} from cluster",
+              meta.update.id);
             // workaround: https://github.com/vectorizedio/redpanda/issues/891
             std::vector<model::node_id> ids{meta.update.id};
             co_await _raft0
@@ -455,10 +481,6 @@ ss::future<> members_backend::reallocate_replica_set(
         [[fallthrough]];
     }
     case reallocation_state::requested: {
-        vlog(
-          clusterlog.info,
-          "waiting for partition {} replicas to be moved",
-          meta.ntp);
         // wait for partition replicas to be moved
         auto reconciliation_state
           = co_await _api.local().get_reconciliation_state(meta.ntp);
@@ -469,6 +491,10 @@ ss::future<> members_backend::reallocate_replica_set(
           reconciliation_state.status(),
           reconciliation_state.pending_operations());
         if (reconciliation_state.status() != reconciliation_status::done) {
+            vlog(
+              clusterlog.info,
+              "waiting for partition {} replicas to be moved",
+              meta.ntp);
             co_return;
         }
         meta.state = reallocation_state::finished;
@@ -481,11 +507,15 @@ ss::future<> members_backend::reallocate_replica_set(
 
 void members_backend::handle_recommissioned(
   const members_manager::node_update& update) {
-    if (_members.local().get_broker(update.id) == std::nullopt) {
+    stop_node_decommissioning(update.id);
+}
+
+void members_backend::stop_node_decommissioning(model::node_id id) {
+    if (_members.local().get_broker(id) == std::nullopt) {
         return;
     }
     // remove all pending decommissioned updates for this node
-    std::erase_if(_updates, [id = update.id](update_meta& meta) {
+    std::erase_if(_updates, [id](update_meta& meta) {
         return meta.update.id == id
                && meta.update.type
                     == members_manager::node_update_type::decommissioned;

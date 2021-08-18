@@ -385,6 +385,29 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
         try {
             auto ec = co_await execute_partitition_op(*it);
             if (ec) {
+                if (it->type == topic_table_delta::op_type::update) {
+                    /**
+                     * check if pending update isn't already finished, if so it
+                     * is safe to proceed to the next step
+                     */
+                    auto fit = std::find_if(
+                      it, deltas.end(), [&it](const topic_table::delta& d) {
+                          return d.type
+                                   == topic_table::delta::op_type::
+                                     update_finished
+                                 && d.new_assignment.replicas
+                                      == it->new_assignment.replicas;
+                      });
+                    vassert(
+                      fit == std::next(it),
+                      "finish operation command, if present have to be the one "
+                      "that follows update operation");
+
+                    if (fit != deltas.end()) {
+                        it = fit;
+                        continue;
+                    }
+                }
                 vlog(
                   clusterlog.info,
                   "partition operation {} result: {}",
@@ -526,6 +549,14 @@ controller_backend::ask_remote_shard_for_initail_rev(
       });
 }
 
+bool are_assignments_equal(
+  const partition_assignment& requested, const partition_assignment& previous) {
+    if (requested.id != previous.id || requested.group != previous.group) {
+        return false;
+    }
+    return are_replica_sets_equal(requested.replicas, previous.replicas);
+}
+
 ss::future<std::error_code> controller_backend::process_partition_update(
   model::ntp ntp,
   const partition_assignment& requested,
@@ -602,6 +633,14 @@ ss::future<std::error_code> controller_backend::process_partition_update(
      * be applied
      */
     if (partition) {
+        // if requested assignment is equal to current one, just finish the
+        // update
+        if (are_assignments_equal(requested, previous)) {
+            if (requested.replicas.front().node_id == _self) {
+                co_return co_await dispatch_update_finished(
+                  std::move(ntp), requested);
+            }
+        }
         auto ec = co_await update_partition_replica_set(
           ntp, requested.replicas, rev);
 
@@ -817,17 +856,11 @@ ss::future<> controller_backend::add_to_shard_table(
   uint32_t shard,
   model::revision_id revision) {
     // update shard_table: broadcast
-
+    vlog(
+      clusterlog.trace, "adding {} to shard table at {}", revision, ntp, shard);
     return _shard_table.invoke_on_all(
-      [self = _self, ntp = std::move(ntp), raft_group, shard, revision](
+      [ntp = std::move(ntp), raft_group, shard, revision](
         shard_table& s) mutable {
-          vlog(
-            clusterlog.trace,
-            "[n: {}, r: {}] adding {} to shard table at {}",
-            self,
-            revision,
-            ntp,
-            shard);
           s.update(ntp, raft_group, shard, revision);
       });
 }

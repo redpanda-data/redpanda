@@ -73,7 +73,7 @@ fetch_session::make_offset_commit_request() const {
             res.back().partitions.push_back(offset_commit_request_partition{
               .partition_index = p_id,
               .committed_offset = o - model::offset(1),
-              .committed_leader_epoch = _epoch});
+              .committed_leader_epoch = invalid_leader_epoch});
         }
     }
     return res;
