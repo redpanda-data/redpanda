@@ -17,6 +17,8 @@
 #include "raft/raftgen_service.h"
 #include "vassert.h"
 
+#include <seastar/core/timed_out_error.hh>
+#include <seastar/core/with_timeout.hh>
 #include <seastar/util/bool_class.hh>
 
 namespace raft {
@@ -260,7 +262,15 @@ ss::future<> vote_stm::update_vote_state(ss::semaphore_units<> u) {
 
 ss::future<std::error_code>
 vote_stm::replicate_config_as_new_leader(ss::semaphore_units<> u) {
-    return _ptr->replicate_configuration(std::move(u), _config.value());
+    // we use long timeout of 5 * base election timeout to trigger it only when
+    // raft group is stuck.
+    const auto deadline = clock_type::now() + 5 * _ptr->_jit.base_duration();
+    return ss::with_timeout(
+             deadline,
+             _ptr->replicate_configuration(std::move(u), _config.value()))
+      .handle_exception_type([](const ss::timed_out_error&) {
+          return make_error_code(errc::timeout);
+      });
 }
 
 ss::future<> vote_stm::self_vote() {
