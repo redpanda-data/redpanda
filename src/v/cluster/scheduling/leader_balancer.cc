@@ -228,8 +228,10 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
     if (!transfer) {
         vlog(
           clusterlog.info,
-          "No leadership balance improvements found with total error {}",
-          error);
+          "No leadership balance improvements found with total delta {}, "
+          "number of muted groups {}",
+          error,
+          _muted.size());
         if (!_timer.armed()) {
             _timer.arm(_idle_timeout);
         }
