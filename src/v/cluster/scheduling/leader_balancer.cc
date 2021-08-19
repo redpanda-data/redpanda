@@ -208,7 +208,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
      * (e.g. on average little should change between ticks) and bounding the
      * search for leader moves.
      */
-    greedy_balanced_shards strategy(build_index());
+    greedy_balanced_shards strategy(build_index(), {});
 
     if (clusterlog.is_enabled(ss::log_level::trace)) {
         auto cores = strategy.stats();
