@@ -1,0 +1,51 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster-with-probe
+spec:
+  # TODO: update once vectorizedio/redpanda#1936 is released
+  image: simon/redpanda
+  version: startup-probe-0
+  replicas: 1
+  startupProbeMaxRetries: 500
+  resources:
+    requests:
+      cpu: 100m
+      memory: 100Mi
+    limits:
+      cpu: 1
+      memory: 100Mi
+  configuration:
+    rpcServer:
+      port: 33145
+    kafkaApi:
+      - port: 9092
+    adminApi:
+    - port: 9644
+    developerMode: true
+---
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster-without-probe
+spec:
+# TODO: update once vectorizedio/redpanda#1936 is released
+  image: simon/redpanda
+  version: startup-probe-0
+  replicas: 1
+  startupProbeEnabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 100Mi
+    limits:
+      cpu: 1
+      memory: 100Mi
+  configuration:
+    rpcServer:
+      port: 33145
+    kafkaApi:
+      - port: 9092
+    adminApi:
+    - port: 9644
+    developerMode: true
