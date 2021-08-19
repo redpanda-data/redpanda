@@ -43,7 +43,7 @@ void server_probe::setup_metrics(
           "requests_completed",
           [this] { return _requests_completed; },
           sm::description(
-            ssx::sformat("{}: Number of successfull requests", proto))),
+            ssx::sformat("{}: Number of successful requests", proto))),
         sm::make_total_bytes(
           "received_bytes",
           [this] { return _in_bytes; },
@@ -178,7 +178,7 @@ void client_probe::setup_metrics(
         sm::make_derive(
           "requests_blocked_memory",
           [this] { return _requests_blocked_memory; },
-          sm::description("Number of requests that are blocked beacause"
+          sm::description("Number of requests that are blocked because"
                           " of insufficient memory"),
           labels),
       });
