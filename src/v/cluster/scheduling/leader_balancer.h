@@ -73,6 +73,7 @@ public:
       ss::sharded<ss::abort_source>&,
       std::chrono::milliseconds,
       std::chrono::milliseconds,
+      std::chrono::milliseconds,
       consensus_ptr);
 
     ss::future<> start();
@@ -85,6 +86,7 @@ private:
     index_type build_index();
     std::optional<model::broker_shard> find_leader_shard(const model::ntp&);
     absl::flat_hash_set<raft::group_id> muted_groups() const;
+    absl::flat_hash_set<model::node_id> muted_nodes() const;
 
     ss::future<bool> do_transfer(reassignment);
     ss::future<bool> do_transfer_local(reassignment) const;
@@ -120,6 +122,13 @@ private:
      * successfully so that we do not pertrub them too much on accident.
      */
     clock_type::duration _mute_timeout;
+
+    /*
+     * threshold timeout of not having a raft0 heartbeat after which the node
+     * will be muted. muting a node removes its capacity from consideration when
+     * choosing new rebalancing targets for leadership.
+     */
+    clock_type::duration _node_mute_timeout;
 
     struct last_known_leader {
         model::broker_shard shard;
