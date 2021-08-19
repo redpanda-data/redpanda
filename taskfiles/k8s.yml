@@ -13,6 +13,7 @@ tasks:
     deps:
     - task: :dev:install-go
     - task: :dev:install-kubectl
+    - task: :dev:install-kind
     cmds:
     - |
       PATH="{{.BUILD_ROOT}}/bin:{{.GO_BUILD_ROOT}}/bin:$PATH"
