@@ -78,6 +78,23 @@ type ClusterSpec struct {
 	// DNS name.
 	// http://www.dns-sd.org/trailingdotsindomainnames.html
 	DNSTrailingDotDisabled bool `json:"dnsTrailingDotDisabled,omitempty"`
+	// Wether a Startup probe pointing to /v1/status/started is added to each Redpanda node or not.
+	// Enabled by default.
+	StartupProbeEnabled *bool `json:"startupProbeEnabled,omitempty"`
+	// Used to set the max amount of retries for the StartupProbe before failing and therefore making the node restart.
+	// The StartupProbe sends a request to /v1/status/started every 1s until it returns 200 or the max amount of retries
+	// is reached.
+	// The default value is 3000 which gives the node around 1 hour to boot.
+	// i.e. 3000 retries * 1s period * ~200ms response time ~= 1h.
+	//
+	// The reason behind this default is that for clusters with large amounts of data, the startup of a new node can
+	// take 10s of minutes because the `started` endpoint succeeds only until there are no partitions under-replicated.
+	//
+	// The disadvantage of this default value is that it will take around ~1h to notice a failure unrelated to startup.
+	// This parameter can be tuned to accomodate smaller clusters.
+	// e.g. Assuming that every retry roughly takes 1200ms, if the desired max timeout is 10 min
+	// a value of 500 can be used as 10 min/1200 ms = 500
+	StartupProbeMaxRetries *int32 `json:"startupProbeMaxRetries,omitempty"`
 }
 
 // Sidecars is definition of sidecars running alongside redpanda process

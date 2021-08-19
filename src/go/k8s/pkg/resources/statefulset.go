@@ -51,6 +51,11 @@ const (
 
 	datadirName            = "datadir"
 	defaultDatadirCapacity = "100Gi"
+
+	defaultStartupProbeIsEnabled = true
+	// For clusters with large amounts of data, the startup of a new node can take 10s of minutes.
+	// As a measure of precaution, we're setting the min time for the probe to fail to ~1h.
+	defaultStartupProbeMaxRetries int32 = 3000
 )
 
 // ConfiguratorSettings holds settings related to configurator container and deployment
@@ -820,7 +825,20 @@ func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
 }
 
 func (r *StatefulSetResource) getStartupProbe() *corev1.Probe {
-	adminApi := r.pandaCluster.AdminAPIInternal()
+	var (
+		adminApi   = r.pandaCluster.AdminAPIInternal()
+		enabled    = defaultStartupProbeIsEnabled
+		maxRetries = defaultStartupProbeMaxRetries
+	)
+	if r.pandaCluster.Spec.StartupProbeEnabled != nil {
+		enabled = *r.pandaCluster.Spec.StartupProbeEnabled
+	}
+	if !enabled {
+		return nil
+	}
+	if r.pandaCluster.Spec.StartupProbeMaxRetries != nil {
+		maxRetries = *r.pandaCluster.Spec.StartupProbeMaxRetries
+	}
 	if adminApi == nil {
 		r.logger.Info("BUG! an internal listener for admin API is required")
 		return nil
@@ -839,15 +857,11 @@ func (r *StatefulSetResource) getStartupProbe() *corev1.Probe {
 				Scheme: "HTTP",
 			},
 		},
-		// TODO: make max retries configurable
-		//
-		// For clusters with large amounts of data, the startup of a new node can take 10s of minutes.
-		// As a measure of precaution, we're setting the min time for the probe to fail to ~1h.
 		InitialDelaySeconds: 1,
 		TimeoutSeconds:      1,
 		PeriodSeconds:       1,
 		SuccessThreshold:    1, // Once the node is in "started" state, it won't go back to "booting" state
-		FailureThreshold:    3000,
+		FailureThreshold:    maxRetries,
 	}
 
 	return &baseProbe
