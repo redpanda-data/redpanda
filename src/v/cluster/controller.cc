@@ -202,6 +202,7 @@ ss::future<> controller::start() {
             std::ref(_as),
             config::shard_local_cfg().leader_balancer_idle_timeout(),
             config::shard_local_cfg().leader_balancer_mute_timeout(),
+            config::shard_local_cfg().leader_balancer_node_mute_timeout(),
             _raft0);
           return _leader_balancer->start();
       });
