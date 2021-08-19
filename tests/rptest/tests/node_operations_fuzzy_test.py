@@ -28,7 +28,7 @@ ALLOWED_REPLICATION = [1, 3]
 
 
 class NodeOperationFuzzyTest(EndToEndTest):
-    def generate_random_workload(self, count):
+    def generate_random_workload(self, count, skip_nodes):
         op_types = [ADD, DECOMMISSION, ADD_NO_DELETE]
         tp_op_types = [ADD_TOPIC, DELETE_TOPIC]
         # current state
@@ -36,6 +36,11 @@ class NodeOperationFuzzyTest(EndToEndTest):
         decommissioned_nodes = []
         operations = []
         topics = []
+
+        def eligible_active_nodes():
+            return list(
+                filter(lambda n: not (n == 1 or n in skip_nodes),
+                       active_nodes))
 
         def decommission(id):
             active_nodes.remove(id)
@@ -51,13 +56,13 @@ class NodeOperationFuzzyTest(EndToEndTest):
                 operations.append((random.choice([ADD, ADD_NO_DELETE]), id))
                 add(id)
             elif len(decommissioned_nodes) == 0:
-                id = random.choice(active_nodes[1:])
+                id = random.choice(eligible_active_nodes())
                 operations.append((DECOMMISSION, id))
                 decommission(id)
             else:
                 op = random.choice(op_types)
                 if op == DECOMMISSION:
-                    id = random.choice(active_nodes[1:])
+                    id = random.choice(eligible_active_nodes())
                     operations.append((DECOMMISSION, id))
                     decommission(id)
                 elif op == ADD:
@@ -126,6 +131,15 @@ class NodeOperationFuzzyTest(EndToEndTest):
         self.start_producer(1, throughput=100)
         self.start_consumer(1)
         self.await_startup()
+        admin = Admin(self)
+        nodes_to_skip = set()
+        for n in self.redpanda.nodes:
+            p = admin.get_partitions(namespace="kafka_internal",
+                                     topic="group",
+                                     node=n,
+                                     partition=0)
+            self.redpanda.logger.info(f"group partition: {p}")
+            nodes_to_skip.add(p["replicas"][0]["node_id"])
 
         def decommission(node_id):
             self.logger.info(f"decommissioning node: {node_id}")
@@ -176,7 +190,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
 
         admin = Admin(self.redpanda)
         admin.set_log_level("cluster", "trace")
-        work = self.generate_random_workload(10)
+        work = self.generate_random_workload(10, skip_nodes=nodes_to_skip)
         self.redpanda.logger.info(f"node operations to execute: {work}")
         for op in work:
             op_type = op[0]
