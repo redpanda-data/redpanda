@@ -16,6 +16,8 @@
 
 #include <seastar/core/scheduling.hh>
 
+#include <optional>
+
 namespace raft {
 
 group_manager::group_manager(
@@ -99,8 +101,13 @@ ss::future<> group_manager::shutdown(ss::lw_shared_ptr<raft::consensus> c) {
 
 void group_manager::trigger_leadership_notification(
   raft::leadership_status st) {
+    std::optional<model::node_id> leader_id;
+    if (st.current_leader) {
+        leader_id = st.current_leader->id();
+    }
+
     for (auto& cb : _notifications) {
-        cb.second(st.group, st.term, st.current_leader->id());
+        cb.second(st.group, st.term, leader_id);
     }
 }
 
