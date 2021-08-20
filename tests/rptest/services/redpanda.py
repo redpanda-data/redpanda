@@ -247,8 +247,7 @@ class RedpandaService(Service):
         pids = self.pids(node)
 
         for pid in pids:
-            # TODO: change SIGKILL back to SIGTERM after we solve graceful shutdown issue
-            node.account.signal(pid, signal.SIGKILL, allow_fail=False)
+            node.account.signal(pid, signal.SIGTERM, allow_fail=False)
 
         timeout_sec = 30
         wait_until(lambda: len(self.pids(node)) == 0,
