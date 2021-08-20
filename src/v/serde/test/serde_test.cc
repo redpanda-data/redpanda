@@ -251,6 +251,20 @@ SEASTAR_THREAD_TEST_CASE(all_types_test) {
         auto parser = iobuf_parser{std::move(b)};
         BOOST_CHECK(!serde::read<std::optional<int32_t>>(parser).has_value());
     }
+
+    {
+        auto b = iobuf();
+        serde::write(b, float{-123.456});
+        auto parser = iobuf_parser{std::move(b)};
+        BOOST_CHECK(serde::read<float>(parser) == float{-123.456});
+    }
+
+    {
+        auto b = iobuf();
+        serde::write(b, double{-123.456});
+        auto parser = iobuf_parser{std::move(b)};
+        BOOST_CHECK(serde::read<double>(parser) == double{-123.456});
+    }
 }
 
 struct test_snapshot_header
