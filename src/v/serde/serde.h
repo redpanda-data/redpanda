@@ -27,6 +27,15 @@
 
 namespace serde {
 
+template<typename To, typename From>
+To bit_cast(From const& f) {
+    static_assert(sizeof(From) == sizeof(To));
+    static_assert(std::is_trivially_copyable_v<To>);
+    To to;
+    std::memcpy(&to, &f, sizeof(To));
+    return to;
+}
+
 struct header {
     version_t _version, _compat_version;
     size_t _bytes_left_limit;
@@ -141,11 +150,11 @@ void write(iobuf& out, T t) {
         if constexpr (sizeof(Type) == 1) {
             out.append(reinterpret_cast<char const*>(&t), sizeof(t));
         } else if constexpr (std::is_same_v<float, Type>) {
-            auto const le_t = htole32(t);
+            auto const le_t = htole32(bit_cast<uint32_t>(t));
             static_assert(sizeof(le_t) == sizeof(Type));
             out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
         } else if constexpr (std::is_same_v<double, Type>) {
-            auto const le_t = htole64(t);
+            auto const le_t = htole64(bit_cast<uint64_t>(t));
             static_assert(sizeof(le_t) == sizeof(Type));
             out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
         } else {
@@ -288,9 +297,9 @@ read_nested(iobuf_parser& in, std::size_t const bytes_left_limit) {
         if constexpr (sizeof(Type) == 1) {
             t = in.consume_type<Type>();
         } else if constexpr (std::is_same_v<float, Type>) {
-            t = le32toh(in.consume_type<Type>());
+            t = bit_cast<float>(le32toh(in.consume_type<uint32_t>()));
         } else if constexpr (std::is_same_v<double, Type>) {
-            t = le64toh(in.consume_type<Type>());
+            t = bit_cast<double>(le64toh(in.consume_type<uint64_t>()));
         } else {
             t = ss::le_to_cpu(in.consume_type<Type>());
         }
@@ -316,7 +325,8 @@ read_nested(iobuf_parser& in, std::size_t const bytes_left_limit) {
         return str;
     } else if constexpr (reflection::is_std_optional_v<Type>) {
         return read_nested<bool>(in, bytes_left_limit)
-                 ? Type{read<typename Type::value_type>(in)}
+                 ? Type{read_nested<typename Type::value_type>(
+                   in, bytes_left_limit)}
                  : std::nullopt;
     }
 
