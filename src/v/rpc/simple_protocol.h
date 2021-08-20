@@ -10,7 +10,6 @@
  */
 
 #pragma once
-#include "rpc/netbuf.h"
 #include "rpc/server.h"
 #include "rpc/service.h"
 namespace rpc {

@@ -12,7 +12,6 @@
 #include "likely.h"
 #include "rpc/dns.h"
 #include "rpc/logger.h"
-#include "rpc/netbuf.h"
 #include "rpc/parse_utils.h"
 #include "rpc/response_handler.h"
 #include "rpc/types.h"

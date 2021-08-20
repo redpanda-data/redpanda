@@ -12,7 +12,6 @@
 #pragma once
 
 #include "reflection/async_adl.h"
-#include "rpc/netbuf.h"
 #include "rpc/parse_utils.h"
 #include "rpc/types.h"
 #include "seastarx.h"

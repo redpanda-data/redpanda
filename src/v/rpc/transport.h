@@ -16,7 +16,6 @@
 #include "rpc/batched_output_stream.h"
 #include "rpc/client_probe.h"
 #include "rpc/errc.h"
-#include "rpc/netbuf.h"
 #include "rpc/parse_utils.h"
 #include "rpc/response_handler.h"
 #include "rpc/types.h"

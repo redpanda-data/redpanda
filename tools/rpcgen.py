@@ -26,7 +26,6 @@ RPC_TEMPLATE = """
 
 #include "reflection/adl.h"
 #include "rpc/types.h"
-#include "rpc/netbuf.h"
 #include "rpc/parse_utils.h"
 #include "rpc/transport.h"
 #include "rpc/service.h"

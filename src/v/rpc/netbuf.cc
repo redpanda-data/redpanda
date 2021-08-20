@@ -7,8 +7,6 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "rpc/netbuf.h"
-
 #include "bytes/iobuf.h"
 #include "compression/stream_zstd.h"
 #include "hashing/xx.h"
