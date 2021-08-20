@@ -26,6 +26,12 @@ public:
     };
     ss::future<> apply(server::resources) final;
 
+    void setup_metrics() {
+        for (auto& s : _services) {
+            s->setup_metrics();
+        }
+    }
+
 private:
     ss::future<> dispatch_method_once(header, server::resources);
 

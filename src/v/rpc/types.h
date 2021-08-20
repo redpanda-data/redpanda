@@ -15,6 +15,7 @@
 #include "likely.h"
 #include "outcome.h"
 #include "seastarx.h"
+#include "utils/hdr_hist.h"
 #include "utils/unresolved_address.h"
 
 #include <seastar/core/future.hh>
@@ -35,6 +36,8 @@
 #include <iosfwd>
 #include <type_traits>
 #include <vector>
+
+using namespace std::chrono_literals;
 
 namespace rpc {
 
@@ -204,10 +207,28 @@ inline void netbuf::set_min_compression_bytes(size_t min) {
     _min_compression_bytes = min;
 }
 
+class method_probes {
+public:
+    hdr_hist& latency_hist() { return _latency_hist; }
+    const hdr_hist& latency_hist() const { return _latency_hist; }
+
+private:
+    // roughly 2024 bytes
+    hdr_hist _latency_hist{120s, 1ms};
+};
+
 /// \brief most method implementations will be codegenerated
 /// by $root/tools/rpcgen.py
-using method = ss::noncopyable_function<ss::future<netbuf>(
-  ss::input_stream<char>&, streaming_context&)>;
+struct method {
+    using handler = ss::noncopyable_function<ss::future<netbuf>(
+      ss::input_stream<char>&, streaming_context&)>;
+
+    handler handle;
+    method_probes probes;
+
+    explicit method(handler h)
+      : handle(std::move(h)) {}
+};
 
 /// \brief used in returned types for client::send_typed() calls
 template<typename T>

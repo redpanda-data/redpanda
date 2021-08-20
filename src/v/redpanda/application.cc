@@ -923,6 +923,9 @@ void application::start_redpanda() {
             _scheduling_groups.cluster_sg(),
             smp_service_groups.cluster_smp_sg(),
             std::ref(controller->get_partition_leaders()));
+          if (!config::shard_local_cfg().disable_metrics()) {
+              proto->setup_metrics();
+          }
           s.set_protocol(std::move(proto));
       })
       .get();

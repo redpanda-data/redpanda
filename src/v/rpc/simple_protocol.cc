@@ -107,8 +107,8 @@ simple_protocol::dispatch_method_once(header h, server::resources rs) {
 
         method* m = it->get()->method_from_id(method_id);
 
-        return (*m)(ctx->res.conn->input(), *ctx)
-          .then_wrapped([ctx, m = ctx->res.hist().auto_measure(), rs](
+        return m->handle(ctx->res.conn->input(), *ctx)
+          .then_wrapped([ctx, m, l = ctx->res.hist().auto_measure(), rs](
                           ss::future<netbuf> fut) mutable {
               netbuf reply_buf;
               try {
@@ -132,7 +132,9 @@ simple_protocol::dispatch_method_once(header h, server::resources rs) {
                   reply_buf.set_status(rpc::status::server_error);
               }
               return send_reply(ctx, std::move(reply_buf))
-                .finally([m = std::move(m)] {});
+                .finally([m, l = std::move(l)]() mutable {
+                    m->probes.latency_hist().record(std::move(l));
+                });
           });
     });
     return fut;

@@ -35,6 +35,7 @@ struct service {
     virtual ss::smp_service_group& get_smp_service_group() = 0;
     /// \brief return nullptr when method not found
     virtual method* method_from_id(uint32_t) = 0;
+    virtual void setup_metrics() = 0;
 };
 
 class rpc_internal_body_parsing_exception : public std::exception {
