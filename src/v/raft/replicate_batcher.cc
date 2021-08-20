@@ -131,15 +131,13 @@ replicate_batcher::do_cache_with_backpressure(
 }
 
 ss::future<> replicate_batcher::flush(ss::semaphore_units<> u) {
-    auto item_cache = std::exchange(_item_cache, {});
-    if (item_cache.empty()) {
-        return ss::now();
-    }
-    return ss::with_gate(
-      _ptr->_bg,
-      [this,
-       item_cache = std::move(item_cache),
-       batcher_units = std::move(u)]() mutable {
+    return ss::try_with_gate(
+      _ptr->_bg, [this, batcher_units = std::move(u)]() mutable {
+          auto item_cache = std::exchange(_item_cache, {});
+          if (item_cache.empty()) {
+              return ss::now();
+          }
+
           return _ptr->_op_lock.get_units().then(
             [this,
              item_cache = std::move(item_cache),
