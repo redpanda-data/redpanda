@@ -27,7 +27,6 @@ class RedpandaTest(Test):
                  test_context,
                  num_brokers=3,
                  extra_rp_conf=dict(),
-                 topics=None,
                  enable_pp=False,
                  enable_sr=False,
                  num_cores=3):

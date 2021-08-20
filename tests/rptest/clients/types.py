@@ -40,19 +40,17 @@ class TopicSpec:
     TIMESTAMP_CREATE_TIME = "CreateTime"
     TIMESTAMP_LOG_APPEND_TIME = "LogAppendTime"
 
-    def __init__(
-            self,
-            *,
-            name=None,
-            partition_count=1,
-            replication_factor=3,
-            cleanup_policy=CLEANUP_DELETE,
-            compression_type=COMPRESSION_PRODUCER,
-            message_timestamp_type=TIMESTAMP_CREATE_TIME,
-            segment_bytes=1 * (2 ^ 30),
-            retention_bytes=-1,
-            retention_ms=(7 * 24 * 3600 * 1000)  # one week
-    ):
+    def __init__(self,
+                 *,
+                 name=None,
+                 partition_count=1,
+                 replication_factor=3,
+                 cleanup_policy=CLEANUP_DELETE,
+                 compression_type=COMPRESSION_PRODUCER,
+                 message_timestamp_type=TIMESTAMP_CREATE_TIME,
+                 segment_bytes=1 * (2 ^ 30),
+                 retention_bytes=None,
+                 retention_ms=None):
         self.name = name or f"topic-{self._random_topic_suffix()}"
         self.partition_count = partition_count
         self.replication_factor = replication_factor

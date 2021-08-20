@@ -28,9 +28,7 @@ class AlterTopicConfiguration(RedpandaTest):
 
     def __init__(self, test_context):
         super(AlterTopicConfiguration,
-              self).__init__(test_context=test_context,
-                             num_brokers=3,
-                             topics=self.topics)
+              self).__init__(test_context=test_context, num_brokers=3)
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
 
