@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/go-logr/logr"
 	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
@@ -425,6 +426,9 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 									MountPath: configDestinationDir,
 								},
 							}, r.secretVolumeMounts()...),
+							Lifecycle: &corev1.Lifecycle{
+								PreStop: r.getPreStopHook(),
+							},
 						},
 					},
 					Tolerations:  tolerations,
@@ -817,4 +821,28 @@ func statefulSetKind() string {
 
 func (r *StatefulSetResource) fullConfiguratorImage() string {
 	return fmt.Sprintf("%s:%s", r.configuratorSettings.ConfiguratorBaseImage, r.configuratorSettings.ConfiguratorTag)
+}
+
+func (r *StatefulSetResource) getPreStopHook() *corev1.Handler {
+	var (
+		host = fmt.Sprintf("$(POD_NAME).%s", r.serviceFQDN)
+		port = r.pandaCluster.AdminAPIInternal().Port
+	)
+
+	cmd := strings.Join([]string{
+		"rpk debug info",
+		"grep -a 'redpanda.node_id'",
+		"awk '{print $2}'",
+		fmt.Sprintf("xargs -I{} curl -XPUT '%s:%d/v1/brokers/{}/abdicate'", host, port),
+	}, " | ")
+
+	return &corev1.Handler{
+		Exec: &corev1.ExecAction{
+			Command: []string{
+				"/bin/sh",
+				"-c",
+				cmd,
+			},
+		},
+	}
 }

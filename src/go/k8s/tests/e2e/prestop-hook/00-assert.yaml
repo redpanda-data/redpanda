@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cluster
+status:
+  readyReplicas: 1
+spec:
+  template:
+    spec:
+      containers:
+      - name: redpanda
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - "/bin/sh"
+              - "-c"
+              - "rpk debug info | grep -a 'redpanda.node_id' | awk '{print $2}' | xargs -I{} curl -XPUT '$(POD_NAME):9644/v1/brokers/{}/abdicate'"
+      - name: rpk-status
