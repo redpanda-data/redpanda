@@ -17,6 +17,7 @@
 #include "units.h"
 #include "utils/mutex.h"
 
+#include <seastar/core/gate.hh>
 #include <seastar/core/semaphore.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -70,6 +71,7 @@ private:
     size_t _max_batch_size;
     std::vector<item_ptr> _item_cache;
     mutex _lock;
+    ss::gate _bg;
 };
 
 } // namespace raft

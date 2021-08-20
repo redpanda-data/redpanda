@@ -157,8 +157,8 @@ ss::future<> consensus::stop() {
 
     return _event_manager.stop()
       .then([this] { return _append_requests_buffer.stop(); })
-      .then([this] { return _bg.close(); })
       .then([this] { return _batcher.stop(); })
+      .then([this] { return _bg.close(); })
       .then([this] {
           // close writer if we have to
           if (likely(!_snapshot_writer)) {
