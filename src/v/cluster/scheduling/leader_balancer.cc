@@ -45,9 +45,11 @@ leader_balancer::leader_balancer(
   ss::sharded<ss::abort_source>& as,
   std::chrono::milliseconds idle_timeout,
   std::chrono::milliseconds mute_timeout,
+  std::chrono::milliseconds node_mute_timeout,
   consensus_ptr raft0)
   : _idle_timeout(idle_timeout)
   , _mute_timeout(mute_timeout)
+  , _node_mute_timeout(node_mute_timeout)
   , _topics(topics)
   , _leaders(leaders)
   , _client(std::move(client))
@@ -208,7 +210,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
      * (e.g. on average little should change between ticks) and bounding the
      * search for leader moves.
      */
-    greedy_balanced_shards strategy(build_index());
+    greedy_balanced_shards strategy(build_index(), muted_nodes());
 
     if (clusterlog.is_enabled(ss::log_level::trace)) {
         auto cores = strategy.stats();
@@ -226,8 +228,10 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
     if (!transfer) {
         vlog(
           clusterlog.info,
-          "No leadership balance improvements found with total delta {}",
-          error);
+          "No leadership balance improvements found with total delta {}, "
+          "number of muted groups {}",
+          error,
+          _muted.size());
         if (!_timer.armed()) {
             _timer.arm(_idle_timeout);
         }
@@ -343,6 +347,25 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
      */
     _muted.try_emplace(transfer->group, clock_type::now() + _mute_timeout);
     co_return ss::stop_iteration::no;
+}
+
+absl::flat_hash_set<model::node_id> leader_balancer::muted_nodes() const {
+    absl::flat_hash_set<model::node_id> nodes;
+    const auto now = raft::clock_type::now();
+    for (const auto& follower : _raft0->get_follower_metrics()) {
+        auto last_hbeat_age = now - follower.last_heartbeat;
+        if (last_hbeat_age > _node_mute_timeout) {
+            nodes.insert(follower.id);
+            vlog(
+              clusterlog.info,
+              "Leadership rebalancer muting node {} last heartbeat {} ms",
+              follower.id,
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                last_hbeat_age)
+                .count());
+        }
+    }
+    return nodes;
 }
 
 absl::flat_hash_set<raft::group_id> leader_balancer::muted_groups() const {

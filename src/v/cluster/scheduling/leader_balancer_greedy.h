@@ -28,15 +28,18 @@ class greedy_balanced_shards final : private leader_balancer_strategy {
     static constexpr double error_jitter = 0.000001;
 
 public:
-    explicit greedy_balanced_shards(index_type cores)
+    explicit greedy_balanced_shards(
+      index_type cores, absl::flat_hash_set<model::node_id> muted_nodes)
       : _cores(std::move(cores))
+      , _muted_nodes(std::move(muted_nodes))
+      , _num_cores(num_cores())
       , _num_groups(num_groups()) {
         rebuild_load_index();
     }
 
     double error() const final {
         auto target_load = static_cast<double>(_num_groups)
-                           / static_cast<double>(_cores.size());
+                           / static_cast<double>(_num_cores);
         return std::accumulate(
           _cores.cbegin(),
           _cores.cend(),
@@ -53,7 +56,7 @@ public:
     double adjusted_error(
       const model::broker_shard& from, const model::broker_shard& to) const {
         auto target_load = static_cast<double>(_num_groups)
-                           / static_cast<double>(_cores.size());
+                           / static_cast<double>(_num_cores);
         auto e = error();
         const auto from_count = static_cast<double>(_cores.at(from).size());
         const auto to_count = static_cast<double>(_cores.at(to).size());
@@ -76,6 +79,10 @@ public:
      * Measurements for clusters with several thousand partitions indicate a
      * real time execution cost of at most a couple hundred micros. Other
      * strategies are sure to improve this as we tackle larger configurations.
+     *
+     * Muted nodes are nodes that should be treated as if they have no available
+     * capacity. So do not move leadership to a muted node, but any leaders on a
+     * muted node should not be touched in case the mute is temporary.
      */
     std::optional<reassignment>
     find_movement(const absl::flat_hash_set<raft::group_id>& skip) const final {
@@ -86,7 +93,14 @@ public:
          * to: less loaded core
          */
         for (const auto& from : boost::adaptors::reverse(_load)) {
+            if (_muted_nodes.contains(from->first.node_id)) {
+                continue;
+            }
             for (const auto& to : _load) {
+                // skip cores on muted nodes
+                if (_muted_nodes.contains(to->first.node_id)) {
+                    continue;
+                }
                 // consider group from high load core
                 for (const auto& group : from->second) {
                     if (skip.contains(group.first)) {
@@ -138,7 +152,24 @@ private:
           _cores.cbegin(),
           _cores.cend(),
           size_t{0},
-          [](auto acc, const auto& e) { return acc + e.second.size(); });
+          [this](auto acc, const auto& e) {
+              /*
+               * we aren't going to attempt to move leadership between muted
+               * nodes, so we only count groups with leaders on non-muted nodes
+               * when calculating error / target load.
+               */
+              if (_muted_nodes.contains(e.first.node_id)) {
+                  return acc;
+              }
+              return acc + e.second.size();
+          });
+    }
+
+    size_t num_cores() const {
+        return std::count_if(
+          _cores.cbegin(), _cores.cend(), [this](const auto& core) {
+              return !_muted_nodes.contains(core.first.node_id);
+          });
     }
 
     /*
@@ -158,6 +189,8 @@ private:
     }
 
     index_type _cores;
+    absl::flat_hash_set<model::node_id> _muted_nodes;
+    size_t _num_cores;
     size_t _num_groups;
     std::vector<index_type::const_iterator> _load;
 };
