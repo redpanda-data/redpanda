@@ -46,7 +46,7 @@ BOOST_AUTO_TEST_CASE(greedy) {
         }
     }
 
-    auto greed = cluster::greedy_balanced_shards(index);
+    auto greed = cluster::greedy_balanced_shards(index, {});
     BOOST_REQUIRE_EQUAL(greed.error(), 0);
 
     // new groups on shard 5
@@ -54,7 +54,7 @@ BOOST_AUTO_TEST_CASE(greedy) {
     index[shards[5]][raft::group_id(21)] = index[shards[5]][raft::group_id(3)];
     index[shards[5]][raft::group_id(22)] = index[shards[5]][raft::group_id(3)];
 
-    greed = cluster::greedy_balanced_shards(index);
+    greed = cluster::greedy_balanced_shards(index, {});
     BOOST_REQUIRE_GT(greed.error(), 0);
 
     // movement should be _from_ the overloaded shard
