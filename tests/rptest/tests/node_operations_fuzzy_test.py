@@ -119,7 +119,11 @@ class NodeOperationFuzzyTest(EndToEndTest):
             self.test_context,
             5,
             KafkaCliTools,
-            extra_rp_conf={"enable_auto_rebalance_on_node_add": True})
+            extra_rp_conf={
+                "enable_auto_rebalance_on_node_add": True,
+                "group_topic_partitions": 3,
+                "default_topic_replications": 3,
+            })
         # start 3 nodes
         self.redpanda.start()
         # create some topics
@@ -131,15 +135,6 @@ class NodeOperationFuzzyTest(EndToEndTest):
         self.start_producer(1, throughput=100)
         self.start_consumer(1)
         self.await_startup()
-        admin = Admin(self)
-        nodes_to_skip = set()
-        for n in self.redpanda.nodes:
-            p = admin.get_partitions(namespace="kafka_internal",
-                                     topic="group",
-                                     node=n,
-                                     partition=0)
-            self.redpanda.logger.info(f"group partition: {p}")
-            nodes_to_skip.add(p["replicas"][0]["node_id"])
 
         def decommission(node_id):
             self.logger.info(f"decommissioning node: {node_id}")
@@ -190,7 +185,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
 
         admin = Admin(self.redpanda)
         admin.set_log_level("cluster", "trace")
-        work = self.generate_random_workload(10, skip_nodes=nodes_to_skip)
+        work = self.generate_random_workload(10, skip_nodes=set())
         self.redpanda.logger.info(f"node operations to execute: {work}")
         for op in work:
             op_type = op[0]
