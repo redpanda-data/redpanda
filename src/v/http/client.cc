@@ -43,22 +43,25 @@
 namespace http {
 
 // client implementation //
+static constexpr ss::lowres_clock::duration default_max_idle_time = 1s;
 
 client::client(const rpc::base_transport::configuration& cfg)
-  : client(cfg, nullptr, nullptr) {}
+  : client(cfg, nullptr, nullptr, default_max_idle_time) {}
 
 client::client(
   const rpc::base_transport::configuration& cfg, const ss::abort_source& as)
-  : client(cfg, &as, nullptr) {}
+  : client(cfg, &as, nullptr, default_max_idle_time) {}
 
 client::client(
   const rpc::base_transport::configuration& cfg,
   const ss::abort_source* as,
-  ss::shared_ptr<client_probe> probe)
+  ss::shared_ptr<client_probe> probe,
+  ss::lowres_clock::duration max_idle_time)
   : rpc::base_transport(cfg)
   , _connect_gate()
   , _as(as)
-  , _probe(std::move(probe)) {
+  , _probe(std::move(probe))
+  , _max_idle_time(max_idle_time) {
     if (!_probe) {
         _probe = ss::make_shared<client_probe>();
     }
@@ -77,9 +80,23 @@ ss::future<client::request_response_t> client::make_request(
     auto target = header.target();
     auto req = ss::make_shared<request_stream>(this, std::move(header));
     auto res = ss::make_shared<response_stream>(this, verb);
+    auto now = ss::lowres_clock::now();
+    auto age = _last_response == ss::lowres_clock::time_point::min()
+                 ? ss::lowres_clock::duration::max()
+                 : now - _last_response;
     if (is_valid()) {
-        return ss::make_ready_future<request_response_t>(
-          std::make_tuple(req, res));
+        if (age < _max_idle_time) {
+            // Reuse connection
+            vlog(http_log.debug, "reusing connection, age {}", age.count());
+            return ss::make_ready_future<request_response_t>(
+              std::make_tuple(req, res));
+        } else {
+            vlog(http_log.debug, "shutdown connection, age {}", age.count());
+            // Connection is too old and likeley already received
+            // RST packet from the server. If we will try to use
+            // it the broken pipe (32) error will be triggered.
+            shutdown();
+        }
     }
     return get_connected(timeout)
       .then([req, res, target](reconnect_result_t r) {
@@ -160,7 +177,8 @@ ss::future<ss::temporary_buffer<char>> client::receive() {
       .handle_exception([this](std::exception_ptr e) {
           _probe->register_transport_error();
           return ss::make_exception_future<ss::temporary_buffer<char>>(e);
-      });
+      })
+      .finally([this] { _last_response = ss::lowres_clock::now(); });
 }
 
 ss::future<> client::send(ss::scattered_message<char> msg) {
@@ -509,16 +527,31 @@ ss::future<client::response_stream_ref> client::request(
   client::request_header&& header,
   ss::input_stream<char>& input,
   ss::lowres_clock::duration timeout) {
+    bool empty_input_stream = false;
+    auto plen = header.find(boost::beast::http::field::content_length);
+    if (plen != header.cend()) {
+        empty_input_stream = plen->value() == "0";
+    }
     return make_request(std::move(header), timeout)
-      .then([&input](request_response_t reqresp) mutable {
+      .then([&input, empty_input_stream](request_response_t reqresp) mutable {
           auto [request, response] = std::move(reqresp);
-          auto fsend = ss::do_with(
-            request->as_output_stream(),
-            [&input](ss::output_stream<char>& output) {
-                return ss::copy(input, output).then([&output] {
-                    return output.close();
+          auto fsend = ss::now();
+          if (empty_input_stream) {
+              // special case - empty input stream, don't use ss::copy
+              // since it won't invoke the underlying implementation
+              fsend = request->send_some(iobuf()).then(
+                [request = request]() { return request->send_eof(); });
+          } else {
+              // since the input stream has some data we can use
+              // output_stream interace of the request
+              fsend = ss::do_with(
+                request->as_output_stream(),
+                [&input](ss::output_stream<char>& output) {
+                    return ss::copy(input, output).then([&output] {
+                        return output.close();
+                    });
                 });
-            });
+          }
           return fsend.then([response = response]() {
               return ss::make_ready_future<response_stream_ref>(response);
           });

@@ -753,6 +753,12 @@ configuration::configuration()
       "Manifest upload timeout (ms)",
       required::no,
       10s)
+  , cloud_storage_max_connection_idle_time_ms(
+      *this,
+      "cloud_storage_max_connection_idle_time_ms",
+      "Max https connection idle time (ms)",
+      required::no,
+      5s)
   , superusers(
       *this, "superusers", "List of superuser usernames", required::no, {})
   , kafka_qdc_latency_alpha(

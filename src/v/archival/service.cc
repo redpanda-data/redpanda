@@ -136,6 +136,9 @@ scheduler_service_impl::get_archival_service_config() {
         overrides.trust_file = s3::ca_trust_file(std::filesystem::path(*cert));
     }
     overrides.port = config::shard_local_cfg().cloud_storage_api_endpoint_port;
+    overrides.max_idle_time
+      = config::shard_local_cfg()
+          .cloud_storage_max_connection_idle_time_ms.value();
 
     auto s3_conf = co_await s3::configuration::make_configuration(
       access_key, secret_key, region, overrides, disable_metrics);
@@ -331,8 +334,10 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
       _gate, [this, to_create = std::move(to_create)]() mutable {
           return ss::do_with(
             std::move(to_create), [this](std::vector<model::ntp>& to_create) {
-                return ss::parallel_for_each(
-                  to_create, [this](const model::ntp& ntp) {
+                // add_ntp_archiver can potentially use two connections
+                auto concurrency = std::max(1UL, _conf.connection_limit() / 2);
+                return ss::max_concurrent_for_each(
+                  to_create, concurrency, [this](const model::ntp& ntp) {
                       storage::api& api = _storage_api.local();
                       storage::log_manager& lm = api.log_mgr();
                       auto log = lm.get(ntp);

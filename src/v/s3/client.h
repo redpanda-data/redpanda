@@ -51,6 +51,7 @@ struct default_overrides {
     std::optional<endpoint_url> endpoint = std::nullopt;
     std::optional<uint16_t> port = std::nullopt;
     std::optional<ca_trust_file> trust_file = std::nullopt;
+    std::optional<ss::lowres_clock::duration> max_idle_time = std::nullopt;
     bool disable_tls = false;
 };
 
@@ -64,6 +65,8 @@ struct configuration : rpc::base_transport::configuration {
     private_key_str secret_key;
     /// AWS region
     aws_region_name region;
+    /// Max time that connection can spend idle
+    ss::lowres_clock::duration max_idle_time;
     /// Metrics probe (should be created for every aws account on every shard)
     ss::shared_ptr<client_probe> _probe;
 

@@ -41,6 +41,12 @@
 
 namespace s3 {
 
+// Close all connections that were used more than 5 seconds ago.
+// AWS S3 endpoint has timeout of 10 seconds. But since we're supporting
+// not only AWS S3 it makes sense to set timeout value a bit lower.
+static constexpr ss::lowres_clock::duration default_max_idle_time
+  = std::chrono::seconds(5);
+
 struct aws_header_names {
     static constexpr boost::beast::string_view prefix = "prefix";
     static constexpr boost::beast::string_view start_after = "start-after";
@@ -100,7 +106,9 @@ ss::future<configuration> configuration::make_configuration(
         client_cfg.credentials
           = co_await cred_builder.build_reloadable_certificate_credentials();
     }
+
     constexpr uint16_t default_port = 443;
+
     client_cfg.server_addr = unresolved_address(
       client_cfg.uri(),
       overrides.port ? *overrides.port : default_port,
@@ -108,6 +116,9 @@ ss::future<configuration> configuration::make_configuration(
     client_cfg.disable_metrics = disable_metrics;
     client_cfg._probe = ss::make_shared<client_probe>(
       disable_metrics, region(), endpoint_uri);
+    client_cfg.max_idle_time = overrides.max_idle_time
+                                 ? *overrides.max_idle_time
+                                 : default_max_idle_time;
     co_return client_cfg;
 }
 
@@ -115,7 +126,7 @@ std::ostream& operator<<(std::ostream& o, const configuration& c) {
     o << "{access_key:" << c.access_key << ",region:" << c.region()
       << ",secret_key:****"
       << ",access_point_uri:" << c.uri() << ",server_addr:" << c.server_addr
-      << "}";
+      << ",max_idle_time:" << c.max_idle_time.count() << "}";
     return o;
 }
 
@@ -144,7 +155,6 @@ result<http::client::request_header> request_creator::make_get_object_request(
     header.insert(boost::beast::http::field::host, host);
     header.insert(boost::beast::http::field::content_length, "0");
     header.insert(aws_header_names::x_amz_content_sha256, emptysig);
-    _sign.update_credentials_if_outdated();
     auto ec = _sign.sign_header(header, emptysig);
     if (ec) {
         return ec;
@@ -189,7 +199,6 @@ request_creator::make_unsigned_put_object_request(
         }
         header.insert(aws_header_names::x_amz_tagging, tstr.str().substr(1));
     }
-    _sign.update_credentials_if_outdated();
     auto ec = _sign.sign_header(header, sig);
     if (ec) {
         return ec;
@@ -228,7 +237,6 @@ request_creator::make_list_objects_v2_request(
     if (max_keys) {
         header.insert(aws_header_names::start_after, std::to_string(*max_keys));
     }
-    _sign.update_credentials_if_outdated();
     auto ec = _sign.sign_header(header, emptysig);
     vlog(s3_log.trace, "ListObjectsV2:\n {}", header);
     if (ec) {
@@ -259,7 +267,6 @@ request_creator::make_delete_object_request(
     header.insert(boost::beast::http::field::host, host);
     header.insert(boost::beast::http::field::content_length, "0");
     header.insert(aws_header_names::x_amz_content_sha256, emptysig);
-    _sign.update_credentials_if_outdated();
     auto ec = _sign.sign_header(header, emptysig);
     if (ec) {
         return ec;
@@ -374,7 +381,7 @@ client::client(const configuration& conf)
 
 client::client(const configuration& conf, const ss::abort_source& as)
   : _requestor(conf)
-  , _client(conf, &as, conf._probe)
+  , _client(conf, &as, conf._probe, conf.max_idle_time)
   , _probe(conf._probe) {}
 
 ss::future<> client::stop() { return _client.stop(); }

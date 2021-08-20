@@ -87,7 +87,8 @@ public:
     client(
       const rpc::base_transport::configuration& cfg,
       const ss::abort_source* as,
-      ss::shared_ptr<client_probe> probe);
+      ss::shared_ptr<client_probe> probe,
+      ss::lowres_clock::duration max_idle_time = {});
 
     ss::future<> stop();
     using rpc::base_transport::shutdown;
@@ -237,6 +238,11 @@ private:
     ss::gate _connect_gate;
     const ss::abort_source* _as;
     ss::shared_ptr<http::client_probe> _probe;
+    // Stores point in time when the last response was received
+    // from the server.
+    ss::lowres_clock::time_point _last_response{
+      ss::lowres_clock::time_point::min()};
+    ss::lowres_clock::duration _max_idle_time;
 };
 
 template<class BufferSeq>

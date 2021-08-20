@@ -327,18 +327,18 @@ ss::sstring signature_v4::sha256_hexdigest(std::string_view payload) {
     return sha_256(payload);
 }
 
-void signature_v4::update_credentials_if_outdated() {
-    static constexpr ss::lowres_clock::duration max_allowed_age
-      = std::chrono::seconds(86400);
-    auto now = ss::lowres_clock::now();
-    auto diff = now - _last_update;
-    if (diff > max_allowed_age) {
-        update_credentials();
-    }
-}
-
 std::error_code signature_v4::sign_header(
   http::client::request_header& header, const ss::sstring& sha256) const {
+    ss::sstring date_str = _sig_time.format_date();
+    ss::sstring service = "s3";
+    auto sign_key = gen_sig_key(_private_key(), date_str, _region(), service);
+    auto cred_scope = ssx::sformat(
+      "{}/{}/{}/aws4_request", date_str, _region(), service);
+    vlog(
+      s3_log.trace,
+      "Credentials updated:\n[signing key]\n{}\n[scope]\n{}\n",
+      hexdigest(sign_key),
+      cred_scope);
     auto amz_date = _sig_time.format_datetime();
     header.set("x-amz-date", {amz_date.data(), amz_date.size()});
     header.set("x-amz-content-sha256", {sha256.data(), sha256.size()});
@@ -353,32 +353,18 @@ std::error_code signature_v4::sign_header(
     }
     vlog(s3_log.trace, "\n[canonical-request]\n{}\n", canonical_req.value());
     auto str_to_sign = get_string_to_sign(
-      amz_date, _cred_scope, canonical_req.value());
-    auto digest = hmac(_sign_key, str_to_sign);
+      amz_date, cred_scope, canonical_req.value());
+    auto digest = hmac(sign_key, str_to_sign);
     auto auth_header = fmt::format(
       "{} Credential={}/{},SignedHeaders={},Signature={}",
       algorithm,
       _access_key(),
-      _cred_scope,
+      cred_scope,
       canonical_headers.value().signed_headers,
       hexdigest(digest));
     header.set(boost::beast::http::field::authorization, auth_header);
     vlog(s3_log.trace, "\n[signed-header]\n\n{}", header);
     return {};
-}
-
-void signature_v4::update_credentials() {
-    ss::sstring date_str = _sig_time.format_date();
-    ss::sstring service = "s3";
-    _sign_key = gen_sig_key(_private_key(), date_str, _region(), service);
-    _cred_scope = ssx::sformat(
-      "{}/{}/{}/aws4_request", date_str, _region(), service);
-    _last_update = ss::lowres_clock::now();
-    vlog(
-      s3_log.trace,
-      "Credentials updated:\n[signing key]\n{}\n[scope]\n{}\n",
-      hexdigest(_sign_key),
-      _cred_scope);
 }
 
 signature_v4::signature_v4(
@@ -389,7 +375,5 @@ signature_v4::signature_v4(
   : _sig_time(std::move(ts))
   , _region(std::move(region))
   , _access_key(std::move(access_key))
-  , _private_key(std::move(private_key)) {
-    update_credentials();
-}
+  , _private_key(std::move(private_key)) {}
 } // namespace s3
