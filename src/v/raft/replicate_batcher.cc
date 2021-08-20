@@ -20,6 +20,7 @@
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/do_with.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/smp.hh>
@@ -39,7 +40,11 @@ replicate_stages replicate_batcher::replicate(
   std::optional<model::term_id> expected_term, model::record_batch_reader&& r) {
     ss::promise<> enqueued;
     auto enqueued_f = enqueued.get_future();
-    auto f = do_cache(expected_term, std::move(r))
+    auto f = ss::try_with_gate(
+               _bg,
+               [this, expected_term, r = std::move(r)]() mutable {
+                   return do_cache(expected_term, std::move(r));
+               })
                .then_wrapped([this, enqueued = std::move(enqueued)](
                                ss::future<item_ptr> f) mutable {
                    if (f.failed()) {
@@ -61,15 +66,15 @@ replicate_stages replicate_batcher::replicate(
 }
 
 ss::future<> replicate_batcher::stop() {
-    // we keep a lock here to make sure that all inflight requests have finished
-    // already
-    return _lock.with([this]() {
-        for (auto& i : _item_cache) {
-            i->_promise.set_exception(
-              std::runtime_error("replicate_batcher destructor called. Cannot "
-                                 "finish replicating pending entries"));
-        }
-        _item_cache.clear();
+    return _bg.close().then([this] {
+        // we keep a lock here to make sure that all inflight requests have
+        // finished already
+        return _lock.with([this] {
+            for (auto& i : _item_cache) {
+                i->_promise.set_exception(ss::gate_closed_exception());
+            }
+            _item_cache.clear();
+        });
     });
 }
 
@@ -132,7 +137,7 @@ replicate_batcher::do_cache_with_backpressure(
 
 ss::future<> replicate_batcher::flush(ss::semaphore_units<> u) {
     return ss::try_with_gate(
-      _ptr->_bg, [this, batcher_units = std::move(u)]() mutable {
+      _bg, [this, batcher_units = std::move(u)]() mutable {
           auto item_cache = std::exchange(_item_cache, {});
           if (item_cache.empty()) {
               return ss::now();
