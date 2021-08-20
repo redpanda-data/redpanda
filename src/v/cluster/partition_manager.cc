@@ -80,6 +80,7 @@ ss::future<> partition_manager::remove(const model::ntp& ntp) {
 
     return _raft_manager.local()
       .remove(partition->raft())
+      .then([this, ntp] { _unmanage_watchers.notify(ntp, ntp.tp.partition); })
       .then([partition] { return partition->stop(); })
       .then([this, ntp] { return _storage.log_mgr().remove(ntp); })
       .finally([partition] {}); // in the end remove partition
