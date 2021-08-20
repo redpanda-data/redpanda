@@ -797,6 +797,19 @@ void application::wire_up_redpanda_services() {
       fetch_session_cache,
       config::shard_local_cfg().fetch_session_eviction_timeout_ms())
       .get();
+    /**
+     * When redpanda stops we need to shutdown all partitions to prevent it
+     * accepting new requests and additionally we need to finish/fail all
+     * ongoing requests before trying to stop kafka RPC. We need this
+     * additionall action in stop sequence since it is required to have
+     * `ss::sharded` instance of partition manager before kafka server is
+     * started.
+     */
+    _deferred.emplace_back([this] {
+        partition_manager
+          .invoke_on_all(&cluster::partition_manager::shutdown_all)
+          .get();
+    });
     construct_service(
       _compaction_controller,
       std::ref(storage),
