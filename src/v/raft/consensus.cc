@@ -20,6 +20,7 @@
 #include "raft/logger.h"
 #include "raft/prevote_stm.h"
 #include "raft/recovery_stm.h"
+#include "raft/replicate_entries_stm.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/types.h"
 #include "raft/vote_stm.h"
@@ -1816,15 +1817,46 @@ ss::future<std::error_code> consensus::replicate_configuration(
             meta(),
             model::make_memory_record_batch_reader(std::move(batches)));
           /**
-           * We use replicate_batcher::do_flush directly as we already hold the
+           * We use dispatch_replicate directly as we already hold the
            * _op_lock mutex when replicating configuration
            */
           std::vector<ss::semaphore_units<>> units;
           units.push_back(std::move(u));
-          return _batcher
-            .do_flush({}, std::move(req), std::move(units), std::move(seqs))
-            .then([] { return std::error_code(errc::success); });
+          return dispatch_replicate(
+                   std::move(req), std::move(units), std::move(seqs))
+            .then([](result<replicate_result> res) {
+                if (res) {
+                    return make_error_code(errc::success);
+                }
+                return res.error();
+            });
       });
+}
+
+ss::future<result<replicate_result>> consensus::dispatch_replicate(
+  append_entries_request req,
+  std::vector<ss::semaphore_units<>> u,
+  absl::flat_hash_map<vnode, follower_req_seq> seqs) {
+    auto stm = ss::make_lw_shared<replicate_entries_stm>(
+      this, std::move(req), std::move(seqs));
+
+    return stm->apply(std::move(u)).finally([this, stm] {
+        auto f = stm->wait().finally([stm] {});
+        // if gate is closed wait for all futures
+        if (_bg.is_closed()) {
+            _ctxlog.info("gate-closed, waiting to finish background requests");
+            return f;
+        }
+        // background
+        (void)with_gate(_bg, [this, stm, f = std::move(f)]() mutable {
+            return std::move(f).handle_exception(
+              [this](const std::exception_ptr& e) {
+                  _ctxlog.error(
+                    "Error waiting for background acks to finish - {}", e);
+              });
+        });
+        return ss::now();
+    });
 }
 
 append_entries_reply consensus::make_append_entries_reply(
