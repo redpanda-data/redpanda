@@ -391,27 +391,48 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
   model::timeout_clock::duration timeout) {
-    if (!_metadata_cache.local().contains(
-          model::tx_manager_nt, model::tx_manager_ntp.tp.partition)) {
+    auto retries = _metadata_dissemination_retries;
+    auto delay_ms = _metadata_dissemination_retry_delay_ms;
+    auto aborted = false;
+
+    auto has_metadata = _metadata_cache.local().contains(
+      model::tx_manager_nt, model::tx_manager_ntp.tp.partition);
+    while (!aborted && !has_metadata && 0 < retries--) {
         vlog(
-          clusterlog.warn, "can't find {}/0 partition", model::tx_manager_nt);
+          clusterlog.trace,
+          "waiting for {}/0 to fill metadata cache, retries left: {}",
+          model::tx_manager_nt,
+          retries);
+        aborted = !co_await sleep_abortable(delay_ms);
+        has_metadata = _metadata_cache.local().contains(
+          model::tx_manager_nt, model::tx_manager_ntp.tp.partition);
+    }
+    if (!has_metadata) {
+        vlog(
+          clusterlog.warn,
+          "can't find {}/0 in the metadata cache",
+          model::tx_manager_nt);
         co_return cluster::init_tm_tx_reply{
           .ec = tx_errc::partition_not_exists};
     }
 
+    retries = _metadata_dissemination_retries;
+    aborted = false;
     auto leader_opt = _leaders.local().get_leader(model::tx_manager_ntp);
-
-    auto retries = _metadata_dissemination_retries;
-    auto delay_ms = _metadata_dissemination_retry_delay_ms;
-    auto aborted = false;
     while (!aborted && !leader_opt && 0 < retries--) {
+        vlog(
+          clusterlog.trace,
+          "waiting for {} to fill leaders cache, retries left: {}",
+          model::tx_manager_ntp,
+          retries);
         aborted = !co_await sleep_abortable(delay_ms);
         leader_opt = _leaders.local().get_leader(model::tx_manager_ntp);
     }
-
     if (!leader_opt) {
         vlog(
-          clusterlog.warn, "can't find a leader for {}", model::tx_manager_ntp);
+          clusterlog.warn,
+          "can't find {} in the leaders cache",
+          model::tx_manager_ntp);
         co_return cluster::init_tm_tx_reply{.ec = tx_errc::leader_not_found};
     }
 
@@ -424,7 +445,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
     }
 
     vlog(
-      clusterlog.trace, "dispatching init_tm_tx to {} from {}", leader, _self);
+      clusterlog.trace, "dispatching init_tm_tx from {} to {}", _self, leader);
 
     co_return co_await dispatch_init_tm_tx(
       leader, tx_id, transaction_timeout_ms, timeout);
