@@ -15,6 +15,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/rm_partition_frontend.h"
 #include "cluster/shard_table.h"
+#include "cluster/tx_helpers.h"
 #include "errc.h"
 #include "types.h"
 
@@ -24,15 +25,6 @@
 
 namespace cluster {
 using namespace std::chrono_literals;
-
-static ss::future<bool> sleep_abortable(std::chrono::milliseconds dur) {
-    try {
-        co_await ss::sleep_abortable(dur);
-        co_return true;
-    } catch (const ss::sleep_aborted&) {
-        co_return false;
-    }
-}
 
 static add_paritions_tx_reply make_add_partitions_error_response(
   add_paritions_tx_request request, tx_errc ec) {
@@ -792,6 +784,12 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
               }
           }
           auto has_added = stm->add_partitions(tx.id, partitions);
+          if (!has_added) {
+              vlog(
+                clusterlog.warn,
+                "can't add partitions: tx.id={} doesn't exist",
+                tx.id);
+          }
           for (auto& br : brs) {
               auto topic_it = std::find_if(
                 response.results.begin(),
@@ -803,6 +801,13 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
               if (has_added && br.ec == tx_errc::none) {
                   res_partition.error_code = tx_errc::none;
               } else {
+                  if (br.ec != tx_errc::none) {
+                      vlog(
+                        clusterlog.warn,
+                        "begin_tx({},...) failed with {}",
+                        br.ntp,
+                        br.ec);
+                  }
                   res_partition.error_code = tx_errc::unknown_server_error;
               }
               topic_it->results.push_back(res_partition);
