@@ -15,10 +15,10 @@
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
-#include "raft/replicate_entries_stm.h"
 #include "raft/types.h"
 
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/do_with.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sleep.hh>
@@ -231,38 +231,18 @@ static void propagate_current_exception(
 }
 
 ss::future<> replicate_batcher::do_flush(
-  std::vector<replicate_batcher::item_ptr>&& notifications,
-  append_entries_request&& req,
+  std::vector<replicate_batcher::item_ptr> notifications,
+  append_entries_request req,
   std::vector<ss::semaphore_units<>> u,
   absl::flat_hash_map<vnode, follower_req_seq> seqs) {
     _ptr->_probe.replicate_batch_flushed();
-    auto stm = ss::make_lw_shared<replicate_entries_stm>(
-      _ptr, std::move(req), std::move(seqs));
-    return stm->apply(std::move(u))
-      .then_wrapped([this, stm, notifications = std::move(notifications)](
-                      ss::future<result<replicate_result>> fut) mutable {
-          try {
-              auto ret = fut.get0();
-              propagate_result(ret, notifications);
-          } catch (...) {
-              propagate_current_exception(notifications);
-          }
-          auto f = stm->wait().finally([stm] {});
-          // if gate is closed wait for all futures
-          if (_ptr->_bg.is_closed()) {
-              _ptr->_ctxlog.info(
-                "gate-closed, waiting to finish background requests");
-              return f;
-          }
-          // background
-          (void)with_gate(_ptr->_bg, [this, stm, f = std::move(f)]() mutable {
-              return std::move(f).handle_exception(
-                [this](const std::exception_ptr& e) {
-                    _ptr->_ctxlog.error(
-                      "Error waiting for background acks to finish - {}", e);
-                });
-          });
-          return ss::make_ready_future<>();
-      });
+    try {
+        auto result = co_await _ptr->dispatch_replicate(
+          std::move(req), std::move(u), std::move(seqs));
+
+        propagate_result(result, notifications);
+    } catch (...) {
+        propagate_current_exception(notifications);
+    }
 }
 } // namespace raft

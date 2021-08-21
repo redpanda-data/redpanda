@@ -338,6 +338,11 @@ private:
     do_append_entries(append_entries_request&&);
     ss::future<install_snapshot_reply>
     do_install_snapshot(install_snapshot_request&& r);
+
+    ss::future<result<replicate_result>> dispatch_replicate(
+      append_entries_request,
+      std::vector<ss::semaphore_units<>>,
+      absl::flat_hash_map<vnode, follower_req_seq>);
     /**
      * Hydrate the consensus state with the data from the snapshot
      */
