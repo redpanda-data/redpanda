@@ -13,7 +13,9 @@
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
+#include "cluster/tx_helpers.h"
 #include "errc.h"
+#include "types.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -60,28 +62,127 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
   model::timeout_clock::duration timeout) {
     auto nt = model::topic_namespace_view(ntp.ns, ntp.tp.topic);
 
-    if (!_metadata_cache.local().contains(nt, ntp.tp.partition)) {
-        return ss::make_ready_future<begin_tx_reply>(
-          begin_tx_reply{.ntp = ntp, .ec = tx_errc::partition_not_exists});
+    auto retries = _metadata_dissemination_retries;
+    auto delay_ms = _metadata_dissemination_retry_delay_ms;
+    auto aborted = false;
+
+    auto has_metadata = _metadata_cache.local().contains(nt, ntp.tp.partition);
+    while (!aborted && !has_metadata && 0 < retries--) {
+        vlog(
+          clusterlog.trace,
+          "waiting for {} to fill metadata cache, retries left: {}",
+          ntp,
+          retries);
+        aborted = !co_await sleep_abortable(delay_ms);
+        has_metadata = _metadata_cache.local().contains(nt, ntp.tp.partition);
+    }
+    if (!has_metadata) {
+        vlog(clusterlog.warn, "can't find {} in the metadata cache", ntp);
+        co_return begin_tx_reply{
+          .ntp = ntp, .ec = tx_errc::partition_not_exists};
     }
 
-    auto leader = _leaders.local().get_leader(ntp);
-    if (!leader) {
-        vlog(clusterlog.warn, "can't find a leader for {}", ntp);
-        return ss::make_ready_future<begin_tx_reply>(
-          begin_tx_reply{.ntp = ntp, .ec = tx_errc::leader_not_found});
+    retries = _metadata_dissemination_retries;
+    aborted = false;
+    auto leader_opt = _leaders.local().get_leader(ntp);
+    while (!aborted && !leader_opt && 0 < retries--) {
+        vlog(
+          clusterlog.trace,
+          "waiting for {} to fill leaders cache, retries left: {}",
+          ntp,
+          retries);
+        aborted = !co_await sleep_abortable(delay_ms);
+        leader_opt = _leaders.local().get_leader(ntp);
     }
 
-    auto _self = _controller->self();
+    retries = _metadata_dissemination_retries;
+    delay_ms = _metadata_dissemination_retry_delay_ms;
+    aborted = false;
+    std::optional<std::string> error;
+    while (!aborted && 0 < retries--) {
+        if (!leader_opt) {
+            error = fmt::format("can't find {} in the leaders cache", ntp);
+            vlog(
+              clusterlog.trace,
+              "can't find {} in the leaders cache, retries left: {}",
+              ntp,
+              retries);
+            aborted = !co_await sleep_abortable(delay_ms);
+            leader_opt = _leaders.local().get_leader(ntp);
+            continue;
+        }
 
-    if (leader == _self) {
-        return do_begin_tx(ntp, pid, tx_seq, transaction_timeout_ms);
+        auto leader = leader_opt.value();
+        auto _self = _controller->self();
+
+        begin_tx_reply result;
+        if (leader == _self) {
+            result = co_await do_begin_tx(
+              ntp, pid, tx_seq, transaction_timeout_ms);
+            if (result.ec == tx_errc::leader_not_found) {
+                error = fmt::format(
+                  "local execution of begin_tx({},...) failed with 'not a "
+                  "leader'",
+                  ntp);
+                vlog(
+                  clusterlog.trace,
+                  "local execution of begin_tx({},...) failed with 'not a "
+                  "leader', retries left: {}",
+                  ntp,
+                  retries);
+                aborted = !co_await sleep_abortable(delay_ms);
+                leader_opt = _leaders.local().get_leader(ntp);
+                continue;
+            }
+            if (result.ec != tx_errc::none) {
+                vlog(
+                  clusterlog.warn,
+                  "local execution of begin_tx({},...) failed with {}",
+                  ntp,
+                  result.ec);
+            }
+            co_return result;
+        }
+
+        vlog(
+          clusterlog.trace,
+          "dispatching begin_tx({},...) from {} to {}",
+          ntp,
+          _self,
+          leader);
+        result = co_await dispatch_begin_tx(
+          leader, ntp, pid, tx_seq, transaction_timeout_ms, timeout);
+        if (result.ec == tx_errc::leader_not_found) {
+            error = fmt::format(
+              "remote execution of begin_tx({},...) on {} failed with 'not a "
+              "leader'",
+              ntp,
+              leader);
+            vlog(
+              clusterlog.trace,
+              "remote execution of begin_tx({},...) on {} failed with 'not a "
+              "leader', retries left: {}",
+              ntp,
+              leader,
+              retries);
+            aborted = !co_await sleep_abortable(delay_ms);
+            leader_opt = _leaders.local().get_leader(ntp);
+            continue;
+        }
+        if (result.ec != tx_errc::none) {
+            vlog(
+              clusterlog.warn,
+              "remote execution of begin_tx({},...) on {} failed with {}",
+              ntp,
+              leader,
+              result.ec);
+        }
+        co_return result;
     }
-
-    vlog(clusterlog.trace, "dispatching begin tx to {} from {}", leader, _self);
-
-    return dispatch_begin_tx(
-      leader.value(), ntp, pid, tx_seq, transaction_timeout_ms, timeout);
+    if (error) {
+        vlog(clusterlog.warn, "{}", error.value());
+    }
+    co_return begin_tx_reply{.ntp = ntp, .ec = tx_errc::leader_not_found};
 }
 
 ss::future<begin_tx_reply> rm_partition_frontend::dispatch_begin_tx(
@@ -145,7 +246,8 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
         cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(ntp);
           if (!partition) {
-              vlog(clusterlog.warn, "can't get partition by {} ntp", ntp);
+              vlog(
+                clusterlog.warn, "can't find {} in the partition manager", ntp);
               return ss::make_ready_future<begin_tx_reply>(
                 begin_tx_reply{.ntp = ntp, .ec = tx_errc::partition_not_found});
           }
@@ -153,17 +255,25 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
           auto stm = partition->rm_stm();
 
           if (!stm) {
-              vlog(
-                clusterlog.warn, "can't get tx stm of the {}' partition", ntp);
+              vlog(clusterlog.warn, "partition {} doesn't have rm_stm", ntp);
               return ss::make_ready_future<begin_tx_reply>(
                 begin_tx_reply{.ntp = ntp, .ec = tx_errc::stm_not_found});
           }
 
           return stm->begin_tx(pid, tx_seq, transaction_timeout_ms)
             .then([ntp](checked<model::term_id, tx_errc> etag) {
-                if (!etag) {
+                if (!etag.has_value()) {
+                    vlog(
+                      clusterlog.warn,
+                      "rm_stm::begin_tx({},...) failed with {}",
+                      ntp,
+                      etag.error());
+                    if (etag.error() == tx_errc::leader_not_found) {
+                        return begin_tx_reply{
+                          .ntp = ntp, .ec = tx_errc::leader_not_found};
+                    }
                     return begin_tx_reply{
-                      .ntp = ntp, .ec = tx_errc::leader_not_found};
+                      .ntp = ntp, .ec = tx_errc::unknown_server_error};
                 }
 
                 return begin_tx_reply{

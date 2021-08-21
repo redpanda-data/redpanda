@@ -17,6 +17,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
+#include "cluster/tx_helpers.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/namespace.h"
@@ -28,15 +29,6 @@
 
 namespace cluster {
 using namespace std::chrono_literals;
-
-static ss::future<bool> sleep_abortable(std::chrono::milliseconds dur) {
-    try {
-        co_await ss::sleep_abortable(dur);
-        co_return true;
-    } catch (const ss::sleep_aborted&) {
-        co_return false;
-    }
-}
 
 cluster::errc map_errc_fixme(std::error_code ec);
 
