@@ -56,6 +56,9 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
                       case cluster::tx_errc::none:
                           partition.error_code = error_code::none;
                           break;
+                      case cluster::tx_errc::not_coordinator:
+                          partition.error_code = error_code::not_coordinator;
+                          break;
                       case cluster::tx_errc::invalid_producer_id_mapping:
                           partition.error_code
                             = error_code::invalid_producer_id_mapping;

@@ -317,6 +317,9 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
             // missing tx => state was lost => can't be comitted => aborted
             co_return try_abort_reply{.aborted = true, .ec = tx_errc::none};
         }
+        if (maybe_tx.error() == tm_stm::op_status::not_leader) {
+            co_return try_abort_reply{.ec = tx_errc::not_coordinator};
+        }
         co_return try_abort_reply{.ec = tx_errc::unknown_server_error};
     }
 
@@ -349,6 +352,9 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
         auto killed_tx = co_await stm->try_change_status(
           tx.id, cluster::tm_transaction::tx_status::killed);
         if (!killed_tx.has_value()) {
+            if (killed_tx.error() == tm_stm::op_status::not_leader) {
+                co_return try_abort_reply{.ec = tx_errc::not_coordinator};
+            }
             co_return try_abort_reply{.ec = tx_errc::unknown_server_error};
         }
         co_return try_abort_reply{.aborted = true, .ec = tx_errc::none};
@@ -369,6 +375,9 @@ tx_gateway_frontend::do_commit_tm_tx(
     if (!maybe_tx.has_value()) {
         if (maybe_tx.error() == tm_stm::op_status::not_found) {
             co_return tx_errc::request_rejected;
+        }
+        if (maybe_tx.error() == tm_stm::op_status::not_leader) {
+            co_return tx_errc::not_coordinator;
         }
         co_return tx_errc::unknown_server_error;
     }
@@ -534,7 +543,19 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     auto maybe_tx = co_await stm->get_actual_tx(tx_id);
 
     if (!maybe_tx.has_value()) {
+        if (maybe_tx.error() == tm_stm::op_status::not_leader) {
+            vlog(
+              clusterlog.warn,
+              "this node isn't a leader for tx.id={} coordinator",
+              tx_id);
+            co_return init_tm_tx_reply{.ec = tx_errc::not_coordinator};
+        }
         if (maybe_tx.error() != tm_stm::op_status::not_found) {
+            vlog(
+              clusterlog.warn,
+              "got error {} on loading tx.id={}",
+              maybe_tx.error(),
+              tx_id);
             co_return init_tm_tx_reply{.ec = tx_errc::unknown_server_error};
         }
 
@@ -554,14 +575,23 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
         } else if (op_status == tm_stm::op_status::conflict) {
             vlog(
               clusterlog.warn,
-              "can't register new producer status: {}",
-              op_status);
+              "got conflict on registering new producer {} for tx.id={}",
+              pid,
+              tx_id);
             reply.ec = tx_errc::conflict;
+        } else if (op_status == tm_stm::op_status::not_leader) {
+            vlog(
+              clusterlog.warn,
+              "this node isn't a leader for tx.id={} coordinator",
+              tx_id);
+            reply.ec = tx_errc::not_coordinator;
         } else {
             vlog(
               clusterlog.warn,
-              "can't register new producer status: {}",
-              op_status);
+              "got {} on registering new producer {} for tx.id={}",
+              op_status,
+              pid,
+              tx_id);
             reply.ec = tx_errc::unknown_server_error;
         }
         co_return reply;
@@ -598,7 +628,13 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     }
 
     if (!r.has_value()) {
-        co_return init_tm_tx_reply{.ec = tx_errc::unknown_server_error};
+        vlog(
+          clusterlog.warn,
+          "got error {} on rolling previous tx.id={} with status={}",
+          r.error(),
+          tx_id,
+          tx.status);
+        co_return init_tm_tx_reply{.ec = r.error()};
     }
 
     tx = r.value();
@@ -619,6 +655,12 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     } else if (op_status == tm_stm::op_status::conflict) {
         reply.ec = tx_errc::conflict;
     } else {
+        vlog(
+          clusterlog.warn,
+          "got error {} on re-registering a producer {} for tx.id={}",
+          op_status,
+          reply.pid,
+          tx.id);
         reply.ec = tx_errc::unknown_server_error;
     }
     co_return reply;
@@ -936,6 +978,10 @@ tx_gateway_frontend::do_end_txn(
             outcome->set_value(tx_errc::invalid_producer_id_mapping);
             co_return tx_errc::invalid_producer_id_mapping;
         }
+        if (maybe_tx.error() == tm_stm::op_status::not_leader) {
+            outcome->set_value(tx_errc::not_coordinator);
+            co_return tx_errc::not_coordinator;
+        }
         outcome->set_value(tx_errc::unknown_server_error);
         co_return tx_errc::unknown_server_error;
     }
@@ -1014,6 +1060,10 @@ tx_gateway_frontend::do_abort_tm_tx(
             auto changed_tx = co_await stm->try_change_status(
               tx.id, cluster::tm_transaction::tx_status::aborting);
             if (!changed_tx.has_value()) {
+                if (changed_tx.error() == tm_stm::op_status::not_leader) {
+                    outcome->set_value(tx_errc::not_coordinator);
+                    co_return tx_errc::not_coordinator;
+                }
                 outcome->set_value(tx_errc::unknown_server_error);
                 co_return tx_errc::unknown_server_error;
             }
@@ -1082,13 +1132,17 @@ tx_gateway_frontend::do_commit_tm_tx(
         }
 
         if (tx.status == tm_transaction::tx_status::ongoing) {
-            auto became_preparing_tx = co_await stm->try_change_status(
+            auto preparing_tx = co_await stm->try_change_status(
               tx.id, cluster::tm_transaction::tx_status::preparing);
-            if (!became_preparing_tx.has_value()) {
+            if (!preparing_tx.has_value()) {
+                if (preparing_tx.error() == tm_stm::op_status::not_leader) {
+                    outcome->set_value(tx_errc::not_coordinator);
+                    co_return tx_errc::not_coordinator;
+                }
                 outcome->set_value(tx_errc::unknown_server_error);
                 co_return tx_errc::unknown_server_error;
             }
-            tx = became_preparing_tx.value();
+            tx = preparing_tx.value();
         }
 
         auto ok = true;
@@ -1104,9 +1158,13 @@ tx_gateway_frontend::do_commit_tm_tx(
             rejected = rejected || (r.ec == tx_errc::request_rejected);
         }
         if (rejected) {
-            auto became_aborting_tx = co_await stm->try_change_status(
+            auto aborting_tx = co_await stm->try_change_status(
               tx.id, cluster::tm_transaction::tx_status::killed);
-            if (!became_aborting_tx.has_value()) {
+            if (!aborting_tx.has_value()) {
+                if (aborting_tx.error() == tm_stm::op_status::not_leader) {
+                    outcome->set_value(tx_errc::not_coordinator);
+                    co_return tx_errc::not_coordinator;
+                }
                 outcome->set_value(tx_errc::unknown_server_error);
                 co_return tx_errc::unknown_server_error;
             }
@@ -1126,6 +1184,9 @@ tx_gateway_frontend::do_commit_tm_tx(
     auto changed_tx = co_await stm->try_change_status(
       tx.id, cluster::tm_transaction::tx_status::prepared);
     if (!changed_tx.has_value()) {
+        if (changed_tx.error() == tm_stm::op_status::not_leader) {
+            co_return tx_errc::not_coordinator;
+        }
         co_return tx_errc::unknown_server_error;
     }
     tx = changed_tx.value();
@@ -1221,6 +1282,9 @@ tx_gateway_frontend::get_ongoing_tx(
     if (!maybe_tx.has_value()) {
         if (maybe_tx.error() == tm_stm::op_status::not_found) {
             co_return tx_errc::invalid_producer_id_mapping;
+        }
+        if (maybe_tx.error() == tm_stm::op_status::not_leader) {
+            co_return tx_errc::not_coordinator;
         }
         co_return tx_errc::unknown_server_error;
     }
