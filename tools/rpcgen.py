@@ -26,7 +26,6 @@ RPC_TEMPLATE = """
 
 #include "reflection/adl.h"
 #include "rpc/types.h"
-#include "rpc/netbuf.h"
 #include "rpc/parse_utils.h"
 #include "rpc/transport.h"
 #include "rpc/service.h"
@@ -34,6 +33,7 @@ RPC_TEMPLATE = """
 #include "utils/string_switch.h"
 #include "random/fast_prng.h"
 #include "outcome.h"
+#include "prometheus/prometheus_sanitize.h"
 #include "seastarx.h"
 
 // extra includes
@@ -41,6 +41,7 @@ RPC_TEMPLATE = """
 #include "{{include}}"
 {%- endfor %}
 
+#include <seastar/core/metrics.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/scheduling.hh>
@@ -71,6 +72,26 @@ public:
     }
 
     virtual ~{{service_name}}_service() noexcept = default;
+
+    void setup_metrics() final {
+        namespace sm = ss::metrics;
+        auto service_label = sm::label("service");
+        auto method_label = sm::label("method");
+      {%- for method in methods %}
+        {
+            std::vector<ss::metrics::label_instance> labels{
+              service_label("{{service_name}}"),
+              method_label("{{method.name}}")};
+            _metrics.add_group(
+              prometheus_sanitize::metrics_name("internal_rpc"),
+              {sm::make_histogram(
+                "latency",
+                [this] { return _methods[{{loop.index-1}}].probes.latency_hist().seastar_histogram_logform(); },
+                sm::description("Internal RPC service latency"),
+                labels)});
+        }
+      {%- endfor %}
+    }
 
     ss::scheduling_group& get_scheduling_group() override {
        return _sc;
@@ -114,6 +135,7 @@ private:
       }){{ "," if not loop.last }}
       {%- endfor %}
     {% raw %}}}{% endraw %};
+    ss::metrics::metric_groups _metrics;
 };
 class {{service_name}}_client_protocol {
 public:

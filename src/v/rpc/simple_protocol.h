@@ -10,7 +10,6 @@
  */
 
 #pragma once
-#include "rpc/netbuf.h"
 #include "rpc/server.h"
 #include "rpc/service.h"
 namespace rpc {
@@ -26,6 +25,12 @@ public:
         return "vectorized internal rpc protocol";
     };
     ss::future<> apply(server::resources) final;
+
+    void setup_metrics() {
+        for (auto& s : _services) {
+            s->setup_metrics();
+        }
+    }
 
 private:
     ss::future<> dispatch_method_once(header, server::resources);
