@@ -17,6 +17,7 @@
 #include "units.h"
 #include "utils/mutex.h"
 
+#include <seastar/core/gate.hh>
 #include <seastar/core/semaphore.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -48,17 +49,16 @@ public:
     replicate_stages
     replicate(std::optional<model::term_id>, model::record_batch_reader&&);
 
-    ss::future<> flush(ss::semaphore_units<> u);
     ss::future<> stop();
 
-    // it will lock on behalf of caller to append entries to leader log.
+private:
+    ss::future<> flush(ss::semaphore_units<> u);
     ss::future<> do_flush(
-      std::vector<item_ptr>&&,
-      append_entries_request&&,
+      std::vector<item_ptr>,
+      append_entries_request,
       std::vector<ss::semaphore_units<>>,
       absl::flat_hash_map<vnode, follower_req_seq>);
 
-private:
     ss::future<item_ptr>
     do_cache(std::optional<model::term_id>, model::record_batch_reader&&);
     ss::future<replicate_batcher::item_ptr> do_cache_with_backpressure(
@@ -71,6 +71,7 @@ private:
     size_t _max_batch_size;
     std::vector<item_ptr> _item_cache;
     mutex _lock;
+    ss::gate _bg;
 };
 
 } // namespace raft
