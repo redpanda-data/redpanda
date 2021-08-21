@@ -674,17 +674,19 @@ consensus::do_make_reader(storage::log_reader_config config) {
 ss::future<model::record_batch_reader> consensus::make_reader(
   storage::log_reader_config config,
   std::optional<clock_type::time_point> debounce_timeout) {
-    if (!debounce_timeout) {
-        // fast path, do not wait
-        return do_make_reader(config);
-    }
+    return ss::try_with_gate(_bg, [this, config, debounce_timeout] {
+        if (!debounce_timeout) {
+            // fast path, do not wait
+            return do_make_reader(config);
+        }
 
-    return _consumable_offset_monitor
-      .wait(
-        details::next_offset(_majority_replicated_index),
-        *debounce_timeout,
-        _as)
-      .then([this, config]() mutable { return do_make_reader(config); });
+        return _consumable_offset_monitor
+          .wait(
+            details::next_offset(_majority_replicated_index),
+            *debounce_timeout,
+            _as)
+          .then([this, config]() mutable { return do_make_reader(config); });
+    });
 }
 
 bool consensus::should_skip_vote(bool ignore_heartbeat) {
