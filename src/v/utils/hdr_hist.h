@@ -110,6 +110,9 @@ public:
       int32_t significant_figures = 1)
       : _hist(hist_internal::make_unique_hdr_histogram(
         max_value, min, significant_figures)) {}
+    hdr_hist(
+      std::chrono::microseconds max_value, std::chrono::microseconds min_value)
+      : hdr_hist(max_value.count(), min_value.count()) {}
     hdr_hist(hdr_hist&& o) noexcept
       : _probes(std::move(o._probes))
       , _hist(std::move(o._hist))
