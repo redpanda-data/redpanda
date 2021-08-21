@@ -140,6 +140,10 @@ public:
 
     std::unique_ptr<measurement> auto_measure();
 
+    void record(std::unique_ptr<measurement> m) {
+        record(m->compute_duration_micros());
+    }
+
 private:
     friend measurement;
     friend std::ostream& operator<<(std::ostream& o, const hdr_hist& h);
