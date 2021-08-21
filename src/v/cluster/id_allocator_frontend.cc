@@ -73,7 +73,7 @@ id_allocator_frontend::allocate_id(model::timeout_clock::duration timeout) {
     }
 
     if (!has_topic) {
-        vlog(clusterlog.warn, "can't meta cache entry for {}", nt);
+        vlog(clusterlog.warn, "can't find {} in the metadata cache", nt);
         co_return allocate_id_reply{0, errc::topic_not_exists};
     }
 
@@ -84,13 +84,17 @@ id_allocator_frontend::allocate_id(model::timeout_clock::duration timeout) {
     auto retries = _metadata_dissemination_retries;
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
     auto aborted = false;
+    std::optional<std::string> error;
     while (!aborted && 0 < retries--) {
         auto leader_opt = _leaders.local().get_leader(model::id_allocator_ntp);
         if (unlikely(!leader_opt)) {
+            error = fmt::format(
+              "can't find {} in the leaders cache", model::id_allocator_ntp);
             vlog(
               clusterlog.trace,
-              "can't find a leader for {}",
-              model::id_allocator_ntp);
+              "waiting for {} to fill leaders cache, retries left: {}",
+              model::id_allocator_ntp,
+              retries);
             aborted = !co_await sleep_abortable(delay_ms);
             continue;
         }
@@ -101,22 +105,30 @@ id_allocator_frontend::allocate_id(model::timeout_clock::duration timeout) {
         } else {
             vlog(
               clusterlog.trace,
-              "dispatching allocate id to {} from {}",
-              leader,
-              _self);
-
+              "dispatching id allocation from {} to {} ",
+              _self,
+              leader);
             r = co_await dispatch_allocate_id_to_leader(leader, timeout);
         }
 
-        if (likely(r.ec != errc::replication_error)) {
+        if (likely(r.ec == errc::success)) {
+            error = std::nullopt;
             break;
         }
 
+        if (likely(r.ec != errc::replication_error)) {
+            error = fmt::format("id allocation failed with {}", r.ec);
+            break;
+        }
+
+        error = fmt::format("id allocation failed with {}", r.ec);
         vlog(
-          clusterlog.warn,
-          "replication of the id allocation command failed, {} retries left",
-          retries);
+          clusterlog.trace, "id allocation failed, retries left: {}", retries);
         aborted = !co_await sleep_abortable(delay_ms);
+    }
+
+    if (error) {
+        vlog(clusterlog.warn, "{}", error.value());
     }
 
     co_return r;
@@ -165,7 +177,7 @@ id_allocator_frontend::do_allocate_id(model::timeout_clock::duration timeout) {
         if (!shard) {
             vlog(
               clusterlog.warn,
-              "can't find a shard for {}",
+              "can't find {} in the shard table",
               model::id_allocator_ntp);
             co_return allocate_id_reply{0, errc::no_leader_controller};
         }
