@@ -113,6 +113,10 @@ tm_stm::update_tx(tm_transaction tx, model::term_id term) {
 ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::try_change_status(
   kafka::transactional_id tx_id, tm_transaction::tx_status status) {
+    if (!_c->is_leader()) {
+        co_return tm_stm::op_status::not_leader;
+    }
+
     auto is_ready = co_await sync(_sync_timeout);
     if (!is_ready) {
         co_return tm_stm::op_status::unknown;
@@ -131,6 +135,10 @@ tm_stm::try_change_status(
 
 ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::get_actual_tx(kafka::transactional_id tx_id) {
+    if (!_c->is_leader()) {
+        co_return tm_stm::op_status::not_leader;
+    }
+
     auto is_ready = co_await sync(_sync_timeout);
     if (!is_ready) {
         co_return tm_stm::op_status::unknown;
@@ -214,6 +222,10 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
   model::producer_identity pid) {
+    if (!_c->is_leader()) {
+        co_return tm_stm::op_status::not_leader;
+    }
+
     auto is_ready = co_await sync(_sync_timeout);
     if (!is_ready) {
         co_return tm_stm::op_status::unknown;
