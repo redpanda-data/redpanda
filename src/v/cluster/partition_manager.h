@@ -35,6 +35,7 @@ public:
 
     using manage_cb_t
       = ss::noncopyable_function<void(ss::lw_shared_ptr<partition>)>;
+    using unmanage_cb_t = ss::noncopyable_function<void(model::partition_id)>;
 
     inline ss::lw_shared_ptr<partition> get(const model::ntp& ntp) const {
         if (auto it = _ntp_table.find(ntp); it != _ntp_table.end()) {
@@ -65,6 +66,7 @@ public:
       manage(storage::ntp_config, raft::group_id, std::vector<model::broker>);
 
     ss::future<> shutdown(const model::ntp& ntp);
+    ss::future<> shutdown_all();
     ss::future<> remove(const model::ntp& ntp);
 
     std::optional<storage::log> log(const model::ntp& ntp) {
@@ -99,8 +101,26 @@ public:
         return _manage_watchers.register_notify(ns, topic, std::move(cb));
     }
 
+    /*
+     * register for notification of partitions within the specific topic
+     * being removed from manager. this will invoke the callback for existing
+     * partitions synchronously so the caller must be prepared for that.
+     *
+     * the callback must not block.
+     *
+     * we don't currently have any mechanism for un-managing partitions, so that
+     * interface is non-existent.
+     */
+    notification_id_type register_unmanage_notification(
+      const model::ns& ns, const model::topic& topic, unmanage_cb_t cb) {
+        return _unmanage_watchers.register_notify(ns, topic, std::move(cb));
+    }
+
     void unregister_manage_notification(notification_id_type id) {
         _manage_watchers.unregister_notify(id);
+    }
+    void unregister_unmanage_notification(notification_id_type id) {
+        _unmanage_watchers.unregister_notify(id);
     }
 
     /*
@@ -118,6 +138,7 @@ private:
     ss::sharded<raft::group_manager>& _raft_manager;
 
     ntp_callbacks<manage_cb_t> _manage_watchers;
+    ntp_callbacks<unmanage_cb_t> _unmanage_watchers;
     // XXX use intrusive containers here
     ntp_table_container _ntp_table;
     absl::flat_hash_map<raft::group_id, ss::lw_shared_ptr<partition>>

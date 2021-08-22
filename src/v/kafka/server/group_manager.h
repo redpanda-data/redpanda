@@ -180,9 +180,11 @@ private:
     }
 
     cluster::notification_id_type _manage_notify_handle;
+    cluster::notification_id_type _unmanage_notify_handle;
     ss::gate _gate;
 
     void attach_partition(ss::lw_shared_ptr<cluster::partition>);
+    void detach_partition(const model::ntp&);
 
     struct attached_partition {
         bool loading;

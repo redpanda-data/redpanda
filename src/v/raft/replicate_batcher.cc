@@ -15,11 +15,12 @@
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
-#include "raft/replicate_entries_stm.h"
 #include "raft/types.h"
 
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/do_with.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/smp.hh>
@@ -39,7 +40,11 @@ replicate_stages replicate_batcher::replicate(
   std::optional<model::term_id> expected_term, model::record_batch_reader&& r) {
     ss::promise<> enqueued;
     auto enqueued_f = enqueued.get_future();
-    auto f = do_cache(expected_term, std::move(r))
+    auto f = ss::try_with_gate(
+               _bg,
+               [this, expected_term, r = std::move(r)]() mutable {
+                   return do_cache(expected_term, std::move(r));
+               })
                .then_wrapped([this, enqueued = std::move(enqueued)](
                                ss::future<item_ptr> f) mutable {
                    if (f.failed()) {
@@ -61,15 +66,15 @@ replicate_stages replicate_batcher::replicate(
 }
 
 ss::future<> replicate_batcher::stop() {
-    // we keep a lock here to make sure that all inflight requests have finished
-    // already
-    return _lock.with([this]() {
-        for (auto& i : _item_cache) {
-            i->_promise.set_exception(
-              std::runtime_error("replicate_batcher destructor called. Cannot "
-                                 "finish replicating pending entries"));
-        }
-        _item_cache.clear();
+    return _bg.close().then([this] {
+        // we keep a lock here to make sure that all inflight requests have
+        // finished already
+        return _lock.with([this] {
+            for (auto& i : _item_cache) {
+                i->_promise.set_exception(ss::gate_closed_exception());
+            }
+            _item_cache.clear();
+        });
     });
 }
 
@@ -132,7 +137,7 @@ replicate_batcher::do_cache_with_backpressure(
 
 ss::future<> replicate_batcher::flush(ss::semaphore_units<> u) {
     return ss::try_with_gate(
-      _ptr->_bg, [this, batcher_units = std::move(u)]() mutable {
+      _bg, [this, batcher_units = std::move(u)]() mutable {
           auto item_cache = std::exchange(_item_cache, {});
           if (item_cache.empty()) {
               return ss::now();
@@ -231,38 +236,18 @@ static void propagate_current_exception(
 }
 
 ss::future<> replicate_batcher::do_flush(
-  std::vector<replicate_batcher::item_ptr>&& notifications,
-  append_entries_request&& req,
+  std::vector<replicate_batcher::item_ptr> notifications,
+  append_entries_request req,
   std::vector<ss::semaphore_units<>> u,
   absl::flat_hash_map<vnode, follower_req_seq> seqs) {
     _ptr->_probe.replicate_batch_flushed();
-    auto stm = ss::make_lw_shared<replicate_entries_stm>(
-      _ptr, std::move(req), std::move(seqs));
-    return stm->apply(std::move(u))
-      .then_wrapped([this, stm, notifications = std::move(notifications)](
-                      ss::future<result<replicate_result>> fut) mutable {
-          try {
-              auto ret = fut.get0();
-              propagate_result(ret, notifications);
-          } catch (...) {
-              propagate_current_exception(notifications);
-          }
-          auto f = stm->wait().finally([stm] {});
-          // if gate is closed wait for all futures
-          if (_ptr->_bg.is_closed()) {
-              _ptr->_ctxlog.info(
-                "gate-closed, waiting to finish background requests");
-              return f;
-          }
-          // background
-          (void)with_gate(_ptr->_bg, [this, stm, f = std::move(f)]() mutable {
-              return std::move(f).handle_exception(
-                [this](const std::exception_ptr& e) {
-                    _ptr->_ctxlog.error(
-                      "Error waiting for background acks to finish - {}", e);
-                });
-          });
-          return ss::make_ready_future<>();
-      });
+    try {
+        auto result = co_await _ptr->dispatch_replicate(
+          std::move(req), std::move(u), std::move(seqs));
+
+        propagate_result(result, notifications);
+    } catch (...) {
+        propagate_current_exception(notifications);
+    }
 }
 } // namespace raft

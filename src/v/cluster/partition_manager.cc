@@ -19,11 +19,14 @@
 #include "resource_mgmt/io_priority.h"
 #include "vlog.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 
+#include <algorithm>
 #include <exception>
+#include <iterator>
 
 namespace cluster {
 
@@ -77,9 +80,24 @@ ss::future<> partition_manager::remove(const model::ntp& ntp) {
 
     return _raft_manager.local()
       .remove(partition->raft())
+      .then([this, ntp] { _unmanage_watchers.notify(ntp, ntp.tp.partition); })
       .then([partition] { return partition->stop(); })
       .then([this, ntp] { return _storage.log_mgr().remove(ntp); })
       .finally([partition] {}); // in the end remove partition
+}
+
+ss::future<> partition_manager::shutdown_all() {
+    std::vector<model::ntp> ntps;
+    ntps.reserve(_ntp_table.size());
+    std::transform(
+      _ntp_table.begin(),
+      _ntp_table.end(),
+      std::back_inserter(ntps),
+      [](const ntp_table_container::value_type& p) { return p.first; });
+
+    for (const auto& ntp : ntps) {
+        co_await shutdown(ntp);
+    }
 }
 
 ss::future<> partition_manager::shutdown(const model::ntp& ntp) {
