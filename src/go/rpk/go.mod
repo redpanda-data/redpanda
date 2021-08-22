@@ -45,12 +45,14 @@ require (
 	github.com/spf13/viper v1.7.0
 	github.com/stretchr/testify v1.7.0
 	github.com/tklauser/go-sysconf v0.1.0
+	github.com/twmb/franz-go v0.10.0
+	github.com/twmb/franz-go/pkg/kmsg v0.0.0-20210817215544-f0d458bf0521
+	github.com/twmb/tlscfg v1.2.0
 	github.com/xdg/scram v1.0.3
-	golang.org/x/crypto v0.0.0-20210220033148-5ea612d1eb83
+	golang.org/x/crypto v0.0.0-20210513164829-c07d793c2f9a
 	golang.org/x/mod v0.4.1 // indirect
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
-	golang.org/x/sys v0.0.0-20210112091331-59c308dcf3cc
-	golang.org/x/text v0.3.6 // indirect
+	golang.org/x/sys v0.0.0-20210423082822-04245dca01da
 	golang.org/x/tools v0.0.0-20210114065538-d78b04bdf963 // indirect
 	gopkg.in/yaml.v2 v2.4.0
 	gotest.tools/v3 v3.0.3 // indirect

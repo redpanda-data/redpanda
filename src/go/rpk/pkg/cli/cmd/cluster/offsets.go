@@ -9,266 +9,471 @@
 package cluster
 
 import (
+	"context"
 	"fmt"
 	"sort"
+	"strconv"
 
-	"github.com/Shopify/sarama"
-	log "github.com/sirupsen/logrus"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/ui"
+	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
 )
 
-func NewOffsetsCommand(
-	client func() (sarama.Client, error),
-	admin func(sarama.Client) (sarama.ClusterAdmin, error),
-) *cobra.Command {
+func NewOffsetsCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "offsets",
 		Short: "Report cluster offset status",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := client()
-			if err != nil {
-				log.Error("Error initializing cluster client")
-				return err
+		Args:  cobra.ExactArgs(0),
+		Run: func(cmd *cobra.Command, _ []string) {
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			cl, err := kafka.NewFranzClient(fs, cfg)
+			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
+			defer cl.Close()
+
+			groups, err := listGroups(cl)
+			out.MaybeDieErr(err)
+
+			if len(groups) == 0 {
+				out.Exit("There are no groups to describe!")
 			}
 
-			admin, err := admin(client)
-			if err != nil {
-				return fmt.Errorf("Error creating admin client: %v", err)
-			}
-			defer admin.Close() // closes underlying client
+			described, err := describeGroups(cl, groups)
+			out.MaybeDieErr(err)
 
-			return executeOffsetReport(client, admin)
+			fetchedOffsets, err := fetchOffsets(cl, groups)
+			out.MaybeDieErr(err)
+
+			listedOffsets, err := listOffsets(cl, described)
+			out.MaybeDieErr(err)
+
+			printDescribed(
+				described,
+				fetchedOffsets,
+				listedOffsets,
+			)
 		},
 	}
 	return cmd
 }
 
-// ConsumerLagRow represents a (group, topic, partition) 3-tuple for reporting
-// consumer lag and will be tagged with the active consumer if one exists.
-type ConsumerLagRow struct {
-	Group           string
-	Topic           string
-	Partition       int32
-	LatestOffset    int64
-	CommittedOffset int64
-	MemberId        string
-	ClientHost      string
-	ClientId        string
-}
+// Command issuing.
+//
+// Printing the lag for all groups requires four(ish...sharding) requests:
+//
+//  * list groups
+//  * describe groups
+//  * fetch offsets
+//  * list offsets
+//
+// List groups, describe groups, and list offsets need to be split and sent to
+// all brokers, and fetch offsets needs to be issued once per group. The kgo
+// client handles sharding, meaning we can continue in the face of partial
+// failures. We only bail on describing if the entire cluster is unreachable
+// (basically, we are trying to work around the scenario where one broker is
+// down as best as we can).
+//
+// Request issuing / response handling is pretty rote.
 
-// executeOffsetReport calculates consumer lag for all consumer groups and
-// reports the summary in table format.
-func executeOffsetReport(
-	client sarama.Client, admin sarama.ClusterAdmin,
-) error {
-	// get all groups and their current members
-	groups, err := describeConsumerGroups(admin)
-	if err != nil {
-		return fmt.Errorf("Error retrieving group information: %v", err)
-	}
+func listGroups(cl *kgo.Client) ([]string, error) {
+	req := kmsg.NewPtrListGroupsRequest()
 
-	// collect consumer lag information for all groups/members
-	var lastError error
-	var consumers []ConsumerLagRow
-	for _, groupDesc := range groups {
-		c, err := getConsumerLag(client, admin, groupDesc)
-		if err != nil {
-			log.Warnf("Error querying consumers for group %s: %v",
-				groupDesc.GroupId, err)
-			lastError = err
+	shards := cl.RequestSharded(context.Background(), req)
+	var groups []string
+	var failures int
+	for _, shard := range shards {
+		if shard.Err != nil {
+			kafka.PrintShardError(req, shard)
+			failures++
 			continue
 		}
-		consumers = append(consumers, c...)
+		resp := shard.Resp.(*kmsg.ListGroupsResponse)
+		if err := kerr.ErrorForCode(resp.ErrorCode); err != nil {
+			fmt.Printf("ListGroups request to broker %s returned error: %v\n",
+				kafka.MetaString(shard.Meta),
+				err,
+			)
+			continue
+		}
+		for _, group := range resp.Groups {
+			groups = append(groups, group.Group)
+		}
 	}
-	if len(consumers) == 0 && lastError != nil {
-		return fmt.Errorf("Error listing consumer groups: %v", err)
+	if failures == len(shards) {
+		return nil, fmt.Errorf("all %d ListGroups requests failed", failures)
+	}
+	return groups, nil
+}
+
+func describeGroups(cl *kgo.Client, groups []string) ([]describedGroup, error) {
+	req := kmsg.NewPtrDescribeGroupsRequest()
+	req.Groups = groups
+
+	shards := cl.RequestSharded(context.Background(), req)
+	var described []describedGroup
+	var failures int
+	for _, shard := range shards {
+		if shard.Err != nil {
+			kafka.PrintShardError(req, shard)
+			failures++
+			continue
+		}
+
+		resp := unmarshalGroupDescribeMembers(shard.Meta, shard.Resp.(*kmsg.DescribeGroupsResponse))
+		described = append(described, resp.Groups...)
+	}
+	if failures == len(shards) {
+		return nil, fmt.Errorf("all %d DescribeGroups requests failed", failures)
+	}
+	return described, nil
+}
+
+type offset struct {
+	at  int64
+	err error
+}
+
+func fetchOffsets(
+	cl *kgo.Client, groups []string,
+) (map[string]map[int32]offset, error) {
+	fetched := make(map[string]map[int32]offset)
+	var failures int
+	for i := range groups {
+		req := kmsg.NewPtrOffsetFetchRequest()
+		req.Group = groups[i]
+		resp, err := req.RequestWith(context.Background(), cl)
+		if err != nil {
+			fmt.Printf("Unable to request OffsetFetch: %v\n", err)
+			failures++
+			continue
+		}
+
+		for _, topic := range resp.Topics {
+			fetchedt := fetched[topic.Topic]
+			if fetchedt == nil {
+				fetchedt = make(map[int32]offset)
+				fetched[topic.Topic] = fetchedt
+			}
+			for _, partition := range topic.Partitions {
+				fetchedt[partition.Partition] = offset{
+					at:  partition.Offset,
+					err: kerr.ErrorForCode(partition.ErrorCode),
+				}
+			}
+		}
+	}
+	if failures == len(groups) {
+		return nil, fmt.Errorf("all %d OffsetFetch requests failed", failures)
+	}
+	return fetched, nil
+}
+
+// listOffsets has a tiny bit more logic compared to the others, in that we
+// want to list any partition in any topic assigned to any member.
+func listOffsets(
+	cl *kgo.Client, described []describedGroup,
+) (map[string]map[int32]offset, error) {
+	tps := make(map[string]map[int32]struct{})
+	for _, group := range described {
+		for _, member := range group.Members {
+			for _, topic := range member.MemberAssignment.Topics {
+				if tps[topic.Topic] == nil {
+					tps[topic.Topic] = make(map[int32]struct{})
+				}
+				for _, partition := range topic.Partitions {
+					tps[topic.Topic][partition] = struct{}{}
+				}
+			}
+		}
 	}
 
-	// group output by (group, topic, partition)
-	sort.Slice(consumers, func(i, j int) bool {
-		a := &consumers[i]
-		b := &consumers[j]
-		if a.Group != b.Group {
-			return a.Group < b.Group
+	req := kmsg.NewPtrListOffsetsRequest()
+	for topic, partitions := range tps {
+		reqTopic := kmsg.NewListOffsetsRequestTopic()
+		reqTopic.Topic = topic
+		for partition := range partitions {
+			reqPartition := kmsg.NewListOffsetsRequestTopicPartition()
+			reqPartition.Partition = partition
+			reqPartition.Timestamp = -1 // latest
+			reqTopic.Partitions = append(reqTopic.Partitions, reqPartition)
 		}
-		if a.Topic != b.Topic {
-			return a.Topic < b.Topic
+		req.Topics = append(req.Topics, reqTopic)
+	}
+
+	shards := cl.RequestSharded(context.Background(), req)
+	listed := make(map[string]map[int32]offset)
+	var failures int
+	for _, shard := range shards {
+		if shard.Err != nil {
+			kafka.PrintShardError(req, shard)
+			failures++
+			continue
 		}
-		return a.Partition < b.Partition
+
+		resp := shard.Resp.(*kmsg.ListOffsetsResponse)
+		for _, topic := range resp.Topics {
+			listedt := listed[topic.Topic]
+			if listedt == nil {
+				listedt = make(map[int32]offset)
+				listed[topic.Topic] = listedt
+			}
+			for _, partition := range topic.Partitions {
+				listedt[partition.Partition] = offset{
+					at:  partition.Offset,
+					err: kerr.ErrorForCode(partition.ErrorCode),
+				}
+			}
+		}
+	}
+	if failures == len(shards) {
+		return nil, fmt.Errorf("all %d ListOffsets requests failed", failures)
+	}
+	return listed, nil
+}
+
+// Below here lies printing the output of everything we have done.
+//
+// There is not much logic; the main thing to note is that we use dashes when
+// some fields do not apply yet, and we only output the instance id or error
+// columns if any member in the group has an instance id / error.
+
+type describeRow struct {
+	topic         string
+	partition     int32
+	currentOffset string
+	logEndOffset  int64
+	lag           string
+	memberID      string
+	instanceID    *string
+	clientID      string
+	host          string
+	err           error
+}
+
+type describeGroup struct {
+	group describedGroup
+	rows  []describeRow
+}
+
+func printDescribed(
+	groups []describedGroup,
+	fetched map[string]map[int32]offset,
+	listed map[string]map[int32]offset,
+) {
+	lookup := func(m map[string]map[int32]offset, topic string, partition int32) offset {
+		p := m[topic]
+		if p == nil {
+			return offset{at: -1}
+		}
+		o, exists := p[partition]
+		if !exists {
+			return offset{at: -1}
+		}
+		return o
+	}
+
+	sort.Slice(groups, func(i, j int) bool {
+		return groups[i].Group < groups[j].Group
 	})
 
-	t := ui.NewRpkTable(log.StandardLogger().Out)
-	t.SetColWidth(80)
-	t.SetAutoWrapText(false)
+	for _, group := range groups {
+		var rows []describeRow
+		var useInstanceID, useErr bool
+		for _, member := range group.Members {
+			for _, topic := range member.MemberAssignment.Topics {
+				t := topic.Topic
+				for _, p := range topic.Partitions {
+					committed := lookup(fetched, t, p)
+					end := lookup(listed, t, p)
 
-	header := [...]string{"Group", "Topic", "Partition", "Lag", "Lag %",
-		"Committed", "Latest", "Consumer", "Client-Host", "Client-Id"}
-	t.SetHeader(header[:])
+					row := describeRow{
+						topic:     t,
+						partition: p,
 
-	for _, consumer := range consumers {
-		consumerId := "-"
-		if consumer.MemberId != "" {
-			consumerId = consumer.MemberId
-		}
-		lagStr := "-"
-		lagPctStr := "-"
-		committedOffset := "-"
-		if consumer.CommittedOffset >= 0 {
-			committedOffset = fmt.Sprintf("%d", consumer.CommittedOffset)
-			lag := consumer.LatestOffset - consumer.CommittedOffset
-			lagPct := 1.0 - (float64(consumer.CommittedOffset)+1)/
-				(float64(consumer.LatestOffset)+1)
-			if lagPct < 0 {
-				lagPct = 0
-			} else if lagPct > 1 {
-				lagPct = 1
-			}
-			lagStr = fmt.Sprintf("%d", lag)
-			lagPctStr = fmt.Sprintf("%f", 100.0*lagPct)
-		}
-		row := [...]string{
-			consumer.Group,
-			consumer.Topic,
-			fmt.Sprintf("%d", consumer.Partition),
-			lagStr,
-			lagPctStr,
-			committedOffset,
-			fmt.Sprintf("%d", consumer.LatestOffset),
-			consumerId,
-			consumer.ClientHost,
-			consumer.ClientId}
-		t.Append(row[:])
-	}
+						logEndOffset: end.at,
 
-	t.Render()
+						memberID:   member.MemberID,
+						instanceID: member.InstanceID,
+						clientID:   member.ClientID,
+						host:       member.ClientHost,
+						err:        committed.err,
+					}
+					if row.err == nil {
+						row.err = end.err
+					}
 
-	return nil
-}
+					useErr = row.err != nil
+					useInstanceID = row.instanceID != nil
 
-// describeConsumerGroups returns group description for all groups.
-func describeConsumerGroups(
-	admin sarama.ClusterAdmin,
-) ([]*sarama.GroupDescription, error) {
-	groups, err := admin.ListConsumerGroups()
-	if err != nil {
-		return nil, fmt.Errorf("Error listing consumer groups: %v", err)
-	}
+					row.currentOffset = strconv.FormatInt(committed.at, 10)
+					if committed.at == -1 {
+						row.currentOffset = "-"
+					}
 
-	groupIds := make([]string, 0, len(groups))
-	for groupId := range groups {
-		groupIds = append(groupIds, groupId)
-	}
+					row.lag = strconv.FormatInt(end.at-committed.at, 10)
+					if end.at == 0 {
+						row.lag = "-"
+					} else if committed.at == -1 {
+						row.lag = strconv.FormatInt(end.at, 10)
+					}
 
-	descs, err := admin.DescribeConsumerGroups(groupIds)
-	if err != nil {
-		return nil, fmt.Errorf("Error describing groups: %v", err)
-	}
+					rows = append(rows, row)
 
-	return descs, nil
-}
-
-type ConsumerLagRowMemberDesc struct {
-	MemberId   string
-	ClientHost string
-	ClientId   string
-	Matched    bool
-}
-
-// getConsumerLag computes lag for all topic partitions and members associated
-// with the specified group.
-func getConsumerLag(
-	client sarama.Client,
-	admin sarama.ClusterAdmin,
-	groupDesc *sarama.GroupDescription,
-) ([]ConsumerLagRow, error) {
-	groupId := groupDesc.GroupId
-
-	// get committed offset for each topic-partition in this group
-	offsets, err := admin.ListConsumerGroupOffsets(groupId, nil)
-	if err != nil {
-		return nil, fmt.Errorf("Error fetching group offsets: %v", err)
-	}
-
-	// build a reverse lookup table so each topic-partition row that is
-	// reported can be annotated with its consumer id if one exists
-	memberAssignments := map[string]map[int32]ConsumerLagRowMemberDesc{}
-	for memberId, memberDesc := range groupDesc.Members {
-		assignments, err := memberDesc.GetMemberAssignment()
-		if err != nil {
-			return nil, fmt.Errorf("Error decoding assignments for "+
-				"group %s: %v", groupId, err)
-		}
-		if len(assignments.Topics) == 0 {
-			continue
-		}
-		for topic, partitions := range assignments.Topics {
-			for _, partition := range partitions {
-				if _, ok := memberAssignments[topic]; !ok {
-					memberAssignments[topic] = map[int32]ConsumerLagRowMemberDesc{}
-				}
-				memberAssignments[topic][partition] = ConsumerLagRowMemberDesc{
-					MemberId:   memberId,
-					ClientHost: memberDesc.ClientHost,
-					ClientId:   memberDesc.ClientId,
 				}
 			}
 		}
+
+		printDescribedGroup(group, rows, useInstanceID, useErr)
+		fmt.Println()
+	}
+}
+
+func printDescribedGroup(
+	group describedGroup, rows []describeRow, useInstanceID bool, useErr bool,
+) {
+	tw := out.NewTabWriter()
+	fmt.Fprintf(tw, "GROUP\t%s\n", group.Group)
+	fmt.Fprintf(tw, "COORDINATOR\t%d\n", group.Broker.NodeID)
+	fmt.Fprintf(tw, "STATE\t%s\n", group.State)
+	fmt.Fprintf(tw, "BALANCER\t%s\n", group.Protocol)
+	fmt.Fprintf(tw, "MEMBERS\t%d\n", len(group.Members))
+	if err := kerr.ErrorForCode(group.ErrorCode); err != nil {
+		fmt.Fprintf(tw, "ERROR\t%s\n", err)
+	}
+	tw.Flush()
+
+	if len(rows) == 0 {
+		return
 	}
 
-	// convert each group's topic-partition and committed offset into a consumer
-	// lag row and annotate it with the partition's latest offset and the
-	// consumer id of any group member assigned to the given partition.
-	var consumers []ConsumerLagRow
-	for topic, partitions := range offsets.Blocks {
-		for partition, partitionInfo := range partitions {
-			latestOffset, err := client.GetOffset(topic, partition, sarama.OffsetNewest)
-			if err != nil {
-				return nil, fmt.Errorf("Error listing consumer groups: %v", err)
-			}
-			row := ConsumerLagRow{
-				Group:           groupId,
-				Topic:           topic,
-				Partition:       partition,
-				LatestOffset:    latestOffset,
-				CommittedOffset: partitionInfo.Offset,
-			}
-			if partitions, ok := memberAssignments[topic]; ok {
-				if member, ok := partitions[partition]; ok {
-					row.MemberId = member.MemberId
-					row.ClientHost = member.ClientHost
-					row.ClientId = member.ClientId
-					member.Matched = true
-				}
-			}
-			consumers = append(consumers, row)
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].topic < rows[j].topic ||
+			rows[i].topic == rows[j].topic &&
+				rows[i].partition < rows[j].partition
+	})
+
+	headers := []string{
+		"TOPIC",
+		"PARTITION",
+		"CURRENT-OFFSET",
+		"LOG-END-OFFSET",
+		"LAG",
+		"MEMBER-ID",
+	}
+	args := func(r *describeRow) []interface{} {
+		return []interface{}{
+			r.topic,
+			r.partition,
+			r.currentOffset,
+			r.logEndOffset,
+			r.lag,
+			r.memberID,
 		}
 	}
 
-	// Also add in members that didn't have a committed offset
-	for topic := range memberAssignments {
-		for partition := range memberAssignments[topic] {
-			member := memberAssignments[topic][partition]
-			if member.Matched {
-				continue
-			}
-			latestOffset, err := client.GetOffset(topic, partition, sarama.OffsetNewest)
-			if err != nil {
-				return nil, fmt.Errorf("Error fetching partition offset: %v", err)
-			}
-			row := ConsumerLagRow{
-				Group:           groupId,
-				Topic:           topic,
-				Partition:       partition,
-				LatestOffset:    latestOffset,
-				CommittedOffset: -1,
-				MemberId:        member.MemberId,
-				ClientHost:      member.ClientHost,
-				ClientId:        member.ClientId,
-			}
-			consumers = append(consumers, row)
+	if useInstanceID {
+		headers = append(headers, "INSTANCE-ID")
+		orig := args
+		args = func(r *describeRow) []interface{} {
+			return append(orig(r), r.instanceID)
 		}
 	}
 
-	return consumers, nil
+	{
+		headers = append(headers, "CLIENT-ID", "HOST")
+		orig := args
+		args = func(r *describeRow) []interface{} {
+			return append(orig(r), r.clientID, r.host)
+		}
+
+	}
+
+	if useErr {
+		headers = append(headers, "ERROR")
+		orig := args
+		args = func(r *describeRow) []interface{} {
+			return append(orig(r), r.err)
+		}
+	}
+
+	tw = out.NewTable(headers...)
+	defer tw.Flush()
+	for _, row := range rows {
+		tw.Print(args(&row)...)
+	}
+}
+
+// Below here, we un-binary a DescribeGroupsResponse.
+//
+// Kafka actually knows nothing about what clients are assigning each other.
+// The protocol is agnostic, which makes it extremely extendable (see streams).
+// We have to take the blob of bytes and deserialize it. The standard protocol
+// is the "consumer" protocol, which deserializes into the kmsg types used
+// below. Only streams uses a different protocol (or maybe it is the same
+// protocol, but with a super advanced balancer? tough to remember).
+
+type describedGroupMember struct {
+	MemberID         string
+	InstanceID       *string
+	ClientID         string
+	ClientHost       string
+	MemberMetadata   kmsg.GroupMemberMetadata
+	MemberAssignment kmsg.GroupMemberAssignment
+}
+
+type describedGroup struct {
+	Broker               kgo.BrokerMetadata
+	ErrorCode            int16
+	Group                string
+	State                string
+	ProtocolType         string
+	Protocol             string
+	Members              []describedGroupMember
+	AuthorizedOperations int32
+}
+
+type describeGroupsResponse struct {
+	ThrottleMillis int32
+	Groups         []describedGroup
+}
+
+func unmarshalGroupDescribeMembers(
+	meta kgo.BrokerMetadata, resp *kmsg.DescribeGroupsResponse,
+) *describeGroupsResponse {
+	dresp := &describeGroupsResponse{
+		ThrottleMillis: resp.ThrottleMillis,
+	}
+	for _, group := range resp.Groups {
+		dgroup := describedGroup{
+			Broker:               meta,
+			ErrorCode:            group.ErrorCode,
+			Group:                group.Group,
+			State:                group.State,
+			ProtocolType:         group.ProtocolType,
+			Protocol:             group.Protocol,
+			AuthorizedOperations: group.AuthorizedOperations,
+		}
+		for _, member := range group.Members {
+			dmember := describedGroupMember{
+				MemberID:   member.MemberID,
+				InstanceID: member.InstanceID,
+				ClientID:   member.ClientID,
+				ClientHost: member.ClientHost,
+			}
+			dmember.MemberMetadata.ReadFrom(member.ProtocolMetadata)
+			dmember.MemberAssignment.ReadFrom(member.MemberAssignment)
+
+			dgroup.Members = append(dgroup.Members, dmember)
+		}
+		dresp.Groups = append(dresp.Groups, dgroup)
+	}
+
+	return dresp
 }

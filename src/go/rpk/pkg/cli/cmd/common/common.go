@@ -32,18 +32,6 @@ import (
 const FeedbackMsg = `We'd love to hear about your experience with redpanda:
 https://vectorized.io/feedback`
 
-const (
-	saslMechanismFlag          = "sasl-mechanism"
-	enableTLSFlag              = "tls-enabled"
-	certFileFlag               = "tls-cert"
-	keyFileFlag                = "tls-key"
-	truststoreFileFlag         = "tls-truststore"
-	adminAPIEnableTLSFlag      = "admin-api-tls-enabled"
-	adminAPICertFileFlag       = "admin-api-tls-cert"
-	adminAPIKeyFileFlag        = "admin-api-tls-key"
-	adminAPITruststoreFileFlag = "admin-api-tls-truststore"
-)
-
 var ErrNoCredentials = errors.New("empty username and password")
 
 func Deprecated(newCmd *cobra.Command, newUse string) *cobra.Command {
@@ -125,7 +113,7 @@ func DeduceBrokers(
 			return bs
 		}
 		// If no values were passed directly, look for the env vars.
-		envVar := "REDPANDA_BROKERS"
+		envVar := config.EnvBrokers
 		envBrokers := os.Getenv(envVar)
 		if envBrokers != "" {
 			log.Debugf("Using %s: %s", envVar, envBrokers)
@@ -215,7 +203,7 @@ func DeduceAdminApiAddrs(
 		return as
 	}
 	// If no values were passed directly, look for the env vars.
-	envVar := "REDPANDA_API_ADMIN_ADDRS"
+	envVar := config.EnvAdminHosts
 	envAddrs := os.Getenv(envVar)
 	if envAddrs != "" {
 		log.Debugf("Using %s: %s", envVar, envAddrs)
@@ -398,13 +386,13 @@ func KafkaAuthConfig(
 		m := *mechanism
 		// If the values are empty, check for env vars.
 		if u == "" {
-			u = os.Getenv("REDPANDA_SASL_USERNAME")
+			u = os.Getenv(config.EnvSASLUser)
 		}
 		if p == "" {
-			p = os.Getenv("REDPANDA_SASL_PASSWORD")
+			p = os.Getenv(config.EnvSASLPass)
 		}
 		if m == "" {
-			m = os.Getenv("REDPANDA_SASL_MECHANISM")
+			m = os.Getenv(config.EnvSASLMechanism)
 		}
 
 		// Then check the config if any of the values are empty.
@@ -452,7 +440,7 @@ func KafkaAuthConfig(
 				"unsupported mechanism '%s'. Pass --%s or set rpk.kafka_api.sasl.mechanism."+
 					" Supported: %s, %s.",
 				m,
-				saslMechanismFlag,
+				config.FlagSASLMechanism,
 				sarama.SASLTypeSCRAMSHA256,
 				sarama.SASLTypeSCRAMSHA512,
 			)
@@ -490,9 +478,9 @@ func BuildAdminApiTLSConfig(
 			certFile,
 			keyFile,
 			truststoreFile,
-			"REDPANDA_ADMIN_TLS_CERT",
-			"REDPANDA_ADMIN_TLS_KEY",
-			"REDPANDA_ADMIN_TLS_TRUSTSTORE",
+			config.EnvAdminTLSCert,
+			config.EnvAdminTLSKey,
+			config.EnvAdminTLSCA,
 			defaultVal,
 		)
 	}
@@ -523,9 +511,9 @@ func BuildKafkaTLSConfig(
 			certFile,
 			keyFile,
 			truststoreFile,
-			"REDPANDA_TLS_CERT",
-			"REDPANDA_TLS_KEY",
-			"REDPANDA_TLS_TRUSTSTORE",
+			config.EnvTLSCert,
+			config.EnvTLSKey,
+			config.EnvTLSCA,
 			defaultVal,
 		)
 	}
@@ -645,7 +633,7 @@ func AddKafkaFlags(
 	)
 	command.PersistentFlags().StringVar(
 		saslMechanism,
-		saslMechanismFlag,
+		config.FlagSASLMechanism,
 		"",
 		fmt.Sprintf(
 			"The authentication mechanism to use. Supported values: %s, %s.",
@@ -666,25 +654,25 @@ func AddTLSFlags(
 ) *cobra.Command {
 	command.PersistentFlags().BoolVar(
 		enableTLS,
-		enableTLSFlag,
+		config.FlagEnableTLS,
 		false,
 		"Enable TLS for the Kafka API (not necessary if specifying custom certs).",
 	)
 	command.PersistentFlags().StringVar(
 		certFile,
-		certFileFlag,
+		config.FlagTLSCert,
 		"",
 		"The certificate to be used for TLS authentication with the broker.",
 	)
 	command.PersistentFlags().StringVar(
 		keyFile,
-		keyFileFlag,
+		config.FlagTLSKey,
 		"",
 		"The certificate key to be used for TLS authentication with the broker.",
 	)
 	command.PersistentFlags().StringVar(
 		truststoreFile,
-		truststoreFileFlag,
+		config.FlagTLSCA,
 		"",
 		"The truststore to be used for TLS communication with the broker.",
 	)
@@ -699,25 +687,25 @@ func AddAdminAPITLSFlags(
 ) *cobra.Command {
 	command.PersistentFlags().BoolVar(
 		enableTLS,
-		adminAPIEnableTLSFlag,
+		config.FlagEnableAdminTLS,
 		false,
 		"Enable TLS for the Admin API (not necessary if specifying custom certs).",
 	)
 	command.PersistentFlags().StringVar(
 		certFile,
-		adminAPICertFileFlag,
+		config.FlagAdminTLSCert,
 		"",
 		"The certificate to be used for TLS authentication with the Admin API.",
 	)
 	command.PersistentFlags().StringVar(
 		keyFile,
-		adminAPIKeyFileFlag,
+		config.FlagAdminTLSKey,
 		"",
 		"The certificate key to be used for TLS authentication with the Admin API.",
 	)
 	command.PersistentFlags().StringVar(
 		truststoreFile,
-		adminAPITruststoreFileFlag,
+		config.FlagAdminTLSCA,
 		"",
 		"The truststore to be used for TLS communication with the Admin API.",
 	)

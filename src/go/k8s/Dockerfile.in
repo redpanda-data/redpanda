@@ -6,7 +6,7 @@
 #
 # For buildkit, the file can be used "as is"
 
-FROM --platform=$BUILDPLATFORM golang:1.15 as builder
+FROM --platform=$BUILDPLATFORM golang:1.17 as builder
 
 ARG TARGETARCH
 

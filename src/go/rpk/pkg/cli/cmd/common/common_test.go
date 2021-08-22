@@ -72,10 +72,10 @@ func TestDeduceBrokers(t *testing.T) {
 			}, nil
 		},
 		before: func() {
-			os.Setenv("REDPANDA_BROKERS", "192.168.34.12:9093,123.4.5.78:9092")
+			os.Setenv(config.EnvBrokers, "192.168.34.12:9093,123.4.5.78:9092")
 		},
 		cleanup: func() {
-			os.Unsetenv("REDPANDA_BROKERS")
+			os.Unsetenv(config.EnvBrokers)
 		},
 		expected: []string{"192.168.34.12:9093", "123.4.5.78:9092"},
 	}, {
@@ -203,10 +203,10 @@ func TestDeduceAdminApiAddrs(t *testing.T) {
 				return conf, nil
 			},
 			before: func() {
-				os.Setenv("REDPANDA_API_ADMIN_ADDRS", "192.168.34.12:33145,123.4.5.78:33145")
+				os.Setenv(config.EnvAdminHosts, "192.168.34.12:33145,123.4.5.78:33145")
 			},
 			cleanup: func() {
-				os.Unsetenv("REDPANDA_API_ADMIN_ADDRS")
+				os.Unsetenv(config.EnvAdminHosts)
 			},
 			addrs:    []string{"192.168.34.12:33145"},
 			expected: []string{"192.168.34.12:33145"},
@@ -220,10 +220,10 @@ func TestDeduceAdminApiAddrs(t *testing.T) {
 				return conf, nil
 			},
 			before: func() {
-				os.Setenv("REDPANDA_API_ADMIN_ADDRS", "192.168.34.12:33145,123.4.5.78:33145")
+				os.Setenv(config.EnvAdminHosts, "192.168.34.12:33145,123.4.5.78:33145")
 			},
 			cleanup: func() {
-				os.Unsetenv("REDPANDA_API_ADMIN_ADDRS")
+				os.Unsetenv(config.EnvAdminHosts)
 			},
 			expected: []string{"192.168.34.12:33145", "123.4.5.78:33145"},
 		}, {
@@ -242,7 +242,8 @@ func TestDeduceAdminApiAddrs(t *testing.T) {
 				"192.168.67.55:9644",
 				"192.168.67.56:9644",
 			},
-		}}
+		},
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(st *testing.T) {
 			if tt.before != nil {
@@ -474,14 +475,14 @@ func TestKafkaAuthConfig(t *testing.T) {
 	}, {
 		name: "it should pick up the values from env vars if the vars' values is empty",
 		before: func() {
-			os.Setenv("REDPANDA_SASL_USERNAME", "ringo")
-			os.Setenv("REDPANDA_SASL_PASSWORD", "octopussgarden66")
-			os.Setenv("REDPANDA_SASL_MECHANISM", "SCRAM-SHA-512")
+			os.Setenv(config.EnvSASLUser, "ringo")
+			os.Setenv(config.EnvSASLPass, "octopussgarden66")
+			os.Setenv(config.EnvSASLMechanism, "SCRAM-SHA-512")
 		},
 		cleanup: func() {
-			os.Unsetenv("REDPANDA_SASL_USERNAME")
-			os.Unsetenv("REDPANDA_SASL_PASSWORD")
-			os.Unsetenv("REDPANDA_SASL_MECHANISM")
+			os.Unsetenv(config.EnvSASLUser)
+			os.Unsetenv(config.EnvSASLPass)
+			os.Unsetenv(config.EnvSASLMechanism)
 		},
 		expected: &config.SASL{User: "ringo", Password: "octopussgarden66", Mechanism: "SCRAM-SHA-512"},
 	}, {
@@ -490,14 +491,14 @@ func TestKafkaAuthConfig(t *testing.T) {
 		password:  "contraseño",
 		mechanism: "SCRAM-SHA-512",
 		before: func() {
-			os.Setenv("REDPANDA_SASL_USERNAME", "ringo")
-			os.Setenv("REDPANDA_SASL_PASSWORD", "octopussgarden66")
-			os.Setenv("REDPANDA_SASL_MECHANISM", "SCRAM-SHA-512")
+			os.Setenv(config.EnvSASLUser, "ringo")
+			os.Setenv(config.EnvSASLPass, "octopussgarden66")
+			os.Setenv(config.EnvSASLMechanism, "SCRAM-SHA-512")
 		},
 		cleanup: func() {
-			os.Unsetenv("REDPANDA_SASL_USERNAME")
-			os.Unsetenv("REDPANDA_SASL_PASSWORD")
-			os.Unsetenv("REDPANDA_SASL_MECHANISM")
+			os.Unsetenv(config.EnvSASLUser)
+			os.Unsetenv(config.EnvSASLPass)
+			os.Unsetenv(config.EnvSASLMechanism)
 		},
 		// Disregards the env vars' values
 		expected: &config.SASL{User: "usuario", Password: "contraseño", Mechanism: "SCRAM-SHA-512"},
@@ -529,14 +530,14 @@ func TestKafkaAuthConfig(t *testing.T) {
 		name: "it should build a complete config from values set through different sources",
 		user: "flag-user",
 		before: func() {
-			os.Setenv("REDPANDA_SASL_PASSWORD", "verysecurenoonewillknow")
+			os.Setenv(config.EnvSASLPass, "verysecurenoonewillknow")
 			// REDPANDA_SASL_USERNAME is also set, but since user is passed
 			// directly, that one will be picked up.
-			os.Setenv("REDPANDA_SASL_USERNAME", "dang,Iwillbeignored")
+			os.Setenv(config.EnvSASLUser, "dang,Iwillbeignored")
 		},
 		cleanup: func() {
-			os.Unsetenv("REDPANDA_SASL_PASSWORD")
-			os.Unsetenv("REDPANDA_SASL_USERNAME")
+			os.Unsetenv(config.EnvSASLPass)
+			os.Unsetenv(config.EnvSASLUser)
 		},
 		config: func() (*config.Config, error) {
 			conf := config.Default()
@@ -655,88 +656,89 @@ T16cNmHSk5jIiR6odFmV6KPjvXhjFTUYxOIjFIWNItOhXBrBxG3NyVE=
 		cleanup        func()
 		defaultVal     func() (*config.TLS, error)
 		expectedErrMsg string
-	}{{
-		name: "it should return the default value provided if none are set",
-		defaultVal: func() (*config.TLS, error) {
-			return &config.TLS{
-				CertFile:       "default-cert.pem",
-				KeyFile:        "default-key.pem",
-				TruststoreFile: "default-trust.pem",
-			}, nil
-		},
-		before: func(fs afero.Fs) {
-			afero.WriteFile(fs, "default-cert.pem", []byte(certContents), 0755)
-			afero.WriteFile(fs, "default-key.pem", []byte(keyContents), 0755)
-			afero.WriteFile(fs, "default-trust.pem", []byte(truststoreContents), 0755)
-		},
-	}, {
-		name:           "it should fail if certFile is present but keyFile is empty",
-		certFile:       "cert.pem",
-		truststoreFile: "trust.pem",
-		expectedErrMsg: "if a TLS client certificate is set, then its key must be passed to enable TLS authentication",
-	}, {
-		name:           "it should fail if keyFile is present but certFile is empty",
-		keyFile:        "key.pem",
-		truststoreFile: "trust.pem",
-		expectedErrMsg: "if a TLS client certificate key is set, then its certificate must be passed to enable TLS authentication",
-	}, {
-		name:           "it should build the config with only a truststore",
-		truststoreFile: "trust.pem",
-		before: func(fs afero.Fs) {
-			afero.WriteFile(fs, "trust.pem", []byte(truststoreContents), 0755)
-		},
-	}, {
-		name:           "it should build the config with all fields",
-		certFile:       "cert.pem",
-		keyFile:        "key.pem",
-		truststoreFile: "trust.pem",
-		before: func(fs afero.Fs) {
-			afero.WriteFile(fs, "cert.pem", []byte(certContents), 0755)
-			afero.WriteFile(fs, "key.pem", []byte(keyContents), 0755)
-			afero.WriteFile(fs, "trust.pem", []byte(truststoreContents), 0755)
-		},
-	}, {
-		name: "it should pick up the values from env vars if the vars' values is empty",
-		before: func(fs afero.Fs) {
-			cert, key, truststore := "./node.crt", "./node.key", "./ca.crt"
-			os.Setenv(certVarName, cert)
-			os.Setenv(keyVarName, key)
-			os.Setenv(truststoreVarName, truststore)
+	}{
+		{
+			name: "it should return the default value provided if none are set",
+			defaultVal: func() (*config.TLS, error) {
+				return &config.TLS{
+					CertFile:       "default-cert.pem",
+					KeyFile:        "default-key.pem",
+					TruststoreFile: "default-trust.pem",
+				}, nil
+			},
+			before: func(fs afero.Fs) {
+				afero.WriteFile(fs, "default-cert.pem", []byte(certContents), 0755)
+				afero.WriteFile(fs, "default-key.pem", []byte(keyContents), 0755)
+				afero.WriteFile(fs, "default-trust.pem", []byte(truststoreContents), 0755)
+			},
+		}, {
+			name:           "it should fail if certFile is present but keyFile is empty",
+			certFile:       "cert.pem",
+			truststoreFile: "trust.pem",
+			expectedErrMsg: "if a TLS client certificate is set, then its key must be passed to enable TLS authentication",
+		}, {
+			name:           "it should fail if keyFile is present but certFile is empty",
+			keyFile:        "key.pem",
+			truststoreFile: "trust.pem",
+			expectedErrMsg: "if a TLS client certificate key is set, then its certificate must be passed to enable TLS authentication",
+		}, {
+			name:           "it should build the config with only a truststore",
+			truststoreFile: "trust.pem",
+			before: func(fs afero.Fs) {
+				afero.WriteFile(fs, "trust.pem", []byte(truststoreContents), 0755)
+			},
+		}, {
+			name:           "it should build the config with all fields",
+			certFile:       "cert.pem",
+			keyFile:        "key.pem",
+			truststoreFile: "trust.pem",
+			before: func(fs afero.Fs) {
+				afero.WriteFile(fs, "cert.pem", []byte(certContents), 0755)
+				afero.WriteFile(fs, "key.pem", []byte(keyContents), 0755)
+				afero.WriteFile(fs, "trust.pem", []byte(truststoreContents), 0755)
+			},
+		}, {
+			name: "it should pick up the values from env vars if the vars' values is empty",
+			before: func(fs afero.Fs) {
+				cert, key, truststore := "./node.crt", "./node.key", "./ca.crt"
+				os.Setenv(certVarName, cert)
+				os.Setenv(keyVarName, key)
+				os.Setenv(truststoreVarName, truststore)
 
-			afero.WriteFile(fs, cert, []byte(certContents), 0755)
-			afero.WriteFile(fs, key, []byte(keyContents), 0755)
-			afero.WriteFile(fs, truststore, []byte(truststoreContents), 0755)
+				afero.WriteFile(fs, cert, []byte(certContents), 0755)
+				afero.WriteFile(fs, key, []byte(keyContents), 0755)
+				afero.WriteFile(fs, truststore, []byte(truststoreContents), 0755)
+			},
+			cleanup: func() {
+				os.Unsetenv(certVarName)
+				os.Unsetenv(keyVarName)
+				os.Unsetenv(truststoreVarName)
+			},
+		}, {
+			name:           "it should give priority to values set through the flags",
+			certFile:       "cert.pem",
+			keyFile:        "key.pem",
+			truststoreFile: "trust.pem",
+			before: func(fs afero.Fs) {
+				afero.WriteFile(fs, "cert.pem", []byte(certContents), 0755)
+				afero.WriteFile(fs, "key.pem", []byte(keyContents), 0755)
+				afero.WriteFile(fs, "trust.pem", []byte(truststoreContents), 0755)
+			},
+		}, {
+			name: "it should return the given default value if no values are set",
+			defaultVal: func() (*config.TLS, error) {
+				return &config.TLS{
+					CertFile:       "certificate.pem",
+					KeyFile:        "cert.key",
+					TruststoreFile: "ca.pem",
+				}, nil
+			},
+			before: func(fs afero.Fs) {
+				afero.WriteFile(fs, "certificate.pem", []byte(certContents), 0755)
+				afero.WriteFile(fs, "cert.key", []byte(keyContents), 0755)
+				afero.WriteFile(fs, "ca.pem", []byte(truststoreContents), 0755)
+			},
 		},
-		cleanup: func() {
-			os.Unsetenv(certVarName)
-			os.Unsetenv(keyVarName)
-			os.Unsetenv(truststoreVarName)
-		},
-	}, {
-		name:           "it should give priority to values set through the flags",
-		certFile:       "cert.pem",
-		keyFile:        "key.pem",
-		truststoreFile: "trust.pem",
-		before: func(fs afero.Fs) {
-			afero.WriteFile(fs, "cert.pem", []byte(certContents), 0755)
-			afero.WriteFile(fs, "key.pem", []byte(keyContents), 0755)
-			afero.WriteFile(fs, "trust.pem", []byte(truststoreContents), 0755)
-		},
-	}, {
-		name: "it should return the given default value if no values are set",
-		defaultVal: func() (*config.TLS, error) {
-			return &config.TLS{
-				CertFile:       "certificate.pem",
-				KeyFile:        "cert.key",
-				TruststoreFile: "ca.pem",
-			}, nil
-		},
-		before: func(fs afero.Fs) {
-			afero.WriteFile(fs, "certificate.pem", []byte(certContents), 0755)
-			afero.WriteFile(fs, "cert.key", []byte(keyContents), 0755)
-			afero.WriteFile(fs, "ca.pem", []byte(truststoreContents), 0755)
-		},
-	},
 	}
 
 	for _, tt := range tests {
@@ -852,6 +854,7 @@ func TestCreateAdmin(t *testing.T) {
 		})
 	}
 }
+
 func TestCreateClient(t *testing.T) {
 	tests := []struct {
 		name           string

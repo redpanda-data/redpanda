@@ -47,7 +47,7 @@ func NewCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 
 	cmd.PersistentFlags().StringSliceVar(
 		&hosts,
-		"hosts",
+		config.FlagAdminHosts1,
 		[]string{},
 		"A comma-separated list of Admin API addresses (<IP>:<port>)."+
 			" You must specify one for each node.",
