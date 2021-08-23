@@ -35,4 +35,4 @@ system like Zookeeper.
 
 Unfortunately, you can only run Redpanda directly on Linux. However, you can
 use Docker to run Redpanda on any system supported by Docker. Please see our
-[Quick Start Docker Guide](/docs/quick-start-docker) for more information.
+[Quick Start Docker Guide](/docs/getting-started/quick-start-docker) for more information.

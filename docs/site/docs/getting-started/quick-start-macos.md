@@ -16,7 +16,7 @@ For production or benchmarking, set up a [production deployment](/docs/productio
 To run Redpanda on MacOS, we'll use `rpk` to bring up Redpanda nodes in Docker containers.
 Make sure that you install [Docker](https://docs.docker.com/docker-for-mac/install/) first.
 
-If you want to customize the containers, you can also set up your own [Redpanda containers in Docker](/docs/quick-start-docker).
+If you want to customize the containers, you can also set up your own [Redpanda containers in Docker](/docs/getting-started/quick-start-docker).
 
 ### Installing rpk
 
@@ -92,5 +92,5 @@ rpk container purge
 
 - Our [FAQ](/docs/faq) page shows all of the clients that you can use to do streaming with Redpanda.
     (Spoiler: Any Kafka-compatible client!)
-- Use the [Quick Start Docker Guide](/docs/quick-start-docker) to try out Redpanda using Docker.
+- Use the [Quick Start Docker Guide](/docs/getting-started/quick-start-docker) to try out Redpanda using Docker.
 - Want to setup a production cluster? Check out our [Production Deployment Guide](/docs/production-deployment).

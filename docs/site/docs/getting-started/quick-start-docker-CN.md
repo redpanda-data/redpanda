@@ -250,7 +250,7 @@ docker network rm redpandanet
 - 我们的[FAQ](/docs/faq)页面显示了可用于与Redpanda进行流媒体传输的所有客户端。
     （剧透：任何与Kafka兼容的客户端！）
 - 使用[`rpk容器`](/docs/guide-rpk-container)启动并运行多节点cluster。
-- 使用[快速入门Docker指南](/docs/quick-start-docker)基于Docker试用Redpanda。
+- 使用[快速入门Docker指南](/docs/getting-started/quick-start-docker)基于Docker试用Redpanda。
 - 是否要建立生产环境的cluster？请查看我们的[生产部署指南](/docs/production-deployment)。
 
 <img src="https://static.scarf.sh/a.png?x-pxid=3c187215-e862-4b67-8057-45aa9a779055" />

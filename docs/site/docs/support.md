@@ -163,7 +163,7 @@ misconfigurations.
 ### The 'redpanda' package wasn't found
 
 Make sure that you added our repo to your package manager as explained in our
-[Quick Start Linux Guide](/docs/quick-start-linux)
+[Quick Start Linux Guide](/docs/getting-started/quick-start-linux)
 
 ### The 'redpanda' package can't be downloaded
 
