@@ -512,11 +512,15 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
         });
     };
 
-    // we do not hold the lock while waiting
-    co_await _follower_reply.wait(
-      [this, snapshot, &majority_sequences_updated] {
-          return majority_sequences_updated() || _term != snapshot.term;
-      });
+    try {
+        // we do not hold the lock while waiting
+        co_await _follower_reply.wait(
+          [this, snapshot, &majority_sequences_updated] {
+              return majority_sequences_updated() || _term != snapshot.term;
+          });
+    } catch (const ss::broken_condition_variable& e) {
+        co_return ret_t(make_error_code(errc::shutting_down));
+    }
 
     // term have changed, not longer a leader
     if (snapshot.term != _term) {
