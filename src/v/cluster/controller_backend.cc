@@ -130,18 +130,6 @@ std::error_code check_configuration_update(
     for (auto& id : group_cfg.current_config().voters) {
         all_ids.emplace(id.id());
     }
-    /**
-     * if current configuration doesn't include current node it may not be fully
-     * updated as current node may stop receiving updates. Therefore we use
-     * learners to calculate is replica set is up to date. (If configuration
-     * contains current node it will receive all updates so eventually all the
-     * nodes will become a voters)
-     */
-    if (!includes_self) {
-        for (auto& id : group_cfg.current_config().learners) {
-            all_ids.emplace(id.id());
-        }
-    }
 
     // there is different number of brokers in group configuration
     if (all_ids.size() != bs.size()) {
