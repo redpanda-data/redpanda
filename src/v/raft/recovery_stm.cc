@@ -526,8 +526,35 @@ ss::future<> recovery_stm::apply() {
                        [this] { return recover(); });
                  });
              })
+      .then_wrapped([this](ss::future<> fut) {
+          bool was_ok = true;
+
+          // We might be finishing because this was already true,
+          // or because of an error.  Call it either way to get
+          // a status printed to the log.
+          is_recovery_finished();
+
+          // Whether we got an exception or really finished, the behaviour
+          // is the same (tear down recovery state).  However, we distinguish
+          // in order to emit clearer log messages (avoid implying completion
+          // in the error case)
+          try {
+              fut.get();
+          } catch (std::system_error& e) {
+              was_ok = false;
+              vlog(_ctxlog.debug, "Aborted node {} recovery: {}", _node_id, e);
+          } catch (...) {
+              was_ok = false;
+              vlog(
+                _ctxlog.debug,
+                "Aborted node {} recovery: unknown error",
+                _node_id);
+          };
+          if (was_ok) {
+              vlog(_ctxlog.trace, "Finished node {} recovery", _node_id);
+          }
+      })
       .finally([this] {
-          vlog(_ctxlog.trace, "Finished node {} recovery", _node_id);
           auto meta = get_follower_meta();
           if (meta) {
               meta.value()->is_recovering = false;
