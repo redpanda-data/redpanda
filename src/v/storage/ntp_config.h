@@ -21,6 +21,8 @@
 
 namespace storage {
 using with_cache = ss::bool_class<struct log_cache_tag>;
+using topic_recovery_enabled
+  = ss::bool_class<struct topic_recovery_enabled_tag>;
 
 class ntp_config {
 public:
@@ -38,6 +40,8 @@ public:
         tristate<std::chrono::milliseconds> retention_time{std::nullopt};
         // if set, log will not use batch cache
         with_cache cache_enabled = with_cache::yes;
+        // if set the value will be used during parititon recovery
+        topic_recovery_enabled recovery_enabled = topic_recovery_enabled::yes;
 
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
