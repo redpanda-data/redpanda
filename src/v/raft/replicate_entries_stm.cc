@@ -256,9 +256,13 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
               return _ptr->committed_offset() >= appended_offset
                      || _ptr->term() > appended_term;
           };
-          return _ptr->_commit_index_updated.wait(stop_cond).then(
-            [this, appended_offset, appended_term] {
+          return _ptr->_commit_index_updated.wait(stop_cond)
+            .then([this, appended_offset, appended_term] {
                 return process_result(appended_offset, appended_term);
+            })
+            .handle_exception_type([](const ss::broken_condition_variable&) {
+                return result<replicate_result>(
+                  make_error_code(errc::shutting_down));
             });
       });
 }
