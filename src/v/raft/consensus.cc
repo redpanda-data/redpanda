@@ -912,6 +912,10 @@ ss::future<std::error_code> consensus::replace_configuration(
 }
 
 ss::future<> consensus::start() {
+    return ss::try_with_gate(_bg, [this] { return do_start(); });
+}
+
+ss::future<> consensus::do_start() {
     vlog(_ctxlog.info, "Starting");
     return _op_lock.with([this] {
         read_voted_for();
