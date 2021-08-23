@@ -14,7 +14,7 @@ All the concepts described here are compatible with the current version of Kafka
 
 - A running redpanda node.
 
-If you haven't checked them out, you can follow our [Getting Started guides](https://vectorized.io/docs/), where you'll find how to get started with Redpanda.
+If you haven't checked them out, you can follow our [Getting Started guides](/docs/), where you'll find how to get started with Redpanda.
 
 - TLS certificates.
 

@@ -78,7 +78,7 @@ Flags:
 
 ### redpanda mode ![linux icon][linux] ![mac icon][mac]
 
-By default, Redpanda runs in development mode. For [production deployments](https://vectorized.io/docs/production-deployment/), set the redpanda mode to `production`.
+By default, Redpanda runs in development mode. For [production deployments](/docs/production-deployment/), set the redpanda mode to `production`.
 
 ```cmd
 Usage:

@@ -32,9 +32,9 @@ tsc --init
 
 ## Setting up Redpanda and creating a topic
 
-If you are on MacOS, check out [this post](https://vectorized.io/docs/quick-start-macos).
+If you are on MacOS, check out [this post](/docs/quick-start-macos).
 If you’re on linux, follow the instructions in the
-[Quick start section](https://vectorized.io/docs/quick-start-linux)
+[Quick start section](/docs/quick-start-linux)
 Note: please follow only this section. If you do the production section, it
 will optimize your machine for Redpanda, which might affect your experience
 with desktop applications and other services. Be especially careful with

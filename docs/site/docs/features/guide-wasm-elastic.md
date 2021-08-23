@@ -20,7 +20,7 @@ In this tutorial, we'll use Redpanda installed on Linux to transform data and se
 
 For this tutorial you need:
 
-- Redpanda v21.4.14 or higher on [Linux](https://vectorized.io/docs/quick-start-linux)
+- Redpanda v21.4.14 or higher on [Linux](/docs/quick-start-linux)
 - Elasticsearch 7.10.2 or higher [running in a docker image](https://www.elastic.co/guide/en/elasticsearch/reference/current/docker.html#docker-cli-run-dev-mode)
 - [NodeJS](https://nodejs.org/en/download/) 12.x or higher
 
