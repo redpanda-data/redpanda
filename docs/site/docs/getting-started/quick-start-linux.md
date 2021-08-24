@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Linux Quick Start Guide
 
-Redpanda is a modern [streaming platform](/blog/intelligent-data-api/) for mission critical workloads.
+Redpanda is a modern [streaming platform](https://vectorized.io/blog/intelligent-data-api/) for mission critical workloads.
 With Redpanda you can get up and running with streaming quickly
 and be fully compatible with the [Kafka ecosystem](https://cwiki.apache.org/confluence/display/KAFKA/Ecosystem).
 

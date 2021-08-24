@@ -4,12 +4,12 @@ sidebar_position: 1
 
 # Docker Quick Start Guide
 
-Redpanda is a modern [streaming platform](/blog/intelligent-data-api/) for mission critical workloads.
+Redpanda is a modern [streaming platform](https://vectorized.io/blog/intelligent-data-api/) for mission critical workloads.
 With Redpanda you can get up and running with streaming quickly
 and be fully compatible with the [Kafka ecosystem](https://cwiki.apache.org/confluence/display/KAFKA/Ecosystem).
 
 This quick start guide can help you get started with Redpanda for development and testing purposes.
-For production or benchmarking, setup a [production deployment](/docs/production-deployment).
+For production or benchmarking, setup a [production deployment](/docs/deploy-self-hosted/production-deployment).
 
 ## Get your cluster ready
 
