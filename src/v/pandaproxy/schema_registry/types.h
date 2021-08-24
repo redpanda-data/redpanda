@@ -117,19 +117,27 @@ constexpr std::string_view to_string_view(seq_marker_key_type v) {
 // in order to later generate tombstone keys when doing a permanent
 // deletion.
 struct seq_marker {
-    model::offset seq;
-    model::node_id node;
+    std::optional<model::offset> seq;
+    std::optional<model::node_id> node;
     schema_version version;
     seq_marker_key_type key_type{seq_marker_key_type::invalid};
 
     friend std::ostream& operator<<(std::ostream& os, const seq_marker& v) {
-        fmt::print(
-          os,
-          "seq={} node={} version={} key_type={}",
-          v.seq,
-          v.node,
-          v.version,
-          to_string_view(v.key_type));
+        if (v.seq.has_value() && v.node.has_value()) {
+            fmt::print(
+              os,
+              "seq={} node={} version={} key_type={}",
+              *v.seq,
+              *v.node,
+              v.version,
+              to_string_view(v.key_type));
+        } else {
+            fmt::print(
+              os,
+              "unsequenced version={} key_type={}",
+              v.version,
+              to_string_view(v.key_type));
+        }
         return os;
     }
 };
