@@ -18,6 +18,7 @@ rp_test(
     one_shot.cc
     consume_to_store.cc
     compatibility_store.cc
+    compatibility_3rdparty.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main v_pandaproxy_schema_registry
   ARGS "-- -c 1"
