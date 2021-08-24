@@ -512,11 +512,15 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
         });
     };
 
-    // we do not hold the lock while waiting
-    co_await _follower_reply.wait(
-      [this, snapshot, &majority_sequences_updated] {
-          return majority_sequences_updated() || _term != snapshot.term;
-      });
+    try {
+        // we do not hold the lock while waiting
+        co_await _follower_reply.wait(
+          [this, snapshot, &majority_sequences_updated] {
+              return majority_sequences_updated() || _term != snapshot.term;
+          });
+    } catch (const ss::broken_condition_variable& e) {
+        co_return ret_t(make_error_code(errc::shutting_down));
+    }
 
     // term have changed, not longer a leader
     if (snapshot.term != _term) {
@@ -525,20 +529,45 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
     co_return ret_t(snapshot.linearizable_offset);
 }
 
+ss::future<result<replicate_result>> chain_stages(replicate_stages stages) {
+    return stages.request_enqueued.then_wrapped(
+      [f = std::move(stages.replicate_finished)](
+        ss::future<> enqueued) mutable {
+          if (enqueued.failed()) {
+              return enqueued
+                .handle_exception([](const std::exception_ptr& e) {
+                    vlog(
+                      raftlog.debug, "replicate first stage exception - {}", e);
+                })
+                .then([f = std::move(f)]() mutable {
+                    return f.discard_result()
+                      .handle_exception([](const std::exception_ptr& e) {
+                          vlog(
+                            raftlog.debug,
+                            "ignoring replicate second stage exception - {}",
+                            e);
+                      })
+                      .then([] {
+                          return result<replicate_result>(make_error_code(
+                            errc::replicate_first_stage_exception));
+                      });
+                });
+          }
+
+          return std::move(f);
+      });
+}
+
 ss::future<result<replicate_result>>
 consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
-    auto r = do_replicate({}, std::move(rdr), opts);
-    return r.request_enqueued.then(
-      [f = std::move(r.replicate_finished)]() mutable { return std::move(f); });
+    return chain_stages(do_replicate({}, std::move(rdr), opts));
 }
 
 ss::future<result<replicate_result>> consensus::replicate(
   model::term_id expected_term,
   model::record_batch_reader&& rdr,
   replicate_options opts) {
-    auto r = do_replicate(expected_term, std::move(rdr), opts);
-    return r.request_enqueued.then(
-      [f = std::move(r.replicate_finished)]() mutable { return std::move(f); });
+    return chain_stages(do_replicate(expected_term, std::move(rdr), opts));
 }
 
 replicate_stages consensus::replicate_in_stages(
@@ -912,6 +941,10 @@ ss::future<std::error_code> consensus::replace_configuration(
 }
 
 ss::future<> consensus::start() {
+    return ss::try_with_gate(_bg, [this] { return do_start(); });
+}
+
+ss::future<> consensus::do_start() {
     vlog(_ctxlog.info, "Starting");
     return _op_lock.with([this] {
         read_voted_for();
