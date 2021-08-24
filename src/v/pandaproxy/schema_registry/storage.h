@@ -886,6 +886,7 @@ class delete_subject_value_handler : public json::base_handler<Encoding> {
         empty = 0,
         object,
         subject,
+        version,
     };
     state _state = state::empty;
 
@@ -903,6 +904,7 @@ public:
         case state::object: {
             std::optional<state> s{string_switch<std::optional<state>>(sv)
                                      .match("subject", state::subject)
+                                     .match("version", state::version)
                                      .default_match(std::nullopt)};
             if (s.has_value()) {
                 _state = *s;
@@ -911,6 +913,7 @@ public:
         }
         case state::empty:
         case state::subject:
+        case state::version:
             return false;
         }
         return false;
@@ -924,6 +927,22 @@ public:
             _state = state::object;
             return true;
         }
+        case state::empty:
+        case state::object:
+        case state::version:
+            return false;
+        }
+        return false;
+    }
+
+    bool Uint(int) {
+        switch (_state) {
+        case state::version: {
+            // version ignored
+            _state = state::object;
+            return true;
+        }
+        case state::subject:
         case state::empty:
         case state::object:
             return false;
