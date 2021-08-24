@@ -338,6 +338,7 @@ private:
     do_append_entries(append_entries_request&&);
     ss::future<install_snapshot_reply>
     do_install_snapshot(install_snapshot_request&& r);
+    ss::future<> do_start();
 
     ss::future<result<replicate_result>> dispatch_replicate(
       append_entries_request,

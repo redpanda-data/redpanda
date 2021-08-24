@@ -54,11 +54,15 @@ replicate_stages replicate_batcher::replicate(
                    }
 
                    enqueued.set_value();
+                   auto item = f.get();
                    return _lock.get_units()
                      .then([this](ss::semaphore_units<> u) {
                          return flush(std::move(u));
                      })
-                     .then([i = f.get()] { return i->_promise.get_future(); });
+                     .handle_exception([item](const std::exception_ptr& e) {
+                         item->_promise.set_exception(e);
+                     })
+                     .then([item] { return item->_promise.get_future(); });
                })
                .finally([this] { _ptr->_probe.replicate_done(); });
 
