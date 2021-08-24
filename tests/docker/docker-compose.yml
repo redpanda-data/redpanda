@@ -38,6 +38,11 @@ services:
     - '${BUILD_ROOT}:${BUILD_ROOT}'
     networks:
     - redpanda-test
+    ulimits:
+      nofile:
+        soft: 131072
+        hard: 131072
+
   n2: *node
   n3: *node
   n4: *node
