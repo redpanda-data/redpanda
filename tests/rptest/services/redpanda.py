@@ -152,7 +152,12 @@ class RedpandaService(Service):
         self.logger.info("Verifying storage is in expected state")
         storage = self.storage()
         for node in storage.nodes:
-            assert set(node.ns) == {"redpanda"}
+            # We should only see the redpanda namespace on a fresh system.
+            # If other stuff is there, the node is unclean and shouldn't be used.
+            if set(node.ns) != {"redpanda"}:
+                raise RuntimeError(
+                    f"Found unexpected namespaces {set(node.ns) - {'redpanda'}} in {node.data_dir}.  Maybe rebuild your compose cluster?"
+                )
             assert set(node.ns["redpanda"].topics) == {"controller", "kvstore"}
 
         security_settings = dict()
