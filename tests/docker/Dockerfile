@@ -138,4 +138,14 @@ RUN python3 -m pip install --upgrade --force pip && \
 # copy python tools
 COPY --chown=0:0 tests/python /opt/python
 
+# Compile and install rust-based workload generator
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    export PATH="/root/.cargo/bin:${PATH}" && \
+    git clone https://github.com/jcsp/kafka_conn_test.git && \
+    cd kafka_conn_test && \
+    git reset --hard 1cac39e && \
+    cargo build --release && \
+    cp target/release/conn_test /usr/local/bin && \
+    cd .. && rm -rf kafka_conn_test && rm -rf /root/.cargo
+
 CMD service ssh start && tail -f /dev/null
