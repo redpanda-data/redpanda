@@ -155,42 +155,47 @@ persisted_stm::ensure_snapshot_exists(model::offset target_offset) {
 
 ss::future<bool> persisted_stm::sync(model::timeout_clock::duration timeout) {
     if (!_c->is_leader()) {
-        return ss::make_ready_future<bool>(false);
+        co_return false;
     }
     if (_insync_term == _c->term()) {
-        return ss::make_ready_future<bool>(true);
+        co_return true;
     }
     if (_is_catching_up) {
         auto deadline = model::timeout_clock::now() + timeout;
         auto sync_waiter = ss::make_lw_shared<expiring_promise<bool>>();
         _sync_waiters.push_back(sync_waiter);
-        return sync_waiter->get_future_with_timeout(
+        co_return co_await sync_waiter->get_future_with_timeout(
           deadline, [] { return false; });
     }
     _is_catching_up = true;
     auto term = _c->term();
-    return quorum_write_empty_batch(model::timeout_clock::now() + timeout)
-      .then_wrapped([this, term](ss::future<result<raft::replicate_result>> f) {
-          auto is_synced = false;
-          try {
-              is_synced = (bool)f.get();
-          } catch (...) {
-              vlog(
-                clusterlog.error,
-                "Error during writing a checkpoint batch: {}",
-                std::current_exception());
-          }
-          is_synced = is_synced && (term == _c->term());
-          if (is_synced) {
-              _insync_term = term;
-          }
-          _is_catching_up = false;
-          for (auto& sync_waiter : _sync_waiters) {
-              sync_waiter->set_value(is_synced);
-          }
-          _sync_waiters.clear();
-          return is_synced;
-      });
+    auto is_synced = false;
+    try {
+        auto r = co_await quorum_write_empty_batch(
+          model::timeout_clock::now() + timeout);
+        if (r.has_value()) {
+            is_synced = term == _c->term();
+        } else {
+            vlog(
+              clusterlog.error,
+              "Error during writing a checkpoint batch: {}",
+              r.error());
+        }
+    } catch (...) {
+        vlog(
+          clusterlog.error,
+          "Error during writing a checkpoint batch: {}",
+          std::current_exception());
+    }
+    if (is_synced) {
+        _insync_term = term;
+    }
+    _is_catching_up = false;
+    for (auto& sync_waiter : _sync_waiters) {
+        sync_waiter->set_value(is_synced);
+    }
+    _sync_waiters.clear();
+    co_return is_synced;
 }
 
 ss::future<bool> persisted_stm::wait_no_throw(
