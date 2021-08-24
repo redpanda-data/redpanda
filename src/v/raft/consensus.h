@@ -259,6 +259,12 @@ public:
 
     model::offset start_offset() const { return _log.offsets().start_offset; }
 
+    model::offset dirty_offset() const { return _log.offsets().dirty_offset; }
+
+    ss::condition_variable& commit_index_updated() {
+        return _commit_index_updated;
+    }
+
     event_manager& events() { return _event_manager; }
 
     ss::future<model::offset> monitor_log_eviction(ss::abort_source& as) {
