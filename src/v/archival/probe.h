@@ -53,7 +53,7 @@ private:
 };
 
 /// Service level probe
-class service_probe : public cloud_storage::service_probe {
+class service_probe {
 public:
     explicit service_probe(service_metrics_disabled disabled);
 

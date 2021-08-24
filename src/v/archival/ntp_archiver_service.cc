@@ -43,13 +43,11 @@ namespace archival {
 std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
     fmt::print(
       o,
-      "{{bucket_name: {}, interval: {}, client_config: {}, connection_limit: "
-      "{}, initial_backoff: {}, segment_upload_timeout: {}, "
+      "{{bucket_name: {}, interval: {}, initial_backoff: {}, "
+      "segment_upload_timeout: {}, "
       "manifest_upload_timeout: {}, time_limit: {}}}",
       cfg.bucket_name,
       cfg.interval.count(),
-      cfg.client_config,
-      cfg.connection_limit,
       cfg.initial_backoff.count(),
       cfg.segment_upload_timeout.count(),
       cfg.manifest_upload_timeout.count(),

@@ -7,6 +7,8 @@ v_cc_library(
     recursive_directory_walker.cc
     remote.cc
     offset_translation_layer.cc
+    probe.cc
+    types.cc
   DEPS
     Seastar::seastar
     v::bytes

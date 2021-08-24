@@ -629,9 +629,20 @@ void application::wire_up_redpanda_services() {
 
     if (archival_storage_enabled()) {
         syschecks::systemd_message("Starting archival scheduler").get();
-        ss::sharded<archival::configuration> configs;
-        configs.start().get();
-        configs
+        ss::sharded<cloud_storage::configuration> cloud_configs;
+        cloud_configs.start().get();
+        cloud_configs
+          .invoke_on_all([](cloud_storage::configuration& c) {
+              return cloud_storage::configuration::get_config().then(
+                [&c](cloud_storage::configuration cfg) { c = std::move(cfg); });
+          })
+          .get();
+        construct_service(cloud_storage_api, std::ref(cloud_configs)).get();
+        cloud_configs.stop().get();
+
+        ss::sharded<archival::configuration> arch_configs;
+        arch_configs.start().get();
+        arch_configs
           .invoke_on_all([](archival::configuration& c) {
               return archival::scheduler_service::get_archival_service_config()
                 .then(
@@ -640,12 +651,13 @@ void application::wire_up_redpanda_services() {
           .get();
         construct_service(
           archival_scheduler,
+          std::ref(cloud_storage_api),
           std::ref(storage),
           std::ref(partition_manager),
           std::ref(controller->get_topics_state()),
-          std::ref(configs))
+          std::ref(arch_configs))
           .get();
-        configs.stop().get();
+        arch_configs.stop().get();
     }
     // group membership
     syschecks::systemd_message("Creating partition manager").get();

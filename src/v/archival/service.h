@@ -102,10 +102,12 @@ public:
     /// \param pm is a partition_manager service instance
     scheduler_service_impl(
       const configuration& conf,
+      ss::sharded<cloud_storage::remote>& remote,
       ss::sharded<storage::api>& api,
       ss::sharded<cluster::partition_manager>& pm,
       ss::sharded<cluster::topic_table>& tt);
     scheduler_service_impl(
+      ss::sharded<cloud_storage::remote>& remote,
       ss::sharded<storage::api>& api,
       ss::sharded<cluster::partition_manager>& pm,
       ss::sharded<cluster::topic_table>& tt,
@@ -151,9 +153,6 @@ public:
     /// Get remote that service uses
     cloud_storage::remote& get_remote();
 
-    /// Get configured connection limit
-    size_t get_connection_limit() const;
-
     /// Get configured bucket
     s3::bucket_name get_bucket() const;
 
@@ -181,7 +180,7 @@ private:
     retry_chain_node _rtcnode;
     retry_chain_logger _rtclog;
     service_probe _probe;
-    cloud_storage::remote _remote;
+    ss::sharded<cloud_storage::remote>& _remote;
     ss::lowres_clock::duration _topic_manifest_upload_timeout;
     ss::lowres_clock::duration _initial_backoff;
 };
@@ -216,9 +215,6 @@ public:
 
     /// Get remote that service uses
     using internal::scheduler_service_impl::get_remote;
-
-    /// Get configured connection limit
-    using internal::scheduler_service_impl::get_connection_limit;
 
     /// Get configured bucket
     using internal::scheduler_service_impl::get_bucket;

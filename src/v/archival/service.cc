@@ -113,33 +113,8 @@ static ss::sstring get_value_or_throw(
 ss::future<archival::configuration>
 scheduler_service_impl::get_archival_service_config() {
     vlog(archival_log.debug, "Generating archival configuration");
-    auto secret_key = s3::private_key_str(get_value_or_throw(
-      config::shard_local_cfg().cloud_storage_secret_key,
-      "cloud_storage_secret_key"));
-    auto access_key = s3::public_key_str(get_value_or_throw(
-      config::shard_local_cfg().cloud_storage_access_key,
-      "cloud_storage_access_key"));
-    auto region = s3::aws_region_name(get_value_or_throw(
-      config::shard_local_cfg().cloud_storage_region, "cloud_storage_region"));
     auto disable_metrics = rpc::metrics_disabled(
       config::shard_local_cfg().disable_metrics());
-
-    // Set default overrides
-    s3::default_overrides overrides;
-    if (auto optep
-        = config::shard_local_cfg().cloud_storage_api_endpoint.value();
-        optep.has_value()) {
-        overrides.endpoint = s3::endpoint_url(*optep);
-    }
-    overrides.disable_tls = config::shard_local_cfg().cloud_storage_disable_tls;
-    if (auto cert = config::shard_local_cfg().cloud_storage_trust_file.value();
-        cert.has_value()) {
-        overrides.trust_file = s3::ca_trust_file(std::filesystem::path(*cert));
-    }
-    overrides.port = config::shard_local_cfg().cloud_storage_api_endpoint_port;
-    overrides.max_idle_time
-      = config::shard_local_cfg()
-          .cloud_storage_max_connection_idle_time_ms.value();
 
     auto time_limit = config::shard_local_cfg()
                         .cloud_storage_segment_max_upload_interval_sec.value();
@@ -154,17 +129,12 @@ scheduler_service_impl::get_archival_service_config() {
     auto time_limit_opt = time_limit ? std::make_optional(
                             segment_time_limit(*time_limit))
                                      : std::nullopt;
-    auto s3_conf = co_await s3::configuration::make_configuration(
-      access_key, secret_key, region, overrides, disable_metrics);
     archival::configuration cfg{
-      .client_config = std::move(s3_conf),
       .bucket_name = s3::bucket_name(get_value_or_throw(
         config::shard_local_cfg().cloud_storage_bucket,
         "cloud_storage_bucket")),
       .interval
       = config::shard_local_cfg().cloud_storage_reconciliation_ms.value(),
-      .connection_limit = s3_connection_limit(
-        config::shard_local_cfg().cloud_storage_max_connections.value()),
       .initial_backoff
       = config::shard_local_cfg().cloud_storage_initial_backoff_ms.value(),
       .segment_upload_timeout
@@ -184,6 +154,7 @@ scheduler_service_impl::get_archival_service_config() {
 
 scheduler_service_impl::scheduler_service_impl(
   const configuration& conf,
+  ss::sharded<cloud_storage::remote>& remote,
   ss::sharded<storage::api>& api,
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<cluster::topic_table>& tt)
@@ -192,20 +163,21 @@ scheduler_service_impl::scheduler_service_impl(
   , _topic_table(tt)
   , _storage_api(api)
   , _jitter(conf.interval, 1ms)
-  , _stop_limit(conf.connection_limit())
+  , _stop_limit(remote.local().concurrency())
   , _rtcnode(_as)
   , _rtclog(archival_log, _rtcnode)
   , _probe(conf.svc_metrics_disabled)
-  , _remote(conf.connection_limit, conf.client_config, _probe)
+  , _remote(remote)
   , _topic_manifest_upload_timeout(conf.manifest_upload_timeout)
   , _initial_backoff(conf.initial_backoff) {}
 
 scheduler_service_impl::scheduler_service_impl(
+  ss::sharded<cloud_storage::remote>& remote,
   ss::sharded<storage::api>& api,
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<cluster::topic_table>& tt,
   ss::sharded<archival::configuration>& config)
-  : scheduler_service_impl(config.local(), api, pm, tt) {}
+  : scheduler_service_impl(config.local(), remote, api, pm, tt) {}
 
 void scheduler_service_impl::rearm_timer() {
     (void)ss::with_gate(_gate, [this] {
@@ -232,21 +204,17 @@ ss::future<> scheduler_service_impl::stop() {
     vlog(_rtclog.info, "Scheduler service stop");
     _timer.cancel();
     _as.request_abort(); // interrupt possible sleep
-    return _remote.stop().then([this] {
-        std::vector<ss::future<>> outstanding;
-        for (auto& it : _queue) {
-            auto fut = ss::with_semaphore(
-              _stop_limit, 1, [it] { return it.second.archiver->stop(); });
-            outstanding.emplace_back(std::move(fut));
-        }
-        return ss::do_with(
-          std::move(outstanding),
-          [this](std::vector<ss::future<>>& outstanding) {
-              return ss::when_all_succeed(
-                       outstanding.begin(), outstanding.end())
-                .finally([this] { return _gate.close(); });
-          });
-    });
+    std::vector<ss::future<>> outstanding;
+    for (auto& it : _queue) {
+        auto fut = ss::with_semaphore(
+          _stop_limit, 1, [it] { return it.second.archiver->stop(); });
+        outstanding.emplace_back(std::move(fut));
+    }
+    return ss::do_with(
+      std::move(outstanding), [this](std::vector<ss::future<>>& outstanding) {
+          return ss::when_all_succeed(outstanding.begin(), outstanding.end())
+            .finally([this] { return _gate.close(); });
+      });
 }
 
 ss::lw_shared_ptr<ntp_archiver> scheduler_service_impl::get_upload_candidate() {
@@ -271,7 +239,7 @@ ss::future<> scheduler_service_impl::upload_topic_manifest(
             cloud_storage::topic_manifest tm(*cfg, rev);
             auto key = tm.get_manifest_path();
             vlog(ctxlog.debug, "Topic manifest object key is '{}'", key);
-            auto res = co_await _remote.upload_manifest(
+            auto res = co_await _remote.local().upload_manifest(
               _conf.bucket_name, tm, fib);
             uploaded = res == cloud_storage::upload_result::success;
             if (!uploaded) {
@@ -349,7 +317,8 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
           return ss::do_with(
             std::move(to_create), [this](std::vector<model::ntp>& to_create) {
                 // add_ntp_archiver can potentially use two connections
-                auto concurrency = std::max(1UL, _conf.connection_limit() / 2);
+                auto concurrency = std::max(
+                  1UL, _remote.local().concurrency() / 2);
                 return ss::max_concurrent_for_each(
                   to_create, concurrency, [this](const model::ntp& ntp) {
                       storage::api& api = _storage_api.local();
@@ -360,7 +329,7 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
                           return ss::now();
                       }
                       auto svc = ss::make_lw_shared<ntp_archiver>(
-                        log->config(), _conf, _remote, part, _probe);
+                        log->config(), _conf, _remote.local(), part, _probe);
                       return ss::repeat([this, svc = std::move(svc)] {
                           return add_ntp_archiver(svc);
                       });
@@ -438,10 +407,8 @@ ss::future<> scheduler_service_impl::reconcile_archivers() {
     }
 }
 
-cloud_storage::remote& scheduler_service_impl::get_remote() { return _remote; }
-
-size_t scheduler_service_impl::get_connection_limit() const {
-    return _conf.connection_limit();
+cloud_storage::remote& scheduler_service_impl::get_remote() {
+    return _remote.local();
 }
 
 s3::bucket_name scheduler_service_impl::get_bucket() const {
@@ -487,9 +454,6 @@ ss::future<> scheduler_service_impl::run_uploads() {
                     .num_succeded = lhs.num_succeded + rhs.num_succeded,
                     .num_failed = lhs.num_failed + rhs.num_failed};
               });
-
-            _probe.successful_upload(total.num_succeded);
-            _probe.failed_upload(total.num_failed);
 
             if (total.num_failed != 0) {
                 vlog(

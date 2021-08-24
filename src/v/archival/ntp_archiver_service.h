@@ -37,14 +37,10 @@ using namespace std::chrono_literals;
 
 /// Archiver service configuration
 struct configuration {
-    /// S3 configuration
-    s3::configuration client_config;
     /// Bucket used to store all archived data
     s3::bucket_name bucket_name;
     /// Time interval to run uploads & deletes
     ss::lowres_clock::duration interval;
-    /// Number of simultaneous S3 uploads
-    s3_connection_limit connection_limit;
     /// Initial backoff for uploads
     ss::lowres_clock::duration initial_backoff;
     /// Long upload timeout

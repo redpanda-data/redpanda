@@ -89,7 +89,8 @@ static segment_layout write_random_batches(
     return layout;
 }
 
-archival::configuration get_configuration() {
+std::tuple<archival::configuration, cloud_storage::configuration>
+get_configurations() {
     unresolved_address server_addr(httpd_host_name, httpd_port_number);
     s3::configuration s3conf{
       .uri = s3::access_point_uri(httpd_host_name),
@@ -98,17 +99,21 @@ archival::configuration get_configuration() {
       .region = s3::aws_region_name("us-east-1"),
     };
     s3conf.server_addr = server_addr;
-    archival::configuration conf;
-    conf.client_config = s3conf;
-    conf.bucket_name = s3::bucket_name("test-bucket");
-    conf.connection_limit = archival::s3_connection_limit(2);
-    conf.ntp_metrics_disabled = archival::per_ntp_metrics_disabled::yes;
-    conf.svc_metrics_disabled = archival::service_metrics_disabled::yes;
-    conf.initial_backoff = 100ms;
-    conf.segment_upload_timeout = 1s;
-    conf.manifest_upload_timeout = 1s;
-    conf.time_limit = std::nullopt;
-    return conf;
+    archival::configuration aconf;
+    aconf.bucket_name = s3::bucket_name("test-bucket");
+    aconf.ntp_metrics_disabled = archival::per_ntp_metrics_disabled::yes;
+    aconf.svc_metrics_disabled = archival::service_metrics_disabled::yes;
+    aconf.initial_backoff = 100ms;
+    aconf.segment_upload_timeout = 1s;
+    aconf.manifest_upload_timeout = 1s;
+    aconf.time_limit = std::nullopt;
+
+    cloud_storage::configuration cconf;
+    cconf.client_config = s3conf;
+    cconf.bucket_name = s3::bucket_name("test-bucket");
+    cconf.connection_limit = archival::s3_connection_limit(2);
+    cconf.metrics_disabled = cloud_storage::remote_metrics_disabled::yes;
+    return std::make_tuple(aconf, cconf);
 }
 
 s3_imposter_fixture::s3_imposter_fixture() {

@@ -91,8 +91,7 @@ static manifest load_manifest_from_str(std::string_view v) {
 FIXTURE_TEST(test_download_manifest, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen(default_expectations);
     auto conf = get_configuration();
-    service_probe probe;
-    remote remote(s3_connection_limit(10), conf, probe);
+    remote remote(s3_connection_limit(10), conf);
     manifest actual(manifest_ntp, manifest_revision);
     auto action = ss::defer([&remote] { remote.stop().get(); });
     retry_chain_node fib(100ms, 20ms);
@@ -110,8 +109,7 @@ FIXTURE_TEST(test_download_manifest, s3_imposter_fixture) { // NOLINT
 
 FIXTURE_TEST(test_download_manifest_timeout, s3_imposter_fixture) { // NOLINT
     auto conf = get_configuration();
-    service_probe probe;
-    remote remote(s3_connection_limit(10), conf, probe);
+    remote remote(s3_connection_limit(10), conf);
     manifest actual(manifest_ntp, manifest_revision);
     auto action = ss::defer([&remote] { remote.stop().get(); });
     retry_chain_node fib(100ms, 20ms);
@@ -128,8 +126,7 @@ FIXTURE_TEST(test_download_manifest_timeout, s3_imposter_fixture) { // NOLINT
 FIXTURE_TEST(test_upload_segment, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen(default_expectations);
     auto conf = get_configuration();
-    service_probe probe;
-    remote remote(s3_connection_limit(10), conf, probe);
+    remote remote(s3_connection_limit(10), conf);
     manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("1-2-v1.log");
     uint64_t clen = manifest_payload.size();
@@ -152,8 +149,7 @@ FIXTURE_TEST(test_upload_segment, s3_imposter_fixture) { // NOLINT
 
 FIXTURE_TEST(test_upload_segment_timeout, s3_imposter_fixture) { // NOLINT
     auto conf = get_configuration();
-    service_probe probe;
-    remote remote(s3_connection_limit(10), conf, probe);
+    remote remote(s3_connection_limit(10), conf);
     manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("1-2-v1.log");
     uint64_t clen = manifest_payload.size();
@@ -175,8 +171,7 @@ FIXTURE_TEST(test_download_segment, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen(default_expectations);
     auto conf = get_configuration();
     auto bucket = s3::bucket_name("bucket");
-    service_probe probe;
-    remote remote(s3_connection_limit(10), conf, probe);
+    remote remote(s3_connection_limit(10), conf);
     manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("1-2-v1.log");
     uint64_t clen = manifest_payload.size();
@@ -212,8 +207,7 @@ FIXTURE_TEST(test_download_segment, s3_imposter_fixture) { // NOLINT
 FIXTURE_TEST(test_download_segment_timeout, s3_imposter_fixture) { // NOLINT
     auto conf = get_configuration();
     auto bucket = s3::bucket_name("bucket");
-    service_probe probe;
-    remote remote(s3_connection_limit(10), conf, probe);
+    remote remote(s3_connection_limit(10), conf);
     manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("1-2-v1.log");
 
