@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import sys
+import threading
 from ducktape.services.background_thread import BackgroundThreadService
 
 
@@ -17,6 +18,7 @@ class KafProducer(BackgroundThreadService):
         self._redpanda = redpanda
         self._topic = topic
         self._num_records = num_records
+        self._stopping = threading.Event()
 
     def _worker(self, idx, node):
         for i in range(self._num_records):
@@ -24,6 +26,13 @@ class KafProducer(BackgroundThreadService):
                 i, self._redpanda.brokers(), i, self._topic)
             for line in node.account.ssh_capture(cmd, timeout_sec=10):
                 self.logger.debug(line.rstrip())
+
+            if self._stopping.is_set():
+                break
+
+    def stop_all(self):
+        self._stopping.set()
+        self.stop()
 
     def stop_node(self, node):
         node.account.kill_process("kaf", clean_shutdown=False)
