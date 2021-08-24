@@ -111,6 +111,13 @@ protected:
     ss::future<> persist_snapshot(stm_snapshot&&);
     ss::future<> do_make_snapshot();
 
+    ss::future<> wait_offset_committed(
+      model::timeout_clock::duration, model::offset, model::term_id);
+    /*
+     * `sync` checks that current node is a leader and if `sync` wasn't
+     * called within its term it waits until the state machine is caught
+     * up with all the events written by the previous leaders
+     */
     ss::future<bool> sync(model::timeout_clock::duration);
 
     mutex _op_lock;

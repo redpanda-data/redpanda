@@ -153,6 +153,17 @@ persisted_stm::ensure_snapshot_exists(model::offset target_offset) {
     });
 }
 
+ss::future<> persisted_stm::wait_offset_committed(
+  model::timeout_clock::duration timeout,
+  model::offset offset,
+  model::term_id term) {
+    auto stop_cond = [this, offset, term] {
+        return _c->committed_offset() >= offset || _c->term() > term;
+    };
+
+    return _c->commit_index_updated().wait(timeout, stop_cond);
+}
+
 ss::future<bool> persisted_stm::sync(model::timeout_clock::duration timeout) {
     if (!_c->is_leader()) {
         co_return false;
@@ -168,25 +179,31 @@ ss::future<bool> persisted_stm::sync(model::timeout_clock::duration timeout) {
           deadline, [] { return false; });
     }
     _is_catching_up = true;
+
+    co_await _c->refresh_commit_index();
+
     auto term = _c->term();
     auto is_synced = false;
     try {
-        auto r = co_await quorum_write_empty_batch(
-          model::timeout_clock::now() + timeout);
-        if (r.has_value()) {
-            is_synced = term == _c->term();
+        auto dirty = _c->dirty_offset();
+        if (dirty > _c->committed_offset()) {
+            co_await wait_offset_committed(timeout, dirty, term);
+            if (_c->term() == term) {
+                co_await wait(dirty, model::timeout_clock::now() + timeout);
+                is_synced = true;
+            }
         } else {
-            vlog(
-              clusterlog.error,
-              "Error during writing a checkpoint batch: {}",
-              r.error());
+            co_await wait(
+              _c->committed_offset(), model::timeout_clock::now() + timeout);
+            is_synced = true;
         }
     } catch (...) {
         vlog(
           clusterlog.error,
-          "Error during writing a checkpoint batch: {}",
+          "Error during waitin for catch up: {}",
           std::current_exception());
     }
+
     if (is_synced) {
         _insync_term = term;
     }
