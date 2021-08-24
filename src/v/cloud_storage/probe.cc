@@ -80,7 +80,11 @@ remote_probe::remote_probe(remote_metrics_disabled disabled) {
           "upload_backoff",
           [this] { return get_upload_backoffs(); },
           sm::description(
+<<<<<<< HEAD
             "Number of times backoff was applied during log-segment uploads")),
+=======
+            "Number of times backoff  was applied during log-segment uploads")),
+>>>>>>> 0ce453a9e (cloud_storage: Split initialization of the remote)
         sm::make_counter(
           "download_backoff",
           [this] { return get_download_backoffs(); },

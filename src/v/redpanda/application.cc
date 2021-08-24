@@ -652,6 +652,17 @@ void application::wire_up_redpanda_services() {
 
     if (archival_storage_enabled()) {
         syschecks::systemd_message("Starting archival scheduler").get();
+        ss::sharded<cloud_storage::configuration> cloud_configs;
+        cloud_configs.start().get();
+        cloud_configs
+          .invoke_on_all([](cloud_storage::configuration& c) {
+              return cloud_storage::configuration::get_config().then(
+                [&c](cloud_storage::configuration cfg) { c = std::move(cfg); });
+          })
+          .get();
+        construct_service(cloud_storage_api, std::ref(cloud_configs)).get();
+        cloud_configs.stop().get();
+
         ss::sharded<archival::configuration> arch_configs;
         arch_configs.start().get();
         arch_configs
