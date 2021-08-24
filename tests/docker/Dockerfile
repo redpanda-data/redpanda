@@ -90,6 +90,15 @@ RUN mvn clean package --batch-mode --file /tmp/java/kafka-verifier --define buil
     mvn clean package --batch-mode --file /tmp/java/compacted-log-verifier --define buildDir=/opt/compacted-log-verifier && \
     mvn clean package --batch-mode --file /tmp/java/tx-verifier --define buildDir=/opt/tx-verifier
 
+# Compile and install rust-based workload generator
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+RUN git clone https://github.com/jcsp/kafka_conn_test.git && \
+    cd kafka_conn_test && \
+    cargo build --release && \
+    cp target/release/conn_test /usr/local/bin
+
 # copy ssh keys
 COPY --chown=0:0 tests/docker/ssh /root/.ssh
 
