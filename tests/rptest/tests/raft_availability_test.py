@@ -18,6 +18,9 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.redpanda import ResourceSettings
+from rptest.services.kaf_producer import KafProducer
+from rptest.services.producer_swarm import ProducerSwarm
 
 ELECTION_TIMEOUT = 10
 
@@ -30,6 +33,14 @@ class MetricCheckFailed(Exception):
 
     def __str__(self):
         return f"MetricCheckFailed<{self.metric} old={self.old_value} new={self.new_value}>"
+
+
+def label_match(candidate, conditions):
+    for k, v in conditions.items():
+        if candidate.get(k, None) != v:
+            return False
+
+    return True
 
 
 class MetricCheck(object):
@@ -62,13 +73,7 @@ class MetricCheck(object):
                 if not include:
                     continue
 
-                label_mismatch = False
-                for k, v in self.labels.items():
-                    if sample.labels.get(k, None) != v:
-                        label_mismatch = True
-                        continue
-
-                if label_mismatch:
+                if not label_match(sample.labels, self.labels):
                     continue
 
                 if sample.name in samples:
@@ -100,6 +105,9 @@ class MetricCheck(object):
 
             new_value = samples[metric]
             ok = comparator(old_value, new_value)
+            self.logger.debug(
+                f"MetricCheck.expect {metric} old={old_value} new={new_value} ok={ok}"
+            )
             if not ok:
                 error = MetricCheckFailed(metric, old_value, new_value)
                 # Log each bad metric, raise the last one as our actual exception below
@@ -122,8 +130,13 @@ class RaftAvailabilityTest(RedpandaTest):
             extra_rp_conf={
                 # Disable leader balancer to enable testing
                 # leadership stability.
-                'enable_leader_balancer': False
+                'enable_leader_balancer': False,
+                # 100MB instead of default 1GB segments in order
+                # to make it easier for loaded workloads to encounter
+                # segment end/begin behaviours.
+                'log_segment_size': 100 * 1024 * 1024,
             },
+            resource_settings=ResourceSettings(num_cpus=1, memory_mb=400),
             **kwargs)
 
         self._ping_offset = 0
@@ -367,3 +380,187 @@ class RaftAvailabilityTest(RedpandaTest):
             self.redpanda.start_node(initial_leader_node)
             time.sleep(ELECTION_TIMEOUT)
             assert new_leader_id == self._get_leader()[0]
+
+    def _get_metric(self, node, metric, labels):
+        for family in self.redpanda.metrics(node):
+            for sample in family.samples:
+                if sample.name == metric and label_match(
+                        sample.labels, labels):
+                    return sample.value
+
+        raise RuntimeError(f"Metric '{metric}' with labels {labels} not found")
+
+    def _await_catchup(self, leader, follower, metric, labels):
+        """
+        Given a named metric and two nodes, wait for the metric
+        to equalize across the two nodes.  Require that the follower's
+        metric increases continuously while we wait (i.e. early fail
+        on hang).
+        """
+
+        last_follower_v = None
+        while True:
+            # Read leader first, so that if we're chasing our tail then
+            # we'll have a chance to see the follower >= the leader
+            leader_v = self._get_metric(leader, metric, labels)
+            follower_v = self._get_metric(follower, metric, labels)
+
+            self.logger.debug(
+                f"await_catchup[{metric}] follower={follower_v} leader={leader_v}"
+            )
+
+            if follower_v >= leader_v:
+                self.logger.info(
+                    f"Caught up {metric} follower={follower_v} leader={leader_v}"
+                )
+                return
+            else:
+                if last_follower_v is not None and follower_v == last_follower_v:
+                    raise RuntimeError(
+                        f"Follower stuck at {metric}={follower_v}!")
+                else:
+                    last_follower_v = follower_v
+                    time.sleep(10)
+
+    @cluster(num_nodes=4)
+    def test_follower_recovery(self):
+        """
+        Validate that when a follower stops for a while while partition
+        is under load, it catches up again when it restarts.
+
+        As well as being a general test of recovery, this specifically
+        regression tests https://github.com/vectorizedio/redpanda/issues/2101
+        (that particular issue requires memory-constrained nodes plus
+         substantial load, plus crossing segment barriers)
+
+        """
+        initial_leader_id, replicas = self._wait_for_leader()
+        initial_leader_node = self.redpanda.get_node(initial_leader_id)
+        follower_id = (set(replicas) - {initial_leader_id}).pop()
+        follower_node = self.redpanda.get_node(follower_id)
+
+        # Validate catching-up code on an idle system: we should be immediately
+        # caught up
+        self._await_catchup(initial_leader_node, follower_node,
+                            "vectorized_cluster_partition_high_watermark",
+                            {"topic": self.topic})
+
+        # FIXME KafProducer is fussy about metadata being all up to date before
+        # it starts to produce, so let the cluster settle down.
+        #time.sleep(5)
+        #producer = KafProducer(self.test_context, self.redpanda, self.topic)
+
+        self.logger.info("Waiting for some pre-restart traffic to accumulate")
+        leader_metrics = MetricCheck(
+            self.logger, self.redpanda, initial_leader_node,
+            ["vectorized_storage_log_log_segments_created_total"],
+            {'topic': self.topic})
+
+        producer = ProducerSwarm(self.test_context, self.redpanda, self.topic,
+                                 100, 1000)
+        producer.start()
+        time.sleep(30)
+        # Expect that this should have been enough time to roll over at least one
+        # log segment
+        leader_metrics.expect([
+            ('vectorized_storage_log_log_segments_created_total',
+             lambda a, b: b > a)
+        ])
+
+        self.logger.info("Stopping follower")
+        offset_before_outage = self._get_metric(
+            initial_leader_node, "vectorized_cluster_partition_high_watermark",
+            {"topic": self.topic})
+        self.redpanda.stop_node(follower_node)
+        time.sleep(30)
+        offset_after_outage = self._get_metric(
+            initial_leader_node, "vectorized_cluster_partition_high_watermark",
+            {"topic": self.topic})
+
+        self.logger.info(
+            f"Follower missed range approx {offset_before_outage}-{offset_after_outage} during simulated outage"
+        )
+
+        self.logger.info("Restarting follower")
+        self.redpanda.start_node(follower_node)
+        follower_offset_after_restart = self._get_metric(
+            follower_node, "vectorized_cluster_partition_high_watermark",
+            {"topic": self.topic})
+        self.logger.info(
+            f"Follower offset after restart is {follower_offset_after_restart}"
+        )
+
+        self.logger.info(
+            "Leaving background producer running for a while after node restart..."
+        )
+        time.sleep(30)
+        self.logger.info("Stopping background producer")
+        producer.stop_all()
+
+        # Wait for this metric to be equal between the two nodes
+        # While waiting, require that it increases.
+        self.logger.info("Waiting for recovery to complete")
+        self._await_catchup(initial_leader_node, follower_node,
+                            "vectorized_cluster_partition_high_watermark",
+                            {"topic": self.topic})
+
+    @cluster(num_nodes=4)
+    def test_shutdown_under_load(self):
+        initial_leader_id, replicas = self._wait_for_leader()
+        initial_leader_node = self.redpanda.get_node(initial_leader_id)
+        follower_id = (set(replicas) - {initial_leader_id}).pop()
+        follower_node = self.redpanda.get_node(follower_id)
+
+        producer = ProducerSwarm(self.test_context, self.redpanda, self.topic)
+        producer.start()
+
+        # Default shutdown timeouts are long to avoid test noise: for this
+        # test we really want to ensure *prompt* shutdown and investigate
+        # if something is taking longer than a few seconds
+        stop_timeout = 5
+
+        wait_until(lambda: self._get_metric(
+            initial_leader_node, "vectorized_cluster_partition_high_watermark",
+            {"topic": self.topic}) > 0.0,
+                   timeout_sec=30,
+                   backoff_sec=0.5,
+                   err_msg="Topic high watermark didn't get above zero")
+
+        # A follower: check that it cleanly shuts down and restarts
+        t1 = time.time()
+        self.redpanda.stop_node(follower_node, timeout_sec=stop_timeout)
+        self.logger.info(
+            f"Stopped node {follower_node.account.hostname} in {time.time() - t1}"
+        )
+
+        time.sleep(30)  # Wait for some recovery backlog to build
+        self.redpanda.start_node(follower_node)
+
+        self._await_catchup(initial_leader_node, follower_node,
+                            "vectorized_cluster_partition_high_watermark",
+                            {"topic": self.topic})
+
+        # A leader: check that it cleanly & promptly shuts down and restarts
+        t1 = time.time()
+        self.redpanda.stop_node(initial_leader_node, timeout_sec=stop_timeout)
+        self.logger.info(
+            f"Stopped node {initial_leader_node.account.hostname} in {time.time() - t1}"
+        )
+
+        new_leader_id, _ = self._wait_for_leader()
+        new_leader_node = self.redpanda.get_node(new_leader_id)
+        wait_until(lambda: self._get_metric(
+            new_leader_node, "vectorized_cluster_partition_high_watermark",
+            {"topic": self.topic}) > 0.0,
+                   timeout_sec=30,
+                   backoff_sec=0.5,
+                   err_msg="Topic high watermark didn't get above zero")
+
+        time.sleep(10)  # Wait for some recovery backlog to build
+        self.redpanda.start_node(initial_leader_node)
+
+        self._await_catchup(new_leader_node, initial_leader_node,
+                            "vectorized_cluster_partition_high_watermark",
+                            {"topic": self.topic})
+
+        producer.stop()
