@@ -178,6 +178,28 @@ class RedpandaService(Service):
             self.logger.debug(f"Creating initial topic {spec}")
             client.create_topic(spec)
 
+    def start_redpanda(self, node):
+        cmd = (f"nohup {self.find_binary('redpanda')}"
+               f" --redpanda-cfg {RedpandaService.CONFIG_FILE}"
+               f" --default-log-level {self._log_level}"
+               f" --logger-log-level=exception=debug:archival=debug:io=debug "
+               f" --kernel-page-cache=true "
+               f" --overprovisioned "
+               f" --smp {self._num_cores} "
+               f" --memory 6G "
+               f" --reserve-memory 0M "
+               f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
+        # set llvm_profile var for code coverage
+        # each node will create its own copy of the .profraw file
+        # since each node creates a redpanda broker.
+        if self.cov_enabled():
+            cmd = f"LLVM_PROFILE_FILE=\"{RedpandaService.COVERAGE_PROFRAW_CAPTURE}\" " + cmd
+
+        node.account.ssh(cmd)
+
+    def signal_redpanda(self, node, signal=signal.SIGKILL):
+        node.account.signal(self.redpanda_pid(node), signal, allow_fail=False)
+
     def start_node(self, node, override_cfg_params=None):
         """
         Start a single instance of redpanda. This function will not return until
@@ -193,24 +215,7 @@ class RedpandaService(Service):
         if self.coproc_enabled():
             self.start_wasm_engine(node)
 
-        cmd = (f"nohup {self.find_binary('redpanda')}"
-               f" --redpanda-cfg {RedpandaService.CONFIG_FILE}"
-               f" --default-log-level {self._log_level}"
-               f" --logger-log-level=exception=debug:archival=debug:io=debug "
-               f" --kernel-page-cache=true "
-               f" --overprovisioned "
-               f" --smp {self._num_cores} "
-               f" --memory 6G "
-               f" --reserve-memory 0M "
-               f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
-
-        # set llvm_profile var for code coverage
-        # each node will create its own copy of the .profraw file
-        # since each node creates a redpanda broker.
-        if self.cov_enabled():
-            cmd = f"LLVM_PROFILE_FILE=\"{RedpandaService.COVERAGE_PROFRAW_CAPTURE}\" " + cmd
-
-        node.account.ssh(cmd)
+        self.start_redpanda(node)
 
         wait_until(
             lambda: Admin.ready(node).get("status") == "ready",
@@ -280,6 +285,19 @@ class RedpandaService(Service):
         node.account.kill_process("redpanda", clean_shutdown=False)
         node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/*")
         node.account.remove(f"{RedpandaService.CONFIG_FILE}")
+
+    def redpanda_pid(self, node):
+        # we need to look for redpanda pid. pids() method returns pids of both
+        # nodejs server and redpanda
+        try:
+            cmd = "ps ax | grep -i 'redpanda' | grep -v grep | awk '{print $1}'"
+            for p in node.account.ssh_capture(cmd,
+                                              allow_fail=True,
+                                              callback=int):
+                return p
+
+        except (RemoteCommandError, ValueError):
+            return None
 
     def pids(self, node):
         """Return process ids associated with running processes on the given node."""
