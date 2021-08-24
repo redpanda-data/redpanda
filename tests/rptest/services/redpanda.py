@@ -250,13 +250,15 @@ class RedpandaService(Service):
             "rp_install_path_root", None)
         return f"{rp_install_path_root}/bin/{name}"
 
-    def stop_node(self, node):
+    def stop_node(self, node, timeout_sec=None):
+        if timeout_sec is None:
+            timeout_sec = 30
+
         pids = self.pids(node)
 
         for pid in pids:
             node.account.signal(pid, signal.SIGTERM, allow_fail=False)
 
-        timeout_sec = 30
         wait_until(lambda: len(self.pids(node)) == 0,
                    timeout_sec=timeout_sec,
                    err_msg="Redpanda node failed to stop in %d seconds" %
