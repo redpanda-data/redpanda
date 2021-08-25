@@ -12,6 +12,8 @@
 
 #include "coproc/ntp_context.h"
 
+#include <optional>
+
 namespace coproc::wasm {
 
 async_event_handler::async_event_handler(ss::sharded<pacemaker>& pacemaker)
@@ -120,20 +122,35 @@ async_event_handler::process(absl::btree_map<script_id, parsed_event> wsas) {
     }
 }
 
-ss::future<> data_policy_event_handler::start() { co_return; }
+ss::future<> data_policy_event_handler::start() { co_await _scritps.start(); }
 
-ss::future<> data_policy_event_handler::stop() { co_return; }
+ss::future<> data_policy_event_handler::stop() { co_await _scritps.stop(); }
 
 ss::future<> data_policy_event_handler::process(
   absl::btree_map<script_id, parsed_event> wsas) {
     for (auto& [id, event] : wsas) {
-        if (event.header.action == event_action::deploy) {
-            _scritps.insert_or_assign(id, std::move(event.data));
-        } else {
-            _scritps.erase(id);
-        }
+        co_await _scritps.invoke_on_all(
+          [id = id, &event = event](
+            absl::btree_map<script_id, iobuf>& _local_scripts) mutable {
+              if (event.header.action == event_action::deploy) {
+                  _local_scripts.insert_or_assign(id, event.data.copy());
+              } else {
+                  _local_scripts.erase(id);
+              }
+          });
     }
     co_return;
+}
+
+std::optional<iobuf>
+data_policy_event_handler::get_code(std::string_view name) {
+    script_id id(xxhash_64(name.data(), name.size()));
+    auto code = _scritps.local().find(id);
+    if (code == _scritps.local().end()) {
+        return std::nullopt;
+    }
+
+    return code->second.copy();
 }
 
 } // namespace coproc::wasm

@@ -13,6 +13,7 @@
 #include "coproc/logger.h"
 #include "coproc/script_dispatcher.h"
 #include "coproc/wasm_event.h"
+#include "hashing/xx.h"
 #include "seastarx.h"
 
 #include <seastar/core/coroutine.hh>
@@ -90,9 +91,12 @@ public:
     ss::future<>
     process(absl::btree_map<script_id, parsed_event> wsas) override;
 
+    std::optional<iobuf> get_code(std::string_view name);
+
 private:
-    /// Map of known script ids to theit code
-    absl::btree_map<script_id, iobuf> _scritps;
+    /// handler is one for all cores. We should use sharded map for each core
+    /// for avoiding cross-core communication
+    ss::sharded<absl::btree_map<script_id, iobuf>> _scritps;
 };
 
 } // namespace coproc::wasm
