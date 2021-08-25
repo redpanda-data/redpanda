@@ -17,6 +17,8 @@ import random
 import threading
 import collections
 
+from pathlib import Path
+
 import yaml
 from ducktape.services.service import Service
 from ducktape.cluster.remoteaccount import RemoteCommandError
@@ -47,6 +49,7 @@ class RedpandaService(Service):
 
     LOG_LEVEL_KEY = "redpanda_log_level"
     DEFAULT_LOG_LEVEL = "info"
+    VERSION_KEY = "redpanda_version"
 
     SUPERUSER_CREDENTIALS = ("admin", "admin", "SCRAM-SHA-256")
 
@@ -84,6 +87,15 @@ class RedpandaService(Service):
         self._num_cores = num_cores
         self._admin = Admin(self)
         self._started = []
+
+        version = self._context.globals.get(self.VERSION_KEY, None)
+        if version:
+            self._rp_install_path_root = f"/opt/{version}"
+        else:
+            install_dir = self._context.globals.get(self.RP_DEV_INSTALL_DIR,
+                                                    None)
+            self._rp_install_path_root = install_dir
+        assert os.path.isdir(self._rp_install_path_root)
 
         # client is intiialized after service starts
         self._client = None
@@ -177,6 +189,15 @@ class RedpandaService(Service):
 
         self.write_conf_file(node, override_cfg_params)
 
+        # redpanda binaries have its RPATH pointing to /opt/redpanda/. Since
+        # this class can be used to test multiple versions of redpanda, and
+        # since those are installed in other paths (e.g. /opt/redpanda-21.7.6),
+        # we need to create /opt/redpanda as a symlink that points to the actual
+        # installation directory containing the redpanda binaries under test
+        install_path = Path("/opt/redpanda")
+        install_path.unlink(missing_ok=True)
+        install_path.link_to(Path(self._rp_install_path_root))
+
         if self.coproc_enabled():
             self.start_wasm_engine(node)
 
@@ -236,14 +257,10 @@ class RedpandaService(Service):
         return node.account.monitor_log(RedpandaService.STDOUT_STDERR_CAPTURE)
 
     def find_wasm_root(self):
-        rp_install_path_root = self._context.globals.get(
-            "rp_install_path_root", None)
-        return f"{rp_install_path_root}/opt/wasm"
+        return f"/opt/redpanda/opt/wasm"
 
     def find_binary(self, name):
-        rp_install_path_root = self._context.globals.get(
-            "rp_install_path_root", None)
-        return f"{rp_install_path_root}/bin/{name}"
+        return f"/opt/redpanda/bin/{name}"
 
     def stop_node(self, node):
         pids = self.pids(node)
