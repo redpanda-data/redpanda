@@ -21,10 +21,14 @@
 #include "security/authorizer.h"
 #include "security/credential_store.h"
 #include "utils/ema.h"
+#include "v8_engine/executor.h"
+#include "v8_engine/scripts_dispatcher.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
+
+#include <optional>
 
 namespace kafka {
 
@@ -46,6 +50,7 @@ public:
       ss::sharded<cluster::security_frontend>&,
       ss::sharded<cluster::controller_api>&,
       ss::sharded<cluster::tx_gateway_frontend>&,
+      ss::sharded<v8_engine::scripts_table>&,
       std::optional<qdc_monitor::config>) noexcept;
 
     ~protocol() noexcept override = default;
@@ -82,6 +87,9 @@ public:
     }
     fetch_session_cache& fetch_sessions_cache() {
         return _fetch_session_cache.local();
+    }
+    ss::sharded<v8_engine::scripts_table>& v8_scripts_dispatcher() {
+        return _v8_scripts_dispatcher;
     }
     quota_manager& quota_mgr() { return _quota_mgr.local(); }
     bool is_idempotence_enabled() const { return _is_idempotence_enabled; }
@@ -137,6 +145,7 @@ private:
     ss::sharded<cluster::security_frontend>& _security_frontend;
     ss::sharded<cluster::controller_api>& _controller_api;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
+    ss::sharded<v8_engine::scripts_table>& _v8_scripts_dispatcher;
     std::optional<qdc_monitor> _qdc_mon;
     kafka::fetch_metadata_cache _fetch_metadata_cache;
 

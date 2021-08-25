@@ -535,6 +535,12 @@ void application::wire_up_redpanda_services() {
 
         _data_policy_handler
           = std::make_unique<coproc::wasm::data_policy_event_handler>();
+
+        construct_service(
+          v8_scripts_dispatcher,
+          std::ref(*_executor),
+          std::ref(*_data_policy_handler))
+          .get();
     }
 
     syschecks::systemd_message("Intializing raft recovery throttle").get();
@@ -1007,6 +1013,7 @@ void application::start_redpanda() {
             controller->get_security_frontend(),
             controller->get_api(),
             tx_gateway_frontend,
+            v8_scripts_dispatcher,
             qdc_config);
           s.set_protocol(std::move(proto));
       })

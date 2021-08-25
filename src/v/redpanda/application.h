@@ -38,6 +38,7 @@
 #include "storage/fwd.h"
 #include "v8_engine/environment.h"
 #include "v8_engine/executor.h"
+#include "v8_engine/scripts_dispatcher.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/metrics_registration.hh>
@@ -94,6 +95,7 @@ public:
     ss::sharded<kafka::rm_group_frontend> rm_group_frontend;
     ss::sharded<cluster::rm_partition_frontend> rm_partition_frontend;
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    ss::sharded<v8_engine::scripts_table> v8_scripts_dispatcher;
 
 private:
     using deferred_actions
