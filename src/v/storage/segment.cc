@@ -455,6 +455,11 @@ segment::offset_data_stream(model::offset o, ss::io_priority_class iopc) {
     if (nearest) {
         position = nearest->filepos;
     }
+
+    // This could be a corruption (bad index) or a runtime defect (bad file
+    // size) (https://github.com/vectorizedio/redpanda/issues/2101)
+    vassert(position < size_bytes(), "Index points beyond file size");
+
     return _reader.data_stream(position, iopc);
 }
 
