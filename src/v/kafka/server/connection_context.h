@@ -77,6 +77,23 @@ public:
     ss::net::inet_address client_host() const { return _client_addr; }
 
 private:
+    // used to track number of pending requests
+    class request_tracker {
+    public:
+        explicit request_tracker(rpc::server_probe& probe)
+          : _probe(probe) {
+            _probe.request_received();
+        }
+        request_tracker(const request_tracker&) = delete;
+        request_tracker(request_tracker&&) = delete;
+        request_tracker& operator=(const request_tracker&) = delete;
+        request_tracker& operator=(request_tracker&&) = delete;
+
+        ~request_tracker() noexcept { _probe.request_completed(); }
+
+    private:
+        rpc::server_probe& _probe;
+    };
     // used to pass around some internal state
     struct session_resources {
         ss::lowres_clock::duration backpressure_delay;
