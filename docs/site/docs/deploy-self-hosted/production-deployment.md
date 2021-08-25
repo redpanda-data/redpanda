@@ -25,13 +25,13 @@ For the best performance, we need to provision the hardware according to these h
   - `8082` - Pandaproxy Port
   - `9644` - Prometheus and HTTP admin port
 
-If you want, you can [use Terraform to deploy Redpanda](/docs/production-deployment-automation).
+If you want, you can [use Terraform to deploy Redpanda](/docs/deploy-self-hosted/production-deployment-automation).
 
 ## Install Redpanda
 
 After the hardware is provisioned, install Redpanda and configure it for production use.
 
-You can also install Redpanda using an [Ansible playbook](/docs/production-deployment-automation).
+You can also install Redpanda using an [Ansible playbook](/docs/deploy-self-hosted/production-deployment-automation).
 
 ### Step 1: Install the binary
 

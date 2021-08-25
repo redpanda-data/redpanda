@@ -11,8 +11,8 @@ Redpanda是用于关键任务业务的先进的[流式计算平台](/blog/intell
 本快速入门指南可以帮助您开始使用Redpanda进行开发和测试。
 要启动并运行，您需要创建一个cluster并将Redpanda operator部署在该cluster上。
 
-- 对于生产或基准测试，请设置[生产部署](/docs/production-deployment)。
-- 您还可以设置[具有外部访问权限的Kubernetes cluster](/docs/kubernetes-external-connect)。
+- 对于生产或基准测试，请设置[生产部署](/docs/deploy-self-hosted/production-deployment)。
+- 您还可以设置[具有外部访问权限的Kubernetes cluster](/docs/deploy-self-hosted/kubernetes-external-connect)。
 
 > **_注意_** - 在Kubernetes cluster内部运行一个容器，以与Redpanda cluster进行通信。
 > 当前，默认情况下，部署期间不会自动创建负载均衡器。
@@ -176,4 +176,4 @@ helm install \
 ## 下一步
 
 - 在我们的[Slack](https://vectorized.io/slack)社区中与我们联系，以便我们可以共同实施您的Kubernetes use cases。
-- 了解如何使用[从外部计算机访问](/docs/kubernetes-external-connect)设置Kubernetes cluster。
+- 了解如何使用[从外部计算机访问](/docs/deploy-self-hosted/kubernetes-external-connect)设置Kubernetes cluster。

@@ -87,7 +87,7 @@ sudo systemctl start redpanda
 ### Adding a new node
 
 Adding a new node is very easy. You can follow
-[the manual installation section](/docs/production-deployment#Manual-Installation)
+[the manual installation section](/docs/deploy-self-hosted/production-deployment#Manual-Installation)
 on setting up a production cluster.
 
 ### Changing the config on an existing node
@@ -112,7 +112,7 @@ Some configuration fields can't be changed, however.
 Redpanda exports Prometheus metrics on `<host>:9644/metrics`. To learn how to
 quickly generate the necessary configuration, to start scraping it and
 visualizing it, see our
-[monitoring docs](/docs/monitoring)
+[monitoring docs](/docs/features/monitoring)
 
 ## Troubleshooting
 

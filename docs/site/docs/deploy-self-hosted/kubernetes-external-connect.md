@@ -162,5 +162,5 @@ Now you know how to set up a Kubernetes cluster in a cloud and access it from a 
 
 ## Next steps
 
-- Check out our in-depth explanation of [Kubernetes connectivity](/docs/kubernetes-connectivity).
+- Check out our in-depth explanation of [Kubernetes connectivity](/docs/deploy-self-hosted/kubernetes-connectivity).
 - Contact us in our [Slack](https://vectorized.io/slack) community so we can work together to implement your Kubernetes use cases.

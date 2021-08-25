@@ -9,13 +9,13 @@ Redpanda是用于任务关键型工作负载的现代[流媒体平台](/blog/int
 并与[Kafka生态系统](https://cwiki.apache.org/confluence/display/KAFKA/Ecosystem)完全兼容。
 
 这份快速入门指南可以帮助您开始使用Redpanda进行开发和测试。
-对于生产或基准测试，请参考[生产部署](/docs/production-deployment)。
+对于生产或基准测试，请参考[生产部署](/docs/deploy-self-hosted/production-deployment)。
 
 ## 准备好cluster
 
 要准备好进行流传输的cluster，请运行Redpanda的单个Docker容器或3个容器的cluster。
 
-> **_注意_** - 您也可以使用[`rpk container`](/docs/guide-rpk-container)在容器中运行Redpanda，从而完全无需与Docker进行交互。
+> **_注意_** - 您也可以使用[`rpk container`](/docs/deploy-self-hosted/guide-rpk-container)在容器中运行Redpanda，从而完全无需与Docker进行交互。
 
 ### 单节点cluster的单个命令
 
@@ -249,8 +249,8 @@ docker network rm redpandanet
 
 - 我们的[FAQ](/docs/faq)页面显示了可用于与Redpanda进行流媒体传输的所有客户端。
     （剧透：任何与Kafka兼容的客户端！）
-- 使用[`rpk容器`](/docs/guide-rpk-container)启动并运行多节点cluster。
+- 使用[`rpk容器`](/docs/deploy-self-hosted/guide-rpk-container)启动并运行多节点cluster。
 - 使用[快速入门Docker指南](/docs/getting-started/quick-start-docker)基于Docker试用Redpanda。
-- 是否要建立生产环境的cluster？请查看我们的[生产部署指南](/docs/production-deployment)。
+- 是否要建立生产环境的cluster？请查看我们的[生产部署指南](/docs/deploy-self-hosted/production-deployment)。
 
 <img src="https://static.scarf.sh/a.png?x-pxid=3c187215-e862-4b67-8057-45aa9a779055" />

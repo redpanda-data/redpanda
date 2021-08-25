@@ -9,13 +9,13 @@ With Redpanda you can get up and running with streaming quickly
 and be fully compatible with the [Kafka ecosystem](https://cwiki.apache.org/confluence/display/KAFKA/Ecosystem).
 
 This quick start guide can help you get started with Redpanda for development and testing purposes.
-For production or benchmarking, setup a [production deployment](/docs/production-deployment).
+For production or benchmarking, setup a [production deployment](/docs/deploy-self-hosted/production-deployment).
 
 ## Get your cluster ready
 
 To get a cluster ready for streaming, either run a single docker container with Redpanda running or a cluster of 3 containers.
 
-> **_Note_** - You can also use [`rpk container`](/docs/guide-rpk-container) to run Redpanda in containers
+> **_Note_** - You can also use [`rpk container`](/docs/deploy-self-hosted/guide-rpk-container) to run Redpanda in containers
     without having to interact with Docker at all.
 
 ### Single command for a 1-node cluster
@@ -250,8 +250,8 @@ docker network rm redpandanet
 
 - Our [FAQ](/docs/faq) page shows all of the clients that you can use to do streaming with Redpanda.
     (Spoiler: Any Kafka-compatible client!)
-- Get a multi-node cluster up and running using [`rpk container`](/docs/guide-rpk-container).
+- Get a multi-node cluster up and running using [`rpk container`](/docs/deploy-self-hosted/guide-rpk-container).
 - Use the [Quick Start Docker Guide](/docs/getting-started/quick-start-docker) to try out Redpanda using Docker.
-- Want to setup a production cluster? Check out our [Production Deployment Guide](/docs/production-deployment).
+- Want to setup a production cluster? Check out our [Production Deployment Guide](/docs/deploy-self-hosted/production-deployment).
 
 <img src="https://static.scarf.sh/a.png?x-pxid=3c187215-e862-4b67-8057-45aa9a779055" />
