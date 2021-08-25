@@ -4,7 +4,7 @@ sidebar_position: 9
 
 # Docker快速入门指南
 
-Redpanda是用于任务关键型工作负载的现代[流媒体平台](/blog/intelligent-data-api/)。
+Redpanda是用于任务关键型工作负载的现代[流媒体平台](https://vectorized.io/blog/intelligent-data-api/)。
 借助Redpanda，您可以快速启动并运行流式传输
 并与[Kafka生态系统](https://cwiki.apache.org/confluence/display/KAFKA/Ecosystem)完全兼容。
 
