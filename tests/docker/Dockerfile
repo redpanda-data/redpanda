@@ -49,7 +49,7 @@ RUN curl -SL https://taskfile.dev/install.sh -o /opt/task-install.sh && \
 ENV PATH="${PATH}:/usr/local/go/bin"
 
 # install kafka binary dependencies, librdkafka dev, kafkacat and kaf tools
-ENV KAFKA_MIRROR="https://s3-us-west-2.amazonaws.com/kafka-packages"
+ARG KAFKA_MIRROR="https://s3-us-west-2.amazonaws.com/kafka-packages"
 RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.3.1.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.3.1" && \
     mkdir -p "/opt/kafka-2.4.1" && chmod a+rw /opt/kafka-2.4.1 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.4.1.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.4.1" && \
     mkdir -p "/opt/kafka-2.5.0" && chmod a+rw /opt/kafka-2.5.0 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.5.0.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.5.0" && \
