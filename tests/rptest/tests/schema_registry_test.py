@@ -22,6 +22,7 @@ from ducktape.services.background_thread import BackgroundThreadService
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.redpanda import ResourceSettings
 
 
 def create_topic_names(count):
@@ -52,7 +53,7 @@ class SchemaRegistryTest(RedpandaTest):
             enable_pp=True,
             enable_sr=True,
             extra_rp_conf={"auto_create_topics_enabled": False},
-            num_cores=1)
+            resource_settings=ResourceSettings(num_cpus=1))
 
         http.client.HTTPConnection.debuglevel = 1
         http.client.print = lambda *args: self.logger.debug(" ".join(args))
