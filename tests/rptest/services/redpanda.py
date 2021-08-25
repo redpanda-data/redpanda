@@ -35,6 +35,30 @@ Partition = collections.namedtuple('Partition',
                                    ['index', 'leader', 'replicas'])
 
 
+class ResourceSettings:
+    """
+    Control CPU+memory footprint of Redpanda instances.  Pass one
+    of these into your RedpandaTest constructor if you want to e.g.
+    create low-memory situations.
+    """
+    def __init__(self, num_cpus=None, memory_mb=None):
+        if num_cpus is None:
+            num_cpus = 3
+
+        if memory_mb is None:
+            memory_mb = 6000
+
+        self._num_cpus = num_cpus
+        self._memory_mb = memory_mb
+
+    def to_cli(self):
+        return ("--kernel-page-cache=true "
+                "--overprovisioned "
+                "--reserve-memory 0M "
+                f"--memory {self._memory_mb}M "
+                f"--smp {self._num_cpus}")
+
+
 class RedpandaService(Service):
     PERSISTENT_ROOT = "/var/lib/redpanda"
     DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
@@ -80,7 +104,7 @@ class RedpandaService(Service):
                  enable_pp=False,
                  enable_sr=False,
                  topics=None,
-                 num_cores=3):
+                 resource_settings=None):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._client_type = client_type
@@ -91,9 +115,12 @@ class RedpandaService(Service):
         self._log_level = self._context.globals.get(self.LOG_LEVEL_KEY,
                                                     self.DEFAULT_LOG_LEVEL)
         self._topics = topics or ()
-        self._num_cores = num_cores
         self._admin = Admin(self)
         self._started = []
+
+        if resource_settings is None:
+            resource_settings = ResourceSettings()
+        self._resource_settings = resource_settings
 
         # client is intiialized after service starts
         self._client = None
@@ -197,11 +224,7 @@ class RedpandaService(Service):
                f" --redpanda-cfg {RedpandaService.CONFIG_FILE}"
                f" --default-log-level {self._log_level}"
                f" --logger-log-level=exception=debug:archival=debug:io=debug "
-               f" --kernel-page-cache=true "
-               f" --overprovisioned "
-               f" --smp {self._num_cores} "
-               f" --memory 6G "
-               f" --reserve-memory 0M "
+               f" {self._resource_settings.to_cli()} "
                f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
 
         # set llvm_profile var for code coverage
