@@ -72,6 +72,11 @@ RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFK
     make install && \
     ldconfig
 
+# install stable redpanda releases
+ARG RP_REPO="https://packages.vectorized.io/IN7hAIHGa2hCp3j5/redpanda/raw/names/"
+RUN bash -c 'if [[ $(uname -m) = "aarch64" ]]; then ARCHID="arm64"; else export ARCHID="amd64"; fi && \
+    mkdir -p "/opt/redpanda-21.7.6" && chmod a+rw /opt/redpanda-21.7.6 && curl -s "$RP_REPO/redpanda-${ARCHID}/versions/21.7.6/redpanda-21.7.6-1-f93eed1c-${ARCHID}.tar.gz" | tar xz -C "/opt/redpanda-21.7.6"'
+
 # Install dependencies for kafka clients such as sarama.
 RUN git -C /opt clone https://github.com/Shopify/sarama.git && \
     cd /opt/sarama/examples/interceptors && go mod tidy && go build && \
