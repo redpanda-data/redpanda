@@ -17,6 +17,7 @@ import random
 import threading
 import collections
 import re
+from typing import Optional
 
 import yaml
 from ducktape.services.service import Service
@@ -129,6 +130,48 @@ def one_or_many(value):
         return value
 
 
+class ResourceSettings:
+    """
+    Control CPU+memory footprint of Redpanda instances.  Pass one
+    of these into your RedpandaTest constructor if you want to e.g.
+    create low-memory situations.
+    """
+    def __init__(self,
+                 *,
+                 num_cpus: Optional[int] = None,
+                 memory_mb: Optional[int] = None,
+                 bypass_fsync: Optional[bool] = None,
+                 nfiles: Optional[int] = None):
+        if num_cpus is None:
+            num_cpus = 3
+
+        if memory_mb is None:
+            memory_mb = 6000
+
+        self._num_cpus = num_cpus
+        self._memory_mb = memory_mb
+
+        if bypass_fsync is None:
+            self._bypass_fsync = False
+        else:
+            self._bypass_fsync = bypass_fsync
+
+        self._nfiles = nfiles
+
+    def to_cli(self):
+        """
+        :return: 2 tuple of strings, first goes before the binary, second goes after it
+        """
+        preamble = f"ulimit -Sn {self._nfiles}; " if self._nfiles else ""
+        args = ("--kernel-page-cache=true "
+                "--overprovisioned "
+                "--reserve-memory 0M "
+                f"--memory {self._memory_mb}M "
+                f"--smp {self._num_cpus} "
+                f"--unsafe-bypass-fsync={'1' if self._bypass_fsync else '0'}")
+        return preamble, args
+
+
 class RedpandaService(Service):
     PERSISTENT_ROOT = "/var/lib/redpanda"
     DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
@@ -180,7 +223,7 @@ class RedpandaService(Service):
                  extra_rp_conf=None,
                  enable_pp=False,
                  enable_sr=False,
-                 num_cores=3):
+                 resource_settings=None):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._enable_rp = enable_rp
@@ -189,10 +232,13 @@ class RedpandaService(Service):
         self._enable_sr = enable_sr
         self._log_level = self._context.globals.get(self.LOG_LEVEL_KEY,
                                                     self.DEFAULT_LOG_LEVEL)
-        self._num_cores = num_cores
         self._admin = Admin(self)
         self._started = []
         self._security_config = dict()
+
+        if resource_settings is None:
+            resource_settings = ResourceSettings()
+        self._resource_settings = resource_settings
 
         self.config_file_lock = threading.Lock()
 
@@ -270,17 +316,16 @@ class RedpandaService(Service):
         return self._security_config
 
     def start_redpanda(self, node):
+        preamble, res_args = self._resource_settings.to_cli()
+
         cmd = (
-            f"nohup {self.find_binary('redpanda')}"
+            f"{preamble}nohup {self.find_binary('redpanda')}"
             f" --redpanda-cfg {RedpandaService.CONFIG_FILE}"
             f" --default-log-level {self._log_level}"
             f" --logger-log-level=exception=debug:archival=debug:io=debug:cloud_storage=debug "
-            f" --kernel-page-cache=true "
-            f" --overprovisioned "
-            f" --smp {self._num_cores} "
-            f" --memory 6G "
-            f" --reserve-memory 0M "
+            f" {res_args} "
             f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
+
         # set llvm_profile var for code coverage
         # each node will create its own copy of the .profraw file
         # since each node creates a redpanda broker.
