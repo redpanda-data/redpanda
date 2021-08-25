@@ -15,7 +15,7 @@ const FeatureList = [
     url: '/',
   },
   {
-    title: 'Production Redpanda deployments',
+    title: 'Deploy Redpanda in production',
     Svg: require('../../static/img/Redpanda Sitting.svg').default,
     href: `/docs/deploy-self-hosted/production-deployment`,
     description: (
