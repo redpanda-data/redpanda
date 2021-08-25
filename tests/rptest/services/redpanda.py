@@ -433,6 +433,25 @@ class RedpandaService(Service):
             shards_per_node[self.idx(node)] = num_shards
         return shards_per_node
 
+    def healthy(self):
+        """
+        A primitive health check on all the nodes which returns True when all
+        nodes report that no under replicated partitions exist. This should
+        later be replaced by a proper / official start-up probe type check on
+        the health of a node after a restart.
+        """
+        counts = {self.idx(node): None for node in self.nodes}
+        for node in self.nodes:
+            metrics = self.metrics(node)
+            idx = self.idx(node)
+            for family in metrics:
+                for sample in family.samples:
+                    if sample.name == "vectorized_cluster_partition_under_replicated_replicas":
+                        if counts[idx] is None:
+                            counts[idx] = 0
+                        counts[idx] += int(sample.value)
+        return all(map(lambda count: count == 0, counts.values()))
+
     def describe_topics(self, topics=None):
         """
         Describe topics. Pass topics=None to describe all topics, or a pass a
