@@ -648,6 +648,11 @@ struct finish_reallocation_reply {
     errc error;
 };
 
+struct set_datapolicy_cmd_data {
+    static constexpr int8_t current_version = 1; // In future dp will be vector
+    model::data_policy dp;
+};
+
 } // namespace cluster
 namespace std {
 template<>

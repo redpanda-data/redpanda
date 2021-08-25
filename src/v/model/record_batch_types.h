@@ -18,23 +18,24 @@
 
 namespace model {
 enum class record_batch_type : int8_t {
-    raft_data = 1,            // raft::data
-    raft_configuration = 2,   // raft::configuration
-    controller = 3,           // controller::*
-    kvstore = 4,              // kvstore::*
-    checkpoint = 5,           // checkpoint - used to achieve linearizable reads
-    topic_management_cmd = 6, // controller topic command batch type
-    ghost_batch = 7,          // ghost - used to fill gaps in raft recovery
-    id_allocator = 8,         // id_allocator_stm::*
-    tx_prepare = 9,           // tx_prepare_batch_type
-    tx_fence = 10,            // tx_fence_batch_type
-    tm_update = 11,           // tm_update_batch_type
-    user_management_cmd = 12, // controller user management command batch type
-    acl_management_cmd = 13,  // controller acl management command batch type
-    group_prepare_tx = 14,    // group_prepare_tx_batch_type
-    group_commit_tx = 15,     // group_commit_tx_batch_type
-    group_abort_tx = 16,      // group_abort_tx_batch_type
-    node_management_cmd = 17, // controller node management
+    raft_data = 1,                   // raft::data
+    raft_configuration = 2,          // raft::configuration
+    controller = 3,                  // controller::*
+    kvstore = 4,                     // kvstore::*
+    checkpoint = 5,                  // checkpoint - used to achieve linearizable reads
+    topic_management_cmd = 6,        // controller topic command batch type
+    ghost_batch = 7,                 // ghost - used to fill gaps in raft recovery
+    id_allocator = 8,                // id_allocator_stm::*
+    tx_prepare = 9,                  // tx_prepare_batch_type
+    tx_fence = 10,                   // tx_fence_batch_type
+    tm_update = 11,                  // tm_update_batch_type
+    user_management_cmd = 12,        // controller user management command batch type
+    acl_management_cmd = 13,         // controller acl management command batch type
+    group_prepare_tx = 14,           // group_prepare_tx_batch_type
+    group_commit_tx = 15,            // group_commit_tx_batch_type
+    group_abort_tx = 16,             // group_abort_tx_batch_type
+    node_management_cmd = 17,        // controller node management
+    data_policy_management_cmd = 18, // data-policy management
 };
 
 std::ostream& operator<<(std::ostream& o, record_batch_type bt);
