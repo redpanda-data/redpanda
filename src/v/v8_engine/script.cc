@@ -43,7 +43,7 @@ script::~script() {
     _context.Reset();
 }
 
-void script::compile_script(ss::temporary_buffer<char> js_code) {
+void script::compile_script(iobuf js_code) {
     v8::Locker locker(_isolate.get());
     v8::Isolate::Scope isolate_scope(_isolate.get());
     v8::HandleScope handle_scope(_isolate.get());
@@ -51,12 +51,12 @@ void script::compile_script(ss::temporary_buffer<char> js_code) {
     v8::Local<v8::Context> local_ctx = v8::Context::New(_isolate.get());
     v8::Context::Scope context_scope(local_ctx);
 
-    v8::Local<v8::String> script_code = v8::String::NewFromUtf8(
-                                          _isolate.get(),
-                                          js_code.begin(),
-                                          v8::NewStringType::kNormal,
-                                          js_code.size())
-                                          .ToLocalChecked();
+    auto code = iobuf_const_parser(js_code).read_string(js_code.size_bytes());
+
+    v8::Local<v8::String> script_code
+      = v8::String::NewFromUtf8(
+          _isolate.get(), code.c_str(), v8::NewStringType::kNormal, code.size())
+          .ToLocalChecked();
     v8::Local<v8::Script> compiled_script;
     if (!v8::Script::Compile(local_ctx, script_code)
            .ToLocal(&compiled_script)) {

@@ -52,8 +52,8 @@ public:
 
     script(const script& other) = delete;
     script& operator=(const script& other) = delete;
-    script(script&& other) = delete;
-    script& operator=(script&& other) = delete;
+    script(script&& other) = default;
+    script& operator=(script&& other) = default;
 
     // Destroy instance. Be carefull!
     // First of all run Reset for all v8::Global fileds
@@ -69,7 +69,7 @@ public:
     template<typename Executor>
     ss::future<> init(
       ss::sstring name,
-      ss::temporary_buffer<char> js_code,
+      iobuf js_code,
       Executor& executor) {
         compile_task task(*this, std::move(js_code));
         return add_future_handlers(
@@ -92,7 +92,7 @@ public:
 private:
     // Must be running in executor, because it runs js code
     // in first time for init global vars and e.t.c.
-    void compile_script(ss::temporary_buffer<char> js_code);
+    void compile_script(iobuf js_code);
 
     // Init function from compiled js code.
     void set_function(std::string_view name);
@@ -162,10 +162,14 @@ private:
 
     class compile_task : public task_for_executor {
     public:
-        compile_task(script& script, ss::temporary_buffer<char> data)
-          : task_for_executor(script, std::move(data)) {}
+        compile_task(script& script, iobuf data)
+          : task_for_executor(script)
+          , _data(std::move(data)) {}
 
         void operator()() override { _script.compile_script(std::move(_data)); }
+
+    private:
+        iobuf _data;
     };
 
     class run_task : public task_for_executor {

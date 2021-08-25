@@ -6,6 +6,8 @@ v_cc_library(
     script.cc
   DEPS
     Seastar::seastar
-    v8_monolith)
+    v8_monolith
+    v::model
+    v::coproc)
 
 add_subdirectory(tests)

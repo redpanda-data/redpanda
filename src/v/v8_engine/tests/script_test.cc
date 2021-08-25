@@ -44,7 +44,7 @@ SEASTAR_THREAD_TEST_CASE(to_upper_test) {
 
     v8_engine::script script(100, TIMEOUT_FOR_TEST_MS);
 
-    ss::temporary_buffer<char> js_code = read_fully_tmpbuf("to_upper.js").get();
+    iobuf js_code = read_fully("to_upper.js").get();
     script.init("to_upper", std::move(js_code), executor_wrapper.get_executor())
       .get();
 
@@ -61,7 +61,7 @@ SEASTAR_THREAD_TEST_CASE(sum_test) {
 
     v8_engine::script script(100, TIMEOUT_FOR_TEST_MS);
 
-    ss::temporary_buffer<char> js_code = read_fully_tmpbuf("sum.js").get();
+    iobuf js_code = read_fully("sum.js").get();
     script.init("sum", std::move(js_code), executor_wrapper.get_executor())
       .get();
 
@@ -88,8 +88,8 @@ SEASTAR_THREAD_TEST_CASE(exception_in_compile_script_test) {
     v8_engine::script script(100, TIMEOUT_FOR_TEST_MS);
 
     std::string error_script = "2lkb34poup3q94h";
-    ss::temporary_buffer<char> js_code(
-      error_script.data(), error_script.size());
+    iobuf js_code;
+    js_code.append(error_script.c_str(), error_script.size());
     BOOST_REQUIRE_EXCEPTION(
       script.init("sum", std::move(js_code), executor_wrapper.get_executor())
         .get(),
@@ -106,7 +106,7 @@ SEASTAR_THREAD_TEST_CASE(exception_in_get_script_test) {
 
     v8_engine::script script(100, TIMEOUT_FOR_TEST_MS);
 
-    ss::temporary_buffer<char> js_code = read_fully_tmpbuf("sum.js").get();
+    iobuf js_code = read_fully("sum.js").get();
     BOOST_REQUIRE_EXCEPTION(
       script.init("foo", std::move(js_code), executor_wrapper.get_executor())
         .get(),
@@ -122,8 +122,7 @@ SEASTAR_THREAD_TEST_CASE(compile_timeout_test) {
 
     v8_engine::script script(100, TIMEOUT_FOR_TEST_MS);
 
-    ss::temporary_buffer<char> js_code
-      = read_fully_tmpbuf("compile_timeout.js").get();
+    iobuf js_code = read_fully("compile_timeout.js").get();
     BOOST_REQUIRE_EXCEPTION(
       script.init("foo", std::move(js_code), executor_wrapper.get_executor())
         .get(),
@@ -139,8 +138,7 @@ SEASTAR_THREAD_TEST_CASE(run_timeout_test) {
 
     v8_engine::script script(100, TIMEOUT_FOR_TEST_MS);
 
-    ss::temporary_buffer<char> js_code
-      = read_fully_tmpbuf("run_timeout.js").get();
+    iobuf js_code = read_fully("run_timeout.js").get();
     script
       .init("run_timeout", std::move(js_code), executor_wrapper.get_executor())
       .get();
