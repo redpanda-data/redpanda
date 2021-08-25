@@ -12,6 +12,7 @@
 #include "model/record.h"
 
 #include <seastar/core/smp.hh>
+#include <seastar/core/sstring.hh>
 
 namespace reflection {
 
@@ -288,4 +289,13 @@ model::topic_metadata adl<model::topic_metadata>::from(iobuf_parser& in) {
       = reflection::adl<std::vector<model::partition_metadata>>{}.from(in);
     return md;
 }
+
+void adl<model::data_policy>::to(iobuf& out, model::data_policy&& dp) {
+    serde::write(out, dp);
+}
+
+model::data_policy adl<model::data_policy>::from(iobuf_parser& in) {
+    return serde::read<model::data_policy>(in);
+}
+
 } // namespace reflection

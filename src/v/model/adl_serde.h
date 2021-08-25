@@ -12,6 +12,7 @@
 #pragma once
 
 #include "bytes/iobuf_parser.h"
+#include "model/data_policy.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -131,6 +132,12 @@ template<>
 struct adl<model::topic_metadata> {
     void to(iobuf& out, model::topic_metadata&& md);
     model::topic_metadata from(iobuf_parser& in);
+};
+
+template<>
+struct adl<model::data_policy> {
+    void to(iobuf&, model::data_policy&&);
+    model::data_policy from(iobuf_parser&);
 };
 
 template<typename T>
