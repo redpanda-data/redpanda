@@ -27,6 +27,7 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.storage import ClusterStorage, NodeStorage
 from rptest.services.admin import Admin
 from rptest.clients.python_librdkafka import PythonLibrdkafka
+from rptest.clients.types import TopicSpec
 from kafka import KafkaAdminClient
 
 Partition = collections.namedtuple('Partition',
@@ -491,10 +492,13 @@ class RedpandaService(Service):
 
         return [make_partition(p) for p in topic["partitions"]]
 
-    def create_topic(self, spec):
+    def create_topic(self, specs):
+        if isinstance(specs, TopicSpec):
+            specs = [specs]
         client = self._client_type(self)
-        self.logger.debug(f"Creating topic {spec}")
-        client.create_topic(spec)
+        for spec in specs:
+            self.logger.debug(f"Creating topic {spec}")
+            client.create_topic(spec)
 
     def delete_topic(self, name):
         client = self._client_type(self)
