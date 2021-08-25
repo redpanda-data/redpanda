@@ -9,7 +9,7 @@ Before continuing please go over the [Kubernetes Quick Start Guide](/docs/gettin
 Once the Redpanda Operator is installed a Redpanda cluster can be created by *applying* a Cluster Custom Resource (CR) containing the specification of the desired Redpanda cluster. The CR includes the desired Redpanda Cluster name, namespace, and configuration for the Admin, Kafka, Pandaproxy API, and others.
 
 The Cluster definition includes parameters that are commonly needed to configure a Redpanda
-Cluster. However, Redpanda offers a broad range of parameters ([Custom configuration](/docs/features/custom-configuration)) not all of which are included in the Cluster definition.
+Cluster. However, Redpanda offers a broad range of parameters ([Custom configuration](/docs/features/configuration)) not all of which are included in the Cluster definition.
 
 For this reason, we introduced a parameter `additionalConfiguration` that allows you to include
 arbitrary configuration parameters not included in the CR. For example, consider the `single-node` sample found in [our sample files](https://github.com/vectorizedio/redpanda/tree/dev/src/go/k8s/config/samples) with `additionalConfiguration` added: 
