@@ -24,7 +24,7 @@ module.exports = {
       items: [
         // Left
         { href: '/', label: 'Docs', position: 'left' },
-        { href: '/docs/getting-started/quick-start-docker', label: 'Quick Start', position: 'left' },
+        { href: '/docs/getting-started/index', label: 'Quick Start', position: 'left' },
         // { href: 'https://vectorized.io/blog', label: 'Blog', position: 'left' },
         // Right
         { 

@@ -12,7 +12,7 @@ const FeatureList = [
         to get streaming up and running quickly.
       </>
     ),
-    url: '/',
+    url: '/docs/getting-started/index',
   },
   {
     title: 'Deploy Redpanda in production',
