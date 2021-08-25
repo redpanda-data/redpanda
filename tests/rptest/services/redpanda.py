@@ -13,6 +13,7 @@ import signal
 import tempfile
 import shutil
 import requests
+import random
 import threading
 import collections
 
@@ -397,12 +398,12 @@ class RedpandaService(Service):
         return f"{node.account.hostname}:{cfg['redpanda']['kafka_api']['port']}"
 
     def brokers(self, limit=None):
-        brokers = ",".join(
-            map(lambda n: self.broker_address(n), self._started[:limit]))
-        return brokers
+        return ",".join(self.brokers_list(limit))
 
     def brokers_list(self, limit=None):
-        return [self.broker_address(n) for n in self._started[:limit]]
+        brokers = [self.broker_address(n) for n in self._started[:limit]]
+        random.shuffle(brokers)
+        return brokers
 
     def metrics(self, node):
         assert node in self._started
