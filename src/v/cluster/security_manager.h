@@ -19,6 +19,34 @@
 
 namespace cluster {
 
+/*
+ * handle: delete acls command
+ */
+std::error_code do_apply(delete_acls_cmd cmd, security::authorizer& authorizer);
+
+/*
+ * handle: create acls command
+ */
+std::error_code do_apply(create_acls_cmd cmd, security::authorizer& authorizer);
+
+/*
+ * handle: update user command
+ */
+std::error_code
+do_apply(update_user_cmd cmd, security::credential_store& store);
+
+/*
+ * handle: delete user command
+ */
+std::error_code
+do_apply(delete_user_cmd cmd, security::credential_store& store);
+
+/*
+ * handle: create user command
+ */
+std::error_code
+do_apply(create_user_cmd cmd, security::credential_store& store);
+
 class security_manager final {
 public:
     explicit security_manager(
@@ -41,10 +69,16 @@ public:
                     == model::record_batch_type::acl_management_cmd;
     }
 
-private:
-    template<typename Cmd, typename T>
-    ss::future<std::error_code> dispatch_updates_to_cores(Cmd, ss::sharded<T>&);
+    template<typename Cmd, typename Service>
+    static ss::future<std::error_code>
+    apply(ss::shard_id shard, Cmd cmd, ss::sharded<Service>& service) {
+        return service.invoke_on(
+          shard, [cmd = std::move(cmd)](auto& local_service) mutable {
+              return do_apply(std::move(cmd), local_service);
+          });
+    }
 
+private:
     ss::sharded<security::credential_store>& _credentials;
     ss::sharded<security::authorizer>& _authorizer;
 };

@@ -189,4 +189,34 @@ ss::future<std::error_code> replicate_and_wait(
       });
 }
 
+template<typename Cmd, typename Service, typename Func>
+ss::future<std::error_code> dispatch_updates_to_cores(
+  Cmd cmd, ss::sharded<Service>& service, Func& func) {
+    using ret_t = std::vector<std::error_code>;
+    return ss::do_with(
+      ret_t{}, [cmd = std::move(cmd), &service, &func](ret_t& ret) mutable {
+          ret.reserve(ss::smp::count);
+          return ss::parallel_for_each(
+                   boost::irange(0, (int)ss::smp::count),
+                   [&ret, cmd = std::move(cmd), &service, &func](int shard) mutable {
+                       return func(shard, cmd, service)
+                         .then([&ret](std::error_code r) { ret.push_back(r); });
+                   })
+            .then([&ret] { return std::move(ret); })
+            .then([](std::vector<std::error_code> results) mutable {
+                auto ret = results.front();
+                for (auto& r : results) {
+                    vassert(
+                      ret == r,
+                      "State inconsistency across shards detected, "
+                      "expected "
+                      "result: {}, have: {}",
+                      ret,
+                      r);
+                }
+                return ret;
+            });
+      });
+}
+
 } // namespace cluster
