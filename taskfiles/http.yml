@@ -1,0 +1,13 @@
+version: '3'
+
+tasks:
+  run:
+    desc: runs http demo
+    cmds:
+      - python ./src/v/http/demo/echo.py &
+      - echo 'Starting web server...'
+      - sleep 3
+      - '{{.BUILD_DIR}}/bin/http_demo_client --port=8080 --target=/echo --method=POST --data="Hello World"'
+      - echo "Stopping web server..."
+      - pkill -f echo.py
+      - wait
