@@ -4,9 +4,11 @@ v_cc_library(
     environment.cc
     executor.cc
     script.cc
+    record_batch_wrapper.cc
   DEPS
     Seastar::seastar
     v8_monolith
-    v_bytes)
+    v_bytes
+    v_model)
 
 add_subdirectory(tests)
