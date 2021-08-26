@@ -1061,8 +1061,9 @@ ss::future<> rm_stm::apply(model::record_batch b) {
         }
     }
 
-    compact_snapshot();
     _insync_offset = last_offset;
+
+    compact_snapshot();
     if (_is_autoabort_enabled && !_is_autoabort_active) {
         abort_old_txes();
     }
