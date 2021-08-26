@@ -153,44 +153,66 @@ persisted_stm::ensure_snapshot_exists(model::offset target_offset) {
     });
 }
 
+ss::future<> persisted_stm::wait_offset_committed(
+  model::timeout_clock::duration timeout,
+  model::offset offset,
+  model::term_id term) {
+    auto stop_cond = [this, offset, term] {
+        return _c->committed_offset() >= offset || _c->term() > term;
+    };
+
+    return _c->commit_index_updated().wait(timeout, stop_cond);
+}
+
 ss::future<bool> persisted_stm::sync(model::timeout_clock::duration timeout) {
     if (!_c->is_leader()) {
-        return ss::make_ready_future<bool>(false);
+        co_return false;
     }
     if (_insync_term == _c->term()) {
-        return ss::make_ready_future<bool>(true);
+        co_return true;
     }
     if (_is_catching_up) {
         auto deadline = model::timeout_clock::now() + timeout;
         auto sync_waiter = ss::make_lw_shared<expiring_promise<bool>>();
         _sync_waiters.push_back(sync_waiter);
-        return sync_waiter->get_future_with_timeout(
+        co_return co_await sync_waiter->get_future_with_timeout(
           deadline, [] { return false; });
     }
     _is_catching_up = true;
+
+    co_await _c->refresh_commit_index();
+
     auto term = _c->term();
-    return quorum_write_empty_batch(model::timeout_clock::now() + timeout)
-      .then_wrapped([this, term](ss::future<result<raft::replicate_result>> f) {
-          auto is_synced = false;
-          try {
-              is_synced = (bool)f.get();
-          } catch (...) {
-              vlog(
-                clusterlog.error,
-                "Error during writing a checkpoint batch: {}",
-                std::current_exception());
-          }
-          is_synced = is_synced && (term == _c->term());
-          if (is_synced) {
-              _insync_term = term;
-          }
-          _is_catching_up = false;
-          for (auto& sync_waiter : _sync_waiters) {
-              sync_waiter->set_value(is_synced);
-          }
-          _sync_waiters.clear();
-          return is_synced;
-      });
+    auto is_synced = false;
+    try {
+        auto dirty = _c->dirty_offset();
+        if (dirty > _c->committed_offset()) {
+            co_await wait_offset_committed(timeout, dirty, term);
+            if (_c->term() == term) {
+                co_await wait(dirty, model::timeout_clock::now() + timeout);
+                is_synced = true;
+            }
+        } else {
+            co_await wait(
+              _c->committed_offset(), model::timeout_clock::now() + timeout);
+            is_synced = true;
+        }
+    } catch (...) {
+        vlog(
+          clusterlog.error,
+          "Error during waitin for catch up: {}",
+          std::current_exception());
+    }
+
+    if (is_synced) {
+        _insync_term = term;
+    }
+    _is_catching_up = false;
+    for (auto& sync_waiter : _sync_waiters) {
+        sync_waiter->set_value(is_synced);
+    }
+    _sync_waiters.clear();
+    co_return is_synced;
 }
 
 ss::future<bool> persisted_stm::wait_no_throw(
