@@ -11,6 +11,7 @@
 
 #pragma once
 #include "cluster/controller_service.h"
+#include "cluster/controller_stm.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "config/tls_config.h"
@@ -172,4 +173,23 @@ bool has_local_replicas(
 bool are_replica_sets_equal(
   const std::vector<model::broker_shard>&,
   const std::vector<model::broker_shard>&);
+
+template<typename Cmd>
+ss::future<std::error_code> replicate_and_wait(
+  ss::sharded<controller_stm>& stm,
+  ss::sharded<ss::abort_source>& as,
+  Cmd&& cmd,
+  model::timeout_clock::time_point timeout) {
+    return stm.invoke_on(
+      controller_stm_shard,
+      [cmd = std::forward<Cmd>(cmd), &as = as, timeout](
+        controller_stm& stm) mutable {
+          return serialize_cmd(std::forward<Cmd>(cmd))
+            .then([&stm, timeout, &as](model::record_batch b) {
+                return stm.replicate_and_wait(
+                  std::move(b), timeout, as.local());
+            });
+      });
+}
+
 } // namespace cluster
