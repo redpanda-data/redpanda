@@ -11,6 +11,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
+#include "model/record.h"
 #include "seastarx.h"
 #include "v8_engine/environment.h"
 
@@ -76,12 +77,11 @@ public:
 
     /// Run function from js script.
     ///
-    /// \param data for js script. TODO: think about temporary_buffer. Maybe
-    /// better use iobuf and use non-seastar memory for data in v8 script.
+    /// \param data for js script.
     /// \param executor for run script
     template<typename Executor>
-    ss::future<> run(ss::temporary_buffer<char> data, Executor& executor) {
-        run_task task(*this, std::move(data));
+    ss::future<> run(model::record_batch& data, Executor& executor) {
+        run_task task(*this, data);
         return add_future_handlers(
           executor.submit(std::move(task), _timeout_ms));
     }
@@ -99,8 +99,8 @@ private:
     /// because js function can have inf loop or smth like that.
     /// We need to controle execution time for js function
 
-    /// \param buffer with data, wich js code can read and edit.
-    void run_internal(ss::temporary_buffer<char> data);
+    /// \param record_batch with data, wich js code can read and edit.
+    void run_internal(model::record_batch& data);
 
     // Throw c++ exception from v8::TryCatch
     void throw_exception_from_v8(std::string_view msg);
@@ -167,16 +167,18 @@ private:
         iobuf _data;
     };
 
+    // Run this task in coroutines with co_await, because it uses ref to
+    // model::record_batch
     class run_task : public task_for_executor {
     public:
-        run_task(script& script, ss::temporary_buffer<char> data)
+        run_task(script& script, model::record_batch& data)
           : task_for_executor(script)
-          , _data(std::move(data)) {}
+          , _data(data) {}
 
-        void operator()() override { _script.run_internal(std::move(_data)); }
+        void operator()() override { _script.run_internal(_data); }
 
     private:
-        ss::temporary_buffer<char> _data;
+        model::record_batch& _data;
     };
 };
 

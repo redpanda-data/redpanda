@@ -8,15 +8,18 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "model/record_utils.h"
 #include "seastarx.h"
 #include "utils/file_io.h"
 #include "v8_engine/environment.h"
 #include "v8_engine/executor.h"
+#include "v8_engine/record_batch_wrapper.h"
 #include "v8_engine/script.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/smp.hh>
+#include <seastar/core/temporary_buffer.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 #include <boost/algorithm/string/case_conv.hpp>
@@ -37,7 +40,18 @@ private:
 
 v8_engine::enviroment env;
 
-static constexpr size_t TIMEOUT_FOR_TEST_MS = 50;
+static constexpr size_t TIMEOUT_FOR_TEST_MS = 1000;
+
+std::vector<ss::temporary_buffer<uint8_t>>
+get_values(model::record_batch record_batch) {
+    std::vector<ss::temporary_buffer<uint8_t>> res;
+    record_batch.for_each_record([&res](model::record r) {
+        auto value = iobuf_const_parser(r.value()).read_bytes(r.value_size());
+        res.emplace_back(
+          ss::temporary_buffer<uint8_t>(value.data(), value.size()));
+    });
+    return res;
+}
 
 SEASTAR_THREAD_TEST_CASE(to_upper_test) {
     executor_wrapper_for_test executor_wrapper;
@@ -49,11 +63,20 @@ SEASTAR_THREAD_TEST_CASE(to_upper_test) {
       .get();
 
     ss::sstring raw_data = "qwerty";
-    ss::temporary_buffer<char> data(raw_data.data(), raw_data.size());
-    script.run(data.share(), executor_wrapper.get_executor()).get();
+    v8_engine::record_wrapper record;
+    record.value = ss::temporary_buffer<char>(raw_data.data(), raw_data.size());
+    std::list<v8_engine::record_wrapper> l;
+    l.emplace_back(std::move(record));
+    auto batch = v8_engine::convert_to_record_batch(
+      model::record_batch_header(), l);
+
+    script.run(batch, executor_wrapper.get_executor()).get();
+    auto value = get_values(std::move(batch));
     boost::to_upper(raw_data);
-    auto res = std::string(data.get_write(), data.size());
-    BOOST_REQUIRE_EQUAL(raw_data, res);
+
+    ss::sstring result(
+      reinterpret_cast<char*>(value[0].get_write()), value[0].size());
+    BOOST_REQUIRE_EQUAL(raw_data, result);
 }
 
 SEASTAR_THREAD_TEST_CASE(sum_test) {
@@ -71,14 +94,25 @@ SEASTAR_THREAD_TEST_CASE(sum_test) {
         int32_t ans;
     };
 
-    for (int i = 0; i < 100; ++i) {
+    std::list<v8_engine::record_wrapper> l;
+    for (int i = 0; i < 10; ++i) {
         sum_data test_data = {.a = i, .b = i + 1, .ans = -1};
         ss::temporary_buffer<char> data(
           reinterpret_cast<char*>(&test_data), sizeof(test_data));
-        script.run(data.share(), executor_wrapper.get_executor()).get();
-        BOOST_REQUIRE_EQUAL(
-          test_data.a + test_data.b,
-          reinterpret_cast<const sum_data*>(data.get())->ans);
+
+        v8_engine::record_wrapper record;
+        record.value = std::move(data);
+        l.emplace_back(std::move(record));
+    }
+    auto batch = v8_engine::convert_to_record_batch(
+      model::record_batch_header(), l);
+
+    script.run(batch, executor_wrapper.get_executor()).get();
+
+    auto res = get_values(std::move(batch));
+    for (auto& value : res) {
+        const sum_data* data = reinterpret_cast<const sum_data*>(value.get());
+        BOOST_REQUIRE_EQUAL(data->a + data->b, data->ans);
     }
 }
 
@@ -144,8 +178,15 @@ SEASTAR_THREAD_TEST_CASE(run_timeout_test) {
       .get();
     ss::temporary_buffer<char> empty_buf;
 
+    std::list<v8_engine::record_wrapper> l;
+    v8_engine::record_wrapper record;
+    record.value = std::move(empty_buf);
+    l.emplace_back(std::move(record));
+    auto batch = v8_engine::convert_to_record_batch(
+      model::record_batch_header(), l);
+
     BOOST_REQUIRE_EXCEPTION(
-      script.run(empty_buf.share(), executor_wrapper.get_executor()).get();
+      script.run(batch, executor_wrapper.get_executor()).get();
       , v8_engine::script_exception, [](const v8_engine::script_exception& e) {
           return "Sript timeout" == std::string(e.what());
       });
