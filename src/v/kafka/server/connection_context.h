@@ -101,6 +101,7 @@ private:
         ss::semaphore_units<> queue_units;
         std::unique_ptr<hdr_hist::measurement> method_latency;
         std::unique_ptr<request_tracker> tracker;
+        qd_tracker qdtracker;
     };
 
     /// called by throttle_request

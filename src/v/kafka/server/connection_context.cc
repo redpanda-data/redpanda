@@ -162,6 +162,7 @@ connection_context::throttle_request(
     auto delay = _proto.quota_mgr().record_tp_and_throttle(
       hdr.client_id, request_size);
     auto tracker = std::make_unique<request_tracker>(_rs.probe());
+    auto qdtracker = _rs.probe().qdstats().track();
     auto fut = ss::now();
     if (!delay.first_violation) {
         fut = ss::sleep_abortable(delay.duration, _rs.abort_source());
@@ -170,20 +171,27 @@ connection_context::throttle_request(
     return fut
       .then(
         [this, request_size] { return reserve_request_units(request_size); })
-      .then([this, delay, track, tracker = std::move(tracker)](
+      .then([this,
+             delay,
+             track,
+             tracker = std::move(tracker),
+             qdtracker = std::move(qdtracker)](
               ss::semaphore_units<> units) mutable {
           return server().get_request_unit().then(
             [this,
              delay,
              mem_units = std::move(units),
              track,
-             tracker = std::move(tracker)](
+             tracker = std::move(tracker),
+             qdtracker = std::move(qdtracker)](
               ss::semaphore_units<> qd_units) mutable {
+                qdtracker.dispatch();
                 session_resources r{
                   .backpressure_delay = delay.duration,
                   .memlocks = std::move(mem_units),
                   .queue_units = std::move(qd_units),
                   .tracker = std::move(tracker),
+                  .qdtracker = std::move(qdtracker),
                 };
                 if (track) {
                     r.method_latency = _rs.hist().auto_measure();
@@ -293,7 +301,11 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                      */
                     (void)ss::try_with_gate(
                       _rs.conn_gate(),
-                      [this, f = std::move(f), seq, correlation]() mutable {
+                      [this,
+                       f = std::move(f),
+                       seq,
+                       correlation,
+                       s = std::move(s)]() mutable {
                           return f.then(
                             [this, seq, correlation](response_ptr r) mutable {
                                 r->set_correlation(correlation);
