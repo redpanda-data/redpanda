@@ -70,18 +70,16 @@ double hdr_hist::mean() const { return ::hdr_mean(_hist.get()); }
 size_t hdr_hist::memory_size() const {
     return ::hdr_get_memory_size(_hist.get());
 }
-ss::metrics::histogram hdr_hist::seastar_histogram_logform() const {
+ss::metrics::histogram hdr_hist::seastar_histogram_logform(
+  int64_t first_value, size_t num_buckets) const {
     // logarithmic histogram configuration. this will range from 10 microseconds
-    // through around 6000 seconds with 26 buckets doubling.
+    // through around 6000 seconds with 26 buckets doubling (default args
+    // of first_value and num_buckets)
     //
-    // TODO:
-    //   1) expose these settings through arguments
-    //   2) upstream log_base fix for sub-2.0 values. in hdr the log_base is a
+    // TODO: upstream log_base fix for sub-2.0 values. in hdr the log_base is a
     //   double but is truncated (see the int64_t casts on log_base below which
     //   is the same as in the hdr C library). this means that if we want
     //   buckets with a log base of 1.5, the histogram becomes linear...
-    constexpr size_t num_buckets = 26;
-    constexpr int64_t first_value = 10;
     constexpr double log_base = 2.0;
 
     ss::metrics::histogram sshist;

@@ -139,7 +139,8 @@ public:
     double stddev() const;
     double mean() const;
     size_t memory_size() const;
-    ss::metrics::histogram seastar_histogram_logform() const;
+    ss::metrics::histogram seastar_histogram_logform(
+      int64_t first_value = 10, size_t num_buckets = 26) const;
 
     std::unique_ptr<measurement> auto_measure();
 
