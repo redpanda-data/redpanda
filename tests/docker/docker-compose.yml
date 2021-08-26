@@ -32,10 +32,10 @@ services:
   n1: &node
     image: vectorized/redpanda-test-node
     privileged: true
-    depends_on: 
+    depends_on:
     - minio
     volumes:
-    - '${BUILD_ROOT}:${BUILD_ROOT}'
+    - '${RP_DEV_INSTALL_DIR}:${RP_DEV_INSTALL_DIR}'
     networks:
     - redpanda-test
   n2: *node
