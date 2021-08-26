@@ -18,7 +18,7 @@ services:
     - '9000'
     healthcheck:
       interval: 30s
-      retries: '3'
+      retries: 3
       test:
       - CMD
       - curl
