@@ -66,10 +66,12 @@ bool check_compatible(avro::Node& reader, avro::Node& writer) {
             // if the writer's symbol is not present in the reader's enum and
             // the reader has a default value, then that value is used,
             // otherwise an error is signalled.
+            if (reader.defaultValueAt(0).type() != avro::AVRO_NULL) {
+                return true;
+            }
             for (size_t w_idx = 0; w_idx < writer.names(); ++w_idx) {
                 size_t r_idx{0};
                 if (!reader.nameIndex(writer.nameAt(int(w_idx)), r_idx)) {
-                    // TODO(Ben): NodeEnum doesn't support defaults.
                     return false;
                 }
             }
