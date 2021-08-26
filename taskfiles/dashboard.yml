@@ -1,9 +1,0 @@
-version: '3'
-
-tasks:
-  build:
-    desc: build the dashboard
-    dir: "{{.SRC_DIR}}/src/v/dashboard"
-    cmds:
-    - npm install
-    - unset CI && npm run build
