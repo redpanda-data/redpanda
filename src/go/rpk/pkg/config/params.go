@@ -442,10 +442,6 @@ func (c *Config) addUnsetDefaults() {
 		b0 := c.Redpanda.KafkaApi[0]
 		brokers = []string{net.JoinHostPort(b0.Address, strconv.Itoa(b0.Port))}
 	}
-	if len(brokers) == 0 && len(c.Redpanda.SeedServers) > 0 {
-		b0 := c.Redpanda.SeedServers[0].Host
-		brokers = []string{net.JoinHostPort(b0.Address, strconv.Itoa(b0.Port))}
-	}
 	if len(brokers) == 0 {
 		brokers = []string{"127.0.0.1:9092"}
 	}
