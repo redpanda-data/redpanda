@@ -257,11 +257,6 @@ type describeRow struct {
 	err           error
 }
 
-type describeGroup struct {
-	group describedGroup
-	rows  []describeRow
-}
-
 func printDescribed(
 	groups []describedGroup,
 	fetched map[string]map[int32]offset,
