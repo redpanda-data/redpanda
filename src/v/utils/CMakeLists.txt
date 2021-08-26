@@ -7,6 +7,7 @@ v_cc_library(
     human.cc
     file_io.cc
     base64.cc
+    qd_tracker.cc
     retry_chain_node.cc
   DEPS
     Seastar::seastar
