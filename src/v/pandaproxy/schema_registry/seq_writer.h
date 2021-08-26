@@ -10,6 +10,7 @@
 #pragma once
 
 #include "kafka/client/client.h"
+#include "outcome.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
@@ -85,7 +86,9 @@ private:
               });
         };
 
-        return container().invoke_on(0, _smp_opts, remote);
+        return container().invoke_on(0, _smp_opts, remote).then([](auto res) {
+            return std::move(res).value();
+        });
     }
 
     /// The part of sequenced_write that runs on shard zero
@@ -93,17 +96,27 @@ private:
     /// This is declared as a separate member function rather than
     /// inline in sequenced_write, to avoid compiler issues (and resulting
     /// crashes) seen when passing in a coroutine lambda.
-    template<typename F>
-    ss::future<typename std::invoke_result_t<F, model::offset, seq_writer&>::
-                 value_type::value_type>
+    ///
+    /// The return of f is wrapped in an outcome<>, to transport exceptions
+    /// without causing a retry.
+    template<
+      typename F,
+      typename invoke_result_t = typename std::
+        invoke_result_t<F, model::offset, seq_writer&>::value_type::value_type>
+    ss::future<
+      outcome::outcome<invoke_result_t, std::error_code, std::exception_ptr>>
     sequenced_write_inner(F f) {
         // If we run concurrently with them, redundant replays to the store
         // will be safely dropped based on offset.
         co_await read_sync();
 
         auto next_offset = _loaded_offset + model::offset{1};
-        auto r = co_await f(next_offset, *this);
-
+        std::optional<invoke_result_t> r;
+        try {
+            r = co_await f(next_offset, *this);
+        } catch (const exception& e) {
+            co_return std::current_exception();
+        }
         if (r.has_value()) {
             co_return r.value();
         } else {
