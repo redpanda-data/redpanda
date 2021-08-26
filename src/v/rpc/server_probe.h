@@ -12,6 +12,7 @@
 #pragma once
 
 #include "seastarx.h"
+#include "utils/qd_tracker.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -48,6 +49,8 @@ public:
 
     void setup_metrics(ss::metrics::metric_groups& mgs, const char* name);
 
+    qd_stats& qdstats() { return _qd_stats; }
+
 private:
     uint64_t _requests_completed = 0;
     uint64_t _in_bytes = 0;
@@ -60,6 +63,7 @@ private:
     uint32_t _corrupted_headers = 0;
     uint32_t _method_not_found_errors = 0;
     uint32_t _requests_blocked_memory = 0;
+    qd_stats _qd_stats;
     friend std::ostream& operator<<(std::ostream& o, const server_probe& p);
 };
 

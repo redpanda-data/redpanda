@@ -80,6 +80,9 @@ void server_probe::setup_metrics(
           sm::description(ssx::sformat(
             "{}: Number of requests being processed by server", proto))),
       });
+
+    auto latency_group = fmt::format("{}_latency", proto);
+    _qd_stats.setup_metrics(mgs, latency_group, "Kafka request");
 }
 
 std::ostream& operator<<(std::ostream& o, const server_probe& p) {
