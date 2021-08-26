@@ -80,7 +80,7 @@ private:
     // used to track number of pending requests
     class request_tracker {
     public:
-        explicit request_tracker(rpc::server_probe& probe)
+        explicit request_tracker(rpc::server_probe& probe) noexcept
           : _probe(probe) {
             _probe.request_received();
         }
