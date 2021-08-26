@@ -80,7 +80,7 @@ func Execute() {
 	rootCmd.AddCommand(NewWasmCommand(fs, mgr))
 	rootCmd.AddCommand(NewContainerCommand())
 	rootCmd.AddCommand(NewTopicCommand(fs, mgr))
-	rootCmd.AddCommand(NewClusterCommand(fs, mgr))
+	rootCmd.AddCommand(NewClusterCommand(fs))
 	rootCmd.AddCommand(NewACLCommand(fs, mgr))
 
 	rootCmd.AddCommand(plugincmd.NewCommand(fs))
