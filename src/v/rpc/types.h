@@ -279,6 +279,8 @@ struct server_configuration {
     std::vector<server_endpoint> addrs;
     int64_t max_service_memory_per_core;
     std::optional<int> listen_backlog;
+    std::optional<int> tcp_recv_buf;
+    std::optional<int> tcp_send_buf;
     metrics_disabled disable_metrics = metrics_disabled::no;
     ss::sstring name;
     // we use the same default as seastar for load balancing algorithm
