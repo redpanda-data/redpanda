@@ -23,18 +23,6 @@ namespace pandaproxy::schema_registry {
 
 namespace {
 
-bool can_promote(avro::Node& writer, avro::Node& reader) {
-    switch (writer.type()) {
-    case avro::AVRO_STRING:
-        return reader.type() == avro::AVRO_BYTES;
-    case avro::AVRO_BYTES:
-        return reader.type() == avro::AVRO_STRING;
-    default:
-        return false;
-    }
-    return false;
-}
-
 bool check_compatible(avro::Node& reader, avro::Node& writer) {
     if (reader.type() == writer.type()) {
         // Do a quick check first
@@ -66,10 +54,12 @@ bool check_compatible(avro::Node& reader, avro::Node& writer) {
             // if the writer's symbol is not present in the reader's enum and
             // the reader has a default value, then that value is used,
             // otherwise an error is signalled.
+            if (reader.defaultValueAt(0).type() != avro::AVRO_NULL) {
+                return true;
+            }
             for (size_t w_idx = 0; w_idx < writer.names(); ++w_idx) {
                 size_t r_idx{0};
                 if (!reader.nameIndex(writer.nameAt(int(w_idx)), r_idx)) {
-                    // TODO(Ben): NodeEnum doesn't support defaults.
                     return false;
                 }
             }
@@ -117,8 +107,6 @@ bool check_compatible(avro::Node& reader, avro::Node& writer) {
                 return false;
             }
         }
-        return true;
-    } else if (can_promote(writer, reader)) {
         return true;
     }
     return writer.resolve(reader) != avro::RESOLVE_NO_MATCH;

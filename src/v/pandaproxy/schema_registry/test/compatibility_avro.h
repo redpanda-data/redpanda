@@ -28,12 +28,59 @@ const auto enum3 = pps::make_avro_schema_definition(R"({
 })")
                      .value();
 
-const auto enum_2def = pps::make_avro_schema_definition(
+const auto enum2_def = pps::make_avro_schema_definition(
                          R"({
   "name": "test2",
   "type": "enum",
   "symbols": ["One", "Two"],
   "default": "One"
+})")
+                         .value();
+
+const auto enum1_mat = pps::make_avro_schema_definition(
+                         R"({
+  "type": "record",
+  "name": "schema_enum",
+  "fields": [
+    {
+      "name": "f1",
+      "type": {
+        "type": "enum",
+        "name": "enum1",
+        "symbols": [
+          "E1",
+          "E2",
+          "E3",
+          "E4",
+          "E_DEFAULT"
+        ]
+      }
+    }
+  ]
+})")
+                         .value();
+
+const auto enum2_mat = pps::make_avro_schema_definition(
+                         R"({
+  "type": "record",
+  "name": "schema_enum",
+  "fields": [
+    {
+      "name": "f1",
+      "type": {
+        "type": "enum",
+        "name": "enum1",
+        "symbols": [
+          "E2",
+          "E3",
+          "E4",
+          "E5",
+          "E_DEFAULT"
+        ],
+        "default": "E_DEFAULT"
+      }
+    }
+  ]
 })")
                          .value();
 

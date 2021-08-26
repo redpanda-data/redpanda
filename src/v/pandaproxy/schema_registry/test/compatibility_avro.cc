@@ -39,8 +39,10 @@ BOOST_AUTO_TEST_CASE(test_avro_enum) {
     BOOST_REQUIRE(!check_compatible(enum2, enum3));
 
     // Removing an enum field with default is ok
-    // TODO(Ben): Fix avro-cpp?
-    // BOOST_REQUIRE(check_compatible(enum3, enum2_def));
+    BOOST_REQUIRE(check_compatible(enum3, enum2_def));
+
+    // Test from Materialize (follows NodeSymbolic)
+    BOOST_REQUIRE(check_compatible(enum2_mat, enum1_mat));
 }
 
 BOOST_AUTO_TEST_CASE(test_avro_union) {
