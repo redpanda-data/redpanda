@@ -1,3 +1,5 @@
+if(FALSE)
+
 set(fixture_srcs
     utils/event_publisher.cc
     utils/supervisor.cc
@@ -29,3 +31,5 @@ rp_test(
   LIBRARIES v::seastar_testing_main ${fixture_deps}
   LABELS coproc
 )
+
+endif()
