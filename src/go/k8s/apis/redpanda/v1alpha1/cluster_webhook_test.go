@@ -26,30 +26,20 @@ import (
 // nolint:funlen // this is ok for a test
 func TestDefault(t *testing.T) {
 	type test struct {
-		name                           string
-		replicas                       int32
-		additionalConfigurationPresent bool
+		name                                string
+		replicas                            int32
+		additionalConfigurationSetByWebhook bool
 	}
 	tests := []test{
 		{
-			name:                           "do not set default topic replication when there is less than 3 replicas",
-			replicas:                       0,
-			additionalConfigurationPresent: false,
+			name:                                "do not set default topic replication when there is less than 3 replicas",
+			replicas:                            2,
+			additionalConfigurationSetByWebhook: false,
 		},
 		{
-			name:                           "do not set default topic replication when there is less than 3 replicas",
-			replicas:                       1,
-			additionalConfigurationPresent: false,
-		},
-		{
-			name:                           "do not set default topic replication when there is less than 3 replicas",
-			replicas:                       2,
-			additionalConfigurationPresent: false,
-		},
-		{
-			name:                           "do not set default topic replication when there is less than 3 replicas",
-			replicas:                       3,
-			additionalConfigurationPresent: true,
+			name:                                "sets default topic replication",
+			replicas:                            3,
+			additionalConfigurationSetByWebhook: true,
 		},
 	}
 	for _, tt := range tests {
@@ -67,7 +57,7 @@ func TestDefault(t *testing.T) {
 
 			redpandaCluster.Default()
 			_, exist := redpandaCluster.Spec.AdditionalConfiguration["redpanda.default_topic_replications"]
-			if exist != tt.additionalConfigurationPresent {
+			if exist != tt.additionalConfigurationSetByWebhook {
 				t.Fail()
 			}
 		})
