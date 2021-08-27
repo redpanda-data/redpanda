@@ -24,6 +24,7 @@
 #include "storage/ntp_config.h"
 #include "tristate.h"
 #include "utils/to_string.h"
+#include "v8_engine/data_policy.h"
 
 #include <fmt/format.h>
 
@@ -576,6 +577,11 @@ struct backend_operation {
     friend std::ostream& operator<<(std::ostream&, const backend_operation&);
 };
 
+struct create_data_policy_cmd_data {
+    static constexpr int8_t current_version = 1; // In future dp will be vector
+    v8_engine::data_policy dp;
+};
+
 enum class reconciliation_status : int8_t {
     done,
     in_progress,
@@ -754,6 +760,12 @@ template<>
 struct adl<cluster::create_partititions_configuration_assignment> {
     void to(iobuf&, cluster::create_partititions_configuration_assignment&&);
     cluster::create_partititions_configuration_assignment from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::create_data_policy_cmd_data> {
+    void to(iobuf&, cluster::create_data_policy_cmd_data&&);
+    cluster::create_data_policy_cmd_data from(iobuf_parser&);
 };
 
 } // namespace reflection

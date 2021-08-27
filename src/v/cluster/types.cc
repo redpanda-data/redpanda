@@ -779,4 +779,22 @@ adl<cluster::create_partititions_configuration_assignment>::from(
       std::move(cfg), std::move(p_as));
 };
 
+void adl<cluster::create_data_policy_cmd_data>::to(
+  iobuf& out, cluster::create_data_policy_cmd_data&& dp_cmd_data) {
+    return serialize(
+      out, dp_cmd_data.current_version, std::move(dp_cmd_data.dp));
+}
+
+cluster::create_data_policy_cmd_data
+adl<cluster::create_data_policy_cmd_data>::from(iobuf_parser& in) {
+    auto version = adl<int8_t>{}.from(in);
+    vassert(
+      version == cluster::create_data_policy_cmd_data::current_version,
+      "Unexpected set_data_policy_cmd version {} (expected {})",
+      version,
+      cluster::create_data_policy_cmd_data::current_version);
+    auto dp = adl<v8_engine::data_policy>{}.from(in);
+    return cluster::create_data_policy_cmd_data{.dp = std::move(dp)};
+}
+
 } // namespace reflection
