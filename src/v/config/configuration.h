@@ -189,6 +189,8 @@ struct configuration final : public config_store {
       cloud_storage_manifest_upload_timeout_ms;
     property<std::chrono::milliseconds>
       cloud_storage_max_connection_idle_time_ms;
+    property<std::optional<std::chrono::seconds>>
+      cloud_storage_segment_max_upload_interval_sec;
 
     one_or_many_property<ss::sstring> superusers;
 
@@ -418,6 +420,23 @@ struct convert<std::chrono::milliseconds> {
             return res;
         }
         rhs = std::chrono::milliseconds(secs);
+        return true;
+    }
+};
+
+template<>
+struct convert<std::chrono::seconds> {
+    using type = std::chrono::seconds;
+
+    static Node encode(const type& rhs) { return Node(rhs.count()); }
+
+    static bool decode(const Node& node, type& rhs) {
+        type::rep secs;
+        auto res = convert<type::rep>::decode(node, secs);
+        if (!res) {
+            return res;
+        }
+        rhs = std::chrono::seconds(secs);
         return true;
     }
 };
