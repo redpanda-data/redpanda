@@ -22,7 +22,8 @@ boost_hist::boost_hist()
   : boost_hist(26, 10, 60000000) {}
 
 boost_hist::boost_hist(size_t nbuckets, double lower, double upper) {
-    _hist = bh::make_histogram(
+    _hist = bh::make_histogram_with(
+      std::array<uint64_t, 30>(),
       bh::axis::regular<double, tr::log>(nbuckets, lower, upper));
 }
 
@@ -45,10 +46,7 @@ ss::metrics::histogram boost_hist::to_seastar() {
     return sshist;
 }
 
-void boost_hist::record(int64_t value) {
-    _hist(value);
-    _sum += value;
-}
+// void boost_hist::record(int64_t value)
 
 std::unique_ptr<boost_hist::measurement> boost_hist::auto_measure() {
     return std::make_unique<measurement>(*this);

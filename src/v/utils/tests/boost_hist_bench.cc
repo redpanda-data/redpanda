@@ -51,10 +51,14 @@ private:
 };
 
 PERF_TEST(boost_hist, insert_few) {
-    boost_hist h(26, 10, 100);
+    boost_hist h(26, 10, 10000000);
     perf_tests::start_measuring_time();
-    for (int64_t i = 0; i < 100; ++i) {
+    for (uint64_t i = 0; i < 100; ++i) {
         h.record(i);
+    }
+
+    for (uint64_t j = 1000000; j < 10000000; j += 1000000) {
+        h.record(j);
     }
 
     perf_tests::do_not_optimize(h);
@@ -62,13 +66,17 @@ PERF_TEST(boost_hist, insert_few) {
 }
 
 PERF_TEST(boost_hist, insert_many) {
-    boost_hist h(26, 10, 100);
+    boost_hist h(26, 10, 10000000);
     perf_tests::start_measuring_time();
 
     // So many inserts we'll cross 8 bit and 16 bit limits
     // for per-bucket counts
     for (int i = 0; i < 17000; ++i) {
-        for (int64_t j = 0; j < 100; ++j) {
+        for (uint64_t j = 0; j < 100; ++j) {
+            h.record(j);
+        }
+
+        for (uint64_t j = 1000000; j < 10000000; j += 1000000) {
             h.record(j);
         }
     }
@@ -81,6 +89,10 @@ PERF_TEST(hdr_hist, insert_few) {
     perf_tests::start_measuring_time();
     for (int64_t i = 0; i < 100; ++i) {
         h.record(i);
+    }
+
+    for (int64_t j = 1000000; j < 10000000; j += 100000) {
+        h.record(j);
     }
 
     perf_tests::do_not_optimize(h);
@@ -97,6 +109,10 @@ PERF_TEST(hdr_hist, insert_many) {
         for (int64_t j = 0; j < 100; ++j) {
             h.record(j);
         }
+
+        for (int64_t j = 1000000; j < 10000000; j += 100000) {
+            h.record(j);
+        }
     }
 
     perf_tests::stop_measuring_time();
@@ -107,6 +123,10 @@ PERF_TEST(simple_hist, insert_few) {
     perf_tests::start_measuring_time();
     for (int64_t i = 0; i < 100; ++i) {
         h.record(i);
+    }
+
+    for (int64_t j = 1000000; j < 10000000; j += 100000) {
+        h.record(j);
     }
 
     perf_tests::do_not_optimize(h);
@@ -121,6 +141,10 @@ PERF_TEST(simple_hist, insert_many) {
     // for per-bucket counts
     for (int i = 0; i < 17000; ++i) {
         for (int64_t j = 0; j < 100; ++j) {
+            h.record(j);
+        }
+
+        for (int64_t j = 1000000; j < 10000000; j += 100000) {
             h.record(j);
         }
     }

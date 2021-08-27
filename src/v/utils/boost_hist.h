@@ -88,7 +88,10 @@ public:
     boost_hist(size_t nbuckets, double lower, double upper);
     ss::metrics::histogram to_seastar();
 
-    void record(int64_t value);
+    inline void record(uint64_t value) {
+        _hist(value);
+        _sum += value;
+    }
     inner& hist() { return _hist; }
 
     std::unique_ptr<measurement> auto_measure();
