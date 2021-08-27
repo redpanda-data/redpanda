@@ -49,30 +49,33 @@ func TestDefault(t *testing.T) {
 			configAlreadyPresent:                true,
 		},
 	}
+	fields := []string{"redpanda.default_topic_replications", "redpanda.transaction_coordinator_replication", "redpanda.id_allocator_replication"}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			redpandaCluster := &v1alpha1.Cluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test",
-					Namespace: "",
-				},
-				Spec: v1alpha1.ClusterSpec{
-					Replicas:      pointer.Int32Ptr(tt.replicas),
-					Configuration: v1alpha1.RedpandaConfig{},
-				},
-			}
+		for _, field := range fields {
+			t.Run(tt.name, func(t *testing.T) {
+				redpandaCluster := &v1alpha1.Cluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test",
+						Namespace: "",
+					},
+					Spec: v1alpha1.ClusterSpec{
+						Replicas:      pointer.Int32Ptr(tt.replicas),
+						Configuration: v1alpha1.RedpandaConfig{},
+					},
+				}
 
-			if tt.configAlreadyPresent {
-				redpandaCluster.Spec.AdditionalConfiguration = make(map[string]string)
-				redpandaCluster.Spec.AdditionalConfiguration["redpanda.default_topic_replications"] = "111"
-			}
+				if tt.configAlreadyPresent {
+					redpandaCluster.Spec.AdditionalConfiguration = make(map[string]string)
+					redpandaCluster.Spec.AdditionalConfiguration[field] = "111"
+				}
 
-			redpandaCluster.Default()
-			val, exist := redpandaCluster.Spec.AdditionalConfiguration["redpanda.default_topic_replications"]
-			if (exist && val == "3") != tt.additionalConfigurationSetByWebhook {
-				t.Fail()
-			}
-		})
+				redpandaCluster.Default()
+				val, exist := redpandaCluster.Spec.AdditionalConfiguration[field]
+				if (exist && val == "3") != tt.additionalConfigurationSetByWebhook {
+					t.Fail()
+				}
+			})
+		}
 	}
 
 	t.Run("missing schema registry does not set default port", func(t *testing.T) {
