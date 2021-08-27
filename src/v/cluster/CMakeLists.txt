@@ -63,6 +63,7 @@ v_cc_library(
     rm_stm.cc
     security_manager.cc
     security_frontend.cc
+    data_policy_manager.cc
     data_policy_frontend.cc
     controller_api.cc
     members_frontend.cc
