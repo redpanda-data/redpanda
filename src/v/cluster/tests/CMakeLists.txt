@@ -37,13 +37,14 @@ set(srcs
     decommissioning_tests.cc
     replicas_rebalancing_tests.cc
     create_partitions_test.cc
-    id_allocator_stm_test.cc)
+    id_allocator_stm_test.cc
+    data_policy_controller_test.cc)
 
 rp_test(
   UNIT_TEST
   BINARY_NAME test_cluster
   SOURCES ${srcs}
-  LIBRARIES v::seastar_testing_main v::application v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::application v::storage_test_utils v::v8_engine
   LABELS cluster
 )
 
@@ -53,7 +54,7 @@ set_source_files_properties(
     partition_allocator_tests.cc
     allocation_bench.cc
   PROPERTIES SKIP_UNITY_BUILD_INCLUSION 1)
-  
+
 rp_test(
   UNIT_TEST
   BINARY_NAME partition_moving_test
