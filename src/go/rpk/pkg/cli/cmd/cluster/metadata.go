@@ -258,13 +258,9 @@ func printTopics(topics []kmsg.MetadataResponseTopic, internal, detailed bool) {
 			if useEpoch {
 				ret = append(ret, p.LeaderEpoch)
 			}
-			int32s(p.Replicas).sort()
-			// TODO see #1928
-			// int32s(p.ISR).sort()
-			ret = append(ret, p.Replicas) // p.ISR)
+			ret = append(ret, int32s(p.Replicas).sort())
 			if useOffline {
-				int32s(p.OfflineReplicas).sort()
-				ret = append(ret, p.OfflineReplicas)
+				ret = append(ret, int32s(p.OfflineReplicas).sort())
 			}
 			if useErr {
 				if err := kerr.ErrorForCode(p.ErrorCode); err != nil {
@@ -290,4 +286,7 @@ func printTopics(topics []kmsg.MetadataResponseTopic, internal, detailed bool) {
 
 type int32s []int32
 
-func (is int32s) sort() { sort.Slice(is, func(i, j int) bool { return is[i] < is[j] }) }
+func (is int32s) sort() []int32 {
+	sort.Slice(is, func(i, j int) bool { return is[i] < is[j] })
+	return is
+}
