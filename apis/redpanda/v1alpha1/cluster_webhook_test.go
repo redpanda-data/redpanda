@@ -29,6 +29,7 @@ func TestDefault(t *testing.T) {
 		name                                string
 		replicas                            int32
 		additionalConfigurationSetByWebhook bool
+		configAlreadyPresent                bool
 	}
 	tests := []test{
 		{
@@ -40,6 +41,12 @@ func TestDefault(t *testing.T) {
 			name:                                "sets default topic replication",
 			replicas:                            3,
 			additionalConfigurationSetByWebhook: true,
+		},
+		{
+			name:                                "does not set default topic replication when it already exists in CRD",
+			replicas:                            3,
+			additionalConfigurationSetByWebhook: false,
+			configAlreadyPresent:                true,
 		},
 	}
 	for _, tt := range tests {
@@ -55,9 +62,14 @@ func TestDefault(t *testing.T) {
 				},
 			}
 
+			if tt.configAlreadyPresent {
+				redpandaCluster.Spec.AdditionalConfiguration = make(map[string]string)
+				redpandaCluster.Spec.AdditionalConfiguration["redpanda.default_topic_replications"] = "111"
+			}
+
 			redpandaCluster.Default()
-			_, exist := redpandaCluster.Spec.AdditionalConfiguration["redpanda.default_topic_replications"]
-			if exist != tt.additionalConfigurationSetByWebhook {
+			val, exist := redpandaCluster.Spec.AdditionalConfiguration["redpanda.default_topic_replications"]
+			if (exist && val == "3") != tt.additionalConfigurationSetByWebhook {
 				t.Fail()
 			}
 		})
