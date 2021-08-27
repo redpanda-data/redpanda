@@ -41,3 +41,11 @@ rp_test(
   LIBRARIES Boost::unit_test_framework v::utils
   LABELS utils
 )
+
+rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME utils_bench
+  SOURCES boost_hist_bench.cc
+  LIBRARIES Seastar::seastar_perf_testing v::rpc
+  LABELS utils
+)
