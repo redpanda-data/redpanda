@@ -25,6 +25,8 @@ struct upload_candidate {
     model::offset starting_offset;
     size_t file_offset;
     size_t content_length;
+    model::offset final_offset;
+    size_t final_file_offset;
 };
 
 std::ostream& operator<<(std::ostream& s, const upload_candidate& c);
@@ -37,7 +39,10 @@ std::ostream& operator<<(std::ostream& s, const upload_candidate& c);
 class archival_policy {
 public:
     explicit archival_policy(
-      model::ntp ntp, service_probe& svc_probe, ntp_level_probe& ntp_probe);
+      model::ntp ntp,
+      service_probe& svc_probe,
+      ntp_level_probe& ntp_probe,
+      std::optional<segment_time_limit> limit = std::nullopt);
 
     /// \brief regurn next upload candidate
     ///
@@ -49,15 +54,23 @@ public:
     ///       last_offset because index is sparse and don't have all possible
     ///       offsets. If index is not materialized we will upload log starting
     ///       from the begining.
-    upload_candidate get_next_candidate(
+    ss::future<upload_candidate> get_next_candidate(
       model::offset last_offset,
       model::offset high_watermark,
       storage::log_manager& lm);
 
 private:
+    /// Check if the upload have to be forced due to timeout
+    ///
+    /// If the upload is idle longer than expected the next call to
+    /// `get_next_candidate` will return partial result which will
+    /// result in partial upload.
+    bool upload_deadline_reached();
+
     struct lookup_result {
         ss::lw_shared_ptr<storage::segment> segment;
         const storage::ntp_config* ntp_conf;
+        bool forced;
     };
 
     lookup_result find_segment(
@@ -68,6 +81,8 @@ private:
     model::ntp _ntp;
     service_probe& _svc_probe;
     ntp_level_probe& _ntp_probe;
+    std::optional<segment_time_limit> _upload_limit;
+    std::optional<ss::lowres_clock::time_point> _upload_deadline;
 };
 
 } // namespace archival

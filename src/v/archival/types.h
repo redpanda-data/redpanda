@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/types.h"
+#include "seastar/core/lowres_clock.hh"
 #include "seastar/core/sstring.hh"
 #include "seastar/util/bool_class.hh"
 #include "seastarx.h"
@@ -30,5 +31,8 @@ using service_metrics_disabled
   = ss::bool_class<struct service_metrics_disabled_tag>;
 using per_ntp_metrics_disabled
   = ss::bool_class<struct per_ntp_metrics_disabled_tag>;
+
+using segment_time_limit
+  = named_type<ss::lowres_clock::duration, struct segment_time_limit_tag>;
 
 } // namespace archival

@@ -90,6 +90,17 @@ struct segment_desc {
     model::ntp ntp;
     model::offset base_offset;
     model::term_id term;
+    std::optional<size_t> num_batches;
+};
+
+struct offset_range {
+    model::offset base_offset;
+    model::offset last_offset;
+};
+
+struct segment_layout {
+    model::offset base_offset;
+    std::vector<offset_range> ranges;
 };
 
 /// This utility can be used to match content of the log
@@ -154,9 +165,16 @@ public:
     /// The method doesn't add topics, only creates segments in data_dir
     void init_storage_api_local(std::vector<segment_desc>& segm);
 
+    std::vector<segment_layout> get_layouts(const model::ntp& ntp) const {
+        return layouts.find(ntp)->second;
+    }
+
+protected:
 private:
     void
     initialize_shard(storage::api& api, const std::vector<segment_desc>& segm);
+
+    std::unordered_map<model::ntp, std::vector<segment_layout>> layouts;
 };
 
 archival::configuration get_configuration();

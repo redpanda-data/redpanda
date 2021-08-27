@@ -54,6 +54,9 @@ struct configuration {
     service_metrics_disabled svc_metrics_disabled;
     /// Flag that indicates that ntp-archiver level metrics are disabled
     per_ntp_metrics_disabled ntp_metrics_disabled;
+    /// Upload time limit (if segment is not uploaded this amount of time the
+    /// upload is triggered)
+    std::optional<segment_time_limit> time_limit;
 };
 
 std::ostream& operator<<(std::ostream& o, const configuration& cfg);

@@ -10,6 +10,7 @@
 
 #include "archival/ntp_archiver_service.h"
 
+#include "archival/archival_policy.h"
 #include "archival/logger.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
@@ -18,6 +19,7 @@
 #include "s3/error.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
+#include "storage/parser.h"
 #include "utils/gate_guard.h"
 
 #include <seastar/core/coroutine.hh>
@@ -42,14 +44,15 @@ std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
       o,
       "{{bucket_name: {}, interval: {}, client_config: {}, connection_limit: "
       "{}, initial_backoff: {}, segment_upload_timeout: {}, "
-      "manifest_upload_timeout: {}}}",
+      "manifest_upload_timeout: {}, time_limit: {}}}",
       cfg.bucket_name,
       cfg.interval.count(),
       cfg.client_config,
       cfg.connection_limit,
       cfg.initial_backoff.count(),
       cfg.segment_upload_timeout.count(),
-      cfg.manifest_upload_timeout.count());
+      cfg.manifest_upload_timeout.count(),
+      cfg.time_limit);
     return o;
 }
 
@@ -63,7 +66,7 @@ ntp_archiver::ntp_archiver(
   , _ntp(ntp.ntp())
   , _rev(ntp.get_revision())
   , _remote(remote)
-  , _policy(_ntp, _svc_probe, std::ref(_probe))
+  , _policy(_ntp, _svc_probe, std::ref(_probe), conf.time_limit)
   , _bucket(conf.bucket_name)
   , _manifest(_ntp, _rev)
   , _gate()
@@ -111,22 +114,19 @@ ntp_archiver::upload_manifest(retry_chain_node& parent) {
     co_return co_await _remote.upload_manifest(_bucket, _manifest, fib);
 }
 
+// from offset to offset (by record batch boundary)
 ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
   upload_candidate candidate, retry_chain_node& parent) {
     gate_guard guard{_gate};
     retry_chain_node fib(_segment_upload_timeout, _initial_backoff, &parent);
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
-    vlog(
-      ctxlog.debug,
-      "Uploading segment for {}, exposed name {} offset {}, length {}",
-      _ntp,
-      candidate.exposed_name,
-      candidate.starting_offset,
-      candidate.content_length);
+    vlog(ctxlog.debug, "Uploading segment {}", candidate);
 
     auto reset_func = [candidate] {
         auto stream = candidate.source->reader().data_stream(
-          candidate.file_offset, ss::default_priority_class());
+          candidate.file_offset,
+          candidate.final_file_offset,
+          ss::default_priority_class());
         return stream;
     };
     co_return co_await _remote.upload_segment(
@@ -165,7 +165,7 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
           "Uploading next candidates for {}, trying offset {}",
           _ntp,
           last_uploaded_offset);
-        auto upload = _policy.get_next_candidate(
+        auto upload = co_await _policy.get_next_candidate(
           last_uploaded_offset, high_watermark, lm);
         if (upload.source.get() == nullptr) {
             vlog(
@@ -220,8 +220,8 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
                 continue;
             }
         }
-        auto offset = upload.source->offsets().dirty_offset;
-        auto base = upload.source->offsets().base_offset;
+        auto offset = upload.final_offset;
+        auto base = upload.starting_offset;
         last_uploaded_offset = offset + model::offset(1);
         deltas.push_back(offset - base);
         flist.emplace_back(upload_segment(upload, parent));
