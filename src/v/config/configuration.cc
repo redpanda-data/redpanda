@@ -67,6 +67,18 @@ configuration::configuration()
       "TCP connection queue length for Kafka server and internal RPC server",
       required::no,
       std::nullopt)
+  , rpc_server_tcp_recv_buf(
+      *this,
+      "rpc_server_tcp_recv_buf",
+      "TCP receive buffer size in bytes.",
+      required::no,
+      std::nullopt)
+  , rpc_server_tcp_send_buf(
+      *this,
+      "rpc_server_tcp_send_buf",
+      "TCP transmit buffer size in bytes.",
+      required::no,
+      std::nullopt)
   , enable_coproc(
       *this, "enable_coproc", "Enable coprocessing mode", required::no, false)
   , coproc_supervisor_server(
