@@ -9,10 +9,13 @@
 
 #pragma once
 
+#include "boost_hist.h"
 #include "utils/hdr_hist.h"
 #include "vassert.h"
 
 #include <seastar/core/metrics.hh>
+
+#include <boost/histogram.hpp>
 
 class qd_tracker;
 
@@ -27,13 +30,15 @@ public:
 
     qd_tracker track() noexcept;
 
+    qd_stats();
+
 private:
-    hdr_hist _q_hist;
-    hdr_hist _q_depth_hist;
+    boost_hist _q_hist;
+    boost_hist _q_depth_hist;
     int _q_depth{0};
 
-    hdr_hist _d_hist;
-    hdr_hist _d_depth_hist;
+    boost_hist _d_hist;
+    boost_hist _d_depth_hist;
     int _d_depth{0};
 
     friend class qd_tracker;
@@ -53,5 +58,5 @@ private:
     bool _queued{false};
     bool _dispatched{false};
 
-    std::unique_ptr<hdr_hist::measurement> _hist_measurement;
+    std::unique_ptr<boost_hist::measurement> _hist_measurement;
 };

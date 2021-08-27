@@ -12,6 +12,12 @@
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/sformat.h"
 
+namespace bh = boost::histogram;
+
+qd_stats::qd_stats()
+  : _q_depth_hist(10, 1, 512)
+  , _d_depth_hist(10, 1, 512) {}
+
 qd_tracker qd_stats::track() noexcept { return qd_tracker(*this); }
 
 void qd_stats::setup_metrics(
@@ -26,20 +32,20 @@ void qd_stats::setup_metrics(
       {
         sm::make_histogram(
           "q_t",
-          [this] { return _q_hist.seastar_histogram_logform(); },
+          [this] { return _q_hist.to_seastar(); },
           sm::description(ssx::sformat("Queuing latency of {}", description))),
         sm::make_histogram(
           "d_t",
-          [this] { return _d_hist.seastar_histogram_logform(); },
+          [this] { return _d_hist.to_seastar(); },
           sm::description(ssx::sformat("Dispatch latency of {}", description))),
         sm::make_histogram(
           "q_d_hist",
-          [this] { return _q_depth_hist.seastar_histogram_logform(1, 10); },
+          [this] { return _q_depth_hist.to_seastar(); },
           sm::description(
             ssx::sformat("Queueing depth distribution of {}", description))),
         sm::make_histogram(
           "d_d_hist",
-          [this] { return _d_depth_hist.seastar_histogram_logform(1, 10); },
+          [this] { return _d_depth_hist.to_seastar(); },
           sm::description(
             ssx::sformat("Dispatch depth distribution of {}", description))),
         sm::make_gauge(
