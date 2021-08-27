@@ -29,6 +29,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME utils_unit
   SOURCES
+    boost_hist_test.cc
     string_switch_test.cc
     constexpr_string_switch.cc
     named_type_tests.cc

@@ -3,6 +3,7 @@ find_package(Base64)
 v_cc_library(
   NAME utils
   SRCS
+    boost_hist.cc
     hdr_hist.cc
     human.cc
     file_io.cc
