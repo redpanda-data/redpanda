@@ -158,9 +158,9 @@ redpanda:
   # If the seed_server list is empty the node will be a cluster root and it will form a new cluster.
   # Default: []
   seed_servers:
-    - address: "0.0.0.0"
+    - host:
+      address: 192.168.0.1
       port: 33145
-  
   # Number of partitions for the internal raft metadata topic.
   # Default: 7
   seed_server_meta_topic_partitions: 7
