@@ -68,6 +68,7 @@ public:
     ss::future<cluster::abort_group_tx_reply> abort_group_tx(
       kafka::group_id,
       model::producer_identity,
+      model::tx_seq,
       model::timeout_clock::duration);
     ss::future<cluster::abort_group_tx_reply>
       abort_group_tx_locally(cluster::abort_group_tx_request);
@@ -105,6 +106,7 @@ private:
       model::node_id,
       kafka::group_id,
       model::producer_identity,
+      model::tx_seq,
       model::timeout_clock::duration);
 
     friend cluster::tx_gateway;
@@ -159,8 +161,9 @@ public:
     ss::future<cluster::abort_group_tx_reply> abort_group_tx(
       kafka::group_id group_id,
       model::producer_identity pid,
+      model::tx_seq tx_seq,
       model::timeout_clock::duration timeout) override {
-        return _target.local().abort_group_tx(group_id, pid, timeout);
+        return _target.local().abort_group_tx(group_id, pid, tx_seq, timeout);
     }
 
     ss::future<cluster::abort_group_tx_reply>

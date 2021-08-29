@@ -1032,8 +1032,8 @@ tx_gateway_frontend::do_abort_tm_tx(
     }
     std::vector<ss::future<abort_group_tx_reply>> gfs;
     for (auto group : tx.groups) {
-        gfs.push_back(
-          _rm_group_proxy->abort_group_tx(group.group_id, tx.pid, timeout));
+        gfs.push_back(_rm_group_proxy->abort_group_tx(
+          group.group_id, tx.pid, tx.tx_seq, timeout));
     }
     auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
     auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
@@ -1192,8 +1192,8 @@ ss::future<tx_errc> tx_gateway_frontend::reabort_tm_tx(
     }
     std::vector<ss::future<abort_group_tx_reply>> gfs;
     for (auto group : tx.groups) {
-        gfs.push_back(
-          _rm_group_proxy->abort_group_tx(group.group_id, tx.pid, timeout));
+        gfs.push_back(_rm_group_proxy->abort_group_tx(
+          group.group_id, tx.pid, tx.tx_seq, timeout));
     }
     auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
     auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
