@@ -58,6 +58,8 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                         "allocated pid {} with epoch {} via tx_gateway",
                         reply.data.producer_id,
                         reply.data.producer_epoch);
+                  } else if (r.ec == cluster::tx_errc::invalid_txn_state) {
+                      reply.data.error_code = error_code::invalid_txn_state;
                   } else {
                       vlog(klog.warn, "failed to allocate pid, ec: {}", r.ec);
                       reply.data.error_code = error_code::broker_not_available;
