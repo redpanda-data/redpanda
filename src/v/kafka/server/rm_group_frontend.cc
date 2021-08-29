@@ -403,7 +403,7 @@ ss::future<cluster::abort_group_tx_reply> rm_group_frontend::abort_group_tx(
         co_return co_await abort_group_tx_locally(std::move(req));
     }
 
-    vlog(klog.trace, "dispatching begin group tx to {} from {}", leader, _self);
+    vlog(klog.trace, "dispatching abort group tx to {} from {}", leader, _self);
     co_return co_await dispatch_abort_group_tx(leader, group_id, pid, timeout);
 }
 
