@@ -26,51 +26,56 @@ import (
 // nolint:funlen // this is ok for a test
 func TestDefault(t *testing.T) {
 	type test struct {
-		name                           string
-		replicas                       int32
-		additionalConfigurationPresent bool
+		name                                string
+		replicas                            int32
+		additionalConfigurationSetByWebhook bool
+		configAlreadyPresent                bool
 	}
 	tests := []test{
 		{
-			name:                           "do not set default topic replication when there is less than 3 replicas",
-			replicas:                       0,
-			additionalConfigurationPresent: false,
+			name:                                "do not set default topic replication when there is less than 3 replicas",
+			replicas:                            2,
+			additionalConfigurationSetByWebhook: false,
 		},
 		{
-			name:                           "do not set default topic replication when there is less than 3 replicas",
-			replicas:                       1,
-			additionalConfigurationPresent: false,
+			name:                                "sets default topic replication",
+			replicas:                            3,
+			additionalConfigurationSetByWebhook: true,
 		},
 		{
-			name:                           "do not set default topic replication when there is less than 3 replicas",
-			replicas:                       2,
-			additionalConfigurationPresent: false,
-		},
-		{
-			name:                           "do not set default topic replication when there is less than 3 replicas",
-			replicas:                       3,
-			additionalConfigurationPresent: true,
+			name:                                "does not set default topic replication when it already exists in CRD",
+			replicas:                            3,
+			additionalConfigurationSetByWebhook: false,
+			configAlreadyPresent:                true,
 		},
 	}
+	fields := []string{"redpanda.default_topic_replications", "redpanda.transaction_coordinator_replication", "redpanda.id_allocator_replication"}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			redpandaCluster := &v1alpha1.Cluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test",
-					Namespace: "",
-				},
-				Spec: v1alpha1.ClusterSpec{
-					Replicas:      pointer.Int32Ptr(tt.replicas),
-					Configuration: v1alpha1.RedpandaConfig{},
-				},
-			}
+		for _, field := range fields {
+			t.Run(tt.name, func(t *testing.T) {
+				redpandaCluster := &v1alpha1.Cluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test",
+						Namespace: "",
+					},
+					Spec: v1alpha1.ClusterSpec{
+						Replicas:      pointer.Int32Ptr(tt.replicas),
+						Configuration: v1alpha1.RedpandaConfig{},
+					},
+				}
 
-			redpandaCluster.Default()
-			_, exist := redpandaCluster.Spec.AdditionalConfiguration["redpanda.default_topic_replications"]
-			if exist != tt.additionalConfigurationPresent {
-				t.Fail()
-			}
-		})
+				if tt.configAlreadyPresent {
+					redpandaCluster.Spec.AdditionalConfiguration = make(map[string]string)
+					redpandaCluster.Spec.AdditionalConfiguration[field] = "111"
+				}
+
+				redpandaCluster.Default()
+				val, exist := redpandaCluster.Spec.AdditionalConfiguration[field]
+				if (exist && val == "3") != tt.additionalConfigurationSetByWebhook {
+					t.Fail()
+				}
+			})
+		}
 	}
 
 	t.Run("missing schema registry does not set default port", func(t *testing.T) {
