@@ -189,6 +189,24 @@ unsafe_do_recover(segment_set&& segments, ss::abort_source& as) {
           good_end,
           good.end()); // remove all the ones we copied into recover
 
+        // Validate that the segments' indices do not claim to
+        // have overlapping offset ranges.  This is a form of corruption
+        // that can result from bugs when writing the segments+indices.
+        std::optional<segment_set::type> prev_seg = std::nullopt;
+        for (auto& seg : good) {
+            if (prev_seg.has_value()) {
+                auto prev = prev_seg.value();
+                if (seg->index().base_offset() <= prev->index().max_offset()) {
+                    vlog(
+                      stlog.error,
+                      "Index range conflict.  Indices: \n  {}\n  {}",
+                      prev->index(),
+                      seg->index());
+                }
+            }
+            prev_seg = seg;
+        }
+
         // remove empty segments
         auto non_empty_end = std::stable_partition(
           to_recover.begin(),
