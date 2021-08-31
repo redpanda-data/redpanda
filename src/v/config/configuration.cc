@@ -857,6 +857,18 @@ configuration::configuration()
       "Leadership rebalancing node mute timeout",
       required::no,
       20s)
+  , internal_topic_replication_factor(
+      *this,
+      "internal_topic_replication_factor",
+      "Target replication factor for internal topics",
+      required::no,
+      3)
+  , health_manager_tick_interval(
+      *this,
+      "health_manager_tick_interval",
+      "How often the health manager runs",
+      required::no,
+      3min)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",
