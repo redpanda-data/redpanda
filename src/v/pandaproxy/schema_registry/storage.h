@@ -13,6 +13,7 @@
 
 #include "bytes/iobuf_parser.h"
 #include "json/json.h"
+#include "model/metadata.h"
 #include "model/record_utils.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/rjson_util.h"
@@ -119,12 +120,12 @@ struct schema_key {
     static constexpr topic_key_type keytype{topic_key_type::schema};
 
     // The record is only valid if its offset in the topic matches `seq`
-    model::offset seq;
+    std::optional<model::offset> seq;
 
     // The node differentiates conflicting writes to the same seq,
     // to prevent compaction from collapsing invalid writes into
     // preceding valid writes.
-    model::node_id node;
+    std::optional<model::node_id> node;
 
     subject sub;
     schema_version version;
@@ -133,15 +134,26 @@ struct schema_key {
     friend bool operator==(const schema_key&, const schema_key&) = default;
 
     friend std::ostream& operator<<(std::ostream& os, const schema_key& v) {
-        fmt::print(
-          os,
-          "seq: {}, node: {}, keytype: {}, subject: {}, version: {}, magic: {}",
-          v.seq,
-          v.node,
-          to_string_view(v.keytype),
-          v.sub,
-          v.version,
-          v.magic);
+        if (v.seq.has_value() && v.node.has_value()) {
+            fmt::print(
+              os,
+              "seq: {}, node: {}, keytype: {}, subject: {}, version: {}, "
+              "magic: {}",
+              *v.seq,
+              *v.node,
+              to_string_view(v.keytype),
+              v.sub,
+              v.version,
+              v.magic);
+        } else {
+            fmt::print(
+              os,
+              "unsequenced keytype: {}, subject: {}, version: {}, magic: {}",
+              to_string_view(v.keytype),
+              v.sub,
+              v.version,
+              v.magic);
+        }
         return os;
     }
 };
@@ -158,10 +170,14 @@ inline void rjson_serialize(
     ::json::rjson_serialize(w, key.version);
     w.Key("magic");
     ::json::rjson_serialize(w, key.magic);
-    w.Key("seq");
-    ::json::rjson_serialize(w, key.seq);
-    w.Key("node");
-    ::json::rjson_serialize(w, key.node);
+    if (key.seq.has_value()) {
+        w.Key("seq");
+        ::json::rjson_serialize(w, key.seq);
+    }
+    if (key.node.has_value()) {
+        w.Key("node");
+        ::json::rjson_serialize(w, key.node);
+    }
     w.EndObject();
 }
 
@@ -276,7 +292,8 @@ public:
     }
 
     bool EndObject(rapidjson::SizeType) {
-        return std::exchange(_state, state::empty) == state::object;
+        return result.seq.has_value() == result.node.has_value()
+               && std::exchange(_state, state::empty) == state::object;
     }
 };
 
@@ -460,22 +477,31 @@ public:
 
 struct config_key {
     static constexpr topic_key_type keytype{topic_key_type::config};
-    model::offset seq;
-    model::node_id node;
+    std::optional<model::offset> seq;
+    std::optional<model::node_id> node;
     std::optional<subject> sub;
     topic_key_magic magic{0};
 
     friend bool operator==(const config_key&, const config_key&) = default;
 
     friend std::ostream& operator<<(std::ostream& os, const config_key& v) {
-        fmt::print(
-          os,
-          "seq: {} node: {} keytype: {}, subject: {}, magic: {}",
-          v.seq,
-          v.node,
-          to_string_view(v.keytype),
-          v.sub.value_or(invalid_subject),
-          v.magic);
+        if (v.seq.has_value() && v.node.has_value()) {
+            fmt::print(
+              os,
+              "seq: {} node: {} keytype: {}, subject: {}, magic: {}",
+              *v.seq,
+              *v.node,
+              to_string_view(v.keytype),
+              v.sub.value_or(invalid_subject),
+              v.magic);
+        } else {
+            fmt::print(
+              os,
+              "unsequenced keytype: {}, subject: {}, magic: {}",
+              to_string_view(v.keytype),
+              v.sub.value_or(invalid_subject),
+              v.magic);
+        }
         return os;
     }
 };
@@ -486,10 +512,6 @@ inline void rjson_serialize(
     w.StartObject();
     w.Key("keytype");
     ::json::rjson_serialize(w, to_string_view(key.keytype));
-    w.Key("seq");
-    ::json::rjson_serialize(w, key.seq);
-    w.Key("node");
-    ::json::rjson_serialize(w, key.node);
     w.Key("subject");
     if (key.sub) {
         ::json::rjson_serialize(w, key.sub.value());
@@ -498,6 +520,14 @@ inline void rjson_serialize(
     }
     w.Key("magic");
     ::json::rjson_serialize(w, key.magic);
+    if (key.seq.has_value()) {
+        w.Key("seq");
+        ::json::rjson_serialize(w, *key.seq);
+    }
+    if (key.node.has_value()) {
+        w.Key("node");
+        ::json::rjson_serialize(w, *key.node);
+    }
     w.EndObject();
 }
 
@@ -593,7 +623,8 @@ public:
     }
 
     bool EndObject(rapidjson::SizeType) {
-        return std::exchange(_state, state::empty) == state::object;
+        return result.seq.has_value() == result.node.has_value()
+               && std::exchange(_state, state::empty) == state::object;
     }
 };
 
@@ -667,8 +698,8 @@ public:
 
 struct delete_subject_key {
     static constexpr topic_key_type keytype{topic_key_type::delete_subject};
-    model::offset seq;
-    model::node_id node;
+    std::optional<model::offset> seq;
+    std::optional<model::node_id> node;
     subject sub;
     topic_key_magic magic{0};
 
@@ -677,14 +708,23 @@ struct delete_subject_key {
 
     friend std::ostream&
     operator<<(std::ostream& os, const delete_subject_key& v) {
-        fmt::print(
-          os,
-          "seq: {}, node: {}, keytype: {}, subject: {}, magic: {}",
-          v.seq,
-          v.node,
-          to_string_view(v.keytype),
-          v.sub,
-          v.magic);
+        if (v.seq.has_value() && v.node.has_value()) {
+            fmt::print(
+              os,
+              "seq: {}, node: {}, keytype: {}, subject: {}, magic: {}",
+              *v.seq,
+              *v.node,
+              to_string_view(v.keytype),
+              v.sub,
+              v.magic);
+        } else {
+            fmt::print(
+              os,
+              "unsequenced keytype: {}, subject: {}, magic: {}",
+              to_string_view(v.keytype),
+              v.sub,
+              v.magic);
+        }
         return os;
     }
 };
@@ -699,10 +739,14 @@ inline void rjson_serialize(
     ::json::rjson_serialize(w, key.sub());
     w.Key("magic");
     ::json::rjson_serialize(w, key.magic);
-    w.Key("seq");
-    ::json::rjson_serialize(w, key.seq);
-    w.Key("node");
-    ::json::rjson_serialize(w, key.node);
+    if (key.seq.has_value()) {
+        w.Key("seq");
+        ::json::rjson_serialize(w, key.seq);
+    }
+    if (key.node.has_value()) {
+        w.Key("node");
+        ::json::rjson_serialize(w, key.node);
+    }
     w.EndObject();
 }
 
@@ -808,7 +852,8 @@ public:
     }
 
     bool EndObject(rapidjson::SizeType) {
-        return std::exchange(_state, state::empty) == state::object;
+        return result.seq.has_value() == result.node.has_value()
+               && std::exchange(_state, state::empty) == state::object;
     }
 };
 
@@ -841,6 +886,7 @@ class delete_subject_value_handler : public json::base_handler<Encoding> {
         empty = 0,
         object,
         subject,
+        version,
     };
     state _state = state::empty;
 
@@ -858,6 +904,7 @@ public:
         case state::object: {
             std::optional<state> s{string_switch<std::optional<state>>(sv)
                                      .match("subject", state::subject)
+                                     .match("version", state::version)
                                      .default_match(std::nullopt)};
             if (s.has_value()) {
                 _state = *s;
@@ -866,6 +913,7 @@ public:
         }
         case state::empty:
         case state::subject:
+        case state::version:
             return false;
         }
         return false;
@@ -879,6 +927,22 @@ public:
             _state = state::object;
             return true;
         }
+        case state::empty:
+        case state::object:
+        case state::version:
+            return false;
+        }
+        return false;
+    }
+
+    bool Uint(int) {
+        switch (_state) {
+        case state::version: {
+            // version ignored
+            _state = state::object;
+            return true;
+        }
+        case state::subject:
         case state::empty:
         case state::object:
             return false;
@@ -1004,7 +1068,10 @@ struct consume_to_store {
         // writer wins: disregard subsequent events whose seq field
         // doesn't match their actually offset.  Check is only applied
         // for messages with values, not tombstones.
-        if (val && offset != key.seq) {
+        //
+        // Check seq if it was provided, otherwise assume 3rdparty
+        // compatibility, which can't collide.
+        if (val && key.seq.has_value() && offset != key.seq) {
             vlog(
               plog.debug,
               "Ignoring out of order {} (at offset {})",
@@ -1064,7 +1131,10 @@ struct consume_to_store {
     ss::future<> apply(
       model::offset offset, config_key key, std::optional<config_value> val) {
         // Drop out-of-sequence messages
-        if (val && offset != key.seq) {
+        //
+        // Check seq if it was provided, otherwise assume 3rdparty
+        // compatibility, which can't collide.
+        if (val && key.seq.has_value() && offset != key.seq) {
             vlog(
               plog.debug,
               "Ignoring out of order {} (at offset {})",
@@ -1106,7 +1176,10 @@ struct consume_to_store {
         // Out-of-place events happen when two writers collide.  First
         // writer wins: disregard subsequent events whose seq field
         // doesn't match their actually offset.
-        if (val.has_value() && offset != key.seq) {
+        //
+        // Check seq if it was provided, otherwise assume 3rdparty
+        // compatibility, which can't collide.
+        if (val && key.seq.has_value() && offset != key.seq) {
             vlog(
               plog.debug,
               "Ignoring out of order {} (at offset {})",

@@ -209,6 +209,10 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   std::chrono::milliseconds transaction_timeout_ms) {
+    if (!_c->is_leader()) {
+        co_return tx_errc::leader_not_found;
+    }
+
     if (!co_await sync(_sync_timeout)) {
         co_return tx_errc::stale;
     }
@@ -1061,8 +1065,9 @@ ss::future<> rm_stm::apply(model::record_batch b) {
         }
     }
 
-    compact_snapshot();
     _insync_offset = last_offset;
+
+    compact_snapshot();
     if (_is_autoabort_enabled && !_is_autoabort_active) {
         abort_old_txes();
     }

@@ -44,6 +44,9 @@ ss::future<response_ptr> end_txn_handler::handle(
               case cluster::tx_errc::none:
                   data.error_code = error_code::none;
                   break;
+              case cluster::tx_errc::not_coordinator:
+                  data.error_code = error_code::not_coordinator;
+                  break;
               case cluster::tx_errc::fenced:
                   data.error_code = error_code::invalid_producer_epoch;
                   break;

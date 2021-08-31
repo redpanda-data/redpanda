@@ -28,10 +28,14 @@ const (
 	mb = 1024 * kb
 	gb = 1024 * mb
 
-	defaultTopicReplicationNumber = 3
-	minimumReplicas               = 3
+	defaultTopicReplicationNumber           = 3
+	transactionCoordinatorReplicationNumber = 3
+	idAllocatorReplicationNumber            = 3
+	minimumReplicas                         = 3
 
-	defaultTopicReplicationKey = "redpanda.default_topic_replications"
+	defaultTopicReplicationKey           = "redpanda.default_topic_replications"
+	transactionCoordinatorReplicationKey = "redpanda.transaction_coordinator_replication"
+	idAllocatorReplicationKey            = "redpanda.id_allocator_replication"
 
 	defaultSchemaRegistryPort = 8081
 )
@@ -88,20 +92,35 @@ func (r *Cluster) Default() {
 		r.Spec.Configuration.SchemaRegistry.Port = defaultSchemaRegistryPort
 	}
 
-	if *r.Spec.Replicas >= minimumReplicas {
-		if r.Spec.AdditionalConfiguration == nil {
-			r.Spec.AdditionalConfiguration = make(map[string]string)
-		}
-		_, ok := r.Spec.AdditionalConfiguration[defaultTopicReplicationKey]
-		if !ok {
-			r.Spec.AdditionalConfiguration[defaultTopicReplicationKey] = strconv.Itoa(defaultTopicReplicationNumber)
-		}
-	}
+	r.setDefaultAdditionalConfiguration()
 
 	if r.Spec.Sidecars.RpkStatus == nil {
 		r.Spec.Sidecars.RpkStatus = &Sidecar{
 			Enabled:   true,
 			Resources: DefaultRpkStatusResources,
+		}
+	}
+}
+
+var defaultAdditionalConfiguration = map[string]int{
+	defaultTopicReplicationKey:           defaultTopicReplicationNumber,
+	transactionCoordinatorReplicationKey: transactionCoordinatorReplicationNumber,
+	idAllocatorReplicationKey:            idAllocatorReplicationNumber,
+}
+
+// setDefaultAdditionalConfiguration sets additional configuration fields based
+// on the best practices
+func (r *Cluster) setDefaultAdditionalConfiguration() {
+	if *r.Spec.Replicas >= minimumReplicas {
+		if r.Spec.AdditionalConfiguration == nil {
+			r.Spec.AdditionalConfiguration = make(map[string]string)
+		}
+
+		for k, v := range defaultAdditionalConfiguration {
+			_, ok := r.Spec.AdditionalConfiguration[k]
+			if !ok {
+				r.Spec.AdditionalConfiguration[k] = strconv.Itoa(v)
+			}
 		}
 	}
 }

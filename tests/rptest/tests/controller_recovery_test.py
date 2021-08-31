@@ -15,10 +15,12 @@ from rptest.tests.redpanda_test import RedpandaTest
 
 class ControllerRecoveryTest(RedpandaTest):
     """
-    Shutdown the controller node and verify that a new controller is elected.
+    Test controller failover.
     """
-    @cluster(num_nodes=3)
-    def test_controller_recovery(self):
+    def _failover(self):
+        """
+        stop controller node and wait for failover
+        """
         prev = self.redpanda.controller()
         self.redpanda.stop_node(prev)
 
@@ -27,6 +29,27 @@ class ControllerRecoveryTest(RedpandaTest):
             return curr and curr != prev
 
         wait_until(new_controller_elected,
-                   timeout_sec=30,
-                   backoff_sec=2,
+                   timeout_sec=20,
+                   backoff_sec=1,
                    err_msg="Controller did not failover")
+
+        return prev
+
+    def _restart(self, controller):
+        self.redpanda.start_node(controller)
+
+        wait_until(
+            lambda: self.redpanda.healthy(),
+            timeout_sec=20,
+            backoff_sec=2,
+            err_msg=f"Cluster did not become healthy after {controller} restart"
+        )
+
+    @cluster(num_nodes=3)
+    def test_controller_recovery(self):
+        big = self.scale.ci or self.scale.release
+        iterations = 12 if big else 2
+
+        for _ in range(iterations):
+            controller = self._failover()
+            self._restart(controller)

@@ -13,6 +13,7 @@ import signal
 import tempfile
 import shutil
 import requests
+import random
 import threading
 import collections
 
@@ -27,6 +28,7 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.storage import ClusterStorage, NodeStorage
 from rptest.services.admin import Admin
 from rptest.clients.python_librdkafka import PythonLibrdkafka
+from rptest.clients.types import TopicSpec
 from kafka import KafkaAdminClient
 
 Partition = collections.namedtuple('Partition',
@@ -396,12 +398,12 @@ class RedpandaService(Service):
         return f"{node.account.hostname}:{cfg['redpanda']['kafka_api']['port']}"
 
     def brokers(self, limit=None):
-        brokers = ",".join(
-            map(lambda n: self.broker_address(n), self._started[:limit]))
-        return brokers
+        return ",".join(self.brokers_list(limit))
 
     def brokers_list(self, limit=None):
-        return [self.broker_address(n) for n in self._started[:limit]]
+        brokers = [self.broker_address(n) for n in self._started[:limit]]
+        random.shuffle(brokers)
+        return brokers
 
     def metrics(self, node):
         assert node in self._started
@@ -432,6 +434,25 @@ class RedpandaService(Service):
             assert num_shards > 0
             shards_per_node[self.idx(node)] = num_shards
         return shards_per_node
+
+    def healthy(self):
+        """
+        A primitive health check on all the nodes which returns True when all
+        nodes report that no under replicated partitions exist. This should
+        later be replaced by a proper / official start-up probe type check on
+        the health of a node after a restart.
+        """
+        counts = {self.idx(node): None for node in self.nodes}
+        for node in self.nodes:
+            metrics = self.metrics(node)
+            idx = self.idx(node)
+            for family in metrics:
+                for sample in family.samples:
+                    if sample.name == "vectorized_cluster_partition_under_replicated_replicas":
+                        if counts[idx] is None:
+                            counts[idx] = 0
+                        counts[idx] += int(sample.value)
+        return all(map(lambda count: count == 0, counts.values()))
 
     def describe_topics(self, topics=None):
         """
@@ -472,10 +493,13 @@ class RedpandaService(Service):
 
         return [make_partition(p) for p in topic["partitions"]]
 
-    def create_topic(self, spec):
+    def create_topic(self, specs):
+        if isinstance(specs, TopicSpec):
+            specs = [specs]
         client = self._client_type(self)
-        self.logger.debug(f"Creating topic {spec}")
-        client.create_topic(spec)
+        for spec in specs:
+            self.logger.debug(f"Creating topic {spec}")
+            client.create_topic(spec)
 
     def delete_topic(self, name):
         client = self._client_type(self)

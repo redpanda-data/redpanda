@@ -13,6 +13,7 @@ package out
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -79,10 +80,15 @@ type TabWriter struct {
 // are uppercased and immediately printed; Print can be used to append
 // additional rows.
 func NewTable(headers ...string) *TabWriter {
+	return NewTableTo(os.Stdout, headers...)
+}
+
+// NewTableTo is NewTable writing to w.
+func NewTableTo(w io.Writer, headers ...string) *TabWriter {
 	for i, header := range headers {
 		headers[i] = strings.ToUpper(header)
 	}
-	t := NewTabWriter()
+	t := NewTabWriterTo(w)
 	t.PrintStrings(headers...)
 	return t
 }
@@ -91,7 +97,12 @@ func NewTable(headers ...string) *TabWriter {
 // NewTable. This function is meant to be used when you may want some column
 // style output (i.e., headers on the left).
 func NewTabWriter() *TabWriter {
-	return &TabWriter{tabwriter.NewWriter(os.Stdout, 6, 4, 2, ' ', 0)}
+	return NewTabWriterTo(os.Stdout)
+}
+
+// NewTabWriterTo returns a TabWriter that writes to w.
+func NewTabWriterTo(w io.Writer) *TabWriter {
+	return &TabWriter{tabwriter.NewWriter(w, 6, 4, 2, ' ', 0)}
 }
 
 // Print stringifies the arguments and calls PrintStrings.

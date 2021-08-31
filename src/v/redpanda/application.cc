@@ -87,6 +87,23 @@ static void set_local_kafka_client_config(
     }
 }
 
+static void set_sr_local_kafka_client_config(
+  std::optional<kafka::client::configuration>& client_config,
+  const config::configuration& config) {
+    set_local_kafka_client_config(client_config, config);
+    if (client_config.has_value()) {
+        if (!client_config->produce_batch_delay.is_overriden()) {
+            client_config->produce_batch_delay.set_value(0ms);
+        }
+        if (!client_config->produce_batch_record_count.is_overriden()) {
+            client_config->produce_batch_record_count.set_value(int32_t(0));
+        }
+        if (!client_config->produce_batch_size_bytes.is_overriden()) {
+            client_config->produce_batch_size_bytes.set_value(int32_t(0));
+        }
+    }
+}
+
 application::application(ss::sstring logger_name)
   : _log(std::move(logger_name))
   , _rm_group_proxy(std::ref(rm_group_frontend)){
@@ -311,7 +328,7 @@ void application::hydrate_config(const po::variables_map& cfg) {
         if (config["schema_registry_client"]) {
             _schema_reg_client_config.emplace(config["schema_registry_client"]);
         } else {
-            set_local_kafka_client_config(
+            set_sr_local_kafka_client_config(
               _schema_reg_client_config, config::shard_local_cfg());
         }
         _schema_reg_config->for_each(config_printer("schema_registry"));
@@ -650,6 +667,10 @@ void application::wire_up_redpanda_services() {
                 config::shard_local_cfg().disable_metrics());
               c.listen_backlog
                 = config::shard_local_cfg().rpc_server_listen_backlog;
+              c.tcp_recv_buf
+                = config::shard_local_cfg().rpc_server_tcp_recv_buf;
+              c.tcp_send_buf
+                = config::shard_local_cfg().rpc_server_tcp_send_buf;
               auto rpc_builder = config::shard_local_cfg()
                                    .rpc_server_tls()
                                    .get_credentials_builder()
@@ -746,6 +767,10 @@ void application::wire_up_redpanda_services() {
                 = memory_groups::kafka_total_memory();
               c.listen_backlog
                 = config::shard_local_cfg().rpc_server_listen_backlog;
+              c.tcp_recv_buf
+                = config::shard_local_cfg().rpc_server_tcp_recv_buf;
+              c.tcp_send_buf
+                = config::shard_local_cfg().rpc_server_tcp_send_buf;
               auto& tls_config
                 = config::shard_local_cfg().kafka_api_tls.value();
               for (const auto& ep : config::shard_local_cfg().kafka_api()) {

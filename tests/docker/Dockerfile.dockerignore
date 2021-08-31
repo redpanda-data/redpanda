@@ -2,4 +2,3 @@
 !tests/java
 !tests/docker/ssh
 !tests/setup.py
-!taskfiles/dev.yml

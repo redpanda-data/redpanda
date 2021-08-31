@@ -6,6 +6,10 @@ import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.errors.ProducerFencedException;
 
 class Verifier {
+  public static interface StringAction {
+    void run(String connection) throws Exception;
+  }
+
   final static String txId1 = "tx1";
   final static String txId2 = "tx2";
   final static String topic1 = "topic1";
@@ -13,107 +17,175 @@ class Verifier {
   final static String groupId = "groupId";
 
   public static void main(final String[] args) throws Exception {
-    initPasses(args[0]);
-    txPasses(args[0]);
-    txesPasses(args[0]);
-    abortPasses(args[0]);
-    commutingTxesPass(args[0]);
-    conflictingTxFails(args[0]);
-    readCommittedSeekTest(args[0]);
-    readUncommittedSeekTest(args[0]);
-    readCommittedTxSeekTest(args[0]);
-    readUncommittedTxSeekTest(args[0]);
-    fetchReadsCommittedTxsTest(args[0]);
-    fetchDoesntReadAbortedTxsTest(args[0]);
-    readCommittedSeekRespectsOngoingTx(args[0]);
-    readCommittedSeekRespectsLongHangingTx(args[0]);
-    readCommittedSeekDoesntRespectShortHangingTx(args[0]);
-    readUncommittedSeekDoesntRespectOngoingTx(args[0]);
-    setGroupStartOffsetPasses(args[0]);
-    readProcessWrite(args[0]);
+    retry(Verifier::initPasses, args[0]);
+    retry(Verifier::txPasses, args[0]);
+    retry(Verifier::txesPasses, args[0]);
+    retry(Verifier::abortPasses, args[0]);
+    retry(Verifier::commutingTxesPass, args[0]);
+    retry(Verifier::conflictingTxFails, args[0]);
+    retry(Verifier::readCommittedSeekTest, args[0]);
+    retry(Verifier::readUncommittedSeekTest, args[0]);
+    retry(Verifier::readCommittedTxSeekTest, args[0]);
+    retry(Verifier::readUncommittedTxSeekTest, args[0]);
+    retry(Verifier::fetchReadsCommittedTxsTest, args[0]);
+    retry(Verifier::fetchDoesntReadAbortedTxsTest, args[0]);
+    retry(Verifier::readCommittedSeekRespectsOngoingTx, args[0]);
+    retry(Verifier::readCommittedSeekRespectsLongHangingTx, args[0]);
+    retry(Verifier::readCommittedSeekDoesntRespectShortHangingTx, args[0]);
+    retry(Verifier::readUncommittedSeekDoesntRespectOngoingTx, args[0]);
+    retry(Verifier::setGroupStartOffsetPasses, args[0]);
+    retry(Verifier::readProcessWrite, args[0]);
+  }
+
+  static void retry(StringAction action, String connection) throws Exception {
+    var retries = 3;
+    while (retries > 0) {
+      retries--;
+      try {
+        action.run(connection);
+        return;
+      } catch (KafkaException e) {
+        if (retries == 0) {
+          throw e;
+        }
+      }
+    }
   }
 
   static void initPasses(String connection) throws Exception {
-    var producer = new TxProducer(connection, txId1);
-    producer.initTransactions();
-    producer.close();
+    TxProducer producer = null;
+    try {
+      producer = new TxProducer(connection, txId1);
+      producer.initTransactions();
+    } finally {
+      if (producer != null) {
+        producer.close();
+      }
+    }
   }
 
   static void txPasses(String connection) throws Exception {
-    var producer = new TxProducer(connection, txId1);
-    producer.initTransactions();
-    producer.commitTx(topic1, "key1", "value1");
-    producer.close();
+    TxProducer producer = null;
+    try {
+      producer = new TxProducer(connection, txId1);
+      producer.initTransactions();
+      producer.commitTx(topic1, "key1", "value1");
+    } finally {
+      if (producer != null) {
+        producer.close();
+      }
+    }
   }
 
   static void txesPasses(String connection) throws Exception {
-    var producer = new TxProducer(connection, txId1);
-    producer.initTransactions();
-    producer.commitTx(topic1, "key1", "value1");
-    producer.commitTx(topic1, "key2", "value2");
-    producer.close();
+    TxProducer producer = null;
+    try {
+      producer = new TxProducer(connection, txId1);
+      producer.initTransactions();
+      producer.commitTx(topic1, "key1", "value1");
+      producer.commitTx(topic1, "key2", "value2");
+    } finally {
+      if (producer != null) {
+        producer.close();
+      }
+    }
   }
 
   static void abortPasses(String connection) throws Exception {
-    var producer = new TxProducer(connection, txId1);
-    producer.initTransactions();
-    producer.abortTx(topic1, "key1", "value1");
-    producer.close();
+    TxProducer producer = null;
+    try {
+      producer = new TxProducer(connection, txId1);
+      producer.initTransactions();
+      producer.abortTx(topic1, "key1", "value1");
+    } finally {
+      if (producer != null) {
+        producer.close();
+      }
+    }
   }
 
   static void commutingTxesPass(String connection) throws Exception {
-    var p1 = new TxProducer(connection, txId1);
-    var p2 = new TxProducer(connection, txId2);
-    p1.initTransactions();
-    p1.beginTransaction();
-    p1.send(topic1, "key1", "p1:value1");
-    p2.initTransactions();
-    p2.beginTransaction();
-    p2.send(topic1, "key1", "p2:value1");
-    p1.commitTransaction();
-    p2.commitTransaction();
+    TxProducer p1 = null, p2 = null;
+    try {
+      p1 = new TxProducer(connection, txId1);
+      p2 = new TxProducer(connection, txId2);
+      p1.initTransactions();
+      p1.beginTransaction();
+      p1.send(topic1, "key1", "p1:value1");
+      p2.initTransactions();
+      p2.beginTransaction();
+      p2.send(topic1, "key1", "p2:value1");
+      p1.commitTransaction();
+      p2.commitTransaction();
+    } finally {
+      if (p1 != null) {
+        p1.close();
+      }
+      if (p2 != null) {
+        p2.close();
+      }
+    }
   }
 
   static void conflictingTxFails(String connection) throws Exception {
-    var p1 = new TxProducer(connection, txId1);
-    var p2 = new TxProducer(connection, txId1);
-    p1.initTransactions();
-    p1.beginTransaction();
-    p1.send(topic1, "key1", "p1:value1");
-    p2.initTransactions();
-    p2.beginTransaction();
-    p2.send(topic1, "key1", "p2:value1");
+    TxProducer p1 = null, p2 = null;
     try {
-      p1.commitTransaction();
-      throw new Exception("commit must throw ProducerFencedException");
-    } catch (ProducerFencedException e) {
-      // eating ProducerFencedException
+      p1 = new TxProducer(connection, txId1);
+      p2 = new TxProducer(connection, txId1);
+      p1.initTransactions();
+      p1.beginTransaction();
+      p1.send(topic1, "key1", "p1:value1");
+      p2.initTransactions();
+      p2.beginTransaction();
+      p2.send(topic1, "key1", "p2:value1");
+      try {
+        p1.commitTransaction();
+        throw new Exception("commit must throw ProducerFencedException");
+      } catch (ProducerFencedException e) {
+        // eating ProducerFencedException
+      }
+      p2.commitTransaction();
+    } finally {
+      if (p1 != null) {
+        p1.close();
+      }
+      if (p2 != null) {
+        p2.close();
+      }
     }
-    p2.commitTransaction();
-    p2.close();
-    p1.close();
   }
 
   static void seekTest(String connection, boolean isReadComitted)
       throws Exception {
-    var producer = new SimpleProducer(connection);
-    long offset = producer.send(topic1, "key1", "value1");
-    producer.close();
+    SimpleProducer producer = null;
+    TxConsumer consumer = null;
 
-    var consumer = new TxConsumer(connection, topic1, isReadComitted);
-    consumer.seekToEnd();
+    try {
+      producer = new SimpleProducer(connection);
+      long offset = producer.send(topic1, "key1", "value1");
+      producer.close();
+      producer = null;
 
-    int retries = 8;
-    while (offset >= consumer.position() && retries > 0) {
-      // partitions lag behind a coordinator
-      // we can't avoid sleep :(
-      Thread.sleep(500);
+      consumer = new TxConsumer(connection, topic1, isReadComitted);
       consumer.seekToEnd();
-      retries--;
-    }
-    assertLess(offset, consumer.position());
 
-    consumer.close();
+      int retries = 8;
+      while (offset >= consumer.position() && retries > 0) {
+        // partitions lag behind a coordinator
+        // we can't avoid sleep :(
+        Thread.sleep(500);
+        consumer.seekToEnd();
+        retries--;
+      }
+      assertLess(offset, consumer.position());
+    } finally {
+      if (producer != null) {
+        producer.close();
+      }
+      if (consumer != null) {
+        consumer.close();
+      }
+    }
   }
 
   static void readCommittedSeekTest(String connection) throws Exception {
@@ -126,25 +198,37 @@ class Verifier {
 
   static void txSeekTest(String connection, boolean isReadComitted)
       throws Exception {
-    var producer = new TxProducer(connection, txId1);
-    producer.initTransactions();
-    long offset = producer.commitTx(topic1, "key1", "value1");
-    producer.close();
 
-    var consumer = new TxConsumer(connection, topic1, isReadComitted);
-    consumer.seekToEnd();
+    TxProducer producer = null;
+    TxConsumer consumer = null;
 
-    int retries = 8;
-    while (offset >= consumer.position() && retries > 0) {
-      // partitions lag behind a coordinator
-      // we can't avoid sleep :(
-      Thread.sleep(500);
+    try {
+      producer = new TxProducer(connection, txId1);
+      producer.initTransactions();
+      long offset = producer.commitTx(topic1, "key1", "value1");
+      producer.close();
+      producer = null;
+
+      consumer = new TxConsumer(connection, topic1, isReadComitted);
       consumer.seekToEnd();
-      retries--;
-    }
-    assertLess(offset, consumer.position());
 
-    consumer.close();
+      int retries = 8;
+      while (offset >= consumer.position() && retries > 0) {
+        // partitions lag behind a coordinator
+        // we can't avoid sleep :(
+        Thread.sleep(500);
+        consumer.seekToEnd();
+        retries--;
+      }
+      assertLess(offset, consumer.position());
+    } finally {
+      if (producer != null) {
+        producer.close();
+      }
+      if (consumer != null) {
+        consumer.close();
+      }
+    }
   }
 
   static void readCommittedTxSeekTest(String connection) throws Exception {
@@ -156,220 +240,308 @@ class Verifier {
   }
 
   static void fetchReadsCommittedTxsTest(String connection) throws Exception {
-    Map<String, Long> offsets = new HashMap<>();
-    var producer = new TxProducer(connection, txId1);
-    producer.initTransactions();
-    long first_offset = producer.commitTx(topic1, "key1", "value1");
-    offsets.put("key1", first_offset);
-    for (int i = 2; i < 10; i++) {
-      long offset = producer.commitTx(topic1, "key" + i, "value" + i);
-      offsets.put("key" + i, offset);
-    }
-    long last_offset = producer.commitTx(topic1, "key10", "value10");
-    offsets.put("key10", last_offset);
-    producer.close();
+    TxProducer producer = null;
+    TxConsumer consumer = null;
 
-    var consumer = new TxConsumer(connection, topic1, true);
-    consumer.seekToEnd();
-    int retries = 8;
-    while (last_offset >= consumer.position() && retries > 0) {
-      // partitions lag behind a coordinator
-      // we can't avoid sleep :(
-      Thread.sleep(500);
+    try {
+      Map<String, Long> offsets = new HashMap<>();
+      producer = new TxProducer(connection, txId1);
+      producer.initTransactions();
+      long first_offset = producer.commitTx(topic1, "key1", "value1");
+      offsets.put("key1", first_offset);
+      for (int i = 2; i < 10; i++) {
+        long offset = producer.commitTx(topic1, "key" + i, "value" + i);
+        offsets.put("key" + i, offset);
+      }
+      long last_offset = producer.commitTx(topic1, "key10", "value10");
+      offsets.put("key10", last_offset);
+      producer.close();
+      producer = null;
+
+      consumer = new TxConsumer(connection, topic1, true);
       consumer.seekToEnd();
-      retries--;
-    }
-    assertLess(last_offset, consumer.position());
+      int retries = 8;
+      while (last_offset >= consumer.position() && retries > 0) {
+        // partitions lag behind a coordinator
+        // we can't avoid sleep :(
+        Thread.sleep(500);
+        consumer.seekToEnd();
+        retries--;
+      }
+      assertLess(last_offset, consumer.position());
 
-    var records = consumer.read(first_offset, last_offset, 1);
-    consumer.close();
-    assertEquals(records.size(), offsets.size());
-    for (var record : records) {
-      assertTrue(offsets.containsKey(record.key));
-      assertEquals(offsets.get(record.key), record.offset);
+      var records = consumer.read(first_offset, last_offset, 1);
+      consumer.close();
+      consumer = null;
+      assertEquals(records.size(), offsets.size());
+      for (var record : records) {
+        assertTrue(offsets.containsKey(record.key));
+        assertEquals(offsets.get(record.key), record.offset);
+      }
+    } finally {
+      if (producer != null) {
+        producer.close();
+      }
+      if (consumer != null) {
+        consumer.close();
+      }
     }
   }
 
   static void fetchDoesntReadAbortedTxsTest(String connection)
       throws Exception {
-    var producer = new TxProducer(connection, txId1);
-    producer.initTransactions();
-    long first_offset = producer.commitTx(topic1, "key1", "value1");
-    producer.abortTx(topic1, "key2", "value2");
-    long last_offset = producer.commitTx(topic1, "key3", "value3");
-    producer.close();
 
-    var consumer = new TxConsumer(connection, topic1, true);
-    consumer.seekToEnd();
-    int retries = 8;
-    while (last_offset >= consumer.position() && retries > 0) {
-      // partitions lag behind a coordinator
-      // we can't avoid sleep :(
-      Thread.sleep(500);
+    TxProducer producer = null;
+    TxConsumer consumer = null;
+    try {
+      producer = new TxProducer(connection, txId1);
+      producer.initTransactions();
+      long first_offset = producer.commitTx(topic1, "key1", "value1");
+      producer.abortTx(topic1, "key2", "value2");
+      long last_offset = producer.commitTx(topic1, "key3", "value3");
+      producer.close();
+      producer = null;
+
+      consumer = new TxConsumer(connection, topic1, true);
       consumer.seekToEnd();
-      retries--;
-    }
-    assertLess(last_offset, consumer.position());
+      int retries = 8;
+      while (last_offset >= consumer.position() && retries > 0) {
+        // partitions lag behind a coordinator
+        // we can't avoid sleep :(
+        Thread.sleep(500);
+        consumer.seekToEnd();
+        retries--;
+      }
+      assertLess(last_offset, consumer.position());
 
-    var records = consumer.read(first_offset, last_offset, 1);
-    consumer.close();
-    assertEquals(records.size(), 2);
-    for (var record : records) {
-      if (record.key.equals("key1")) {
-        assertEquals(first_offset, record.offset);
-      } else if (record.key.equals("key3")) {
-        assertEquals(last_offset, record.offset);
-      } else {
-        fail("Unexpected key: " + record.key);
+      var records = consumer.read(first_offset, last_offset, 1);
+      consumer.close();
+      consumer = null;
+      assertEquals(records.size(), 2);
+      for (var record : records) {
+        if (record.key.equals("key1")) {
+          assertEquals(first_offset, record.offset);
+        } else if (record.key.equals("key3")) {
+          assertEquals(last_offset, record.offset);
+        } else {
+          fail("Unexpected key: " + record.key);
+        }
+      }
+    } finally {
+      if (producer != null) {
+        producer.close();
+      }
+      if (consumer != null) {
+        consumer.close();
       }
     }
   }
 
   static void readCommittedSeekRespectsOngoingTx(String connection)
       throws Exception {
-    var producer = new TxProducer(connection, txId1);
-    producer.initTransactions();
-    producer.beginTransaction();
-    long offset = producer.send(topic1, "key1", "value1");
+    TxProducer producer = null;
+    TxConsumer consumer = null;
+    try {
+      producer = new TxProducer(connection, txId1);
+      producer.initTransactions();
+      producer.beginTransaction();
+      long offset = producer.send(topic1, "key1", "value1");
 
-    var consumer = new TxConsumer(connection, topic1, true);
-    consumer.seekToEnd();
-    assertLessOrEqual(consumer.position(), offset);
+      consumer = new TxConsumer(connection, topic1, true);
+      consumer.seekToEnd();
+      assertLessOrEqual(consumer.position(), offset);
 
-    producer.commitTransaction();
-    producer.close();
-    consumer.close();
+      producer.commitTransaction();
+    } finally {
+      if (producer != null) {
+        producer.close();
+      }
+      if (consumer != null) {
+        consumer.close();
+      }
+    }
   }
 
   static void readCommittedSeekRespectsLongHangingTx(String connection)
       throws Exception {
-    var producer = new TxProducer(connection, txId1, Integer.MAX_VALUE);
-    producer.initTransactions();
-    producer.beginTransaction();
-    long offset = producer.send(topic1, "key1", "value1");
+    TxProducer producer = null;
+    TxConsumer consumer = null;
+    try {
+      producer = new TxProducer(connection, txId1, Integer.MAX_VALUE);
+      producer.initTransactions();
+      producer.beginTransaction();
+      long offset = producer.send(topic1, "key1", "value1");
 
-    var consumer = new TxConsumer(connection, topic1, true);
-    int retries = 8;
-    while (offset >= consumer.position() && retries > 0) {
-      // partitions lag behind a coordinator
-      // we can't avoid sleep :(
-      Thread.sleep(500);
-      consumer.seekToEnd();
-      retries--;
+      consumer = new TxConsumer(connection, topic1, true);
+      int retries = 8;
+      while (offset >= consumer.position() && retries > 0) {
+        // partitions lag behind a coordinator
+        // we can't avoid sleep :(
+        Thread.sleep(500);
+        consumer.seekToEnd();
+        retries--;
+      }
+      assertLessOrEqual(consumer.position(), offset);
+
+      producer.commitTransaction();
+    } finally {
+      if (producer != null) {
+        producer.close();
+      }
+      if (consumer != null) {
+        consumer.close();
+      }
     }
-    assertLessOrEqual(consumer.position(), offset);
-
-    producer.commitTransaction();
-    producer.close();
-    consumer.close();
   }
 
   static void readCommittedSeekDoesntRespectShortHangingTx(String connection)
       throws Exception {
-    var producer = new TxProducer(connection, txId1, 100);
-    producer.initTransactions();
-    producer.beginTransaction();
-    long offset = producer.send(topic1, "key1", "value1");
-
-    var consumer = new TxConsumer(connection, topic1, true);
-    int retries = 8;
-    while (offset >= consumer.position() && retries > 0) {
-      // partitions lag behind a coordinator
-      // we can't avoid sleep :(
-      Thread.sleep(500);
-      consumer.seekToEnd();
-      retries--;
-    }
-    assertLess(offset, consumer.position());
-
+    TxProducer producer = null;
+    TxConsumer consumer = null;
     try {
-      producer.commitTransaction();
-      fail("commit must fail because tx is already aborted");
-    } catch (KafkaException e) {
-    }
+      producer = new TxProducer(connection, txId1, 100);
+      producer.initTransactions();
+      producer.beginTransaction();
+      long offset = producer.send(topic1, "key1", "value1");
 
-    producer.close();
-    consumer.close();
+      consumer = new TxConsumer(connection, topic1, true);
+      int retries = 8;
+      while (offset >= consumer.position() && retries > 0) {
+        // partitions lag behind a coordinator
+        // we can't avoid sleep :(
+        Thread.sleep(500);
+        consumer.seekToEnd();
+        retries--;
+      }
+      assertLess(offset, consumer.position());
+
+      try {
+        producer.commitTransaction();
+        fail("commit must fail because tx is already aborted");
+      } catch (KafkaException e) {
+      }
+    } finally {
+      if (producer != null) {
+        producer.close();
+      }
+      if (consumer != null) {
+        consumer.close();
+      }
+    }
   }
 
   static void readUncommittedSeekDoesntRespectOngoingTx(String connection)
       throws Exception {
-    var producer = new TxProducer(connection, txId1);
-    producer.initTransactions();
-    producer.beginTransaction();
-    long offset = producer.send(topic1, "key1", "value1");
+    TxProducer producer = null;
+    TxConsumer consumer = null;
+    try {
+      producer = new TxProducer(connection, txId1);
+      producer.initTransactions();
+      producer.beginTransaction();
+      long offset = producer.send(topic1, "key1", "value1");
 
-    var consumer = new TxConsumer(connection, topic1, false);
+      consumer = new TxConsumer(connection, topic1, false);
 
-    int retries = 8;
-    while (offset >= consumer.position() && retries > 0) {
-      // partitions lag behind a coordinator
-      // we can't avoid sleep :(
-      Thread.sleep(500);
-      consumer.seekToEnd();
-      retries--;
+      int retries = 8;
+      while (offset >= consumer.position() && retries > 0) {
+        // partitions lag behind a coordinator
+        // we can't avoid sleep :(
+        Thread.sleep(500);
+        consumer.seekToEnd();
+        retries--;
+      }
+      assertLess(offset, consumer.position());
+
+      producer.commitTransaction();
+    } finally {
+      if (producer != null) {
+        producer.close();
+      }
+      if (consumer != null) {
+        consumer.close();
+      }
     }
-    assertLess(offset, consumer.position());
-
-    producer.commitTransaction();
-    producer.close();
-    consumer.close();
   }
 
   static void setGroupStartOffsetPasses(String connection) throws Exception {
-    TxStream stream = new TxStream(connection);
-    stream.initProducer(txId1);
-    stream.initConsumer(topic1, groupId, true);
-    stream.setGroupStartOffset(0);
-    stream.close();
+    TxStream stream = null;
+    try {
+      stream = new TxStream(connection);
+      stream.initProducer(txId1);
+      stream.initConsumer(topic1, groupId, true);
+      stream.setGroupStartOffset(0);
+    } finally {
+      if (stream != null) {
+        stream.close();
+      }
+    }
   }
 
   static void readProcessWrite(String connection) throws Exception {
-    var producer = new SimpleProducer(connection);
-    long target_offset = producer.send(topic2, "noop-1", "noop");
-    producer.close();
+    SimpleProducer producer = null;
+    TxStream stream = null;
+    TxConsumer consumer = null;
 
-    Map<Long, TxRecord> input = new HashMap<>();
-    TxStream stream = new TxStream(connection);
-    stream.initProducer(txId1);
+    try {
+      producer = new SimpleProducer(connection);
+      long target_offset = producer.send(topic2, "noop-1", "noop");
+      producer.close();
+      producer = null;
 
-    long first_offset = Long.MAX_VALUE;
-    long last_offset = 0;
-    for (int i = 0; i < 3; i++) {
-      TxRecord record = new TxRecord();
-      record.key = "key" + i;
-      record.value = "value" + i;
-      record.offset = stream.commitTx(topic1, record.key, record.value);
-      first_offset = Math.min(first_offset, record.offset);
-      last_offset = record.offset;
-      input.put(record.offset, record);
-    }
+      Map<Long, TxRecord> input = new HashMap<>();
+      stream = new TxStream(connection);
+      stream.initProducer(txId1);
 
-    stream.initConsumer(topic1, groupId, true);
-    stream.setGroupStartOffset(first_offset);
+      long first_offset = Long.MAX_VALUE;
+      long last_offset = 0;
+      for (int i = 0; i < 3; i++) {
+        TxRecord record = new TxRecord();
+        record.key = "key" + i;
+        record.value = "value" + i;
+        record.offset = stream.commitTx(topic1, record.key, record.value);
+        first_offset = Math.min(first_offset, record.offset);
+        last_offset = record.offset;
+        input.put(record.offset, record);
+      }
 
-    int retries = 8;
-    while (first_offset > stream.getGroupOffset() && retries > 0) {
-      // consumer groups lag behind a coordinator
-      // we can't avoid sleep :(
-      Thread.sleep(500);
-      retries--;
-    }
-    assertEquals(first_offset, stream.getGroupOffset());
+      stream.initConsumer(topic1, groupId, true);
+      stream.setGroupStartOffset(first_offset);
 
-    var mapping = stream.process(last_offset, x -> x.toUpperCase(), 1, topic2);
-    stream.close();
+      int retries = 8;
+      while (first_offset > stream.getGroupOffset() && retries > 0) {
+        // consumer groups lag behind a coordinator
+        // we can't avoid sleep :(
+        Thread.sleep(500);
+        retries--;
+      }
+      assertEquals(first_offset, stream.getGroupOffset());
 
-    var consumer = new TxConsumer(connection, topic2, true);
-    var transformed = consumer.readN(target_offset + 1, 3, 1);
+      var mapping
+          = stream.process(last_offset, x -> x.toUpperCase(), 1, topic2);
+      stream.close();
+      stream = null;
 
-    for (var target : transformed) {
-      assertTrue(mapping.containsKey(target.offset));
-      long source_offset = mapping.get(target.offset);
-      assertTrue(input.containsKey(source_offset));
-      var source = input.get(source_offset);
-      assertEquals(source.key, target.key);
-      assertEquals(source.value.toUpperCase(), target.value);
+      consumer = new TxConsumer(connection, topic2, true);
+      var transformed = consumer.readN(target_offset + 1, 3, 1);
+
+      for (var target : transformed) {
+        assertTrue(mapping.containsKey(target.offset));
+        long source_offset = mapping.get(target.offset);
+        assertTrue(input.containsKey(source_offset));
+        var source = input.get(source_offset);
+        assertEquals(source.key, target.key);
+        assertEquals(source.value.toUpperCase(), target.value);
+      }
+    } finally {
+      if (stream != null) {
+        stream.close();
+      }
+      if (producer != null) {
+        producer.close();
+      }
+      if (consumer != null) {
+        consumer.close();
+      }
     }
   }
 

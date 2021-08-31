@@ -83,7 +83,7 @@ class RpkTool:
 
         def partition_line(line):
             m = re.match(
-                r" *(?P<id>\d+) +(?P<leader>\d+) +\[(?P<replicas>.+?)\] + \[.+\] +(?P<hw>\d+) *",
+                r" *(?P<id>\d+) +(?P<leader>\d+) +\[(?P<replicas>.+?)\] +(?P<hw>\d+) *",
                 line)
             if m == None:
                 return None

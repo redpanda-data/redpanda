@@ -39,13 +39,10 @@ RUN apt update && \
     rm -rf /var/lib/apt/lists/* && \
     echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config
 
-#Install task and the latest version of golang since apt links to an
-#old version of golang.
-COPY taskfiles/dev.yml /opt/Taskfile.yml
-RUN curl -SL https://taskfile.dev/install.sh -o /opt/task-install.sh && \
-    cd /opt && chmod a+x task-install.sh && \
-    ./task-install.sh && \
-    ./bin/task install-go GO_BUILD_ROOT=/usr/local
+# install go
+RUN mkdir -p /usr/local/go/ && \
+    bash -c 'if [[ $(uname -m) = "aarch64" ]]; then ARCHID="arm64"; else export ARCHID="amd64"; fi && \
+    curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 https://golang.org/dl/go1.17.linux-${ARCHID}.tar.gz | tar -xz -C /usr/local/go/ --strip 1'
 ENV PATH="${PATH}:/usr/local/go/bin"
 
 # install kafka binary dependencies, librdkafka dev, kafkacat and kaf tools

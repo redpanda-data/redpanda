@@ -24,6 +24,9 @@ class Scale:
             raise RuntimeError(
                 f"Invalid scale {self._scale}. Available: {Scale.SCALES}")
 
+    def __str__(self):
+        return self._scale
+
     @property
     def local(self):
         return self._scale == Scale.LOCAL

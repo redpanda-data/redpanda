@@ -24,6 +24,7 @@
 #include <seastar/core/sleep.hh>
 
 #include <chrono>
+#include <memory>
 using namespace std::chrono_literals;
 
 namespace kafka {
@@ -54,7 +55,6 @@ ss::future<> connection_context::process_one_request() {
           return parse_header(_rs.conn->input())
             .then(
               [this, s = sz.value()](std::optional<request_header> h) mutable {
-                  _rs.probe().request_received();
                   _rs.probe().add_bytes_received(s);
                   if (!h) {
                       vlog(
@@ -62,7 +62,6 @@ ss::future<> connection_context::process_one_request() {
                         "could not parse header from client: {}",
                         _rs.conn->addr);
                       _rs.probe().header_corrupted();
-                      _rs.probe().request_completed();
                       return ss::make_ready_future<>();
                   }
                   return dispatch_method_once(std::move(h.value()), s);
@@ -162,7 +161,7 @@ connection_context::throttle_request(
     // affect.
     auto delay = _proto.quota_mgr().record_tp_and_throttle(
       hdr.client_id, request_size);
-
+    auto tracker = std::make_unique<request_tracker>(_rs.probe());
     auto fut = ss::now();
     if (!delay.first_violation) {
         fut = ss::sleep_abortable(delay.duration, _rs.abort_source());
@@ -171,14 +170,20 @@ connection_context::throttle_request(
     return fut
       .then(
         [this, request_size] { return reserve_request_units(request_size); })
-      .then([this, delay, track](ss::semaphore_units<> units) {
+      .then([this, delay, track, tracker = std::move(tracker)](
+              ss::semaphore_units<> units) mutable {
           return server().get_request_unit().then(
-            [this, delay, mem_units = std::move(units), track](
+            [this,
+             delay,
+             mem_units = std::move(units),
+             track,
+             tracker = std::move(tracker)](
               ss::semaphore_units<> qd_units) mutable {
                 session_resources r{
                   .backpressure_delay = delay.duration,
                   .memlocks = std::move(mem_units),
                   .queue_units = std::move(qd_units),
+                  .tracker = std::move(tracker),
                 };
                 if (track) {
                     r.method_latency = _rs.hist().auto_measure();
@@ -211,7 +216,6 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
     return throttle_request(hdr, size).then([this, hdr = std::move(hdr), size](
                                               session_resources sres) mutable {
         if (_rs.abort_requested()) {
-            _rs.probe().request_completed();
             // protect against shutdown behavior
             return ss::make_ready_future<>();
         }
@@ -305,16 +309,13 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                           self->_rs.probe().service_error();
                           self->_rs.conn->shutdown_input();
                       })
-                      .finally([s = std::move(s), self] {
-                          self->_rs.probe().request_completed();
-                      });
+                      .finally([s = std::move(s), self] {});
                     return d;
                 })
                 .handle_exception([self](std::exception_ptr e) {
                     vlog(
                       klog.info, "Detected error dispatching request: {}", e);
                     self->_rs.conn->shutdown_input();
-                    self->_rs.probe().request_completed();
                 });
           });
     });

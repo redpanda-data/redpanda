@@ -9,6 +9,7 @@
 
 #include "rpc/server.h"
 
+#include "config/configuration.h"
 #include "likely.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "rpc/logger.h"
@@ -110,6 +111,22 @@ ss::future<> server::accept(listener& s) {
               auto ar = f_cs_sa.get();
               ar.connection.set_nodelay(true);
               ar.connection.set_keepalive(true);
+
+              // Apply socket buffer size settings
+              if (cfg.tcp_recv_buf.has_value()) {
+                  // Explicitly store in an int to decouple the
+                  // config type from the set_sockopt type.
+                  int recv_buf = cfg.tcp_recv_buf.value();
+                  ar.connection.set_sockopt(
+                    SOL_SOCKET, SO_RCVBUF, &recv_buf, sizeof(recv_buf));
+              }
+
+              if (cfg.tcp_send_buf.has_value()) {
+                  int send_buf = cfg.tcp_send_buf.value();
+                  ar.connection.set_sockopt(
+                    SOL_SOCKET, SO_SNDBUF, &send_buf, sizeof(send_buf));
+              }
+
               auto conn = ss::make_lw_shared<connection>(
                 _connections,
                 s.name,
