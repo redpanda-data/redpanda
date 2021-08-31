@@ -1,5 +1,6 @@
 package io.vectorized.kafka;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import org.apache.kafka.common.KafkaException;
@@ -48,6 +49,7 @@ class Verifier {
         if (retries == 0) {
           throw e;
         }
+        Thread.sleep(Duration.ofSeconds(1).toMillis());
       }
     }
   }
