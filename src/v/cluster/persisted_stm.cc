@@ -164,11 +164,58 @@ ss::future<> persisted_stm::wait_offset_committed(
     return _c->commit_index_updated().wait(timeout, stop_cond);
 }
 
+ss::future<bool> persisted_stm::do_sync(
+  model::timeout_clock::duration timeout,
+  model::offset offset,
+  model::term_id term) {
+    const auto committed = _c->committed_offset();
+    const auto ntp = _c->ntp();
+
+    if (offset > committed) {
+        try {
+            co_await wait_offset_committed(timeout, offset, term);
+        } catch (...) {
+            vlog(
+              clusterlog.error,
+              "sync error: wait_offset_committed failed with {}; offsets: "
+              "dirty={}, committed={}; ntp={}",
+              std::current_exception(),
+              offset,
+              committed,
+              ntp);
+            co_return false;
+        }
+    } else {
+        offset = committed;
+    }
+
+    if (_c->term() == term) {
+        try {
+            co_await wait(offset, model::timeout_clock::now() + timeout);
+        } catch (...) {
+            vlog(
+              clusterlog.error,
+              "sync error: waiting for offset={} failed with {}; committed "
+              "offset={}; ntp={}",
+              offset,
+              std::current_exception(),
+              committed,
+              ntp);
+            co_return false;
+        }
+        _insync_term = term;
+        co_return true;
+    }
+
+    co_return false;
+}
+
 ss::future<bool> persisted_stm::sync(model::timeout_clock::duration timeout) {
+    auto term = _c->term();
     if (!_c->is_leader()) {
         co_return false;
     }
-    if (_insync_term == _c->term()) {
+    if (_insync_term == term) {
         co_return true;
     }
     if (_is_catching_up) {
@@ -180,33 +227,11 @@ ss::future<bool> persisted_stm::sync(model::timeout_clock::duration timeout) {
     }
     _is_catching_up = true;
 
+    auto dirty = _c->dirty_offset();
     co_await _c->refresh_commit_index();
 
-    auto term = _c->term();
-    auto is_synced = false;
-    try {
-        auto dirty = _c->dirty_offset();
-        if (dirty > _c->committed_offset()) {
-            co_await wait_offset_committed(timeout, dirty, term);
-            if (_c->term() == term) {
-                co_await wait(dirty, model::timeout_clock::now() + timeout);
-                is_synced = true;
-            }
-        } else {
-            co_await wait(
-              _c->committed_offset(), model::timeout_clock::now() + timeout);
-            is_synced = true;
-        }
-    } catch (...) {
-        vlog(
-          clusterlog.error,
-          "Error during waitin for catch up: {}",
-          std::current_exception());
-    }
+    auto is_synced = co_await do_sync(timeout, dirty, term);
 
-    if (is_synced) {
-        _insync_term = term;
-    }
     _is_catching_up = false;
     for (auto& sync_waiter : _sync_waiters) {
         sync_waiter->set_value(is_synced);
