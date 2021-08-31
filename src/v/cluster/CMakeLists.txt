@@ -67,6 +67,7 @@ v_cc_library(
     controller_api.cc
     members_frontend.cc
     members_backend.cc
+    health_manager.cc
     scheduling/allocation_node.cc
     scheduling/types.cc
     scheduling/allocation_state.cc
