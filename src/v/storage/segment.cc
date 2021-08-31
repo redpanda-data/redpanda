@@ -268,6 +268,7 @@ ss::future<> remove_compacted_index(const ss::sstring& reader_path) {
 ss::future<>
 segment::truncate(model::offset prev_last_offset, size_t physical) {
     check_segment_not_closed("truncate()");
+    vlog(stlog.warn, "Truncating segment to {}", prev_last_offset);
     return write_lock().then(
       [this, prev_last_offset, physical](ss::rwlock::holder h) {
           return do_truncate(prev_last_offset, physical)
@@ -326,6 +327,7 @@ ss::future<bool> segment::materialize_index() {
       "Materializing the index must happen tracking any data. {}",
       *this);
     return _idx.materialize_index().then([this](bool yn) {
+        vlog(stlog.debug, "segment::materialze_index: {}", yn);
         if (yn) {
             _tracker.committed_offset = _idx.max_offset();
             _tracker.stable_offset = _idx.max_offset();

@@ -12,6 +12,7 @@
 #include "model/timestamp.h"
 #include "storage/logger.h"
 #include "vassert.h"
+#include "vlog.h"
 
 #include <seastar/core/fstream.hh>
 #include <seastar/core/iostream.hh>
@@ -163,6 +164,9 @@ ss::future<bool> segment_index::materialize_index() {
               return false;
           }
           _state = std::move(hydrated.value());
+
+          vlog(stlog.debug, "segment_index {} hydrated: {}", _name, _state);
+
           return true;
       });
 }

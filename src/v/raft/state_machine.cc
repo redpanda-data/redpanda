@@ -63,6 +63,12 @@ state_machine::batch_applicator::operator()(model::record_batch batch) {
           ss::stop_iteration::yes);
     }
 
+    vlog(
+      _machine->_log.debug,
+      "Applying batch {}-{}",
+      batch.base_offset(),
+      batch.last_offset());
+
     auto last_offset = batch.last_offset();
     return _machine->apply(std::move(batch)).then([this, last_offset] {
         _last_applied = last_offset;
@@ -108,6 +114,11 @@ ss::future<> state_machine::apply() {
           // build a reader for log range [_next, +inf).
           storage::log_reader_config config(
             _next, model::model_limits<model::offset>::max(), _io_prio);
+          vlog(
+            _log.debug,
+            "state_machine::apply: _next={} config={}",
+            _next,
+            config);
           return _raft->make_reader(config);
       })
       .then([this](model::record_batch_reader reader) {
@@ -115,6 +126,8 @@ ss::future<> state_machine::apply() {
           return std::move(reader)
             .consume(batch_applicator(this), model::no_timeout)
             .then([this](model::offset last_applied) {
+                vlog(
+                  _log.debug, "state_machine::apply: last_applied={}", _next);
                 if (last_applied >= model::offset(0)) {
                     _next = last_applied + model::offset(1);
                 }

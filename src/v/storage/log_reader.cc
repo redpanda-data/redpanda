@@ -204,8 +204,17 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
     return ptr->consume().then(
       [this](result<size_t> bytes_consumed) -> result<records_t> {
           if (!bytes_consumed) {
+              vlog(
+                stlog.debug,
+                "log_segment_batch_reader::read_some ERROR {}",
+                bytes_consumed);
               return bytes_consumed.error();
           }
+          vlog(
+            stlog.debug,
+            "log_segment_batch_reader::read_some then bytes={} state={}",
+            bytes_consumed.value(),
+            _state.buffer_size);
           auto tmp = std::exchange(_state, {});
           return result<records_t>(std::move(tmp.buffer));
       });
@@ -242,6 +251,11 @@ ss::future<> log_reader::find_next_valid_iterator() {
         return ss::make_ready_future<>();
     }
     std::unique_ptr<log_segment_batch_reader> tmp_reader = nullptr;
+    vlog(
+      stlog.debug,
+      "log_reader::fnvi {} {}",
+      _config.start_offset,
+      _iterator.offsets().dirty_offset);
     while (_config.start_offset > _iterator.offsets().dirty_offset) {
         _iterator.next_seg++;
         if (!tmp_reader) {
@@ -293,9 +307,16 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
     if (is_end_of_stream()) {
         return fut.then([] { return ss::make_ready_future<storage_t>(); });
     }
+
     return fut
       .then([this, timeout] { return _iterator.reader->read_some(timeout); })
       .then([this, timeout](result<records_t> recs) -> ss::future<storage_t> {
+          vlog(
+            stlog.debug,
+            "log_reader::do_load_slice: segs {} {}",
+            *(_iterator.current_reader_seg),
+            *(_iterator.next_seg));
+
           if (!recs) {
               set_end_of_stream();
               vlog(
@@ -308,11 +329,14 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
           if (recs.value().empty()) {
               /*
                * if no records are returned it may be the case that all of the
-               * batches in the segment were skipped (e.g. all control batches).
-               * thus, returning no records does not imply end of stream.
-               * instead, we recurse which will advance the iterator and check
-               * end of stream.
+               * batches in the segment were skipped (e.g. all control
+               * batches). thus, returning no records does not imply end of
+               * stream. instead, we recurse which will advance the iterator
+               * and check end of stream.
                */
+              vlog(
+                stlog.info,
+                "log_reader::do_load_slice: recursing for zero records");
               return do_load_slice(timeout);
           }
           _probe.add_batches_read(recs.value().size());

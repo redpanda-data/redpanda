@@ -198,11 +198,15 @@ void continuous_batch_parser::add_bytes_and_reset() {
 }
 ss::future<result<stop_parser>> continuous_batch_parser::consume_records() {
     auto sz = _header->size_bytes - model::packed_record_batch_header_size;
+    vlog(stlog.debug, "cbp::consume_records...");
     return verify_read_iobuf(_input, sz, "parser::consume_records")
       .then([this](result<iobuf> record) -> result<stop_parser> {
           if (!record) {
+              vlog(
+                stlog.debug, "cbp::consume_records error {}", record.error());
               return record.error();
           }
+          vlog(stlog.debug, "cbp::consume_records OK {}", record.value());
           _consumer->consume_records(std::move(record.value()));
           return result<stop_parser>(_consumer->consume_batch_end());
       });
@@ -215,15 +219,19 @@ ss::future<result<size_t>> continuous_batch_parser::consume() {
     return ss::repeat([this] {
                return consume_one().then([this](result<stop_parser> s) {
                    if (_input.eof()) {
+                       vlog(stlog.debug, "cbp::consume A");
                        return ss::stop_iteration::yes;
                    }
                    if (!s) {
                        _err = parser_errc(s.error().value());
+                       vlog(stlog.debug, "cbp::consume B");
                        return ss::stop_iteration::yes;
                    }
                    if (s.value() == stop_parser::yes) {
+                       vlog(stlog.debug, "cbp::consume C");
                        return ss::stop_iteration::yes;
                    }
+                   vlog(stlog.debug, "cbp::consume D continue");
                    return ss::stop_iteration::no;
                });
            })

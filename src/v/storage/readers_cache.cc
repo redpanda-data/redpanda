@@ -81,7 +81,14 @@ readers_cache::put(std::unique_ptr<log_reader> reader) {
 
 std::optional<model::record_batch_reader>
 readers_cache::get_reader(const log_reader_config& cfg) {
-    vlog(stlog.trace, "{} - trying to get reader for: {}", _ntp, cfg);
+    vlog(stlog.trace, "{} - trying to gett reader for: {}", _ntp, cfg);
+
+    if (cfg.start_offset == model::offset{166563}) {
+        // vassert(false, "Woop woop");
+    } else {
+        // vlog(stlog.trace, "{} - {}", cfg.start_offset);
+        // vassert(cfg.start_offset != model::offset{166563}, "Blurp");
+    }
     intrusive_list<entry, &entry::_hook> to_evict;
     /**
      * We use linear search since _readers intrusive list is small.
