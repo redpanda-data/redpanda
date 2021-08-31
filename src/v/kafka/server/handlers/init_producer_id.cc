@@ -60,6 +60,9 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                         reply.data.producer_id,
                         reply.data.producer_epoch);
                       break;
+                  case cluster::tx_errc::invalid_txn_state:
+                      reply.data.error_code = error_code::invalid_txn_state;
+                      break;
                   case cluster::tx_errc::not_coordinator:
                       reply.data.error_code = error_code::not_coordinator;
                       break;
