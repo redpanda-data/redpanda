@@ -61,6 +61,7 @@ v_cc_library(
     persisted_stm.cc
     tm_stm.cc
     rm_stm.cc
+    tx_helpers.cc
     security_manager.cc
     security_frontend.cc
     controller_api.cc

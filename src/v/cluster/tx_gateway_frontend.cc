@@ -15,6 +15,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/rm_partition_frontend.h"
 #include "cluster/shard_table.h"
+#include "cluster/tx_helpers.h"
 #include "errc.h"
 #include "types.h"
 
@@ -24,15 +25,6 @@
 
 namespace cluster {
 using namespace std::chrono_literals;
-
-static ss::future<bool> sleep_abortable(std::chrono::milliseconds dur) {
-    try {
-        co_await ss::sleep_abortable(dur);
-        co_return true;
-    } catch (const ss::sleep_aborted&) {
-        co_return false;
-    }
-}
 
 static add_paritions_tx_reply make_add_partitions_error_response(
   add_paritions_tx_request request, tx_errc ec) {
@@ -317,6 +309,9 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
             // missing tx => state was lost => can't be comitted => aborted
             co_return try_abort_reply{.aborted = true, .ec = tx_errc::none};
         }
+        if (maybe_tx.error() == tm_stm::op_status::not_leader) {
+            co_return try_abort_reply{.ec = tx_errc::not_coordinator};
+        }
         co_return try_abort_reply{.ec = tx_errc::unknown_server_error};
     }
 
@@ -349,6 +344,9 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
         auto killed_tx = co_await stm->try_change_status(
           tx.id, cluster::tm_transaction::tx_status::killed);
         if (!killed_tx.has_value()) {
+            if (killed_tx.error() == tm_stm::op_status::not_leader) {
+                co_return try_abort_reply{.ec = tx_errc::not_coordinator};
+            }
             co_return try_abort_reply{.ec = tx_errc::unknown_server_error};
         }
         co_return try_abort_reply{.aborted = true, .ec = tx_errc::none};
@@ -370,6 +368,9 @@ tx_gateway_frontend::do_commit_tm_tx(
         if (maybe_tx.error() == tm_stm::op_status::not_found) {
             co_return tx_errc::request_rejected;
         }
+        if (maybe_tx.error() == tm_stm::op_status::not_leader) {
+            co_return tx_errc::not_coordinator;
+        }
         co_return tx_errc::unknown_server_error;
     }
     auto tx = maybe_tx.value();
@@ -390,27 +391,48 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
   model::timeout_clock::duration timeout) {
-    if (!_metadata_cache.local().contains(
-          model::tx_manager_nt, model::tx_manager_ntp.tp.partition)) {
+    auto retries = _metadata_dissemination_retries;
+    auto delay_ms = _metadata_dissemination_retry_delay_ms;
+    auto aborted = false;
+
+    auto has_metadata = _metadata_cache.local().contains(
+      model::tx_manager_nt, model::tx_manager_ntp.tp.partition);
+    while (!aborted && !has_metadata && 0 < retries--) {
         vlog(
-          clusterlog.warn, "can't find {}/0 partition", model::tx_manager_nt);
+          clusterlog.trace,
+          "waiting for {}/0 to fill metadata cache, retries left: {}",
+          model::tx_manager_nt,
+          retries);
+        aborted = !co_await sleep_abortable(delay_ms);
+        has_metadata = _metadata_cache.local().contains(
+          model::tx_manager_nt, model::tx_manager_ntp.tp.partition);
+    }
+    if (!has_metadata) {
+        vlog(
+          clusterlog.warn,
+          "can't find {}/0 in the metadata cache",
+          model::tx_manager_nt);
         co_return cluster::init_tm_tx_reply{
           .ec = tx_errc::partition_not_exists};
     }
 
+    retries = _metadata_dissemination_retries;
+    aborted = false;
     auto leader_opt = _leaders.local().get_leader(model::tx_manager_ntp);
-
-    auto retries = _metadata_dissemination_retries;
-    auto delay_ms = _metadata_dissemination_retry_delay_ms;
-    auto aborted = false;
     while (!aborted && !leader_opt && 0 < retries--) {
+        vlog(
+          clusterlog.trace,
+          "waiting for {} to fill leaders cache, retries left: {}",
+          model::tx_manager_ntp,
+          retries);
         aborted = !co_await sleep_abortable(delay_ms);
         leader_opt = _leaders.local().get_leader(model::tx_manager_ntp);
     }
-
     if (!leader_opt) {
         vlog(
-          clusterlog.warn, "can't find a leader for {}", model::tx_manager_ntp);
+          clusterlog.warn,
+          "can't find {} in the leaders cache",
+          model::tx_manager_ntp);
         co_return cluster::init_tm_tx_reply{.ec = tx_errc::leader_not_found};
     }
 
@@ -423,7 +445,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
     }
 
     vlog(
-      clusterlog.trace, "dispatching init_tm_tx to {} from {}", leader, _self);
+      clusterlog.trace, "dispatching init_tm_tx from {} to {}", _self, leader);
 
     co_return co_await dispatch_init_tm_tx(
       leader, tx_id, transaction_timeout_ms, timeout);
@@ -534,7 +556,19 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     auto maybe_tx = co_await stm->get_actual_tx(tx_id);
 
     if (!maybe_tx.has_value()) {
+        if (maybe_tx.error() == tm_stm::op_status::not_leader) {
+            vlog(
+              clusterlog.warn,
+              "this node isn't a leader for tx.id={} coordinator",
+              tx_id);
+            co_return init_tm_tx_reply{.ec = tx_errc::not_coordinator};
+        }
         if (maybe_tx.error() != tm_stm::op_status::not_found) {
+            vlog(
+              clusterlog.warn,
+              "got error {} on loading tx.id={}",
+              maybe_tx.error(),
+              tx_id);
             co_return init_tm_tx_reply{.ec = tx_errc::unknown_server_error};
         }
 
@@ -554,14 +588,23 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
         } else if (op_status == tm_stm::op_status::conflict) {
             vlog(
               clusterlog.warn,
-              "can't register new producer status: {}",
-              op_status);
+              "got conflict on registering new producer {} for tx.id={}",
+              pid,
+              tx_id);
             reply.ec = tx_errc::conflict;
+        } else if (op_status == tm_stm::op_status::not_leader) {
+            vlog(
+              clusterlog.warn,
+              "this node isn't a leader for tx.id={} coordinator",
+              tx_id);
+            reply.ec = tx_errc::not_coordinator;
         } else {
             vlog(
               clusterlog.warn,
-              "can't register new producer status: {}",
-              op_status);
+              "got {} on registering new producer {} for tx.id={}",
+              op_status,
+              pid,
+              tx_id);
             reply.ec = tx_errc::unknown_server_error;
         }
         co_return reply;
@@ -598,7 +641,13 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     }
 
     if (!r.has_value()) {
-        co_return init_tm_tx_reply{.ec = tx_errc::unknown_server_error};
+        vlog(
+          clusterlog.warn,
+          "got error {} on rolling previous tx.id={} with status={}",
+          r.error(),
+          tx_id,
+          tx.status);
+        co_return init_tm_tx_reply{.ec = r.error()};
     }
 
     tx = r.value();
@@ -619,6 +668,12 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     } else if (op_status == tm_stm::op_status::conflict) {
         reply.ec = tx_errc::conflict;
     } else {
+        vlog(
+          clusterlog.warn,
+          "got error {} on re-registering a producer {} for tx.id={}",
+          op_status,
+          reply.pid,
+          tx.id);
         reply.ec = tx_errc::unknown_server_error;
     }
     co_return reply;
@@ -750,6 +805,12 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
               }
           }
           auto has_added = stm->add_partitions(tx.id, partitions);
+          if (!has_added) {
+              vlog(
+                clusterlog.warn,
+                "can't add partitions: tx.id={} doesn't exist",
+                tx.id);
+          }
           for (auto& br : brs) {
               auto topic_it = std::find_if(
                 response.results.begin(),
@@ -761,6 +822,13 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
               if (has_added && br.ec == tx_errc::none) {
                   res_partition.error_code = tx_errc::none;
               } else {
+                  if (br.ec != tx_errc::none) {
+                      vlog(
+                        clusterlog.warn,
+                        "begin_tx({},...) failed with {}",
+                        br.ntp,
+                        br.ec);
+                  }
                   res_partition.error_code = tx_errc::unknown_server_error;
               }
               topic_it->results.push_back(res_partition);
@@ -936,6 +1004,10 @@ tx_gateway_frontend::do_end_txn(
             outcome->set_value(tx_errc::invalid_producer_id_mapping);
             co_return tx_errc::invalid_producer_id_mapping;
         }
+        if (maybe_tx.error() == tm_stm::op_status::not_leader) {
+            outcome->set_value(tx_errc::not_coordinator);
+            co_return tx_errc::not_coordinator;
+        }
         outcome->set_value(tx_errc::unknown_server_error);
         co_return tx_errc::unknown_server_error;
     }
@@ -1014,6 +1086,10 @@ tx_gateway_frontend::do_abort_tm_tx(
             auto changed_tx = co_await stm->try_change_status(
               tx.id, cluster::tm_transaction::tx_status::aborting);
             if (!changed_tx.has_value()) {
+                if (changed_tx.error() == tm_stm::op_status::not_leader) {
+                    outcome->set_value(tx_errc::not_coordinator);
+                    co_return tx_errc::not_coordinator;
+                }
                 outcome->set_value(tx_errc::unknown_server_error);
                 co_return tx_errc::unknown_server_error;
             }
@@ -1082,13 +1158,17 @@ tx_gateway_frontend::do_commit_tm_tx(
         }
 
         if (tx.status == tm_transaction::tx_status::ongoing) {
-            auto became_preparing_tx = co_await stm->try_change_status(
+            auto preparing_tx = co_await stm->try_change_status(
               tx.id, cluster::tm_transaction::tx_status::preparing);
-            if (!became_preparing_tx.has_value()) {
+            if (!preparing_tx.has_value()) {
+                if (preparing_tx.error() == tm_stm::op_status::not_leader) {
+                    outcome->set_value(tx_errc::not_coordinator);
+                    co_return tx_errc::not_coordinator;
+                }
                 outcome->set_value(tx_errc::unknown_server_error);
                 co_return tx_errc::unknown_server_error;
             }
-            tx = became_preparing_tx.value();
+            tx = preparing_tx.value();
         }
 
         auto ok = true;
@@ -1104,9 +1184,13 @@ tx_gateway_frontend::do_commit_tm_tx(
             rejected = rejected || (r.ec == tx_errc::request_rejected);
         }
         if (rejected) {
-            auto became_aborting_tx = co_await stm->try_change_status(
+            auto aborting_tx = co_await stm->try_change_status(
               tx.id, cluster::tm_transaction::tx_status::killed);
-            if (!became_aborting_tx.has_value()) {
+            if (!aborting_tx.has_value()) {
+                if (aborting_tx.error() == tm_stm::op_status::not_leader) {
+                    outcome->set_value(tx_errc::not_coordinator);
+                    co_return tx_errc::not_coordinator;
+                }
                 outcome->set_value(tx_errc::unknown_server_error);
                 co_return tx_errc::unknown_server_error;
             }
@@ -1126,6 +1210,9 @@ tx_gateway_frontend::do_commit_tm_tx(
     auto changed_tx = co_await stm->try_change_status(
       tx.id, cluster::tm_transaction::tx_status::prepared);
     if (!changed_tx.has_value()) {
+        if (changed_tx.error() == tm_stm::op_status::not_leader) {
+            co_return tx_errc::not_coordinator;
+        }
         co_return tx_errc::unknown_server_error;
     }
     tx = changed_tx.value();
@@ -1221,6 +1308,9 @@ tx_gateway_frontend::get_ongoing_tx(
     if (!maybe_tx.has_value()) {
         if (maybe_tx.error() == tm_stm::op_status::not_found) {
             co_return tx_errc::invalid_producer_id_mapping;
+        }
+        if (maybe_tx.error() == tm_stm::op_status::not_leader) {
+            co_return tx_errc::not_coordinator;
         }
         co_return tx_errc::unknown_server_error;
     }

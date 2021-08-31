@@ -102,6 +102,7 @@ public:
         not_found,
         conflict,
         unknown,
+        not_leader,
     };
 
     explicit tm_stm(ss::logger&, raft::consensus*);
