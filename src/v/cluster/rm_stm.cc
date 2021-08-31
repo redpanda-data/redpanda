@@ -610,7 +610,14 @@ ss::future<result<raft::replicate_result>> rm_stm::replicate(
         return replicate_seq(bid, std::move(b), opts);
     }
 
-    return _c->replicate(std::move(b), opts);
+    return sync(_sync_timeout)
+      .then([this, opts, b = std::move(b)](bool is_synced) mutable {
+          if (!is_synced) {
+              return ss::make_ready_future<result<raft::replicate_result>>(
+                errc::not_leader);
+          }
+          return _c->replicate(std::move(b), opts);
+      });
 }
 
 ss::future<> rm_stm::stop() {
