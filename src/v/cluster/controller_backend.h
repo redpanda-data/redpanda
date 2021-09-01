@@ -109,6 +109,8 @@ private:
     ss::future<>
       remove_from_shard_table(model::ntp, raft::group_id, model::revision_id);
     ss::future<> delete_partition(model::ntp, model::revision_id);
+    ss::future<>
+      delete_non_replicable_partition(model::ntp, model::revision_id);
     ss::future<std::error_code> update_partition_replica_set(
       const model::ntp&,
       const std::vector<model::broker_shard>&,

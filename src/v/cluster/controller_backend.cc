@@ -534,6 +534,10 @@ controller_backend::execute_partitition_op(const topic_table::delta& delta) {
         return delete_partition(delta.ntp, rev).then([] {
             return std::error_code(errc::success);
         });
+    case op_t::del_non_replicable:
+        return delete_non_replicable_partition(delta.ntp, rev).then([] {
+            return std::error_code(errc::success);
+        });
     case op_t::update:
         vassert(
           delta.previous_assignment,
@@ -929,6 +933,16 @@ ss::future<> controller_backend::remove_from_shard_table(
       [ntp = std::move(ntp), raft_group, revision](shard_table& s) mutable {
           s.erase(ntp, raft_group, revision);
       });
+}
+
+ss::future<> controller_backend::delete_non_replicable_partition(
+  model::ntp ntp, model::revision_id rev) {
+    auto existing = _shard_table.local().revision_for(ntp);
+    if (existing && *existing <= rev) {
+        co_await _shard_table.invoke_on_all(
+          [ntp, rev](shard_table& st) { st.erase(ntp, rev); });
+        co_await _storage.local().log_mgr().remove(ntp);
+    }
 }
 
 ss::future<std::error_code> controller_backend::create_non_replicable_partition(

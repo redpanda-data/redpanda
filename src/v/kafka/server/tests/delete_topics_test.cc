@@ -175,8 +175,7 @@ FIXTURE_TEST(delete_non_replicable_topics, delete_topics_request_fixture) {
     auto resp = send_delete_topics_request(
       make_delete_topics_request({model::topic("topic-5")}, 10s));
     for (const auto& r : resp.data.responses) {
-        BOOST_REQUIRE_EQUAL(
-          r.error_code, kafka::error_code::unknown_topic_or_partition);
+        BOOST_REQUIRE_EQUAL(r.error_code, kafka::error_code::none);
     }
 }
 
