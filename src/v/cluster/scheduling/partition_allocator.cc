@@ -59,8 +59,7 @@ partition_allocator::allocate_partition(partition_constraints p_constraints) {
         effective_constraits.hard_constraints.push_back(
           ss::make_lw_shared<hard_constraint_evaluator>(
             distinct_from(replicas.get())));
-        effective_constraits.add(std::move(p_constraints.constraints));
-
+        effective_constraits.add(p_constraints.constraints);
         auto replica = _allocation_strategy.allocate_replica(
           effective_constraits, *_state);
 
