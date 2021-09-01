@@ -205,6 +205,21 @@ ss::future<> controller::start() {
             config::shard_local_cfg().leader_balancer_node_mute_timeout(),
             _raft0);
           return _leader_balancer->start();
+      })
+      .then([this] {
+          return _health_manager.start_single(
+            _raft0->self().id(),
+            config::shard_local_cfg().internal_topic_replication_factor(),
+            config::shard_local_cfg().health_manager_tick_interval(),
+            std::ref(_tp_state),
+            std::ref(_tp_frontend),
+            std::ref(_partition_allocator),
+            std::ref(_partition_leaders),
+            std::ref(_as));
+      })
+      .then([this] {
+          return _health_manager.invoke_on(
+            health_manager::shard, &health_manager::start);
       });
 }
 
@@ -227,6 +242,7 @@ ss::future<> controller::stop() {
         auto stop_leader_balancer = _leader_balancer ? _leader_balancer->stop()
                                                      : ss::now();
         return stop_leader_balancer
+          .then([this] { return _health_manager.stop(); })
           .then([this] { return _members_backend.stop(); })
           .then([this] { return _api.stop(); })
           .then([this] { return _backend.stop(); })

@@ -210,6 +210,8 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> leader_balancer_idle_timeout;
     property<std::chrono::milliseconds> leader_balancer_mute_timeout;
     property<std::chrono::milliseconds> leader_balancer_node_mute_timeout;
+    property<int> internal_topic_replication_factor;
+    property<std::chrono::milliseconds> health_manager_tick_interval;
 
     configuration();
 
