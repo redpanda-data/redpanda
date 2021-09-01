@@ -13,6 +13,7 @@
 
 #include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
+#include "cluster/health_manager.h"
 #include "cluster/scheduling/leader_balancer.h"
 #include "cluster/topic_updates_dispatcher.h"
 #include "raft/group_manager.h"
@@ -96,6 +97,7 @@ private:
     ss::sharded<security_frontend> _security_frontend;
     ss::sharded<security::authorizer> _authorizer;
     ss::sharded<raft::group_manager>& _raft_manager;
+    ss::sharded<health_manager> _health_manager;
     std::unique_ptr<leader_balancer> _leader_balancer;
     consensus_ptr _raft0;
 };
