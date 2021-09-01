@@ -522,7 +522,8 @@ struct topic_table_delta {
         update,
         update_finished,
         update_properties,
-        add_non_replicable
+        add_non_replicable,
+        del_non_replicable
     };
 
     topic_table_delta(

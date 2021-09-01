@@ -68,6 +68,8 @@ public:
         return true;
     }
 
+    void erase_shard(const model::ntp& ntp) { _ntp_idx.erase(ntp); }
+
     void update(
       const model::ntp& ntp,
       raft::group_id g,

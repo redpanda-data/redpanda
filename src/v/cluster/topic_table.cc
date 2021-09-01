@@ -106,15 +106,30 @@ ss::future<> topic_table::stop() {
 
 ss::future<std::error_code>
 topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
+    auto delete_type = delta::op_type::del;
     if (auto tp = _topics.find(cmd.value); tp != _topics.end()) {
         if (tp->second.is_topic_replicable()) {
-            return ss::make_ready_future<std::error_code>(
-              errc::invalid_delete_topic_request);
+            /// TODO: Might have to resolve deletion of non_replicable_topics
+            /// with what copro engine is currently doing
+            delete_type = delta::op_type::del_non_replicable;
+            auto parent = _topics.find(model::topic_namespace{
+              cmd.value.ns, tp->second.get_source_topic()});
+            vassert(
+              parent != _topics.end(),
+              "Missing source for non_replicable topic");
+            parent->second.get_children().erase(cmd.value);
+        } else {
+            const auto& children = tp->second.get_children();
+            if (!children.empty()) {
+                return ss::make_ready_future<std::error_code>(
+                  errc::invalid_delete_topic_request);
+            }
         }
+
         for (auto& p : tp->second.configuration.assignments) {
             auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, p.id);
             _pending_deltas.emplace_back(
-              std::move(ntp), std::move(p), offset, delta::op_type::del);
+              std::move(ntp), std::move(p), offset, delete_type);
         }
         _topics.erase(tp);
         notify_waiters();
@@ -346,13 +361,12 @@ topic_table::apply(create_non_replicable_topic_cmd cmd, model::offset o) {
     }
     _topics.insert(
       {new_non_rep_topic, topic_metadata(std::move(ca), source.tp)});
-    auto& children = tp->second.get_children();
-    auto h = children.find(source);
-    if (h == children.end()) {
-        children.insert(source, {new_non_rep_topic});
-    } else {
-        children.insert(new_non_rep_topic);
-    }
+    auto [_, success] = tp->second.get_children().emplace(new_non_rep_topic);
+    /// Assert because if item already exists, the contains check at the topic
+    /// of the method should have succeeded
+    vassert(
+      success,
+      "Duplicate non_replicable_topic detected when it shouldn't exist");
     notify_waiters();
     co_return make_error_code(errc::success);
 }
