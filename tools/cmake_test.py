@@ -204,7 +204,8 @@ class TestRunner():
             shutil.copy(src, "%s/%s" % (test_dir, os.path.basename(dst)))
 
         cmd = Template(
-            "(cd $test_dir; $prepare_command; $binary $args; $post_command e=$$?; "
+            "(cd $test_dir; $prepare_command; BOOST_TEST_LOG_LEVEL=\"test_suite\""
+            " BOOST_LOGGER=\"HRF,test_suite\" $binary $args; $post_command e=$$?; "
             "rm -rf $test_dir; echo \"Test Exit code $$e\"; exit $$e)"
         ).substitute(test_dir=test_dir,
                      prepare_command=" && ".join(self.prepare_command)
