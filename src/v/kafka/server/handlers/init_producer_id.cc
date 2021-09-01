@@ -50,7 +50,8 @@ ss::future<response_ptr> init_producer_id_handler::handle(
               .then([&ctx](cluster::init_tm_tx_reply r) {
                   init_producer_id_response reply;
 
-                  if (r.ec == cluster::tx_errc::none) {
+                  switch (r.ec) {
+                  case cluster::tx_errc::none:
                       reply.data.producer_id = kafka::producer_id(r.pid.id);
                       reply.data.producer_epoch = r.pid.epoch;
                       vlog(
@@ -58,11 +59,17 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                         "allocated pid {} with epoch {} via tx_gateway",
                         reply.data.producer_id,
                         reply.data.producer_epoch);
-                  } else if (r.ec == cluster::tx_errc::invalid_txn_state) {
+                      break;
+                  case cluster::tx_errc::not_coordinator:
+                      reply.data.error_code = error_code::not_coordinator;
+                      break;
+                  case cluster::tx_errc::invalid_txn_state:
                       reply.data.error_code = error_code::invalid_txn_state;
-                  } else {
+                      break;
+                  default:
                       vlog(klog.warn, "failed to allocate pid, ec: {}", r.ec);
                       reply.data.error_code = error_code::broker_not_available;
+                      break;
                   }
 
                   return ctx.respond(std::move(reply));
