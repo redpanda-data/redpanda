@@ -175,7 +175,7 @@ raft::replicate_stages partition::replicate_in_stages(
         }
     }
 
-    if (bid.is_transactional || bid.has_idempotent()) {
+    if (_rm_stm) {
         ss::promise<> p;
         auto f = p.get_future();
         auto replicate_finished
@@ -259,7 +259,7 @@ ss::future<result<raft::replicate_result>> partition::replicate(
         }
     }
 
-    if (bid.is_transactional || bid.has_idempotent()) {
+    if (_rm_stm) {
         return _rm_stm->replicate(bid, std::move(r), opts);
     } else {
         return _raft->replicate(std::move(r), opts);

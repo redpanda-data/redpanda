@@ -274,7 +274,7 @@ configuration::configuration()
       "tm_sync_timeout_ms",
       "Time to wait state catch up before rejecting a request",
       required::no,
-      2000ms)
+      10s)
   , tm_violation_recovery_policy(
       *this,
       "tm_violation_recovery_policy",
@@ -287,7 +287,7 @@ configuration::configuration()
       "rm_sync_timeout_ms",
       "Time to wait state catch up before rejecting a request",
       required::no,
-      2000ms)
+      10s)
   , tx_timeout_delay_ms(
       *this,
       "tx_timeout_delay_ms",
