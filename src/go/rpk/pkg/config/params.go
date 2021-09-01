@@ -283,7 +283,7 @@ func (p *Params) readConfig(fs afero.Fs, c *Config) error {
 		return nil
 	}
 
-	return fmt.Errorf("%w: unable to file config in searched paths %v", afero.ErrFileNotFound, paths)
+	return fmt.Errorf("%w: unable to find config in searched paths %v", afero.ErrFileNotFound, paths)
 }
 
 // Before we process overrides, we process any backwards compatibility from the
