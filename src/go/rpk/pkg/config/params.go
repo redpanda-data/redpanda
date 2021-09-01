@@ -10,6 +10,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -240,7 +241,11 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 	}
 
 	if err := p.readConfig(fs, c); err != nil {
-		return nil, err
+		// Sometimes a config file will not exist (e.g. rpk running on MacOS),
+		// which is OK. In those cases, just return the default config.
+		if !errors.Is(err, afero.ErrFileNotFound) {
+			return nil, err
+		}
 	}
 	c.backcompat()
 	if err := p.processOverrides(c); err != nil {
@@ -278,7 +283,7 @@ func (p *Params) readConfig(fs afero.Fs, c *Config) error {
 		return nil
 	}
 
-	return fmt.Errorf("unable to file config in searched paths %v", paths)
+	return fmt.Errorf("%w: unable to file config in searched paths %v", afero.ErrFileNotFound, paths)
 }
 
 // Before we process overrides, we process any backwards compatibility from the
