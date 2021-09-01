@@ -484,3 +484,29 @@ FIXTURE_TEST(updating_nodes_core_count, partition_allocator_fixture) {
       10 * cluster::allocation_node::max_allocations_per_core
         - cluster::allocation_node::core0_extra_weight);
 }
+
+FIXTURE_TEST(change_replication_factor, partition_allocator_fixture) {
+    register_node(0, 2);
+    register_node(1, 4);
+    auto req = make_allocation_request(1, 1);
+    auto res = allocator.allocate(std::move(req));
+
+    BOOST_CHECK_EQUAL(res.has_value(), true);
+
+    // try to allocate 3 replicas no 2 nodes - should fail
+    auto expected_failure = allocator.reallocate_partition(
+      cluster::partition_constraints(model::partition_id(0), 3),
+      res.value().get_assignments().front());
+
+    BOOST_CHECK_EQUAL(expected_failure.has_error(), true);
+
+    // add new node and allocate again
+    register_node(3, 4);
+
+    auto expected_success = allocator.reallocate_partition(
+      cluster::partition_constraints(model::partition_id(0), 3),
+      res.value().get_assignments().front());
+
+    BOOST_CHECK_EQUAL(expected_success.has_value(), true);
+    validate_replica_set_diversity(expected_success.value().get_assignments());
+}
