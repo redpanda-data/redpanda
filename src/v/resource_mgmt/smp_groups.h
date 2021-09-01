@@ -13,6 +13,7 @@
 
 #include "seastarx.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/reactor.hh>
 
 // manage SMP scheduling groups. These scheduling groups are global, so one
@@ -23,38 +24,15 @@ class smp_groups {
 public:
     smp_groups() = default;
     ss::future<> create_groups() {
-        ss::smp_service_group_config smp_sg_config;
-        smp_sg_config.max_nonlocal_requests = 5000;
+        const unsigned default_max_nonlocal_requests = 5000;
 
-        return create_smp_service_group(smp_sg_config)
-          .then([this](ss::smp_service_group sg) {
-              _raft = std::make_unique<ss::smp_service_group>(sg);
-          })
-          .then([smp_sg_config] {
-              return ss::create_smp_service_group(smp_sg_config);
-          })
-          .then([this](ss::smp_service_group sg) {
-              _kafka = std::make_unique<ss::smp_service_group>(sg);
-          })
-          .then([smp_sg_config] {
-              return ss::create_smp_service_group(smp_sg_config);
-          })
-          .then([this](ss::smp_service_group sg) {
-              _cluster = std::make_unique<ss::smp_service_group>(sg);
-          })
-          .then([smp_sg_config] {
-              return ss::create_smp_service_group(smp_sg_config);
-          })
-          .then([this](ss::smp_service_group sg) {
-              _coproc = std::make_unique<ss::smp_service_group>(sg);
-          })
-          .then([smp_sg_config] {
-              return ss::create_smp_service_group(smp_sg_config);
-          })
-          .then([this](ss::smp_service_group sg) {
-              _proxy = std::make_unique<ss::smp_service_group>(sg);
-          });
+        _raft = co_await create_service_group(default_max_nonlocal_requests);
+        _kafka = co_await create_service_group(default_max_nonlocal_requests);
+        _cluster = co_await create_service_group(default_max_nonlocal_requests);
+        _coproc = co_await create_service_group(default_max_nonlocal_requests);
+        _proxy = co_await create_service_group(default_max_nonlocal_requests);
     }
+
     ss::smp_service_group raft_smp_sg() { return *_raft; }
     ss::smp_service_group kafka_smp_sg() { return *_kafka; }
     ss::smp_service_group cluster_smp_sg() { return *_cluster; }
@@ -70,6 +48,15 @@ public:
     }
 
 private:
+    ss::future<std::unique_ptr<ss::smp_service_group>>
+    create_service_group(unsigned max_non_local_requests) {
+        ss::smp_service_group_config smp_sg_config{
+          .max_nonlocal_requests = max_non_local_requests};
+        auto sg = co_await create_smp_service_group(smp_sg_config);
+
+        co_return std::make_unique<ss::smp_service_group>(sg);
+    }
+
     std::unique_ptr<ss::smp_service_group> _raft;
     std::unique_ptr<ss::smp_service_group> _kafka;
     std::unique_ptr<ss::smp_service_group> _cluster;
