@@ -368,19 +368,19 @@ tx_gateway_frontend::do_commit_tm_tx(
     auto maybe_tx = co_await stm->get_actual_tx(tx_id);
     if (!maybe_tx.has_value()) {
         if (maybe_tx.error() == tm_stm::op_status::not_found) {
-            co_return tx_errc::request_rejected;
+            co_return tx_errc::invalid_txn_state;
         }
-        co_return tx_errc::unknown_server_error;
+        co_return tx_errc::invalid_txn_state;
     }
     auto tx = maybe_tx.value();
     if (tx.pid != pid) {
-        co_return tx_errc::request_rejected;
+        co_return tx_errc::invalid_txn_state;
     }
     if (tx.tx_seq != tx_seq) {
-        co_return tx_errc::request_rejected;
+        co_return tx_errc::invalid_txn_state;
     }
     if (tx.status != tm_transaction::tx_status::preparing) {
-        co_return tx_errc::request_rejected;
+        co_return tx_errc::invalid_txn_state;
     }
     co_return co_await do_commit_tm_tx(
       stm, tx, timeout, ss::make_lw_shared<available_promise<tx_errc>>());
@@ -480,7 +480,7 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::dispatch_init_tm_tx(
                 clusterlog.warn,
                 "got error {} on remote init tm tx",
                 r.error());
-              return init_tm_tx_reply{.ec = tx_errc::unknown_server_error};
+              return init_tm_tx_reply{.ec = tx_errc::invalid_txn_state};
           }
 
           return r.value();
@@ -535,14 +535,14 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
 
     if (!maybe_tx.has_value()) {
         if (maybe_tx.error() != tm_stm::op_status::not_found) {
-            co_return init_tm_tx_reply{.ec = tx_errc::unknown_server_error};
+            co_return init_tm_tx_reply{.ec = tx_errc::invalid_txn_state};
         }
 
         allocate_id_reply pid_reply
           = co_await _id_allocator_frontend.local().allocate_id(timeout);
         if (pid_reply.ec != errc::success) {
             vlog(clusterlog.warn, "allocate_id failed with {}", pid_reply.ec);
-            co_return init_tm_tx_reply{.ec = tx_errc::unknown_server_error};
+            co_return init_tm_tx_reply{.ec = tx_errc::invalid_txn_state};
         }
 
         model::producer_identity pid{.id = pid_reply.id, .epoch = 0};
@@ -562,7 +562,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
               clusterlog.warn,
               "can't register new producer status: {}",
               op_status);
-            reply.ec = tx_errc::unknown_server_error;
+            reply.ec = tx_errc::invalid_txn_state;
         }
         co_return reply;
     }
@@ -619,7 +619,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     } else if (op_status == tm_stm::op_status::conflict) {
         reply.ec = tx_errc::conflict;
     } else {
-        reply.ec = tx_errc::unknown_server_error;
+        reply.ec = tx_errc::invalid_txn_state;
     }
     co_return reply;
 }
@@ -633,7 +633,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
           clusterlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
         return ss::make_ready_future<add_paritions_tx_reply>(
           make_add_partitions_error_response(
-            request, tx_errc::unknown_server_error));
+            request, tx_errc::invalid_txn_state));
     }
 
     return container().invoke_on(
@@ -647,7 +647,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
                 model::tx_manager_ntp);
               return ss::make_ready_future<add_paritions_tx_reply>(
                 make_add_partitions_error_response(
-                  request, tx_errc::unknown_server_error));
+                  request, tx_errc::invalid_txn_state));
           }
 
           auto stm = partition->tm_stm();
@@ -659,7 +659,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
                 model::tx_manager_ntp);
               return ss::make_ready_future<add_paritions_tx_reply>(
                 make_add_partitions_error_response(
-                  request, tx_errc::unknown_server_error));
+                  request, tx_errc::invalid_txn_state));
           }
 
           return stm->get_tx_lock(request.transactional_id)
@@ -761,7 +761,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
               if (has_added && br.ec == tx_errc::none) {
                   res_partition.error_code = tx_errc::none;
               } else {
-                  res_partition.error_code = tx_errc::unknown_server_error;
+                  res_partition.error_code = tx_errc::invalid_txn_state;
               }
               topic_it->results.push_back(res_partition);
           }
@@ -777,7 +777,7 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
         vlog(
           clusterlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
         return ss::make_ready_future<add_offsets_tx_reply>(
-          add_offsets_tx_reply{.error_code = tx_errc::unknown_server_error});
+          add_offsets_tx_reply{.error_code = tx_errc::invalid_txn_state});
     }
 
     return container().invoke_on(
@@ -790,8 +790,7 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
                 "can't get partition by {} ntp",
                 model::tx_manager_ntp);
               return ss::make_ready_future<add_offsets_tx_reply>(
-                add_offsets_tx_reply{
-                  .error_code = tx_errc::unknown_server_error});
+                add_offsets_tx_reply{.error_code = tx_errc::invalid_txn_state});
           }
 
           auto stm = partition->tm_stm();
@@ -802,8 +801,7 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
                 "can't get tm stm of the {}' partition",
                 model::tx_manager_ntp);
               return ss::make_ready_future<add_offsets_tx_reply>(
-                add_offsets_tx_reply{
-                  .error_code = tx_errc::unknown_server_error});
+                add_offsets_tx_reply{.error_code = tx_errc::invalid_txn_state});
           }
 
           return stm->get_tx_lock(request.transactional_id)
@@ -838,7 +836,7 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
     if (!has_added) {
         vlog(clusterlog.warn, "can't add group to tm_stm");
         co_return add_offsets_tx_reply{
-          .error_code = tx_errc::unknown_server_error};
+          .error_code = tx_errc::invalid_txn_state};
     }
     co_return add_offsets_tx_reply{.error_code = tx_errc::none};
 }
@@ -851,7 +849,7 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
         vlog(
           clusterlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
         return ss::make_ready_future<end_tx_reply>(
-          end_tx_reply{.error_code = tx_errc::unknown_server_error});
+          end_tx_reply{.error_code = tx_errc::invalid_txn_state});
     }
 
     return container().invoke_on(
@@ -866,7 +864,7 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
                 "can't get partition by {} ntp",
                 model::tx_manager_ntp);
               return ss::make_ready_future<end_tx_reply>(
-                end_tx_reply{.error_code = tx_errc::unknown_server_error});
+                end_tx_reply{.error_code = tx_errc::invalid_txn_state});
           }
 
           auto stm = partition->tm_stm();
@@ -877,7 +875,7 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
                 "can't get tm stm of the {}' partition",
                 model::tx_manager_ntp);
               return ss::make_ready_future<end_tx_reply>(
-                end_tx_reply{.error_code = tx_errc::unknown_server_error});
+                end_tx_reply{.error_code = tx_errc::invalid_txn_state});
           }
 
           auto outcome = ss::make_lw_shared<available_promise<tx_errc>>();
@@ -928,7 +926,7 @@ tx_gateway_frontend::do_end_txn(
     try {
         maybe_tx = co_await stm->get_actual_tx(request.transactional_id);
     } catch (...) {
-        outcome->set_value(tx_errc::unknown_server_error);
+        outcome->set_value(tx_errc::invalid_txn_state);
         throw;
     }
     if (!maybe_tx.has_value()) {
@@ -936,8 +934,8 @@ tx_gateway_frontend::do_end_txn(
             outcome->set_value(tx_errc::invalid_producer_id_mapping);
             co_return tx_errc::invalid_producer_id_mapping;
         }
-        outcome->set_value(tx_errc::unknown_server_error);
-        co_return tx_errc::unknown_server_error;
+        outcome->set_value(tx_errc::invalid_txn_state);
+        co_return tx_errc::invalid_txn_state;
     }
 
     model::producer_identity pid{
@@ -958,8 +956,8 @@ tx_gateway_frontend::do_end_txn(
         if (tx.status == tm_transaction::tx_status::ongoing) {
             r = co_await do_commit_tm_tx(stm, tx, timeout, outcome);
         } else {
-            outcome->set_value(tx_errc::request_rejected);
-            co_return tx_errc::request_rejected;
+            outcome->set_value(tx_errc::invalid_txn_state);
+            co_return tx_errc::invalid_txn_state;
         }
     } else {
         r = co_await do_abort_tm_tx(stm, tx, timeout, outcome);
@@ -990,24 +988,24 @@ tx_gateway_frontend::do_abort_tm_tx(
                 // client should start a transaction before attempting to
                 // abort it. since tx has actual term we know for sure it
                 // wasn't start on a different leader
-                outcome->set_value(tx_errc::request_rejected);
-                co_return tx_errc::request_rejected;
+                outcome->set_value(tx_errc::invalid_txn_state);
+                co_return tx_errc::invalid_txn_state;
             }
 
             // writing ready status to overwrite an ongoing transaction if
             // it exists on an older leader
             auto ready_tx = co_await stm->mark_tx_ready(tx.id);
             if (!ready_tx.has_value()) {
-                outcome->set_value(tx_errc::unknown_server_error);
-                co_return tx_errc::unknown_server_error;
+                outcome->set_value(tx_errc::invalid_txn_state);
+                co_return tx_errc::invalid_txn_state;
             }
             outcome->set_value(tx_errc::none);
             co_return ready_tx.value();
         } else if (
           tx.status != tm_transaction::tx_status::ongoing
           && tx.status != tm_transaction::tx_status::killed) {
-            outcome->set_value(tx_errc::unknown_server_error);
-            co_return tx_errc::unknown_server_error;
+            outcome->set_value(tx_errc::invalid_txn_state);
+            co_return tx_errc::invalid_txn_state;
         }
 
         if (tx.status == tm_transaction::tx_status::ongoing) {
@@ -1032,8 +1030,8 @@ tx_gateway_frontend::do_abort_tm_tx(
     }
     std::vector<ss::future<abort_group_tx_reply>> gfs;
     for (auto group : tx.groups) {
-        gfs.push_back(
-          _rm_group_proxy->abort_group_tx(group.group_id, tx.pid, timeout));
+        gfs.push_back(_rm_group_proxy->abort_group_tx(
+          group.group_id, tx.pid, tx.tx_seq, timeout));
     }
     auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
     auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
@@ -1060,8 +1058,8 @@ tx_gateway_frontend::do_commit_tm_tx(
         if (
           tx.status != tm_transaction::tx_status::ongoing
           && tx.status != tm_transaction::tx_status::preparing) {
-            outcome->set_value(tx_errc::request_rejected);
-            co_return tx_errc::request_rejected;
+            outcome->set_value(tx_errc::invalid_txn_state);
+            co_return tx_errc::invalid_txn_state;
         }
 
         std::vector<ss::future<prepare_tx_reply>> pfs;
@@ -1107,11 +1105,11 @@ tx_gateway_frontend::do_commit_tm_tx(
             auto became_aborting_tx = co_await stm->try_change_status(
               tx.id, cluster::tm_transaction::tx_status::killed);
             if (!became_aborting_tx.has_value()) {
-                outcome->set_value(tx_errc::unknown_server_error);
-                co_return tx_errc::unknown_server_error;
+                outcome->set_value(tx_errc::invalid_txn_state);
+                co_return tx_errc::invalid_txn_state;
             }
-            outcome->set_value(tx_errc::request_rejected);
-            co_return tx_errc::request_rejected;
+            outcome->set_value(tx_errc::invalid_txn_state);
+            co_return tx_errc::invalid_txn_state;
         }
         if (!ok) {
             outcome->set_value(tx_errc::unknown_server_error);
@@ -1178,7 +1176,7 @@ ss::future<tx_errc> tx_gateway_frontend::recommit_tm_tx(
         ok = ok && (r.ec == tx_errc::none);
     }
     if (!ok) {
-        co_return tx_errc::unknown_server_error;
+        co_return tx_errc::invalid_txn_state;
     }
     co_return tx_errc::none;
 }
@@ -1192,8 +1190,8 @@ ss::future<tx_errc> tx_gateway_frontend::reabort_tm_tx(
     }
     std::vector<ss::future<abort_group_tx_reply>> gfs;
     for (auto group : tx.groups) {
-        gfs.push_back(
-          _rm_group_proxy->abort_group_tx(group.group_id, tx.pid, timeout));
+        gfs.push_back(_rm_group_proxy->abort_group_tx(
+          group.group_id, tx.pid, tx.tx_seq, timeout));
     }
     auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
     auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
@@ -1205,7 +1203,7 @@ ss::future<tx_errc> tx_gateway_frontend::reabort_tm_tx(
         ok = ok && (r.ec == tx_errc::none);
     }
     if (!ok) {
-        co_return tx_errc::unknown_server_error;
+        co_return tx_errc::invalid_txn_state;
     }
     co_return tx_errc::none;
 }
@@ -1222,7 +1220,7 @@ tx_gateway_frontend::get_ongoing_tx(
         if (maybe_tx.error() == tm_stm::op_status::not_found) {
             co_return tx_errc::invalid_producer_id_mapping;
         }
-        co_return tx_errc::unknown_server_error;
+        co_return tx_errc::invalid_txn_state;
     }
 
     auto tx = maybe_tx.value();
@@ -1304,7 +1302,7 @@ tx_gateway_frontend::get_ongoing_tx(
 
     auto ongoing_tx = stm->mark_tx_ongoing(tx.id);
     if (!ongoing_tx.has_value()) {
-        co_return tx_errc::unknown_server_error;
+        co_return tx_errc::invalid_txn_state;
     }
     co_return ongoing_tx.value();
 }
