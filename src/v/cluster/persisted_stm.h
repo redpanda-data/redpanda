@@ -103,6 +103,12 @@ public:
     ss::future<bool>
     wait_no_throw(model::offset offset, model::timeout_clock::duration);
 
+private:
+    ss::future<> wait_offset_committed(
+      model::timeout_clock::duration, model::offset, model::term_id);
+    ss::future<bool>
+      do_sync(model::timeout_clock::duration, model::offset, model::term_id);
+
 protected:
     virtual ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) = 0;
     virtual ss::future<stm_snapshot> take_snapshot() = 0;
@@ -111,8 +117,6 @@ protected:
     ss::future<> persist_snapshot(stm_snapshot&&);
     ss::future<> do_make_snapshot();
 
-    ss::future<> wait_offset_committed(
-      model::timeout_clock::duration, model::offset, model::term_id);
     /*
      * `sync` checks that current node is a leader and if `sync` wasn't
      * called within its term it waits until the state machine is caught

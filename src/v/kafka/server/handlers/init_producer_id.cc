@@ -63,6 +63,9 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                   case cluster::tx_errc::not_coordinator:
                       reply.data.error_code = error_code::not_coordinator;
                       break;
+                  case cluster::tx_errc::invalid_txn_state:
+                      reply.data.error_code = error_code::invalid_txn_state;
+                      break;
                   default:
                       vlog(klog.warn, "failed to allocate pid, ec: {}", r.ec);
                       reply.data.error_code = error_code::broker_not_available;
