@@ -203,8 +203,12 @@ void application::initialize(
     if (config::shard_local_cfg().enable_pid_file()) {
         syschecks::pidfile_create(config::shard_local_cfg().pidfile_path());
     }
+    smp_groups::config smp_groups_cfg{
+      .raft_group_max_non_local_requests
+      = config::shard_local_cfg().raft_smp_max_non_local_requests(),
+    };
 
-    smp_service_groups.create_groups().get();
+    smp_service_groups.create_groups(smp_groups_cfg).get();
     _deferred.emplace_back(
       [this] { smp_service_groups.destroy_groups().get(); });
 

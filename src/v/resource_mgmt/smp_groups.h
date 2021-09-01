@@ -22,15 +22,32 @@
 // group.
 class smp_groups {
 public:
-    smp_groups() = default;
-    ss::future<> create_groups() {
-        const unsigned default_max_nonlocal_requests = 5000;
+    static constexpr unsigned default_max_nonlocal_requests = 5000;
+    struct config {
+        uint32_t kafka_group_max_non_local_requests
+          = default_max_nonlocal_requests;
+        uint32_t raft_group_max_non_local_requests
+          = default_max_nonlocal_requests;
+        uint32_t cluster_group_max_non_local_requests
+          = default_max_nonlocal_requests;
+        uint32_t coproc_group_max_non_local_requests
+          = default_max_nonlocal_requests;
+        uint32_t proxy_group_max_non_local_requests
+          = default_max_nonlocal_requests;
+    };
 
-        _raft = co_await create_service_group(default_max_nonlocal_requests);
-        _kafka = co_await create_service_group(default_max_nonlocal_requests);
-        _cluster = co_await create_service_group(default_max_nonlocal_requests);
-        _coproc = co_await create_service_group(default_max_nonlocal_requests);
-        _proxy = co_await create_service_group(default_max_nonlocal_requests);
+    smp_groups() = default;
+    ss::future<> create_groups(config cfg) {
+        _raft = co_await create_service_group(
+          cfg.raft_group_max_non_local_requests);
+        _kafka = co_await create_service_group(
+          cfg.kafka_group_max_non_local_requests);
+        _cluster = co_await create_service_group(
+          cfg.cluster_group_max_non_local_requests);
+        _coproc = co_await create_service_group(
+          cfg.coproc_group_max_non_local_requests);
+        _proxy = co_await create_service_group(
+          cfg.proxy_group_max_non_local_requests);
     }
 
     ss::smp_service_group raft_smp_sg() { return *_raft; }
