@@ -16,6 +16,8 @@
 #include "kafka/protocol/metadata.h"
 #include "storage/tests/utils/random_batch.h"
 
+#include <seastar/core/coroutine.hh>
+
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test_log.hpp>
 
@@ -25,35 +27,35 @@ static kafka::client::transport make_kafka_client() {
     });
 }
 
-FIXTURE_TEST(test_metadata_request, coproc_test_fixture) {
-    model::topic input_topic("intpc1");
-    model::topic output_topic = to_materialized_topic(
-      input_topic, identity_coprocessor::identity_topic);
-    setup({{input_topic, 1}}).get();
-    model::ntp input_ntp(
-      model::kafka_namespace, input_topic, model::partition_id(0));
-    model::ntp output_ntp(
-      model::kafka_namespace, output_topic, model::partition_id(0));
+class push_some_data_fixture : public coproc_test_fixture {
+public:
+    ss::future<std::optional<model::record_batch_reader::data_t>> start() {
+        co_await setup({{input_topic, 1}});
+        co_await enable_coprocessors(
+          {{.id = 1234,
+            .data{
+              .tid = coproc::registry::type_identifier::identity_coprocessor,
+              .topics = {
+                {input_topic, coproc::topic_ingestion_policy::stored}}}}});
+        co_await push(
+          input_ntp,
+          storage::test::make_random_memory_record_batch_reader(
+            model::offset(0), 4, 4));
+        co_return co_await drain(output_ntp, 16);
+    }
 
-    /// Create coprocessor
-    enable_coprocessors(
-      {{.id = 1234,
-        .data{
-          .tid = coproc::registry::type_identifier::identity_coprocessor,
-          .topics = {std::make_pair<>(
-            input_topic, coproc::topic_ingestion_policy::stored)}}}})
-      .get();
+    static const inline model::topic input_topic{"intpc1"};
+    static const inline model::topic output_topic{
+      to_materialized_topic(input_topic, identity_coprocessor::identity_topic)};
+    static const inline model::ntp input_ntp{
+      model::kafka_namespace, input_topic, model::partition_id(0)};
+    static const inline model::ntp output_ntp{
+      model::kafka_namespace, output_topic, model::partition_id(0)};
+};
 
-    /// Deploy some data onto the input topic
-    push(
-      input_ntp,
-      storage::test::make_random_memory_record_batch_reader(
-        model::offset(0), 4, 4))
-      .get();
-
-    /// Wait for the materialized log to appear
-    drain(output_ntp, 1).get();
-
+FIXTURE_TEST(test_metadata_request, push_some_data_fixture) {
+    const auto data = start().get();
+    BOOST_REQUIRE(data);
     /// Make a metadata request specifically for the materialized topic
     kafka::metadata_request req{
       .data = {.topics = {{{output_topic}}}},
@@ -70,34 +72,8 @@ FIXTURE_TEST(test_metadata_request, coproc_test_fixture) {
     BOOST_REQUIRE_EQUAL(resp.data.topics[0].partitions.size(), 1);
 }
 
-FIXTURE_TEST(test_read_from_materialized_topic, coproc_test_fixture) {
-    model::topic input_topic("foo");
-    model::topic output_topic = to_materialized_topic(
-      input_topic, identity_coprocessor::identity_topic);
-    setup({{input_topic, 1}}).get();
-    model::ntp input_ntp(
-      model::kafka_namespace, input_topic, model::partition_id(0));
-    model::ntp output_ntp(
-      model::kafka_namespace, output_topic, model::partition_id(0));
-
-    /// Create coprocessor
-    enable_coprocessors(
-      {{.id = 1234,
-        .data{
-          .tid = coproc::registry::type_identifier::identity_coprocessor,
-          .topics = {std::make_pair<>(
-            input_topic, coproc::topic_ingestion_policy::stored)}}}})
-      .get();
-
-    /// Deploy some data onto the input topic
-    push(
-      input_ntp,
-      storage::test::make_random_memory_record_batch_reader(
-        model::offset(0), 4, 4))
-      .get();
-
-    // read the materialized topic from disk
-    const auto data = drain(output_ntp, 16).get0();
+FIXTURE_TEST(test_read_from_materialized_topic, push_some_data_fixture) {
+    const auto data = start().get();
     BOOST_REQUIRE(data);
 
     // Connect a kafka client to the expected output topic
