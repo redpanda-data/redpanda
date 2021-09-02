@@ -53,10 +53,6 @@ public:
       std::vector<security::acl_binding_filter>,
       model::timeout_clock::duration);
 
-    template<typename Cmd>
-    ss::future<std::error_code>
-    replicate_and_wait(Cmd&&, model::timeout_clock::time_point);
-
 private:
     ss::future<std::vector<errc>> do_create_acls(
       std::vector<security::acl_binding>, model::timeout_clock::duration);

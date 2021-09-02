@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/cluster_utils.h"
 #include "cluster/controller_stm.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
@@ -46,18 +47,10 @@ public:
 private:
     template<typename T>
     ss::future<std::error_code> do_replicate_node_command(model::node_id id) {
-        return _stm.invoke_on(
-          controller_stm_shard, [id, this](controller_stm& stm) {
-              T cmd(id, 0);
-              return serialize_cmd(cmd).then(
-                [this, &stm](model::record_batch b) {
-                    return stm.replicate_and_wait(
-                      std::move(b),
-                      _node_op_timeout + model::timeout_clock::now(),
-                      _as.local());
-                });
-          });
+        return replicate_and_wait(
+          _stm, _as, T(id, 0), _node_op_timeout + model::timeout_clock::now());
     }
+
     model::node_id _self;
     std::chrono::milliseconds _node_op_timeout;
     ss::sharded<controller_stm>& _stm;

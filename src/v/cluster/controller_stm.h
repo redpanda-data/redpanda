@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/data_policy_manager.h"
 #include "cluster/members_manager.h"
 #include "cluster/security_manager.h"
 #include "cluster/topic_updates_dispatcher.h"
@@ -22,7 +23,8 @@ namespace cluster {
 using controller_stm = raft::mux_state_machine<
   topic_updates_dispatcher,
   security_manager,
-  members_manager>;
+  members_manager,
+  data_policy_manager>;
 
 static constexpr ss::shard_id controller_stm_shard = 0;
 

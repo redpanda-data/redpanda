@@ -13,6 +13,7 @@
 #include "cluster/controller_api.h"
 #include "cluster/controller_backend.h"
 #include "cluster/controller_service.h"
+#include "cluster/data_policy_frontend.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/members_backend.h"
@@ -89,6 +90,7 @@ ss::future<> controller::start() {
           // validate configuration invariants to exit early
           return _members_manager.local().validate_configuration_invariants();
       })
+      .then([this] { return _data_policy_manager.start(); })
       .then([this] {
           return _stm.start_single(
             std::ref(clusterlog),
@@ -96,7 +98,8 @@ ss::future<> controller::start() {
             raft::persistent_last_applied::yes,
             std::ref(_tp_updates_dispatcher),
             std::ref(_security_manager),
-            std::ref(_members_manager));
+            std::ref(_members_manager),
+            std::ref(_data_policy_manager));
       })
       .then([this] {
           return _members_frontend.start(
@@ -113,6 +116,9 @@ ss::future<> controller::start() {
             std::ref(_partition_leaders),
             std::ref(_as),
             std::ref(_authorizer));
+      })
+      .then([this] {
+          return _data_policy_frontend.start(std::ref(_stm), std::ref(_as));
       })
       .then([this] {
           return _tp_frontend.start(
@@ -248,11 +254,13 @@ ss::future<> controller::stop() {
           .then([this] { return _backend.stop(); })
           .then([this] { return _tp_frontend.stop(); })
           .then([this] { return _security_frontend.stop(); })
+          .then([this] { return _data_policy_frontend.stop(); })
           .then([this] { return _members_frontend.stop(); })
           .then([this] { return _stm.stop(); })
           .then([this] { return _authorizer.stop(); })
           .then([this] { return _credentials.stop(); })
           .then([this] { return _tp_state.stop(); })
+          .then([this] { return _data_policy_manager.stop(); })
           .then([this] { return _members_manager.stop(); })
           .then([this] { return _partition_allocator.stop(); })
           .then([this] { return _partition_leaders.stop(); })

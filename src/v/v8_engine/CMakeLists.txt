@@ -4,8 +4,10 @@ v_cc_library(
     environment.cc
     executor.cc
     script.cc
+    data_policy.cc
   DEPS
     Seastar::seastar
-    v8_monolith)
+    v8_monolith
+    v_reflection)
 
 add_subdirectory(tests)

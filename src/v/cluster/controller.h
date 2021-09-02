@@ -57,6 +57,11 @@ public:
         return _security_frontend;
     }
 
+    ss::sharded<data_policy_frontend>& get_data_policy_frontend() {
+        return _data_policy_frontend;
+    }
+    data_policy_manager& dp_manager() { return _data_policy_manager; }
+
     ss::sharded<security::authorizer>& get_authorizer() { return _authorizer; }
 
     ss::sharded<controller_api>& get_api() { return _api; }
@@ -94,7 +99,9 @@ private:
     topic_updates_dispatcher _tp_updates_dispatcher;
     ss::sharded<security::credential_store> _credentials;
     security_manager _security_manager;
+    data_policy_manager _data_policy_manager;
     ss::sharded<security_frontend> _security_frontend;
+    ss::sharded<data_policy_frontend> _data_policy_frontend;
     ss::sharded<security::authorizer> _authorizer;
     ss::sharded<raft::group_manager>& _raft_manager;
     ss::sharded<health_manager> _health_manager;
