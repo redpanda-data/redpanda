@@ -10,6 +10,7 @@
 #include "rpc/batched_output_stream.h"
 
 #include "likely.h"
+#include "vassert.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/scattered_message.hh>
@@ -21,7 +22,11 @@ batched_output_stream::batched_output_stream(
   ss::output_stream<char> o, size_t cache)
   : _out(std::move(o))
   , _cache_size(cache)
-  , _write_sem(std::make_unique<ss::semaphore>(1)) {}
+  , _write_sem(std::make_unique<ss::semaphore>(1)) {
+    // Size zero reserved for identifying default-initialized
+    // instances in stop()
+    vassert(_cache_size > 0, "Size must be > 0");
+}
 
 [[gnu::cold]] static ss::future<>
 already_closed_error(ss::scattered_message<char>& msg) {
@@ -65,6 +70,15 @@ ss::future<> batched_output_stream::stop() {
         return ss::make_ready_future<>();
     }
     _closed = true;
+
+    if (_cache_size == 0) {
+        // A default-initialized batched_output_stream has a default
+        // initialized output_stream, which has a default initialized
+        // data_sink, which has a null pimpl pointer, and will segfault if
+        // any methods (including flush or close) are called on it.
+        return ss::make_ready_future();
+    }
+
     return ss::with_semaphore(*_write_sem, 1, [this] {
         return do_flush().then([this] { return _out.close(); });
     });
