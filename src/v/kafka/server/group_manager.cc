@@ -251,12 +251,12 @@ ss::future<> group_manager::handle_partition_leader_change(
      * otherwise, we can remove any groups and commits that map to this
      * partition.
      */
-    p->loading = true;
     if (leader_id != _self.id()) {
         // TODO: we are not yet handling group / partition deletion
         return ss::make_ready_future<>();
     }
 
+    p->loading = true;
     auto timeout
       = ss::lowres_clock::now()
         + config::shard_local_cfg().kafka_group_recovery_timeout_ms();
