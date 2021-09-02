@@ -124,7 +124,18 @@ base_transport::connect(clock_type::time_point connection_timeout) {
 }
 ss::future<> base_transport::stop() {
     fail_outstanding_futures();
-    return _dispatch_gate.close();
+
+    return _dispatch_gate.close().then([this]() {
+        // We must call stop() on our output stream, because
+        // seastar::output_stream may not be safely destroyed without a call to
+        // close(), and this class may be destroyed after stop() is called.
+        return _out.stop().then([this] {
+            // Invalidate _out here, so that do_connect can assert that
+            // it isn't dropping an un-stopped output stream when it
+            // assigns to _out
+            _out = {};
+        });
+    });
 }
 void transport::fail_outstanding_futures() noexcept {
     // must close the socket
