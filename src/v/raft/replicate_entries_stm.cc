@@ -22,6 +22,8 @@
 #include "raft/types.h"
 #include "rpc/types.h"
 
+#include <seastar/util/defer.hh>
+
 #include <chrono>
 
 namespace raft {
@@ -89,13 +91,33 @@ replicate_entries_stm::send_append_entries_request(
     auto opts = rpc::client_opts(append_entries_timeout());
     opts.resource_units = ss::make_foreign<ss::lw_shared_ptr<units_t>>(_units);
 
-    auto f = _ptr->_client_protocol
-               .append_entries(n.id(), std::move(req), std::move(opts))
-               .then([this](result<append_entries_reply> reply) {
-                   return _ptr->validate_reply_target_node(
-                     "append_entries_replicate", std::move(reply));
-               });
-    _dispatch_sem.signal();
+    auto f = _ptr->_fstats.get_append_entries_unit(n).then_wrapped(
+      [this, req = std::move(req), opts = std::move(opts), n](
+        ss::future<ss::semaphore_units<>> f) mutable {
+          // we want to signal dispatch semaphore after calling append entries.
+          // When dispatch semaphore is released the append_entries_stm releases
+          // op_lock so next append entries request can be dispatched to the
+          // follower
+          auto signal_dispatch_sem = ss::defer(
+            [this] { _dispatch_sem.signal(); });
+          if (f.failed()) {
+              f.ignore_ready_future();
+              return ss::make_ready_future<result<append_entries_reply>>(
+                make_error_code(errc::append_entries_dispatch_error));
+          }
+          auto u = f.get();
+
+          return _ptr->_client_protocol
+            .append_entries(n.id(), std::move(req), std::move(opts))
+            .then([this](result<append_entries_reply> reply) {
+                return _ptr->validate_reply_target_node(
+                  "append_entries_replicate", std::move(reply));
+            })
+            .finally([this, n, u = std::move(u)] {
+                _ptr->_fstats.return_append_entries_units(n);
+            });
+      });
+
     return f
       .handle_exception([this](const std::exception_ptr& e) {
           vlog(_ctxlog.warn, "Error while replicating entries {}", e);
