@@ -4,8 +4,8 @@ metadata:
   name: cluster-tls
   namespace: given-cert
 spec:
-  image: "vectorized/redpanda"
-  version: "latest"
+  image: "localhost/redpanda"
+  version: "dev"
   replicas: 1
   resources:
     requests:

@@ -5,6 +5,9 @@ CONFIGURATOR_IMG_LATEST ?= "vectorized/configurator:latest"
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 
+# default redpanda image to load
+REDPANDA_IMG ?= "localhost/redpanda:dev"
+
 # The BUILDKITE_JOB_ID is used to create unique kind cluster.
 # BUILDKITE_JOB_ID is set in the buildkite runner for every CI run.
 #
@@ -59,6 +62,7 @@ uninstall: manifests kustomize
 deploy: manifests kustomize
 	cd config/manager && $(KUSTOMIZE) edit set image vectorized/redpanda-operator=${OPERATOR_IMG_LATEST}
 	$(KUSTOMIZE) build config/default | kubectl apply -f -
+	kind load docker-image ${REDPANDA_IMG}
 
 # Deploy pre loaded controller in the configured Kind Kubernetes cluster
 deploy-to-kind: manifests kustomize push-to-kind deploy

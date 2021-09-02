@@ -7,7 +7,7 @@ spec:
     spec:
       containers:
       - name: rpk
-        image: vectorized/redpanda:latest
+        image: localhost/redpanda:dev
         command:
         - curl
         args:
