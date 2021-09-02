@@ -51,6 +51,7 @@ rpk:
   enable_usage_stats: false
   overprovisioned: true
   tune_aio_events: false
+  tune_ballast_file: false
   tune_clocksource: false
   tune_coredump: false
   tune_cpu: false
