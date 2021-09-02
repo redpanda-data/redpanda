@@ -21,7 +21,6 @@ from rptest.tests.end_to_end import EndToEndTest
 
 DECOMMISSION = "decommission"
 ADD = "add"
-ADD_NO_DELETE = "add_no_delete"
 ADD_TOPIC = "add_tp"
 DELETE_TOPIC = "delete_tp"
 ALLOWED_REPLICATION = [1, 3]
@@ -29,7 +28,7 @@ ALLOWED_REPLICATION = [1, 3]
 
 class NodeOperationFuzzyTest(EndToEndTest):
     def generate_random_workload(self, count, skip_nodes):
-        op_types = [ADD, DECOMMISSION, ADD_NO_DELETE]
+        op_types = [ADD, DECOMMISSION]
         tp_op_types = [ADD_TOPIC, DELETE_TOPIC]
         # current state
         active_nodes = [1, 2, 3, 4, 5]
@@ -53,7 +52,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
         for _ in range(0, count):
             if len(decommissioned_nodes) == 2:
                 id = random.choice(decommissioned_nodes)
-                operations.append((random.choice([ADD, ADD_NO_DELETE]), id))
+                operations.append((ADD, id))
                 add(id)
             elif len(decommissioned_nodes) == 0:
                 id = random.choice(eligible_active_nodes())
@@ -68,10 +67,6 @@ class NodeOperationFuzzyTest(EndToEndTest):
                 elif op == ADD:
                     id = random.choice(decommissioned_nodes)
                     operations.append((ADD, id))
-                    add(id)
-                elif op == ADD_NO_DELETE:
-                    id = random.choice(decommissioned_nodes)
-                    operations.append((ADD_NO_DELETE, id))
                     add(id)
             # topic operation
             if len(topics) == 0:
@@ -193,10 +188,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
             if op_type == ADD:
                 id = op[1]
                 restart_node(id)
-            if op_type == ADD_NO_DELETE:
-                id = op[1]
-                restart_node(id, cleanup=False)
-            elif op_type == DECOMMISSION:
+            if op_type == DECOMMISSION:
                 id = op[1]
                 decommission(id)
             elif op_type == ADD_TOPIC:
