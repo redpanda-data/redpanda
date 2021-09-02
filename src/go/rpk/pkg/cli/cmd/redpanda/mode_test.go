@@ -7,6 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+// +build linux
+
 package redpanda
 
 import (
@@ -40,6 +42,7 @@ func fillRpkConfig(path, mode string) *config.Config {
 		TuneSwappiness:     val,
 		CoredumpDir:        path,
 		Overprovisioned:    !val,
+		TuneBallastFile:    val,
 	}
 	return conf
 }
@@ -162,6 +165,7 @@ func TestModeCommand(t *testing.T) {
 			require.NoError(t, err)
 			output := out.String()
 			require.Contains(t, strings.TrimSpace(output), tt.expectedOutput)
+			mgr = config.NewManager(fs)
 			conf, err := mgr.Read(path)
 			require.NoError(t, err)
 			require.Exactly(t, tt.expectedConfig, conf)

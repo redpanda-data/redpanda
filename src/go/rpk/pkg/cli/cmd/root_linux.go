@@ -29,4 +29,5 @@ func addPlatformDependentCmds(
 	cmd.AddCommand(NewStopCommand(fs, mgr))
 	cmd.AddCommand(NewConfigCommand(fs, mgr))
 	cmd.AddCommand(NewStatusCommand(fs, mgr))
+	cmd.AddCommand(NewModeCommand(mgr))
 }

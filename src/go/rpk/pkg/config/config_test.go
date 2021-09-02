@@ -46,6 +46,7 @@ func getValidConfig() *Config {
 		TuneTransparentHugePages: true,
 		EnableMemoryLocking:      true,
 		TuneCoredump:             true,
+		TuneBallastFile:          true,
 		CoredumpDir:              "/var/lib/redpanda/coredumps",
 		WellKnownIo:              "vendor:vm:storage",
 	}
@@ -476,6 +477,7 @@ rpk:
   enable_usage_stats: true
   overprovisioned: false
   tune_aio_events: true
+  tune_ballast_file: true
   tune_clocksource: true
   tune_coredump: true
   tune_cpu: true
@@ -523,6 +525,7 @@ rpk:
   enable_usage_stats: true
   overprovisioned: false
   tune_aio_events: true
+  tune_ballast_file: true
   tune_clocksource: true
   tune_coredump: true
   tune_cpu: true
@@ -580,6 +583,7 @@ rpk:
   enable_usage_stats: true
   overprovisioned: false
   tune_aio_events: true
+  tune_ballast_file: true
   tune_clocksource: true
   tune_coredump: true
   tune_cpu: true
@@ -639,6 +643,7 @@ rpk:
   enable_usage_stats: true
   overprovisioned: false
   tune_aio_events: true
+  tune_ballast_file: true
   tune_clocksource: true
   tune_coredump: true
   tune_cpu: true
@@ -690,6 +695,7 @@ rpk:
   enable_usage_stats: false
   overprovisioned: false
   tune_aio_events: false
+  tune_ballast_file: false
   tune_clocksource: false
   tune_coredump: false
   tune_cpu: false
@@ -745,6 +751,7 @@ rpk:
   enable_usage_stats: true
   overprovisioned: false
   tune_aio_events: true
+  tune_ballast_file: true
   tune_clocksource: true
   tune_coredump: true
   tune_cpu: true
@@ -824,6 +831,7 @@ rpk:
   enable_usage_stats: true
   overprovisioned: false
   tune_aio_events: true
+  tune_ballast_file: true
   tune_clocksource: true
   tune_coredump: true
   tune_cpu: true
@@ -895,6 +903,7 @@ rpk:
   enable_usage_stats: true
   overprovisioned: false
   tune_aio_events: true
+  tune_ballast_file: true
   tune_clocksource: true
   tune_coredump: true
   tune_cpu: true
@@ -962,6 +971,7 @@ rpk:
   enable_usage_stats: true
   overprovisioned: false
   tune_aio_events: true
+  tune_ballast_file: true
   tune_clocksource: true
   tune_coredump: true
   tune_cpu: true
@@ -1025,6 +1035,7 @@ rpk:
   enable_usage_stats: true
   overprovisioned: false
   tune_aio_events: true
+  tune_ballast_file: true
   tune_clocksource: true
   tune_coredump: true
   tune_cpu: true
@@ -1078,6 +1089,7 @@ rpk:
   enable_usage_stats: true
   overprovisioned: false
   tune_aio_events: true
+  tune_ballast_file: true
   tune_clocksource: true
   tune_coredump: true
   tune_cpu: true
@@ -1169,6 +1181,7 @@ rpk:
   enable_usage_stats: true
   overprovisioned: false
   tune_aio_events: true
+  tune_ballast_file: true
   tune_clocksource: true
   tune_coredump: true
   tune_cpu: true
@@ -1234,6 +1247,7 @@ rpk:
   enable_usage_stats: true
   overprovisioned: false
   tune_aio_events: true
+  tune_ballast_file: true
   tune_clocksource: true
   tune_coredump: true
   tune_cpu: true
@@ -1309,6 +1323,7 @@ rpk:
   enable_usage_stats: true
   overprovisioned: false
   tune_aio_events: true
+  tune_ballast_file: true
   tune_clocksource: true
   tune_coredump: true
   tune_cpu: true
@@ -1362,6 +1377,7 @@ rpk:
   enable_usage_stats: true
   overprovisioned: false
   tune_aio_events: true
+  tune_ballast_file: true
   tune_clocksource: true
   tune_coredump: true
   tune_cpu: true
@@ -1415,6 +1431,7 @@ rpk:
   enable_usage_stats: true
   overprovisioned: false
   tune_aio_events: true
+  tune_ballast_file: true
   tune_clocksource: true
   tune_coredump: true
   tune_cpu: true
@@ -1477,6 +1494,7 @@ rpk:
   enable_usage_stats: true
   overprovisioned: false
   tune_aio_events: true
+  tune_ballast_file: true
   tune_clocksource: true
   tune_coredump: true
   tune_cpu: true
@@ -1560,6 +1578,7 @@ rpk:
   enable_usage_stats: true
   overprovisioned: false
   tune_aio_events: true
+  tune_ballast_file: true
   tune_clocksource: true
   tune_coredump: true
   tune_cpu: true
@@ -1617,6 +1636,7 @@ rpk:
   enable_usage_stats: true
   overprovisioned: false
   tune_aio_events: true
+  tune_ballast_file: true
   tune_clocksource: true
   tune_coredump: true
   tune_cpu: true
@@ -1677,6 +1697,7 @@ rpk:
       user: scram_user
   overprovisioned: false
   tune_aio_events: true
+  tune_ballast_file: true
   tune_clocksource: true
   tune_coredump: true
   tune_cpu: true
@@ -1747,6 +1768,7 @@ rpk:
   enable_usage_stats: false
   overprovisioned: false
   tune_aio_events: false
+  tune_ballast_file: false
   tune_clocksource: false
   tune_coredump: false
   tune_cpu: false
@@ -1902,6 +1924,7 @@ func TestSetMode(t *testing.T) {
 				TuneSwappiness:     val,
 				CoredumpDir:        conf.Rpk.CoredumpDir,
 				Overprovisioned:    !val,
+				TuneBallastFile:    val,
 			}
 			return conf
 		}
@@ -2142,7 +2165,7 @@ func TestReadAsJSON(t *testing.T) {
 				return mgr.Write(conf)
 			},
 			path:     Default().ConfigFile,
-			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","pandaproxy":{},"redpanda":{"admin":[{"address":"0.0.0.0","port":9644}],"data_directory":"/var/lib/redpanda/data","developer_mode":true,"kafka_api":[{"address":"0.0.0.0","name":"internal","port":9092}],"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_disk_write_cache":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false},"schema_registry":{}}`,
+			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","pandaproxy":{},"redpanda":{"admin":[{"address":"0.0.0.0","port":9644}],"data_directory":"/var/lib/redpanda/data","developer_mode":true,"kafka_api":[{"address":"0.0.0.0","name":"internal","port":9092}],"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tune_aio_events":false,"tune_ballast_file":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_disk_write_cache":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false},"schema_registry":{}}`,
 		},
 		{
 			name:           "it should fail if the the config isn't found",
@@ -2207,6 +2230,7 @@ func TestReadFlat(t *testing.T) {
 		"rpk.enable_usage_stats":                       "false",
 		"rpk.overprovisioned":                          "false",
 		"rpk.tune_aio_events":                          "false",
+		"rpk.tune_ballast_file":                        "false",
 		"rpk.tune_clocksource":                         "false",
 		"rpk.tune_coredump":                            "false",
 		"rpk.tune_cpu":                                 "false",

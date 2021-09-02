@@ -158,6 +158,9 @@ type RpkConfig struct {
 	EnableMemoryLocking      bool        `yaml:"enable_memory_locking" mapstructure:"enable_memory_locking" json:"enableMemoryLocking"`
 	TuneCoredump             bool        `yaml:"tune_coredump" mapstructure:"tune_coredump" json:"tuneCoredump"`
 	CoredumpDir              string      `yaml:"coredump_dir,omitempty" mapstructure:"coredump_dir,omitempty" json:"coredumpDir"`
+	TuneBallastFile          bool        `yaml:"tune_ballast_file" mapstructure:"tune_ballast_file" json:"tuneBallastFile"`
+	BallastFilePath          string      `yaml:"ballast_file_path,omitempty" mapstructure:"ballast_file_path,omitempty" json:"ballastFilePath"`
+	BallastFileSize          string      `yaml:"ballast_file_size,omitempty" mapstructure:"ballast_file_size,omitempty" json:"ballastFileSize"`
 	WellKnownIo              string      `yaml:"well_known_io,omitempty" mapstructure:"well_known_io,omitempty" json:"wellKnownIo"`
 	Overprovisioned          bool        `yaml:"overprovisioned" mapstructure:"overprovisioned" json:"overprovisioned"`
 	SMP                      *int        `yaml:"smp,omitempty" mapstructure:"smp,omitempty" json:"smp,omitempty"`
