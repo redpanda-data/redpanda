@@ -12,6 +12,7 @@
 #include "coproc/tests/utils/coprocessor.h"
 #include "coproc/types.h"
 #include "kafka/client/transport.h"
+#include "kafka/protocol/delete_topics.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/metadata.h"
 #include "storage/tests/utils/random_batch.h"
@@ -105,4 +106,62 @@ FIXTURE_TEST(test_read_from_materialized_topic, push_some_data_fixture) {
     // BOOST_REQUIRE_EQUAL(
     //   std::move(*resp.partitions[0].responses[0].record_set).release(),
     //   data);
+}
+
+ss::future<std::vector<kafka::metadata_response_topic>>
+list_all_topics(kafka::client::transport& cli) {
+    kafka::metadata_request list_topics{.list_all_topics = true};
+    return cli.dispatch(list_topics, kafka::api_version(4))
+      .then([](auto all_topics) { return std::move(all_topics.data.topics); });
+}
+
+bool topic_exists(
+  std::vector<kafka::metadata_response_topic>& topics,
+  const model::topic& target) {
+    return std::find_if(
+             topics.begin(),
+             topics.end(),
+             [&](const kafka::metadata_response_topic& mrt) {
+                 return mrt.name == target;
+             })
+           != topics.end();
+}
+
+FIXTURE_TEST(test_delete_materialized_topic, push_some_data_fixture) {
+    const auto data = start().get();
+    BOOST_REQUIRE(data);
+    auto client = make_kafka_client();
+    client.connect().get();
+
+    /// List all topics, ensuring expected topics exists
+    auto topics = list_all_topics(client).get();
+    BOOST_REQUIRE(topic_exists(topics, input_topic));
+    BOOST_REQUIRE(topic_exists(topics, output_topic));
+
+    /// Attempt to delete source topic, this should fail
+    kafka::delete_topics_request drt{
+      .data{.topic_names{input_topic}, .timeout_ms = 1s}};
+    auto drt_response = client.dispatch(drt, kafka::api_version(3)).get();
+    BOOST_REQUIRE_EQUAL(drt_response.data.responses.size(), 1);
+    BOOST_REQUIRE_EQUAL(drt_response.data.responses[0].name, input_topic);
+    BOOST_REQUIRE_EQUAL(
+      drt_response.data.responses[0].error_code,
+      kafka::error_code::unknown_topic_or_partition);
+    topics = list_all_topics(client).get();
+    BOOST_REQUIRE(topic_exists(topics, input_topic));
+
+    /// Attempt to delete materialized topic, this should work
+    kafka::delete_topics_request drto{
+      .data{.topic_names{output_topic}, .timeout_ms = 1s}};
+    drt_response = client.dispatch(drto, kafka::api_version(3)).get();
+    BOOST_REQUIRE_EQUAL(drt_response.data.responses.size(), 1);
+    BOOST_REQUIRE_EQUAL(drt_response.data.responses[0].name, output_topic);
+    BOOST_REQUIRE_EQUAL(
+      drt_response.data.responses[0].error_code, kafka::error_code::none);
+
+    /// Verify only materialized topic was deleted
+    topics = list_all_topics(client).get();
+    BOOST_REQUIRE(!topic_exists(topics, output_topic));
+    BOOST_REQUIRE(topic_exists(topics, input_topic));
+    client.stop().get();
 }
