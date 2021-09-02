@@ -60,7 +60,10 @@ consensus::consensus(
   , _disk_timeout(disk_timeout)
   , _client_protocol(client)
   , _leader_notification(std::move(cb))
-  , _fstats(_self)
+  , _fstats(
+      _self,
+      config::shard_local_cfg()
+        .raft_max_concurrent_append_requests_per_follower())
   , _batcher(this, config::shard_local_cfg().raft_replicate_batch_window_size())
   , _event_manager(this)
   , _ctxlog(group, _log.config().ntp())
