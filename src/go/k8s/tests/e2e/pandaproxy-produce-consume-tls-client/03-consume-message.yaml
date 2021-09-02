@@ -12,7 +12,7 @@ spec:
             secretName: cluster-proxy-proxy-api-node
       containers:
         - name: rpk
-          image: vectorized/redpanda:dev
+          image: localhost/redpanda:dev
           env:
             - name: POD_NAMESPACE
               valueFrom:

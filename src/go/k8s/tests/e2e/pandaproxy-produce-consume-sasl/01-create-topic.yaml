@@ -7,7 +7,7 @@ spec:
     spec:
       containers:
         - name: rpk
-          image: vectorized/redpanda:dev
+          image: localhost/redpanda:dev
           env:
             - name: POD_NAMESPACE
               valueFrom:
