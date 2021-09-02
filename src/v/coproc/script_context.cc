@@ -22,6 +22,7 @@
 #include "storage/types.h"
 #include "vlog.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/sleep.hh>
 
 #include <chrono>
@@ -175,12 +176,9 @@ ss::future<> script_context::process_one_reply(process_batch_reply::data e) {
     }
     auto ntp_ctx = found->second;
     return write_materialized(materialized_ntp, std::move(*e.reader))
-      .then([this, ntp_ctx](write_response wr) {
-          if (wr == write_response::crc_failure) {
+      .then([this, ntp_ctx](bool success) {
+          if (!success) {
               vlog(coproclog.warn, "record_batch failed to pass crc checks");
-              return;
-          } else if (wr == write_response::term_too_old) {
-              vlog(coproclog.debug, "older term record detected, retrying");
               return;
           }
           auto ofound = ntp_ctx->offsets.find(_id);
@@ -204,100 +202,65 @@ ss::future<storage::log> get_log(storage::api& api, const model::ntp& ntp) {
       storage::ntp_config(ntp, api.log_mgr().config().base_dir));
 }
 
-/// Solution to case where scripts writing to the same materialized topic may
-/// attempt to write a record with a lower term_id then the logs base.
-class term_id_barrier {
+class set_term_id_to_one {
 public:
-    explicit term_id_barrier(model::term_id last)
-      : _last(last) {}
-
-    ss::future<ss::stop_iteration> operator()(const model::record_batch& rb) {
-        /// If the situation is encountered, the consumer will be alerted,
-        /// and in the case below, the reference_window_consumer will not
-        /// attempt to further process the batch, i.e. aborting the write
-        if (rb.term() < _last) {
-            _exited_early = true;
-        }
-        return ss::make_ready_future<ss::stop_iteration>(
-          _exited_early ? ss::stop_iteration::yes : ss::stop_iteration::no);
+    ss::future<ss::stop_iteration> operator()(model::record_batch& b) {
+        b.header().ctx.term = model::term_id(0);
+        _batches.push_back(std::move(b));
+        co_return ss::stop_iteration::no;
     }
 
-    std::optional<model::term_id> end_of_stream() {
-        return _exited_early ? std::nullopt : std::optional(_last);
+    model::record_batch_reader end_of_stream() {
+        return model::make_memory_record_batch_reader(std::move(_batches));
     }
 
 private:
-    bool _exited_early{false};
-    model::term_id _last;
+    model::record_batch_reader::data_t _batches;
 };
 
-ss::future<std::variant<script_context::write_response, model::term_id>>
-script_context::write_checked(
-  storage::log log,
-  model::term_id last_term,
-  model::record_batch_reader reader) {
-    using rt_val = std::variant<write_response, model::term_id>;
-    using consumption_result = std::
-      tuple<bool, std::optional<model::term_id>, model::record_batch_reader>;
-    return std::move(reader)
-      .for_each_ref(
-        coproc::reference_window_consumer(
-          model::record_batch_crc_checker(),
-          term_id_barrier(last_term),
-          storage::internal::compress_batch_consumer(
-            model::compression::zstd, 512)),
-        model::no_timeout)
-      .then([log](consumption_result rs) mutable {
-          bool crc_success = std::get<bool>(rs);
-          if (!crc_success) {
-              return ss::make_ready_future<rt_val>(write_response::crc_failure);
-          }
-          auto newest_term = std::get<std::optional<model::term_id>>(rs);
-          if (!newest_term) {
-              return ss::make_ready_future<rt_val>(
-                write_response::term_too_old);
-          }
-          const storage::log_append_config write_cfg{
-            .should_fsync = storage::log_append_config::fsync::no,
-            .io_priority = ss::default_priority_class(),
-            .timeout = model::no_timeout};
-          return std::move(std::get<model::record_batch_reader>(rs))
-            .for_each_ref(log.make_appender(write_cfg), model::no_timeout)
-            .then(
-              [](storage::append_result ar) { return rt_val(ar.last_term); });
-      });
+ss::future<bool> script_context::write_checked(
+  storage::log log, model::record_batch_reader reader) {
+    /// Re-write all batch term_ids to 1, otherwise they will carry the
+    /// term ids of records coming from parent batches
+    auto [success, batch_w_correct_terms]
+      = co_await std::move(reader).for_each_ref(
+        reference_window_consumer(
+          model::record_batch_crc_checker(), set_term_id_to_one()),
+        model::no_timeout);
+    if (!success) {
+        /// In the case crc checks failed, do NOT write records to storage
+        co_return false;
+    }
+    /// Compress the data before writing...
+    auto compressed = co_await std::move(batch_w_correct_terms)
+                        .for_each_ref(
+                          storage::internal::compress_batch_consumer(
+                            model::compression::zstd, 512),
+                          model::no_timeout);
+    const storage::log_append_config write_cfg{
+      .should_fsync = storage::log_append_config::fsync::no,
+      .io_priority = ss::default_priority_class(),
+      .timeout = model::no_timeout};
+    /// Finally, write the batch
+    co_await std::move(compressed)
+      .for_each_ref(log.make_appender(write_cfg), model::no_timeout)
+      .discard_result();
+    co_return true;
 }
 
-ss::future<script_context::write_response> script_context::write_materialized(
+ss::future<bool> script_context::write_materialized(
   const model::materialized_ntp& m_ntp, model::record_batch_reader reader) {
     auto found = _resources.log_mtx.find(m_ntp.input_ntp());
     if (found == _resources.log_mtx.end()) {
-        found = _resources.log_mtx
-                  .emplace(
-                    m_ntp.input_ntp(),
-                    std::make_pair(mutex(), model::term_id{}))
-                  .first;
+        found = _resources.log_mtx.emplace(m_ntp.input_ntp(), mutex()).first;
     }
-    return found->second.first.with([this,
-                                     m_ntp,
-                                     reader = std::move(reader)]() mutable {
-        model::term_id last_term = _resources.log_mtx[m_ntp.input_ntp()].second;
-        return get_log(_resources.api, m_ntp.input_ntp())
-          .then([this, last_term, reader = std::move(reader)](
-                  storage::log log) mutable {
-              return write_checked(
-                std::move(log), last_term, std::move(reader));
-          })
-          .then([this,
-                 m_ntp](std::variant<write_response, model::term_id> written) {
-              if (std::holds_alternative<model::term_id>(written)) {
-                  model::term_id next_term = std::get<model::term_id>(written);
-                  _resources.log_mtx[m_ntp.input_ntp()].second = next_term;
-                  return write_response::success;
-              }
-              return std::get<write_response>(written);
-          });
-    });
+    return found->second.with(
+      [this, m_ntp, reader = std::move(reader)]() mutable {
+          return get_log(_resources.api, m_ntp.input_ntp())
+            .then([this, reader = std::move(reader)](storage::log log) mutable {
+                return write_checked(std::move(log), std::move(reader));
+            });
+      });
 }
 
 } // namespace coproc

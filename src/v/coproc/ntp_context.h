@@ -97,7 +97,7 @@ struct shared_script_resources {
     /// the seastar reactor
     /// NOTE: Pointer stability is explicity requested due to the way iterators
     /// to elements within the collection are used
-    absl::node_hash_map<model::ntp, std::pair<mutex, model::term_id>> log_mtx;
+    absl::node_hash_map<model::ntp, mutex> log_mtx;
 
     explicit shared_script_resources(
       rpc::reconnect_transport t, storage::api& a)
