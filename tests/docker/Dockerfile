@@ -81,6 +81,8 @@ RUN git -C /opt clone https://github.com/Shopify/sarama.git && \
 
 # Expose port 8080 for any http examples within clients
 EXPOSE 8080
+RUN go install github.com/twmb/kcl@latest && \
+    mv /root/go/bin/kcl /usr/local/bin/
 
 # copy source of test (java) programs
 COPY --chown=0:0 tests/java /tmp/java
