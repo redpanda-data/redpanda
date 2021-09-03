@@ -87,27 +87,21 @@ func listGroups(cl *kgo.Client) ([]string, error) {
 
 	shards := cl.RequestSharded(context.Background(), req)
 	var groups []string
-	var failures int
-	for _, shard := range shards {
-		if shard.Err != nil {
-			kafka.PrintShardError(req, shard)
-			failures++
-			continue
-		}
+	allFailed := kafka.EachShard(req, shards, func(shard kgo.ResponseShard) {
 		resp := shard.Resp.(*kmsg.ListGroupsResponse)
 		if err := kerr.ErrorForCode(resp.ErrorCode); err != nil {
 			fmt.Printf("ListGroups request to broker %s returned error: %v\n",
 				kafka.MetaString(shard.Meta),
 				err,
 			)
-			continue
+			return
 		}
 		for _, group := range resp.Groups {
 			groups = append(groups, group.Group)
 		}
-	}
-	if failures == len(shards) {
-		return nil, fmt.Errorf("all %d ListGroups requests failed", failures)
+	})
+	if allFailed {
+		return nil, fmt.Errorf("all %d ListGroups requests failed", len(shards))
 	}
 	return groups, nil
 }
@@ -118,19 +112,12 @@ func describeGroups(cl *kgo.Client, groups []string) ([]describedGroup, error) {
 
 	shards := cl.RequestSharded(context.Background(), req)
 	var described []describedGroup
-	var failures int
-	for _, shard := range shards {
-		if shard.Err != nil {
-			kafka.PrintShardError(req, shard)
-			failures++
-			continue
-		}
-
+	allFailed := kafka.EachShard(req, shards, func(shard kgo.ResponseShard) {
 		resp := unmarshalGroupDescribeMembers(shard.Meta, shard.Resp.(*kmsg.DescribeGroupsResponse))
 		described = append(described, resp.Groups...)
-	}
-	if failures == len(shards) {
-		return nil, fmt.Errorf("all %d DescribeGroups requests failed", failures)
+	})
+	if allFailed {
+		return nil, fmt.Errorf("all %d DescribeGroups requests failed", len(shards))
 	}
 	return described, nil
 }
@@ -209,14 +196,7 @@ func listOffsets(
 
 	shards := cl.RequestSharded(context.Background(), req)
 	listed := make(map[string]map[int32]offset)
-	var failures int
-	for _, shard := range shards {
-		if shard.Err != nil {
-			kafka.PrintShardError(req, shard)
-			failures++
-			continue
-		}
-
+	allFailed := kafka.EachShard(req, shards, func(shard kgo.ResponseShard) {
 		resp := shard.Resp.(*kmsg.ListOffsetsResponse)
 		for _, topic := range resp.Topics {
 			listedt := listed[topic.Topic]
@@ -231,9 +211,9 @@ func listOffsets(
 				}
 			}
 		}
-	}
-	if failures == len(shards) {
-		return nil, fmt.Errorf("all %d ListOffsets requests failed", failures)
+	})
+	if allFailed {
+		return nil, fmt.Errorf("all %d ListOffsets requests failed", len(shards))
 	}
 	return listed, nil
 }

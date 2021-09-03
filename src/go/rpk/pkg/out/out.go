@@ -85,11 +85,12 @@ func NewTable(headers ...string) *TabWriter {
 
 // NewTableTo is NewTable writing to w.
 func NewTableTo(w io.Writer, headers ...string) *TabWriter {
-	for i, header := range headers {
-		headers[i] = strings.ToUpper(header)
+	var iheaders []interface{}
+	for _, header := range headers {
+		iheaders = append(iheaders, strings.ToUpper(header))
 	}
 	t := NewTabWriterTo(w)
-	t.PrintStrings(headers...)
+	t.Print(iheaders...)
 	return t
 }
 
@@ -105,15 +106,17 @@ func NewTabWriterTo(w io.Writer) *TabWriter {
 	return &TabWriter{tabwriter.NewWriter(w, 6, 4, 2, ' ', 0)}
 }
 
-// Print stringifies the arguments and calls PrintStrings.
+// Print stringifies the arguments and prints them tab-delimited and
+// newline-suffixed to the tab writer.
 func (t *TabWriter) Print(args ...interface{}) {
-	t.PrintStrings(args2strings(args)...)
+	fmt.Fprint(t.Writer, strings.Join(args2strings(args), "\t")+"\n")
 }
 
-// PrintStrings prints the arguments tab-delimited and newline-suffixed to the
-// tab writer.
-func (t *TabWriter) PrintStrings(args ...string) {
-	fmt.Fprint(t.Writer, strings.Join(args, "\t")+"\n")
+// PrintColumn is the same as Print, but prints header uppercased as the first
+// argument.
+func (t *TabWriter) PrintColumn(header string, args ...interface{}) {
+	header = strings.ToUpper(header)
+	t.Print(append([]interface{}{header}, args...)...)
 }
 
 // Line prints a newline in our tab writer. This will reset tab spacing.

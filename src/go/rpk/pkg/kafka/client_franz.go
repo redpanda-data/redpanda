@@ -77,3 +77,20 @@ func PrintShardError(req kmsg.Request, shard kgo.ResponseShard) {
 		shard.Err,
 	)
 }
+
+// EachShard calls fn for each non-erroring response in shards. Any errored
+// response calls PrintShardError, and this returns if all shards failed.
+func EachShard(
+	req kmsg.Request, shards []kgo.ResponseShard, fn func(kgo.ResponseShard),
+) (allFailed bool) {
+	var failures int
+	for _, shard := range shards {
+		if shard.Err != nil {
+			PrintShardError(req, shard)
+			failures++
+			continue
+		}
+		fn(shard)
+	}
+	return failures == len(shards)
+}
