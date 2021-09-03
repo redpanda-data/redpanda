@@ -589,6 +589,8 @@ void application::wire_up_redpanda_services() {
 
     // controller
 
+    construct_service(data_policies).get();
+
     syschecks::systemd_message("Creating cluster::controller").get();
 
     construct_single_service(
@@ -597,7 +599,8 @@ void application::wire_up_redpanda_services() {
       partition_manager,
       shard_table,
       storage,
-      std::ref(raft_group_manager));
+      std::ref(raft_group_manager),
+      data_policies);
 
     controller->wire_up().get0();
     syschecks::systemd_message("Creating kafka metadata cache").get();

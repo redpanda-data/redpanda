@@ -25,28 +25,26 @@ namespace cluster {
 namespace {
 
 template<typename Cmd>
-std::error_code do_apply(Cmd cmd, data_policy_manager::container_type& db) {
+std::error_code do_apply(Cmd cmd, v8_engine::data_policy_table& db) {
     return ss::visit(
       std::move(cmd),
       [&db](create_data_policy_cmd cmd) {
-          auto [_, res] = db.insert({cmd.key, std::move(cmd.value.dp)});
-          return res ? std::error_code(errc::success)
-                     : std::error_code(errc::data_policy_already_exists);
+          return db.insert(cmd.key, std::move(cmd.value.dp))
+                   ? std::error_code(errc::success)
+                   : std::error_code(errc::data_policy_already_exists);
       },
       [&db](delete_data_policy_cmd cmd) {
-          if (db.erase(cmd.key) == 0) {
-              return std::error_code(errc::data_policy_not_exists);
-          } else {
-              return std::error_code(errc::success);
-          }
+          return db.erase(cmd.key)
+                   ? std::error_code(errc::success)
+                   : std::error_code(errc::data_policy_not_exists);
       });
 }
 
 template<typename Cmd>
 ss::future<std::error_code> dispatch_updates_to_cores(
-  Cmd cmd, ss::sharded<data_policy_manager::container_type>& db) {
+  Cmd cmd, ss::sharded<v8_engine::data_policy_table>& db) {
     auto res = co_await db.map_reduce0(
-      [cmd](data_policy_manager::container_type& local_db) {
+      [cmd](v8_engine::data_policy_table& local_db) {
           return do_apply(std::move(cmd), local_db);
       },
       std::optional<std::error_code>{},
