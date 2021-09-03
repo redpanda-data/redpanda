@@ -10,70 +10,36 @@
 package topic
 
 import (
-	"sort"
-	"strconv"
-
-	"github.com/Shopify/sarama"
-	log "github.com/sirupsen/logrus"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/ui"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/cluster"
 )
 
-func NewListCommand(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
+func NewListCommand(fs afero.Fs) *cobra.Command {
+	var detailed bool
+	var internal bool
+
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List topics",
+		Long:    `List topics (alias for rpk cluster metadata -t).`,
 		Args:    cobra.ExactArgs(0),
-		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
-		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			adm, err := admin()
-			if err != nil {
-				log.Error("Couldn't initialize API admin")
-				return err
+		Run: func(listCmd *cobra.Command, _ []string) {
+			args := append(listCmd.Flags().Args(), "-t")
+			if detailed {
+				args = append(args, "-d")
 			}
-			defer adm.Close()
-
-			topics, err := adm.ListTopics()
-			if err != nil {
-				return err
+			if internal {
+				args = append(args, "-i")
 			}
-			if len(topics) == 0 {
-				log.Info("No topics found.")
-				return nil
-			}
-
-			sortedTopics := make(
-				[]struct {
-					name string
-					sarama.TopicDetail
-				}, len(topics))
-
-			i := 0
-			for name, topic := range topics {
-				sortedTopics[i].name = name
-				sortedTopics[i].TopicDetail = topic
-				i++
-			}
-
-			sort.Slice(sortedTopics, func(i int, j int) bool {
-				return sortedTopics[i].name < sortedTopics[j].name
-			})
-
-			t := ui.NewRpkTable(log.StandardLogger().Out)
-			t.Append([]string{"Name", "Partitions", "Replicas"})
-
-			for _, topic := range sortedTopics {
-				t.Append([]string{
-					topic.name,
-					strconv.Itoa(int(topic.NumPartitions)),
-					strconv.Itoa(int(topic.ReplicationFactor)),
-				})
-			}
-			t.Render()
-			return nil
+			metaCmd := cluster.NewMetadataCommand(fs)
+			metaCmd.SetArgs(args)
+			metaCmd.Execute()
 		},
 	}
+
+	cmd.Flags().BoolVarP(&detailed, "detailed", "d", false, "print per-partition information for topics")
+	cmd.Flags().BoolVarP(&internal, "internal", "i", false, "print internal topics")
 	return cmd
 }
