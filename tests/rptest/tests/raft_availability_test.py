@@ -12,6 +12,7 @@ import json
 import re
 
 from ducktape.mark.resource import cluster
+from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cat import KafkaCat
@@ -417,7 +418,7 @@ class RaftAvailabilityTest(RedpandaTest):
             else:
                 if last_follower_v is not None and follower_v == last_follower_v:
                     raise RuntimeError(
-                        f"Follower stuck at {metric}={follower_v}!")
+                        f"Follower {follower.account.hostname} stuck at {metric}={follower_v}!")
                 else:
                     last_follower_v = follower_v
                     time.sleep(10)
@@ -505,7 +506,14 @@ class RaftAvailabilityTest(RedpandaTest):
                             {"topic": self.topic})
 
     @cluster(num_nodes=4)
-    def test_shutdown_under_load(self):
+    @parametrize(tiny=True)
+    @parametrize(tiny=False)
+    def test_shutdown_under_load(self, tiny):
+        if tiny:
+            self.redpanda.set_resource_settings(ResourceSettings(num_cpus=1, memory_mb=200))
+        else:
+            self.redpanda.set_resource_settings(ResourceSettings())
+
         initial_leader_id, replicas = self._wait_for_leader()
         initial_leader_node = self.redpanda.get_node(initial_leader_id)
         follower_id = (set(replicas) - {initial_leader_id}).pop()

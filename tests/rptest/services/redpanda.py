@@ -58,6 +58,9 @@ class ResourceSettings:
                 f"--memory {self._memory_mb}M "
                 f"--smp {self._num_cpus}")
 
+    def __eq__(self, other):
+        return self._num_cpus == other._num_cpus and self._memory_mb == other._memory_mb
+
 
 class RedpandaService(Service):
     PERSISTENT_ROOT = "/var/lib/redpanda"
@@ -535,3 +538,14 @@ class RedpandaService(Service):
         client = self._client_type(self)
         self.logger.debug(f"Deleting topic {name}")
         client.delete_topic(name)
+
+    def set_resource_settings(self, rs):
+        """
+        Modify redpanda resource constraints after initial construction: effectively
+        restarts redpanda with different -c/-m options.
+        :param rs:
+        :return:
+        """
+        if rs != self._resource_settings:
+            self._resource_settings = rs
+            self.restart_nodes(self.nodes)
