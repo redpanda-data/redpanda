@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/controller_stm.h"
+#include "cluster/data_policy_frontend.h"
 #include "cluster/fwd.h"
 #include "cluster/scheduling/types.h"
 #include "cluster/topic_table.h"
@@ -38,6 +39,7 @@ public:
       ss::sharded<partition_allocator>&,
       ss::sharded<partition_leaders_table>&,
       ss::sharded<topic_table>&,
+      ss::sharded<data_policy_frontend>&,
       ss::sharded<ss::abort_source>&);
 
     ss::future<std::vector<topic_result>> create_topics(
@@ -82,6 +84,8 @@ private:
       model::node_id,
       std::vector<topic_configuration>,
       model::timeout_clock::duration);
+    ss::future<std::error_code> do_update_data_policy(
+      topic_properties_update&, model::timeout_clock::time_point);
     ss::future<topic_result> do_update_topic_properties(
       topic_properties_update, model::timeout_clock::time_point);
     ss::future<> update_leaders_with_estimates(std::vector<ntp_leader>);
@@ -101,6 +105,7 @@ private:
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_leaders_table>& _leaders;
     ss::sharded<topic_table>& _topics;
+    ss::sharded<data_policy_frontend>& _dp_frontend;
     ss::sharded<ss::abort_source>& _as;
 };
 
