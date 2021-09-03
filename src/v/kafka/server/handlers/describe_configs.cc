@@ -419,6 +419,17 @@ ss::future<response_ptr> describe_configs_handler::handle(
               request.data.include_synonyms,
               &describe_as_string<model::timestamp_type>);
 
+            // Data-policy property
+            ss::sstring property_name = "redpanda.datapolicy";
+            add_topic_config(
+              result,
+              property_name,
+              v8_engine::data_policy("", ""),
+              property_name,
+              ctx.data_policy_table().get_data_policy(topic),
+              request.data.include_synonyms,
+              &describe_as_string<v8_engine::data_policy>);
+
             break;
         }
 
