@@ -133,6 +133,8 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> recovery_append_timeout_ms;
     property<size_t> raft_replicate_batch_window_size;
     property<size_t> raft_learner_recovery_rate;
+    property<uint32_t> raft_smp_max_non_local_requests;
+    property<uint32_t> raft_max_concurrent_append_requests_per_follower;
 
     property<size_t> reclaim_min_size;
     property<size_t> reclaim_max_size;

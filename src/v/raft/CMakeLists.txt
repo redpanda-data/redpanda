@@ -31,6 +31,7 @@ v_cc_library(
     configuration_manager.cc
     group_configuration.cc
     append_entries_buffer.cc
+    follower_queue.cc
   DEPS
     v::storage
     raft_rpc

@@ -195,7 +195,7 @@ private:
         model::term_id term{-1};
 
         explicit attached_partition(ss::lw_shared_ptr<cluster::partition> p)
-          : loading(true)
+          : loading(false)
           , partition(std::move(p)) {}
     };
 

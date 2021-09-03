@@ -246,17 +246,31 @@ ss::future<> group_manager::handle_partition_leader_change(
   ss::lw_shared_ptr<attached_partition> p,
   std::optional<model::node_id> leader_id) {
     /*
-     * TODO: when we are becoming a leader for this partition we'll recover
-     * groups and commits from the log and re-populate the in-memory cache.
-     * otherwise, we can remove any groups and commits that map to this
-     * partition.
+     * When a partition is attached it is initially NOT in the loading state.
+     * Shortly after we should receive a leadership change upcall. If we are the
+     * leader then we will start loading (and clear the loading bit when we are
+     * done). Otherwise, we clear the loading bit.
+     *
+     * The reason that a newly attached partition AND partitions that lose
+     * leadership have their loading bit cleared is not because this state makes
+     * total sense (it is really neither loading nor non-loading state as it
+     * should never be queried in a non-leader state), but rather because some
+     * APIs like list_groups will return an error if _any_ partition is in the
+     * loading state. However, this should only apply to leader partitions, and
+     * we rely on higher level routing to avoid requests from hitting non-leader
+     * partitions (this check is circumvented for list groups).
+     *
+     * Ideally what we do disconnect or detatch partitions when leadership is
+     * lost. At this time we could also GC group state:
+     *
+     *    https://github.com/vectorizedio/redpanda/issues/2217
      */
-    p->loading = true;
     if (leader_id != _self.id()) {
-        // TODO: we are not yet handling group / partition deletion
+        p->loading = false;
         return ss::make_ready_future<>();
     }
 
+    p->loading = true;
     auto timeout
       = ss::lowres_clock::now()
         + config::shard_local_cfg().kafka_group_recovery_timeout_ms();
