@@ -35,6 +35,9 @@ const (
 	DefaultCertificateDuration = 5 * 365 * 24 * time.Hour
 	// DefaultRenewBefore default time length prior to expiration to attempt renewal - 90 days
 	DefaultRenewBefore = 90 * 24 * time.Hour
+	// EmptyCommonName should be used by default because the `common name` field has been deprecated since 2000
+	// Also, cert-manager will set the `common name` field to be equal to the first value in the list of SANs.
+	EmptyCommonName = CommonName("")
 )
 
 // CertificateResource is part of the reconciliation of redpanda.vectorized.io CRD
