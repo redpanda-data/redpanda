@@ -15,6 +15,7 @@
 #include "rpc/parse_utils.h"
 #include "rpc/response_handler.h"
 #include "rpc/types.h"
+#include "vassert.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
@@ -98,6 +99,10 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
         _fd = std::make_unique<ss::connected_socket>(std::move(fd));
         _probe.connection_established();
         _in = _fd->input();
+
+        // Never implicitly destroy a live output stream here: output streams
+        // are only safe to destroy after/during stop()
+        vassert(!_out.is_valid(), "destroyed output_stream without stopping");
         _out = batched_output_stream(_fd->output());
     } catch (...) {
         auto e = std::current_exception();
