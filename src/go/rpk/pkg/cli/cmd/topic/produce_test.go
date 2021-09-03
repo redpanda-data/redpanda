@@ -98,7 +98,7 @@ func TestProduceCmd(t *testing.T) {
 			name:        "it should omit headers that can't be parsed",
 			args:        []string{"topic-name", "-k", "key", "-H", "whatisthis", "-H", "k2:v2"},
 			data:        `{"very":"important", "data": true}`,
-			expectedErr: "'whatisthis' doesn't conform to the <k>:<v> format",
+			expectedErr: "unable to find key=value pair in \"whatisthis\"",
 		},
 		{
 			name:        "it should fail if no topic is passed",
