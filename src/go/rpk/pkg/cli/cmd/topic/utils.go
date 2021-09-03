@@ -14,20 +14,34 @@ import (
 	"strings"
 )
 
-func parseKVs(kvs []string) (map[string]*string, error) {
-	m := map[string]*string{}
-	for _, s := range kvs {
-		kv := strings.SplitN(s, ":", 2)
-		if len(kv) != 2 {
-			err := fmt.Errorf(
-				"'%s' doesn't conform to the <k>:<v> format",
-				s,
-			)
-			return m, err
+func parseKVs(in []string) (map[string]string, error) {
+	kvs := make(map[string]string)
+	for _, pair := range in {
+		colon := strings.IndexByte(pair, ':')
+		equal := strings.IndexByte(pair, '=')
+
+		delim := "="
+		if colon != -1 {
+			if equal == -1 || colon < equal {
+				delim = ":"
+			}
 		}
-		key := strings.Trim(kv[0], " ")
-		value := strings.Trim(kv[1], " ")
-		m[key] = &value
+
+		kv := strings.SplitN(pair, delim, 2)
+		if len(kv) != 2 {
+			return nil, fmt.Errorf("unable to find key=value pair in %q", pair)
+		}
+
+		k := strings.TrimSpace(kv[0])
+		v := strings.TrimSpace(kv[1])
+
+		if len(k) == 0 {
+			return nil, fmt.Errorf("empty key in pair %q", pair)
+		}
+		if len(v) == 0 {
+			return nil, fmt.Errorf("empty value in pair %q", pair)
+		}
+		kvs[k] = v
 	}
-	return m, nil
+	return kvs, nil
 }

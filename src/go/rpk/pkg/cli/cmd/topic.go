@@ -63,7 +63,7 @@ func NewTopicCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	clientClosure := common.CreateClient(brokersClosure, configClosure, tlsClosure, kAuthClosure)
 	producerClosure := common.CreateProducer(brokersClosure, configClosure, tlsClosure, kAuthClosure)
 
-	command.AddCommand(topic.NewCreateCommand(adminClosure))
+	command.AddCommand(topic.NewCreateCommand(fs))
 	command.AddCommand(topic.NewDeleteCommand(adminClosure))
 	command.AddCommand(topic.NewSetConfigCommand(adminClosure))
 	command.AddCommand(topic.NewDescribeCommand(fs))

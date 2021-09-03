@@ -187,7 +187,7 @@ func parseHeaders(headers []string) ([]sarama.RecordHeader, error) {
 			hs,
 			sarama.RecordHeader{
 				Key:   []byte(k),
-				Value: []byte(*v),
+				Value: []byte(v),
 			},
 		)
 	}
