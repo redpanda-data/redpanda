@@ -667,6 +667,10 @@ void application::wire_up_redpanda_services() {
                 config::shard_local_cfg().disable_metrics());
               c.listen_backlog
                 = config::shard_local_cfg().rpc_server_listen_backlog;
+              c.tcp_recv_buf
+                = config::shard_local_cfg().rpc_server_tcp_recv_buf;
+              c.tcp_send_buf
+                = config::shard_local_cfg().rpc_server_tcp_send_buf;
               auto rpc_builder = config::shard_local_cfg()
                                    .rpc_server_tls()
                                    .get_credentials_builder()
@@ -763,6 +767,10 @@ void application::wire_up_redpanda_services() {
                 = memory_groups::kafka_total_memory();
               c.listen_backlog
                 = config::shard_local_cfg().rpc_server_listen_backlog;
+              c.tcp_recv_buf
+                = config::shard_local_cfg().rpc_server_tcp_recv_buf;
+              c.tcp_send_buf
+                = config::shard_local_cfg().rpc_server_tcp_send_buf;
               auto& tls_config
                 = config::shard_local_cfg().kafka_api_tls.value();
               for (const auto& ep : config::shard_local_cfg().kafka_api()) {
