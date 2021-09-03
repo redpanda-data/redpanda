@@ -67,22 +67,24 @@ func (r *PkiReconciler) prepareKafkaAPI(
 	nodeSecretRef := tlsListener.NodeSecretRef
 
 	if nodeSecretRef == nil {
-		// Redpanda cluster certificate for Kafka API - to be provided to each broker
-		cn := NewCommonName(r.pandaCluster.Name, RedpandaNodeCert)
-		certsKey := types.NamespacedName{Name: string(cn), Namespace: r.pandaCluster.Namespace}
+		certName := NewCertName(r.pandaCluster.Name, RedpandaNodeCert)
+		certsKey := types.NamespacedName{Name: string(certName), Namespace: r.pandaCluster.Namespace}
 		nodeIssuerRef := issuerRef
 		if externalIssuerRef != nil {
 			// if external issuer is provided, we will use it to generate node certificates
 			nodeIssuerRef = externalIssuerRef
 		}
 
-		dnsName := []string{r.internalFQDN}
 		externalListener := r.pandaCluster.ExternalListener()
-		if externalListener != nil && externalListener.External.Subdomain != "" {
-			dnsName = append(dnsName, externalListener.External.Subdomain)
+		internalListener := r.pandaCluster.InternalListener()
+		dnsNames := []string{}
+		if internalListener != nil && internalListener.TLS.Enabled {
+			dnsNames = append(dnsNames, r.internalFQDN)
 		}
-
-		redpandaCert := NewNodeCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, nodeIssuerRef, dnsName, cn, false, keystoreSecret, r.logger)
+		if externalListener != nil && externalListener.TLS.Enabled && externalListener.External.Subdomain != "" {
+			dnsNames = append(dnsNames, externalListener.External.Subdomain)
+		}
+		redpandaCert := NewNodeCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, nodeIssuerRef, dnsNames, EmptyCommonName, false, keystoreSecret, r.logger)
 
 		toApply = append(toApply, redpandaCert)
 	}
