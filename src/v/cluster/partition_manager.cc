@@ -86,20 +86,6 @@ ss::future<> partition_manager::remove(const model::ntp& ntp) {
       .finally([partition] {}); // in the end remove partition
 }
 
-ss::future<> partition_manager::shutdown_all() {
-    std::vector<model::ntp> ntps;
-    ntps.reserve(_ntp_table.size());
-    std::transform(
-      _ntp_table.begin(),
-      _ntp_table.end(),
-      std::back_inserter(ntps),
-      [](const ntp_table_container::value_type& p) { return p.first; });
-
-    for (const auto& ntp : ntps) {
-        co_await shutdown(ntp);
-    }
-}
-
 ss::future<> partition_manager::shutdown(const model::ntp& ntp) {
     auto partition = get(ntp);
 

@@ -66,7 +66,6 @@ public:
       manage(storage::ntp_config, raft::group_id, std::vector<model::broker>);
 
     ss::future<> shutdown(const model::ntp& ntp);
-    ss::future<> shutdown_all();
     ss::future<> remove(const model::ntp& ntp);
 
     std::optional<storage::log> log(const model::ntp& ntp) {
