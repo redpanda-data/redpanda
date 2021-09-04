@@ -12,6 +12,7 @@ from ducktape.mark import ignore
 from ducktape.mark.resource import cluster
 import ducktape.errors
 
+from ducktape.mark import ignore
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool
 from rptest.services.rpk_consumer import RpkConsumer
@@ -27,6 +28,7 @@ class RpkToolTest(RedpandaTest):
         self._ctx = ctx
         self._rpk = RpkTool(self.redpanda)
 
+    @ignore
     @cluster(num_nodes=3)
     def test_create_topic(self):
         self._rpk.create_topic("topic")
