@@ -124,7 +124,7 @@ In the broker section, the controller node is suffixed with *.
 			}
 			if topics && len(resp.Topics) > 0 {
 				header("TOPICS", func() {
-					printTopics(resp.Topics, internal, detailed)
+					PrintTopics(resp.Topics, internal, detailed)
 				})
 			}
 		},
@@ -176,7 +176,7 @@ func printBrokers(controllerID int32, brokers []kmsg.MetadataResponseBroker) {
 	}
 }
 
-func printTopics(topics []kmsg.MetadataResponseTopic, internal, detailed bool) {
+func PrintTopics(topics []kmsg.MetadataResponseTopic, internal, detailed bool) {
 	sort.Slice(topics, func(i, j int) bool {
 		return topics[i].Topic < topics[j].Topic
 	})

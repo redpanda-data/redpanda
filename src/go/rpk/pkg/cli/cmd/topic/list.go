@@ -10,9 +10,15 @@
 package topic
 
 import (
+	"context"
+
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/cluster"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
 )
 
 func NewListCommand(fs afero.Fs) *cobra.Command {
@@ -25,17 +31,20 @@ func NewListCommand(fs afero.Fs) *cobra.Command {
 		Short:   "List topics",
 		Long:    `List topics (alias for rpk cluster metadata -t).`,
 		Args:    cobra.ExactArgs(0),
-		Run: func(listCmd *cobra.Command, _ []string) {
-			args := append(listCmd.Flags().Args(), "-t")
-			if detailed {
-				args = append(args, "-d")
-			}
-			if internal {
-				args = append(args, "-i")
-			}
-			metaCmd := cluster.NewMetadataCommand(fs)
-			metaCmd.SetArgs(args)
-			metaCmd.Execute()
+		Run: func(cmd *cobra.Command, _ []string) {
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			cl, err := kafka.NewFranzClient(fs, cfg)
+			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
+			defer cl.Close()
+
+			req := kmsg.NewPtrMetadataRequest()
+			resp, err := req.RequestWith(context.Background(), cl)
+			out.MaybeDie(err, "unable to request metadata: %v", err)
+
+			cluster.PrintTopics(resp.Topics, internal, detailed)
 		},
 	}
 
