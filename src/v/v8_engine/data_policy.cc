@@ -10,6 +10,19 @@
 
 #include "v8_engine/data_policy.h"
 
+namespace v8_engine {
+
+std::ostream& operator<<(std::ostream& os, const data_policy& datapolicy) {
+    fmt::print(
+      os,
+      "function_name: {} script_name: {}",
+      datapolicy._function_name,
+      datapolicy._script_name);
+    return os;
+}
+
+} // namespace v8_engine
+
 namespace reflection {
 
 void reflection::adl<v8_engine::data_policy>::to(
