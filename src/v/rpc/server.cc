@@ -153,7 +153,7 @@ ss::future<> server::accept(listener& s) {
     });
 } // namespace rpc
 
-ss::future<> server::stop() {
+void server::shutdown_input() {
     ss::sstring proto_name = _proto ? _proto->name() : "protocol not set";
     vlog(
       rpclog.info, "{} - Stopping {} listeners", proto_name, _listeners.size());
@@ -171,11 +171,27 @@ ss::future<> server::stop() {
     for (auto& c : _connections) {
         c.shutdown_input();
     }
+}
+
+ss::future<> server::wait_for_shutdown() {
     return _conn_gate.close().then([this] {
         return seastar::do_for_each(
           _connections, [](connection& c) { return c.shutdown(); });
     });
 }
+
+ss::future<> server::stop() {
+    // if shutdown input was already requested this method is nop, user has to
+    // wait explicitly for shutdown to finish with `wait_for_shutdown`
+    if (_as.abort_requested()) {
+        return ss::now();
+    }
+    // if shutdown_input wasn't called fallback to previous behavior i.e. stop()
+    // waits for shutdown
+    shutdown_input();
+    return wait_for_shutdown();
+}
+
 void server::setup_metrics() {
     namespace sm = ss::metrics;
     if (!_proto) {

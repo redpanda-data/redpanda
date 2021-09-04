@@ -520,6 +520,23 @@ void application::wire_up_redpanda_services() {
         return storage::internal::chunks().start();
     }).get();
 
+    /**
+     * Last step in shutdown is to wait for all pending request to be
+     * finished/aborted
+     */
+    _deferred.emplace_back([this] {
+        if (_rpc.local_is_initialized()) {
+            _rpc.invoke_on_all(&rpc::server::wait_for_shutdown).get();
+            _rpc.stop().get();
+        }
+    });
+    _deferred.emplace_back([this] {
+        if (_kafka_server.local_is_initialized()) {
+            _kafka_server.invoke_on_all(&rpc::server::wait_for_shutdown).get();
+            _kafka_server.stop().get();
+        }
+    });
+
     // cluster
     syschecks::systemd_message("Adding raft client cache").get();
     construct_service(_raft_connection_cache).get();
@@ -701,7 +718,7 @@ void application::wire_up_redpanda_services() {
      **/
     syschecks::systemd_message("Starting internal RPC {}", rpc_cfg.local())
       .get();
-    construct_service(_rpc, &rpc_cfg).get();
+    _rpc.start(&rpc_cfg).get();
     rpc_cfg.stop().get();
 
     syschecks::systemd_message("Creating id allocator frontend").get();
@@ -820,25 +837,12 @@ void application::wire_up_redpanda_services() {
       .get();
     syschecks::systemd_message("Starting kafka RPC {}", kafka_cfg.local())
       .get();
-    construct_service(_kafka_server, &kafka_cfg).get();
+    _kafka_server.start(&kafka_cfg).get();
     kafka_cfg.stop().get();
     construct_service(
       fetch_session_cache,
       config::shard_local_cfg().fetch_session_eviction_timeout_ms())
       .get();
-    /**
-     * When redpanda stops we need to shutdown all partitions to prevent it
-     * accepting new requests and additionally we need to finish/fail all
-     * ongoing requests before trying to stop kafka RPC. We need this
-     * additionall action in stop sequence since it is required to have
-     * `ss::sharded` instance of partition manager before kafka server is
-     * started.
-     */
-    _deferred.emplace_back([this] {
-        partition_manager
-          .invoke_on_all(&cluster::partition_manager::shutdown_all)
-          .get();
-    });
     construct_service(
       _compaction_controller,
       std::ref(storage),
@@ -973,6 +977,9 @@ void application::start_redpanda() {
       .get();
     auto& conf = config::shard_local_cfg();
     _rpc.invoke_on_all(&rpc::server::start).get();
+    // shutdown input on RPC server
+    _deferred.emplace_back(
+      [this] { _rpc.invoke_on_all(&rpc::server::shutdown_input).get(); });
     vlog(_log.info, "Started RPC server listening at {}", conf.rpc_server());
 
     if (archival_storage_enabled()) {
@@ -1025,6 +1032,10 @@ void application::start_redpanda() {
       })
       .get();
     _kafka_server.invoke_on_all(&rpc::server::start).get();
+    // shutdown Kafka server input
+    _deferred.emplace_back([this] {
+        _kafka_server.invoke_on_all(&rpc::server::shutdown_input).get();
+    });
     vlog(
       _log.info, "Started Kafka API server listening at {}", conf.kafka_api());
 
