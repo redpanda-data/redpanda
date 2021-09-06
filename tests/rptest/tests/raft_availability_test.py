@@ -505,7 +505,7 @@ class RaftAvailabilityTest(RedpandaTest):
                             "vectorized_cluster_partition_high_watermark",
                             {"topic": self.topic})
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=5)
     @parametrize(tiny=True)
     @parametrize(tiny=False)
     def test_shutdown_under_load(self, tiny):
@@ -541,12 +541,21 @@ class RaftAvailabilityTest(RedpandaTest):
             f"Stopped node {follower_node.account.hostname} in {time.time() - t1}"
         )
 
-        time.sleep(30)  # Wait for some recovery backlog to build
+        time.sleep(10)  # Wait for some recovery backlog to build
         self.redpanda.start_node(follower_node)
+        time.sleep(10)  # Inject some post-restart messages
+
+        # Give the follower a chance to catch up
+        producer.stop_all()
 
         self._await_catchup(initial_leader_node, follower_node,
                             "vectorized_cluster_partition_high_watermark",
                             {"topic": self.topic})
+
+        # FIXME somehow release the node used by the previous one, so that the
+        # test doesn't have to demand so many nodes
+        producer = ProducerSwarm(self.test_context, self.redpanda, self.topic)
+        producer.start()
 
         # A leader: check that it cleanly & promptly shuts down and restarts
         t1 = time.time()
@@ -566,6 +575,9 @@ class RaftAvailabilityTest(RedpandaTest):
 
         time.sleep(10)  # Wait for some recovery backlog to build
         self.redpanda.start_node(initial_leader_node)
+        time.sleep(10)  # Inject some post-restart messages
+
+        producer.stop_all()
 
         self._await_catchup(new_leader_node, initial_leader_node,
                             "vectorized_cluster_partition_high_watermark",
