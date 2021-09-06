@@ -23,6 +23,7 @@
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <variant>
 
@@ -133,5 +134,23 @@ private:
     size_t _bytes_consumed{0};
     size_t _physical_base_offset{0};
 };
+
+using record_batch_transform_predicate = ss::noncopyable_function<
+  batch_consumer::consume_result(model::record_batch_header&)>;
+
+/// Copy input stream to the output stream
+///
+/// Invoke predicate for every batch. The predicate can skip or
+/// accept the batch. The accepted batches are copied to the output
+/// stream. The predicate can also update record batch header in-place
+/// or stop the transfer.
+///
+/// \param in is an input stream with record batches
+/// \param out is an output stream that should receive the resulting batches
+/// \return number of bytes written to the 'out'
+ss::future<result<size_t>> transform_stream(
+  ss::input_stream<char> in,
+  ss::output_stream<char> out,
+  record_batch_transform_predicate pred);
 
 } // namespace storage
