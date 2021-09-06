@@ -27,6 +27,8 @@ class TopicSpec:
     PROPERTY_SEGMENT_SIZE = "segment.bytes"
     PROPERTY_RETENTION_BYTES = "retention.bytes"
     PROPERTY_RETENTION_TIME = "retention.ms"
+    PROPERTY_DATA_POLICY_FUNCTION_NAME = "redpanda.datapolicy.function.name"
+    PROPERTY_DATA_POLICY_SCRIPT_NAME = "redpanda.datapolicy.script.name"
 
     # compression types
     COMPRESSION_NONE = "none"
@@ -50,7 +52,8 @@ class TopicSpec:
                  message_timestamp_type=TIMESTAMP_CREATE_TIME,
                  segment_bytes=1 * (2 ^ 30),
                  retention_bytes=None,
-                 retention_ms=None):
+                 retention_ms=None,
+                 redpanda_datapolicy=None):
         self.name = name or f"topic-{self._random_topic_suffix()}"
         self.partition_count = partition_count
         self.replication_factor = replication_factor
@@ -60,6 +63,7 @@ class TopicSpec:
         self.segment_bytes = segment_bytes
         self.retention_bytes = retention_bytes
         self.retention_ms = retention_ms
+        self.redpanda_datapolicy = redpanda_datapolicy
 
     def __str__(self):
         return self.name
