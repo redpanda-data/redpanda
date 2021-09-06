@@ -33,3 +33,50 @@ spec:
     protocol: TCP
     targetPort: 9093
   type: NodePort
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: external-connectivity-kafka-selfsigned-issuer
+status:
+  conditions:
+    - reason: IsReady
+      status: "True"
+      type: Ready
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: external-connectivity-kafka-root-issuer
+status:
+  conditions:
+    - reason: KeyPairVerified
+      status: "True"
+      type: Ready
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: external-connectivity-kafka-root-certificate
+status:
+  conditions:
+    - reason: Ready
+      status: "True"
+      type: Ready
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: external-connectivity-redpanda
+spec:
+  dnsNames:
+  - "test.subdomain.com"
+  - "*.test.subdomain.com"
+  issuerRef:
+    name: external-connectivity-kafka-root-issuer
+  secretName: external-connectivity-redpanda
+status:
+  conditions:
+  - reason: Ready
+    status: "True"
+    type: Ready

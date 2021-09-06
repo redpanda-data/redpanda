@@ -18,9 +18,13 @@ spec:
       port: 33145
     kafkaApi:
     - port: 9092
+      tls:
+        enabled: false
     - external:
         enabled: true
         subdomain: "test.subdomain.com"
+      tls:
+        enabled: true
     adminApi:
     - port: 9644
     developerMode: true
