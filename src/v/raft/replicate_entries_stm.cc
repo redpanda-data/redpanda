@@ -91,9 +91,13 @@ replicate_entries_stm::send_append_entries_request(
     auto opts = rpc::client_opts(append_entries_timeout());
     opts.resource_units = ss::make_foreign<ss::lw_shared_ptr<units_t>>(_units);
 
+    auto qdt = _ptr->get_probe().qdstats().track();
     auto f = _ptr->_fstats.get_append_entries_unit(n).then_wrapped(
-      [this, req = std::move(req), opts = std::move(opts), n](
-        ss::future<ss::semaphore_units<>> f) mutable {
+      [this,
+       req = std::move(req),
+       opts = std::move(opts),
+       n,
+       qdt = std::move(qdt)](ss::future<ss::semaphore_units<>> f) mutable {
           // we want to signal dispatch semaphore after calling append entries.
           // When dispatch semaphore is released the append_entries_stm releases
           // op_lock so next append entries request can be dispatched to the
@@ -107,13 +111,15 @@ replicate_entries_stm::send_append_entries_request(
           }
           auto u = f.get();
 
+          qdt.dispatch();
+
           return _ptr->_client_protocol
             .append_entries(n.id(), std::move(req), std::move(opts))
             .then([this](result<append_entries_reply> reply) {
                 return _ptr->validate_reply_target_node(
                   "append_entries_replicate", std::move(reply));
             })
-            .finally([this, n, u = std::move(u)] {
+            .finally([this, n, u = std::move(u), qdt = std::move(qdt)] {
                 _ptr->_fstats.return_append_entries_units(n);
             });
       });
