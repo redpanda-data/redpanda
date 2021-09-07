@@ -75,7 +75,9 @@ void client::check() const {
 
 ss::future<client::request_response_t> client::make_request(
   client::request_header&& header, ss::lowres_clock::duration timeout) {
-    vlog(http_log.trace, "client.make_request {}", header);
+    if (http_log.is_enabled(ss::log_level::trace)) {
+        vlog(http_log.trace, "client.make_request {}", header);
+    }
     auto verb = header.method();
     auto target = header.target();
     auto req = ss::make_shared<request_stream>(this, std::move(header));
@@ -147,9 +149,9 @@ client::get_connected(ss::lowres_clock::duration timeout) {
             co_await connect(current + interval);
             break;
         } catch (const std::system_error& err) {
-            vlog(http_log.trace, "connection refused {}", err);
+            vlog(http_log.debug, "connection refused {}", err);
         } catch (const ss::timed_out_error&) {
-            vlog(http_log.trace, "connection timeout");
+            vlog(http_log.debug, "connection timeout");
         }
         current = ss::lowres_clock::now();
         // Any TLS error have to be propagated because it's not
@@ -275,7 +277,12 @@ ss::future<iobuf> client::response_stream::recv_some() {
     }
     return _client->receive()
       .then([this](ss::temporary_buffer<char> chunk) mutable {
-          vlog(http_log.trace, "chunk received, chunk length {}", chunk.size());
+          if (http_log.is_enabled(ss::log_level::trace)) {
+              vlog(
+                http_log.trace,
+                "chunk received, chunk length {}",
+                chunk.size());
+          }
           if (chunk.empty()) {
               // NOTE: to make the parser stop we need to use the 'put_eof'
               // method, because it will handle situation when the data is
@@ -331,14 +338,16 @@ ss::future<iobuf> client::response_stream::recv_some() {
           auto out = _parser.get().body().consume();
           _buffer.trim_front(noctets);
           if (!_buffer.empty()) {
-              vlog(
-                http_log.trace,
-                "not all consumed, noctets {}, input size {}, output size "
-                "{}, ec {}",
-                noctets,
-                _buffer.size_bytes(),
-                out.size_bytes(),
-                ec);
+              if (http_log.is_enabled(ss::log_level::trace)) {
+                  vlog(
+                    http_log.trace,
+                    "not all consumed, noctets {}, input size {}, output size "
+                    "{}, ec {}",
+                    noctets,
+                    _buffer.size_bytes(),
+                    out.size_bytes(),
+                    ec);
+              }
           }
           return ss::make_ready_future<iobuf>(std::move(out));
       })
@@ -393,7 +402,9 @@ client::request_stream::send_some(ss::temporary_buffer<char>&& buf) {
 
 ss::future<> client::request_stream::send_some(iobuf&& seq) {
     _client->check();
-    vlog(http_log.trace, "request_stream.send_some {}", seq.size_bytes());
+    if (http_log.is_enabled(ss::log_level::trace)) {
+        vlog(http_log.trace, "request_stream.send_some {}", seq.size_bytes());
+    }
     if (_serializer.is_header_done()) {
         // Fast path
         return ss::with_gate(_gate, [this, seq = std::move(seq)]() mutable {
