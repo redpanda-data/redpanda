@@ -84,7 +84,7 @@ func (r *PkiReconciler) prepareKafkaAPI(
 		if externalListener != nil && externalListener.TLS.Enabled && externalListener.External.Subdomain != "" {
 			dnsNames = append(dnsNames, externalListener.External.Subdomain)
 		}
-		redpandaCert := NewNodeCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, nodeIssuerRef, dnsNames, EmptyCommonName, false, keystoreSecret, r.logger)
+		redpandaCert := NewNodeCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, nodeIssuerRef, dnsNames, EmptyCommonName, keystoreSecret, r.logger)
 
 		toApply = append(toApply, redpandaCert)
 	}
