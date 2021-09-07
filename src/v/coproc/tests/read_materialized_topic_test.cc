@@ -19,6 +19,12 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test_log.hpp>
 
+static kafka::client::transport make_kafka_client() {
+    return kafka::client::transport(rpc::base_transport::configuration{
+      .server_addr = config::shard_local_cfg().kafka_api()[0].address,
+    });
+}
+
 FIXTURE_TEST(test_metadata_request, coproc_test_fixture) {
     model::topic input_topic("intpc1");
     model::topic output_topic = model::to_materialized_topic(
@@ -50,7 +56,7 @@ FIXTURE_TEST(test_metadata_request, coproc_test_fixture) {
       .data = {.topics = {{{output_topic}}}},
       .list_all_topics = false,
     };
-    auto client = make_kafka_client().get0();
+    auto client = make_kafka_client();
     client.connect().get();
     auto resp = client.dispatch(req, kafka::api_version(4)).get0();
     client.stop().get();
@@ -103,7 +109,7 @@ FIXTURE_TEST(test_read_from_materialized_topic, coproc_test_fixture) {
           .fetch_offset = model::offset(0)}}}};
 
     // .. and read the same partition using a kafka client
-    auto client = make_kafka_client().get0();
+    auto client = make_kafka_client();
     client.connect().get();
     auto resp = client.dispatch(req, kafka::api_version(4)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();

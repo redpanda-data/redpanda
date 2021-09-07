@@ -31,7 +31,7 @@ ss::future<std::size_t> number_of_logs(redpanda_thread_fixture* rtf) {
 
 FIXTURE_TEST(test_coproc_router_no_results, coproc_test_fixture) {
     // Note the original number of logs
-    const std::size_t n_logs = number_of_logs(this).get0();
+    const std::size_t n_logs = number_of_logs(root_fixture()).get0();
     // Storage has 10 ntps, 8 of topic 'bar' and 2 of 'foo'
     model::topic foo("foo");
     model::topic bar("bar");
@@ -61,7 +61,8 @@ FIXTURE_TEST(test_coproc_router_no_results, coproc_test_fixture) {
     // Wait for any side-effects, ...expecting that none occur
     ss::sleep(1s).get();
     // Expecting 10, because "foo(2)" and "bar(8)" were loaded at startup
-    const std::size_t final_n_logs = number_of_logs(this).get0() - n_logs;
+    const std::size_t final_n_logs = number_of_logs(root_fixture()).get0()
+                                     - n_logs;
     /// .. but total should be exactly 11 due to the introducion of the
     /// coprocessor_internal_topic
     BOOST_REQUIRE_EQUAL(final_n_logs, 11);
@@ -176,7 +177,8 @@ FIXTURE_TEST(test_copro_auto_deregister_function, coproc_test_fixture) {
     ss::when_all_succeed(fs.begin(), fs.end()).get();
 
     /// Assert that the coproc does not exist in memory
-    auto n_registered = app.pacemaker
+    auto n_registered = root_fixture()
+                          ->app.pacemaker
                           .map_reduce0(
                             [id](coproc::pacemaker& p) {
                                 return p.local_script_id_exists(id);

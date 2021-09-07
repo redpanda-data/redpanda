@@ -28,6 +28,14 @@
 
 #include <chrono>
 
+coproc_test_fixture::coproc_test_fixture() {
+    ss::smp::invoke_on_all([]() {
+        auto& config = config::shard_local_cfg();
+        config.get("coproc_offset_flush_interval_ms").set_value(500ms);
+    }).get0();
+    _root_fixture = std::make_unique<redpanda_thread_fixture>();
+}
+
 ss::future<>
 coproc_test_fixture::enable_coprocessors(std::vector<deploy> copros) {
     std::vector<coproc::wasm::event> events;
@@ -57,12 +65,21 @@ coproc_test_fixture::disable_coprocessors(std::vector<uint64_t> ids) {
 }
 
 ss::future<> coproc_test_fixture::setup(log_layout_map llm) {
-    co_await wait_for_controller_leadership();
+    co_await _root_fixture->wait_for_controller_leadership();
     co_await _publisher.start();
     for (auto& p : llm) {
-        co_await add_topic(
+        co_await _root_fixture->add_topic(
           model::topic_namespace(model::kafka_namespace, p.first), p.second);
     }
+}
+
+ss::future<> coproc_test_fixture::restart() {
+    auto data_dir = _root_fixture->data_dir;
+    _root_fixture->remove_on_shutdown = false;
+    _root_fixture = nullptr;
+    _root_fixture = std::make_unique<redpanda_thread_fixture>(
+      std::move(data_dir));
+    co_await _root_fixture->wait_for_controller_leadership();
 }
 
 /// TODO: Code duplication remove after a rebase of dev
@@ -87,7 +104,8 @@ coproc_test_fixture::drain(
   model::offset offset,
   model::timeout_clock::time_point timeout) {
     const auto m_ntp = model::materialized_ntp(std::move(ntp));
-    auto shard_id = app.shard_table.local().shard_for(m_ntp.source_ntp());
+    auto shard_id = _root_fixture->app.shard_table.local().shard_for(
+      m_ntp.source_ntp());
     if (!shard_id) {
         vlog(
           coproc::coproclog.error,
@@ -102,7 +120,7 @@ coproc_test_fixture::drain(
       m_ntp.input_ntp(),
       *shard_id,
       limit);
-    return app.partition_manager.invoke_on(
+    return _root_fixture->app.partition_manager.invoke_on(
       *shard_id,
       [m_ntp, limit, offset, timeout](cluster::partition_manager& pm) {
           return tests::cooperative_spin_wait_with_timeout(
@@ -134,7 +152,7 @@ coproc_test_fixture::drain(
 
 ss::future<model::offset> coproc_test_fixture::push(
   const model::ntp& ntp, model::record_batch_reader rbr) {
-    auto shard_id = app.shard_table.local().shard_for(ntp);
+    auto shard_id = _root_fixture->app.shard_table.local().shard_for(ntp);
     if (!shard_id) {
         vlog(
           coproc::coproclog.error,
@@ -147,7 +165,7 @@ ss::future<model::offset> coproc_test_fixture::push(
       "Pushing record_batch_reader to ntp: {} on shard_id: {}",
       ntp,
       *shard_id);
-    return app.partition_manager.invoke_on(
+    return _root_fixture->app.partition_manager.invoke_on(
       *shard_id,
       [ntp, rbr = std::move(rbr)](cluster::partition_manager& pm) mutable {
           auto partition = pm.get(ntp);

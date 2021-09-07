@@ -10,8 +10,8 @@
  */
 
 #pragma once
+#include "cluster/partition_manager.h"
 #include "coproc/ntp_context.h"
-#include "storage/fwd.h"
 
 #include <filesystem>
 
@@ -25,7 +25,7 @@ inline std::filesystem::path offsets_snapshot_path() {
 /// Reads the snapshot on disk (if one exists) and returns an initialized
 /// ntp_context_cache with all proper storage::logs and stored offsets
 ss::future<ntp_context_cache>
-recover_offsets(storage::simple_snapshot_manager&, storage::log_manager&);
+recover_offsets(storage::simple_snapshot_manager&, cluster::partition_manager&);
 
 /// Writes all offsets to disk using the snapshot manager
 ss::future<>

@@ -11,6 +11,7 @@
 #include "config/configuration.h"
 #include "coproc/ntp_context.h"
 #include "coproc/offset_storage_utils.h"
+#include "coproc/tests/fixtures/coproc_test_fixture.h"
 #include "model/namespace.h"
 #include "storage/api.h"
 #include "storage/snapshot.h"
@@ -22,103 +23,135 @@
 #include <chrono>
 #include <filesystem>
 
-class offset_keeper_fixture {
+class offset_keeper_fixture : public coproc_test_fixture {
 public:
     offset_keeper_fixture()
-      : _base_dir(make_base_dir())
-      , _api(make_api())
-      , _snap(
-          _base_dir,
-          storage::simple_snapshot_manager::default_snapshot_filename,
-          ss::default_priority_class()) {
-        _api.start().get();
+      : coproc_test_fixture() {
+        _smk.start().get();
     }
 
-    ~offset_keeper_fixture() {
-        _api.stop().get();
-        std::filesystem::remove_all(_base_dir);
+    ~offset_keeper_fixture() override { _smk.stop().get(); }
+
+    cluster::partition_manager& get_pm() {
+        return root_fixture()->app.partition_manager.local();
     }
 
-    /// Create some logs to properly initialize a valid ntp_context_cache
-    coproc::ntp_context_cache create_test_cache(std::size_t n) {
-        coproc::ntp_context_cache ntpcc;
-        for (auto i = 0; i < n; ++i) {
-            model::ntp ntp(
-              model::kafka_namespace,
-              model::topic(ssx::sformat("test_topic_{}", i)),
-              model::partition_id(0));
-            storage::log log = _api.log_mgr()
-                                 .manage(
-                                   storage::ntp_config(ntp, _base_dir.string()))
-                                 .get();
-            auto [itr, _] = ntpcc.emplace(
-              ntp, ss::make_lw_shared<coproc::ntp_context>(log));
-            /// Insert some test data
-            itr->second->offsets.emplace(
-              coproc::script_id(4444),
-              coproc::ntp_context::offset_pair{
-                .last_read = model::offset(5), .last_acked = model::offset(3)});
-            itr->second->offsets.emplace(
-              coproc::script_id(3333),
-              coproc::ntp_context::offset_pair{
-                .last_read = model::offset(10),
-                .last_acked = model::offset(10)});
-        }
-        return ntpcc;
+    storage::simple_snapshot_manager& snapshot_mgr() {
+        return _smk.local().snap;
     }
 
-    storage::log_manager& log_mgr() { return _api.log_mgr(); }
-    storage::simple_snapshot_manager& snapshot_mgr() { return _snap; }
+    template<typename Func>
+    ss::future<> push_all(
+      const model::topic& topic, int32_t n_partitions, Func&& make_reader_fn) {
+        auto r = boost::irange<int32_t>(0, n_partitions);
+        return ss::parallel_for_each(
+          r, [this, topic, fn = std::forward<Func>(make_reader_fn)](int32_t i) {
+              model::record_batch_reader rbr = fn();
+              return push(
+                       model::ntp(
+                         model::kafka_namespace, topic, model::partition_id(i)),
+                       std::move(rbr))
+                .discard_result();
+          });
+    };
+
+    ss::future<> wait_on(const model::topic& topic, int32_t n_partitions) {
+        auto r = boost::irange<int32_t>(0, n_partitions);
+        return ss::parallel_for_each(r, [this, topic](int32_t i) {
+            return drain(
+                     model::ntp(
+                       model::kafka_namespace, topic, model::partition_id(i)),
+                     1)
+              .discard_result();
+        });
+    }
 
 private:
-    static std::filesystem::path make_base_dir() {
-        return std::filesystem::current_path()
-               / fmt::format("coproc_test.dir_{}", time(0)) / "data_dir";
-    }
+    /// Created for the sole use of constructing an item that has access to the
+    /// shard id it was constructed on
+    struct snapshot_mgr_keeper {
+        snapshot_mgr_keeper()
+          : snap(
+            coproc::offsets_snapshot_path(),
+            fmt::format(
+              "{}-{}",
+              storage::simple_snapshot_manager::default_snapshot_filename,
+              ss::this_shard_id()),
+            ss::default_priority_class()) {}
+        storage::simple_snapshot_manager snap;
+    };
 
-    storage::api make_api() const {
-        storage::log_config conf{
-          storage::log_config::storage_type::disk,
-          ss::sstring(_base_dir.string()),
-          1024,
-          storage::debug_sanitize_files::yes};
-        return storage::api(
-          storage::kvstore_config(
-            1_MiB, 10ms, conf.base_dir, storage::debug_sanitize_files::yes),
-          conf);
-    }
-
-    std::filesystem::path _base_dir;
-    storage::api _api;
-    storage::simple_snapshot_manager _snap;
+    ss::sharded<snapshot_mgr_keeper> _smk;
 };
 
-namespace coproc {
-bool operator==(
-  const ntp_context::offset_pair& a, const ntp_context::offset_pair& b) {
-    return a.last_acked == b.last_acked && a.last_read == b.last_read;
-}
-} // namespace coproc
-
 FIXTURE_TEST(offset_keeper_saved_offsets, offset_keeper_fixture) {
-    coproc::ntp_context_cache cache, retrieved_cache;
-    cache = create_test_cache(50);
+    /// Setup a test environement with:
+    /// 1. Two topics, w/ 50 partitions each
+    /// 2. Two coprocessors each consuming from one of these two topics
+    /// 3. 5, 10 batches initially pushed to these input topics
+    model::topic foo("foo");
+    model::topic bar("bar");
+    setup({{foo, 50}, {bar, 50}}).get();
+    push_all(foo, 50, []() {
+        return storage::test::make_random_memory_record_batch_reader(
+          model::offset{0}, 5, 1);
+    }).get();
+    push_all(foo, 50, []() {
+        return storage::test::make_random_memory_record_batch_reader(
+          model::offset{0}, 10, 1);
+    }).get();
 
-    /// Write these offsets to disk
-    coproc::save_offsets(snapshot_mgr(), cache).get();
+    using copro_typeid = coproc::registry::type_identifier;
+    enable_coprocessors(
+      {{.id = 4444,
+        .data{
+          .tid = copro_typeid::identity_coprocessor,
+          .topics = {{bar, coproc::topic_ingestion_policy::stored}}}},
+       {.id = 3333,
+        .data{
+          .tid = copro_typeid::identity_coprocessor,
+          .topics = {{foo, coproc::topic_ingestion_policy::stored}}}}})
+      .get();
 
-    /// Attempt to retrieve all stored offsets
-    retrieved_cache = coproc::recover_offsets(snapshot_mgr(), log_mgr()).get0();
+    wait_on(
+      model::to_materialized_topic(foo, identity_coprocessor::identity_topic),
+      50)
+      .get();
 
-    const size_t total_offsets = std::accumulate(
-      retrieved_cache.cbegin(),
-      retrieved_cache.cend(),
-      size_t(0),
-      [](size_t acc, const coproc::ntp_context_cache::value_type& p) {
-          return acc + p.second->offsets.size();
-      });
-    /// Created test cache with 50 static topics...
-    BOOST_CHECK_EQUAL(retrieved_cache.size(), 50);
-    /// and for every topic 2 scripts are tracking offsets for 100 total
-    BOOST_CHECK_EQUAL(total_offsets, 100);
+    /// Attempt to retrieve the data that should have been written to disk
+    /// We can assume this because the coproc_offset_flush_interval is
+    /// within the sleep interval
+    ss::sleep(1s).get();
+
+    using ntp_offset_cache
+      = absl::flat_hash_map<model::ntp, coproc::ntp_context::offset_tracker>;
+    auto r = boost::irange<unsigned int>(0, ss::smp::count);
+    auto mapper = [this](unsigned int c) {
+        return ss::smp::submit_to(c, [this] {
+            return coproc::recover_offsets(snapshot_mgr(), get_pm())
+              .then([](auto ofs) {
+                  ntp_offset_cache c;
+                  std::transform(
+                    ofs.begin(),
+                    ofs.end(),
+                    std::inserter(c, c.begin()),
+                    [](const auto& p) {
+                        return std::make_pair<>(p.first, p.second->offsets);
+                    });
+                  return c;
+              });
+        });
+    };
+    auto results = ss::map_reduce(
+                     r,
+                     std::move(mapper),
+                     ntp_offset_cache(),
+                     [](ntp_offset_cache ncca, ntp_offset_cache nccb) {
+                         ncca.merge(nccb);
+                         return std::move(ncca);
+                     })
+                     .get();
+
+    /// Created test cache with 50 partitions across 2 topics...
+    BOOST_CHECK_EQUAL(results.size(), 100);
 }
