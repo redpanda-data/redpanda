@@ -7,8 +7,9 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cluster/logger.h"
 #include "cluster/partition_manager.h"
+
+#include "cluster/logger.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
