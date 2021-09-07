@@ -202,6 +202,7 @@ ss::future<> heartbeat_manager::do_self_heartbeat(node_heartbeat&& r) {
 }
 
 ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
+    auto gate = _bghbeats.hold();
     auto f = _client_protocol
                .heartbeat(
                  r.target,
@@ -210,8 +211,10 @@ ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
                    clock_type::now() + _heartbeat_timeout,
                    rpc::compression_type::zstd,
                    512))
-               .then([node = r.target, groups = std::move(r.meta_map), this](
-                       result<heartbeat_reply> ret) mutable {
+               .then([node = r.target,
+                      groups = std::move(r.meta_map),
+                      gate = std::move(gate),
+                      this](result<heartbeat_reply> ret) mutable {
                    // this will happen after RPC client will return and resume
                    // sending heartbeats to follower
                    process_reply(node, std::move(groups), std::move(ret));
