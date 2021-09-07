@@ -49,8 +49,8 @@ struct configuration final : public config_store {
     property<unresolved_address> rpc_server;
     property<tls_config> rpc_server_tls;
     property<std::optional<int>> rpc_server_listen_backlog;
-    property<std::optional<int>> rpc_server_tcp_recv_buf;
-    property<std::optional<int>> rpc_server_tcp_send_buf;
+    clamped_property<std::optional<int>> rpc_server_tcp_recv_buf;
+    clamped_property<std::optional<int>> rpc_server_tcp_send_buf;
     // Coproc
     property<bool> enable_coproc;
     property<unresolved_address> coproc_supervisor_server;
