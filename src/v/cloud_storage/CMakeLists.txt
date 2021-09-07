@@ -6,6 +6,7 @@ v_cc_library(
     manifest.cc
     recursive_directory_walker.cc
     remote.cc
+    offset_translation_layer.cc
   DEPS
     Seastar::seastar
     v::bytes
