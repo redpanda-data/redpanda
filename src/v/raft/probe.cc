@@ -35,7 +35,7 @@ void probe::setup_metrics(const model::ntp& ntp) {
     auto labels = create_metric_labels(ntp);
 
     _qd_stats.setup_metrics(
-      _metrics, fmt::format("raft_latency"), "Raft Append");
+      _metrics, fmt::format("raft_latency"), "Raft Append", labels);
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("raft"),
