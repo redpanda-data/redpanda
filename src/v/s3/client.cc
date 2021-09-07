@@ -238,7 +238,9 @@ request_creator::make_list_objects_v2_request(
         header.insert(aws_header_names::start_after, std::to_string(*max_keys));
     }
     auto ec = _sign.sign_header(header, emptysig);
-    vlog(s3_log.trace, "ListObjectsV2:\n {}", header);
+    if (s3_log.is_enabled(ss::log_level::trace)) {
+        vlog(s3_log.trace, "ListObjectsV2:\n {}", header);
+    }
     if (ec) {
         return ec;
     }
@@ -302,11 +304,13 @@ parse_timestamp(std::string_view sv) {
 
 static client::list_bucket_result iobuf_to_list_bucket_result(iobuf&& buf) {
     try {
-        for (auto& frag : buf) {
-            vlog(
-              s3_log.trace,
-              "iobuf_to_list_bucket_result part {}",
-              ss::sstring{frag.get(), frag.size()});
+        if (s3_log.is_enabled(ss::log_level::trace)) {
+            for (auto& frag : buf) {
+                vlog(
+                  s3_log.trace,
+                  "iobuf_to_list_bucket_result part {}",
+                  ss::sstring{frag.get(), frag.size()});
+            }
         }
         client::list_bucket_result result;
         auto root = iobuf_to_ptree(std::move(buf));
@@ -400,7 +404,9 @@ ss::future<http::client::response_stream_ref> client::get_object(
         return ss::make_exception_future<http::client::response_stream_ref>(
           std::system_error(header.error()));
     }
-    vlog(s3_log.trace, "send https request:\n{}", header);
+    if (s3_log.is_enabled(ss::log_level::trace)) {
+        vlog(s3_log.trace, "send https request:\n{}", header);
+    }
     return _client.request(std::move(header.value()), timeout)
       .then([](http::client::response_stream_ref&& ref) {
           // here we didn't receive any bytes from the socket and
@@ -436,7 +442,9 @@ ss::future<> client::put_object(
     if (!header) {
         return ss::make_exception_future<>(std::system_error(header.error()));
     }
-    vlog(s3_log.trace, "send https request:\n{}", header);
+    if (s3_log.is_enabled(ss::log_level::trace)) {
+        vlog(s3_log.trace, "send https request:\n{}", header);
+    }
     return ss::do_with(
       std::move(body),
       [this, timeout, header = std::move(header)](
@@ -473,7 +481,9 @@ ss::future<client::list_bucket_result> client::list_objects_v2(
         return ss::make_exception_future<list_bucket_result>(
           std::system_error(header.error()));
     }
-    vlog(s3_log.trace, "send https request:\n{}", header);
+    if (s3_log.is_enabled(ss::log_level::trace)) {
+        vlog(s3_log.trace, "send https request:\n{}", header);
+    }
     return _client.request(std::move(header.value()), timeout)
       .then([](const http::client::response_stream_ref& resp) mutable {
           // chunked encoding is used so we don't know output size in
@@ -514,7 +524,9 @@ ss::future<> client::delete_object(
     if (!header) {
         return ss::make_exception_future<>(std::system_error(header.error()));
     }
-    vlog(s3_log.trace, "send https request:\n{}", header);
+    if (s3_log.is_enabled(ss::log_level::trace)) {
+        vlog(s3_log.trace, "send https request:\n{}", header);
+    }
     return _client.request(std::move(header.value()), timeout)
       .then([](const http::client::response_stream_ref& ref) {
           return drain_response_stream(ref).then([ref](iobuf&& res) {

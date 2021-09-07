@@ -334,11 +334,13 @@ std::error_code signature_v4::sign_header(
     auto sign_key = gen_sig_key(_private_key(), date_str, _region(), service);
     auto cred_scope = ssx::sformat(
       "{}/{}/{}/aws4_request", date_str, _region(), service);
-    vlog(
-      s3_log.trace,
-      "Credentials updated:\n[signing key]\n{}\n[scope]\n{}\n",
-      hexdigest(sign_key),
-      cred_scope);
+    if (s3_log.is_enabled(ss::log_level::trace)) {
+        vlog(
+          s3_log.trace,
+          "Credentials updated:\n[signing key]\n{}\n[scope]\n{}\n",
+          hexdigest(sign_key),
+          cred_scope);
+    }
     auto amz_date = _sig_time.format_datetime();
     header.set("x-amz-date", {amz_date.data(), amz_date.size()});
     header.set("x-amz-content-sha256", {sha256.data(), sha256.size()});
@@ -351,7 +353,10 @@ std::error_code signature_v4::sign_header(
     if (!canonical_req) {
         return canonical_req.error();
     }
-    vlog(s3_log.trace, "\n[canonical-request]\n{}\n", canonical_req.value());
+    if (s3_log.is_enabled(ss::log_level::trace)) {
+        vlog(
+          s3_log.trace, "\n[canonical-request]\n{}\n", canonical_req.value());
+    }
     auto str_to_sign = get_string_to_sign(
       amz_date, cred_scope, canonical_req.value());
     auto digest = hmac(sign_key, str_to_sign);
@@ -363,7 +368,9 @@ std::error_code signature_v4::sign_header(
       canonical_headers.value().signed_headers,
       hexdigest(digest));
     header.set(boost::beast::http::field::authorization, auth_header);
-    vlog(s3_log.trace, "\n[signed-header]\n\n{}", header);
+    if (s3_log.is_enabled(ss::log_level::trace)) {
+        vlog(s3_log.trace, "\n[signed-header]\n\n{}", header);
+    }
     return {};
 }
 
