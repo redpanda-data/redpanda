@@ -48,7 +48,7 @@ func (r *PkiReconciler) prepareAdminAPI(
 		dnsName = append(dnsName, externalListener.External.Subdomain)
 	}
 
-	nodeCert := NewNodeCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, issuerRef, dnsName, cn, false, keystoreSecret, r.logger)
+	nodeCert := NewNodeCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, issuerRef, dnsName, cn, keystoreSecret, r.logger)
 	toApply = append(toApply, nodeCert)
 
 	if r.pandaCluster.AdminAPITLS() != nil && r.pandaCluster.AdminAPITLS().TLS.RequireClientAuth {

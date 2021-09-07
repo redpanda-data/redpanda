@@ -53,7 +53,7 @@ func NewPki(
 }
 
 func (r *PkiReconciler) prepareRoot(
-	prefix string, san []string,
+	prefix string,
 ) ([]resources.Resource, *cmmetav1.ObjectReference) {
 	toApply := []resources.Resource{}
 
@@ -66,14 +66,12 @@ func (r *PkiReconciler) prepareRoot(
 
 	rootCn := NewCommonName(r.pandaCluster.Name, prefix+"-root-certificate")
 	rootKey := types.NamespacedName{Name: string(rootCn), Namespace: r.pandaCluster.Namespace}
-	rootCertificate := NewNodeCertificate(r.Client,
+	rootCertificate := NewCACertificate(r.Client,
 		r.scheme,
 		r.pandaCluster,
 		rootKey,
 		selfSignedIssuer.objRef(),
-		san,
 		rootCn,
-		true,
 		nil,
 		r.logger)
 
@@ -101,7 +99,7 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 	toApply = append(toApply, keystoreSecret)
 
 	if tlsListener != nil {
-		toApplyRootKafka, kafkaIssuerRef := r.prepareRoot(kafkaAPI, []string{r.internalFQDN})
+		toApplyRootKafka, kafkaIssuerRef := r.prepareRoot(kafkaAPI)
 		toApplyKafka, err := r.prepareKafkaAPI(ctx, kafkaIssuerRef, &tlsListener.TLS, &keystoreKey)
 		if err != nil {
 			return err
@@ -111,25 +109,19 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 	}
 
 	if r.pandaCluster.AdminAPITLS() != nil {
-		toApplyRootAdmin, adminIssuerRef := r.prepareRoot(adminAPI, []string{r.internalFQDN})
+		toApplyRootAdmin, adminIssuerRef := r.prepareRoot(adminAPI)
 		toApply = append(toApply, toApplyRootAdmin...)
 		toApply = append(toApply, r.prepareAdminAPI(adminIssuerRef, &keystoreKey)...)
 	}
 
 	if r.pandaCluster.PandaproxyAPITLS() != nil {
-		toApplyRootPandaproxy, pandaproxyIssuerRef := r.prepareRoot(pandaproxyAPI, []string{r.internalFQDN})
+		toApplyRootPandaproxy, pandaproxyIssuerRef := r.prepareRoot(pandaproxyAPI)
 		toApply = append(toApply, toApplyRootPandaproxy...)
 		toApply = append(toApply, r.preparePandaproxyAPI(pandaproxyIssuerRef, &keystoreKey)...)
 	}
 
 	if r.pandaCluster.Spec.Configuration.SchemaRegistry != nil && r.pandaCluster.Spec.Configuration.SchemaRegistry.TLS != nil {
-		san := []string{r.clusterFQDN}
-		if r.pandaCluster.Spec.Configuration.SchemaRegistry != nil &&
-			r.pandaCluster.Spec.Configuration.SchemaRegistry.External != nil &&
-			r.pandaCluster.Spec.Configuration.SchemaRegistry.External.Subdomain != "" {
-			san = append(san, r.pandaCluster.Spec.Configuration.SchemaRegistry.External.Subdomain)
-		}
-		toApplyRootPandaproxy, schemaRegistryIssuerRef := r.prepareRoot(schemaRegistryAPI, san)
+		toApplyRootPandaproxy, schemaRegistryIssuerRef := r.prepareRoot(schemaRegistryAPI)
 		toApply = append(toApply, toApplyRootPandaproxy...)
 		toApply = append(toApply, r.prepareSchemaRegistryAPI(schemaRegistryIssuerRef, &keystoreKey)...)
 	}
