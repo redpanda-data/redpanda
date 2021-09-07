@@ -11,6 +11,7 @@
 
 #pragma once
 #include "model/fundamental.h"
+#include "utils/qd_tracker.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/metrics_registration.hh>
@@ -47,6 +48,8 @@ public:
     void replicate_request_error() { ++_replicate_request_error; };
     void recovery_request_error() { ++_recovery_request_error; };
 
+    qd_stats& qdstats() { return _qd_stats; }
+
 private:
     uint64_t _vote_requests = 0;
     uint64_t _append_requests = 0;
@@ -64,6 +67,7 @@ private:
     uint64_t _heartbeat_request_error = 0;
     uint64_t _replicate_request_error = 0;
     uint64_t _recovery_request_error = 0;
+    qd_stats _qd_stats;
 
     ss::metrics::metric_groups _metrics;
 };
