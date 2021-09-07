@@ -635,6 +635,12 @@ configuration::configuration()
       "cache",
       required::no,
       60s)
+  , append_chunk_size(
+      *this,
+      "append_chunk_size",
+      "Size of direct write operations to disk",
+      required::no,
+      16_KiB)
   , max_compacted_log_segment_size(
       *this,
       "max_compacted_log_segment_size",
