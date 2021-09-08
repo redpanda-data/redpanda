@@ -26,7 +26,8 @@ public:
     void setup_metrics(
       ss::metrics::metric_groups& mgs,
       std::string const& metric_name,
-      std::string const& description);
+      std::string const& description,
+      std::vector<ss::metrics::label_instance>& labels);
 
     qd_tracker track() noexcept;
 
