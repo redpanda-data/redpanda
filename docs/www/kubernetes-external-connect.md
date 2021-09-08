@@ -98,7 +98,7 @@ We'll use Helm to install cert-manager:
 
 <tabs group="shell">
 
-	<tab id="bash">
+  <tab id="bash">
 
   ```
   kubectl apply -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=$VERSION && \
@@ -113,7 +113,7 @@ We'll use Helm to install cert-manager:
 
   </tab>
 
-	<tab id="zsh">
+  <tab id="zsh">
 
 
   ```
