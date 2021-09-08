@@ -550,15 +550,6 @@ void application::wire_up_redpanda_services() {
     construct_service(storage, kvstore_config_from_global_config(), log_cfg)
       .get();
 
-    if (coproc_enabled()) {
-        syschecks::systemd_message("Building coproc pacemaker").get();
-        construct_service(
-          pacemaker,
-          config::shard_local_cfg().coproc_supervisor_server(),
-          std::ref(storage))
-          .get();
-    }
-
     syschecks::systemd_message("Intializing raft recovery throttle").get();
     recovery_throttle
       .start(
@@ -668,6 +659,16 @@ void application::wire_up_redpanda_services() {
       std::ref(shard_table),
       std::ref(coordinator_ntp_mapper))
       .get();
+
+    if (coproc_enabled()) {
+        syschecks::systemd_message("Building coproc pacemaker").get();
+        construct_service(
+          pacemaker,
+          config::shard_local_cfg().coproc_supervisor_server(),
+          std::ref(storage),
+          std::ref(partition_manager))
+          .get();
+    }
 
     // metrics and quota management
     syschecks::systemd_message("Adding kafka quota manager").get();

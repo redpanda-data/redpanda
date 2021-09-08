@@ -12,6 +12,7 @@ v_cc_library(
     types.cc
     logger.cc
     script_context.cc
+    script_context_frontend.cc
     pacemaker.cc
     offset_storage_utils.cc
     wasm_event.cc
@@ -23,6 +24,7 @@ v_cc_library(
     v::storage
     v::reflection
     v::kafka_client
+    v::cluster
     coproc_gen
   )
 

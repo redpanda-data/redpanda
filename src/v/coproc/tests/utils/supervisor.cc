@@ -37,16 +37,15 @@ supervisor::supervisor(
   , _coprocessors(coprocessors)
   , _delay_heartbeat(delay_heartbeat) {}
 
-ss::future<model::record_batch_reader::data_t>
+model::record_batch_reader::data_t
 copy_batch(const model::record_batch_reader::data_t& data) {
-    return ss::map_reduce(
+    model::record_batch_reader::data_t new_batch;
+    std::transform(
       data.cbegin(),
       data.cend(),
-      [](const model::record_batch& rb) {
-          return ss::make_ready_future<model::record_batch>(rb.copy());
-      },
-      model::record_batch_reader::data_t(),
-      reduce::push_back());
+      std::back_inserter(new_batch),
+      [](const model::record_batch& rb) { return rb.copy(); });
+    return new_batch;
 }
 
 ss::future<std::vector<process_batch_reply::data>> resultmap_to_vector(
@@ -136,12 +135,8 @@ supervisor::invoke_coprocessors(process_batch_request::data d) {
               const std::vector<script_id>& ids) {
                 return ssx::async_flat_transform(
                   ids, [this, ntp, &rbr](script_id id) {
-                      return copy_batch(rbr).then(
-                        [this, id, ntp](
-                          model::record_batch_reader::data_t batch) {
-                            return invoke_coprocessor(
-                              ntp, id, std::move(batch));
-                        });
+                      auto batch = copy_batch(rbr);
+                      return invoke_coprocessor(ntp, id, std::move(batch));
                   });
             });
       });

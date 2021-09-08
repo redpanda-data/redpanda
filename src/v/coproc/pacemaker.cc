@@ -49,11 +49,15 @@ rpc::backoff_policy wasm_transport_backoff() {
     return rpc::make_exponential_backoff_policy<rpc::clock_type>(1s, 10s);
 }
 
-pacemaker::pacemaker(unresolved_address addr, ss::sharded<storage::api>& api)
+pacemaker::pacemaker(
+  unresolved_address addr,
+  ss::sharded<storage::api>& api,
+  ss::sharded<cluster::partition_manager>& pm)
   : _shared_res(
     rpc::reconnect_transport(
       wasm_transport_cfg(addr), wasm_transport_backoff()),
-    api.local()) {
+    api.local(),
+    pm.local()) {
     _offs.timer.set_callback([this] {
         (void)ss::with_gate(_gate, [this] {
             return save_offsets(_offs.snap, _ntps).then([this] {
@@ -67,7 +71,7 @@ pacemaker::pacemaker(unresolved_address addr, ss::sharded<storage::api>& api)
 
 ss::future<> pacemaker::start() {
     co_await ss::recursive_touch_directory(offsets_snapshot_path().string());
-    _ntps = co_await recover_offsets(_offs.snap, _shared_res.api.log_mgr());
+    _ntps = co_await recover_offsets(_offs.snap, _shared_res.pm);
     if (!_offs.timer.armed()) {
         _offs.timer.arm(_offs.duration);
     }
@@ -79,7 +83,9 @@ ss::future<> pacemaker::reset() {
     auto removed = co_await remove_all_sources();
     vlog(coproclog.info, "Pacemaker reset {} scripts", removed.size());
     std::swap(_ntps, ncc);
-    _offs.timer.arm(_offs.duration);
+    if (!_offs.timer.armed()) {
+        _offs.timer.arm(_offs.duration);
+    }
 }
 
 ss::future<> pacemaker::stop() {
@@ -161,7 +167,7 @@ static void set_start_offset(
     if (tip == topic_ingestion_policy::earliest) {
         ntp_ctx->offsets[id] = ntp_context::offset_pair{};
     } else if (tip == topic_ingestion_policy::latest) {
-        model::offset last = ntp_ctx->log.offsets().dirty_offset;
+        model::offset last = ntp_ctx->partition->last_stable_offset();
         ntp_ctx->offsets[id] = ntp_context::offset_pair{
           .last_read = last, .last_acked = last};
     } else if (tip == topic_ingestion_policy::stored) {
@@ -179,18 +185,18 @@ void pacemaker::do_add_source(
   std::vector<errc>& acks,
   const std::vector<topic_namespace_policy>& topics) {
     for (const topic_namespace_policy& tnp : topics) {
-        auto logs = _shared_res.api.log_mgr().get(tnp.tn);
-        if (logs.empty()) {
+        auto partitions = _shared_res.pm.get_topic_partition_table(tnp.tn);
+        if (partitions.empty()) {
             acks.push_back(errc::topic_does_not_exist);
             continue;
         }
-        for (auto& [ntp, log] : logs) {
+        for (auto& [ntp, partition] : partitions) {
             auto found = _ntps.find(ntp);
             ss::lw_shared_ptr<ntp_context> ntp_ctx;
             if (found != _ntps.end()) {
                 ntp_ctx = found->second;
             } else {
-                ntp_ctx = ss::make_lw_shared<ntp_context>(log);
+                ntp_ctx = ss::make_lw_shared<ntp_context>(partition);
                 _ntps.emplace(ntp, ntp_ctx);
             }
             set_start_offset(id, ntp_ctx, tnp.policy);

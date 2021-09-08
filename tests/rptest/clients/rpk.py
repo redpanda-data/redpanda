@@ -58,7 +58,7 @@ class RpkTool:
 
         lines = output.splitlines()
         for i, line in enumerate(lines):
-            if line.split() == ["Name", "Partitions", "Replicas"]:
+            if line.split() == ["NAME", "PARTITIONS", "REPLICAS"]:
                 return map(topic_line, lines[i + 1:])
 
         assert False, "Unexpected output format"
