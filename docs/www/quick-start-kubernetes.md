@@ -125,22 +125,22 @@ to verify that cert-manager is working correcly.
 
 <tabs group="shell">
 
-	<tab id="bash">
+  <tab id="bash">
 
 ```
 kubectl apply \
 -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=$VERSION
 ```
-	</tab>
+  </tab>
 
-	<tab id="zsh">
+  <tab id="zsh">
 
 ```
 noglob kubectl apply \
 -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=$VERSION
 ```
 
-	</tab>
+  </tab>
 
 </tabs>
 
