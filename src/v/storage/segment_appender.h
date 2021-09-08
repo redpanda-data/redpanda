@@ -36,9 +36,8 @@ public:
     using chunk = segment_appender_chunk;
 
     static constexpr const size_t write_behind_memory = 1_MiB;
-    static constexpr const size_t chunks_no_buffer = write_behind_memory
-                                                     / chunk::chunk_size;
-    static constexpr const size_t chunk_size = chunk::chunk_size;
+    //    static constexpr const size_t chunks_no_buffer = write_behind_memory
+    //                                                     / chunk::chunk_size;
     static constexpr const size_t fallocation_step = 32_MiB;
 
     struct options {
@@ -51,7 +50,7 @@ public:
           , falloc_step(step) {}
 
         ss::io_priority_class priority;
-        size_t number_of_chunks{chunks_no_buffer};
+        size_t number_of_chunks;
         size_t falloc_step{fallocation_step};
     };
 
@@ -143,6 +142,8 @@ private:
 
     ss::timer<ss::lowres_clock> _inactive_timer;
     void handle_inactive_timer();
+
+    size_t _chunk_size{0};
 
     friend std::ostream& operator<<(std::ostream&, const segment_appender&);
 };

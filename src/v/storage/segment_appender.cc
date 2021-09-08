@@ -54,7 +54,8 @@ segment_appender::segment_appender(ss::file f, options opts)
   , _opts(opts)
   , _concurrent_flushes(ss::semaphore::max_counter())
   , _prev_head_write(ss::make_lw_shared<ss::semaphore>(1))
-  , _inactive_timer([this] { handle_inactive_timer(); }) {
+  , _inactive_timer([this] { handle_inactive_timer(); })
+  , _chunk_size(config::shard_local_cfg().append_chunk_size()) {
     const auto alignment = _out.disk_write_dma_alignment();
     vassert(
       internal::chunk_cache::alignment % alignment == 0,
@@ -423,9 +424,9 @@ void segment_appender::dispatch_background_head_write() {
     const size_t expected = _head->dma_size();
     const char* src = _head->dma_ptr();
     vassert(
-      expected <= chunk::chunk_size,
+      expected <= _chunk_size,
       "Writes can be at most a full segment. Expected {}, attempted write: {}",
-      chunk::chunk_size,
+      _chunk_size,
       expected);
     // accounting synchronously
     _committed_offset += _head->bytes_pending();

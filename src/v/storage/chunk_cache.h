@@ -32,7 +32,8 @@ public:
 
     chunk_cache() noexcept
       : _size_target(memory_groups::chunk_cache_min_memory())
-      , _size_limit(memory_groups::chunk_cache_max_memory()) {}
+      , _size_limit(memory_groups::chunk_cache_max_memory())
+      , _chunk_size(config::shard_local_cfg().append_chunk_size()) {}
 
     chunk_cache(chunk_cache&&) = delete;
     chunk_cache& operator=(chunk_cache&&) = delete;
@@ -42,24 +43,24 @@ public:
 
     ss::future<> start() {
         const auto num_chunks = memory_groups::chunk_cache_min_memory()
-                                / chunk::chunk_size;
+                                / _chunk_size;
         return ss::do_for_each(
           boost::counting_iterator<size_t>(0),
           boost::counting_iterator<size_t>(num_chunks),
           [this](size_t) {
               auto c = ss::make_lw_shared<chunk>(alignment);
-              _size_total += chunk::chunk_size;
+              _size_total += _chunk_size;
               add(c);
           });
     }
 
     void add(const chunk_ptr& chunk) {
         if (_size_available >= _size_target) {
-            _size_total -= chunk::chunk_size;
+            _size_total -= _chunk_size;
             return;
         }
         _chunks.push_back(chunk);
-        _size_available += chunk::chunk_size;
+        _size_available += _chunk_size;
         if (_sem.waiters()) {
             _sem.signal();
         }
@@ -87,14 +88,14 @@ private:
         if (!_chunks.empty()) {
             auto c = _chunks.front();
             _chunks.pop_front();
-            _size_available -= chunk::chunk_size;
+            _size_available -= _chunk_size;
             c->reset();
             return c;
         }
         if (_size_total < _size_limit) {
             try {
                 auto c = ss::make_lw_shared<chunk>(alignment);
-                _size_total += chunk::chunk_size;
+                _size_total += _chunk_size;
                 return c;
             } catch (const std::bad_alloc& e) {
                 vlog(stlog.debug, "chunk allocation failed: {}", e);
@@ -109,6 +110,8 @@ private:
     size_t _size_total{0};
     const size_t _size_target;
     const size_t _size_limit;
+
+    const size_t _chunk_size{0};
 };
 
 inline chunk_cache& chunks() {
