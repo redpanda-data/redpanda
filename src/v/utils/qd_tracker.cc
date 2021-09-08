@@ -23,9 +23,8 @@ qd_tracker qd_stats::track() noexcept { return qd_tracker(*this); }
 void qd_stats::setup_metrics(
   ss::metrics::metric_groups& mgs,
   const std::string& group_name,
-  const std::string& description) {
-    // TODO: take labels for cases that need it
-
+  const std::string& description,
+  std::vector<ss::metrics::label_instance>& labels) {
     namespace sm = ss::metrics;
     mgs.add_group(
       prometheus_sanitize::metrics_name(group_name),
@@ -33,29 +32,35 @@ void qd_stats::setup_metrics(
         sm::make_histogram(
           "q_t",
           [this] { return _q_hist.to_seastar(); },
-          sm::description(ssx::sformat("Queuing latency of {}", description))),
+          sm::description(ssx::sformat("Queuing latency of {}", description)),
+          labels),
         sm::make_histogram(
           "d_t",
           [this] { return _d_hist.to_seastar(); },
-          sm::description(ssx::sformat("Dispatch latency of {}", description))),
+          sm::description(ssx::sformat("Dispatch latency of {}", description)),
+          labels),
         sm::make_histogram(
           "q_d_hist",
           [this] { return _q_depth_hist.to_seastar(); },
           sm::description(
-            ssx::sformat("Queueing depth distribution of {}", description))),
+            ssx::sformat("Queueing depth distribution of {}", description)),
+          labels),
         sm::make_histogram(
           "d_d_hist",
           [this] { return _d_depth_hist.to_seastar(); },
           sm::description(
-            ssx::sformat("Dispatch depth distribution of {}", description))),
+            ssx::sformat("Dispatch depth distribution of {}", description)),
+          labels),
         sm::make_gauge(
           "q_d",
           [this] { return _q_depth; },
-          sm::description(ssx::sformat("Queuing depth of {}", description))),
+          sm::description(ssx::sformat("Queuing depth of {}", description)),
+          labels),
         sm::make_gauge(
           "d_d",
           [this] { return _d_depth; },
-          sm::description(ssx::sformat("Dispatch depth of {}", description))),
+          sm::description(ssx::sformat("Dispatch depth of {}", description)),
+          labels),
       });
 }
 
