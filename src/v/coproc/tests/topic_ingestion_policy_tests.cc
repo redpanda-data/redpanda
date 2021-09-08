@@ -8,7 +8,7 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "coproc/tests/fixtures/coproc_slim_fixture.h"
+#include "coproc/tests/fixtures/coproc_test_fixture.h"
 #include "coproc/tests/utils/coprocessor.h"
 #include "model/namespace.h"
 #include "storage/tests/utils/random_batch.h"
@@ -19,7 +19,7 @@
 
 #include <chrono>
 
-class tip_fixture : public coproc_slim_fixture {
+class tip_fixture : public coproc_test_fixture {
 public:
     std::optional<std::size_t> run(
       coproc::topic_ingestion_policy tip, std::size_t n, std::size_t drain_n) {
@@ -34,9 +34,6 @@ public:
             model::offset(0), n, 1))
           .get();
 
-        /// Using the slim fixture makes this test possible, otherwise the call
-        /// to .get() here just ensures the coprocessor was pushed into the
-        /// copro topic, not fully registered
         enable_coprocessors(
           {{.id = 78,
             .data{
@@ -44,15 +41,23 @@ public:
               .topics = {{infoo, tip}}}}})
           .get();
 
+        /// Wait for the coprocessor to startup before next batch
+        coproc::script_id id(78);
+        tests::cooperative_spin_wait_with_timeout(60s, [this, id]() {
+            return root_fixture()->app.pacemaker.map_reduce0(
+              [id](coproc::pacemaker& p) {
+                  return p.local_script_id_exists(id);
+              },
+              false,
+              std::logical_or<>());
+        }).get();
+
         push(
           infoo_ntp,
           storage::test::make_random_memory_record_batch_reader(
             model::offset{0}, n, 1))
           .get();
 
-        /// Assert that only the records from the second batch exist in the
-        /// materialized log since the latest policy was chosen and the
-        /// coprocessor was deployed between both pushes
         model::ntp output_ntp(
           model::kafka_namespace,
           model::to_materialized_topic(
@@ -77,9 +82,13 @@ FIXTURE_TEST(test_copro_tip_earliest, tip_fixture) {
     BOOST_CHECK_EQUAL(*result, 80);
 }
 
-FIXTURE_TEST(test_copro_tip_stored, coproc_slim_fixture) {
+FIXTURE_TEST(test_copro_tip_stored, coproc_test_fixture) {
     model::topic sttp("sttp");
     model::ntp sttp_ntp(model::kafka_namespace, sttp, model::partition_id(0));
+    model::ntp output_ntp(
+      model::kafka_namespace,
+      model::to_materialized_topic(sttp, identity_coprocessor::identity_topic),
+      model::partition_id(0));
     setup({{sttp, 1}}).get();
 
     enable_coprocessors(
@@ -95,6 +104,10 @@ FIXTURE_TEST(test_copro_tip_stored, coproc_slim_fixture) {
         model::offset{0}, 40, 1))
       .get();
 
+    auto a_results = drain(output_ntp, 40).get();
+    BOOST_CHECK(a_results);
+    BOOST_CHECK(a_results->size() == 40);
+
     ss::sleep(1s).get();
     info("Restarting....");
     restart().get();
@@ -105,14 +118,7 @@ FIXTURE_TEST(test_copro_tip_stored, coproc_slim_fixture) {
         model::offset{0}, 40, 1))
       .get();
 
-    /// Assert that only the records from the second batch exist in the
-    /// materialized log since the latest policy was chosen and the coprocessor
-    /// was deployed between both pushes
-    model::ntp output_ntp(
-      model::kafka_namespace,
-      model::to_materialized_topic(sttp, identity_coprocessor::identity_topic),
-      model::partition_id(0));
     auto results = drain(output_ntp, 80).get();
     BOOST_CHECK(results);
-    BOOST_CHECK(results->size() >= 80);
+    BOOST_CHECK(results->size() == 80);
 }

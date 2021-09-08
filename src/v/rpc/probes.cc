@@ -67,7 +67,7 @@ void server_probe::setup_metrics(
             "{}: Number of requests with corrupted headers", proto))),
         sm::make_derive(
           "service_errors",
-          [this] { return _corrupted_headers; },
+          [this] { return _service_errors; },
           sm::description(ssx::sformat("{}: Number of service errors", proto))),
         sm::make_derive(
           "requests_blocked_memory",

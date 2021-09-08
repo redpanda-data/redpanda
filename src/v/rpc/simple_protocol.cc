@@ -20,7 +20,9 @@ namespace rpc {
 struct server_context_impl final : streaming_context {
     server_context_impl(server::resources s, header h)
       : res(std::move(s))
-      , hdr(h) {}
+      , hdr(h) {
+        res.probe().request_received();
+    }
     ss::future<ss::semaphore_units<>> reserve_memory(size_t ask) final {
         auto fut = get_units(res.memory(), ask);
         if (res.memory().waiters()) {
@@ -28,6 +30,7 @@ struct server_context_impl final : streaming_context {
         }
         return fut;
     }
+    ~server_context_impl() override { res.probe().request_completed(); }
     const header& get_header() const final { return hdr; }
     void signal_body_parse() final { pr.set_value(); }
     server::resources res;
@@ -41,7 +44,6 @@ ss::future<> simple_protocol::apply(server::resources rs) {
       [this, rs]() mutable {
           return parse_header(rs.conn->input())
             .then([this, rs](std::optional<header> h) mutable {
-                rs.probe().request_received();
                 if (!h) {
                     rpclog.debug(
                       "could not parse header from client: {}", rs.conn->addr);
@@ -73,8 +75,7 @@ send_reply(ss::lw_shared_ptr<server_context_impl> ctx, netbuf buf) {
       .handle_exception([ctx](std::exception_ptr e) {
           vlog(rpclog.info, "Error dispatching method: {}", e);
           ctx->res.conn->shutdown_input();
-      })
-      .finally([ctx] { ctx->res.probe().request_completed(); });
+      });
 }
 
 ss::future<>
