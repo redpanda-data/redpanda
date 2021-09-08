@@ -141,7 +141,8 @@ ss::future<> server::accept(listener& s) {
                 _probe);
               vlog(
                 rpclog.trace,
-                "Incoming connection from {} on \"{}\"",
+                "{} - Incoming connection from {} on \"{}\"",
+                _proto->name(),
                 ar.remote_address,
                 s.name);
               if (_conn_gate.is_closed()) {
