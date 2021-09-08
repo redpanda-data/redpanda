@@ -135,7 +135,7 @@ const writeObject = <T>(
 
 /** Deserializer **/
 
-type FromBytes<T> = { fromBytes: (Buffer, number) => [T, number] };
+type FromBytes<T> = { fromBytes: (buffer: Buffer, number: number) => [T, number] };
 type ReadFunction<T> = (
   buffer: Buffer,
   offset: number,
