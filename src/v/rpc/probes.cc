@@ -82,7 +82,8 @@ void server_probe::setup_metrics(
       });
 
     auto latency_group = fmt::format("{}_latency", proto);
-    _qd_stats.setup_metrics(mgs, latency_group, "Kafka request");
+    std::vector<ss::metrics::label_instance> labels;
+    _qd_stats.setup_metrics(mgs, latency_group, "Kafka request", labels);
 }
 
 std::ostream& operator<<(std::ostream& o, const server_probe& p) {
