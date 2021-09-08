@@ -147,7 +147,7 @@ class TestRunner():
         self.prepare_command = prepare_command
         self.post_command = post_command
         self.binary = binary
-        self.repeat = repeat
+        self.repeat = repeat if repeat is not None else 1
         self.copy_files = copy_files
         self.root = "/dev/shm/vectorized_io"
         os.makedirs(self.root, exist_ok=True)
@@ -181,6 +181,21 @@ class TestRunner():
                                 prefix="%s/test." % self.root)
 
     def run(self):
+        # Execute the requested number of times, terminate on the first failure.
+        for r in range(0, self.repeat):
+            status = self._run()
+            if status != 0:
+                if self.repeat > 1:
+                    logger.info(f"Failed on run {r + 1}/{self.repeat}")
+                sys.exit(status)
+
+        # Fall out of loop means status was 0 (OK).  Proceed to terminate
+        # normally, no need for an explicit sys.exit on success.
+
+        if self.repeat > 1:
+            logger.info(f"Repeated {self.repeat} times, no failures")
+
+    def _run(self):
         test_dir = self._gen_testdir()
         env = os.environ.copy()
         env["TEST_DIR"] = test_dir
@@ -241,7 +256,7 @@ class TestRunner():
         t.start()
         t.join()
 
-        sys.exit(p.wait())
+        return p.wait()
 
 
 def main():
