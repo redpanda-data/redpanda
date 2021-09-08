@@ -436,7 +436,7 @@ func newPercentilePanel(
 	m *dto.MetricFamily, percentile float32,
 ) *graf.GraphPanel {
 	expr := fmt.Sprintf(
-		`histogram_quantile(%.2f, sum(rate(%s_bucket{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m])) by (le, [[aggr_criteria]]))`,
+		`histogram_quantile(%.2f, sum(rate(%s_bucket{instance=~"$node",shard=~"$node_shard"}[2m])) by (le, $aggr_criteria))`,
 		percentile,
 		m.GetName(),
 	)
@@ -460,7 +460,7 @@ func newPercentilePanel(
 
 func newCounterPanel(m *dto.MetricFamily) *graf.GraphPanel {
 	expr := fmt.Sprintf(
-		`sum(irate(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m])) by ([[aggr_criteria]])`,
+		`sum(irate(%s{instance=~"$node",shard=~"$node_shard"}[2m])) by ($aggr_criteria)`,
 		m.GetName(),
 	)
 	target := graf.Target{
@@ -481,7 +481,7 @@ func newCounterPanel(m *dto.MetricFamily) *graf.GraphPanel {
 
 func newGaugePanel(m *dto.MetricFamily) *graf.GraphPanel {
 	expr := fmt.Sprintf(
-		`sum(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}) by ([[aggr_criteria]])`,
+		`sum(%s{instance=~"$node",shard=~"$node_shard"}) by ($aggr_criteria)`,
 		m.GetName(),
 	)
 	target := graf.Target{
@@ -503,7 +503,7 @@ func newGaugePanel(m *dto.MetricFamily) *graf.GraphPanel {
 
 func makeRatioPanel(m0, m1 *dto.MetricFamily, help string) *graf.GraphPanel {
 	expr := fmt.Sprintf(
-		`sum(irate(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m])) by ([[aggr_criteria]]) / sum(irate(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m])) by ([[aggr_criteria]])`,
+		`sum(irate(%s{instance=~"$node",shard=~"$node_shard"}[2m])) by ($aggr_criteria) / sum(irate(%s{instance=~"$node",shard=~"$node_shard"}[2m])) by ($aggr_criteria)`,
 		m0.GetName(), m1.GetName())
 	target := graf.Target{
 		Expr:           expr,
