@@ -10,6 +10,7 @@
 #include "storage/segment_utils.h"
 
 #include "bytes/iobuf_parser.h"
+#include "config/configuration.h"
 #include "likely.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
@@ -180,14 +181,17 @@ ss::future<segment_appender_ptr> make_segment_appender(
 }
 
 size_t number_of_chunks_from_config(const ntp_config& ntpc) {
+    auto def = segment_appender::write_behind_memory
+               / config::shard_local_cfg().append_chunk_size();
+
     if (!ntpc.has_overrides()) {
-        return segment_appender::chunks_no_buffer;
+        return def;
     }
     auto& o = ntpc.get_overrides();
     if (o.compaction_strategy) {
-        return segment_appender::chunks_no_buffer / 2;
+        return def / 2;
     }
-    return segment_appender::chunks_no_buffer;
+    return def;
 }
 
 ss::future<Roaring>
@@ -340,7 +344,8 @@ ss::future<storage::index_state> do_copy_segment_data(
           return make_segment_appender(
                    tmpname,
                    cfg.sanitize,
-                   segment_appender::chunks_no_buffer,
+                   segment_appender::write_behind_memory
+                     / config::shard_local_cfg().append_chunk_size(),
                    cfg.iopc)
             .then([l = std::move(list), &pb, h = std::move(h), cfg, s, tmpname](
                     segment_appender_ptr w) mutable {
