@@ -15,6 +15,7 @@
 #include "rpc/parse_utils.h"
 #include "rpc/response_handler.h"
 #include "rpc/types.h"
+#include "vassert.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
@@ -98,6 +99,10 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
         _fd = std::make_unique<ss::connected_socket>(std::move(fd));
         _probe.connection_established();
         _in = _fd->input();
+
+        // Never implicitly destroy a live output stream here: output streams
+        // are only safe to destroy after/during stop()
+        vassert(!_out.is_valid(), "destroyed output_stream without stopping");
         _out = batched_output_stream(_fd->output());
     } catch (...) {
         auto e = std::current_exception();
@@ -123,7 +128,18 @@ base_transport::connect(clock_type::time_point connection_timeout) {
 }
 ss::future<> base_transport::stop() {
     fail_outstanding_futures();
-    return _dispatch_gate.close();
+
+    return _dispatch_gate.close().then([this]() {
+        // We must call stop() on our output stream, because
+        // seastar::output_stream may not be safely destroyed without a call to
+        // close(), and this class may be destroyed after stop() is called.
+        return _out.stop().then([this] {
+            // Invalidate _out here, so that do_connect can assert that
+            // it isn't dropping an un-stopped output stream when it
+            // assigns to _out
+            _out = {};
+        });
+    });
 }
 void transport::fail_outstanding_futures() noexcept {
     // must close the socket
