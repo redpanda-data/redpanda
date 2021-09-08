@@ -277,6 +277,37 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     co_return make_error_code(errc::success);
 }
 
+ss::future<std::error_code>
+topic_table::apply(create_materialized_topic_cmd cmd, model::offset o) {
+    const model::topic_namespace& source = cmd.value.source;
+    const model::topic_namespace& new_materialized_topic
+      = cmd.value.materialized;
+    if (_topics.contains(new_materialized_topic)) {
+        co_return make_error_code(errc::topic_already_exists);
+    }
+    auto tp = _topics.find(source);
+    if (tp == _topics.end()) {
+        /// Source topic must exist if attempting to create a materialized topic
+        co_return make_error_code(errc::missing_materialized_source_topic);
+    }
+
+    for (const auto& pas : tp->second.configuration.assignments) {
+        _pending_deltas.emplace_back(
+          model::ntp(
+            new_materialized_topic.ns, new_materialized_topic.tp, pas.id),
+          pas,
+          o,
+          delta::op_type::add_materialized);
+    }
+
+    topic_table::topic_metadata tca(tp->second);
+    tca.configuration.cfg.tp_ns.tp = new_materialized_topic.tp;
+    tca.configuration.cfg.properties.source_topic = source.tp;
+    _topics.insert({new_materialized_topic, std::move(tca)});
+    notify_waiters();
+    co_return make_error_code(errc::success);
+}
+
 void topic_table::notify_waiters() {
     if (_waiters.empty()) {
         return;

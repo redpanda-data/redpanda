@@ -514,7 +514,14 @@ private:
 };
 // delta propagated to backend
 struct topic_table_delta {
-    enum class op_type { add, del, update, update_finished, update_properties };
+    enum class op_type {
+        add,
+        add_materialized,
+        del,
+        update,
+        update_finished,
+        update_properties
+    };
 
     topic_table_delta(
       model::ntp,
@@ -581,6 +588,11 @@ struct backend_operation {
 struct create_data_policy_cmd_data {
     static constexpr int8_t current_version = 1; // In future dp will be vector
     v8_engine::data_policy dp;
+};
+
+struct create_materialized_topic_cmd_data {
+    model::topic_namespace source;
+    model::topic_namespace materialized;
 };
 
 enum class reconciliation_status : int8_t {
@@ -767,6 +779,12 @@ template<>
 struct adl<cluster::create_data_policy_cmd_data> {
     void to(iobuf&, cluster::create_data_policy_cmd_data&&);
     cluster::create_data_policy_cmd_data from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::create_materialized_topic_cmd_data> {
+    void to(iobuf& out, cluster::create_materialized_topic_cmd_data&&);
+    cluster::create_materialized_topic_cmd_data from(iobuf_parser&);
 };
 
 } // namespace reflection

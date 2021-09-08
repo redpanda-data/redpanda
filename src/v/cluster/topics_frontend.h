@@ -78,6 +78,11 @@ private:
     ss::future<topic_result>
       do_delete_topic(model::topic_namespace, model::timeout_clock::time_point);
 
+    ss::future<topic_result> do_create_materialized_topic(
+      model::topic_namespace,
+      model::topic_namespace,
+      model::timeout_clock::time_point);
+
     ss::future<std::vector<topic_result>> dispatch_create_to_leader(
       model::node_id,
       std::vector<topic_configuration>,

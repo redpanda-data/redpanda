@@ -212,6 +212,8 @@ operator<<(std::ostream& o, const topic_table_delta::op_type& tp) {
         return o << "update_finished";
     case topic_table_delta::op_type::update_properties:
         return o << "update_properties";
+    case topic_table_delta::op_type::add_materialized:
+        return o << "materialized_addition";
     }
     __builtin_unreachable();
 }
@@ -797,6 +799,20 @@ adl<cluster::create_data_policy_cmd_data>::from(iobuf_parser& in) {
       cluster::create_data_policy_cmd_data::current_version);
     auto dp = adl<v8_engine::data_policy>{}.from(in);
     return cluster::create_data_policy_cmd_data{.dp = std::move(dp)};
+}
+
+void adl<cluster::create_materialized_topic_cmd_data>::to(
+  iobuf& out, cluster::create_materialized_topic_cmd_data&& cm_cmd_data) {
+    return serialize(
+      out, std::move(cm_cmd_data.source), std::move(cm_cmd_data.materialized));
+}
+
+cluster::create_materialized_topic_cmd_data
+adl<cluster::create_materialized_topic_cmd_data>::from(iobuf_parser& in) {
+    auto source = adl<model::topic_namespace>{}.from(in);
+    auto materialzied = adl<model::topic_namespace>{}.from(in);
+    return cluster::create_materialized_topic_cmd_data{
+      .source = std::move(source), .materialized = std::move(materialzied)};
 }
 
 } // namespace reflection

@@ -36,6 +36,8 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
         return error_code::request_timed_out;
     case cluster::errc::invalid_topic_name:
         return error_code::invalid_topic_exception;
+    case cluster::errc::missing_materialized_source_topic:
+        return error_code::invalid_config;
     default:
         return error_code::unknown_server_error;
     }

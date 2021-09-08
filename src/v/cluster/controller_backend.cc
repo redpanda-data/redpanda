@@ -503,6 +503,11 @@ controller_backend::execute_partitition_op(const topic_table::delta& delta) {
           rev,
           create_brokers_set(
             delta.new_assignment.replicas, _members_table.local()));
+    case op_t::add_materialized:
+        if (!has_local_replicas(_self, delta.new_assignment.replicas)) {
+            return ss::make_ready_future<std::error_code>(errc::success);
+        }
+        return create_materialized(delta.ntp, rev);
     case op_t::del:
         return delete_partition(delta.ntp, rev);
     case op_t::update:
@@ -853,6 +858,16 @@ ss::future<> controller_backend::add_to_shard_table(
       });
 }
 
+ss::future<> controller_backend::insert_to_shard_table(
+  model::ntp ntp, ss::shard_id shard, model::revision_id revision) {
+    vlog(
+      clusterlog.trace, "insert {} to shard table at {}", revision, ntp, shard);
+    return _shard_table.invoke_on_all(
+      [ntp = std::move(ntp), shard, revision](shard_table& s) mutable {
+          s.insert(ntp, shard, revision);
+      });
+}
+
 ss::future<> controller_backend::remove_from_shard_table(
   model::ntp ntp, raft::group_id raft_group, model::revision_id revision) {
     // update shard_table: broadcast
@@ -861,6 +876,22 @@ ss::future<> controller_backend::remove_from_shard_table(
       [ntp = std::move(ntp), raft_group, revision](shard_table& s) mutable {
           s.erase(ntp, raft_group, revision);
       });
+}
+
+ss::future<std::error_code> controller_backend::create_materialized(
+  model::ntp ntp, model::revision_id rev) {
+    auto cfg = _topics.local().get_topic_cfg(model::topic_namespace_view(ntp));
+    if (!cfg) {
+        // partition was already removed, do nothing
+        co_return errc::success;
+    }
+    vassert(
+      cfg->properties.source_topic.has_value(),
+      "Misconfigured materialized topic encountered");
+    auto ntp_cfg = cfg->make_ntp_config(_data_directory, ntp.tp.partition, rev);
+    co_await _storage.local().log_mgr().manage(std::move(ntp_cfg));
+    co_await insert_to_shard_table(std::move(ntp), ss::this_shard_id(), rev);
+    co_return errc::success;
 }
 
 ss::future<std::error_code> controller_backend::create_partition(

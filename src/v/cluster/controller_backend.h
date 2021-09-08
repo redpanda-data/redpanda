@@ -100,6 +100,10 @@ private:
       raft::group_id,
       model::revision_id,
       std::vector<model::broker>);
+    ss::future<std::error_code>
+      create_materialized(model::ntp, model::revision_id);
+    ss::future<>
+      insert_to_shard_table(model::ntp, ss::shard_id, model::revision_id);
     ss::future<> add_to_shard_table(
       model::ntp, raft::group_id, ss::shard_id, model::revision_id);
     ss::future<>
