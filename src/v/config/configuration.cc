@@ -98,14 +98,14 @@ configuration::configuration()
       "TCP receive buffer size in bytes.",
       required::no,
       std::nullopt,
-      32768)
+      32_KiB)
   , rpc_server_tcp_send_buf(
       *this,
       "rpc_server_tcp_send_buf",
       "TCP transmit buffer size in bytes.",
       required::no,
       std::nullopt,
-      32768)
+      32_KiB)
   , enable_coproc(
       *this, "enable_coproc", "Enable coprocessing mode", required::no, false)
   , coproc_supervisor_server(
