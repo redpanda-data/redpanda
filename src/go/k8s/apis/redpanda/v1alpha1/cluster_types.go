@@ -523,3 +523,111 @@ func (r *Cluster) IsSchemaRegistryExternallyAvailable() bool {
 		r.Spec.Configuration.SchemaRegistry.External != nil &&
 		r.Spec.Configuration.SchemaRegistry.External.Enabled
 }
+
+// TLSConfig is a generic TLS configuration
+type TLSConfig struct {
+	Enabled           bool                    `json:"enabled,omitempty"`
+	RequireClientAuth bool                    `json:"requireClientAuth,omitempty"`
+	IssuerRef         *cmmeta.ObjectReference `json:"issuerRef,omitempty"`
+	NodeSecretRef     *corev1.ObjectReference `json:"nodeSecretRef,omitempty"`
+}
+
+// Kafka API
+
+// GetPort returns API port
+func (k KafkaAPI) GetPort() int {
+	return k.Port
+}
+
+// GetTLS returns API TLSConfig
+func (k KafkaAPI) GetTLS() *TLSConfig {
+	return &TLSConfig{
+		Enabled:           k.TLS.Enabled,
+		RequireClientAuth: k.TLS.RequireClientAuth,
+		IssuerRef:         k.TLS.IssuerRef,
+		NodeSecretRef:     k.TLS.NodeSecretRef,
+	}
+}
+
+// GetExternal returns API's ExternalConnectivityConfig
+func (k KafkaAPI) GetExternal() *ExternalConnectivityConfig {
+	return &k.External
+}
+
+// Admin API
+
+// GetPort returns API port
+func (a AdminAPI) GetPort() int {
+	return a.Port
+}
+
+// GetTLS returns API TLSConfig
+func (a AdminAPI) GetTLS() *TLSConfig {
+	return &TLSConfig{
+		Enabled:           a.TLS.Enabled,
+		RequireClientAuth: a.TLS.RequireClientAuth,
+		IssuerRef:         nil,
+		NodeSecretRef:     nil,
+	}
+}
+
+// GetExternal returns API's ExternalConnectivityConfig
+func (a AdminAPI) GetExternal() *ExternalConnectivityConfig {
+	return &a.External
+}
+
+// SchemaRegistry API
+
+// GetPort returns API port
+func (s SchemaRegistryAPI) GetPort() int {
+	return s.Port
+}
+
+// GetTLS returns API TLSConfig
+func (s SchemaRegistryAPI) GetTLS() *TLSConfig {
+	if s.TLS == nil {
+		return defaultTLSConfig()
+	}
+	return &TLSConfig{
+		Enabled:           s.TLS.Enabled,
+		RequireClientAuth: s.TLS.RequireClientAuth,
+		IssuerRef:         nil,
+		NodeSecretRef:     nil,
+	}
+}
+
+// GetExternal returns API's ExternalConnectivityConfig
+func (s SchemaRegistryAPI) GetExternal() *ExternalConnectivityConfig {
+	return s.External
+}
+
+// PandaProxy API
+
+// GetPort returns API port
+func (p PandaproxyAPI) GetPort() int {
+	return p.Port
+}
+
+// GetTLS returns API TLSConfig
+func (p PandaproxyAPI) GetTLS() *TLSConfig {
+	return &TLSConfig{
+		Enabled:           p.TLS.Enabled,
+		RequireClientAuth: p.TLS.RequireClientAuth,
+		IssuerRef:         nil,
+		NodeSecretRef:     nil,
+	}
+}
+
+// GetExternal returns API's ExternalConnectivityConfig
+func (p PandaproxyAPI) GetExternal() *ExternalConnectivityConfig {
+	return &p.External
+}
+
+func defaultTLSConfig() *TLSConfig {
+	return &TLSConfig{
+		Enabled:           false,
+		RequireClientAuth: false,
+		IssuerRef:         nil,
+		NodeSecretRef:     nil,
+	}
+}
