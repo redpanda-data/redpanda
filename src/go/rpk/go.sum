@@ -59,8 +59,8 @@ github.com/cockroachdb/gostdlib v1.13.0 h1:TzSEPYgkKDNei3gbLc0rrHu4iHyBp7/+NxPOF
 github.com/cockroachdb/gostdlib v1.13.0/go.mod h1:eXX95p9QDrYwJfJ6AgeN9QnRa/lqqid9LAzWz/l5OgA=
 github.com/cockroachdb/ttycolor v0.0.0-20180709150743-a1d5aaeb377d h1:TNsiMS1Ij2aleP/05UNSPzsOu9eJm9mfUGLm7Ylt7Dg=
 github.com/cockroachdb/ttycolor v0.0.0-20180709150743-a1d5aaeb377d/go.mod h1:NltwFG0VBANi1jHKpn5KL9AbsHTE+8fPaAHT0TzL20k=
-github.com/containerd/containerd v1.4.1 h1:pASeJT3R3YyVn+94qEPk0SnU1OQ20Jd/T+SPKy9xehY=
-github.com/containerd/containerd v1.4.1/go.mod h1:bC6axHOhabU15QhwfG7w5PipXdVtMXFTttgp+kVtyUA=
+github.com/containerd/containerd v1.4.8 h1:H0wkS4AbVKTg9vyvBdCBrxoax8AMObKbNz9Fl2N0i4Y=
+github.com/containerd/containerd v1.4.8/go.mod h1:bC6axHOhabU15QhwfG7w5PipXdVtMXFTttgp+kVtyUA=
 github.com/coreos/bbolt v1.3.2/go.mod h1:iRUV2dpdMOn7Bo10OQBFzIJO9kkE559Wcmn+qkEiiKk=
 github.com/coreos/etcd v3.3.13+incompatible/go.mod h1:uF7uidLiAD3TWHmW31ZFd/JWoc32PjwdhPthX9715RE=
 github.com/coreos/go-semver v0.3.0/go.mod h1:nnelYz7RCh+5ahJtPPxZlU+153eP4D4r3EedlOD2RNk=
