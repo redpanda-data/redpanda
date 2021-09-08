@@ -7,23 +7,19 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package cmd
+//go:build linux
+// +build linux
+
+package debug
 
 import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/debug"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 )
 
-func NewDebugCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
-	command := &cobra.Command{
-		Use:   "debug",
-		Short: "Debug the local Redpanda process",
-	}
-	command.AddCommand(debug.NewInfoCommand(fs, mgr))
-
-	debug.AddPlatformDependentCmds(fs, mgr, command)
-
-	return command
+func AddPlatformDependentCmds(
+	fs afero.Fs, mgr config.Manager, cmd *cobra.Command,
+) {
+	cmd.AddCommand(NewBundleCommand(fs, mgr))
 }
