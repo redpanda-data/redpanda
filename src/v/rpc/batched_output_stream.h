@@ -53,6 +53,8 @@ public:
     /// do not use `_fd.shutdown_output();` on connected_sockets
     ss::future<> stop();
 
+    bool is_valid() const noexcept { return _cache_size != 0; }
+
 private:
     ss::future<> do_flush();
 

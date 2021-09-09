@@ -72,30 +72,36 @@ void server::start() {
     }
 }
 
-// inline to get more context
 static inline void print_exceptional_future(
-  server::protocol* proto, ss::future<> f, const char* ctx) {
-    try {
-        f.get();
-    } catch (...) {
-        vlog(
-          rpclog.error,
-          "{} - Error ( {} ): {}",
-          proto->name(),
-          ctx,
-          std::current_exception());
+  server::protocol* proto,
+  ss::future<> f,
+  const char* ctx,
+  ss::socket_address address) {
+    if (likely(!f.failed())) {
+        f.ignore_ready_future();
+        return;
     }
+
+    vlog(
+      rpclog.error,
+      "{} - Error[{}] remote address: {} - {}",
+      proto->name(),
+      ctx,
+      address,
+      f.get_exception());
 }
 static ss::future<>
 apply_proto(server::protocol* proto, server::resources&& rs) {
     auto conn = rs.conn;
     return proto->apply(std::move(rs))
       .then_wrapped([proto, conn](ss::future<> f) {
-          print_exceptional_future(proto, std::move(f), "applying proto");
-          vlog(rpclog.debug, "{} Closing: {}", proto->name(), conn->addr);
-          return conn->shutdown().then_wrapped([proto](ss::future<> f) {
-              print_exceptional_future(proto, std::move(f), "shutting down");
-          });
+          print_exceptional_future(
+            proto, std::move(f), "applying protocol", conn->addr);
+          return conn->shutdown().then_wrapped(
+            [proto, addr = conn->addr](ss::future<> f) {
+                print_exceptional_future(
+                  proto, std::move(f), "shutting down", addr);
+            });
       })
       .finally([conn] {});
 }
@@ -135,7 +141,8 @@ ss::future<> server::accept(listener& s) {
                 _probe);
               vlog(
                 rpclog.trace,
-                "Incoming connection from {} on \"{}\"",
+                "{} - Incoming connection from {} on \"{}\"",
+                _proto->name(),
                 ar.remote_address,
                 s.name);
               if (_conn_gate.is_closed()) {
