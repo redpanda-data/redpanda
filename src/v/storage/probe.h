@@ -67,7 +67,7 @@ public:
     size_t partition_size() const { return _partition_bytes; }
     void add_initial_segment(const segment&);
     void remove_partition_bytes(size_t remove) { _partition_bytes -= remove; }
-    void set_compaction_ration(double r) { _compaction_ratio = r; }
+    void set_compaction_ratio(double r) { _compaction_ratio = r; }
 
 private:
     uint64_t _partition_bytes = 0;
