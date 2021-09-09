@@ -44,6 +44,7 @@
 #include <fmt/format.h>
 
 #include <iterator>
+#include <sstream>
 
 using namespace std::literals::chrono_literals;
 
@@ -418,11 +419,16 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     std::vector<ss::lw_shared_ptr<segment>> segments;
     std::copy(range.first, range.second, std::back_inserter(segments));
 
-    if (stlog.is_enabled(ss::log_level::debug)) {
-        vlog(stlog.debug, "Compacting {} adjacent segments:", segments.size());
+    if (gclog.is_enabled(ss::log_level::debug)) {
+        std::stringstream segments_str;
         for (size_t i = 0; i < segments.size(); i++) {
-            vlog(stlog.debug, "Segment {}: {}", i + 1, *segments[i]);
+            fmt::print(segments_str, "Segment {}: {}, ", i + 1, *segments[i]);
         }
+        vlog(
+          gclog.debug,
+          "Compacting {} adjacent segments: [{}]",
+          segments.size(),
+          segments_str.str());
     }
 
     // the segment which will be expanded to replace
@@ -446,7 +452,7 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     auto ret = co_await storage::internal::self_compact_segment(
       replacement, cfg, _probe, *_readers_cache);
     _probe.delete_segment(*replacement.get());
-    vlog(stlog.debug, "Final compacted segment {}", replacement);
+    vlog(gclog.debug, "Final compacted segment {}", replacement);
 
     /*
      * remove index files. they will be rebuilt by the single segment compaction
