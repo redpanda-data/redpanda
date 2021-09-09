@@ -16,10 +16,10 @@ cluster_id: ""
 license_key: ""
 
 redpanda:
-  # Data directory where all the files will be stored. 
+  # Data directory where all the files will be stored.
   # This directory MUST resides on xfs partion.
   data_directory: "/var/lib/redpanda/data"
-  
+
   # Node ID - must be unique for each node
   node_id: 1
 
@@ -30,7 +30,7 @@ redpanda:
   rpc_server:
     address: "0.0.0.0"
     port: 33145
-  
+
   # Kafka transport
   kafka_api:
   - address: "0.0.0.0"
