@@ -14,6 +14,7 @@
 #include "cluster/partition.h"
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
+#include "coproc/sys_refs.h"
 #include "coproc/types.h"
 #include "random/simple_time_jitter.h"
 #include "rpc/reconnect_transport.h"
@@ -88,13 +89,6 @@ struct shared_script_resources {
     /// Underlying transport connection to the wasm engine
     rpc::reconnect_transport transport;
 
-    /// Reference to the storage layer for writing to materialized logs
-    storage::api& api;
-
-    /// Reference to the partition manager, used to interface with
-    /// cluster::partition
-    cluster::partition_manager& pm;
-
     /// A mutex per materialized log is required as concurrency is not
     /// guaranteed across script contexts. Two scripts writing to the same
     /// underlying log must not have portions of the writes be ordered within
@@ -103,13 +97,12 @@ struct shared_script_resources {
     /// to elements within the collection are used
     absl::node_hash_map<model::ntp, mutex> log_mtx;
 
-    explicit shared_script_resources(
-      rpc::reconnect_transport t,
-      storage::api& sapi,
-      cluster::partition_manager& a)
+    /// References to other redpanda components
+    sys_refs& rs;
+
+    shared_script_resources(rpc::reconnect_transport t, sys_refs& rs)
       : transport(std::move(t))
-      , api(sapi)
-      , pm(a) {}
+      , rs(rs) {}
 };
 
 } // namespace coproc

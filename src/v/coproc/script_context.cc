@@ -120,7 +120,7 @@ ss::future<> script_context::send_request(
           if (reply) {
               output_write_args args{
                 .id = _id,
-                .log_manager = _resources.api.log_mgr(),
+                .rs = _resources.rs,
                 .inputs = _ntp_ctxs,
                 .locks = _resources.log_mtx};
               return write_materialized(

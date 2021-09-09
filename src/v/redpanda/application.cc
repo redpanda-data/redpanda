@@ -666,13 +666,13 @@ void application::wire_up_redpanda_services() {
       .get();
 
     if (coproc_enabled()) {
-        syschecks::systemd_message("Building coproc pacemaker").get();
-        construct_service(
-          pacemaker,
+        syschecks::systemd_message("Creating coproc::api").get();
+        construct_single_service(
+          coprocessing,
           config::shard_local_cfg().coproc_supervisor_server(),
           std::ref(storage),
-          std::ref(partition_manager))
-          .get();
+          std::ref(partition_manager));
+        coprocessing->start().get();
     }
 
     // metrics and quota management
@@ -1046,11 +1046,6 @@ void application::start_redpanda() {
     vlog(
       _log.info, "Started Kafka API server listening at {}", conf.kafka_api());
 
-    if (coproc_enabled()) {
-        construct_single_service(_wasm_event_listener, std::ref(pacemaker));
-        _wasm_event_listener->start().get();
-        pacemaker.invoke_on_all(&coproc::pacemaker::start).get();
-    }
     if (config::shard_local_cfg().enable_admin_api()) {
         _admin.invoke_on_all(&admin_server::start).get0();
     }

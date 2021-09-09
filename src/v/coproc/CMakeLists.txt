@@ -9,6 +9,7 @@ rpcgen(
 v_cc_library(
   NAME coproc
   SRCS
+    api.cc
     types.cc
     logger.cc
     script_context.cc

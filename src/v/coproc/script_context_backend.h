@@ -12,6 +12,7 @@
 #pragma once
 
 #include "coproc/ntp_context.h"
+#include "coproc/sys_refs.h"
 #include "coproc/types.h"
 #include "utils/mutex.h"
 
@@ -26,7 +27,7 @@ using output_write_inputs = std::vector<process_batch_reply::data>;
 /// Arugments to pass to 'write_materialized', trivially copyable
 struct output_write_args {
     coproc::script_id id;
-    storage::log_manager& log_manager;
+    sys_refs& rs;
     ntp_context_cache& inputs;
     absl::node_hash_map<model::ntp, mutex>& locks;
 };
