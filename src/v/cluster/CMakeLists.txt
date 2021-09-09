@@ -70,6 +70,7 @@ v_cc_library(
     members_frontend.cc
     members_backend.cc
     health_manager.cc
+    non_replicable_topics_frontend.cc
     scheduling/allocation_node.cc
     scheduling/types.cc
     scheduling/allocation_state.cc
