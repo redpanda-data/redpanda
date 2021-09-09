@@ -467,7 +467,7 @@ struct raft_group {
         for (auto& [_, m] : _members) {
             close_futures.push_back(m.stop_node());
         }
-        ss::when_all(close_futures.begin(), close_futures.end()).get0();
+        ss::when_all_succeed(close_futures.begin(), close_futures.end()).get0();
     }
 
     members_t& get_members() { return _members; }
