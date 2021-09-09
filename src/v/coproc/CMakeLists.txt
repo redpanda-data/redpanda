@@ -12,6 +12,7 @@ v_cc_library(
     api.cc
     types.cc
     logger.cc
+    materialized_topics_frontend.cc
     script_context.cc
     script_context_frontend.cc
     script_context_backend.cc
