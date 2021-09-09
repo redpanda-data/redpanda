@@ -35,6 +35,9 @@ const (
 	DefaultCertificateDuration = 5 * 365 * 24 * time.Hour
 	// DefaultRenewBefore default time length prior to expiration to attempt renewal - 90 days
 	DefaultRenewBefore = 90 * 24 * time.Hour
+	// EmptyCommonName should be used by default because the `common name` field has been deprecated since 2000
+	// Also, cert-manager will set the `common name` field to be equal to the first value in the list of SANs.
+	EmptyCommonName = CommonName("")
 )
 
 // CertificateResource is part of the reconciliation of redpanda.vectorized.io CRD
@@ -52,6 +55,31 @@ type CertificateResource struct {
 	logger         logr.Logger
 }
 
+// NewCACertificate creates a root or intermediate CA certificate
+func NewCACertificate(
+	client k8sclient.Client,
+	scheme *runtime.Scheme,
+	pandaCluster *redpandav1alpha1.Cluster,
+	key types.NamespacedName,
+	issuerRef *cmetav1.ObjectReference,
+	commonName CommonName,
+	keystoreSecret *types.NamespacedName,
+	logger logr.Logger,
+) *CertificateResource {
+	return &CertificateResource{
+		client,
+		scheme,
+		pandaCluster,
+		key,
+		issuerRef,
+		[]string{},
+		commonName,
+		true,
+		keystoreSecret,
+		logger.WithValues("Kind", certificateKind()),
+	}
+}
+
 // NewNodeCertificate creates certificate with given FQDN that is either internal or external
 func NewNodeCertificate(
 	client k8sclient.Client,
@@ -61,7 +89,6 @@ func NewNodeCertificate(
 	issuerRef *cmetav1.ObjectReference,
 	fqdn []string,
 	commonName CommonName,
-	isCA bool,
 	keystoreSecret *types.NamespacedName,
 	logger logr.Logger,
 ) *CertificateResource {
@@ -73,7 +100,7 @@ func NewNodeCertificate(
 		issuerRef,
 		fqdn,
 		commonName,
-		isCA,
+		false,
 		keystoreSecret,
 		logger.WithValues("Kind", certificateKind()),
 	}
