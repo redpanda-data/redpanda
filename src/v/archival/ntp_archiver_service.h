@@ -125,12 +125,12 @@ public:
     /// uploading them.
     ///
     /// \param lm is a log manager instance
-    /// \param high_watermark is a high watermark offset of the partition
-    /// \param parent is a retry chain node of the caller
-    /// \return future that returns number of uploaded/failed segments
+    /// \param last_stable_offset is a last_stable_offset offset of the
+    /// partition \param parent is a retry chain node of the caller \return
+    /// future that returns number of uploaded/failed segments
     ss::future<batch_result> upload_next_candidates(
       storage::log_manager& lm,
-      model::offset high_watermark,
+      model::offset last_stable_offset,
       retry_chain_node& parent);
 
 private:

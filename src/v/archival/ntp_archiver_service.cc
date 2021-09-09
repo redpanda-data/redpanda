@@ -140,7 +140,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
 
 ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
   storage::log_manager& lm,
-  model::offset high_watermark,
+  model::offset last_stable_offset,
   retry_chain_node& parent) {
     retry_chain_logger ctxlog(archival_log, parent, _ntp.path());
     gate_guard guard{_gate};
@@ -162,14 +162,23 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
     for (size_t i = 0; i < _concurrency; i++) {
         vlog(
           ctxlog.debug,
-          "Uploading next candidates for {}, trying offset {}",
+          "Uploading next candidates for {}, trying offset {}, LSO {}",
           _ntp,
-          last_uploaded_offset);
+          last_uploaded_offset,
+          last_stable_offset);
         auto upload = co_await _policy.get_next_candidate(
-          last_uploaded_offset, high_watermark, lm);
+          last_uploaded_offset, last_stable_offset, lm);
         if (upload.source.get() == nullptr) {
             vlog(
-              ctxlog.debug, "Uploading next candidates for {}, ...skip", _ntp);
+              ctxlog.debug,
+              "Uploading next candidates, last_uploaded_offset: {}, "
+              "last_stable_offset: {} ...skip",
+              last_uploaded_offset,
+              last_stable_offset);
+            // NOTE: this code trggered compiler bug which can be fixed
+            // by using variables last_*_offset after co_await. The bug
+            // led to segfault on a second iteration of the loop when the
+            // local variables were accessed seocnd time.
             break;
         }
         if (_manifest.contains(upload.exposed_name)) {

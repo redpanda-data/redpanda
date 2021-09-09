@@ -156,7 +156,6 @@ class ArchivalTest(RedpandaTest):
     def __init__(self, test_context):
         self.s3_bucket_name = f"panda-bucket-{uuid.uuid1()}"
         self._extra_rp_conf = dict(
-            developer_mode=True,
             cloud_storage_enabled=True,
             cloud_storage_access_key=ArchivalTest.s3_access_key,
             cloud_storage_secret_key=ArchivalTest.s3_secret_key,
@@ -169,6 +168,11 @@ class ArchivalTest(RedpandaTest):
             cloud_storage_max_connections=5,
             log_segment_size=1048576  # 1MB
         )
+        if test_context.function_name == "test_timeboxed_uploads":
+            self._extra_rp_conf.update(
+                log_segment_size=1024 * 1024 * 1024,
+                cloud_storage_segment_max_upload_interval_sec=1)
+
         super(ArchivalTest, self).__init__(test_context=test_context,
                                            extra_rp_conf=self._extra_rp_conf)
 
@@ -309,17 +313,6 @@ class ArchivalTest(RedpandaTest):
         of the segments won't align with the segment in the redpanda data directory. But
         their respective offset ranges should align and the sizes should make sense.
         """
-        self._extra_rp_conf.update(
-            log_segment_size=1024 * 1024 * 1024,
-            cloud_storage_segment_max_upload_interval_sec=1)
-        # We have to restart redpanda in order for these config changes
-        # to take effect.
-        for node in self.redpanda.nodes:
-            self.redpanda.stop_node(node)
-        time.sleep(5)
-        for node in self.redpanda.nodes:
-            self.redpanda.start_node(node)
-        time.sleep(5)
 
         # The offsets of the segments in the Minio bucket won't necessary
         # correlate with the write bursts here. The upload depends on the
@@ -374,7 +367,8 @@ class ArchivalTest(RedpandaTest):
                     self.logger.info(
                         f"checking {segment} prev: {prev_committed_offset}")
                     base_offset = segment['base_offset']
-                    assert prev_committed_offset + 1 == base_offset
+                    assert prev_committed_offset + 1 == base_offset, f"inconsistent segments, " +\
+                        "expected base_offset: {prev_committed_offset + 1}, actual: {base_offset}"
                     prev_committed_offset = segment['committed_offset']
                     size += segment['size_bytes']
                 assert sizes[ntp] >= size

@@ -223,7 +223,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
       get_ntp_conf(), get_configuration(), remote, probe);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
-    model::offset high_watermark = model::offset::max();
+    model::offset lso = model::offset::max();
     std::vector<segment_desc> segments = {
       {manifest_ntp, model::offset(1), model::term_id(2)},
       {manifest_ntp, model::offset(1000), model::term_id(4)},
@@ -233,7 +233,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     retry_chain_node fib;
     auto res = archiver
                  .upload_next_candidates(
-                   get_local_storage_api().log_mgr(), high_watermark, fib)
+                   get_local_storage_api().log_mgr(), lso, fib)
                  .get0();
     BOOST_REQUIRE_EQUAL(res.num_succeded, 2);
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
@@ -269,7 +269,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
 
 // NOLINTNEXTLINE
 FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
-    model::offset high_watermark{9999};
+    model::offset lso{9999};
     const auto offset1 = model::offset(1000);
     const auto offset2 = model::offset(2000);
     const auto offset3 = model::offset(3000);
@@ -288,19 +288,16 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
 
     log_segment_set(lm);
     // Starting offset is lower than offset1
-    auto upload1
-      = policy.get_next_candidate(model::offset(0), high_watermark, lm).get();
+    auto upload1 = policy.get_next_candidate(model::offset(0), lso, lm).get();
     log_upload_candidate(upload1);
     BOOST_REQUIRE(upload1.source.get() != nullptr);
     BOOST_REQUIRE(upload1.starting_offset == offset1);
 
-    auto upload2 = policy
-                     .get_next_candidate(
-                       upload1.source->offsets().dirty_offset
-                         + model::offset(1),
-                       high_watermark,
-                       lm)
-                     .get();
+    auto upload2
+      = policy
+          .get_next_candidate(
+            upload1.source->offsets().dirty_offset + model::offset(1), lso, lm)
+          .get();
     log_upload_candidate(upload2);
     BOOST_REQUIRE(upload2.source.get() != nullptr);
     BOOST_REQUIRE(upload2.starting_offset() == offset2);
@@ -308,13 +305,11 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
     BOOST_REQUIRE(upload2.source != upload1.source);
     BOOST_REQUIRE(upload2.source->offsets().base_offset == offset2);
 
-    auto upload3 = policy
-                     .get_next_candidate(
-                       upload2.source->offsets().dirty_offset
-                         + model::offset(1),
-                       high_watermark,
-                       lm)
-                     .get();
+    auto upload3
+      = policy
+          .get_next_candidate(
+            upload2.source->offsets().dirty_offset + model::offset(1), lso, lm)
+          .get();
     log_upload_candidate(upload3);
     BOOST_REQUIRE(upload3.source.get() != nullptr);
     BOOST_REQUIRE(upload3.starting_offset() == offset3);
@@ -322,19 +317,15 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
     BOOST_REQUIRE(upload3.source != upload2.source);
     BOOST_REQUIRE(upload3.source->offsets().base_offset == offset3);
 
-    auto upload4 = policy
-                     .get_next_candidate(
-                       upload3.source->offsets().dirty_offset
-                         + model::offset(1),
-                       high_watermark,
-                       lm)
-                     .get();
+    auto upload4
+      = policy
+          .get_next_candidate(
+            upload3.source->offsets().dirty_offset + model::offset(1), lso, lm)
+          .get();
     BOOST_REQUIRE(upload4.source.get() == nullptr);
 
-    auto upload5 = policy
-                     .get_next_candidate(
-                       high_watermark + model::offset(1), high_watermark, lm)
-                     .get();
+    auto upload5
+      = policy.get_next_candidate(lso + model::offset(1), lso, lm).get();
     BOOST_REQUIRE(upload5.source.get() == nullptr);
 }
 
@@ -346,7 +337,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     // made.
     // The manifest that this test generates contains a segment definition
     // that clashes with the partial upload.
-    model::offset high_watermark = model::offset::max();
+    model::offset lso = model::offset::max();
     std::vector<segment_desc> segments = {
       {manifest_ntp, model::offset(1), model::term_id(2)},
       {manifest_ntp, model::offset(1000), model::term_id(4)},
@@ -395,7 +386,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
 
     auto res = archiver
                  .upload_next_candidates(
-                   get_local_storage_api().log_mgr(), high_watermark, fib)
+                   get_local_storage_api().log_mgr(), lso, fib)
                  .get0();
     BOOST_REQUIRE_EQUAL(res.num_succeded, 2);
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
@@ -487,28 +478,33 @@ calculate_segment_stats(const ss::httpd::request& req) {
     return stats;
 }
 
-// NOLINTNEXTLINE
-FIXTURE_TEST(test_partial_upload, archiver_fixture) {
-    // This test checks partial uploads. Partial upload can happen
-    // if the idle time is set in config or when the leadership is
-    // transferred to another node which has different data layout.
-    //
-    // The test creates a segment and forces a partial upload of the
-    // segment's middle part followed by the upload of the remaining
-    // data.
+struct upload_range {
+    size_t base;
+    size_t last;
+};
+
+/// This test checks partial uploads. Partial upload can happen
+/// if the idle time is set in config or when the leadership is
+/// transferred to another node which has different data layout.
+///
+/// The test creates a segment and forces a partial upload of the
+/// segment's middle part followed by the upload of the remaining
+/// data.
+static void test_partial_upload_impl(
+  archiver_fixture& test, upload_range first, upload_range last) {
     std::vector<segment_desc> segments = {
       {manifest_ntp, model::offset(0), model::term_id(1), 10},
     };
 
-    init_storage_api_local(segments);
+    test.init_storage_api_local(segments);
     auto s1name = archival::segment_name("0-1-v1.log");
 
-    auto segment1 = get_segment(manifest_ntp, s1name);
+    auto segment1 = test.get_segment(manifest_ntp, s1name);
     BOOST_REQUIRE(static_cast<bool>(segment1));
 
     // Generate new manifest
     cloud_storage::manifest manifest(manifest_ntp, manifest_revision);
-    const auto& layout = get_layouts(manifest_ntp);
+    const auto& layout = test.get_layouts(manifest_ntp);
     vlog(test_log.debug, "Layout size", layout.size());
     for (const auto& s : layout) {
         vlog(test_log.debug, "- Segment {}", s.base_offset);
@@ -518,17 +514,26 @@ FIXTURE_TEST(test_partial_upload, archiver_fixture) {
         }
     }
 
-    auto last_uploaded_range = layout[0].ranges[3];
+    auto last_uploaded_range = layout[0].ranges[first.base];
     auto last_uploaded_offset = last_uploaded_range.base_offset
                                 - model::offset(1);
 
-    model::offset high_watermark = layout[0].ranges[7].last_offset;
-    model::offset next_uploaded_offset = high_watermark;
+    model::offset lso = layout[0].ranges[last.base].base_offset;
+    model::offset next_uploaded_offset
+      = layout[0].ranges[first.last].last_offset;
 
-    model::offset base_upl1 = layout[0].ranges[3].base_offset;
-    model::offset last_upl1 = layout[0].ranges[7].last_offset;
-    model::offset base_upl2 = layout[0].ranges[8].base_offset;
-    model::offset last_upl2 = layout[0].ranges[9].last_offset;
+    model::offset base_upl1 = layout[0].ranges[first.base].base_offset;
+    model::offset last_upl1 = layout[0].ranges[first.last].last_offset;
+    model::offset base_upl2 = layout[0].ranges[last.base].base_offset;
+    model::offset last_upl2 = layout[0].ranges[last.last].last_offset;
+
+    vlog(
+      test_log.debug,
+      "First range: {}-{}, second range: {}-{}",
+      base_upl1,
+      last_upl1,
+      base_upl2,
+      last_upl2);
 
     cloud_storage::manifest::segment_meta segment_meta{
       .is_compacted = false,
@@ -555,11 +560,11 @@ FIXTURE_TEST(test_partial_upload, archiver_fixture) {
     vlog(
       test_log.debug,
       "Expected segment upload urls {} and {}, last_uploaded_offset: {}, "
-      "high_watermark: {}",
+      "last_stable_offset: {}",
       url1,
       url2,
       last_uploaded_offset,
-      high_watermark);
+      lso);
 
     std::vector<s3_imposter_fixture::expectation> expectations({
       s3_imposter_fixture::expectation{
@@ -568,7 +573,7 @@ FIXTURE_TEST(test_partial_upload, archiver_fixture) {
       s3_imposter_fixture::expectation{.url = url2, .body = "segment2"},
     });
 
-    set_expectations_and_listen(expectations);
+    test.set_expectations_and_listen(expectations);
 
     auto conf = get_configuration();
     service_probe probe(service_metrics_disabled::yes);
@@ -585,17 +590,17 @@ FIXTURE_TEST(test_partial_upload, archiver_fixture) {
 
     auto res = archiver
                  .upload_next_candidates(
-                   get_local_storage_api().log_mgr(), high_watermark, fib)
+                   test.get_local_storage_api().log_mgr(), lso, fib)
                  .get0();
     BOOST_REQUIRE_EQUAL(res.num_succeded, 1);
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
 
-    for (auto req : get_requests()) {
+    for (auto req : test.get_requests()) {
         vlog(test_log.error, "{}", req._url);
     }
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
+    BOOST_REQUIRE_EQUAL(test.get_requests().size(), 3);
     {
-        auto [begin, end] = get_targets().equal_range(manifest_url);
+        auto [begin, end] = test.get_targets().equal_range(manifest_url);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 2);
         std::set<ss::sstring> expected = {"PUT", "GET"};
@@ -607,7 +612,7 @@ FIXTURE_TEST(test_partial_upload, archiver_fixture) {
         BOOST_REQUIRE(expected.empty());
     }
     {
-        auto [begin, end] = get_targets().equal_range(url1);
+        auto [begin, end] = test.get_targets().equal_range(url1);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
         BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
@@ -619,17 +624,17 @@ FIXTURE_TEST(test_partial_upload, archiver_fixture) {
         BOOST_REQUIRE_EQUAL(stats.max_offset, last_upl1);
     }
 
-    high_watermark = model::offset::max();
+    lso = model::offset::max();
     res = archiver
             .upload_next_candidates(
-              get_local_storage_api().log_mgr(), high_watermark, fib)
+              test.get_local_storage_api().log_mgr(), lso, fib)
             .get0();
     BOOST_REQUIRE_EQUAL(res.num_succeded, 1);
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
 
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
+    BOOST_REQUIRE_EQUAL(test.get_requests().size(), 5);
     {
-        auto [begin, end] = get_targets().equal_range(manifest_url);
+        auto [begin, end] = test.get_targets().equal_range(manifest_url);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 3);
         std::multiset<ss::sstring> expected = {"PUT", "PUT", "GET"};
@@ -642,13 +647,13 @@ FIXTURE_TEST(test_partial_upload, archiver_fixture) {
         BOOST_REQUIRE(expected.empty());
     }
     {
-        auto [begin, end] = get_targets().equal_range(url1);
+        auto [begin, end] = test.get_targets().equal_range(url1);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
         BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
     }
     {
-        auto [begin, end] = get_targets().equal_range(url2);
+        auto [begin, end] = test.get_targets().equal_range(url2);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
         BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
@@ -659,6 +664,21 @@ FIXTURE_TEST(test_partial_upload, archiver_fixture) {
         BOOST_REQUIRE_EQUAL(stats.min_offset, base_upl2);
         BOOST_REQUIRE_EQUAL(stats.max_offset, last_upl2);
     }
+}
+
+// NOLINTNEXTLINE
+FIXTURE_TEST(test_partial_upload1, archiver_fixture) {
+    test_partial_upload_impl(*this, {3, 7}, {8, 9});
+}
+
+// NOLINTNEXTLINE
+FIXTURE_TEST(test_partial_upload2, archiver_fixture) {
+    test_partial_upload_impl(*this, {3, 3}, {4, 9});
+}
+
+// NOLINTNEXTLINE
+FIXTURE_TEST(test_partial_upload3, archiver_fixture) {
+    test_partial_upload_impl(*this, {3, 8}, {9, 9});
 }
 
 // NOLINTNEXTLINE
@@ -702,21 +722,18 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     // Every segment should be returned once as we're calling the
     // policy to get next candidate.
     log_segment_set(lm);
-    model::offset high_watermark{9999};
+    model::offset lso{9999};
     // Starting offset is lower than offset1
-    auto upload1
-      = policy.get_next_candidate(model::offset(0), high_watermark, lm).get();
+    auto upload1 = policy.get_next_candidate(model::offset(0), lso, lm).get();
     log_upload_candidate(upload1);
     BOOST_REQUIRE(upload1.source.get() != nullptr);
     BOOST_REQUIRE(upload1.starting_offset == offset1);
 
-    auto upload2 = policy
-                     .get_next_candidate(
-                       upload1.source->offsets().dirty_offset
-                         + model::offset(1),
-                       high_watermark,
-                       lm)
-                     .get();
+    auto upload2
+      = policy
+          .get_next_candidate(
+            upload1.source->offsets().dirty_offset + model::offset(1), lso, lm)
+          .get();
     log_upload_candidate(upload2);
     BOOST_REQUIRE(upload2.source.get() != nullptr);
     BOOST_REQUIRE(upload2.starting_offset == offset2);
@@ -724,13 +741,11 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     BOOST_REQUIRE(upload2.source != upload1.source);
     BOOST_REQUIRE(upload2.source->offsets().base_offset == offset2);
 
-    auto upload3 = policy
-                     .get_next_candidate(
-                       upload2.source->offsets().dirty_offset
-                         + model::offset(1),
-                       high_watermark,
-                       lm)
-                     .get();
+    auto upload3
+      = policy
+          .get_next_candidate(
+            upload2.source->offsets().dirty_offset + model::offset(1), lso, lm)
+          .get();
     log_upload_candidate(upload3);
     BOOST_REQUIRE(upload3.source.get() != nullptr);
     BOOST_REQUIRE(upload3.starting_offset == offset3);
@@ -738,12 +753,10 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     BOOST_REQUIRE(upload3.source != upload2.source);
     BOOST_REQUIRE(upload3.source->offsets().base_offset == offset3);
 
-    auto upload4 = policy
-                     .get_next_candidate(
-                       upload3.source->offsets().dirty_offset
-                         + model::offset(1),
-                       high_watermark,
-                       lm)
-                     .get();
+    auto upload4
+      = policy
+          .get_next_candidate(
+            upload3.source->offsets().dirty_offset + model::offset(1), lso, lm)
+          .get();
     BOOST_REQUIRE(upload4.source.get() == nullptr);
 }

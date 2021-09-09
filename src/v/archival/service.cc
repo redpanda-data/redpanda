@@ -390,11 +390,11 @@ scheduler_service_impl::remove_archivers(std::vector<model::ntp> to_remove) {
 }
 
 std::optional<model::offset>
-scheduler_service_impl::get_high_watermark(const model::ntp& ntp) const {
+scheduler_service_impl::get_last_stable_offset(const model::ntp& ntp) const {
     cluster::partition_manager& pm = _partition_manager.local();
     auto p = pm.get(ntp);
     if (p) {
-        return p->high_watermark();
+        return p->last_stable_offset();
     }
     return std::nullopt;
 }
@@ -470,10 +470,10 @@ ss::future<> scheduler_service_impl::run_uploads() {
                     _rtclog.debug,
                     "Checking {} for S3 upload candidates",
                     archiver->get_ntp());
-                  auto hwm = get_high_watermark(archiver->get_ntp());
-                  if (hwm) {
+                  auto lso = get_last_stable_offset(archiver->get_ntp());
+                  if (lso) {
                       return archiver->upload_next_candidates(
-                        lm, *hwm, _rtcnode);
+                        lm, *lso, _rtcnode);
                   }
                   return ss::make_ready_future<result_t>(result_t{});
               });
