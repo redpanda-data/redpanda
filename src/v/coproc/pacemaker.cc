@@ -49,15 +49,11 @@ rpc::backoff_policy wasm_transport_backoff() {
     return rpc::make_exponential_backoff_policy<rpc::clock_type>(1s, 10s);
 }
 
-pacemaker::pacemaker(
-  unresolved_address addr,
-  ss::sharded<storage::api>& api,
-  ss::sharded<cluster::partition_manager>& pm)
+pacemaker::pacemaker(unresolved_address addr, sys_refs& rs)
   : _shared_res(
     rpc::reconnect_transport(
       wasm_transport_cfg(addr), wasm_transport_backoff()),
-    api.local(),
-    pm.local()) {
+    rs) {
     _offs.timer.set_callback([this] {
         (void)ss::with_gate(_gate, [this] {
             return save_offsets(_offs.snap, _ntps).then([this] {
@@ -71,7 +67,8 @@ pacemaker::pacemaker(
 
 ss::future<> pacemaker::start() {
     co_await ss::recursive_touch_directory(offsets_snapshot_path().string());
-    _ntps = co_await recover_offsets(_offs.snap, _shared_res.pm);
+    _ntps = co_await recover_offsets(
+      _offs.snap, _shared_res.rs.partition_manager.local());
     if (!_offs.timer.armed()) {
         _offs.timer.arm(_offs.duration);
     }
@@ -185,7 +182,8 @@ void pacemaker::do_add_source(
   std::vector<errc>& acks,
   const std::vector<topic_namespace_policy>& topics) {
     for (const topic_namespace_policy& tnp : topics) {
-        auto partitions = _shared_res.pm.get_topic_partition_table(tnp.tn);
+        auto partitions = _shared_res.rs.partition_manager.local()
+                            .get_topic_partition_table(tnp.tn);
         if (partitions.empty()) {
             acks.push_back(errc::topic_does_not_exist);
             continue;

@@ -87,10 +87,9 @@ static ss::future<bool> write_materialized_partition(
     }
     return found->second.with(
       [args, ntp, reader = std::move(reader)]() mutable {
-          return get_log(args.log_manager, ntp)
-            .then([reader = std::move(reader)](storage::log log) mutable {
-                return do_write_materialized_partition(
-                  std::move(log), std::move(reader));
+          return get_log(args.rs.storage.local().log_mgr(), ntp)
+            .then([ntp, reader = std::move(reader)](storage::log log) mutable {
+                return do_write_materialized_partition(log, std::move(reader));
             });
       });
 }
