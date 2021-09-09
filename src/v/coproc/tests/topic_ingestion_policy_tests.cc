@@ -120,7 +120,10 @@ FIXTURE_TEST(test_copro_tip_stored, coproc_test_fixture) {
         model::offset{0}, 40, 1))
       .get();
 
+    /// Due to the at-least-once semantics of how coproc records offsets, it is
+    /// expected and OK to observe more records then were written to the input
+    /// log in the case a recovery occurred
     auto results = drain(output_ntp, 80).get();
     BOOST_CHECK(results);
-    BOOST_CHECK(results->size() == 80);
+    BOOST_CHECK_GE(results->size(), 80);
 }
