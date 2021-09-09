@@ -23,6 +23,7 @@ For the best performance, we need to provision the hardware according to these h
 - TCP ports:
   - `33145` - Internal RPC Port
   - `9092` - Kafka API Port
+  - `8081` - Schema Registry Port
   - `8082` - Pandaproxy Port
   - `9644` - Prometheus and HTTP admin port
 

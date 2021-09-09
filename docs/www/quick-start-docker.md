@@ -73,6 +73,7 @@ docker run -d \
 --hostname=redpanda-1 \
 --net=redpandanet \
 -p 8082:8082 \
+-p 8081:8081 \
 -p 9092:9092 \
 -p 9644:9644 \
 -v "redpanda1:/var/lib/redpanda/data" \
