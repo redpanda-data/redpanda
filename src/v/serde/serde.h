@@ -111,7 +111,7 @@ inline constexpr auto const is_serde_compatible_v
 #if defined(SERDE_TEST)
 using serde_size_t = uint16_t;
 #else
-using serde_size_t = int32_t;
+using serde_size_t = uint32_t;
 #endif
 
 template<typename T>
