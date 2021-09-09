@@ -64,6 +64,8 @@ public:
     /// starting at position @pos
     ss::input_stream<char>
     data_stream(size_t pos, const ss::io_priority_class&);
+    ss::input_stream<char>
+    data_stream(size_t pos_begin, size_t pos_end, const ss::io_priority_class&);
 
 private:
     ss::sstring _filename;
