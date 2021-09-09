@@ -133,10 +133,20 @@ ss::future<> base_transport::stop() {
         // We must call stop() on our output stream, because
         // seastar::output_stream may not be safely destroyed without a call to
         // close(), and this class may be destroyed after stop() is called.
-        return _out.stop().then([this] {
+        return _out.stop().then_wrapped([this](ss::future<> f) {
             // Invalidate _out here, so that do_connect can assert that
             // it isn't dropping an un-stopped output stream when it
             // assigns to _out
+            try {
+                f.get();
+            } catch (...) {
+                // Closing the output stream can throw bad pipe if
+                // it had unflushed bytes, as we already closed FD.
+                vlog(
+                  rpclog.debug,
+                  "Exception while stopping transport: {}",
+                  std::current_exception());
+            }
             _out = {};
         });
     });
