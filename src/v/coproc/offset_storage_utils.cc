@@ -79,10 +79,6 @@ ss::future<ntp_context_cache> recover_offsets(
 
 ss::future<> save_offsets(
   storage::simple_snapshot_manager& snap, const ntp_context_cache& ntp_cache) {
-    vlog(
-      coproclog.info,
-      "Saving {} coprocessor offsets to disk....",
-      ntp_cache.size());
     /// Create the metadata, and data iobuffers
     iobuf metadata = reflection::to_iobuf(static_cast<int8_t>(1));
     iresults_map irm_map;
