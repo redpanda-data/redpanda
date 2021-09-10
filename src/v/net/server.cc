@@ -223,6 +223,7 @@ ss::future<> server::accept(listener& s) {
                 std::move(ar.connection),
                 ar.remote_address,
                 _probe,
+                cfg.stream_recv_buf,
                 tls_pm);
               vlog(
                 rpc::rpclog.trace,
