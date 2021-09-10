@@ -93,15 +93,20 @@ func copyPorts(newSvc, currentSvc *corev1.Service) {
 func (r *NodePortServiceResource) obj() (k8sclient.Object, error) {
 	ports := make([]corev1.ServicePort, 0, len(r.svcPorts))
 	for _, svcPort := range r.svcPorts {
-		ports = append(ports, corev1.ServicePort{
+		port := corev1.ServicePort{
 			Name:       svcPort.Name,
 			Protocol:   corev1.ProtocolTCP,
 			Port:       int32(svcPort.Port),
 			TargetPort: intstr.FromInt(svcPort.Port),
-		})
+		}
+		if svcPort.NodePort > 0 {
+			port.NodePort = int32(svcPort.NodePort)
+		}
+		ports = append(ports, port)
 	}
 
 	objLabels := labels.ForCluster(r.pandaCluster)
+	selectorLabels := objLabels.AsAPISelector().MatchLabels
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.Key().Namespace,
@@ -126,9 +131,7 @@ func (r *NodePortServiceResource) obj() (k8sclient.Object, error) {
 			// https://blog.getambassador.io/externaltrafficpolicy-local-on-kubernetes-e66e498212f9
 			ExternalTrafficPolicy: corev1.ServiceExternalTrafficPolicyTypeLocal,
 			Ports:                 ports,
-			// The selector is purposely set to nil. Our external connectivity doesn't use
-			// kubernetes service as kafka protocol need to have access to each broker individually.
-			Selector: nil,
+			Selector:              selectorLabels,
 		},
 	}
 

@@ -799,9 +799,6 @@ func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
 				// port. The routing in the Kubernetes will forward all traffic from
 				// HostPort to the ContainerPort.
 				ContainerPort: port.TargetPort.IntVal,
-				// The host port is set to the service node port that doesn't have
-				// any endpoints.
-				HostPort: port.NodePort,
 			})
 		}
 		return ports

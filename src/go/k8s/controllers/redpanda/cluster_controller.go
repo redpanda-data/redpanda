@@ -102,25 +102,29 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, nil
 	}
 
-	nodeports := []resources.NamedServicePort{}
 	internalListener := redpandaCluster.InternalListener()
 	externalListener := redpandaCluster.ExternalListener()
 	adminAPIInternal := redpandaCluster.AdminAPIInternal()
 	adminAPIExternal := redpandaCluster.AdminAPIExternal()
 	proxyAPIInternal := redpandaCluster.PandaproxyAPIInternal()
 	proxyAPIExternal := redpandaCluster.PandaproxyAPIExternal()
+	// bootstrap service
+	nodeports := []resources.NamedServicePort{}
 	if externalListener != nil {
-		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.ExternalListenerName, Port: internalListener.Port + 1})
+		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.ExternalListenerName, NodePort: externalListener.External.BaseNodePort, Port: internalListener.Port + 1})
 	}
 	if adminAPIExternal != nil {
-		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.AdminPortExternalName, Port: adminAPIInternal.Port + 1})
+		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.AdminPortExternalName, NodePort: adminAPIExternal.External.BaseNodePort, Port: adminAPIInternal.Port + 1})
 	}
 	if proxyAPIExternal != nil {
-		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.PandaproxyPortExternalName, Port: proxyAPIInternal.Port + 1})
+		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.PandaproxyPortExternalName, NodePort: proxyAPIExternal.External.BaseNodePort, Port: proxyAPIInternal.Port + 1})
 	}
 	if redpandaCluster.IsSchemaRegistryExternallyAvailable() {
 		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.SchemaRegistryPortName, Port: redpandaCluster.Spec.Configuration.SchemaRegistry.Port})
 	}
+
+	bootstrapNodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, nodeports, log)
+
 	headlessPorts := []resources.NamedServicePort{
 		{Name: resources.AdminPortName, Port: adminAPIInternal.Port},
 		{Name: resources.InternalListenerName, Port: internalListener.Port},
@@ -130,12 +134,8 @@ func (r *ClusterReconciler) Reconcile(
 	}
 
 	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, headlessPorts, log)
-	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, nodeports, log)
 
 	clusterPorts := []resources.NamedServicePort{}
-	if proxyAPIExternal != nil && proxyAPIInternal != nil {
-		clusterPorts = append(clusterPorts, resources.NamedServicePort{Name: resources.PandaproxyPortExternalName, Port: proxyAPIInternal.Port + 1})
-	}
 	if redpandaCluster.Spec.Configuration.SchemaRegistry != nil {
 		port := redpandaCluster.Spec.Configuration.SchemaRegistry.Port
 		clusterPorts = append(clusterPorts, resources.NamedServicePort{Name: resources.SchemaRegistryPortName, Port: port})
@@ -173,7 +173,7 @@ func (r *ClusterReconciler) Reconcile(
 		r.Scheme,
 		headlessSvc.HeadlessServiceFQDN(r.clusterDomain),
 		headlessSvc.Key().Name,
-		nodeportSvc.Key(),
+		bootstrapNodeportSvc.Key(),
 		pki.NodeCert(),
 		pki.OperatorClientCert(),
 		pki.AdminCert(),
@@ -188,7 +188,7 @@ func (r *ClusterReconciler) Reconcile(
 	toApply := []resources.Reconciler{
 		headlessSvc,
 		clusterSvc,
-		nodeportSvc,
+		bootstrapNodeportSvc,
 		ingress,
 		proxySu,
 		schemaRegistrySu,
@@ -247,7 +247,7 @@ func (r *ClusterReconciler) Reconcile(
 		headlessSvc.HeadlessServiceFQDN(r.clusterDomain),
 		clusterSvc.ServiceFQDN(r.clusterDomain),
 		schemaRegistryPort,
-		nodeportSvc.Key(),
+		bootstrapNodeportSvc.Key(),
 	)
 	if err != nil {
 		log.Error(err, "Unable to report status")

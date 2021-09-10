@@ -49,8 +49,9 @@ const (
 
 // NamedServicePort allows to pass name ports, e.g., to service resources
 type NamedServicePort struct {
-	Name string
-	Port int
+	Name     string
+	NodePort int
+	Port     int
 }
 
 // Resource decompose the reconciliation loop to specific kubernetes objects
@@ -81,7 +82,9 @@ func CreateIfNotExists(
 	}
 	err := c.Create(ctx, obj)
 	if err != nil && !errors.IsAlreadyExists(err) {
-		return false, fmt.Errorf("unable to create %s resource: %w", obj.GetObjectKind().GroupVersionKind().Kind, err)
+		if obj.GetObjectKind().GroupVersionKind().Kind == "Service" && !errors.IsInvalid(err) {
+			return false, fmt.Errorf("unable to create %s resource: %w", obj.GetObjectKind().GroupVersionKind().Kind, err)
+		}
 	}
 	if err == nil {
 		l.Info(fmt.Sprintf("%s %s did not exist, was created", gvk.Kind, obj.GetName()))
