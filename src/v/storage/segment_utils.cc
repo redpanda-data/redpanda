@@ -310,7 +310,7 @@ ss::future<>
 do_compact_segment_index(ss::lw_shared_ptr<segment> s, compaction_config cfg) {
     auto compacted_path = std::filesystem::path(s->reader().filename());
     compacted_path.replace_extension(".compaction_index");
-    vlog(stlog.trace, "compacting index:{}", compacted_path);
+    vlog(gclog.trace, "compacting segment compaction index:{}", compacted_path);
     return make_reader_handle(compacted_path, cfg.sanitize)
       .then([cfg, compacted_path, s](ss::file f) {
           auto reader = make_file_backed_compacted_reader(
@@ -334,33 +334,38 @@ ss::future<storage::index_state> do_copy_segment_data(
                 return reader.close().then_wrapped([](ss::future<>) {});
             });
       })
-      .then(
-        [cfg, s, &pb, h = std::move(h)](compacted_offset_list list) mutable {
-            const auto tmpname = data_segment_staging_name(s);
-            return make_segment_appender(
-                     tmpname,
-                     cfg.sanitize,
-                     segment_appender::chunks_no_buffer,
-                     cfg.iopc)
-              .then([l = std::move(list), &pb, h = std::move(h), cfg, s](
-                      segment_appender_ptr w) mutable {
-                  auto raw = w.get();
-                  auto red = copy_data_segment_reducer(std::move(l), raw);
-                  auto r = create_segment_full_reader(s, cfg, pb, std::move(h));
-                  return std::move(r)
-                    .consume(std::move(red), model::no_timeout)
-                    .finally([raw, w = std::move(w)]() mutable {
-                        return raw->close()
-                          .handle_exception([](std::exception_ptr e) {
-                              vlog(
-                                stlog.error,
-                                "Error copying index to new segment:{}",
-                                e);
-                          })
-                          .finally([w = std::move(w)] {});
-                    });
-              });
-        });
+      .then([cfg, s, &pb, h = std::move(h)](
+              compacted_offset_list list) mutable {
+          const auto tmpname = data_segment_staging_name(s);
+          return make_segment_appender(
+                   tmpname,
+                   cfg.sanitize,
+                   segment_appender::chunks_no_buffer,
+                   cfg.iopc)
+            .then([l = std::move(list), &pb, h = std::move(h), cfg, s, tmpname](
+                    segment_appender_ptr w) mutable {
+                auto raw = w.get();
+                auto red = copy_data_segment_reducer(std::move(l), raw);
+                auto r = create_segment_full_reader(s, cfg, pb, std::move(h));
+                vlog(
+                  gclog.trace,
+                  "copying compacted segment data from {} to {}",
+                  s->reader().filename(),
+                  tmpname);
+                return std::move(r)
+                  .consume(std::move(red), model::no_timeout)
+                  .finally([raw, w = std::move(w)]() mutable {
+                      return raw->close()
+                        .handle_exception([](std::exception_ptr e) {
+                            vlog(
+                              gclog.error,
+                              "Error copying index to new segment:{}",
+                              e);
+                        })
+                        .finally([w = std::move(w)] {});
+                  });
+            });
+      });
 }
 
 model::record_batch_reader create_segment_full_reader(
@@ -391,6 +396,11 @@ ss::future<> do_swap_data_file_handles(
       .close()
       .then([compacted, s] {
           ss::sstring old_name = compacted.string();
+          vlog(
+            gclog.trace,
+            "swapping compacted segment temp file {} with the segment {}",
+            old_name,
+            s->reader().filename());
           return ss::rename_file(old_name, s->reader().filename());
       })
       .then([s, cfg] {
@@ -426,6 +436,7 @@ ss::future<size_t> do_self_compact_segment(
   compaction_config cfg,
   storage::probe& pb,
   storage::readers_cache& readers_cache) {
+    vlog(gclog.trace, "self compacting segment {}", s->reader().filename());
     return s->read_lock()
       .then([cfg, s, &pb](ss::rwlock::holder h) {
           if (s->is_closed()) {
@@ -489,7 +500,7 @@ ss::future<> rebuild_compaction_index(
             .then_wrapped([x = std::move(u)](ss::future<> fut) mutable {
                 return x->close()
                   .handle_exception([](std::exception_ptr e) {
-                      vlog(stlog.warn, "error closing compacted index:{}", e);
+                      vlog(gclog.warn, "error closing compacted index:{}", e);
                   })
                   .then([f = std::move(fut), x = std::move(x)]() mutable {
                       return std::move(f);
@@ -516,9 +527,10 @@ ss::future<compaction_result> self_compact_segment(
     return detect_compaction_index_state(idx_path, cfg)
       .then([idx_path, s, cfg, &pb, &readers_cache](
               compacted_index::recovery_state state) mutable {
+          vlog(gclog.trace, "segment {} compaction state: {}", idx_path, state);
           switch (state) {
           case compacted_index::recovery_state::recovered: {
-              vlog(stlog.debug, "detected {} is already compacted", idx_path);
+              vlog(gclog.debug, "detected {} is already compacted", idx_path);
               return ss::make_ready_future<compaction_result>(s->size_bytes());
           }
           case compacted_index::recovery_state::nonrecovered:
@@ -530,7 +542,7 @@ ss::future<compaction_result> self_compact_segment(
           case compacted_index::recovery_state::missing:
               [[fallthrough]];
           case compacted_index::recovery_state::needsrebuild: {
-              vlog(stlog.info, "Rebuilding index file... ({})", idx_path);
+              vlog(gclog.info, "Rebuilding index file... ({})", idx_path);
               pb.corrupted_compaction_index();
               return s->read_lock()
                 .then([s, cfg, &pb, idx_path](ss::rwlock::holder h) {
@@ -541,7 +553,7 @@ ss::future<compaction_result> self_compact_segment(
                 })
                 .then([s, cfg, &pb, idx_path, &readers_cache] {
                     vlog(
-                      stlog.info,
+                      gclog.info,
                       "rebuilt index: {}, attempting compaction again",
                       idx_path);
                     return self_compact_segment(s, cfg, pb, readers_cache);
@@ -664,9 +676,8 @@ ss::future<> rewrite_concatenated_indicies(
                          readers.end(),
                          [&reducer](compacted_index_reader& rdr) {
                              vlog(
-                               stlog.trace,
-                               "concatenating index: "
-                               "{}",
+                               gclog.trace,
+                               "concatenating index: {}",
                                rdr.filename());
                              return rdr.consume(reducer, model::no_timeout);
                          })
@@ -682,7 +693,7 @@ ss::future<> do_write_concatenated_compacted_index(
     return make_indices_readers(segments, cfg.iopc, cfg.sanitize)
       .then([cfg, target_path = std::move(target_path)](
               std::vector<compacted_index_reader> readers) mutable {
-          vlog(stlog.debug, "concatenating {} indicies", readers.size());
+          vlog(gclog.debug, "concatenating {} indicies", readers.size());
           return ss::do_with(
             std::move(readers),
             [cfg, target_path = std::move(target_path)](
@@ -696,7 +707,7 @@ ss::future<> do_write_concatenated_compacted_index(
                   .then([] { return true; })
                   .handle_exception([](const std::exception_ptr& e) {
                       vlog(
-                        stlog.info,
+                        gclog.info,
                         "compacted index is corrupted, skipping concatenation "
                         "- {}",
                         e);

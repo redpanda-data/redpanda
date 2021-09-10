@@ -11,4 +11,5 @@
 
 namespace storage {
 ss::logger stlog("storage");
+ss::logger gclog("storage-gc");
 } // namespace storage

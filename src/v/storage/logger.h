@@ -17,4 +17,5 @@
 
 namespace storage {
 extern ss::logger stlog;
+extern ss::logger gclog;
 } // namespace storage
