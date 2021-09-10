@@ -840,6 +840,13 @@ configuration::configuration()
       {.example = "65536"},
       std::nullopt,
       {.min = 32_KiB, .align = 4_KiB})
+  , kafka_rpc_server_stream_recv_buf(
+      *this,
+      "kafka_rpc_server_stream_recv_buf",
+      "Userspace receive buffer max size in bytes",
+      {.example = "65536", .visibility = visibility::tunable},
+      std::nullopt,
+      {.min = 32_KiB, .align = 4_KiB})
   , cloud_storage_enabled(
       *this,
       "cloud_storage_enabled",
