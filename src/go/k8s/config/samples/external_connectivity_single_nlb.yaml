@@ -1,0 +1,35 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: external-connectivity-single-nlb
+spec:
+  image: "vectorized/redpanda"
+  version: "latest"
+  replicas: 3
+  resources:
+    requests:
+      cpu: 1
+      memory: 2Gi
+    limits:
+      cpu: 1
+      memory: 2Gi
+  configuration:
+    rpcServer:
+      port: 33145
+    kafkaApi:
+     - port: 9092
+     - external:
+         enabled: true
+         hostname: redpanda
+         subdomain: example.com
+         ordinalNodePorts: true
+         baseNodePort: 32000
+    pandaproxyApi:
+     - port: 8082
+     - external:
+         enabled: true
+         ordinalNodePorts: true
+         subdomain: example.com
+    adminApi:
+    - port: 9644
+    developerMode: true
