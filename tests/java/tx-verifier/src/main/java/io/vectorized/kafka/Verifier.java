@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.Map;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.errors.ProducerFencedException;
+import java.util.concurrent.ExecutionException;
 
 class Verifier {
   public static interface StringAction {
@@ -46,10 +47,20 @@ class Verifier {
         action.run(connection);
         return;
       } catch (KafkaException e) {
-        if (retries == 0) {
-          throw e;
+        if (retries > 0) {
+          Thread.sleep(Duration.ofSeconds(1).toMillis());
+          continue;
         }
-        Thread.sleep(Duration.ofSeconds(1).toMillis());
+        throw e;
+      } catch (ExecutionException e) {
+        var cause = e.getCause();
+        if (cause != null && cause instanceof KafkaException) {
+          if (retries > 0) {
+            Thread.sleep(Duration.ofSeconds(1).toMillis());
+            continue;
+          }
+        }
+        throw e;
       }
     }
   }
