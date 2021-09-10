@@ -321,6 +321,7 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
         vlog(
           gclog.debug,
           "[{}] segment {} compaction result: {}",
+          config().ntp(),
           seg->reader().filename(),
           result);
         _compaction_ratio.update(result.compaction_ratio());
