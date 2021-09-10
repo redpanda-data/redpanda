@@ -1824,3 +1824,95 @@ FIXTURE_TEST(committed_offset_updates, storage_test_fixture) {
 
     ss::when_all_succeed(futures.begin(), futures.end()).get();
 }
+
+FIXTURE_TEST(changing_cleanup_policy_back_and_forth, storage_test_fixture) {
+    // issue: https://github.com/vectorizedio/redpanda/issues/2214
+    auto cfg = default_log_config(test_dir);
+    cfg.max_compacted_segment_size = 100_MiB;
+    cfg.stype = storage::log_config::storage_type::disk;
+    cfg.cache = storage::with_cache::no;
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp,
+                   mgr.config().base_dir,
+                   std::make_unique<storage::ntp_config::default_overrides>(
+                     overrides)))
+                 .get0();
+
+    auto disk_log = get_disk_log(log);
+
+    // add a segment, some of the record keys in batches are random and some of
+    // them are the same to generate offset gaps after compaction
+    auto add_segment = [&log, disk_log](size_t size, model::term_id term) {
+        do {
+            // 10 records per batch
+            for (int i = 0; i < 10; ++i) {
+                ss::sstring key_str;
+                bool random_key = random_generators::get_int(0, 100) < 50;
+                if (random_key) {
+                    key_str = ssx::sformat(
+                      "key_{}", random_generators::get_int<uint64_t>());
+                } else {
+                    key_str = "key";
+                }
+                iobuf key = bytes_to_iobuf(bytes(key_str.c_str()));
+                bytes val_bytes = random_generators::get_bytes(1024);
+
+                iobuf value = bytes_to_iobuf(val_bytes);
+                storage::record_batch_builder builder(
+                  model::record_batch_type::raft_data, model::offset(0));
+                builder.add_raw_kv(std::move(key), std::move(value));
+                auto batch = std::move(builder).build();
+                batch.set_term(model::term_id(0));
+                auto reader = model::make_memory_record_batch_reader(
+                  {std::move(batch)});
+                storage::log_append_config cfg{
+                  .should_fsync = storage::log_append_config::fsync::no,
+                  .io_priority = ss::default_priority_class(),
+                  .timeout = model::no_timeout,
+                };
+
+                std::move(reader)
+                  .for_each_ref(log.make_appender(cfg), cfg.timeout)
+                  .get0();
+            }
+        } while (disk_log->segments().back()->size_bytes() < size);
+    };
+    // add 2 log segments
+    add_segment(1_MiB, model::term_id(1));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    add_segment(1_MiB, model::term_id(1));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    add_segment(1_MiB, model::term_id(1));
+    log.flush().get0();
+
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 3);
+
+    storage::compaction_config c_cfg(
+      model::timestamp::min(), std::nullopt, ss::default_priority_class(), as);
+
+    // self compaction steps
+    log.compact(c_cfg).get0();
+    log.compact(c_cfg).get0();
+
+    // read all batches
+    auto first_read = read_and_validate_all_batches(log);
+
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::deletion;
+    // update cleanup policy to deletion
+    log.update_configuration(overrides).get();
+
+    // read all batches again
+    auto second_read = read_and_validate_all_batches(log);
+
+    BOOST_REQUIRE_EQUAL(first_read.size(), second_read.size());
+}
