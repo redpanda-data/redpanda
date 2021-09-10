@@ -27,11 +27,9 @@ batch_consumer::consume_result skipping_consumer::accept_batch_start(
   const model::record_batch_header& header) const {
     // check for holes in the offset range on disk
     // skip check for compacted logs
-    if (unlikely(
-          !_reader._seg.is_compacted_segment() && _expected_next_batch() >= 0
-          && header.base_offset != _expected_next_batch)) {
+    if (unlikely(header.base_offset < _expected_next_batch)) {
         throw std::runtime_error(fmt::format(
-          "hole encountered reading from disk log: "
+          "incorrect offset encountered reading from disk log: "
           "expected batch offset {} (actual {})",
           _expected_next_batch,
           header.base_offset()));
