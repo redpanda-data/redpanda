@@ -3,6 +3,7 @@ rp_test(
   BINARY_NAME pandaproxy_schema_registry_unit
   SOURCES
     compatibility_avro.cc
+    sanitize_avro.cc
     util.cc
     storage.cc
     store.cc
