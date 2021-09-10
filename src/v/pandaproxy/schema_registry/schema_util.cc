@@ -29,4 +29,14 @@ result<void> validate(std::string_view def, schema_type type) {
     }
 }
 
+result<schema_definition> sanitize(schema_definition def, schema_type type) {
+    switch (type) {
+    case schema_type::avro: {
+        return sanitize_avro_schema_definition(std::move(def));
+    }
+    default:
+        return invalid_schema_type(type);
+    }
+}
+
 } // namespace pandaproxy::schema_registry
