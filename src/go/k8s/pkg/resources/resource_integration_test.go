@@ -307,6 +307,7 @@ func TestEnsure_NodePortService(t *testing.T) {
 		c,
 		cluster,
 		scheme.Scheme,
+		-1,
 		[]res.NamedServicePort{
 			{Port: 123},
 		},
@@ -339,6 +340,7 @@ func TestEnsure_NodePortService(t *testing.T) {
 		c,
 		cluster,
 		scheme.Scheme,
+		-1,
 		[]res.NamedServicePort{
 			{Port: 1111},
 		},

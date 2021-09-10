@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -123,7 +124,7 @@ func (r *ClusterReconciler) Reconcile(
 		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.SchemaRegistryPortName, Port: redpandaCluster.Spec.Configuration.SchemaRegistry.Port})
 	}
 
-	bootstrapNodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, nodeports, log)
+	bootstrapNodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, -1, nodeports, log)
 
 	headlessPorts := []resources.NamedServicePort{
 		{Name: resources.AdminPortName, Port: adminAPIInternal.Port},
@@ -212,6 +213,47 @@ func (r *ClusterReconciler) Reconcile(
 		if err != nil {
 			log.Error(err, "Failed to reconcile resource")
 			return ctrl.Result{}, err
+		}
+	}
+
+	// ordinal node ports
+	var observedBootstrapNodePortSvc corev1.Service
+	bootstrapNodeportSvcReady := true
+	if err := r.Get(ctx, bootstrapNodeportSvc.Key(), &observedBootstrapNodePortSvc); err != nil {
+		bootstrapNodeportSvcReady = false
+	}
+
+	for _, port := range observedBootstrapNodePortSvc.Spec.Ports {
+		if port.NodePort == 0 {
+			bootstrapNodeportSvcReady = false
+		}
+	}
+	if bootstrapNodeportSvcReady {
+		ordinalNodeportSvc := []resources.Reconciler{}
+		externalListenerNodePort := getNodePort(&observedBootstrapNodePortSvc, resources.ExternalListenerName)
+		adminExternalListenerNodePort := getNodePort(&observedBootstrapNodePortSvc, resources.AdminPortExternalName)
+		pandaProxyExternalListenerNodePort := getNodePort(&observedBootstrapNodePortSvc, resources.PandaproxyPortExternalName)
+		for replica, replicas := int32(0), *redpandaCluster.Spec.Replicas; replica < replicas; replica++ {
+			ordinalNodeports := []resources.NamedServicePort{}
+			if externalListener != nil && externalListener.External.OrdinalNodePorts && externalListenerNodePort > 0 {
+				ordinalNodeports = append(ordinalNodeports, resources.NamedServicePort{Name: resources.ExternalListenerName, NodePort: int(externalListenerNodePort + replica + 1), Port: internalListener.Port + 1})
+			}
+			if adminAPIExternal != nil && adminAPIExternal.External.OrdinalNodePorts && adminExternalListenerNodePort > 0 {
+				ordinalNodeports = append(ordinalNodeports, resources.NamedServicePort{Name: resources.AdminPortExternalName, NodePort: int(adminExternalListenerNodePort + replica + 1), Port: adminAPIInternal.Port + 1})
+			}
+			if proxyAPIExternal != nil && proxyAPIExternal.External.OrdinalNodePorts && pandaProxyExternalListenerNodePort > 0 {
+				ordinalNodeports = append(ordinalNodeports, resources.NamedServicePort{Name: resources.PandaproxyPortExternalName, NodePort: int(pandaProxyExternalListenerNodePort + replica + 1), Port: proxyAPIInternal.Port + 1})
+			}
+			if len(ordinalNodeports) > 0 {
+				ordinalNodeportSvc = append(ordinalNodeportSvc, resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, replica, ordinalNodeports, log))
+			}
+		}
+
+		for _, res := range ordinalNodeportSvc {
+			if err := res.Ensure(ctx); err != nil {
+				log.Error(err, "Failed to reconcile resource")
+				return ctrl.Result{}, err
+			}
 		}
 	}
 
@@ -421,6 +463,11 @@ func (r *ClusterReconciler) createExternalNodesList(
 		if externalKafkaListener != nil && externalKafkaListener.External.Hostname != "" {
 			hostName = externalKafkaListener.External.Hostname
 		}
+		externalPort := getNodePort(&nodePortSvc, resources.ExternalListenerName)
+		if externalKafkaListener != nil && externalKafkaListener.External.OrdinalNodePorts {
+			brokerNumber, _ := strconv.Atoi(pods[i].Name[prefixLen:])
+			externalPort += int32(brokerNumber + 1)
+		}
 
 		if externalKafkaListener != nil && needExternalIP(externalKafkaListener.External) ||
 			externalAdminListener != nil && needExternalIP(externalAdminListener.External) ||
@@ -432,13 +479,13 @@ func (r *ClusterReconciler) createExternalNodesList(
 		}
 
 		if externalKafkaListener != nil && len(externalKafkaListener.External.Subdomain) > 0 {
-			address := subdomainAddress(hostName, externalKafkaListener.External.Subdomain, getNodePort(&nodePortSvc, resources.ExternalListenerName))
+			address := subdomainAddress(hostName, externalKafkaListener.External.Subdomain, externalPort)
 			result.External = append(result.External, address)
 		} else if externalKafkaListener != nil {
 			result.External = append(result.External,
 				fmt.Sprintf("%s:%d",
 					getExternalIP(&node),
-					getNodePort(&nodePortSvc, resources.ExternalListenerName),
+					externalPort,
 				))
 		}
 
@@ -446,14 +493,19 @@ func (r *ClusterReconciler) createExternalNodesList(
 		if externalAdminListener != nil && externalAdminListener.External.Hostname != "" {
 			hostName = externalAdminListener.External.Hostname
 		}
+		externalPort = getNodePort(&nodePortSvc, resources.AdminPortExternalName)
+		if externalAdminListener != nil && externalAdminListener.External.OrdinalNodePorts {
+			brokerNumber, _ := strconv.Atoi(pods[i].Name[prefixLen:])
+			externalPort += int32(brokerNumber + 1)
+		}
 		if externalAdminListener != nil && len(externalKafkaListener.External.Subdomain) > 0 {
-			address := subdomainAddress(hostName, externalAdminListener.External.Subdomain, getNodePort(&nodePortSvc, resources.AdminPortExternalName))
+			address := subdomainAddress(hostName, externalAdminListener.External.Subdomain, externalPort)
 			result.ExternalAdmin = append(result.ExternalAdmin, address)
 		} else if externalAdminListener != nil {
 			result.ExternalAdmin = append(result.ExternalAdmin,
 				fmt.Sprintf("%s:%d",
 					getExternalIP(&node),
-					getNodePort(&nodePortSvc, resources.AdminPortExternalName),
+					externalPort,
 				))
 		}
 
@@ -461,14 +513,19 @@ func (r *ClusterReconciler) createExternalNodesList(
 		if externalProxyListener != nil && externalProxyListener.External.Hostname != "" {
 			hostName = externalProxyListener.External.Hostname
 		}
+		externalPort = getNodePort(&nodePortSvc, resources.PandaproxyPortExternalName)
+		if externalProxyListener != nil && externalProxyListener.External.OrdinalNodePorts {
+			brokerNumber, _ := strconv.Atoi(pods[i].Name[prefixLen:])
+			externalPort += int32(brokerNumber + 1)
+		}
 		if externalProxyListener != nil && len(externalKafkaListener.External.Subdomain) > 0 {
-			address := subdomainAddress(hostName, externalProxyListener.External.Subdomain, getNodePort(&nodePortSvc, resources.PandaproxyPortExternalName))
+			address := subdomainAddress(hostName, externalProxyListener.External.Subdomain, externalPort)
 			result.ExternalPandaproxy = append(result.ExternalPandaproxy, address)
 		} else if externalProxyListener != nil {
 			result.ExternalPandaproxy = append(result.ExternalPandaproxy,
 				fmt.Sprintf("%s:%d",
 					getExternalIP(&node),
-					getNodePort(&nodePortSvc, resources.PandaproxyPortExternalName),
+					externalPort,
 				))
 		}
 

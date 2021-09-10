@@ -42,7 +42,9 @@ const (
 	hostPortEnvVar                      = "HOST_PORT"
 	proxyHostPortEnvVar                 = "PROXY_HOST_PORT"
 	advertisedHostnameEnvVar            = "ADVERTISED_HOSTNAME"
+	ordinalNodePortsEnvVar              = "ORDINAL_NODE_PORTS"
 	advertisedProxyHostnameEnvVar       = "ADVERTISED_PROXY_HOSTNAME"
+	proxyOrdinalNodePortsEnvVar         = "PROXY_ORDINAL_NODE_PORTS"
 )
 
 type brokerID int
@@ -59,7 +61,9 @@ type configuratorConfig struct {
 	hostPort                int
 	proxyHostPort           int
 	advertisedHostname      string
+	ordinalNodePorts        bool
 	advertisedProxyHostname string
+	proxyOrdinalNodePorts   bool
 }
 
 func (c *configuratorConfig) String() string {
@@ -75,7 +79,9 @@ func (c *configuratorConfig) String() string {
 		"hostPort: %d\n"+
 		"proxyHostPort: %d\n"+
 		"advertisedHostname: %s\n"+
-		"advertisedProxyHostname: %s\n",
+		"ordinalNodePorts: %t\n"+
+		"advertisedProxyHostname: %s\n"+
+		"proxyOrdinalNodePorts: %t\n",
 		c.hostName,
 		c.svcFQDN,
 		c.configSourceDir,
@@ -87,7 +93,9 @@ func (c *configuratorConfig) String() string {
 		c.hostPort,
 		c.proxyHostPort,
 		c.advertisedHostname,
+		c.ordinalNodePorts,
 		c.advertisedProxyHostname,
+		c.proxyOrdinalNodePorts,
 	)
 }
 
@@ -211,6 +219,11 @@ func registerAdvertisedKafkaAPI(
 		return nil
 	}
 
+	advertisedPort := c.hostPort
+	if c.ordinalNodePorts {
+		advertisedPort += int(index) + 1
+	}
+
 	if len(c.subdomain) > 0 {
 		address := fmt.Sprintf("%d.%s", index, c.subdomain)
 		if c.advertisedHostname != "" {
@@ -219,7 +232,7 @@ func registerAdvertisedKafkaAPI(
 		cfg.Redpanda.AdvertisedKafkaApi = append(cfg.Redpanda.AdvertisedKafkaApi, config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
 				Address: address,
-				Port:    c.hostPort,
+				Port:    advertisedPort,
 			},
 			Name: "kafka-external",
 		})
@@ -234,7 +247,7 @@ func registerAdvertisedKafkaAPI(
 	cfg.Redpanda.AdvertisedKafkaApi = append(cfg.Redpanda.AdvertisedKafkaApi, config.NamedSocketAddress{
 		SocketAddress: config.SocketAddress{
 			Address: getExternalIP(node),
-			Port:    c.hostPort,
+			Port:    advertisedPort,
 		},
 		Name: "kafka-external",
 	})
@@ -259,6 +272,11 @@ func registerAdvertisedPandaproxyAPI(
 		return nil
 	}
 
+	advertisedPort := c.proxyHostPort
+	if c.ordinalNodePorts {
+		advertisedPort += int(index) + 1
+	}
+
 	// Pandaproxy uses the Kafka API subdomain.
 	if len(c.subdomain) > 0 {
 		address := fmt.Sprintf("%d.%s", index, c.subdomain)
@@ -268,7 +286,7 @@ func registerAdvertisedPandaproxyAPI(
 		cfg.Pandaproxy.AdvertisedPandaproxyAPI = append(cfg.Pandaproxy.AdvertisedPandaproxyAPI, config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
 				Address: address,
-				Port:    c.proxyHostPort,
+				Port:    advertisedPort,
 			},
 			Name: "proxy-external",
 		})
@@ -283,7 +301,7 @@ func registerAdvertisedPandaproxyAPI(
 	cfg.Pandaproxy.AdvertisedPandaproxyAPI = append(cfg.Pandaproxy.AdvertisedPandaproxyAPI, config.NamedSocketAddress{
 		SocketAddress: config.SocketAddress{
 			Address: getExternalIP(node),
-			Port:    c.proxyHostPort,
+			Port:    advertisedPort,
 		},
 		Name: "proxy-external",
 	})
@@ -308,6 +326,8 @@ func checkEnvVars() (configuratorConfig, error) {
 	var extCon string
 	var rpcPort string
 	var hostPort string
+	var onp string
+	var ponp string
 
 	c := configuratorConfig{}
 
@@ -356,8 +376,16 @@ func checkEnvVars() (configuratorConfig, error) {
 			name:  advertisedHostnameEnvVar,
 		},
 		{
+			value: &onp,
+			name:  ordinalNodePortsEnvVar,
+		},
+		{
 			value: &c.advertisedProxyHostname,
 			name:  advertisedProxyHostnameEnvVar,
+		},
+		{
+			value: &ponp,
+			name:  proxyOrdinalNodePortsEnvVar,
 		},
 	}
 	for _, envVar := range envVarList {
@@ -396,6 +424,16 @@ func checkEnvVars() (configuratorConfig, error) {
 		if err != nil {
 			result = multierror.Append(result, fmt.Errorf("unable to convert proxy host port from string to int: %w", err))
 		}
+	}
+
+	c.ordinalNodePorts, err = strconv.ParseBool(onp)
+	if err != nil {
+		result = multierror.Append(result, fmt.Errorf("unable to parse bool: %w", err))
+	}
+
+	c.proxyOrdinalNodePorts, err = strconv.ParseBool(ponp)
+	if err != nil {
+		result = multierror.Append(result, fmt.Errorf("unable to parse bool: %w", err))
 	}
 
 	return c, result

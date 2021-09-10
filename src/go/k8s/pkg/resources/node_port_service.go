@@ -12,6 +12,7 @@ package resources
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -33,6 +34,7 @@ type NodePortServiceResource struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
 	pandaCluster *redpandav1alpha1.Cluster
+	broker       int32
 	svcPorts     []NamedServicePort
 	logger       logr.Logger
 }
@@ -42,6 +44,7 @@ func NewNodePortService(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
+	broker int32,
 	svcPorts []NamedServicePort,
 	logger logr.Logger,
 ) *NodePortServiceResource {
@@ -49,6 +52,7 @@ func NewNodePortService(
 		client,
 		scheme,
 		pandaCluster,
+		broker,
 		svcPorts,
 		logger.WithValues("Kind", serviceKind(), "ServiceType", "NodePort"),
 	}
@@ -69,7 +73,11 @@ func (r *NodePortServiceResource) Ensure(ctx context.Context) error {
 		return err
 	}
 	var svc corev1.Service
-	err = r.Get(ctx, r.Key(), &svc)
+	name := r.Key()
+	if r.broker >= 0 {
+		name = r.brokerKey(r.broker)
+	}
+	err = r.Get(ctx, name, &svc)
 	if err != nil {
 		return fmt.Errorf("error while fetching Service resource: %w", err)
 	}
@@ -107,10 +115,15 @@ func (r *NodePortServiceResource) obj() (k8sclient.Object, error) {
 
 	objLabels := labels.ForCluster(r.pandaCluster)
 	selectorLabels := objLabels.AsAPISelector().MatchLabels
+	name := r.Key()
+	if r.broker >= 0 {
+		name = r.brokerKey(r.broker)
+		selectorLabels["statefulset.kubernetes.io/pod-name"] = name.Name
+	}
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: r.Key().Namespace,
-			Name:      r.Key().Name,
+			Namespace: name.Namespace,
+			Name:      name.Name,
 			Labels:    objLabels,
 		},
 		TypeMeta: metav1.TypeMeta{
@@ -147,4 +160,9 @@ func (r *NodePortServiceResource) obj() (k8sclient.Object, error) {
 // For reference please visit types.NamespacedName docs in k8s.io/apimachinery
 func (r *NodePortServiceResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: r.pandaCluster.Name + "-external", Namespace: r.pandaCluster.Namespace}
+}
+
+func (r *NodePortServiceResource) brokerKey(broker int32) types.NamespacedName {
+	suffix := "-" + strconv.Itoa(int(broker))
+	return types.NamespacedName{Name: r.pandaCluster.Name + suffix, Namespace: r.pandaCluster.Namespace}
 }

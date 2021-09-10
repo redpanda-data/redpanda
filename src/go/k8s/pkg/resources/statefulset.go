@@ -236,15 +236,19 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 	externalListener := r.pandaCluster.ExternalListener()
 	externalSubdomain := ""
 	advertisedHostname := ""
+	ordinalNodePorts := false
 	if externalListener != nil {
 		advertisedHostname = externalListener.External.Hostname
 		externalSubdomain = externalListener.External.Subdomain
+		ordinalNodePorts = externalListener.External.OrdinalNodePorts
 	}
 
 	proxyAPIExternal := r.pandaCluster.PandaproxyAPIExternal()
 	advertisedProxyHostname := ""
+	proxyOrdinalNodePorts := false
 	if proxyAPIExternal != nil {
 		advertisedProxyHostname = proxyAPIExternal.External.Hostname
+		proxyOrdinalNodePorts = proxyAPIExternal.External.OrdinalNodePorts
 	}
 
 	ss := &appsv1.StatefulSet{
@@ -351,8 +355,16 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 									Value: advertisedHostname,
 								},
 								{
+									Name:  "ORDINAL_NODE_PORTS",
+									Value: strconv.FormatBool(ordinalNodePorts),
+								},
+								{
 									Name:  "ADVERTISED_PROXY_HOSTNAME",
 									Value: advertisedProxyHostname,
+								},
+								{
+									Name:  "PROXY_ORDINAL_NODE_PORTS",
+									Value: strconv.FormatBool(proxyOrdinalNodePorts),
 								},
 							}, r.pandaproxyEnvVars()...),
 							SecurityContext: &corev1.SecurityContext{
