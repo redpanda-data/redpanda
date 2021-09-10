@@ -41,21 +41,25 @@ const (
 	externalConnectivitySubDomainEnvVar = "EXTERNAL_CONNECTIVITY_SUBDOMAIN"
 	hostPortEnvVar                      = "HOST_PORT"
 	proxyHostPortEnvVar                 = "PROXY_HOST_PORT"
+	advertisedHostnameEnvVar            = "ADVERTISED_HOSTNAME"
+	advertisedProxyHostnameEnvVar       = "ADVERTISED_PROXY_HOSTNAME"
 )
 
 type brokerID int
 
 type configuratorConfig struct {
-	hostName             string
-	svcFQDN              string
-	configSourceDir      string
-	configDestination    string
-	nodeName             string
-	subdomain            string
-	externalConnectivity bool
-	redpandaRPCPort      int
-	hostPort             int
-	proxyHostPort        int
+	hostName                string
+	svcFQDN                 string
+	configSourceDir         string
+	configDestination       string
+	nodeName                string
+	subdomain               string
+	externalConnectivity    bool
+	redpandaRPCPort         int
+	hostPort                int
+	proxyHostPort           int
+	advertisedHostname      string
+	advertisedProxyHostname string
 }
 
 func (c *configuratorConfig) String() string {
@@ -69,7 +73,9 @@ func (c *configuratorConfig) String() string {
 		"externalConnectivitySubdomain: %s\n"+
 		"redpandaRPCPort: %d\n"+
 		"hostPort: %d\n"+
-		"proxyHostPort: %d\n",
+		"proxyHostPort: %d\n"+
+		"advertisedHostname: %s\n"+
+		"advertisedProxyHostname: %s\n",
 		c.hostName,
 		c.svcFQDN,
 		c.configSourceDir,
@@ -79,7 +85,10 @@ func (c *configuratorConfig) String() string {
 		c.subdomain,
 		c.redpandaRPCPort,
 		c.hostPort,
-		c.proxyHostPort)
+		c.proxyHostPort,
+		c.advertisedHostname,
+		c.advertisedProxyHostname,
+	)
 }
 
 var errorMissingEnvironmentVariable = errors.New("missing environment variable")
@@ -203,9 +212,13 @@ func registerAdvertisedKafkaAPI(
 	}
 
 	if len(c.subdomain) > 0 {
+		address := fmt.Sprintf("%d.%s", index, c.subdomain)
+		if c.advertisedHostname != "" {
+			address = fmt.Sprintf("%s.%s", c.advertisedHostname, c.subdomain)
+		}
 		cfg.Redpanda.AdvertisedKafkaApi = append(cfg.Redpanda.AdvertisedKafkaApi, config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
-				Address: fmt.Sprintf("%d.%s", index, c.subdomain),
+				Address: address,
 				Port:    c.hostPort,
 			},
 			Name: "kafka-external",
@@ -248,9 +261,13 @@ func registerAdvertisedPandaproxyAPI(
 
 	// Pandaproxy uses the Kafka API subdomain.
 	if len(c.subdomain) > 0 {
+		address := fmt.Sprintf("%d.%s", index, c.subdomain)
+		if c.advertisedProxyHostname != "" {
+			address = fmt.Sprintf("%s.%s", c.advertisedProxyHostname, c.subdomain)
+		}
 		cfg.Pandaproxy.AdvertisedPandaproxyAPI = append(cfg.Pandaproxy.AdvertisedPandaproxyAPI, config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
-				Address: fmt.Sprintf("%d.%s", index, c.subdomain),
+				Address: address,
 				Port:    c.proxyHostPort,
 			},
 			Name: "proxy-external",
@@ -333,6 +350,14 @@ func checkEnvVars() (configuratorConfig, error) {
 		{
 			value: &hostPort,
 			name:  hostPortEnvVar,
+		},
+		{
+			value: &c.advertisedHostname,
+			name:  advertisedHostnameEnvVar,
+		},
+		{
+			value: &c.advertisedProxyHostname,
+			name:  advertisedProxyHostnameEnvVar,
 		},
 	}
 	for _, envVar := range envVarList {

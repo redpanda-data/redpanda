@@ -417,7 +417,10 @@ func (r *ClusterReconciler) createExternalNodesList(
 
 	for i := range pods {
 		prefixLen := len(pods[i].GenerateName)
-		podName := pods[i].Name[prefixLen:]
+		hostName := pods[i].Name[prefixLen:]
+		if externalKafkaListener != nil && externalKafkaListener.External.Hostname != "" {
+			hostName = externalKafkaListener.External.Hostname
+		}
 
 		if externalKafkaListener != nil && needExternalIP(externalKafkaListener.External) ||
 			externalAdminListener != nil && needExternalIP(externalAdminListener.External) ||
@@ -429,7 +432,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 		}
 
 		if externalKafkaListener != nil && len(externalKafkaListener.External.Subdomain) > 0 {
-			address := subdomainAddress(podName, externalKafkaListener.External.Subdomain, getNodePort(&nodePortSvc, resources.ExternalListenerName))
+			address := subdomainAddress(hostName, externalKafkaListener.External.Subdomain, getNodePort(&nodePortSvc, resources.ExternalListenerName))
 			result.External = append(result.External, address)
 		} else if externalKafkaListener != nil {
 			result.External = append(result.External,
@@ -439,8 +442,12 @@ func (r *ClusterReconciler) createExternalNodesList(
 				))
 		}
 
-		if externalAdminListener != nil && len(externalAdminListener.External.Subdomain) > 0 {
-			address := subdomainAddress(podName, externalAdminListener.External.Subdomain, getNodePort(&nodePortSvc, resources.AdminPortExternalName))
+		hostName = pods[i].Name[prefixLen:]
+		if externalAdminListener != nil && externalAdminListener.External.Hostname != "" {
+			hostName = externalAdminListener.External.Hostname
+		}
+		if externalAdminListener != nil && len(externalKafkaListener.External.Subdomain) > 0 {
+			address := subdomainAddress(hostName, externalAdminListener.External.Subdomain, getNodePort(&nodePortSvc, resources.AdminPortExternalName))
 			result.ExternalAdmin = append(result.ExternalAdmin, address)
 		} else if externalAdminListener != nil {
 			result.ExternalAdmin = append(result.ExternalAdmin,
@@ -450,8 +457,12 @@ func (r *ClusterReconciler) createExternalNodesList(
 				))
 		}
 
-		if externalProxyListener != nil && len(externalProxyListener.External.Subdomain) > 0 {
-			address := subdomainAddress(podName, externalProxyListener.External.Subdomain, getNodePort(&nodePortSvc, resources.PandaproxyPortExternalName))
+		hostName = pods[i].Name[prefixLen:]
+		if externalProxyListener != nil && externalProxyListener.External.Hostname != "" {
+			hostName = externalProxyListener.External.Hostname
+		}
+		if externalProxyListener != nil && len(externalKafkaListener.External.Subdomain) > 0 {
+			address := subdomainAddress(hostName, externalProxyListener.External.Subdomain, getNodePort(&nodePortSvc, resources.PandaproxyPortExternalName))
 			result.ExternalPandaproxy = append(result.ExternalPandaproxy, address)
 		} else if externalProxyListener != nil {
 			result.ExternalPandaproxy = append(result.ExternalPandaproxy,
