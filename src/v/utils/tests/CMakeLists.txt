@@ -9,6 +9,7 @@ rp_test(
     base64_test.cc
     timed_mutex_test
     retry_chain_node_test.cc
+    input_stream_fanout_test.cc
   LIBRARIES v::seastar_testing_main v::utils v::bytes
   ARGS "-- -c 1"
   LABELS utils
