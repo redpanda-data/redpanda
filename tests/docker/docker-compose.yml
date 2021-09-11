@@ -32,6 +32,10 @@ services:
   n1: &node
     image: vectorized/redpanda-test-node
     privileged: true
+    ulimits:
+      nofile:
+        soft: 131072
+        hard: 131072
     depends_on: 
     - minio
     volumes:
