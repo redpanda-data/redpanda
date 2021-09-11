@@ -94,6 +94,9 @@ public:
         }
 
         if (acls.empty()) {
+            if (operation == acl_operation::idempotent_write) {
+                return true;
+            }
             return bool(_allow_empty_matches);
         }
 
