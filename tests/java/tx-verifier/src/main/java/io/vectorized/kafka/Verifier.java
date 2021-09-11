@@ -3,6 +3,7 @@ package io.vectorized.kafka;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.errors.ProducerFencedException;
 
@@ -18,38 +19,71 @@ class Verifier {
   final static String groupId = "groupId";
 
   public static void main(final String[] args) throws Exception {
-    retry(Verifier::initPasses, args[0]);
-    retry(Verifier::txPasses, args[0]);
-    retry(Verifier::txesPasses, args[0]);
-    retry(Verifier::abortPasses, args[0]);
-    retry(Verifier::commutingTxesPass, args[0]);
-    retry(Verifier::conflictingTxFails, args[0]);
-    retry(Verifier::readCommittedSeekTest, args[0]);
-    retry(Verifier::readUncommittedSeekTest, args[0]);
-    retry(Verifier::readCommittedTxSeekTest, args[0]);
-    retry(Verifier::readUncommittedTxSeekTest, args[0]);
-    retry(Verifier::fetchReadsCommittedTxsTest, args[0]);
-    retry(Verifier::fetchDoesntReadAbortedTxsTest, args[0]);
-    retry(Verifier::readCommittedSeekRespectsOngoingTx, args[0]);
-    retry(Verifier::readCommittedSeekRespectsLongHangingTx, args[0]);
-    retry(Verifier::readCommittedSeekDoesntRespectShortHangingTx, args[0]);
-    retry(Verifier::readUncommittedSeekDoesntRespectOngoingTx, args[0]);
-    retry(Verifier::setGroupStartOffsetPasses, args[0]);
-    retry(Verifier::readProcessWrite, args[0]);
+    retry("initPasses", Verifier::initPasses, args[0]);
+    retry("txPasses", Verifier::txPasses, args[0]);
+    retry("txesPasses", Verifier::txesPasses, args[0]);
+    retry("abortPasses", Verifier::abortPasses, args[0]);
+    retry("commutingTxesPass", Verifier::commutingTxesPass, args[0]);
+    retry("conflictingTxFails", Verifier::conflictingTxFails, args[0]);
+    retry("readCommittedSeekTest", Verifier::readCommittedSeekTest, args[0]);
+    retry(
+        "readUncommittedSeekTest", Verifier::readUncommittedSeekTest, args[0]);
+    retry(
+        "readCommittedTxSeekTest", Verifier::readCommittedTxSeekTest, args[0]);
+    retry(
+        "readUncommittedTxSeekTest", Verifier::readUncommittedTxSeekTest,
+        args[0]);
+    retry(
+        "fetchReadsCommittedTxsTest", Verifier::fetchReadsCommittedTxsTest,
+        args[0]);
+    retry(
+        "fetchDoesntReadAbortedTxsTest",
+        Verifier::fetchDoesntReadAbortedTxsTest, args[0]);
+    retry(
+        "readCommittedSeekRespectsOngoingTx",
+        Verifier::readCommittedSeekRespectsOngoingTx, args[0]);
+    retry(
+        "readCommittedSeekRespectsLongHangingTx",
+        Verifier::readCommittedSeekRespectsLongHangingTx, args[0]);
+    retry(
+        "readCommittedSeekDoesntRespectShortHangingTx",
+        Verifier::readCommittedSeekDoesntRespectShortHangingTx, args[0]);
+    retry(
+        "readUncommittedSeekDoesntRespectOngoingTx",
+        Verifier::readUncommittedSeekDoesntRespectOngoingTx, args[0]);
+    retry(
+        "setGroupStartOffsetPasses", Verifier::setGroupStartOffsetPasses,
+        args[0]);
+    retry("readProcessWrite", Verifier::readProcessWrite, args[0]);
   }
 
-  static void retry(StringAction action, String connection) throws Exception {
+  static void retry(String name, StringAction action, String connection)
+      throws Exception {
     var retries = 3;
     while (retries > 0) {
       retries--;
       try {
+        System.out.println(
+            "Executing " + name + " test, retries left: " + retries);
         action.run(connection);
         return;
       } catch (KafkaException e) {
-        if (retries == 0) {
-          throw e;
+        if (retries > 0) {
+          e.printStackTrace();
+          Thread.sleep(Duration.ofSeconds(1).toMillis());
+          continue;
         }
-        Thread.sleep(Duration.ofSeconds(1).toMillis());
+        throw e;
+      } catch (ExecutionException e) {
+        var cause = e.getCause();
+        if (cause != null && cause instanceof KafkaException) {
+          if (retries > 0) {
+            e.printStackTrace();
+            Thread.sleep(Duration.ofSeconds(1).toMillis());
+            continue;
+          }
+        }
+        throw e;
       }
     }
   }
