@@ -1,0 +1,37 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: ordinal-nodeports-extended
+spec:
+  image: "vectorized/redpanda"
+  version: "dev"
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 100Mi
+    limits:
+      cpu: 1
+      memory: 500Mi
+  configuration:
+    rpcServer:
+      port: 33145
+    kafkaApi:
+    - port: 9092
+    - external:
+        enabled: true
+        subdomain: "subdomain.com"
+        hostname: hostname
+        baseNodePort: 32000
+        ordinalNodePorts: true
+    pandaproxyApi:
+    - port: 8082
+    - external:
+        enabled: true
+        subdomain: "subdomain.com"
+        hostname: hostname
+        baseNodePort: 31000
+        ordinalNodePorts: true
+    adminApi:
+    - port: 9644
+    developerMode: true
