@@ -394,12 +394,12 @@ spec:
                 minimum: 0
                 type: integer
               resources:
-                description: Resources used by redpanda process running in container.
-                  Beware that there are multiple containers running in the redpanda
-                  pod and these can be enabled/disabled and configured from the `sidecars`
-                  field. These containers have separate resources settings and the
-                  amount of resources assigned to these containers will be required
-                  on the cluster on top of the resources defined here
+                description: Resources used by all redpanda containers. Beware that
+                  there are multiple containers running in the redpanda pod and these
+                  can be enabled/disabled and configured from the `sidecars` field.
+                  These containers have separate resources settings and the amount
+                  of resources assigned to these containers will be deducted from
+                  the amount assigned here.
                 properties:
                   limits:
                     additionalProperties:

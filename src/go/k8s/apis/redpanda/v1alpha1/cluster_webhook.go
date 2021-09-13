@@ -403,10 +403,11 @@ func (r *Cluster) validateRedpandaMemory() field.ErrorList {
 	var allErrs field.ErrorList
 
 	// Ensure a requested 2GB of memory per core
-	requests := r.Spec.Resources.Requests.DeepCopy()
+	requests := r.GetRedpandaResources().Requests.DeepCopy()
 	requests.Cpu().RoundUp(0)
 	requestedCores := requests.Cpu().Value()
-	if r.Spec.Resources.Requests.Memory().Value() < requestedCores*MinimumMemoryPerCore {
+	originalRequests := r.GetRedpandaResources().Requests
+	if originalRequests.Memory().Value() < requestedCores*MinimumMemoryPerCore {
 		allErrs = append(allErrs,
 			field.Invalid(
 				field.NewPath("spec").Child("resources").Child("requests").Child("memory"),

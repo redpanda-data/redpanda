@@ -622,7 +622,7 @@ func (p PandaproxyAPI) GetTLS() *TLSConfig {
 // all CRDs assigned to all enabled sidecars
 func (r *Cluster) GetRedpandaResources() corev1.ResourceRequirements {
 	assignedResources := *r.Spec.Resources.DeepCopy()
-	if r.Spec.Sidecars.RpkStatus.Enabled && r.Spec.Sidecars.RpkStatus.Resources != nil {
+	if r.Spec.Sidecars.RpkStatus != nil && r.Spec.Sidecars.RpkStatus.Enabled && r.Spec.Sidecars.RpkStatus.Resources != nil {
 		cpuLimit := assignedResources.Limits.Cpu()
 		memoryLimit := assignedResources.Limits.Memory()
 		cpuLimit.Sub(*r.Spec.Sidecars.RpkStatus.Resources.Limits.Cpu())

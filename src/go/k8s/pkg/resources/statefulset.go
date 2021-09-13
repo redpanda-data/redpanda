@@ -344,8 +344,8 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 								RunAsGroup: pointer.Int64Ptr(groupID),
 							},
 							Resources: corev1.ResourceRequirements{
-								Limits:   r.pandaCluster.Spec.Resources.Limits,
-								Requests: r.pandaCluster.Spec.Resources.Requests,
+								Limits:   r.pandaCluster.GetRedpandaResources().Limits,
+								Requests: r.pandaCluster.GetRedpandaResources().Requests,
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
@@ -371,7 +371,7 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 								r.portsConfiguration(),
 							}, prepareAdditionalArguments(
 								r.pandaCluster.Spec.Configuration.DeveloperMode,
-								r.pandaCluster.Spec.Resources.Requests)...),
+								r.pandaCluster.GetRedpandaResources().Requests)...),
 							Env: []corev1.EnvVar{
 								{
 									Name:  "REDPANDA_ENVIRONMENT",
@@ -412,8 +412,8 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 								},
 							}, r.getPorts()...),
 							Resources: corev1.ResourceRequirements{
-								Limits:   r.pandaCluster.Spec.Resources.Limits,
-								Requests: r.pandaCluster.Spec.Resources.Requests,
+								Limits:   r.pandaCluster.GetRedpandaResources().Limits,
+								Requests: r.pandaCluster.GetRedpandaResources().Requests,
 							},
 							VolumeMounts: append([]corev1.VolumeMount{
 								{

@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+// nolint:funlen // this is ok for a test
 func TestEnsure(t *testing.T) {
 	cluster := pandaCluster()
 	stsResource := stsFromCluster(cluster)
@@ -41,14 +42,14 @@ func TestEnsure(t *testing.T) {
 	replicasUpdatedSts.Spec.Replicas = &newReplicas
 
 	newResources := corev1.ResourceList{
-		corev1.ResourceCPU:    resource.MustParse("1111"),
-		corev1.ResourceMemory: resource.MustParse("2222Gi"),
+		corev1.ResourceCPU:    resource.MustParse("1111.1"),
+		corev1.ResourceMemory: resource.MustParse("2222.2Gi"),
 	}
 	resourcesUpdatedCluster := cluster.DeepCopy()
 	resourcesUpdatedCluster.Spec.Resources.Requests = newResources
 	resourcesUpdatedSts := stsFromCluster(cluster).DeepCopy()
-	resourcesUpdatedSts.Spec.Template.Spec.InitContainers[0].Resources.Requests = newResources
-	resourcesUpdatedSts.Spec.Template.Spec.Containers[0].Resources.Requests = newResources
+	resourcesUpdatedSts.Spec.Template.Spec.InitContainers[0].Resources.Requests = resourcesUpdatedCluster.GetRedpandaResources().Requests
+	resourcesUpdatedSts.Spec.Template.Spec.Containers[0].Resources.Requests = resourcesUpdatedCluster.GetRedpandaResources().Requests
 
 	noSidecarCluster := cluster.DeepCopy()
 	noSidecarCluster.Spec.Sidecars.RpkStatus = &redpandav1alpha1.Sidecar{
@@ -116,8 +117,15 @@ func TestEnsure(t *testing.T) {
 		expectedInitResources := tt.expectedObject.Spec.Template.Spec.InitContainers[0].Resources
 		expectedRedpandaResources := tt.expectedObject.Spec.Template.Spec.Containers[0].Resources
 
-		assert.Equal(t, expectedRedpandaResources, actualRedpandaResources)
-		assert.Equal(t, expectedInitResources, actualInitResources)
+		assert.True(t, expectedRedpandaResources.Limits.Cpu().Equal(*actualRedpandaResources.Limits.Cpu()), "limits rp cpu", tt.name)
+		assert.True(t, expectedRedpandaResources.Limits.Memory().Equal(*actualRedpandaResources.Limits.Memory()), "limits rp mem", tt.name)
+		assert.True(t, expectedRedpandaResources.Requests.Cpu().Equal(*actualRedpandaResources.Requests.Cpu()), "req rp cpu", tt.name)
+		assert.True(t, expectedRedpandaResources.Requests.Memory().Equal(*actualRedpandaResources.Requests.Memory()), "req rp mem", tt.name)
+
+		assert.True(t, expectedInitResources.Limits.Cpu().Equal(*actualInitResources.Limits.Cpu()), "limits init cpu", tt.name)
+		assert.True(t, expectedInitResources.Limits.Memory().Equal(*actualInitResources.Limits.Memory()), "limits init mem", tt.name)
+		assert.True(t, expectedInitResources.Requests.Cpu().Equal(*actualInitResources.Requests.Cpu()), "req rp cpu", tt.name)
+		assert.True(t, expectedInitResources.Requests.Memory().Equal(*actualInitResources.Requests.Memory()), "req rp cpu", tt.name)
 
 		if *actual.Spec.Replicas != *tt.expectedObject.Spec.Replicas {
 			t.Errorf("%s: expecting replicas %d, got replicas %d", tt.name,
@@ -150,8 +158,8 @@ func stsFromCluster(pandaCluster *redpandav1alpha1.Cluster) *v1.StatefulSet {
 						Name:  "redpanda-configurator",
 						Image: "vectorized/configurator:latest",
 						Resources: corev1.ResourceRequirements{
-							Limits:   pandaCluster.Spec.Resources.Limits,
-							Requests: pandaCluster.Spec.Resources.Requests,
+							Limits:   pandaCluster.GetRedpandaResources().Limits,
+							Requests: pandaCluster.GetRedpandaResources().Requests,
 						},
 					}},
 					Containers: []corev1.Container{
@@ -159,8 +167,8 @@ func stsFromCluster(pandaCluster *redpandav1alpha1.Cluster) *v1.StatefulSet {
 							Name:  "redpanda",
 							Image: "image:latest",
 							Resources: corev1.ResourceRequirements{
-								Limits:   pandaCluster.Spec.Resources.Limits,
-								Requests: pandaCluster.Spec.Resources.Requests,
+								Limits:   pandaCluster.GetRedpandaResources().Limits,
+								Requests: pandaCluster.GetRedpandaResources().Requests,
 							},
 						},
 					},
@@ -200,8 +208,12 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 	var replicas int32 = 1
 
 	resources := corev1.ResourceList{
-		corev1.ResourceCPU:    resource.MustParse("1"),
-		corev1.ResourceMemory: resource.MustParse("2Gi"),
+		corev1.ResourceCPU:    resource.MustParse("1.1"),
+		corev1.ResourceMemory: resource.MustParse("2.2Gi"),
+	}
+	sideCarResources := corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("0.1"),
+		corev1.ResourceMemory: resource.MustParse("0.2Gi"),
 	}
 
 	return &redpandav1alpha1.Cluster{
@@ -233,8 +245,8 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 				RpkStatus: &redpandav1alpha1.Sidecar{
 					Enabled: true,
 					Resources: &corev1.ResourceRequirements{
-						Limits:   resources,
-						Requests: resources,
+						Limits:   sideCarResources,
+						Requests: sideCarResources,
 					},
 				},
 			},

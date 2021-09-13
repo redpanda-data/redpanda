@@ -51,8 +51,8 @@ var _ = Describe("RedPandaCluster controller", func() {
 	Context("When creating RedpandaCluster", func() {
 		It("Should create Redpanda cluster with corresponding resources", func() {
 			resources := corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("1"),
-				corev1.ResourceMemory: resource.MustParse("2Gi"),
+				corev1.ResourceCPU:    resource.MustParse("1.2"),
+				corev1.ResourceMemory: resource.MustParse("3Gi"),
 			}
 
 			key := types.NamespacedName{
@@ -106,6 +106,12 @@ var _ = Describe("RedPandaCluster controller", func() {
 					Resources: corev1.ResourceRequirements{
 						Limits:   resources,
 						Requests: resources,
+					},
+					Sidecars: v1alpha1.Sidecars{
+						RpkStatus: &v1alpha1.Sidecar{
+							Enabled:   true,
+							Resources: v1alpha1.DefaultRpkStatusResources,
+						},
 					},
 				},
 			}
@@ -219,8 +225,10 @@ var _ = Describe("RedPandaCluster controller", func() {
 					validOwner(redpandaCluster, sts.OwnerReferences)
 			}, timeout, interval).Should(BeTrue())
 
-			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Requests).Should(Equal(resources))
-			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Limits).Should(Equal(resources))
+			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Requests.Cpu().Equal(redpandaCluster.GetRedpandaResources().Requests[corev1.ResourceCPU])).Should(BeTrue())
+			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Requests.Memory().Equal(redpandaCluster.GetRedpandaResources().Requests[corev1.ResourceMemory])).Should(BeTrue())
+			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Limits.Cpu().Equal(redpandaCluster.GetRedpandaResources().Limits[corev1.ResourceCPU])).Should(BeTrue())
+			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Limits.Memory().Equal(redpandaCluster.GetRedpandaResources().Limits[corev1.ResourceMemory])).Should(BeTrue())
 			Expect(sts.Spec.Template.Spec.Containers[0].Env).Should(ContainElement(corev1.EnvVar{Name: "REDPANDA_ENVIRONMENT", Value: "kubernetes"}))
 
 			By("Reporting nodes internal and external")
