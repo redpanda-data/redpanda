@@ -11,6 +11,7 @@
 
 #include "config/base_property.h"
 #include "model/metadata.h"
+#include "storage/chunk_cache.h"
 #include "units.h"
 
 #include <cstdint>
@@ -640,7 +641,8 @@ configuration::configuration()
       "append_chunk_size",
       "Size of direct write operations to disk",
       required::no,
-      16_KiB)
+      16_KiB,
+      storage::internal::chunk_cache::validate_chunk_size)
   , max_compacted_log_segment_size(
       *this,
       "max_compacted_log_segment_size",
