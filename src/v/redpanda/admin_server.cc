@@ -835,10 +835,24 @@ void admin_server::register_partition_routes() {
 
           std::vector<model::broker_shard> replicas;
           for (auto& r : doc.GetArray()) {
-              replicas.push_back(model::broker_shard{
-                .node_id = model::node_id(r["node_id"].GetInt()),
-                .shard = static_cast<uint32_t>(r["core"].GetInt()),
-              });
+              const auto node_id = model::node_id(r["node_id"].GetInt());
+              const auto shard = static_cast<uint32_t>(r["core"].GetInt());
+
+              // Validate node ID and shard - subsequent code assumes
+              // they exist and may assert if not.
+              bool is_valid = co_await _controller->get_topics_frontend()
+                                .local()
+                                .validate_shard(node_id, shard);
+              if (!is_valid) {
+                  throw ss::httpd::bad_request_exception(fmt::format(
+                    "Replica set refers to non-existent node/shard (node {} "
+                    "shard {})",
+                    node_id,
+                    shard));
+              }
+
+              replicas.push_back(
+                model::broker_shard{.node_id = node_id, .shard = shard});
           }
 
           const model::ntp ntp(std::move(ns), std::move(topic), partition);
