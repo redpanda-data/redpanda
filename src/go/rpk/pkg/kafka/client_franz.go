@@ -36,7 +36,7 @@ func NewFranzClient(fs afero.Fs, cfg *config.Config) (*kgo.Client, error) {
 		kgo.RetryTimeout(5 * time.Second),
 
 		kgo.ProduceRequestTimeout(5 * time.Second),
-		kgo.RecordTimeout(8 * time.Second),
+		kgo.RecordDeliveryTimeout(8 * time.Second),
 	}
 
 	if k.SASL != nil {

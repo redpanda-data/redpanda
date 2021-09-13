@@ -178,7 +178,9 @@ func printBrokers(controllerID int32, brokers []kmsg.MetadataResponseBroker) {
 
 func PrintTopics(topics []kmsg.MetadataResponseTopic, internal, detailed bool) {
 	sort.Slice(topics, func(i, j int) bool {
-		return topics[i].Topic < topics[j].Topic
+		// Topics is only non-nil if we requested with topic IDs,
+		// which we are not doing.
+		return *topics[i].Topic < *topics[j].Topic
 	})
 
 	if !detailed {
@@ -212,7 +214,7 @@ func PrintTopics(topics []kmsg.MetadataResponseTopic, internal, detailed bool) {
 		}
 
 		// "foo, 20 partitions, 3 replicas"
-		fmt.Fprintf(buf, "%s", topic.Topic)
+		fmt.Fprintf(buf, "%s", *topic.Topic)
 		if topic.IsInternal {
 			fmt.Fprint(buf, " (internal)")
 		}
