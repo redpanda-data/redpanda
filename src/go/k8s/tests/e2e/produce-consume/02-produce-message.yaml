@@ -22,6 +22,6 @@ spec:
               rpk topic produce test --brokers cluster-sample-0.cluster-sample.$POD_NAMESPACE.svc.cluster.local:9092
               -v -n 1 -k "test-key"
       restartPolicy: Never
-  backoffLimit: 6
+  backoffLimit: 12
   parallelism: 1
   completions: 1
