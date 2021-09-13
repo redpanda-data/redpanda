@@ -275,11 +275,23 @@ class PartitionMovementTest(EndToEndTest):
                 auto_offset_reset='earliest',
                 request_timeout_ms=5000,
                 consumer_timeout_ms=10000)
-            consumed = []
+            consumed = set()
             for msg in consumer:
-                consumed.append((msg.key, msg.value))
-            self.logger.info(f"Finished verifying records in {spec}")
-            assert set(consumed) == produced
+                consumed.add((msg.key, msg.value))
+            if consumed != produced:
+                self.logger.error(
+                    f"Validation failed for topic {spec.name}.  Produced {len(produced)}, consumed {len(consumed)}"
+                )
+                self.logger.error(
+                    f"Messages consumed but not produced: {sorted(consumed - produced)}"
+                )
+                self.logger.error(
+                    f"Messages produced but not consumed: {sorted(produced - consumed)}"
+                )
+
+                assert set(consumed) == produced
+            else:
+                self.logger.info(f"Finished verifying records in {spec}")
 
     @cluster(num_nodes=5)
     def test_dynamic(self):
