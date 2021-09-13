@@ -81,9 +81,9 @@ func checkIfExists(fs afero.Fs, path string) error {
 func GetLatestClientApiVersion() string {
 	/// Works by using npm to lookup the latest version of our library
 	timeout := 2 * time.Second
-	version := "1.0.0"
+	version := "21.8.2"
 	proc := vos.NewProc()
-	output, err := proc.RunWithSystemLdPath(timeout, "npm", "search", "'@vectorizedio/wasm-api'")
+	output, err := proc.RunWithSystemLdPath(timeout, "npm", "search", "@vectorizedio/wasm-api")
 	if err != nil {
 		log.Error(err)
 		return version
