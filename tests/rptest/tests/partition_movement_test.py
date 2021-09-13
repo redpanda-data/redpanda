@@ -127,7 +127,8 @@ class PartitionMovementTest(EndToEndTest):
         self.logger.info(
             f"new assignments for {topic}-{partition}: {assignments}")
 
-        admin.set_partition_replicas(topic, partition, assignments)
+        r = admin.set_partition_replicas(topic, partition, assignments)
+        r.raise_for_status()
 
         def status_done():
             info = admin.get_partitions(topic, partition)
@@ -185,7 +186,8 @@ class PartitionMovementTest(EndToEndTest):
         self.logger.info(
             f"new assignments for {topic}-{partition}: {assignments}")
 
-        admin.set_partition_replicas(topic, partition, assignments)
+        r = admin.set_partition_replicas(topic, partition, assignments)
+        r.raise_for_status()  # Expect success
 
         def status_done():
             info = admin.get_partitions(topic, partition)
