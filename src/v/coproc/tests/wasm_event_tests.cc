@@ -43,7 +43,8 @@ SEASTAR_THREAD_TEST_CASE(verify_make_event) {
                      .get0();
     for (auto& record_batch : batches) {
         record_batch.for_each_record([](model::record r) {
-            BOOST_CHECK_EQUAL(cp_errc::none, coproc::wasm::validate_event(r));
+            auto validate_res = coproc::wasm::validate_event(r);
+            BOOST_CHECK(validate_res.has_value());
         });
     }
 }
@@ -53,8 +54,8 @@ BOOST_AUTO_TEST_CASE(verify_make_event_failures) {
         /// Empty event
         model::record r = coproc::wasm::make_record(coproc::wasm::event{});
         BOOST_CHECK(!coproc::wasm::get_event_id(r));
-        BOOST_CHECK_EQUAL(
-          cp_errc::empty_mandatory_field, coproc::wasm::validate_event(r));
+        auto validate_res = coproc::wasm::validate_event(r);
+        BOOST_CHECK_EQUAL(cp_errc::empty_mandatory_field, validate_res.error());
     }
     {
         /// Missing 'script' field
@@ -66,8 +67,8 @@ BOOST_AUTO_TEST_CASE(verify_make_event_failures) {
         BOOST_CHECK_EQUAL(
           cp_errc::empty_mandatory_field,
           coproc::wasm::verify_event_checksum(r));
-        BOOST_CHECK_EQUAL(
-          cp_errc::empty_mandatory_field, coproc::wasm::validate_event(r));
+        auto validate_res = coproc::wasm::validate_event(r);
+        BOOST_CHECK_EQUAL(cp_errc::empty_mandatory_field, validate_res.error());
     }
     {
         /// Erroneous checksum
@@ -89,8 +90,17 @@ SEASTAR_THREAD_TEST_CASE(verify_event_reconciliation) {
       .topics = {std::make_pair<>(
         model::topic("ABC"), coproc::topic_ingestion_policy::earliest)}};
     std::vector<std::vector<coproc::wasm::event>> events{
-      {{123, deploy}, {456, deploy}, {123}, {456, deploy}},
-      {{789, deploy}, {123}}};
+      {{123, deploy},
+       {456, deploy},
+       {123},
+       {456, deploy},
+       {666, deploy, coproc::wasm::event_type::data_policy},
+       {333, deploy, coproc::wasm::event_type::data_policy}},
+      {{789, deploy},
+       {123},
+       {333, deploy, coproc::wasm::event_type::data_policy},
+       {888, deploy, coproc::wasm::event_type::data_policy},
+       {666, coproc::wasm::event_type::data_policy}}};
 
     auto rbr = make_event_record_batch_reader(std::move(events))
                  .for_each_ref(
@@ -101,14 +111,28 @@ SEASTAR_THREAD_TEST_CASE(verify_event_reconciliation) {
                      std::move(rbr), model::no_timeout)
                      .get0();
 
-    auto results = coproc::wasm::reconcile_events(
+    auto results = coproc::wasm::reconcile_events_by_type(
       std::vector<model::record_batch>(
         std::make_move_iterator(batches.begin()),
         std::make_move_iterator(batches.end())));
-    BOOST_CHECK_EQUAL(results.size(), 3);
+    BOOST_CHECK_EQUAL(results.size(), 2);
+    auto& res_async = results[coproc::wasm::event_type::async];
+    BOOST_CHECK_EQUAL(res_async.size(), 3);
     BOOST_CHECK(
-      results.find(coproc::script_id(123))->second.empty()); /// 'remove' event
-    BOOST_CHECK(results.find(coproc::script_id(123)) != results.end());
-    BOOST_CHECK(results.find(coproc::script_id(456)) != results.end());
-    BOOST_CHECK(results.find(coproc::script_id(789)) != results.end());
+      res_async.find(coproc::script_id(123))->second.header.action
+      == coproc::wasm::event_action::remove);
+    BOOST_CHECK(res_async.find(coproc::script_id(123)) != res_async.end());
+    BOOST_CHECK(res_async.find(coproc::script_id(456)) != res_async.end());
+    BOOST_CHECK(res_async.find(coproc::script_id(789)) != res_async.end());
+    BOOST_CHECK(res_async.find(coproc::script_id(333)) == res_async.end());
+
+    auto& res_data_policy = results[coproc::wasm::event_type::data_policy];
+    BOOST_CHECK_EQUAL(res_data_policy.size(), 3);
+    BOOST_CHECK(
+      res_data_policy.find(coproc::script_id(666))->second.header.action
+      == coproc::wasm::event_action::remove);
+    BOOST_CHECK(
+      res_data_policy.find(coproc::script_id(888)) != res_data_policy.end());
+    BOOST_CHECK(
+      res_data_policy.find(coproc::script_id(333)) != res_data_policy.end());
 }

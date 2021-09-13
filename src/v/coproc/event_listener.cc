@@ -45,16 +45,6 @@ kafka::client::client make_client() {
 
 namespace coproc::wasm {
 
-static wasm::event_action query_action(const iobuf& source_code) {
-    /// If this came from a remove event, the validator would
-    /// have failed if the value() field of the record wasn't
-    /// empty. Therefore checking if this iobuf is empty is a
-    /// certain way to know if the intended request was to
-    /// deploy or remove
-    return source_code.empty() ? wasm::event_action::remove
-                               : wasm::event_action::deploy;
-}
-
 ss::future<> event_listener::stop() {
     vlog(coproclog.info, "Stopping coproc::wasm::event_listener");
     _abort_source.request_abort();
@@ -62,15 +52,15 @@ ss::future<> event_listener::stop() {
 }
 
 ss::future<> event_listener::persist_actions(
-  absl::btree_map<script_id, iobuf> wsas, model::offset last_offset) {
+  absl::btree_map<script_id, parsed_event> wsas, model::offset last_offset) {
     std::vector<enable_copros_request::data> enables;
     std::vector<script_id> disables;
-    for (auto& [id, source] : wsas) {
+    for (auto& [id, event] : wsas) {
         /// Keeping the active_ids cache up to date solves the issue of issuing
         /// a bunch of remove commands for scripts that aren't deployed (this
         /// could occur during bootstrapping)
         auto found = _active_ids.find(id);
-        if (query_action(source) == event_action::remove) {
+        if (event.header.action == event_action::remove) {
             if (found != _active_ids.end()) {
                 disables.emplace_back(id);
             }
@@ -81,7 +71,7 @@ ss::future<> event_listener::persist_actions(
             /// arrived in separate batches.
             if (found == _active_ids.end()) {
                 enables.emplace_back(enable_copros_request::data{
-                  .id = id, .source_code = std::move(source)});
+                  .id = id, .source_code = std::move(event.data)});
             }
         }
     }

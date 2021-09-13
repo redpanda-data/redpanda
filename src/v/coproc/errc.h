@@ -21,7 +21,8 @@ enum class errc {
     empty_mandatory_field,
     missing_header_key,
     unexpected_action_type,
-    unexpected_value
+    unexpected_value,
+    unexpected_coproc_type
 };
 
 struct errc_category final : public std::error_category {
