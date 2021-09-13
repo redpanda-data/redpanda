@@ -272,6 +272,14 @@ auto group_configuration::quorum_match(Func&& f) const {
     if (!_old) {
         return details::quorum_match(std::forward<Func>(f), _current.voters);
     }
+    /**
+     * relay only on the old configuration if current configuration doesn't yet
+     * have any voters
+     */
+    if (_current.voters.empty()) {
+        return details::quorum_match(f, _old->voters);
+    }
+
     return std::min(
       details::quorum_match(f, _current.voters),
       details::quorum_match(f, _old->voters));
