@@ -34,6 +34,15 @@ int16_t allocation_state::available_nodes() const {
       });
 }
 
+bool allocation_state::validate_shard(
+  model::node_id node, uint32_t shard) const {
+    if (auto node_i = _nodes.find(node); node_i != _nodes.end()) {
+        return shard < node_i->second->cpus();
+    } else {
+        return false;
+    }
+}
+
 raft::group_id allocation_state::next_group_id() { return ++_highest_group; }
 
 void allocation_state::apply_update(
