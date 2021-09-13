@@ -55,7 +55,7 @@ licenses           @senior7515 @dswang
 /src/v/pandaproxy      @benpope             @nyalialui
 /src/v/platform        @lazin               @benpope
 /src/v/prometheus      @dotnwat
-/src/v/raft            @mmaslankaprv        @ztlpn          @jcsp        @vadimplh
+/src/v/raft            @mmaslankaprv        @ztlpn          @jcsp        @vadimplh        @rystsov
 /src/v/random          @dotnwat
 /src/v/redpanda        @dotnwat             @mmaslankaprv
 /src/v/reflection      @graphcareful        @benpope
