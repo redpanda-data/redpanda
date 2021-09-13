@@ -32,12 +32,11 @@ type ClusterSpec struct {
 	// Replicas determine how big the cluster will be.
 	// +kubebuilder:validation:Minimum=0
 	Replicas *int32 `json:"replicas,omitempty"`
-	// Resources used by redpanda process running in container. Beware that
+	// Resources used by all redpanda containers. Beware that
 	// there are multiple containers running in the redpanda pod and these can
 	// be enabled/disabled and configured from the `sidecars` field. These
 	// containers have separate resources settings and the amount of resources
-	// assigned to these containers will be required on the cluster on top of
-	// the resources defined here
+	// assigned to these containers will be deducted from the amount assigned here.
 	Resources corev1.ResourceRequirements `json:"resources"`
 	// Sidecars is list of sidecars run alongside redpanda container
 	Sidecars Sidecars `json:"sidecars,omitempty"`
@@ -616,6 +615,29 @@ func (p PandaproxyAPI) GetTLS() *TLSConfig {
 		IssuerRef:         nil,
 		NodeSecretRef:     nil,
 	}
+}
+
+// GetRedpandaResources returns resources that will be used by redpanda
+// container. This takes the total amount of resources given in the crd minus
+// all CRDs assigned to all enabled sidecars
+func (r *Cluster) GetRedpandaResources() corev1.ResourceRequirements {
+	assignedResources := *r.Spec.Resources.DeepCopy()
+	if r.Spec.Sidecars.RpkStatus.Enabled && r.Spec.Sidecars.RpkStatus.Resources != nil {
+		cpuLimit := assignedResources.Limits.Cpu()
+		memoryLimit := assignedResources.Limits.Memory()
+		cpuLimit.Sub(*r.Spec.Sidecars.RpkStatus.Resources.Limits.Cpu())
+		memoryLimit.Sub(*r.Spec.Sidecars.RpkStatus.Resources.Limits.Memory())
+		assignedResources.Limits[corev1.ResourceCPU] = *cpuLimit
+		assignedResources.Limits[corev1.ResourceMemory] = *memoryLimit
+
+		cpuRequest := assignedResources.Requests.Cpu()
+		memoryRequest := assignedResources.Requests.Memory()
+		cpuRequest.Sub(*r.Spec.Sidecars.RpkStatus.Resources.Requests.Cpu())
+		memoryRequest.Sub(*r.Spec.Sidecars.RpkStatus.Resources.Requests.Memory())
+		assignedResources.Requests[corev1.ResourceCPU] = *cpuRequest
+		assignedResources.Requests[corev1.ResourceMemory] = *memoryRequest
+	}
+	return assignedResources
 }
 
 // GetExternal returns API's ExternalConnectivityConfig
