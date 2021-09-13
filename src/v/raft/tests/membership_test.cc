@@ -13,6 +13,8 @@
 #include "storage/api.h"
 #include "test_utils/async.h"
 
+#include <boost/test/tools/old/interface.hpp>
+
 FIXTURE_TEST(add_one_node_to_single_node_cluster, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 1);
     gr.enable_all();
@@ -268,4 +270,44 @@ FIXTURE_TEST(replace_whole_group, raft_test_fixture) {
         auto& new_leader = gr.get_member(*new_leader_id);
         BOOST_REQUIRE_EQUAL(new_leader.consensus->config().brokers().size(), 1);
     }
+}
+
+FIXTURE_TEST(
+  make_sure_group_is_writable_during_config_replace, raft_test_fixture) {
+    // raft group with single replica
+    raft_group gr = raft_group(raft::group_id(0), 1);
+    gr.enable_all();
+
+    info("replicating some batches");
+    auto res = replicate_random_batches(gr, 5).get();
+    gr.create_new_node(model::node_id(5));
+    auto broker = gr.get_member(model::node_id(5)).broker;
+    gr.disable_node(model::node_id(5));
+    std::vector<model::broker> new_members;
+    new_members.reserve(1);
+    new_members.push_back(broker);
+    // replace configuration with other node, the target node is stopped
+    // to keep the transient state in which the old node is the only voter in
+    // raft group
+    info("replacing configuration");
+    res = retry_with_leader(gr, 5, 5s, [new_members](raft_node& leader) {
+              return leader.consensus
+                ->replace_configuration(new_members, model::revision_id(0))
+                .then([](std::error_code ec) {
+                    info("configuration replace result: {}", ec.message());
+                    return !ec
+                           || ec
+                                == raft::errc::configuration_change_in_progress;
+                });
+          }).get();
+
+    BOOST_REQUIRE(res);
+
+    auto logs_before = gr.read_all_logs();
+    // replicate more data, partition should be writable
+    res = replicate_random_batches(gr, 5).get();
+    BOOST_REQUIRE(res);
+    auto logs_after = gr.read_all_logs();
+    BOOST_REQUIRE_GT(
+      logs_after.begin()->second.size(), logs_before.begin()->second.size());
 }
