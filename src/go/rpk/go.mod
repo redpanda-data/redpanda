@@ -18,6 +18,7 @@ require (
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.4.0
 	github.com/fatih/color v1.7.0
+	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/go-cmp v0.5.6 // indirect
 	github.com/google/uuid v1.1.1
 	github.com/hashicorp/go-multierror v1.1.0
@@ -46,8 +47,8 @@ require (
 	github.com/spf13/viper v1.7.0
 	github.com/stretchr/testify v1.7.0
 	github.com/tklauser/go-sysconf v0.1.0
-	github.com/twmb/franz-go v0.10.2
-	github.com/twmb/franz-go/pkg/kmsg v0.0.0-20210823212011-0d01f7456b4d
+	github.com/twmb/franz-go v1.0.0
+	github.com/twmb/franz-go/pkg/kmsg v0.0.0-20210913185252-b87af2dffd6a
 	github.com/twmb/tlscfg v1.2.0
 	github.com/xdg/scram v1.0.3
 	golang.org/x/crypto v0.0.0-20210817164053-32db794688a5
