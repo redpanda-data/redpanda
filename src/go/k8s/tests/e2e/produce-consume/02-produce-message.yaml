@@ -19,7 +19,8 @@ spec:
           args:
             - >
               echo {"test":"message"} |
-              rpk topic produce test --brokers cluster-sample-0.cluster-sample.$POD_NAMESPACE.svc.cluster.local:9092
+              rpk topic produce test
+              --brokers "cluster-sample-0.cluster-sample.$POD_NAMESPACE.svc.cluster.local:9092,cluster-sample-1.cluster-sample.$POD_NAMESPACE.svc.cluster.local:9092,cluster-sample-2.cluster-sample.$POD_NAMESPACE.svc.cluster.local:9092"
               -v -n 1 -k "test-key"
       restartPolicy: Never
   backoffLimit: 12
