@@ -11,6 +11,7 @@
 #pragma once
 #include "coproc/tests/fixtures/supervisor_test_fixture.h"
 #include "coproc/tests/utils/event_publisher.h"
+#include "kafka/client/fwd.h"
 #include "kafka/protocol/schemata/produce_response.h"
 #include "redpanda/tests/fixture.h"
 
@@ -37,6 +38,8 @@ public:
     /// destroyed and re-initialized in the middle of a test
     coproc_test_fixture();
 
+    ~coproc_test_fixture() override;
+
     /// Higher level abstraction of 'publish_events'
     ///
     /// Maps tuple to proper encoded wasm record and calls 'publish_events'
@@ -61,8 +64,7 @@ public:
     ss::future<> restart();
 
     /// \brief Write records to storage::api
-    ss::future<model::offset>
-    push(const model::ntp&, model::record_batch_reader);
+    ss::future<model::offset> push(model::ntp, model::record_batch_reader);
 
     /// \brief Read records from storage::api up until 'limit' or 'time'
     /// starting at 'offset'
@@ -76,12 +78,19 @@ public:
     coproc::wasm::event_publisher& get_publisher() { return _publisher; };
 
 protected:
+    ss::future<ss::stop_iteration> fetch_partition(
+      model::record_batch_reader::data_t&,
+      model::offset&,
+      model::topic_partition);
+
     redpanda_thread_fixture* root_fixture() {
         vassert(_root_fixture != nullptr, "Access root_fixture when null");
         return _root_fixture.get();
     }
 
 private:
+    std::unique_ptr<kafka::client::client> _client;
+
     coproc::wasm::event_publisher _publisher;
 
     std::unique_ptr<redpanda_thread_fixture> _root_fixture;

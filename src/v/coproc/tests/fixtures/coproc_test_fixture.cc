@@ -13,8 +13,8 @@
 
 #include "config/configuration.h"
 #include "coproc/logger.h"
-#include "coproc/tests/fixtures/fixture_utils.h"
-#include "kafka/server/partition_proxy.h"
+#include "coproc/tests/utils/kafka_publish_consumer.h"
+#include "kafka/client/client.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
@@ -27,12 +27,30 @@
 
 #include <chrono>
 
+namespace {
+
+std::unique_ptr<kafka::client::client> make_client() {
+    kafka::client::configuration cfg;
+    cfg.brokers.set_value(std::vector<unresolved_address>{
+      config::shard_local_cfg().kafka_api()[0].address});
+    cfg.retries.set_value(size_t(1));
+    return std::make_unique<kafka::client::client>(to_yaml(cfg));
+}
+
+} // namespace
+
 coproc_test_fixture::coproc_test_fixture() {
     ss::smp::invoke_on_all([]() {
         auto& config = config::shard_local_cfg();
         config.get("coproc_offset_flush_interval_ms").set_value(500ms);
     }).get0();
     _root_fixture = std::make_unique<redpanda_thread_fixture>();
+}
+
+coproc_test_fixture::~coproc_test_fixture() {
+    if (_client) {
+        _client->stop().get();
+    }
 }
 
 ss::future<>
@@ -70,6 +88,9 @@ ss::future<> coproc_test_fixture::setup(log_layout_map llm) {
         co_await _root_fixture->add_topic(
           model::topic_namespace(model::kafka_namespace, p.first), p.second);
     }
+    _client = make_client();
+    co_await _client->connect();
+    co_await _client->update_metadata();
 }
 
 ss::future<> coproc_test_fixture::restart() {
@@ -81,19 +102,41 @@ ss::future<> coproc_test_fixture::restart() {
     co_await _root_fixture->wait_for_controller_leadership();
 }
 
-static ss::future<std::optional<ss::shard_id>>
-wait_for_partition(const model::ntp& ntp, cluster::shard_table& shard_table) {
-    return ss::do_with(
-      std::optional<ss::shard_id>(),
-      [ntp, &shard_table](std::optional<ss::shard_id>& shard) {
-          return tests::cooperative_spin_wait_with_timeout(
-                   60s,
-                   [ntp, &shard, &shard_table] {
-                       shard = shard_table.shard_for(ntp);
-                       return shard.has_value();
-                   })
-            .then([&shard] { return shard; });
-      });
+ss::future<ss::stop_iteration> coproc_test_fixture::fetch_partition(
+  model::record_batch_reader::data_t& events,
+  model::offset& o,
+  model::topic_partition tp) {
+    auto response = co_await _client->fetch_partition(tp, o, 64_KiB, 1000ms);
+    if (
+      response.data.error_code
+      == kafka::error_code::unknown_topic_or_partition) {
+        co_await ss::sleep(50ms);
+        co_await _client->update_metadata();
+        co_return ss::stop_iteration::no;
+    }
+    if (response.data.error_code != kafka::error_code::none) {
+        vlog(
+          coproc::coproclog.info,
+          "error: {}, {}",
+          tp,
+          response.data.error_code);
+        co_return ss::stop_iteration::yes;
+    }
+    vassert(response.data.topics.size() == 1, "Unexpected partition size");
+    auto& p = response.data.topics[0];
+    vassert(p.partitions.size() == 1, "Unexpected responses size");
+    auto& pr = p.partitions[0];
+    if (pr.error_code == kafka::error_code::none) {
+        auto rbr = make_record_batch_reader<kafka::batch_reader>(
+          std::move(*pr.records));
+        auto batches = co_await consume_reader_to_memory(
+          std::move(rbr), model::no_timeout);
+        for (auto& batch : batches) {
+            events.push_back(std::move(batch));
+            o = events.back().last_offset() + model::offset(1);
+        }
+    }
+    co_return ss::stop_iteration::no;
 }
 
 ss::future<std::optional<model::record_batch_reader::data_t>>
@@ -102,70 +145,31 @@ coproc_test_fixture::drain(
   std::size_t limit,
   model::offset offset,
   model::timeout_clock::time_point timeout) {
-    auto shard_id = co_await wait_for_partition(
-      ntp, _root_fixture->app.shard_table.local());
-    if (!shard_id) {
-        vlog(
-          coproc::coproclog.error,
-          "No ntp exists, cannot drain from ntp: {}",
-          ntp);
-        co_return std::nullopt;
+    vlog(coproc::coproclog.info, "Making request to fetch from ntp: {}", ntp);
+    model::topic_partition tp{ntp.tp.topic, ntp.tp.partition};
+    model::record_batch_reader::data_t events;
+    ss::stop_iteration stop{};
+    auto start_time = model::timeout_clock::now();
+    while ((stop != ss::stop_iteration::yes) && (events.size() < limit)
+           && (start_time < timeout)) {
+        stop = co_await fetch_partition(events, offset, tp);
+        start_time = model::timeout_clock::now();
     }
-    vlog(
-      coproc::coproclog.info,
-      "searching for ntp {} on shard id {} ...with value for limit: {}",
-      ntp,
-      *shard_id,
-      limit);
-    using ret_t = std::optional<model::record_batch_reader::data_t>;
-    auto& cache = _root_fixture->app.metadata_cache;
-    co_return co_await _root_fixture->app.partition_manager.invoke_on(
-      *shard_id,
-      [this, ntp, limit, offset, timeout, &cache](
-        cluster::partition_manager& pm) -> ss::future<ret_t> {
-          auto partition_proxy = kafka::make_partition_proxy(
-            ntp, cache.local(), pm);
-          auto r = co_await do_drain(
-            offset,
-            limit,
-            timeout,
-            [partition_proxy = std::move(partition_proxy)](
-              model::offset next_offset) mutable {
-                return partition_proxy->make_reader(log_rdr_cfg(next_offset));
-            });
-          co_return ret_t(std::move(r));
-      });
+    co_return std::optional<model::record_batch_reader::data_t>(
+      std::move(events));
 }
 
-ss::future<model::offset> coproc_test_fixture::push(
-  const model::ntp& ntp, model::record_batch_reader rbr) {
-    auto shard_id = _root_fixture->app.shard_table.local().shard_for(ntp);
-    if (!shard_id) {
-        vlog(
-          coproc::coproclog.error,
-          "No ntp exists, cannot push data to log: {}",
-          ntp);
-        return ss::make_ready_future<model::offset>(model::offset(-1));
+ss::future<model::offset>
+coproc_test_fixture::push(model::ntp ntp, model::record_batch_reader rbr) {
+    vlog(coproc::coproclog.info, "About to produce to ntp: {}", ntp);
+    auto result = co_await std::move(rbr).for_each_ref(
+      kafka_publish_consumer(
+        *_client, model::topic_partition{ntp.tp.topic, ntp.tp.partition}),
+      model::no_timeout);
+    for (const auto& r : result.responses) {
+        vassert(
+          r.error_code != kafka::error_code::unknown_topic_or_partition,
+          "Input logs should already exist, use setup() before starting test");
     }
-    vlog(
-      coproc::coproclog.info,
-      "Pushing record_batch_reader to ntp: {} on shard_id: {}",
-      ntp,
-      *shard_id);
-    return _root_fixture->app.partition_manager.invoke_on(
-      *shard_id,
-      [ntp, rbr = std::move(rbr)](cluster::partition_manager& pm) mutable {
-          auto partition = pm.get(ntp);
-          return tests::cooperative_spin_wait_with_timeout(
-                   60s,
-                   [partition] { return partition && partition->is_leader(); })
-            .then([rbr = std::move(rbr), partition]() mutable {
-                return partition
-                  ->replicate(
-                    std::move(rbr),
-                    raft::replicate_options(
-                      raft::consistency_level::quorum_ack))
-                  .then([](auto r) { return r.value().last_offset; });
-            });
-      });
+    co_return result.last_offset;
 }
