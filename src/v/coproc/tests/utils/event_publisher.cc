@@ -12,6 +12,7 @@
 
 #include "coproc/logger.h"
 #include "coproc/reference_window_consumer.hpp"
+#include "coproc/tests/utils/kafka_publish_consumer.h"
 #include "coproc/tests/utils/wasm_event_generator.h"
 #include "coproc/types.h"
 #include "coproc/wasm_event.h"
@@ -57,28 +58,6 @@ private:
     /// If at least one event isn't valid the validator will stop early and the
     /// value of this var will be false
     bool _all_valid{true};
-};
-
-class publisher {
-public:
-    explicit publisher(kafka::client::client& client, model::topic_partition tp)
-      : _client(client)
-      , _publish_tp(std::move(tp)) {}
-
-    ss::future<ss::stop_iteration> operator()(model::record_batch& rb) {
-        _results.push_back(
-          co_await _client.produce_record_batch(_publish_tp, std::move(rb)));
-        co_return ss::stop_iteration::no;
-    }
-
-    std::vector<kafka::produce_response::partition> end_of_stream() {
-        return std::move(_results);
-    }
-
-private:
-    std::vector<kafka::produce_response::partition> _results;
-    kafka::client::client& _client;
-    model::topic_partition _publish_tp;
 };
 
 event_publisher::event_publisher()
@@ -129,12 +108,12 @@ event_publisher::publish_events(model::record_batch_reader reader) {
             .for_each_ref(
               coproc::reference_window_consumer(
                 coproc::wasm::batch_verifier(),
-                coproc::wasm::publisher(
+                kafka_publish_consumer(
                   _client, model::coprocessor_internal_tp)),
               model::no_timeout)
             .then([](auto tuple) {
                 vassert(std::get<0>(tuple), "crc checks failed");
-                return std::move(std::get<1>(tuple));
+                return std::move(std::get<1>(tuple)).responses;
             });
       });
 }
