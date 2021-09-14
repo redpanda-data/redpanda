@@ -181,6 +181,10 @@ void server::shutdown_input() {
 }
 
 ss::future<> server::wait_for_shutdown() {
+    if (!_as.abort_requested()) {
+        shutdown_input();
+    }
+
     return _conn_gate.close().then([this] {
         return seastar::do_for_each(
           _connections, [](connection& c) { return c.shutdown(); });
@@ -195,7 +199,6 @@ ss::future<> server::stop() {
     }
     // if shutdown_input wasn't called fallback to previous behavior i.e. stop()
     // waits for shutdown
-    shutdown_input();
     return wait_for_shutdown();
 }
 
