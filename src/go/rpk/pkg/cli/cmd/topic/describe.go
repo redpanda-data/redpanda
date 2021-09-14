@@ -101,7 +101,7 @@ partitions section. By default, the summary and configs sections are printed.
 			header("SUMMARY", summary, func() {
 				tw := out.NewTabWriter()
 				defer tw.Flush()
-				tw.PrintColumn("NAME", t.Topic)
+				tw.PrintColumn("NAME", *t.Topic)
 				if t.IsInternal {
 					tw.PrintColumn("INTERNAL", t.IsInternal)
 				}
