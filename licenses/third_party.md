@@ -77,17 +77,46 @@ please keep this up to date with every new library use.
 
 # Javascript deps _used_ in production (exclude all test dependencies)
 
+## src/js/package.json
+| software                             | license          |
+| :----------                          | :------------:   |
+| @types/mocha                         | MIT              |
+| @types/node                          | MIT              |
+| chokidar                             | MIT              |
+| fast-crc32c                          | MIT              |
+| js-yaml                              | MIT              |
+| mocha                                | MIT              |
+| prettier                             | MIT              |
+| rewire                               | MIT              |
+| ts-loader                            | MIT              |
+| ts-node                              | MIT              |
+| typescript                           | Apache-2.0       |
+| webpack                              | MIT              |
+| winston                              | MIT              |
+| xxhash                               | BSD              |
+
+## tools/ts-generator/package.json
+| software                             | license          |
+| :----------                          | :------------:   |
+| @types/node                          | MIT              |
+| fast-crc32c                          | MIT              |
+| xxhash                               | BSD              |
+
+## src/v/dashboard/package.json
 | software                             | license          |
 | :----------                          | :------------:   |
 | @types/jest                          | MIT              |
 | @types/node                          | MIT              |             
 | @types/react                         | MIT              |
 | @types/react-dom                     | MIT              |
+| bootstrap                            | MIT              |
+| node-sass                            | MIT              |
 | parse-prometheus-text-format         | Apache-2.0       |
+| plotly.js                            | MIT              |
+| react-plotly.js                      | MIT              |
 | react                                | MIT              |
 | react-charts                         | MIT              |
 | react-dom                            | MIT              |
 | react-scripts                        | MIT              |
 | typescript                           | Apache-2.0       |
 | web-vitals                           | Apache-2.0       |
-| node-sass                            | MIT              |
