@@ -222,13 +222,13 @@ Aliases:
   list, ls
 ```
 
-### topic set-config ![linux icon][linux] ![mac icon][mac]
+### topic alter-config ![linux icon][linux] ![mac icon][mac]
 
-Set the topic's config key/value pairs
+Set, delete, append to, and remove from topic config's key/value pairs
 
 ```cmd
 Usage:
-  rpk topic set-config <topic> <key> <value> [flags]
+  rpk topic alter-config <topics...> --set <key>=<value> --append <key>=<value> [flags]
 ```
 
 ## cluster ![linux icon][linux] ![mac icon][mac]

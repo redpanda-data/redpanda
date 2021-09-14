@@ -196,7 +196,7 @@ func PrintTopics(topics []kmsg.MetadataResponseTopic, internal, detailed bool) {
 			if parts > 0 {
 				replicas = len(topic.Partitions[0].Replicas)
 			}
-			tw.Print(topic.Topic, parts, replicas)
+			tw.Print(*topic.Topic, parts, replicas)
 		}
 		return
 	}
