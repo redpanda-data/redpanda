@@ -34,6 +34,16 @@ class PartitionMovementTest(EndToEndTest):
     - Add settings for scaling up tests
     - Add tests guarnateeing multiple segments
     """
+    def __init__(self, *args, **kwargs):
+        super(PartitionMovementTest, self).__init__(
+            *args,
+            extra_rp_conf={
+                # Disable leader balancer, as this test is doing its own
+                # partition movement and the balancer would interfere
+                'enable_leader_balancer': False
+            },
+            **kwargs)
+
     @staticmethod
     def _random_partition(metadata):
         topic = random.choice(metadata)
