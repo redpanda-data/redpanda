@@ -13,6 +13,7 @@
 
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/rjson_util.h"
+#include "pandaproxy/schema_registry/schema_util.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/schema_registry/util.h"
 #include "seastarx.h"
@@ -124,11 +125,7 @@ public:
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::schema: {
-            auto def = make_schema_definition<Encoding>(sv);
-            if (!def) {
-                return false;
-            }
-            result.schema = std::move(def).value();
+            result.schema = schema_definition{ss::sstring{sv}};
             _state = state::record;
             return true;
         }
@@ -186,8 +183,13 @@ public:
     bool EndObject(rapidjson::SizeType) {
         switch (_state) {
         case state::record: {
-            _state = state::empty;
-            return !result.schema().empty();
+            auto sanitized = sanitize(std::move(result.schema), result.type);
+            bool succeeded = sanitized.has_value();
+            if (succeeded) {
+                result.schema = std::move(sanitized).assume_value();
+                _state = state::empty;
+            }
+            return succeeded;
         }
         case state::reference: {
             _state = state::references;

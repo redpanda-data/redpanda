@@ -30,6 +30,9 @@ struct avro_schema_definition
 
 result<avro_schema_definition> make_avro_schema_definition(std::string_view sv);
 
+result<schema_definition>
+sanitize_avro_schema_definition(schema_definition def);
+
 bool check_compatible(
   const avro_schema_definition& reader, const avro_schema_definition& writer);
 
