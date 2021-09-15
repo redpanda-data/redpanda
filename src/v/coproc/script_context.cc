@@ -32,6 +32,40 @@
 
 namespace coproc {
 
+script_context::insert_update::insert_update(read_context r) noexcept
+  : update()
+  , rctx(std::move(r)) {}
+
+script_context::output_remove_update::output_remove_update(
+  model::ntp n) noexcept
+  : update()
+  , source(std::move(n)) {}
+
+errc script_context::insert_update::handle(
+  const model::ntp& source, routes_t& routes) {
+    auto new_source = ss::make_lw_shared<coproc::source>();
+    new_source->rctx = std::move(rctx);
+    new_source->rctx.absolute_start = model::offset{0};
+    auto [_, success] = routes.emplace(source, std::move(new_source));
+    return success ? errc::success : errc::partition_already_exists;
+}
+
+errc script_context::remove_update::handle(
+  const model::ntp& source, routes_t& routes) {
+    auto erased = routes.erase(source);
+    return erased > 0 ? errc::success : errc::partition_not_exists;
+}
+
+errc script_context::output_remove_update::handle(
+  const model::ntp& materialized, routes_t& routes) {
+    auto found = routes.find(source);
+    if (found == routes.end()) {
+        return errc::partition_not_exists;
+    }
+    auto erased = found->second->wctx.offsets.erase(materialized);
+    return erased > 0 ? errc::success : errc::partition_not_exists;
+}
+
 script_context::script_context(
   script_id id, shared_script_resources& resources, routes_t&& routes) noexcept
   : _resources(resources)
@@ -89,25 +123,21 @@ ss::future<> script_context::do_execute() {
 void script_context::notify_waiters() {
     auto updates = std::exchange(_updates, {});
     for (auto& [ntp, update] : updates) {
-        auto found = _routes.find(update.source);
-        if (found != _routes.end()) {
-            found->second->wctx.offsets.erase(ntp);
-        }
-        for (auto& p : update.ps) {
-            p.set_value();
+        errc e = update->handle(ntp, _routes);
+        for (auto& p : update->ps) {
+            p.set_value(e);
         }
     }
 }
 
-ss::future<> script_context::remove_output(
+ss::future<errc> script_context::remove_output(
   const model::ntp& source, const model::ntp& materialized) {
-    auto found = _updates.find(materialized);
-    if (found == _updates.end()) {
-        found = _updates.emplace(materialized, update{.source = source}).first;
+    auto& entry = _updates[materialized];
+    if (!entry) {
+        entry = std::make_unique<output_remove_update>(source);
     }
-    vassert(found->second.source == source, "Mismatched");
-    found->second.ps.emplace_back();
-    return found->second.ps.back().get_future();
+    entry->ps.emplace_back();
+    return entry->ps.back().get_future();
 }
 
 ss::future<ss::stop_iteration>
@@ -154,12 +184,38 @@ script_context::process_send_write(rpc::transport* t) {
     co_return ss::stop_iteration::no;
 }
 
+ss::future<errc> script_context::start_processing_ntp(
+  const model::ntp& ntp, read_context&& rctx) {
+    auto found = _routes.find(ntp);
+    if (found != _routes.end()) {
+        vassert(
+          rctx.input == found->second->rctx.input,
+          "Wanting to swap a different ctx for same input ntp");
+    }
+    auto [itr, _] = _updates.emplace(
+      ntp, std::make_unique<insert_update>(std::move(rctx)));
+    itr->second->ps.emplace_back();
+    return itr->second->ps.back().get_future();
+}
+
+ss::future<errc> script_context::stop_processing_ntp(const model::ntp& ntp) {
+    if (!_routes.contains(ntp)) {
+        return ss::make_ready_future<errc>(errc::success);
+    }
+    auto& entry = _updates[ntp];
+    if (!entry) {
+        entry = std::make_unique<remove_update>();
+    }
+    entry->ps.emplace_back();
+    return entry->ps.back().get_future();
+}
+
 ss::future<> script_context::shutdown() {
     _abort_source.request_abort();
     co_await _gate.close();
     auto updates = std::exchange(_updates, {});
     for (auto& [ntp, update] : updates) {
-        for (auto& p : update.ps) {
+        for (auto& p : update->ps) {
             p.set_exception(wait_future_stranded(
               ssx::sformat("Failed to fufill event for partition: {}", ntp)));
         }
