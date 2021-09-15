@@ -42,7 +42,8 @@ public:
 private:
     unresolved_address _engine_addr;
 
-    ss::sharded<pacemaker> _pacemaker; /// one per core
+    ss::sharded<wasm::script_database> _sdb; // one instance
+    ss::sharded<pacemaker> _pacemaker;       /// one per core
     ss::sharded<cluster::non_replicable_topics_frontend>
       _mt_frontend; /// one instance
     ss::sharded<reconciliation_backend>

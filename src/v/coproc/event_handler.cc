@@ -39,19 +39,9 @@ async_event_handler::preparation_before_process() {
               "interval");
             co_return cron_finish_status::skip_pull;
         }
-    } else if (heartbeat.value().data != _active_ids.size()) {
-        /// There is a discrepency between the number of registered coprocs
-        /// according to redpanda and according to the wasm engine.
-        /// Reconcile all state from offset 0.
-        vlog(coproclog.info, "Replaying coprocessor state...");
-        if (co_await _dispatcher.disable_all_coprocessors()) {
-            vlog(
-              coproclog.error,
-              "Failed to reset wasm_engine state, will keep retrying...");
-        } else {
-            _active_ids.clear();
-            co_return cron_finish_status::replay_topic;
-        }
+    } else if (!heartbeat.value()) {
+        vlog(coproclog.warn, "Replaying coprocessor state...");
+        co_return cron_finish_status::replay_topic;
     }
     co_return cron_finish_status::none;
 }
@@ -62,64 +52,33 @@ async_event_handler::process(absl::btree_map<script_id, parsed_event> wsas) {
     std::vector<enable_copros_request::data> enables;
     std::vector<script_id> disables;
     for (auto& [id, event] : wsas) {
-        /// Keeping the active_ids cache up to date solves the issue of
-        /// issuing a bunch of remove commands for scripts that aren't
-        /// deployed (this could occur during bootstrapping)
-        auto found = _active_ids.find(id);
         if (event.header.action == event_action::remove) {
-            if (found != _active_ids.end()) {
-                disables.emplace_back(id);
-            }
+            disables.emplace_back(id);
         } else {
-            /// ... or in the case if deploys are performed using the same
-            /// key. This would normally be resolved if the events came in
-            /// the same record batch by the reconcile events function, but
-            /// not if they arrived in separate batches.
-            if (found == _active_ids.end()) {
-                enables.emplace_back(enable_copros_request::data{
-                  .id = id, .source_code = std::move(event.data)});
-            }
+            enables.emplace_back(enable_copros_request::data{
+              .id = id, .source_code = std::move(event.data)});
         }
     }
     /// TODO: In the future, maybe it would be cleaner to have a add/remove
     /// endpoint, instead of two seperate RPC endpoints
     if (!enables.empty()) {
         enable_copros_request req{.inputs = std::move(enables)};
-        auto resp = co_await _dispatcher.enable_coprocessors(std::move(req));
-        if (resp.has_error()) {
+        auto ec = co_await _dispatcher.enable_coprocessors(std::move(req));
+        if (ec) {
             throw async_event_handler_exception(fmt_with_ctx(
               fmt::format,
               "Failed to register coprocessors with the wasm engine: {}",
-              resp.error()));
-            co_return;
-        } else {
-            for (script_id id : resp.value()) {
-                vlog(
-                  coproclog.info,
-                  "Successfully registered script with id: {}",
-                  id);
-                _active_ids.insert(id);
-            }
+              ec));
         }
     }
     if (!disables.empty()) {
         disable_copros_request req{.ids = std::move(disables)};
-        auto resp = co_await _dispatcher.disable_coprocessors(std::move(req));
-        if (resp.has_error()) {
-            /// In this case the code will follow a path that re-enters this
-            /// method with the same inputs, and the call to enable_copros
-            /// above succeeded but the call to disable_coprocessors failed,
-            /// double registrations will be avoided because the ids have
-            /// entered the \ref active_ids cache and will not be queued for
-            /// re-registration
+        auto ec = co_await _dispatcher.disable_coprocessors(std::move(req));
+        if (ec) {
             throw async_event_handler_exception(fmt_with_ctx(
               fmt::format,
-              "Failed to make disable request to the wasm engine: {}",
-              resp.error()));
-        } else {
-            for (script_id id : resp.value()) {
-                _active_ids.erase(id);
-            }
+              "Failed to deregister coprocessors with the wasm engine: {}",
+              ec));
         }
     }
 }

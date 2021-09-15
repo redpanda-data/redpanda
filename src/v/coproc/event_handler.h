@@ -77,9 +77,6 @@ public:
     process(absl::btree_map<script_id, parsed_event> wsas) override;
 
 private:
-    /// Set of known script ids to be active
-    absl::btree_set<script_id> _active_ids;
-
     ss::gate _gate;
 
     /// Used to make requests to the wasm engine

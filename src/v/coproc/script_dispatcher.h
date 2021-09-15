@@ -11,6 +11,7 @@
 #pragma once
 
 #include "coproc/pacemaker.h"
+#include "coproc/script_database.h"
 #include "coproc/supervisor.h"
 #include "coproc/types.h"
 
@@ -26,33 +27,35 @@ namespace coproc::wasm {
 /// retrival of the reply, invokes the appropriate action within the pacemaker.
 class script_dispatcher {
 public:
-    explicit script_dispatcher(ss::sharded<pacemaker>&, ss::abort_source&);
+    script_dispatcher(
+      ss::sharded<pacemaker>&,
+      ss::sharded<script_database>&,
+      ss::abort_source&) noexcept;
 
     /// Called when new coprocessors arrive on the coproc_internal_topic
     ///
     /// The wasm engine will be sent the list of coprocessors to enable
     /// Upon retrival of each successful ack, the script will be registered with
     /// the pacemaker.
-    ss::future<result<std::vector<script_id>>>
-      enable_coprocessors(enable_copros_request);
+    ss::future<std::error_code> enable_coprocessors(enable_copros_request);
 
     /// Called when removal commands arrive on the coproc_internal_topic
     ///
     /// The wasm engine will be send the list of coprocessor ids to remove from
     /// its internal map. Upon retrival of each successful ack, the script will
     /// be deregistered from the pacemaker.
-    ss::future<result<std::vector<script_id>>>
-      disable_coprocessors(disable_copros_request);
+    ss::future<std::error_code> disable_coprocessors(disable_copros_request);
 
     /// Invoke this after fatal error has occurred and its desired to clear all
     /// state from the wasm engine.
     ss::future<std::error_code> disable_all_coprocessors();
 
     /// Invoke this to query weather the wasm engine is up or not
-    ss::future<result<rpc::client_context<state_size_t>>>
-    heartbeat(int8_t connect_attempts = 3);
+    ss::future<result<bool>> heartbeat(int8_t connect_attempts = 3);
 
 private:
+    ss::future<result<rpc::client_context<state_size_t>>> do_heartbeat(int8_t);
+
     /// The following methods are introduced to sidestep an issue detected when
     /// using .map/invoke_on_all within the context of a coroutine
     ss::future<std::vector<std::vector<coproc::errc>>>
@@ -71,6 +74,11 @@ private:
     /// remove_source to add and remove coprocessors. It must do them however
     /// across all shards
     ss::sharded<pacemaker>& _pacemaker;
+
+    /// Service that contains all deployed scripts and associated metadata. Only
+    /// one shard has an instance of this service, the \ref
+    /// script_database_main_shard
+    ss::sharded<script_database>& _sdb;
 
     /// Reference to the script_listeners abort source. This class uses this
     /// abort source to know when to abort the transports retry loop in order to

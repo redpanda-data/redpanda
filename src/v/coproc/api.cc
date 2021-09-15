@@ -17,6 +17,7 @@
 #include "coproc/pacemaker.h"
 #include "coproc/partition_manager.h"
 #include "coproc/reconciliation_backend.h"
+#include "coproc/script_database.h"
 #include "coproc/script_dispatcher.h"
 
 #include <seastar/core/coroutine.hh>
@@ -56,6 +57,7 @@ ss::future<> api::start() {
     co_await _reconciliation_backend.invoke_on_all(
       &coproc::reconciliation_backend::start);
 
+    co_await _sdb.start_single();
     co_await _mt_frontend.start_single(std::ref(_rs.topics_frontend));
     co_await _pacemaker.start(_engine_addr, std::ref(_rs));
     co_await _pacemaker.invoke_on_all(&coproc::pacemaker::start);
@@ -64,7 +66,8 @@ ss::future<> api::start() {
     vassert(!_dispatcher, "nullptr expected");
     vassert(!_wasm_async_handler, "nullptr expected");
     _listener = std::make_unique<wasm::event_listener>(_as);
-    _dispatcher = std::make_unique<wasm::script_dispatcher>(_pacemaker, _as);
+    _dispatcher = std::make_unique<wasm::script_dispatcher>(
+      _pacemaker, _sdb, _as);
     _wasm_async_handler = std::make_unique<coproc::wasm::async_event_handler>(
       std::ref(*_dispatcher));
     _listener->register_handler(
@@ -77,6 +80,7 @@ ss::future<> api::stop() {
     co_await _listener->stop();
     co_await _pacemaker.stop();
     co_await _mt_frontend.stop();
+    co_await _sdb.stop();
 }
 
 } // namespace coproc
