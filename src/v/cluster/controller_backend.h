@@ -92,7 +92,7 @@ private:
     ss::future<std::error_code> finish_partition_update(
       model::ntp, const partition_assignment&, model::revision_id);
 
-    ss::future<std::error_code>
+    ss::future<>
       process_partition_properties_update(model::ntp, partition_assignment);
 
     ss::future<std::error_code> create_partition(
