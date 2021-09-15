@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "coproc/errc.h"
 #include "coproc/exception.h"
 #include "coproc/ntp_context.h"
 #include "coproc/supervisor.h"
@@ -25,10 +26,12 @@
 namespace coproc {
 
 /**
- * Thrown when there are promises queued waiting on the fiber to reach an idle
- * state, but shutdown is called before that occurs
+ * Expect this type of exception if a pending update had no changed to
+ * complete due to due to shutdown occurring first OR when there are promises
+ * queued waiting on the fiber to reach an idle state, but shutdown is called
+ * before that occurs
  */
-class wait_idle_state_future_stranded final : public exception {
+class stranded_update_exception final : public exception {
     using exception::exception;
 };
 
@@ -82,6 +85,25 @@ public:
     /// when there is no more data to read.
     ss::future<> wait_idle_state();
 
+    /**
+     * Start ingestion on the interested ntp.
+     * Useful for the cases where a partition was moved or updated.
+     *
+     * @returns Future that resolves when the is ready to be used in an
+     * an uncoming request
+     */
+    ss::future<errc>
+      start_processing_ntp(model::ntp, ss::lw_shared_ptr<ntp_context>);
+
+    /**
+     * Stop ingestion on the interested ntp.
+     * Useful for the cases where a partition is to be moved or updated.
+     *
+     * @returns Future that resolves when the ntp will no longer be used for a
+     * read or in progress request
+     */
+    ss::future<errc> stop_processing_ntp(model::ntp);
+
 private:
     ss::future<> do_execute();
 
@@ -89,11 +111,22 @@ private:
 
     void process_idle_callbacks();
 
+    void process_pending_updates();
+
     ss::future<ss::stop_iteration> process_send_write(rpc::transport*);
 
 private:
     /// Idle state promises
     std::vector<ss::promise<>> _idle;
+
+    /// State to track in-progress ntp modifications
+    struct input_update {
+        enum class modification_type { insert, remove };
+        modification_type action;
+        ss::lw_shared_ptr<ntp_context> ctx;
+        ss::promise<errc> p;
+    };
+    absl::node_hash_map<model::ntp, input_update> _updates;
 
     /// Killswitch for in-process reads
     ss::abort_source _abort_source;

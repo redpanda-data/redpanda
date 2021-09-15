@@ -75,6 +75,7 @@ ss::future<> script_context::do_execute() {
             return ss::make_ready_future<ss::stop_iteration>(
               ss::stop_iteration::yes);
         }
+        process_pending_updates();
         return _resources.transport.get_connected(model::no_timeout)
           .then([this](result<rpc::transport*> transport) {
               if (!transport) {
@@ -147,12 +148,65 @@ script_context::process_send_write(rpc::transport* t) {
     co_return ss::stop_iteration::no;
 }
 
+void script_context::process_pending_updates() {
+    /// No locks? Thats because this operates within the context of a the single
+    /// threaded fiber above.
+    for (auto& [ntp, update] : _updates) {
+        if (update.action == input_update::modification_type::insert) {
+            // TODO: Error handling
+            _ntp_ctxs.emplace(ntp, std::move(update.ctx));
+        } else {
+            _ntp_ctxs.erase(ntp);
+        }
+        update.p.set_value(errc::success);
+    }
+    _updates.clear();
+}
+
+ss::future<errc> script_context::start_processing_ntp(
+  model::ntp ntp, ss::lw_shared_ptr<ntp_context> ntp_ctx) {
+    auto found = _ntp_ctxs.find(ntp);
+    if (found != _ntp_ctxs.end()) {
+        vassert(
+          ntp_ctx == found->second,
+          "Wanting to swap a different ctx for same input ntp");
+        co_return errc::partition_input_already_exists;
+    }
+    input_update update{
+      .action = input_update::modification_type::insert, .ctx = ntp_ctx};
+    auto [itr, success] = _updates.emplace(std::move(ntp), std::move(update));
+    if (!success) {
+        co_return errc::partition_has_pending_update;
+    }
+    co_return co_await itr->second.p.get_future();
+}
+
+ss::future<errc> script_context::stop_processing_ntp(model::ntp ntp) {
+    auto found = _ntp_ctxs.find(ntp);
+    if (found == _ntp_ctxs.end()) {
+        co_return errc::success;
+    }
+    input_update update{
+      .action = input_update::modification_type::remove,
+    };
+    auto [itr, success] = _updates.emplace(std::move(ntp), std::move(update));
+    if (!success) {
+        co_return errc::partition_has_pending_update;
+    }
+    co_return co_await itr->second.p.get_future();
+}
+
 ss::future<> script_context::shutdown() {
     auto ps = std::exchange(_idle, std::vector<ss::promise<>>());
     for (auto& p : ps) {
-        p.set_exception(wait_idle_state_future_stranded(fmt::format(
+        p.set_exception(stranded_update_exception(fmt::format(
           "Idle callback futures abandoned due to shutdown, id: {}", _id)));
     }
+    for (auto& update : _updates) {
+        update.second.p.set_exception(stranded_update_exception(fmt::format(
+          "Idle update future abandonded due to shutdown, id: {}", _id)));
+    }
+    _updates.clear();
     _abort_source.request_abort();
     return _gate.close().then([this] { _ntp_ctxs.clear(); });
 }
