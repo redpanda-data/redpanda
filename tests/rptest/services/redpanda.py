@@ -155,8 +155,6 @@ class RedpandaService(Service):
             assert set(node.ns) == {"redpanda"}
             assert set(node.ns["redpanda"].topics) == {"controller", "kvstore"}
 
-        self._create_initial_topics()
-
         security_settings = dict()
         if self.sasl_enabled():
             username, password, algorithm = self.SUPERUSER_CREDENTIALS
@@ -169,8 +167,13 @@ class RedpandaService(Service):
         self._client = KafkaAdminClient(bootstrap_servers=self.brokers_list(),
                                         **security_settings)
 
-    def _create_initial_topics(self):
-        client = self._client_type(self)
+        self._create_initial_topics(security_settings)
+
+    def _create_initial_topics(self, security_settings):
+        user = security_settings.get("sasl_plain_username")
+        passwd = security_settings.get("sasl_plain_password")
+
+        client = self._client_type(self, user=user, passwd=passwd)
         for spec in self._topics:
             self.logger.debug(f"Creating initial topic {spec}")
             client.create_topic(spec)

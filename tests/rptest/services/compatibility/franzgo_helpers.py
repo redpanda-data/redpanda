@@ -58,6 +58,11 @@ class FranzGoBenchProduceHelper(FranzGoBench):
         EXAMPLE_DIR = os.path.join(TESTS_DIR, "examples/bench")
         cmd = f"bench -brokers {self._redpanda.brokers()} -topic {self._topic} -record-bytes 1000"
 
+        auth = self._extra_conf.get("enable_sasl")
+        if auth:
+            creds = self._redpanda.SUPERUSER_CREDENTIALS
+            cmd = cmd + f" -sasl-user {creds[0]} -sasl-pass {creds[1]} -sasl-method {creds[2]}"
+
         return os.path.join(EXAMPLE_DIR, cmd)
 
 
@@ -78,6 +83,11 @@ class FranzGoBenchConsumeHelper(FranzGoBench):
         group = self._extra_conf.get("group")
         if group:
             cmd = cmd + f" -group {group}"
+
+        auth = self._extra_conf.get("enable_sasl")
+        if auth:
+            creds = self._redpanda.SUPERUSER_CREDENTIALS
+            cmd = cmd + f" -sasl-user {creds[0]} -sasl-pass {creds[1]} -sasl-method {creds[2]}"
 
         return os.path.join(EXAMPLE_DIR, cmd)
 
