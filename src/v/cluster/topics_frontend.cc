@@ -632,21 +632,24 @@ allocation_request make_allocation_request(
 ss::future<topic_result> topics_frontend::do_create_partition(
   create_partititions_configuration p_cfg,
   model::timeout_clock::time_point timeout) {
-    auto tp_cfg = _topics.local().get_topic_cfg(p_cfg.tp_ns);
-    if (!tp_cfg) {
+    auto tp_meta = _topics.local().get_topic_table_metadata(p_cfg.tp_ns);
+    if (!tp_meta) {
         co_return make_error_result(p_cfg.tp_ns, errc::topic_not_exists);
     }
+    if (!tp_meta->is_topic_replicable()) {
+        co_return make_error_result(p_cfg.tp_ns, errc::topic_operation_error);
+    }
     // we only support increasing number of partitions
-    if (p_cfg.new_total_partition_count <= tp_cfg->partition_count) {
+    const auto& tp_cfg = tp_meta->get_configuration().cfg;
+    if (p_cfg.new_total_partition_count <= tp_cfg.partition_count) {
         co_return make_error_result(
           p_cfg.tp_ns, errc::topic_invalid_partitions);
     }
 
     auto units = co_await _allocator.invoke_on(
       partition_allocator::shard,
-      [p_cfg,
-       current = tp_cfg->partition_count,
-       rf = tp_cfg->replication_factor](partition_allocator& al) {
+      [p_cfg, current = tp_cfg.partition_count, rf = tp_cfg.replication_factor](
+        partition_allocator& al) {
           return al.allocate(make_allocation_request(rf, current, p_cfg));
       });
 
