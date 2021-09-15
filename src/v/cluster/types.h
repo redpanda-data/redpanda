@@ -347,6 +347,10 @@ struct incremental_topic_updates {
     property_update<std::optional<size_t>> segment_size;
     property_update<tristate<size_t>> retention_bytes;
     property_update<tristate<std::chrono::milliseconds>> retention_duration;
+
+    // Data-policy property is replicated by data_policy_frontend and handled by
+    // data_policy_manager.
+    property_update<std::optional<v8_engine::data_policy>> data_policy;
 };
 
 /**

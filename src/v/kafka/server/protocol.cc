@@ -49,6 +49,7 @@ protocol::protocol(
   ss::sharded<cluster::security_frontend>& sec_fe,
   ss::sharded<cluster::controller_api>& controller_api,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
+  ss::sharded<v8_engine::data_policy_table>& data_policy_table,
   std::optional<qdc_monitor::config> qdc_config) noexcept
   : _smp_group(smp)
   , _topics_frontend(tf)
@@ -68,7 +69,8 @@ protocol::protocol(
   , _authorizer(authorizer)
   , _security_frontend(sec_fe)
   , _controller_api(controller_api)
-  , _tx_gateway_frontend(tx_gateway_frontend) {
+  , _tx_gateway_frontend(tx_gateway_frontend)
+  , _data_policy_table(data_policy_table) {
     if (qdc_config) {
         _qdc_mon.emplace(*qdc_config);
     }

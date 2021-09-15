@@ -46,13 +46,15 @@ controller::controller(
   ss::sharded<partition_manager>& pm,
   ss::sharded<shard_table>& st,
   ss::sharded<storage::api>& storage,
-  ss::sharded<raft::group_manager>& raft_manager)
+  ss::sharded<raft::group_manager>& raft_manager,
+  ss::sharded<v8_engine::data_policy_table>& data_policy_table)
   : _connections(ccache)
   , _partition_manager(pm)
   , _shard_table(st)
   , _storage(storage)
   , _tp_updates_dispatcher(_partition_allocator, _tp_state)
   , _security_manager(_credentials, _authorizer)
+  , _data_policy_manager(data_policy_table)
   , _raft_manager(raft_manager) {}
 
 ss::future<> controller::wire_up() {
@@ -90,7 +92,6 @@ ss::future<> controller::start() {
           // validate configuration invariants to exit early
           return _members_manager.local().validate_configuration_invariants();
       })
-      .then([this] { return _data_policy_manager.start(); })
       .then([this] {
           return _stm.start_single(
             std::ref(clusterlog),
@@ -128,6 +129,7 @@ ss::future<> controller::start() {
             std::ref(_partition_allocator),
             std::ref(_partition_leaders),
             std::ref(_tp_state),
+            std::ref(_data_policy_frontend),
             std::ref(_as));
       })
       .then([this] {
@@ -260,7 +262,6 @@ ss::future<> controller::stop() {
           .then([this] { return _authorizer.stop(); })
           .then([this] { return _credentials.stop(); })
           .then([this] { return _tp_state.stop(); })
-          .then([this] { return _data_policy_manager.stop(); })
           .then([this] { return _members_manager.stop(); })
           .then([this] { return _partition_allocator.stop(); })
           .then([this] { return _partition_leaders.stop(); })

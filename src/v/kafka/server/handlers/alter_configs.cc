@@ -14,6 +14,7 @@
 #include "kafka/protocol/schemata/alter_configs_request.h"
 #include "kafka/protocol/schemata/alter_configs_response.h"
 #include "kafka/server/handlers/configs/config_utils.h"
+#include "kafka/server/handlers/details/data_policy.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
@@ -59,6 +60,15 @@ void parse_and_set_tristate(
     }
 }
 
+void check_data_policy(std::string_view property_name) {
+    if (
+      property_name == topic_property_data_policy_function_name
+      || property_name == topic_property_data_policy_script_name) {
+        throw v8_engine::data_policy_exeption(
+          "Alter config does not support data-policy");
+    }
+}
+
 checked<cluster::topic_properties_update, alter_configs_resource_response>
 create_topic_properties_update(alter_configs_resource& resource) {
     model::topic_namespace tp_ns(
@@ -85,6 +95,8 @@ create_topic_properties_update(alter_configs_resource& resource) {
       = cluster::incremental_update_operation::set;
     update.properties.retention_duration.op
       = cluster::incremental_update_operation::set;
+    update.properties.data_policy.op
+      = cluster::incremental_update_operation::none;
 
     for (auto& cfg : resource.configs) {
         try {
@@ -123,6 +135,7 @@ create_topic_properties_update(alter_configs_resource& resource) {
                   update.properties.retention_duration, cfg.value);
                 continue;
             }
+            (check_data_policy(cfg.name));
         } catch (const boost::bad_lexical_cast& e) {
             return make_error_alter_config_resource_response<
               alter_configs_resource_response>(
@@ -130,6 +143,16 @@ create_topic_properties_update(alter_configs_resource& resource) {
               error_code::invalid_config,
               fmt::format(
                 "unable to parse property {} value {}", cfg.name, cfg.value));
+        } catch (const v8_engine::data_policy_exeption& e) {
+            return make_error_alter_config_resource_response<
+              alter_configs_resource_response>(
+              resource,
+              error_code::invalid_config,
+              fmt::format(
+                "unable to parse property {}, value{}, error {}",
+                cfg.name,
+                cfg.value,
+                e.what()));
         }
 
         // Unsupported property, return error

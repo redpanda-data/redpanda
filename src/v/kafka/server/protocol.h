@@ -21,6 +21,7 @@
 #include "security/authorizer.h"
 #include "security/credential_store.h"
 #include "utils/ema.h"
+#include "v8_engine/data_policy_table.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
@@ -46,6 +47,7 @@ public:
       ss::sharded<cluster::security_frontend>&,
       ss::sharded<cluster::controller_api>&,
       ss::sharded<cluster::tx_gateway_frontend>&,
+      ss::sharded<v8_engine::data_policy_table>&,
       std::optional<qdc_monitor::config>) noexcept;
 
     ~protocol() noexcept override = default;
@@ -95,6 +97,10 @@ public:
         return _security_frontend.local();
     }
 
+    v8_engine::data_policy_table& data_policy_table() {
+        return _data_policy_table.local();
+    }
+
     void update_produce_latency(std::chrono::steady_clock::duration x) {
         if (_qdc_mon) {
             _qdc_mon->ema.update(x);
@@ -137,6 +143,7 @@ private:
     ss::sharded<cluster::security_frontend>& _security_frontend;
     ss::sharded<cluster::controller_api>& _controller_api;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
+    ss::sharded<v8_engine::data_policy_table>& _data_policy_table;
     std::optional<qdc_monitor> _qdc_mon;
     kafka::fetch_metadata_cache _fetch_metadata_cache;
 

@@ -62,9 +62,11 @@ FIXTURE_TEST(test_change_data_policy, cluster_test_fixture) {
             .get();
     BOOST_REQUIRE_EQUAL(res, cluster::errc::data_policy_not_exists);
 
-    auto n1_map = n1->controller->dp_manager().get_current_state();
+    auto dp_table = n1->data_policies.local();
 
-    BOOST_REQUIRE_EQUAL(n1_map.size(), 1);
-    BOOST_REQUIRE_EQUAL(n1_map.at(topic1).function_name(), dp1.function_name());
-    BOOST_REQUIRE_EQUAL(n1_map.at(topic1).script_name(), dp1.script_name());
+    BOOST_REQUIRE_EQUAL(dp_table.size(), 1);
+    auto dp = dp_table.get_data_policy(topic1);
+    BOOST_ASSERT(dp.has_value());
+    BOOST_REQUIRE_EQUAL(dp.value().function_name(), dp1.function_name());
+    BOOST_REQUIRE_EQUAL(dp.value().script_name(), dp1.script_name());
 }

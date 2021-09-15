@@ -46,6 +46,12 @@ static constexpr std::string_view topic_property_retention_bytes
 static constexpr std::string_view topic_property_retention_duration
   = "retention.ms";
 
+// Data-policy property
+static constexpr std::string_view topic_property_data_policy_function_name
+  = "redpanda.datapolicy.function.name";
+static constexpr std::string_view topic_property_data_policy_script_name
+  = "redpanda.datapolicy.script.name";
+
 /// \brief Type representing Kafka protocol response from
 /// CreateTopics, DeleteTopics and CreatePartitions requests
 /// the types used here match the types used in Kafka protocol specification
