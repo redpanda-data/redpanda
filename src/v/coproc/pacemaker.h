@@ -138,9 +138,6 @@ public:
      */
     bool local_script_id_exists(script_id);
 
-    /// returns the number of running / registered fibers
-    size_t n_registered_scripts() const { return _scripts.size(); }
-
     /// returns a handle to the reconnect transport
     shared_script_resources& resources() { return _shared_res; }
 
