@@ -8,36 +8,42 @@ please keep this up to date with every new library use.
 
 | software        | license                            |
 | :----------     | :------------                      |
-| clang           | Apache License 2                   |
-| libcxx          | Apache License 2                   |
-| libcxxabi       | Apache License 2                   |
-| boost libraries | Boost Software License Version 1.0 |
-| fmt             | BSD                                |
-| zlib            | Zlib                               |
-| protobuf        | Apache License 2                   |
-| DPDK            | BSD                                |
-| c-ares          | MIT                                |
-| yaml-cpp        | MIT                                |
-| gmp             | LGPL v3                            |
-| nettle          | LGPL v3                            |
-| gnutls          | LGPL v2.1                          |
-| lz4             | BSD 2                              |
-| libnumactl      | LGPL v2.1                          |
-| libpciaccess    | MIT                                |
-| hwloc           | BSD                                |
-| xz:liblzma      | Public Domain                      |
-| xml2            | MIT                                |
-| cryptopp        | Public Domain                      |
-| lksctp-tools    | LGPL v2.1                          |
-| seastar         | Apache License 2                   |
-| zstd            | BSD                                |
-| HdrHistogram    | BSD 2                              |
-| xxhash          | BSD                                |
 | abseil          | Apache License 2                   |
-| rapidjson       | MIT                                |
+| avro            | Apache License 2                   |
+| base64          | BSD 2                              |
+| boost libraries | Boost Software License Version 1.0 |
+| c-ares          | MIT                                |
+| clang           | Apache License 2                   |
 | crc32c          | BSD 3                              |
 | CRoaring        | Apache License 2                   |
-| base64          | BSD 2                              |
+| cryptopp        | Public Domain                      |
+| ctre            | Apache License 2                   |
+| DPDK            | BSD                                |
+| fmt             | BSD                                |
+| gmp             | LGPL v3                            |
+| gnutls          | LGPL v2.1                          |
+| HdrHistogram    | BSD 2                              |
+| hwloc           | BSD                                |
+| libcxx          | Apache License 2                   |
+| libcxxabi       | Apache License 2                   |
+| libnumactl      | LGPL v2.1                          |
+| libpciaccess    | MIT                                |
+| lksctp-tools    | LGPL v2.1                          |
+| lz4             | BSD 2                              |
+| nettle          | LGPL v3                            |
+| nodejs          | MIT                                |
+| protobuf        | Apache License 2                   |
+| rapidjson       | MIT                                |
+| sasl2           | https://github.com/cyrusimap/cyrus-sasl/blob/master/COPYING |
+| seastar         | Apache License 2                   |
+| snappy          | https://github.com/google/snappy/blob/master/COPYING |
+| v8              | https://github.com/v8/v8/blob/master/LICENSE |
+| xz:liblzma      | Public Domain                      |
+| xml2            | MIT                                |
+| xxhash          | BSD                                |
+| yaml-cpp        | MIT                                |
+| zlib            | Zlib                               |
+| zstd            | BSD                                |
  
 # Golang deps _used_ in production (exclude all test dependencies)
 
