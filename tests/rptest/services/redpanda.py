@@ -336,7 +336,8 @@ class RedpandaService(Service):
         self.logger.debug("Controller reported with id: {}".format(cid))
         if cid != -1:
             node = self.get_node(cid)
-            self.logger.debug("Controller node found: {}".format(node))
+            self.logger.debug("Controller node found: {}".format(
+                node.account.hostname))
             return node
 
     def node_storage(self, node):
