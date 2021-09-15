@@ -118,6 +118,22 @@ public:
     ss::future<> wait_idle_state(script_id);
 
     /**
+     * Restarts a partition. Useful after source partition is moved.
+     */
+    ss::future<absl::flat_hash_map<script_id, errc>> restart_partition(
+      model::ntp,
+      std::vector<std::pair<script_id, std::vector<topic_namespace_policy>>>,
+      ntp_context::offset_tracker&&);
+
+    /**
+     * Removes partition from any active scripts that may be processing it
+     *
+     * @returns Ids of scripts that were reading from this partition
+     */
+    ss::future<std::variant<errc, ntp_context::offset_tracker>>
+      shutdown_partition(model::ntp);
+
+    /**
      * @returns true if a matching script id exists on 'this' shard
      */
     bool local_script_id_exists(script_id);
@@ -136,6 +152,8 @@ private:
       const std::vector<topic_namespace_policy>&);
 
     void fire_updates(script_id, errc);
+
+    void install_failure_handler(script_id);
 
     struct offset_flush_fiber_state {
         ss::timer<ss::lowres_clock> timer;

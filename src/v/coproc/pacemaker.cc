@@ -139,6 +139,11 @@ std::vector<errc> pacemaker::add_source(
     const auto [_, success] = _scripts.emplace(id, std::move(script_ctx));
     vassert(success, "Double coproc insert detected");
     vlog(coproclog.debug, "Adding source with id: {}", id);
+    install_failure_handler(id);
+    return acks;
+}
+
+void pacemaker::install_failure_handler(script_id id) {
     (void)ss::with_gate(_gate, [this, id] {
         fire_updates(id, errc::success);
         auto found = _scripts.find(id);
@@ -158,12 +163,13 @@ std::vector<errc> pacemaker::add_source(
                 "expected: {}",
                 e.get_id(),
                 id);
+              /// TODO: Poses interesting issue, now that there is a script
+              /// database, entry is in the db but not 'running'
               return container().invoke_on_all([id](pacemaker& p) {
                   return p.remove_source(id).discard_result();
               });
           });
     });
-    return acks;
 }
 
 static void set_start_offset(
@@ -229,6 +235,98 @@ ss::future<errc> pacemaker::remove_source(script_id id) {
         return p.second.use_count() == 1;
     });
     co_return errc::success;
+}
+
+static absl::flat_hash_map<script_id, errc> make_restart_partition_resp(
+  const std::vector<std::pair<script_id, std::vector<topic_namespace_policy>>>&
+    id_policies,
+  errc e) {
+    absl::flat_hash_map<script_id, errc> r;
+    for (const auto& [id, _] : id_policies) {
+        r.emplace(id, e);
+    }
+    return r;
+}
+
+ss::future<absl::flat_hash_map<script_id, errc>> pacemaker::restart_partition(
+  model::ntp ntp,
+  std::vector<std::pair<script_id, std::vector<topic_namespace_policy>>>
+    id_policies,
+  ntp_context::offset_tracker&& offsets) {
+    absl::flat_hash_map<script_id, errc> results;
+    if (_ntps.contains(ntp)) {
+        co_return make_restart_partition_resp(
+          id_policies, errc::partition_input_already_exists);
+    }
+    auto partition = _shared_res.rs.partition_manager.local().get(ntp);
+    if (!partition) {
+        co_return make_restart_partition_resp(
+          id_policies, errc::partition_input_not_exists);
+    }
+    auto ctx_ptr = ss::make_lw_shared<ntp_context>(partition);
+    ctx_ptr->offsets = std::move(offsets);
+    _ntps.emplace(ntp, ctx_ptr);
+
+    std::vector<ss::future<>> fs;
+    for (auto& [id, tnp] : id_policies) {
+        auto found = _scripts.find(id);
+        if (found != _scripts.end()) {
+            fs.emplace_back(
+              found->second->start_processing_ntp(ntp, ctx_ptr)
+                .handle_exception_type([ntp](const stranded_update_exception&) {
+                    vlog(
+                      coproclog.error,
+                      "Failed to shutdown partition before close: {}",
+                      ntp);
+                    return errc::internal_error;
+                })
+                .then([id = id, &results](errc e) { results[id] = e; }));
+        } else {
+            auto errs = add_source(id, std::move(tnp));
+            bool all_failures = std::all_of(
+              errs.begin(), errs.end(), [](errc e) {
+                  return e != errc::success;
+              });
+            results[id] = all_failures ? errc::topic_does_not_exist
+                                       : errc::success;
+        }
+    }
+    co_await ss::when_all_succeed(fs.begin(), fs.end());
+    co_return results;
+}
+
+ss::future<std::variant<errc, ntp_context::offset_tracker>>
+pacemaker::shutdown_partition(model::ntp ntp) {
+    std::vector<ss::future<errc>> fs;
+    std::vector<script_id> ids;
+    auto handle = _ntps.extract(ntp);
+    if (handle.empty()) {
+        co_return errc::partition_input_not_exists;
+    }
+    ss::lw_shared_ptr<ntp_context> ctx = std::move(handle.mapped());
+    for (const auto& [id, _] : ctx->offsets) {
+        auto found = _scripts.find(id);
+        vassert(
+          found != _scripts.end(),
+          "State inconsistency detected within coproc");
+        fs.push_back(
+          found->second->stop_processing_ntp(ntp).handle_exception_type(
+            [ntp](const stranded_update_exception&) {
+                vlog(
+                  coproclog.info,
+                  "Failed to shutdown partition before close: {}",
+                  ntp);
+                return errc::success;
+            }));
+        ids.push_back(id);
+    }
+    auto results = co_await ss::when_all_succeed(fs.begin(), fs.end());
+    for (errc e : results) {
+        if (e != errc::success) {
+            co_return e;
+        }
+    }
+    co_return std::move(ctx->offsets);
 }
 
 ss::future<absl::btree_map<script_id, errc>> pacemaker::remove_all_sources() {

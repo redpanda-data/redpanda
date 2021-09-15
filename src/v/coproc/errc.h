@@ -65,7 +65,8 @@ enum class errc {
     materialized_topic,
     script_id_does_not_exist,
     partition_has_pending_update,
-    partition_input_already_exists
+    partition_input_already_exists,
+    partition_input_not_exists
 };
 
 struct errc_category final : public std::error_category {
@@ -89,6 +90,8 @@ struct errc_category final : public std::error_category {
             return "attempted to move a partition that is already pending";
         case errc::partition_input_already_exists:
             return "attempted to add a partition that already exists";
+        case errc::partition_input_not_exists:
+            return "attempted to remove a partition that doesn't exist";
         default:
             return "Undefined coprocessor error encountered";
         }
