@@ -13,7 +13,7 @@ from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.compatibility.compat_helpers import sarama_sasl_scram
+from rptest.services.compatibility.sarama_helpers import sarama_sasl_scram
 
 
 class SaramaScramTest(RedpandaTest):
@@ -44,7 +44,6 @@ class SaramaScramTest(RedpandaTest):
             result = node.account.ssh_output(cmd,
                                              allow_fail=True,
                                              timeout_sec=10).decode()
-            self.logger.debug(result)
             return "wrote message at partition:" in result
 
         #Using wait_until for auto-retry because sometimes

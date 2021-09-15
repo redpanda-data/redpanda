@@ -68,7 +68,6 @@ class SaramaTest(RedpandaTest):
 
         def try_curl():
             result = node.account.ssh_output(curl, timeout_sec=5).decode()
-            self.logger.debug(result)
             return "Your data is stored with unique identifier" in result
 
         #Using wait_until for auto-retry because sometimes
