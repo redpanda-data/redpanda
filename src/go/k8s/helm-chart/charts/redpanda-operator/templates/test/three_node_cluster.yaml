@@ -10,10 +10,10 @@ spec:
   replicas: 3
   resources:
     requests:
-      cpu: 100m
-      memory: 100Mi
+      cpu: 200m
+      memory: 110Mi
     limits:
-      cpu: 1
+      cpu: 1.1
       memory: 1.2Gi
   configuration:
     rpcServer:

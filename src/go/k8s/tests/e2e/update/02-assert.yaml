@@ -8,7 +8,7 @@ spec:
       containers:
         - resources:
             requests:
-              memory: 99M
+              memory: 89M
         - resources:
             requests:
               memory: 10M

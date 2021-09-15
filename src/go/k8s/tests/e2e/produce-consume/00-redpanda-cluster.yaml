@@ -8,11 +8,11 @@ spec:
   replicas: 3
   resources:
     requests:
-      cpu: 1
-      memory: 2Gi
+      cpu: 1.2
+      memory: 2.02Gi
     limits:
-      cpu: 1
-      memory: 2Gi
+      cpu: 1.2
+      memory: 2.02Gi
   configuration:
     rpcServer:
       port: 33145
