@@ -106,6 +106,8 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
         args = ["--describe", "--topic", topic]
         res = self._run("kafka-topics.sh", args)
         self._redpanda.logger.debug("Describe topics result: %s", res)
+        if res is None:
+            raise RuntimeError(f"Error describing topic {topic}")
 
         # parse/extract the topic configuration
         configs = None
