@@ -113,6 +113,21 @@ public:
     ss::future<errc> wait_for_script(script_id);
 
     /**
+     * Restarts a partition. Useful after source partition is moved.
+     */
+    using script_inputs_t
+      = absl::flat_hash_map<script_id, std::vector<topic_namespace_policy>>;
+    ss::future<absl::flat_hash_map<script_id, errc>>
+      restart_partition(model::ntp, script_inputs_t);
+
+    /**
+     * Removes partition from any active scripts that may be processing it
+     *
+     * @returns Ids of scripts that were reading from this partition
+     */
+    ss::future<std::vector<script_id>> shutdown_partition(model::ntp);
+
+    /**
      * @returns true if a matching script id exists on 'this' shard
      */
     bool local_script_id_exists(script_id);

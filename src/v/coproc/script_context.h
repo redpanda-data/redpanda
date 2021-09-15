@@ -77,6 +77,13 @@ public:
      */
     ss::future<> shutdown();
 
+    /// Query for particular route
+    inline ss::lw_shared_ptr<coproc::source>
+    get_route(const model::ntp& ntp) const {
+        auto f = _routes.find(ntp);
+        return f != _routes.end() ? f->second : nullptr;
+    }
+
     /// Returns copy of active routes
     routes_t get_routes() const { return _routes; }
 

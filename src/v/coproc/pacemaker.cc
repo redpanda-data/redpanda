@@ -173,6 +173,8 @@ std::vector<errc> pacemaker::add_source(
                 "expected: {}",
                 e.get_id(),
                 id);
+              /// TODO(rob): Poses interesting issue, now that there is a script
+              /// database entry in the db but is not 'running'
               return container().invoke_on_all([id](pacemaker& p) {
                   return p.remove_source(id).discard_result();
               });
@@ -238,6 +240,58 @@ ss::future<errc> pacemaker::remove_source(script_id id) {
     std::unique_ptr<script_context> ctx = std::move(handle.mapped());
     co_await ctx->shutdown();
     co_return errc::success;
+}
+
+ss::future<absl::flat_hash_map<script_id, errc>>
+pacemaker::restart_partition(model::ntp ntp, script_inputs_t inputs) {
+    absl::flat_hash_map<script_id, errc> results;
+    auto partition = _shared_res.rs.partition_manager.local().get(ntp);
+    if (!partition) {
+        for (const auto& [id, _] : inputs) {
+            results.emplace(id, errc::partition_not_exists);
+        }
+        co_return results;
+    }
+    std::vector<ss::future<>> fs;
+    for (auto& [id, tnps] : inputs) {
+        read_context rps{.input = partition};
+        auto found = _scripts.find(id);
+        if (found != _scripts.end()) {
+            fs.emplace_back(
+              found->second->start_processing_ntp(ntp, std::move(rps))
+                .handle_exception_type([ntp](const wait_future_stranded&) {
+                    return errc::internal_error;
+                })
+                .then([id = id, &results](errc e) { results[id] = e; }));
+        } else {
+            /// Ignore existing offsets that may exist on disk
+            _cached_routes.erase(id);
+            auto errs = add_source(id, std::move(tnps));
+            bool all_failures = std::all_of(
+              errs.begin(), errs.end(), [](errc e) {
+                  return e != errc::success;
+              });
+            results[id] = all_failures ? errc::topic_does_not_exist
+                                       : errc::success;
+        }
+    }
+    co_await ss::when_all_succeed(fs.begin(), fs.end());
+    co_return results;
+}
+
+ss::future<std::vector<script_id>>
+pacemaker::shutdown_partition(model::ntp ntp) {
+    std::vector<ss::future<script_id>> fs;
+    for (const auto& [id, script] : _scripts) {
+        if (auto route = script->get_route(ntp)) {
+            fs.push_back(
+              script->stop_processing_ntp(ntp)
+                .then([id = id](errc) { return id; })
+                .handle_exception_type(
+                  [id = id](const wait_future_stranded&) { return id; }));
+        }
+    }
+    co_return co_await ss::when_all_succeed(fs.begin(), fs.end());
 }
 
 ss::future<absl::btree_map<script_id, errc>> pacemaker::remove_all_sources() {
