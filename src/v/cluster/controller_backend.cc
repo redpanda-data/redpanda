@@ -28,6 +28,7 @@
 #include "raft/group_configuration.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
+#include "vassert.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
@@ -386,13 +387,26 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
                                  && d.new_assignment.replicas
                                       == it->new_assignment.replicas;
                       });
-                    vassert(
-                      fit == std::next(it),
-                      "finish operation command, if present have to be the one "
-                      "that follows update operation");
 
+                    // The only delta type permitted between `update` and
+                    // `update_finished` is `update_properties`.  Apply any
+                    // intervening deltas of this type and skip
+                    // the cursor ahead to the `update_finished`
                     if (fit != deltas.end()) {
-                        it = fit;
+                        while (++it != fit) {
+                            vlog(
+                              clusterlog.trace,
+                              "executing (during update) ntp: {} operation: {}",
+                              it->ntp,
+                              *it);
+                            vassert(
+                              it->type
+                                == topic_table_delta::op_type::
+                                  update_properties,
+                              "Only update_properties allowed here");
+                            co_await process_partition_properties_update(
+                              it->ntp, it->new_assignment);
+                        }
                         continue;
                     }
                 }
