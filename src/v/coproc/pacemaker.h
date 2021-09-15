@@ -133,7 +133,7 @@ public:
     ss::future<>
     with_hold(const model::ntp& source, const model::ntp& materialized, Fn fn) {
         _shared_res.in_progress_deletes.emplace(materialized);
-        std::vector<ss::future<>> fs;
+        std::vector<ss::future<errc>> fs;
         for (auto& [_, script] : _scripts) {
             fs.emplace_back(
               script->remove_output(source, materialized)
@@ -142,6 +142,7 @@ public:
                       coproclog.info,
                       "Script shutdown during barriers emplacement: {}",
                       ex);
+                    return errc::success;
                 }));
         }
         /// When this future completes, it can safely be assumed that all fibers

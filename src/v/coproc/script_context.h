@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "coproc/errc.h"
 #include "coproc/exception.h"
 #include "coproc/script_context_router.h"
 #include "coproc/shared_script_resources.h"
@@ -25,7 +26,7 @@
 
 namespace coproc {
 
-/// Raised when futures enqueued by \ref remove_output were failed to be
+/// Raised when futures enqueued by an async update were failed to be
 /// fufilled due to shutdown before the event occurring
 class wait_future_stranded final : public exception {
     using exception::exception;
@@ -82,7 +83,7 @@ public:
     /// Clean-up associated resources with removed output
     ///
     /// This is to be invoked after a materialized topic is deleted
-    ss::future<>
+    ss::future<errc>
     remove_output(const model::ntp& source, const model::ntp& materialized);
 
     /// Returns true if fiber is up to date with all of its inputs
@@ -91,18 +92,50 @@ public:
     /// offsets for respective tracked partitions
     bool is_up_to_date() const;
 
+    /// Start ingestion on the interested ntp.
+    ///
+    /// Useful for the cases where an input partition was moved or updated.
+    ss::future<errc> start_processing_ntp(const model::ntp&, read_context&&);
+
+    /// Stop ingestion on the interested ntp.
+    ///
+    /// Useful for the cases where an input partition is to be moved or updated.
+    ss::future<errc> stop_processing_ntp(const model::ntp&);
+
 private:
     ss::future<> do_execute();
 
     ss::future<> process_reply(process_batch_reply);
     void notify_waiters();
 
+    ss::future<ss::stop_iteration> process_send_write(rpc::transport*);
+
+private:
+    /// State to track in-progress ntp modifications
     struct update {
-        model::ntp source;
-        std::vector<ss::promise<>> ps;
+        std::vector<ss::promise<errc>> ps;
+        virtual ~update() = default;
+        virtual errc handle(const model::ntp&, routes_t&) = 0;
     };
 
-    ss::future<ss::stop_iteration> process_send_write(rpc::transport*);
+    struct insert_update final : public update {
+        /// New input topic is inserted after initial start
+        read_context rctx;
+        explicit insert_update(read_context) noexcept;
+        errc handle(const model::ntp&, routes_t&) final;
+    };
+
+    struct remove_update final : public update {
+        /// Existing input topic is removed after initial start
+        errc handle(const model::ntp&, routes_t&) final;
+    };
+
+    struct output_remove_update final : public update {
+        /// Materialized topic (output topic) removed
+        model::ntp source;
+        explicit output_remove_update(model::ntp) noexcept;
+        errc handle(const model::ntp&, routes_t&) final;
+    };
 
 private:
     /// Killswitch for in-process reads
@@ -112,7 +145,7 @@ private:
     ss::gate _gate;
 
     /// Allows the ability to asynchronously remove items from the router map
-    absl::node_hash_map<model::ntp, update> _updates;
+    absl::node_hash_map<model::ntp, std::unique_ptr<update>> _updates;
 
     // Reference to resources shared across all script_contexts on 'this'
     // shard

@@ -86,9 +86,9 @@ struct errc_category final : public std::error_category {
         case errc::script_id_does_not_exist:
             return "Could not find coprocessor with matching script_id";
         case errc::partition_not_exists:
-            return "Partition missing from coproc::partition_manager";
+            return "Partition not found";
         case errc::partition_already_exists:
-            return "Partition alreday exists in coproc::partition_manager";
+            return "Partition already exists";
         default:
             return "Undefined coprocessor error encountered";
         }
