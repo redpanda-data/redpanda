@@ -9,6 +9,7 @@
 
 import os
 from .sarama_helpers import SaramaHelperFactory
+from .franzgo_helpers import FranzGoHelperFactory
 
 
 #A factory method to create the necessary
@@ -17,5 +18,8 @@ def create_helper(func_name, redpanda, topic, extra_conf):
     if "sarama" in func_name:
         factory = SaramaHelperFactory(func_name, redpanda, topic)
         return factory.create_sarama_helpers()
+    elif "franzgo" in func_name:
+        factory = FranzGoHelperFactory(func_name, redpanda, topic, extra_conf)
+        return factory.create_franzgo_helpers()
     else:
         raise RuntimeError("create_helper failed: Invalid function name")

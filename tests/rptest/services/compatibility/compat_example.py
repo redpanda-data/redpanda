@@ -17,15 +17,17 @@ class CompatExample(BackgroundThreadService):
     """
     The service that runs examples in the background
     """
-    def __init__(self, context, redpanda, topic):
+    def __init__(self, context, redpanda, topic, extra_conf={}):
         super(CompatExample, self).__init__(context, num_nodes=1)
 
         #Create the correct helper instance from the test function being run.
         #helper is an object with various methods to help run the example
-        self._helper = create_helper(context.function_name, redpanda, topic)
+        self._helper = create_helper(context.function_name, redpanda, topic,
+                                     extra_conf)
 
-        #The amount of time to run the example
-        self._timeout = 10
+        #The amount of time to run the example.
+        #If user removes timeout key, then use 10 seconds.
+        self._timeout = extra_conf.get("timeout") or 10
 
     def _worker(self, idx, node):
         start_time = time.time()
