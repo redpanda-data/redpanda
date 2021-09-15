@@ -1,4 +1,4 @@
-# Licenses list as of 12/6/2019
+# Licenses list
 
 
 Dependencies sometimes change licenses between versions, 
