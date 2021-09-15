@@ -14,6 +14,7 @@
 #include "cluster/non_replicable_topics_frontend.h"
 #include "coproc/event_listener.h"
 #include "coproc/pacemaker.h"
+#include "coproc/script_database.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -36,11 +37,13 @@ api::api(
 api::~api() = default;
 
 ss::future<> api::start() {
+    co_await _sdb.start_single();
     co_await _mt_frontend.start_single(std::ref(_rs.topics_frontend));
     co_await _pacemaker.start(_engine_addr, std::ref(_rs));
     co_await _pacemaker.invoke_on_all(&coproc::pacemaker::start);
     _listener = std::make_unique<wasm::event_listener>(_as);
-    _dispatcher = std::make_unique<wasm::script_dispatcher>(_pacemaker, _as);
+    _dispatcher = std::make_unique<wasm::script_dispatcher>(
+      _pacemaker, _sdb, _as);
     _wasm_async_handler = std::make_unique<coproc::wasm::async_event_handler>(
       std::ref(*_dispatcher));
     _listener->register_handler(
@@ -54,9 +57,9 @@ ss::future<> api::stop() {
     if (_listener) {
         f = _listener->stop();
     }
-    return f.then([this] { return _pacemaker.stop(); }).then([this] {
-        return _mt_frontend.stop();
-    });
+    return f.then([this] { return _pacemaker.stop(); })
+      .then([this] { return _mt_frontend.stop(); })
+      .then([this] { return _sdb.stop(); });
 }
 
 } // namespace coproc

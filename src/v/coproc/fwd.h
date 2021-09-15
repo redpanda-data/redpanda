@@ -19,6 +19,7 @@ class script_context;
 
 namespace wasm {
 
+class script_database;
 class script_dispatcher;
 class event_listener;
 

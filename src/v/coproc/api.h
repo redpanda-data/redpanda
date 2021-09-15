@@ -42,7 +42,8 @@ private:
     sys_refs _rs;
     ss::abort_source _as;
 
-    ss::sharded<pacemaker> _pacemaker; /// one per core
+    ss::sharded<wasm::script_database> _sdb; // one instance
+    ss::sharded<pacemaker> _pacemaker;       /// one per core
     ss::sharded<cluster::non_replicable_topics_frontend>
       _mt_frontend; /// one instance
 
