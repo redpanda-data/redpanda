@@ -21,6 +21,7 @@ class reconciliation_backend;
 
 namespace wasm {
 
+class script_database;
 class script_dispatcher;
 class async_event_handler;
 class event_listener;
