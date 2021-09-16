@@ -88,7 +88,10 @@ class RpkTool:
             cmd += ['-H ' + h for h in headers]
         if partition:
             cmd += ['-p', str(partition)]
-        return self._run_topic(cmd, stdin=msg, timeout=timeout)
+        out = self._run_topic(cmd, stdin=msg, timeout=timeout)
+
+        offset = re.search("at offset (\d+)", out).group(1)
+        return int(offset)
 
     def describe_topic(self, topic):
         cmd = ['describe', topic]
