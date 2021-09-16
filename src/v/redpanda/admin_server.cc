@@ -843,6 +843,22 @@ void admin_server::register_partition_routes() {
 
           const model::ntp ntp(std::move(ns), std::move(topic), partition);
 
+          auto current_assignment
+            = _controller->get_topics_state().local().get_partition_assignment(
+              ntp);
+
+          // For a no-op change, just return success here, to avoid doing
+          // all the raft writes and consensus restarts for a config change
+          // that will do nothing.
+          if (current_assignment && current_assignment->replicas == replicas) {
+              vlog(
+                logger.info,
+                "Request to change ntp {} replica set to {}, no change",
+                ntp,
+                replicas);
+              co_return ss::json::json_void();
+          }
+
           vlog(
             logger.info,
             "Request to change ntp {} replica set to {}",
