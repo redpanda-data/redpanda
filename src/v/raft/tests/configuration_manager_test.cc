@@ -173,9 +173,11 @@ FIXTURE_TEST(test_prefix_truncation, config_manager_fixture) {
 
     validate_recovery();
     // try to truncate whole
-    BOOST_CHECK_THROW(
-      _cfg_mgr.prefix_truncate(model::offset(3003)).get0(),
-      std::invalid_argument);
+    _cfg_mgr.prefix_truncate(model::offset(3003)).get0();
+    validate_recovery();
+    // last known config is preserved
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(3003)), configurations[5]);
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get_latest_index()(), 6);
 }
 
 FIXTURE_TEST(test_truncation, config_manager_fixture) {
