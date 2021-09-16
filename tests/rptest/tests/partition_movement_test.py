@@ -148,7 +148,9 @@ class PartitionMovementTest(EndToEndTest):
             return converged and info["status"] == "done"
 
         # wait until redpanda reports complete
-        wait_until(status_done, timeout_sec=30, backoff_sec=1)
+        t1 = time.time()
+        wait_until(status_done, timeout_sec=60, backoff_sec=1)
+        self.logger.info(f"move complete (status) in {time.time() - t1}s")
 
         def derived_done():
             info = self._get_current_partitions(admin, topic, partition)
@@ -156,7 +158,8 @@ class PartitionMovementTest(EndToEndTest):
                 f"derived assignments for {topic}-{partition}: {info}")
             return self._equal_assignments(info, assignments)
 
-        wait_until(derived_done, timeout_sec=30, backoff_sec=1)
+        wait_until(derived_done, timeout_sec=60, backoff_sec=1)
+        self.logger.info(f"move complete (derived) in {time.time() - t1}s")
 
     @cluster(num_nodes=3)
     def test_moving_not_fully_initialized_partition(self):
