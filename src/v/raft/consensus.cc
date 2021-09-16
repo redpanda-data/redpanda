@@ -774,8 +774,11 @@ void consensus::dispatch_vote(bool leadership_transfer) {
     }
     auto self_priority = get_node_priority(_self);
     // check if current node priority is high enough
-    bool current_priority_to_low = _target_priority > self_priority;
     // update target priority
+    auto cur_target_priority = _target_priority;
+    bool current_priority_to_low = cur_target_priority > self_priority;
+    // Update target priority: irrespective of vote outcome, we will
+    // lower our required priority for next time.
     _target_priority = next_target_priority();
 
     // skip sending vote request if current node is not a voter
@@ -789,8 +792,9 @@ void consensus::dispatch_vote(bool leadership_transfer) {
     if (current_priority_to_low && !leadership_transfer) {
         vlog(
           _ctxlog.trace,
-          "current node priority {} is to low, target priority {}",
+          "current node priority {} is lower than target {} (next vote {})",
           self_priority,
+          cur_target_priority,
           _target_priority);
         arm_vote_timeout();
         return;
