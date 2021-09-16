@@ -29,7 +29,8 @@ struct fixture {
 FIXTURE_TEST(half_next_page, fixture) {
     using namespace storage; // NOLINT
     // gurantee next half page on 4096 segments(default)
-    constexpr size_t data_size = (segment_appender::chunk_size / 2) + 1;
+    const size_t data_size = (config::shard_local_cfg().append_chunk_size() / 2)
+                             + 1;
     ss::temporary_buffer<char> data(data_size);
     auto key = iobuf();
     auto value = iobuf();
