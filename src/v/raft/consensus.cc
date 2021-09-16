@@ -1289,6 +1289,27 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         }
     }
 
+    /// Stable leadership optimization
+    ///
+    /// When current node is a leader (we set _hbeat to max after
+    /// successfull election) or already processed request from active
+    /// leader  do not grant a vote to follower. This will prevent restarted
+    /// nodes to disturb all groups leadership
+    // Check if we updated the heartbeat timepoint in the last election
+    // timeout duration When the vote was requested because of leadership
+    // transfer grant the vote immediately.
+    auto prev_election = clock_type::now() - _jit.base_duration();
+    if (
+      _hbeat > prev_election && !r.leadership_transfer
+      && r.node_id != _voted_for) {
+        vlog(
+          _ctxlog.trace,
+          "Already heard from the leader, not granting vote to node {}",
+          r.node_id);
+        reply.granted = false;
+        return ss::make_ready_future<vote_reply>(std::move(reply));
+    }
+
     /// set to true if the caller's log is as up to date as the recipient's
     /// - extension on raft. see Diego's phd dissertation, section 9.6
     /// - "Preventing disruptions when a server rejoins the cluster"
@@ -1313,26 +1334,6 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
           _target_priority);
         reply.granted = false;
         return ss::make_ready_future<vote_reply>(reply);
-    }
-    /// Stable leadership optimization
-    ///
-    /// When current node is a leader (we set _hbeat to max after
-    /// successfull election) or already processed request from active
-    /// leader  do not grant a vote to follower. This will prevent restarted
-    /// nodes to disturb all groups leadership
-    // Check if we updated the heartbeat timepoint in the last election
-    // timeout duration When the vote was requested because of leadership
-    // transfer grant the vote immediately.
-    auto prev_election = clock_type::now() - _jit.base_duration();
-    if (
-      _hbeat > prev_election && !r.leadership_transfer
-      && r.node_id != _voted_for) {
-        vlog(
-          _ctxlog.trace,
-          "Already heard from the leader, not granting vote to node {}",
-          r.node_id);
-        reply.granted = false;
-        return ss::make_ready_future<vote_reply>(std::move(reply));
     }
 
     if (r.term > _term) {
