@@ -23,9 +23,12 @@
 #include <ostream>
 
 namespace storage {
+
+using alignment = named_type<size_t, struct alignment_type>;
+
 class segment_appender_chunk {
 public:
-    explicit segment_appender_chunk(size_t size, size_t alignment)
+    explicit segment_appender_chunk(size_t size, alignment alignment)
       : _chunk_size(size)
       , _alignment(alignment)
       , _buf(ss::allocate_aligned_buffer<char>(_chunk_size, alignment)) {
@@ -43,7 +46,7 @@ public:
 
     bool is_full() const { return _pos == _chunk_size; }
     bool is_empty() const { return _pos == 0; }
-    size_t alignment() const { return _alignment; }
+    alignment alignment() const { return _alignment; }
     size_t space_left() const { return _chunk_size - _pos; }
     size_t size() const { return _pos; }
 
@@ -97,7 +100,7 @@ public:
 
 private:
     size_t _chunk_size{0};
-    size_t _alignment{0};
+    storage::alignment _alignment{0};
     size_t _pos{0};
     size_t _flushed_pos{0};
     std::unique_ptr<char[], ss::free_deleter> _buf;
