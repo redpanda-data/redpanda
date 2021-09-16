@@ -574,8 +574,10 @@ void application::wire_up_redpanda_services() {
     // that are being throttled are released so that they can make be quickly
     // shutdown by the group manager.
     _deferred.emplace_back([this] {
-        recovery_throttle.stop().get();
+        recovery_throttle.invoke_on_all(&raft::recovery_throttle::shutdown)
+          .get();
         raft_group_manager.stop().get();
+        recovery_throttle.stop().get();
     });
 
     syschecks::systemd_message("Adding partition manager").get();
