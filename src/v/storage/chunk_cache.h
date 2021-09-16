@@ -105,7 +105,7 @@ private:
         }
         if (_size_total < _size_limit) {
             try {
-                auto c = ss::make_lw_shared<chunk>(alignment, _chunk_size);
+                auto c = ss::make_lw_shared<chunk>(_chunk_size, alignment);
                 _size_total += _chunk_size;
                 return c;
             } catch (const std::bad_alloc& e) {

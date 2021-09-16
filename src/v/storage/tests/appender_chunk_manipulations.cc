@@ -23,7 +23,7 @@ static constexpr size_t alignment = 4096;
 SEASTAR_THREAD_TEST_CASE(chunk_manipulation) {
     const auto b = random_generators::gen_alphanum_string(1024 * 1024);
     const auto chunk_size = config::shard_local_cfg().append_chunk_size();
-    chunk c(alignment, chunk_size);
+    chunk c(chunk_size, alignment);
 
     // Unit tests should be running with default config
     assert(chunk_size == 16_KiB);
