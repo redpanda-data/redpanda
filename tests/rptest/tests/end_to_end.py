@@ -50,8 +50,12 @@ class EndToEndTest(Test):
       - Perform some action (e.g. partition movement)
       - Run validation
     """
-    def __init__(self, test_context):
+    def __init__(self, test_context, extra_rp_conf=None):
         super(EndToEndTest, self).__init__(test_context=test_context)
+        if extra_rp_conf is None:
+            self._extra_rp_conf = {}
+        else:
+            self._extra_rp_conf = extra_rp_conf
         self.records_consumed = []
         self.last_consumed_offsets = {}
         self.redpanda = None
@@ -59,8 +63,10 @@ class EndToEndTest(Test):
 
     def start_redpanda(self, num_nodes=1):
         assert self.redpanda is None
-        self.redpanda = RedpandaService(self.test_context, num_nodes,
-                                        KafkaCliTools)
+        self.redpanda = RedpandaService(self.test_context,
+                                        num_nodes,
+                                        KafkaCliTools,
+                                        extra_rp_conf=self._extra_rp_conf)
         self.redpanda.start()
 
     def start_consumer(self, num_nodes=1, group_id="test_group"):

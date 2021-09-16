@@ -26,6 +26,16 @@ class LeadershipTransferTest(RedpandaTest):
     """
     topics = (TopicSpec(partition_count=3, replication_factor=3), )
 
+    def __init__(self, *args, **kwargs):
+        super(LeadershipTransferTest, self).__init__(
+            *args,
+            extra_rp_conf={
+                # Disable leader balancer, as this test is doing its own
+                # partition movement and the balancer would interfere
+                'enable_leader_balancer': False
+            },
+            **kwargs)
+
     @cluster(num_nodes=3)
     def test_controller_recovery(self):
         kc = KafkaCat(self.redpanda)

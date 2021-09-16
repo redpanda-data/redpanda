@@ -34,6 +34,16 @@ class PartitionMovementTest(EndToEndTest):
     - Add settings for scaling up tests
     - Add tests guarnateeing multiple segments
     """
+    def __init__(self, *args, **kwargs):
+        super(PartitionMovementTest, self).__init__(
+            *args,
+            extra_rp_conf={
+                # Disable leader balancer, as this test is doing its own
+                # partition movement and the balancer would interfere
+                'enable_leader_balancer': False
+            },
+            **kwargs)
+
     @staticmethod
     def _random_partition(metadata):
         topic = random.choice(metadata)
@@ -127,7 +137,8 @@ class PartitionMovementTest(EndToEndTest):
         self.logger.info(
             f"new assignments for {topic}-{partition}: {assignments}")
 
-        admin.set_partition_replicas(topic, partition, assignments)
+        r = admin.set_partition_replicas(topic, partition, assignments)
+        r.raise_for_status()
 
         def status_done():
             info = admin.get_partitions(topic, partition)
@@ -185,7 +196,8 @@ class PartitionMovementTest(EndToEndTest):
         self.logger.info(
             f"new assignments for {topic}-{partition}: {assignments}")
 
-        admin.set_partition_replicas(topic, partition, assignments)
+        r = admin.set_partition_replicas(topic, partition, assignments)
+        r.raise_for_status()  # Expect success
 
         def status_done():
             info = admin.get_partitions(topic, partition)
@@ -217,7 +229,7 @@ class PartitionMovementTest(EndToEndTest):
 
         topics = []
         for partition_count in range(1, 5):
-            for replication_factor in (3, 3):
+            for replication_factor in (1, 3):
                 name = f"topic{len(topics)}"
                 spec = TopicSpec(name=name,
                                  partition_count=partition_count,
@@ -239,7 +251,7 @@ class PartitionMovementTest(EndToEndTest):
 
         topics = []
         for partition_count in range(1, 5):
-            for replication_factor in (3, 3):
+            for replication_factor in (1, 3):
                 name = f"topic{len(topics)}"
                 spec = TopicSpec(name=name,
                                  partition_count=partition_count,
@@ -275,11 +287,23 @@ class PartitionMovementTest(EndToEndTest):
                 auto_offset_reset='earliest',
                 request_timeout_ms=5000,
                 consumer_timeout_ms=10000)
-            consumed = []
+            consumed = set()
             for msg in consumer:
-                consumed.append((msg.key, msg.value))
-            self.logger.info(f"Finished verifying records in {spec}")
-            assert set(consumed) == produced
+                consumed.add((msg.key, msg.value))
+            if consumed != produced:
+                self.logger.error(
+                    f"Validation failed for topic {spec.name}.  Produced {len(produced)}, consumed {len(consumed)}"
+                )
+                self.logger.error(
+                    f"Messages consumed but not produced: {sorted(consumed - produced)}"
+                )
+                self.logger.error(
+                    f"Messages produced but not consumed: {sorted(produced - consumed)}"
+                )
+
+                assert set(consumed) == produced
+            else:
+                self.logger.info(f"Finished verifying records in {spec}")
 
     @cluster(num_nodes=5)
     def test_dynamic(self):

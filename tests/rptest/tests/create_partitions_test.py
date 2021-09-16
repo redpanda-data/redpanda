@@ -27,6 +27,10 @@ class CreatePartitionsTest(RedpandaTest):
         client = KafkaCliTools(self.redpanda)
         client.add_topic_partitions(topic, count)
 
+    def _delete_topic(self, topic_name):
+        client = KafkaCliTools(self.redpanda)
+        client.delete_topic(topic_name)
+
     def _create_add_verify(self, topic, new_parts):
         self.logger.info(
             f"Testing topic {topic.name} with partitions {topic.partition_count} replicas {topic.replication_factor} additional partitions {new_parts}"
@@ -63,3 +67,6 @@ class CreatePartitionsTest(RedpandaTest):
                               replication_factor=random.choice((1, 3)))
             new_parts = random.randint(1, 30)
             self._create_add_verify(topic, new_parts)
+            self._delete_topic(topic.name)
+
+            # todo delete the topic to avoid running out of file handles
