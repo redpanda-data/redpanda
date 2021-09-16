@@ -25,7 +25,7 @@ from ducktape.utils.util import wait_until
 from rptest.services.redpanda import RedpandaService
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.services.verifiable_consumer import VerifiableConsumer
-from rptest.services.verifiable_producer import VerifiableProducer
+from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
 
 TopicPartition = namedtuple('TopicPartition', ['topic', 'partition'])
 
@@ -84,16 +84,18 @@ class EndToEndTest(Test):
     def start_producer(self, num_nodes=1, throughput=1000):
         assert self.redpanda
         assert self.topic
-        self.producer = VerifiableProducer(self.test_context,
-                                           num_nodes=num_nodes,
-                                           redpanda=self.redpanda,
-                                           topic=self.topic,
-                                           throughput=throughput)
+        self.producer = VerifiableProducer(
+            self.test_context,
+            num_nodes=num_nodes,
+            redpanda=self.redpanda,
+            topic=self.topic,
+            throughput=throughput,
+            message_validator=is_int_with_prefix)
         self.producer.start()
 
     def on_record_consumed(self, record, node):
         partition = TopicPartition(record["topic"], record["partition"])
-        record_id = int(record["value"])
+        record_id = record["value"]
         offset = record["offset"]
         self.last_consumed_offsets[partition] = offset
         self.records_consumed.append(record_id)
