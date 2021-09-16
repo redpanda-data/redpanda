@@ -87,12 +87,12 @@ FIXTURE_TEST(write_configs, bootstrap_fixture) {
       cfg.data_batches_seen(),
       cfg.config_batches_seen());
 
-    cfg.config().for_each_voter([](raft::vnode rni) {
+    cfg.configurations().back().cfg.for_each_voter([](raft::vnode rni) {
         BOOST_REQUIRE(
           rni.id() >= 0 && rni.id() <= bootstrap_fixture::active_nodes);
     });
 
-    cfg.config().for_each_learner([](raft::vnode rni) {
+    cfg.configurations().back().cfg.for_each_learner([](raft::vnode rni) {
         BOOST_REQUIRE(rni.id() > bootstrap_fixture::active_nodes);
     });
 

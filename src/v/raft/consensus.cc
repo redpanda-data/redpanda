@@ -1036,7 +1036,7 @@ ss::future<> consensus::do_start() {
               if (st.config_batches_seen() > 0) {
                   f = f.then([this, st = std::move(st)]() mutable {
                       return _configuration_manager.add(
-                        st.prev_log_index(), st.release_config());
+                        std::move(st).release_configurations());
                   });
               }
 
