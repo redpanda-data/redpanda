@@ -232,6 +232,17 @@ result<void> sanitize(
                 return res.assume_error();
             }
         }
+        if (t_it->value.GetType() == rapidjson::Type::kArrayType) {
+            auto a = t_it->value.GetArray();
+            for (auto& m : a) {
+                if (m.IsString()) {
+                    auto res = sanitize_name(m, alloc);
+                    if (res.has_error()) {
+                        return res.assume_error();
+                    }
+                }
+            }
+        }
     }
     return outcome::success();
 }
