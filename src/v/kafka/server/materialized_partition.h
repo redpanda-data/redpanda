@@ -34,6 +34,8 @@ public:
         return raft::details::next_offset(_log.offsets().dirty_offset);
     }
 
+    bool is_leader() const final { return true; }
+
     ss::future<model::record_batch_reader> make_reader(
       storage::log_reader_config cfg,
       std::optional<model::timeout_clock::time_point>) final {
