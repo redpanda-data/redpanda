@@ -11,6 +11,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
+#include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
@@ -392,6 +393,10 @@ topic_table::get_partition_assignment(const model::ntp& ntp) const {
     }
 
     return *p_it;
+}
+
+bool topic_table::is_update_in_progress(const model::ntp& ntp) const {
+    return _update_in_progress.contains(ntp);
 }
 
 } // namespace cluster

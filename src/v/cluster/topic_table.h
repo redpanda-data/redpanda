@@ -132,6 +132,8 @@ public:
 
     const underlying_t& topics_map() const { return _topics; }
 
+    bool is_update_in_progress(const model::ntp&) const;
+
 private:
     struct waiter {
         explicit waiter(uint64_t id)
