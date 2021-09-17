@@ -42,6 +42,9 @@ class RedpandaService(Service):
     STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda.log")
     WASM_STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT,
                                               "wasm_engine.log")
+    COVERAGE_PROFRAW_CAPTURE = os.path.join(PERSISTENT_ROOT,
+                                            "redpanda.profraw")
+
     CLUSTER_NAME = "my_cluster"
     READY_TIMEOUT_SEC = 10
 
@@ -50,6 +53,9 @@ class RedpandaService(Service):
 
     SUPERUSER_CREDENTIALS = ("admin", "admin", "SCRAM-SHA-256")
 
+    COV_KEY = "enable_cov"
+    DEFAULT_COV_OPT = False
+
     logs = {
         "redpanda_start_stdout_stderr": {
             "path": STDOUT_STDERR_CAPTURE,
@@ -57,6 +63,10 @@ class RedpandaService(Service):
         },
         "wasm_engine_start_stdout_stderr": {
             "path": WASM_STDOUT_STDERR_CAPTURE,
+            "collect_default": True
+        },
+        "code_coverage_profraw_file": {
+            "path": COVERAGE_PROFRAW_CAPTURE,
             "collect_default": True
         }
     }
@@ -190,6 +200,12 @@ class RedpandaService(Service):
                f" --memory 6G "
                f" --reserve-memory 0M "
                f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
+
+        # set llvm_profile var for code coverage
+        # each node will create its own copy of the .profraw file
+        # since each node creates a redpanda broker.
+        if self.cov_enabled():
+            cmd = f"LLVM_PROFILE_FILE=\"{RedpandaService.COVERAGE_PROFRAW_CAPTURE}\" " + cmd
 
         node.account.ssh(cmd)
 
@@ -505,3 +521,7 @@ class RedpandaService(Service):
         client = self._client_type(self)
         self.logger.debug(f"Deleting topic {name}")
         client.delete_topic(name)
+
+    def cov_enabled(self):
+        return self._context.globals.get(self.COV_KEY,
+                                         self.DEFAULT_COV_OPT)
