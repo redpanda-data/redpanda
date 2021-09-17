@@ -304,6 +304,11 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     co_return make_error_code(errc::success);
 }
 
+ss::future<std::error_code>
+topic_table::apply(create_non_replicable_topic_cmd cmd, model::offset o) {
+    co_return make_error_code(errc::topic_operation_error);
+}
+
 void topic_table::notify_waiters() {
     if (_waiters.empty()) {
         return;

@@ -240,6 +240,12 @@ std::ostream& operator<<(std::ostream& o, const backend_operation& op) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const non_replicable_topic& d) {
+    fmt::print(
+      o, "{{Source topic: {}, materialized topic: {}}}", d.source, d.name);
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const reconciliation_status& s) {
     switch (s) {
     case reconciliation_status::done:
@@ -795,6 +801,29 @@ adl<cluster::create_data_policy_cmd_data>::from(iobuf_parser& in) {
       cluster::create_data_policy_cmd_data::current_version);
     auto dp = adl<v8_engine::data_policy>{}.from(in);
     return cluster::create_data_policy_cmd_data{.dp = std::move(dp)};
+}
+
+void adl<cluster::non_replicable_topic>::to(
+  iobuf& out, cluster::non_replicable_topic&& cm_cmd_data) {
+    return serialize(
+      out,
+      cm_cmd_data.current_version,
+      std::move(cm_cmd_data.source),
+      std::move(cm_cmd_data.name));
+}
+
+cluster::non_replicable_topic
+adl<cluster::non_replicable_topic>::from(iobuf_parser& in) {
+    auto version = adl<int8_t>{}.from(in);
+    vassert(
+      version == cluster::non_replicable_topic::current_version,
+      "Unexpected version: {} (expected: {})",
+      version,
+      cluster::non_replicable_topic::current_version);
+    auto source = adl<model::topic_namespace>{}.from(in);
+    auto name = adl<model::topic_namespace>{}.from(in);
+    return cluster::non_replicable_topic{
+      .source = std::move(source), .name = std::move(name)};
 }
 
 } // namespace reflection

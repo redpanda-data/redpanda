@@ -86,7 +86,8 @@ public:
       move_partition_replicas_cmd,
       finish_moving_partition_replicas_cmd,
       update_topic_properties_cmd,
-      create_partition_cmd>{};
+      create_partition_cmd,
+      create_non_replicable_topic_cmd>{};
 
     /// State machine applies
     ss::future<std::error_code> apply(create_topic_cmd, model::offset);
@@ -98,6 +99,8 @@ public:
     ss::future<std::error_code>
       apply(update_topic_properties_cmd, model::offset);
     ss::future<std::error_code> apply(create_partition_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(create_non_replicable_topic_cmd, model::offset);
     ss::future<> stop();
 
     /// Delta API

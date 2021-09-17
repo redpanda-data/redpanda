@@ -586,6 +586,13 @@ struct create_data_policy_cmd_data {
     v8_engine::data_policy dp;
 };
 
+struct non_replicable_topic {
+    static constexpr int8_t current_version = 1;
+    model::topic_namespace source;
+    model::topic_namespace name;
+};
+std::ostream& operator<<(std::ostream&, const non_replicable_topic&);
+
 enum class reconciliation_status : int8_t {
     done,
     in_progress,
@@ -770,6 +777,12 @@ template<>
 struct adl<cluster::create_data_policy_cmd_data> {
     void to(iobuf&, cluster::create_data_policy_cmd_data&&);
     cluster::create_data_policy_cmd_data from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::non_replicable_topic> {
+    void to(iobuf& out, cluster::non_replicable_topic&&);
+    cluster::non_replicable_topic from(iobuf_parser&);
 };
 
 } // namespace reflection

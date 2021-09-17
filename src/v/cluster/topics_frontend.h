@@ -68,6 +68,9 @@ public:
       std::vector<create_partititions_configuration>,
       model::timeout_clock::time_point);
 
+    ss::future<std::vector<topic_result>> create_non_replicable_topics(
+      std::vector<non_replicable_topic>, model::timeout_clock::time_point);
+
     ss::future<bool> validate_shard(model::node_id node, uint32_t shard) const;
 
 private:
@@ -81,6 +84,9 @@ private:
 
     ss::future<topic_result>
       do_delete_topic(model::topic_namespace, model::timeout_clock::time_point);
+
+    ss::future<topic_result> do_create_non_replicable_topic(
+      non_replicable_topic, model::timeout_clock::time_point);
 
     ss::future<std::vector<topic_result>> dispatch_create_to_leader(
       model::node_id,
