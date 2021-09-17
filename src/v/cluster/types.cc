@@ -212,6 +212,8 @@ operator<<(std::ostream& o, const topic_table_delta::op_type& tp) {
         return o << "update_finished";
     case topic_table_delta::op_type::update_properties:
         return o << "update_properties";
+    case topic_table_delta::op_type::add_non_replicable:
+        return o << "add_non_replicable_addition";
     }
     __builtin_unreachable();
 }
@@ -242,7 +244,7 @@ std::ostream& operator<<(std::ostream& o, const backend_operation& op) {
 
 std::ostream& operator<<(std::ostream& o, const non_replicable_topic& d) {
     fmt::print(
-      o, "{{Source topic: {}, materialized topic: {}}}", d.source, d.name);
+      o, "{{Source topic: {}, non replicable topic: {}}}", d.source, d.name);
     return o;
 }
 

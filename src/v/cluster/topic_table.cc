@@ -306,7 +306,33 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
 
 ss::future<std::error_code>
 topic_table::apply(create_non_replicable_topic_cmd cmd, model::offset o) {
-    co_return make_error_code(errc::topic_operation_error);
+    const model::topic_namespace& source = cmd.key.source;
+    const model::topic_namespace& new_non_rep_topic = cmd.key.name;
+    if (_topics.contains(new_non_rep_topic)) {
+        co_return make_error_code(errc::topic_already_exists);
+    }
+    auto tp = _topics.find(source);
+    if (tp == _topics.end()) {
+        co_return make_error_code(errc::source_topic_not_exists);
+    }
+
+    for (const auto& pas : tp->second.configuration.assignments) {
+        _pending_deltas.emplace_back(
+          model::ntp(new_non_rep_topic.ns, new_non_rep_topic.tp, pas.id),
+          pas,
+          o,
+          delta::op_type::add_non_replicable);
+    }
+
+    auto ca = tp->second.configuration;
+    ca.cfg.tp_ns = new_non_rep_topic;
+    for (auto& assignment : ca.assignments) {
+        assignment.group = raft::group_id(-1);
+    }
+    _topics.insert(
+      {new_non_rep_topic, topic_metadata(std::move(ca), source.tp)});
+    notify_waiters();
+    co_return make_error_code(errc::success);
 }
 
 void topic_table::notify_waiters() {
