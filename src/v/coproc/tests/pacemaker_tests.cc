@@ -8,6 +8,7 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "coproc/pacemaker.h"
 #include "coproc/tests/fixtures/coproc_test_fixture.h"
 #include "coproc/tests/utils/coprocessor.h"
 #include "coproc/types.h"
@@ -178,7 +179,7 @@ FIXTURE_TEST(test_copro_auto_deregister_function, coproc_test_fixture) {
 
     /// Assert that the coproc does not exist in memory
     auto n_registered = root_fixture()
-                          ->app.pacemaker
+                          ->app.coprocessing->get_pacemaker()
                           .map_reduce0(
                             [id](coproc::pacemaker& p) {
                                 return p.local_script_id_exists(id);

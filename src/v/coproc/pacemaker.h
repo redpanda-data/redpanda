@@ -11,11 +11,14 @@
 
 #pragma once
 
+#include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
+#include "cluster/topics_frontend.h"
 #include "config/configuration.h"
 #include "coproc/ntp_context.h"
 #include "coproc/offset_storage_utils.h"
 #include "coproc/script_context.h"
+#include "coproc/sys_refs.h"
 #include "coproc/types.h"
 #include "rpc/reconnect_transport.h"
 #include "storage/fwd.h"
@@ -42,10 +45,7 @@ public:
      * @param address of coprocessor engine
      * @param reference to the storage layer
      */
-    pacemaker(
-      unresolved_address,
-      ss::sharded<storage::api>&,
-      ss::sharded<cluster::partition_manager>&);
+    pacemaker(unresolved_address, sys_refs&);
 
     /**
      * Begins the offset tracking fiber

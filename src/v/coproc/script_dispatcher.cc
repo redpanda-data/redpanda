@@ -178,12 +178,12 @@ script_dispatcher::enable_coprocessors(enable_copros_request req) {
     for (enable_copros_reply::data& r : reply.value().data.acks) {
         /// 1. Only continue on success
         script_id id = r.script_meta.id;
-        vlog(coproclog.debug, "Request complete: {}", id);
         if (r.ack != enable_response_code::success) {
             vlog(
               coproclog.info,
-              "wasm engine failed to register script, returned with code: "
+              "wasm engine failed to register script {}, returned with code: "
               "{}",
+              id,
               r.ack);
             continue;
         }

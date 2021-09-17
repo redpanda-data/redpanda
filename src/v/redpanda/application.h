@@ -15,8 +15,7 @@
 #include "cluster/controller.h"
 #include "cluster/fwd.h"
 #include "cluster/rm_partition_frontend.h"
-#include "coproc/event_listener.h"
-#include "coproc/pacemaker.h"
+#include "coproc/api.h"
 #include "kafka/server/fwd.h"
 #include "kafka/server/rm_group_frontend.h"
 #include "pandaproxy/rest/configuration.h"
@@ -77,7 +76,7 @@ public:
     ss::sharded<kafka::group_router> group_router;
     ss::sharded<cluster::shard_table> shard_table;
     ss::sharded<storage::api> storage;
-    ss::sharded<coproc::pacemaker> pacemaker;
+    std::unique_ptr<coproc::api> coprocessing;
     ss::sharded<cluster::partition_manager> partition_manager;
     ss::sharded<raft::recovery_throttle> recovery_throttle;
     ss::sharded<raft::group_manager> raft_group_manager;
@@ -135,7 +134,6 @@ private:
     scheduling_groups _scheduling_groups;
     ss::logger _log;
 
-    std::unique_ptr<coproc::wasm::event_listener> _wasm_event_listener;
     ss::sharded<rpc::connection_cache> _raft_connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<rpc::server> _rpc;

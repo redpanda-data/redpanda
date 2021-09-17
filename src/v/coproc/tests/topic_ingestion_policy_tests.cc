@@ -8,6 +8,7 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "coproc/pacemaker.h"
 #include "coproc/tests/fixtures/coproc_test_fixture.h"
 #include "coproc/tests/utils/coprocessor.h"
 #include "model/namespace.h"
@@ -44,12 +45,14 @@ public:
         /// Wait for the coprocessor to startup before next batch
         coproc::script_id id(78);
         tests::cooperative_spin_wait_with_timeout(60s, [this, id]() {
-            return root_fixture()->app.pacemaker.map_reduce0(
-              [id](coproc::pacemaker& p) {
-                  return p.local_script_id_exists(id);
-              },
-              false,
-              std::logical_or<>());
+            return root_fixture()
+              ->app.coprocessing->get_pacemaker()
+              .map_reduce0(
+                [id](coproc::pacemaker& p) {
+                    return p.local_script_id_exists(id);
+                },
+                false,
+                std::logical_or<>());
         }).get();
 
         push(
@@ -120,5 +123,5 @@ FIXTURE_TEST(test_copro_tip_stored, coproc_test_fixture) {
 
     auto results = drain(output_ntp, 80).get();
     BOOST_CHECK(results);
-    BOOST_CHECK(results->size() == 80);
+    BOOST_CHECK(results->size() >= 80);
 }
