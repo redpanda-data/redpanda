@@ -241,7 +241,7 @@ func tune(
 	if allDisabled {
 		log.Warn(
 			"All tuners were disabled, so none were applied. You may run " +
-				" `rpk mode prod` to enable the recommended set of tuners " +
+				" `rpk redpanda mode prod` to enable the recommended set of tuners " +
 				" for non-containerized production use.",
 		)
 	}
