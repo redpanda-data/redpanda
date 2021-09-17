@@ -128,6 +128,12 @@ controller_api::get_reconciliation_state(model::ntp ntp) {
           std::move(ntp), std::move(ops), reconciliation_status::in_progress);
     }
 
+    // if update is in progress return
+    if (_topics.local().is_update_in_progress(ntp)) {
+        co_return ntp_reconciliation_state(
+          std::move(ntp), std::move(ops), reconciliation_status::in_progress);
+    }
+
     // deltas are empty, make sure that local node partitions are in align with
     // expected cluster state
 
