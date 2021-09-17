@@ -524,5 +524,4 @@ class RedpandaService(Service):
         client.delete_topic(name)
 
     def cov_enabled(self):
-        return self._context.globals.get(self.COV_KEY,
-                                         self.DEFAULT_COV_OPT)
+        return self._context.globals.get(self.COV_KEY, self.DEFAULT_COV_OPT)
