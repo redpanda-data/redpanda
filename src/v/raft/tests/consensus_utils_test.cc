@@ -70,6 +70,28 @@ BOOST_AUTO_TEST_CASE(test_filling_gaps) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(test_filling_first_gap) {
+    auto batches = storage::test::make_random_batches(
+      model::offset(1), 50, true);
+
+    // cut some holes in log
+    for (size_t i = 0; i < 10; ++i) {
+        auto idx = random_generators::get_int(batches.size() - 1);
+        auto it = std::next(batches.begin(), idx);
+        batches.erase(it, std::next(it));
+    }
+
+    model::offset first_expected = model::offset(0);
+
+    auto without_gaps = raft::details::make_ghost_batches_in_gaps(
+      first_expected, std::move(batches));
+
+    for (auto& b : without_gaps) {
+        BOOST_REQUIRE_EQUAL(b.base_offset(), first_expected);
+        first_expected = raft::details::next_offset(b.last_offset());
+    }
+}
+
 BOOST_AUTO_TEST_CASE(test_filling_gaps_larger_than_batch_size) {
     auto batches = storage::test::make_random_batches(
       model::offset(20), 50, true);
