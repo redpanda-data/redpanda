@@ -27,10 +27,10 @@ pps::schema_definition not_minimal_sanitized{
   R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"}]})"};
 
 pps::schema_definition leading_dot{
-  R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":".f1"}]})"};
+  R"({"type":"record","name":"record","fields":[{"name":"one","type":["null",{"fields":[{"name":"f1","type":["null","string"]}],"name":".r1","type":"record"}]},{"name":"two","type":["null",".r1"]}]})"};
 
 pps::schema_definition leading_dot_sanitized{
-  R"({"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"}]})"};
+  R"({"type":"record","name":"record","fields":[{"name":"one","type":["null",{"fields":[{"name":"f1","type":["null","string"]}],"name":"r1","type":"record"}]},{"name":"two","type":["null","r1"]}]})"};
 
 BOOST_AUTO_TEST_CASE(test_sanitize_avro_minify) {
     BOOST_REQUIRE_EQUAL(
