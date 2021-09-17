@@ -134,6 +134,46 @@ public:
       retry_chain_node& parent);
 
 private:
+    /// Information about started upload
+    struct scheduled_upload {
+        /// The future that will be ready when the segment will be fully
+        /// uploaded
+        std::optional<ss::future<cloud_storage::upload_result>> result;
+        /// Last offset of the uploaded segment or part
+        model::offset inclusive_last_offset;
+        /// Segment metadata
+        std::optional<cloud_storage::manifest::segment_meta> meta;
+        /// Name of the uploaded segment
+        std::optional<ss::sstring> name;
+        /// Offset range convered by the upload
+        std::optional<model::offset> delta;
+        /// Contains 'no' if the method can be called another time or 'yes'
+        /// if it shouldn't be called (if there is no data to upload).
+        /// If the 'stop' is 'no' the 'result' might be 'nullopt'. In this
+        /// case the upload is not started but the method might be called
+        /// again anyway.
+        ss::stop_iteration stop;
+    };
+    /// Start upload without waiting for it to complete
+    ss::future<scheduled_upload> schedule_single_upload(
+      storage::log_manager& lm,
+      model::offset last_uploaded_offset,
+      model::offset last_stable_offset,
+      retry_chain_node& parent);
+
+    /// Start all uploads
+    ss::future<std::vector<scheduled_upload>> schedule_uploads(
+      storage::log_manager& lm,
+      model::offset last_stable_offset,
+      retry_chain_node& parent);
+
+    /// Wait until all scheduled uploads will be completed
+    ///
+    /// Update the probe and manifest
+    ss::future<ntp_archiver::batch_result> wait_all_scheduled_uploads(
+      std::vector<ntp_archiver::scheduled_upload> scheduled,
+      retry_chain_node& parent);
+
     /// Upload individual segment to S3.
     ///
     /// \return true on success and false otherwise

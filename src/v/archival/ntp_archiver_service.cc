@@ -138,15 +138,112 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
       fib);
 }
 
-ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
+ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
+  storage::log_manager& lm,
+  model::offset last_uploaded_offset,
+  model::offset last_stable_offset,
+  retry_chain_node& parent) {
+    retry_chain_logger ctxlog(archival_log, parent, _ntp.path());
+
+    auto upload = co_await _policy.get_next_candidate(
+      last_uploaded_offset, last_stable_offset, lm);
+
+    if (upload.source.get() == nullptr) {
+        vlog(
+          ctxlog.debug,
+          "Uploading next candidates, last_uploaded_offset: {}, "
+          "last_stable_offset: {} ...skip",
+          last_uploaded_offset,
+          last_stable_offset);
+        // Indicate that the upload is not started
+        co_return scheduled_upload{
+          .result = std::nullopt,
+          .inclusive_last_offset = {},
+          .meta = std::nullopt,
+          .name = std::nullopt,
+          .delta = std::nullopt,
+          .stop = ss::stop_iteration::yes,
+        };
+    }
+    if (_manifest.contains(upload.exposed_name)) {
+        // If the manifest already contains the name we have the following
+        // cases
+        //
+        // manifest: [A-B], upload: [C-D] where A/C are base offsets and B/D
+        // are committed offsets
+        // invariant:
+        // - A == C (because the name contains base offset)
+        // cases:
+        // - B < C:
+        //   - We need to upload the segment since it has more data.
+        //     Skipping the upload is not an option since partial upload
+        //     is not guaranteed to start from an offset which is not equal
+        //     to B (which will trigger a loop).
+        // - B > C:
+        //   - Normally this shouldn't happen because we will lookup
+        //     offset B to start the next upload and the segment returned by
+        //     the policy will have commited offset which is less than this
+        //     value. We need to log a warning and continue with the largest
+        //     offset.
+        // - B == C:
+        //   - Same as previoius. We need to log error and continue with the
+        //   largest offset.
+        const auto& meta = _manifest.get(upload.exposed_name);
+        auto dirty_offset = upload.source->offsets().dirty_offset;
+        if (meta->committed_offset < dirty_offset) {
+            vlog(
+              ctxlog.info,
+              "Uploading next candidates for {}, attempt to re-upload "
+              "{}, manifest committed offset {}, upload dirty offset {}",
+              _ntp,
+              upload,
+              meta->committed_offset,
+              dirty_offset);
+        } else if (meta->committed_offset >= dirty_offset) {
+            vlog(
+              ctxlog.warn,
+              "Skip upload for {} because it's already in the manifest "
+              "{}, manifest committed offset {}, upload dirty offset {}",
+              _ntp,
+              upload,
+              meta->committed_offset,
+              dirty_offset);
+            last_uploaded_offset = meta->committed_offset;
+            co_return scheduled_upload{
+              .result = std::nullopt,
+              .inclusive_last_offset = last_uploaded_offset,
+              .meta = std::nullopt,
+              .name = std::nullopt,
+              .delta = std::nullopt,
+              .stop = ss::stop_iteration::no,
+            };
+        }
+    }
+    auto offset = upload.final_offset;
+    auto base = upload.starting_offset;
+    last_uploaded_offset = offset + model::offset(1);
+    co_return scheduled_upload {
+        .result = upload_segment(upload, parent),
+        .inclusive_last_offset = offset,
+        .meta = cloud_storage::manifest::segment_meta{
+            .is_compacted = upload.source->is_compacted_segment(),
+            .size_bytes = upload.content_length,
+            .base_offset = upload.starting_offset,
+            .committed_offset = offset,
+        },
+        .name = upload.exposed_name,
+        .delta = offset - base,
+        .stop = ss::stop_iteration::no,
+    };
+}
+
+ss::future<std::vector<ntp_archiver::scheduled_upload>>
+ntp_archiver::schedule_uploads(
   storage::log_manager& lm,
   model::offset last_stable_offset,
   retry_chain_node& parent) {
     retry_chain_logger ctxlog(archival_log, parent, _ntp.path());
-    gate_guard guard{_gate};
-    auto mlock = co_await ss::get_units(_mutex, 1);
-    vlog(ctxlog.debug, "Uploading next candidates called for {}", _ntp);
-    ntp_archiver::batch_result total{};
+
     // We have to increment last offset to guarantee progress.
     // The manifest's last offset contains dirty_offset of the
     // latest uploaded segment but '_policy' requires offset that
@@ -155,93 +252,70 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
     auto last_uploaded_offset = _manifest.size() ? _manifest.get_last_offset()
                                                      + model::offset(1)
                                                  : model::offset(0);
+
+    vlog(ctxlog.debug, "Uploading next candidates called for {}", _ntp);
+
+    vlog(
+      ctxlog.debug,
+      "Uploading next candidates for {}, trying offset {}, LSO {}",
+      _ntp,
+      last_uploaded_offset,
+      last_stable_offset);
+
+    return ss::do_with(
+      std::vector<scheduled_upload>(),
+      size_t(0),
+      last_uploaded_offset,
+      [this, &lm, last_stable_offset, &parent](
+        std::vector<scheduled_upload>& scheduled,
+        size_t& ix,
+        model::offset& last_uploaded_offset) {
+          return ss::repeat([this,
+                             &lm,
+                             &last_uploaded_offset,
+                             last_stable_offset,
+                             &parent,
+                             &scheduled,
+                             &ix] {
+                     if (ix == _concurrency) {
+                         return ss::make_ready_future<ss::stop_iteration>(
+                           ss::stop_iteration::yes);
+                     }
+                     ++ix;
+                     return schedule_single_upload(
+                              lm,
+                              last_uploaded_offset,
+                              last_stable_offset,
+                              parent)
+                       .then([&scheduled,
+                              &last_uploaded_offset](scheduled_upload upload) {
+                           auto res = upload.stop;
+                           last_uploaded_offset = upload.inclusive_last_offset
+                                                  + model::offset(1);
+                           scheduled.push_back(std::move(upload));
+                           return ss::make_ready_future<ss::stop_iteration>(
+                             res);
+                       });
+                 })
+            .then([&scheduled] {
+                return ss::make_ready_future<std::vector<scheduled_upload>>(
+                  std::move(scheduled));
+            });
+      });
+}
+
+ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
+  std::vector<ntp_archiver::scheduled_upload> scheduled,
+  retry_chain_node& parent) {
+    retry_chain_logger ctxlog(archival_log, parent, _ntp.path());
+    ntp_archiver::batch_result total{};
     std::vector<ss::future<cloud_storage::upload_result>> flist;
-    std::vector<cloud_storage::manifest::segment_meta> meta;
-    std::vector<ss::sstring> names;
-    std::vector<model::offset> deltas;
-    for (size_t i = 0; i < _concurrency; i++) {
-        vlog(
-          ctxlog.debug,
-          "Uploading next candidates for {}, trying offset {}, LSO {}",
-          _ntp,
-          last_uploaded_offset,
-          last_stable_offset);
-        auto upload = co_await _policy.get_next_candidate(
-          last_uploaded_offset, last_stable_offset, lm);
-        if (upload.source.get() == nullptr) {
-            vlog(
-              ctxlog.debug,
-              "Uploading next candidates, last_uploaded_offset: {}, "
-              "last_stable_offset: {} ...skip",
-              last_uploaded_offset,
-              last_stable_offset);
-            // NOTE: this code trggered compiler bug which can be fixed
-            // by using variables last_*_offset after co_await. The bug
-            // led to segfault on a second iteration of the loop when the
-            // local variables were accessed seocnd time.
-            break;
+    std::vector<size_t> ixupload;
+    for (size_t ix = 0; ix < scheduled.size(); ix++) {
+        if (scheduled[ix].result) {
+            flist.emplace_back(std::move(*scheduled[ix].result));
+            ixupload.push_back(ix);
         }
-        if (_manifest.contains(upload.exposed_name)) {
-            // If the manifest already contains the name we have the following
-            // cases
-            //
-            // manifest: [A-B], upload: [C-D] where A/C are base offsets and B/D
-            // are committed offsets
-            // invariant:
-            // - A == C (because the name contains base offset)
-            // cases:
-            // - B < C:
-            //   - We need to upload the segment since it has more data.
-            //     Skipping the upload is not an option since partial upload
-            //     is not guaranteed to start from an offset which is not equal
-            //     to B (which will trigger a loop).
-            // - B > C:
-            //   - Normally this shouldn't happen because we will lookup
-            //     offset B to start the next upload and the segment returned by
-            //     the policy will have commited offset which is less than this
-            //     value. We need to log a warning and continue with the largest
-            //     offset.
-            // - B == C:
-            //   - Same as previoius. We need to log error and continue with the
-            //   largest offset.
-            const auto& meta = _manifest.get(upload.exposed_name);
-            auto dirty_offset = upload.source->offsets().dirty_offset;
-            if (meta->committed_offset < dirty_offset) {
-                vlog(
-                  ctxlog.info,
-                  "Uploading next candidates for {}, attempt to re-upload "
-                  "{}, manifest committed offset {}, upload dirty offset {}",
-                  _ntp,
-                  upload,
-                  meta->committed_offset,
-                  dirty_offset);
-            } else if (meta->committed_offset >= dirty_offset) {
-                vlog(
-                  ctxlog.warn,
-                  "Skip upload for {} because it's already in the manifest "
-                  "{}, manifest committed offset {}, upload dirty offset {}",
-                  _ntp,
-                  upload,
-                  meta->committed_offset,
-                  dirty_offset);
-                last_uploaded_offset = meta->committed_offset
-                                       + model::offset(1);
-                continue;
-            }
-        }
-        auto offset = upload.final_offset;
-        auto base = upload.starting_offset;
-        last_uploaded_offset = offset + model::offset(1);
-        deltas.push_back(offset - base);
-        flist.emplace_back(upload_segment(upload, parent));
-        cloud_storage::manifest::segment_meta m{
-          .is_compacted = upload.source->is_compacted_segment(),
-          .size_bytes = upload.content_length,
-          .base_offset = upload.starting_offset,
-          .committed_offset = offset,
-        };
-        meta.emplace_back(m);
-        names.emplace_back(upload.exposed_name);
     }
     if (flist.empty()) {
         vlog(
@@ -258,8 +332,9 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
         if (results[i] != cloud_storage::upload_result::success) {
             break;
         }
-        _probe.uploaded(deltas[i]);
-        _manifest.add(segment_name(names[i]), meta[i]);
+        const auto& upload = scheduled[ixupload[i]];
+        _probe.uploaded(*upload.delta);
+        _manifest.add(segment_name(*upload.name), *upload.meta);
     }
     if (total.num_succeded != 0) {
         vlog(
@@ -273,6 +348,25 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
         _last_upload_time = ss::lowres_clock::now();
     }
     co_return total;
+}
+
+ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
+  storage::log_manager& lm,
+  model::offset last_stable_offset,
+  retry_chain_node& parent) {
+    retry_chain_logger ctxlog(archival_log, parent, _ntp.path());
+    vlog(ctxlog.debug, "Uploading next candidates called for {}", _ntp);
+
+    return ss::with_gate(_gate, [this, &lm, last_stable_offset, &parent] {
+        return ss::with_semaphore(
+          _mutex, 1, [this, &lm, last_stable_offset, &parent] {
+              return schedule_uploads(lm, last_stable_offset, parent)
+                .then([this, &parent](std::vector<scheduled_upload> scheduled) {
+                    return wait_all_scheduled_uploads(
+                      std::move(scheduled), parent);
+                });
+          });
+    });
 }
 
 } // namespace archival
