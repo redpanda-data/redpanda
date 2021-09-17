@@ -433,4 +433,14 @@ ss::future<> tm_stm::expire_tx(kafka::transactional_id tx_id) {
     co_await update_tx(tx, tx.etag).discard_result();
 }
 
+ss::future<> tm_stm::handle_eviction() {
+    return _state_lock.hold_write_lock().then(
+      [this]([[maybe_unused]] ss::basic_rwlock<>::holder unit) {
+          _tx_table.clear();
+          _pid_tx_id.clear();
+          set_next(_c->start_offset());
+          return ss::now();
+      });
+}
+
 } // namespace cluster

@@ -101,6 +101,7 @@ public:
 
 protected:
     void set_next(model::offset offset);
+    virtual ss::future<> handle_eviction();
     ss::gate _gate;
 
 private:

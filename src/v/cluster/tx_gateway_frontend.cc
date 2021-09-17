@@ -259,40 +259,49 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
                 try_abort_reply{.ec = tx_errc::stm_not_found});
           }
 
-          return stm->barrier().then([&self, stm, pid, tx_seq, timeout](
-                                       bool ready) {
-              if (!ready) {
-                  return ss::make_ready_future<try_abort_reply>(
-                    try_abort_reply{.ec = tx_errc::unknown_server_error});
-              }
-              auto tx_id_opt = stm->get_id_by_pid(pid);
-              if (!tx_id_opt) {
-                  return ss::make_ready_future<try_abort_reply>(
-                    try_abort_reply{.aborted = true, .ec = tx_errc::none});
-              }
-              auto tx_id = tx_id_opt.value();
+          return stm->read_lock().then([&self, stm, pid, tx_seq, timeout](
+                                         ss::basic_rwlock<>::holder unit) {
+              return stm->barrier()
+                .then([&self, stm, pid, tx_seq, timeout](bool ready) {
+                    if (!ready) {
+                        return ss::make_ready_future<try_abort_reply>(
+                          try_abort_reply{.ec = tx_errc::unknown_server_error});
+                    }
+                    auto tx_id_opt = stm->get_id_by_pid(pid);
+                    if (!tx_id_opt) {
+                        return ss::make_ready_future<try_abort_reply>(
+                          try_abort_reply{
+                            .aborted = true, .ec = tx_errc::none});
+                    }
+                    auto tx_id = tx_id_opt.value();
 
-              auto tx_opt = stm->get_tx_by_id(tx_id);
-              if (!tx_opt) {
-                  return ss::make_ready_future<try_abort_reply>(
-                    try_abort_reply{.aborted = true, .ec = tx_errc::none});
-              }
-              auto tx = tx_opt.value();
-              if (tx.pid != pid || tx.tx_seq != tx_seq) {
-                  return ss::make_ready_future<try_abort_reply>(
-                    try_abort_reply{.aborted = true, .ec = tx_errc::none});
-              }
+                    auto tx_opt = stm->get_tx_by_id(tx_id);
+                    if (!tx_opt) {
+                        return ss::make_ready_future<try_abort_reply>(
+                          try_abort_reply{
+                            .aborted = true, .ec = tx_errc::none});
+                    }
+                    auto tx = tx_opt.value();
+                    if (tx.pid != pid || tx.tx_seq != tx_seq) {
+                        return ss::make_ready_future<try_abort_reply>(
+                          try_abort_reply{
+                            .aborted = true, .ec = tx_errc::none});
+                    }
 
-              return stm->get_tx_lock(tx_id)
-                ->with(
-                  timeout,
-                  [&self, stm, tx_id, pid, tx_seq, timeout]() {
-                      return self.do_try_abort(
-                        stm, tx_id, pid, tx_seq, timeout);
-                  })
-                .handle_exception_type([](const ss::semaphore_timed_out&) {
-                    return try_abort_reply{.ec = tx_errc::unknown_server_error};
-                });
+                    return stm->get_tx_lock(tx_id)
+                      ->with(
+                        timeout,
+                        [&self, stm, tx_id, pid, tx_seq, timeout]() {
+                            return self.do_try_abort(
+                              stm, tx_id, pid, tx_seq, timeout);
+                        })
+                      .handle_exception_type(
+                        [](const ss::semaphore_timed_out&) {
+                            return try_abort_reply{
+                              .ec = tx_errc::unknown_server_error};
+                        });
+                })
+                .finally([u = std::move(unit)] {});
           });
       });
 }
@@ -537,10 +546,16 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
                 init_tm_tx_reply{.ec = tx_errc::stm_not_found});
           }
 
-          return stm->get_tx_lock(tx_id)->with(
-            [&self, stm, tx_id, transaction_timeout_ms, timeout]() {
-                return self.do_init_tm_tx(
-                  stm, tx_id, transaction_timeout_ms, timeout);
+          return stm->read_lock().then(
+            [&self, stm, tx_id, transaction_timeout_ms, timeout](
+              ss::basic_rwlock<>::holder unit) {
+                return stm->get_tx_lock(tx_id)
+                  ->with(
+                    [&self, stm, tx_id, transaction_timeout_ms, timeout]() {
+                        return self.do_init_tm_tx(
+                          stm, tx_id, transaction_timeout_ms, timeout);
+                    })
+                  .finally([u = std::move(unit)] {});
             });
       });
 }
@@ -714,9 +729,13 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
                   request, tx_errc::invalid_txn_state));
           }
 
-          return stm->get_tx_lock(request.transactional_id)
-            ->with([&self, stm, request, timeout]() {
-                return self.do_add_partition_to_tx(stm, request, timeout);
+          return stm->read_lock().then(
+            [&self, stm, request, timeout](ss::basic_rwlock<>::holder unit) {
+                return stm->get_tx_lock(request.transactional_id)
+                  ->with([&self, stm, request, timeout]() {
+                      return self.do_add_partition_to_tx(stm, request, timeout);
+                  })
+                  .finally([u = std::move(unit)] {});
             });
       });
 }
@@ -869,9 +888,13 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
                 add_offsets_tx_reply{.error_code = tx_errc::invalid_txn_state});
           }
 
-          return stm->get_tx_lock(request.transactional_id)
-            ->with([&self, stm, request, timeout]() {
-                return self.do_add_offsets_to_tx(stm, request, timeout);
+          return stm->read_lock().then(
+            [&self, stm, request, timeout](ss::basic_rwlock<>::holder unit) {
+                return stm->get_tx_lock(request.transactional_id)
+                  ->with([&self, stm, request, timeout]() {
+                      return self.do_add_offsets_to_tx(stm, request, timeout);
+                  })
+                  .finally([u = std::move(unit)] {});
             });
       });
 }
@@ -958,20 +981,26 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
              stm,
              timeout,
              outcome]() mutable {
-                return stm->get_tx_lock(request.transactional_id)
-                  ->with([request = std::move(request),
-                          &self,
-                          stm,
-                          timeout,
-                          outcome]() mutable {
-                      return self
-                        .do_end_txn(std::move(request), stm, timeout, outcome)
-                        .finally([outcome]() {
-                            if (!outcome->available()) {
-                                outcome->set_value(
-                                  tx_errc::unknown_server_error);
-                            }
-                        });
+                return stm->read_lock().then(
+                  [request = std::move(request), &self, stm, timeout, outcome](
+                    ss::basic_rwlock<>::holder unit) {
+                      return stm->get_tx_lock(request.transactional_id)
+                        ->with([request = std::move(request),
+                                &self,
+                                stm,
+                                timeout,
+                                outcome]() mutable {
+                            return self
+                              .do_end_txn(
+                                std::move(request), stm, timeout, outcome)
+                              .finally([outcome]() {
+                                  if (!outcome->available()) {
+                                      outcome->set_value(
+                                        tx_errc::unknown_server_error);
+                                  }
+                              });
+                        })
+                        .finally([u = std::move(unit)] {});
                   });
             });
 
@@ -1455,7 +1484,10 @@ ss::future<> tx_gateway_frontend::do_expire_old_txs() {
         }
 
         auto stm = partition->tm_stm();
-        return expire_old_txs(stm);
+        return stm->read_lock().then(
+          [this, stm](ss::basic_rwlock<>::holder unit) {
+              return expire_old_txs(stm).finally([u = std::move(unit)] {});
+          });
     });
 }
 

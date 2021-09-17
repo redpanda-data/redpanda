@@ -132,6 +132,9 @@ public:
 
     void testing_only_enable_transactions() { _is_tx_enabled = true; }
 
+protected:
+    ss::future<> handle_eviction() override;
+
 private:
     ss::future<checked<model::term_id, tx_errc>> do_begin_tx(
       model::producer_identity, model::tx_seq, std::chrono::milliseconds);
@@ -280,6 +283,7 @@ private:
         return lock_it->second;
     }
 
+    ss::basic_rwlock<> _state_lock;
     absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
     log_state _log_state;
     mem_state _mem_state;
