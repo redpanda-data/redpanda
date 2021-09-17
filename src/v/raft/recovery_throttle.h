@@ -63,10 +63,9 @@ public:
         return _sem.wait(size);
     }
 
-    ss::future<> stop() {
+    void shutdown() {
         _refresh_timer.cancel();
         _sem.broken();
-        return ss::now();
     }
 
 private:

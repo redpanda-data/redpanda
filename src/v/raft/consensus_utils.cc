@@ -42,6 +42,8 @@
 
 #include <algorithm>
 #include <iterator>
+#include <limits>
+#include <vector>
 
 namespace raft::details {
 [[gnu::cold]] void throw_out_of_range() {
@@ -193,6 +195,28 @@ model::record_batch make_ghost_batch(
     return batch;
 }
 
+/**
+ * makes multiple ghost batches required to fill the gap in a way that max batch
+ * size (max of int32_t) is not exceeded
+ */
+std::vector<model::record_batch> make_ghost_batches(
+  model::offset start_offset, model::offset end_offset, model::term_id term) {
+    std::vector<model::record_batch> batches;
+    while (start_offset <= end_offset) {
+        static constexpr model::offset max_batch_size{
+          std::numeric_limits<int32_t>::max()};
+        // limit max batch size
+        const model::offset delta = std::min<model::offset>(
+          max_batch_size, end_offset - start_offset);
+
+        batches.push_back(
+          make_ghost_batch(start_offset, delta + start_offset, term));
+        start_offset = next_offset(batches.back().last_offset());
+    }
+
+    return batches;
+}
+
 ss::circular_buffer<model::record_batch> make_ghost_batches_in_gaps(
   model::offset expected_start,
   ss::circular_buffer<model::record_batch>&& batches) {
@@ -201,8 +225,9 @@ ss::circular_buffer<model::record_batch> make_ghost_batches_in_gaps(
     for (auto& b : batches) {
         // gap
         if (b.base_offset() > expected_start) {
-            res.push_back(make_ghost_batch(
-              expected_start, prev_offset(b.base_offset()), b.term()));
+            auto gb = make_ghost_batches(
+              expected_start, prev_offset(b.base_offset()), b.term());
+            std::move(gb.begin(), gb.end(), std::back_inserter(res));
         }
         expected_start = next_offset(b.last_offset());
         res.push_back(std::move(b));

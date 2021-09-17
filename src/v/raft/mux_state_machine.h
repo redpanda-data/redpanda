@@ -104,10 +104,14 @@ public:
 
     ss::future<> stop() {
         _mutex.broken();
+        // close the gate so no new requests will be handled
+        auto f = raft::state_machine::stop();
+        // fail all pending replicate requests
         for (auto& p : _promises) {
             p.second.set_value(std::error_code(errc::shutting_down));
         }
-        return raft::state_machine::stop();
+        _promises.clear();
+        return f;
     }
 
     /// Replicates record batch
