@@ -68,6 +68,8 @@ public:
       std::vector<create_partititions_configuration>,
       model::timeout_clock::time_point);
 
+    ss::future<bool> validate_shard(model::node_id node, uint32_t shard) const;
+
 private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 

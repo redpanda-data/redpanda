@@ -544,6 +544,14 @@ ss::future<std::vector<topic_result>> topics_frontend::create_partitions(
     co_return result;
 }
 
+ss::future<bool>
+topics_frontend::validate_shard(model::node_id node, uint32_t shard) const {
+    return _allocator.invoke_on(
+      partition_allocator::shard, [node, shard](partition_allocator& al) {
+          return al.state().validate_shard(node, shard);
+      });
+}
+
 allocation_request make_allocation_request(
   int16_t replication_factor, const create_partititions_configuration& cfg) {
     allocation_request req;

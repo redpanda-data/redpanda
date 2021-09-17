@@ -320,3 +320,44 @@ class PartitionMovementTest(EndToEndTest):
         for _ in range(25):
             self._move_and_verify()
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
+
+    @cluster(num_nodes=3)
+    def test_invalid_destination(self):
+        """
+        Check that requuests to move to non-existent locations are properly rejected.
+        """
+
+        self.start_redpanda(num_nodes=3)
+        spec = TopicSpec(name="topic", partition_count=1, replication_factor=1)
+        self.redpanda.create_topic(spec)
+        topic = spec.name
+        partition = 0
+
+        admin = Admin(self.redpanda)
+        brokers = admin.get_brokers()
+        assignments = self._get_assignments(admin, topic, partition)
+
+        # Pick a node id where the topic currently isn't allocated
+        valid_dest = list(
+            set([b['node_id']
+                 for b in brokers]) - set([a['node_id']
+                                           for a in assignments]))[0]
+
+        # This test will need updating on far-future hardware when core counts go higher
+        invalid_shard = 1000
+        invalid_dest = 30
+
+        # A valid node but an invalid core
+        assignments = [{"node_id": valid_dest, "core": invalid_shard}]
+        r = admin.set_partition_replicas(topic, partition, assignments)
+        assert r.status_code == 400
+
+        # An invalid node but a valid core
+        assignments = [{"node_id": invalid_dest, "core": 0}]
+        r = admin.set_partition_replicas(topic, partition, assignments)
+        assert r.status_code == 400
+
+        # Finally a valid move
+        assignments = [{"node_id": valid_dest, "core": 0}]
+        r = admin.set_partition_replicas(topic, partition, assignments)
+        assert r.status_code == 200

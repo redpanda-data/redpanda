@@ -43,6 +43,8 @@ public:
     void rollback(const std::vector<partition_assignment>& pa);
     void rollback(const std::vector<model::broker_shard>& v);
 
+    bool validate_shard(model::node_id node, uint32_t shard) const;
+
     // Raft group id
     raft::group_id next_group_id();
     raft::group_id last_group_id() const { return _highest_group; }
