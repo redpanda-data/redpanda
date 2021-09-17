@@ -202,7 +202,7 @@ model::record_batch make_ghost_batch(
 std::vector<model::record_batch> make_ghost_batches(
   model::offset start_offset, model::offset end_offset, model::term_id term) {
     std::vector<model::record_batch> batches;
-    while (start_offset < end_offset) {
+    while (start_offset <= end_offset) {
         static constexpr model::offset max_batch_size{
           std::numeric_limits<int32_t>::max()};
         // limit max batch size

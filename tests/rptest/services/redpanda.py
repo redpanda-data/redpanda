@@ -193,7 +193,7 @@ class RedpandaService(Service):
         cmd = (f"nohup {self.find_binary('redpanda')}"
                f" --redpanda-cfg {RedpandaService.CONFIG_FILE}"
                f" --default-log-level {self._log_level}"
-               f" --logger-log-level=exception=debug:archival=debug "
+               f" --logger-log-level=exception=debug:archival=debug:io=debug "
                f" --kernel-page-cache=true "
                f" --overprovisioned "
                f" --smp {self._num_cores} "
@@ -524,5 +524,4 @@ class RedpandaService(Service):
         client.delete_topic(name)
 
     def cov_enabled(self):
-        return self._context.globals.get(self.COV_KEY,
-                                         self.DEFAULT_COV_OPT)
+        return self._context.globals.get(self.COV_KEY, self.DEFAULT_COV_OPT)
