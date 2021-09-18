@@ -3,9 +3,11 @@ package wasm
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 
 	"github.com/Shopify/sarama"
 	"github.com/cespare/xxhash"
+	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
 )
 
@@ -60,7 +62,7 @@ func ExistingTopic(admin sarama.ClusterAdmin, topic string) (bool, error) {
 }
 
 func CreateDeployMsg(
-	name string, description string, content []byte,
+	name string, coprocType string, description string, content []byte,
 ) sarama.ProducerMessage {
 	shaValue := sha256.Sum256(content)
 	var headers = []sarama.RecordHeader{
@@ -73,6 +75,9 @@ func CreateDeployMsg(
 		}, {
 			Key:   []byte("sha256"),
 			Value: shaValue[:],
+		}, {
+			Key:   []byte("type"),
+			Value: []byte(coprocType),
 		},
 	}
 	id := xxhash.Sum64([]byte(name))
@@ -86,11 +91,14 @@ func CreateDeployMsg(
 	}
 }
 
-func CreateRemoveMsg(name string) sarama.ProducerMessage {
+func CreateRemoveMsg(name string, coprocType string) sarama.ProducerMessage {
 	var headers = []sarama.RecordHeader{
 		{
 			Key:   []byte("action"),
 			Value: []byte("remove"),
+		}, {
+			Key:   []byte("type"),
+			Value: []byte(coprocType),
 		},
 	}
 	id := xxhash.Sum64([]byte(name))
@@ -103,5 +111,23 @@ func CreateRemoveMsg(name string) sarama.ProducerMessage {
 		// information on message, just a key value
 		Value:   sarama.ByteEncoder([]byte{}),
 		Headers: headers,
+	}
+}
+
+func AddTypeFlag(command *cobra.Command, coprocType *string) {
+	command.Flags().StringVar(
+		coprocType,
+		"type",
+		"async",
+		"WASM engine type (async, data-policy)",
+	)
+}
+
+func CheckCoprocType(coprocType string) error {
+	switch coprocType {
+	case "async", "data-policy":
+		return nil
+	default:
+		return fmt.Errorf("Unexpected WASM engine type: '%s'", coprocType)
 	}
 }

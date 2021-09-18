@@ -45,7 +45,8 @@ public:
     ss::future<ss::stop_iteration> operator()(const model::record_batch& rb) {
         vassert(!rb.compressed(), "Records should not have been compressed");
         co_await model::for_each_record(rb, [this](const model::record& r) {
-            _all_valid &= (validate_event(r) == errc::none);
+            auto validate_res = coproc::wasm::validate_event(r);
+            _all_valid &= validate_res.has_value();
         });
         co_return _all_valid ? ss::stop_iteration::no : ss::stop_iteration::yes;
     }

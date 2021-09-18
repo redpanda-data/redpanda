@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "coproc/event_handler.h"
 #include "coproc/fwd.h"
 #include "coproc/sys_refs.h"
 #include "utils/unresolved_address.h"
@@ -36,6 +37,9 @@ private:
     sys_refs _rs;
     std::unique_ptr<wasm::event_listener> _listener; /// one instance
     ss::sharded<pacemaker> _pacemaker;               /// one per core
+
+    // Event handlers
+    std::unique_ptr<wasm::async_event_handler> _wasm_async_handler;
 };
 
 } // namespace coproc

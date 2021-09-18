@@ -39,15 +39,17 @@ struct event {
     std::optional<bytes> script;
     std::optional<bytes> checksum;
     std::optional<event_action> action;
+    std::optional<event_type> type;
 
     /// Default constructor creates an invalid event
     event() = default;
 
     /// Use the single arg constructor to create remove events
-    event(uint64_t);
+    event(uint64_t, std::optional<event_type> = std::nullopt);
 
     // And the two arg consutrctor to create deploy events
-    event(uint64_t, cpp_enable_payload);
+    event(
+      uint64_t, cpp_enable_payload, std::optional<event_type> = std::nullopt);
 };
 
 /// \brief Generates an event that models the 'wasm_event' struct passed in. Any

@@ -21,6 +21,7 @@ rp_test(
     coproc_bench_tests.cc
     offset_storage_utils_tests.cc
     wasm_event_tests.cc
+    event_handler_tests.cc
     event_listener_tests.cc
     read_materialized_topic_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK

@@ -17,6 +17,7 @@ func NewDeployCommand(
 ) *cobra.Command {
 	var description string
 	var name string
+	var coprocType string
 
 	command := &cobra.Command{
 		Use:   "deploy <path>",
@@ -29,6 +30,10 @@ func NewDeployCommand(
 			// validate file extension, just allow js extension
 			if fileExt != ".js" {
 				return fmt.Errorf("can't deploy '%s': only .js files are supported.", path)
+			}
+			err := CheckCoprocType(coprocType)
+			if err != nil {
+				return err
 			}
 			fileContent, err := afero.ReadFile(fs, path)
 			if err != nil {
@@ -46,6 +51,7 @@ func NewDeployCommand(
 			}
 			return deploy(
 				name,
+				coprocType,
 				fileContent,
 				description,
 				producer,
@@ -69,6 +75,8 @@ func NewDeployCommand(
 	)
 	command.MarkFlagRequired("name")
 
+	AddTypeFlag(command, &coprocType)
+
 	return command
 }
 
@@ -81,12 +89,14 @@ message format:
 		action: "deploy",
 		sha256: <file content sha256>,
 		description: <file description>,
+		type: <coproc type>
 	}
 	message: <binary file content>
 }
 */
 func deploy(
 	name string,
+	coprocType string,
 	fileContent []byte,
 	description string,
 	producer sarama.SyncProducer,
@@ -103,7 +113,7 @@ func deploy(
 		}
 	}
 	// create message
-	message := CreateDeployMsg(name, description, fileContent)
+	message := CreateDeployMsg(name, coprocType, description, fileContent)
 	// publish message
 	err = kafka.PublishMessage(producer, &message)
 	if err != nil {
