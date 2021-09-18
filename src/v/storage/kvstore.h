@@ -95,6 +95,7 @@ public:
         consensus = 1,
         storage = 2,
         controller = 3,
+        offset_translator = 4,
         /* your sub-system here */
     };
 
