@@ -72,6 +72,7 @@ Flags:
       --rpc-addr string                The RPC address to bind to (<host>:<port>)
       --schema-registry-addr           A comma-separated list of Schema Registry listener addresses to bind to (<name>://<host>:<port>)
   -s, --seeds strings                  A comma-separated list of seed node addresses (<host>[:<port>]) to connect to
+      --set string                     Set configuration parameters in the format: "<key>=<value>"
       --timeout duration               The maximum time to wait for the checks and tune processes to complete. The value passed is a sequence of decimal numbers, each with optional fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h' (default: 10s)
       --tune                           When present will enable tuning before starting redpanda
       --well-known-io string           The cloud vendor and VM type, in the format <vendor>:<vm type>:<storage type>
