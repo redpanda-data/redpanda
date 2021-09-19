@@ -23,32 +23,33 @@ namespace kafka {
 replicated_partition::replicated_partition(
   ss::lw_shared_ptr<cluster::partition> p) noexcept
   : _partition(p)
-  , _translator(
-      ss::make_lw_shared<offset_translator>(_partition->get_cfg_manager())){
+  , _translator(_partition->get_offset_translator()) {
+    vassert(
+      _translator, "ntp {}: offset translator must be initialized", p->ntp());
+}
 
-    };
 // TODO: use previous translation speed up lookup
 ss::future<model::record_batch_reader> replicated_partition::make_reader(
   storage::log_reader_config cfg,
   std::optional<model::timeout_clock::time_point> deadline) {
-    cfg.start_offset = _translator->from_kafka_offset(cfg.start_offset);
-    cfg.max_offset = _translator->from_kafka_offset(cfg.max_offset);
+    cfg.start_offset = _translator->to_log_offset(cfg.start_offset);
+    cfg.max_offset = _translator->to_log_offset(cfg.max_offset);
     cfg.type_filter = {model::record_batch_type::raft_data};
 
     class reader : public model::record_batch_reader::impl {
     public:
         reader(
           std::unique_ptr<model::record_batch_reader::impl> underlying,
-          ss::lw_shared_ptr<offset_translator> tr)
+          const ss::lw_shared_ptr<raft::offset_translator>& tr)
           : _underlying(std::move(underlying))
-          , _translator(std::move(tr)) {}
+          , _translator(tr) {}
 
         bool is_end_of_stream() const final {
             return _underlying->is_end_of_stream();
         }
 
         void print(std::ostream& os) final {
-            fmt::print(os, "kaka::partition reader for ");
+            fmt::print(os, "kafka::partition reader for ");
             _underlying->print(os);
         }
         using storage_t = model::record_batch_reader::storage_t;
@@ -67,7 +68,7 @@ ss::future<model::record_batch_reader> replicated_partition::make_reader(
         do_load_slice(model::timeout_clock::time_point t) final {
             return _underlying->do_load_slice(t).then([this](storage_t recs) {
                 for (auto& batch : get_batches(recs)) {
-                    batch.header().base_offset = _translator->to_kafka_offset(
+                    batch.header().base_offset = _translator->from_log_offset(
                       batch.base_offset());
                 }
                 return recs;
@@ -78,12 +79,11 @@ ss::future<model::record_batch_reader> replicated_partition::make_reader(
 
     private:
         std::unique_ptr<model::record_batch_reader::impl> _underlying;
-        ss::lw_shared_ptr<offset_translator> _translator;
+        ss::lw_shared_ptr<raft::offset_translator> _translator;
     };
-    auto tr = _translator;
     auto rdr = co_await _partition->make_reader(cfg, deadline);
     co_return model::make_record_batch_reader<reader>(
-      std::move(rdr).release(), std::move(tr));
+      std::move(rdr).release(), _translator);
 }
 
 ss::future<std::optional<storage::timequery_result>>
@@ -92,7 +92,7 @@ replicated_partition::timequery(
     return _partition->timequery(ts, io_pc).then(
       [this](std::optional<storage::timequery_result> r) {
           if (r) {
-              r->offset = _translator->to_kafka_offset(r->offset);
+              r->offset = _translator->from_log_offset(r->offset);
           }
           return r;
       });
@@ -106,7 +106,7 @@ ss::future<result<model::offset>> replicated_partition::replicate(
           if (!r) {
               return ret_t(r.error());
           }
-          return ret_t(_translator->to_kafka_offset(r.value().last_offset));
+          return ret_t(_translator->from_log_offset(r.value().last_offset));
       });
 }
 
@@ -122,7 +122,7 @@ raft::replicate_stages replicated_partition::replicate(
               return ret_t(r.error());
           }
           return ret_t(raft::replicate_result{
-            _translator->to_kafka_offset(r.value().last_offset)});
+            _translator->from_log_offset(r.value().last_offset)});
       });
     return res;
 }
