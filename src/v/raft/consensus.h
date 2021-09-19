@@ -17,6 +17,7 @@
 #include "raft/append_entries_buffer.h"
 #include "raft/configuration_manager.h"
 #include "raft/consensus_client_protocol.h"
+#include "raft/consensus_utils.h"
 #include "raft/event_manager.h"
 #include "raft/follower_stats.h"
 #include "raft/group_configuration.h"
@@ -257,7 +258,9 @@ public:
         return _log.timequery(cfg);
     }
 
-    model::offset start_offset() const { return _log.offsets().start_offset; }
+    model::offset start_offset() const {
+        return details::next_offset(_last_snapshot_index);
+    }
 
     model::offset dirty_offset() const { return _log.offsets().dirty_offset; }
 

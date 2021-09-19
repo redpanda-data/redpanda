@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "kafka/server/offset_translator.h"
+#include "model/fundamental.h"
 #include "random/generators.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
@@ -182,4 +183,67 @@ FIXTURE_TEST(random_translation_test_with_hint, offset_translator_fixture) {
         prev_log_offset = reverse_log_offset;
         BOOST_REQUIRE_EQUAL(log_offset, reverse_log_offset);
     }
+}
+
+FIXTURE_TEST(immutabitlity_test, offset_translator_fixture) {
+    auto cfgs_count = 100;
+    std::vector<raft::offset_configuration> cfgs;
+    std::set<model::offset> config_offsets;
+    cfgs.reserve(config_offsets.size());
+    /**
+     * control batches in random places
+     */
+    for (auto i = 0; i < cfgs_count; ++i) {
+        config_offsets.emplace(random_generators::get_int(1000));
+    }
+
+    for (auto& o : config_offsets) {
+        cfgs.emplace_back(
+          o, raft::group_configuration({}, model::revision_id(0)));
+    }
+
+    config_manager.add(std::move(cfgs)).get();
+    // internal offset -> kafka offset
+    std::unordered_map<model::offset, model::offset> offsets_mapping;
+
+    // go over whole offset space
+    for (auto o : boost::irange(0, 1100)) {
+        model::offset log_offset(o);
+
+        if (config_offsets.contains(log_offset)) {
+            continue;
+        }
+        auto kafka_offset = tr.to_kafka_offset(log_offset);
+        auto reverse_log_offset = tr.from_kafka_offset(kafka_offset);
+
+        BOOST_REQUIRE_EQUAL(log_offset, reverse_log_offset);
+        offsets_mapping.emplace(log_offset, kafka_offset);
+    }
+
+    auto validate_offsets_immutable = [&](int64_t start) {
+        for (auto o : boost::irange<int64_t>(start, 1100)) {
+            model::offset log_offset(o);
+            if (config_offsets.contains(log_offset)) {
+                continue;
+            }
+            model::offset k_offset = tr.to_kafka_offset(log_offset);
+            // validate that offset havent changed
+            BOOST_REQUIRE_EQUAL(offsets_mapping[log_offset], k_offset);
+        }
+    };
+
+    // prefix truncate
+    auto truncate_at = random_generators::get_int(1100 - 1);
+    config_manager.prefix_truncate(model::offset(truncate_at)).get();
+
+    validate_offsets_immutable(truncate_at + 1);
+
+    // add new config at the end
+    config_manager
+      .add(
+        model::offset(1101),
+        raft::group_configuration({}, model::revision_id(0)))
+      .get();
+
+    validate_offsets_immutable(truncate_at + 1);
 }

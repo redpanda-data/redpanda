@@ -1036,7 +1036,7 @@ ss::future<> consensus::do_start() {
               if (st.config_batches_seen() > 0) {
                   f = f.then([this, st = std::move(st)]() mutable {
                       return _configuration_manager.add(
-                        st.prev_log_index(), st.release_config());
+                        std::move(st).release_configurations());
                   });
               }
 
@@ -1818,20 +1818,12 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
 
     return details::persist_snapshot(
              _snapshot_mgr, std::move(md), std::move(data))
-      .then([this,
-             last_included_index,
-             term = *last_included_term,
-             cfg = std::move(*config)]() mutable {
+      .then([this, last_included_index, term = *last_included_term]() mutable {
           // update consensus state
           _last_snapshot_index = last_included_index;
           _last_snapshot_term = term;
           // update configuration manager
-          return _configuration_manager
-            .add(_last_snapshot_index, std::move(cfg))
-            .then([this] {
-                return _configuration_manager.prefix_truncate(
-                  _last_snapshot_index);
-            });
+          return _configuration_manager.prefix_truncate(_last_snapshot_index);
       });
 }
 

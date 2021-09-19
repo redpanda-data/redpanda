@@ -35,21 +35,26 @@ public:
     model::term_id term() const { return _term; }
     model::offset prev_log_index() const { return _prev_log_index; }
     model::term_id prev_log_term() const { return _prev_log_term; }
-    const raft::group_configuration& config() const { return *_config; }
-    raft::group_configuration&& release_config() { return std::move(*_config); }
+    const std::vector<raft::offset_configuration>& configurations() const {
+        return _configurations;
+    }
+    std::vector<raft::offset_configuration> release_configurations() && {
+        return std::move(_configurations);
+    }
     void set_term(model::term_id t) { _term = t; }
     void set_end_of_log() { _end_of_log = true; }
     uint32_t data_batches_seen() const { return _data_batches_seen; }
-    uint32_t config_batches_seen() const { return _config_batches_seen; }
+    uint32_t config_batches_seen() const { return _configurations.size(); }
 
     friend std::ostream&
     operator<<(std::ostream& o, const configuration_bootstrap_state& s) {
         fmt::print(
           o,
           "data_seen {} config_seen {} eol {} commit {} term {} prev_idx {} "
-          "prev_term {} config_tracker {} commit_base_tracker {} config {}",
+          "prev_term {} config_tracker {} commit_base_tracker {} "
+          "configurations {}",
           s._data_batches_seen,
-          s._config_batches_seen,
+          s._configurations.size(),
           s._end_of_log,
           s._commit_index,
           s._term,
@@ -57,7 +62,7 @@ public:
           s._prev_log_term,
           s._log_config_offset_tracker,
           s._commit_index_base_batch_offset,
-          s._config);
+          s._configurations);
         return o;
     }
 
@@ -65,14 +70,13 @@ private:
     void process_offsets(model::offset base_offset, model::offset last_offset);
 
     uint32_t _data_batches_seen{0};
-    uint32_t _config_batches_seen{0};
     bool _end_of_log{false};
     // This is an exclusive upper bound
     model::offset _commit_index{0};
     model::term_id _term{0};
     model::offset _prev_log_index{0};
     model::term_id _prev_log_term{0};
-    std::optional<raft::group_configuration> _config;
+    std::vector<raft::offset_configuration> _configurations;
 
     // we need to keep track of what we have processed in case we re-reprocess a
     // multiple segments

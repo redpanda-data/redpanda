@@ -31,15 +31,14 @@ void configuration_bootstrap_state::process_configuration(
           "Compressed configuration records are unsupported");
     }
     auto last_offset = b.last_offset();
-    if (_log_config_offset_tracker < last_offset) {
-        _config_batches_seen++;
-        _log_config_offset_tracker = last_offset;
-        process_offsets(b.base_offset(), last_offset);
-        b.for_each_record([this](model::record rec) {
-            _config = reflection::from_iobuf<raft::group_configuration>(
-              rec.release_value());
-        });
-    }
+
+    process_offsets(b.base_offset(), last_offset);
+    b.for_each_record([this, o = b.base_offset()](model::record rec) {
+        _configurations.emplace_back(
+          o,
+          reflection::from_iobuf<raft::group_configuration>(
+            rec.release_value()));
+    });
 }
 void configuration_bootstrap_state::process_data_offsets(
   model::record_batch b) {
