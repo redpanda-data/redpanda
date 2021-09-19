@@ -160,6 +160,11 @@ public:
         return _raft->get_configuration_manager();
     }
 
+    const ss::lw_shared_ptr<raft::offset_translator>&
+    get_offset_translator() const {
+        return _raft->get_offset_translator();
+    }
+
     ss::shared_ptr<cluster::rm_stm> rm_stm();
 
     size_t size_bytes() const { return _raft->log().size_bytes(); }
