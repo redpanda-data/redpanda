@@ -56,20 +56,35 @@ ss::future<consensus_ptr> partition_manager::manage(
   storage::ntp_config ntp_cfg,
   raft::group_id group,
   std::vector<model::broker> initial_nodes) {
-    return _storage.log_mgr()
-      .manage(std::move(ntp_cfg))
-      .then([this, group, nodes = std::move(initial_nodes)](
-              storage::log&& log) mutable {
-          return _raft_manager.local()
-            .create_group(group, std::move(nodes), log)
-            .then([this, log, group](ss::lw_shared_ptr<raft::consensus> c) {
-                auto p = ss::make_lw_shared<partition>(c, _tx_gateway_frontend);
-                _ntp_table.emplace(log.config().ntp(), p);
-                _raft_table.emplace(group, p);
-                _manage_watchers.notify(p->ntp(), p);
-                return p->start().then([c] { return c; });
-            });
-      });
+    bool logs_recovered = co_await maybe_download_log(ntp_cfg);
+    if (logs_recovered) {
+        vlog(
+          clusterlog.info,
+          "Log download complete, ntp: {}, rev: {}",
+          ntp_cfg.ntp(),
+          ntp_cfg.get_revision());
+    }
+    storage::log log = co_await _storage.log_mgr().manage(std::move(ntp_cfg));
+    vlog(
+      clusterlog.info,
+      "Log created manage completed, ntp: {}, rev: {}, {} "
+      "segments, {} bytes",
+      log.config().ntp(),
+      log.config().get_revision(),
+      log.segment_count(),
+      log.size_bytes());
+
+    ss::lw_shared_ptr<raft::consensus> c
+      = co_await _raft_manager.local().create_group(
+        group, std::move(initial_nodes), log);
+
+    auto p = ss::make_lw_shared<partition>(c, _tx_gateway_frontend);
+
+    _ntp_table.emplace(log.config().ntp(), p);
+    _raft_table.emplace(group, p);
+    _manage_watchers.notify(p->ntp(), p);
+    co_await p->start();
+    co_return c;
 }
 
 ss::future<bool>
