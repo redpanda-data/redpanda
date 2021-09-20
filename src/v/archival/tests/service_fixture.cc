@@ -38,6 +38,8 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
+#include <optional>
+
 using namespace std::chrono_literals;
 
 inline ss::logger fixt_log("fixture"); // NOLINT
@@ -66,11 +68,24 @@ static void write_batches(
     seg->flush().get();
 }
 
-static void
-write_random_batches(ss::lw_shared_ptr<storage::segment> seg) { // NOLINT
+static segment_layout write_random_batches(
+  ss::lw_shared_ptr<storage::segment> seg, size_t num_batches = 1) { // NOLINT
+    segment_layout layout{
+      .base_offset = seg->offsets().base_offset,
+    };
     auto batches = storage::test::make_random_batches(
-      seg->offsets().base_offset + model::offset(1), 1);
+      seg->offsets().base_offset, num_batches);
+
+    vlog(fixt_log.debug, "Generated {} random batches", batches.size());
+    for (const auto& batch : batches) {
+        vlog(fixt_log.debug, "Generated random batch {}", batch);
+        layout.ranges.push_back({
+          .base_offset = batch.base_offset(),
+          .last_offset = batch.last_offset(),
+        });
+    }
     write_batches(seg, std::move(batches));
+    return layout;
 }
 
 archival::configuration get_configuration() {
@@ -91,6 +106,7 @@ archival::configuration get_configuration() {
     conf.initial_backoff = 100ms;
     conf.segment_upload_timeout = 1s;
     conf.manifest_upload_timeout = 1s;
+    conf.time_limit = std::nullopt;
     return conf;
 }
 
@@ -280,7 +296,9 @@ void archiver_fixture::initialize_shard(
                        ss::default_priority_class())
                      .get0();
         vlog(fixt_log.trace, "write random batches to segment");
-        write_random_batches(seg);
+        auto layout = write_random_batches(
+          seg, d.num_batches ? d.num_batches.value() : 1);
+        layouts[d.ntp].push_back(std::move(layout));
         vlog(fixt_log.trace, "segment close");
         seg->close().get();
         all_ntp[d.ntp] += 1;

@@ -159,7 +159,7 @@ private:
     add_ntp_archiver(ss::lw_shared_ptr<ntp_archiver> archiver);
     /// Returns high watermark for the partition
     std::optional<model::offset>
-    get_high_watermark(const model::ntp& ntp) const;
+    get_last_stable_offset(const model::ntp& ntp) const;
 
     configuration _conf;
     ss::sharded<cluster::partition_manager>& _partition_manager;

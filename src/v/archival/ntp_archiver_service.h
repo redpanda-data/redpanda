@@ -54,6 +54,9 @@ struct configuration {
     service_metrics_disabled svc_metrics_disabled;
     /// Flag that indicates that ntp-archiver level metrics are disabled
     per_ntp_metrics_disabled ntp_metrics_disabled;
+    /// Upload time limit (if segment is not uploaded this amount of time the
+    /// upload is triggered)
+    std::optional<segment_time_limit> time_limit;
 };
 
 std::ostream& operator<<(std::ostream& o, const configuration& cfg);
@@ -122,15 +125,55 @@ public:
     /// uploading them.
     ///
     /// \param lm is a log manager instance
-    /// \param high_watermark is a high watermark offset of the partition
-    /// \param parent is a retry chain node of the caller
-    /// \return future that returns number of uploaded/failed segments
+    /// \param last_stable_offset is a last_stable_offset offset of the
+    /// partition \param parent is a retry chain node of the caller \return
+    /// future that returns number of uploaded/failed segments
     ss::future<batch_result> upload_next_candidates(
       storage::log_manager& lm,
-      model::offset high_watermark,
+      model::offset last_stable_offset,
       retry_chain_node& parent);
 
 private:
+    /// Information about started upload
+    struct scheduled_upload {
+        /// The future that will be ready when the segment will be fully
+        /// uploaded
+        std::optional<ss::future<cloud_storage::upload_result>> result;
+        /// Last offset of the uploaded segment or part
+        model::offset inclusive_last_offset;
+        /// Segment metadata
+        std::optional<cloud_storage::manifest::segment_meta> meta;
+        /// Name of the uploaded segment
+        std::optional<ss::sstring> name;
+        /// Offset range convered by the upload
+        std::optional<model::offset> delta;
+        /// Contains 'no' if the method can be called another time or 'yes'
+        /// if it shouldn't be called (if there is no data to upload).
+        /// If the 'stop' is 'no' the 'result' might be 'nullopt'. In this
+        /// case the upload is not started but the method might be called
+        /// again anyway.
+        ss::stop_iteration stop;
+    };
+    /// Start upload without waiting for it to complete
+    ss::future<scheduled_upload> schedule_single_upload(
+      storage::log_manager& lm,
+      model::offset last_uploaded_offset,
+      model::offset last_stable_offset,
+      retry_chain_node& parent);
+
+    /// Start all uploads
+    ss::future<std::vector<scheduled_upload>> schedule_uploads(
+      storage::log_manager& lm,
+      model::offset last_stable_offset,
+      retry_chain_node& parent);
+
+    /// Wait until all scheduled uploads will be completed
+    ///
+    /// Update the probe and manifest
+    ss::future<ntp_archiver::batch_result> wait_all_scheduled_uploads(
+      std::vector<ntp_archiver::scheduled_upload> scheduled,
+      retry_chain_node& parent);
+
     /// Upload individual segment to S3.
     ///
     /// \return true on success and false otherwise

@@ -45,6 +45,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <optional>
 #include <stdexcept>
 
 using namespace std::chrono_literals;
@@ -140,6 +141,19 @@ scheduler_service_impl::get_archival_service_config() {
       = config::shard_local_cfg()
           .cloud_storage_max_connection_idle_time_ms.value();
 
+    auto time_limit = config::shard_local_cfg()
+                        .cloud_storage_segment_max_upload_interval_sec.value();
+    if (time_limit and time_limit.value() == 0s) {
+        vlog(
+          archival_log.error,
+          "Configuration property "
+          "cloud_storage_segment_max_upload_interval_sec can't be 0");
+        throw std::runtime_error(
+          "cloud_storage_segment_max_upload_interval_sec is invalid");
+    }
+    auto time_limit_opt = time_limit ? std::make_optional(
+                            segment_time_limit(*time_limit))
+                                     : std::nullopt;
     auto s3_conf = co_await s3::configuration::make_configuration(
       access_key, secret_key, region, overrides, disable_metrics);
     archival::configuration cfg{
@@ -163,7 +177,7 @@ scheduler_service_impl::get_archival_service_config() {
         static_cast<bool>(disable_metrics)),
       .ntp_metrics_disabled = per_ntp_metrics_disabled(
         static_cast<bool>(disable_metrics)),
-    };
+      .time_limit = time_limit_opt};
     vlog(archival_log.debug, "Archival configuration generated: {}", cfg);
     co_return cfg;
 }
@@ -376,11 +390,11 @@ scheduler_service_impl::remove_archivers(std::vector<model::ntp> to_remove) {
 }
 
 std::optional<model::offset>
-scheduler_service_impl::get_high_watermark(const model::ntp& ntp) const {
+scheduler_service_impl::get_last_stable_offset(const model::ntp& ntp) const {
     cluster::partition_manager& pm = _partition_manager.local();
     auto p = pm.get(ntp);
     if (p) {
-        return p->high_watermark();
+        return p->last_stable_offset();
     }
     return std::nullopt;
 }
@@ -456,10 +470,10 @@ ss::future<> scheduler_service_impl::run_uploads() {
                     _rtclog.debug,
                     "Checking {} for S3 upload candidates",
                     archiver->get_ntp());
-                  auto hwm = get_high_watermark(archiver->get_ntp());
-                  if (hwm) {
+                  auto lso = get_last_stable_offset(archiver->get_ntp());
+                  if (lso) {
                       return archiver->upload_next_candidates(
-                        lm, *hwm, _rtcnode);
+                        lm, *lso, _rtcnode);
                   }
                   return ss::make_ready_future<result_t>(result_t{});
               });

@@ -18,7 +18,7 @@ from rptest.services.redpanda import RedpandaService
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 import time
 import os
 import json
@@ -155,8 +155,7 @@ class ArchivalTest(RedpandaTest):
 
     def __init__(self, test_context):
         self.s3_bucket_name = f"panda-bucket-{uuid.uuid1()}"
-        extra_rp_conf = dict(
-            developer_mode=True,
+        self._extra_rp_conf = dict(
             cloud_storage_enabled=True,
             cloud_storage_access_key=ArchivalTest.s3_access_key,
             cloud_storage_secret_key=ArchivalTest.s3_secret_key,
@@ -169,8 +168,13 @@ class ArchivalTest(RedpandaTest):
             cloud_storage_max_connections=5,
             log_segment_size=1048576  # 1MB
         )
+        if test_context.function_name == "test_timeboxed_uploads":
+            self._extra_rp_conf.update(
+                log_segment_size=1024 * 1024 * 1024,
+                cloud_storage_segment_max_upload_interval_sec=1)
+
         super(ArchivalTest, self).__init__(test_context=test_context,
-                                           extra_rp_conf=extra_rp_conf)
+                                           extra_rp_conf=self._extra_rp_conf)
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
         self.s3_client = S3Client(
@@ -294,6 +298,83 @@ class ArchivalTest(RedpandaTest):
         time.sleep(5)
         self.kafka_tools.produce(self.topic, 5000, 1024)
         validate(self._cross_node_verify, self.logger, 90)
+
+    @cluster(num_nodes=3)
+    def test_timeboxed_uploads(self):
+        """This test checks segment upload time limit. The feature is enabled in the
+        configuration. The configuration defines maximum time interval between uploads.
+        If the option is set then redpanda will start uploading a segment partially if
+        configured amount of time passed since previous upload and the segment has some
+        new data.
+        The test sets the timeout value to 1s. Then it uploads data in batches with delays
+        between the batches. The segment size is set to 1GiB. We upload 10MiB total. So
+        normally, there won't be any data uploaded to Minio. But since the time limit for
+        a segment is set to 1s we will see a bunch of segments in the bucket. The offsets
+        of the segments won't align with the segment in the redpanda data directory. But
+        their respective offset ranges should align and the sizes should make sense.
+        """
+
+        # The offsets of the segments in the Minio bucket won't necessary
+        # correlate with the write bursts here. The upload depends on the
+        # timeout but also on raft and current high_watermark. So we can
+        # expect that the bucket won't have 9 segments with 1000 offsets.
+        # The actual segments will be larger.
+        for i in range(0, 10):
+            self.kafka_tools.produce(self.topic, 1000, 1024)
+            time.sleep(1)
+        time.sleep(5)
+
+        def check_upload():
+            # check that the upload happened
+            ntps = set()
+            sizes = {}
+
+            for node in self.redpanda.nodes:
+                checksums = self._get_redpanda_log_segment_checksums(node)
+                self.logger.info(
+                    f"Node: {node.account.hostname} checksums: {checksums}")
+                lst = [
+                    _parse_normalized_segment_path(path, md5, size)
+                    for path, (md5, size) in checksums.items()
+                ]
+                lst = sorted(lst, key=lambda x: x.base_offset)
+                segments = defaultdict(int)
+                sz = defaultdict(int)
+                for it in lst:
+                    ntps.add(it.ntp)
+                    sz[it.ntp] += it.size
+                    segments[it.ntp] += 1
+                for ntp, s in segments.items():
+                    assert s != 0, f"expected to have at least one segment per partition, got {s}"
+                for ntp, s in sz.items():
+                    if ntp not in sizes:
+                        sizes[ntp] = s
+
+            # Download manifest for partitions
+            for ntp in ntps:
+                manifest = self._download_partition_manifest(ntp)
+                self.logger.info(f"downloaded manifest {manifest}")
+                segments = []
+                for _, segment in manifest['segments'].items():
+                    segments.append(segment)
+
+                segments = sorted(segments, key=lambda s: s['base_offset'])
+                self.logger.info(f"sorted segments {segments}")
+
+                prev_committed_offset = -1
+                size = 0
+                for segment in segments:
+                    self.logger.info(
+                        f"checking {segment} prev: {prev_committed_offset}")
+                    base_offset = segment['base_offset']
+                    assert prev_committed_offset + 1 == base_offset, f"inconsistent segments, " +\
+                        "expected base_offset: {prev_committed_offset + 1}, actual: {base_offset}"
+                    prev_committed_offset = segment['committed_offset']
+                    size += segment['size_bytes']
+                assert sizes[ntp] >= size
+                assert size > 0
+
+        validate(check_upload, self.logger, 90)
 
     def _check_bucket_is_emtpy(self):
         allobj = self._list_objects()
@@ -467,8 +548,11 @@ class ArchivalTest(RedpandaTest):
                                 )
                                 if actual_hash == msegm.md5:
                                     manifest_segments[mix] = None
-                                    self.logger.info(f"partial match for segment {msegm.ntp} {msegm.base_offset}-" +\
-                                                    f"{msegm.committed_offset} on {node_key}")
+                                    self.logger.info(
+                                        f"partial match for segment {msegm.ntp} {msegm.base_offset}-"
+                                        +
+                                        f"{msegm.committed_offset} on {node_key}"
+                                    )
                                     found = True
                                     break
                         if not found:

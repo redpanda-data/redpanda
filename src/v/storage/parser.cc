@@ -18,6 +18,7 @@
 #include "storage/logger.h"
 #include "storage/parser.h"
 #include "storage/parser_utils.h"
+#include "storage/segment_appender_utils.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
@@ -134,10 +135,11 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
     }
 }
 
-ss::future<result<model::record_batch_header>>
-continuous_batch_parser::read_header() {
+template<class Consumer>
+static ss::future<result<model::record_batch_header>>
+read_header_impl(ss::input_stream<char>& input, const Consumer& consumer) {
     auto b = co_await read_iobuf_exactly(
-      _input, model::packed_record_batch_header_size);
+      input, model::packed_record_batch_header_size);
 
     if (b.empty()) {
         // benign outcome. happens at end of file
@@ -148,7 +150,7 @@ continuous_batch_parser::read_header() {
           "Could not parse header. Expected:{}, but Got:{}. consumer:{}",
           model::packed_record_batch_header_size,
           b.size_bytes(),
-          *_consumer);
+          consumer);
         co_return parser_errc::input_stream_not_enough_bytes;
     }
 
@@ -167,10 +169,15 @@ continuous_batch_parser::read_header() {
           computed_crc,
           header.header_crc,
           header,
-          *_consumer);
+          consumer);
         co_return parser_errc::header_only_crc_missmatch;
     }
     co_return header;
+}
+
+ss::future<result<model::record_batch_header>>
+continuous_batch_parser::read_header() {
+    return read_header_impl(_input, *_consumer);
 }
 
 ss::future<result<stop_parser>> continuous_batch_parser::consume_one() {
@@ -245,4 +252,89 @@ ss::future<result<size_t>> continuous_batch_parser::consume() {
           return result<size_t>(_err);
       });
 }
+
+class copy_helper {
+public:
+    explicit copy_helper(
+      ss::input_stream<char> input,
+      ss::output_stream<char> output,
+      record_batch_transform_predicate pred)
+      : _input(std::move(input))
+      , _output(std::move(output))
+      , _pred(std::move(pred)) {}
+
+    ss::future<result<model::record_batch_header>> read_header() {
+        return read_header_impl(_input, ss::sstring("copy_helper"));
+    }
+
+    /// Copy data.
+    /// Return number of bytes copied.
+    ss::future<result<size_t>> run() {
+        size_t consumed = 0;
+        bool stop = false;
+        while (!stop) {
+            auto r = co_await read_header();
+            if (!r) {
+                if (r.error() == parser_errc::end_of_stream) {
+                    break;
+                }
+                co_return r.error();
+            }
+
+            _header = r.value();
+            auto remaining = _header.size_bytes
+                             - model::packed_record_batch_header_size;
+
+            // invoke pred
+            switch (_pred(_header)) {
+            case batch_consumer::consume_result::skip_batch:
+                // Record batch shouldn't be copied, we can just skip its
+                // content altogether
+                co_await _input.skip(remaining);
+                break;
+            case batch_consumer::consume_result::accept_batch: {
+                auto body = co_await verify_read_iobuf(
+                  _input, remaining, "copy_helper");
+                if (!body) {
+                    co_return body.error();
+                }
+                // we should only write to the output stream if we can
+                // guarantee that both header and records are available
+
+                // the header should be re-serialized since the predicate
+                // might change it in-place (this is a low level tool)
+                // we're also need to update header only crc
+                _header.header_crc = model::internal_header_only_crc(_header);
+                iobuf hdr = disk_header_to_iobuf(_header);
+                co_await write_iobuf_to_output_stream(std::move(hdr), _output);
+                co_await write_iobuf_to_output_stream(
+                  std::move(body.value()), _output);
+                consumed += _header.size_bytes;
+                break;
+            }
+            case batch_consumer::consume_result::stop_parser:
+                stop = true;
+                break;
+            };
+        }
+        co_await _input.close();
+        co_await _output.flush();
+        co_await _output.close();
+        co_return consumed;
+    }
+
+    ss::input_stream<char> _input;
+    ss::output_stream<char> _output;
+    record_batch_transform_predicate _pred;
+    model::record_batch_header _header{};
+};
+
+ss::future<result<size_t>> transform_stream(
+  ss::input_stream<char> in,
+  ss::output_stream<char> out,
+  record_batch_transform_predicate pred) {
+    copy_helper helper(std::move(in), std::move(out), std::move(pred));
+    co_return co_await helper.run();
+}
+
 } // namespace storage

@@ -44,6 +44,28 @@ segment_reader::data_stream(size_t pos, const ss::io_priority_class& pc) {
       _data_file, pos, _file_size - pos, std::move(options));
 }
 
+ss::input_stream<char> segment_reader::data_stream(
+  size_t pos_begin, size_t pos_end, const ss::io_priority_class& pc) {
+    vassert(
+      pos_begin <= _file_size,
+      "cannot read negative bytes. Asked to read at positions: '{}-{}' - {}",
+      pos_begin,
+      pos_end,
+      *this);
+    vassert(
+      pos_end >= pos_begin,
+      "cannot read backward. Asked to read at positions: '{}-{}' - {}",
+      pos_begin,
+      pos_end,
+      *this);
+    ss::file_input_stream_options options;
+    options.buffer_size = _buffer_size;
+    options.io_priority_class = pc;
+    options.read_ahead = 10;
+    return make_file_input_stream(
+      _data_file, pos_begin, pos_end - pos_begin, std::move(options));
+}
+
 ss::future<> segment_reader::truncate(size_t n) {
     _file_size = n;
     return ss::open_file_dma(_filename, ss::open_flags::rw)
