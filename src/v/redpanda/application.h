@@ -32,7 +32,7 @@
 #include "security/credential_store.h"
 #include "storage/compaction_controller.h"
 #include "storage/fwd.h"
-#include "v8_engine/data_policy_table.h"
+#include "v8_engine/fwd.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/metrics_registration.hh>
