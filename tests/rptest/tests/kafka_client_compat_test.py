@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from ducktape.mark import matrix
+from ducktape.mark.resource import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 
 from rptest.clients.types import TopicSpec
