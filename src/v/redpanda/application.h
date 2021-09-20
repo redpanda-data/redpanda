@@ -28,7 +28,7 @@
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
 #include "resource_mgmt/smp_groups.h"
-#include "rpc/server.h"
+#include "rpc/fwd.h"
 #include "seastarx.h"
 #include "security/credential_store.h"
 #include "storage/compaction_controller.h"
