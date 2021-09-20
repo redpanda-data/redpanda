@@ -54,6 +54,10 @@ class RpkTool:
             cmd += ["--partitions", str(partitions)]
         return self._run_topic(cmd)
 
+    def delete_topic(self, topic):
+        cmd = ["delete", topic]
+        return self._run_topic(cmd)
+
     def list_topics(self):
         cmd = ["list"]
 
@@ -113,6 +117,10 @@ class RpkTool:
                                 hw=int(m.group('hw')))
 
         return filter(lambda p: p != None, map(partition_line, lines))
+
+    def alter_topic_config(self, topic, set_key, set_value):
+        cmd = ['alter-config', topic, "--set", f"{set_key}={set_value}"]
+        self._run_topic(cmd)
 
     def wasm_deploy(self, script, name, description):
         cmd = [
