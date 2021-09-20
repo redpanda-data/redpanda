@@ -12,9 +12,7 @@
 #pragma once
 
 #include "archival/service.h"
-#include "cluster/controller.h"
 #include "cluster/fwd.h"
-#include "cluster/rm_partition_frontend.h"
 #include "coproc/api.h"
 #include "kafka/server/fwd.h"
 #include "kafka/server/rm_group_frontend.h"
