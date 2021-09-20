@@ -102,7 +102,7 @@ helm install \
 2. 为了简化命令，请为版本号创建一个变量：
 
     ```
-    export VERSION=v21.4.15
+    export VERSION=$(curl -s https://api.github.com/repos/vectorizedio/redpanda/releases/latest | jq -r .tag_name)
     ```
 
     **_注意_** - 您可以在[operator版本列表](https://github.com/vectorizedio/redpanda/releases)中找到operator的最新版本号。
@@ -152,7 +152,7 @@ helm install \
 
         kubectl -n chat-with-me run -ti --rm \
         --restart=Never \
-        --image vectorized/redpanda:$VERSION \
+        --image docker.vectorized.io/vectorized/redpanda:$VERSION \
         -- rpk --brokers one-node-cluster-0.one-node-cluster.chat-with-me.svc.cluster.local:9092 \
         cluster info
     
@@ -160,7 +160,7 @@ helm install \
 
         kubectl -n chat-with-me run -ti --rm \
         --restart=Never \
-        --image vectorized/redpanda:$VERSION \
+        --image docker.vectorized.io/vectorized/redpanda:$VERSION \
         -- rpk --brokers one-node-cluster-0.one-node-cluster.chat-with-me.svc.cluster.local:9092 \
         topic create chat-rooms -p 5
 
@@ -168,7 +168,7 @@ helm install \
 
         kubectl -n chat-with-me run -ti --rm \
         --restart=Never \
-        --image vectorized/redpanda:$VERSION \
+        --image docker.vectorized.io/vectorized/redpanda:$VERSION \
         -- rpk --brokers one-node-cluster-0.one-node-cluster.chat-with-me.svc.cluster.local:9092 \
         topic list
 

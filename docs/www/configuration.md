@@ -35,7 +35,7 @@ redpanda:
   # Required.
   data_directory: "var/lib/redpanda/data"
     
-  # Unique id identifying the node in the cluster.
+  # Unique ID identifying the node in the cluster.
   # Required.
   node_id: 1
    
@@ -158,9 +158,9 @@ redpanda:
   # If the seed_server list is empty the node will be a cluster root and it will form a new cluster.
   # Default: []
   seed_servers:
-    - address: "0.0.0.0"
+    - host:
+      address: 192.168.0.1
       port: 33145
-  
   # Number of partitions for the internal raft metadata topic.
   # Default: 7
   seed_server_meta_topic_partitions: 7
@@ -252,8 +252,18 @@ redpanda:
   group_topic_partitions: 1
   
   # Default replication factor for new topics.
-  # Default: 1
+  # Default: 1 (In v21.8.1 and higher, the default is 3 for Kubernetes clusters with at least 3 nodes)
   default_topic_replications: 1
+
+  # Replication factor for a transaction coordinator topic.
+  # Not required
+  # Default: 1 (In v21.8.1 and higher, the default is 3 for Kubernetes clusters with at least 3 nodes)
+  transaction_coordinator_replication: 1
+
+  # Replication factor for an ID allocator topic.
+  # Not required
+  # Default: 1 (In v21.8.1 and higher, the default is 3 for Kubernetes clusters with at least 3 nodes)
+  id_allocator_replication: 1
   
   # Timeout (in milliseconds) to wait when creating a new topic.
   # Default: 2s
@@ -542,7 +552,7 @@ rpk:
     sasl:
       user: user
       password: pass
-      method: scram-sha256
+      type: SCRAM-SHA-256
 
   # The Admin API configuration
   admin_api:
@@ -692,7 +702,9 @@ Here is a more comprehensive view of the configration so that you can see all of
 | `dashboard_dir` | serve http dashboard on / url | None |
 | `default_num_windows` | Default number of quota tracking windows | 10 |
 | `default_topic_partitions` | Default number of partitions per topic | 1 |
-| `default_topic_replication` | Default replication factor for new topics | 1 |
+| `default_topic_replications` | Default replication factor for new topics | 1 (In v21.8.1 and higher, the default is 3 for Kubernetes clusters with at least 3 nodes) |
+| `transaction_coordinator_replication` | Replication factor for a transaction coordinator topic | 1 (In v21.8.1 and higher, the default is 3 for Kubernetes clusters with at least 3 nodes) |
+| `id_allocator_replication` | Replication factor for an ID allocator topic | 1 (In v21.8.1 and higher, the default is 3 for Kubernetes clusters with at least 3 nodes) |
 | `default_window_sec` | Default quota tracking window size in milliseconds | 1000ms |
 | `delete_retention_ms` | delete segments older than this (default 1 week) | 10080min |
 | `developer_mode` | Skips most of the checks performed at startup | Optional |
