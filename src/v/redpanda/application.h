@@ -62,6 +62,7 @@ public:
     void start_redpanda();
 
     explicit application(ss::sstring = "redpanda::main");
+    ~application();
 
     void shutdown() {
         while (!_deferred.empty()) {

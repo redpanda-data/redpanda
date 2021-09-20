@@ -110,6 +110,8 @@ application::application(ss::sstring logger_name)
 
     };
 
+application::~application() = default;
+
 static void log_system_resources(
   ss::logger& log, const boost::program_options::variables_map& cfg) {
     const auto shard_mem = ss::memory::stats();
