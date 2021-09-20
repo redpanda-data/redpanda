@@ -13,7 +13,7 @@
 
 #include "archival/fwd.h"
 #include "cluster/fwd.h"
-#include "coproc/api.h"
+#include "coproc/fwd.h"
 #include "kafka/server/fwd.h"
 #include "kafka/server/rm_group_frontend.h"
 #include "pandaproxy/rest/configuration.h"
