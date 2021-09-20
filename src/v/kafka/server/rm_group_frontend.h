@@ -11,20 +11,13 @@
 
 #pragma once
 
-#include "cluster/controller.h"
-#include "cluster/metadata_cache.h"
 #include "cluster/rm_group_proxy.h"
-#include "cluster/tm_stm.h"
-#include "cluster/topics_frontend.h"
-#include "cluster/tx_gateway.h"
 #include "cluster/types.h"
-#include "config/configuration.h"
 #include "kafka/protocol/errors.h"
-#include "kafka/server/coordinator_ntp_mapper.h"
-#include "kafka/server/group.h"
-#include "kafka/server/group_router.h"
+#include "kafka/server/fwd.h"
 #include "kafka/types.h"
 #include "model/metadata.h"
+#include "rpc/fwd.h"
 #include "seastarx.h"
 
 namespace kafka {
