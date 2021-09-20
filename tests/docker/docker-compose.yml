@@ -39,5 +39,6 @@ services:
     - minio
     volumes:
     - '${BUILD_ROOT}:${BUILD_ROOT}'
+    - '${BUILD_ROOT}/var:/host_var'
     networks:
     - redpanda-test
