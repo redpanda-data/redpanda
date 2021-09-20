@@ -28,7 +28,7 @@ class SimpleEndToEndTest(EndToEndTest):
         self.redpanda.create_topic(spec)
         self.topic = spec.name
 
-        self.start_producer(5, throughput=10000)
+        self.start_producer(5, throughput=1000)
         self.start_consumer(1)
         self.await_startup()
 
