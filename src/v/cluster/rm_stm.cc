@@ -199,9 +199,14 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   std::chrono::milliseconds transaction_timeout_ms) {
-    return get_tx_lock(pid.get_id())
-      ->with([this, pid, tx_seq, transaction_timeout_ms]() {
-          return do_begin_tx(pid, tx_seq, transaction_timeout_ms);
+    return _state_lock.hold_read_lock().then(
+      [this, pid, tx_seq, transaction_timeout_ms](
+        ss::basic_rwlock<>::holder unit) mutable {
+          return get_tx_lock(pid.get_id())
+            ->with([this, pid, tx_seq, transaction_timeout_ms]() {
+                return do_begin_tx(pid, tx_seq, transaction_timeout_ms);
+            })
+            .finally([u = std::move(unit)] {});
       });
 }
 
@@ -275,9 +280,14 @@ ss::future<tx_errc> rm_stm::prepare_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
-    return get_tx_lock(pid.get_id())
-      ->with([this, etag, tm, pid, tx_seq, timeout]() {
-          return do_prepare_tx(etag, tm, pid, tx_seq, timeout);
+    return _state_lock.hold_read_lock().then(
+      [this, etag, tm, pid, tx_seq, timeout](
+        ss::basic_rwlock<>::holder unit) mutable {
+          return get_tx_lock(pid.get_id())
+            ->with([this, etag, tm, pid, tx_seq, timeout]() {
+                return do_prepare_tx(etag, tm, pid, tx_seq, timeout);
+            })
+            .finally([u = std::move(unit)] {});
       });
 }
 
@@ -382,9 +392,14 @@ ss::future<tx_errc> rm_stm::commit_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
-    return get_tx_lock(pid.get_id())->with([this, pid, tx_seq, timeout]() {
-        return do_commit_tx(pid, tx_seq, timeout);
-    });
+    return _state_lock.hold_read_lock().then(
+      [this, pid, tx_seq, timeout](ss::basic_rwlock<>::holder unit) mutable {
+          return get_tx_lock(pid.get_id())
+            ->with([this, pid, tx_seq, timeout]() {
+                return do_commit_tx(pid, tx_seq, timeout);
+            })
+            .finally([u = std::move(unit)] {});
+      });
 }
 
 ss::future<tx_errc> rm_stm::do_commit_tx(
@@ -529,9 +544,14 @@ ss::future<tx_errc> rm_stm::abort_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
-    return get_tx_lock(pid.get_id())->with([this, pid, tx_seq, timeout]() {
-        return do_abort_tx(pid, tx_seq, timeout);
-    });
+    return _state_lock.hold_read_lock().then(
+      [this, pid, tx_seq, timeout](ss::basic_rwlock<>::holder unit) mutable {
+          return get_tx_lock(pid.get_id())
+            ->with([this, pid, tx_seq, timeout]() {
+                return do_abort_tx(pid, tx_seq, timeout);
+            })
+            .finally([u = std::move(unit)] {});
+      });
 }
 
 // abort_tx is invoked strictly after a tx is canceled on the tm_stm
@@ -601,22 +621,30 @@ ss::future<result<raft::replicate_result>> rm_stm::replicate(
   model::batch_identity bid,
   model::record_batch_reader b,
   raft::replicate_options opts) {
-    if (bid.is_transactional) {
-        auto pid = bid.pid.get_id();
-        return get_tx_lock(pid)->with([this, bid, b = std::move(b)]() mutable {
-            return replicate_tx(bid, std::move(b));
-        });
-    } else if (bid.has_idempotent() && bid.first_seq <= bid.last_seq) {
-        return replicate_seq(bid, std::move(b), opts);
-    }
-
-    return sync(_sync_timeout)
-      .then([this, opts, b = std::move(b)](bool is_synced) mutable {
-          if (!is_synced) {
-              return ss::make_ready_future<result<raft::replicate_result>>(
-                errc::not_leader);
+    return _state_lock.hold_read_lock().then(
+      [this, bid, opts, b = std::move(b)](
+        ss::basic_rwlock<>::holder unit) mutable {
+          if (bid.is_transactional) {
+              auto pid = bid.pid.get_id();
+              return get_tx_lock(pid)
+                ->with([this, bid, b = std::move(b)]() mutable {
+                    return replicate_tx(bid, std::move(b));
+                })
+                .finally([u = std::move(unit)] {});
+          } else if (bid.has_idempotent() && bid.first_seq <= bid.last_seq) {
+              return replicate_seq(bid, std::move(b), opts)
+                .finally([u = std::move(unit)] {});
           }
-          return _c->replicate(std::move(b), opts);
+
+          return sync(_sync_timeout)
+            .then([this, opts, b = std::move(b)](bool is_synced) mutable {
+                if (!is_synced) {
+                    return ss::make_ready_future<
+                      result<raft::replicate_result>>(errc::not_leader);
+                }
+                return _c->replicate(std::move(b), opts);
+            })
+            .finally([u = std::move(unit)] {});
       });
 }
 
@@ -869,8 +897,12 @@ void rm_stm::track_tx(
 void rm_stm::abort_old_txes() {
     _is_autoabort_active = true;
     (void)ss::with_gate(_gate, [this] {
-        return do_abort_old_txes().finally(
-          [this] { try_arm(clock_type::now() + _abort_interval_ms); });
+        return _state_lock.hold_read_lock().then(
+          [this](ss::basic_rwlock<>::holder unit) mutable {
+              return do_abort_old_txes().finally([this, u = std::move(unit)] {
+                  try_arm(clock_type::now() + _abort_interval_ms);
+              });
+          });
     });
 }
 
@@ -1341,6 +1373,16 @@ rm_stm::load_abort_snapshot(abort_index index) {
     auto data = reflection::adl<abort_snapshot>{}.from(data_parser);
 
     co_return data;
+}
+
+ss::future<> rm_stm::handle_eviction() {
+    return _state_lock.hold_write_lock().then(
+      [this]([[maybe_unused]] ss::basic_rwlock<>::holder unit) {
+          _log_state = {};
+          _mem_state = {};
+          set_next(_c->start_offset());
+          return ss::now();
+      });
 }
 
 } // namespace cluster

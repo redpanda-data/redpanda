@@ -26,7 +26,7 @@ state_machine::state_machine(
   , _bootstrap_last_applied(_raft->read_last_applied()) {}
 
 ss::future<> state_machine::start() {
-    vlog(_log.info, "Starting state machine");
+    vlog(_log.info, "Starting state machine for ntp={}", _raft->ntp());
     (void)ss::with_gate(_gate, [this] {
         return ss::do_until(
           [this] { return _gate.is_closed(); }, [this] { return apply(); });
@@ -35,6 +35,14 @@ ss::future<> state_machine::start() {
 }
 
 void state_machine::set_next(model::offset offset) { _next = offset; }
+
+ss::future<> state_machine::handle_eviction() {
+    vlog(
+      _log.warn,
+      "{} state_machine should support handle_eviction",
+      _raft->ntp());
+    return ss::now();
+}
 
 ss::future<> state_machine::stop() {
     _waiters.stop();
@@ -105,10 +113,16 @@ ss::future<> state_machine::apply() {
     return _raft->events()
       .wait(_next, model::no_timeout, _as)
       .then([this] {
-          // build a reader for log range [_next, +inf).
-          storage::log_reader_config config(
-            _next, model::model_limits<model::offset>::max(), _io_prio);
-          return _raft->make_reader(config);
+          auto f = ss::now();
+          if (_next < _raft->start_offset()) {
+              f = handle_eviction();
+          }
+          return f.then([this] {
+              // build a reader for log range [_next, +inf).
+              storage::log_reader_config config(
+                _next, model::model_limits<model::offset>::max(), _io_prio);
+              return _raft->make_reader(config);
+          });
       })
       .then([this](model::record_batch_reader reader) {
           // apply each batch to the state machine
@@ -121,7 +135,8 @@ ss::future<> state_machine::apply() {
             });
       })
       .handle_exception([this](const std::exception_ptr& e) {
-          vlog(_log.info, "State machine handles {}", e);
+          vlog(
+            _log.info, "State machine for ntp={} handles {}", _raft->ntp(), e);
       });
 }
 

@@ -135,6 +135,10 @@ public:
 
     ss::future<bool> barrier();
 
+    ss::future<ss::basic_rwlock<>::holder> read_lock() {
+        return _state_lock.hold_read_lock();
+    }
+
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       get_actual_tx(kafka::transactional_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
@@ -167,10 +171,14 @@ public:
 
     std::vector<kafka::transactional_id> get_expired_txs();
 
+protected:
+    ss::future<> handle_eviction() override;
+
 private:
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_snapshot() override;
 
+    ss::basic_rwlock<> _state_lock;
     std::chrono::milliseconds _sync_timeout;
     std::chrono::milliseconds _transactional_id_expiration;
     model::violation_recovery_policy _recovery_policy;
