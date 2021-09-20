@@ -10,7 +10,7 @@ from rptest.tests.end_to_end import EndToEndTest
 
 
 class SimpleEndToEndTest(EndToEndTest):
-    @cluster(num_nodes=9)
+    @cluster(num_nodes=6)
     def test_correctness_while_evicitng_log(self):
         '''
         Validate that all the records will be delivered to consumers when there 
@@ -28,7 +28,7 @@ class SimpleEndToEndTest(EndToEndTest):
         self.redpanda.create_topic(spec)
         self.topic = spec.name
 
-        self.start_producer(5, throughput=10000)
+        self.start_producer(2, throughput=10000)
         self.start_consumer(1)
         self.await_startup()
 
