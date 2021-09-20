@@ -41,7 +41,7 @@ class ResourceSettings:
     of these into your RedpandaTest constructor if you want to e.g.
     create low-memory situations.
     """
-    def __init__(self, num_cpus=None, memory_mb=None):
+    def __init__(self, num_cpus=None, memory_mb=None, bypass_fsync=None):
         if num_cpus is None:
             num_cpus = 3
 
@@ -51,12 +51,18 @@ class ResourceSettings:
         self._num_cpus = num_cpus
         self._memory_mb = memory_mb
 
+        if bypass_fsync is None:
+            self._bypass_fsync = False
+        else:
+            self._bypass_fsync = bypass_fsync
+
     def to_cli(self):
         return ("--kernel-page-cache=true "
                 "--overprovisioned "
                 "--reserve-memory 0M "
                 f"--memory {self._memory_mb}M "
-                f"--smp {self._num_cpus}")
+                f"--smp {self._num_cpus} "
+                f"--unsafe-bypass-fsync={'1' if self._bypass_fsync else '0'}")
 
 
 class RedpandaService(Service):
