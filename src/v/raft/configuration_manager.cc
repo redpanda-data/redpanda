@@ -70,7 +70,6 @@ ss::future<> configuration_manager::prefix_truncate(model::offset offset) {
           !_configurations.empty(),
           "Configuration manager should always have at least one "
           "configuration");
-        auto it = _configurations.lower_bound(offset);
         /**
          * When prefix truncation would remove all the configuration we instert
          * the last configuration from before requested offset at the offset.
@@ -89,25 +88,48 @@ ss::future<> configuration_manager::prefix_truncate(model::offset offset) {
          *                            └───────┘
          *                   move last know configuration to truncate offset
          *
+         * Another situation is when prefix truncate happen in between the
+         * configurations f.e:
+         *            200
+         *             │
+         *             │
+         *             │ prefix truncate
+         *             │
+         * ┌───────┐   ▼     ┌───────┐
+         * │   0   │........ │  800  │...........................
+         * └───────┘         └───────┘
+         *     │                      ┌───────┐       ┌───────┐
+         *     └─────────────────────►│  200  │.......│  800  │....
+         *                            └───────┘       └───────┘
+         *
          *  NOTE: box with number represent an entry in configuration manager
          */
 
-        if (it == _configurations.end()) {
-            auto config = std::move(std::prev(it)->second);
-            _configurations.clear();
-            _configurations.emplace(offset, std::move(config));
-        } else {
-            _configurations.erase(_configurations.begin(), it);
+        // special case, do nothig if we are asked to truncate before or exactly
+        // at the beggining
+        if (_configurations.begin()->first >= offset) {
+            return ss::now();
         }
 
+        auto it = _configurations.upper_bound(offset);
+
+        auto config = std::move(std::prev(it)->second);
+        _configurations.erase(_configurations.begin(), it);
+        const auto [_, success] = _configurations.emplace(
+          offset, std::move(config));
+        vassert(
+          success,
+          "Inserting configuration after prefix truncate must succeed, "
+          "truncation offset: {}, current state: {}",
+          offset,
+          *this);
+
         _highest_known_offset = std::max(offset, _highest_known_offset);
+
         /**
          * store index of first configuration to recover indexing
          */
-        configuration_idx next_index{0};
-        if (!_configurations.empty()) {
-            next_index = _configurations.begin()->second.idx;
-        }
+        auto next_index = _configurations.begin()->second.idx;
         return store_highest_known_offset()
           .then([this, next_index] {
               return _storage.kvs().put(
