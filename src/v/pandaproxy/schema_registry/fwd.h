@@ -13,7 +13,11 @@
 
 namespace pandaproxy::schema_registry {
 
+class api;
 struct configuration;
+class seq_writer;
 class service;
+class sharded_store;
+class store;
 
 } // namespace pandaproxy::schema_registry
