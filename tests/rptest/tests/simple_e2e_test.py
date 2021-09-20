@@ -33,5 +33,5 @@ class SimpleEndToEndTest(EndToEndTest):
         self.await_startup()
 
         self.run_validation(min_records=100000,
-                            producer_timeout_sec=120,
-                            consumer_timeout_sec=120)
+                            producer_timeout_sec=300,
+                            consumer_timeout_sec=300)
