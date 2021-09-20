@@ -35,5 +35,7 @@ class controller_api;
 class members_frontend;
 class members_backend;
 class data_policy_frontend;
+class tx_gateway;
+class rm_group_proxy;
 
 } // namespace cluster

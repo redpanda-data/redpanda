@@ -9,13 +9,20 @@
 
 #include "cluster/tx_gateway_frontend.h"
 
+#include "cluster/controller.h"
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/logger.h"
+#include "cluster/metadata_cache.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
+#include "cluster/rm_group_proxy.h"
 #include "cluster/rm_partition_frontend.h"
 #include "cluster/shard_table.h"
+#include "cluster/tm_stm.h"
+#include "cluster/topics_frontend.h"
+#include "cluster/tx_gateway.h"
 #include "cluster/tx_helpers.h"
+#include "config/configuration.h"
 #include "errc.h"
 #include "types.h"
 

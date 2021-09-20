@@ -11,15 +11,11 @@
 
 #pragma once
 
-#include "cluster/controller.h"
-#include "cluster/metadata_cache.h"
-#include "cluster/rm_group_proxy.h"
+#include "cluster/fwd.h"
 #include "cluster/tm_stm.h"
-#include "cluster/topics_frontend.h"
-#include "cluster/tx_gateway.h"
 #include "cluster/types.h"
-#include "config/configuration.h"
 #include "model/metadata.h"
+#include "rpc/fwd.h"
 #include "seastarx.h"
 #include "utils/available_promise.h"
 
