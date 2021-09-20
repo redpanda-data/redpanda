@@ -60,7 +60,6 @@ controller::controller(
 ss::future<> controller::wire_up() {
     return _as.start()
       .then([this] { return _members_table.start(); })
-      .then([this] { return _partition_leaders.start(); })
       .then([this] { return _partition_allocator.start_single(); })
       .then([this] { return _credentials.start(); })
       .then([this] { return _authorizer.start(); })
@@ -79,6 +78,7 @@ ss::future<> controller::start() {
              config::shard_local_cfg().data_directory().as_sstring(),
              std::move(initial_raft0_brokers))
       .then([this](consensus_ptr c) { _raft0 = c; })
+      .then([this] { return _partition_leaders.start(std::ref(_tp_state)); })
       .then([this] {
           return _members_manager.start_single(
             _raft0,
