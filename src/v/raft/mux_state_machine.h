@@ -23,6 +23,7 @@
 #include "utils/mutex.h"
 #include "vassert.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/util/bool_class.hh>
@@ -105,13 +106,12 @@ public:
     ss::future<> stop() {
         _mutex.broken();
         // close the gate so no new requests will be handled
-        auto f = raft::state_machine::stop();
+        co_await raft::state_machine::stop();
         // fail all pending replicate requests
         for (auto& p : _promises) {
             p.second.set_value(std::error_code(errc::shutting_down));
         }
         _promises.clear();
-        return f;
     }
 
     /// Replicates record batch
