@@ -388,10 +388,10 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
                                       == it->new_assignment.replicas;
                       });
 
-                    // The only delta type permitted between `update` and
-                    // `update_finished` is `update_properties`.  Apply any
-                    // intervening deltas of this type and skip
-                    // the cursor ahead to the `update_finished`
+                    // The only delta types permitted between `update` and
+                    // `update_finished` are `update_properties` or `del`. Apply
+                    // any intervening deltas of these types and skip the cursor
+                    // ahead to the `update_finished`
                     if (fit != deltas.end()) {
                         while (++it != fit) {
                             vlog(
@@ -399,13 +399,20 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
                               "executing (during update) ntp: {} operation: {}",
                               it->ntp,
                               *it);
-                            vassert(
+                            if (
                               it->type
-                                == topic_table_delta::op_type::
-                                  update_properties,
-                              "Only update_properties allowed here");
-                            co_await process_partition_properties_update(
-                              it->ntp, it->new_assignment);
+                              == topic_table_delta::op_type::
+                                update_properties) {
+                                co_await process_partition_properties_update(
+                                  it->ntp, it->new_assignment);
+                            } else if (
+                              it->type == topic_table_delta::op_type::del) {
+                                co_await delete_partition(
+                                  it->ntp, model::revision_id{it->offset});
+                            } else {
+                                vassert(
+                                  false, "Invalid delta during topic update");
+                            }
                         }
                         continue;
                     }
