@@ -518,7 +518,9 @@ controller_backend::execute_partitition_op(const topic_table::delta& delta) {
           create_brokers_set(
             delta.new_assignment.replicas, _members_table.local()));
     case op_t::del:
-        return delete_partition(delta.ntp, rev);
+        return delete_partition(delta.ntp, rev).then([] {
+            return std::error_code(errc::success);
+        });
     case op_t::update:
         vassert(
           delta.previous_assignment,
@@ -527,7 +529,8 @@ controller_backend::execute_partitition_op(const topic_table::delta& delta) {
         return process_partition_update(
           delta.ntp, delta.new_assignment, *delta.previous_assignment, rev);
     case op_t::update_finished:
-        return finish_partition_update(delta.ntp, delta.new_assignment, rev);
+        return finish_partition_update(delta.ntp, delta.new_assignment, rev)
+          .then([] { return std::error_code(errc::success); });
     case op_t::update_properties:
         return process_partition_properties_update(
                  delta.ntp, delta.new_assignment)
@@ -782,7 +785,7 @@ ss::future<std::error_code> controller_backend::dispatch_update_finished(
       });
 }
 
-ss::future<std::error_code> controller_backend::finish_partition_update(
+ss::future<> controller_backend::finish_partition_update(
   model::ntp ntp, const partition_assignment& current, model::revision_id rev) {
     vlog(
       clusterlog.trace, "processing partition {} finished update command", ntp);
@@ -791,14 +794,14 @@ ss::future<std::error_code> controller_backend::finish_partition_update(
     // it has to be removed after new configuration is stable
 
     if (has_local_replicas(_self, current.replicas)) {
-        return ss::make_ready_future<std::error_code>(errc::success);
+        return ss::make_ready_future<>();
     }
 
     auto partition = _partition_manager.local().get(ntp);
     // we do not have local replicas and partition does not
     // exists, it is ok
     if (!partition) {
-        return ss::make_ready_future<std::error_code>(errc::success);
+        return ss::make_ready_future<>();
     }
     vlog(clusterlog.trace, "removing partition {} replica", ntp);
     return delete_partition(std::move(ntp), rev);
@@ -966,16 +969,16 @@ ss::future<std::error_code> controller_backend::shutdown_on_current_shard(
     }
 }
 
-ss::future<std::error_code>
+ss::future<>
 controller_backend::delete_partition(model::ntp ntp, model::revision_id rev) {
     auto part = _partition_manager.local().get(ntp);
     if (unlikely(part.get() == nullptr)) {
-        return ss::make_ready_future<std::error_code>(errc::success);
+        return ss::make_ready_future<>();
     }
 
     // partition was already recreated with greater rev, do nothing
     if (unlikely(part->get_revision_id() > rev)) {
-        return ss::make_ready_future<std::error_code>(errc::success);
+        return ss::make_ready_future<>();
     }
 
     auto group_id = part->group();
@@ -993,8 +996,7 @@ controller_backend::delete_partition(model::ntp ntp, model::revision_id rev) {
       .then([this, ntp = std::move(ntp)] {
           // remove partition
           return _partition_manager.local().remove(ntp);
-      })
-      .then([] { return make_error_code(errc::success); });
+      });
 }
 
 std::vector<topic_table::delta>
