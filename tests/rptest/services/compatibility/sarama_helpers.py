@@ -10,7 +10,7 @@
 import os
 from .helpers_base import HelperBase, HelperFactoryBase
 
-#The Sarama root directory
+# The Sarama root directory
 TESTS_DIR = os.path.join("/opt", "sarama")
 
 
@@ -21,21 +21,21 @@ class SaramaInterceptorsHelper(HelperBase):
     def __init__(self, redpanda, topic):
         super(SaramaInterceptorsHelper, self).__init__(redpanda)
 
-        #The kafka topic
+        # The kafka topic
         self._topic = topic
 
-    #The internal condition to determine if the
-    #example is successful. Returns boolean.
+    # The internal condition to determine if the
+    # example is successful. Returns boolean.
     def _condition(self, line):
         return 'SpanContext' in line
 
-    #Return the command to call in the shell
+    # Return the command to call in the shell
     def cmd(self):
         EXAMPLE_DIR = os.path.join(TESTS_DIR, "examples/interceptors")
         cmd = f"interceptors -brokers {self._redpanda.brokers()} -topic {self._topic}"
         return os.path.join(EXAMPLE_DIR, cmd)
 
-    #Return the process name to kill
+    # Return the process name to kill
     def process_to_kill(self):
         return "interceptors"
 
@@ -47,31 +47,31 @@ class SaramaHttpServerHelper(HelperBase):
     def __init__(self, redpanda):
         super(SaramaHttpServerHelper, self).__init__(redpanda)
 
-        #The name of the node assigned to this example
+        # The name of the node assigned to this example
         self._node_name = ""
 
-    #The internal condition to determine if the
-    #example is successful. Returns boolean.
+    # The internal condition to determine if the
+    # example is successful. Returns boolean.
     def _condition(self, line):
         return 'Listening for requests' in line
 
-    #Return the command to call in the shell
+    # Return the command to call in the shell
     def cmd(self):
         EXAMPLE_DIR = os.path.join(TESTS_DIR, "examples/http_server")
         cmd = f"http_server -addr {self._node_name}:8080 -brokers {self._redpanda.brokers()}"
         return os.path.join(EXAMPLE_DIR, cmd)
 
-    #Return the process name to kill
+    # Return the process name to kill
     def process_to_kill(self):
         return "http_server"
 
-    #What is the name of the node
-    #assigned to this example?
+    # What is the name of the node
+    # assigned to this example?
     def node_name(self):
         return self._node_name
 
-    #Set the name of the node assigned to
-    #this example.
+    # Set the name of the node assigned to
+    # this example.
     def set_node_name(self, node_name):
         self._node_name = node_name
 
@@ -83,29 +83,29 @@ class SaramaConsumerGroupHelper(HelperBase):
     def __init__(self, redpanda, topic):
         super(SaramaConsumerGroupHelper, self).__init__(redpanda)
 
-        #The kafka topic
+        # The kafka topic
         self._topic = topic
 
-    #The internal condition to determine if the
-    #example is successful. Returns boolean.
+    # The internal condition to determine if the
+    # example is successful. Returns boolean.
     def _condition(self, line):
         return 'Message claimed:' in line
 
-    #Return the command to call in the shell
+    # Return the command to call in the shell
     def cmd(self):
         EXAMPLE_DIR = os.path.join(TESTS_DIR, "examples/consumergroup")
         cmd = f"consumer -brokers=\"{self._redpanda.brokers()}\" -topics=\"{self._topic}\" -group=\"example\""
         return os.path.join(EXAMPLE_DIR, cmd)
 
-    #Return the process name to kill
+    # Return the process name to kill
     def process_to_kill(self):
         return "consumer"
 
 
-#A factory method to produce the command to run
-#Sarama's SASL/SCRAM authentication example.
-#Here, we do not create a HelperBase because
-#the SASL/SCRAM example runs in the foreground.
+# A factory method to produce the command to run
+# Sarama's SASL/SCRAM authentication example.
+# Here, we do not create a HelperBase because
+# the SASL/SCRAM example runs in the foreground.
 def sarama_sasl_scram(redpanda, topic):
     EXAMPLE_DIR = os.path.join(TESTS_DIR, "examples/sasl_scram_client")
     creds = redpanda.SUPERUSER_CREDENTIALS
@@ -122,7 +122,7 @@ class SaramaHelperFactory(HelperFactoryBase):
     def __init__(self, func_name, redpanda, topic):
         super(SaramaHelperFactory, self).__init__(func_name, redpanda, topic)
 
-    #The factory method for sarama
+    # The factory method for sarama
     def create_sarama_helpers(self):
         if self._func_name == "test_sarama_interceptors":
             return SaramaInterceptorsHelper(self._redpanda, self._topic)

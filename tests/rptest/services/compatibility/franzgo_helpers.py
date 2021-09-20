@@ -11,7 +11,7 @@ import os
 from .helpers_base import HelperBase, HelperFactoryBase
 import time
 
-#The franz-go root directory
+# The franz-go root directory
 TESTS_DIR = os.path.join("/opt", "franz-go")
 
 
@@ -23,23 +23,23 @@ class FranzGoBench(HelperBase):
     def __init__(self, redpanda, topic, extra_conf):
         super(FranzGoBench, self).__init__(redpanda)
 
-        #The kafka topic
+        # The kafka topic
         self._topic = topic
 
-        #Number of records produced
+        # Number of records produced
         self._recs = 0
 
         self._extra_conf = extra_conf
 
-    #The internal condition to determine if the
-    #example is successful. Returns boolean.
+    # The internal condition to determine if the
+    # example is successful. Returns boolean.
     def _condition(self, line):
-        #Multiply by 1k because the number of recs
-        #is formated as XXX.XXk records/s
+        # Multiply by 1k because the number of recs
+        # is formated as XXX.XXk records/s
         self._recs += float(line.split()[2][:-1]) * 1000
         return self._recs >= self._extra_conf.get("max_records")
 
-    #Return the process name to kill
+    # Return the process name to kill
     def process_to_kill(self):
         return "bench"
 
@@ -53,7 +53,7 @@ class FranzGoBenchProduceHelper(FranzGoBench):
         super(FranzGoBenchProduceHelper,
               self).__init__(redpanda, topic, extra_conf)
 
-    #Return the command to call in the shell
+    # Return the command to call in the shell
     def cmd(self):
         EXAMPLE_DIR = os.path.join(TESTS_DIR, "examples/bench")
         cmd = f"bench -brokers {self._redpanda.brokers()} -topic {self._topic} -record-bytes 1000"
@@ -75,7 +75,7 @@ class FranzGoBenchConsumeHelper(FranzGoBench):
         super(FranzGoBenchConsumeHelper,
               self).__init__(redpanda, topic, extra_conf)
 
-    #Return the command to call in the shell
+    # Return the command to call in the shell
     def cmd(self):
         EXAMPLE_DIR = os.path.join(TESTS_DIR, "examples/bench")
         cmd = f"bench -brokers {self._redpanda.brokers()} -topic {self._topic} -record-bytes 1000 -consume"
@@ -102,10 +102,10 @@ class FranzGoHelperFactory(HelperFactoryBase):
 
         self._extra_conf = extra_conf or dict()
 
-    #The factory method for franz-go
+    # The factory method for franz-go
     def create_franzgo_helpers(self):
-        #Explictly checking None because "consume" is boolean
-        #and False may satisfy this condition
+        # Explictly checking None because "consume" is boolean
+        # and False may satisfy this condition
         if not isinstance(self._extra_conf.get("consume"), bool):
             raise RuntimeError(
                 "create_franzgo_helpers failed: consume must be bool.")

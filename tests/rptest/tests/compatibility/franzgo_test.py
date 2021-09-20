@@ -24,40 +24,40 @@ class FranzGoBase(RedpandaTest):
     topics = (TopicSpec(), )
 
     def __init__(self, test_context):
-        #idempotence is necessary for bench example
+        # idempotence is necessary for bench example
         extra_rp_conf = {"enable_idempotence": True}
         self._ctx = test_context
 
         super(FranzGoBase, self).__init__(test_context=test_context,
                                           extra_rp_conf=extra_rp_conf)
 
-        #A representation of the bench producer endpoint
+        # A representation of the bench producer endpoint
         self._prod_conf = {
             "consume": False,
 
-            #Amount of records to produce.
-            #1mill seems like a good starting point. Could be scaled.
+            # Amount of records to produce.
+            # 1mill seems like a good starting point. Could be scaled.
             "max_records": 1000000,
 
-            #Custom timeout of 30s instead of the default 10s
-            #because sometimes no records are produced early on
-            #which eats-up execution time.
-            "timeout": 30
+            # Custom timeout of 30s instead of the default 10s
+            # because sometimes no records are produced early on
+            # which eats-up execution time.
+            "timeout": 300
         }
         self._producer = None
 
-        #A representation of the bench consumer endpoint
+        # A representation of the bench consumer endpoint
         self._cons_conf = {
             "consume": True,
 
-            #Amount of records to consume
-            #1mill seems like a good starting point. Could be scaled.
+            # Amount of records to consume
+            # 1mill seems like a good starting point. Could be scaled.
             "max_records": 1000000,
 
-            #Custom timeout of 120s instead of the default 10s
-            #because the default is not long enough to consume
-            #1mill records.
-            "timeout": 120
+            # Custom timeout of 120s instead of the default 10s
+            # because the default is not long enough to consume
+            # 1mill records.
+            "timeout": 300
         }
         self._consumer = None
 
@@ -87,25 +87,25 @@ class FranzGoWithoutGroupTest(FranzGoBase):
 
     @cluster(num_nodes=5)
     def test_franzgo_bench_wo_group(self):
-        #Start the produce bench
+        # Start the produce bench
         self._producer.start()
 
-        #Wait until the example is ok.
-        #Add 30s to the timeout incase the example
-        #took the full amount of time to produce
+        # Wait until the example is ok.
+        # Add 30s to the timeout incase the example
+        # took the full amount of time to produce
         wait_until(lambda: self._producer.ok(),
                    timeout_sec=self._prod_conf["timeout"] + 30,
                    backoff_sec=5,
                    err_msg="franz-go bench_wo_group produce test failed")
 
-        #Start the consume bench.
-        #Running the example sequentially because
-        #it's easier to debug.
+        # Start the consume bench.
+        # Running the example sequentially because
+        # it's easier to debug.
         self._consumer.start()
 
-        #Wait until the example is OK to terminate
-        #Add 30s to the timeout incase the example
-        #took the full amount of time to consume
+        # Wait until the example is OK to terminate
+        # Add 30s to the timeout incase the example
+        # took the full amount of time to consume
         wait_until(lambda: self._consumer.ok(),
                    timeout_sec=self._cons_conf["timeout"] + 30,
                    backoff_sec=5,
@@ -119,33 +119,33 @@ class FranzGoWithGroupTest(FranzGoBase):
     def __init__(self, test_context):
         super(FranzGoWithGroupTest, self).__init__(test_context=test_context)
 
-        #Using TopicSpec to generate random string
+        # Using TopicSpec to generate random string
         string_gen = TopicSpec()
 
-        #Add group to the consumer configuration
+        # Add group to the consumer configuration
         self._cons_conf["group"] = f"group-{string_gen._random_topic_suffix()}"
 
     @cluster(num_nodes=5)
     def test_franzgo_bench_w_group(self):
-        #Start the produce bench
+        # Start the produce bench
         self._producer.start()
 
-        #Wait until the example is ok.
-        #Add 30s to the timeout incase the example
-        #took the full amount of time to produce
+        # Wait until the example is ok.
+        # Add 30s to the timeout incase the example
+        # took the full amount of time to produce
         wait_until(lambda: self._producer.ok(),
                    timeout_sec=self._prod_conf["timeout"] + 30,
                    backoff_sec=5,
                    err_msg="franz-go bench_w_group produce test failed")
 
-        #Start the consume bench.
-        #Running the example sequentially because
-        #it's easier to debug.
+        # Start the consume bench.
+        # Running the example sequentially because
+        # it's easier to debug.
         self._consumer.start()
 
-        #Wait until the example is OK to terminate
-        #Add 30s to the timeout incase the example
-        #took the full amount of time to consume
+        # Wait until the example is OK to terminate
+        # Add 30s to the timeout incase the example
+        # took the full amount of time to consume
         wait_until(lambda: self._consumer.ok(),
                    timeout_sec=self._cons_conf["timeout"] + 30,
                    backoff_sec=5,
