@@ -81,7 +81,6 @@ public:
 
     void set_exception(std::exception_ptr&& ex) {
         if (_timer.cancel()) {
-            _promise.set_exception(ex);
             unlink_abort_source();
         }
 
