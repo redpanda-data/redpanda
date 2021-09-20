@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "archival/service.h"
+#include "archival/fwd.h"
 #include "cluster/fwd.h"
 #include "coproc/api.h"
 #include "kafka/server/fwd.h"
