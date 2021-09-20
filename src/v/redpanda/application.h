@@ -29,8 +29,6 @@
 #include "resource_mgmt/smp_groups.h"
 #include "rpc/fwd.h"
 #include "seastarx.h"
-#include "security/credential_store.h"
-#include "storage/compaction_controller.h"
 #include "storage/fwd.h"
 #include "v8_engine/fwd.h"
 
