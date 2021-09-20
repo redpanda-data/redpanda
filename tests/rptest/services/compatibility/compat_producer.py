@@ -19,10 +19,10 @@ class CompatProducer(BackgroundThreadService):
     """
     def __init__(self, context, redpanda, topic):
         super(CompatProducer, self).__init__(context, num_nodes=1)
-        #The instance of redpanda
+        # The instance of redpanda
         self._redpanda = redpanda
 
-        #The kafka topic
+        # The kafka topic
         self._topic = topic
 
     def _worker(self, idx, node):

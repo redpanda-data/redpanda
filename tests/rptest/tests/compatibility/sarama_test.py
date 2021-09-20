@@ -28,19 +28,19 @@ class SaramaTest(RedpandaTest):
     def __init__(self, test_context):
         super(SaramaTest, self).__init__(test_context=test_context)
 
-        #The produce is only for the consumer group example
+        # The produce is only for the consumer group example
         self._producer = CompatProducer(test_context, self.redpanda,
                                         self.topic)
 
-        #A representation of the example to be run in the background
+        # A representation of the example to be run in the background
         self._example = CompatExample(test_context, self.redpanda, self.topic)
 
     @cluster(num_nodes=5)
     def test_sarama_interceptors(self):
-        #Start the example
+        # Start the example
         self._example.start()
 
-        #Wait until the example is OK to terminate
+        # Wait until the example is OK to terminate
         wait_until(lambda: self._example.ok(),
                    timeout_sec=30,
                    backoff_sec=5,
@@ -48,32 +48,31 @@ class SaramaTest(RedpandaTest):
 
     @cluster(num_nodes=5)
     def test_sarama_http_server(self):
-        #Start the example
+        # Start the example
         self._example.start()
 
-        #Wait for the server to load
+        # Wait for the server to load
         wait_until(lambda: self._example.ok(),
                    timeout_sec=30,
                    backoff_sec=5,
                    err_msg="sarama http_server failed to load")
 
-        #Get the node the server is on and
-        #a ducktape node
+        # Get the node the server is on and
+        # a ducktape node
         server_name = self._example.node_name()
         n = random.randint(0, len(self.redpanda.nodes))
         node = self.redpanda.get_node(n)
 
-        #Http get request using curl
+        # Http get request using curl
         curl = f"curl -SL http://{server_name}:8080/"
 
         def try_curl():
             result = node.account.ssh_output(curl, timeout_sec=5).decode()
-            self.logger.debug(result)
             return "Your data is stored with unique identifier" in result
 
-        #Using wait_until for auto-retry because sometimes
-        #redpanda is in the middle of a leadership election when
-        #we try to http get.
+        # Using wait_until for auto-retry because sometimes
+        # redpanda is in the middle of a leadership election when
+        # we try to http get.
         wait_until(lambda: try_curl(),
                    timeout_sec=60,
                    backoff_sec=5,
@@ -81,13 +80,13 @@ class SaramaTest(RedpandaTest):
 
     @cluster(num_nodes=5)
     def test_sarama_consumergroup(self):
-        #Run the publisher
+        # Run the publisher
         self._producer.start()
 
-        #Start the example
+        # Start the example
         self._example.start()
 
-        #Wait until the example is OK to terminate
+        # Wait until the example is OK to terminate
         wait_until(lambda: self._example.ok(),
                    timeout_sec=30,
                    backoff_sec=5,

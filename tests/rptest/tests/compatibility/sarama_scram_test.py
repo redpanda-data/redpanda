@@ -13,7 +13,7 @@ from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.compatibility.compat_helpers import sarama_sasl_scram
+from rptest.services.compatibility.sarama_helpers import sarama_sasl_scram
 
 
 class SaramaScramTest(RedpandaTest):
@@ -31,24 +31,23 @@ class SaramaScramTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_sarama_sasl_scram(self):
-        #Get the SASL SCRAM command and a ducktape node
+        # Get the SASL SCRAM command and a ducktape node
         cmd = sarama_sasl_scram(self.redpanda, self.topic)
         n = random.randint(0, len(self.redpanda.nodes))
         node = self.redpanda.get_node(n)
 
         def try_cmd():
-            #Allow fail because the process exits with
-            #non-zero if redpanda is in the middle of a
-            #leadership election. Instead we want to
-            #retry the cmd.
+            # Allow fail because the process exits with
+            # non-zero if redpanda is in the middle of a
+            # leadership election. Instead we want to
+            # retry the cmd.
             result = node.account.ssh_output(cmd,
                                              allow_fail=True,
                                              timeout_sec=10).decode()
-            self.logger.debug(result)
             return "wrote message at partition:" in result
 
-        #Using wait_until for auto-retry because sometimes
-        #redpanda is in the middle of a leadership election
+        # Using wait_until for auto-retry because sometimes
+        # redpanda is in the middle of a leadership election
         wait_until(lambda: try_cmd(),
                    timeout_sec=60,
                    backoff_sec=5,
