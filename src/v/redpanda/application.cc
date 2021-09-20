@@ -38,8 +38,7 @@
 #include "model/metadata.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/proxy.h"
-#include "pandaproxy/schema_registry/configuration.h"
-#include "pandaproxy/schema_registry/service.h"
+#include "pandaproxy/schema_registry/api.h"
 #include "platform/stop_signal.h"
 #include "raft/group_manager.h"
 #include "raft/recovery_throttle.h"
@@ -495,32 +494,15 @@ void application::wire_up_services() {
           .get();
     }
     if (_schema_reg_config) {
-        _schema_registry_store.start(smp_service_groups.proxy_smp_sg()).get();
-        _deferred.emplace_back([this] { _schema_registry_store.stop().get(); });
-
-        construct_service(
-          _schema_registry_client, to_yaml(*_schema_reg_client_config))
-          .get();
-
-        construct_service(
-          _schema_registry_sequencer,
-          config::shard_local_cfg().node_id(),
-          smp_service_groups.proxy_smp_sg(),
-          std::reference_wrapper(_schema_registry_client),
-          std::reference_wrapper(_schema_registry_store))
-          .get();
-
-        construct_service(
+        construct_single_service(
           _schema_registry,
-          to_yaml(*_schema_reg_config),
+          config::shard_local_cfg().node_id(),
           smp_service_groups.proxy_smp_sg(),
           // TODO: Improve memory budget for services
           // https://github.com/vectorizedio/redpanda/issues/1392
           memory_groups::kafka_total_memory(),
-          std::reference_wrapper(_schema_registry_client),
-          std::reference_wrapper(_schema_registry_store),
-          std::reference_wrapper(_schema_registry_sequencer))
-          .get();
+          *_schema_reg_client_config,
+          *_schema_reg_config);
     }
 }
 
@@ -901,9 +883,7 @@ void application::start() {
     }
 
     if (_schema_reg_config) {
-        _schema_registry
-          .invoke_on_all(&pandaproxy::schema_registry::service::start)
-          .get();
+        _schema_registry->start().get();
         vlog(
           _log.info,
           "Started Schema Registry listening at {}",

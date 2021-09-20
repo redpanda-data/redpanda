@@ -22,8 +22,6 @@
 #include "pandaproxy/rest/fwd.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/fwd.h"
-#include "pandaproxy/schema_registry/seq_writer.h"
-#include "pandaproxy/schema_registry/sharded_store.h"
 #include "raft/fwd.h"
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/cpu_scheduling.h"
@@ -139,11 +137,7 @@ private:
     ss::sharded<rpc::server> _kafka_server;
     ss::sharded<kafka::client::client> _proxy_client;
     ss::sharded<pandaproxy::rest::proxy> _proxy;
-    ss::sharded<kafka::client::client> _schema_registry_client;
-    pandaproxy::schema_registry::sharded_store _schema_registry_store;
-    ss::sharded<pandaproxy::schema_registry::service> _schema_registry;
-    ss::sharded<pandaproxy::schema_registry::seq_writer>
-      _schema_registry_sequencer;
+    std::unique_ptr<pandaproxy::schema_registry::api> _schema_registry;
     ss::sharded<storage::compaction_controller> _compaction_controller;
 
     ss::metrics::metric_groups _metrics;
