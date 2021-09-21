@@ -32,8 +32,9 @@ func NewAlterConfigCommand(fs afero.Fs) *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use: "alter-config [TOPICS...] --set key=value --del key2,key3",
-		Short: `Set, delete, add, and remove key/value configs for a topic.
+		Use:   "alter-config [TOPICS...] --set key=value --del key2,key3",
+		Short: `Set, delete, add, and remove key/value configs for a topic.`,
+		Long: `Set, delete, add, and remove key/value configs for a topic.
 
 This command allows you to incrementally alter the configuration for multiple
 topics at a time.
