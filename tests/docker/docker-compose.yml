@@ -28,8 +28,7 @@ services:
     image: minio/minio:RELEASE.2021-03-26T00-00-41Z
     networks:
     - redpanda-test
-
-  n1: &node
+  n:
     image: vectorized/redpanda-test-node
     privileged: true
     ulimits:
@@ -42,50 +41,3 @@ services:
     - '${BUILD_ROOT}:${BUILD_ROOT}'
     networks:
     - redpanda-test
-  n2: *node
-  n3: *node
-  n4: *node
-  n5: *node
-  n6: *node
-  n7: *node
-  n8: *node
-  n9: *node
-  n10: *node
-  n11: *node
-  n12: *node
-  n13: *node
-  n14: *node
-  n15: *node
-  n16: *node
-  n17: *node
-  n18: *node
-  n19: *node
-  n20: *node
-  n21: *node
-  n22: *node
-  n23: *node
-  n24: *node
-  n25: *node
-  n26: *node
-  n27: *node
-  n28: *node
-  n29: *node
-  n30: *node
-  n31: *node
-  n32: *node
-  n33: *node
-  n34: *node
-  n35: *node
-  n36: *node
-  n37: *node
-  n38: *node
-  n39: *node
-  n40: *node
-  n41: *node
-  n42: *node
-  n43: *node
-  n44: *node
-  n45: *node
-  n46: *node
-  n47: *node
-  n48: *node
