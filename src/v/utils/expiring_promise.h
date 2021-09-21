@@ -34,13 +34,13 @@ public:
             if (as) {
                 auto opt_sub = as.value().get().subscribe([this]() noexcept {
                     if (_timer.cancel()) {
-                        _promise.set_exception(ss::abort_requested_exception{});
+                        set_exception(ss::abort_requested_exception{});
                     }
                 });
                 if (opt_sub) {
                     _sub = std::move(*opt_sub);
                 } else {
-                    _promise.set_exception(ss::abort_requested_exception{});
+                    set_exception(ss::abort_requested_exception{});
                     return _promise.get_shared_future();
                 }
             }
@@ -54,9 +54,9 @@ public:
 
                   // if errors are encoded in values f.e. result<T> or errc
                   if constexpr (is_result || is_std_error_code) {
-                      _promise.set_value(ef());
+                      set_value(ef());
                   } else {
-                      _promise.set_exception(ef());
+                      set_exception(ef());
                   }
                   unlink_abort_source();
               });
@@ -81,7 +81,6 @@ public:
 
     void set_exception(std::exception_ptr&& ex) {
         if (_timer.cancel()) {
-            _promise.set_exception(ex);
             unlink_abort_source();
         }
 
@@ -98,6 +97,10 @@ public:
         if (!_promise.available()) {
             _promise.set_exception(ex);
         }
+    }
+
+    void set_exception(const std::exception& ex) {
+        set_exception(std::make_exception_ptr(ex));
     }
 
 private:
