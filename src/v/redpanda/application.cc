@@ -12,11 +12,13 @@
 #include "archival/ntp_archiver_service.h"
 #include "archival/service.h"
 #include "cluster/cluster_utils.h"
+#include "cluster/controller.h"
 #include "cluster/id_allocator.h"
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/metadata_dissemination_handler.h"
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/partition_manager.h"
+#include "cluster/rm_partition_frontend.h"
 #include "cluster/security_frontend.h"
 #include "cluster/service.h"
 #include "cluster/topics_frontend.h"
@@ -25,6 +27,7 @@
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
 #include "config/seed_server.h"
+#include "coproc/api.h"
 #include "kafka/client/configuration.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
@@ -35,12 +38,14 @@
 #include "model/metadata.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/proxy.h"
-#include "pandaproxy/schema_registry/configuration.h"
-#include "pandaproxy/schema_registry/service.h"
+#include "pandaproxy/schema_registry/api.h"
 #include "platform/stop_signal.h"
+#include "raft/group_manager.h"
+#include "raft/recovery_throttle.h"
 #include "raft/service.h"
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/io_priority.h"
+#include "rpc/server.h"
 #include "rpc/simple_protocol.h"
 #include "storage/chunk_cache.h"
 #include "storage/compaction_controller.h"
@@ -49,6 +54,7 @@
 #include "test_utils/logs.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
+#include "v8_engine/data_policy_table.h"
 #include "version.h"
 #include "vlog.h"
 
@@ -109,6 +115,8 @@ application::application(ss::sstring logger_name)
   , _rm_group_proxy(std::ref(rm_group_frontend)){
 
     };
+
+application::~application() = default;
 
 static void log_system_resources(
   ss::logger& log, const boost::program_options::variables_map& cfg) {
@@ -486,32 +494,15 @@ void application::wire_up_services() {
           .get();
     }
     if (_schema_reg_config) {
-        _schema_registry_store.start(smp_service_groups.proxy_smp_sg()).get();
-        _deferred.emplace_back([this] { _schema_registry_store.stop().get(); });
-
-        construct_service(
-          _schema_registry_client, to_yaml(*_schema_reg_client_config))
-          .get();
-
-        construct_service(
-          _schema_registry_sequencer,
-          config::shard_local_cfg().node_id(),
-          smp_service_groups.proxy_smp_sg(),
-          std::reference_wrapper(_schema_registry_client),
-          std::reference_wrapper(_schema_registry_store))
-          .get();
-
-        construct_service(
+        construct_single_service(
           _schema_registry,
-          to_yaml(*_schema_reg_config),
+          config::shard_local_cfg().node_id(),
           smp_service_groups.proxy_smp_sg(),
           // TODO: Improve memory budget for services
           // https://github.com/vectorizedio/redpanda/issues/1392
           memory_groups::kafka_total_memory(),
-          std::reference_wrapper(_schema_registry_client),
-          std::reference_wrapper(_schema_registry_store),
-          std::reference_wrapper(_schema_registry_sequencer))
-          .get();
+          *_schema_reg_client_config,
+          *_schema_reg_config);
     }
 }
 
@@ -892,9 +883,7 @@ void application::start() {
     }
 
     if (_schema_reg_config) {
-        _schema_registry
-          .invoke_on_all(&pandaproxy::schema_registry::service::start)
-          .get();
+        _schema_registry->start().get();
         vlog(
           _log.info,
           "Started Schema Registry listening at {}",

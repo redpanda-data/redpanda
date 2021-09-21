@@ -11,13 +11,9 @@
 
 #pragma once
 
-namespace pandaproxy::schema_registry {
+namespace rpc {
 
-class api;
-struct configuration;
-class seq_writer;
-class service;
-class sharded_store;
-class store;
+class connection_cache;
+class server;
 
-} // namespace pandaproxy::schema_registry
+} // namespace rpc

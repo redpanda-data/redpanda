@@ -11,13 +11,11 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "cluster/rm_stm.h"
 #include "kafka/protocol/errors.h"
 #include "model/fundamental.h"
 #include "units.h"
 
 #include <seastar/core/lowres_clock.hh>
-#include <seastar/core/sharded.hh>
 
 #include <absl/container/node_hash_map.h>
 

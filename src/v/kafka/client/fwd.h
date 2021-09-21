@@ -11,13 +11,9 @@
 
 #pragma once
 
-namespace pandaproxy::schema_registry {
+namespace kafka::client {
 
-class api;
 struct configuration;
-class seq_writer;
-class service;
-class sharded_store;
-class store;
+class client;
 
-} // namespace pandaproxy::schema_registry
+} // namespace kafka::client

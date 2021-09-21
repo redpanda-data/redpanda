@@ -11,13 +11,8 @@
 
 #pragma once
 
-namespace pandaproxy::schema_registry {
+namespace v8_engine {
 
-class api;
-struct configuration;
-class seq_writer;
-class service;
-class sharded_store;
-class store;
+class data_policy_table;
 
-} // namespace pandaproxy::schema_registry
+} // namespace v8_engine

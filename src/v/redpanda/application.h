@@ -11,31 +11,26 @@
 
 #pragma once
 
-#include "archival/service.h"
-#include "cluster/controller.h"
+#include "archival/fwd.h"
 #include "cluster/fwd.h"
-#include "cluster/rm_partition_frontend.h"
-#include "coproc/api.h"
+#include "coproc/fwd.h"
+#include "kafka/client/configuration.h"
+#include "kafka/client/fwd.h"
 #include "kafka/server/fwd.h"
 #include "kafka/server/rm_group_frontend.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/fwd.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/fwd.h"
-#include "pandaproxy/schema_registry/seq_writer.h"
-#include "pandaproxy/schema_registry/sharded_store.h"
-#include "raft/group_manager.h"
-#include "raft/recovery_throttle.h"
+#include "raft/fwd.h"
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
 #include "resource_mgmt/smp_groups.h"
-#include "rpc/server.h"
+#include "rpc/fwd.h"
 #include "seastarx.h"
-#include "security/credential_store.h"
-#include "storage/compaction_controller.h"
 #include "storage/fwd.h"
-#include "v8_engine/data_policy_table.h"
+#include "v8_engine/fwd.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/metrics_registration.hh>
@@ -62,6 +57,7 @@ public:
     void start_redpanda();
 
     explicit application(ss::sstring = "redpanda::main");
+    ~application();
 
     void shutdown() {
         while (!_deferred.empty()) {
@@ -141,11 +137,7 @@ private:
     ss::sharded<rpc::server> _kafka_server;
     ss::sharded<kafka::client::client> _proxy_client;
     ss::sharded<pandaproxy::rest::proxy> _proxy;
-    ss::sharded<kafka::client::client> _schema_registry_client;
-    pandaproxy::schema_registry::sharded_store _schema_registry_store;
-    ss::sharded<pandaproxy::schema_registry::service> _schema_registry;
-    ss::sharded<pandaproxy::schema_registry::seq_writer>
-      _schema_registry_sequencer;
+    std::unique_ptr<pandaproxy::schema_registry::api> _schema_registry;
     ss::sharded<storage::compaction_controller> _compaction_controller;
 
     ss::metrics::metric_groups _metrics;

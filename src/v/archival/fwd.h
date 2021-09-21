@@ -11,13 +11,8 @@
 
 #pragma once
 
-namespace pandaproxy::schema_registry {
+namespace archival {
 
-class api;
-struct configuration;
-class seq_writer;
-class service;
-class sharded_store;
-class store;
+class scheduler_service;
 
-} // namespace pandaproxy::schema_registry
+} // namespace archival

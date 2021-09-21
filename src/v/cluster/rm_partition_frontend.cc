@@ -9,12 +9,17 @@
 
 #include "cluster/rm_partition_frontend.h"
 
+#include "cluster/controller.h"
 #include "cluster/logger.h"
+#include "cluster/metadata_cache.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
+#include "cluster/tx_gateway_service.h"
 #include "cluster/tx_helpers.h"
+#include "config/configuration.h"
 #include "errc.h"
+#include "rpc/connection_cache.h"
 #include "types.h"
 
 #include <seastar/core/coroutine.hh>

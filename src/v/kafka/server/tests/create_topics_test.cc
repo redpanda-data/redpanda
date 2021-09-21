@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "kafka/protocol/create_topics.h"
+#include "kafka/protocol/metadata.h"
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/io_priority.h"
 

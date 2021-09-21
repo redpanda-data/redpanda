@@ -35,7 +35,7 @@ namespace kafka::client {
 
 // consumer manages the lifetime of a consumer within a group.
 class consumer final : public ss::enable_lw_shared_from_this<consumer> {
-    using assignment_t = client::assignment;
+    using assignment_t = assignment;
     using broker_reqs_t = absl::node_hash_map<shared_broker_t, fetch_request>;
 
 public:

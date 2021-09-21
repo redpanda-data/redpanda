@@ -11,14 +11,10 @@
 
 #pragma once
 
-#include "cluster/controller.h"
-#include "cluster/metadata_cache.h"
-#include "cluster/tm_stm.h"
-#include "cluster/topics_frontend.h"
-#include "cluster/tx_gateway.h"
+#include "cluster/fwd.h"
 #include "cluster/types.h"
-#include "config/configuration.h"
 #include "model/metadata.h"
+#include "rpc/fwd.h"
 #include "seastarx.h"
 
 namespace cluster {
