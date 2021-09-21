@@ -11,7 +11,7 @@ package template
 
 const packageJson = `{
   "name": "wasm-panda",
-  "version": ">= 21.8.2",
+  "version": "0.0.1",
   "description": "inline wasm transforms sdk",
   "main": "bin/index.js",
   "bin": { "iwt": "./bin/index.js" },
@@ -23,7 +23,7 @@ const packageJson = `{
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@vectorizedio/wasm-api": ">= %s"
+    "@vectorizedio/wasm-api": ">=%s"
   },
   "devDependencies": {
     "ts-loader": "8.0.4",
