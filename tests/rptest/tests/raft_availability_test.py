@@ -18,6 +18,7 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.redpanda import redpanda_cluster
 import random
 
 ELECTION_TIMEOUT = 10
@@ -222,7 +223,12 @@ class RaftAvailabilityTest(RedpandaTest):
         self._ping_pong()
         self.logger.info("Cluster is available as expected")
 
-    @cluster(num_nodes=3)
+    def setUp(self):
+        # Disable default RedpandaTest startup so that `redpanda_cluster`
+        # can change resource settings before starting cluster.
+        pass
+
+    @redpanda_cluster()
     def test_one_node_down(self):
         """
         Simplest HA test.  Stop the leader for our partition.  Validate that
@@ -303,7 +309,7 @@ class RaftAvailabilityTest(RedpandaTest):
              lambda a, b: b == a),
         ])
 
-    @cluster(num_nodes=3)
+    @redpanda_cluster()
     def test_two_nodes_down(self):
         """
         Validate that when two nodes are down, the cluster becomes unavailable, and
@@ -347,7 +353,7 @@ class RaftAvailabilityTest(RedpandaTest):
         # 1/3 nodes down, cluster should be available
         self._expect_available()
 
-    @cluster(num_nodes=3)
+    @redpanda_cluster()
     def test_leader_restart(self):
         """
         Validate that when a leader node is stopped and restarted,
