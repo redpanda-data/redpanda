@@ -59,6 +59,10 @@ public:
     /// Returns list of all topics that exists in the cluster.
     std::vector<model::topic_namespace> all_topics() const;
 
+    ///\brief Returns coprocessor status
+    std::optional<model::topic>
+      get_source_topic(model::topic_namespace_view) const;
+
     ///\brief Returns metadata of single topic.
     ///
     /// If topic does not exists it returns an empty optional
