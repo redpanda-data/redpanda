@@ -140,22 +140,24 @@ class RpkTool:
     def cluster_info(self, timeout=None):
         # Matches against `rpk cluster info`'s output & parses the brokers'
         # ID & address. Example:
-        #
-        #  Redpanda Cluster Info
-        #
-        #  1 (192.168.52.1:9092)  (No partitions)
-        #
-        #  2 (192.168.52.2:9092)  (No partitions)
-        #
-        #  3 (192.168.52.3:9092)  (No partitions)
-        #
+
+        # BROKERS
+        # =======
+        # ID    HOST  PORT
+        # 1*    n1    9092
+        # 2     n2    9092
+        # 3     n3    9092
+
         def _parse_out(line):
-            m = re.match(r" *(?P<id>\d) \((?P<addr>.+\:[0-9]+)\) *", line)
+            m = re.match(
+                r"^(?P<id>\d+)[\s*]+(?P<host>[^\s]+)\s+(?P<port>\d+)$",
+                line.strip())
             if m is None:
                 return None
 
-            return RpkClusterInfoNode(id=int(m.group('id')),
-                                      address=m.group('addr'))
+            address = f"{m.group('host')}:{m.group('port')}"
+
+            return RpkClusterInfoNode(id=int(m.group('id')), address=address)
 
         cmd = [
             self._rpk_binary(), 'cluster', 'info', '--brokers',
