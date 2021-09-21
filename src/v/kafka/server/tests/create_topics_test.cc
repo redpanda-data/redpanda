@@ -104,6 +104,43 @@ public:
         client.stop().then([&client] { client.shutdown(); }).get();
     }
 
+    void test_create_non_replicable_topic(
+      model::topic src, kafka::create_topics_request req) {
+        std::vector<cluster::non_replicable_topic> non_reps;
+        std::transform(
+          req.data.topics.begin(),
+          req.data.topics.end(),
+          std::back_inserter(non_reps),
+          [&src](const kafka::creatable_topic& t) {
+              return cluster::non_replicable_topic{
+                .source = model::topic_namespace{model::kafka_namespace, src},
+                .name = model::topic_namespace{model::kafka_namespace, t.name}};
+          });
+
+        // Creating a materialized topic is not part of the kafka API
+        // Must do this through the cluster::topics_frontend class
+        auto& topics_frontend = app.controller->get_topics_frontend();
+        const auto resp = topics_frontend.local()
+                            .create_non_replicable_topics(
+                              std::move(non_reps), model::no_timeout)
+                            .get();
+        BOOST_TEST(
+          std::all_of(
+            std::cbegin(resp),
+            std::cend(resp),
+            [](const cluster::topic_result& t) {
+                return t.ec == cluster::errc::success;
+            }),
+          fmt::format("expected no errors. received response: {}", resp));
+
+        auto client = make_kafka_client().get0();
+        client.connect().get();
+        for (auto& topic : req.data.topics) {
+            verify_metadata(client, req, topic);
+        }
+        client.stop().then([&client] { client.shutdown(); }).get();
+    }
+
     void verify_metadata(
       kafka::client::transport& client,
       kafka::create_topics_request& create_req,
@@ -230,4 +267,12 @@ FIXTURE_TEST_EXPECTED_FAILURES(create_topics, create_topic_fixture, 2) {
       topicReq("topic11", assignment = Map(0 -> List(0, 1), 1 -> List(1, 0), 2 -> List(1, 2)))),
       validateOnly = true))
 #endif
+}
+
+FIXTURE_TEST(create_non_replicable_topics, create_topic_fixture) {
+    wait_for_controller_leadership().get();
+
+    test_create_topic(make_req({make_topic("topic1")}));
+    test_create_non_replicable_topic(
+      model::topic("topic1"), make_req({make_topic("topic2")}));
 }
