@@ -60,6 +60,7 @@ rpk:
   enable_usage_stats: false
   overprovisioned: false
   tune_aio_events: false
+  tune_ballast_file: false
   tune_clocksource: false
   tune_coredump: false
   tune_cpu: false
@@ -82,6 +83,12 @@ schema_registry: {}
                 # Delete 'node_uuid' so they can be compared (it's random so
                 # it's probably gonna be different each time)
                 del actual_config['node_uuid']
+
+                if actual_config != expected_config:
+                    self.logger.error("Configs differ")
+                    self.logger.error(
+                        f"Expected: {yaml.dump(expected_config)}")
+                    self.logger.error(f"Actual: {yaml.dump(actual_config)}")
 
                 assert actual_config == expected_config
 
