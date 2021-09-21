@@ -162,13 +162,14 @@ model::offset disk_log_impl::time_based_gc_max_offset(model::timestamp time) {
     auto it = std::find_if(
       std::cbegin(_segs),
       std::cend(_segs),
-      [time, bogus_threshold](const ss::lw_shared_ptr<segment>& s) {
+      [this, time, bogus_threshold](const ss::lw_shared_ptr<segment>& s) {
           auto max_ts = s->index().max_timestamp();
           // first that is not going to be collected
           if (max_ts > bogus_threshold) {
               vlog(
                 gclog.warn,
                 "[{}] found segment with bogus max timestamp: {} - {}",
+                config().ntp(),
                 max_ts,
                 s);
           }
