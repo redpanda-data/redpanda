@@ -14,7 +14,9 @@ import random
 import ducktape.errors
 from typing import Optional
 
+from ducktape.mark.resource import cluster
 from ducktape.mark import parametrize
+from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cat import KafkaCat
@@ -28,6 +30,7 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.metrics_check import MetricCheck
+from rptest.services.producer_swarm import ProducerSwarm
 
 ELECTION_TIMEOUT = 10
 
@@ -36,6 +39,100 @@ ISOLATION_LOG_ALLOW_LIST = [
     # rpc - server.cc:91 - vectorized internal rpc protocol - Error[shutting down] remote address: 10.89.0.16:60960 - std::__1::system_error (error system:32, sendmsg: Broken pipe)
     "rpc - .*Broken pipe",
 ]
+
+ELECTION_TIMEOUT = 10
+
+
+class MetricCheckFailed(Exception):
+    def __init__(self, metric, old_value, new_value):
+        self.metric = metric
+        self.old_value = old_value
+        self.new_value = new_value
+
+    def __str__(self):
+        return f"MetricCheckFailed<{self.metric} old={self.old_value} new={self.new_value}>"
+
+
+def label_match(candidate, conditions):
+    for k, v in conditions.items():
+        if candidate.get(k, None) != v:
+            return False
+
+    return True
+
+
+class MetricCheck(object):
+    def __init__(self, logger, redpanda, node, metrics, labels):
+        """
+        :param redpanda: a RedpandaService
+        :param logger: a Logger
+        :param node: a ducktape Node
+        :param metrics: a list of metric names, or a single compiled regex (use re.compile())
+        :param labels: dict, to filter metrics as we capture and check.
+        """
+        self.redpanda = redpanda
+        self.node = node
+        self.labels = labels
+        self.logger = logger
+
+        self._initial_samples = self._capture(metrics)
+
+    def _capture(self, check_metrics):
+        metrics = self.redpanda.metrics(self.node)
+
+        samples = {}
+        for family in metrics:
+            for sample in family.samples:
+                if isinstance(check_metrics, re.Pattern):
+                    include = bool(check_metrics.match(sample.name))
+                else:
+                    include = sample.name in check_metrics
+
+                if not include:
+                    continue
+
+                if not label_match(sample.labels, self.labels):
+                    continue
+
+                if sample.name in samples:
+                    raise RuntimeError(
+                        f"Labels {self.labels} on {sample.name} not specific enough"
+                    )
+
+                self.logger.info(
+                    f"  Captured {sample.name}={sample.value} {sample.labels}")
+                samples[sample.name] = sample.value
+
+        return samples
+
+    def expect(self, expectations):
+        # Gather current values for all the metrics we are going to
+        # apply expectations to (this may be a subset of the metrics
+        # we originally gathered at construction time).
+        samples = self._capture([e[0] for e in expectations])
+
+        error = None
+        for (metric, comparator) in expectations:
+            try:
+                old_value = self._initial_samples[metric]
+            except KeyError:
+                self.logger.error(
+                    f"Missing metrics {metric} on {self.node.account.hostname}.  Have metrics: {list(self._initial_samples.keys())}"
+                )
+                raise
+
+            new_value = samples[metric]
+            ok = comparator(old_value, new_value)
+            self.logger.debug(
+                f"MetricCheck.expect {metric} old={old_value} new={new_value} ok={ok}"
+            )
+            if not ok:
+                error = MetricCheckFailed(metric, old_value, new_value)
+                # Log each bad metric, raise the last one as our actual exception below
+                self.logger.error(str(error))
+
+        if error:
+            raise error
 
 
 class RaftAvailabilityTest(RedpandaTest):
@@ -53,7 +150,11 @@ class RaftAvailabilityTest(RedpandaTest):
             extra_rp_conf={
                 # Disable leader balancer to enable testing
                 # leadership stability.
-                'enable_leader_balancer': False
+                'enable_leader_balancer': False,
+                # 100MB instead of default 1GB segments in order
+                # to make it easier for loaded workloads to encounter
+                # segment end/begin behaviours.
+                'log_segment_size': 100 * 1024 * 1024,
             },
             **kwargs)
 
@@ -470,3 +571,214 @@ class RaftAvailabilityTest(RedpandaTest):
 
         for i in range(0, 128):
             self._ping_pong()
+
+    def _get_metric(self, node, metric, labels):
+        for family in self.redpanda.metrics(node):
+            for sample in family.samples:
+                if sample.name == metric and label_match(
+                        sample.labels, labels):
+                    return sample.value
+
+        raise RuntimeError(f"Metric '{metric}' with labels {labels} not found")
+
+    def _await_catchup(self, leader, follower, metric, labels):
+        """
+        Given a named metric and two nodes, wait for the metric
+        to equalize across the two nodes.  Require that the follower's
+        metric increases continuously while we wait (i.e. early fail
+        on hang).
+        """
+
+        last_follower_v = None
+        while True:
+            # Read leader first, so that if we're chasing our tail then
+            # we'll have a chance to see the follower >= the leader
+            leader_v = self._get_metric(leader, metric, labels)
+            follower_v = self._get_metric(follower, metric, labels)
+
+            self.logger.debug(
+                f"await_catchup[{metric}] follower={follower_v} leader={leader_v}"
+            )
+
+            if follower_v >= leader_v:
+                self.logger.info(
+                    f"Caught up {metric} follower={follower_v} leader={leader_v}"
+                )
+                return
+            else:
+                if last_follower_v is not None and follower_v == last_follower_v:
+                    raise RuntimeError(
+                        f"Follower {follower.account.hostname} stuck at {metric}={follower_v}!"
+                    )
+                else:
+                    last_follower_v = follower_v
+                    time.sleep(10)
+
+    @cluster(num_nodes=4)
+    def test_follower_recovery(self):
+        """
+        Validate that when a follower stops for a while while partition
+        is under load, it catches up again when it restarts.
+
+        As well as being a general test of recovery, this specifically
+        regression tests https://github.com/vectorizedio/redpanda/issues/2101
+        (that particular issue requires memory-constrained nodes plus
+         substantial load, plus crossing segment barriers)
+
+        """
+        if self.debug_mode:
+            self.logger.info("Skipping test, not suitable for debug mode")
+            return
+
+        initial_leader_id, replicas = self._wait_for_leader()
+        initial_leader_node = self.redpanda.get_node(initial_leader_id)
+        follower_id = (set(replicas) - {initial_leader_id}).pop()
+        follower_node = self.redpanda.get_node(follower_id)
+
+        # Validate catching-up code on an idle system: we should be immediately
+        # caught up
+        self._await_catchup(initial_leader_node, follower_node,
+                            "vectorized_cluster_partition_high_watermark",
+                            {"topic": self.topic})
+
+        self.logger.info("Waiting for some pre-restart traffic to accumulate")
+        leader_metrics = MetricCheck(
+            self.logger, self.redpanda, initial_leader_node,
+            ["vectorized_storage_log_log_segments_created_total"],
+            {'topic': self.topic})
+
+        producer = ProducerSwarm(self.test_context, self.redpanda, self.topic,
+                                 1000, 100)
+        producer.start()
+        time.sleep(30)
+        # Expect that this should have been enough time to roll over at least one
+        # log segment
+        leader_metrics.expect([
+            ('vectorized_storage_log_log_segments_created_total',
+             lambda a, b: b > a)
+        ])
+
+        self.logger.info("Stopping follower")
+        offset_before_outage = self._get_metric(
+            initial_leader_node, "vectorized_cluster_partition_high_watermark",
+            {"topic": self.topic})
+        self.redpanda.stop_node(follower_node)
+        time.sleep(30)
+        offset_after_outage = self._get_metric(
+            initial_leader_node, "vectorized_cluster_partition_high_watermark",
+            {"topic": self.topic})
+
+        self.logger.info(
+            f"Follower missed range approx {offset_before_outage}-{offset_after_outage} during simulated outage"
+        )
+
+        self.logger.info("Restarting follower")
+        self.redpanda.start_node(follower_node)
+        follower_offset_after_restart = self._get_metric(
+            follower_node, "vectorized_cluster_partition_high_watermark",
+            {"topic": self.topic})
+        self.logger.info(
+            f"Follower offset after restart is {follower_offset_after_restart}"
+        )
+
+        self.logger.info(
+            "Leaving background producer running for a while after node restart..."
+        )
+        time.sleep(30)
+        self.logger.info("Stopping background producer")
+        producer.stop_all()
+
+        # Wait for this metric to be equal between the two nodes
+        # While waiting, require that it increases.
+        self.logger.info("Waiting for recovery to complete")
+        self._await_catchup(initial_leader_node, follower_node,
+                            "vectorized_cluster_partition_high_watermark",
+                            {"topic": self.topic})
+
+    @cluster(num_nodes=5)
+    def test_shutdown_under_load(self):
+        if self.debug_mode:
+            self.logger.info("Skipping test, not suitable for debug mode")
+            return
+
+        initial_leader_id, replicas = self._wait_for_leader()
+        initial_leader_node = self.redpanda.get_node(initial_leader_id)
+        follower_id = (set(replicas) - {initial_leader_id}).pop()
+        follower_node = self.redpanda.get_node(follower_id)
+
+        producer = ProducerSwarm(self.test_context,
+                                 self.redpanda,
+                                 self.topic,
+                                 producers=1000,
+                                 records_per_producer=100)
+        producer.start()
+
+        # Default shutdown timeouts are long to avoid test noise: for this
+        # test we really want to ensure *prompt* shutdown and investigate
+        # if something is taking longer than a few seconds
+        stop_timeout = 5
+
+        wait_until(lambda: self._get_metric(
+            initial_leader_node, "vectorized_cluster_partition_high_watermark",
+            {"topic": self.topic}) > 0.0,
+                   timeout_sec=30,
+                   backoff_sec=0.5,
+                   err_msg="Topic high watermark didn't get above zero")
+
+        # A follower: check that it cleanly shuts down and restarts
+        t1 = time.time()
+        self.redpanda.stop_node(follower_node, timeout=stop_timeout)
+        self.logger.info(
+            f"Stopped node {follower_node.account.hostname} in {time.time() - t1}"
+        )
+
+        time.sleep(10)  # Wait for some recovery backlog to build
+        self.redpanda.start_node(follower_node)
+        time.sleep(10)  # Inject some post-restart messages
+
+        # Give the follower a chance to catch up
+        producer.stop_all()
+
+        self._await_catchup(initial_leader_node, follower_node,
+                            "vectorized_cluster_partition_high_watermark",
+                            {"topic": self.topic})
+
+        # FIXME somehow release the node used by the previous one, so that the
+        # test doesn't have to demand so many nodes
+        producer = ProducerSwarm(self.test_context,
+                                 self.redpanda,
+                                 self.topic,
+                                 producers=1000,
+                                 records_per_producer=100)
+        producer.start()
+
+        # A leader: check that it cleanly & promptly shuts down and restarts
+        t1 = time.time()
+        self.redpanda.stop_node(initial_leader_node, timeout=stop_timeout)
+        self.logger.info(
+            f"Stopped node {initial_leader_node.account.hostname} in {time.time() - t1}"
+        )
+
+        # Leadership should pass to the highest priority follower
+        expect_new_leader_id = replicas[1]
+        new_leader_id, _ = self._wait_for_leader(
+            lambda l: l == expect_new_leader_id)
+        new_leader_node = self.redpanda.get_node(new_leader_id)
+        wait_until(lambda: self._get_metric(
+            new_leader_node, "vectorized_cluster_partition_high_watermark",
+            {"topic": self.topic}) > 0.0,
+                   timeout_sec=30,
+                   backoff_sec=0.5,
+                   err_msg="Topic high watermark didn't get above zero")
+
+        time.sleep(10)  # Wait for some recovery backlog to build
+        self.redpanda.start_node(initial_leader_node)
+        time.sleep(10)  # Inject some post-restart messages
+
+        producer.stop_all()
+
+        self._await_catchup(new_leader_node, initial_leader_node,
+                            "vectorized_cluster_partition_high_watermark",
+                            {"topic": self.topic})
+
+        producer.stop()
