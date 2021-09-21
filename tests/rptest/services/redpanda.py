@@ -16,12 +16,15 @@ import requests
 import random
 import threading
 import collections
+import functools
 
 import yaml
 from ducktape.services.service import Service
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.mark import parametrize
+from ducktape.mark.resource import cluster
 from prometheus_client.parser import text_string_to_metric_families
 
 from rptest.clients.kafka_cat import KafkaCat
@@ -41,7 +44,19 @@ class ResourceSettings:
     of these into your RedpandaTest constructor if you want to e.g.
     create low-memory situations.
     """
-    def __init__(self, num_cpus=None, memory_mb=None, bypass_fsync=None):
+    def __init__(self,
+                 name=None,
+                 num_cpus=None,
+                 memory_mb=None,
+                 bypass_fsync=None):
+        """
+
+        :param num_cpus:
+        :param memory_mb:
+        :param bypass_fsync:
+        """
+        self._name = name
+
         if num_cpus is None:
             num_cpus = 3
 
@@ -63,6 +78,96 @@ class ResourceSettings:
                 f"--memory {self._memory_mb}M "
                 f"--smp {self._num_cpus} "
                 f"--unsafe-bypass-fsync={'1' if self._bypass_fsync else '0'}")
+
+    @property
+    def name(self):
+        return self._name
+
+    def __eq__(self, other):
+        return self.to_dict() == other.to_dict()
+
+    def __str__(self):
+        return f"<ResourceSettings cpus={self._num_cpus} mem={self._memory_mb} bypass-fsync={self._bypass_fsync}>"
+
+    def __repr__(self):
+        return self.__str__()
+
+    def to_dict(self):
+        return {
+            'name': self._name,
+            'num_cpus': self._num_cpus,
+            'memory_mb': self._memory_mb,
+            'bypass_fsync': self._bypass_fsync
+        }
+
+
+import sys
+sys.stderr.write(f"resource config waat")
+RESOURCE_TINY = ResourceSettings('tiny',
+                                 num_cpus=1,
+                                 memory_mb=200,
+                                 bypass_fsync=True)
+RESOURCE_STANDARD = ResourceSettings('standard')
+
+# Resource configs that may be referred to by name when
+# parameterizing tests.  This helps keep test output directory
+# names concise.
+NAMED_RESOURCES = {
+    RESOURCE_TINY.name: RESOURCE_TINY,
+    RESOURCE_STANDARD.name: RESOURCE_STANDARD
+}
+
+# Cluster resource params that will be used for a test if it does
+# not specify any of its own.
+DEFAULT_RESOURCE_PARAMS = [RESOURCE_TINY, RESOURCE_STANDARD]
+
+
+def redpanda_cluster(num_nodes=None, resource_configs=None):
+    """
+    This decorator is an adaptation of the ducktape `cluster` decorator
+    that includes parameterizing the redpanda cluster config
+    """
+    if resource_configs is None:
+        resource_configs = DEFAULT_RESOURCE_PARAMS
+
+    # Ducktape test parameters have to be JSON serializable, and will
+    # be included in test run names.  For NAMED_RESOURCES configs (the
+    # standard ones), pass through by name to keep nice concise testnames).
+    # For custom resource settings, pass through as dict.
+
+    resource_configs_serialized = []
+    for r in resource_configs:
+        import sys
+        sys.stderr.write(f"resource config {r}")
+        if r.name in NAMED_RESOURCES:
+            resource_configs_serialized.append(r.name)
+        else:
+            resource_configs_serialized.append(r.to_dict())
+
+    if num_nodes is None:
+        num_nodes = 3
+
+    def inner(func):
+        @functools.wraps(func)
+        def wrapped(self, resource_settings, *args, **kwargs):
+            if isinstance(resource_settings, dict):
+                self.redpanda.set_resource_settings(
+                    ResourceSettings(**resource_settings))
+            else:
+                self.redpanda.set_resource_settings(
+                    NAMED_RESOURCES[resource_settings])
+
+            self.redpanda.start()
+            return func(self, *args, **kwargs)
+
+        f = wrapped
+        for r in resource_configs_serialized:
+            f = parametrize(resource_settings=r)(f)
+        f = cluster(num_nodes=num_nodes)(f)
+
+        return f
+
+    return inner
 
 
 class RedpandaService(Service):
@@ -557,3 +662,19 @@ class RedpandaService(Service):
 
     def cov_enabled(self):
         return self._context.globals.get(self.COV_KEY, self.DEFAULT_COV_OPT)
+
+    def set_resource_settings(self, rs):
+        """
+        Modify redpanda resource constraints after initial construction: effectively
+        restarts redpanda with different -c/-m options.
+        :param rs:
+        :return:
+        """
+        if rs != self._resource_settings:
+            for node in self.nodes:
+                self.stop_node(node)
+
+            self._resource_settings = rs
+
+            for node in self.nodes:
+                self.start_node(node)
