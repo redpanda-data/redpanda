@@ -17,8 +17,8 @@ spec:
             - /bin/bash
             - -c
           args:
-            - rpk topic create test --brokers cluster-sample-0.cluster-sample.$POD_NAMESPACE.svc.cluster.local:9092 -v
+            - sleep 10 ; rpk topic create -r 3 test --brokers cluster-sample-0.cluster-sample.$POD_NAMESPACE.svc.cluster.local:9092 -v
       restartPolicy: Never
-  backoffLimit: 6
+  backoffLimit: 12
   parallelism: 1
   completions: 1
