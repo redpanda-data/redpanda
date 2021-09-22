@@ -13,16 +13,19 @@ import random
 from rptest.wasm.background_task import BackgroundTask
 from kafka import KafkaProducer
 from kafka.errors import KafkaTimeoutError
+from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
 class NativeKafkaProducer(BackgroundTask):
     def __init__(self,
+                 redpanda,
                  brokers,
                  topic,
                  num_records,
                  max_outstanding_futures=100,
                  records_size=4192):
         super(NativeKafkaProducer, self).__init__()
+        self._redpanda = redpanda
         self._topic = topic
         self._brokers = brokers
         self._num_records = num_records
@@ -33,6 +36,9 @@ class NativeKafkaProducer(BackgroundTask):
         return f"producer-worker-{str(random.randint(0, 9999))}"
 
     def _run(self):
+        producer = KafkaCliTools(self._redpanda)
+        producer.produce(self._topic, self._num_records, self._records_size)
+        """
         producer = KafkaProducer(bootstrap_servers=self._brokers,
                                  acks='all',
                                  retries=10,
@@ -70,3 +76,4 @@ class NativeKafkaProducer(BackgroundTask):
                     outstanding_futures = []
 
         assert (len(outstanding_futures) == 0)
+        """

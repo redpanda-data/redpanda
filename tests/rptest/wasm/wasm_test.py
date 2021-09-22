@@ -153,7 +153,7 @@ class WasmTest(RedpandaTest):
 
         for tp_spec, num_records, record_size in topic_spec:
             try:
-                producer = NativeKafkaProducer(self.redpanda.brokers(),
+                producer = NativeKafkaProducer(self.redpanda, self.redpanda.brokers(),
                                                tp_spec.name, num_records, 100,
                                                record_size)
                 producer.start()

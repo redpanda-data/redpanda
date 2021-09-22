@@ -104,7 +104,7 @@ class WasmRPMeshFailureRecoveryTest(WasmRedpandaFailureRecoveryTest):
                              record_size=record_size)
 
     def wasm_xfactor(self):
-        return 3
+        return 3  # Need to increase this number to 9
 
     def wasm_test_outputs(self):
         otopic_a = "output_topic_a"
