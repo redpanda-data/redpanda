@@ -170,48 +170,39 @@ class RpkTool:
             timeout = DEFAULT_TIMEOUT
 
         self._redpanda.logger.debug("Executing command: %s", cmd)
-        try:
-            output = None
-            f = None
-            if stdin:
-                f = subprocess.PIPE
-                if isinstance(stdin, str):
-                    # Convert the string msg to bytes
-                    stdin = stdin.encode()
+        f = None
+        if stdin:
+            if isinstance(stdin, str):
+                # Convert the string msg to bytes
+                stdin = stdin.encode()
 
-                f = tempfile.TemporaryFile()
-                f.write(stdin)
-                f.seek(0)
+            f = tempfile.TemporaryFile()
+            f.write(stdin)
+            f.seek(0)
 
-            # rpk logs everything on STDERR by default
-            p = subprocess.Popen(cmd,
-                                 stdout=subprocess.PIPE,
-                                 stdin=f,
-                                 text=True)
-            start_time = time.time()
+        # rpk logs everything on STDERR by default
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stdin=f, text=True)
+        start_time = time.time()
 
-            ret = None
-            while time.time() < start_time + timeout:
-                ret = p.poll()
-                if ret != None:
-                    break
-                time.sleep(0.5)
+        ret = None
+        while time.time() < start_time + timeout:
+            ret = p.poll()
+            if ret != None:
+                break
+            time.sleep(0.5)
 
-            if ret is None:
-                p.terminate()
-                raise RpkException(f"command {' '.join(cmd)} timed out")
+        if ret is None:
+            p.terminate()
+            raise RpkException(f"command {' '.join(cmd)} timed out")
 
-            output = p.stdout.read()
-            self._redpanda.logger.debug(output)
+        output = p.stdout.read()
+        self._redpanda.logger.debug(output)
 
-            if p.returncode:
-                raise RpkException('command %s returned %d, output: %s' %
-                                   (' '.join(cmd), p.returncode, output))
+        if p.returncode:
+            raise RpkException('command %s returned %d, output: %s' %
+                               (' '.join(cmd), p.returncode, output))
 
-            return output
-        except subprocess.CalledProcessError as e:
-            self._redpanda.logger.debug("Error (%d) executing command: %s",
-                                        e.returncode, e.output)
+        return output
 
     def _rpk_binary(self):
         return self._redpanda.find_binary("rpk")
