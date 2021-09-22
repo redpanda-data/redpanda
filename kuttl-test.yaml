@@ -17,4 +17,4 @@ commands:
 artifactsDir: tests/_e2e_artifacts
 timeout: 300
 reportFormat: xml
-parallel: 3
+parallel: 1
