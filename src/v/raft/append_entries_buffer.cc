@@ -2,6 +2,7 @@
 
 #include "raft/consensus.h"
 #include "raft/types.h"
+#include "utils/gate_guard.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/do_with.hh>
@@ -22,28 +23,32 @@ append_entries_buffer::append_entries_buffer(
 
 ss::future<append_entries_reply>
 append_entries_buffer::enqueue(append_entries_request&& r) {
-    return ss::with_gate(_gate, [this, r = std::move(r)]() mutable {
-        // we normally do not want to wait as it would cause requests
-        // reordering. Reordering may only happend if we would wait on condition
-        // variable.
+    gate_guard guard(_gate);
 
-        return _flushed
-          .wait([this] { return _requests.size() < _max_buffered; })
-          .then([this, r = std::move(r)]() mutable {
-              ss::promise<append_entries_reply> p;
-              auto f = p.get_future();
-              _requests.push_back(std::move(r));
-              _responses.push_back(std::move(p));
-              _enqueued.signal();
-              return f;
-          });
-    });
+    // we normally do not want to wait as it would cause requests
+    // reordering. Reordering may only happend if we would wait on condition
+    // variable.
+
+    return _flushed.wait([this] { return _requests.size() < _max_buffered; })
+      .then([this, r = std::move(r), guard = std::move(guard)]() mutable {
+          ss::promise<append_entries_reply> p;
+          auto f = p.get_future();
+          _requests.push_back(std::move(r));
+          _responses.push_back(std::move(p));
+          _enqueued.signal();
+          // do not wait for the future to finish inside the gate
+          return f;
+      });
 }
 
 ss::future<> append_entries_buffer::stop() {
     auto f = _gate.close();
+    // break the condition variables to initiate shutdown process
     _enqueued.broken();
     _flushed.broken();
+    // wait for gate to be closed so all the pending requests will finish before
+    // we invalidate pending promisses
+    co_await std::move(f);
     auto response_promises = std::exchange(_responses, {});
     // set errors
     for (auto& p : response_promises) {
@@ -53,8 +58,6 @@ ss::future<> append_entries_buffer::stop() {
       _responses.empty(),
       "response promises queue should be empty when append entries buffer is "
       "about to stop");
-
-    return f;
 }
 
 void append_entries_buffer::start() {
@@ -126,6 +129,12 @@ ss::future<> append_entries_buffer::do_flush(
 
 void append_entries_buffer::propagate_results(
   std::vector<reply_t> replies, response_t response_promises) {
+    vassert(
+      replies.size() == response_promises.size(),
+      "Number of requests and response promiseshave to be equal. Have {} "
+      "response promises and {} requests",
+      response_promises.size(),
+      replies.size());
     auto resp_it = response_promises.begin();
     for (auto& reply : replies) {
         auto lstats = _consensus._log.offsets();
