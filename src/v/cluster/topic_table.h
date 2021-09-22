@@ -34,9 +34,21 @@ namespace cluster {
 class topic_table {
 public:
     using delta = topic_table_delta;
-    struct topic_metadata {
+    class topic_metadata {
+    public:
+        topic_metadata(
+          topic_configuration_assignment, model::revision_id) noexcept;
+        topic_metadata(topic_configuration_assignment, model::topic) noexcept;
+
+        bool is_topic_replicable() const;
+        model::revision_id get_revision() const;
+        const model::topic& get_source_topic() const;
+        const topic_configuration_assignment& get_configuration() const;
+
+    private:
+        friend class topic_table;
         topic_configuration_assignment configuration;
-        model::revision_id revision;
+        std::variant<model::revision_id, model::topic> _id_or_topic;
     };
     using underlying_t = absl::flat_hash_map<
       model::topic_namespace,
