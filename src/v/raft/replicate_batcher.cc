@@ -16,6 +16,7 @@
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/types.h"
+#include "utils/gate_guard.h"
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/coroutine.hh>
@@ -40,40 +41,48 @@ replicate_stages replicate_batcher::replicate(
   std::optional<model::term_id> expected_term, model::record_batch_reader&& r) {
     ss::promise<> enqueued;
     auto enqueued_f = enqueued.get_future();
-    auto f = ss::try_with_gate(
-               _bg,
-               [this, expected_term, r = std::move(r)]() mutable {
-                   return do_cache(expected_term, std::move(r));
-               })
-               .then_wrapped([this, enqueued = std::move(enqueued)](
-                               ss::future<item_ptr> f) mutable {
-                   if (f.failed()) {
-                       enqueued.set_exception(f.get_exception());
-                       return ss::make_ready_future<result<replicate_result>>(
-                         errc::replicate_batcher_cache_error);
-                   }
+    try {
+        gate_guard guard(_bg);
+        auto f
+          = do_cache(expected_term, std::move(r))
+              .then_wrapped(
+                [this,
+                 enqueued = std::move(enqueued),
+                 guard = std::move(guard)](ss::future<item_ptr> f) mutable {
+                    if (f.failed()) {
+                        enqueued.set_exception(f.get_exception());
+                        return ss::make_ready_future<result<replicate_result>>(
+                          errc::replicate_batcher_cache_error);
+                    }
 
-                   enqueued.set_value();
-                   auto item = f.get();
-                   return _lock.get_units()
-                     .then([this](ss::semaphore_units<> u) {
-                         return flush(std::move(u));
-                     })
-                     .then_wrapped([this, item](ss::future<> f) {
-                         if (f.failed()) {
-                             vlog(
-                               _ptr->_ctxlog.warn,
-                               "replicate flush failed - {}",
-                               f.get_exception());
-                         } else {
-                             f.ignore_ready_future();
-                         }
-                         return item->_promise.get_future();
-                     });
-               })
-               .finally([this] { _ptr->_probe.replicate_done(); });
-
-    return replicate_stages(std::move(enqueued_f), std::move(f));
+                    enqueued.set_value();
+                    auto item = f.get();
+                    return _lock.get_units()
+                      .then([this](ss::semaphore_units<> u) {
+                          return flush(std::move(u));
+                      })
+                      .then_wrapped(
+                        [this, item, guard = std::move(guard)](ss::future<> f) {
+                            if (f.failed()) {
+                                vlog(
+                                  _ptr->_ctxlog.warn,
+                                  "replicate flush failed - {}",
+                                  f.get_exception());
+                            } else {
+                                f.ignore_ready_future();
+                            }
+                            _ptr->_probe.replicate_done();
+                            // we wait for the future outside of the batcher
+                            // gate since we do not access any resources
+                            return item->_promise.get_future();
+                        });
+                });
+        return replicate_stages(std::move(enqueued_f), std::move(f));
+    } catch (...) {
+        return replicate_stages(
+          ss::current_exception_as_future<>(),
+          ss::make_ready_future<result<replicate_result>>(errc::shutting_down));
+    }
 }
 
 ss::future<> replicate_batcher::stop() {
