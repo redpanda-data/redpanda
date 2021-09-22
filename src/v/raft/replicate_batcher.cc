@@ -59,10 +59,17 @@ replicate_stages replicate_batcher::replicate(
                      .then([this](ss::semaphore_units<> u) {
                          return flush(std::move(u));
                      })
-                     .handle_exception([item](const std::exception_ptr& e) {
-                         item->_promise.set_exception(e);
-                     })
-                     .then([item] { return item->_promise.get_future(); });
+                     .then_wrapped([this, item](ss::future<> f) {
+                         if (f.failed()) {
+                             vlog(
+                               _ptr->_ctxlog.warn,
+                               "replicate flush failed - {}",
+                               f.get_exception());
+                         } else {
+                             f.ignore_ready_future();
+                         }
+                         return item->_promise.get_future();
+                     });
                })
                .finally([this] { _ptr->_probe.replicate_done(); });
 
@@ -147,11 +154,20 @@ ss::future<> replicate_batcher::flush(ss::semaphore_units<> u) {
               return ss::now();
           }
 
-          return _ptr->_op_lock.get_units().then(
+          return _ptr->_op_lock.get_units().then_wrapped(
             [this,
              item_cache = std::move(item_cache),
              batcher_units = std::move(batcher_units)](
-              ss::semaphore_units<> u) mutable {
+              ss::future<ss::semaphore_units<>> f) mutable {
+                // if we failed to acquire units, propagate exception to cached
+                // promises
+                if (f.failed()) {
+                    for (auto& i : item_cache) {
+                        i->_promise.set_exception(f.get_exception());
+                    }
+                    return ss::now();
+                }
+                auto u = f.get();
                 // release batcher replicate batcher lock
                 batcher_units.return_all();
                 // we have to check if we are the leader
