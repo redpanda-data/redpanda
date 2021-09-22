@@ -116,6 +116,25 @@ public:
           std::forward<Func>(f));
     }
 
+    /// If a reconnect_transport is in a backed-off state, reset
+    /// it so that the next RPC will be dispatched.  This is useful
+    /// when a down node comes back to life: the first time we see
+    /// a message from a re-awakened peer, we reset their backoff.
+    ss::future<> reset_client_backoff(
+      model::node_id self, ss::shard_id src_shard, model::node_id node_id) {
+        auto shard = rpc::connection_cache::shard_for(self, src_shard, node_id);
+
+        return container().invoke_on(
+          shard, [node_id](rpc::connection_cache& cache) mutable {
+              if (!cache.contains(node_id)) {
+                  // No client available
+                  return;
+              }
+              auto recon_transport = cache.get(node_id);
+              recon_transport->reset_backoff();
+          });
+    }
+
 private:
     mutex _mutex; // to add/remove nodes
     underlying _cache;

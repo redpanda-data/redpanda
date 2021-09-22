@@ -774,8 +774,11 @@ void consensus::dispatch_vote(bool leadership_transfer) {
     }
     auto self_priority = get_node_priority(_self);
     // check if current node priority is high enough
-    bool current_priority_to_low = _target_priority > self_priority;
     // update target priority
+    auto cur_target_priority = _target_priority;
+    bool current_priority_to_low = cur_target_priority > self_priority;
+    // Update target priority: irrespective of vote outcome, we will
+    // lower our required priority for next time.
     _target_priority = next_target_priority();
 
     // skip sending vote request if current node is not a voter
@@ -789,8 +792,9 @@ void consensus::dispatch_vote(bool leadership_transfer) {
     if (current_priority_to_low && !leadership_transfer) {
         vlog(
           _ctxlog.trace,
-          "current node priority {} is to low, target priority {}",
+          "current node priority {} is lower than target {} (next vote {})",
           self_priority,
+          cur_target_priority,
           _target_priority);
         arm_vote_timeout();
         return;
@@ -1266,6 +1270,50 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         reply.granted = false;
         return ss::make_ready_future<vote_reply>(reply);
     }
+
+    // Optimization: for vote requests from nodes that are likely
+    // to have been recently restarted (have failed heartbeats
+    // and an <= present term), reset their RPC backoff to get
+    // a heartbeat sent out sooner.
+    if (is_leader() and r.term <= _term) {
+        // Look up follower stats for the requester
+        if (auto it = _fstats.find(r.node_id); it != _fstats.end()) {
+            auto& fstats = it->second;
+            if (fstats.heartbeats_failed) {
+                vlog(
+                  _ctxlog.debug,
+                  "Vote request from peer {} with heartbeat failures, "
+                  "resetting backoff",
+                  r.node_id);
+                return _client_protocol.reset_backoff(r.node_id.id())
+                  .then([reply]() {
+                      return ss::make_ready_future<vote_reply>(reply);
+                  });
+            }
+        }
+    }
+
+    /// Stable leadership optimization
+    ///
+    /// When current node is a leader (we set _hbeat to max after
+    /// successfull election) or already processed request from active
+    /// leader  do not grant a vote to follower. This will prevent restarted
+    /// nodes to disturb all groups leadership
+    // Check if we updated the heartbeat timepoint in the last election
+    // timeout duration When the vote was requested because of leadership
+    // transfer grant the vote immediately.
+    auto prev_election = clock_type::now() - _jit.base_duration();
+    if (
+      _hbeat > prev_election && !r.leadership_transfer
+      && r.node_id != _voted_for) {
+        vlog(
+          _ctxlog.trace,
+          "Already heard from the leader, not granting vote to node {}",
+          r.node_id);
+        reply.granted = false;
+        return ss::make_ready_future<vote_reply>(std::move(reply));
+    }
+
     /// set to true if the caller's log is as up to date as the recipient's
     /// - extension on raft. see Diego's phd dissertation, section 9.6
     /// - "Preventing disruptions when a server rejoins the cluster"
@@ -1290,26 +1338,6 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
           _target_priority);
         reply.granted = false;
         return ss::make_ready_future<vote_reply>(reply);
-    }
-    /// Stable leadership optimization
-    ///
-    /// When current node is a leader (we set _hbeat to max after
-    /// successfull election) or already processed request from active
-    /// leader  do not grant a vote to follower. This will prevent restarted
-    /// nodes to disturb all groups leadership
-    // Check if we updated the heartbeat timepoint in the last election
-    // timeout duration When the vote was requested because of leadership
-    // transfer grant the vote immediately.
-    auto prev_election = clock_type::now() - _jit.base_duration();
-    if (
-      _hbeat > prev_election && !r.leadership_transfer
-      && r.node_id != _voted_for) {
-        vlog(
-          _ctxlog.trace,
-          "Already heard from the leader, not granting vote to node {}",
-          r.node_id);
-        reply.granted = false;
-        return ss::make_ready_future<vote_reply>(std::move(reply));
     }
 
     if (r.term > _term) {

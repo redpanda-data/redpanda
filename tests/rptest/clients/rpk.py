@@ -12,6 +12,16 @@ import tempfile
 import time
 import re
 
+DEFAULT_TIMEOUT = 30
+
+
+class RpkException(Exception):
+    def __init__(self, msg):
+        self.msg = msg
+
+    def __str__(self):
+        return f"RpkException<{self.msg}>"
+
 
 class RpkPartition:
     def __init__(self, id, leader, replicas, hw):
@@ -63,7 +73,13 @@ class RpkTool:
 
         assert False, "Unexpected output format"
 
-    def produce(self, topic, key, msg, headers=[], partition=None):
+    def produce(self,
+                topic,
+                key,
+                msg,
+                headers=[],
+                partition=None,
+                timeout=None):
         cmd = [
             'produce', '--brokers',
             self._redpanda.brokers(), '--key', key, topic
@@ -72,7 +88,10 @@ class RpkTool:
             cmd += ['-H ' + h for h in headers]
         if partition:
             cmd += ['-p', str(partition)]
-        return self._run_topic(cmd, stdin=msg)
+        out = self._run_topic(cmd, stdin=msg, timeout=timeout)
+
+        offset = re.search("at offset (\d+)", out).group(1)
+        return int(offset)
 
     def describe_topic(self, topic):
         cmd = ['describe', topic]
@@ -111,14 +130,14 @@ class RpkTool:
         cmd = [self._rpk_binary(), 'wasm', 'generate', directory]
         return self._execute(cmd)
 
-    def _run_topic(self, cmd, stdin=None, timeout=30):
+    def _run_topic(self, cmd, stdin=None, timeout=None):
         cmd = [
             self._rpk_binary(), "topic", "--brokers",
             self._redpanda.brokers()
         ] + cmd
         return self._execute(cmd, stdin=stdin, timeout=timeout)
 
-    def cluster_info(self, timeout=30):
+    def cluster_info(self, timeout=None):
         # Matches against `rpk cluster info`'s output & parses the brokers'
         # ID & address. Example:
         #
@@ -146,7 +165,10 @@ class RpkTool:
         parsed = map(_parse_out, output.splitlines())
         return [p for p in parsed if p is not None]
 
-    def _execute(self, cmd, stdin=None, timeout=30):
+    def _execute(self, cmd, stdin=None, timeout=None):
+        if timeout is None:
+            timeout = DEFAULT_TIMEOUT
+
         self._redpanda.logger.debug("Executing command: %s", cmd)
         try:
             output = None
@@ -177,14 +199,15 @@ class RpkTool:
 
             if ret is None:
                 p.terminate()
+                raise RpkException(f"command {' '.join(cmd)} timed out")
 
             output = p.stdout.read()
+            self._redpanda.logger.debug(output)
 
             if p.returncode:
-                raise Exception('command %s returned %d, output: %s' %
-                                (' '.join(cmd), p.returncode, output))
+                raise RpkException('command %s returned %d, output: %s' %
+                                   (' '.join(cmd), p.returncode, output))
 
-            self._redpanda.logger.debug(output)
             return output
         except subprocess.CalledProcessError as e:
             self._redpanda.logger.debug("Error (%d) executing command: %s",
