@@ -11,255 +11,80 @@ package acl
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
-	"github.com/Shopify/sarama"
-	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"golang.org/x/sync/errgroup"
+	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
 )
 
-func NewCreateACLsCommand(
-	admin func() (sarama.ClusterAdmin, error),
-) *cobra.Command {
-	var (
-		resource        string
-		resourceName    string
-		namePattern     string
-		operations      []string
-		allowPrincipals []string
-		allowHosts      []string
-		denyPrincipals  []string
-		denyHosts       []string
-	)
-	command := &cobra.Command{
-		Use:          "create",
-		Short:        "Create ACLs",
-		SilenceUsage: true,
-		Args: func(_ *cobra.Command, _ []string) error {
-			if len(allowPrincipals) == 0 &&
-				len(denyPrincipals) == 0 {
-				return fmt.Errorf(
-					"at least one of --%s or --%s must be set",
-					allowPrincipalFlag,
-					denyPrincipalFlag,
-				)
+func NewCreateCommand(fs afero.Fs) *cobra.Command {
+	var a acls
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create ACLs.",
+
+		Args: cobra.ExactArgs(0),
+		Run: func(cmd *cobra.Command, _ []string) {
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			cl, err := kafka.NewFranzClient(fs, cfg)
+			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
+			defer cl.Close()
+
+			creations, err := a.createCreations()
+			out.MaybeDieErr(err)
+			if len(creations) == 0 {
+				out.Exit("Specified flags result in no ACLs to be created.")
 			}
 
-			if resource == "cluster" {
-				resourceName = defaultClusterResourceName
+			req := kmsg.NewPtrCreateACLsRequest()
+			req.Creations = creations
+			resp, err := req.RequestWith(context.Background(), cl)
+			out.MaybeDie(err, "unable to issue ACL creation request: %v", err)
+			if len(resp.Results) != len(req.Creations) {
+				out.Die("response contained only %d results out of the expected %d", len(resp.Results), len(req.Creations))
 			}
 
-			err := checkSupported(
-				supportedResources(),
-				resource,
-				resourceFlag,
-			)
-			if err != nil {
-				return err
+			tw := out.NewTable(headersWithError...)
+			defer tw.Flush()
+			for i, r := range resp.Results {
+				c := req.Creations[i]
+				tw.PrintStructFields(aclWithMessage{
+					c.Principal,
+					c.Host,
+					c.ResourceType,
+					c.ResourceName,
+					c.ResourcePatternType,
+					c.Operation,
+					c.PermissionType,
+					kafka.MaybeErrMessage(r.ErrorCode),
+				})
 			}
-
-			return checkSupported(
-				supportedPatterns(),
-				namePattern,
-				namePatternFlag,
-			)
-		},
-		RunE: func(ccmd *cobra.Command, args []string) error {
-			adm, err := admin()
-			if err != nil {
-				return err
-			}
-
-			return executeCreateACLs(
-				adm,
-				resource,
-				resourceName,
-				namePattern,
-				operations,
-				allowPrincipals,
-				allowHosts,
-				denyPrincipals,
-				denyHosts,
-			)
 		},
 	}
-
-	command.Flags().StringVar(
-		&resource,
-		resourceFlag,
-		"",
-		fmt.Sprintf(
-			"The target resource for the ACL. Supported values: %s.",
-			strings.Join(supportedResources(), ", "),
-		),
-	)
-	command.MarkFlagRequired(resourceFlag)
-	command.Flags().StringVar(
-		&resourceName,
-		resourceNameFlag,
-		"",
-		"The name of the target resource for the ACL.",
-	)
-	command.Flags().StringVar(
-		&namePattern,
-		namePatternFlag,
-		"literal",
-		fmt.Sprintf(
-			"The name pattern type to be used when matching the"+
-				" resource names. Supported values: %s.",
-			strings.Join(supportedPatterns(), ", "),
-		),
-	)
-	command.Flags().StringSliceVar(
-		&operations,
-		operationFlag,
-		[]string{},
-		fmt.Sprintf(
-			"Operation that the principal will be allowed or denied. Can be"+
-				" passed many times. Supported values: %s.",
-			strings.Join(supportedOperations(), ", "),
-		),
-	)
-	command.Flags().StringSliceVar(
-		&allowPrincipals,
-		allowPrincipalFlag,
-		[]string{},
-		"Principal to which permissions will be granted. Can be passed many times.",
-	)
-	command.Flags().StringSliceVar(
-		&allowHosts,
-		allowHostFlag,
-		[]string{},
-		"Host from which access will be granted. Can be passed many times.",
-	)
-	command.Flags().StringSliceVar(
-		&denyPrincipals,
-		denyPrincipalFlag,
-		[]string{},
-		"Principal to which permissions will be denied. Can be passed many times.",
-	)
-	command.Flags().StringSliceVar(
-		&denyHosts,
-		denyHostFlag,
-		[]string{},
-		"Host from which access will be denied. Can be passed many times.",
-	)
-	return command
+	a.addCreateFlags(cmd)
+	return cmd
 }
 
-func executeCreateACLs(
-	adm sarama.ClusterAdmin,
-	resource, resourceName, namePattern string,
-	operations, allowPrincipals, allowHosts, denyPrincipals, denyHosts []string,
-) error {
-	var resType sarama.AclResourceType
-	err := resType.UnmarshalText([]byte(resource))
-	if err != nil {
-		return err
-	}
-	var pat sarama.AclResourcePatternType
-	err = pat.UnmarshalText([]byte(namePattern))
-	if err != nil {
-		return err
-	}
+func (a *acls) addCreateFlags(cmd *cobra.Command) {
+	a.addDeprecatedFlags(cmd)
 
-	res := sarama.Resource{
-		ResourceType:        resType,
-		ResourceName:        resourceName,
-		ResourcePatternType: pat,
-	}
+	cmd.Flags().StringArrayVar(&a.topics, topicFlag, nil, "topic to grant ACLs for (repeatable)")
+	cmd.Flags().StringArrayVar(&a.groups, groupFlag, nil, "group to grant ACLs for (repeatable)")
+	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "whether to grant ACLs to the cluster")
+	cmd.Flags().StringArrayVar(&a.txnIDs, txnIDFlag, nil, "transactional IDs to grant ACLs for (repeatable)")
 
-	acls, err := calculateACLs(
-		operations,
-		allowPrincipals,
-		denyPrincipals,
-		allowHosts,
-		denyHosts,
-	)
-	if err != nil {
-		return err
-	}
-	grp, _ := errgroup.WithContext(context.Background())
-	for _, acl := range acls {
-		a := acl
-		grp.Go(createACL(adm, res, a))
-	}
+	cmd.Flags().StringVar(&a.resourcePatternType, patternFlag, "literal", "pattern to use when matching resource names (literal or prefixed)")
 
-	return grp.Wait()
-}
+	cmd.Flags().StringSliceVar(&a.operations, operationFlag, nil, "operation to grant (repeatable)")
 
-// Returns the set of ACLs
-func calculateACLs(
-	operations, allowPrincipals, denyPrincipals, allowHosts, denyHosts []string,
-) ([]*sarama.Acl, error) {
-	var err error
-	acls := []*sarama.Acl{}
-	if len(allowPrincipals) == 0 && len(denyPrincipals) == 0 {
-		return nil, errors.New("empty allow & deny principals list")
-	}
-	if len(allowPrincipals) != 0 && len(allowHosts) == 0 {
-		allowHosts = []string{"*"}
-	}
-	if len(denyPrincipals) != 0 && len(denyHosts) == 0 {
-		denyHosts = []string{"*"}
-	}
-
-	ops := []sarama.AclOperation{sarama.AclOperationAll}
-	if len(operations) != 0 {
-		ops, err = parseOperations(operations)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	for _, op := range ops {
-		for _, ap := range allowPrincipals {
-			for _, ah := range allowHosts {
-				acl := &sarama.Acl{
-					Principal:      ap,
-					Host:           ah,
-					Operation:      op,
-					PermissionType: sarama.AclPermissionAllow,
-				}
-				acls = append(acls, acl)
-			}
-		}
-
-		for _, dp := range denyPrincipals {
-			for _, dh := range denyHosts {
-				acl := &sarama.Acl{
-					Principal:      dp,
-					Host:           dh,
-					Operation:      op,
-					PermissionType: sarama.AclPermissionDeny,
-				}
-				acls = append(acls, acl)
-			}
-		}
-	}
-	return acls, nil
-}
-
-func createACL(
-	adm sarama.ClusterAdmin, res sarama.Resource, acl *sarama.Acl,
-) func() error {
-	return func() error {
-		msg := fmt.Sprintf(
-			"ACL for principal '%s' with host '%s', operation '%s' and"+
-				" permission '%s'",
-			acl.Principal,
-			acl.Host,
-			acl.Operation.String(),
-			acl.PermissionType.String(),
-		)
-		err := adm.CreateACL(res, *acl)
-		if err == nil {
-			log.Infof("Created %s", msg)
-			return nil
-		}
-		return errors.Wrap(err, fmt.Sprintf("Couldn't create %s", msg))
-	}
+	cmd.Flags().StringSliceVar(&a.allowPrincipals, allowPrincipalFlag, nil, "principals for which these permissions will be granted (repeatable)")
+	cmd.Flags().StringSliceVar(&a.allowHosts, allowHostFlag, nil, "hosts from which access will be granted (repeatable)")
+	cmd.Flags().StringSliceVar(&a.denyPrincipals, denyPrincipalFlag, nil, "principal for which these permissions will be denied (repeatable)")
+	cmd.Flags().StringSliceVar(&a.denyHosts, denyHostFlag, nil, "hosts from from access will be denied (repeatable)")
 }

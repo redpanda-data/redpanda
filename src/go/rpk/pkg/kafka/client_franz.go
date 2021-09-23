@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/spf13/afero"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
@@ -93,4 +94,14 @@ func EachShard(
 		fn(shard)
 	}
 	return failures == len(shards)
+}
+
+// MaybeErrMessage returns either an empty string if code is 0, or the short
+// error message string corresponding to the Kafka error for code.
+func MaybeErrMessage(code int16) string {
+	var msg string
+	if err := kerr.TypedErrorForCode(code); err != nil {
+		msg = err.Message
+	}
+	return msg
 }
