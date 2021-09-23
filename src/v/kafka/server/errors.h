@@ -27,6 +27,7 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::notification_wait_timeout:
         return error_code::request_timed_out;
     case cluster::errc::not_leader_controller:
+    case cluster::errc::no_leader_controller:
         return error_code::not_controller;
     case cluster::errc::topic_already_exists:
         return error_code::topic_already_exists;
