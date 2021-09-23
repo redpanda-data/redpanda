@@ -9,7 +9,7 @@
 
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ignore
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
@@ -97,6 +97,7 @@ class RetentionPolicyTest(RedpandaTest):
                    backoff_sec=5,
                    err_msg="Segments were not removed")
 
+    @ignore()  # https://github.com/vectorizedio/redpanda/issues/2406
     @cluster(num_nodes=3)
     def test_changing_topic_retention_with_restart(self):
         """
