@@ -1,5 +1,7 @@
 module github.com/vectorizedio/redpanda/src/go/rpk
 
+go 1.16
+
 require (
 	cloud.google.com/go v0.46.3
 	github.com/AlecAivazis/survey/v2 v2.2.16
@@ -48,8 +50,9 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/tklauser/go-sysconf v0.1.0
 	github.com/twmb/franz-go v1.0.0
-	github.com/twmb/franz-go/pkg/kmsg v0.0.0-20210913185252-b87af2dffd6a
+	github.com/twmb/franz-go/pkg/kmsg v0.0.0-20210915213851-c153b9a13d31
 	github.com/twmb/tlscfg v1.2.0
+	github.com/twmb/types v1.1.3
 	github.com/xdg/scram v1.0.3
 	golang.org/x/crypto v0.0.0-20210817164053-32db794688a5
 	golang.org/x/mod v0.4.1 // indirect
@@ -60,5 +63,3 @@ require (
 	gotest.tools/v3 v3.0.3 // indirect
 	mvdan.cc/sh/v3 v3.2.1
 )
-
-go 1.16
