@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"strings"
 	"text/tabwriter"
 
@@ -71,6 +72,19 @@ func args2strings(args []interface{}) []string {
 	return sargs
 }
 
+// Section prints header in uppercase, followed by a line of =.
+func Section(header string) {
+	fmt.Println(strings.ToUpper(header))
+	fmt.Println(strings.Repeat("=", len(header)))
+}
+
+// SectionFn prints header in uppercase, followed by a line of = as long as the
+// header, and then calls fn.
+func SectionFn(header string, fn func()) {
+	Section(header)
+	fn()
+}
+
 // TabWriter writes tab delimited output.
 type TabWriter struct {
 	*tabwriter.Writer
@@ -110,6 +124,31 @@ func NewTabWriterTo(w io.Writer) *TabWriter {
 // newline-suffixed to the tab writer.
 func (t *TabWriter) Print(args ...interface{}) {
 	fmt.Fprint(t.Writer, strings.Join(args2strings(args), "\t")+"\n")
+}
+
+// PrintStructFields prints the values stored in fields in a struct.
+//
+// This is a function meant to allow users to define helper structs that have
+// defined field types. Rather than passing arguments blindly to Print, you can
+// put those arguments in your helper struct to *ensure* there are no breaking
+// output changes if any field changes types.
+func (t *TabWriter) PrintStructFields(s interface{}) {
+	v := reflect.ValueOf(s)
+	if v.Kind() == reflect.Ptr {
+		v = reflect.Indirect(v)
+	}
+	if v.Kind() != reflect.Struct {
+		panic("PrintStructFields not called on a *reflect.Struct nor a reflect.Struct!")
+	}
+	var fields []interface{}
+	typ := v.Type()
+	for i := 0; i < v.NumField(); i++ {
+		if typ.Field(i).PkgPath != "" {
+			panic("PrintStructFields used on type with private fields!")
+		}
+		fields = append(fields, v.Field(i).Interface())
+	}
+	t.Print(fields...)
 }
 
 // PrintColumn is the same as Print, but prints header uppercased as the first
