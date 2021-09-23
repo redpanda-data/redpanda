@@ -42,7 +42,7 @@ ss::future<response_ptr>
 offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
     offset_fetch_request request;
     request.decode(ctx.reader(), ctx.header().version);
-    klog.trace("Handling request {}", request);
+    vlog(klog.trace, "Handling request {}", request);
 
     if (!ctx.authorized(
           security::acl_operation::describe, request.data.group_id)) {

@@ -499,7 +499,8 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
     } else {
-        klog.trace("ignorning batch with type {}", int(batch.header().type));
+        vlog(
+          klog.trace, "ignorning batch with type {}", int(batch.header().type));
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
     }
