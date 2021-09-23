@@ -11,7 +11,7 @@ from ducktape.mark.resource import cluster
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
 
-import json
+import subprocess
 
 from rptest.tests.redpanda_test import RedpandaTest
 
@@ -52,14 +52,26 @@ class DataPolicyTest(RedpandaTest):
     def test_incremental_config(self):
         topic = self.topics[0].name
         kafka_tools = KafkaCliTools(self.redpanda)
-        res = kafka_tools.alter_topic_config(
+        kafka_tools.alter_topic_config(
             topic, {
                 TopicSpec.PROPERTY_DATA_POLICY_FUNCTION_NAME: "1",
                 TopicSpec.PROPERTY_DATA_POLICY_SCRIPT_NAME: "2"
             })
         spec = kafka_tools.describe_topic(topic)
         assert spec.redpanda_datapolicy == self._get_data_policy(1, 2)
-        res = kafka_tools.alter_topic_config(
-            topic, {TopicSpec.PROPERTY_DATA_POLICY_FUNCTION_NAME: "3"})
+
+        # Expect that trying to set with a function name but no script fails.
+        try:
+            r = kafka_tools.alter_topic_config(
+                topic, {TopicSpec.PROPERTY_DATA_POLICY_FUNCTION_NAME: "3"})
+        except subprocess.CalledProcessError as e:
+            # Expected: request fails to update topic
+            self.logger.error(
+                f"Kafka CLI alter failed as expected: {e.stdout}")
+            assert "unable to parse property" in e.stdout
+        else:
+            raise RuntimeError(f"Expected API error, got {r}")
+
+        # Expect that the failed alter operation has not modified the topic
         spec = kafka_tools.describe_topic(topic)
         assert spec.redpanda_datapolicy == self._get_data_policy(1, 2)
