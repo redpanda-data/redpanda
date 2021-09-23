@@ -55,14 +55,15 @@ set_source_files_properties(
     allocation_bench.cc
   PROPERTIES SKIP_UNITY_BUILD_INCLUSION 1)
 
-rp_test(
-  UNIT_TEST
-  BINARY_NAME partition_moving_test
-  SOURCES partition_moving_test.cc
-  LIBRARIES v::seastar_testing_main v::application v::storage_test_utils
-  DEFINITIONS SEASTAR_TESTING_MAIN
-  LABELS cluster
-)
+# Disabled until https://github.com/vectorizedio/redpanda/issues/2385 is resolved
+#rp_test(
+#  UNIT_TEST
+#  BINARY_NAME partition_moving_test
+#  SOURCES partition_moving_test.cc
+#  LIBRARIES v::seastar_testing_main v::application v::storage_test_utils
+#  DEFINITIONS SEASTAR_TESTING_MAIN
+#  LABELS cluster
+#)
 
 rp_test(
   UNIT_TEST

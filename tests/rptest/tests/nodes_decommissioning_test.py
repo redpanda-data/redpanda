@@ -28,6 +28,7 @@ class NodesDecommissioningTest(EndToEndTest):
     """
     Basic nodes decommissioning test.
     """
+    @ignore  # https://github.com/vectorizedio/redpanda/issues/2388
     @cluster(num_nodes=6)
     def test_decommissioning_working_node(self):
 
