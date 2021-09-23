@@ -144,7 +144,9 @@ public:
     ss::future<response_ptr> respond(ResponseType r) {
         vlog(
           klog.trace,
-          "sending {}:{} response {}",
+          "[{}:{}] sending {}:{} response {}",
+          _conn->client_host(),
+          _conn->client_port(),
           ResponseType::api_type::key,
           ResponseType::api_type::name,
           r);
