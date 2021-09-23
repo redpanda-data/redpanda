@@ -14,7 +14,7 @@ import json
 
 class KafkaCat:
     """
-    Wrapper around the kafkacat utility.
+    Wrapper around the kcat utility.
 
     This tools is useful because it offers a JSON output format.
     """
@@ -34,7 +34,7 @@ class KafkaCat:
         for retry in reversed(range(10)):
             try:
                 res = subprocess.check_output(
-                    ["kafkacat", "-b",
+                    ["kcat", "-b",
                      self._redpanda.brokers(), "-J"] + cmd)
                 res = json.loads(res)
                 self._redpanda.logger.debug(json.dumps(res, indent=2))
@@ -43,6 +43,6 @@ class KafkaCat:
                 if retry == 0:
                     raise
                 self._redpanda.logger.debug(
-                    "kafkacat retrying after exit code {}: {}".format(
+                    "kcat retrying after exit code {}: {}".format(
                         e.returncode, e.output))
                 time.sleep(2)
