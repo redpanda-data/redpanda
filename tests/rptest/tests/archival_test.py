@@ -8,7 +8,7 @@
 
 from rptest.clients.kafka_cat import KafkaCat
 from ducktape.mark.resource import cluster
-from ducktape.mark import matrix, ignore
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 from ducktape.errors import DucktapeError
 from rptest.tests.redpanda_test import RedpandaTest
