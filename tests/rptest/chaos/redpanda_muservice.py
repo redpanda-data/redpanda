@@ -100,7 +100,7 @@ class RedpandaMuService(MuService):
     def api_meta(self, service, node):
         topic = KafkaKVMuService.TOPIC
         return node.account.ssh_output(
-            f"kafkacat -L -b {node.account.hostname} -t {topic} -J",
+            f"kcat -L -b {node.account.hostname} -t {topic} -J",
             allow_fail=False)
 
     def api_is_running(self, service, node):

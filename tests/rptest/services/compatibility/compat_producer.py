@@ -26,11 +26,11 @@ class CompatProducer(BackgroundThreadService):
         self._topic = topic
 
     def _worker(self, idx, node):
-        cmd = f"echo \"redpanda is fast\" | kafkacat -b {self._redpanda.brokers()} -t {self._topic}"
+        cmd = f"echo \"redpanda is fast\" | kcat -b {self._redpanda.brokers()} -t {self._topic}"
         node.account.ssh_output(cmd, timeout_sec=10)
 
     def stop_node(self, node):
-        node.account.kill_process("kafkacat", clean_shutdown=False)
+        node.account.kill_process("kcat", clean_shutdown=False)
 
     def clean_node(self, nodes):
         pass

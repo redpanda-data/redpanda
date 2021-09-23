@@ -45,14 +45,14 @@ RUN mkdir -p /usr/local/go/ && \
     curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 https://golang.org/dl/go1.17.linux-${ARCHID}.tar.gz | tar -xz -C /usr/local/go/ --strip 1'
 ENV PATH="${PATH}:/usr/local/go/bin"
 
-# install kafka binary dependencies, librdkafka dev, kafkacat and kaf tools
+# install kafka binary dependencies, librdkafka dev, kcat and kaf tools
 ENV KAFKA_MIRROR="https://s3-us-west-2.amazonaws.com/kafka-packages"
 RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.3.1.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.3.1" && \
     mkdir -p "/opt/kafka-2.4.1" && chmod a+rw /opt/kafka-2.4.1 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.4.1.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.4.1" && \
     mkdir -p "/opt/kafka-2.5.0" && chmod a+rw /opt/kafka-2.5.0 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.5.0.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.5.0" && \
     mkdir -p "/opt/kafka-2.7.0" && chmod a+rw /opt/kafka-2.7.0 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.7.0.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.7.0" && \
     mkdir /opt/librdkafka && \
-    curl -SL "https://github.com/edenhill/librdkafka/archive/v1.6.1.tar.gz" | tar -xz --strip-components=1 -C /opt/librdkafka && \
+    curl -SL "https://github.com/edenhill/librdkafka/archive/v1.8.0.tar.gz" | tar -xz --strip-components=1 -C /opt/librdkafka && \
     cd /opt/librdkafka && \
     ./configure && \
     make -j$(nproc) && \
@@ -61,9 +61,9 @@ RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFK
     make build -j$(nproc) && \
     go get github.com/birdayz/kaf/cmd/kaf && \
     mv /root/go/bin/kaf /usr/local/bin/ && \
-    mkdir /tmp/kafkacat && \
-    curl -SL "https://github.com/edenhill/kafkacat/archive/1.6.0.tar.gz" | tar -xz --strip-components=1 -C /tmp/kafkacat && \
-    cd /tmp/kafkacat && \
+    mkdir /tmp/kcat && \
+    curl -SL "https://github.com/edenhill/kcat/archive/1.7.0.tar.gz" | tar -xz --strip-components=1 -C /tmp/kcat && \
+    cd /tmp/kcat && \
     ./configure && \
     make -j$(nproc) && \
     make install && \
