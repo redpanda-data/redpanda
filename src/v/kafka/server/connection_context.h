@@ -45,6 +45,7 @@ public:
       , _sasl(std::move(sasl))
       // tests may build a context without a live connection
       , _client_addr(_rs.conn ? _rs.conn->addr.addr() : ss::net::inet_address{})
+      , _client_port(_rs.conn ? _rs.conn->addr.port() : 0)
       , _enable_authorizer(enable_authorizer) {}
 
     ~connection_context() noexcept = default;
@@ -75,6 +76,7 @@ public:
     ss::future<> process_one_request();
     bool is_finished_parsing() const;
     ss::net::inet_address client_host() const { return _client_addr; }
+    uint16_t client_port() const { return _client_port; }
 
 private:
     // used to track number of pending requests
@@ -127,6 +129,7 @@ private:
     map_t _responses;
     security::sasl_server _sasl;
     const ss::net::inet_address _client_addr;
+    const uint16_t _client_port{0};
     const bool _enable_authorizer;
 };
 

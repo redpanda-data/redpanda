@@ -80,7 +80,9 @@ process_result_stages
   do_process(request_context&& ctx, ss::smp_service_group g) {
     vlog(
       klog.trace,
-      "Processing name:{}, key:{}, version:{} for {}",
+      "[{}:{}] processing name:{}, key:{}, version:{} for {}",
+      ctx.connection()->client_host(),
+      ctx.connection()->client_port(),
       Request::api::name,
       ctx.header().key,
       ctx.header().version,
