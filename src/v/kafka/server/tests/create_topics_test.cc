@@ -30,6 +30,15 @@ public:
         }};
     }
 
+    cluster::non_replicable_topic
+    make_non_rep(ss::sstring src, ss::sstring name) {
+        return cluster::non_replicable_topic{
+          .source = model::
+            topic_namespace{model::kafka_namespace, model::topic(std::move(src))},
+          .name = model::topic_namespace{
+            model::kafka_namespace, model::topic(std::move(name))}};
+    }
+
     kafka::creatable_topic make_topic(
       ss::sstring name,
       std::optional<int> num_partitions = std::nullopt,
@@ -275,4 +284,19 @@ FIXTURE_TEST(create_non_replicable_topics, create_topic_fixture) {
     test_create_topic(make_req({make_topic("topic1")}));
     test_create_non_replicable_topic(
       model::topic("topic1"), make_req({make_topic("topic2")}));
+
+    // Test failure cases
+    cluster::non_replicable_topic no_exist(make_non_rep("abc", "def"));
+    cluster::non_replicable_topic already_exist(
+      make_non_rep("topic1", "topic2"));
+    auto& topics_frontend = app.controller->get_topics_frontend();
+    const auto resp = topics_frontend.local()
+                        .create_non_replicable_topics(
+                          {std::move(no_exist), std::move(already_exist)},
+                          model::no_timeout)
+                        .get();
+    BOOST_CHECK(resp[0].ec == cluster::errc::source_topic_not_exists);
+    BOOST_CHECK(resp[0].tp_ns.tp() == "def");
+    BOOST_CHECK(resp[1].ec == cluster::errc::topic_already_exists);
+    BOOST_CHECK(resp[1].tp_ns.tp() == "topic2");
 }
