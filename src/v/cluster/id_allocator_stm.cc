@@ -93,8 +93,10 @@ id_allocator_stm::allocate_id_and_wait(
 
         return replicate_and_wait(allocation_cmd{seq, range}, timeout, seq)
           .then([this](log_allocation_result r) {
-              _last_allocated_base = r.base + 1;
-              _last_allocated_range = r.range - 1;
+              if (r.raft_status == raft::errc::success) {
+                  _last_allocated_base = r.base + 1;
+                  _last_allocated_range = r.range - 1;
+              }
               return stm_allocation_result{r.base, r.raft_status};
           });
     });
