@@ -207,7 +207,7 @@ Please note that you may have to add the `--tls-key`, `--tls-cert` and `--tls-tr
 ```cmd
 $ rpk acl create \
   --allow-principal 'User:Charlie' \
-  --allow-hosts '*' \
+  --allow-host '*' \
   --operation all \
   --resource topic \
   --resource-name pings
