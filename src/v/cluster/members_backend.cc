@@ -306,6 +306,15 @@ ss::future<> members_backend::reconcile() {
     auto& meta = _updates.front();
     co_await try_to_finish_update(meta);
 
+    vlog(
+      clusterlog.debug,
+      "reconcile: meta.update={}, {} partition_reallocations, finished={}, "
+      "offset={}",
+      meta.update,
+      meta.partition_reallocations.size(),
+      meta.finished,
+      meta.update.offset);
+
     // calculate necessary reallocations
     if (meta.partition_reallocations.empty()) {
         calculate_reallocations(meta);
@@ -318,6 +327,11 @@ ss::future<> members_backend::reconcile() {
             if (!err) {
                 meta.finished = true;
             }
+            vlog(
+              clusterlog.debug,
+              "reconcile: node {} addition status, reallocation finished={}",
+              meta.update.id,
+              meta.finished);
             co_return;
         }
     }
@@ -334,6 +348,10 @@ ss::future<> members_backend::reconcile() {
     if (meta.update.type == members_manager::node_update_type::decommissioned) {
         auto node = _members.local().get_broker(meta.update.id);
         if (!node) {
+            vlog(
+              clusterlog.debug,
+              "reconcile: node {} is gone, returning",
+              meta.update.id);
             co_return;
         }
         const auto is_draining = node.value()->get_membership_state()
@@ -344,9 +362,11 @@ ss::future<> members_backend::reconcile() {
           [](const partition_reallocation& r) {
               return r.state == reallocation_state::finished;
           });
-        if (
-          is_draining && all_reallocations_finished
-          && _allocator.local().is_empty(meta.update.id)) {
+
+        const auto allocator_empty = _allocator.local().is_empty(
+          meta.update.id);
+
+        if (is_draining && all_reallocations_finished && allocator_empty) {
             // we can safely discard the result since action is going to be
             // retried if it fails
             vlog(
@@ -358,6 +378,16 @@ ss::future<> members_backend::reconcile() {
             co_await _raft0
               ->remove_members(std::move(ids), model::revision_id{0})
               .discard_result();
+        } else {
+            // Decommissioning still in progress
+            vlog(
+              clusterlog.debug,
+              "decommissioning status: node {} is_draining={} "
+              "all_reallocations_finished={} allocator_empty={}",
+              meta.update.id,
+              is_draining,
+              all_reallocations_finished,
+              allocator_empty);
         }
     }
 }
