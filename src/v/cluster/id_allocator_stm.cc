@@ -110,10 +110,25 @@ ss::future<> id_allocator_stm::apply(model::record_batch b) {
     return ss::now();
 }
 
+ss::future<> id_allocator_stm::handle_eviction() {
+    _promises.clear();
+    _prepare_promises.clear();
+    _cache.clear();
+    _state = 0;
+    _processed = 0;
+    _last_allocated_base = 0;
+    _last_allocated_range = 0;
+    _should_cache = false;
+    _prepare_offset = model::offset(0);
+    _prepare_state = 0;
+    set_next(_c->start_offset());
+    return ss::now();
+}
+
 ss::future<> id_allocator_stm::start() {
-    auto last = _c->read_last_applied();
-    if (last != model::offset{}) {
-        set_next(last);
+    auto offset = _c->start_offset();
+    if (offset >= model::offset(0)) {
+        set_next(offset);
     }
 
     return state_machine::start().then([this] {

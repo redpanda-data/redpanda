@@ -92,6 +92,9 @@ public:
     ss::future<stm_allocation_result>
     allocate_id_and_wait(model::timeout_clock::time_point timeout);
 
+protected:
+    ss::future<> handle_eviction() override;
+
 private:
     struct sequence_id {
         model::run_id run_id;
