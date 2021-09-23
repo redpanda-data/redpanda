@@ -12,303 +12,174 @@ package acl
 import (
 	"context"
 	"fmt"
-	"strings"
+	"sync"
 
-	"github.com/Shopify/sarama"
-	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/ui"
-	"golang.org/x/sync/errgroup"
+	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/types"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
 )
 
-func NewListACLsCommand(
-	admin func() (sarama.ClusterAdmin, error),
-) *cobra.Command {
-	var (
-		resource     string
-		resourceName string
-		namePattern  string
-		operations   []string
-		permissions  []string
-		principals   []string
-		hosts        []string
-	)
-	command := &cobra.Command{
-		Use:          "list",
-		Aliases:      []string{"ls"},
-		Short:        "List ACLs",
-		SilenceUsage: true,
-		RunE: func(ccmd *cobra.Command, args []string) error {
-			adm, err := admin()
-			if err != nil {
-				return err
-			}
+func NewListCommand(fs afero.Fs) *cobra.Command {
+	var a acls
+	var printAllFilters bool
+	cmd := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls", "describe"},
+		Short:   "List ACLs",
+		Args:    cobra.ExactArgs(0),
+		Run: func(cmd *cobra.Command, _ []string) {
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
 
-			return executeListACLs(
-				adm,
-				resource,
-				resourceName,
-				namePattern,
-				operations,
-				permissions,
-				principals,
-				hosts,
-			)
+			cl, err := kafka.NewFranzClient(fs, cfg)
+			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
+			defer cl.Close()
+
+			_, describes, err := a.createDeletionsAndDescribes(true)
+			out.MaybeDieErr(err)
+			if len(describes) == 0 {
+				out.Exit("Specified flags result in no ACL filters for listing.")
+			}
+			describeReqResp(cl, printAllFilters, describes)
 		},
 	}
-
-	command.Flags().StringVar(
-		&resource,
-		resourceFlag,
-		"",
-		fmt.Sprintf(
-			"Resource type to filter by. Supported values: %s.",
-			strings.Join(supportedResources(), ", "),
-		),
-	)
-	command.Flags().StringVar(
-		&resourceName,
-		resourceNameFlag,
-		"",
-		"The name of the resource of the given type.",
-	)
-	command.Flags().StringVar(
-		&namePattern,
-		namePatternFlag,
-		"",
-		fmt.Sprintf(
-			"The name pattern type to be used when matching affected"+
-				" resources. Supported values: %s.",
-			strings.Join(supportedPatterns(), ", "),
-		),
-	)
-	command.Flags().StringSliceVar(
-		&operations,
-		operationFlag,
-		[]string{},
-		fmt.Sprintf(
-			"Operation to filter by. Can be passed multiple times to filter by many operations. Supported"+
-				" values: %s.",
-			strings.Join(supportedOperations(), ", "),
-		),
-	)
-	command.Flags().StringSliceVar(
-		&permissions,
-		"permission",
-		[]string{},
-		fmt.Sprintf(
-			"Permission to filter by. Can be"+
-				" passed many times to filter by multiple permission types. Supported values: %s.",
-			strings.Join(supportedPermissions(), ", "),
-		),
-	)
-	command.Flags().StringSliceVar(
-		&principals,
-		"principal",
-		[]string{},
-		"Principal to filter by. Can be passed multiple times to filter by many principals.",
-	)
-	command.Flags().StringSliceVar(
-		&hosts,
-		"host",
-		[]string{},
-		"Host to filter by. Can be passed multiple times to filter by many hosts.",
-	)
-	return command
+	a.addListFlags(cmd)
+	cmd.Flags().BoolVarP(&printAllFilters, "print-filters", "f", false, "print the filters that were requested (failed filters are always printed)")
+	return cmd
 }
 
-func executeListACLs(
-	adm sarama.ClusterAdmin,
-	resource, resourceName, namePattern string,
-	operations, permissions, principals, hosts []string,
-) error {
-	filters, err := calculateListACLFilters(
-		resource,
-		resourceName,
-		namePattern,
-		operations,
-		permissions,
-		principals,
-		hosts,
-	)
-	if err != nil {
-		return err
-	}
+func (a *acls) addListFlags(cmd *cobra.Command) {
+	a.addDeprecatedFlags(cmd)
 
-	grp, _ := errgroup.WithContext(context.Background())
-	aclsChan := make(chan []sarama.ResourceAcls, len(filters))
-	for _, filter := range filters {
-		grp.Go(listACLs(adm, *filter, aclsChan))
-	}
+	// List has a few more extra deprecated flags.
+	cmd.Flags().StringSliceVar(&a.listPermissions, "permission", nil, "")
+	cmd.Flags().StringSliceVar(&a.listPrincipals, "principal", nil, "")
+	cmd.Flags().StringSliceVar(&a.listHosts, "host", nil, "")
+	cmd.Flags().MarkDeprecated("permission", "use --{allow,deny}-{host,principal}")
+	cmd.Flags().MarkDeprecated("principal", "use --{allow,deny}-{host,principal}")
+	cmd.Flags().MarkDeprecated("host", "use --{allow,deny}-{host,principal}")
 
-	err = grp.Wait()
+	cmd.Flags().StringArrayVar(&a.topics, topicFlag, nil, "topic to match ACLs for (repeatable)")
+	cmd.Flags().StringArrayVar(&a.groups, groupFlag, nil, "group to match ACLs for (repeatable)")
+	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "whether to match ACLs to the cluster")
+	cmd.Flags().StringArrayVar(&a.txnIDs, txnIDFlag, nil, "transactional IDs to match ACLs for (repeatable)")
 
-	close(aclsChan)
+	cmd.Flags().StringVar(&a.resourcePatternType, patternFlag, "literal", "pattern to use when matching resource names (any, match, literal, or prefixed)")
 
-	acls := []sarama.ResourceAcls{}
-	for resACLs := range aclsChan {
-		acls = append(acls, resACLs...)
-	}
+	cmd.Flags().StringSliceVar(&a.operations, operationFlag, nil, "operation to match (repeatable)")
 
-	printResourceACLs(acls)
+	cmd.Flags().StringSliceVar(&a.allowPrincipals, allowPrincipalFlag, nil, "allowed principal ACLs to match (repeatable)")
+	cmd.Flags().StringSliceVar(&a.allowHosts, allowHostFlag, nil, "allowed host ACLs to match (repeatable)")
+	cmd.Flags().StringSliceVar(&a.denyPrincipals, denyPrincipalFlag, nil, "denied principal ACLs to match (repeatable)")
+	cmd.Flags().StringSliceVar(&a.denyHosts, denyHostFlag, nil, "denied host ACLs to match (repeatable)")
 
-	return err
+	cmd.Flags().StringSliceVar(&a.any, anyFlag, nil, "flags to opt into matching anything for (e.g., --any=topic,group,allow-host or --any=all)")
 }
 
-func listACLs(
-	adm sarama.ClusterAdmin,
-	filter sarama.AclFilter,
-	acls chan<- []sarama.ResourceAcls,
-) func() error {
-	return func() error {
-		filterInfo := fmt.Sprintf("resource type: '%s',"+
-			" name pattern type '%s', operation '%s', permission '%s'",
-			filter.ResourceType.String(),
-			filter.ResourcePatternTypeFilter.String(),
-			filter.Operation.String(),
-			filter.PermissionType.String(),
-		)
-		log.Debugf("Listing ACLs with filter %s", filterInfo)
-		as, err := adm.ListAcls(filter)
-		if err == nil {
-			acls <- as
-			return nil
-		}
+func describeReqResp(
+	cl *kgo.Client, printAllFilters bool, describes []*kmsg.DescribeACLsRequest,
+) {
+	// Kafka's DescribeACLsRequest actually only describes one filter at a
+	// time. We issue all our filters concurrently and wait.
+	var (
+		wg      sync.WaitGroup
+		results = make([]describeRespAndErr, len(describes))
+	)
+	for i := range describes {
+		describe := describes[i]
+		wg.Add(1)
+		idx := i
+		go func() {
+			defer wg.Done()
+			resp, err := describe.RequestWith(context.Background(), cl)
+			results[idx] = describeRespAndErr{resp, err}
+		}()
+	}
+	wg.Wait()
 
-		msg := fmt.Sprintf(
-			"couldn't list ACLs with filter %s",
-			filterInfo,
-		)
-		if filter.ResourceName != nil {
-			msg = fmt.Sprintf("%s, resource name %s", msg, *filter.ResourceName)
+	// If any filters failed, or if all filters are
+	// requested, we print the filter section.
+	var printFailedFilters bool
+	for _, r := range results {
+		if r.err != nil || r.resp.ErrorCode != 0 {
+			printFailedFilters = true
+			break
 		}
-		if filter.Principal != nil {
-			msg = fmt.Sprintf("%s, principal %s", msg, *filter.Principal)
-		}
+	}
+	if printAllFilters || printFailedFilters {
+		out.Section("filters")
+		printDescribeFilters(printAllFilters, describes, results)
+		fmt.Println()
+		out.Section("matches")
+	}
 
-		if filter.Host != nil {
-			msg = fmt.Sprintf("%s, host %s", msg, *filter.Host)
+	printDescribedACLs(results)
+}
+
+type describeRespAndErr struct {
+	resp *kmsg.DescribeACLsResponse
+	err  error
+}
+
+func printDescribeFilters(
+	all bool, reqs []*kmsg.DescribeACLsRequest, results []describeRespAndErr,
+) {
+	tw := out.NewTable(headersWithError...)
+	defer tw.Flush()
+	for i, res := range results {
+		req := reqs[i]
+		if !all && res.err == nil && res.resp.ErrorCode == 0 {
+			continue
 		}
-		return errors.Wrap(err, msg)
+		var msg string
+		if res.err != nil {
+			msg = res.err.Error()
+		} else {
+			msg = kafka.MaybeErrMessage(res.resp.ErrorCode)
+		}
+		tw.PrintStructFields(aclWithMessage{
+			unptr(req.Principal),
+			unptr(req.Host),
+			req.ResourceType,
+			unptr(req.ResourceName),
+			req.ResourcePatternType,
+			req.Operation,
+			req.PermissionType,
+			msg,
+		})
 	}
 }
 
-// Returns the set of ACL filters
-func calculateListACLFilters(
-	resource, resourceName, resourceNamePattern string,
-	operations, permissions, principals, hosts []string,
-) ([]*sarama.AclFilter, error) {
-	filters := []*sarama.AclFilter{}
-	var principalsFilter []*string
-	var hostsFilter []*string
-	var ops []sarama.AclOperation
-	var perms []sarama.AclPermissionType
-	var err error
-
-	if len(principals) == 0 {
-		principalsFilter = []*string{nil}
-	} else {
-		for _, ppal := range principals {
-			p := ppal
-			principalsFilter = append(principalsFilter, &p)
+func printDescribedACLs(results []describeRespAndErr) {
+	var described []acl
+	for _, res := range results {
+		if res.err != nil {
+			continue
 		}
-	}
-
-	if len(hosts) == 0 {
-		hostsFilter = []*string{nil}
-	} else {
-		for _, host := range hosts {
-			h := host
-			hostsFilter = append(hostsFilter, &h)
-		}
-	}
-
-	if len(operations) == 0 {
-		ops = []sarama.AclOperation{sarama.AclOperationAny}
-	} else {
-		ops, err = parseOperations(operations)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if len(permissions) == 0 {
-		perms = []sarama.AclPermissionType{sarama.AclPermissionAny}
-	} else {
-		perms, err = parsePermissions(permissions)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	var resName *string = nil
-	if resourceName != "" {
-		resName = &resourceName
-	}
-	resType := sarama.AclResourceAny
-	if resource != "" {
-		err = resType.UnmarshalText([]byte(resource))
-		if err != nil {
-			return nil, err
-		}
-	}
-	pat := sarama.AclPatternAny
-	if resourceNamePattern != "" {
-		err = pat.UnmarshalText([]byte(resourceNamePattern))
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	for _, p := range perms {
-		for _, op := range ops {
-			for _, ap := range principalsFilter {
-				for _, ah := range hostsFilter {
-					filter := &sarama.AclFilter{
-						ResourceType:              resType,
-						ResourceName:              resName,
-						ResourcePatternTypeFilter: pat,
-						Principal:                 ap,
-						Host:                      ah,
-						Operation:                 op,
-						PermissionType:            p,
-					}
-					filters = append(filters, filter)
-				}
+		for _, resource := range res.resp.Resources {
+			for _, a := range resource.ACLs {
+				described = append(described, acl{
+					Principal:           a.Principal,
+					Host:                a.Host,
+					ResourceType:        resource.ResourceType,
+					ResourceName:        resource.ResourceName,
+					ResourcePatternType: resource.ResourcePatternType,
+					Operation:           a.Operation,
+					Permission:          a.PermissionType,
+				})
 			}
 		}
 	}
-	return filters, nil
-}
-
-func printResourceACLs(resACLs []sarama.ResourceAcls) {
-	if len(resACLs) == 0 {
-		log.Info("No ACLs found for the given filters.")
-		return
+	types.DistinctInPlace(&described)
+	tw := out.NewTable(headers...)
+	defer tw.Flush()
+	for _, d := range described {
+		tw.PrintStructFields(d)
 	}
-	spacer := []string{""}
-	t := ui.NewRpkTable(log.StandardLogger().Out)
-	t.SetColWidth(80)
-	t.SetAutoWrapText(true)
-	t.SetHeader([]string{"Principal", "Host", "Operation", "Permission Type", "Resource Type", "Resource Name", "Resource Pattern Type"})
-	t.Append(spacer)
-	for _, resACL := range resACLs {
-		resType := resACL.Resource.ResourceType.String()
-		resName := resACL.ResourceName
-		resNamePattern := resACL.Resource.ResourcePatternType.String()
-		for _, acl := range resACL.Acls {
-			t.Append([]string{
-				acl.Principal,
-				acl.Host,
-				acl.Operation.String(),
-				acl.PermissionType.String(),
-				resType,
-				resName,
-				resNamePattern,
-			})
-		}
-	}
-	t.Append(spacer)
-	t.Render()
 }
