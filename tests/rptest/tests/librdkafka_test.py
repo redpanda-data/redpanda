@@ -33,6 +33,8 @@ class LibrdkafkaTest(Test):
         self._extra_rp_conf = dict(
             auto_create_topics_enabled=True,
             default_topic_partitions=4,
+            enable_idempotence=True,
+            enable_transactions=True,
         )
         self._redpanda = None
 
@@ -63,12 +65,6 @@ class LibrdkafkaTest(Test):
     @ignore(test_num=44, num_brokers=1) # we do not support runtime changes to topic partition count
     @ignore(test_num=69, num_brokers=1) # we do not support runtime changes to topic partition count
     @ignore(test_num=81, num_brokers=1) # we do not support replica assignment
-    @ignore(test_num=61, num_brokers=1) # transactions
-    @ignore(test_num=76, num_brokers=1) # idempotent producer
-    @ignore(test_num=86, num_brokers=1) # idempotent producer
-    @ignore(test_num=90, num_brokers=1) # idempotent producer
-    @ignore(test_num=94, num_brokers=1) # idempotent producer
-    @ignore(test_num=98, num_brokers=1) # transactions
     # @ignore appears to not be quite smart enough to handle the partial
     # parameterization so we repeat them here with num_brokers=3. this would be
     # a nice enhancement that we could upstream.
@@ -82,12 +78,6 @@ class LibrdkafkaTest(Test):
     @ignore(test_num=44, num_brokers=3)
     @ignore(test_num=69, num_brokers=3)
     @ignore(test_num=81, num_brokers=3)
-    @ignore(test_num=61, num_brokers=3)
-    @ignore(test_num=76, num_brokers=3)
-    @ignore(test_num=86, num_brokers=3)
-    @ignore(test_num=90, num_brokers=3)
-    @ignore(test_num=94, num_brokers=3)
-    @ignore(test_num=98, num_brokers=3)
     @matrix(test_num=range(101), num_brokers=[1, 3])
     # yapf: enable
     def test_librdkafka(self, test_num, num_brokers):
