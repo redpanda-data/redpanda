@@ -51,19 +51,25 @@ id_allocator_stm::allocate_id_and_wait(
         _last_allocated_base += 1;
 
         return ss::make_ready_future<stm_allocation_result>(
-          stm_allocation_result{allocated_id, raft::errc::success});
+          stm_allocation_result{
+            .id = allocated_id, .raft_status = raft::errc::success});
     }
 
     if (_processed > _config.id_allocator_log_capacity.value()) {
-        auto seq = sequence_id{_run_id.value(), _c->self(), ++_last_seq_tick};
-        prelude = replicate_and_wait(prepare_truncation_cmd{seq}, timeout, seq)
+        auto seq = sequence_id{
+          .run_id = _run_id.value(),
+          .node_id = _c->self(),
+          .tick = ++_last_seq_tick};
+        prelude = replicate_and_wait(
+                    prepare_truncation_cmd{.seq = seq}, timeout, seq)
                     .then([this](bool replicated) {
                         if (replicated) {
                             try {
                                 (void)ss::with_gate(_gate, [this] {
                                     return replicate(serialize_cmd(
                                       execute_truncation_cmd{
-                                        _prepare_offset, _prepare_state},
+                                        .prepare_offset = _prepare_offset,
+                                        .state = _prepare_state},
                                       model::record_batch_type::id_allocator));
                                 });
                             } catch (const ss::gate_closed_exception&) {
@@ -77,7 +83,8 @@ id_allocator_stm::allocate_id_and_wait(
         try {
             (void)ss::with_gate(_gate, [this] {
                 return replicate(serialize_cmd(
-                  execute_truncation_cmd{_prepare_offset, _prepare_state},
+                  execute_truncation_cmd{
+                    .prepare_offset = _prepare_offset, .state = _prepare_state},
                   model::record_batch_type::id_allocator));
             });
         } catch (const ss::gate_closed_exception&) {
@@ -89,15 +96,19 @@ id_allocator_stm::allocate_id_and_wait(
 
     return prelude.then([this, timeout, range] {
         sequence_id seq = sequence_id{
-          _run_id.value(), _c->self(), ++_last_seq_tick};
+          .run_id = _run_id.value(),
+          .node_id = _c->self(),
+          .tick = ++_last_seq_tick};
 
-        return replicate_and_wait(allocation_cmd{seq, range}, timeout, seq)
+        return replicate_and_wait(
+                 allocation_cmd{.seq = seq, .range = range}, timeout, seq)
           .then([this](log_allocation_result r) {
               if (r.raft_status == raft::errc::success) {
                   _last_allocated_base = r.base + 1;
                   _last_allocated_range = r.range - 1;
               }
-              return stm_allocation_result{r.base, r.raft_status};
+              return stm_allocation_result{
+                .id = r.base, .raft_status = r.raft_status};
           });
     });
 }
@@ -147,7 +158,8 @@ ss::future<> id_allocator_stm::process(model::record_batch&& b) {
         allocation_cmd cmd = reflection::adl<allocation_cmd>{}.from(
           record.release_value());
         if (_should_cache) {
-            _cache.emplace_back(cached_allocation_cmd{b.last_offset(), cmd});
+            _cache.emplace_back(
+              cached_allocation_cmd{.offset = b.last_offset(), .cmd = cmd});
         } else {
             execute(b.last_offset(), cmd);
         }
@@ -191,7 +203,11 @@ void id_allocator_stm::execute(model::offset offset, allocation_cmd c) {
     _processed += 1;
 
     id_allocator_stm::log_allocation_result result{
-      c.seq, base, c.range, raft::errc::success, offset};
+      .seq = c.seq,
+      .base = base,
+      .range = c.range,
+      .raft_status = raft::errc::success,
+      .offset = offset};
 
     if (auto it = _promises.find(result.seq); it != _promises.end()) {
         it->second.set_value(result);
@@ -213,7 +229,11 @@ id_allocator_stm::replicate_and_wait(
           if (!r) {
               _promises.erase(seq);
               auto result = id_allocator_stm::log_allocation_result{
-                seq, 0, 0, raft::errc::timeout, model::offset(0)};
+                .seq = seq,
+                .base = 0,
+                .range = 0,
+                .raft_status = raft::errc::timeout,
+                .offset = model::offset(0)};
               return ss::make_ready_future<ret_t>(result);
           }
 
@@ -229,7 +249,11 @@ id_allocator_stm::replicate_and_wait(
               timeout,
               [seq, last_offset] {
                   return id_allocator_stm::log_allocation_result{
-                    seq, 0, 0, raft::errc::timeout, last_offset};
+                    .seq = seq,
+                    .base = 0,
+                    .range = 0,
+                    .raft_status = raft::errc::timeout,
+                    .offset = last_offset};
               })
             .then([this, seq, last_offset](ret_t r) {
                 _promises.erase(seq);
