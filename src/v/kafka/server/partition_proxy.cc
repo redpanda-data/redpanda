@@ -31,9 +31,12 @@ std::optional<partition_proxy> make_partition_proxy(
         return std::nullopt;
     }
     auto source_ntp = model::ntp(ntp.ns, *mts, ntp.tp.partition);
+    auto src_log = pm.get(source_ntp);
+    vassert(src_log, "Materialized topic must have an associated source");
     auto materialized_log = pm.log(ntp);
     vassert(materialized_log, "log should exist for materialized partition");
-    return make_partition_proxy<materialized_partition>(*materialized_log);
+    return make_partition_proxy<materialized_partition>(
+      *materialized_log, src_log);
 }
 
 } // namespace kafka
