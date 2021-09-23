@@ -9,11 +9,9 @@
 
 import random
 import string
-import time
 
 from ducktape.mark.resource import cluster
 from ducktape.mark import parametrize
-from ducktape.tests.test import test_logger
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 from rptest.clients.types import TopicSpec
@@ -44,14 +42,18 @@ class AlterTopicConfiguration(RedpandaTest):
     def test_altering_topic_configuration(self, property, value):
         topic = self.topics[0].name
         kafka_tools = KafkaCliTools(self.redpanda)
-        res = kafka_tools.alter_topic_config(topic, {property: value})
+        kafka_tools.alter_topic_config(topic, {property: value})
         spec = kafka_tools.describe_topic(topic)
+
+        # e.g. retention.ms is TopicSpec.retention_ms
+        attr_name = property.replace(".", "_")
+        assert getattr(spec, attr_name, None) == value
 
     @cluster(num_nodes=3)
     def test_altering_multiple_topic_configurations(self):
         topic = self.topics[0].name
         kafka_tools = KafkaCliTools(self.redpanda)
-        res = kafka_tools.alter_topic_config(
+        kafka_tools.alter_topic_config(
             topic, {
                 TopicSpec.PROPERTY_SEGMENT_SIZE: 1024,
                 TopicSpec.PROPERTY_RETENTION_TIME: 360000,
@@ -76,9 +78,12 @@ class AlterTopicConfiguration(RedpandaTest):
         for i in range(0, 5):
             key = self.random_string(5)
             try:
-                res = kafka_tools.alter_topic_config(topic, {key: "123"})
+                kafka_tools.alter_topic_config(topic, {key: "123"})
             except Exception as inst:
-                test_logger.info("exception %s", inst)
+                self.logger.info(
+                    "alter failed as expected: expected exception %s", inst)
+            else:
+                raise RuntimeError("Alter should have failed but succeeded!")
 
         new_spec = kafka_tools.describe_topic(topic)
         # topic spec shouldn't change
