@@ -10,10 +10,10 @@
 package wasm
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -83,19 +83,24 @@ func GetLatestClientApiVersion() string {
 	timeout := 2 * time.Second
 	version := "21.8.2"
 	proc := vos.NewProc()
-	output, err := proc.RunWithSystemLdPath(timeout, "npm", "search", "@vectorizedio/wasm-api")
+	output, err := proc.RunWithSystemLdPath(timeout, "npm", "search", "@vectorizedio/wasm-api", "--json")
 	if err != nil {
 		log.Error(err)
 		return version
 	}
-	for line := range output {
-		resultLine := output[line]
-		splitResults := strings.Split(resultLine, "|")
-		if strings.TrimSpace(splitResults[0]) == "@vectorizedio/wasm-api" {
-			version = strings.TrimSpace(splitResults[len(splitResults)-2])
-			break
-		}
+
+	var result map[string]interface{}
+	parseError := json.Unmarshal([]byte(output[2]), &result)
+	if parseError != nil {
+		fmt.Println("Can not parse json from npm search: {}, Error: {}", output, parseError)
+		return version
 	}
+
+	version, ok := result["version"].(string)
+	if !ok {
+		fmt.Println("Can not get version from npm search result: {}", output)
+	}
+
 	return version
 }
 
