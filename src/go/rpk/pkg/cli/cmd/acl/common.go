@@ -18,15 +18,6 @@ import (
 )
 
 const (
-	resourceFlag       = "resource"
-	resourceNameFlag   = "resource-name"
-	namePatternFlag    = "name-pattern"
-	allowPrincipalFlag = "allow-principal"
-	allowHostFlag      = "allow-host"
-	denyPrincipalFlag  = "deny-principal"
-	denyHostFlag       = "deny-host"
-	operationFlag      = "operation"
-
 	defaultClusterResourceName = "kafka-cluster"
 )
 
