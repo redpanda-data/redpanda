@@ -67,6 +67,7 @@
 #include <seastar/util/conversions.hh>
 #include <seastar/util/defer.hh>
 
+#include <sys/resource.h>
 #include <sys/utsname.h>
 
 #include <chrono>
@@ -138,6 +139,17 @@ static void log_system_resources(
       ss::smp::count,
       human::bytes(total_mem),
       human::bytes(reserve));
+
+    struct rlimit nofile = {0, 0};
+    if (getrlimit(RLIMIT_NOFILE, &nofile) == 0) {
+        vlog(
+          log.info,
+          "File handle limit: {}/{}",
+          nofile.rlim_cur,
+          nofile.rlim_max);
+    } else {
+        vlog(log.warn, "Error {} querying file handle limit", errno);
+    }
 }
 
 int application::run(int ac, char** av) {
