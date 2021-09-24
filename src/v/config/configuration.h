@@ -22,6 +22,7 @@
 #include "model/timestamp.h"
 #include "utils/unresolved_address.h"
 
+#include <seastar/core/sstring.hh>
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>
 #include <seastar/net/socket_defs.hh>
@@ -191,6 +192,11 @@ struct configuration final : public config_store {
       cloud_storage_max_connection_idle_time_ms;
     property<std::optional<std::chrono::seconds>>
       cloud_storage_segment_max_upload_interval_sec;
+
+    // Archival cache
+    property<std::optional<ss::sstring>> cloud_storage_cache_directory;
+    property<size_t> cloud_storage_cache_size;
+    property<std::chrono::milliseconds> cloud_storage_cache_check_interval_ms;
 
     one_or_many_property<ss::sstring> superusers;
 
