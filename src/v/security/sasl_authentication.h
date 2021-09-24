@@ -12,6 +12,7 @@
 #include "vassert.h"
 
 #include <memory>
+#include <string_view>
 
 namespace security {
 
@@ -70,5 +71,23 @@ private:
     std::unique_ptr<sasl_mechanism> _mechanism;
     bool _handshake_v0{false};
 };
+
+// inline because the function is pretty small and clang complains about
+// duplicate symbol since sasl_authentication.h is included in several
+// locations.
+inline std::string_view sasl_state_to_str(sasl_server::sasl_state state) {
+    switch (state) {
+    case sasl_server::sasl_state::initial:
+        return "initial";
+    case sasl_server::sasl_state::handshake:
+        return "handshake";
+    case sasl_server::sasl_state::authenticate:
+        return "authenticate";
+    case sasl_server::sasl_state::complete:
+        return "complete";
+    case sasl_server::sasl_state::failed:
+        return "failed";
+    }
+}
 
 }; // namespace security
