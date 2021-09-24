@@ -131,6 +131,9 @@ public:
     std::optional<topic_configuration>
       get_topic_cfg(model::topic_namespace_view) const;
 
+    std::optional<topic_metadata>
+      get_topic_table_metadata(model::topic_namespace_view) const;
+
     ///\brief Returns topics timestamp type
     ///
     /// If topic does not exists it returns an empty optional

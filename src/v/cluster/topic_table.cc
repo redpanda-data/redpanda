@@ -431,6 +431,14 @@ std::vector<model::topic_namespace> topic_table::all_topics() const {
       [](const topic_configuration_assignment& td) { return td.cfg.tp_ns; });
 }
 
+std::optional<topic_table::topic_metadata>
+topic_table::get_topic_table_metadata(model::topic_namespace_view tp) const {
+    if (auto it = _topics.find(tp); it != _topics.end()) {
+        return it->second;
+    }
+    return {};
+}
+
 std::optional<model::topic_metadata>
 topic_table::get_topic_metadata(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
