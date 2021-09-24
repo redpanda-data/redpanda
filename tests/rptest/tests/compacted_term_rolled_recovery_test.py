@@ -42,7 +42,7 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
         scenario with various topic configurations.
         """
         # operate on a partition. doesn't matter which one
-        partition = next(self.redpanda.partitions(self.topic))
+        partition = self.redpanda.partitions(self.topic)[0]
 
         # stop a replica in order to test its recovery
         all_replicas = list(partition.replicas)
