@@ -35,7 +35,7 @@ namespace coproc::wasm {
 class event_listener {
 public:
     /// class constructor
-    event_listener();
+    explicit event_listener(ss::abort_source&);
 
     /// To be invoked once on redpanda::application startup
     ///
@@ -68,7 +68,7 @@ private:
 
     /// Primitives used to manage the poll loop
     ss::gate _gate;
-    ss::abort_source _abort_source;
+    ss::abort_source& _abort_source;
 
     /// Current offset into the 'coprocessor_internal_topic'
     model::offset _offset{0};
