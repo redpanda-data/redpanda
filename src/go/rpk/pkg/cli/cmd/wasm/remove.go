@@ -3,85 +3,41 @@ package wasm
 import (
 	"fmt"
 
-	"github.com/Shopify/sarama"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
 )
 
-func NewRemoveCommand(
-	createProduce func(bool, int32) (sarama.SyncProducer, error),
-	adminCreate func() (sarama.ClusterAdmin, error),
-) *cobra.Command {
+func NewRemoveCommand(fs afero.Fs) *cobra.Command {
 	var coprocType string
 
-	command := &cobra.Command{
-		Use:   "remove <name>",
+	cmd := &cobra.Command{
+		Use:   "remove [NAME]",
 		Short: "remove inline WASM function",
-		Args: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 {
-				return fmt.Errorf(
-					"no wasm script name specified",
-				)
-			}
-			return nil
-		},
-		RunE: func(_ *cobra.Command, args []string) error {
-			name := args[0]
-			err := CheckCoprocType(coprocType)
-			if err != nil {
-				return err
-			}
-			producer, err := createProduce(false, -1)
-			if err != nil {
-				return err
-			}
-			admin, err := adminCreate()
-			if err != nil {
-				return err
-			}
-			return remove(
-				name,
-				coprocType,
-				producer,
-				admin,
-			)
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			cl, err := kafka.NewFranzClient(fs, cfg)
+			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
+			defer cl.Close()
+
+			err = checkCoprocType(coprocType)
+			out.MaybeDieErr(err)
+			err = ensureCoprocTopic(cl)
+			out.MaybeDie(err, "coproc topic failure: %v", err)
+
+			err = produceRemoveRecord(cl, args[0], coprocType)
+			out.MaybeDie(err, "unable to produce remove message: %v", err)
+			fmt.Println("Removal successful!")
 		},
 	}
 
-	AddTypeFlag(command, &coprocType)
+	cmd.Flags().StringVar(&coprocType, "type", "async", "WASM engine type (async, data-policy)")
 
-	return command
-}
-
-/**
-this function create and publish message for removing coprocessor
-message format:
-{
-	key: <name>,
-	header: {
-		action: "remove"
-		type: <coproc type>
-	}
-}
-*/
-func remove(
-	name string,
-	coprocType string,
-	producer sarama.SyncProducer,
-	admin sarama.ClusterAdmin,
-) error {
-	exist, err := ExistingTopic(admin, kafka.CoprocessorTopic)
-	if err != nil {
-		return err
-	}
-	if !exist {
-		err = CreateCoprocessorTopic(admin)
-		if err != nil {
-			return err
-		}
-	}
-	// create message
-	message := CreateRemoveMsg(name, coprocType)
-	//publish message
-	return kafka.PublishMessage(producer, &message)
+	return cmd
 }

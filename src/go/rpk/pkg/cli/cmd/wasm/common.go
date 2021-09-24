@@ -1,133 +1,95 @@
 package wasm
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 
-	"github.com/Shopify/sarama"
 	"github.com/cespare/xxhash"
-	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
+	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
-/**
-Create coprocessor internal topic with this config:
-	cleanup.policy = compact
-	replicationFactor = if cluster has 2 brokers o more
-						factor is 3, otherwise it should be 1
-	name = coprocessor_internal_topic
-*/
-func CreateCoprocessorTopic(admin sarama.ClusterAdmin) error {
-	brokers, _, err := admin.DescribeCluster()
-	if err != nil {
-		return err
-	}
-	brokersLen := len(brokers)
-	var replicationFactor int16 = 1
-	if brokersLen > 1 {
-		replicationFactor = 3
-	}
-	configEntry := make(map[string]*string)
-	compact := "compact"
-	compressionType := "zstd"
-	configEntry["cleanup.policy"] = &compact
-	configEntry["compression.type"] = &compressionType
-	detail := sarama.TopicDetail{
-		NumPartitions:     1,
-		ReplicationFactor: replicationFactor,
-		ReplicaAssignment: nil,
-		ConfigEntries:     configEntry,
-	}
-	err = admin.CreateTopic(kafka.CoprocessorTopic, &detail, false)
-	if err != nil {
-		return err
-	}
-	return nil
-}
+const coprocTopic = "coprocessor_internal_topic"
 
-/**
-Validate if the given topic exist in Cluster
-*/
-func ExistingTopic(admin sarama.ClusterAdmin, topic string) (bool, error) {
-	topics, err := admin.ListTopics()
-	if err != nil {
-		return false, err
-	}
-	if _, val := topics[topic]; val {
-		return true, err
-	} else {
-		return false, err
-	}
-}
-
-func CreateDeployMsg(
-	name string, coprocType string, description string, content []byte,
-) sarama.ProducerMessage {
-	shaValue := sha256.Sum256(content)
-	var headers = []sarama.RecordHeader{
-		{
-			Key:   []byte("action"),
-			Value: []byte("deploy"),
-		}, {
-			Key:   []byte("description"),
-			Value: []byte(description),
-		}, {
-			Key:   []byte("sha256"),
-			Value: shaValue[:],
-		}, {
-			Key:   []byte("type"),
-			Value: []byte(coprocType),
-		},
-	}
-	id := xxhash.Sum64([]byte(name))
-	binaryId := make([]byte, 8)
-	binary.LittleEndian.PutUint64(binaryId, id)
-	return sarama.ProducerMessage{
-		Key:     sarama.ByteEncoder(binaryId),
-		Topic:   kafka.CoprocessorTopic,
-		Value:   sarama.ByteEncoder(content),
-		Headers: headers,
-	}
-}
-
-func CreateRemoveMsg(name string, coprocType string) sarama.ProducerMessage {
-	var headers = []sarama.RecordHeader{
-		{
-			Key:   []byte("action"),
-			Value: []byte("remove"),
-		}, {
-			Key:   []byte("type"),
-			Value: []byte(coprocType),
-		},
-	}
-	id := xxhash.Sum64([]byte(name))
-	binaryId := make([]byte, 8)
-	binary.LittleEndian.PutUint64(binaryId, id)
-	return sarama.ProducerMessage{
-		Key:   sarama.ByteEncoder(binaryId),
-		Topic: kafka.CoprocessorTopic,
-		// create empty message, the remove command doesn't need
-		// information on message, just a key value
-		Value:   sarama.ByteEncoder([]byte{}),
-		Headers: headers,
-	}
-}
-
-func AddTypeFlag(command *cobra.Command, coprocType *string) {
-	command.Flags().StringVar(
-		coprocType,
-		"type",
-		"async",
-		"WASM engine type (async, data-policy)",
-	)
-}
-
-func CheckCoprocType(coprocType string) error {
+func checkCoprocType(coprocType string) error {
 	switch coprocType {
 	case "async", "data-policy":
 		return nil
 	default:
 		return fmt.Errorf("Unexpected WASM engine type: '%s'", coprocType)
 	}
+}
+
+func nameIDKey(name string) []byte {
+	hash := xxhash.Sum64([]byte(name))
+	id := make([]byte, 8)
+	binary.LittleEndian.PutUint64(id, hash)
+	return id
+}
+
+// We always try creating the coproc topic to ensure it exists, creating a
+// topic that already exists is fine. We use replicas -1 to ensure we use
+// the broker default, which is now three for three+ node clusters.
+func ensureCoprocTopic(cl *kgo.Client) error {
+	req := kmsg.NewCreateTopicsRequest()
+	t := kmsg.NewCreateTopicsRequestTopic()
+	t.Topic = coprocTopic
+	t.NumPartitions = 1
+	t.ReplicationFactor = -1
+	for _, kvs := range [][2]string{
+		{"cleanup.policy", "compact"},
+		{"compression.type", "zstd"},
+	} {
+		c := kmsg.NewCreateTopicsRequestTopicConfig()
+		c.Name = kvs[0]
+		c.Value = kmsg.StringPtr(kvs[1])
+		t.Configs = append(t.Configs, c)
+	}
+	req.Topics = append(req.Topics, t)
+	resp, err := req.RequestWith(context.Background(), cl)
+	if err != nil {
+		return err
+	}
+	err = kerr.ErrorForCode(resp.Topics[0].ErrorCode)
+	switch err {
+	case nil:
+		// topic did not exist
+	case kerr.TopicAlreadyExists:
+		// topic exists, fine
+	default:
+		return err
+	}
+	return nil
+}
+
+// Removing uses a record with no value.
+func produceRemoveRecord(cl *kgo.Client, name, coprocType string) error {
+	rec := kgo.KeySliceRecord(nameIDKey(name), nil)
+	rec.Topic = coprocTopic
+	rec.Headers = []kgo.RecordHeader{
+		{Key: "action", Value: []byte("remove")},
+		{Key: "type", Value: []byte(coprocType)},
+	}
+	return cl.ProduceSync(context.Background(), rec).FirstErr()
+}
+
+// Deploying has sha256 header with the sha of the file contents, and the file
+// itself as the record value.
+func produceDeployRecord(
+	cl *kgo.Client, name, description, coprocType string, file []byte,
+) error {
+	sha := sha256.Sum256(file)
+	rec := kgo.KeySliceRecord(nameIDKey(name), nil)
+	rec.Topic = coprocTopic
+	rec.Value = file
+	rec.Headers = []kgo.RecordHeader{
+		{Key: "action", Value: []byte("deploy")},
+		{Key: "description", Value: []byte(description)},
+		{Key: "sha256", Value: sha[:]},
+		{Key: "type", Value: []byte(coprocType)},
+	}
+	return cl.ProduceSync(context.Background(), rec).FirstErr()
 }

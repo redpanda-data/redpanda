@@ -49,6 +49,6 @@ transform.processRecord((recordBatch) => {
 exports["default"] = transform;
 `
 
-func GetWasmJs() string {
+func WasmJs() string {
 	return wasmJs
 }
