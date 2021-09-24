@@ -20,7 +20,7 @@ class DescribeTopicsTest(RedpandaTest):
     @cluster(num_nodes=3)
     def test_describe_topics(self):
         big = self.scale.ci or self.scale.release
-        num_topics = 100 if big else 2
+        num_topics = 20 if big else 2
 
         topics = [
             TopicSpec(partition_count=random.randint(1, 20),
