@@ -303,6 +303,17 @@ struct partition_assignment {
     friend std::ostream& operator<<(std::ostream&, const partition_assignment&);
 };
 
+enum class shadow_indexing_mode : int8_t {
+    // Upload is disabled
+    disabled = 0,
+    // Only upload data to the object storage
+    archival_storage = 1,
+    // Upload data and enable shadow indexing
+    shadow_indexing = 2,
+};
+
+std::ostream& operator<<(std::ostream&, const shadow_indexing_mode&);
+
 /**
  * Structure holding topic properties overrides, empty values will be replaced
  * with defaults
@@ -315,6 +326,8 @@ struct topic_properties {
     std::optional<size_t> segment_size;
     tristate<size_t> retention_bytes{std::nullopt};
     tristate<std::chrono::milliseconds> retention_duration{std::nullopt};
+    std::optional<bool> recovery;
+    std::optional<shadow_indexing_mode> shadow_indexing;
 
     bool is_compacted() const;
     bool has_overrides() const;

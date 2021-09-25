@@ -10,10 +10,14 @@
 #include "cluster/types.h"
 
 #include "cluster/fwd.h"
+#include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/timestamp.h"
 #include "reflection/adl.h"
 #include "security/acl.h"
+#include "serde/envelope.h"
+#include "serde/serde.h"
 #include "tristate.h"
 #include "utils/to_string.h"
 
@@ -23,6 +27,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <type_traits>
 
 namespace cluster {
 
@@ -37,9 +42,9 @@ bool topic_properties::is_compacted() const {
 
 bool topic_properties::has_overrides() const {
     return cleanup_policy_bitflags || compaction_strategy || segment_size
-           || retention_bytes.has_value() || retention_bytes.is_disabled()
-           || retention_duration.has_value()
-           || retention_duration.is_disabled();
+           || recovery || retention_bytes.has_value()
+           || retention_bytes.is_disabled() || retention_duration.has_value()
+           || retention_duration.is_disabled() || shadow_indexing.has_value();
 }
 
 storage::ntp_config::default_overrides
@@ -147,7 +152,8 @@ create_partititions_configuration::create_partititions_configuration(
 std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
     fmt::print(
       o,
-      "{{ topic: {}, partition_count: {}, replication_factor: {}, properties: "
+      "{{ topic: {}, partition_count: {}, replication_factor: {}, "
+      "properties: "
       "{}}}",
       cfg.tp_ns,
       cfg.partition_count,
@@ -160,16 +166,20 @@ std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
 std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
     fmt::print(
       o,
-      "{{ compression: {}, cleanup_policy_bitflags: {}, compaction_strategy: "
-      "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: {}, "
-      "timestamp_type: {} }}",
+      "{{ compression: {}, cleanup_policy_bitflags: {}, "
+      "compaction_strategy: "
+      "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: "
+      "{}, "
+      "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {} }}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
       properties.retention_bytes,
       properties.retention_duration,
       properties.segment_size,
-      properties.timestamp_type);
+      properties.timestamp_type,
+      properties.recovery,
+      properties.shadow_indexing);
 
     return o;
 }
@@ -196,6 +206,21 @@ std::ostream& operator<<(std::ostream& o, const partition_assignment& p_as) {
       p_as.id,
       p_as.group,
       p_as.replicas);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const shadow_indexing_mode& si) {
+    switch (si) {
+    case shadow_indexing_mode::disabled:
+        o << "disabled";
+        break;
+    case shadow_indexing_mode::archival_storage:
+        o << "archival_storage";
+        break;
+    case shadow_indexing_mode::shadow_indexing:
+        o << "shadow_indexing";
+        break;
+    }
     return o;
 }
 
@@ -293,24 +318,188 @@ std::ostream& operator<<(
 } // namespace cluster
 
 namespace reflection {
+
+// These enum encoding/decoding functions should be move into the different
+// translation unit eventually
+
+inline void read_nested(
+  iobuf_parser& in, model::compression& el, size_t const bytes_left_limit) {
+    serde::read_enum(in, el, bytes_left_limit);
+}
+
+inline void write(iobuf& out, model::compression el) {
+    serde::write_enum(out, el);
+}
+
+inline void read_nested(
+  iobuf_parser& in,
+  model::cleanup_policy_bitflags& el,
+  size_t const bytes_left_limit) {
+    serde::read_enum(in, el, bytes_left_limit);
+}
+
+inline void write(iobuf& out, model::cleanup_policy_bitflags el) {
+    serde::write_enum(out, el);
+}
+
+inline void read_nested(
+  iobuf_parser& in,
+  model::compaction_strategy& el,
+  size_t const bytes_left_limit) {
+    serde::read_enum(in, el, bytes_left_limit);
+}
+
+inline void write(iobuf& out, model::compaction_strategy el) {
+    serde::write_enum(out, el);
+}
+
+inline void read_nested(
+  iobuf_parser& in, model::timestamp_type& el, size_t const bytes_left_limit) {
+    serde::read_enum(in, el, bytes_left_limit);
+}
+
+inline void write(iobuf& out, model::timestamp_type el) {
+    serde::write_enum(out, el);
+}
+
+inline void read_nested(
+  iobuf_parser& in,
+  cluster::shadow_indexing_modee& el,
+  size_t const bytes_left_limit) {
+    serde::read_enum(in, el, bytes_left_limit);
+}
+
+inline void write(iobuf& out, cluster::shadow_indexing_mode el) {
+    serde::write_enum(out, el);
+}
+
+/// Deserialize tristate using the same format as adl
+///
+/// Template parameter T is a result value type.
+template<class T>
+void read_nested(
+  iobuf_parser& in, tristate<T>& value, size_t bytes_left_limit) {
+    auto state = serde::read_nested<int8_t>(in, bytes_left_limit);
+    if (state == -1) {
+        value = tristate<T>{};
+    } else if (state == 0) {
+        value = tristate<T>{std::nullopt};
+    }
+    value = serde::read_nested<T>(in, bytes_left_limit);
+};
+
+/// Serialize tristate using the same format as adl
+///
+/// Template parameter T is a value type of the tristate.
+template<class T>
+inline void write(iobuf& out, const tristate<T>& t) {
+    if (t.is_disabled()) {
+        serde::write(out, static_cast<int8_t>(-1));
+    } else if (!t.has_value()) {
+        serde::write(out, static_cast<int8_t>(0));
+    } else {
+        serde::write(out, static_cast<int8_t>(1));
+        serde::write(out, t.value());
+    }
+}
+
+/// The wrapper is used to serialize topic_configuraiton using serde
+/// library.
+/// The topic_configuration doesn't have default c-tor so it can't be
+/// directly used with serde. Another benefit of using this wrapper is
+/// that serialization details (versions) are not exposed in the header.
+struct topic_configuration_wrapper {
+    using value_t = topic_configuration_wrapper;
+    static constexpr serde::version_t redpanda_serde_version = 0;
+    static constexpr serde::version_t redpanda_serde_compat_version = 0;
+    std::optional<cluster::topic_configuration> cfg;
+
+    void serde_read(iobuf_parser& in, const serde::header& hdr) {
+        auto ns = serde::read_nested<ss::sstring>(in, hdr._bytes_left_limit);
+        auto tp = serde::read_nested<ss::sstring>(in, hdr._bytes_left_limit);
+
+        auto partition_count = serde::read_nested<int32_t>(
+          in, hdr._bytes_left_limit);
+        auto replication_factor = serde::read_nested<int16_t>(
+          in, hdr._bytes_left_limit);
+
+        cfg = cluster::topic_configuration(
+          model::ns(ns), model::topic(tp), partition_count, replication_factor);
+
+        cfg->properties.compression
+          = serde::read_nested<std::optional<model::compression>>(
+            in, hdr._bytes_left_limit);
+        cfg->properties.cleanup_policy_bitflags
+          = serde::read_nested<std::optional<model::cleanup_policy_bitflags>>(
+            in, hdr._bytes_left_limit);
+        cfg->properties.compaction_strategy
+          = serde::read_nested<std::optional<model::compaction_strategy>>(
+            in, hdr._bytes_left_limit);
+        cfg->properties.timestamp_type
+          = serde::read_nested<std::optional<model::timestamp_type>>(
+            in, hdr._bytes_left_limit);
+        cfg->properties.segment_size
+          = serde::read_nested<std::optional<size_t>>(
+            in, hdr._bytes_left_limit);
+        cfg->properties.retention_bytes = serde::read_nested<tristate<size_t>>(
+          in, hdr._bytes_left_limit);
+        cfg->properties.retention_duration
+          = serde::read_nested<tristate<std::chrono::milliseconds>>(
+            in, hdr._bytes_left_limit);
+        cfg->properties.recovery = serde::read_nested<std::optional<bool>>(
+          in, hdr._bytes_left_limit);
+        cfg->properties.shadow_indexing
+          = serde::read_nested<std::optional<cluster::shadow_indexing_mode>>(
+            in, hdr._bytes_left_limit);
+    }
+
+    void serde_write(iobuf& out) {
+        serde::write(out, cfg->tp_ns.ns());
+        serde::write(out, cfg->tp_ns.tp());
+        serde::write(out, cfg->partition_count);
+        serde::write(out, cfg->replication_factor);
+        serde::write(out, cfg->properties.compression);
+        serde::write(out, cfg->properties.cleanup_policy_bitflags);
+        serde::write(out, cfg->properties.compaction_strategy);
+        serde::write(out, cfg->properties.timestamp_type);
+        serde::write(out, cfg->properties.segment_size);
+        serde::write(out, cfg->properties.retention_bytes);
+        serde::write(out, cfg->properties.retention_duration);
+        serde::write(out, cfg->properties.recovery);
+        serde::write(out, cfg->properties.shadow_indexing);
+    }
+};
+
 void adl<cluster::topic_configuration>::to(
   iobuf& out, cluster::topic_configuration&& t) {
-    reflection::serialize(
-      out,
-      t.tp_ns,
-      t.partition_count,
-      t.replication_factor,
-      t.properties.compression,
-      t.properties.cleanup_policy_bitflags,
-      t.properties.compaction_strategy,
-      t.properties.timestamp_type,
-      t.properties.segment_size,
-      t.properties.retention_bytes,
-      t.properties.retention_duration);
+    // Here we're always writing new version of the struct
+    int32_t version = -1;
+    adl<int32_t>{}.to(out, version);
+    topic_configuration_wrapper wrapper{.cfg = t};
+    serde::write(out, wrapper);
 }
 
 cluster::topic_configuration
 adl<cluster::topic_configuration>::from(iobuf_parser& in) {
+    // NOTE: The first field of the topic_configuration is a
+    // model::ns which has length prefix which is always
+    // positive.
+    // We're using negative length value to encode version. So if
+    // the first int32_t value is positive then we're dealing with
+    // the old format. And if it's negative then we're using serde
+    // to decode the new format. Serde has it's own versioning scheme
+    // that should be used instead of the length prefix in the future
+    // updates.
+    auto version = adl<int32_t>{}.from(in.peek(4));
+    if (version < 0) {
+        // Consume version from stream
+        vassert(
+          version == adl<int32_t>{}.from(in),
+          "Can't read topic_configuration version");
+        auto wrapper = serde::read_nested<topic_configuration_wrapper>(in, 0U);
+        vassert(wrapper.cfg, "Topic configuration is not initialized");
+        return *wrapper.cfg;
+    }
     auto ns = model::ns(adl<ss::sstring>{}.from(in));
     auto topic = model::topic(adl<ss::sstring>{}.from(in));
     auto partition_count = adl<int32_t>{}.from(in);
@@ -331,7 +520,6 @@ adl<cluster::topic_configuration>::from(iobuf_parser& in) {
     cfg.properties.retention_bytes = adl<tristate<size_t>>{}.from(in);
     cfg.properties.retention_duration
       = adl<tristate<std::chrono::milliseconds>>{}.from(in);
-
     return cfg;
 }
 

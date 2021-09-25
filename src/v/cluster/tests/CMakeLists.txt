@@ -38,7 +38,8 @@ set(srcs
     replicas_rebalancing_tests.cc
     create_partitions_test.cc
     id_allocator_stm_test.cc
-    data_policy_controller_test.cc)
+    data_policy_controller_test.cc
+    topic_configuration_compat_test.cc)
 
 rp_test(
   UNIT_TEST
