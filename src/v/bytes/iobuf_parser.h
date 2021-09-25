@@ -95,6 +95,8 @@ public:
 
     iobuf copy(size_t len) { return iobuf_copy(_in, len); }
 
+    iobuf peek(size_t len) const { return iobuf_peek(_in, len); }
+
 protected:
     iobuf& ref() { return *std::get<owned_buf>(_buf); }
 

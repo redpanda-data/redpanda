@@ -17,6 +17,7 @@
 #include <seastar/core/future-util.hh>
 #include <seastar/core/smp.hh>
 
+#include <cstddef>
 #include <iostream>
 #include <limits>
 
@@ -153,6 +154,20 @@ iobuf iobuf_copy(iobuf::iterator_consumer& in, size_t len) {
     }
 
     vassert(bytes_left == 0, "Bytes remaining to be copied");
+    return ret;
+}
+
+iobuf iobuf_peek(const iobuf::iterator_consumer& in, size_t len) {
+    iobuf ret;
+    for (auto b : in) {
+        if (len > 0) {
+            ret.append(&b, 1);
+            len--;
+        } else {
+            break;
+        }
+    }
+    vassert(len == 0, "Bytes remaining to be peeked");
     return ret;
 }
 

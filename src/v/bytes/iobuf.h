@@ -409,6 +409,9 @@ ss::future<> write_iobuf_to_output_stream(iobuf, ss::output_stream<char>&);
 
 iobuf iobuf_copy(iobuf::iterator_consumer& in, size_t len);
 
+/// Return first 'len' bytes without consuming from iterator
+iobuf iobuf_peek(const iobuf::iterator_consumer& in, size_t len);
+
 namespace std {
 template<>
 struct hash<::iobuf> {
