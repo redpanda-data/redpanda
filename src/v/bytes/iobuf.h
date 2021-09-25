@@ -408,7 +408,6 @@ ss::scattered_message<char> iobuf_as_scattered(iobuf b);
 ss::future<> write_iobuf_to_output_stream(iobuf, ss::output_stream<char>&);
 
 iobuf iobuf_copy(iobuf::iterator_consumer& in, size_t len);
-
 namespace std {
 template<>
 struct hash<::iobuf> {

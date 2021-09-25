@@ -17,6 +17,7 @@
 #include <seastar/core/future-util.hh>
 #include <seastar/core/smp.hh>
 
+#include <cstddef>
 #include <iostream>
 #include <limits>
 
