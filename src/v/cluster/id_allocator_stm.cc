@@ -40,8 +40,8 @@ id_allocator_stm::id_allocator_stm(
   , _c(c) {}
 
 ss::future<id_allocator_stm::stm_allocation_result>
-id_allocator_stm::allocate_id_and_wait(
-  model::timeout_clock::time_point timeout) {
+id_allocator_stm::allocate_id(model::timeout_clock::duration timeout) {
+    auto deadline = model::timeout_clock::now() + timeout;
     auto prelude = ss::now();
     auto range = _config.id_allocator_batch_size.value();
 
@@ -56,7 +56,7 @@ id_allocator_stm::allocate_id_and_wait(
 
     if (_processed > _config.id_allocator_log_capacity.value()) {
         auto seq = sequence_id{_run_id.value(), _c->self(), ++_last_seq_tick};
-        prelude = replicate_and_wait(prepare_truncation_cmd{seq}, timeout, seq)
+        prelude = replicate_and_wait(prepare_truncation_cmd{seq}, deadline, seq)
                     .then([this](bool replicated) {
                         if (replicated) {
                             try {
@@ -87,11 +87,11 @@ id_allocator_stm::allocate_id_and_wait(
         }
     }
 
-    return prelude.then([this, timeout, range] {
+    return prelude.then([this, deadline, range] {
         sequence_id seq = sequence_id{
           _run_id.value(), _c->self(), ++_last_seq_tick};
 
-        return replicate_and_wait(allocation_cmd{seq, range}, timeout, seq)
+        return replicate_and_wait(allocation_cmd{seq, range}, deadline, seq)
           .then([this](log_allocation_result r) {
               _last_allocated_base = r.base + 1;
               _last_allocated_range = r.range - 1;

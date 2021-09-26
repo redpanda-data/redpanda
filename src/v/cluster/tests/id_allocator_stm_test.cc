@@ -55,8 +55,7 @@ FIXTURE_TEST(stm_monotonicity_test, mux_state_machine_fixture) {
     int64_t last_id = -1;
 
     for (int i = 0; i < 5; i++) {
-        auto result
-          = stm.allocate_id_and_wait(model::timeout_clock::now() + 1s).get0();
+        auto result = stm.allocate_id(1s).get0();
 
         BOOST_REQUIRE_EQUAL(raft::errc::success, result.raft_status);
         BOOST_REQUIRE_LT(last_id, result.id);
@@ -79,8 +78,7 @@ FIXTURE_TEST(stm_restart_test, mux_state_machine_fixture) {
     int64_t last_id = -1;
 
     for (int i = 0; i < 5; i++) {
-        auto result
-          = stm1.allocate_id_and_wait(model::timeout_clock::now() + 1s).get0();
+        auto result = stm1.allocate_id(1s).get0();
 
         BOOST_REQUIRE_EQUAL(raft::errc::success, result.raft_status);
         BOOST_REQUIRE_LT(last_id, result.id);
@@ -92,8 +90,7 @@ FIXTURE_TEST(stm_restart_test, mux_state_machine_fixture) {
     cluster::id_allocator_stm stm2(idstmlog, _raft.get(), cfg);
     stm2.start().get0();
     for (int i = 0; i < 5; i++) {
-        auto result
-          = stm2.allocate_id_and_wait(model::timeout_clock::now() + 1s).get0();
+        auto result = stm2.allocate_id(1s).get0();
 
         BOOST_REQUIRE_EQUAL(raft::errc::success, result.raft_status);
         BOOST_REQUIRE_LT(last_id, result.id);

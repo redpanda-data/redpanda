@@ -90,7 +90,7 @@ public:
     ss::future<> start() final;
 
     ss::future<stm_allocation_result>
-    allocate_id_and_wait(model::timeout_clock::time_point timeout);
+    allocate_id(model::timeout_clock::duration timeout);
 
 private:
     struct sequence_id {
