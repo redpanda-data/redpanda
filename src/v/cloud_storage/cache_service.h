@@ -40,7 +40,8 @@ public:
     ss::future<> stop();
 
     /// Get cached value as a stream if it exists on disk
-    ss::future<std::optional<cache_item>> get(std::filesystem::path key);
+    ss::future<std::optional<cache_item>>
+    get(std::filesystem::path key, size_t file_pos = 0);
 
     /// Add new value to the cache, overwrite if it's already exist
     ss::future<> put(std::filesystem::path key, ss::input_stream<char>& data);

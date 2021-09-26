@@ -35,6 +35,9 @@ namespace archival {
 
 using namespace std::chrono_literals;
 
+/// Represents optional reference to cache
+using opt_cache = std::optional<std::reference_wrapper<cloud_storage::cache>>;
+
 /// Archiver service configuration
 struct configuration {
     /// Bucket used to store all archived data
@@ -82,6 +85,7 @@ public:
       const storage::ntp_config& ntp,
       const configuration& conf,
       cloud_storage::remote& remote,
+      opt_cache cache,
       ss::lw_shared_ptr<cluster::partition> part,
       service_probe& svc_probe);
 
@@ -184,6 +188,7 @@ private:
     model::ntp _ntp;
     model::revision_id _rev;
     cloud_storage::remote& _remote;
+    opt_cache _cache;
     ss::lw_shared_ptr<cluster::partition> _partition;
     archival_policy _policy;
     s3::bucket_name _bucket;
@@ -199,6 +204,7 @@ private:
     ss::lowres_clock::duration _initial_backoff;
     ss::lowres_clock::duration _segment_upload_timeout;
     ss::lowres_clock::duration _manifest_upload_timeout;
+    std::unique_ptr<cloud_storage::remote_partition> _remote_partition;
 };
 
 } // namespace archival

@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "cloud_storage/manifest.h"
+#include "cloud_storage/remote_partition.h"
 #include "cluster/id_allocator_stm.h"
 #include "cluster/partition_probe.h"
 #include "cluster/rm_stm.h"
@@ -57,6 +59,7 @@ public:
       model::batch_identity,
       model::record_batch_reader&&,
       raft::replicate_options);
+
     /**
      * The reader is modified such that the max offset is configured to be
      * the minimum of the max offset requested and the committed index of the
@@ -65,10 +68,50 @@ public:
     ss::future<model::record_batch_reader> make_reader(
       storage::log_reader_config config,
       std::optional<model::timeout_clock::time_point> deadline = std::nullopt) {
-        return _raft->make_reader(std::move(config), deadline);
+        if (
+          cloud_data_available()
+          && config.start_offset < _raft->start_offset()) {
+            auto begin = _cloud_storage_partition->first_uploaded_offset();
+            auto end = _cloud_storage_partition->last_uploaded_offset();
+            if (!(config.max_offset < begin) && !(end < config.start_offset)) {
+                // Special case for shadow indexing.
+                // We're creating shadow indexing record_batch_reader which will
+                // read only remote data.
+                return _cloud_storage_partition->make_reader(config, deadline);
+            }
+        }
+        return _raft->make_reader(config, deadline);
     }
 
-    model::offset start_offset() const { return _raft->start_offset(); }
+    model::offset start_offset() const {
+        if (cloud_data_available()) {
+            // TODO: reconsider
+            return std::min(_raft->start_offset(), start_offset_cloud());
+        }
+        return _raft->start_offset();
+    }
+
+    // TODO: this code should go away when archival snapshot gets integrated
+    model::offset start_offset_cloud() const {
+        vassert(
+          cloud_data_available(),
+          "Method can only be called if cloud data is available");
+        return _cloud_storage_partition->first_uploaded_offset();
+    }
+    model::offset max_offset_cloud() const {
+        vassert(
+          cloud_data_available(),
+          "Method can only be called if cloud data is available");
+        return _cloud_storage_partition->last_uploaded_offset();
+    }
+    bool cloud_data_available() const {
+        return static_cast<bool>(_cloud_storage_partition);
+    }
+    void connect_with_cloud_storage(
+      ss::weak_ptr<cloud_storage::remote_partition> part) {
+        _cloud_storage_partition = std::move(part);
+    }
+    // TODO: end section
 
     /**
      * The returned value of last committed offset should not be used to
@@ -197,6 +240,10 @@ private:
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     bool _is_tx_enabled{false};
     bool _is_idempotence_enabled{false};
+    // TODO: next two fields should go away when archival snapshot will be
+    // integrated
+    ss::weak_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
+    // end TODO
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

@@ -65,6 +65,12 @@ ss::future<uint64_t> offset_translator::copy_stream(
     co_return len.value();
 }
 
+ss::input_stream<char> offset_translator::patch_stream(
+  ss::input_stream<char> src, retry_chain_node&) const {
+    // TBD: implement
+    return src;
+}
+
 remote_segment_path offset_translator::get_adjusted_segment_name(
   const remote_segment_path& s, retry_chain_node& fib) const {
     auto smeta = _manifest->get().get(s);

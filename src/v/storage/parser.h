@@ -111,10 +111,10 @@ public:
     /// \brief cleans up async resources like the input stream
     ss::future<> close() { return _input.close(); }
 
-private:
     /// \brief consumes _one_ full batch.
     ss::future<result<batch_consumer::stop_parser>> consume_one();
 
+private:
     /// \brief read and parses header from input_file_stream
     ss::future<result<model::record_batch_header>> read_header();
     /// \brief parses and _stores_ the header into _header variable

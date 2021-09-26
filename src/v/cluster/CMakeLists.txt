@@ -88,5 +88,6 @@ v_cc_library(
     absl::flat_hash_map
     v::model
     v::v8_engine
+    v::cloud_storage
   )
 add_subdirectory(tests)

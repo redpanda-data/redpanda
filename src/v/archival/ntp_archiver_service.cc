@@ -59,6 +59,7 @@ ntp_archiver::ntp_archiver(
   const storage::ntp_config& ntp,
   const configuration& conf,
   cloud_storage::remote& remote,
+  opt_cache cache,
   ss::lw_shared_ptr<cluster::partition> part,
   service_probe& svc_probe)
   : _svc_probe(svc_probe)
@@ -66,6 +67,7 @@ ntp_archiver::ntp_archiver(
   , _ntp(ntp.ntp())
   , _rev(ntp.get_revision())
   , _remote(remote)
+  , _cache(cache)
   , _partition(std::move(part))
   , _policy(_ntp, _svc_probe, std::ref(_probe), conf.time_limit)
   , _bucket(conf.bucket_name)
@@ -75,6 +77,14 @@ ntp_archiver::ntp_archiver(
   , _segment_upload_timeout(conf.segment_upload_timeout)
   , _manifest_upload_timeout(conf.manifest_upload_timeout) {
     vlog(archival_log.trace, "Create ntp_archiver {}", _ntp.path());
+    if (_cache) {
+        _remote_partition = std::make_unique<cloud_storage::remote_partition>(
+          _manifest, _remote, _cache.value(), _bucket);
+        if (_partition) {
+            _partition->connect_with_cloud_storage(
+              _remote_partition->weak_from_this());
+        }
+    }
 }
 
 ss::future<> ntp_archiver::stop() {
