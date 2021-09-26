@@ -449,6 +449,23 @@ int64_t configuration_manager::offset_delta(model::offset o) const {
 
     return std::prev(it)->second.idx();
 }
+
+ss::future<> configuration_manager::adjust_configuration_idx(
+  configuration_idx new_initial_idx) {
+    return _storage.kvs()
+      .put(
+        storage::kvstore::key_space::consensus,
+        next_configuration_idx_key(),
+        reflection::to_iobuf(new_initial_idx))
+      .then([this, new_initial_idx] {
+          auto idx = new_initial_idx;
+          for (auto& [_, cfg] : _configurations) {
+              cfg.idx = idx++;
+          }
+          _next_index = idx;
+      });
+}
+
 std::ostream& operator<<(std::ostream& o, const configuration_manager& m) {
     o << "{configurations: ";
     for (const auto& p : m._configurations) {

@@ -1049,6 +1049,39 @@ ss::future<> consensus::do_start() {
               });
           })
           .then([this] {
+              /**
+               * fix for incorrectly persisted configuration index. In previous
+               * version of redpanda due to the issue with incorrectly assigned
+               * raft configuration indicies
+               * (https://github.com/vectorizedio/redpanda/issues/2326) there
+               * may be a persistent corruption in offset translation caused by
+               * incorrectly persited configuration index. It may cause log
+               * offset to be negative. Here we check if this problem exists and
+               * if so apply necessary offset translation.
+               */
+              const auto so = start_offset();
+              // no prefix truncation was applied we do not need adjustment
+              if (so <= model::offset(0)) {
+                  return ss::now();
+              }
+              auto delta = _configuration_manager.offset_delta(start_offset());
+
+              if (so >= delta) {
+                  return ss::now();
+              }
+              // if start offset is smaller than offset delta we need to apply
+              // adjustment
+              const configuration_manager::configuration_idx new_idx(so());
+              vlog(
+                _ctxlog.info,
+                "adjusting configuration index, current start offset: {}, "
+                "delta: {}, new initial index: {}",
+                so,
+                delta,
+                new_idx);
+              return _configuration_manager.adjust_configuration_idx(new_idx);
+          })
+          .then([this] {
               auto next_election = clock_type::now();
               // set last heartbeat timestamp to prevent skipping first
               // election
