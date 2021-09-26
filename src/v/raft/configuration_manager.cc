@@ -433,6 +433,22 @@ model::revision_id configuration_manager::get_latest_revision() const {
     return _configurations.rbegin()->second.cfg.revision_id();
 }
 
+int64_t configuration_manager::offset_delta(model::offset o) const {
+    auto it = lower_bound(o);
+
+    if (it == begin()) {
+        /**
+         * iterator points to the first configuration with offset greater
+         * than then requsted one. Knowing an index of that configuration we
+         * know that there was exactly (index -1) configurations with offset
+         * lower than the current one. We can simply subtract one from
+         * index.
+         */
+        return std::max<int64_t>(0, it->second.idx() - 1);
+    }
+
+    return std::prev(it)->second.idx();
+}
 std::ostream& operator<<(std::ostream& o, const configuration_manager& m) {
     o << "{configurations: ";
     for (const auto& p : m._configurations) {
