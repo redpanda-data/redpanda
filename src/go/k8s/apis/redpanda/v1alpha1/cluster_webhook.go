@@ -44,11 +44,11 @@ var (
 	// DefaultRpkStatusResources is default resources setting for rpk debug
 	DefaultRpkStatusResources = &corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
-			corev1.ResourceMemory: resource.MustParse("10M"),
+			corev1.ResourceMemory: resource.MustParse("10Mi"),
 			corev1.ResourceCPU:    resource.MustParse("0.2"),
 		},
 		Limits: corev1.ResourceList{
-			corev1.ResourceMemory: resource.MustParse("10M"),
+			corev1.ResourceMemory: resource.MustParse("10Mi"),
 			corev1.ResourceCPU:    resource.MustParse("0.2"),
 		},
 	}

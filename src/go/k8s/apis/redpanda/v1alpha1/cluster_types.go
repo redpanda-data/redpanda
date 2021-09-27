@@ -627,6 +627,7 @@ func (r *Cluster) GetRedpandaResources() corev1.ResourceRequirements {
 		memoryLimit := assignedResources.Limits.Memory()
 		cpuLimit.Sub(*r.Spec.Sidecars.RpkStatus.Resources.Limits.Cpu())
 		memoryLimit.Sub(*r.Spec.Sidecars.RpkStatus.Resources.Limits.Memory())
+		_ = memoryLimit.RoundUp(0)
 		assignedResources.Limits[corev1.ResourceCPU] = *cpuLimit
 		assignedResources.Limits[corev1.ResourceMemory] = *memoryLimit
 
@@ -634,6 +635,7 @@ func (r *Cluster) GetRedpandaResources() corev1.ResourceRequirements {
 		memoryRequest := assignedResources.Requests.Memory()
 		cpuRequest.Sub(*r.Spec.Sidecars.RpkStatus.Resources.Requests.Cpu())
 		memoryRequest.Sub(*r.Spec.Sidecars.RpkStatus.Resources.Requests.Memory())
+		_ = memoryRequest.RoundUp(0)
 		assignedResources.Requests[corev1.ResourceCPU] = *cpuRequest
 		assignedResources.Requests[corev1.ResourceMemory] = *memoryRequest
 	}
