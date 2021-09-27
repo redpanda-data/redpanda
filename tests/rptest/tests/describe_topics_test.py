@@ -42,7 +42,7 @@ class DescribeTopicsTest(RedpandaTest):
                     return False
             # and targetted topic describe
             topics_described = [
-                client.describe_topic(topic) for topic in topics
+                client.describe_topic(topic.name) for topic in topics
             ]
             for meta in zip(topics, topics_described):
                 if meta[0].partition_count != meta[1].partition_count:
