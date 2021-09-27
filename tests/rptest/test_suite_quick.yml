@@ -18,7 +18,4 @@ quick:
   - tests/compacted_term_rolled_recovery_test.py
   - tests/compacted_topic_verifier_test.py
   - tests/compaction_recovery_test.py
-  - tests/wasm_identity_test.py
-  - tests/wasm_failure_recovery_test.py
-  - tests/wasm_redpanda_failure_recovery_test.py
   - tests/archival_upload_test.py
