@@ -131,30 +131,7 @@ class RaftAvailabilityTest(RedpandaTest):
         """
         :returns: 2 tuple of (leader, [replica ids])
         """
-        kc = KafkaCat(self.redpanda)
-
-        topic_meta = None
-        all_metadata = kc.metadata()
-        for t in all_metadata['topics']:
-            if t['topic'] != self.topic:
-                self.logger.warning(f"Unexpected topic {t['topic']}")
-            else:
-                topic_meta = t
-                break
-
-        if topic_meta is None:
-            self.logger.error(f"Topic {self.topic} not found!")
-            self.logger.error(
-                f"KafkaCat metadata: {json.dumps(all_metadata,indent=2)}")
-            assert topic_meta is not None
-
-        partition = topic_meta['partitions'][0]
-        leader_id = partition['leader']
-        replicas = [p['id'] for p in partition['replicas']]
-        if leader_id == -1:
-            return None, replicas
-        else:
-            return leader_id, replicas
+        return KafkaCat(self.redpanda).get_partition_leader(self.topic, 0)
 
     def _wait_for_leader(self, condition=None, timeout=None):
         if timeout is None:
