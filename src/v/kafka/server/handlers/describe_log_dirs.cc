@@ -97,7 +97,7 @@ ss::future<response_ptr> describe_log_dirs_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
     describe_log_dirs_request request;
     request.decode(ctx.reader(), ctx.header().version);
-    klog.trace("Handling request {}", request);
+    vlog(klog.trace, "Handling request {}", request);
 
     describe_log_dirs_response response;
 

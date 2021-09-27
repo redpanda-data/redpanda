@@ -306,7 +306,7 @@ ss::future<response_ptr> describe_configs_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
     describe_configs_request request;
     request.decode(ctx.reader(), ctx.header().version);
-    klog.trace("Handling request {}", request);
+    vlog(klog.trace, "Handling request {}", request);
 
     describe_configs_response response;
     response.data.results.reserve(request.data.resources.size());

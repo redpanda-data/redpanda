@@ -27,6 +27,7 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::notification_wait_timeout:
         return error_code::request_timed_out;
     case cluster::errc::not_leader_controller:
+    case cluster::errc::no_leader_controller:
         return error_code::not_controller;
     case cluster::errc::topic_already_exists:
         return error_code::topic_already_exists;
@@ -36,9 +37,36 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
         return error_code::request_timed_out;
     case cluster::errc::invalid_topic_name:
         return error_code::invalid_topic_exception;
-    default:
-        return error_code::unknown_server_error;
+    case cluster::errc::replication_error:
+    case cluster::errc::shutting_down:
+    case cluster::errc::join_request_dispatch_error:
+    case cluster::errc::seed_servers_exhausted:
+    case cluster::errc::auto_create_topics_exception:
+    case cluster::errc::partition_not_exists:
+    case cluster::errc::not_leader:
+    case cluster::errc::partition_already_exists:
+    case cluster::errc::waiting_for_recovery:
+    case cluster::errc::update_in_progress:
+    case cluster::errc::user_exists:
+    case cluster::errc::user_does_not_exist:
+    case cluster::errc::invalid_producer_epoch:
+    case cluster::errc::sequence_out_of_order:
+    case cluster::errc::generic_tx_error:
+    case cluster::errc::node_does_not_exists:
+    case cluster::errc::invalid_node_operation:
+    case cluster::errc::invalid_configuration_update:
+    case cluster::errc::topic_operation_error:
+    case cluster::errc::no_eligible_allocation_nodes:
+    case cluster::errc::allocation_error:
+    case cluster::errc::partition_configuration_revision_not_updated:
+    case cluster::errc::partition_configuration_in_joint_mode:
+    case cluster::errc::partition_configuration_leader_config_not_committed:
+    case cluster::errc::partition_configuration_differs:
+    case cluster::errc::data_policy_already_exists:
+    case cluster::errc::data_policy_not_exists:
+        break;
     }
+    return error_code::unknown_server_error;
 }
 
 } // namespace kafka

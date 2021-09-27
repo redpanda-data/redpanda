@@ -60,7 +60,7 @@ ss::future<response_ptr> delete_acls_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
     delete_acls_request request;
     request.decode(ctx.reader(), ctx.header().version);
-    klog.trace("Handling request {}", request);
+    vlog(klog.trace, "Handling request {}", request);
 
     if (!ctx.authorized(
           security::acl_operation::alter, security::default_cluster_name)) {

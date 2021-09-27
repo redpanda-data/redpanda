@@ -56,7 +56,7 @@ void group_stm::commit(model::producer_identity pid) {
     auto prepared_it = _prepared_txs.find(pid.get_id());
     if (prepared_it == _prepared_txs.end()) {
         // missing prepare may happen when the consumer log gets truncated
-        klog.trace("can't find ongoing tx {}", pid);
+        vlog(klog.trace, "can't find ongoing tx {}", pid);
         return;
     } else if (prepared_it->second.pid.epoch != pid.epoch) {
         klog.warn(
