@@ -28,6 +28,7 @@
 #include "storage/segment_utils.h"
 #include "storage/types.h"
 #include "storage/version.h"
+#include "utils/gate_guard.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -88,8 +89,10 @@ ss::future<> disk_log_impl::remove() {
         permanent_delete.emplace_back(
           remove_segment_permanently(s, "disk_log_impl::remove()"));
     }
+    // wait for compaction to finish
+    co_await _compaction_gate.close();
 
-    return _readers_cache->stop().then(
+    co_await _readers_cache->stop().then(
       [this, permanent_delete = std::move(permanent_delete)]() mutable {
           // wait for all futures
           return ss::when_all_succeed(
@@ -112,7 +115,10 @@ ss::future<> disk_log_impl::close() {
       && !_eviction_monitor->promise.get_future().available()) {
         _eviction_monitor->promise.set_exception(segment_closed_exception());
     }
-    return _readers_cache->stop().then([this] {
+    // wait for compaction to finish
+    co_await _compaction_gate.close();
+
+    co_await _readers_cache->stop().then([this] {
         return ss::parallel_for_each(_segs, [](ss::lw_shared_ptr<segment>& h) {
             return h->close().handle_exception([h](std::exception_ptr e) {
                 vlog(stlog.error, "Error closing segment:{} - {}", e, h);
@@ -538,6 +544,7 @@ disk_log_impl::apply_overrides(compaction_config defaults) const {
 }
 
 ss::future<> disk_log_impl::compact(compaction_config cfg) {
+    return ss::try_with_gate(_compaction_gate,[this, cfg] () mutable {
     vlog(
       gclog.trace,
       "[{}] houskeeping with configuration from manager: {}",
@@ -562,6 +569,7 @@ ss::future<> disk_log_impl::compact(compaction_config cfg) {
     }
     return f.then(
       [this] { _probe.set_compaction_ratio(_compaction_ratio.get()); });
+    });
 }
 
 ss::future<> disk_log_impl::gc(compaction_config cfg) {
