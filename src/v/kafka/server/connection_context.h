@@ -45,8 +45,8 @@ public:
       , _sasl(std::move(sasl))
       // tests may build a context without a live connection
       , _client_addr(_rs.conn ? _rs.conn->addr.addr() : ss::net::inet_address{})
-      , _client_port(_rs.conn ? _rs.conn->addr.port() : 0)
-      , _enable_authorizer(enable_authorizer) {}
+      , _enable_authorizer(enable_authorizer)
+      , _authlog(_client_addr, client_port()) {}
 
     ~connection_context() noexcept = default;
     connection_context(const connection_context&) = delete;
@@ -66,17 +66,32 @@ public:
         auto user = sasl().principal();
         security::acl_principal principal(
           security::principal_type::user, std::move(user));
-        return _proto.authorizer().authorized(
+
+        bool authorized = _proto.authorizer().authorized(
           name,
           operation,
           std::move(principal),
           security::acl_host(_client_addr));
+
+        if (!authorized) {
+            vlog(
+              _authlog.info,
+              "proto: {}, sasl state: {}, acl op: {}, resource: {}",
+              _proto.name(),
+              security::sasl_state_to_str(_sasl.state()),
+              operation,
+              name);
+        }
+
+        return authorized;
     }
 
     ss::future<> process_one_request();
     bool is_finished_parsing() const;
     ss::net::inet_address client_host() const { return _client_addr; }
-    uint16_t client_port() const { return _client_port; }
+    uint16_t client_port() const {
+        return _rs.conn ? _rs.conn->addr.port() : 0;
+    }
 
 private:
     // used to track number of pending requests
@@ -122,6 +137,56 @@ private:
     using sequence_id = named_type<uint64_t, struct kafka_protocol_sequence>;
     using map_t = absl::flat_hash_map<sequence_id, response_ptr>;
 
+    class ctx_log {
+    public:
+        ctx_log(const ss::net::inet_address& addr, uint16_t port)
+          : _client_addr(addr)
+          , _client_port(port) {}
+
+        template<typename... Args>
+        void error(const char* format, Args&&... args) {
+            log(ss::log_level::error, format, std::forward<Args>(args)...);
+        }
+        template<typename... Args>
+        void warn(const char* format, Args&&... args) {
+            log(ss::log_level::warn, format, std::forward<Args>(args)...);
+        }
+
+        template<typename... Args>
+        void info(const char* format, Args&&... args) {
+            log(ss::log_level::info, format, std::forward<Args>(args)...);
+        }
+
+        template<typename... Args>
+        void debug(const char* format, Args&&... args) {
+            log(ss::log_level::debug, format, std::forward<Args>(args)...);
+        }
+
+        template<typename... Args>
+        void trace(const char* format, Args&&... args) {
+            log(ss::log_level::trace, format, std::forward<Args>(args)...);
+        }
+
+        template<typename... Args>
+        void log(ss::log_level lvl, const char* format, Args&&... args) {
+            if (klog.is_enabled(lvl)) {
+                auto line_fmt = ss::sstring("{}:{} failed authorization - ")
+                                + format;
+                klog.log(
+                  lvl,
+                  line_fmt.c_str(),
+                  _client_addr,
+                  _client_port,
+                  std::forward<Args>(args)...);
+            }
+        }
+
+    private:
+        // connection_context owns the original client_addr
+        const ss::net::inet_address& _client_addr;
+        uint16_t _client_port;
+    };
+
     protocol& _proto;
     rpc::server::resources _rs;
     sequence_id _next_response;
@@ -129,8 +194,8 @@ private:
     map_t _responses;
     security::sasl_server _sasl;
     const ss::net::inet_address _client_addr;
-    const uint16_t _client_port{0};
     const bool _enable_authorizer;
+    ctx_log _authlog;
 };
 
 } // namespace kafka
