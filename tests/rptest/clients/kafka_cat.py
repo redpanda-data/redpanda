@@ -46,3 +46,29 @@ class KafkaCat:
                     "kcat retrying after exit code {}: {}".format(
                         e.returncode, e.output))
                 time.sleep(2)
+
+    def get_partition_leader(self, topic, partition):
+        """
+        :param topic: string, topic name
+        :param partition: integer
+        :return: 2-tuple of (leader id or None, list of replica broker IDs)
+        """
+        topic_meta = None
+        all_metadata = self.metadata()
+        for t in all_metadata['topics']:
+            if t['topic'] == topic:
+                topic_meta = t
+                break
+
+        # Raise AssertionError if user queried a topic that does not exist
+        assert topic_meta is not None
+
+        # Raise IndexError if user queried a partition that does not exist
+        partition = topic_meta['partitions'][partition]
+
+        leader_id = partition['leader']
+        replicas = [p['id'] for p in partition['replicas']]
+        if leader_id == -1:
+            return None, replicas
+        else:
+            return leader_id, replicas
