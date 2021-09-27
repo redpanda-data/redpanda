@@ -12,6 +12,7 @@ from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool
 from rptest.services.rpk_consumer import RpkConsumer
+from ducktape.mark.resource import cluster
 
 import threading
 import random
