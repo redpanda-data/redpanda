@@ -238,6 +238,27 @@ public:
           storage::debug_sanitize_files::yes);
     }
 
+    ss::future<> wait_for_topics(std::vector<cluster::topic_result> results) {
+        return tests::cooperative_spin_wait_with_timeout(
+          2s, [this, results = std::move(results)] {
+              return std::all_of(
+                results.begin(),
+                results.end(),
+                [this](const cluster::topic_result& r) {
+                    auto md = app.metadata_cache.local().get_topic_metadata(
+                      r.tp_ns);
+                    return md
+                           && std::all_of(
+                             md->partitions.begin(),
+                             md->partitions.end(),
+                             [this, &r](const model::partition_metadata& p) {
+                                 return app.shard_table.local().shard_for(
+                                   model::ntp(r.tp_ns.ns, r.tp_ns.tp, p.id));
+                             });
+                });
+          });
+    }
+
     ss::future<>
     add_topic(model::topic_namespace_view tp_ns, int partitions = 1) {
         std::vector<cluster::topic_configuration> cfgs{
@@ -246,26 +267,19 @@ public:
           .local()
           .create_topics(std::move(cfgs), model::no_timeout)
           .then([this](std::vector<cluster::topic_result> results) {
-              return tests::cooperative_spin_wait_with_timeout(
-                2s, [this, results = std::move(results)] {
-                    return std::all_of(
-                      results.begin(),
-                      results.end(),
-                      [this](const cluster::topic_result& r) {
-                          auto md = app.metadata_cache.local()
-                                      .get_topic_metadata(r.tp_ns);
-                          return md
-                                 && std::all_of(
-                                   md->partitions.begin(),
-                                   md->partitions.end(),
-                                   [this,
-                                    &r](const model::partition_metadata& p) {
-                                       return app.shard_table.local().shard_for(
-                                         model::ntp(
-                                           r.tp_ns.ns, r.tp_ns.tp, p.id));
-                                   });
-                      });
-                });
+              return wait_for_topics(std::move(results));
+          });
+    }
+
+    ss::future<> add_non_replicable_topic(
+      model::topic_namespace tp_ns_src, model::topic_namespace tp_ns) {
+        cluster::non_replicable_topic nrt{
+          .source = std::move(tp_ns_src), .name = std::move(tp_ns)};
+        return app.controller->get_topics_frontend()
+          .local()
+          .create_non_replicable_topics({std::move(nrt)}, model::no_timeout)
+          .then([this](std::vector<cluster::topic_result> results) {
+              return wait_for_topics(std::move(results));
           });
     }
 

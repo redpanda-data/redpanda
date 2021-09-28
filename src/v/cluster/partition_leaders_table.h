@@ -11,10 +11,13 @@
 
 #pragma once
 
+#include "cluster/fwd.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "utils/concepts-enabled.h"
 #include "utils/expiring_promise.h"
+
+#include <seastar/core/sharded.hh>
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
@@ -28,7 +31,7 @@ namespace cluster {
 /// received by cluster::metadata_dissemination_service.
 class partition_leaders_table {
 public:
-    partition_leaders_table() = default;
+    explicit partition_leaders_table(ss::sharded<topic_table>&);
 
     ss::future<> stop();
 
@@ -141,6 +144,8 @@ private:
       absl::node_hash_map<int32_t, expiring_promise<model::node_id>>>;
 
     promises_t _leader_promises;
+
+    ss::sharded<topic_table>& _topic_table;
 };
 
 } // namespace cluster

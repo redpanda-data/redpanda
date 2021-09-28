@@ -37,6 +37,35 @@ topic_table::transform_topics(Func&& f) const {
     return ret;
 }
 
+topic_table::topic_metadata::topic_metadata(
+  topic_configuration_assignment c, model::revision_id rid) noexcept
+  : configuration(std::move(c))
+  , _id_or_topic(rid) {}
+
+topic_table::topic_metadata::topic_metadata(
+  topic_configuration_assignment c, model::topic st) noexcept
+  : configuration(std::move(c))
+  , _id_or_topic(std::move(st)) {}
+
+bool topic_table::topic_metadata::is_topic_replicable() const {
+    return std::holds_alternative<model::topic>(_id_or_topic);
+}
+model::revision_id topic_table::topic_metadata::get_revision() const {
+    vassert(
+      !is_topic_replicable(), "Query for revision_id on a replicable topic");
+    return std::get<model::revision_id>(_id_or_topic);
+}
+const model::topic& topic_table::topic_metadata::get_source_topic() const {
+    vassert(is_topic_replicable(), "Query for source_topic on a normal topic");
+    return std::get<model::topic>(_id_or_topic);
+}
+const topic_configuration_assignment&
+topic_table::topic_metadata::get_configuration() const {
+    vassert(
+      !is_topic_replicable(), "Query for configuration on a replicable topic");
+    return configuration;
+}
+
 ss::future<std::error_code>
 topic_table::apply(create_topic_cmd cmd, model::offset offset) {
     if (_topics.contains(cmd.key)) {
@@ -53,10 +82,7 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
 
     _topics.insert(
       {cmd.key,
-       topic_metadata{
-         .configuration = std::move(cmd.value),
-         .revision = model::revision_id(offset()),
-       }});
+       topic_metadata(std::move(cmd.value), model::revision_id(offset()))});
     notify_waiters();
     return ss::make_ready_future<std::error_code>(errc::success);
 }
@@ -71,6 +97,10 @@ ss::future<> topic_table::stop() {
 ss::future<std::error_code>
 topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
     if (auto tp = _topics.find(cmd.value); tp != _topics.end()) {
+        if (tp->second.is_topic_replicable()) {
+            return ss::make_ready_future<std::error_code>(
+              errc::invalid_delete_topic_request);
+        }
         for (auto& p : tp->second.configuration.assignments) {
             auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, p.id);
             _pending_deltas.emplace_back(
@@ -85,7 +115,7 @@ topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
 ss::future<std::error_code>
 topic_table::apply(create_partition_cmd cmd, model::offset offset) {
     auto tp = _topics.find(cmd.key);
-    if (tp == _topics.end()) {
+    if (tp == _topics.end() || tp->second.is_topic_replicable()) {
         co_return errc::topic_not_exists;
     }
 
@@ -110,7 +140,7 @@ topic_table::apply(create_partition_cmd cmd, model::offset offset) {
 ss::future<std::error_code>
 topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
     auto tp = _topics.find(model::topic_namespace_view(cmd.key));
-    if (tp == _topics.end()) {
+    if (tp == _topics.end() || tp->second.is_topic_replicable()) {
         return ss::make_ready_future<std::error_code>(errc::topic_not_exists);
     }
 
@@ -159,7 +189,7 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
 ss::future<std::error_code>
 topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
     auto tp = _topics.find(model::topic_namespace_view(cmd.key));
-    if (tp == _topics.end()) {
+    if (tp == _topics.end() || tp->second.is_topic_replicable()) {
         return ss::make_ready_future<std::error_code>(errc::topic_not_exists);
     }
 
@@ -240,7 +270,7 @@ void incremental_update(
 ss::future<std::error_code>
 topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     auto tp = _topics.find(cmd.key);
-    if (tp == _topics.end()) {
+    if (tp == _topics.end() || tp->second.is_topic_replicable()) {
         co_return make_error_code(errc::topic_not_exists);
     }
     auto& properties = tp->second.configuration.cfg.properties;
@@ -275,6 +305,37 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
 
     notify_waiters();
 
+    co_return make_error_code(errc::success);
+}
+
+ss::future<std::error_code>
+topic_table::apply(create_non_replicable_topic_cmd cmd, model::offset o) {
+    const model::topic_namespace& source = cmd.key.source;
+    const model::topic_namespace& new_non_rep_topic = cmd.key.name;
+    if (_topics.contains(new_non_rep_topic)) {
+        co_return make_error_code(errc::topic_already_exists);
+    }
+    auto tp = _topics.find(source);
+    if (tp == _topics.end()) {
+        co_return make_error_code(errc::source_topic_not_exists);
+    }
+
+    for (const auto& pas : tp->second.configuration.assignments) {
+        _pending_deltas.emplace_back(
+          model::ntp(new_non_rep_topic.ns, new_non_rep_topic.tp, pas.id),
+          pas,
+          o,
+          delta::op_type::add_non_replicable);
+    }
+
+    auto ca = tp->second.configuration;
+    ca.cfg.tp_ns = new_non_rep_topic;
+    for (auto& assignment : ca.assignments) {
+        assignment.group = raft::group_id(-1);
+    }
+    _topics.insert(
+      {new_non_rep_topic, topic_metadata(std::move(ca), source.tp)});
+    notify_waiters();
     co_return make_error_code(errc::success);
 }
 
@@ -377,7 +438,7 @@ bool topic_table::contains(
 std::optional<cluster::partition_assignment>
 topic_table::get_partition_assignment(const model::ntp& ntp) const {
     auto it = _topics.find(model::topic_namespace_view(ntp));
-    if (it == _topics.end()) {
+    if (it == _topics.end() || it->second.is_topic_replicable()) {
         return {};
     }
 

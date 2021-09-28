@@ -274,7 +274,11 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
      */
     std::optional<model::ntp> ntp;
     for (const auto& topic : _topics.topics_map()) {
-        for (const auto& partition : topic.second.configuration.assignments) {
+        if (topic.second.is_topic_replicable()) {
+            continue;
+        }
+        for (const auto& partition :
+             topic.second.get_configuration().assignments) {
             if (partition.group == transfer->group) {
                 ntp = model::ntp(topic.first.ns, topic.first.tp, partition.id);
                 break;
@@ -394,7 +398,10 @@ leader_balancer::find_leader_shard(const model::ntp& ntp) {
         return std::nullopt;
     }
 
-    for (const auto& partition : config_it->second.configuration.assignments) {
+    // If the inital query was for a non_replicable ntp, the get_leader() call
+    // would have returned its source topic
+    for (const auto& partition :
+         config_it->second.get_configuration().assignments) {
         if (partition.id != ntp.tp.partition) {
             continue;
         }
@@ -426,7 +433,11 @@ leader_balancer::index_type leader_balancer::build_index() {
 
     // for each ntp in the cluster
     for (const auto& topic : _topics.topics_map()) {
-        for (const auto& partition : topic.second.configuration.assignments) {
+        if (topic.second.is_topic_replicable()) {
+            continue;
+        }
+        for (const auto& partition :
+             topic.second.get_configuration().assignments) {
             if (partition.replicas.empty()) {
                 vlog(
                   clusterlog.warn,

@@ -34,9 +34,21 @@ namespace cluster {
 class topic_table {
 public:
     using delta = topic_table_delta;
-    struct topic_metadata {
+    class topic_metadata {
+    public:
+        topic_metadata(
+          topic_configuration_assignment, model::revision_id) noexcept;
+        topic_metadata(topic_configuration_assignment, model::topic) noexcept;
+
+        bool is_topic_replicable() const;
+        model::revision_id get_revision() const;
+        const model::topic& get_source_topic() const;
+        const topic_configuration_assignment& get_configuration() const;
+
+    private:
+        friend class topic_table;
         topic_configuration_assignment configuration;
-        model::revision_id revision;
+        std::variant<model::revision_id, model::topic> _id_or_topic;
     };
     using underlying_t = absl::flat_hash_map<
       model::topic_namespace,
@@ -74,7 +86,8 @@ public:
       move_partition_replicas_cmd,
       finish_moving_partition_replicas_cmd,
       update_topic_properties_cmd,
-      create_partition_cmd>{};
+      create_partition_cmd,
+      create_non_replicable_topic_cmd>{};
 
     /// State machine applies
     ss::future<std::error_code> apply(create_topic_cmd, model::offset);
@@ -86,6 +99,8 @@ public:
     ss::future<std::error_code>
       apply(update_topic_properties_cmd, model::offset);
     ss::future<std::error_code> apply(create_partition_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(create_non_replicable_topic_cmd, model::offset);
     ss::future<> stop();
 
     /// Delta API
