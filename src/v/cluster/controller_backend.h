@@ -89,10 +89,10 @@ private:
       const partition_assignment&,
       const partition_assignment&,
       model::revision_id);
-    ss::future<std::error_code> finish_partition_update(
+    ss::future<> finish_partition_update(
       model::ntp, const partition_assignment&, model::revision_id);
 
-    ss::future<std::error_code>
+    ss::future<>
       process_partition_properties_update(model::ntp, partition_assignment);
 
     ss::future<std::error_code> create_partition(
@@ -104,8 +104,7 @@ private:
       model::ntp, raft::group_id, ss::shard_id, model::revision_id);
     ss::future<>
       remove_from_shard_table(model::ntp, raft::group_id, model::revision_id);
-    ss::future<std::error_code>
-      delete_partition(model::ntp, model::revision_id);
+    ss::future<> delete_partition(model::ntp, model::revision_id);
     ss::future<std::error_code> update_partition_replica_set(
       const model::ntp&,
       const std::vector<model::broker_shard>&,
