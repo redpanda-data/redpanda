@@ -701,6 +701,8 @@ void application::wire_up_redpanda_services() {
           coprocessing,
           config::shard_local_cfg().coproc_supervisor_server(),
           std::ref(storage),
+          std::ref(controller->get_topics_state()),
+          std::ref(shard_table),
           std::ref(controller->get_topics_frontend()),
           std::ref(metadata_cache),
           std::ref(partition_manager));

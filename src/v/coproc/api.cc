@@ -12,8 +12,10 @@
 #include "coproc/api.h"
 
 #include "cluster/non_replicable_topics_frontend.h"
+#include "cluster/shard_table.h"
 #include "coproc/event_listener.h"
 #include "coproc/pacemaker.h"
+#include "coproc/reconciliation_backend.h"
 #include "coproc/script_database.h"
 
 #include <seastar/core/coroutine.hh>
@@ -23,6 +25,8 @@ namespace coproc {
 api::api(
   unresolved_address addr,
   ss::sharded<storage::api>& storage,
+  ss::sharded<cluster::topic_table>& topic_table,
+  ss::sharded<cluster::shard_table>& shard_table,
   ss::sharded<cluster::topics_frontend>& topics_frontend,
   ss::sharded<cluster::metadata_cache>& metadata_cache,
   ss::sharded<cluster::partition_manager>& partition_manager) noexcept
@@ -32,7 +36,9 @@ api::api(
       .mt_frontend = _mt_frontend,
       .topics_frontend = topics_frontend,
       .metadata_cache = metadata_cache,
-      .partition_manager = partition_manager}) {}
+      .partition_manager = partition_manager})
+  , _topics(topic_table)
+  , _shard_table(shard_table) {}
 
 api::~api() = default;
 
@@ -49,6 +55,13 @@ ss::future<> api::start() {
     _listener->register_handler(
       coproc::wasm::event_type::async, _wasm_async_handler.get());
 
+    co_await _backend.start(
+      std::ref(_sdb),
+      std::ref(_rs.storage),
+      std::ref(_topics),
+      std::ref(_shard_table),
+      std::ref(_pacemaker));
+    co_await _backend.invoke_on_all(&coproc::reconciliation_backend::start);
     co_await _listener->start();
 }
 
@@ -57,7 +70,8 @@ ss::future<> api::stop() {
     if (_listener) {
         f = _listener->stop();
     }
-    return f.then([this] { return _pacemaker.stop(); })
+    return f.then([this] { return _backend.stop(); })
+      .then([this] { return _pacemaker.stop(); })
       .then([this] { return _mt_frontend.stop(); })
       .then([this] { return _sdb.stop(); });
 }

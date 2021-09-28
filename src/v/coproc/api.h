@@ -25,6 +25,8 @@ public:
     api(
       unresolved_address,
       ss::sharded<storage::api>&,
+      ss::sharded<cluster::topic_table>&,
+      ss::sharded<cluster::shard_table>&,
       ss::sharded<cluster::topics_frontend>&,
       ss::sharded<cluster::metadata_cache>&,
       ss::sharded<cluster::partition_manager>&) noexcept;
@@ -41,11 +43,14 @@ private:
     unresolved_address _engine_addr;
     sys_refs _rs;
     ss::abort_source _as;
+    ss::sharded<cluster::topic_table>& _topics; /// pass to _backend
 
     ss::sharded<wasm::script_database> _sdb; // one instance
     ss::sharded<pacemaker> _pacemaker;       /// one per core
     ss::sharded<cluster::non_replicable_topics_frontend>
       _mt_frontend; /// one instance
+    ss::sharded<reconciliation_backend> _backend;
+    ss::sharded<cluster::shard_table>& _shard_table;
 
     std::unique_ptr<wasm::script_dispatcher> _dispatcher;
     std::unique_ptr<wasm::event_listener> _listener;
