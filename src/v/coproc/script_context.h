@@ -94,9 +94,6 @@ public:
 private:
     ss::future<> do_execute();
 
-    ss::future<>
-      send_request(supervisor_client_protocol, process_batch_request);
-
     ss::future<> process_reply(process_batch_reply);
     void notify_waiters();
 
@@ -104,6 +101,8 @@ private:
         model::ntp source;
         std::vector<ss::promise<>> ps;
     };
+
+    ss::future<ss::stop_iteration> process_send_write(rpc::transport*);
 
 private:
     /// Killswitch for in-process reads

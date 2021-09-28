@@ -11,6 +11,7 @@
 
 #include "coproc/script_context.h"
 
+#include "coproc/exception.h"
 #include "coproc/logger.h"
 #include "coproc/reference_window_consumer.hpp"
 #include "coproc/script_context_backend.h"
@@ -80,26 +81,7 @@ ss::future<> script_context::do_execute() {
                   return ss::make_ready_future<ss::stop_iteration>(
                     ss::stop_iteration::yes);
               }
-              supervisor_client_protocol client(*transport.value());
-              input_read_args args{
-                .id = _id,
-                .read_sem = _resources.read_sem,
-                .abort_src = _abort_source,
-                .inputs = _routes};
-              return read_from_inputs(args).then(
-                [this, client = std::move(client)](
-                  std::vector<process_batch_request::data> requests) mutable {
-                    if (requests.empty()) {
-                        /// No data to read from all inputs, no need to
-                        /// incessently loop, can exit to yield
-                        return ss::make_ready_future<ss::stop_iteration>(
-                          ss::stop_iteration::yes);
-                    }
-                    /// Send request to wasm engine
-                    process_batch_request req{.reqs = std::move(requests)};
-                    return send_request(std::move(client), std::move(req))
-                      .then([] { return ss::stop_iteration::no; });
-                });
+              return process_send_write(transport.value());
           });
     });
 }
@@ -128,6 +110,50 @@ ss::future<> script_context::remove_output(
     return found->second.ps.back().get_future();
 }
 
+ss::future<ss::stop_iteration>
+script_context::process_send_write(rpc::transport* t) {
+    /// Read batch of data
+    input_read_args args{
+      .id = _id,
+      .read_sem = _resources.read_sem,
+      .abort_src = _abort_source,
+      .inputs = _routes};
+    input_read_results requests;
+    try {
+        requests = co_await read_from_inputs(args);
+    } catch (const partition_shutdown_exception& ex) {
+        _routes.erase(ex.ntp());
+        vlog(
+          coproclog.warn, "Removing partition due to shutdown: {}", ex.ntp());
+    }
+    if (requests.empty()) {
+        co_return ss::stop_iteration::yes;
+    }
+    /// Send request to wasm engine
+    process_batch_request req{.reqs = std::move(requests)};
+    supervisor_client_protocol client(*t);
+    auto response = co_await client.process_batch(
+      std::move(req), rpc::client_opts(rpc::clock_type::now() + 5s));
+    if (!response) {
+        vlog(
+          coproclog.warn,
+          "Error upon attempting to perform RPC to wasm engine, code: {}",
+          response.error());
+        co_return ss::stop_iteration::yes;
+    }
+    /// Finally write response
+    output_write_args oargs{
+      .id = _id,
+      .metadata = _resources.rs.metadata_cache,
+      .frontend = _resources.rs.mt_frontend,
+      .pm = _resources.rs.cp_partition_manager,
+      .inputs = _routes,
+      .denylist = _resources.in_progress_deletes,
+      .locks = _resources.log_mtx};
+    co_await write_materialized(std::move(response.value().data.resps), oargs);
+    co_return ss::stop_iteration::no;
+}
+
 ss::future<> script_context::shutdown() {
     _abort_source.request_abort();
     co_await _gate.close();
@@ -138,33 +164,6 @@ ss::future<> script_context::shutdown() {
               ssx::sformat("Failed to fufill event for partition: {}", ntp)));
         }
     }
-}
-
-ss::future<> script_context::send_request(
-  supervisor_client_protocol client, process_batch_request r) {
-    using reply_t = result<rpc::client_context<process_batch_reply>>;
-    return client
-      .process_batch(
-        std::move(r), rpc::client_opts(rpc::clock_type::now() + 5s))
-      .then([this](reply_t reply) {
-          if (reply) {
-              output_write_args args{
-                .id = _id,
-                .metadata = _resources.rs.metadata_cache,
-                .frontend = _resources.rs.mt_frontend,
-                .pm = _resources.rs.cp_partition_manager,
-                .inputs = _routes,
-                .denylist = _resources.in_progress_deletes,
-                .locks = _resources.log_mtx};
-              return write_materialized(
-                std::move(reply.value().data.resps), args);
-          }
-          vlog(
-            coproclog.warn,
-            "Error upon attempting to perform RPC to wasm engine, code: {}",
-            reply.error());
-          return ss::now();
-      });
 }
 
 bool script_context::is_up_to_date() const {
