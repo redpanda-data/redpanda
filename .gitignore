@@ -230,7 +230,7 @@ tests/docker/build
 vbuild/
 
 /.vtools.yml
-/vtools/
+/vtools
 /Taskfile.yml
 /.dockerignore
 
