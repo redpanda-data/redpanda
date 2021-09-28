@@ -16,6 +16,7 @@
 #include "cluster/topics_frontend.h"
 #include "config/configuration.h"
 #include "coproc/exception.h"
+#include "coproc/fwd.h"
 #include "coproc/ntp_context.h"
 #include "coproc/offset_storage_utils.h"
 #include "coproc/script_context.h"
@@ -63,7 +64,8 @@ public:
      * @param address of coprocessor engine
      * @param reference to the storage layer
      */
-    pacemaker(unresolved_address, sys_refs&);
+    pacemaker(
+      unresolved_address, ss::sharded<wasm::script_database>&, sys_refs&);
 
     /**
      * Begins the offset tracking fiber
@@ -179,6 +181,10 @@ private:
 
     /// Data to be referenced by script_contexts on the current shard
     shared_script_resources _shared_res;
+
+    /// Global script database cache. Only used by pacemaker to remove scripts
+    /// that should be permanently removed, due to a fatal error
+    ss::sharded<wasm::script_database>& _sdb;
 
     /// Main datastructure containing all active script_contexts
     absl::node_hash_map<script_id, std::unique_ptr<script_context>> _scripts;

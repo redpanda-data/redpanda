@@ -45,7 +45,7 @@ api::~api() = default;
 ss::future<> api::start() {
     co_await _sdb.start_single();
     co_await _mt_frontend.start_single(std::ref(_rs.topics_frontend));
-    co_await _pacemaker.start(_engine_addr, std::ref(_rs));
+    co_await _pacemaker.start(_engine_addr, std::ref(_sdb), std::ref(_rs));
     co_await _pacemaker.invoke_on_all(&coproc::pacemaker::start);
     _listener = std::make_unique<wasm::event_listener>(_as);
     _dispatcher = std::make_unique<wasm::script_dispatcher>(

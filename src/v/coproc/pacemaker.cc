@@ -15,6 +15,7 @@
 #include "coproc/logger.h"
 #include "coproc/ntp_context.h"
 #include "coproc/offset_storage_utils.h"
+#include "coproc/script_database.h"
 #include "coproc/types.h"
 #include "model/validation.h"
 #include "rpc/reconnect_transport.h"
@@ -50,11 +51,15 @@ rpc::backoff_policy wasm_transport_backoff() {
     return rpc::make_exponential_backoff_policy<rpc::clock_type>(1s, 10s);
 }
 
-pacemaker::pacemaker(unresolved_address addr, sys_refs& rs)
+pacemaker::pacemaker(
+  unresolved_address addr,
+  ss::sharded<wasm::script_database>& sdb,
+  sys_refs& rs)
   : _shared_res(
     rpc::reconnect_transport(
       wasm_transport_cfg(addr), wasm_transport_backoff()),
-    rs) {
+    rs)
+  , _sdb(sdb) {
     _offs.timer.set_callback([this] {
         (void)ss::with_gate(_gate, [this] {
             return save_offsets(_offs.snap, _ntps).then([this] {
@@ -148,6 +153,8 @@ void pacemaker::install_failure_handler(script_id id) {
         fire_updates(id, errc::success);
         auto found = _scripts.find(id);
         if (found == _scripts.end()) {
+            vlog(
+              coproclog.warn, "Script shutdown before its start method called");
             return ss::now();
         }
         return found->second->start().handle_exception_type(
@@ -163,11 +170,19 @@ void pacemaker::install_failure_handler(script_id id) {
                 "expected: {}",
                 e.get_id(),
                 id);
-              /// TODO: Poses interesting issue, now that there is a script
-              /// database, entry is in the db but not 'running'
-              return container().invoke_on_all([id](pacemaker& p) {
-                  return p.remove_source(id).discard_result();
-              });
+              return container()
+                .invoke_on_all([id](pacemaker& p) {
+                    return p.remove_source(id).discard_result();
+                })
+                .then([this, id]() {
+                    return _sdb.invoke_on(0, [id](wasm::script_database& sdb) {
+                        /// Remove the script from the script_database. Either
+                        /// relaunching it will cause the same issue, or the
+                        /// failure mode was explicity set to not relaunch by
+                        /// client.
+                        sdb.remove_script(id);
+                    });
+                });
           });
     });
 }
