@@ -694,6 +694,11 @@ ss::future<std::error_code> controller_backend::process_partition_update(
             it != _bootstrap_revisions.end()) {
             initial_revision = it->second;
         } else {
+            vlog(
+              clusterlog.trace,
+              "waiting for cross core move information from shard {}, for {}",
+              *previous_shard,
+              ntp);
             // ask previous controller for partition initial revision
             auto x_core_move_req = co_await ask_remote_shard_for_initail_rev(
               ntp, *previous_shard);
@@ -934,7 +939,7 @@ controller_backend::cross_shard_move_request::cross_shard_move_request(
 
 ss::future<std::error_code> controller_backend::shutdown_on_current_shard(
   model::ntp ntp, model::revision_id rev) {
-    vlog(clusterlog.trace, "shutting down partition: {}", ntp);
+    vlog(clusterlog.trace, "cross core move, shutting down partition: {}", ntp);
     auto partition = _partition_manager.local().get(ntp);
     // partition doesn't exists it was deleted
     if (!partition) {
@@ -952,7 +957,7 @@ ss::future<std::error_code> controller_backend::shutdown_on_current_shard(
         auto [it, success] = _cross_shard_requests.emplace(
           ntp,
           cross_shard_move_request(init_rev, partition->group_configuration()));
-
+        vlog(clusterlog.trace, "cross core move, partition {} stopped", ntp);
         vassert(
           success,
           "only one cross shard request is allowed to be pending for single "
