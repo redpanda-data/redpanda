@@ -14,6 +14,7 @@
 #include "config/configuration.h"
 #include "coproc/api.h"
 #include "coproc/logger.h"
+#include "coproc/pacemaker.h"
 #include "coproc/tests/utils/event_publisher_utils.h"
 #include "coproc/tests/utils/kafka_publish_consumer.h"
 #include "kafka/client/client.h"
