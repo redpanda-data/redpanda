@@ -7,11 +7,19 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import random
+import json
 import requests
 from ducktape.utils.util import wait_until
 
 
 class Admin:
+    """
+    Wrapper for Redpanda admin REST API.
+
+    All methods on this class will raise on errors.  For GETs the return
+    value is a decoded dict of the JSON payload, for other requests
+    the successful HTTP response object is returned.
+    """
     def __init__(self, redpanda):
         self.redpanda = redpanda
 
@@ -24,6 +32,29 @@ class Admin:
     def _url(node, path):
         return f"http://{node.account.hostname}:9644/v1/{path}"
 
+    def _request(self, verb, path, node=None, **kwargs):
+        if node is None:
+            node = self.redpanda.controller()
+        r = requests.request(verb, self._url(node, path), **kwargs)
+
+        # Log the response
+        if r.status_code != 200:
+            self.redpanda.logger.warn(f"Response {r.status_code}: {r.text}")
+        else:
+            if 'application/json' in r.headers.get('Content-Type') and len(
+                    r.text):
+                try:
+                    self.redpanda.logger.debug(
+                        f"Response OK, JSON: {r.json()}")
+                except json.decoder.JSONDecodeError as e:
+                    self.redpanda.logger.debug(
+                        f"Response OK, Malformed JSON: '{r.text}' ({e})")
+            else:
+                self.redpanda.logger.debug("Response OK")
+
+        r.raise_for_status()
+        return r
+
     def set_log_level(self, name, level, expires=None):
         """
         Set broker log level
@@ -32,30 +63,21 @@ class Admin:
             path = f"config/log_level/{name}?level={level}"
             if expires:
                 path = f"{path}&expires={expires}"
-            url = self._url(node, path)
-            ret = requests.put(url)
-            self.redpanda.logger.debug(ret)
+            self._request('put', path, node=node)
 
     def get_brokers(self, node=None):
         """
         Return metadata about brokers.
         """
-        node = node or self.redpanda.controller()
-        url = self._url(node, f"brokers")
-        ret = requests.get(url).json()
-        self.redpanda.logger.debug(ret)
-        return ret
+        return self._request('get', "brokers", node=node).json()
 
     def decommission_broker(self, id, node=None):
         """
         Decommission broker
         """
-        node = node or self.redpanda.controller()
-        url = self._url(node, f"brokers/{id}/decommission")
-        self.redpanda.logger.debug(f"decommissioning URL: {url}")
-        ret = requests.put(url)
-        self.redpanda.logger.debug(f"decommissioning response: {ret}")
-        return ret
+        path = f"brokers/{id}/decommission"
+        self.redpanda.logger.debug(f"decommissioning {path}")
+        return self._request('put', path, node=node)
 
     def get_partitions(self,
                        topic=None,
@@ -71,11 +93,10 @@ class Admin:
                 (topic is not None and partition is not None)
         assert topic or namespace is None
         namespace = namespace or "kafka"
-        node = node or self.redpanda.controller()
-        url = self._url(node, f"partitions")
+        path = "partitions"
         if topic:
-            url = f"{url}/{namespace}/{topic}/{partition}"
-        return requests.get(url).json()
+            path = f"{path}/{namespace}/{topic}/{partition}"
+        return self._request('get', path, node=node).json()
 
     def set_partition_replicas(self,
                                topic,
@@ -87,21 +108,17 @@ class Admin:
         """
         [ {"node_id": 0, "core": 1}, ... ]
         """
-        node = node or self.redpanda.controller()
-        url = self._url(
-            node, f"partitions/{namespace}/{topic}/{partition}/replicas")
-        ret = requests.post(url, json=replicas)
-        self.redpanda.logger.debug(ret)
-        return ret
+        path = f"partitions/{namespace}/{topic}/{partition}/replicas"
+        return self._request('post', path, node=node, json=replicas)
 
     def create_user(self, username, password, algorithm):
         self.redpanda.logger.info(
             f"Creating user {username}:{password}:{algorithm}")
 
-        path = f"v1/security/users"
+        path = f"security/users"
 
         def handle(node):
-            url = f"http://{node.account.hostname}:9644/{path}"
+            url = self._url(node, path)
             data = dict(
                 username=username,
                 password=password,
@@ -111,21 +128,21 @@ class Admin:
             self.redpanda.logger.debug(f"{reply.status_code} {reply.text}")
             return reply.status_code == 200
 
-        self._send_request(handle)
+        self._request_to_any(handle)
 
     def delete_user(self, username):
         self.redpanda.logger.info(f"Deleting user {username}")
 
-        path = f"v1/security/users/{username}"
+        path = f"security/users/{username}"
 
         def handle(node):
-            url = f"http://{node.account.hostname}:9644/{path}"
+            url = self._url(node, path)
             reply = requests.delete(url)
             return reply.status_code == 200
 
-        self._send_request(handle)
+        self._request_to_any(handle)
 
-    def _send_request(self, handler):
+    def _request_to_any(self, handler):
         def try_send():
             nodes = [n for n in self.redpanda.started_nodes()]
             random.shuffle(nodes)

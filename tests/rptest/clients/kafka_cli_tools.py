@@ -78,7 +78,7 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
         args = ['--alter']
         args += ["--topic", topic]
         args += ["--partitions", f"{partitions}"]
-        return self._run_strict("kafka-topics.sh", args)
+        return self._run("kafka-topics.sh", args)
 
     def delete_topic(self, topic):
         self._redpanda.logger.debug("Deleting topic: %s", topic)
@@ -173,7 +173,7 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
 
     def list_acls(self):
         args = ["--list"]
-        return self._run_strict("kafka-acls.sh", args)
+        return self._run("kafka-acls.sh", args)
 
     def create_cluster_acls(self, username, op):
         """
@@ -182,20 +182,23 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
         args = ["--add"]
         args += ["--allow-principal", f"User:{username}"]
         args += ["--operation", op, "--cluster"]
-        return self._run_strict("kafka-acls.sh", args)
+        return self._run("kafka-acls.sh", args)
 
-    def _run_strict(self, script, args):
-        """
-        A sticter version of run. TODO: the two should be merged but will
-        require looking at all the users
-        """
+    def _run(self, script, args):
         cmd = [self._script(script)]
         cmd += ["--bootstrap-server", self._redpanda.brokers()]
         if self._command_config:
             cmd += ["--command-config", self._command_config.name]
         cmd += args
-        self._redpanda.logger.debug("Executing command: %s", cmd)
+        return self._execute(cmd)
 
+    def _execute(self, cmd):
+        """
+
+        :param cmd: list of strings
+        :return: stdout on success (raise on failure)
+        """
+        self._redpanda.logger.debug("Executing command: %s", cmd)
         try:
             res = subprocess.check_output(cmd,
                                           stderr=subprocess.STDOUT,
@@ -210,26 +213,6 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
             if "ClusterAuthorizationException: Cluster authorization failed" in e.output:
                 raise ClusterAuthorizationError(e.output)
             raise
-
-    def _run(self, script, args):
-        cmd = [self._script(script)]
-        cmd += ["--bootstrap-server", self._redpanda.brokers()]
-        if self._command_config:
-            cmd += ["--command-config", self._command_config.name]
-        cmd += args
-        return self._execute(cmd)
-
-    def _execute(self, cmd):
-        self._redpanda.logger.debug("Executing command: %s", cmd)
-        try:
-            res = subprocess.check_output(cmd,
-                                          stderr=subprocess.STDOUT,
-                                          text=True)
-            self._redpanda.logger.debug(res)
-            return res
-        except subprocess.CalledProcessError as e:
-            self._redpanda.logger.debug("Error (%d) executing command: %s",
-                                        e.returncode, e.output)
 
     def _script(self, script):
         version = self._version or KafkaCliTools.VERSIONS[0]

@@ -9,6 +9,7 @@
 
 import random
 import time
+import requests
 
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
@@ -139,7 +140,6 @@ class PartitionMovementTest(EndToEndTest):
             f"new assignments for {topic}-{partition}: {assignments}")
 
         r = admin.set_partition_replicas(topic, partition, assignments)
-        r.raise_for_status()
 
         def status_done():
             info = admin.get_partitions(topic, partition)
@@ -198,7 +198,6 @@ class PartitionMovementTest(EndToEndTest):
             f"new assignments for {topic}-{partition}: {assignments}")
 
         r = admin.set_partition_replicas(topic, partition, assignments)
-        r.raise_for_status()  # Expect success
 
         def status_done():
             info = admin.get_partitions(topic, partition)
@@ -354,13 +353,21 @@ class PartitionMovementTest(EndToEndTest):
 
         # A valid node but an invalid core
         assignments = [{"node_id": valid_dest, "core": invalid_shard}]
-        r = admin.set_partition_replicas(topic, partition, assignments)
-        assert r.status_code == 400
+        try:
+            r = admin.set_partition_replicas(topic, partition, assignments)
+        except requests.exceptions.HTTPError as e:
+            assert e.response.status_code == 400
+        else:
+            raise RuntimeError(f"Expected 400 but got {r.status_code}")
 
         # An invalid node but a valid core
         assignments = [{"node_id": invalid_dest, "core": 0}]
-        r = admin.set_partition_replicas(topic, partition, assignments)
-        assert r.status_code == 400
+        try:
+            r = admin.set_partition_replicas(topic, partition, assignments)
+        except requests.exceptions.HTTPError as e:
+            assert e.response.status_code == 400
+        else:
+            raise RuntimeError(f"Expected 400 but got {r.status_code}")
 
         # Finally a valid move
         assignments = [{"node_id": valid_dest, "core": 0}]

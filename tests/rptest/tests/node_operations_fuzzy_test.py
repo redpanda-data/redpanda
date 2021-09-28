@@ -135,7 +135,6 @@ class NodeOperationFuzzyTest(EndToEndTest):
             self.logger.info(f"decommissioning node: {node_id}")
             admin = Admin(self.redpanda)
             r = admin.decommission_broker(id=node_id)
-            r.raise_for_status()
 
             def node_removed():
                 admin = Admin(self.redpanda)
