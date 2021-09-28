@@ -29,6 +29,8 @@ Redpanda是用于任务关键型工作负载的现代[流媒体平台](/blog/int
 
 ```bash
 docker run -d --pull=always --name=redpanda-1 --rm \
+-p 8081:8081 \
+-p 8082:8082 \
 -p 9092:9092 \
 -p 9644:9644 \
 docker.vectorized.io/vectorized/redpanda:latest \
@@ -71,68 +73,57 @@ docker run -d \
 --name=redpanda-1 \
 --hostname=redpanda-1 \
 --net=redpandanet \
--p 8082:8082 \
--p 8081:8081 \
--p 9092:9092 \
+-p 18081:18081 \
+-p 18082:18082 \
+-p 19092:19092 \
 -p 9644:9644 \
+-e NODE_ID=0 \
+-e ENABLE_DEFAULT_LISTENERS=true \
 -v "redpanda1:/var/lib/redpanda/data" \
 docker.vectorized.io/vectorized/redpanda redpanda start \
 --smp 1  \
 --memory 1G  \
 --reserve-memory 0M \
 --overprovisioned \
---node-id 0 \
---check=false \
---pandaproxy-addr 0.0.0.0:8082 \
---advertise-pandaproxy-addr 127.0.0.1:8082 \
---kafka-addr 0.0.0.0:9092 \
---advertise-kafka-addr 127.0.0.1:9092 \
---rpc-addr 0.0.0.0:33145 \
---advertise-rpc-addr redpanda-1:33145 &&
+--check=false &&
 
 docker run -d \
 --pull=always \
 --name=redpanda-2 \
 --hostname=redpanda-2 \
 --net=redpandanet \
--p 9093:9093 \
+-p 28081:28081 \
+-p 28082:28082 \
+-p 29092:29092 \
 -v "redpanda2:/var/lib/redpanda/data" \
+-e NODE_ID=1 \
+-e ENABLE_DEFAULT_LISTENERS=true \
 docker.vectorized.io/vectorized/redpanda redpanda start \
 --smp 1  \
 --memory 1G  \
 --reserve-memory 0M \
 --overprovisioned \
---node-id 1 \
 --seeds "redpanda-1:33145" \
---check=false \
---pandaproxy-addr 0.0.0.0:8083 \
---advertise-pandaproxy-addr 127.0.0.1:8083 \
---kafka-addr 0.0.0.0:9093 \
---advertise-kafka-addr 127.0.0.1:9093 \
---rpc-addr 0.0.0.0:33146 \
---advertise-rpc-addr redpanda-2:33146 &&
+--check=false &&
 
 docker run -d \
 --pull=always \
 --name=redpanda-3 \
 --hostname=redpanda-3 \
 --net=redpandanet \
--p 9094:9094 \
+-p 38081:38081 \
+-p 38082:38082 \
+-p 39092:39092 \
 -v "redpanda3:/var/lib/redpanda/data" \
+-e NODE_ID=2 \
+-e ENABLE_DEFAULT_LISTENERS=true \
 docker.vectorized.io/vectorized/redpanda redpanda start \
 --smp 1  \
 --memory 1G  \
 --reserve-memory 0M \
 --overprovisioned \
---node-id 2 \
 --seeds "redpanda-1:33145" \
---check=false \
---pandaproxy-addr 0.0.0.0:8084 \
---advertise-pandaproxy-addr 127.0.0.1:8084 \
---kafka-addr 0.0.0.0:9094 \
---advertise-kafka-addr 127.0.0.1:9094 \
---rpc-addr 0.0.0.0:33147 \
---advertise-rpc-addr redpanda-3:33147
+--check=false
 ```
 
 现在，您可以在其中一个容器上运行`rpk`以与cluster进行交互：
@@ -219,9 +210,9 @@ status命令的输出如下所示：
     docker exec -it redpanda-1 \
     rpk topic consume twitch_chat --brokers=localhost:9092
     ```
-    
+
     每条消息都带有其metadata，如下所示：
-    
+
     ```bash
     {
     "message": "How do you stream with Redpanda?\n",
