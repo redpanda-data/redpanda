@@ -228,14 +228,8 @@ ss::future<std::error_code> mux_state_machine<T...>::replicate_and_wait(
                       insterted,
                       "Prosmise for offset {} already registered",
                       last_offset);
-                    return it->second
-                      .get_future_with_timeout(
-                        timeout, [] { return errc::timeout; }, as)
-                      .then_wrapped(
-                        [this, last_offset](ss::future<std::error_code> ec) {
-                            _promises.erase(last_offset);
-                            return ec;
-                        });
+                    return it->second.get_future_with_timeout(
+                      timeout, [] { return errc::timeout; }, as);
                 });
           });
       });
@@ -289,6 +283,7 @@ ss::future<> mux_state_machine<T...>::apply(model::record_batch b) {
                 if (auto it = _promises.find(last_offset);
                     it != _promises.end()) {
                     it->second.set_value(ec);
+                    _promises.erase(it);
                 }
                 if (
                   _persist_last_applied
