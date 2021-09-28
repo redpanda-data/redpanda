@@ -41,6 +41,7 @@
 #include <seastar/util/later.hh>
 
 #include <absl/container/flat_hash_set.h>
+#include <absl/container/node_hash_map.h>
 
 #include <algorithm>
 #include <exception>
@@ -575,6 +576,28 @@ bool are_assignments_equal(
     return are_replica_sets_equal(requested.replicas, previous.replicas);
 }
 
+model::node_id first_with_assignment_change(
+  const partition_assignment& requested, const partition_assignment& previous) {
+    absl::node_hash_map<model::node_id, model::broker_shard> prev_map;
+    prev_map.reserve(previous.replicas.size());
+    for (auto& replica : previous.replicas) {
+        prev_map.emplace(replica.node_id, replica);
+    }
+
+    auto it = std::find_if(
+      requested.replicas.begin(),
+      requested.replicas.end(),
+      [&](const model::broker_shard& bs) {
+          auto it = prev_map.find(bs.node_id);
+          return it == prev_map.end() || it->second != bs;
+      });
+    // there are no changed assignements
+    if (it == requested.replicas.end()) {
+        return requested.replicas.begin()->node_id;
+    }
+    return it->node_id;
+}
+
 ss::future<std::error_code> controller_backend::process_partition_update(
   model::ntp ntp,
   const partition_assignment& requested,
@@ -672,7 +695,7 @@ ss::future<std::error_code> controller_backend::process_partition_update(
              * NOTE: deletion is safe as we are already running with new
              * configuration so old replicas are not longer needed.
              */
-            if (requested.replicas.front().node_id == _self) {
+            if (first_with_assignment_change(requested, previous) == _self) {
                 co_return co_await dispatch_update_finished(
                   std::move(ntp), requested);
             }
