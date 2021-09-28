@@ -203,7 +203,7 @@ class ArchivalTest(RedpandaTest):
         self.kafka_tools.produce(self.topic, 10000, 1024)
         validate(self._quick_verify, self.logger, 90)
 
-    @ignore
+    @ignore  # https://github.com/vectorizedio/redpanda/issues/1977
     @cluster(num_nodes=3)
     def test_isolate(self):
         """Verify that our isolate/rejoin facilities actually work"""
