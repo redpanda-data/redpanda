@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_storage/recursive_directory_walker.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -30,7 +31,10 @@ public:
     /// C-tor.
     ///
     /// \param cache_dir is a directory where cached data is stored
-    explicit cache(std::filesystem::path cache_dir) noexcept;
+    cache(
+      std::filesystem::path cache_dir,
+      size_t _max_cache_size,
+      ss::lowres_clock::duration _check_period) noexcept;
 
     ss::future<> start();
     ss::future<> stop();
@@ -47,10 +51,28 @@ public:
     /// Remove element from cache by key
     ss::future<> invalidate(const std::filesystem::path& key);
 
+    // Total cleaned is exposed for better testability of eviction
+    uint64_t get_total_cleaned();
+
 private:
+    /// Triggers directory walker, creates a list of files to delete and deletes
+    /// them until cache size <= _cache_size_low_watermark * max_cache_size
+    ss::future<> clean_up_cache();
+
+    /// Triggers directory walker, creates a list of files to delete and deletes
+    /// only tmp files that are left from previous Red Panda run
+    ss::future<> clean_up_at_start();
+
     std::filesystem::path _cache_dir;
+    size_t _max_cache_size;
+    ss::lowres_clock::duration _check_period;
+
     ss::gate _gate;
     uint64_t _cnt;
+    static constexpr double _cache_size_low_watermark{0.8};
+    ss::timer<ss::lowres_clock> _timer;
+    cloud_storage::recursive_directory_walker _walker;
+    uint64_t _total_cleaned;
 };
 
 } // namespace cloud_storage
