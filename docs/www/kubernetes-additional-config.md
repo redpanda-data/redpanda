@@ -43,6 +43,8 @@ spec:
       port: 33145
     kafkaApi:
     - port: 9092
+    schemaRegistry:
+      port: 8081
     pandaproxyApi:
     - port: 8082
     adminApi:

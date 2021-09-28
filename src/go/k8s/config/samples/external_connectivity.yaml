@@ -24,6 +24,10 @@ spec:
      - port: 8082
      - external:
          enabled: true
+    schemaRegistryApi:
+       port: 8082
+       external:
+         enabled: true
     adminApi:
     - port: 9644
     developerMode: true

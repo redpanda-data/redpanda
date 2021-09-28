@@ -23,6 +23,8 @@ For example:
     - port: 9092
     pandaproxyApi:
     - port: 8082
+    schemaRegistry:
+      port: 8081
     adminApi:
     - port: 9644
 ```
@@ -139,8 +141,12 @@ Let’s enable external connectivity for all supported APIs:
      - port: 8082
      - external:
          enabled: true
+    schemaRegistry:
+      port: 8081
+      external:
+        enabled: true
     adminApi:
-    - port: 9644
+     - port: 9644
      - external:
          enabled: true
 ```
