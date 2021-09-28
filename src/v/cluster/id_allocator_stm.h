@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/fwd.h"
+#include "cluster/persisted_stm.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "raft/errc.h"
@@ -30,12 +31,14 @@ namespace cluster {
 
 // id_allocator is a service to generate cluster-wide unique id (int64)
 
-class id_allocator_stm final : public raft::state_machine {
+class id_allocator_stm final : public persisted_stm {
 public:
     struct stm_allocation_result {
         int64_t id;
         raft::errc raft_status{raft::errc::success};
     };
+
+    explicit id_allocator_stm(ss::logger&, raft::consensus*);
 
     explicit id_allocator_stm(
       ss::logger&, raft::consensus*, config::configuration&);
@@ -44,6 +47,8 @@ public:
     allocate_id(model::timeout_clock::duration timeout);
 
 private:
+    // legacy structs left for backward compatibility with the "old"
+    // on-disk log format
     struct sequence_id {
         model::run_id run_id;
         raft::vnode node_id;
@@ -74,7 +79,52 @@ private:
         int64_t state;
     };
 
-    ss::future<> apply(model::record_batch) final;
+    // /legacy
+
+    bool _should_cache{false};
+    bool _procesing_legacy{true};
+    model::offset _prepare_offset{0};
+    std::vector<allocation_cmd> _cache;
+
+    struct state_cmd {
+        static constexpr uint8_t record_key = 3;
+        int64_t next_state;
+    };
+
+    ss::future<stm_allocation_result>
+      do_allocate_id(model::timeout_clock::duration);
+    ss::future<bool> set_state(int64_t, model::timeout_clock::duration);
+
+    ss::future<> apply(model::record_batch) override;
+
+    ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
+    ss::future<stm_snapshot> take_snapshot() override;
+    ss::future<> handle_eviction() override;
+    ss::future<bool> sync(model::timeout_clock::duration);
+
+    mutex _lock;
+
+    // id_allocator_stm is a state machine generating unique increasing IDs.
+    // When a node becomes a leader it allocates a range of IDs of size
+    // `_batch_size` by saving `state_cmd {_state + _batch_size}` to the log.
+    // The state machine uses `_curr_batch` to track the number of the IDs
+    // left in the range. Each time `allocate_id` is called the state machine
+    // increments `_curr_id` (it is initialy equal to `_state`) and decrements
+    // `_curr_batch`. When the latter reaches zero the state machine allocates
+    // a new batch.
+    //
+    // Unlike the data partitions id_allocator_stm doesn't rely on the eviction
+    // stm and manages log truncations on its own. STM counts the number of
+    // applied `state_cmd` commands and when it (`_processed`) surpasses
+    // `_log_capacity` id_allocator_stm trucates the prefix.
+    int64_t _batch_size;
+    int16_t _log_capacity;
+
+    int64_t _processed{0};
+    model::offset _next_snapshot{-1};
+    int64_t _curr_id{0};
+    int64_t _curr_batch{0};
+    int64_t _state{0};
 };
 
 } // namespace cluster
