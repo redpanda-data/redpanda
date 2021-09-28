@@ -72,7 +72,7 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
             ]
         return self._run("kafka-topics.sh", args)
 
-    def add_topic_partitions(self, topic, partitions):
+    def create_topic_partitions(self, topic, partitions):
         self._redpanda.logger.debug("Adding %d partitions to topic: %s",
                                     partitions, topic)
         args = ['--alter']
