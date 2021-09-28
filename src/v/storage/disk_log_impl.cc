@@ -544,31 +544,31 @@ disk_log_impl::apply_overrides(compaction_config defaults) const {
 }
 
 ss::future<> disk_log_impl::compact(compaction_config cfg) {
-    return ss::try_with_gate(_compaction_gate,[this, cfg] () mutable {
-    vlog(
-      gclog.trace,
-      "[{}] houskeeping with configuration from manager: {}",
-      config().ntp(),
-      cfg);
-    cfg = apply_overrides(cfg);
-    ss::future<> f = ss::now();
-    if (config().is_collectable()) {
-        f = gc(cfg);
-    }
-    if (unlikely(
-          config().has_overrides()
-          && config().get_overrides().cleanup_policy_bitflags
-               == model::cleanup_policy_bitflags::none)) {
-        // prevent *any* collection - used for snapshots
-        // all the internal redpanda logs - i.e.: controller, etc should
-        // have this set
-        f = ss::now();
-    }
-    if (config().is_compacted() && !_segs.empty()) {
-        f = f.then([this, cfg] { return do_compact(cfg); });
-    }
-    return f.then(
-      [this] { _probe.set_compaction_ratio(_compaction_ratio.get()); });
+    return ss::try_with_gate(_compaction_gate, [this, cfg]() mutable {
+        vlog(
+          gclog.trace,
+          "[{}] houskeeping with configuration from manager: {}",
+          config().ntp(),
+          cfg);
+        cfg = apply_overrides(cfg);
+        ss::future<> f = ss::now();
+        if (config().is_collectable()) {
+            f = gc(cfg);
+        }
+        if (unlikely(
+              config().has_overrides()
+              && config().get_overrides().cleanup_policy_bitflags
+                   == model::cleanup_policy_bitflags::none)) {
+            // prevent *any* collection - used for snapshots
+            // all the internal redpanda logs - i.e.: controller, etc should
+            // have this set
+            f = ss::now();
+        }
+        if (config().is_compacted() && !_segs.empty()) {
+            f = f.then([this, cfg] { return do_compact(cfg); });
+        }
+        return f.then(
+          [this] { _probe.set_compaction_ratio(_compaction_ratio.get()); });
     });
 }
 
