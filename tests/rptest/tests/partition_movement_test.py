@@ -439,8 +439,12 @@ class PartitionMovementTest(EndToEndTest):
 
         # Another move should fail
         assert admin.get_partitions(name, 0)['status'] == "in_progress"
-        r = admin.set_partition_replicas(name, 0, old_assignments)
-        assert r.status_code == 400
+        try:
+            r = admin.set_partition_replicas(name, 0, old_assignments)
+        except requests.exceptions.HTTPError as e:
+            assert e.response.status_code == 400
+        else:
+            raise RuntimeError(f"Expected 400 but got {r.status_code}")
 
         # An update to partition properties should succeed
         # (issue https://github.com/vectorizedio/redpanda/issues/2300)
