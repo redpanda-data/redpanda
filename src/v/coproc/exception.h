@@ -31,6 +31,21 @@ private:
     ss::sstring _msg;
 };
 
+/// Not necessarily a fatal error, explicity handle these events as theres no
+/// way to ensure handles to partitions aren't in use before
+/// partition::shutdown() is called
+class partition_shutdown_exception final : public exception {
+public:
+    partition_shutdown_exception(model::ntp ntp, ss::sstring msg) noexcept
+      : exception(std::move(msg))
+      , _ntp(std::move(ntp)) {}
+
+    const model::ntp& ntp() const { return _ntp; }
+
+private:
+    model::ntp _ntp;
+};
+
 /// Root exception type for classes of exceptions that are only thrown by
 /// actions interpreted by coprocessors themselves
 class script_exception : public exception {

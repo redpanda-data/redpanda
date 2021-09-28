@@ -85,12 +85,11 @@ public:
 private:
     ss::future<> do_execute();
 
-    ss::future<>
-      send_request(supervisor_client_protocol, process_batch_request);
-
     ss::future<> process_reply(process_batch_reply);
 
     void process_idle_callbacks();
+
+    ss::future<ss::stop_iteration> process_send_write(rpc::transport*);
 
 private:
     /// Idle state promises

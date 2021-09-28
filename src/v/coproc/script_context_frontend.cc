@@ -12,6 +12,7 @@
 #include "coproc/script_context_frontend.h"
 
 #include "cluster/partition.h"
+#include "coproc/exception.h"
 #include "coproc/logger.h"
 #include "coproc/ntp_context.h"
 #include "coproc/reference_window_consumer.hpp"
@@ -81,20 +82,31 @@ ss::future<std::optional<process_batch_request::data>>
 read_ntp(input_read_args args, ss::lw_shared_ptr<ntp_context> ntp_ctx) {
     storage::log_reader_config cfg = get_reader(
       args.id, args.abort_src, ntp_ctx);
-    auto rbr = co_await ntp_ctx->partition->make_reader(cfg);
-    auto read_result = co_await std::move(rbr).for_each_ref(
-      coproc::reference_window_consumer(
-        high_offset_tracker(), storage::internal::decompress_batch_consumer()),
-      model::no_timeout);
-    auto& [info, nrbr] = read_result;
-    if (info.size == 0) {
-        co_return std::nullopt;
+    try {
+        auto rbr = co_await ntp_ctx->partition->make_reader(cfg);
+        auto read_result = co_await std::move(rbr).for_each_ref(
+          coproc::reference_window_consumer(
+            high_offset_tracker(),
+            storage::internal::decompress_batch_consumer()),
+          model::no_timeout);
+        auto& [info, nrbr] = read_result;
+        if (info.size == 0) {
+            co_return std::nullopt;
+        }
+        ntp_ctx->offsets[args.id].last_read = info.last;
+        co_return process_batch_request::data{
+          .ids = std::vector<script_id>{args.id},
+          .ntp = ntp_ctx->ntp(),
+          .reader = std::move(nrbr)};
+    } catch (const ss::gate_closed_exception&) {
+        throw partition_shutdown_exception(
+          ntp_ctx->ntp(),
+          fmt::format(
+            "Partition {} shutdown while script {} was attempting to read",
+            ntp_ctx->ntp(),
+            args.id));
     }
-    ntp_ctx->offsets[args.id].last_read = info.last;
-    co_return process_batch_request::data{
-      .ids = std::vector<script_id>{args.id},
-      .ntp = ntp_ctx->ntp(),
-      .reader = std::move(nrbr)};
+    co_return std::nullopt;
 }
 
 ss::future<std::vector<process_batch_request::data>>
