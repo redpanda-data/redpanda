@@ -23,6 +23,7 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/semaphore.hh>
+#include <seastar/net/socket_defs.hh>
 #include <seastar/util/log.hh>
 
 #include <fmt/format.h>
@@ -100,6 +101,27 @@ ss::future<> protocol::apply(rpc::server::resources rs) {
     return ss::do_until(
              [ctx] { return ctx->is_finished_parsing(); },
              [ctx] { return ctx->process_one_request(); })
+      .handle_exception([ctx](std::exception_ptr eptr) {
+          if (config::shard_local_cfg().enable_sasl()) {
+              vlog(
+                klog.info,
+                "{}:{} errored, proto: {}, sasl state: {} - {}",
+                ctx->client_host(),
+                ctx->client_port(),
+                ctx->server().name(),
+                security::sasl_state_to_str(ctx->sasl().state()),
+                eptr);
+          } else {
+              vlog(
+                klog.info,
+                "{}:{} errored, proto: {} - {}",
+                ctx->client_host(),
+                ctx->client_port(),
+                ctx->server().name(),
+                eptr);
+          }
+          return ss::make_exception_future(eptr);
+      })
       .finally([ctx] {});
 }
 

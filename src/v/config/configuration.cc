@@ -827,6 +827,25 @@ configuration::configuration()
       "remote storage (sec)",
       required::no,
       std::nullopt)
+  , cloud_storage_cache_directory(
+      *this,
+      "cloud_storage_cache_directory",
+      "Directory for archival cache. Should be present when "
+      "`cloud_storage_enabled` is present",
+      required::no,
+      (data_directory.value().path / "archival_cache").native())
+  , cloud_storage_cache_size(
+      *this,
+      "cloud_storage_cache_size",
+      "Max size of archival cache",
+      required::no,
+      20_GiB)
+  , cloud_storage_cache_check_interval_ms(
+      *this,
+      "cloud_storage_cache_check_interval",
+      "Timeout to check if cache eviction should be triggered",
+      required::no,
+      30s)
   , superusers(
       *this, "superusers", "List of superuser usernames", required::no, {})
   , kafka_qdc_latency_alpha(

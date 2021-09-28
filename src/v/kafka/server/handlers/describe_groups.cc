@@ -27,7 +27,7 @@ ss::future<response_ptr>
 describe_groups_handler::handle(request_context ctx, ss::smp_service_group) {
     describe_groups_request request;
     request.decode(ctx.reader(), ctx.header().version);
-    klog.trace("Handling request {}", request);
+    vlog(klog.trace, "Handling request {}", request);
 
     auto unauthorized_it = std::partition(
       request.data.groups.begin(),

@@ -161,6 +161,10 @@ public:
         return _configurations.lower_bound(o);
     }
 
+    int64_t offset_delta(model::offset) const;
+
+    ss::future<> adjust_configuration_idx(configuration_idx);
+
     friend std::ostream&
     operator<<(std::ostream&, const configuration_manager&);
 

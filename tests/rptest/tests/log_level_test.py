@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 import ducktape.errors
 from ducktape.utils.util import wait_until
+from ducktape.mark.resource import cluster
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
@@ -23,11 +24,14 @@ class LogLevelTest(RedpandaTest):
         admin = Admin(self.redpanda)
         node = self.redpanda.nodes[0]
 
-        # set to warn level. message seen at info
+        # This test assumes the default log level while testing is trace
+        default_log_level = "trace"
+
+        # set to warn level. message seen at trace
         with self.redpanda.monitor_log(node) as mon:
             admin.set_log_level("admin_api_server", "warn")
             mon.wait_until(
-                "Set log level for {admin_api_server}: info -> warn",
+                f"Set log level for {{admin_api_server}}: {default_log_level} -> warn",
                 timeout_sec=5,
                 backoff_sec=1,
                 err_msg="Never saw message")
@@ -56,7 +60,8 @@ class LogLevelTest(RedpandaTest):
 
         with self.redpanda.monitor_log(node) as mon:
             admin.set_log_level("admin_api_server", "debug", expires=5)
-            mon.wait_until("Expiring log level for {admin_api_server} to info",
-                           timeout_sec=10,
-                           backoff_sec=1,
-                           err_msg="Never saw message")
+            mon.wait_until(
+                f"Expiring log level for {{admin_api_server}} to {default_log_level}",
+                timeout_sec=10,
+                backoff_sec=1,
+                err_msg="Never saw message")

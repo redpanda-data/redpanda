@@ -83,7 +83,7 @@ ss::future<response_ptr> txn_offset_commit_handler::handle(
     txn_offset_commit_request request;
     request.decode(ctx.reader(), ctx.header().version);
 
-    klog.trace("Handling request {}", request);
+    vlog(klog.trace, "Handling request {}", request);
 
     txn_offset_commit_ctx octx(std::move(ctx), std::move(request), ssg);
 

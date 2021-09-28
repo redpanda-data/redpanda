@@ -57,7 +57,7 @@ process_result_stages
 offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     offset_commit_request request;
     request.decode(ctx.reader(), ctx.header().version);
-    klog.trace("Handling request {}", request);
+    vlog(klog.trace, "Handling request {}", request);
 
     if (request.data.group_instance_id) {
         return process_result_stages::single_stage(ctx.respond(

@@ -4,6 +4,7 @@ v_cc_library(
   SRCS
     manifest.cc
     remote.cc
+    cache_service.cc
   DEPS
     Seastar::seastar
     v::bytes

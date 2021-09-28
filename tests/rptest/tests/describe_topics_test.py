@@ -10,6 +10,7 @@ import random
 
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
+from ducktape.mark.resource import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 
 from rptest.clients.types import TopicSpec
@@ -20,7 +21,7 @@ class DescribeTopicsTest(RedpandaTest):
     @cluster(num_nodes=3)
     def test_describe_topics(self):
         big = self.scale.ci or self.scale.release
-        num_topics = 100 if big else 2
+        num_topics = 20 if big else 2
 
         topics = [
             TopicSpec(partition_count=random.randint(1, 20),
@@ -41,7 +42,7 @@ class DescribeTopicsTest(RedpandaTest):
                     return False
             # and targetted topic describe
             topics_described = [
-                client.describe_topic(topic) for topic in topics
+                client.describe_topic(topic.name) for topic in topics
             ]
             for meta in zip(topics, topics_described):
                 if meta[0].partition_count != meta[1].partition_count:
