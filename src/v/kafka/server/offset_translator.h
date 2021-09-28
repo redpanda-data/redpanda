@@ -51,22 +51,7 @@ public:
     }
 
 private:
-    int64_t delta(model::offset o) const {
-        auto it = _cfg_mgr.lower_bound(o);
-
-        if (it == _cfg_mgr.begin()) {
-            /**
-             * iterator points to the first configuration with offset greater
-             * than then requsted one. Knowing an index of that configuration we
-             * know that there was exactly (index -1) configurations with offset
-             * lower than the current one. We can simply subtract one from
-             * index.
-             */
-            return std::max<int64_t>(0, it->second.idx() - 1);
-        }
-
-        return std::prev(it)->second.idx();
-    }
+    int64_t delta(model::offset o) const { return _cfg_mgr.offset_delta(o); }
 
     const raft::configuration_manager& _cfg_mgr;
 };
