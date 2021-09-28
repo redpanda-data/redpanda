@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 import tempfile
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ignore
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
@@ -40,6 +40,7 @@ class PrefixTruncateRecoveryTest(RedpandaTest):
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
 
+    @ignore  #  https://github.com/vectorizedio/redpanda/issues/2460
     @cluster(num_node=3)
     @matrix(acks=[-1, 1])
     def test_prefix_truncate_recovery(self, acks):
