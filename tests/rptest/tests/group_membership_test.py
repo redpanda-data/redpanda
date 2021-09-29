@@ -36,7 +36,7 @@ class ListGroupsReplicationFactorTest(RedpandaTest):
                              num_brokers=3,
                              extra_rp_conf=extra_rp_conf)
 
-    @cluster(num_node=3)
+    @cluster(num_nodes=3)
     def test_list_groups(self):
         kcl = KCL(self.redpanda)
         kcl.produce(self.topic, "msg\n")
