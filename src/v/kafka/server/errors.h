@@ -41,6 +41,7 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::replication_error:
     case cluster::errc::shutting_down:
     case cluster::errc::join_request_dispatch_error:
+    case cluster::errc::source_topic_not_exists:
     case cluster::errc::seed_servers_exhausted:
     case cluster::errc::auto_create_topics_exception:
     case cluster::errc::partition_not_exists:
