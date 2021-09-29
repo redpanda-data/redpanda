@@ -114,11 +114,11 @@ push-to-kind: kind-create certmanager-install
 
 # Execute end to end tests
 e2e-tests: kuttl test docker-build docker-build-configurator
-	$(KUTTL) test $(TEST_ONLY_FLAG) $(KUTLL_TEST_FLAGS) --kind-context $(BUILDKITE_JOB_ID)
+	$(KUTTL) test $(TEST_ONLY_FLAG) $(KUTTL_TEST_FLAGS) --kind-context $(BUILDKITE_JOB_ID)
 
 # Execute end to end tests using helm as an installation
 helm-e2e-tests: kuttl test docker-build docker-build-configurator
-	$(KUTTL) test --config kuttl-helm-test.yaml $(TEST_ONLY_FLAG) --kind-context $(BUILDKITE_JOB_ID)-helm
+	$(KUTTL) test --config kuttl-helm-test.yaml $(TEST_ONLY_FLAG) $(KUTTL_TEST_FLAGS) --kind-context $(BUILDKITE_JOB_ID)-helm
 
 # Download controller-gen locally if necessary
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
