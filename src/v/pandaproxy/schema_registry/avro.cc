@@ -29,6 +29,8 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
+#include <string_view>
+
 namespace pandaproxy::schema_registry {
 
 namespace {
@@ -132,19 +134,23 @@ result<void> sanitize(
   rapidjson::GenericValue<rapidjson::UTF8<>>::Array& a,
   rapidjson::MemoryPoolAllocator<>& alloc);
 
-result<void> sanitize_name(
+result<void> sanitize_union_symbol_name(
   rapidjson::GenericValue<rapidjson::UTF8<>>& name,
   rapidjson::MemoryPoolAllocator<>& alloc) {
+    // A name should have the leading dot stripped iff it's the only one
+
     if (!name.IsString() || name.GetStringLength() == 0) {
         return error_info{
           error_code::schema_invalid, "Invalid JSON Field \"name\""};
     }
 
-    auto name_sv = std::string_view{name.GetString(), name.GetStringLength()};
-    name_sv = name_sv.substr(name_sv.find_last_of('.') + 1);
-    if (name_sv.length() != name.GetStringLength()) {
+    std::string_view fullname_sv{name.GetString(), name.GetStringLength()};
+    auto last_dot = fullname_sv.find_last_of('.');
+
+    if (last_dot == 0) {
+        fullname_sv.remove_prefix(1);
         // SetString uses memcpy, take a copy so the range doesn't overlap.
-        auto new_name = ss::sstring{name_sv};
+        auto new_name = ss::sstring{fullname_sv};
         name.SetString(new_name.data(), new_name.length(), alloc);
     }
     return outcome::success();
@@ -212,9 +218,54 @@ result<void> sanitize(
   rapidjson::GenericValue<rapidjson::UTF8<>>::Object& o,
   rapidjson::MemoryPoolAllocator<>& alloc) {
     if (auto it = o.FindMember("name"); it != o.MemberEnd()) {
-        auto res = sanitize_name(it->value, alloc);
-        if (res.has_error()) {
-            return res.assume_error();
+        // A name should have the leading dot stripped iff it's the only one
+        // Otherwise split on the last dot into a name and a namespace
+
+        auto& name = it->value;
+
+        if (!name.IsString() || name.GetStringLength() == 0) {
+            return error_info{
+              error_code::schema_invalid, "Invalid JSON Field \"name\""};
+        }
+
+        std::string_view fullname_sv{name.GetString(), name.GetStringLength()};
+        auto last_dot = fullname_sv.find_last_of('.');
+
+        ss::sstring new_namespace;
+        if (last_dot != std::string::npos) {
+            // Take a copy, fullname_sv will be invalidated when new_name is
+            // set, and SetString uses memcpy, the range musn't overlap.
+            ss::sstring fullname{fullname_sv};
+            fullname_sv = fullname;
+
+            auto new_name{fullname_sv.substr(last_dot + 1)};
+            name.SetString(new_name.data(), new_name.length(), alloc);
+
+            fullname.resize(last_dot);
+            new_namespace = std::move(fullname);
+        }
+
+        if (!new_namespace.empty()) {
+            if (auto it = o.FindMember("namespace"); it != o.MemberEnd()) {
+                if (!it->value.IsString()) {
+                    return error_info{
+                      error_code::schema_invalid,
+                      "Invalid JSON Field \"namespace\""};
+                }
+                std::string_view existing_namespace{
+                  it->value.GetString(), it->value.GetStringLength()};
+                if (existing_namespace != new_namespace) {
+                    return error_info{
+                      error_code::schema_invalid,
+                      "name doesn't match namespace"};
+                }
+            } else {
+                o.AddMember(
+                  rapidjson::Value("namespace", alloc),
+                  rapidjson::Value(
+                    new_namespace.data(), new_namespace.length(), alloc),
+                  alloc);
+            }
         }
     }
 
@@ -236,7 +287,7 @@ result<void> sanitize(
             auto a = t_it->value.GetArray();
             for (auto& m : a) {
                 if (m.IsString()) {
-                    auto res = sanitize_name(m, alloc);
+                    auto res = sanitize_union_symbol_name(m, alloc);
                     if (res.has_error()) {
                         return res.assume_error();
                     }
