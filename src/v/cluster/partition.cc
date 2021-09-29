@@ -39,7 +39,7 @@ partition::partition(
 
     if (is_id_allocator_topic(_raft->ntp())) {
         _id_allocator_stm = ss::make_lw_shared<cluster::id_allocator_stm>(
-          clusterlog, _raft.get(), config::shard_local_cfg());
+          clusterlog, _raft.get());
     } else if (is_tx_manager_topic(_raft->ntp())) {
         if (_raft->log_config().is_collectable()) {
             _nop_stm = ss::make_lw_shared<raft::log_eviction_stm>(

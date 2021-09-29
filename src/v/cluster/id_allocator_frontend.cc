@@ -199,9 +199,8 @@ ss::future<allocate_id_reply> id_allocator_frontend::do_allocate_id(
               return ss::make_ready_future<allocate_id_reply>(
                 allocate_id_reply{0, errc::topic_not_exists});
           }
-          return stm
-            ->allocate_id_and_wait(model::timeout_clock::now() + timeout)
-            .then([](id_allocator_stm::stm_allocation_result r) {
+          return stm->allocate_id(timeout).then(
+            [](id_allocator_stm::stm_allocation_result r) {
                 if (r.raft_status != raft::errc::success) {
                     vlog(
                       clusterlog.warn,

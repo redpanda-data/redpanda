@@ -17,6 +17,7 @@
 #include "raft/types.h"
 #include "storage/record_batch_builder.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 
 namespace cluster {
@@ -32,232 +33,169 @@ static model::record_batch serialize_cmd(T t, model::record_batch_type type) {
     return std::move(b).build();
 }
 
+id_allocator_stm::id_allocator_stm(ss::logger& logger, raft::consensus* c)
+  : id_allocator_stm(logger, c, config::shard_local_cfg()) {}
+
 id_allocator_stm::id_allocator_stm(
-  ss::logger& logger, raft::consensus* c, config::configuration& config)
-  : raft::state_machine(c, logger, ss::default_priority_class())
-  , _config(config)
-  , _last_seq_tick(0)
-  , _c(c) {}
+  ss::logger& logger, raft::consensus* c, config::configuration& cfg)
+  : persisted_stm("id.snapshot", logger, c)
+  , _batch_size(cfg.id_allocator_batch_size.value())
+  , _log_capacity(cfg.id_allocator_log_capacity.value()) {}
 
-ss::future<id_allocator_stm::stm_allocation_result>
-id_allocator_stm::allocate_id_and_wait(
-  model::timeout_clock::time_point timeout) {
-    auto prelude = ss::now();
-    auto range = _config.id_allocator_batch_size.value();
-
-    if (_last_allocated_range > 0) {
-        auto allocated_id = _last_allocated_base;
-        _last_allocated_range -= 1;
-        _last_allocated_base += 1;
-
-        return ss::make_ready_future<stm_allocation_result>(
-          stm_allocation_result{allocated_id, raft::errc::success});
-    }
-
-    if (_processed > _config.id_allocator_log_capacity.value()) {
-        auto seq = sequence_id{_run_id.value(), _c->self(), ++_last_seq_tick};
-        prelude = replicate_and_wait(prepare_truncation_cmd{seq}, timeout, seq)
-                    .then([this](bool replicated) {
-                        if (replicated) {
-                            try {
-                                (void)ss::with_gate(_gate, [this] {
-                                    return replicate(serialize_cmd(
-                                      execute_truncation_cmd{
-                                        _prepare_offset, _prepare_state},
-                                      model::record_batch_type::id_allocator));
-                                });
-                            } catch (const ss::gate_closed_exception&) {
-                                // it's ok to ignore the expection because
-                                // it doesn't lead to any violation and
-                                // we can't do anything
-                            }
-                        }
-                    });
-    } else if (_should_cache) {
-        try {
-            (void)ss::with_gate(_gate, [this] {
-                return replicate(serialize_cmd(
-                  execute_truncation_cmd{_prepare_offset, _prepare_state},
-                  model::record_batch_type::id_allocator));
-            });
-        } catch (const ss::gate_closed_exception&) {
-            // it's ok to ignore the expection because
-            // it doesn't lead to any violation and
-            // we can't do anything
+ss::future<bool>
+id_allocator_stm::sync(model::timeout_clock::duration timeout) {
+    auto term = _insync_term;
+    auto is_synced = co_await persisted_stm::sync(timeout);
+    if (is_synced) {
+        if (term != _insync_term) {
+            _curr_id = _state;
+            _curr_batch = 0;
+            _processed = 0;
+            _next_snapshot = _insync_offset;
+        }
+        if (_procesing_legacy) {
+            for (auto& cmd : _cache) {
+                _state += cmd.range;
+            }
+            is_synced = co_await set_state(_state + 1, timeout);
+            if (is_synced) {
+                _cache.clear();
+                _procesing_legacy = false;
+            }
         }
     }
+    co_return is_synced;
+}
 
-    return prelude.then([this, timeout, range] {
-        sequence_id seq = sequence_id{
-          _run_id.value(), _c->self(), ++_last_seq_tick};
+ss::future<bool> id_allocator_stm::set_state(
+  int64_t value, model::timeout_clock::duration timeout) {
+    auto batch = serialize_cmd(
+      state_cmd{.next_state = value}, model::record_batch_type::id_allocator);
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
+    auto r = co_await _c->replicate(
+      _insync_term,
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+    if (!r) {
+        co_return false;
+    }
+    if (!co_await wait_no_throw(
+          model::offset(r.value().last_offset()), timeout)) {
+        co_return false;
+    }
+    co_return true;
+}
 
-        return replicate_and_wait(allocation_cmd{seq, range}, timeout, seq)
-          .then([this](log_allocation_result r) {
-              _last_allocated_base = r.base + 1;
-              _last_allocated_range = r.range - 1;
-              return stm_allocation_result{r.base, r.raft_status};
-          });
-    });
+ss::future<id_allocator_stm::stm_allocation_result>
+id_allocator_stm::allocate_id(model::timeout_clock::duration timeout) {
+    return _lock
+      .with(timeout, [this, timeout]() { return do_allocate_id(timeout); })
+      .handle_exception_type([](const ss::semaphore_timed_out&) {
+          return stm_allocation_result{-1, raft::errc::timeout};
+      });
+}
+
+ss::future<id_allocator_stm::stm_allocation_result>
+id_allocator_stm::do_allocate_id(model::timeout_clock::duration timeout) {
+    if (!co_await sync(timeout)) {
+        co_return stm_allocation_result{-1, raft::errc::timeout};
+    }
+
+    if (_curr_batch == 0) {
+        _curr_id = _state;
+        if (!co_await set_state(_curr_id + _batch_size, timeout)) {
+            co_return stm_allocation_result{-1, raft::errc::timeout};
+        }
+        _curr_batch = _batch_size;
+    }
+
+    auto id = _curr_id;
+
+    _curr_id += 1;
+    _curr_batch -= 1;
+
+    co_return stm_allocation_result{id, raft::errc::success};
 }
 
 ss::future<> id_allocator_stm::apply(model::record_batch b) {
-    if (b.header().type == model::record_batch_type::id_allocator) {
-        return process(std::move(b));
+    if (b.header().type != model::record_batch_type::id_allocator) {
+        return ss::now();
     }
 
-    return ss::now();
-}
-
-ss::future<> id_allocator_stm::start() {
-    auto last = _c->read_last_applied();
-    if (last != model::offset{}) {
-        set_next(last);
-    }
-
-    return state_machine::start().then([this] {
-        return _c->get_run_id().then(
-          [this](model::run_id id) { _run_id.emplace(id); });
-    });
-}
-
-ss::future<> id_allocator_stm::process(model::record_batch&& b) {
     vassert(b.record_count() == 1, "We expect single command in single batch");
     auto r = b.copy_records();
     auto& record = *r.begin();
     auto rk = reflection::adl<uint8_t>{}.from(record.release_key());
 
+    _insync_offset = b.last_offset();
+
     if (rk == allocation_cmd::record_key) {
         allocation_cmd cmd = reflection::adl<allocation_cmd>{}.from(
           record.release_value());
         if (_should_cache) {
-            _cache.emplace_back(cached_allocation_cmd{b.last_offset(), cmd});
+            _cache.emplace_back(cmd);
         } else {
-            execute(b.last_offset(), cmd);
+            _state += cmd.range;
         }
     } else if (rk == prepare_truncation_cmd::record_key) {
-        prepare_truncation_cmd cmd = reflection::adl<prepare_truncation_cmd>{}
-                                       .from(record.release_value());
         if (!_should_cache) {
-            _processed = 0;
             _should_cache = true;
-            _prepare_state = _state;
             _prepare_offset = b.last_offset();
-        }
-        if (auto it = _prepare_promises.find(cmd.seq);
-            it != _prepare_promises.end()) {
-            it->second.set_value(true);
         }
     } else if (rk == execute_truncation_cmd::record_key) {
         execute_truncation_cmd cmd = reflection::adl<execute_truncation_cmd>{}
                                        .from(record.release_value());
         if (_should_cache && _prepare_offset == cmd.prepare_offset) {
             _state = cmd.state;
-            for (auto& it : _cache) {
-                execute(it.offset, it.cmd);
+            for (auto& cmd : _cache) {
+                _state += cmd.range;
             }
             _cache.clear();
             _should_cache = false;
-            return _c->write_last_applied(_prepare_offset).then([this] {
-                return _c->write_snapshot(raft::write_snapshot_cfg(
-                  model::offset(_prepare_offset - 1),
-                  iobuf(),
-                  raft::write_snapshot_cfg::should_prefix_truncate::yes));
-            });
+        }
+    } else if (rk == state_cmd::record_key) {
+        _procesing_legacy = false;
+        state_cmd cmd = reflection::adl<state_cmd>{}.from(
+          record.release_value());
+        _state = cmd.next_state;
+
+        if (_next_snapshot() < 0) {
+            _next_snapshot = _insync_offset;
+            _processed = 0;
+        }
+
+        _processed++;
+        if (_processed > _log_capacity) {
+            return _c
+              ->write_snapshot(raft::write_snapshot_cfg(
+                _next_snapshot,
+                iobuf(),
+                raft::write_snapshot_cfg::should_prefix_truncate::no))
+              .then([this] {
+                  _next_snapshot = _insync_offset;
+                  _processed = 0;
+              });
         }
     }
+
     return ss::now();
 }
 
-void id_allocator_stm::execute(model::offset offset, allocation_cmd c) {
-    auto base = _state;
-    _state += c.range;
-    _processed += 1;
-
-    id_allocator_stm::log_allocation_result result{
-      c.seq, base, c.range, raft::errc::success, offset};
-
-    if (auto it = _promises.find(result.seq); it != _promises.end()) {
-        it->second.set_value(result);
-    }
+ss::future<> id_allocator_stm::apply_snapshot(stm_snapshot_header, iobuf&&) {
+    return ss::make_exception_future<>(
+      std::logic_error("id_allocator_stm doesn't support snapshots"));
 }
 
-ss::future<id_allocator_stm::log_allocation_result>
-id_allocator_stm::replicate_and_wait(
-  allocation_cmd cmd,
-  model::timeout_clock::time_point timeout,
-  sequence_id seq) {
-    using ret_t = id_allocator_stm::log_allocation_result;
-
-    auto b = serialize_cmd(cmd, model::record_batch_type::id_allocator);
-    _promises.emplace(seq, expiring_promise<ret_t>{});
-
-    return replicate(std::move(b))
-      .then([this, seq, timeout](result<raft::replicate_result> r) {
-          if (!r) {
-              _promises.erase(seq);
-              auto result = id_allocator_stm::log_allocation_result{
-                seq, 0, 0, raft::errc::timeout, model::offset(0)};
-              return ss::make_ready_future<ret_t>(result);
-          }
-
-          auto last_offset = r.value().last_offset;
-
-          auto it = _promises.find(seq);
-
-          vassert(
-            it != _promises.end(), "seq isn't in _promises after insertion");
-
-          return it->second
-            .get_future_with_timeout(
-              timeout,
-              [seq, last_offset] {
-                  return id_allocator_stm::log_allocation_result{
-                    seq, 0, 0, raft::errc::timeout, last_offset};
-              })
-            .then([this, seq, last_offset](ret_t r) {
-                _promises.erase(seq);
-                vassert(
-                  r.offset == last_offset,
-                  "seq uniqueness violation, got offset: {} expected offset: "
-                  "{}",
-                  r.offset,
-                  last_offset);
-                return ss::make_ready_future<ret_t>(r);
-            });
-      });
+ss::future<stm_snapshot> id_allocator_stm::take_snapshot() {
+    return ss::make_exception_future<stm_snapshot>(
+      std::logic_error("id_allocator_stm doesn't support snapshots"));
 }
 
-ss::future<bool> id_allocator_stm::replicate_and_wait(
-  prepare_truncation_cmd cmd,
-  model::timeout_clock::time_point timeout,
-  sequence_id seq) {
-    auto b = serialize_cmd(cmd, model::record_batch_type::id_allocator);
-    _prepare_promises.emplace(seq, expiring_promise<bool>{});
-
-    return replicate(std::move(b))
-      .then([this, seq, timeout](result<raft::replicate_result> r) {
-          if (!r) {
-              _prepare_promises.erase(seq);
-              return ss::make_ready_future<bool>(false);
-          }
-
-          auto it = _prepare_promises.find(seq);
-
-          vassert(
-            it != _prepare_promises.end(),
-            "seq isn't in _prepare_promises after insertion");
-
-          return it->second
-            .get_future_with_timeout(timeout, [] { return false; })
-            .finally([this, seq] { _prepare_promises.erase(seq); });
-      });
-}
-
-ss::future<result<raft::replicate_result>>
-id_allocator_stm::replicate(model::record_batch&& batch) {
-    return _c->replicate(
-      model::make_memory_record_batch_reader(std::move(batch)),
-      raft::replicate_options{raft::consistency_level::quorum_ack});
+ss::future<> id_allocator_stm::handle_eviction() {
+    _next_snapshot = _c->start_offset();
+    _processed = 0;
+    set_next(_next_snapshot);
+    return ss::now();
 }
 
 } // namespace cluster
