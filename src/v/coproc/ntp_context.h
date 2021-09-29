@@ -33,21 +33,6 @@ using namespace std::chrono_literals;
 
 namespace coproc {
 
-class script_failed_exception final : public std::exception {
-public:
-    script_failed_exception(script_id id, ss::sstring msg)
-      : _id(id)
-      , _msg(std::move(msg)) {}
-
-    const char* what() const noexcept final { return _msg.c_str(); }
-
-    script_id get_id() const noexcept { return _id; }
-
-private:
-    script_id _id;
-    ss::sstring _msg;
-};
-
 /// Structure representing state about input topics that scripts will subscribe
 /// to. ss::shared_ptrs to ntp_contexts will be used as there may be many
 /// subscribers to an input ntp
