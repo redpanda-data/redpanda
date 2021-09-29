@@ -157,6 +157,7 @@ private:
         ss::abort_source::subscription subscription;
     };
     bool _closed{false};
+    ss::gate _compaction_gate;
     log_manager& _manager;
     segment_set _segs;
     kvstore& _kvstore;
