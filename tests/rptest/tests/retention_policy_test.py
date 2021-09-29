@@ -114,6 +114,10 @@ class RetentionPolicyTest(RedpandaTest):
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
         kafka_tools = KafkaCliTools(self.redpanda)
+
+        # Wait for controller, alter configs doesn't have a retry loop
+        kafka_tools.describe_topic(self.topic)
+
         # change retention bytes to preserve 15 segments
         kafka_tools.alter_topic_config(
             self.topic, {
