@@ -13,15 +13,6 @@ rp_test(
   LABELS kafka
 )
 
-rp_test(
-  UNIT_TEST
-  BINARY_NAME test_translation
-  SOURCES
-    translation_test.cc
-  LIBRARIES v::seastar_testing_main v::raft v::kafka
-  LABELS kafka
-)
-
 set(srcs
   member_test.cc
   group_test.cc
