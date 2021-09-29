@@ -76,6 +76,6 @@ class TopicSpec:
                 self.replication_factor == other.replication_factor and \
                 self.cleanup_policy == other.cleanup_policy
 
-    def _random_topic_suffix(self, size=4):
+    def _random_topic_suffix(self, size=10):
         return "".join(
             random.choice(string.ascii_lowercase) for _ in range(size))
