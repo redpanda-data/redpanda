@@ -6,7 +6,7 @@ rp_test(
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main v::application Boost::unit_test_framework v::archival v::storage_test_utils
   ARGS "-- -c 1"
-  LABELS archival
+  LABELS archival disable_on_ci  # Disabled for https://github.com/vectorizedio/redpanda/issues/2438
 )
 
 
