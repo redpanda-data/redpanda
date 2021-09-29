@@ -61,6 +61,7 @@ Algorithm steps:
      ->(2) or (3) check if entry with given offset and term exists in log
        if entry exists reply with success, reply with false otherwise
 
+```
                            N1 (Leader)        +
                            +-------+          |
                        +-->| Flush |--------->+     OK
@@ -78,7 +79,7 @@ Algorithm steps:
                     |                         +
                     v               Wait for (1) or (2)
         Store entry offset & term
-
+```
 This algorithm indicates that on the followers log is flushed before response is
 returned to the leader thanks to that leader can use the returned `last_log_index`
 to establish the latest offset that has been safely (persistently) replicated on
@@ -91,7 +92,7 @@ Algorithm steps:
   1. Append entry to leader log without flush
   2. If append was successful reply with (1) success,
      reply with an error (2) otherwise
-
+```
                            OK
                             +----(1)----> SUCCESS
                             |
@@ -103,6 +104,7 @@ Algorithm steps:
                             |
                             +----(2)----> FAILURE
                            ERR
+```
 
 Follower replication is done in async manner as leader log is ahead of the
 follower and recovery is triggered.
@@ -136,6 +138,7 @@ returned `last_log_index` to update its `commit_index`.
 
 ## Relation between committed and dirty offset
 
+```
                     Committed batches
              +-----------------------------+
              |                             |
@@ -150,6 +153,8 @@ Offset       0         2         5         7         9         12
                                                Dirty batches
 Committed offset: 7
 Dirty offset: 12
+```
+
 
 Proposed change relies on fact that batches that were already committed
 are non volatile while the one that are 'dirty' are appended to the log already
@@ -192,7 +197,7 @@ persistently replicate across majority of nodes.
 In order to make it possible new fields have to be added to
 `follower_index_metadata`:
 
-    ```c++
+```cpp
         struct follower_index_metadata {
             explicit follower_index_metadata(model::node_id node)
             : node_id(node) {}
@@ -217,7 +222,8 @@ In order to make it possible new fields have to be added to
             // indicates if leader has active connection to this node
             bool disconnected = false;
         };
-    ```
+```
+
 The addition of `last_committed_log_index` and `last_dirty_log_index`
 leader can track both flushed and dirty offsets of followers.
 
@@ -227,7 +233,7 @@ In order to allow leader to track both committed and dirty offsets have to be
 send in `append_entries_reply`. This will be done in both the heartbeat and
 `append_entries` containing data.
 
-    ```c++
+```cpp
     struct append_entries_reply {
         enum class status : uint8_t { success, failure, group_unavailable };
         /// \brief callee's node_id; work-around for batched heartbeats
@@ -243,12 +249,12 @@ send in `append_entries_reply`. This will be done in both the heartbeat and
         /// \brief did the rpc succeed or not
         status result = status::failure;
     };
-    ```
+```
 
 Additionally leader has to be able to control
 if follower should flush while processing `append_entries_request`.
 
-    ```c++
+```cpp
     struct append_entries_request {
         using flush_after_append = ss::bool_class<struct flush_after_append_tag>;
 
@@ -280,7 +286,7 @@ if follower should flush while processing `append_entries_request`.
             req.flush);
         }
     };
-    ```
+```
 
 ## Drawbacks
 
