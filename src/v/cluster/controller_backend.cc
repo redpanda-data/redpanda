@@ -28,6 +28,7 @@
 #include "raft/group_configuration.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
+#include "vassert.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
@@ -386,13 +387,33 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
                                  && d.new_assignment.replicas
                                       == it->new_assignment.replicas;
                       });
-                    vassert(
-                      fit == std::next(it),
-                      "finish operation command, if present have to be the one "
-                      "that follows update operation");
 
+                    // The only delta types permitted between `update` and
+                    // `update_finished` are `update_properties` or `del`. Apply
+                    // any intervening deltas of these types and skip the cursor
+                    // ahead to the `update_finished`
                     if (fit != deltas.end()) {
-                        it = fit;
+                        while (++it != fit) {
+                            vlog(
+                              clusterlog.trace,
+                              "executing (during update) ntp: {} operation: {}",
+                              it->ntp,
+                              *it);
+                            if (
+                              it->type
+                              == topic_table_delta::op_type::
+                                update_properties) {
+                                co_await process_partition_properties_update(
+                                  it->ntp, it->new_assignment);
+                            } else if (
+                              it->type == topic_table_delta::op_type::del) {
+                                co_await delete_partition(
+                                  it->ntp, model::revision_id{it->offset});
+                            } else {
+                                vassert(
+                                  false, "Invalid delta during topic update");
+                            }
+                        }
                         continue;
                     }
                 }
@@ -503,8 +524,15 @@ controller_backend::execute_partitition_op(const topic_table::delta& delta) {
           rev,
           create_brokers_set(
             delta.new_assignment.replicas, _members_table.local()));
+    case op_t::add_non_replicable:
+        if (!has_local_replicas(_self, delta.new_assignment.replicas)) {
+            return ss::make_ready_future<std::error_code>(errc::success);
+        }
+        return create_non_replicable_partition(delta.ntp, rev);
     case op_t::del:
-        return delete_partition(delta.ntp, rev);
+        return delete_partition(delta.ntp, rev).then([] {
+            return std::error_code(errc::success);
+        });
     case op_t::update:
         vassert(
           delta.previous_assignment,
@@ -513,10 +541,12 @@ controller_backend::execute_partitition_op(const topic_table::delta& delta) {
         return process_partition_update(
           delta.ntp, delta.new_assignment, *delta.previous_assignment, rev);
     case op_t::update_finished:
-        return finish_partition_update(delta.ntp, delta.new_assignment, rev);
+        return finish_partition_update(delta.ntp, delta.new_assignment, rev)
+          .then([] { return std::error_code(errc::success); });
     case op_t::update_properties:
         return process_partition_properties_update(
-          delta.ntp, delta.new_assignment);
+                 delta.ntp, delta.new_assignment)
+          .then([] { return std::error_code(errc::success); });
     }
     __builtin_unreachable();
 }
@@ -719,26 +749,25 @@ ss::future<std::error_code> controller_backend::process_partition_update(
     co_return ec;
 }
 
-ss::future<std::error_code>
-controller_backend::process_partition_properties_update(
+ss::future<> controller_backend::process_partition_properties_update(
   model::ntp ntp, partition_assignment assignment) {
     /**
      * No core local replicas are expected to exists, do nothing
      */
     if (!has_local_replicas(_self, assignment.replicas)) {
-        co_return errc::success;
+        co_return;
     }
 
     auto partition = _partition_manager.local().get(ntp);
 
     // partition doesn't exists, it must already have been removed, do nothing
     if (!partition) {
-        co_return errc::success;
+        co_return;
     }
     auto cfg = _topics.local().get_topic_cfg(model::topic_namespace_view(ntp));
     // configuration doesn't exists, topic was removed
     if (!cfg) {
-        co_return errc::success;
+        co_return;
     }
     vlog(
       clusterlog.trace,
@@ -746,7 +775,6 @@ controller_backend::process_partition_properties_update(
       ntp,
       cfg->properties);
     co_await partition->update_configuration(cfg->properties);
-    co_return errc::success;
 }
 
 /**
@@ -769,7 +797,7 @@ ss::future<std::error_code> controller_backend::dispatch_update_finished(
       });
 }
 
-ss::future<std::error_code> controller_backend::finish_partition_update(
+ss::future<> controller_backend::finish_partition_update(
   model::ntp ntp, const partition_assignment& current, model::revision_id rev) {
     vlog(
       clusterlog.trace, "processing partition {} finished update command", ntp);
@@ -778,14 +806,14 @@ ss::future<std::error_code> controller_backend::finish_partition_update(
     // it has to be removed after new configuration is stable
 
     if (has_local_replicas(_self, current.replicas)) {
-        return ss::make_ready_future<std::error_code>(errc::success);
+        return ss::make_ready_future<>();
     }
 
     auto partition = _partition_manager.local().get(ntp);
     // we do not have local replicas and partition does not
     // exists, it is ok
     if (!partition) {
-        return ss::make_ready_future<std::error_code>(errc::success);
+        return ss::make_ready_future<>();
     }
     vlog(clusterlog.trace, "removing partition {} replica", ntp);
     return delete_partition(std::move(ntp), rev);
@@ -853,6 +881,18 @@ ss::future<> controller_backend::add_to_shard_table(
       });
 }
 
+ss::future<> controller_backend::add_to_shard_table(
+  model::ntp ntp, ss::shard_id shard, model::revision_id revision) {
+    vlog(
+      clusterlog.trace, "adding {} to shard table at {}", revision, ntp, shard);
+    return _shard_table.invoke_on_all(
+      [ntp = std::move(ntp), shard, revision](shard_table& s) mutable {
+          vassert(
+            s.update_shard(ntp, shard, revision),
+            "Newer revision for non-replicable ntp exists");
+      });
+}
+
 ss::future<> controller_backend::remove_from_shard_table(
   model::ntp ntp, raft::group_id raft_group, model::revision_id revision) {
     // update shard_table: broadcast
@@ -861,6 +901,22 @@ ss::future<> controller_backend::remove_from_shard_table(
       [ntp = std::move(ntp), raft_group, revision](shard_table& s) mutable {
           s.erase(ntp, raft_group, revision);
       });
+}
+
+ss::future<std::error_code> controller_backend::create_non_replicable_partition(
+  model::ntp ntp, model::revision_id rev) {
+    auto cfg = _topics.local().get_topic_cfg(model::topic_namespace_view(ntp));
+    if (!cfg) {
+        // partition was already removed, do nothing
+        co_return errc::success;
+    }
+    vassert(
+      !_storage.local().log_mgr().get(ntp),
+      "Log exists for missing entry in topics_table");
+    auto ntp_cfg = cfg->make_ntp_config(_data_directory, ntp.tp.partition, rev);
+    co_await _storage.local().log_mgr().manage(std::move(ntp_cfg));
+    co_await add_to_shard_table(std::move(ntp), ss::this_shard_id(), rev);
+    co_return errc::success;
 }
 
 ss::future<std::error_code> controller_backend::create_partition(
@@ -953,16 +1009,16 @@ ss::future<std::error_code> controller_backend::shutdown_on_current_shard(
     }
 }
 
-ss::future<std::error_code>
+ss::future<>
 controller_backend::delete_partition(model::ntp ntp, model::revision_id rev) {
     auto part = _partition_manager.local().get(ntp);
     if (unlikely(part.get() == nullptr)) {
-        return ss::make_ready_future<std::error_code>(errc::success);
+        return ss::make_ready_future<>();
     }
 
     // partition was already recreated with greater rev, do nothing
     if (unlikely(part->get_revision_id() > rev)) {
-        return ss::make_ready_future<std::error_code>(errc::success);
+        return ss::make_ready_future<>();
     }
 
     auto group_id = part->group();
@@ -980,8 +1036,7 @@ controller_backend::delete_partition(model::ntp ntp, model::revision_id rev) {
       .then([this, ntp = std::move(ntp)] {
           // remove partition
           return _partition_manager.local().remove(ntp);
-      })
-      .then([] { return make_error_code(errc::success); });
+      });
 }
 
 std::vector<topic_table::delta>

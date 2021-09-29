@@ -242,6 +242,60 @@ ss::future<topic_result> topics_frontend::do_update_topic_properties(
     }
 }
 
+ss::future<topic_result> topics_frontend::do_create_non_replicable_topic(
+  non_replicable_topic data, model::timeout_clock::time_point timeout) {
+    if (!validate_topic_name(data.name)) {
+        co_return topic_result(
+          topic_result(std::move(data.name), errc::invalid_topic_name));
+    }
+
+    create_non_replicable_topic_cmd cmd(data, 0);
+    try {
+        auto ec = co_await replicate_and_wait(
+          _stm, _as, std::move(cmd), timeout);
+        co_return topic_result(data.name, map_errc(ec));
+    } catch (const std::exception& ex) {
+        vlog(
+          clusterlog.warn,
+          "unable to create non replicated topic {} - source topic - {} "
+          "reason: "
+          "{}",
+          data.name,
+          data.source,
+          ex.what());
+        co_return topic_result(std::move(data.name), errc::replication_error);
+    }
+}
+
+ss::future<std::vector<topic_result>>
+topics_frontend::create_non_replicable_topics(
+  std::vector<non_replicable_topic> topics,
+  model::timeout_clock::time_point timeout) {
+    vlog(clusterlog.trace, "Create non_replicable topics {}", topics);
+    std::vector<ss::future<topic_result>> futures;
+    futures.reserve(topics.size());
+
+    std::transform(
+      std::begin(topics),
+      std::end(topics),
+      std::back_inserter(futures),
+      [this, timeout](non_replicable_topic& d) {
+          return do_create_non_replicable_topic(std::move(d), timeout);
+      });
+
+    return ss::when_all_succeed(futures.begin(), futures.end())
+      .then([this, timeout](std::vector<topic_result> results) {
+          if (needs_linearizable_barrier(results)) {
+              return stm_linearizable_barrier(timeout).then(
+                [results = std::move(results)](result<model::offset>) mutable {
+                    return results;
+                });
+          }
+          return ss::make_ready_future<std::vector<topic_result>>(
+            std::move(results));
+      });
+}
+
 topic_result
 make_error_result(const model::topic_namespace& tp_ns, std::error_code ec) {
     if (ec.category() == cluster::error_category()) {

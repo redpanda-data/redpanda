@@ -60,6 +60,7 @@ static constexpr int8_t move_partition_replicas_cmd_type = 2;
 static constexpr int8_t finish_moving_partition_replicas_cmd_type = 3;
 static constexpr int8_t update_topic_properties_cmd_type = 4;
 static constexpr int8_t create_partition_cmd_type = 5;
+static constexpr int8_t create_non_replicable_topic_cmd_type = 6;
 
 static constexpr int8_t create_user_cmd_type = 5;
 static constexpr int8_t delete_user_cmd_type = 6;
@@ -110,6 +111,12 @@ using create_partition_cmd = controller_command<
   model::topic_namespace,
   create_partititions_configuration_assignment,
   create_partition_cmd_type,
+  model::record_batch_type::topic_management_cmd>;
+
+using create_non_replicable_topic_cmd = controller_command<
+  non_replicable_topic,
+  int8_t, // unused
+  create_non_replicable_topic_cmd_type,
   model::record_batch_type::topic_management_cmd>;
 
 using create_user_cmd = controller_command<

@@ -18,9 +18,11 @@ from rptest.clients.kafka_cat import KafkaCat
 import requests
 
 from rptest.clients.types import TopicSpec
+from rptest.clients.rpk import RpkTool
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
 from rptest.services.honey_badger import HoneyBadger
+from rptest.services.rpk_producer import RpkProducer
 from kafka import KafkaProducer
 from kafka import KafkaConsumer
 
@@ -36,8 +38,9 @@ class PartitionMovementTest(EndToEndTest):
     - Add settings for scaling up tests
     - Add tests guarnateeing multiple segments
     """
-    def __init__(self, *args, **kwargs):
+    def __init__(self, ctx, *args, **kwargs):
         super(PartitionMovementTest, self).__init__(
+            ctx,
             *args,
             extra_rp_conf={
                 # Disable leader balancer, as this test is doing its own
@@ -45,6 +48,7 @@ class PartitionMovementTest(EndToEndTest):
                 'enable_leader_balancer': False
             },
             **kwargs)
+        self._ctx = ctx
 
     @staticmethod
     def _random_partition(metadata):
@@ -373,3 +377,83 @@ class PartitionMovementTest(EndToEndTest):
         assignments = [{"node_id": valid_dest, "core": 0}]
         r = admin.set_partition_replicas(topic, partition, assignments)
         assert r.status_code == 200
+
+    @cluster(num_nodes=5)
+    def test_overlapping_changes(self):
+        """
+        Check that while a movement is in flight, rules about
+        overlapping operations are properly enforced.
+        """
+
+        self.start_redpanda(num_nodes=4)
+        node_ids = {1, 2, 3, 4}
+
+        # Create topic with enough data that inter-node movement
+        # will take a while.
+        name = f"movetest"
+        spec = TopicSpec(name=name, partition_count=1, replication_factor=3)
+        self.redpanda.create_topic(spec)
+
+        # Wait for the partition to have a leader (`rpk produce` errors
+        # out if it tries to write data before this)
+        def partition_ready():
+            return KafkaCat(self.redpanda).get_partition_leader(
+                name, 0)[0] is not None
+
+        wait_until(partition_ready, timeout_sec=10, backoff_sec=0.5)
+
+        # Write a substantial amount of data to the topic
+        msg_size = 512 * 1024
+        write_bytes = 512 * 1024 * 1024
+        producer = RpkProducer(self._ctx,
+                               self.redpanda,
+                               name,
+                               msg_size=msg_size,
+                               msg_count=int(write_bytes / msg_size))
+        t1 = time.time()
+        producer.start()
+
+        # This is an absurdly low expected throughput, but necessarily
+        # so to run reliably on current test runners, which share an EBS
+        # backend among many parallel tests.  10MB/s has been empirically
+        # shown to be too high an expectation.
+        expect_bps = 1 * 1024 * 1024
+        expect_runtime = write_bytes / expect_bps
+        producer.wait(timeout_sec=expect_runtime)
+
+        self.logger.info(
+            f"Write complete {write_bytes} in {time.time() - t1} seconds")
+
+        # Start an inter-node move, which should take some time
+        # to complete because of recovery network traffic
+        admin = Admin(self.redpanda)
+        assignments = self._get_assignments(admin, name, 0)
+        new_node = list(node_ids - set([a['node_id'] for a in assignments]))[0]
+        self.logger.info(f"old assignments: {assignments}")
+        old_assignments = assignments
+        assignments = assignments[1:] + [{'node_id': new_node, 'core': 0}]
+        self.logger.info(f"new assignments: {assignments}")
+        r = admin.set_partition_replicas(name, 0, assignments)
+        r.raise_for_status()
+        assert admin.get_partitions(name, 0)['status'] == "in_progress"
+
+        # Another move should fail
+        assert admin.get_partitions(name, 0)['status'] == "in_progress"
+        try:
+            r = admin.set_partition_replicas(name, 0, old_assignments)
+        except requests.exceptions.HTTPError as e:
+            assert e.response.status_code == 400
+        else:
+            raise RuntimeError(f"Expected 400 but got {r.status_code}")
+
+        # An update to partition properties should succeed
+        # (issue https://github.com/vectorizedio/redpanda/issues/2300)
+        rpk = RpkTool(self.redpanda)
+        assert admin.get_partitions(name, 0)['status'] == "in_progress"
+        rpk.alter_topic_config(name, "retention.ms", "3600000")
+
+        # A deletion should succeed
+        assert name in rpk.list_topics()
+        assert admin.get_partitions(name, 0)['status'] == "in_progress"
+        rpk.delete_topic(name)
+        assert name not in rpk.list_topics()

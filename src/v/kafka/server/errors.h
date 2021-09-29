@@ -32,6 +32,7 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::topic_already_exists:
         return error_code::topic_already_exists;
     case cluster::errc::topic_not_exists:
+    case cluster::errc::invalid_delete_topic_request:
         return error_code::unknown_topic_or_partition;
     case cluster::errc::timeout:
         return error_code::request_timed_out;
@@ -40,6 +41,7 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::replication_error:
     case cluster::errc::shutting_down:
     case cluster::errc::join_request_dispatch_error:
+    case cluster::errc::source_topic_not_exists:
     case cluster::errc::seed_servers_exhausted:
     case cluster::errc::auto_create_topics_exception:
     case cluster::errc::partition_not_exists:
