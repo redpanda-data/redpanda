@@ -142,6 +142,8 @@ public:
         return _raft->linearizable_barrier();
     }
 
+    bool is_compacted() const { return _raft->log_config().is_compacted(); }
+
     ss::future<std::error_code>
     transfer_leadership(std::optional<model::node_id> target) {
         return _raft->do_transfer_leadership(target);

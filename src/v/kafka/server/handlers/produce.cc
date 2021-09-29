@@ -24,6 +24,7 @@
 #include "model/record_batch_reader.h"
 #include "model/timestamp.h"
 #include "raft/types.h"
+#include "storage/parser_utils.h"
 #include "storage/shard_assignment.h"
 #include "utils/remote.h"
 #include "utils/to_string.h"
@@ -109,18 +110,6 @@ static raft::replicate_options acks_to_replicate_options(int16_t acks) {
     };
 }
 
-static inline model::record_batch_reader
-reader_from_lcore_batch(model::record_batch&& batch) {
-    /*
-     * The remainder of work for this partition is handled on its home
-     * core. The foreign memory record batch reader requires that once the
-     * reader is sent to the foreign core that it has exclusive access to the
-     * data in reader. That is true here and is generally trivial with readers
-     * that hold a copy of their data in memory.
-     */
-    return model::make_foreign_memory_record_batch_reader(std::move(batch));
-}
-
 static error_code map_produce_error_code(std::error_code ec) {
     if (ec.category() == raft::error_category()) {
         switch (static_cast<raft::errc>(ec.value())) {
@@ -190,6 +179,63 @@ static partition_produce_stages partition_append(
     };
 }
 
+static ss::future<model::record_batch> try_decompress(
+  bool is_compacted,
+  ss::foreign_ptr<std::unique_ptr<model::record_batch>> batch_ptr) {
+    auto batch = batch_ptr->copy();
+    if (is_compacted && batch.compressed()) {
+        return ss::do_with(std::move(batch), [](model::record_batch& batch) {
+            return storage::internal::decompress_batch(batch).then(
+              [&batch](model::record_batch&& b) {
+                  batch.decompressed(std::move(b));
+                  return std::move(batch);
+              });
+        });
+    }
+    return ss::make_ready_future<model::record_batch>(std::move(batch));
+}
+
+static std::optional<produce_response::partition>
+validate_keys(model::ntp& ntp, model::record_batch& batch) {
+    std::optional<produce_response::partition> error_opt;
+
+    std::vector<int32_t> null_keys;
+    if (batch.decompressed()) {
+        batch.decompressed()->for_each_record(
+          [&null_keys](const model::record& r) {
+              if (r.key_size() < 0) {
+                  null_keys.push_back(r.offset_delta());
+              }
+          });
+    } else if (!batch.compressed()) {
+        batch.for_each_record([&null_keys](const model::record& r) {
+            if (r.key_size() < 0) {
+                null_keys.push_back(r.offset_delta());
+            }
+        });
+    }
+
+    if (!null_keys.empty()) {
+        auto error = produce_response::partition{
+          .partition_index = ntp.tp.partition,
+          .error_code = error_code::invalid_record,
+          .error_message = ss::sstring{
+            "One or more records have been rejected"}};
+
+        for (auto idx : null_keys) {
+            error.record_errors.push_back(batch_index_and_error_message{
+              .batch_index = idx,
+              .batch_index_error_message = ss::sstring{
+                "Compacted topic cannot accept message "
+                "without key."}});
+        }
+
+        error_opt = error;
+    }
+
+    return error_opt;
+}
+
 /**
  * \brief handle writing to a single topic partition.
  */
@@ -235,7 +281,6 @@ static partition_produce_stages produce_topic_partition(
     auto bid = model::batch_identity::from(hdr);
 
     auto num_records = batch.record_count();
-    auto reader = reader_from_lcore_batch(std::move(batch));
     auto start = std::chrono::steady_clock::now();
 
     auto dispatch = std::make_unique<ss::promise<>>();
@@ -246,7 +291,7 @@ static partition_produce_stages produce_topic_partition(
           .invoke_on(
             *shard,
             octx.ssg,
-            [reader = std::move(reader),
+            [batch_ptr = ss::make_foreign(std::make_unique<model::record_batch>(std::move(batch))),
              ntp = std::move(ntp),
              dispatch = std::move(dispatch),
              num_records,
@@ -279,6 +324,30 @@ static partition_produce_stages produce_topic_partition(
                         .partition_index = ntp.tp.partition,
                         .error_code = error_code::not_leader_for_partition});
                 }
+                return try_decompress(partition->is_compacted(), std::move(batch_ptr))
+                  .then([partition = std::move(partition),
+                         ntp = std::move(ntp),
+                         dispatch = std::move(dispatch),
+                         num_records,
+                         bid,
+                         acks,
+                         source_shard](model::record_batch batch) mutable {
+                if (partition->is_compacted()) {
+                    auto error_opt = validate_keys(ntp, batch);
+                    if (error_opt) {
+                        // submit back to promise source shard
+                        (void)ss::smp::submit_to(
+                          source_shard,
+                          [dispatch = std::move(dispatch)]() mutable {
+                              dispatch->set_value();
+                              dispatch.reset();
+                          });
+                        return ss::make_ready_future<
+                          produce_response::partition>(error_opt.value());
+                    }
+                }
+
+                auto reader = model::make_memory_record_batch_reader(std::move(batch));
                 auto stages = partition_append(
                   ntp.tp.partition,
                   ss::make_lw_shared<replicated_partition>(
@@ -310,6 +379,7 @@ static partition_produce_stages produce_topic_partition(
                   .then([f = std::move(stages.produced)]() mutable {
                       return std::move(f);
                   });
+                });
             })
           .then([&octx, start, m = std::move(m)](
                   produce_response::partition p) {
