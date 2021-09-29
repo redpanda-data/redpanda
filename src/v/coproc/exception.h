@@ -60,4 +60,10 @@ class script_failed_exception final : public script_exception {
     using script_exception::script_exception;
 };
 
+/// \brief Thrown when a coprocessor performs an action that is explicity
+/// disallowed such as producing onto a normal topic
+class script_illegal_action_exception final : public script_exception {
+    using script_exception::script_exception;
+};
+
 } // namespace coproc

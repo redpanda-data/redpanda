@@ -116,6 +116,9 @@ static ss::future<> maybe_make_materialized_log(
             /// Log already exists
             co_return;
         }
+        /// Attempt to produce onto a normal topic..., shutdown
+        throw script_illegal_action_exception(
+          args.id, fmt::format("Script attempted to write to a normal topic"));
     }
     /// Leader could be on a different machine, can only wait until log comes
     /// into existance
