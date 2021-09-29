@@ -550,8 +550,11 @@ public:
     bool compressed() const { return _compressed; }
 
     record_batch copy() const {
-        // copy sets shard id
-        return record_batch(_header.copy(), _records.copy(), _compressed);
+        auto b = record_batch(_header.copy(), _records.copy(), _compressed);
+        if (_decompressed) {
+            b.decompressed(_decompressed->copy());
+        }
+        return b;
     }
 
     int32_t record_count() const { return _header.record_count; }
@@ -584,8 +587,12 @@ public:
     friend std::ostream& operator<<(std::ostream&, const record_batch&);
 
     record_batch share() {
-        return record_batch(
+        auto b = record_batch(
           _header, _records.share(0, _records.size_bytes()), _compressed);
+        if (_decompressed) {
+            b.decompressed(_decompressed->share());
+        }
+        return b;
     }
 
     /**
@@ -647,11 +654,19 @@ public:
     const iobuf& data() const { return _records; }
     iobuf&& release_data() && { return std::move(_records); }
     void clear_data() { _records.clear(); }
+    void decompressed(record_batch&& b) {
+        vassert(!b.compressed(), "decompressed arg can't be compressed");
+        _decompressed = std::make_unique<record_batch>(std::move(b));
+    }
+    const std::unique_ptr<record_batch>& decompressed() const {
+        return _decompressed;
+    }
 
 private:
     record_batch_header _header;
     iobuf _records;
     bool _compressed;
+    std::unique_ptr<record_batch> _decompressed;
 
     record_batch(record_batch_header header, iobuf&& records, bool compressed)
       : _header(header)
