@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "likely.h"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
@@ -29,7 +30,7 @@ public:
       ErrorFactory&& err_factory,
       std::optional<std::reference_wrapper<ss::abort_source>> as
       = std::nullopt) {
-        if (!_promise.available()) {
+        if (!_available) {
             // handle abort source
             if (as) {
                 auto opt_sub = as.value().get().subscribe([this]() noexcept {
@@ -72,19 +73,21 @@ public:
             unlink_abort_source();
         }
 
-        if (!_promise.available()) {
+        if (likely(!_available)) {
+            _available = true;
             _promise.set_value(std::move(val));
         }
     }
 
-    bool available() { return _promise.available(); }
+    bool available() const { return _available; }
 
     void set_exception(std::exception_ptr&& ex) {
         if (_timer.cancel()) {
             unlink_abort_source();
         }
 
-        if (!_promise.available()) {
+        if (likely(!_available)) {
+            _available = true;
             _promise.set_exception(ex);
         }
     }
@@ -94,7 +97,8 @@ public:
             unlink_abort_source();
         }
 
-        if (!_promise.available()) {
+        if (likely(!_available)) {
+            _available = true;
             _promise.set_exception(ex);
         }
     }
@@ -110,6 +114,7 @@ private:
         }
     }
 
+    bool _available{false};
     ss::shared_promise<T> _promise;
     ss::timer<Clock> _timer;
     ss::abort_source::subscription _sub;
