@@ -142,7 +142,7 @@ ntp_reconciliation_state::ntp_reconciliation_state(
 create_partititions_configuration::create_partititions_configuration(
   model::topic_namespace tp_ns, int32_t cnt)
   : tp_ns(std::move(tp_ns))
-  , partition_count(cnt) {}
+  , new_total_partition_count(cnt) {}
 
 std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
     fmt::print(
@@ -276,9 +276,9 @@ std::ostream&
 operator<<(std::ostream& o, const create_partititions_configuration& cfg) {
     fmt::print(
       o,
-      "{{topic: {}, partition count: {}, custom assignments: {}}}",
+      "{{topic: {}, new total partition count: {}, custom assignments: {}}}",
       cfg.tp_ns,
-      cfg.partition_count,
+      cfg.new_total_partition_count,
       cfg.custom_assignments);
     return o;
 }
@@ -755,7 +755,8 @@ adl<cluster::ntp_reconciliation_state>::from(iobuf_parser& in) {
 
 void adl<cluster::create_partititions_configuration>::to(
   iobuf& out, cluster::create_partititions_configuration&& pc) {
-    return serialize(out, pc.tp_ns, pc.partition_count, pc.custom_assignments);
+    return serialize(
+      out, pc.tp_ns, pc.new_total_partition_count, pc.custom_assignments);
 }
 
 cluster::create_partititions_configuration
