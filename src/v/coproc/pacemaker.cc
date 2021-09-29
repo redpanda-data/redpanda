@@ -11,6 +11,7 @@
 
 #include "coproc/pacemaker.h"
 
+#include "coproc/exception.h"
 #include "coproc/logger.h"
 #include "coproc/ntp_context.h"
 #include "coproc/offset_storage_utils.h"
