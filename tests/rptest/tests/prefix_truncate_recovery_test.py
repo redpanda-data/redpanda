@@ -7,10 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import os
-import collections
 import tempfile
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ignore
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
@@ -18,7 +16,7 @@ from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 
-from storage import storage as vstorage
+import storage as vstorage
 
 
 class PrefixTruncateRecoveryTest(RedpandaTest):
@@ -42,6 +40,7 @@ class PrefixTruncateRecoveryTest(RedpandaTest):
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
 
+    @ignore  #  https://github.com/vectorizedio/redpanda/issues/2460
     @cluster(num_node=3)
     @matrix(acks=[-1, 1])
     def test_prefix_truncate_recovery(self, acks):
