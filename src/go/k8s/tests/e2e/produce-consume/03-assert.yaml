@@ -1,7 +1,8 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: consume-message
+  name: consume-message-produceconsume
+  namespace: default
 status:
   conditions:
     - status: "True"

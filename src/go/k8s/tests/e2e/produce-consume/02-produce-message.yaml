@@ -1,7 +1,8 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: produce-message
+  name: produce-message-produceconsume
+  namespace: default
 spec:
   template:
     spec:
@@ -20,7 +21,7 @@ spec:
             - >
               echo {"test":"message"} |
               rpk topic produce test
-              --brokers "cluster-sample-0.cluster-sample.$POD_NAMESPACE.svc.cluster.local:9092,cluster-sample-1.cluster-sample.$POD_NAMESPACE.svc.cluster.local:9092,cluster-sample-2.cluster-sample.$POD_NAMESPACE.svc.cluster.local:9092"
+              --brokers "cluster-sample-produceconsume-0.cluster-sample-produceconsume.$POD_NAMESPACE.svc.cluster.local:9092,cluster-sample-1.cluster-sample.$POD_NAMESPACE.svc.cluster.local:9092,cluster-sample-2.cluster-sample.$POD_NAMESPACE.svc.cluster.local:9092"
               -v -n 1 -k "test-key"
       restartPolicy: Never
   backoffLimit: 12

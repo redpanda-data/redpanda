@@ -1,7 +1,8 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: consume-message
+  name: consume-message-produceconsume
+  namespace: default
 spec:
   template:
     spec:
@@ -18,7 +19,7 @@ spec:
             - -c
           args:
             - >
-              kafkacat -b cluster-sample-0.cluster-sample.$POD_NAMESPACE.svc.cluster.local:9092
+              kafkacat -b cluster-sample-produceconsume-0.cluster-sample-produceconsume.$POD_NAMESPACE.svc.cluster.local:9092
               -C -t test -c1
               -f '\nKey (%K bytes): %k\t\nValue (%S bytes): %s\nTimestamp: %T\tPartition: %p\tOffset: %o\n--\n'
       restartPolicy: Never

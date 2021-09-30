@@ -1,7 +1,8 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: create-test-topic
+  name: create-test-topic-produceconsume
+  namespace: default
 spec:
   template:
     spec:
@@ -17,7 +18,7 @@ spec:
             - /bin/bash
             - -c
           args:
-            - sleep 10 ; rpk topic create -r 3 test --brokers cluster-sample-0.cluster-sample.$POD_NAMESPACE.svc.cluster.local:9092 -v
+            - sleep 10 ; rpk topic create -r 3 test --brokers cluster-sample-produceconsume-0.cluster-sample-produceconsume.$POD_NAMESPACE.svc.cluster.local:9092 -v
       restartPolicy: Never
   backoffLimit: 12
   parallelism: 1
