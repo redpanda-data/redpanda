@@ -306,7 +306,7 @@ class Verifier {
       }
       assertLess(last_offset, consumer.position());
 
-      var records = consumer.read(first_offset, last_offset, 1);
+      var records = consumer.read(first_offset, last_offset, 500, 10);
       consumer.close();
       consumer = null;
       assertEquals(records.size(), offsets.size());
@@ -350,7 +350,7 @@ class Verifier {
       }
       assertLess(last_offset, consumer.position());
 
-      var records = consumer.read(first_offset, last_offset, 1);
+      var records = consumer.read(first_offset, last_offset, 500, 10);
       consumer.close();
       consumer = null;
       assertEquals(records.size(), 2);
@@ -558,7 +558,7 @@ class Verifier {
       stream = null;
 
       consumer = new TxConsumer(connection, topic2, true);
-      var transformed = consumer.readN(target_offset + 1, 3, 1);
+      var transformed = consumer.readN(target_offset + 1, 3, 500, 10);
 
       for (var target : transformed) {
         assertTrue(mapping.containsKey(target.offset));
