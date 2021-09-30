@@ -90,7 +90,7 @@ class RpkTool:
         ]
         if headers:
             cmd += ['-H ' + h for h in headers]
-        if partition:
+        if partition is not None:
             cmd += ['-p', str(partition)]
         out = self._run_topic(cmd, stdin=msg, timeout=timeout)
 
