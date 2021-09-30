@@ -1,5 +1,0 @@
-apiVersion: kuttl.dev/v1beta1
-kind: TestAssert
-commands:
-  - command: kubectl rollout status deployment redpanda-controller-manager -n redpanda-system
-  - command: hack/wait-for-webhook-ready.sh
