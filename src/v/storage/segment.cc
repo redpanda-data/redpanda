@@ -356,6 +356,10 @@ ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
     if (!b.compressed()) {
         return do_compaction_index_batch(b);
     }
+    auto& decompressed = b.decompressed();
+    if (decompressed) {
+        return do_compaction_index_batch(*decompressed);
+    }
     return internal::decompress_batch(b).then([this](model::record_batch&& b) {
         return ss::do_with(std::move(b), [this](model::record_batch& b) {
             return do_compaction_index_batch(b);
