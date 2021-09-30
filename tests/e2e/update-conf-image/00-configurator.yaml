@@ -1,6 +1,0 @@
-apiVersion: kuttl.dev/v1beta1
-kind: TestStep
-commands:
-# Set specific configurator version - this will be reflected in all configurator containers of managed redpanda clusters (new or old)
-- command: kubectl patch deployment redpanda-controller-manager -n redpanda-system --type='json' -p='[{"op":"add", "path":"/spec/template/spec/containers/1/args/-", "value":"--configurator-tag=v21.6.6"}]'
-- command: kubectl get deployment redpanda-controller-manager -n redpanda-system -o json

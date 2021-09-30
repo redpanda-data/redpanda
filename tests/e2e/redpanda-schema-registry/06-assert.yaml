@@ -1,9 +1,0 @@
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: retrieve-schema-with-tls
-status:
-  conditions:
-    - status: "True"
-      type: Complete
-  succeeded: 1
