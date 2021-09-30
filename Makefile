@@ -95,10 +95,12 @@ prepare-dockerfile:
 
 # Build the docker image
 docker-build: prepare-dockerfile
+	echo "~~~ Building operator image :docker:"
 	docker build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=manager -f Dockerfile -t ${OPERATOR_IMG_LATEST} ../
 
 # Build the docker image
 docker-build-configurator: prepare-dockerfile
+	echo "~~~ Building configurator image :docker:"
 	docker build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=configurator -f Dockerfile -t ${CONFIGURATOR_IMG_LATEST} ../
 
 # Preload controller image to kind cluster
@@ -108,10 +110,12 @@ push-to-kind: kind-create certmanager-install
 
 # Execute end to end tests
 e2e-tests: kuttl test docker-build docker-build-configurator
+	echo "~~~ Running kuttl tests :k8s:"
 	$(KUTTL) test $(TEST_ONLY_FLAG) $(KUTTL_TEST_FLAGS)
 
 # Execute end to end tests using helm as an installation
 helm-e2e-tests: kuttl test docker-build docker-build-configurator
+	echo "~~~ Running kuttl tests :k8s:"
 	$(KUTTL) test --config kuttl-helm-test.yaml $(TEST_ONLY_FLAG) $(KUTTL_TEST_FLAGS)
 
 # Download controller-gen locally if necessary
