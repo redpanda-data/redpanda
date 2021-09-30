@@ -28,16 +28,15 @@ import (
 //
 // The settings are close to, but not identical to the sarama client
 // configuration.  Particularly, our timeouts are higher.
-func NewFranzClient(fs afero.Fs, cfg *config.Config) (*kgo.Client, error) {
+func NewFranzClient(
+	fs afero.Fs, cfg *config.Config, extraOpts ...kgo.Opt,
+) (*kgo.Client, error) {
 	k := &cfg.Rpk.KafkaApi
 
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(k.Brokers...),
 		kgo.ClientID("rpk"),
 		kgo.RetryTimeout(5 * time.Second),
-
-		kgo.ProduceRequestTimeout(5 * time.Second),
-		kgo.RecordDeliveryTimeout(8 * time.Second),
 	}
 
 	if k.SASL != nil {
@@ -52,6 +51,8 @@ func NewFranzClient(fs afero.Fs, cfg *config.Config) (*kgo.Client, error) {
 			opts = append(opts, kgo.SASL(mech.AsSha512Mechanism()))
 		}
 	}
+
+	opts = append(opts, extraOpts...)
 
 	tc, err := k.TLS.Config(fs)
 	if err != nil {
