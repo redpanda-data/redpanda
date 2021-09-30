@@ -40,7 +40,7 @@ topic_table::transform_topics(Func&& f) const {
 topic_table::topic_metadata::topic_metadata(
   topic_configuration_assignment c, model::revision_id rid) noexcept
   : configuration(std::move(c))
-  , _id_or_topic(rid) {}
+  , _id_or_topic(topic_metadata::normal_topic_meta{.rev = rid}) {}
 
 topic_table::topic_metadata::topic_metadata(
   topic_configuration_assignment c, model::topic st) noexcept
@@ -53,7 +53,17 @@ bool topic_table::topic_metadata::is_topic_replicable() const {
 model::revision_id topic_table::topic_metadata::get_revision() const {
     vassert(
       !is_topic_replicable(), "Query for revision_id on a replicable topic");
-    return std::get<model::revision_id>(_id_or_topic);
+    return std::get<normal_topic_meta>(_id_or_topic).rev;
+}
+const absl::flat_hash_set<model::topic_namespace>&
+topic_table::topic_metadata::get_children() const {
+    vassert(!is_topic_replicable(), "Query for children on a replicable topic");
+    return std::get<normal_topic_meta>(_id_or_topic).children;
+}
+absl::flat_hash_set<model::topic_namespace>&
+topic_table::topic_metadata::get_children() {
+    vassert(!is_topic_replicable(), "Query for children on a replicable topic");
+    return std::get<normal_topic_meta>(_id_or_topic).children;
 }
 const model::topic& topic_table::topic_metadata::get_source_topic() const {
     vassert(is_topic_replicable(), "Query for source_topic on a normal topic");
@@ -336,6 +346,13 @@ topic_table::apply(create_non_replicable_topic_cmd cmd, model::offset o) {
     }
     _topics.insert(
       {new_non_rep_topic, topic_metadata(std::move(ca), source.tp)});
+    auto& children = tp->second.get_children();
+    auto h = children.find(source);
+    if (h == children.end()) {
+        children.insert(source, {new_non_rep_topic});
+    } else {
+        children.insert(new_non_rep_topic);
+    }
     notify_waiters();
     co_return make_error_code(errc::success);
 }

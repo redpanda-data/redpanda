@@ -36,6 +36,11 @@ public:
     using delta = topic_table_delta;
     class topic_metadata {
     public:
+        struct normal_topic_meta {
+            model::revision_id rev;
+            absl::flat_hash_set<model::topic_namespace> children;
+        };
+
         topic_metadata(
           topic_configuration_assignment, model::revision_id) noexcept;
         topic_metadata(topic_configuration_assignment, model::topic) noexcept;
@@ -44,11 +49,14 @@ public:
         model::revision_id get_revision() const;
         const model::topic& get_source_topic() const;
         const topic_configuration_assignment& get_configuration() const;
+        const absl::flat_hash_set<model::topic_namespace>& get_children() const;
 
     private:
         friend class topic_table;
+        absl::flat_hash_set<model::topic_namespace>& get_children();
+
         topic_configuration_assignment configuration;
-        std::variant<model::revision_id, model::topic> _id_or_topic;
+        std::variant<normal_topic_meta, model::topic> _id_or_topic;
     };
     using underlying_t = absl::flat_hash_map<
       model::topic_namespace,
