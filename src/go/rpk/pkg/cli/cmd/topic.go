@@ -68,7 +68,7 @@ func NewTopicCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	command.AddCommand(topic.NewDescribeCommand(fs))
 	command.AddCommand(topic.NewListCommand(fs))
 	command.AddCommand(topic.NewConsumeCommand(clientClosure))
-	command.AddCommand(topic.NewProduceCommand(producerClosure))
+	command.AddCommand(topic.NewProduceCommand(fs))
 
 	return command
 }
