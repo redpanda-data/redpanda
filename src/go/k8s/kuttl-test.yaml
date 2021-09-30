@@ -13,6 +13,7 @@ commands:
   - command: "kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/master/bundle.yaml"
   - command: "make deploy"
   - command: "./hack/wait-for-webhook-ready.sh"
+  - command: "mkdir -p tests/_e2e_artifacts"
 artifactsDir: tests/_e2e_artifacts
 timeout: 300
 reportFormat: xml
