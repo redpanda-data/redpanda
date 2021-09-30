@@ -10,117 +10,57 @@
 package wasm
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
 
-	"github.com/spf13/afero"
-	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/wasm/template"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/testfs"
 )
 
-func checkDirsExist(fs afero.Fs, t *testing.T, paths []string) {
-	for _, path := range paths {
-		exists, err := afero.DirExists(fs, filepath.Join(path))
-		require.NoError(t, err)
-		require.True(t, exists)
-	}
-}
-
-func checkFilesExist(fs afero.Fs, t *testing.T, paths []string) {
-	for _, path := range paths {
-		exists, err := afero.Exists(fs, filepath.Join(path))
-		require.NoError(t, err)
-		require.True(t, exists)
-	}
-}
-
-func checkGeneratedFiles(fs afero.Fs, t *testing.T, basePath string) {
-	checkDirsExist(fs, t, []string{
-		basePath,
-		filepath.Join(basePath, "src"),
-		filepath.Join(basePath, "test"),
-	})
-
-	checkFilesExist(fs, t, []string{
-		filepath.Join(basePath, "package.json"),
-		filepath.Join(basePath, "webpack.js"),
-		filepath.Join(basePath, "src", "main.js"),
-		filepath.Join(basePath, "test", "main.test.js"),
-	})
+func init() {
+	inTests = true
 }
 
 func TestWasmCommand(t *testing.T) {
-	path, err := os.Getwd()
-	require.NoError(t, err)
 	tests := []struct {
-		name           string
-		args           []string
-		before         func(afero.Fs) error
-		check          func(fs afero.Fs, t *testing.T)
-		expectedErrMsg string
+		name string
+		path string
+
+		pre    map[string]testfs.Fmode
+		post   map[string]testfs.Fmode
+		expNot []string
+		expErr bool
 	}{
 		{
-			name: "should create an npm template with its folder",
-			args: []string{"wasm"},
-			check: func(fs afero.Fs, t *testing.T) {
-				dir := filepath.Join(path, "wasm")
-				checkGeneratedFiles(fs, t, dir)
-			},
-		}, {
-			name: "should fail if the given dir contains files created by " +
-				"this command*",
-			args: []string{"wasm"},
-			before: func(fs afero.Fs) error {
-				absolutePath, err := filepath.Abs(".")
-				folderPath := filepath.Join(absolutePath, "wasm")
-				err = fs.MkdirAll(folderPath, 0755)
-				_, err = fs.Create(filepath.Join(folderPath, "package.json"))
-				return err
-			},
-			expectedErrMsg: fmt.Sprintf("The directory %s/wasm/"+
-				" contains files that could conflict: \n package.json", path),
-		}, {
-			name: "should create webpack file with executable permission",
-			args: []string{"wasm-project"},
-			check: func(fs afero.Fs, t *testing.T) {
-				dir := filepath.Join(path, "wasm-project", "webpack.js")
-				info, _ := fs.Stat(dir)
-				require.True(t, info.Mode() == 0766)
+			name: "should create an npm template in new directory with executable webpack",
+			path: "new_folder/new_sub_folder/wasm",
+			pre:  nil,
+			post: map[string]testfs.Fmode{
+				"new_folder/new_sub_folder/wasm/src/main.js":       {0o600, template.WasmJs()},
+				"new_folder/new_sub_folder/wasm/test/main.test.js": {0o600, template.WasmTestJs()},
+				"new_folder/new_sub_folder/wasm/package.json":      {0o600, template.PackageJson(defApiVersion)},
+				"new_folder/new_sub_folder/wasm/webpack.js":        {0o766, template.Webpack()},
 			},
 		},
 		{
-			name:           "should fail if <project directory> argument isn't passed",
-			args:           []string{},
-			expectedErrMsg: fmt.Sprintf("no project directory specified"),
-		}, {
-			name: "should create <project directory> if it doesn't exist",
-			args: []string{"new_folder/new_sub_folder/wasm-project"},
-			check: func(fs afero.Fs, t *testing.T) {
-				absolutePath, _ := filepath.Abs(".")
-				dir := filepath.Join(absolutePath, "new_folder", "new_sub_folder", "wasm-project")
-				checkGeneratedFiles(fs, t, dir)
-			},
+			name:   "should fail if the given dir contains files created by this command*",
+			path:   "wasm",
+			pre:    map[string]testfs.Fmode{"wasm/package.json": {0o300, "foo"}},
+			post:   map[string]testfs.Fmode{"wasm/package.json": {0o300, "foo"}},
+			expNot: []string{"wasm/src/main.js", "wasm/test/main.test.js", "wasm/webpack.js"},
+			expErr: true,
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			fs := afero.NewMemMapFs()
-			if tt.before != nil {
-				err := tt.before(fs)
-				require.NoError(t, err)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fs := testfs.FromMap(test.pre)
+			err := executeGenerate(fs, test.path)
+			gotErr := err != nil
+			if gotErr != test.expErr {
+				t.Errorf("got err %v (%v) != exp err? %v", gotErr, err, test.expErr)
 			}
-			cmd := NewGenerateCommand(fs)
-			cmd.SetArgs(tt.args)
-			err = cmd.Execute()
-			if tt.expectedErrMsg != "" {
-				require.EqualError(t, err, tt.expectedErrMsg)
-				return
-			}
-			if tt.check != nil {
-				tt.check(fs, t)
-			}
+			testfs.Expect(t, fs, test.post)
+			testfs.ExpectNot(t, fs, test.expNot...)
 		})
 	}
 }

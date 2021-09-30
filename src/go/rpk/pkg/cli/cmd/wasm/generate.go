@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -21,8 +22,23 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/wasm/template"
 	vos "github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
 )
+
+func NewGenerateCommand(fs afero.Fs) *cobra.Command {
+	return &cobra.Command{
+		Use:          "generate [PROJECT DIRECTORY]",
+		Short:        "Create an npm template project for inline WASM engine",
+		SilenceUsage: true,
+		Args:         cobra.ExactArgs(1),
+		Run: func(_ *cobra.Command, args []string) {
+			path, err := filepath.Abs(args[0])
+			out.MaybeDie(err, "unable to get absolute path for %q: %v", args[0], err)
+			err = executeGenerate(fs, path)
+			out.MaybeDie(err, "unable to generate all manifest files: %v", err)
+		},
+	}
+}
 
 type genFile struct {
 	name       string
@@ -30,109 +46,88 @@ type genFile struct {
 	permission os.FileMode
 }
 
-func GenerateManifest(version string) map[string][]genFile {
+func generateManifest(version string) map[string][]genFile {
 	return map[string][]genFile{
-		"src":  {genFile{name: "main.js", content: template.GetWasmJs()}},
-		"test": {genFile{name: "main.test.js", content: template.GetWasmTestJs()}},
+		"src":  {genFile{name: "main.js", content: template.WasmJs()}},
+		"test": {genFile{name: "main.test.js", content: template.WasmTestJs()}},
 		"": {
-			genFile{name: "package.json", content: fmt.Sprintf(template.GetPackageJson(), version)},
-			genFile{name: "webpack.js", content: template.GetWebpack(), permission: 0766},
+			genFile{name: "package.json", content: template.PackageJson(version)},
+			genFile{name: "webpack.js", content: template.Webpack(), permission: 0o766},
 		},
 	}
 }
 
-func NewGenerateCommand(fs afero.Fs) *cobra.Command {
-	command := &cobra.Command{
-		Use:          "generate <project directory>",
-		Short:        "Create an npm template project for inline WASM engine",
-		SilenceUsage: true,
-		Args: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 {
-				return fmt.Errorf(
-					"no project directory specified",
-				)
-			}
-			return nil
-		},
-		RunE: func(_ *cobra.Command, args []string) error {
-			path, err := filepath.Abs(args[0])
-			if err != nil {
-				return err
-			}
-			return executeGenerate(fs, path)
-		},
+const defApiVersion = "21.8.2"
+
+var inTests bool
+
+// Looks up the latest version of our client library using npm, defaulting
+// if anything fails.
+func latestClientApiVersion() string {
+	if inTests {
+		return defApiVersion
 	}
 
-	return command
-}
-
-func checkIfExists(fs afero.Fs, path string) error {
-	exist, err := afero.Exists(fs, path)
-	if err != nil {
-		return err
+	if _, err := exec.LookPath("npm"); err != nil {
+		fmt.Printf("npm not found, defaulting to client API verision %s.\n", defApiVersion)
+		return defApiVersion
 	}
-	if exist {
-		folderPath, filePath := filepath.Split(path)
-		return fmt.Errorf("The directory %s contains files that could conflict: \n %s", folderPath, filePath)
-	}
-	return nil
-}
 
-func GetLatestClientApiVersion() string {
-	/// Works by using npm to lookup the latest version of our library
-	timeout := 2 * time.Second
-	version := "21.8.2"
 	proc := vos.NewProc()
-	output, err := proc.RunWithSystemLdPath(timeout, "npm", "search", "@vectorizedio/wasm-api", "--json")
+	output, err := proc.RunWithSystemLdPath(2*time.Second, "npm", "search", "@vectorizedio/wasm-api", "--json")
 	if err != nil {
 		log.Error(err)
-		return version
+		return defApiVersion
 	}
 
 	var result map[string]interface{}
-	parseError := json.Unmarshal([]byte(output[2]), &result)
-	if parseError != nil {
-		fmt.Println("Can not parse json from npm search: {}, Error: {}", output, parseError)
-		return version
+	if err := json.Unmarshal([]byte(output[2]), &result); err != nil {
+		fmt.Println("Can not parse json from npm search: {}, Error: {}", output, err)
+		return defApiVersion
 	}
 
 	version, ok := result["version"].(string)
 	if !ok {
 		fmt.Println("Can not get version from npm search result: {}", output)
+		return defApiVersion
 	}
-
 	return version
 }
 
 func executeGenerate(fs afero.Fs, path string) error {
-	err := fs.MkdirAll(path, 0755)
-	if err != nil {
-		if !os.IsExist(err) {
-			return err
+	var preexisting []string
+	for dir, templates := range generateManifest(latestClientApiVersion()) {
+		for _, template := range templates {
+			file := filepath.Join(path, dir, template.name)
+			exist, err := afero.Exists(fs, path)
+			if err != nil {
+				return fmt.Errorf("unable to determine if file %q exists: %v", file, err)
+			}
+			if exist {
+				preexisting = append(preexisting, file)
+			}
 		}
 	}
-	for folderName, templates := range GenerateManifest(GetLatestClientApiVersion()) {
-		folderPath := filepath.Join(path, folderName)
-		err := fs.MkdirAll(folderPath, 0755)
-		if err != nil && !os.IsExist(err) {
+	if len(preexisting) > 0 {
+		return fmt.Errorf("Files %v already exist, avoiding generation.", preexisting)
+	}
+
+	if err := fs.MkdirAll(path, 0o755); err != nil {
+		return err
+	}
+	for dir, templates := range generateManifest(latestClientApiVersion()) {
+		dirPath := filepath.Join(path, dir)
+		if err := fs.MkdirAll(dirPath, 0o755); err != nil {
 			return err
 		}
-		for _, templateFile := range templates {
-			filePath := filepath.Join(folderPath, templateFile.name)
-			err := checkIfExists(fs, filePath)
-			if err != nil {
-				return err
+		for _, template := range templates {
+			file := filepath.Join(dirPath, template.name)
+			perm := os.FileMode(0o600)
+			if template.permission > 0 {
+				perm = template.permission
 			}
-			_, err = utils.WriteBytes(fs, []byte(templateFile.content), filePath)
-			if err != nil {
+			if err := afero.WriteFile(fs, file, []byte(template.content), perm); err != nil {
 				return err
-			}
-
-			if templateFile.permission > 0 {
-				err = fs.Chmod(filePath, templateFile.permission)
-				if err != nil {
-					return err
-				}
 			}
 		}
 	}

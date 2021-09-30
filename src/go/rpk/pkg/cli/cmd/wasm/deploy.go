@@ -4,120 +4,54 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/Shopify/sarama"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
 )
 
-func NewDeployCommand(
-	fs afero.Fs,
-	createProducer func(bool, int32) (sarama.SyncProducer, error),
-	adminCreate func() (sarama.ClusterAdmin, error),
-) *cobra.Command {
-	var description string
-	var name string
-	var coprocType string
-
-	command := &cobra.Command{
-		Use:   "deploy <path>",
+func NewDeployCommand(fs afero.Fs) *cobra.Command {
+	var (
+		description string
+		name        string
+		coprocType  string
+	)
+	cmd := &cobra.Command{
+		Use:   "deploy [PATH]",
 		Short: "deploy inline WASM function",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		Run: func(cmd *cobra.Command, args []string) {
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			cl, err := kafka.NewFranzClient(fs, cfg)
+			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
+			defer cl.Close()
+
 			path := args[0]
-			fullFileName := filepath.Base(path)
-			fileExt := filepath.Ext(fullFileName)
-			// validate file extension, just allow js extension
-			if fileExt != ".js" {
-				return fmt.Errorf("can't deploy '%s': only .js files are supported.", path)
+			if filepath.Ext(path) != ".js" {
+				out.Die("cannot deploy %q: only .js files are supported", path)
 			}
-			err := CheckCoprocType(coprocType)
-			if err != nil {
-				return err
-			}
-			fileContent, err := afero.ReadFile(fs, path)
-			if err != nil {
-				return err
-			}
-			// create producer
-			producer, err := createProducer(false, -1)
-			if err != nil {
-				return err
-			}
-			// create admin
-			admin, err := adminCreate()
-			if err != nil {
-				return err
-			}
-			return deploy(
-				name,
-				coprocType,
-				fileContent,
-				description,
-				producer,
-				admin,
-			)
+
+			err = checkCoprocType(coprocType)
+			out.MaybeDieErr(err)
+			err = ensureCoprocTopic(cl)
+			out.MaybeDie(err, "coproc topic failure: %v", err)
+
+			file, err := afero.ReadFile(fs, path)
+			out.MaybeDie(err, "unable to read %q: %v", path, err)
+
+			err = produceDeployRecord(cl, name, description, coprocType, file)
+			out.MaybeDie(err, "unable to produce deploy message: %v", err)
+			fmt.Println("Deploy successful!")
 		},
 	}
 
-	command.Flags().StringVar(
-		&description,
-		"description",
-		"",
-		"Optional description about what the wasm function does, for reference.",
-	)
-
-	command.Flags().StringVar(
-		&name,
-		"name",
-		"",
-		"Unique deploy identifier attached to the instance of this script",
-	)
-	command.MarkFlagRequired("name")
-
-	AddTypeFlag(command, &coprocType)
-
-	return command
-}
-
-/**
-this function create and publish message for deploying coprocessor
-message format:
-{
-	key: <name>,
-	header: {
-		action: "deploy",
-		sha256: <file content sha256>,
-		description: <file description>,
-		type: <coproc type>
-	}
-	message: <binary file content>
-}
-*/
-func deploy(
-	name string,
-	coprocType string,
-	fileContent []byte,
-	description string,
-	producer sarama.SyncProducer,
-	admin sarama.ClusterAdmin,
-) error {
-	exist, err := ExistingTopic(admin, kafka.CoprocessorTopic)
-	if err != nil {
-		return err
-	}
-	if !exist {
-		err = CreateCoprocessorTopic(admin)
-		if err != nil {
-			return err
-		}
-	}
-	// create message
-	message := CreateDeployMsg(name, coprocType, description, fileContent)
-	// publish message
-	err = kafka.PublishMessage(producer, &message)
-	if err != nil {
-		return fmt.Errorf("error deploying '%s: %v'", name, err)
-	}
-	return nil
+	cmd.Flags().StringVar(&description, "description", "", "optional description about what the wasm function does")
+	cmd.Flags().StringVar(&coprocType, "type", "async", "WASM engine type (async, data-policy)")
+	cmd.Flags().StringVar(&name, "name", "", "unique deploy identifier attached to the instance of this script")
+	cmd.MarkFlagRequired("name")
+	return cmd
 }
