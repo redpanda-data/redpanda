@@ -2,6 +2,8 @@ apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
   name: cluster-sample
+  labels:
+    test: produce-consume
 spec:
   image: "localhost/redpanda"
   version: "dev"
