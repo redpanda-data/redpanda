@@ -322,6 +322,8 @@ topic_table::apply(create_non_replicable_topic_cmd cmd, model::offset o) {
     if (tp == _topics.end()) {
         co_return make_error_code(errc::source_topic_not_exists);
     }
+    vassert(
+      tp->second.is_topic_replicable(), "Source topic must be replicable");
 
     for (const auto& pas : tp->second.configuration.assignments) {
         _pending_deltas.emplace_back(
@@ -335,6 +337,18 @@ topic_table::apply(create_non_replicable_topic_cmd cmd, model::offset o) {
     ca.cfg.tp_ns = new_non_rep_topic;
     for (auto& assignment : ca.assignments) {
         assignment.group = raft::group_id(-1);
+    }
+
+    auto [itr, success] = _topics_hierarchy.try_emplace(
+      source,
+      (std::initializer_list<model::topic_namespace>){new_non_rep_topic});
+    if (!success) {
+        auto [_, success] = itr->second.emplace(new_non_rep_topic);
+        /// Assert because if item already exists, the contains check at the
+        /// topic of the method should have passed
+        vassert(
+          success,
+          "Duplicate non_replicable_topic detected when it shouldn't exist");
     }
     _topics.insert(
       {new_non_rep_topic, topic_metadata(std::move(ca), source.tp)});
