@@ -15,6 +15,7 @@ commands:
   - command: "helm dep up ./helm-chart/charts/redpanda-operator"
   - command: "helm install --set configurator.tag=latest --set image.tag=latest --namespace helm-test --create-namespace redpanda-operator ./helm-chart/charts/redpanda-operator"
   - command: "./hack/wait-for-webhook-ready.sh"
+  - command: "mkdir -p tests/_helm_e2e_artifacts"
 artifactsDir: tests/_helm_e2e_artifacts
 timeout: 300
 reportFormat: xml
