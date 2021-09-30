@@ -15,6 +15,9 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
 
 public class TxConsumer {
+  public static class TimeoutException extends Exception {
+    public TimeoutException(String msg) { super(msg); }
+  }
 
   String topic;
   TopicPartition tp;
@@ -82,7 +85,7 @@ public class TxConsumer {
       }
     }
 
-    throw new Exception(
+    throw new TimeoutException(
         "can't read up to " + last_offset + " in " + attempts + " tries");
   }
 
@@ -117,7 +120,7 @@ public class TxConsumer {
       }
     }
 
-    throw new Exception(
+    throw new TimeoutException(
         "can't read " + n + " records in " + attempts + " tries");
   }
 }

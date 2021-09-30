@@ -67,6 +67,13 @@ class Verifier {
             "Executing " + name + " test, retries left: " + retries);
         action.run(connection);
         return;
+      } catch (TxConsumer.TimeoutException e) {
+        if (retries > 0) {
+          e.printStackTrace();
+          Thread.sleep(Duration.ofSeconds(1).toMillis());
+          continue;
+        }
+        throw e;
       } catch (KafkaException e) {
         if (retries > 0) {
           e.printStackTrace();
