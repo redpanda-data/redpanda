@@ -16,7 +16,7 @@ from kafka import TopicPartition
 
 from rptest.wasm.topic import get_source_topic
 from rptest.wasm.native_kafka_consumer import NativeKafkaConsumer
-from rptest.wasm.native_kafka_producer import NativeKafkaProducer
+from rptest.wasm.cli_kafka_producer import CliKafkaProducer
 
 from rptest.wasm.topic import construct_materialized_topic
 from rptest.wasm.wasm_build_tool import WasmBuildTool
@@ -153,13 +153,12 @@ class WasmTest(RedpandaTest):
 
         for tp_spec, num_records, record_size in topic_spec:
             try:
-                producer = NativeKafkaProducer(self.redpanda.brokers(),
-                                               tp_spec.name, num_records, 100,
-                                               record_size)
+                producer = CliKafkaProducer(self.redpanda, tp_spec.name,
+                                            num_records, record_size)
                 producer.start()
                 self._producers.append(producer)
             except Exception as e:
-                self.logger.error(f"Failed to create NativeKafkaProducer: {e}")
+                self.logger.error(f"Failed to create CliKafkaProducer: {e}")
                 raise
 
         try:
@@ -231,4 +230,4 @@ class WasmTest(RedpandaTest):
         """
         2-tuple representing timeout(0) and backoff interval(1)
         """
-        return (90, 1)
+        return (300, 1)

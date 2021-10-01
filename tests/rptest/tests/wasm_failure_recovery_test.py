@@ -79,36 +79,3 @@ class WasmMultiInputTopicFailureRecoveryTest(WasmFailureRecoveryTest):
 
     def verify_results(self):
         return materialized_result_set_compare
-
-
-class WasmMeshFailureRecoveryTest(WasmFailureRecoveryTest):
-    topics = (
-        TopicSpec(partition_count=3,
-                  replication_factor=3,
-                  cleanup_policy=TopicSpec.CLEANUP_DELETE),
-        TopicSpec(partition_count=3,
-                  replication_factor=3,
-                  cleanup_policy=TopicSpec.CLEANUP_DELETE),
-        TopicSpec(partition_count=3,
-                  replication_factor=3,
-                  cleanup_policy=TopicSpec.CLEANUP_DELETE),
-    )
-
-    def __init__(self, test_context, num_records=10000, record_size=1024):
-        super(WasmMeshFailureRecoveryTest,
-              self).__init__(test_context,
-                             num_records=num_records,
-                             record_size=record_size)
-
-    def wasm_xfactor(self):
-        return 3
-
-    def wasm_test_outputs(self):
-        otopic_a = "output_topic_a"
-        otopic_b = "output_topic_b"
-        otopic_c = "output_topic_c"
-        return [[otopic_a, otopic_b, otopic_c], [otopic_a, otopic_b, otopic_c],
-                [otopic_a, otopic_b, otopic_c]]
-
-    def verify_results(self):
-        return materialized_result_set_compare
