@@ -402,6 +402,29 @@ ss::future<> write_async(iobuf& out, T const& t) {
     }
 }
 
+/**
+ * Only use this method for enums specifying the underlying datatype explicitly.
+ * Otherwise, the serialization format might change depending on the compiler.
+ */
+template<
+  typename T,
+  std::enable_if_t<std::is_enum_v<std::decay_t<T>>, void*> = nullptr>
+void read_enum(iobuf_parser& in, T& el, size_t const bytes_left_limit) {
+    serde::read_nested(
+      in, *reinterpret_cast<std::underlying_type_t<T>*>(&el), bytes_left_limit);
+}
+
+/**
+ * Only use this method for enums specifying the underlying datatype explicitly.
+ * Otherwise, the serialization format might change depending on the compiler.
+ */
+template<
+  typename T,
+  std::enable_if_t<std::is_enum_v<std::decay_t<T>>, void*> = nullptr>
+void write_enum(iobuf& out, T const el) {
+    serde::write(out, static_cast<std::underlying_type_t<T>>(el));
+}
+
 template<typename T>
 iobuf to_iobuf(T&& t) {
     iobuf b;

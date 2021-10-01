@@ -34,6 +34,15 @@ struct custom_read_write {
     int _x;
 };
 
+enum class my_enum : uint8_t { x, y, z };
+
+inline void
+read_nested(iobuf_parser& in, my_enum& el, size_t const bytes_left_limit) {
+    serde::read_enum(in, el, bytes_left_limit);
+}
+
+inline void write(iobuf& out, my_enum el) { serde::write_enum(out, el); }
+
 SEASTAR_THREAD_TEST_CASE(custom_read_write_test) {
     BOOST_CHECK(
       serde::from_iobuf<custom_read_write>(
