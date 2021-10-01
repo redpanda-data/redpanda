@@ -281,9 +281,9 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
                 f = read_nested<FieldType>(in, bytes_left_limit);
                 return true;
             });
-            if (in.bytes_left() > h._bytes_left_limit) {
-                in.skip(in.bytes_left() - h._bytes_left_limit);
-            }
+        }
+        if (in.bytes_left() > h._bytes_left_limit) {
+            in.skip(in.bytes_left() - h._bytes_left_limit);
         }
     } else if constexpr (std::is_same_v<Type, bool>) {
         t = read_nested<int8_t>(in, bytes_left_limit) != 0;
