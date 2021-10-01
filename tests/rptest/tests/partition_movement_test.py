@@ -13,7 +13,6 @@ import requests
 
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
-from ducktape.mark import ignore
 from rptest.clients.kafka_cat import KafkaCat
 import requests
 
@@ -312,7 +311,6 @@ class PartitionMovementTest(EndToEndTest):
 
             self.logger.info(f"Finished verifying records in {spec}")
 
-    @ignore  # https://github.com/vectorizedio/redpanda/issues/2385
     @cluster(num_nodes=5)
     def test_dynamic(self):
         """
