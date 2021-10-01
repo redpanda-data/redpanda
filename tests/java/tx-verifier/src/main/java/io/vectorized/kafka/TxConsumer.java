@@ -15,6 +15,10 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
 
 public class TxConsumer {
+  public static class TimeoutException extends Exception {
+    public TimeoutException(String msg) { super(msg); }
+  }
+
   String topic;
   TopicPartition tp;
   List<TopicPartition> tps;
@@ -51,21 +55,19 @@ public class TxConsumer {
 
   public void close() { this.consumer.close(); }
 
-  public List<TxRecord> read(long start_offset, long last_offset, int batchSize)
+  public List<TxRecord>
+  read(long start_offset, long last_offset, int timeout_ms, int attempts)
       throws Exception {
     List<TxRecord> result = new ArrayList<>();
-    var limit = Math.max(last_offset - start_offset, 1) * 10;
+    var attempt = 0;
 
     consumer.seek(tp, start_offset);
 
-    while (limit >= 0) {
-      ConsumerRecords<String, String> records = consumer.poll(batchSize);
-      if (records.count() == 0) {
-        limit--;
-      }
+    while (attempt < attempts) {
+      attempt++;
+      ConsumerRecords<String, String> records = consumer.poll(timeout_ms);
       var it = records.iterator();
       while (it.hasNext()) {
-        limit--;
         var record = it.next();
 
         var txRecord = new TxRecord();
@@ -83,27 +85,25 @@ public class TxConsumer {
       }
     }
 
-    throw new Exception(
-        "can't read up to " + last_offset + " in " + limit + " tries");
+    throw new TimeoutException(
+        "can't read up to " + last_offset + " in " + attempts + " tries");
   }
 
-  public List<TxRecord> readN(long start_offset, int n, int batchSize)
+  public List<TxRecord>
+  readN(long start_offset, int n, int timeout_ms, int attempts)
       throws Exception {
     List<TxRecord> result = new ArrayList<>();
-    var limit = n * 10;
+    var attempt = 0;
 
     consumer.seek(tp, start_offset);
 
     int read = 0;
 
-    while (limit >= 0) {
-      ConsumerRecords<String, String> records = consumer.poll(batchSize);
-      if (records.count() == 0) {
-        limit--;
-      }
+    while (attempt < attempts) {
+      attempt++;
+      ConsumerRecords<String, String> records = consumer.poll(timeout_ms);
       var it = records.iterator();
       while (it.hasNext()) {
-        limit--;
         read++;
         var record = it.next();
 
@@ -120,6 +120,7 @@ public class TxConsumer {
       }
     }
 
-    throw new Exception("can't read " + n + " records in " + limit + " tries");
+    throw new TimeoutException(
+        "can't read " + n + " records in " + attempts + " tries");
   }
 }

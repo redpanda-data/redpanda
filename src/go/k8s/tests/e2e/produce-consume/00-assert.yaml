@@ -28,3 +28,9 @@ metadata:
   name: cluster-sample
 status:
   replicas: 3
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+  - type: pod
+    selector: test=produce-consume

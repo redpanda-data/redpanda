@@ -19,6 +19,38 @@
 #include <chrono>
 #include <limits>
 
+struct custom_read_write {
+    friend inline void read_nested(
+      iobuf_parser& in, custom_read_write& el, size_t const bytes_left_limit) {
+        serde::read_nested(in, el._x, bytes_left_limit);
+        ++el._x;
+    }
+
+    friend inline void write(iobuf& out, custom_read_write el) {
+        ++el._x;
+        serde::write(out, el._x);
+    }
+
+    int _x;
+};
+
+enum class my_enum : uint8_t { x, y, z };
+
+inline void
+read_nested(iobuf_parser& in, my_enum& el, size_t const bytes_left_limit) {
+    serde::read_enum(in, el, bytes_left_limit);
+}
+
+inline void write(iobuf& out, my_enum el) { serde::write_enum(out, el); }
+
+SEASTAR_THREAD_TEST_CASE(custom_read_write_test) {
+    BOOST_CHECK(
+      serde::from_iobuf<custom_read_write>(
+        serde::to_iobuf(custom_read_write{123}))
+        ._x
+      == 125);
+}
+
 struct test_msg0
   : serde::envelope<test_msg0, serde::version<1>, serde::compat_version<0>> {
     char _i, _j;

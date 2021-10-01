@@ -30,6 +30,6 @@ describe("transform", () => {
   });
 });`
 
-func GetWasmTestJs() string {
+func WasmTestJs() string {
 	return wasmTestJS
 }

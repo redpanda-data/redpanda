@@ -110,13 +110,22 @@ class BacktraceCapture(threading.Thread):
             for block in blocks:
                 self._addr2lines(block)
 
-    def _addr2lines(self, backtrace):
-        if not backtrace:
-            # Maybe we saw a 'Backtrace:' line with no following
-            # address lines, and got an empty list.  Ignore it.
-            return
+    def _find_addr2lines(self):
+        """
+        seastar-addr2lines can be run directly from seastar source
+        tree on developer workstations, but must be found in a magic
+        location in CI, where the dependencies' sources have been
+        deleted before tests are run
+        :return: string, path
+        """
 
-        # Find our build directory by searching back from binary
+        # CI: use prior knowledge of location where tool is
+        # copied in Dockerfile for build image
+        ci_location = "/vectorized/bin/seastar-addr2line"
+        if os.path.exists(ci_location):
+            return ci_location
+
+        # Workstation: find our build directory by searching back from binary
         path_parts = self.binary.split("/")
         try:
             vbuild = "/".join(path_parts[0:path_parts.index("vbuild") + 3])
@@ -125,20 +134,40 @@ class BacktraceCapture(threading.Thread):
                 f"Could not find vbuild in binary path {self.binary}\n")
             return
         else:
-            addr2line_script = os.path.join(
+            location = os.path.join(
                 vbuild,
                 "v_deps_build/seastar-prefix/src/seastar/scripts/seastar-addr2line"
             )
 
-        ran = subprocess.run([addr2line_script, "-e", self.binary],
+            if not os.path.exists(location):
+                sys.stderr.write(
+                    f"seastar-addr2line not found at {location}\n")
+                return
+            else:
+                return location
+
+    def _addr2lines(self, backtrace):
+        if not backtrace:
+            # Maybe we saw a 'Backtrace:' line with no following
+            # address lines, and got an empty list.  Ignore it.
+            return
+
+        addr2lines_path = self._find_addr2lines()
+        if addr2lines_path is None:
+            sys.stderr.write(
+                f"Could not decode backtrace, seastar-addr2lines not found\n")
+            return
+
+        ran = subprocess.run([addr2lines_path, "-e", self.binary],
                              input="\n".join(backtrace),
                              encoding='utf-8',
                              capture_output=True)
-        ran.check_returncode()
 
-        sys.stderr.write("Captured a Seastar backtrace:\n")
+        sys.stderr.write(f"Decoded a Seastar backtrace:\n")
         sys.stderr.write(ran.stderr)
         sys.stderr.write(ran.stdout)
+
+        ran.check_returncode()
 
 
 class TestRunner():
@@ -231,7 +260,7 @@ class TestRunner():
                      args=self.test_args)
         logger.info(cmd)
 
-        # We only capture stderr becasuse that's where backtraces go
+        # We only capture stderr because that's where backtraces go
         p = subprocess.Popen(cmd,
                              shell=True,
                              stderr=subprocess.PIPE,

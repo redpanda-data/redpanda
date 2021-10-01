@@ -47,22 +47,8 @@ func NewWasmCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		&brokers,
 	)
 	command.AddCommand(wasm.NewGenerateCommand(fs))
-
-	// configure kafka producer
-	configClosure := common.FindConfigFile(mgr, &configFile)
-	brokersClosure := common.DeduceBrokers(
-		common.CreateDockerClient,
-		configClosure,
-		&brokers,
-	)
-	tlsClosure := common.BuildKafkaTLSConfig(fs, &enableTLS, &certFile, &keyFile, &truststoreFile, configClosure)
-	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism, configClosure)
-	producerClosure := common.CreateProducer(brokersClosure, configClosure, tlsClosure, kAuthClosure)
-	adminClosure := common.CreateAdmin(brokersClosure, configClosure, tlsClosure, kAuthClosure)
-
-	command.AddCommand(wasm.NewDeployCommand(fs, producerClosure, adminClosure))
-
-	command.AddCommand(wasm.NewRemoveCommand(producerClosure, adminClosure))
+	command.AddCommand(wasm.NewDeployCommand(fs))
+	command.AddCommand(wasm.NewRemoveCommand(fs))
 
 	return command
 }

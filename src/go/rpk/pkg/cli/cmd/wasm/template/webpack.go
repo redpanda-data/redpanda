@@ -47,6 +47,6 @@ fs.readdir("./src/", (err, files) => {
 });
 `
 
-func GetWebpack() string {
+func Webpack() string {
 	return webpack
 }

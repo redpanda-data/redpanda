@@ -3,6 +3,7 @@
 package testfs
 
 import (
+	"errors"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -62,6 +63,20 @@ func Expect(t *testing.T, fs afero.Fs, m map[string]Fmode) {
 
 		if got := string(file); got != fmode.Contents {
 			t.Errorf("file %q contents %q != expected %q", path, got, fmode.Contents)
+		}
+	}
+}
+
+// ExpectNot ensures that the files in m do not exist in fs.
+func ExpectNot(t *testing.T, afs afero.Fs, paths ...string) {
+	for _, path := range paths {
+		_, err := afs.Stat(path)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+		case err == nil:
+			t.Errorf("stat %q shows file exists", path)
+		default:
+			t.Errorf("unable to stat %q: %v", path, err)
 		}
 	}
 }
