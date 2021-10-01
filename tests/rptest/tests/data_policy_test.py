@@ -66,8 +66,7 @@ class DataPolicyTest(RedpandaTest):
                 topic, {TopicSpec.PROPERTY_DATA_POLICY_FUNCTION_NAME: "3"})
         except subprocess.CalledProcessError as e:
             # Expected: request fails to update topic
-            self.logger.error(
-                f"Kafka CLI alter failed as expected: {e.stdout}")
+            self.logger.info(f"Kafka CLI alter failed as expected: {e.stdout}")
             assert "unable to parse property" in e.stdout
         else:
             raise RuntimeError(f"Expected API error, got {r}")

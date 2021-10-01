@@ -40,7 +40,7 @@ class TxVerifierTest(RedpandaTest):
         rpk.create_topic("topic1")
         rpk.create_topic("topic2")
 
-        self.redpanda.logger.error("starting tx verifier")
+        self.redpanda.logger.info("starting tx verifier")
         try:
             cmd = ("{java} -jar {verifier_jar} {brokers}").format(
                 java="java",
