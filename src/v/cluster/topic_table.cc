@@ -90,9 +90,10 @@ topic_table::apply(create_partition_cmd cmd, model::offset offset) {
 
     // add partitions
     auto prev_partition_count = tp->second.configuration.cfg.partition_count;
+    // update partitions count
     tp->second.configuration.cfg.partition_count
-      += cmd.value.cfg.partition_count;
-    // add assignments
+      = cmd.value.cfg.new_total_partition_count;
+    // add assignments of newly created partitions
     for (auto& p_as : cmd.value.assignments) {
         p_as.id += model::partition_id(prev_partition_count);
         tp->second.configuration.assignments.push_back(p_as);

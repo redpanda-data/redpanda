@@ -392,7 +392,9 @@ struct create_partititions_configuration {
     create_partititions_configuration(model::topic_namespace, int32_t);
 
     model::topic_namespace tp_ns;
-    int32_t partition_count;
+
+    // This is new total number of partitions in topic.
+    int32_t new_total_partition_count;
 
     // TODO: use when we will start supporting custom partitions assignment
     std::vector<custom_assignment> custom_assignments;

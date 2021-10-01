@@ -517,10 +517,14 @@ ss::future<std::vector<topic_result>> topics_frontend::create_partitions(
 }
 
 allocation_request make_allocation_request(
-  int16_t replication_factor, const create_partititions_configuration& cfg) {
+  int16_t replication_factor,
+  const int32_t current_partitions_count,
+  const create_partititions_configuration& cfg) {
+    const auto new_partitions_cnt = cfg.new_total_partition_count
+                                    - current_partitions_count;
     allocation_request req;
-    req.partitions.reserve(cfg.partition_count);
-    for (auto p = 0; p < cfg.partition_count; ++p) {
+    req.partitions.reserve(new_partitions_cnt);
+    for (auto p = 0; p < new_partitions_cnt; ++p) {
         req.partitions.emplace_back(model::partition_id(p), replication_factor);
     }
     return req;
@@ -533,10 +537,18 @@ ss::future<topic_result> topics_frontend::do_create_partition(
     if (!tp_cfg) {
         co_return make_error_result(p_cfg.tp_ns, errc::topic_not_exists);
     }
+    // we only support increasing number of partitions
+    if (p_cfg.new_total_partition_count <= tp_cfg->partition_count) {
+        co_return make_error_result(
+          p_cfg.tp_ns, errc::topic_invalid_partitions);
+    }
+
     auto units = co_await _allocator.invoke_on(
       partition_allocator::shard,
-      [p_cfg, rf = tp_cfg->replication_factor](partition_allocator& al) {
-          return al.allocate(make_allocation_request(rf, p_cfg));
+      [p_cfg,
+       current = tp_cfg->partition_count,
+       rf = tp_cfg->replication_factor](partition_allocator& al) {
+          return al.allocate(make_allocation_request(rf, current, p_cfg));
       });
 
     // no assignments, error
