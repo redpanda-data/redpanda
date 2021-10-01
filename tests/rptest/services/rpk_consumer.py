@@ -9,6 +9,7 @@
 
 import json
 import time
+import threading
 from ducktape.services.background_thread import BackgroundThreadService
 
 
@@ -32,6 +33,7 @@ class RpkConsumer(BackgroundThreadService):
         self._retries = retries
         self._group = group
         self._commit = commit
+        self._stopping = threading.Event()
         self.done = False
         self.messages = []
         self.error = None
@@ -41,15 +43,21 @@ class RpkConsumer(BackgroundThreadService):
         retries = 1
         retry_sec = 5
         err = None
-        while retries < self._retries:
+
+        self._stopping.clear()
+        while retries < self._retries and not self._stopping.is_set():
             try:
                 self._consume(node)
             except Exception as e:
+                if self._stopping.is_set():
+                    break
+
                 err = e
                 self._redpanda.logger.error(
                     f"Consumer failed with error: '{e}'. Retrying in {retry_sec} seconds."
                 )
                 retries += 1
+                self._stopping.wait(retry_sec)
                 time.sleep(retry_sec)
 
         self.done = True
@@ -57,6 +65,9 @@ class RpkConsumer(BackgroundThreadService):
             self.error = err
 
     def stop_node(self, node):
+        self._redpanda.logger.info(
+            f"Stopping RpkConsumer on ({node.account.hostname})")
+        self._stopping.set()
         node.account.kill_process('rpk', clean_shutdown=False)
 
     def _consume(self, node):
@@ -77,6 +88,9 @@ class RpkConsumer(BackgroundThreadService):
             cmd += ' --commit'
 
         for line in node.account.ssh_capture(cmd):
+            if self._stopping.is_set():
+                break
+
             l = line.rstrip()
             if not l:
                 continue

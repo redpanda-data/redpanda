@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import re
+import threading
 from ducktape.services.background_thread import BackgroundThreadService
 
 
@@ -17,15 +18,20 @@ class KafConsumer(BackgroundThreadService):
         self._redpanda = redpanda
         self._topic = topic
         self._num_records = num_records
+        self._stopping = threading.Event()
         self.done = False
         self.offset = dict()
 
     def _worker(self, idx, node):
+        self._stopping.clear()
         try:
             partition = None
             cmd = "kaf consume -b %s --offset newest %s" % (
                 self._redpanda.brokers(), self._topic)
             for line in node.account.ssh_capture(cmd):
+                if self._stopping.is_set():
+                    break
+
                 self.logger.debug(line.rstrip())
 
                 m = re.match("Partition:\s+(?P<partition>\d+)", line)
@@ -41,9 +47,14 @@ class KafConsumer(BackgroundThreadService):
                     self.offset[partition] = offset
                     partition = None
         except:
-            raise
+            if self._stopping.is_set():
+                # Expect a non-zero exit code when killing during teardown
+                pass
+            else:
+                raise
         finally:
             self.done = True
 
     def stop_node(self, node):
+        self._stopping.set()
         node.account.kill_process("kaf", clean_shutdown=False)
