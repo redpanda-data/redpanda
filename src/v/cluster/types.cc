@@ -322,57 +322,6 @@ namespace reflection {
 // These enum encoding/decoding functions should be move into the different
 // translation unit eventually
 
-inline void read_nested(
-  iobuf_parser& in, model::compression& el, size_t const bytes_left_limit) {
-    serde::read_enum(in, el, bytes_left_limit);
-}
-
-inline void write(iobuf& out, model::compression el) {
-    serde::write_enum(out, el);
-}
-
-inline void read_nested(
-  iobuf_parser& in,
-  model::cleanup_policy_bitflags& el,
-  size_t const bytes_left_limit) {
-    serde::read_enum(in, el, bytes_left_limit);
-}
-
-inline void write(iobuf& out, model::cleanup_policy_bitflags el) {
-    serde::write_enum(out, el);
-}
-
-inline void read_nested(
-  iobuf_parser& in,
-  model::compaction_strategy& el,
-  size_t const bytes_left_limit) {
-    serde::read_enum(in, el, bytes_left_limit);
-}
-
-inline void write(iobuf& out, model::compaction_strategy el) {
-    serde::write_enum(out, el);
-}
-
-inline void read_nested(
-  iobuf_parser& in, model::timestamp_type& el, size_t const bytes_left_limit) {
-    serde::read_enum(in, el, bytes_left_limit);
-}
-
-inline void write(iobuf& out, model::timestamp_type el) {
-    serde::write_enum(out, el);
-}
-
-inline void read_nested(
-  iobuf_parser& in,
-  cluster::shadow_indexing_modee& el,
-  size_t const bytes_left_limit) {
-    serde::read_enum(in, el, bytes_left_limit);
-}
-
-inline void write(iobuf& out, cluster::shadow_indexing_mode el) {
-    serde::write_enum(out, el);
-}
-
 /// Deserialize tristate using the same format as adl
 ///
 /// Template parameter T is a result value type.
@@ -454,19 +403,20 @@ struct topic_configuration_wrapper {
     }
 
     void serde_write(iobuf& out) {
-        serde::write(out, cfg->tp_ns.ns());
-        serde::write(out, cfg->tp_ns.tp());
-        serde::write(out, cfg->partition_count);
-        serde::write(out, cfg->replication_factor);
-        serde::write(out, cfg->properties.compression);
-        serde::write(out, cfg->properties.cleanup_policy_bitflags);
-        serde::write(out, cfg->properties.compaction_strategy);
-        serde::write(out, cfg->properties.timestamp_type);
-        serde::write(out, cfg->properties.segment_size);
-        serde::write(out, cfg->properties.retention_bytes);
-        serde::write(out, cfg->properties.retention_duration);
-        serde::write(out, cfg->properties.recovery);
-        serde::write(out, cfg->properties.shadow_indexing);
+        using serde::write;
+        write(out, cfg->tp_ns.ns());
+        write(out, cfg->tp_ns.tp());
+        write(out, cfg->partition_count);
+        write(out, cfg->replication_factor);
+        write(out, cfg->properties.compression);
+        write(out, cfg->properties.cleanup_policy_bitflags);
+        write(out, cfg->properties.compaction_strategy);
+        write(out, cfg->properties.timestamp_type);
+        write(out, cfg->properties.segment_size);
+        write(out, cfg->properties.retention_bytes);
+        write(out, cfg->properties.retention_duration);
+        write(out, cfg->properties.recovery);
+        write(out, cfg->properties.shadow_indexing);
     }
 };
 

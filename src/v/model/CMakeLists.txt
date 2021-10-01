@@ -11,6 +11,7 @@ v_cc_library(
     v::bytes
     v::rphashing
     v::reflection
+    v::serde
     Seastar::seastar
   )
 add_subdirectory(tests)

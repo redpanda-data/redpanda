@@ -23,6 +23,7 @@
 namespace model {
 
 enum class timestamp_type : uint8_t { create_time, append_time };
+constexpr bool is_fixed_size_enum(timestamp_type) { return true; }
 
 std::ostream& operator<<(std::ostream&, timestamp_type);
 std::istream& operator>>(std::istream&, timestamp_type&);

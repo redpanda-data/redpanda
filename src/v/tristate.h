@@ -12,6 +12,7 @@
 #pragma once
 
 #include "seastarx.h"
+#include "serde/serde.h"
 
 #include <fmt/ostream.h>
 
@@ -33,6 +34,22 @@ template<typename T>
 class tristate {
 public:
     constexpr tristate() noexcept = default;
+
+    tristate(T&& o) noexcept
+      : _value{std::move(o)} {}
+
+    tristate(T const& o)
+      : _value(o) {}
+
+    tristate& operator=(T const& o) {
+        _value = o;
+        return *this;
+    }
+
+    tristate& operator=(T&& o) noexcept {
+        _value = std::move(o);
+        return *this;
+    }
 
     constexpr explicit tristate(std::optional<T> t) noexcept
       : _value(std::move(t)) {}
@@ -106,3 +123,33 @@ private:
     using underlying_t = std::variant<std::monostate, std::optional<T>>;
     underlying_t _value;
 };
+
+/// Deserialize tristate using the same format as adl
+///
+/// Template parameter T is a result value type.
+template<class T>
+void read_nested(
+  iobuf_parser& in, tristate<T>& value, size_t bytes_left_limit) {
+    auto state = serde::read_nested<int8_t>(in, bytes_left_limit);
+    if (state == -1) {
+        value = tristate<T>{};
+    } else if (state == 0) {
+        value = tristate<T>{std::nullopt};
+    }
+    value = serde::read_nested<T>(in, bytes_left_limit);
+};
+
+/// Serialize tristate using the same format as adl
+///
+/// Template parameter T is a value type of the tristate.
+template<class T>
+inline void write(iobuf& out, const tristate<T>& t) {
+    if (t.is_disabled()) {
+        serde::write(out, static_cast<int8_t>(-1));
+    } else if (!t.has_value()) {
+        serde::write(out, static_cast<int8_t>(0));
+    } else {
+        serde::write(out, static_cast<int8_t>(1));
+        serde::write(out, t.value());
+    }
+}

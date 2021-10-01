@@ -46,6 +46,7 @@ enum class compression : uint8_t {
     // compression codecs in kafka batch attributes.
     producer = std::numeric_limits<std::underlying_type_t<compression>>::max()
 };
+constexpr bool is_fixed_size_enum(compression) { return true; }
 
 /// operators needed for boost::lexical_cast<compression>
 /// inline to prevent library depdency with the v::compression module

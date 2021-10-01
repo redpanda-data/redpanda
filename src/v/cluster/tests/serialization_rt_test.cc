@@ -31,8 +31,7 @@ SEASTAR_THREAD_TEST_CASE(topic_config_rt_test) {
     cfg.properties.compression = model::compression::snappy;
     cfg.properties.segment_size = std::optional<size_t>(1_GiB);
     cfg.properties.retention_bytes = tristate<size_t>{};
-    cfg.properties.retention_duration = tristate<std::chrono::milliseconds>(
-      10h);
+    cfg.properties.retention_duration = 10h;
 
     auto d = serialize_roundtrip_rpc(std::move(cfg));
 

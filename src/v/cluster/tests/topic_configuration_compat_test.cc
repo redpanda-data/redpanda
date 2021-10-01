@@ -167,8 +167,7 @@ void topic_config_roundtrip() {
     cfg.properties.compression = model::compression::snappy;
     cfg.properties.segment_size = std::optional<size_t>(1_GiB);
     cfg.properties.retention_bytes = tristate<size_t>{};
-    cfg.properties.retention_duration = tristate<std::chrono::milliseconds>(
-      10h);
+    cfg.properties.retention_duration = 10h;
     if constexpr (std::is_same<CfgIn, cluster::topic_configuration>::value) {
         // Init new fields
         cfg.properties.recovery = true;
@@ -230,8 +229,7 @@ void topic_config_with_recovery_field_roundtrip(
     cfg.properties.compression = model::compression::snappy;
     cfg.properties.segment_size = std::optional<size_t>(1_GiB);
     cfg.properties.retention_bytes = tristate<size_t>{};
-    cfg.properties.retention_duration = tristate<std::chrono::milliseconds>(
-      10h);
+    cfg.properties.retention_duration = 10h;
     cfg.properties.recovery = recovery_field;
     cfg.properties.shadow_indexing = si_mode;
 

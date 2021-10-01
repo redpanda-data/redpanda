@@ -33,6 +33,7 @@ enum class cleanup_policy_bitflags : uint8_t {
     deletion = 1U,
     compaction = 1U << 1U
 };
+constexpr bool is_fixed_size_enum(cleanup_policy_bitflags) { return true; }
 
 inline cleanup_policy_bitflags
 operator|(cleanup_policy_bitflags a, cleanup_policy_bitflags b) {
@@ -69,6 +70,7 @@ enum class compaction_strategy : int8_t {
     /// \brief header field compaction is not yet supported
     header,
 };
+constexpr bool is_fixed_size_enum(compaction_strategy) { return true; }
 std::ostream& operator<<(std::ostream&, compaction_strategy);
 std::istream& operator>>(std::istream&, compaction_strategy&);
 

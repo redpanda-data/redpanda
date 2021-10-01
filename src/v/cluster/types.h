@@ -311,6 +311,7 @@ enum class shadow_indexing_mode : int8_t {
     // Upload data and enable shadow indexing
     shadow_indexing = 2,
 };
+constexpr bool is_fixed_size_enum(shadow_indexing_mode) { return true; }
 
 std::ostream& operator<<(std::ostream&, const shadow_indexing_mode&);
 

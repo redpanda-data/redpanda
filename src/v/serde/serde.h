@@ -94,12 +94,18 @@ inline constexpr auto const has_serde_async_write
   = help_has_serde_async_write<T>::value;
 
 template<typename T>
+struct is_fixed_size_enum_helper {
+    static constexpr auto const value = is_fixed_size_enum(T{});
+};
+
+template<typename T>
 inline constexpr auto const is_serde_compatible_v
   = is_envelope_v<T>
     || (std::is_scalar_v<T>  //
          && (!std::is_same_v<float, T> || std::numeric_limits<float>::is_iec559)
          && (!std::is_same_v<double, T> || std::numeric_limits<double>::is_iec559)
-         && !std::is_enum_v<T>)
+         && (!std::is_enum_v<T> ||
+              std::conjunction_v<std::is_enum<T>, is_fixed_size_enum_helper<T>>))
     || reflection::is_std_vector_v<T>
     || reflection::is_named_type_v<T>
     || reflection::is_ss_bool_v<T>
@@ -145,7 +151,10 @@ void write(iobuf& out, T t) {
         size_placeholder.write(
           reinterpret_cast<char const*>(&size), sizeof(serde_size_t));
     } else if constexpr (std::is_same_v<bool, Type>) {
-        write<int8_t>(out, t);
+        write(out, static_cast<int8_t>(t));
+    } else if constexpr (std::is_enum_v<Type>) {
+        static_assert(is_fixed_size_enum(Type{}));
+        write(out, static_cast<std::underlying_type_t<Type>>(t));
     } else if constexpr (std::is_scalar_v<Type> && !std::is_enum_v<Type>) {
         if constexpr (sizeof(Type) == 1) {
             out.append(reinterpret_cast<char const*>(&t), sizeof(t));
@@ -287,6 +296,10 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         }
     } else if constexpr (std::is_same_v<Type, bool>) {
         t = read_nested<int8_t>(in, bytes_left_limit) != 0;
+    } else if constexpr (std::is_enum_v<Type>) {
+        static_assert(is_fixed_size_enum(Type{}));
+        t = static_cast<Type>(
+          read_nested<std::underlying_type_t<T>>(in, bytes_left_limit));
     } else if constexpr (std::is_scalar_v<Type> && !std::is_enum_v<Type>) {
         if (unlikely(in.bytes_left() < sizeof(Type))) {
             throw serde_exception{"message too short"};
@@ -400,29 +413,6 @@ ss::future<> write_async(iobuf& out, T const& t) {
         write(out, t);
         return ss::make_ready_future<>();
     }
-}
-
-/**
- * Only use this method for enums specifying the underlying datatype explicitly.
- * Otherwise, the serialization format might change depending on the compiler.
- */
-template<
-  typename T,
-  std::enable_if_t<std::is_enum_v<std::decay_t<T>>, void*> = nullptr>
-void read_enum(iobuf_parser& in, T& el, size_t const bytes_left_limit) {
-    serde::read_nested(
-      in, *reinterpret_cast<std::underlying_type_t<T>*>(&el), bytes_left_limit);
-}
-
-/**
- * Only use this method for enums specifying the underlying datatype explicitly.
- * Otherwise, the serialization format might change depending on the compiler.
- */
-template<
-  typename T,
-  std::enable_if_t<std::is_enum_v<std::decay_t<T>>, void*> = nullptr>
-void write_enum(iobuf& out, T const el) {
-    serde::write(out, static_cast<std::underlying_type_t<T>>(el));
 }
 
 template<typename T>
