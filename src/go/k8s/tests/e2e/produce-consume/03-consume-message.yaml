@@ -2,6 +2,8 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: consume-message
+  labels:
+    test: produce-consume
 spec:
   template:
     spec:

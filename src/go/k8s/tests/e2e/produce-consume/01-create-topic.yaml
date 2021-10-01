@@ -2,6 +2,8 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: create-test-topic
+  labels:
+    test: produce-consume
 spec:
   template:
     spec:
