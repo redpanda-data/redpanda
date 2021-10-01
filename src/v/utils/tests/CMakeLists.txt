@@ -7,7 +7,8 @@ rp_test(
     directory_walker_test.cc
     outcome_utils_test.cc
     base64_test.cc
-    timed_mutex_test
+    timed_mutex_test.cc
+    expiring_promise_test.cc
     retry_chain_node_test.cc
     input_stream_fanout_test.cc
   LIBRARIES v::seastar_testing_main v::utils v::bytes
