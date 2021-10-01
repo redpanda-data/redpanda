@@ -163,7 +163,6 @@ class RpkToolTest(RedpandaTest):
                    backoff_sec=20,
                    err_msg="Message didn't appear.")
 
-    @ignore
     @cluster(num_nodes=4)
     def test_consume_from_partition(self):
         topic = 'topic_partition'
