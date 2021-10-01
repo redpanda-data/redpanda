@@ -11,6 +11,7 @@ import random
 import time
 
 from ducktape.mark.resource import cluster
+from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -107,6 +108,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
     nodes
     """
 
+    @ignore  # https://github.com/vectorizedio/redpanda/issues/2246
     @cluster(num_nodes=7)
     def test_node_opeartions(self):
         # allocate 5 nodes for the cluster

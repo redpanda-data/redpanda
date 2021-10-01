@@ -23,7 +23,8 @@ set(srcs
     cluster_tests.cc
     metadata_dissemination_test.cc
     notification_latch_test.cc
-    autocreate_test.cc
+    # Disabled for https://github.com/vectorizedio/redpanda/issues/2175
+    # autocreate_test.cc
     controller_state_test.cc
     commands_serialization_test.cc
     topic_table_test.cc
@@ -36,7 +37,8 @@ set(srcs
     controller_api_tests.cc
     decommissioning_tests.cc
     replicas_rebalancing_tests.cc
-    create_partitions_test.cc
+    # Disabled for https://github.com/vectorizedio/redpanda/issues/2175
+    # create_partitions_test.cc
     id_allocator_stm_test.cc
     data_policy_controller_test.cc)
 
@@ -55,15 +57,14 @@ set_source_files_properties(
     allocation_bench.cc
   PROPERTIES SKIP_UNITY_BUILD_INCLUSION 1)
 
-# Disabled until https://github.com/vectorizedio/redpanda/issues/2385 is resolved
-#rp_test(
-#  UNIT_TEST
-#  BINARY_NAME partition_moving_test
-#  SOURCES partition_moving_test.cc
-#  LIBRARIES v::seastar_testing_main v::application v::storage_test_utils
-#  DEFINITIONS SEASTAR_TESTING_MAIN
-#  LABELS cluster
-#)
+rp_test(
+  UNIT_TEST
+  BINARY_NAME partition_moving_test
+  SOURCES partition_moving_test.cc
+  LIBRARIES v::seastar_testing_main v::application v::storage_test_utils
+  DEFINITIONS SEASTAR_TESTING_MAIN
+  LABELS cluster disable_on_ci  # Disabled for https://github.com/vectorizedio/redpanda/issues/2385
+)
 
 rp_test(
   UNIT_TEST
