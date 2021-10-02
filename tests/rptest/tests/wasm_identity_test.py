@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from ducktape.mark.resource import cluster
+from ducktape.mark import matrix, ignore
 from rptest.clients.types import TopicSpec
 from rptest.wasm.topic import construct_materialized_topic, get_source_topic
 from rptest.wasm.topics_result_set import materialized_result_set_compare
@@ -64,6 +65,7 @@ class WasmIdentityTest(WasmTest):
         """ How to interpret PASS/FAIL between two sets of returned results"""
         return materialized_result_set_compare
 
+    @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
     @cluster(num_nodes=3)
     def verify_materialized_topics_test(self):
         """
@@ -228,6 +230,7 @@ class WasmAllInputsToAllOutputsIdentityTest(WasmIdentityTest):
         return [[otopic_a, otopic_b, otopic_c], [otopic_a, otopic_b, otopic_c],
                 [otopic_a, otopic_b, otopic_c]]
 
+    @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
     @cluster(num_nodes=3)
     def verify_materialized_topics_test(self):
         # Cannot compare topics to topics, can only verify # of records
