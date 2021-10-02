@@ -223,9 +223,10 @@ export class ProcessBatchServer extends SupervisorServer {
     const handle = module?.exports?.default;
     if (handle === undefined) {
       this.logger.error(
-        "Error on load script, script doesn't " + "export anything"
+        "Error on load script, script doesn't export anything. " +
+          "Possible cause: script not packaged using NPM."
       );
-      return undefined;
+      return [undefined, errors.validateLoadScriptError(null, id, script)];
     }
     if (!errors.validateWasmAttributes(handle, id, this.logger)) {
       return [undefined, errors.validateLoadScriptError(null, id, script)];
