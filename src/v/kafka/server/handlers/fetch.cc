@@ -9,6 +9,7 @@
 
 #include "kafka/server/handlers/fetch.h"
 
+#include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "config/configuration.h"
@@ -427,12 +428,27 @@ class simple_fetch_planner final : public fetch_planner::impl {
 
               auto materialized_ntp = model::materialized_ntp(ntp);
 
+              // there is given partition in topic metadata, return
+              // unknown_topic_or_partition error
+              if (unlikely(!octx.rctx.metadata_cache().contains(
+                    materialized_ntp.source_ntp()))) {
+                  (resp_it).set(make_partition_response_error(
+                    fp.partition, error_code::unknown_topic_or_partition));
+                  ++resp_it;
+                  return;
+              }
+
               auto shard = octx.rctx.shards().shard_for(
                 materialized_ntp.source_ntp());
               if (!shard) {
-                  // no shard found, set error, do not include into a plan
+                  /**
+                   * no shard is found on current node, but topic exists in
+                   * cluster metadata, this mean that the partition was moved
+                   * but consumer has not updated its metadata yet. we return
+                   * not_leader_for_partition error to force metadata update.
+                   */
                   (resp_it).set(make_partition_response_error(
-                    fp.partition, error_code::unknown_topic_or_partition));
+                    fp.partition, error_code::not_leader_for_partition));
                   ++resp_it;
                   return;
               }
