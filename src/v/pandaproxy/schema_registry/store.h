@@ -20,6 +20,24 @@
 
 namespace pandaproxy::schema_registry {
 
+///\brief A mapping of version and schema id for a subject.
+struct subject_version_id {
+    subject_version_id(schema_version version, schema_id id, is_deleted deleted)
+      : version{version}
+      , id{id}
+      , deleted(deleted) {}
+
+    subject_version_id(schema_version version, schema_id id)
+      : version{version}
+      , id{id} {}
+
+    schema_version version;
+    schema_id id;
+    is_deleted deleted{is_deleted::no};
+
+    std::vector<seq_marker> written_at;
+};
+
 namespace detail {
 
 template<typename T>
