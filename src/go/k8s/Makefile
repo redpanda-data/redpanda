@@ -8,12 +8,6 @@ CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 # default redpanda image to load
 REDPANDA_IMG ?= "localhost/redpanda:dev"
 
-# The BUILDKITE_JOB_ID is used to create unique kind cluster.
-# BUILDKITE_JOB_ID is set in the buildkite runner for every CI run.
-#
-# https://buildkite.com/docs/pipelines/environment-variables#bk-env-vars-buildkite-job-id
-BUILDKITE_JOB_ID ?= kind
-
 ifeq (aarch64,$(uname -m))
 TARGETARCH = arm64
 else
@@ -101,10 +95,12 @@ prepare-dockerfile:
 
 # Build the docker image
 docker-build: prepare-dockerfile
+	echo "~~~ Building operator image :docker:"
 	docker build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=manager -f Dockerfile -t ${OPERATOR_IMG_LATEST} ../
 
 # Build the docker image
 docker-build-configurator: prepare-dockerfile
+	echo "~~~ Building configurator image :docker:"
 	docker build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=configurator -f Dockerfile -t ${CONFIGURATOR_IMG_LATEST} ../
 
 # Preload controller image to kind cluster
@@ -114,11 +110,13 @@ push-to-kind: kind-create certmanager-install
 
 # Execute end to end tests
 e2e-tests: kuttl test docker-build docker-build-configurator
-	$(KUTTL) test $(TEST_ONLY_FLAG) $(KUTTL_TEST_FLAGS) --kind-context $(BUILDKITE_JOB_ID)
+	echo "~~~ Running kuttl tests :k8s:"
+	$(KUTTL) test $(TEST_ONLY_FLAG) $(KUTTL_TEST_FLAGS)
 
 # Execute end to end tests using helm as an installation
 helm-e2e-tests: kuttl test docker-build docker-build-configurator
-	$(KUTTL) test --config kuttl-helm-test.yaml $(TEST_ONLY_FLAG) $(KUTTL_TEST_FLAGS) --kind-context $(BUILDKITE_JOB_ID)-helm
+	echo "~~~ Running kuttl tests :k8s:"
+	$(KUTTL) test --config kuttl-helm-test.yaml $(TEST_ONLY_FLAG) $(KUTTL_TEST_FLAGS)
 
 # Download controller-gen locally if necessary
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
