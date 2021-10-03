@@ -65,7 +65,6 @@ class WasmIdentityTest(WasmTest):
         """ How to interpret PASS/FAIL between two sets of returned results"""
         return materialized_result_set_compare
 
-    @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
     @cluster(num_nodes=3)
     def verify_materialized_topics_test(self):
         """
@@ -230,7 +229,6 @@ class WasmAllInputsToAllOutputsIdentityTest(WasmIdentityTest):
         return [[otopic_a, otopic_b, otopic_c], [otopic_a, otopic_b, otopic_c],
                 [otopic_a, otopic_b, otopic_c]]
 
-    @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
     @cluster(num_nodes=3)
     def verify_materialized_topics_test(self):
         # Cannot compare topics to topics, can only verify # of records

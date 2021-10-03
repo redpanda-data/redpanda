@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 import tempfile
-from ducktape.mark import matrix, ignore
+from ducktape.mark import matrix 
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
