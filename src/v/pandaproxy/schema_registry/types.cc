@@ -56,4 +56,22 @@ std::ostream& operator<<(
     return os;
 }
 
+std::ostream& operator<<(std::ostream& os, const schema_reference& ref) {
+    fmt::print(
+      os, "name: {}, subject: {}, version: {}", ref.name, ref.sub, ref.version);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const unparsed_schema& ref) {
+    fmt::print(
+      os, "subject: {}, {}, references: {}", ref.sub(), ref.def(), ref.refs());
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const canonical_schema& ref) {
+    fmt::print(
+      os, "subject: {}, {}, references: {}", ref.sub(), ref.def(), ref.refs());
+    return os;
+}
+
 } // namespace pandaproxy::schema_registry

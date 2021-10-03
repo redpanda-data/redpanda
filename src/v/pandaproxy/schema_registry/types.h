@@ -174,6 +174,64 @@ struct schema {
     schema_definition definition;
 };
 
+struct schema_reference {
+    friend bool
+    operator==(const schema_reference& lhs, const schema_reference& rhs)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const schema_reference& ref);
+
+    ss::sstring name;
+    subject sub{invalid_subject};
+    schema_version version{invalid_schema_version};
+};
+
+///\brief A schema with its subject and references.
+template<typename Tag>
+class typed_schema {
+public:
+    using tag = Tag;
+    using schema_definition = typed_schema_definition<tag>;
+
+    using references = std::vector<schema_reference>;
+
+    typed_schema() = default;
+
+    typed_schema(subject sub, schema_definition def)
+      : _sub{std::move(sub)}
+      , _def{std::move(def)} {}
+
+    typed_schema(subject sub, schema_definition def, references refs)
+      : _sub{std::move(sub)}
+      , _def{std::move(def)}
+      , _refs{std::move(refs)} {}
+
+    friend bool operator==(const typed_schema& lhs, const typed_schema& rhs)
+      = default;
+
+    friend std::ostream& operator<<(std::ostream& os, const typed_schema& ref);
+
+    const subject& sub() const& { return _sub; }
+    subject sub() && { return std::move(_sub); }
+
+    schema_type type() const { return _def.type(); }
+
+    const schema_definition& def() const& { return _def; }
+    schema_definition def() && { return std::move(_def); }
+
+    const references& refs() const& { return _refs; }
+    references refs() && { return std::move(_refs); }
+
+private:
+    subject _sub{invalid_subject};
+    schema_definition _def{"", schema_type::avro};
+    references _refs;
+};
+
+using unparsed_schema = typed_schema<unparsed_schema_definition::tag>;
+using canonical_schema = typed_schema<canonical_schema_definition::tag>;
+
 ///\brief A mapping of version and schema id for a subject.
 struct subject_version_id {
     subject_version_id(schema_version version, schema_id id, is_deleted deleted)
