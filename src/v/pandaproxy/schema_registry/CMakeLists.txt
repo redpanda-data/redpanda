@@ -17,6 +17,7 @@ v_cc_library(
     service.cc
     seq_writer.cc
     sharded_store.cc
+    types.cc
     avro.cc
   DEPS
     v::pandaproxy_common
