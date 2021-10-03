@@ -110,7 +110,12 @@ ss::future<bool> sharded_store::upsert(
   is_deleted deleted) {
     co_await upsert_schema(id, std::move(schema).def());
     co_return co_await upsert_subject(
-      marker, std::move(schema).sub(), version, id, deleted);
+      marker,
+      std::move(schema).sub(),
+      std::move(schema).refs(),
+      version,
+      id,
+      deleted);
 }
 
 ss::future<subject_schema>
@@ -166,21 +171,14 @@ sharded_store::get_schema_subject_versions(schema_id id) {
 
 ss::future<subject_schema> sharded_store::get_subject_schema(
   const subject& sub, schema_version version, include_deleted inc_del) {
-    auto v_id = (co_await _store.invoke_on(
-                   shard_for(sub),
-                   _smp_opts,
-                   &store::get_subject_version_id,
-                   sub,
-                   version,
-                   inc_del))
-                  .value();
-    auto def = co_await get_schema_definition(v_id.id);
-
-    co_return subject_schema{
-      .schema = {sub, std::move(def)},
-      .version = v_id.version,
-      .id = v_id.id,
-      .deleted = v_id.deleted};
+    auto res = co_await _store.invoke_on(
+      shard_for(sub),
+      _smp_opts,
+      &store::get_subject_schema,
+      sub,
+      version,
+      inc_del);
+    co_return res.value();
 }
 
 ss::future<std::vector<subject>>
@@ -311,16 +309,22 @@ sharded_store::upsert_schema(schema_id id, canonical_schema_definition def) {
       shard_for(id), _smp_opts, &store::upsert_schema, id, std::move(def));
 }
 
-ss::future<sharded_store::insert_subject_result>
-sharded_store::insert_subject(subject sub, schema_id id) {
+ss::future<sharded_store::insert_subject_result> sharded_store::insert_subject(
+  subject sub, canonical_schema::references refs, schema_id id) {
     auto [version, inserted] = co_await _store.invoke_on(
-      shard_for(sub), _smp_opts, &store::insert_subject, sub, id);
+      shard_for(sub),
+      _smp_opts,
+      &store::insert_subject,
+      sub,
+      std::move(refs),
+      id);
     co_return insert_subject_result{version, inserted};
 }
 
 ss::future<bool> sharded_store::upsert_subject(
   seq_marker marker,
   subject sub,
+  canonical_schema::references refs,
   schema_version version,
   schema_id id,
   is_deleted deleted) {
@@ -330,6 +334,7 @@ ss::future<bool> sharded_store::upsert_subject(
       &store::upsert_subject,
       marker,
       sub,
+      std::move(refs),
       version,
       id,
       deleted);
@@ -374,7 +379,7 @@ ss::future<bool> sharded_store::is_compatible(
       versions.begin(),
       versions.end(),
       version,
-      [](const subject_version_id& lhs, schema_version rhs) {
+      [](const subject_version_entry& lhs, schema_version rhs) {
           return lhs.version < rhs;
       });
     if (ver_it == versions.end() || ver_it->version != version) {
