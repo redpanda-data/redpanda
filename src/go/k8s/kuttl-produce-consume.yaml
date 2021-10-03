@@ -1,0 +1,19 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestSuite
+kindContainers:
+  - vectorized/redpanda-operator:latest
+  - vectorized/configurator:latest
+testDirs:
+  - ./tests/produce-consume
+kindNodeCache: false
+commands:
+  - command: "kubectl taint nodes -l node-role.kubernetes.io/master= node-role.kubernetes.io/master:NoSchedule-"
+  - command: "./hack/install-cert-manager.sh"
+  - command: "kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/master/bundle.yaml"
+  - command: "make deploy"
+  - command: "./hack/wait-for-webhook-ready.sh"
+  - command: "mkdir -p tests/_produce_consume_e2e_artifacts"
+artifactsDir: tests/_produce_consume_e2e_artifacts
+timeout: 300
+reportFormat: xml
+parallel: 1

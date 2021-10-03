@@ -118,6 +118,11 @@ helm-e2e-tests: kuttl test docker-build docker-build-configurator
 	echo "~~~ Running kuttl tests :k8s:"
 	$(KUTTL) test --config kuttl-helm-test.yaml $(TEST_ONLY_FLAG) $(KUTTL_TEST_FLAGS)
 
+# Execute one consume produce end to end test
+produce-consume-e2e-tests: kuttl test docker-build docker-build-configurator
+	echo "~~~ Running kuttl tests :k8s:"
+	$(KUTTL) test --config kuttl-produce-consume.yaml $(TEST_ONLY_FLAG) $(KUTTL_TEST_FLAGS)
+
 # Download controller-gen locally if necessary
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 controller-gen:
