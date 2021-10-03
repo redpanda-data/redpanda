@@ -64,6 +64,48 @@ std::ostream& operator<<(std::ostream& os, const schema_type& v);
 using subject = named_type<ss::sstring, struct subject_tag>;
 static const subject invalid_subject{};
 
+///\brief Definition of a schema and its type.
+template<typename Tag>
+class typed_schema_definition {
+public:
+    using tag = Tag;
+    using raw_string = named_type<ss::sstring, tag>;
+
+    template<typename T>
+    typed_schema_definition(T&& def, schema_type type)
+      : _def{ss::sstring{std::forward<T>(def)}}
+      , _type{type} {}
+
+    friend bool operator==(
+      const typed_schema_definition& lhs, const typed_schema_definition& rhs)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const typed_schema_definition&);
+
+    schema_type type() const { return _type; }
+
+    const raw_string& raw() const& { return _def; }
+    raw_string raw() && { return std::move(_def); }
+
+private:
+    raw_string _def;
+    schema_type _type{schema_type::avro};
+};
+
+///\brief An unvalidated definition of the schema and its type.
+///
+/// This comes from the user and should be considered as potentially
+/// ill-formed.
+using unparsed_schema_definition
+  = typed_schema_definition<struct unparsed_schema_defnition_tag>;
+
+///\brief A canonical definition of the schema and its type.
+///
+/// This form is stored on the topic and returned to the user.
+using canonical_schema_definition
+  = typed_schema_definition<struct canonical_schema_defnition_tag>;
+
 ///\brief The definition of the schema.
 ///
 /// TODO(Ben): Make this cheap to copy
