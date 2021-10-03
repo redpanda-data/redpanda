@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 from rptest.services.cluster import cluster
-from ducktape.mark import ignore
 from rptest.clients.types import TopicSpec
 from rptest.wasm.topic import get_source_topic
 from rptest.wasm.topics_result_set import materialized_result_set_compare, group_fan_in_verifier
@@ -50,8 +49,7 @@ class WasmIdentityTest(WasmTest):
         """
         return {topic: self._num_records for topic in self.wasm_test_output()}
 
-    @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
-    @cluster(num_nodes=4, log_allow_list=WASM_LOG_ALLOW_LIST)
+    @cluster(num_nodes=3)
     def verify_materialized_topics_test(self):
         self.verify_results(materialized_result_set_compare)
 
@@ -219,8 +217,7 @@ class WasmAllInputsToAllOutputsIdentityTest(WasmIdentityTest):
                        script=WasmTemplateRepository.IDENTITY_TRANSFORM)
         ]
 
-    @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
-    @cluster(num_nodes=6, log_allow_list=WASM_LOG_ALLOW_LIST)
+    @cluster(num_nodes=3)
     def verify_materialized_topics_test(self):
         # Cannot compare topics to topics, can only verify # of records
         self.start_wasm()
