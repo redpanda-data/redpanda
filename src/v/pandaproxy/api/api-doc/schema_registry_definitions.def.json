@@ -44,11 +44,31 @@
         "subject": {
           "type": "string"
         },
+        "version": {
+          "type": "integer"
+        },
         "id": {
           "type": "integer"
         },
-        "version": {
-          "type": "integer"
+        "schemaType": {
+          "type": "string"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              },
+              "version": {
+                  "type": "integer"
+              }
+            }
+          }
         },
         "schema": {
           "type": "string"
