@@ -99,3 +99,8 @@ please run the following command:
 ```
 kubectl delete -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/default
 ```
+
+#### Running e2e tests
+
+Before you execute any kuttl tests, that are defined in e2e test Makefile target,
+please create kind cluster.
