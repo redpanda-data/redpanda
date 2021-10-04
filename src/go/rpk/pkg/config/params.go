@@ -72,6 +72,10 @@ const (
 	// FlagConfig is rpk config flag.
 	FlagConfig = "config"
 
+	// FlagVerbose opts in to verbose logging. This is to be replaced with
+	// a log-level flag later, with `-v` meaning DEBUG for backcompat.
+	FlagVerbose = "verbose"
+
 	// This entire block is filled with our current flags and environment
 	// variables. These will all eventually be hidden.
 
@@ -132,6 +136,10 @@ type Params struct {
 	// This is unused until step (2) in the refactoring process.
 	ConfigPath string
 
+	// Verbose tracks the -v flag. This will be swapped with --log-level in
+	// the future.
+	Verbose bool
+
 	// FlagOverrides are any flag-specified config overrides.
 	//
 	// This is unused until step (2) in the refactoring process.
@@ -158,6 +166,12 @@ func ParamsFromCommand(cmd *cobra.Command) *Params {
 
 			case FlagConfig:
 				p.ConfigPath = f.Value.String()
+				return
+
+			case FlagVerbose:
+				if b, err := strconv.ParseBool(f.Value.String()); err == nil {
+					p.Verbose = b
+				}
 				return
 
 			case FlagBrokers:
