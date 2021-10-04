@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "avro/ValidSchema.hh"
 #include "model/metadata.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
@@ -108,6 +109,31 @@ using canonical_schema_definition
 
 static const unparsed_schema_definition invalid_schema_definition{
   "", schema_type::avro};
+
+///\brief The definition of an avro schema.
+class avro_schema_definition {
+public:
+    explicit avro_schema_definition(avro::ValidSchema vs);
+
+    canonical_schema_definition::raw_string raw() const;
+
+    const avro::ValidSchema& operator()() const;
+
+    friend bool operator==(
+      const avro_schema_definition& lhs, const avro_schema_definition& rhs);
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const avro_schema_definition& rhs);
+
+    constexpr schema_type type() const { return schema_type::avro; }
+
+    explicit operator canonical_schema_definition() const {
+        return {raw(), type()};
+    }
+
+private:
+    avro::ValidSchema _impl;
+};
 
 ///\brief The version of the schema registered with a subject.
 ///
