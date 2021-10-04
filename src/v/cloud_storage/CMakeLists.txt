@@ -2,9 +2,10 @@
 v_cc_library(
   NAME cloud_storage
   SRCS
-    manifest.cc
-    remote.cc
     cache_service.cc
+    manifest.cc
+    recursive_directory_walker.cc
+    remote.cc
   DEPS
     Seastar::seastar
     v::bytes

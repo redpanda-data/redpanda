@@ -9,42 +9,134 @@
  */
 
 #include "cloud_storage/logger.h"
-#include "random/generators.h"
 #include "utils/gate_guard.h"
+#include "vassert.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
-#include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
-#include <seastar/core/future.hh>
-#include <seastar/core/print.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/smp.hh>
-#include <seastar/util/defer.hh>
+#include <seastar/core/sstring.hh>
 
 #include <cloud_storage/cache_service.h>
 
 #include <exception>
-#include <filesystem>
-#include <optional>
-#include <string>
-#include <system_error>
+#include <stdexcept>
+#include <string_view>
 
 namespace cloud_storage {
 
-cache::cache(std::filesystem::path cache_dir) noexcept
+static constexpr std::string_view tmp_extension{".part"};
+
+cache::cache(
+  std::filesystem::path cache_dir,
+  size_t max_cache_size,
+  ss::lowres_clock::duration check_period) noexcept
   : _cache_dir(std::move(cache_dir))
-  , _cnt(0) {}
+  , _max_cache_size(max_cache_size)
+  , _check_period(check_period)
+  , _cnt(0)
+  , _total_cleaned(0) {}
+
+uint64_t cache::get_total_cleaned() { return _total_cleaned; }
+
+ss::future<> cache::clean_up_at_start() {
+    gate_guard guard{_gate};
+    auto [unused, candidates_for_deletion] = co_await _walker.walk(
+      _cache_dir.native());
+
+    for (auto& file_item : candidates_for_deletion) {
+        auto filepath_to_remove = file_item.path;
+        vassert(
+          std::string_view(filepath_to_remove).starts_with(_cache_dir.native()),
+          "Tried to clean up {}, which is outside of cache_dir {}.",
+          filepath_to_remove,
+          _cache_dir.native());
+
+        // delete only tmp files that are left from previous RedPanda run
+        if (std::string_view(filepath_to_remove).ends_with(tmp_extension)) {
+            try {
+                co_await ss::remove_file(filepath_to_remove);
+                _total_cleaned += file_item.size;
+            } catch (std::exception& e) {
+                vlog(
+                  cst_log.error,
+                  "Cache eviction couldn't delete {}: {}.",
+                  filepath_to_remove,
+                  e.what());
+            }
+        }
+    }
+    vlog(
+      cst_log.debug,
+      "Clean up at start deleted files of total size {}.",
+      _total_cleaned);
+}
+
+ss::future<> cache::clean_up_cache() {
+    gate_guard guard{_gate};
+    auto [curr_cache_size, candidates_for_deletion] = co_await _walker.walk(
+      _cache_dir.native());
+
+    if (curr_cache_size >= _max_cache_size) {
+        auto size_to_delete
+          = curr_cache_size
+            - (_max_cache_size * (long double)_cache_size_low_watermark);
+
+        uint64_t deleted_size = 0;
+        size_t i_to_delete = 0;
+        while (i_to_delete < candidates_for_deletion.size()
+               && deleted_size < size_to_delete) {
+            auto filename_to_remove = candidates_for_deletion[i_to_delete].path;
+            vassert(
+              std::string_view(filename_to_remove)
+                .starts_with(_cache_dir.native()),
+              "Tried to clean up {}, which is outside of cache_dir {}.",
+              filename_to_remove,
+              _cache_dir.native());
+
+            // skip tmp files since someone may be writing to it
+            if (!std::string_view(filename_to_remove)
+                   .ends_with(tmp_extension)) {
+                try {
+                    co_await ss::remove_file(filename_to_remove);
+                    deleted_size += candidates_for_deletion[i_to_delete].size;
+                } catch (std::exception& e) {
+                    vlog(
+                      cst_log.error,
+                      "Cache eviction couldn't delete {}: {}.",
+                      filename_to_remove,
+                      e.what());
+                }
+            }
+            i_to_delete++;
+        }
+        _total_cleaned += deleted_size;
+        vlog(
+          cst_log.debug,
+          "Cache eviction deleted {} files of total size {}.",
+          i_to_delete,
+          deleted_size);
+    }
+}
 
 ss::future<> cache::start() {
     vlog(cst_log.debug, "Starting archival cache service");
-    // todo: start maintenance cycle here
-    return ss::make_ready_future<>();
+    // TODO: implement more optimal cache eviction
+    if (ss::this_shard_id() == 0) {
+        co_await clean_up_at_start();
+
+        _timer.set_callback([this] { return clean_up_cache(); });
+        _timer.arm_periodic(_check_period);
+    }
 }
 
 ss::future<> cache::stop() {
     vlog(cst_log.debug, "Stopping archival cache service");
-    return _gate.close();
+    _timer.cancel();
+    co_await _walker.stop();
+    co_await _gate.close();
 }
 
 ss::future<std::optional<cache_item>> cache::get(std::filesystem::path key) {
@@ -52,6 +144,13 @@ ss::future<std::optional<cache_item>> cache::get(std::filesystem::path key) {
     vlog(cst_log.debug, "Trying to get {} from archival cache.", key.native());
     ss::file cache_file;
     try {
+        /*
+         * TODO: update access time of file. Cache eviction uses file access
+         * timestamp to delete files from oldest to newest. File access time
+         * should be updated every time file is returned by cache, see
+         *
+         *  https://github.com/vectorizedio/redpanda/issues/2459
+         */
         cache_file = co_await ss::open_file_dma(
           (_cache_dir / key).native(), ss::open_flags::ro);
     } catch (std::filesystem::filesystem_error& e) {
@@ -73,6 +172,12 @@ cache::put(std::filesystem::path key, ss::input_stream<char>& data) {
     vlog(cst_log.debug, "Trying to put {} to archival cache.", key.native());
 
     auto filename = (_cache_dir / key).filename();
+    if (std::string_view(filename.native()).ends_with(tmp_extension)) {
+        throw std::invalid_argument(fmt::format(
+          "Cache file key {} is ending with tmp extension {}.",
+          filename.native(),
+          tmp_extension));
+    }
     auto dir_path = (_cache_dir / key).remove_filename();
     co_await ss::recursive_touch_directory(dir_path.string());
 
@@ -82,7 +187,11 @@ cache::put(std::filesystem::path key, ss::input_stream<char>& data) {
     // names for tmp files within one shard, while shard_id ensures uniqueness
     // across multiple shards.
     auto tmp_filename = std::filesystem::path(ss::format(
-      "{}_{}_{}.part", filename.string(), ss::this_shard_id(), (++_cnt)));
+      "{}_{}_{}{}",
+      filename.native(),
+      ss::this_shard_id(),
+      (++_cnt),
+      tmp_extension));
     auto flags = ss::open_flags::wo | ss::open_flags::create
                  | ss::open_flags::exclusive;
     auto tmp_cache_file = co_await ss::open_file_dma(
