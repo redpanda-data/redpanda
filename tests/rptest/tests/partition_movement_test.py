@@ -251,6 +251,7 @@ class PartitionMovementTest(EndToEndTest):
         """
         Move partitions with data, but no active producers or consumers.
         """
+        self.logger.info(f"Starting redpanda...")
         self.start_redpanda(num_nodes=3)
 
         topics = []
@@ -262,6 +263,7 @@ class PartitionMovementTest(EndToEndTest):
                                  replication_factor=replication_factor)
                 topics.append(spec)
 
+        self.logger.info(f"Creating topics...")
         for spec in topics:
             self.redpanda.create_topic(spec)
 
