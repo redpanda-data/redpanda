@@ -118,7 +118,7 @@ ss::future<> coproc_bench_fixture::do_action(
           .then(
             [ntp, &rt](
               std::optional<model::record_batch_reader::data_t> maybe_data) {
-                if (maybe_data) {
+                if (maybe_data && !maybe_data->empty()) {
                     rt.first = ++maybe_data->back().last_offset();
                     rt.second += maybe_data->size();
                 }
