@@ -40,12 +40,12 @@ class RpkConsumer(BackgroundThreadService):
         self.offset = dict()
 
     def _worker(self, idx, node):
-        retries = 1
         retry_sec = 5
         err = None
 
         self._stopping.clear()
-        while retries < self._retries and not self._stopping.is_set():
+        attempt = 0
+        while attempt <= self._retries and not self._stopping.is_set():
             try:
                 self._consume(node)
             except Exception as e:
@@ -56,12 +56,14 @@ class RpkConsumer(BackgroundThreadService):
                 self._redpanda.logger.error(
                     f"Consumer failed with error: '{e}'. Retrying in {retry_sec} seconds."
                 )
-                retries += 1
+                attempt += 1
                 self._stopping.wait(retry_sec)
                 time.sleep(retry_sec)
+            else:
+                err = None
 
         self.done = True
-        if retries == self._retries and err is not None:
+        if err is not None:
             self.error = err
 
     def stop_node(self, node):
