@@ -193,8 +193,8 @@ template<class Ch>
 struct fanout_data_source final : ss::data_source_impl {
     fanout_data_source(
       ss::lw_shared_ptr<input_stream_fanout<Ch>> i, size_t source_id)
-      : _isf(std::move(i))
-      , _id{source_id} {}
+      : _id{source_id}
+      , _isf(std::move(i)) {}
 
     ss::future<> close() final { co_await _isf->detach(_id); }
 

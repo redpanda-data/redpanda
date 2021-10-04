@@ -20,14 +20,16 @@
 
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/weak_ptr.hh>
 
 #include <boost/beast/http/error.hpp>
-#include <boost/beast/http/field.hpp>
+#include <utils/stream_utils.h>
 
 #include <exception>
+#include <optional>
 #include <variant>
 
 namespace cloud_storage {
@@ -170,6 +172,9 @@ ss::future<download_result> remote::download_manifest(
             auto resp = co_await client->get_object(
               bucket, path, fib.get_timeout());
             vlog(ctxlog.debug, "Receive OK response from {}", path);
+            // todo: put resp to cache
+            // convert resp to input stream (should be already done and returned
+            // to client) input_stream_fanout
             co_await manifest.update(resp->as_input_stream());
             switch (manifest.get_manifest_type()) {
             case manifest_type::partition:
@@ -416,13 +421,26 @@ ss::future<download_result> remote::download_segment(
             vlog(ctxlog.debug, "Receive OK response from {}", path);
             auto length = boost::lexical_cast<uint64_t>(resp->get_headers().at(
               boost::beast::http::field::content_length));
-            uint64_t content_length = co_await cons_str(
-              length, resp->as_input_stream());
+
+            uint64_t content_length = 0;
+            if (_cache.local_is_initialized()) {
+                // fan out stream, one pass to cons_str, another to cache
+                auto [stream1, stream2] = input_stream_fanout<2>(
+                  resp->as_input_stream(), /* read_ahead = */ 4);
+                content_length = co_await cons_str(length, std::move(stream1));
+                // todo: pass stream2 to cache
+                // defer(stream2.close())
+            } else {
+                content_length = co_await cons_str(
+                  length, resp->as_input_stream());
+            }
             _probe.successful_download();
             _probe.register_download_size(content_length);
             co_return download_result::success;
         } catch (...) {
             eptr = std::current_exception();
+            // stream1.close();
+            // stream2.close();
         }
         auto outcome = categorize_error(eptr, fib, bucket, path);
         switch (outcome) {

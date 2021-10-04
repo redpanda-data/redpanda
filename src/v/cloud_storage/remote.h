@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_storage/cache_service.h"
 #include "cloud_storage/manifest.h"
 #include "cloud_storage/probe.h"
 #include "cloud_storage/types.h"
@@ -20,6 +21,9 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/sharded.hh>
+
+#include <optional>
 
 namespace cloud_storage {
 
@@ -140,6 +144,7 @@ private:
     ss::gate _gate;
     ss::abort_source _as;
     remote_probe _probe;
+    ss::sharded<cache> _cache;
 };
 
 } // namespace cloud_storage
