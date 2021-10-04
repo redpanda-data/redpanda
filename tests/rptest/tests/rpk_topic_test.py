@@ -54,7 +54,7 @@ class RpkToolTest(RedpandaTest):
         def cond():
             return c.messages is not None \
                 and len(c.messages) == 1 \
-                and c.messages[0]['message'] == message \
+                and c.messages[0]['value'] == message \
                 and c.messages[0]['key'] == key \
                 and c.messages[0]['headers'] == [
                     {'key': h_key, 'value': h_value},
@@ -84,7 +84,7 @@ class RpkToolTest(RedpandaTest):
                 raise c.error
             self._rpk.produce(topic, key, message, headers)
             return c.messages \
-                and c.messages[0]['message'] == message \
+                and c.messages[0]['value'] == message \
                 and c.messages[0]['key'] == key \
                 and c.messages[0]['headers'] == [
                     {'key': h_key, 'value': h_value},
@@ -114,7 +114,7 @@ class RpkToolTest(RedpandaTest):
                 raise c.error
             self._rpk.produce(topic, key, message, headers)
             return c.messages \
-                and c.messages[0]['message'] == message \
+                and c.messages[0]['value'] == message \
                 and c.messages[0]['key'] == key \
                 and c.messages[0]['headers'] == [
                     {'key': h_key, 'value': h_value},
@@ -153,7 +153,7 @@ class RpkToolTest(RedpandaTest):
                 if key is None:
                     return False
 
-                if m['message'] != msgs[key]:
+                if m['value'] != msgs[key]:
                     return False
 
             return True
@@ -197,7 +197,7 @@ class RpkToolTest(RedpandaTest):
                 if key is None:
                     return False
 
-                if m['message'] != msgs[key]:
+                if m['value'] != msgs[key]:
                     return False
 
             return True
