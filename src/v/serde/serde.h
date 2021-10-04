@@ -254,12 +254,10 @@ header read_header(iobuf_parser& in, std::size_t const bytes_left_limit) {
 }
 
 template<typename T>
-std::decay_t<T>
-read_nested(iobuf_parser& in, std::size_t const bytes_left_limit) {
+void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
     static_assert(has_serde_read<T> || is_serde_compatible_v<Type>);
 
-    auto t = Type();
     if constexpr (is_envelope_v<Type>) {
         auto const h = read_header<Type>(in, bytes_left_limit);
         if constexpr (has_serde_read<Type>) {
@@ -283,9 +281,9 @@ read_nested(iobuf_parser& in, std::size_t const bytes_left_limit) {
                 f = read_nested<FieldType>(in, bytes_left_limit);
                 return true;
             });
-            if (in.bytes_left() > h._bytes_left_limit) {
-                in.skip(in.bytes_left() - h._bytes_left_limit);
-            }
+        }
+        if (in.bytes_left() > h._bytes_left_limit) {
+            in.skip(in.bytes_left() - h._bytes_left_limit);
         }
     } else if constexpr (std::is_same_v<Type, bool>) {
         t = read_nested<int8_t>(in, bytes_left_limit) != 0;
@@ -317,19 +315,26 @@ read_nested(iobuf_parser& in, std::size_t const bytes_left_limit) {
         t = std::chrono::milliseconds{
           read_nested<int64_t>(in, bytes_left_limit)};
     } else if constexpr (std::is_same_v<Type, iobuf>) {
-        return in.share(read_nested<serde_size_t>(in, bytes_left_limit));
+        t = in.share(read_nested<serde_size_t>(in, bytes_left_limit));
     } else if constexpr (std::is_same_v<Type, ss::sstring>) {
         auto str = ss::uninitialized_string(
           read_nested<serde_size_t>(in, bytes_left_limit));
         in.consume_to(str.size(), str.begin());
-        return str;
+        t = str;
     } else if constexpr (reflection::is_std_optional_v<Type>) {
-        return read_nested<bool>(in, bytes_left_limit)
-                 ? Type{read_nested<typename Type::value_type>(
-                   in, bytes_left_limit)}
-                 : std::nullopt;
+        t = read_nested<bool>(in, bytes_left_limit)
+              ? Type{read_nested<typename Type::value_type>(
+                in, bytes_left_limit)}
+              : std::nullopt;
     }
+}
 
+template<typename T>
+std::decay_t<T>
+read_nested(iobuf_parser& in, std::size_t const bytes_left_limit) {
+    using Type = std::decay_t<T>;
+    auto t = Type();
+    read_nested(in, t, bytes_left_limit);
     return t;
 }
 
@@ -395,6 +400,29 @@ ss::future<> write_async(iobuf& out, T const& t) {
         write(out, t);
         return ss::make_ready_future<>();
     }
+}
+
+/**
+ * Only use this method for enums specifying the underlying datatype explicitly.
+ * Otherwise, the serialization format might change depending on the compiler.
+ */
+template<
+  typename T,
+  std::enable_if_t<std::is_enum_v<std::decay_t<T>>, void*> = nullptr>
+void read_enum(iobuf_parser& in, T& el, size_t const bytes_left_limit) {
+    serde::read_nested(
+      in, *reinterpret_cast<std::underlying_type_t<T>*>(&el), bytes_left_limit);
+}
+
+/**
+ * Only use this method for enums specifying the underlying datatype explicitly.
+ * Otherwise, the serialization format might change depending on the compiler.
+ */
+template<
+  typename T,
+  std::enable_if_t<std::is_enum_v<std::decay_t<T>>, void*> = nullptr>
+void write_enum(iobuf& out, T const el) {
+    serde::write(out, static_cast<std::underlying_type_t<T>>(el));
 }
 
 template<typename T>
