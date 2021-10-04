@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 from ducktape.utils.util import wait_until
-from ducktape.mark import ignore
 from ducktape.mark.resource import cluster
 import ducktape.errors
 
