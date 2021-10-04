@@ -32,7 +32,6 @@
 #include "redpanda/admin/api-doc/broker.json.h"
 #include "redpanda/admin/api-doc/config.json.h"
 #include "redpanda/admin/api-doc/hbadger.json.h"
-#include "redpanda/admin/api-doc/kafka.json.h"
 #include "redpanda/admin/api-doc/partition.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
 #include "redpanda/admin/api-doc/security.json.h"
@@ -483,8 +482,10 @@ void admin_server::register_security_routes() {
 }
 
 void admin_server::register_kafka_routes() {
-    ss::httpd::kafka_json::kafka_transfer_leadership.set(
+    ss::httpd::partition_json::kafka_transfer_leadership.set(
       _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+          auto ns = model::ns(req->param["namespace"]);
+
           auto topic = model::topic(req->param["topic"]);
 
           model::partition_id partition;
@@ -518,13 +519,15 @@ void admin_server::register_kafka_routes() {
 
           vlog(
             logger.info,
-            "Leadership transfer request for leader of topic-partition {}:{} "
+            "Leadership transfer request for leader of topic-partition "
+            "{}:{}:{} "
             "to node {}",
+            ns,
             topic,
             partition,
             target);
 
-          model::ntp ntp(model::kafka_namespace, topic, partition);
+          model::ntp ntp(ns, topic, partition);
 
           auto shard = _shard_table.local().shard_for(ntp);
           if (!shard) {

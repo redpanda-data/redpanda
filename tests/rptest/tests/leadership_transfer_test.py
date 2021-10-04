@@ -61,7 +61,7 @@ class LeadershipTransferTest(RedpandaTest):
         host = source_broker["name"]
         host = host.split(":")[0]
         partition_id = partition["partition"]
-        url = "http://{}:9644/v1/kafka/{}/{}/transfer_leadership?target={}".format(
+        url = "http://{}:9644/v1/partitions/kafka/{}/{}/transfer_leadership?target={}".format(
             host, self.topic, partition["partition"], target_node_id)
 
         def try_transfer():

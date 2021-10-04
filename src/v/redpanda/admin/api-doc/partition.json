@@ -95,6 +95,46 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/partitions/{namespace}/{topic}/{partition}/transfer_leadership",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Transfer raft group leadership by topic-partition",
+                    "type": "void",
+                    "nickname": "kafka_transfer_leadership",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name":"target",
+                            "in":"query",
+                            "required":false,
+                            "type":"integer"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {
