@@ -6,6 +6,7 @@ kindContainers:
 testDirs:
   - ./tests/produce-consume
 kindNodeCache: false
+skipDelete: true
 commands:
   - command: "kubectl taint nodes -l node-role.kubernetes.io/master= node-role.kubernetes.io/master:NoSchedule-"
   - command: "./hack/install-cert-manager.sh"
