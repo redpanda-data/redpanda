@@ -95,6 +95,7 @@ describe("Server", function () {
   describe("Given a Request", function () {
     beforeEach(() => {
       sinonInstance = createSandbox();
+      writeError = sinonInstance.stub();
       //Mock LogService
       sinonInstance.stub(LogService, "createLogger").returns({
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -102,7 +103,7 @@ describe("Server", function () {
         info: sinonInstance.stub(),
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore
-        error: sinonInstance.stub(),
+        error: writeError,
       });
       server = new ProcessBatchServer();
       server.listen(43000);
@@ -823,38 +824,6 @@ describe("Server", function () {
         );
       }
     );
-  });
-
-  describe("Load script from string", function () {
-    beforeEach(() => {
-      sinonInstance = createSandbox();
-      writeError = sinonInstance.stub();
-      //Mock LogService
-      sinonInstance.stub(LogService, "createLogger").returns({
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        info: sinonInstance.stub(),
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        error: writeError,
-      });
-      server = new ProcessBatchServer();
-      server.listen(43000);
-      return new Promise<void>((resolve, reject) => {
-        return SupervisorClient.create(43000)
-          .then((c) => {
-            client = c;
-            resolve();
-          })
-          .catch((e) => reject(e));
-      });
-    });
-
-    afterEach(async () => {
-      client.close();
-      sinonInstance.restore();
-      await server.closeConnection();
-    });
 
     it("should load a script", function () {
       const [coproc, err] = server.loadCoprocFromString(
