@@ -650,6 +650,8 @@ void application::wire_up_redpanda_services() {
       std::ref(_raft_connection_cache))
       .get();
 
+    // todo: initialize cache, pass it to remote
+
     if (archival_storage_enabled()) {
         syschecks::systemd_message("Starting archival scheduler").get();
         ss::sharded<cloud_storage::configuration> cloud_configs;
