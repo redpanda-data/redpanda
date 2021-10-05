@@ -12,6 +12,7 @@ package kafka
 import (
 	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -29,7 +30,7 @@ import (
 // The settings are close to, but not identical to the sarama client
 // configuration.  Particularly, our timeouts are higher.
 func NewFranzClient(
-	fs afero.Fs, cfg *config.Config, extraOpts ...kgo.Opt,
+	fs afero.Fs, p *config.Params, cfg *config.Config, extraOpts ...kgo.Opt,
 ) (*kgo.Client, error) {
 	k := &cfg.Rpk.KafkaApi
 
@@ -60,6 +61,10 @@ func NewFranzClient(
 	}
 	if tc != nil {
 		opts = append(opts, kgo.DialTLSConfig(tc))
+	}
+
+	if p.Verbose {
+		opts = append(opts, kgo.WithLogger(kgo.BasicLogger(os.Stderr, kgo.LogLevelDebug, nil)))
 	}
 
 	return kgo.NewClient(opts...)

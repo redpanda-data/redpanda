@@ -86,7 +86,7 @@ func NewConsumeCommand(fs afero.Fs) *cobra.Command {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			c.cl, err = kafka.NewFranzClient(fs, cfg, opts...)
+			c.cl, err = kafka.NewFranzClient(fs, p, cfg, opts...)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 
 			done := make(chan struct{})

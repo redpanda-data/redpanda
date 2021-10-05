@@ -34,7 +34,7 @@ func NewOffsetsCommand(fs afero.Fs) *cobra.Command {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := kafka.NewFranzClient(fs, cfg)
+			cl, err := kafka.NewFranzClient(fs, p, cfg)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer cl.Close()
 
