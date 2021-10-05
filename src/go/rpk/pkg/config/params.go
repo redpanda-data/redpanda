@@ -158,6 +158,7 @@ func ParamsFromCommand(cmd *cobra.Command) *Params {
 
 			case FlagConfig:
 				p.ConfigPath = f.Value.String()
+				return
 
 			case FlagBrokers:
 				key = xKafkaBrokers
