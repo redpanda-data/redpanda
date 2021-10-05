@@ -10,6 +10,7 @@
 #include "config/configuration.h"
 
 #include "config/base_property.h"
+#include "config/node_config.h"
 #include "model/metadata.h"
 #include "storage/chunk_cache.h"
 #include "units.h"
@@ -977,11 +978,14 @@ configuration::configuration()
 
 {}
 
-void configuration::read_yaml(const YAML::Node& root_node) {
+void configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
         throw std::invalid_argument("'redpanda'root is required");
     }
-    config_store::read_yaml(root_node["redpanda"]);
+
+    const auto& ignore = node().property_names();
+
+    config_store::read_yaml(root_node["redpanda"], ignore);
 }
 
 configuration& shard_local_cfg() {

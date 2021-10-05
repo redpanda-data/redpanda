@@ -27,6 +27,7 @@
 #include "cluster/tx_gateway_frontend.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
+#include "config/node_config.h"
 #include "config/seed_server.h"
 #include "coproc/api.h"
 #include "kafka/client/configuration.h"
@@ -331,9 +332,15 @@ void application::hydrate_config(const po::variables_map& cfg) {
     _redpanda_enabled = config["redpanda"];
     if (_redpanda_enabled) {
         ss::smp::invoke_on_all([&config] {
-            config::shard_local_cfg().read_yaml(config);
+            config::shard_local_cfg().load(config);
         }).get0();
+
+        ss::smp::invoke_on_all([&config] {
+            config::node().load(config);
+        }).get0();
+
         config::shard_local_cfg().for_each(config_printer("redpanda"));
+        config::node().for_each(config_printer("redpanda"));
     }
     if (config["pandaproxy"]) {
         _proxy_config.emplace(config["pandaproxy"]);

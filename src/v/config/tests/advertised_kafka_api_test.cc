@@ -74,7 +74,7 @@ YAML::Node with_advertised_kafka_api() {
 
 SEASTAR_THREAD_TEST_CASE(shall_return_kafka_api_as_advertised_api_was_not_set) {
     config::configuration cfg;
-    cfg.read_yaml(no_advertised_kafka_api());
+    cfg.load(no_advertised_kafka_api());
     auto adv_list = cfg.advertised_kafka_api();
     BOOST_REQUIRE_EQUAL(
       adv_list[0].address.host(), cfg.kafka_api()[0].address.host());
@@ -84,7 +84,7 @@ SEASTAR_THREAD_TEST_CASE(shall_return_kafka_api_as_advertised_api_was_not_set) {
 
 SEASTAR_THREAD_TEST_CASE(shall_return_advertised_kafka_api) {
     config::configuration cfg;
-    cfg.read_yaml(with_advertised_kafka_api());
+    cfg.load(with_advertised_kafka_api());
     auto adv_list = cfg.advertised_kafka_api();
     BOOST_REQUIRE_EQUAL(adv_list[0].address.host(), "10.48.0.2");
     BOOST_REQUIRE_EQUAL(adv_list[0].address.port(), 1234);
@@ -92,11 +92,11 @@ SEASTAR_THREAD_TEST_CASE(shall_return_advertised_kafka_api) {
 
 SEASTAR_THREAD_TEST_CASE(handles_v2) {
     config::configuration cfg_v1;
-    cfg_v1.read_yaml(with_advertised_kafka_api());
+    cfg_v1.load(with_advertised_kafka_api());
 
     config::configuration cfg_v2;
     auto node = YAML::Load(kafka_endpoints_conf_v2);
-    cfg_v2.read_yaml(node);
+    cfg_v2.load(node);
 
     BOOST_REQUIRE_EQUAL(cfg_v2.kafka_api().size(), 2);
     BOOST_REQUIRE_EQUAL(cfg_v2.advertised_kafka_api().size(), 2);

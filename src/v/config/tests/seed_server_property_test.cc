@@ -93,9 +93,9 @@ SEASTAR_THREAD_TEST_CASE(test_seed_servers_yaml_parsing) {
     config::configuration old_seed_no_id;
     config::configuration new_seed;
 
-    old_seed.read_yaml(read_old_seed_server_format());
-    old_seed_no_id.read_yaml(read_old_seed_server_format_no_id());
-    new_seed.read_yaml(read_new_seed_server_format());
+    old_seed.load(read_old_seed_server_format());
+    old_seed_no_id.load(read_old_seed_server_format_no_id());
+    new_seed.load(read_new_seed_server_format());
 
     BOOST_REQUIRE_EQUAL(
       new_seed.seed_servers()[0],

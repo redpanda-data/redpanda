@@ -26,7 +26,9 @@ public:
         return *_properties.at(name);
     }
 
-    virtual void read_yaml(const YAML::Node& root_node) {
+    virtual void read_yaml(
+      const YAML::Node& root_node,
+      const std::set<std::string_view> ignore_missing = {}) {
         for (auto const& [name, property] : _properties) {
             if (property->is_required() == required::no) {
                 continue;
@@ -42,10 +44,13 @@ public:
             auto name = node.first.as<ss::sstring>();
             auto found = _properties.find(name);
             if (found == _properties.end()) {
-                throw std::invalid_argument(
-                  fmt::format("Unknown property {}", name));
+                if (!ignore_missing.contains(name)) {
+                    throw std::invalid_argument(
+                      fmt::format("Unknown property {}", name));
+                }
+            } else {
+                found->second->set_value(node.second);
             }
-            found->second->set_value(node.second);
         }
     }
 
@@ -75,6 +80,15 @@ public:
         }
 
         w.EndObject();
+    }
+
+    std::set<std::string_view> property_names() const {
+        std::set<std::string_view> result;
+        for (const auto& i : _properties) {
+            result.insert(i.first);
+        }
+
+        return result;
     }
 
     virtual ~config_store() noexcept = default;

@@ -226,7 +226,7 @@ struct configuration final : public config_store {
 
     configuration();
 
-    void read_yaml(const YAML::Node& root_node) override;
+    void load(const YAML::Node& root_node);
 
     const std::vector<model::broker_endpoint>& advertised_kafka_api() const {
         if (_advertised_kafka_api().empty()) {
