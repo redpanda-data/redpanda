@@ -13,9 +13,3 @@ quick:
 
   excluded:
   - tests/librdkafka_test.py
-  - tests/rpk_test.py
-  - tests/demo_test.py
-  - tests/compacted_term_rolled_recovery_test.py
-  - tests/compacted_topic_verifier_test.py
-  - tests/compaction_recovery_test.py
-  - tests/archival_upload_test.py
