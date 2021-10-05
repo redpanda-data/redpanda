@@ -15,6 +15,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <set>
+#include <string_view>
 
 BOOST_AUTO_TEST_CASE(named_type_basic) {
     using int_alias = named_type<int32_t, struct int_alias_test_module>;
@@ -68,4 +69,13 @@ BOOST_AUTO_TEST_CASE(named_type_prefix_increment) {
     t t0(0);
     BOOST_TEST(++t0 == 1);
     BOOST_TEST(++t0 == 2);
+}
+
+BOOST_AUTO_TEST_CASE(named_type_rvalue_overload) {
+    using t = named_type<ss::sstring, struct int_t_alias_test_module>;
+    static constexpr std::string_view str{"This shouldn't dangle"};
+    auto f = []() { return t{ss::sstring{str}}; };
+    const auto& r = f()();
+
+    BOOST_REQUIRE_EQUAL(str, r);
 }

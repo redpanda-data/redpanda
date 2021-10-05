@@ -170,9 +170,11 @@ public:
     bool operator>=(const type& other) const { return _value >= other; }
 
     // explicit getter
-    const type& operator()() const { return _value; }
+    const type& operator()() const& { return _value; }
+    type operator()() && { return std::move(_value); }
     // implicit conversion operator
-    operator const type&() const { return _value; }
+    operator const type&() const& { return _value; }
+    operator type() && { return std::move(_value); }
 
 protected:
     type _value;
