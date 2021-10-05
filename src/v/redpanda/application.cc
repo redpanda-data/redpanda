@@ -35,6 +35,7 @@
 #include "kafka/server/protocol.h"
 #include "kafka/server/queue_depth_monitor.h"
 #include "kafka/server/quota_manager.h"
+#include "kafka/server/rm_group_frontend.h"
 #include "model/metadata.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/proxy.h"
@@ -112,10 +113,7 @@ static void set_sr_local_kafka_client_config(
 }
 
 application::application(ss::sstring logger_name)
-  : _log(std::move(logger_name))
-  , _rm_group_proxy(std::ref(rm_group_frontend)){
-
-    };
+  : _log(std::move(logger_name)){};
 
 application::~application() = default;
 
@@ -754,6 +752,9 @@ void application::wire_up_redpanda_services() {
       std::ref(group_router))
       .get();
 
+    _rm_group_proxy = std::make_unique<kafka::rm_group_proxy_impl>(
+      std::ref(rm_group_frontend));
+
     syschecks::systemd_message("Creating partition resource manager frontend")
       .get();
     construct_service(
@@ -784,7 +785,7 @@ void application::wire_up_redpanda_services() {
       std::ref(controller->get_partition_leaders()),
       controller.get(),
       std::ref(id_allocator_frontend),
-      &_rm_group_proxy,
+      _rm_group_proxy.get(),
       std::ref(rm_partition_frontend))
       .get();
 
@@ -954,7 +955,7 @@ void application::start_redpanda() {
             _scheduling_groups.raft_sg(),
             smp_service_groups.raft_smp_sg(),
             std::ref(tx_gateway_frontend),
-            &_rm_group_proxy,
+            _rm_group_proxy.get(),
             std::ref(rm_partition_frontend));
           proto->register_service<
             raft::service<cluster::partition_manager, cluster::shard_table>>(
