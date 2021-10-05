@@ -18,7 +18,6 @@
 #include "pandaproxy/schema_registry/avro.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/exceptions.h"
-#include "pandaproxy/schema_registry/schema_util.h"
 #include "pandaproxy/schema_registry/store.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "vlog.h"
@@ -40,6 +39,18 @@ ss::shard_id shard_for(const subject& sub) {
 ss::shard_id shard_for(schema_id id) {
     return jump_consistent_hash(id(), ss::smp::count);
 }
+
+bool check_compatible(const valid_schema& reader, const valid_schema& writer) {
+    return reader.visit([&](const auto& reader) {
+        return writer.visit([&](const auto& writer) {
+            if constexpr (std::is_same_v<decltype(reader), decltype(writer)>) {
+                return check_compatible(reader, writer);
+            }
+            return false;
+        });
+    });
+}
+
 } // namespace
 
 ss::future<> sharded_store::start(ss::smp_service_group sg) {
@@ -49,10 +60,33 @@ ss::future<> sharded_store::start(ss::smp_service_group sg) {
 
 ss::future<> sharded_store::stop() { return _store.stop(); }
 
+ss::future<canonical_schema>
+sharded_store::make_canonical_schema(unparsed_schema schema) {
+    auto def = co_await _store.invoke_on(
+      shard_for(schema.sub()),
+      _smp_opts,
+      &store::make_canonical_schema,
+      schema);
+    co_return std::move(def).value();
+}
+
+ss::future<> sharded_store::validate_schema(const canonical_schema& schema) {
+    auto def = co_await _store.invoke_on(
+      shard_for(schema.sub()), _smp_opts, &store::validate_schema, schema);
+    co_return std::move(def).value();
+}
+
+ss::future<valid_schema>
+sharded_store::make_valid_schema(const canonical_schema& schema) {
+    auto def = co_await _store.invoke_on(
+      shard_for(schema.sub()), _smp_opts, &store::make_valid_schema, schema);
+    co_return std::move(def).value();
+}
+
 ss::future<sharded_store::insert_result>
 sharded_store::project_ids(const canonical_schema& schema) {
     // Validate the schema (may throw)
-    validate(schema).value();
+    co_await validate_schema(schema);
 
     // Check compatibility
     std::vector<schema_version> versions;
@@ -122,7 +156,9 @@ ss::future<subject_schema>
 sharded_store::has_schema(const canonical_schema& schema) {
     auto versions = co_await get_versions(schema.sub(), include_deleted::no);
 
-    if (validate(schema).has_error()) {
+    try {
+        co_await validate_schema(schema);
+    } catch (const exception& e) {
         throw as_exception(invalid_subject_schema(schema.sub()));
     }
 
@@ -418,29 +454,29 @@ ss::future<bool> sharded_store::is_compatible(
         ver_it = versions.begin();
     }
 
-    auto new_avro
-      = make_avro_schema_definition(new_schema.def().raw()()).value();
+    auto new_valid = co_await make_valid_schema(new_schema);
+
     auto is_compat = true;
     for (; is_compat && ver_it != versions.end(); ++ver_it) {
         if (ver_it->deleted) {
             continue;
         }
 
-        auto old_schema = co_await get_schema_definition(ver_it->id);
-        auto old_avro
-          = make_avro_schema_definition(std::move(old_schema).raw()()).value();
+        auto old_schema = co_await get_subject_schema(
+          sub, ver_it->version, include_deleted::no);
+        auto old_valid = co_await make_valid_schema(old_schema.schema);
 
         if (
           compat == compatibility_level::backward
           || compat == compatibility_level::backward_transitive
           || compat == compatibility_level::full) {
-            is_compat = is_compat && check_compatible(new_avro, old_avro);
+            is_compat = is_compat && check_compatible(new_valid, old_valid);
         }
         if (
           compat == compatibility_level::forward
           || compat == compatibility_level::forward_transitive
           || compat == compatibility_level::full) {
-            is_compat = is_compat && check_compatible(old_avro, new_avro);
+            is_compat = is_compat && check_compatible(old_valid, new_valid);
         }
     }
     co_return is_compat;
