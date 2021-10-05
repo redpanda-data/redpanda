@@ -241,6 +241,25 @@ ss::future<> group_manager::inject_noop(
       .discard_result();
 }
 
+ss::future<>
+group_manager::gc_partition_state(ss::lw_shared_ptr<attached_partition> p) {
+    /**
+     * since this operation is destructive for partitions group we hold a
+     * catchup write lock
+     */
+
+    auto units = co_await p->catchup_lock.hold_write_lock();
+
+    for (auto it = _groups.begin(); it != _groups.end();) {
+        if (it->second->partition()->ntp() == p->partition->ntp()) {
+            _groups.erase(it++);
+            continue;
+        }
+        ++it;
+    }
+    _groups.rehash(0);
+}
+
 ss::future<> group_manager::handle_partition_leader_change(
   model::term_id term,
   ss::lw_shared_ptr<attached_partition> p,
@@ -267,7 +286,7 @@ ss::future<> group_manager::handle_partition_leader_change(
      */
     if (leader_id != _self.id()) {
         p->loading = false;
-        return ss::make_ready_future<>();
+        return gc_partition_state(p);
     }
 
     p->loading = true;
