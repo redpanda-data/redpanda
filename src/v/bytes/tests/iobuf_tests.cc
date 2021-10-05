@@ -12,6 +12,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_istreambuf.h"
 #include "bytes/iobuf_ostreambuf.h"
+#include "bytes/iobuf_parser.h"
 #include "bytes/tests/utils.h"
 
 #include <seastar/core/temporary_buffer.hh>
@@ -631,4 +632,16 @@ SEASTAR_THREAD_TEST_CASE(iobuf_string_view_cmp) {
         }
         BOOST_REQUIRE_EQUAL(buf, std::string_view(str));
     }
+}
+
+SEASTAR_THREAD_TEST_CASE(iobuf_parser_peek) {
+    const auto a = random_generators::gen_alphanum_string(1024);
+    const auto b = random_generators::gen_alphanum_string(1024);
+    iobuf src;
+    src.append(a.data(), a.size());
+    src.append(b.data(), b.size());
+    iobuf_parser parser(std::move(src));
+    auto dst_a = parser.peek(1000);
+    auto dst_b = parser.copy(1000);
+    BOOST_REQUIRE(dst_a == dst_b);
 }

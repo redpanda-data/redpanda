@@ -10,8 +10,10 @@
 #include "cluster/types.h"
 
 #include "cluster/fwd.h"
+#include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/timestamp.h"
 #include "reflection/adl.h"
 #include "security/acl.h"
 #include "tristate.h"
@@ -23,6 +25,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <type_traits>
 
 namespace cluster {
 
@@ -38,8 +41,8 @@ bool topic_properties::is_compacted() const {
 bool topic_properties::has_overrides() const {
     return cleanup_policy_bitflags || compaction_strategy || segment_size
            || retention_bytes.has_value() || retention_bytes.is_disabled()
-           || retention_duration.has_value()
-           || retention_duration.is_disabled();
+           || retention_duration.has_value() || retention_duration.is_disabled()
+           || recovery.has_value() || shadow_indexing.has_value();
 }
 
 storage::ntp_config::default_overrides
@@ -147,7 +150,8 @@ create_partititions_configuration::create_partititions_configuration(
 std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
     fmt::print(
       o,
-      "{{ topic: {}, partition_count: {}, replication_factor: {}, properties: "
+      "{{ topic: {}, partition_count: {}, replication_factor: {}, "
+      "properties: "
       "{}}}",
       cfg.tp_ns,
       cfg.partition_count,
@@ -160,16 +164,20 @@ std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
 std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
     fmt::print(
       o,
-      "{{ compression: {}, cleanup_policy_bitflags: {}, compaction_strategy: "
-      "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: {}, "
-      "timestamp_type: {} }}",
+      "{{ compression: {}, cleanup_policy_bitflags: {}, "
+      "compaction_strategy: "
+      "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: "
+      "{}, "
+      "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {} }}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
       properties.retention_bytes,
       properties.retention_duration,
       properties.segment_size,
-      properties.timestamp_type);
+      properties.timestamp_type,
+      properties.recovery,
+      properties.shadow_indexing);
 
     return o;
 }
@@ -293,10 +301,13 @@ std::ostream& operator<<(
 } // namespace cluster
 
 namespace reflection {
+
 void adl<cluster::topic_configuration>::to(
   iobuf& out, cluster::topic_configuration&& t) {
+    int32_t version = -1;
     reflection::serialize(
       out,
+      version,
       t.tp_ns,
       t.partition_count,
       t.replication_factor,
@@ -306,11 +317,31 @@ void adl<cluster::topic_configuration>::to(
       t.properties.timestamp_type,
       t.properties.segment_size,
       t.properties.retention_bytes,
-      t.properties.retention_duration);
+      t.properties.retention_duration,
+      t.properties.recovery,
+      t.properties.shadow_indexing);
 }
 
 cluster::topic_configuration
 adl<cluster::topic_configuration>::from(iobuf_parser& in) {
+    // NOTE: The first field of the topic_configuration is a
+    // model::ns which has length prefix which is always
+    // positive.
+    // We're using negative length value to encode version. So if
+    // the first int32_t value is positive then we're dealing with
+    // the old format. The negative value means that the new format
+    // was used.
+    auto version = adl<int32_t>{}.from(in.peek(4));
+    if (version < 0) {
+        // Consume version from stream
+        in.skip(4);
+        vassert(
+          -1 == version,
+          "topic_configuration version {} is not supported",
+          version);
+    } else {
+        version = 0;
+    }
     auto ns = model::ns(adl<ss::sstring>{}.from(in));
     auto topic = model::topic(adl<ss::sstring>{}.from(in));
     auto partition_count = adl<int32_t>{}.from(in);
@@ -331,7 +362,11 @@ adl<cluster::topic_configuration>::from(iobuf_parser& in) {
     cfg.properties.retention_bytes = adl<tristate<size_t>>{}.from(in);
     cfg.properties.retention_duration
       = adl<tristate<std::chrono::milliseconds>>{}.from(in);
-
+    if (version < 0) {
+        cfg.properties.recovery = adl<std::optional<bool>>{}.from(in);
+        cfg.properties.shadow_indexing
+          = adl<std::optional<model::shadow_indexing_mode>>{}.from(in);
+    }
     return cfg;
 }
 

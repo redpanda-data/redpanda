@@ -414,4 +414,19 @@ std::ostream& operator<<(std::ostream& o, membership_state st) {
     return o << "unknown membership state {" << static_cast<int>(st) << "}";
 }
 
+std::ostream& operator<<(std::ostream& o, const shadow_indexing_mode& si) {
+    switch (si) {
+    case shadow_indexing_mode::disabled:
+        o << "disabled";
+        break;
+    case shadow_indexing_mode::archival_storage:
+        o << "archival_storage";
+        break;
+    case shadow_indexing_mode::shadow_indexing:
+        o << "shadow_indexing";
+        break;
+    }
+    return o;
+}
+
 } // namespace model
