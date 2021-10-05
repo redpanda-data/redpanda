@@ -33,10 +33,12 @@ namespace cluster {
 partition_manager::partition_manager(
   ss::sharded<storage::api>& storage,
   ss::sharded<raft::group_manager>& raft,
-  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend)
+  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
+  ss::sharded<cloud_storage::partition_recovery_manager>& recovery_mgr)
   : _storage(storage.local())
   , _raft_manager(raft)
-  , _tx_gateway_frontend(tx_gateway_frontend) {}
+  , _tx_gateway_frontend(tx_gateway_frontend)
+  , _partition_recovery_mgr(recovery_mgr) {}
 
 partition_manager::ntp_table_container
 partition_manager::get_topic_partition_table(
@@ -68,6 +70,20 @@ ss::future<consensus_ptr> partition_manager::manage(
                 return p->start().then([c] { return c; });
             });
       });
+}
+
+ss::future<bool>
+partition_manager::maybe_download_log(storage::ntp_config& ntp_cfg) {
+    if (_partition_recovery_mgr.local_is_initialized()) {
+        co_return co_await _partition_recovery_mgr.local().download_log(
+          ntp_cfg);
+    }
+    vlog(
+      clusterlog.debug,
+      "Logs can't be downloaded because cloud storage is not configured. "
+      "Continue creating {} witout downloading the logs.",
+      ntp_cfg);
+    co_return false;
 }
 
 ss::future<> partition_manager::stop() {

@@ -9,12 +9,14 @@
 
 #include "kafka/server/handlers/topics/types.h"
 
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/timestamp.h"
 #include "units.h"
+#include "utils/string_switch.h"
 
 #include <bits/stdint-intn.h>
 #include <bits/stdint-uintn.h>
@@ -46,6 +48,18 @@ static std::optional<T>
 get_config_value(const config_map_t& config, std::string_view key) {
     if (auto it = config.find(key); it != config.end()) {
         return boost::lexical_cast<T>(it->second);
+    }
+    return std::nullopt;
+}
+
+// Either parse configuration or return nullopt
+static std::optional<bool>
+get_bool_value(const config_map_t& config, std::string_view key) {
+    if (auto it = config.find(key); it != config.end()) {
+        return string_switch<std::optional<bool>>(it->second)
+          .match("true", true)
+          .match("false", false)
+          .default_match(std::nullopt);
     }
     return std::nullopt;
 }
@@ -95,6 +109,8 @@ cluster::topic_configuration to_cluster_type(const creatable_topic& t) {
     cfg.properties.retention_duration
       = get_tristate_value<std::chrono::milliseconds>(
         config_entries, topic_property_retention_duration);
+    cfg.properties.recovery = get_bool_value(
+      config_entries, topic_property_recovery);
 
     return cfg;
 }
