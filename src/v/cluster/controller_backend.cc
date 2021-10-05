@@ -22,6 +22,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "config/node_config.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "outcome.h"
@@ -176,7 +177,7 @@ controller_backend::controller_backend(
   , _topics_frontend(frontend)
   , _storage(storage)
   , _self(model::node_id(config::shard_local_cfg().node_id))
-  , _data_directory(config::shard_local_cfg().data_directory().as_sstring())
+  , _data_directory(config::node().data_directory().as_sstring())
   , _housekeeping_timer_interval(
       config::shard_local_cfg().controller_backend_housekeeping_interval_ms())
   , _as(as) {}

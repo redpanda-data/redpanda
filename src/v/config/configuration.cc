@@ -44,18 +44,13 @@ uint32_t default_raft_non_local_requests() {
 }
 
 configuration::configuration()
-  : data_directory(
+  : developer_mode(
     *this,
-    "data_directory",
-    "Place where redpanda will keep the data",
-    required::yes)
-  , developer_mode(
-      *this,
-      "developer_mode",
-      "Skips most of the checks performed at startup, not recomended for "
-      "production use",
-      required::no,
-      false)
+    "developer_mode",
+    "Skips most of the checks performed at startup, not recomended for "
+    "production use",
+    required::no,
+    false)
   , log_segment_size(
       *this,
       "log_segment_size",
@@ -828,13 +823,6 @@ configuration::configuration()
       "remote storage (sec)",
       required::no,
       std::nullopt)
-  , cloud_storage_cache_directory(
-      *this,
-      "cloud_storage_cache_directory",
-      "Directory for archival cache. Should be present when "
-      "`cloud_storage_enabled` is present",
-      required::no,
-      (data_directory.value().path / "archival_cache").native())
   , cloud_storage_cache_size(
       *this,
       "cloud_storage_cache_size",

@@ -221,7 +221,8 @@ void application::initialize(
     }).get0();
 
     if (config::shard_local_cfg().enable_pid_file()) {
-        syschecks::pidfile_create(config::shard_local_cfg().pidfile_path());
+        syschecks::pidfile_create(
+          config::node().pidfile_path());
     }
     smp_groups::config smp_groups_cfg{
       .raft_group_max_non_local_requests
@@ -373,7 +374,7 @@ void application::check_environment() {
     syschecks::memory(config::shard_local_cfg().developer_mode());
     if (_redpanda_enabled) {
         storage::directories::initialize(
-          config::shard_local_cfg().data_directory().as_sstring())
+          config::node().data_directory().as_sstring())
           .get();
     }
 }
@@ -420,7 +421,7 @@ static storage::kvstore_config kvstore_config_from_global_config() {
     return storage::kvstore_config(
       config::shard_local_cfg().kvstore_max_segment_size(),
       config::shard_local_cfg().kvstore_flush_interval(),
-      config::shard_local_cfg().data_directory().as_sstring(),
+      config::node().data_directory().as_sstring(),
       storage::debug_sanitize_files::no);
 }
 
@@ -428,7 +429,7 @@ static storage::log_config
 manager_config_from_global_config(scheduling_groups& sgs) {
     return storage::log_config(
       storage::log_config::storage_type::disk,
-      config::shard_local_cfg().data_directory().as_sstring(),
+      config::node().data_directory().as_sstring(),
       config::shard_local_cfg().log_segment_size(),
       config::shard_local_cfg().compacted_log_segment_size(),
       config::shard_local_cfg().max_compacted_log_segment_size(),
@@ -451,7 +452,7 @@ manager_config_from_global_config(scheduling_groups& sgs) {
 static storage::backlog_controller_config compaction_controller_config(
   ss::scheduling_group sg, const ss::io_priority_class& iopc) {
     auto space_info = std::filesystem::space(
-      config::shard_local_cfg().data_directory().path);
+      config::node().data_directory().path);
     /**
      * By default we set desired compaction backlog size to 10% of disk
      * capacity.

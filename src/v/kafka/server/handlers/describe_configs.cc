@@ -12,6 +12,7 @@
 #include "cluster/metadata_cache.h"
 #include "config/configuration.h"
 #include "config/data_directory_path.h"
+#include "config/node_config.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
 #include "kafka/server/handlers/topics/types.h"
@@ -263,7 +264,7 @@ report_broker_config(describe_configs_result& result, bool include_synonyms) {
     add_broker_config(
       result,
       "log.dirs",
-      config::shard_local_cfg().data_directory,
+      config::node().data_directory,
       include_synonyms,
       [](const config::data_directory_path& path) {
           return path.as_sstring();

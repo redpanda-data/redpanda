@@ -18,6 +18,7 @@
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
+#include "config/node_config.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
@@ -171,7 +172,9 @@ public:
                 unresolved_address("127.0.0.1", coproc_supervisor_port));
             config.get("rack").set_value(std::optional<ss::sstring>(rack_name));
             config.get("disable_metrics").set_value(true);
-            config.get("data_directory")
+
+            auto& node_config = config::node();
+            node_config.get("data_directory")
               .set_value(config::data_directory_path{.path = base_path});
         }).get0();
     }
@@ -308,7 +311,10 @@ public:
           model::partition_id(0));
 
         storage::ntp_config ntp_cfg(
-          ntp, lconf().data_directory().as_sstring(), nullptr, rev);
+          ntp,
+          config::node().data_directory().as_sstring(),
+          nullptr,
+          rev);
 
         storage::disk_log_builder builder(make_default_config());
         using namespace storage; // NOLINT

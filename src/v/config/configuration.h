@@ -41,7 +41,6 @@ namespace config {
 
 struct configuration final : public config_store {
     // WAL
-    property<data_directory_path> data_directory;
     property<bool> developer_mode;
     property<uint64_t> log_segment_size;
     property<uint64_t> compacted_log_segment_size;
@@ -194,7 +193,6 @@ struct configuration final : public config_store {
       cloud_storage_segment_max_upload_interval_sec;
 
     // Archival cache
-    property<std::optional<ss::sstring>> cloud_storage_cache_directory;
     property<size_t> cloud_storage_cache_size;
     property<std::chrono::milliseconds> cloud_storage_cache_check_interval_ms;
 
@@ -239,10 +237,6 @@ struct configuration final : public config_store {
         return _advertised_rpc_api().value_or(rpc_server());
     }
 
-    // build pidfile path: `<data_directory>/pid.lock`
-    std::filesystem::path pidfile_path() const {
-        return data_directory().path / "pid.lock";
-    }
     const one_or_many_property<model::broker_endpoint>&
     advertised_kafka_api_property() {
         return _advertised_kafka_api;

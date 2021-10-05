@@ -31,6 +31,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "config/node_config.h"
 #include "likely.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
@@ -75,7 +76,7 @@ ss::future<> controller::start() {
     return create_raft0(
              _partition_manager,
              _shard_table,
-             config::shard_local_cfg().data_directory().as_sstring(),
+             config::node().data_directory().as_sstring(),
              std::move(initial_raft0_brokers))
       .then([this](consensus_ptr c) { _raft0 = c; })
       .then([this] { return _partition_leaders.start(std::ref(_tp_state)); })
