@@ -259,35 +259,7 @@ using conf_ref = typename std::reference_wrapper<configuration>;
 
 } // namespace config
 
-namespace std {
-inline ostream& operator<<(ostream& o, const config::data_directory_path& p) {
-    return o << "{data_directory=" << p.path << "}";
-}
-} // namespace std
-
 namespace YAML {
-template<>
-struct convert<config::data_directory_path> {
-    using type = config::data_directory_path;
-    static Node encode(const type& rhs) {
-        Node node;
-        node = rhs.path.c_str();
-        return node;
-    }
-    static bool decode(const Node& node, type& rhs) {
-        auto pstr = node.as<std::string>();
-        if (pstr[0] == '~') {
-            const char* home = std::getenv("HOME");
-            if (!home) {
-                return false;
-            }
-            pstr = fmt::format("{}{}", home, pstr.erase(0, 1));
-        }
-        rhs.path = pstr;
-        return true;
-    }
-};
-
 template<>
 struct convert<model::violation_recovery_policy> {
     using type = model::violation_recovery_policy;
