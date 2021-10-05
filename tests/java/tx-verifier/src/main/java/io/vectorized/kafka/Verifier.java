@@ -67,7 +67,7 @@ class Verifier {
             "Executing " + name + " test, retries left: " + retries);
         action.run(connection);
         return;
-      } catch (TxConsumer.TimeoutException e) {
+      } catch (RetryableException e) {
         if (retries > 0) {
           e.printStackTrace();
           Thread.sleep(Duration.ofSeconds(1).toMillis());
@@ -253,17 +253,11 @@ class Verifier {
       producer = null;
 
       consumer = new TxConsumer(connection, topic1, isReadComitted);
-      consumer.seekToEnd();
-
-      int retries = 8;
-      while (offset >= consumer.position() && retries > 0) {
-        // partitions lag behind a coordinator
-        // we can't avoid sleep :(
-        Thread.sleep(500);
-        consumer.seekToEnd();
-        retries--;
-      }
-      assertLess(offset, consumer.position());
+      long position = seekOver(consumer, offset, 500, 8);
+      should(
+          offset < position,
+          "data partition hasn't caught up with committed tx - offset:" + offset
+              + ", position: " + position);
     } finally {
       if (producer != null) {
         producer.close();
@@ -302,16 +296,11 @@ class Verifier {
       producer = null;
 
       consumer = new TxConsumer(connection, topic1, true);
-      consumer.seekToEnd();
-      int retries = 8;
-      while (last_offset >= consumer.position() && retries > 0) {
-        // partitions lag behind a coordinator
-        // we can't avoid sleep :(
-        Thread.sleep(500);
-        consumer.seekToEnd();
-        retries--;
-      }
-      assertLess(last_offset, consumer.position());
+      long position = seekOver(consumer, last_offset, 500, 8);
+      should(
+          last_offset < position,
+          "data partition hasn't caught up with committed tx - offset:"
+              + last_offset + ", position: " + position);
 
       var records = consumer.read(first_offset, last_offset, 500, 10);
       consumer.close();
@@ -346,16 +335,11 @@ class Verifier {
       producer = null;
 
       consumer = new TxConsumer(connection, topic1, true);
-      consumer.seekToEnd();
-      int retries = 8;
-      while (last_offset >= consumer.position() && retries > 0) {
-        // partitions lag behind a coordinator
-        // we can't avoid sleep :(
-        Thread.sleep(500);
-        consumer.seekToEnd();
-        retries--;
-      }
-      assertLess(last_offset, consumer.position());
+      long position = seekOver(consumer, last_offset, 500, 8);
+      should(
+          last_offset < position,
+          "data partition hasn't caught up with committed tx - offset:"
+              + last_offset + ", position: " + position);
 
       var records = consumer.read(first_offset, last_offset, 500, 10);
       consumer.close();
@@ -416,15 +400,11 @@ class Verifier {
       long offset = producer.send(topic1, "key1", "value1");
 
       consumer = new TxConsumer(connection, topic1, true);
-      int retries = 8;
-      while (offset >= consumer.position() && retries > 0) {
-        // partitions lag behind a coordinator
-        // we can't avoid sleep :(
-        Thread.sleep(500);
-        consumer.seekToEnd();
-        retries--;
-      }
-      assertLessOrEqual(consumer.position(), offset);
+      long position = seekOver(consumer, offset, 500, 8);
+      should(
+          position <= offset,
+          "read committed seek can't jump beyond an inflight tx; tx offset:"
+              + offset + ", position: " + position);
 
       producer.commitTransaction();
     } finally {
@@ -448,15 +428,11 @@ class Verifier {
       long offset = producer.send(topic1, "key1", "value1");
 
       consumer = new TxConsumer(connection, topic1, true);
-      int retries = 8;
-      while (offset >= consumer.position() && retries > 0) {
-        // partitions lag behind a coordinator
-        // we can't avoid sleep :(
-        Thread.sleep(500);
-        consumer.seekToEnd();
-        retries--;
-      }
-      assertLess(offset, consumer.position());
+      long position = seekOver(consumer, offset, 500, 8);
+      should(
+          offset < position,
+          "read committed seek should jump beyond an (auto)aborted tx; tx offset: "
+              + offset + ", position: " + position);
 
       try {
         producer.commitTransaction();
@@ -484,16 +460,11 @@ class Verifier {
       long offset = producer.send(topic1, "key1", "value1");
 
       consumer = new TxConsumer(connection, topic1, false);
-
-      int retries = 8;
-      while (offset >= consumer.position() && retries > 0) {
-        // partitions lag behind a coordinator
-        // we can't avoid sleep :(
-        Thread.sleep(500);
-        consumer.seekToEnd();
-        retries--;
-      }
-      assertLess(offset, consumer.position());
+      long position = seekOver(consumer, offset, 500, 8);
+      should(
+          offset < position,
+          "read uncommitted seek should jump beyond an ongoing tx; tx offset: "
+              + offset + ", position: " + position);
 
       producer.commitTransaction();
     } finally {
@@ -518,6 +489,20 @@ class Verifier {
         stream.close();
       }
     }
+  }
+
+  static long seekOver(TxConsumer consumer, long offset, int delay, int retries)
+      throws Exception {
+    consumer.seekToEnd();
+    long position = consumer.position();
+    while (position <= offset && retries > 0) {
+      // partitions lag behind a coordinator we can't avoid sleep
+      Thread.sleep(delay);
+      consumer.seekToEnd();
+      position = consumer.position();
+      retries--;
+    }
+    return position;
   }
 
   static void readProcessWrite(String connection) throws Exception {
@@ -551,13 +536,18 @@ class Verifier {
       stream.setGroupStartOffset(first_offset);
 
       int retries = 8;
-      while (first_offset > stream.getGroupOffset() && retries > 0) {
+      long group_offset = stream.getGroupOffset();
+      while (first_offset > group_offset && retries > 0) {
         // consumer groups lag behind a coordinator
         // we can't avoid sleep :(
         Thread.sleep(500);
+        group_offset = stream.getGroupOffset();
         retries--;
       }
-      assertEquals(first_offset, stream.getGroupOffset());
+      should(
+          first_offset == group_offset,
+          "consumer should observe committed offset; committed offset: "
+              + first_offset + ", group offset: " + group_offset);
 
       var mapping
           = stream.process(last_offset, x -> x.toUpperCase(), 1, topic2);
@@ -606,6 +596,12 @@ class Verifier {
   static void assertLess(long lesser, long greater) throws Exception {
     if (lesser >= greater) {
       throw new Exception("Expected " + lesser + " to be less than " + greater);
+    }
+  }
+
+  static void should(boolean cond, String msg) throws Exception {
+    if (!cond) {
+      throw new RetryableException(msg);
     }
   }
 
