@@ -154,6 +154,10 @@
                     "type": "string",
                     "description": "status"
                 },
+                "leader_id": {
+                    "type": "long",
+                    "description": "leader node id"
+                },
                 "replicas": {
                     "type": "array",
                     "items": {

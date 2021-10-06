@@ -766,10 +766,16 @@ void admin_server::register_partition_routes() {
           p.ns = ntp.ns;
           p.topic = ntp.tp.topic;
           p.partition_id = ntp.tp.partition;
+          p.leader_id = -1;
 
           auto assignment
             = _controller->get_topics_state().local().get_partition_assignment(
               ntp);
+          auto leader_opt = _metadata_cache.local().get_leader_id(ntp);
+          
+          if(leader_opt){
+              p.leader_id = *leader_opt;
+          }
 
           if (assignment) {
               for (auto& r : assignment->replicas) {
