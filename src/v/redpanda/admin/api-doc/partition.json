@@ -158,6 +158,10 @@
                     "type": "long",
                     "description": "leader node id"
                 },
+                "raft_group_id": {
+                    "type": "long",
+                    "description": "partition raft group id"
+                },
                 "replicas": {
                     "type": "array",
                     "items": {

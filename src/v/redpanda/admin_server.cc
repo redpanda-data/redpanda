@@ -784,6 +784,7 @@ void admin_server::register_partition_routes() {
                   a.core = r.shard;
                   p.replicas.push(a);
               }
+              p.raft_group_id = assignment->group;
           }
 
           return _controller->get_api()
