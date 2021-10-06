@@ -220,6 +220,4 @@ struct configuration final : public config_store {
 
 configuration& shard_local_cfg();
 
-using conf_ref = typename std::reference_wrapper<configuration>;
-
 } // namespace config
