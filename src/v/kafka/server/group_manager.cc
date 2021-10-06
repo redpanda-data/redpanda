@@ -37,8 +37,7 @@ group_manager::group_manager(
   , _pm(pm)
   , _topic_table(topic_table)
   , _conf(conf)
-  , _self(cluster::make_self_broker(
-      config::shard_local_cfg(), config::node())) {}
+  , _self(cluster::make_self_broker(config::node())) {}
 
 ss::future<> group_manager::start() {
     /*

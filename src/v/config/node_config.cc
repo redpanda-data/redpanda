@@ -24,6 +24,7 @@ node_config::node_config() noexcept
       "node_id",
       "Unique id identifying a node in the cluster",
       required::yes)
+  , rack(*this, "rack", "Rack identifier", required::no, std::nullopt)
   , rpc_server(
       *this,
       "rpc_server",

@@ -101,8 +101,7 @@ auto with_client(
 }
 
 /// Creates current broker instance using its configuration.
-model::broker make_self_broker(
-  const config::configuration& cfg, const config::node_config& node_cfg);
+model::broker make_self_broker(const config::node_config& node_cfg);
 
 /// \brief Log reload credential event
 /// The function is supposed to be invoked from the callback passed to

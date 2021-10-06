@@ -212,7 +212,6 @@ configuration::configuration()
       2_GiB)
   , cluster_id(
       *this, "cluster_id", "Cluster identifier", required::no, std::nullopt)
-  , rack(*this, "rack", "Rack identifier", required::no, std::nullopt)
   , dashboard_dir(
       *this,
       "dashboard_dir",

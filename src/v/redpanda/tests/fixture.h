@@ -163,11 +163,12 @@ public:
             config.get("coproc_supervisor_server")
               .set_value(
                 unresolved_address("127.0.0.1", coproc_supervisor_port));
-            config.get("rack").set_value(std::optional<ss::sstring>(rack_name));
             config.get("disable_metrics").set_value(true);
 
             auto& node_config = config::node();
             node_config.get("node_id").set_value(node_id);
+            node_config.get("rack").set_value(
+              std::optional<ss::sstring>(rack_name));
             node_config.get("rpc_server")
               .set_value(unresolved_address("127.0.0.1", rpc_port));
             node_config.get("kafka_api")
