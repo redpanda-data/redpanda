@@ -14,6 +14,7 @@ from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kcl import KCL
 
@@ -44,3 +45,43 @@ class ListGroupsReplicationFactorTest(RedpandaTest):
         kcl.list_groups()
         out = kcl.list_groups()
         assert "COORDINATOR_LOAD_IN_PROGRESS" not in out
+
+    # https://github.com/vectorizedio/redpanda/issues/2528
+    @cluster(num_nodes=3)
+    def test_list_groups_has_no_duplicates(self):
+        kcl = KCL(self.redpanda)
+        kcl.produce(self.topic, "msg\n")
+        # create 4 groups
+        kcl.consume(self.topic, n=1, group="g0")
+        kcl.consume(self.topic, n=1, group="g1")
+        kcl.consume(self.topic, n=1, group="g2")
+        kcl.consume(self.topic, n=1, group="g3")
+        # transfer kafka_internal/group/0 leadership across the nodes to trigger
+        # group state recovery on each node
+        admin = Admin(redpanda=self.redpanda)
+        for n in self.redpanda.nodes:
+            admin.transfer_leadership_to(namespace="kafka_internal",
+                                         topic="group",
+                                         partition=0,
+                                         target_id=self.redpanda.idx(n))
+        # assert that there are no duplicates in
+        def _list_groups():
+            out = kcl.list_groups()
+            groups = []
+            for l in out.splitlines():
+                # skip header line
+                if l.startswith("BROKER"):
+                    continue
+                parts = l.split()
+                groups.append({'node_id': parts[0], 'group': parts[1]})
+            return groups
+
+        def _check_no_duplicates():
+            groups = _list_groups()
+            self.redpanda.logger.debug(f"groups: {groups}")
+            return len(groups) == 4
+
+        wait_until(_check_no_duplicates,
+                   10,
+                   backoff_sec=2,
+                   err_msg="found persistent duplicates in groups listing")
