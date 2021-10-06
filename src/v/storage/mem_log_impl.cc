@@ -229,6 +229,15 @@ struct mem_log_impl final : log::impl {
           cfg.base_offset,
           entries_ordering{});
         if (it != _data.end()) {
+            if (it->base_offset() != cfg.base_offset) {
+                throw std::invalid_argument{fmt::format(
+                  "ntp {}: trying to truncate at offset {} which is not at "
+                  "batch base (containing batch base offset: {})",
+                  config().ntp(),
+                  cfg.base_offset,
+                  it->base_offset())};
+            }
+
             _probe.remove_bytes_written(std::accumulate(
               it,
               _data.end(),
