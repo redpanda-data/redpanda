@@ -23,14 +23,14 @@ func TestLogOutput(t *testing.T) {
 func TestTryExecPlugin(t *testing.T) {
 	fs := func() testPluginHandler {
 		return testPluginHandler{
-			"rpk-foo-bar_baz":     nil,
-			"rpk-foo-bar":         nil,
-			"rpk-fizz_buzz_bizzy": nil,
+			".rpk-foo-bar_baz":     nil,
+			".rpk-foo-bar":         nil,
+			".rpk-fizz_buzz_bizzy": nil,
 		}
 	}
 	hit := func(file, args string) testPluginHandler {
 		h := fs()
-		h["rpk-"+file] = map[string]int{args: 1}
+		h[".rpk-"+file] = map[string]int{args: 1}
 		return h
 	}
 
