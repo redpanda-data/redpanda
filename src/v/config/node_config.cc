@@ -19,6 +19,11 @@ node_config::node_config() noexcept
     "data_directory",
     "Place where redpanda will keep the data",
     required::yes)
+  , node_id(
+      *this,
+      "node_id",
+      "Unique id identifying a node in the cluster",
+      required::yes)
   , cloud_storage_cache_directory(
       *this,
       "cloud_storage_cache_directory",

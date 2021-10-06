@@ -135,11 +135,6 @@ configuration::configuration()
       "Interval for which all coprocessor offsets are flushed to disk",
       required::no,
       300000ms) // five minutes
-  , node_id(
-      *this,
-      "node_id",
-      "Unique id identifying a node in the cluster",
-      required::yes)
   , seed_server_meta_topic_partitions(
       *this,
       "seed_server_meta_topic_partitions",

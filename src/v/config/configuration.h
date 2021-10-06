@@ -60,7 +60,6 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> coproc_offset_flush_interval_ms;
 
     // Raft
-    property<model::node_id> node_id;
     property<int32_t> seed_server_meta_topic_partitions;
     property<std::chrono::milliseconds> raft_heartbeat_interval_ms;
     property<std::chrono::milliseconds> raft_heartbeat_timeout_ms;

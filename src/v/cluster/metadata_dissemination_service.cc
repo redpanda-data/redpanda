@@ -57,7 +57,8 @@ metadata_dissemination_service::metadata_dissemination_service(
   , _members_table(members)
   , _topics(topics)
   , _clients(clients)
-  , _self(make_self_broker(config::shard_local_cfg()))
+  , _self(make_self_broker(
+      config::shard_local_cfg(), config::node()))
   , _dissemination_interval(
       config::shard_local_cfg().metadata_dissemination_interval_ms)
   , _rpc_tls_config(config::shard_local_cfg().rpc_server_tls()) {

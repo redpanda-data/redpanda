@@ -191,12 +191,12 @@ report_broker_config(describe_configs_result& result, bool include_synonyms) {
           result.resource_name.data() + result.resource_name.size(), // NOLINT
           broker_id);
         if (res.ec == std::errc()) {
-            if (broker_id != config::shard_local_cfg().node_id()) {
+            if (broker_id != config::node().node_id()) {
                 result.error_code = error_code::invalid_request;
                 result.error_message = ssx::sformat(
                   "Unexpected broker id {} expected {}",
                   broker_id,
-                  config::shard_local_cfg().node_id());
+                  config::node().node_id());
                 return;
             }
         } else {

@@ -153,7 +153,6 @@ public:
                                 seed_servers = std::move(seed_servers),
                                 base_path]() mutable {
             auto& config = config::shard_local_cfg();
-            config.get("node_id").set_value(node_id);
 
             config.get("rpc_server")
               .set_value(unresolved_address("127.0.0.1", rpc_port));
@@ -174,6 +173,7 @@ public:
             config.get("disable_metrics").set_value(true);
 
             auto& node_config = config::node();
+            node_config.get("node_id").set_value(node_id);
             node_config.get("data_directory")
               .set_value(config::data_directory_path{.path = base_path});
         }).get0();
@@ -311,10 +311,7 @@ public:
           model::partition_id(0));
 
         storage::ntp_config ntp_cfg(
-          ntp,
-          config::node().data_directory().as_sstring(),
-          nullptr,
-          rev);
+          ntp, config::node().data_directory().as_sstring(), nullptr, rev);
 
         storage::disk_log_builder builder(make_default_config());
         using namespace storage; // NOLINT

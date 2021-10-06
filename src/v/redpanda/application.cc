@@ -515,7 +515,7 @@ void application::wire_up_services() {
     if (_schema_reg_config) {
         construct_single_service(
           _schema_registry,
-          config::shard_local_cfg().node_id(),
+          config::node().node_id(),
           smp_service_groups.proxy_smp_sg(),
           // TODO: Improve memory budget for services
           // https://github.com/vectorizedio/redpanda/issues/1392
@@ -553,7 +553,7 @@ void application::wire_up_redpanda_services() {
     syschecks::systemd_message("Intializing raft group manager").get();
     raft_group_manager
       .start(
-        model::node_id(config::shard_local_cfg().node_id()),
+        model::node_id(config::node().node_id()),
         config::shard_local_cfg().raft_io_timeout_ms(),
         _scheduling_groups.raft_sg(),
         config::shard_local_cfg().raft_heartbeat_interval_ms(),
