@@ -154,8 +154,6 @@ public:
                                 base_path]() mutable {
             auto& config = config::shard_local_cfg();
 
-            config.get("rpc_server")
-              .set_value(unresolved_address("127.0.0.1", rpc_port));
             config.get("kafka_api")
               .set_value(
                 std::vector<model::broker_endpoint>{model::broker_endpoint(
@@ -174,6 +172,8 @@ public:
 
             auto& node_config = config::node();
             node_config.get("node_id").set_value(node_id);
+            node_config.get("rpc_server")
+              .set_value(unresolved_address("127.0.0.1", rpc_port));
             node_config.get("data_directory")
               .set_value(config::data_directory_path{.path = base_path});
         }).get0();

@@ -46,8 +46,6 @@ struct configuration final : public config_store {
     property<uint64_t> compacted_log_segment_size;
     property<std::chrono::milliseconds> readers_cache_eviction_timeout_ms;
     // Network
-    property<unresolved_address> rpc_server;
-    property<tls_config> rpc_server_tls;
     property<std::optional<int>> rpc_server_listen_backlog;
     clamped_property<std::optional<int>> rpc_server_tcp_recv_buf;
     clamped_property<std::optional<int>> rpc_server_tcp_send_buf;
@@ -232,10 +230,6 @@ struct configuration final : public config_store {
         return _advertised_kafka_api();
     }
 
-    unresolved_address advertised_rpc_api() const {
-        return _advertised_rpc_api().value_or(rpc_server());
-    }
-
     const one_or_many_property<model::broker_endpoint>&
     advertised_kafka_api_property() {
         return _advertised_kafka_api;
@@ -243,7 +237,6 @@ struct configuration final : public config_store {
 
 private:
     one_or_many_property<model::broker_endpoint> _advertised_kafka_api;
-    property<std::optional<unresolved_address>> _advertised_rpc_api;
 };
 
 configuration& shard_local_cfg();

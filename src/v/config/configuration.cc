@@ -70,19 +70,6 @@ configuration::configuration()
       "Duration after which inactive readers will be evicted from cache",
       required::no,
       30s)
-  , rpc_server(
-      *this,
-      "rpc_server",
-      "IpAddress and port for RPC server",
-      required::no,
-      unresolved_address("127.0.0.1", 33145))
-  , rpc_server_tls(
-      *this,
-      "rpc_server_tls",
-      "TLS configuration for RPC server",
-      required::no,
-      tls_config(),
-      tls_config::validate)
   , rpc_server_listen_backlog(
       *this,
       "rpc_server_listen_backlog",
@@ -951,15 +938,7 @@ configuration::configuration()
       "advertised_kafka_api",
       "Address of Kafka API published to the clients",
       required::no,
-      {})
-  , _advertised_rpc_api(
-      *this,
-      "advertised_rpc_api",
-      "Address of RPC endpoint published to other cluster members",
-      required::no,
-      std::nullopt)
-
-{}
+      {}) {}
 
 void configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

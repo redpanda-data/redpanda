@@ -24,13 +24,32 @@ node_config::node_config() noexcept
       "node_id",
       "Unique id identifying a node in the cluster",
       required::yes)
+  , rpc_server(
+      *this,
+      "rpc_server",
+      "IpAddress and port for RPC server",
+      required::no,
+      unresolved_address("127.0.0.1", 33145))
+  , rpc_server_tls(
+      *this,
+      "rpc_server_tls",
+      "TLS configuration for RPC server",
+      required::no,
+      tls_config(),
+      tls_config::validate)
   , cloud_storage_cache_directory(
       *this,
       "cloud_storage_cache_directory",
       "Directory for archival cache. Should be present when "
       "`cloud_storage_enabled` is present",
       required::no,
-      (data_directory.value().path / "archival_cache").native()) {}
+      (data_directory.value().path / "archival_cache").native())
+  , _advertised_rpc_api(
+      *this,
+      "advertised_rpc_api",
+      "Address of RPC endpoint published to other cluster members",
+      required::no,
+      std::nullopt) {}
 
 void node_config::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

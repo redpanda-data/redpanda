@@ -221,8 +221,7 @@ void application::initialize(
     }).get0();
 
     if (config::shard_local_cfg().enable_pid_file()) {
-        syschecks::pidfile_create(
-          config::node().pidfile_path());
+        syschecks::pidfile_create(config::node().pidfile_path());
     }
     smp_groups::config smp_groups_cfg{
       .raft_group_max_non_local_requests
@@ -724,9 +723,8 @@ void application::wire_up_redpanda_services() {
     rpc_cfg
       .invoke_on_all([this](rpc::server_configuration& c) {
           return ss::async([this, &c] {
-              auto rpc_server_addr = rpc::resolve_dns(
-                                       config::shard_local_cfg().rpc_server())
-                                       .get0();
+              auto rpc_server_addr
+                = rpc::resolve_dns(config::node().rpc_server()).get0();
               c.load_balancing_algo
                 = ss::server_socket::load_balancing_algorithm::port;
               c.max_service_memory_per_core = memory_groups::rpc_total_memory();
@@ -738,7 +736,7 @@ void application::wire_up_redpanda_services() {
                 = config::shard_local_cfg().rpc_server_tcp_recv_buf;
               c.tcp_send_buf
                 = config::shard_local_cfg().rpc_server_tcp_send_buf;
-              auto rpc_builder = config::shard_local_cfg()
+              auto rpc_builder = config::node()
                                    .rpc_server_tls()
                                    .get_credentials_builder()
                                    .get0();
@@ -1027,7 +1025,10 @@ void application::start_redpanda() {
     // shutdown input on RPC server
     _deferred.emplace_back(
       [this] { _rpc.invoke_on_all(&rpc::server::shutdown_input).get(); });
-    vlog(_log.info, "Started RPC server listening at {}", conf.rpc_server());
+    vlog(
+      _log.info,
+      "Started RPC server listening at {}",
+      config::node().rpc_server());
 
     if (archival_storage_enabled()) {
         syschecks::systemd_message("Starting archival storage").get();
