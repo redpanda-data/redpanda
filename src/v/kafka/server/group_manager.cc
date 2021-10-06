@@ -643,7 +643,8 @@ group_manager::join_group(join_group_request&& r) {
         vlog(klog.trace, "Created new group {} while joining", r.data.group_id);
     }
 
-    return group->handle_join_group(std::move(r), is_new_group);
+    return group->handle_join_group(std::move(r), is_new_group)
+      .finally([group] {});
 }
 
 ss::future<sync_group_response>
@@ -671,7 +672,7 @@ group_manager::sync_group(sync_group_request&& r) {
 
     auto group = get_group(r.data.group_id);
     if (group) {
-        return group->handle_sync_group(std::move(r));
+        return group->handle_sync_group(std::move(r)).finally([group] {});
     } else {
         vlog(
           klog.trace,
@@ -700,7 +701,7 @@ ss::future<heartbeat_response> group_manager::heartbeat(heartbeat_request&& r) {
 
     auto group = get_group(r.data.group_id);
     if (group) {
-        return group->handle_heartbeat(std::move(r));
+        return group->handle_heartbeat(std::move(r)).finally([group] {});
     }
 
     vlog(
@@ -721,7 +722,7 @@ group_manager::leave_group(leave_group_request&& r) {
 
     auto group = get_group(r.data.group_id);
     if (group) {
-        return group->handle_leave_group(std::move(r));
+        return group->handle_leave_group(std::move(r)).finally([group] {});
     } else {
         vlog(
           klog.trace,
@@ -766,7 +767,7 @@ group_manager::txn_offset_commit(txn_offset_commit_request&& r) {
           }
 
           return group->handle_txn_offset_commit(std::move(r))
-            .finally([unit = std::move(unit)] {});
+            .finally([unit = std::move(unit), group] {});
       });
 }
 
@@ -803,7 +804,7 @@ group_manager::commit_tx(cluster::commit_group_tx_request&& r) {
           }
 
           return group->handle_commit_tx(std::move(r))
-            .finally([unit = std::move(unit)] {});
+            .finally([unit = std::move(unit), group] {});
       });
 }
 
@@ -841,7 +842,7 @@ group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
           }
 
           return group->handle_begin_tx(std::move(r))
-            .finally([unit = std::move(unit)] {});
+            .finally([unit = std::move(unit), group] {});
       });
 }
 
@@ -877,7 +878,7 @@ group_manager::prepare_tx(cluster::prepare_group_tx_request&& r) {
           }
 
           return group->handle_prepare_tx(std::move(r))
-            .finally([unit = std::move(unit)] {});
+            .finally([unit = std::move(unit), group] {});
       });
 }
 
@@ -912,7 +913,7 @@ group_manager::abort_tx(cluster::abort_group_tx_request&& r) {
           }
 
           return group->handle_abort_tx(std::move(r))
-            .finally([unit = std::move(unit)] {});
+            .finally([unit = std::move(unit), group] {});
       });
 }
 
@@ -943,7 +944,9 @@ group_manager::offset_commit(offset_commit_request&& r) {
         }
     }
 
-    return group->handle_offset_commit(std::move(r));
+    auto stages = group->handle_offset_commit(std::move(r));
+    stages.committed = stages.committed.finally([group] {});
+    return stages;
 }
 
 ss::future<offset_fetch_response>
@@ -961,7 +964,7 @@ group_manager::offset_fetch(offset_fetch_request&& r) {
           offset_fetch_response(r.data.topics));
     }
 
-    return group->handle_offset_fetch(std::move(r));
+    return group->handle_offset_fetch(std::move(r)).finally([group] {});
 }
 
 std::pair<error_code, std::vector<listed_group>>
