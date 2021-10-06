@@ -51,6 +51,19 @@ node_config::node_config() noexcept
       required::no,
       {},
       endpoint_tls_config::validate_many)
+  , admin(
+      *this,
+      "admin",
+      "Address and port of admin server",
+      required::no,
+      {model::broker_endpoint(unresolved_address("127.0.0.1", 9644))})
+  , admin_api_tls(
+      *this,
+      "admin_api_tls",
+      "TLS configuration for admin HTTP server",
+      required::no,
+      {},
+      endpoint_tls_config::validate_many)
   , coproc_supervisor_server(
       *this,
       "coproc_supervisor_server",

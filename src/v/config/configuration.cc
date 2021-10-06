@@ -159,19 +159,6 @@ configuration::configuration()
       "Manage CPU scheduling",
       required::no,
       false)
-  , admin(
-      *this,
-      "admin",
-      "Address and port of admin server",
-      required::no,
-      {model::broker_endpoint(unresolved_address("127.0.0.1", 9644))})
-  , admin_api_tls(
-      *this,
-      "admin_api_tls",
-      "TLS configuration for admin HTTP server",
-      required::no,
-      {},
-      endpoint_tls_config::validate_many)
   , enable_admin_api(
       *this, "enable_admin_api", "Enable the admin API", required::no, true)
   , admin_api_doc_dir(

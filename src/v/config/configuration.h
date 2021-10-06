@@ -66,8 +66,6 @@ struct configuration final : public config_store {
     property<int16_t> max_version;
     // Kafka
     property<bool> use_scheduling_groups;
-    one_or_many_property<model::broker_endpoint> admin;
-    one_or_many_property<endpoint_tls_config> admin_api_tls;
     property<bool> enable_admin_api;
     property<ss::sstring> admin_api_doc_dir;
     property<int16_t> default_num_windows;
