@@ -705,7 +705,7 @@ void application::wire_up_redpanda_services() {
         syschecks::systemd_message("Creating coproc::api").get();
         construct_single_service(
           coprocessing,
-          config::shard_local_cfg().coproc_supervisor_server(),
+          config::node().coproc_supervisor_server(),
           std::ref(storage),
           std::ref(controller->get_topics_frontend()),
           std::ref(metadata_cache),

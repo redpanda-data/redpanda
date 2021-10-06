@@ -51,7 +51,6 @@ struct configuration final : public config_store {
     clamped_property<std::optional<int>> rpc_server_tcp_send_buf;
     // Coproc
     property<bool> enable_coproc;
-    property<unresolved_address> coproc_supervisor_server;
     property<std::size_t> coproc_max_inflight_bytes;
     property<std::size_t> coproc_max_ingest_bytes;
     property<std::size_t> coproc_max_batch_size;

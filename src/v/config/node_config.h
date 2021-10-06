@@ -31,6 +31,9 @@ public:
     one_or_many_property<model::broker_endpoint> kafka_api;
     one_or_many_property<endpoint_tls_config> kafka_api_tls;
 
+    // Coproc/wasm
+    property<unresolved_address> coproc_supervisor_server;
+
     property<std::optional<ss::sstring>> cloud_storage_cache_directory;
 
     // build pidfile path: `<data_directory>/pid.lock`

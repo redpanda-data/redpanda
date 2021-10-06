@@ -51,6 +51,12 @@ node_config::node_config() noexcept
       required::no,
       {},
       endpoint_tls_config::validate_many)
+  , coproc_supervisor_server(
+      *this,
+      "coproc_supervisor_server",
+      "IpAddress and port for supervisor service",
+      required::no,
+      unresolved_address("127.0.0.1", 43189))
   , cloud_storage_cache_directory(
       *this,
       "cloud_storage_cache_directory",

@@ -160,9 +160,6 @@ public:
             config.get("enable_admin_api").set_value(false);
             config.get("join_retry_timeout_ms").set_value(100ms);
             config.get("members_backend_retry_ms").set_value(1000ms);
-            config.get("coproc_supervisor_server")
-              .set_value(
-                unresolved_address("127.0.0.1", coproc_supervisor_port));
             config.get("disable_metrics").set_value(true);
 
             auto& node_config = config::node();
@@ -177,6 +174,9 @@ public:
                   unresolved_address("127.0.0.1", kafka_port))});
             node_config.get("data_directory")
               .set_value(config::data_directory_path{.path = base_path});
+            node_config.get("coproc_supervisor_server")
+              .set_value(
+                unresolved_address("127.0.0.1", coproc_supervisor_port));
         }).get0();
     }
 

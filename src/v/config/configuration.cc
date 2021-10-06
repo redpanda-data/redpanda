@@ -92,12 +92,6 @@ configuration::configuration()
       32_KiB)
   , enable_coproc(
       *this, "enable_coproc", "Enable coprocessing mode", required::no, false)
-  , coproc_supervisor_server(
-      *this,
-      "coproc_supervisor_server",
-      "IpAddress and port for supervisor service",
-      required::no,
-      unresolved_address("127.0.0.1", 43189))
   , coproc_max_inflight_bytes(
       *this,
       "coproc_max_inflight_bytes",
