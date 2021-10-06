@@ -108,6 +108,8 @@ public:
      * segment: {[10,10][11,30][31,100][101,103]}
      * Truncate at offset (31) will result in
      * segment: {[10,10][11,30]}
+     * Truncating mid-batch is forbidden:
+     * Truncate at offset 35 will result in an exception.
      */
     ss::future<> truncate(truncate_config cfg) { return _impl->truncate(cfg); }
 

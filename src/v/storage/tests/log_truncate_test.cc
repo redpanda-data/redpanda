@@ -61,6 +61,7 @@ FIXTURE_TEST(test_truncate_whole, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(read_batches.size(), 0);
     BOOST_REQUIRE_EQUAL(lstats.committed_offset, model::offset{});
     BOOST_REQUIRE_EQUAL(lstats.dirty_offset, model::offset{});
+    BOOST_REQUIRE_EQUAL(lstats.start_offset, model::offset{});
 }
 
 FIXTURE_TEST(test_truncate_in_the_middle_of_segment, storage_test_fixture) {
@@ -96,6 +97,32 @@ FIXTURE_TEST(test_truncate_in_the_middle_of_segment, storage_test_fixture) {
     } else {
         BOOST_REQUIRE_EQUAL(read_batches.empty(), true);
     }
+}
+
+FIXTURE_TEST(test_truncate_in_the_middle_of_batch, storage_test_fixture) {
+    storage::log_manager mgr = make_log_manager();
+    info("config: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+
+    append_batch(log, test::make_random_batch(model::offset{0}, 10, true));
+    append_batch(log, test::make_random_batch(model::offset{0}, 5, true));
+
+    auto truncate_at = [log](model::offset o) mutable {
+        log.truncate(storage::truncate_config(o, ss::default_priority_class()))
+          .get();
+    };
+
+    BOOST_CHECK_THROW(truncate_at(model::offset{7}), std::exception);
+    BOOST_CHECK_THROW(truncate_at(model::offset{12}), std::exception);
+
+    truncate_at(model::offset{20});
+    BOOST_CHECK_EQUAL(log.offsets().dirty_offset, model::offset{14});
+    auto read_batches = read_and_validate_all_batches(log);
+    BOOST_REQUIRE_EQUAL(read_batches.size(), 2);
+    BOOST_CHECK_EQUAL(read_batches[1].last_offset(),  model::offset{14});
 }
 
 FIXTURE_TEST(test_truncate_empty_log, storage_test_fixture) {
