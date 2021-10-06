@@ -222,6 +222,8 @@ private:
       ss::lw_shared_ptr<attached_partition>,
       recovery_batch_consumer_state);
 
+    ss::future<> gc_partition_state(ss::lw_shared_ptr<attached_partition>);
+
     ss::future<> inject_noop(
       ss::lw_shared_ptr<cluster::partition> p,
       ss::lowres_clock::time_point timeout);
