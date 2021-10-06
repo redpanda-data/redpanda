@@ -57,13 +57,14 @@ public:
         return {version, id, inserted};
     }
 
-    ///\brief Return a schema by id.
-    result<schema> get_schema(const schema_id& id) const {
+    ///\brief Return a schema definition by id.
+    result<canonical_schema_definition>
+    get_schema_definition(const schema_id& id) const {
         auto it = _schemas.find(id);
         if (it == _schemas.end()) {
             return not_found(id);
         }
-        return {it->first, it->second.definition};
+        return {it->second.definition};
     }
 
     ///\brief Return the id of the schema, if it already exists.
@@ -110,10 +111,10 @@ public:
         auto v_id = BOOST_OUTCOME_TRYX(
           get_subject_version_id(sub, version, inc_del));
 
-        auto s = BOOST_OUTCOME_TRYX(get_schema(v_id.id));
+        auto def = BOOST_OUTCOME_TRYX(get_schema_definition(v_id.id));
 
         return subject_schema{
-          .schema = {sub, std::move(s).definition},
+          .schema = {sub, std::move(def)},
           .version = v_id.version,
           .id = v_id.id,
           .deleted = v_id.deleted};

@@ -182,7 +182,7 @@ BOOST_AUTO_TEST_CASE(test_store_upsert_override) {
 BOOST_AUTO_TEST_CASE(test_store_get_schema) {
     pps::store s;
 
-    auto res = s.get_schema(pps::schema_id{1});
+    auto res = s.get_schema_definition(pps::schema_id{1});
     BOOST_REQUIRE(res.has_error());
     auto err = std::move(res).assume_error();
     BOOST_REQUIRE(err.code() == pps::error_code::schema_id_not_found);
@@ -193,12 +193,11 @@ BOOST_AUTO_TEST_CASE(test_store_get_schema) {
     BOOST_REQUIRE_EQUAL(ins_res.id, pps::schema_id{1});
     BOOST_REQUIRE_EQUAL(ins_res.version, pps::schema_version{1});
 
-    res = s.get_schema(ins_res.id);
+    res = s.get_schema_definition(ins_res.id);
     BOOST_REQUIRE(res.has_value());
 
-    auto val = std::move(res).assume_value();
-    BOOST_REQUIRE_EQUAL(val.id, ins_res.id);
-    BOOST_REQUIRE_EQUAL(val.definition, string_def0);
+    auto def = std::move(res).assume_value();
+    BOOST_REQUIRE_EQUAL(def, string_def0);
 }
 
 BOOST_AUTO_TEST_CASE(test_store_get_schema_subject_versions) {

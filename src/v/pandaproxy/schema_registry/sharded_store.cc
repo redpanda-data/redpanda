@@ -145,9 +145,10 @@ sharded_store::has_schema(const canonical_schema& schema) {
     co_return std::move(sub_schema).value();
 }
 
-ss::future<schema> sharded_store::get_schema(const schema_id& id) {
+ss::future<canonical_schema_definition>
+sharded_store::get_schema_definition(const schema_id& id) {
     auto schema = co_await _store.invoke_on(
-      shard_for(id), _smp_opts, &store::get_schema, id);
+      shard_for(id), _smp_opts, &store::get_schema_definition, id);
     co_return std::move(schema).value();
 }
 
@@ -173,10 +174,10 @@ ss::future<subject_schema> sharded_store::get_subject_schema(
                    version,
                    inc_del))
                   .value();
-    auto s = co_await get_schema(v_id.id);
+    auto def = co_await get_schema_definition(v_id.id);
 
     co_return subject_schema{
-      .schema = {sub, std::move(s.definition)},
+      .schema = {sub, std::move(def)},
       .version = v_id.version,
       .id = v_id.id,
       .deleted = v_id.deleted};
@@ -420,10 +421,9 @@ ss::future<bool> sharded_store::is_compatible(
             continue;
         }
 
-        auto old_schema = co_await get_schema(ver_it->id);
-        auto old_avro = make_avro_schema_definition(
-                          std::move(old_schema.definition).raw()())
-                          .value();
+        auto old_schema = co_await get_schema_definition(ver_it->id);
+        auto old_avro
+          = make_avro_schema_definition(std::move(old_schema).raw()()).value();
 
         if (
           compat == compatibility_level::backward

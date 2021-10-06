@@ -159,16 +159,6 @@ struct seq_marker {
     friend std::ostream& operator<<(std::ostream& os, const seq_marker& v);
 };
 
-///\brief Complete description of a schema.
-struct schema {
-    schema(schema_id id, canonical_schema_definition definition)
-      : id{id}
-      , definition{std::move(definition)} {}
-
-    schema_id id;
-    canonical_schema_definition definition;
-};
-
 struct schema_reference {
     friend bool
     operator==(const schema_reference& lhs, const schema_reference& rhs)

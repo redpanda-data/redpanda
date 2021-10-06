@@ -174,11 +174,12 @@ get_schemas_ids_id(server::request_t rq, server::reply_t rp) {
     auto id = parse::request_param<schema_id>(*rq.req, "id");
     rq.req.reset();
 
-    auto schema_val = co_await get_or_load(
-      rq, [&rq, id]() { return rq.service().schema_store().get_schema(id); });
+    auto def = co_await get_or_load(rq, [&rq, id]() {
+        return rq.service().schema_store().get_schema_definition(id);
+    });
 
-    auto json_rslt = ppj::rjson_serialize(get_schemas_ids_id_response{
-      .definition{std::move(schema_val.definition)}});
+    auto json_rslt = ppj::rjson_serialize(
+      get_schemas_ids_id_response{.definition{std::move(def)}});
     rp.rep->write_body("json", json_rslt);
     co_return rp;
 }
@@ -193,7 +194,7 @@ get_schemas_ids_id_versions(server::request_t rq, server::reply_t rp) {
     co_await rq.service().writer().read_sync();
 
     // Force early 40403 if the schema id isn't found
-    co_await rq.service().schema_store().get_schema(id);
+    co_await rq.service().schema_store().get_schema_definition(id);
 
     auto svs = co_await rq.service().schema_store().get_schema_subject_versions(
       id);

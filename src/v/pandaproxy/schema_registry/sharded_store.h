@@ -43,8 +43,9 @@ public:
 
     ss::future<subject_schema> has_schema(const canonical_schema& schema);
 
-    ///\brief Return a schema by id.
-    ss::future<schema> get_schema(const schema_id& id);
+    ///\brief Return a schema definition by id.
+    ss::future<canonical_schema_definition>
+    get_schema_definition(const schema_id& id);
 
     ///\brief Return a list of subject-versions for the shema id.
     ss::future<std::vector<subject_version>>
