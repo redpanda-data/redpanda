@@ -81,6 +81,9 @@ readers_cache::put(std::unique_ptr<log_reader> reader) {
 
 std::optional<model::record_batch_reader>
 readers_cache::get_reader(const log_reader_config& cfg) {
+    if (_gate.is_closed()) {
+        return std::nullopt;
+    }
     vlog(stlog.trace, "{} - trying to get reader for: {}", _ntp, cfg);
     intrusive_list<entry, &entry::_hook> to_evict;
     /**
