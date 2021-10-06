@@ -142,6 +142,39 @@ class Admin:
 
         self._request_to_any(handle)
 
+    def transfer_leadership_to(self, namespace, topic, partition, target_id):
+        """
+        Looks up current ntp leader and transfer leadership to target node, 
+        this operations is NOP when current leader is the same as target. 
+        If leadership transfer was performed this function return True
+        """
+
+        #  check which node is current leader
+
+        def _get_details():
+            p = self.get_partitions(topic=topic,
+                                    partition=partition,
+                                    namespace=namespace)
+            self.redpanda.logger.debug(
+                f"ntp {namespace}/{topic}/{partition} details: {p}")
+            return p
+
+        def _has_leader():
+            return _get_details()['leader_id'] != -1
+
+        wait_until(_has_leader,
+                   timeout_sec=30,
+                   backoff_sec=2,
+                   err_msg="Failed to establish current leader")
+
+        details = _get_details()
+        if details['leader_id'] == target_id:
+            return False
+        path = f"raft/{details['raft_group_id']}/transfer_leadership?target={target_id}"
+        leader = self.redpanda.get_node(details['leader_id'])
+        ret = self._request('post', path=path, node=leader)
+        return ret.status_code == 200
+
     def _request_to_any(self, handler):
         def try_send():
             nodes = [n for n in self.redpanda.started_nodes()]
