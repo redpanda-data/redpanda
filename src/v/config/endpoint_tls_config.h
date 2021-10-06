@@ -12,7 +12,10 @@
 #pragma once
 
 #include "config/tls_config.h"
+#include "model/metadata.h"
 #include "seastarx.h"
+
+#include <yaml-cpp/yaml.h>
 
 namespace config {
 struct endpoint_tls_config {
@@ -40,3 +43,34 @@ struct endpoint_tls_config {
     }
 };
 } // namespace config
+
+namespace YAML {
+template<>
+struct convert<config::endpoint_tls_config> {
+    using type = config::endpoint_tls_config;
+    static Node encode(const type& rhs) {
+        Node node;
+        node["name"] = rhs.name;
+        node["config"] = rhs.config;
+        return node;
+    }
+
+    static bool decode(const Node& node, type& rhs) {
+        ss::sstring name;
+        if (node["name"]) {
+            name = node["name"].as<ss::sstring>();
+        }
+        config::tls_config tls_cfg;
+        auto res = convert<config::tls_config>{}.decode(node, tls_cfg);
+        if (!res) {
+            return res;
+        }
+        rhs = config::endpoint_tls_config{
+          .name = name,
+          .config = tls_cfg,
+        };
+
+        return true;
+    }
+};
+} // namespace YAML

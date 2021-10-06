@@ -35,8 +35,8 @@ namespace {
 
 std::unique_ptr<kafka::client::client> make_client() {
     kafka::client::configuration cfg;
-    cfg.brokers.set_value(std::vector<unresolved_address>{
-      config::shard_local_cfg().kafka_api()[0].address});
+    cfg.brokers.set_value(
+      std::vector<unresolved_address>{config::node().kafka_api()[0].address});
     cfg.retries.set_value(size_t(1));
     cfg.produce_batch_delay.set_value(0ms);
     return std::make_unique<kafka::client::client>(to_yaml(cfg));

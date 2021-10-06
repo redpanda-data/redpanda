@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "config/convert.h"
 #include "seastarx.h"
 #include "utils/to_string.h"
 
@@ -20,6 +21,9 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/net/ip.hh>
 #include <seastar/net/tls.hh>
+
+#include <boost/filesystem.hpp>
+#include <yaml-cpp/yaml.h>
 
 #include <optional>
 #include <utility>
@@ -131,3 +135,79 @@ static inline ostream& operator<<(ostream& o, const config::tls_config& c) {
     return o;
 }
 } // namespace std
+
+namespace YAML {
+
+inline ss::sstring to_absolute(const ss::sstring& path) {
+    namespace fs = boost::filesystem;
+    if (path.empty()) {
+        return path;
+    }
+    return fs::absolute(fs::path(path)).native();
+}
+
+inline std::optional<ss::sstring>
+to_absolute(const std::optional<ss::sstring>& path) {
+    if (path) {
+        return to_absolute(*path);
+    }
+    return std::nullopt;
+}
+
+template<>
+struct convert<config::tls_config> {
+    static Node encode(const config::tls_config& rhs) {
+        Node node;
+
+        node["enabled"] = rhs.is_enabled();
+        node["require_client_auth"] = rhs.get_require_client_auth();
+
+        if (rhs.get_key_cert_files()) {
+            node["cert_file"] = (*rhs.get_key_cert_files()).key_file;
+            node["key_file"] = (*rhs.get_key_cert_files()).cert_file;
+        }
+
+        if (rhs.get_truststore_file()) {
+            node["truststore_file"] = *rhs.get_truststore_file();
+        }
+
+        return node;
+    }
+
+    static std::optional<ss::sstring>
+    read_optional(const Node& node, const ss::sstring& key) {
+        if (node[key]) {
+            return node[key].as<ss::sstring>();
+        }
+        return std::nullopt;
+    }
+
+    static bool decode(const Node& node, config::tls_config& rhs) {
+        // either both true or both false
+        if (
+          static_cast<bool>(node["key_file"])
+          ^ static_cast<bool>(node["cert_file"])) {
+            return false;
+        }
+        auto enabled = node["enabled"] && node["enabled"].as<bool>();
+        if (!enabled) {
+            rhs = config::tls_config(false, std::nullopt, std::nullopt, false);
+        } else {
+            auto key_cert
+              = node["key_file"]
+                  ? std::make_optional<config::key_cert>(config::key_cert{
+                    to_absolute(node["key_file"].as<ss::sstring>()),
+                    to_absolute(node["cert_file"].as<ss::sstring>())})
+                  : std::nullopt;
+            rhs = config::tls_config(
+              enabled,
+              key_cert,
+              to_absolute(read_optional(node, "truststore_file")),
+              node["require_client_auth"]
+                && node["require_client_auth"].as<bool>());
+        }
+        return true;
+    }
+};
+
+} // namespace YAML

@@ -79,13 +79,13 @@
 
 static void set_local_kafka_client_config(
   std::optional<kafka::client::configuration>& client_config,
-  const config::configuration& config) {
+  const config::node_config& config) {
     client_config.emplace();
     const auto& kafka_api = config.kafka_api.value();
     vassert(!kafka_api.empty(), "There are no kafka_api listeners");
     client_config->brokers.set_value(
       std::vector<unresolved_address>{kafka_api[0].address});
-    const auto& kafka_api_tls = config::shard_local_cfg().kafka_api_tls.value();
+    const auto& kafka_api_tls = config::node().kafka_api_tls.value();
     auto tls_it = std::find_if(
       kafka_api_tls.begin(),
       kafka_api_tls.end(),
@@ -99,7 +99,7 @@ static void set_local_kafka_client_config(
 
 static void set_sr_local_kafka_client_config(
   std::optional<kafka::client::configuration>& client_config,
-  const config::configuration& config) {
+  const config::node_config& config) {
     set_local_kafka_client_config(client_config, config);
     if (client_config.has_value()) {
         if (!client_config->produce_batch_delay.is_overriden()) {
@@ -347,8 +347,7 @@ void application::hydrate_config(const po::variables_map& cfg) {
         if (config["pandaproxy_client"]) {
             _proxy_client_config.emplace(config["pandaproxy_client"]);
         } else {
-            set_local_kafka_client_config(
-              _proxy_client_config, config::shard_local_cfg());
+            set_local_kafka_client_config(_proxy_client_config, config::node());
         }
         _proxy_config->for_each(config_printer("pandaproxy"));
         _proxy_client_config->for_each(config_printer("pandaproxy_client"));
@@ -359,7 +358,7 @@ void application::hydrate_config(const po::variables_map& cfg) {
             _schema_reg_client_config.emplace(config["schema_registry_client"]);
         } else {
             set_sr_local_kafka_client_config(
-              _schema_reg_client_config, config::shard_local_cfg());
+              _schema_reg_client_config, config::node());
         }
         _schema_reg_config->for_each(config_printer("schema_registry"));
         _schema_reg_client_config->for_each(
@@ -839,9 +838,8 @@ void application::wire_up_redpanda_services() {
                 = config::shard_local_cfg().rpc_server_tcp_recv_buf;
               c.tcp_send_buf
                 = config::shard_local_cfg().rpc_server_tcp_send_buf;
-              auto& tls_config
-                = config::shard_local_cfg().kafka_api_tls.value();
-              for (const auto& ep : config::shard_local_cfg().kafka_api()) {
+              auto& tls_config = config::node().kafka_api_tls.value();
+              for (const auto& ep : config::node().kafka_api()) {
                   ss::shared_ptr<ss::tls::server_credentials> credentails;
                   // find credentials for this endpoint
                   auto it = find_if(
@@ -1020,7 +1018,6 @@ void application::start_redpanda() {
           s.set_protocol(std::move(proto));
       })
       .get();
-    auto& conf = config::shard_local_cfg();
     _rpc.invoke_on_all(&rpc::server::start).get();
     // shutdown input on RPC server
     _deferred.emplace_back(
@@ -1086,7 +1083,9 @@ void application::start_redpanda() {
         _kafka_server.invoke_on_all(&rpc::server::shutdown_input).get();
     });
     vlog(
-      _log.info, "Started Kafka API server listening at {}", conf.kafka_api());
+      _log.info,
+      "Started Kafka API server listening at {}",
+      config::node().kafka_api());
 
     if (config::shard_local_cfg().enable_admin_api()) {
         _admin.invoke_on_all(&admin_server::start).get0();

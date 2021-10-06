@@ -159,19 +159,6 @@ configuration::configuration()
       *this, "min_version", "minimum redpanda compat version", required::no, 0)
   , max_version(
       *this, "max_version", "max redpanda compat version", required::no, 1)
-  , kafka_api(
-      *this,
-      "kafka_api",
-      "Address and port of an interface to listen for Kafka API requests",
-      required::no,
-      {model::broker_endpoint(unresolved_address("127.0.0.1", 9092))})
-  , kafka_api_tls(
-      *this,
-      "kafka_api_tls",
-      "TLS configuration for Kafka API endpoint",
-      required::no,
-      {},
-      endpoint_tls_config::validate_many)
   , use_scheduling_groups(
       *this,
       "use_scheduling_groups",
@@ -932,13 +919,7 @@ configuration::configuration()
       "health_manager_tick_interval",
       "How often the health manager runs",
       required::no,
-      3min)
-  , _advertised_kafka_api(
-      *this,
-      "advertised_kafka_api",
-      "Address of Kafka API published to the clients",
-      required::no,
-      {}) {}
+      3min) {}
 
 void configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

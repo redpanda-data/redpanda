@@ -37,6 +37,19 @@ node_config::node_config() noexcept
       required::no,
       tls_config(),
       tls_config::validate)
+  , kafka_api(
+      *this,
+      "kafka_api",
+      "Address and port of an interface to listen for Kafka API requests",
+      required::no,
+      {model::broker_endpoint(unresolved_address("127.0.0.1", 9092))})
+  , kafka_api_tls(
+      *this,
+      "kafka_api_tls",
+      "TLS configuration for Kafka API endpoint",
+      required::no,
+      {},
+      endpoint_tls_config::validate_many)
   , cloud_storage_cache_directory(
       *this,
       "cloud_storage_cache_directory",
@@ -49,7 +62,13 @@ node_config::node_config() noexcept
       "advertised_rpc_api",
       "Address of RPC endpoint published to other cluster members",
       required::no,
-      std::nullopt) {}
+      std::nullopt)
+  , _advertised_kafka_api(
+      *this,
+      "advertised_kafka_api",
+      "Address of Kafka API published to the clients",
+      required::no,
+      {}) {}
 
 void node_config::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

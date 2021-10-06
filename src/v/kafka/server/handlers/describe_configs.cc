@@ -211,14 +211,14 @@ report_broker_config(describe_configs_result& result, bool include_synonyms) {
     add_broker_config(
       result,
       "listeners",
-      config::shard_local_cfg().kafka_api,
+      config::node().kafka_api,
       include_synonyms,
       &kafka_endpoint_format);
 
     add_broker_config(
       result,
       "advertised.listeners",
-      config::shard_local_cfg().advertised_kafka_api_property(),
+      config::node().advertised_kafka_api_property(),
       include_synonyms,
       &kafka_endpoint_format);
 

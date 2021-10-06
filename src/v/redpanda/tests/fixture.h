@@ -154,10 +154,6 @@ public:
                                 base_path]() mutable {
             auto& config = config::shard_local_cfg();
 
-            config.get("kafka_api")
-              .set_value(
-                std::vector<model::broker_endpoint>{model::broker_endpoint(
-                  unresolved_address("127.0.0.1", kafka_port))});
             config.get("seed_servers").set_value(seed_servers);
             config.get("enable_pid_file").set_value(false);
             config.get("developer_mode").set_value(true);
@@ -174,6 +170,10 @@ public:
             node_config.get("node_id").set_value(node_id);
             node_config.get("rpc_server")
               .set_value(unresolved_address("127.0.0.1", rpc_port));
+            node_config.get("kafka_api")
+              .set_value(
+                std::vector<model::broker_endpoint>{model::broker_endpoint(
+                  unresolved_address("127.0.0.1", kafka_port))});
             node_config.get("data_directory")
               .set_value(config::data_directory_path{.path = base_path});
         }).get0();
@@ -188,12 +188,10 @@ public:
     }
 
     YAML::Node proxy_client_config(
-      uint16_t kafka_api_port
-      = config::shard_local_cfg().kafka_api()[0].address.port()) {
+      uint16_t kafka_api_port = config::node().kafka_api()[0].address.port()) {
         kafka::client::configuration cfg;
         unresolved_address kafka_api{
-          config::shard_local_cfg().kafka_api()[0].address.host(),
-          kafka_api_port};
+          config::node().kafka_api()[0].address.host(), kafka_api_port};
         cfg.brokers.set_value(std::vector<unresolved_address>({kafka_api}));
         return to_yaml(cfg);
     }
@@ -223,7 +221,7 @@ public:
     ss::future<kafka::client::transport> make_kafka_client() {
         return ss::make_ready_future<kafka::client::transport>(
           rpc::base_transport::configuration{
-            .server_addr = config::shard_local_cfg().kafka_api()[0].address,
+            .server_addr = config::node().kafka_api()[0].address,
           });
     }
 
