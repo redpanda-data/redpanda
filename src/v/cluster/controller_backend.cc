@@ -41,6 +41,7 @@
 #include <seastar/util/later.hh>
 
 #include <absl/container/flat_hash_set.h>
+#include <absl/container/node_hash_map.h>
 
 #include <algorithm>
 #include <exception>
@@ -575,6 +576,28 @@ bool are_assignments_equal(
     return are_replica_sets_equal(requested.replicas, previous.replicas);
 }
 
+model::node_id first_with_assignment_change(
+  const partition_assignment& requested, const partition_assignment& previous) {
+    absl::node_hash_map<model::node_id, model::broker_shard> prev_map;
+    prev_map.reserve(previous.replicas.size());
+    for (auto& replica : previous.replicas) {
+        prev_map.emplace(replica.node_id, replica);
+    }
+
+    auto it = std::find_if(
+      requested.replicas.begin(),
+      requested.replicas.end(),
+      [&](const model::broker_shard& bs) {
+          auto it = prev_map.find(bs.node_id);
+          return it == prev_map.end() || it->second != bs;
+      });
+    // there are no changed assignements
+    if (it == requested.replicas.end()) {
+        return requested.replicas.begin()->node_id;
+    }
+    return it->node_id;
+}
+
 ss::future<std::error_code> controller_backend::process_partition_update(
   model::ntp ntp,
   const partition_assignment& requested,
@@ -672,7 +695,7 @@ ss::future<std::error_code> controller_backend::process_partition_update(
              * NOTE: deletion is safe as we are already running with new
              * configuration so old replicas are not longer needed.
              */
-            if (requested.replicas.front().node_id == _self) {
+            if (first_with_assignment_change(requested, previous) == _self) {
                 co_return co_await dispatch_update_finished(
                   std::move(ntp), requested);
             }
@@ -701,6 +724,11 @@ ss::future<std::error_code> controller_backend::process_partition_update(
             it != _bootstrap_revisions.end()) {
             initial_revision = it->second;
         } else {
+            vlog(
+              clusterlog.trace,
+              "waiting for cross core move information from shard {}, for {}",
+              *previous_shard,
+              ntp);
             // ask previous controller for partition initial revision
             auto x_core_move_req = co_await ask_remote_shard_for_initail_rev(
               ntp, *previous_shard);
@@ -967,7 +995,7 @@ controller_backend::cross_shard_move_request::cross_shard_move_request(
 
 ss::future<std::error_code> controller_backend::shutdown_on_current_shard(
   model::ntp ntp, model::revision_id rev) {
-    vlog(clusterlog.trace, "shutting down partition: {}", ntp);
+    vlog(clusterlog.trace, "cross core move, shutting down partition: {}", ntp);
     auto partition = _partition_manager.local().get(ntp);
     // partition doesn't exists it was deleted
     if (!partition) {
@@ -985,7 +1013,7 @@ ss::future<std::error_code> controller_backend::shutdown_on_current_shard(
         auto [it, success] = _cross_shard_requests.emplace(
           ntp,
           cross_shard_move_request(init_rev, partition->group_configuration()));
-
+        vlog(clusterlog.trace, "cross core move, partition {} stopped", ntp);
         vassert(
           success,
           "only one cross shard request is allowed to be pending for single "
