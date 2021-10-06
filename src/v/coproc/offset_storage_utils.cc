@@ -64,9 +64,9 @@ ss::future<ntp_context_cache> recover_offsets(
         auto partition = pm.get(key);
         if (!partition) {
             vlog(
-              coproclog.error,
-              "Coult not recover ntp {}, for some reason it does not exist in "
-              "the partition_manager",
+              coproclog.debug,
+              "Coult not recover ntp {}, its possible it was from a moved "
+              "partition",
               key);
         } else {
             auto [itr, _] = recovered.emplace(
