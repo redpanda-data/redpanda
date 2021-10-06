@@ -194,7 +194,7 @@ func Sha256Path(fs afero.Fs, path string) (string, error) {
 func WriteBinary(
 	fs afero.Fs, name, dstDir string, contents []byte, autocomplete bool,
 ) (string, error) {
-	tmp, err := afero.TempFile(fs, "", fmt.Sprintf("rpk-plugin-%s-*", name))
+	tmp, err := afero.TempFile(fs, dstDir, fmt.Sprintf("rpk-plugin-part-%s-*", name))
 	if err != nil {
 		return "", fmt.Errorf("unable to create temp file for plugin %q: %v", name, err)
 	}
