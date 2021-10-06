@@ -8,8 +8,10 @@
 # by the Apache License, Version 2.0
 
 import random
+import threading
 import time
 
+from ducktape.mark import parametrize
 from ducktape.mark.resource import cluster
 from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
@@ -17,6 +19,7 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
+from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.redpanda import RedpandaService
 from rptest.tests.end_to_end import EndToEndTest
 
@@ -110,7 +113,9 @@ class NodeOperationFuzzyTest(EndToEndTest):
 
     @ignore  # https://github.com/vectorizedio/redpanda/issues/2246
     @cluster(num_nodes=7)
-    def test_node_opeartions(self):
+    @parametrize(enable_failures=True)
+    @parametrize(enable_failures=False)
+    def test_node_opeartions(self, enable_failures):
         # allocate 5 nodes for the cluster
         self.redpanda = RedpandaService(
             self.test_context,
@@ -121,7 +126,8 @@ class NodeOperationFuzzyTest(EndToEndTest):
                 "group_topic_partitions": 3,
                 "default_topic_replications": 3,
             })
-        # start 3 nodes
+        self.active_nodes = set([1, 2, 3, 4, 5])
+
         self.redpanda.start()
         # create some topics
         topics = self._create_random_topics(10)
@@ -132,6 +138,35 @@ class NodeOperationFuzzyTest(EndToEndTest):
         self.start_producer(1, throughput=100)
         self.start_consumer(1)
         self.await_startup()
+        NODE_OP_TIMEOUT = 360
+
+        def failure_injector_loop():
+            f_injector = FailureInjector(self.redpanda)
+            while enable_failures:
+                f_type = random.choice(FailureSpec.FAILURE_TYPES)
+                length = 0
+                # allow suspending any node
+                if f_type == FailureSpec.FAILURE_SUSPEND:
+                    length = random.randint(1, 10)
+                    node = random.choice(self.redpanda.nodes)
+                else:
+                    #kill/termianate only active nodes (not to influence the test outcome)
+                    idx = random.choice(list(self.active_nodes)) - 1
+                    node = self.redpanda.nodes[idx]
+
+                f_injector.inject_failure(
+                    FailureSpec(node=node, type=f_type, length=length))
+
+                delay = random.randint(20, 45)
+                self.redpanda.logger.info(
+                    f"waiting {delay} seconds before next failure")
+                time.sleep(delay)
+
+        if enable_failures:
+            finjector_thread = threading.Thread(target=failure_injector_loop,
+                                                args=())
+            finjector_thread.daemon = True
+            finjector_thread.start()
 
         def decommission(node_id):
             self.logger.info(f"decommissioning node: {node_id}")
@@ -140,13 +175,18 @@ class NodeOperationFuzzyTest(EndToEndTest):
 
             def node_removed():
                 admin = Admin(self.redpanda)
-                brokers = admin.get_brokers()
-                for b in brokers:
-                    if b['node_id'] == node_id:
-                        return False
-                return True
+                try:
+                    brokers = admin.get_brokers()
+                    for b in brokers:
+                        if b['node_id'] == node_id:
+                            return False
+                    return True
+                except:
+                    return False
 
-            wait_until(node_removed, timeout_sec=240, backoff_sec=2)
+            wait_until(node_removed,
+                       timeout_sec=NODE_OP_TIMEOUT,
+                       backoff_sec=2)
 
         kafkacat = KafkaCat(self.redpanda)
 
@@ -170,28 +210,29 @@ class NodeOperationFuzzyTest(EndToEndTest):
             if cleanup:
                 self.redpanda.clean_node(self.redpanda.nodes[node_id - 1])
             self.redpanda.start_node(self.redpanda.nodes[node_id - 1])
-            admin = Admin(self.redpanda)
-            admin.set_log_level("cluster", "trace")
 
             def has_new_replicas():
                 per_node = replicas_per_node()
                 self.logger.info(f"replicas per node: {per_node}")
                 return node_id in per_node
 
-            wait_until(has_new_replicas, timeout_sec=240, backoff_sec=2)
+            wait_until(has_new_replicas,
+                       timeout_sec=NODE_OP_TIMEOUT,
+                       backoff_sec=2)
 
-        admin = Admin(self.redpanda)
-        admin.set_log_level("cluster", "trace")
         work = self.generate_random_workload(10, skip_nodes=set())
         self.redpanda.logger.info(f"node operations to execute: {work}")
         for op in work:
             op_type = op[0]
             self.logger.info(f"executing - {op}")
+
             if op_type == ADD:
                 id = op[1]
+                self.active_nodes.add(id)
                 restart_node(id)
             if op_type == DECOMMISSION:
                 id = op[1]
+                self.active_nodes.remove(id)
                 decommission(id)
             elif op_type == ADD_TOPIC:
                 spec = TopicSpec(name=op[1],
@@ -202,4 +243,5 @@ class NodeOperationFuzzyTest(EndToEndTest):
             elif op_type == DELETE_TOPIC:
                 self.redpanda.delete_topic(op[1])
 
+        enable_failures = False
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=180)
