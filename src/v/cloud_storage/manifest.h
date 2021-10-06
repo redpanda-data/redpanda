@@ -22,13 +22,57 @@
 
 #include <seastar/util/bool_class.hh>
 
-#include <absl/container/btree_map.h>
 #include <rapidjson/fwd.h>
 
 #include <compare>
 #include <iterator>
+#include <map>
 
 namespace cloud_storage {
+
+/// Information contained inside the partition manifest path
+struct manifest_path_components {
+    std::filesystem::path _origin;
+    model::ns _ns;
+    model::topic _topic;
+    model::partition_id _part;
+    model::revision_id _rev;
+};
+
+/// Information contained inside the segment path
+///
+/// The struct can contain information obtained from the full
+/// S3 segment path. In this case it will have all fields properly
+/// set (_origin, _ns, _topic, _part, _rev). It can also be created using
+/// segment name only. In this case the _is_full field will be set
+/// to false and some fields wouldn't be set (_origin, _ns, _topic, _part,
+/// _rev).
+struct segment_path_components : manifest_path_components {
+    bool _is_full;
+    cloud_storage::segment_name _name;
+    model::offset _base_offset;
+    model::term_id _term;
+};
+
+std::ostream& operator<<(std::ostream& s, const manifest_path_components& c);
+
+std::ostream& operator<<(std::ostream& s, const segment_path_components& c);
+
+/// Parse partition manifest path and return components
+std::optional<manifest_path_components>
+get_manifest_path_components(const std::filesystem::path& path);
+
+/// Parse segment path and return components
+std::optional<segment_path_components>
+get_segment_path_components(const std::filesystem::path& path);
+
+/// Parse base offset from the segment path or segment name
+std::optional<model::offset> get_base_offset(const std::filesystem::path& path);
+
+/// Parse segment file name
+/// \return offset, term id, and success flag
+std::tuple<model::offset, model::term_id, bool>
+parse_segment_name(const std::filesystem::path& path);
 
 struct serialized_json_stream {
     ss::input_stream<char> stream;
@@ -39,6 +83,26 @@ enum class manifest_type {
     topic,
     partition,
 };
+
+/// Selected prefixes used to store manifest files
+static constexpr std::array<std::string_view, 16> manifest_prefixes = {{
+  "00000000",
+  "10000000",
+  "20000000",
+  "30000000",
+  "40000000",
+  "50000000",
+  "60000000",
+  "70000000",
+  "80000000",
+  "90000000",
+  "a0000000",
+  "b0000000",
+  "c0000000",
+  "d0000000",
+  "e0000000",
+  "f0000000",
+}};
 
 class base_manifest {
 public:
@@ -70,13 +134,18 @@ public:
         size_t size_bytes;
         model::offset base_offset;
         model::offset committed_offset;
+        model::timestamp base_timestamp;
+        model::timestamp max_timestamp;
+        model::offset delta_offset;
 
         auto operator<=>(const segment_meta&) const = default;
     };
-    using key = segment_name;
+
+    using key = std::variant<segment_name, remote_segment_path>;
     using value = segment_meta;
-    using segment_map = absl::btree_map<key, value>;
+    using segment_map = std::map<key, value>;
     using const_iterator = segment_map::const_iterator;
+    using const_reverse_iterator = segment_map::const_reverse_iterator;
 
     /// Create empty manifest that supposed to be updated later
     manifest();
@@ -89,6 +158,7 @@ public:
 
     /// Segment file name in S3
     remote_segment_path get_remote_segment_path(const segment_name& name) const;
+    remote_segment_path get_remote_segment_path(const key& name) const;
 
     /// Get NTP
     const model::ntp& get_ntp() const;
@@ -102,16 +172,32 @@ public:
     /// Return iterator to the begining(end) of the segments list
     const_iterator begin() const;
     const_iterator end() const;
+    const_reverse_iterator rbegin() const;
+    const_reverse_iterator rend() const;
     size_t size() const;
 
-    /// Check if the manifest contains particular segment
-    bool contains(const segment_name& obj) const;
+    /// Check if the manifest contains particular path
+    ///
+    /// The manifest may contain two types of keys
+    /// 1. Segment names like `193984-4-v1.log`
+    /// 2. Full segment paths like
+    /// `f28dac93/kafka/mytopic/12_32/193984-4-v1.log`
+    /// This overloads handles the second case.
+    bool contains(const key& path) const;
 
     /// Add new segment to the manifest
     bool add(const segment_name& key, const segment_meta& meta);
 
+    /// Add new segment to the manifest
+    bool add(const remote_segment_path& key, const segment_meta& meta);
+
     /// Get segment if available or nullopt
-    const segment_meta* get(const segment_name& key) const;
+    ///
+    /// The manifest may contain two types of keys
+    /// 1. Segment names like `193984-4-v1.log`
+    /// 2. Full segment paths like
+    /// `f28dac93/kafka/mytopic/12_32/193984-4-v1.log`
+    const segment_meta* get(const key& path) const;
 
     /// Get insert iterator for segments set
     std::insert_iterator<segment_map> get_insert_iterator();
@@ -180,6 +266,9 @@ public:
     /// Manifest object name in S3
     remote_manifest_path get_manifest_path() const override;
 
+    static remote_manifest_path
+    get_topic_manifest_path(model::ns ns, model::topic topic);
+
     /// Serialize manifest object
     ///
     /// \param out output stream that should be used to output the json
@@ -191,6 +280,11 @@ public:
     manifest_type get_manifest_type() const override {
         return manifest_type::partition;
     };
+
+    model::revision_id get_revision() const noexcept { return _rev; }
+
+    /// Change topic-manifest revision
+    void set_revision(model::revision_id id) noexcept { _rev = id; }
 
 private:
     /// Update manifest content from json document that supposed to be generated

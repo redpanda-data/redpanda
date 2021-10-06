@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "archival/types.h"
+#include "cloud_storage/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
 
@@ -20,10 +20,10 @@
 
 namespace cloud_storage {
 
-/// Service level probe
-class service_probe {
+/// Cloud storage endpoint level probe
+class remote_probe {
 public:
-    service_probe() = default;
+    explicit remote_probe(remote_metrics_disabled disabled);
 
     /// Register topic manifest upload
     void topic_manifest_upload() { _cnt_topic_manifest_uploads++; }
@@ -90,13 +90,13 @@ public:
     }
 
     /// Register successfull uploads
-    void successful_upload(size_t n) { _cnt_successful_uploads += n; }
+    void successful_upload() { _cnt_successful_uploads++; }
 
     /// Get successfull uploads
     uint64_t get_successful_uploads() const { return _cnt_successful_uploads; }
 
     /// Register successfull downloads
-    void successful_download(size_t n) { _cnt_successful_downloads += n; }
+    void successful_download() { _cnt_successful_downloads++; }
 
     /// Get successfull downloads
     uint64_t get_successful_downloads() const {
@@ -104,7 +104,7 @@ public:
     }
 
     /// Register failed uploads
-    void failed_upload(size_t n) { _cnt_failed_uploads += n; }
+    void failed_upload() { _cnt_failed_uploads++; }
 
     /// Get failed uploads
     uint64_t get_failed_uploads() const { return _cnt_failed_uploads; }
@@ -127,35 +127,43 @@ public:
     /// Get backoff during log-segment download
     uint64_t get_download_backoffs() const { return _cnt_download_backoff; }
 
+    void register_upload_size(size_t n) { _cnt_bytes_sent += n; }
+
+    void register_download_size(size_t n) { _cnt_bytes_received += n; }
+
 private:
     /// Number of topic manifest uploads
-    uint64_t _cnt_topic_manifest_uploads;
+    uint64_t _cnt_topic_manifest_uploads{0};
     /// Number of manifest (re)uploads
-    uint64_t _cnt_partition_manifest_uploads;
+    uint64_t _cnt_partition_manifest_uploads{0};
     /// Number of topic manifest downloads
-    uint64_t _cnt_topic_manifest_downloads;
+    uint64_t _cnt_topic_manifest_downloads{0};
     /// Number of manifest downloads
-    uint64_t _cnt_partition_manifest_downloads;
+    uint64_t _cnt_partition_manifest_downloads{0};
     /// Number of times backoff was applied during manifest upload
-    uint64_t _cnt_manifest_upload_backoff;
+    uint64_t _cnt_manifest_upload_backoff{0};
     /// Number of times backoff was applied during manifest download
-    uint64_t _cnt_manifest_download_backoff;
+    uint64_t _cnt_manifest_download_backoff{0};
     /// Number of failed manifest uploads
-    uint64_t _cnt_failed_manifest_uploads;
+    uint64_t _cnt_failed_manifest_uploads{0};
     /// Number of failed manifest downloads
-    uint64_t _cnt_failed_manifest_downloads;
+    uint64_t _cnt_failed_manifest_downloads{0};
     /// Number of completed log-segment uploads
-    uint64_t _cnt_successful_uploads;
+    uint64_t _cnt_successful_uploads{0};
     /// Number of completed log-segment uploads
-    uint64_t _cnt_successful_downloads;
+    uint64_t _cnt_successful_downloads{0};
     /// Number of failed log-segment uploads
-    uint64_t _cnt_failed_uploads;
+    uint64_t _cnt_failed_uploads{0};
     /// Number of failed log-segment downloads
-    uint64_t _cnt_failed_downloads;
+    uint64_t _cnt_failed_downloads{0};
     /// Number of times backoff  was applied during log-segment uploads
-    uint64_t _cnt_upload_backoff;
+    uint64_t _cnt_upload_backoff{0};
     /// Number of times backoff  was applied during log-segment downloads
-    uint64_t _cnt_download_backoff;
+    uint64_t _cnt_download_backoff{0};
+    /// Number of bytes being successfully sent to S3
+    uint64_t _cnt_bytes_sent{0};
+    /// Number of bytes being successfully received from S3
+    uint64_t _cnt_bytes_received{0};
 
     ss::metrics::metric_groups _metrics;
 };

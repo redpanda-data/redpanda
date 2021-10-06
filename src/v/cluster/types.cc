@@ -79,7 +79,9 @@ storage::ntp_config topic_configuration::make_ntp_config(
             .retention_time = properties.retention_duration,
             // we disable cache for internal topics as they are read only once
             // during bootstrap.
-            .cache_enabled = storage::with_cache(!is_internal())});
+            .cache_enabled = storage::with_cache(!is_internal()),
+            .recovery_enabled = storage::topic_recovery_enabled(
+              properties.recovery ? *properties.recovery : false)});
     }
     return storage::ntp_config(
       model::ntp(tp_ns.ns, tp_ns.tp, p_id),

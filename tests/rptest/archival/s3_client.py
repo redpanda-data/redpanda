@@ -6,6 +6,8 @@ from functools import wraps
 from collections import namedtuple
 import traceback
 import sys
+import time
+import datetime
 
 
 class SlowDown(Exception):
@@ -93,9 +95,49 @@ class S3Client:
                 failed_keys.append(key)
         return failed_keys
 
-    def delete_object(self, bucket, key):
+    def delete_object(self, bucket, key, verify=False):
         """Remove object from S3"""
-        return self._delete_object(bucket, key)
+        res = self._delete_object(bucket, key)
+        if verify:
+            self._wait_no_key(bucket, key)
+        return res
+
+    def _wait_no_key(self, bucket, key, timeout_sec=10):
+        """Wait for the key to apper in the bucket"""
+        deadline = datetime.datetime.now() + datetime.timedelta(
+            seconds=timeout_sec)
+        try:
+            # Busy wait until the object is actually
+            # deleted
+            while True:
+                self._head_object(bucket, key)
+                # aws boto3 uses 5s interval for polling
+                # using head_object API call
+                now = datetime.datetime.now()
+                if now > deadline:
+                    raise TimeoutError()
+                time.sleep(5)
+        except ClientError as err:
+            self.logger.debug(f"error response while polling {err}")
+
+    def _wait_key(self, bucket, key, timeout_sec=30):
+        """Wait for the key to apper in the bucket"""
+        # Busy wait until the object is available
+        deadline = datetime.datetime.now() + datetime.timedelta(
+            seconds=timeout_sec)
+        while True:
+            try:
+                meta = self._head_object(bucket, key)
+                self.logger.debug(f"object {key} is available, head: {meta}")
+                return
+            except ClientError as err:
+                self.logger.debug(f"error response while polling {err}")
+            now = datetime.datetime.now()
+            if now > deadline:
+                raise TimeoutError()
+            # aws boto3 uses 5s interval for polling
+            # using head_object API call
+            time.sleep(5)
 
     @retry_on_slowdown()
     def _delete_object(self, bucket, key):
@@ -121,9 +163,79 @@ class S3Client:
             else:
                 raise
 
+    @retry_on_slowdown()
+    def _head_object(self, bucket, key):
+        """Get object from S3"""
+        try:
+            return self._cli.head_object(Bucket=bucket, Key=key)
+        except ClientError as err:
+            self.logger.debug(f"error response {err}")
+            if err.response['Error']['Code'] == 'SlowDown':
+                raise SlowDown()
+            else:
+                raise
+
+    @retry_on_slowdown()
+    def _put_object(self, bucket, key, content):
+        """Put object to S3"""
+        try:
+            return self._cli.put_object(Bucket=bucket,
+                                        Key=key,
+                                        Body=bytes(content, encoding='utf-8'))
+        except ClientError as err:
+            self.logger.debug(f"error response {err}")
+            if err.response['Error']['Code'] == 'SlowDown':
+                raise SlowDown()
+            else:
+                raise
+
+    @retry_on_slowdown()
+    def _copy_single_object(self, bucket, src, dst):
+        """Copy object to another location within the bucket"""
+        try:
+            src_uri = f"{bucket}/{src}"
+            return self._cli.copy_object(Bucket=bucket,
+                                         Key=dst,
+                                         CopySource=src_uri)
+        except ClientError as err:
+            self.logger.debug(f"error response {err}")
+            if err.response['Error']['Code'] == 'SlowDown':
+                raise SlowDown()
+            else:
+                raise
+
     def get_object_data(self, bucket, key):
         resp = self._get_object(bucket, key)
         return resp['Body'].read()
+
+    def put_object(self, bucket, key, data):
+        self._put_object(bucket, key, data)
+
+    def copy_object(self,
+                    bucket,
+                    src,
+                    dst,
+                    validate=False,
+                    validation_timeout_sec=30):
+        """Copy object inside a bucket and optionally poll the destination until
+        the copy will be available or timeout passes."""
+        self._copy_single_object(bucket, src, dst)
+        if validate:
+            self._wait_key(bucket, dst, validation_timeout_sec)
+
+    def move_object(self,
+                    bucket,
+                    src,
+                    dst,
+                    validate=False,
+                    validation_timeout_sec=30):
+        """Move object inside a bucket and optionally poll the destination until
+        the new location will be available and old will disappear or timeout is reached."""
+        self._copy_single_object(bucket, src, dst)
+        self._delete_object(bucket, src)
+        if validate:
+            self._wait_key(bucket, dst, validation_timeout_sec)
+            self._wait_no_key(bucket, src, validation_timeout_sec)
 
     def get_object_meta(self, bucket, key):
         """Get object metadata without downloading it"""

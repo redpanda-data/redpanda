@@ -12,6 +12,7 @@
 
 #include "archival/ntp_archiver_service.h"
 #include "cloud_storage/manifest.h"
+#include "cloud_storage/types.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
@@ -169,7 +170,12 @@ public:
         return layouts.find(ntp)->second;
     }
 
-protected:
+    ss::future<> add_topic_with_single_partition(model::ntp ntp) {
+        co_await wait_for_controller_leadership();
+        co_await add_topic(model::topic_namespace_view(
+          model::topic_namespace(ntp.ns, ntp.tp.topic)));
+    }
+
 private:
     void
     initialize_shard(storage::api& api, const std::vector<segment_desc>& segm);
@@ -177,4 +183,5 @@ private:
     std::unordered_map<model::ntp, std::vector<segment_layout>> layouts;
 };
 
-archival::configuration get_configuration();
+std::tuple<archival::configuration, cloud_storage::configuration>
+get_configurations();

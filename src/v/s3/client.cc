@@ -532,7 +532,7 @@ ss::future<> client::delete_object(
 
 client_pool::client_pool(
   size_t size, configuration conf, client_pool_overdraft_policy policy)
-  : _size(size)
+  : _max_size(size)
   , _config(std::move(conf))
   , _policy(policy) {
     init();
@@ -581,14 +581,15 @@ ss::future<client_pool::client_lease> client_pool::acquire() {
         })};
 }
 size_t client_pool::size() const noexcept { return _pool.size(); }
+size_t client_pool::max_size() const noexcept { return _max_size; }
 void client_pool::init() {
-    for (size_t i = 0; i < _size; i++) {
+    for (size_t i = 0; i < _max_size; i++) {
         auto cl = ss::make_shared<client>(_config, _as);
         _pool.emplace_back(std::move(cl));
     }
 }
 void client_pool::release(ss::shared_ptr<client> leased) {
-    if (_pool.size() == _size) {
+    if (_pool.size() == _max_size) {
         return;
     }
     _pool.emplace_back(std::move(leased));

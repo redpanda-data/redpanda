@@ -252,11 +252,13 @@ public:
     /// \brief Get number of connections
     size_t size() const noexcept;
 
+    size_t max_size() const noexcept;
+
 private:
     void init();
     void release(ss::shared_ptr<client> leased);
 
-    const size_t _size;
+    const size_t _max_size;
     configuration _config;
     client_pool_overdraft_policy _policy;
     std::vector<http_client_ptr> _pool;

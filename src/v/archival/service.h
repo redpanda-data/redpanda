@@ -102,10 +102,12 @@ public:
     /// \param pm is a partition_manager service instance
     scheduler_service_impl(
       const configuration& conf,
+      ss::sharded<cloud_storage::remote>& remote,
       ss::sharded<storage::api>& api,
       ss::sharded<cluster::partition_manager>& pm,
       ss::sharded<cluster::topic_table>& tt);
     scheduler_service_impl(
+      ss::sharded<cloud_storage::remote>& remote,
       ss::sharded<storage::api>& api,
       ss::sharded<cluster::partition_manager>& pm,
       ss::sharded<cluster::topic_table>& tt,
@@ -148,6 +150,12 @@ public:
     /// Return range with all available ntps
     bool contains(const model::ntp& ntp) const { return _queue.contains(ntp); }
 
+    /// Get remote that service uses
+    cloud_storage::remote& get_remote();
+
+    /// Get configured bucket
+    s3::bucket_name get_bucket() const;
+
 private:
     /// Remove archivers from the workingset
     ss::future<> remove_archivers(std::vector<model::ntp> to_remove);
@@ -157,9 +165,6 @@ private:
     /// Adds archiver to the reconciliation loop after fetching its manifest.
     ss::future<ss::stop_iteration>
     add_ntp_archiver(ss::lw_shared_ptr<ntp_archiver> archiver);
-    /// Returns high watermark for the partition
-    std::optional<model::offset>
-    get_last_stable_offset(const model::ntp& ntp) const;
 
     configuration _conf;
     ss::sharded<cluster::partition_manager>& _partition_manager;
@@ -175,7 +180,7 @@ private:
     retry_chain_node _rtcnode;
     retry_chain_logger _rtclog;
     service_probe _probe;
-    cloud_storage::remote _remote;
+    ss::sharded<cloud_storage::remote>& _remote;
     ss::lowres_clock::duration _topic_manifest_upload_timeout;
     ss::lowres_clock::duration _initial_backoff;
 };
@@ -207,6 +212,12 @@ public:
 
     /// Generate configuration
     using internal::scheduler_service_impl::get_archival_service_config;
+
+    /// Get remote that service uses
+    using internal::scheduler_service_impl::get_remote;
+
+    /// Get configured bucket
+    using internal::scheduler_service_impl::get_bucket;
 };
 
 } // namespace archival

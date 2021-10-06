@@ -73,15 +73,21 @@ FIXTURE_TEST(test_reconciliation_manifest_download, archiver_fixture) {
     wait_for_partition_leadership(pid0);
     wait_for_partition_leadership(pid1);
 
-    auto config = get_configuration();
+    auto [arch_config, remote_config] = get_configurations();
     auto& pm = app.partition_manager;
     auto& api = app.storage;
     auto& topics = app.controller->get_topics_state();
-    archival::internal::scheduler_service_impl service(config, api, pm, topics);
+    ss::sharded<cloud_storage::remote> remote;
+    remote
+      .start_single(remote_config.connection_limit, remote_config.client_config)
+      .get();
+    archival::internal::scheduler_service_impl service(
+      arch_config, remote, api, pm, topics);
     service.reconcile_archivers().get();
     BOOST_REQUIRE(service.contains(pid0));
     BOOST_REQUIRE(service.contains(pid1));
     service.stop().get();
+    remote.stop().get();
 }
 
 FIXTURE_TEST(test_reconciliation_drop_ntp, archiver_fixture) {
@@ -102,11 +108,16 @@ FIXTURE_TEST(test_reconciliation_drop_ntp, archiver_fixture) {
 
     wait_for_partition_leadership(ntp);
 
-    auto config = get_configuration();
+    auto [arch_config, remote_config] = get_configurations();
     auto& pm = app.partition_manager;
     auto& api = app.storage;
     auto& topics = app.controller->get_topics_state();
-    archival::internal::scheduler_service_impl service(config, api, pm, topics);
+    ss::sharded<cloud_storage::remote> remote;
+    remote
+      .start_single(remote_config.connection_limit, remote_config.client_config)
+      .get();
+    archival::internal::scheduler_service_impl service(
+      arch_config, remote, api, pm, topics);
 
     service.reconcile_archivers().get();
     BOOST_REQUIRE(service.contains(ntp));
@@ -119,6 +130,7 @@ FIXTURE_TEST(test_reconciliation_drop_ntp, archiver_fixture) {
     service.reconcile_archivers().get();
     BOOST_REQUIRE(!service.contains(ntp));
     service.stop().get();
+    remote.stop().get();
 }
 
 FIXTURE_TEST(test_segment_upload, archiver_fixture) {
@@ -157,11 +169,16 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
 
     wait_for_partition_leadership(ntp);
 
-    auto config = get_configuration();
+    auto [arch_config, remote_config] = get_configurations();
     auto& pm = app.partition_manager;
     auto& api = app.storage;
     auto& topics = app.controller->get_topics_state();
-    archival::internal::scheduler_service_impl service(config, api, pm, topics);
+    ss::sharded<cloud_storage::remote> remote;
+    remote
+      .start_single(remote_config.connection_limit, remote_config.client_config)
+      .get();
+    archival::internal::scheduler_service_impl service(
+      arch_config, remote, api, pm, topics);
 
     service.reconcile_archivers().get();
     BOOST_REQUIRE(service.contains(ntp));
@@ -198,4 +215,5 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
     verify_segment(
       ntp, archival::segment_name("100-0-v1.log"), put_seg100->second.content);
     service.stop().get();
+    remote.stop().get();
 }

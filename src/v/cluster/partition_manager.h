@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cloud_storage/partition_recovery_manager.h"
 #include "cluster/ntp_callbacks.h"
 #include "cluster/partition.h"
 #include "model/metadata.h"
@@ -31,7 +32,8 @@ public:
     partition_manager(
       ss::sharded<storage::api>&,
       ss::sharded<raft::group_manager>&,
-      ss::sharded<cluster::tx_gateway_frontend>&);
+      ss::sharded<cluster::tx_gateway_frontend>&,
+      ss::sharded<cloud_storage::partition_recovery_manager>&);
 
     using manage_cb_t
       = ss::noncopyable_function<void(ss::lw_shared_ptr<partition>)>;
@@ -136,6 +138,14 @@ public:
     const ntp_table_container& partitions() const { return _ntp_table; }
 
 private:
+    /// Download log if partition_recovery_manager is initialized.
+    ///
+    /// It might not be initialized if cloud storage is disable.
+    /// In this case this method always returns false.
+    /// \param ntp_cfg is an ntp_config instance to recover
+    /// \return true if the recovery was invoked, false otherwise
+    ss::future<bool> maybe_download_log(storage::ntp_config& ntp_cfg);
+
     storage::api& _storage;
     /// used to wait for concurrent recoveries
     ss::sharded<raft::group_manager>& _raft_manager;
@@ -147,6 +157,8 @@ private:
     absl::flat_hash_map<raft::group_id, ss::lw_shared_ptr<partition>>
       _raft_table;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
+    ss::sharded<cloud_storage::partition_recovery_manager>&
+      _partition_recovery_mgr;
 
     friend std::ostream& operator<<(std::ostream&, const partition_manager&);
 };

@@ -15,6 +15,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
 #include "model/metadata.h"
+#include "raft/configuration_manager.h"
 #include "s3/client.h"
 #include "s3/error.h"
 #include "storage/disk_log_impl.h"
@@ -42,13 +43,11 @@ namespace archival {
 std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
     fmt::print(
       o,
-      "{{bucket_name: {}, interval: {}, client_config: {}, connection_limit: "
-      "{}, initial_backoff: {}, segment_upload_timeout: {}, "
+      "{{bucket_name: {}, interval: {}, initial_backoff: {}, "
+      "segment_upload_timeout: {}, "
       "manifest_upload_timeout: {}, time_limit: {}}}",
       cfg.bucket_name,
       cfg.interval.count(),
-      cfg.client_config,
-      cfg.connection_limit,
       cfg.initial_backoff.count(),
       cfg.segment_upload_timeout.count(),
       cfg.manifest_upload_timeout.count(),
@@ -60,12 +59,14 @@ ntp_archiver::ntp_archiver(
   const storage::ntp_config& ntp,
   const configuration& conf,
   cloud_storage::remote& remote,
+  ss::lw_shared_ptr<cluster::partition> part,
   service_probe& svc_probe)
   : _svc_probe(svc_probe)
   , _probe(conf.ntp_metrics_disabled, ntp.ntp())
   , _ntp(ntp.ntp())
   , _rev(ntp.get_revision())
   , _remote(remote)
+  , _partition(std::move(part))
   , _policy(_ntp, _svc_probe, std::ref(_probe), conf.time_limit)
   , _bucket(conf.bucket_name)
   , _manifest(_ntp, _rev)
@@ -136,6 +137,15 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
       reset_func,
       _manifest,
       fib);
+}
+
+static model::offset num_config_batches_before_offset(
+  const raft::configuration_manager& cm, model::offset o) {
+    auto it = cm.lower_bound(o);
+    if (it != cm.begin()) {
+        --it;
+    }
+    return model::offset(it->second.idx());
 }
 
 ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
@@ -222,18 +232,20 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
     auto offset = upload.final_offset;
     auto base = upload.starting_offset;
     last_uploaded_offset = offset + model::offset(1);
-    co_return scheduled_upload {
-        .result = upload_segment(upload, parent),
-        .inclusive_last_offset = offset,
-        .meta = cloud_storage::manifest::segment_meta{
-            .is_compacted = upload.source->is_compacted_segment(),
-            .size_bytes = upload.content_length,
-            .base_offset = upload.starting_offset,
-            .committed_offset = offset,
-        },
-        .name = upload.exposed_name,
-        .delta = offset - base,
-        .stop = ss::stop_iteration::no,
+    co_return scheduled_upload{
+      .result = upload_segment(upload, parent),
+      .inclusive_last_offset = offset,
+      .meta = cloud_storage::manifest::segment_meta{
+        .is_compacted = upload.source->is_compacted_segment(),
+        .size_bytes = upload.content_length,
+        .base_offset = upload.starting_offset,
+        .committed_offset = offset,
+        .base_timestamp = upload.base_timestamp,
+        .max_timestamp = upload.max_timestamp,
+        .delta_offset = num_config_batches_before_offset(_partition->get_cfg_manager(), base),
+      }, 
+      .name = upload.exposed_name, .delta = offset - base,
+      .stop = ss::stop_iteration::no,
     };
 }
 
@@ -352,11 +364,12 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
 
 ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
   storage::log_manager& lm,
-  model::offset last_stable_offset,
-  retry_chain_node& parent) {
+  retry_chain_node& parent,
+  std::optional<model::offset> lso_override) {
     retry_chain_logger ctxlog(archival_log, parent, _ntp.path());
     vlog(ctxlog.debug, "Uploading next candidates called for {}", _ntp);
-
+    auto last_stable_offset = lso_override ? *lso_override
+                                           : _partition->last_stable_offset();
     return ss::with_gate(_gate, [this, &lm, last_stable_offset, &parent] {
         return ss::with_semaphore(
           _mutex, 1, [this, &lm, last_stable_offset, &parent] {

@@ -80,6 +80,18 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
         args += ["--partitions", f"{partitions}"]
         return self._run("kafka-topics.sh", args)
 
+    def create_topic_with_config(self, name, partitions, replication_factor,
+                                 configs):
+        cfgs = [f"{k}={v}" for k, v in configs.items()]
+        self._redpanda.logger.debug("Creating topic: %s", name)
+        args = ["--create"]
+        args += ["--topic", name]
+        args += ["--partitions", str(partitions)]
+        args += ["--replication-factor", str(replication_factor)]
+        for it in cfgs:
+            args += ["--config", it]
+        return self._run("kafka-topics.sh", args)
+
     def delete_topic(self, topic):
         self._redpanda.logger.debug("Deleting topic: %s", topic)
         args = ["--delete"]

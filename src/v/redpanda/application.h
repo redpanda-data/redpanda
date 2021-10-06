@@ -12,6 +12,7 @@
 #pragma once
 
 #include "archival/fwd.h"
+#include "cloud_storage/partition_recovery_manager.h"
 #include "cluster/fwd.h"
 #include "coproc/fwd.h"
 #include "kafka/client/configuration.h"
@@ -84,6 +85,9 @@ public:
     smp_groups smp_service_groups;
     ss::sharded<kafka::quota_manager> quota_mgr;
     ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
+    ss::sharded<cloud_storage::remote> cloud_storage_api;
+    ss::sharded<cloud_storage::partition_recovery_manager>
+      partition_recovery_manager;
     ss::sharded<archival::scheduler_service> archival_scheduler;
     ss::sharded<kafka::rm_group_frontend> rm_group_frontend;
     ss::sharded<cluster::rm_partition_frontend> rm_partition_frontend;

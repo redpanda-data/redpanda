@@ -10,13 +10,20 @@
 
 #pragma once
 
-#include "seastar/core/sstring.hh"
+#include "s3/client.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
+
+#include <seastar/core/future.hh>
+#include <seastar/core/sstring.hh>
+#include <seastar/util/bool_class.hh>
 
 #include <filesystem>
 
 namespace cloud_storage {
+
+using remote_metrics_disabled
+  = ss::bool_class<struct remote_metrics_disabled_tag>;
 
 /// Segment file name without working directory,
 /// expected format: <base-offset>-<term-id>-<revision>.log
@@ -55,5 +62,24 @@ enum class manifest_version : int32_t {
 enum class topic_manifest_version : int32_t {
     v1 = 1,
 };
+
+std::ostream& operator<<(std::ostream& o, const download_result& r);
+
+std::ostream& operator<<(std::ostream& o, const upload_result& r);
+
+struct configuration {
+    /// S3 configuration
+    s3::configuration client_config;
+    /// Number of simultaneous S3 uploads
+    s3_connection_limit connection_limit;
+    /// Disable metrics in the remote
+    remote_metrics_disabled metrics_disabled;
+    /// The bucket to use
+    s3::bucket_name bucket_name;
+
+    static ss::future<configuration> get_config();
+};
+
+std::ostream& operator<<(std::ostream& o, const configuration& cfg);
 
 } // namespace cloud_storage

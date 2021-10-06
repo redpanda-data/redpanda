@@ -15,6 +15,7 @@
 #include "s3/client.h"
 #include "ssx/sformat.h"
 #include "utils/intrusive_list_helpers.h"
+#include "utils/retry_chain_node.h"
 #include "utils/string_switch.h"
 
 #include <seastar/core/loop.hh>
@@ -24,6 +25,7 @@
 #include <seastar/core/weak_ptr.hh>
 
 #include <boost/beast/http/error.hpp>
+#include <boost/beast/http/field.hpp>
 
 #include <exception>
 #include <variant>
@@ -62,29 +64,27 @@ static error_outcome categorize_error(
   const s3::bucket_name& bucket,
   const s3::object_key& path) {
     auto result = error_outcome::retry;
+    retry_chain_logger ctxlog(cst_log, fib);
     try {
         std::rethrow_exception(err);
     } catch (const s3::rest_error_response& err) {
         if (err.code() == s3::s3_error_code::no_such_key) {
-            vlog(
-              cst_log.warn, "{} NoSuchKey response received {}", fib(), path);
+            vlog(ctxlog.warn, "NoSuchKey response received {}", path);
             result = error_outcome::notfound;
         } else if (err.code() == s3::s3_error_code::slow_down) {
             // This can happen when we're dealing with high request rate to
             // the manifest's prefix. Backoff algorithm should be applied.
-            vlog(
-              cst_log.debug, "{} SlowDown response received {}", fib(), path);
+            vlog(ctxlog.debug, "SlowDown response received {}", path);
             result = error_outcome::retry_slowdown;
         } else {
             // Unexpected REST API error, we can't recover from this
             // because the issue is not temporary (e.g. bucket doesn't
             // exist)
             vlog(
-              cst_log.error,
-              "{} Accessing {}, unexpected REST API error \"{}\" detected, "
+              ctxlog.error,
+              "Accessing {}, unexpected REST API error \"{}\" detected, "
               "code: "
               "{}, request_id: {}, resource: {}",
-              fib(),
               bucket,
               err.message(),
               err.code_string(),
@@ -104,50 +104,41 @@ static error_outcome categorize_error(
         if (auto code = cerr.code();
             code.value() != ECONNREFUSED && code.value() != ENETUNREACH
             && code.value() != ETIMEDOUT && code.value() != ECONNRESET) {
-            vlog(cst_log.error, "{} System error {}", fib(), cerr);
+            vlog(ctxlog.error, "System error {}", cerr);
             result = error_outcome::fail;
         } else {
             vlog(
-              cst_log.debug,
-              "{} System error susceptible for retry {}",
-              fib(),
+              ctxlog.debug,
+              "System error susceptible for retry {}",
               cerr.what());
         }
     } catch (const ss::timed_out_error& terr) {
         // This should happen when the connection pool was disconnected
         // from the S3 endpoint and subsequent connection attmpts failed.
-        vlog(cst_log.warn, "{} Connection timeout {}", fib(), terr.what());
+        vlog(ctxlog.warn, "Connection timeout {}", terr.what());
     } catch (const boost::system::system_error& err) {
         if (err.code() != boost::beast::http::error::short_read) {
-            vlog(cst_log.warn, "Connection failed {}", fib(), err.what());
+            vlog(cst_log.warn, "Connection failed {}", err.what());
             result = error_outcome::fail;
         } else {
             // This is a short read error that can be caused by the abrupt TLS
             // shutdown. The content of the received buffer is discarded in this
             // case and http client receives an empty buffer.
-            vlog(
-              cst_log.warn,
-              "{} Short Read detected, retrying {}",
-              fib(),
-              err.what());
+            vlog(ctxlog.warn, "Short Read detected, retrying {}", err.what());
         }
     } catch (...) {
-        vlog(
-          cst_log.error,
-          "{} Unexpected error {}",
-          fib(),
-          std::current_exception());
+        vlog(ctxlog.error, "Unexpected error {}", std::current_exception());
         result = error_outcome::fail;
     }
     return result;
 }
 
-remote::remote(
-  s3_connection_limit limit,
-  const s3::configuration& conf,
-  service_probe& probe)
+remote::remote(s3_connection_limit limit, const s3::configuration& conf)
   : _pool(limit(), conf)
-  , _probe(probe) {}
+  , _probe(remote_metrics_disabled(static_cast<bool>(conf.disable_metrics))) {}
+
+remote::remote(ss::sharded<configuration>& conf)
+  : remote(conf.local().connection_limit, conf.local().client_config) {}
 
 ss::future<> remote::start() { return ss::now(); }
 
@@ -156,6 +147,8 @@ ss::future<> remote::stop() {
     co_await _pool.stop();
     co_await _gate.close();
 }
+
+size_t remote::concurrency() const { return _pool.max_size(); }
 
 ss::future<download_result> remote::download_manifest(
   const s3::bucket_name& bucket,
@@ -168,8 +161,10 @@ ss::future<download_result> remote::download_manifest(
     auto path = s3::object_key(key().native());
     auto [client, deleter] = co_await _pool.acquire();
     auto retry_permit = fib.retry();
+    std::optional<download_result> result;
     vlog(ctxlog.debug, "Download manifest {}", key());
-    while (!_gate.is_closed() && retry_permit.is_allowed) {
+    while (!_gate.is_closed() && retry_permit.is_allowed
+           && !result.has_value()) {
         std::exception_ptr eptr = nullptr;
         try {
             auto resp = co_await client->get_object(
@@ -178,10 +173,10 @@ ss::future<download_result> remote::download_manifest(
             co_await manifest.update(resp->as_input_stream());
             switch (manifest.get_manifest_type()) {
             case manifest_type::partition:
-                _probe.partition_manifest_upload();
+                _probe.partition_manifest_download();
                 break;
             case manifest_type::topic:
-                _probe.topic_manifest_upload();
+                _probe.topic_manifest_download();
                 break;
             }
             co_return download_result::success;
@@ -211,19 +206,29 @@ ss::future<download_result> remote::download_manifest(
             retry_permit = fib.retry();
             break;
         case error_outcome::fail:
-            co_return download_result::failed;
+            result = download_result::failed;
         case error_outcome::notfound:
-            co_return download_result::notfound;
+            result = download_result::notfound;
         }
     }
-    vlog(
-      ctxlog.warn,
-      "Downloading manifest from {}, backoff quota exceded, manifest at {} not "
-      "available",
-      bucket,
-      path);
     _probe.failed_manifest_download();
-    co_return download_result::timedout;
+    if (!result) {
+        vlog(
+          ctxlog.warn,
+          "Downloading manifest from {}, backoff quota exceded, manifest at {} "
+          "not available",
+          bucket,
+          path);
+        result = download_result::timedout;
+    } else {
+        vlog(
+          ctxlog.warn,
+          "Downloading manifest from {} {}, manifest at {} not available",
+          bucket,
+          *result,
+          path);
+    }
+    co_return *result;
 }
 
 ss::future<upload_result> remote::upload_manifest(
@@ -239,7 +244,8 @@ ss::future<upload_result> remote::upload_manifest(
     auto [client, deleter] = co_await _pool.acquire();
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Uploading manifest {} to the {}", path, bucket());
-    while (!_gate.is_closed() && permit.is_allowed) {
+    std::optional<upload_result> result;
+    while (!_gate.is_closed() && permit.is_allowed && !result.has_value()) {
         std::exception_ptr eptr = nullptr;
         try {
             auto [is, size] = manifest.serialize();
@@ -254,6 +260,7 @@ ss::future<upload_result> remote::upload_manifest(
                 _probe.topic_manifest_upload();
                 break;
             }
+            _probe.register_upload_size(size);
             co_return upload_result::success;
         } catch (...) {
             eptr = std::current_exception();
@@ -277,17 +284,27 @@ ss::future<upload_result> remote::upload_manifest(
         case error_outcome::notfound:
             // not expected during upload
         case error_outcome::fail:
-            co_return upload_result::failed;
+            result = upload_result::failed;
         }
     }
-    vlog(
-      ctxlog.warn,
-      "Uploading manifest {} to {}, backoff quota exceded, manifest not "
-      "uploaded",
-      path,
-      bucket);
     _probe.failed_manifest_upload();
-    co_return upload_result::timedout;
+    if (!result) {
+        vlog(
+          ctxlog.warn,
+          "Uploading manifest {} to {}, backoff quota exceded, manifest not "
+          "uploaded",
+          path,
+          bucket);
+        result = upload_result::timedout;
+    } else {
+        vlog(
+          ctxlog.warn,
+          "Uploading manifest {} to {}, {}, manifest not uploaded",
+          path,
+          *result,
+          bucket);
+    }
+    co_return *result;
 }
 
 ss::future<upload_result> remote::upload_segment(
@@ -309,7 +326,8 @@ ss::future<upload_result> remote::upload_segment(
       manifest.get_ntp(),
       exposed_name,
       content_length);
-    while (!_gate.is_closed() && permit.is_allowed) {
+    std::optional<upload_result> result;
+    while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto [client, deleter] = co_await _pool.acquire();
         auto stream = reset_str();
         auto path = s3::object_key(s3path().string());
@@ -328,7 +346,8 @@ ss::future<upload_result> remote::upload_segment(
               std::move(stream),
               tags,
               fib.get_timeout());
-            _probe.successful_upload(content_length);
+            _probe.successful_upload();
+            _probe.register_upload_size(content_length);
             co_return upload_result::success;
         } catch (...) {
             eptr = std::current_exception();
@@ -352,21 +371,31 @@ ss::future<upload_result> remote::upload_segment(
         case error_outcome::notfound:
             // not expected during upload
         case error_outcome::fail:
-            co_return upload_result::failed;
+            result = upload_result::failed;
         }
     }
-    vlog(
-      ctxlog.warn,
-      "Uploading segment {} to {}, backoff quota exceded, segment not uploaded",
-      s3path,
-      bucket);
-    _probe.failed_upload(content_length);
+    _probe.failed_upload();
+    if (!result) {
+        vlog(
+          ctxlog.warn,
+          "Uploading segment {} to {}, backoff quota exceded, segment not "
+          "uploaded",
+          s3path,
+          bucket);
+    } else {
+        vlog(
+          ctxlog.warn,
+          "Uploading segment {} to {}, {}, segment not uploaded",
+          s3path,
+          *result,
+          bucket);
+    }
     co_return upload_result::timedout;
 }
 
 ss::future<download_result> remote::download_segment(
   const s3::bucket_name& bucket,
-  const segment_name& name,
+  const manifest::key& name,
   const manifest& manifest,
   const try_consume_stream& cons_str,
   retry_chain_node& parent) {
@@ -378,7 +407,8 @@ ss::future<download_result> remote::download_segment(
     auto [client, deleter] = co_await _pool.acquire();
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Download segment {}", path);
-    while (!_gate.is_closed() && permit.is_allowed) {
+    std::optional<download_result> result;
+    while (!_gate.is_closed() && permit.is_allowed && !result) {
         std::exception_ptr eptr = nullptr;
         try {
             auto resp = co_await client->get_object(
@@ -388,7 +418,8 @@ ss::future<download_result> remote::download_segment(
               boost::beast::http::field::content_length));
             uint64_t content_length = co_await cons_str(
               length, resp->as_input_stream());
-            _probe.successful_download(content_length);
+            _probe.successful_download();
+            _probe.register_download_size(content_length);
             co_return download_result::success;
         } catch (...) {
             eptr = std::current_exception();
@@ -409,19 +440,29 @@ ss::future<download_result> remote::download_segment(
             permit = fib.retry();
             break;
         case error_outcome::fail:
-            co_return download_result::failed;
+            result = download_result::failed;
         case error_outcome::notfound:
-            co_return download_result::notfound;
+            result = download_result::notfound;
         }
     }
-    vlog(
-      ctxlog.warn,
-      "Downloading segment from {}, backoff quota exceded, segment at {} "
-      "not available",
-      bucket,
-      path);
     _probe.failed_download();
-    co_return download_result::timedout;
+    if (!result) {
+        vlog(
+          ctxlog.warn,
+          "Downloading segment from {}, backoff quota exceded, segment at {} "
+          "not available",
+          bucket,
+          path);
+        result = download_result::timedout;
+    } else {
+        vlog(
+          ctxlog.warn,
+          "Downloading segment from {}, {}, segment at {} not available",
+          bucket,
+          *result,
+          path);
+    }
+    co_return *result;
 }
 
 static const s3::object_key empty_object_key = s3::object_key();

@@ -54,10 +54,12 @@ public:
     ///
     /// \param limit is a number of simultaneous connections
     /// \param conf is an S3 configuration
-    explicit remote(
-      s3_connection_limit limit,
-      const s3::configuration& conf,
-      service_probe& probe);
+    remote(s3_connection_limit limit, const s3::configuration& conf);
+
+    /// \brief Initialize 'remote'
+    ///
+    /// \param conf is an archival configuration
+    explicit remote(ss::sharded<configuration>& conf);
 
     /// \brief Start the remote
     ss::future<> start();
@@ -66,6 +68,10 @@ public:
     ///
     /// Wait until all background operations complete
     ss::future<> stop();
+
+    /// Return max number of concurrent requests that the object
+    /// can perform.
+    size_t concurrency() const;
 
     /// \brief Download manifest from pre-defined S3 location
     ///
@@ -117,7 +123,7 @@ public:
     /// \param manifest is a manifest that should have the segment metadata
     ss::future<download_result> download_segment(
       const s3::bucket_name& bucket,
-      const segment_name& name,
+      const manifest::key& name,
       const manifest& manifest,
       const try_consume_stream& cons_str,
       retry_chain_node& parent);
@@ -133,7 +139,7 @@ private:
     s3::client_pool _pool;
     ss::gate _gate;
     ss::abort_source _as;
-    service_probe& _probe;
+    remote_probe _probe;
 };
 
 } // namespace cloud_storage
