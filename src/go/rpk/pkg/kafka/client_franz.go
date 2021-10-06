@@ -38,6 +38,15 @@ func NewFranzClient(
 		kgo.SeedBrokers(k.Brokers...),
 		kgo.ClientID("rpk"),
 		kgo.RetryTimeout(5 * time.Second),
+
+		// Redpanda may indicate one leader just before rebalancing the
+		// leader to a different server. During this rebalance,
+		// Redpanda may return stale metadata. We always want fresh
+		// metadata, and we want it fast since this is a CLI, so we
+		// will use a small min metadata age.
+		//
+		// https://github.com/vectorizedio/redpanda/issues/2546
+		kgo.MetadataMinAge(250 * time.Millisecond),
 	}
 
 	if k.SASL != nil {
@@ -53,8 +62,6 @@ func NewFranzClient(
 		}
 	}
 
-	opts = append(opts, extraOpts...)
-
 	tc, err := k.TLS.Config(fs)
 	if err != nil {
 		return nil, err
@@ -66,6 +73,8 @@ func NewFranzClient(
 	if p.Verbose {
 		opts = append(opts, kgo.WithLogger(kgo.BasicLogger(os.Stderr, kgo.LogLevelDebug, nil)))
 	}
+
+	opts = append(opts, extraOpts...)
 
 	return kgo.NewClient(opts...)
 }
