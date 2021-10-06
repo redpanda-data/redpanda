@@ -783,7 +783,8 @@ void admin_server::register_partition_routes() {
                   p.replicas.push(a);
                   p.leader_id = *leader_opt;
               }
-
+              // special case, controller is raft group 0
+              p.raft_group_id = 0;
               for (const auto& i : _metadata_cache.local().all_broker_ids()) {
                   if (!leader_opt.has_value() || leader_opt.value() != i) {
                       ss::httpd::partition_json::assignment a;
@@ -814,6 +815,7 @@ void admin_server::register_partition_routes() {
                       a.core = r.shard;
                       p.replicas.push(a);
                   }
+                  p.raft_group_id = assignment->group;
               }
               auto leader = _metadata_cache.local().get_leader_id(ntp);
               if (leader) {
