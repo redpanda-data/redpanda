@@ -89,9 +89,11 @@ class RpkTool:
                 headers=[],
                 partition=None,
                 timeout=None):
+        # For tests, we want fast failures rather than indefinite retries,
+        # so we use a 1s delivery timeout.
         cmd = [
-            'produce', '--brokers',
-            self._redpanda.brokers(), '--key', key, topic
+            'produce', '--key', key, '-z', 'none', '--delivery-timeout',
+            '4.5s', '-f', '%v', topic
         ]
         if headers:
             cmd += ['-H ' + h for h in headers]
@@ -185,37 +187,24 @@ class RpkTool:
             timeout = DEFAULT_TIMEOUT
 
         self._redpanda.logger.debug("Executing command: %s", cmd)
-        f = None
-        if stdin:
-            if isinstance(stdin, str):
-                # Convert the string msg to bytes
-                stdin = stdin.encode()
 
-            f = tempfile.TemporaryFile()
-            f.write(stdin)
-            f.seek(0)
-
-        # rpk logs everything on STDERR by default
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stdin=f, text=True)
-        start_time = time.time()
-
-        ret = None
-        while time.time() < start_time + timeout:
-            ret = p.poll()
-            if ret != None:
-                break
-            time.sleep(0.5)
-
-        if ret is None:
-            p.terminate()
+        p = subprocess.Popen(cmd,
+                             stdout=subprocess.PIPE,
+                             stdin=subprocess.PIPE,
+                             stderr=subprocess.PIPE,
+                             text=True)
+        try:
+            output, error = p.communicate(input=stdin, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            p.kill()
             raise RpkException(f"command {' '.join(cmd)} timed out")
 
-        output = p.stdout.read()
         self._redpanda.logger.debug(output)
 
         if p.returncode:
-            raise RpkException('command %s returned %d, output: %s' %
-                               (' '.join(cmd), p.returncode, output))
+            raise RpkException(
+                'command %s returned %d, output: %s, error: %s' %
+                (' '.join(cmd), p.returncode, output, error))
 
         return output
 

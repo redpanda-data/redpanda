@@ -16,7 +16,7 @@ class RpkProducer(BackgroundThreadService):
 
     def _worker(self, _idx, node):
         rpk_binary = self._redpanda.find_binary("rpk")
-        cmd = f"dd if=/dev/zero bs={self._msg_size} count=1 | {rpk_binary} topic --brokers {self._redpanda.brokers()} produce -n {self._msg_count} --key test {self._topic}"
+        cmd = f"dd if=/dev/urandom bs={self._msg_size} count={self._msg_count} | {rpk_binary} topic --brokers {self._redpanda.brokers()} produce --compression none --key test {self._topic} -f '%V{{{self._msg_size}}}%v'"
         for line in node.account.ssh_capture(cmd, timeout_sec=10):
             self.logger.debug(line.rstrip())
 

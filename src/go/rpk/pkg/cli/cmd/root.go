@@ -71,7 +71,7 @@ func Execute() {
 		Long:  "",
 	}
 	rootCmd.SilenceUsage = true
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose",
+	rootCmd.PersistentFlags().BoolVarP(&verbose, config.FlagVerbose,
 		"v", false, "enable verbose logging (default false)")
 
 	rootCmd.AddCommand(NewGenerateCommand(mgr))

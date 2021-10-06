@@ -12,6 +12,7 @@ package kafka
 import (
 	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -28,7 +29,9 @@ import (
 //
 // The settings are close to, but not identical to the sarama client
 // configuration.  Particularly, our timeouts are higher.
-func NewFranzClient(fs afero.Fs, cfg *config.Config) (*kgo.Client, error) {
+func NewFranzClient(
+	fs afero.Fs, p *config.Params, cfg *config.Config, extraOpts ...kgo.Opt,
+) (*kgo.Client, error) {
 	k := &cfg.Rpk.KafkaApi
 
 	opts := []kgo.Opt{
@@ -36,8 +39,14 @@ func NewFranzClient(fs afero.Fs, cfg *config.Config) (*kgo.Client, error) {
 		kgo.ClientID("rpk"),
 		kgo.RetryTimeout(5 * time.Second),
 
-		kgo.ProduceRequestTimeout(5 * time.Second),
-		kgo.RecordDeliveryTimeout(8 * time.Second),
+		// Redpanda may indicate one leader just before rebalancing the
+		// leader to a different server. During this rebalance,
+		// Redpanda may return stale metadata. We always want fresh
+		// metadata, and we want it fast since this is a CLI, so we
+		// will use a small min metadata age.
+		//
+		// https://github.com/vectorizedio/redpanda/issues/2546
+		kgo.MetadataMinAge(250 * time.Millisecond),
 	}
 
 	if k.SASL != nil {
@@ -60,6 +69,12 @@ func NewFranzClient(fs afero.Fs, cfg *config.Config) (*kgo.Client, error) {
 	if tc != nil {
 		opts = append(opts, kgo.DialTLSConfig(tc))
 	}
+
+	if p.Verbose {
+		opts = append(opts, kgo.WithLogger(kgo.BasicLogger(os.Stderr, kgo.LogLevelDebug, nil)))
+	}
+
+	opts = append(opts, extraOpts...)
 
 	return kgo.NewClient(opts...)
 }

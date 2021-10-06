@@ -21,6 +21,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/types"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
@@ -50,7 +51,7 @@ partitions section. By default, the summary and configs sections are printed.
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := kafka.NewFranzClient(fs, cfg)
+			cl, err := kafka.NewFranzClient(fs, p, cfg)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer cl.Close()
 
@@ -132,6 +133,7 @@ partitions section. By default, the summary and configs sections are printed.
 
 				tw := out.NewTable("KEY", "VALUE", "SOURCE")
 				defer tw.Flush()
+				types.Sort(resp)
 				for _, config := range resp.Resources[0].Configs {
 					var val string
 					if config.IsSensitive {

@@ -10,186 +10,291 @@
 package topic
 
 import (
+	"context"
+	"fmt"
 	"io"
-	"io/ioutil"
-	"strings"
+	"os"
 	"time"
 
-	"github.com/Shopify/sarama"
-	log "github.com/sirupsen/logrus"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
+	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
 )
 
-func NewProduceCommand(
-	producer func(bool, int32) (sarama.SyncProducer, error),
-) *cobra.Command {
+func NewProduceCommand(fs afero.Fs) *cobra.Command {
 	var (
-		key            string
-		headers        []string
-		numRecords     int
-		jvmPartitioner bool
-		partition      int32
-		timestamp      string
+		key        string
+		recHeaders []string
+		partition  int32
+
+		inFormat    string
+		outFormat   string
+		compression string
+		acks        int
+
+		timeout time.Duration
 	)
+
 	cmd := &cobra.Command{
-		Use:   "produce <topic>",
-		Short: "Produce a record from data entered in stdin.",
-		Args:  common.ExactArgs(1, "topic's name is missing."),
-		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
-		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			prod, err := producer(jvmPartitioner, partition)
-			if err != nil {
-				log.Error("Unable to create the producer")
-				return err
+		Use:   "produce [TOPIC]",
+		Short: "Produce records to a topic.",
+		Long:  helpProduce,
+		Args:  cobra.MaximumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			// A few of our flags require up front handling before
+			// the kgo client is initialized: compression, acks,
+			// retries, and partition.
+			opts := []kgo.Opt{
+				kgo.ProduceRequestTimeout(5 * time.Second),
 			}
-			return produce(
-				prod,
-				numRecords,
-				partition,
-				headers,
-				args[0],
-				key,
-				timestamp,
-				cmd.InOrStdin(),
-			)
+			switch compression {
+			case "none":
+				opts = append(opts, kgo.ProducerBatchCompression(kgo.NoCompression()))
+			case "gzip":
+				opts = append(opts, kgo.ProducerBatchCompression(kgo.GzipCompression()))
+			case "snappy":
+				opts = append(opts, kgo.ProducerBatchCompression(kgo.SnappyCompression()))
+			case "lz4":
+				opts = append(opts, kgo.ProducerBatchCompression(kgo.Lz4Compression()))
+			case "zstd":
+				opts = append(opts, kgo.ProducerBatchCompression(kgo.ZstdCompression()))
+			default:
+				out.Die("invalid compression codec %q", compression)
+			}
+
+			switch acks {
+			case -1:
+				opts = append(opts, kgo.RequiredAcks(kgo.AllISRAcks()))
+			case 0:
+				opts = append(opts, kgo.RequiredAcks(kgo.NoAck()), kgo.DisableIdempotentWrite())
+			case 1:
+				opts = append(opts, kgo.RequiredAcks(kgo.LeaderAck()))
+			default:
+				out.Die("invalid acks %d, only -1, 0, and 1 are supported", acks)
+			}
+
+			switch {
+			case timeout == 0:
+			case timeout < time.Second:
+				out.Die("invalid --delivery-timeout less than 1s")
+			default:
+				opts = append(opts, kgo.RecordDeliveryTimeout(timeout))
+			}
+			if partition >= 0 {
+				opts = append(opts, kgo.RecordPartitioner(kgo.ManualPartitioner()))
+			}
+			var defaultTopic string
+			if len(args) == 1 {
+				defaultTopic = args[0]
+				opts = append(opts, kgo.DefaultProduceTopic(defaultTopic))
+			}
+
+			// Parse our input/output formats.
+			inf, err := kgo.NewRecordReader(os.Stdin, inFormat)
+			out.MaybeDie(err, "unable to parse input format: %v", err)
+			var outf *kgo.RecordFormatter
+			var outfBuf []byte
+			if outFormat != "" {
+				outf, err = kgo.NewRecordFormatter(outFormat)
+				out.MaybeDie(err, "unable to parse output success format: %v", err)
+			}
+
+			// Parse input headers using parseKVs.
+			kvs, err := parseKVs(recHeaders)
+			out.MaybeDie(err, "unable to parse input headers: %v", err)
+			headers := make([]kgo.RecordHeader, 0, len(kvs))
+			for k, v := range kvs {
+				headers = append(headers, kgo.RecordHeader{k, []byte(v)})
+			}
+
+			// We are now ready to produce.
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			cl, err := kafka.NewFranzClient(fs, p, cfg, opts...)
+			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
+			defer cl.Close()
+			defer cl.Flush(context.Background())
+
+			for {
+				r := &kgo.Record{
+					Partition: partition,
+					Headers:   headers,
+				}
+				if len(key) > 0 {
+					r.Key = []byte(key)
+				}
+				if err := inf.ReadRecordInto(r); err != nil {
+					if err != io.EOF {
+						fmt.Fprintf(os.Stderr, "record read error: %v\n", err)
+					}
+					return
+				}
+				if r.Topic == "" && defaultTopic == "" {
+					out.Die("topic to produce to is missing, check --help for produce syntax")
+				}
+				cl.Produce(context.Background(), r, func(r *kgo.Record, err error) {
+					out.MaybeDie(err, "unable to produce record: %v", err)
+					if outf != nil {
+						outfBuf = outf.AppendRecord(outfBuf[:0], r)
+						os.Stdout.Write(outfBuf)
+					}
+				})
+			}
 		},
 	}
+
+	// The following flags require parsing before we initialize our client.
+	cmd.Flags().StringVarP(&compression, "compression", "z", "snappy", "compression to use for producing batches (none, gzip, snapy, lz4, zstd)")
+	cmd.Flags().IntVar(&acks, "acks", -1, "number of acks required for producing (-1=all, 0=none, 1=leader)")
+	cmd.Flags().DurationVar(&timeout, "delivery-timeout", 0, "per-record delivery timeout, if non-zero, min 1s")
+	cmd.Flags().Int32VarP(&partition, "partition", "p", -1, "partition to directly produce to, if non-negative (also allows %p parsing to set partitions)")
+
+	cmd.Flags().StringVarP(&inFormat, "format", "f", "%v\n", "input record format")
 	cmd.Flags().StringVarP(
-		&key,
-		"key",
-		"k",
-		"",
-		"Key for the record. Currently only strings are supported.",
+		&outFormat,
+		"output-format",
+		"o",
+		"Produced to partition %p at offset %o with timestamp %d.\n",
+		"what to write to stdout when a record is successfully produced",
 	)
-	cmd.Flags().StringArrayVarP(
-		&headers,
-		"header",
-		"H",
-		[]string{},
-		"Header in format <key>:<value>. May be used multiple times"+
-			" to add more headers.",
-	)
-	cmd.Flags().IntVarP(
-		&numRecords,
-		"num",
-		"n",
-		1,
-		"Number of records to send.",
-	)
-	cmd.Flags().BoolVarP(
-		&jvmPartitioner,
-		"jvm-partitioner",
-		"j",
-		false,
-		"Use a JVM-compatible partitioner. If --partition is passed"+
-			" with a positive value, this will be overridden and"+
-			" a manual partitioner will be used.",
-	)
-	cmd.Flags().StringVarP(
-		&timestamp,
-		"timestamp",
-		"t",
-		"",
-		"RFC3339-compliant timestamp for the record. If the value"+
-			" passed can't be parsed, the current time will be used.",
-	)
-	cmd.Flags().Int32VarP(
-		&partition,
-		"partition",
-		"p",
-		-1,
-		"Partition to produce to.",
-	)
+	cmd.Flags().StringArrayVarP(&recHeaders, "header", "H", nil, "headers in format key:value to add to each record (repeatable)")
+	cmd.Flags().StringVarP(&key, "key", "k", "", "a fixed key to use for each record (parsed input keys take precedence)")
+
+	// Deprecated
+	cmd.Flags().IntVarP(new(int), "num", "n", 1, "")
+	cmd.Flags().MarkDeprecated("num", "invoke rpk multiple times if you wish to repeat records")
+	cmd.Flags().BoolVarP(new(bool), "jvm-partitioner", "j", false, "")
+	cmd.Flags().MarkDeprecated("jvm-partitioner", "the default is now the jvm-partitioner")
+	cmd.Flags().StringVarP(new(string), "timestamp", "t", "", "")
+	cmd.Flags().MarkDeprecated("timestamp", "record timestamps are set when producing")
+
 	return cmd
 }
 
-func produce(
-	producer sarama.SyncProducer,
-	numRecords int,
-	partition int32,
-	headers []string,
-	topic string,
-	key string,
-	timestamp string,
-	in io.Reader,
-) error {
-	log.Info(
-		"Reading message... Press CTRL + D to send," +
-			" CTRL + C to cancel.",
-	)
-	data, err := ioutil.ReadAll(in)
-	if err != nil {
-		log.Error("Unable to read data")
-		return err
-	}
+const helpProduce = `Produce records to a topic.
 
-	k := sarama.StringEncoder(key)
+Producing records reads from STDIN, parses input according to --format, and
+produce records to Redpanda. The input formatter understands a wide variety of
+formats.
 
-	ts := time.Now()
-	if timestamp != "" {
-		ts, err = time.Parse(time.RFC3339, timestamp)
-		if err != nil {
-			return err
-		}
-	}
+Parsing input operates on either sizes or on delimiters, both of which can be
+specified in the same formatting options. If using sizes to specify something,
+the size must come before what it is specifying. Delimiters match on an exact
+text basis. This command will quit with an error if any input fails to match
+your specified format.
 
-	hs, err := parseHeaders(headers)
-	if err != nil {
-		return err
-	}
+Slashes can be used for common escapes:
 
-	for i := 0; i < numRecords; i++ {
-		msg := &sarama.ProducerMessage{
-			Topic:     topic,
-			Key:       k,
-			Headers:   hs,
-			Timestamp: ts,
-			Value:     sarama.ByteEncoder(data),
-		}
-		if partition != -1 {
-			msg.Partition = partition
-		}
-		retryConf := kafka.DefaultConfig().Producer.Retry
-		part, offset, err := kafka.RetrySend(
-			producer,
-			msg,
-			uint(retryConf.Max),
-			retryConf.Backoff,
-		)
-		if err != nil {
-			log.Error("Failed to send record")
-			return err
-		}
+    \t \n \r \\ \xNN
 
-		log.Infof(
-			"Sent record to partition %d at offset %d with timestamp %v.",
-			part,
-			offset,
-			ts,
-		)
-		log.Debugf("Data: '%s'", string(data))
-		log.Debugf("Headers: '%s'", strings.Join(headers, ", "))
-	}
-	return nil
-}
+matches tabs, newlines, carriage returns, slashes, and hex encoded characters.
 
-func parseHeaders(headers []string) ([]sarama.RecordHeader, error) {
-	var hs []sarama.RecordHeader
-	kvs, err := parseKVs(headers)
-	if err != nil {
-		return hs, err
-	}
-	for k, v := range kvs {
-		hs = append(
-			hs,
-			sarama.RecordHeader{
-				Key:   []byte(k),
-				Value: []byte(v),
-			},
-		)
-	}
-	return hs, nil
-}
+Percent encoding reads into specific values of a record:
+
+    %t    topic
+    %T    topic length
+    %k    key
+    %K    key length
+    %v    topic
+    %V    value length
+    %h    begin the header specification
+    %H    number of headers
+    %p    partition (if using the --partition flag)
+
+Three escapes exist to parse characters that are used to modify the previous
+escapes:
+
+    %%    percent sign
+    %{    left brace
+    %}    right brace
+
+MODIFIERS
+
+Text and numbers can be read in multiple formats, and the default format can be
+changed within brace modifiers. %v reads a value, while %v{hex} reads a value
+and then hex decodes it before producing. %T reads the length of a topic from
+the input, while %T{3} reads exactly three bytes for a topic from the input.
+
+All modifiers go within braces following a percent-escape.
+
+NUMBERS
+
+Reading number values can have the following modifiers:
+
+     ascii       parse numeric digits until a non-numeric (default)
+
+     hex64       sixteen hex characters
+     hex32       eight hex characters
+     hex16       four hex characters
+     hex8        two hex characters
+     hex4        one hex character
+
+     big64       eight byte big endian number
+     big32       four byte big endian number
+     big16       two byte big endian number
+     big8        alias for byte
+
+     little64    eight byte little endian number
+     little32    four byte little endian number
+     little16    two byte little endian number
+     little8     alias for byte
+
+     byte        one byte number
+
+     <digits>    directly specify the length as this many digits
+
+When reading number sizes, the size corresponds to the size of the encoded
+values, not the decoded values. "%T{6}%t{hex}" will read six hex bytes and
+decode into three.
+
+TEXT
+
+Reading text values can have the following modifiers:
+
+    hex       read text then hex decode it
+    base64    read text then std-encoding base64 it
+
+HEADERS
+
+Headers are parsed with an internal key / value specifier format. For example,
+the following will read three headers that begin and end with a space and are
+separated by an equal:
+
+    %H{3}%h{ %k=%v }
+
+EXAMPLES
+
+In the below examples, we can parse many records at once. The produce command
+reads input and tokenizes based on your specified format. Every time the format
+is completely matched, a record is produced and parsing begins anew.
+
+A key and value, separated by a space and ending in newline:
+    -f '%k %v\n'
+A four byte topic, four byte key, and four byte value:
+    -f '%T{4}%K{4}%V{4}%t%k%v'
+A value to a specific partition, if using a non-negative --partition flag:
+    -f '%p %v\n'
+A big-endian uint16 key size, the text " foo ", and then that key:
+    -f '%K{big16} foo %k'
+
+MISC
+
+Producing requires a topic to produce to. The topic can be specified either
+directly on as an argument, or in the input text through %t. A parsed topic
+takes precedence over the default passed in topic. If no topic is specified
+directly and no topic is parsed, this command will quit with an error.
+
+The input format can parse partitions to produce directly to with %p. Doing so
+requires specifying a non-negative --partition flag. Any parsed parstition
+takes precedence over the --partition flag; specifying the flag is the main
+requirement for being able to directly control which partition to produce to.
+
+You can also specify an output format to write when a record is produced
+successfully. The output format follows the same formatting rules as the topic
+consume command. See that command's help text for a detailed description.
+`
