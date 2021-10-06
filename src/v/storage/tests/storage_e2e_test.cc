@@ -1916,3 +1916,63 @@ FIXTURE_TEST(changing_cleanup_policy_back_and_forth, storage_test_fixture) {
 
     BOOST_REQUIRE_EQUAL(first_read.size(), second_read.size());
 }
+
+ss::future<ss::circular_buffer<model::record_batch>>
+copy_to_mem(model::record_batch_reader& reader) {
+    using data_t = ss::circular_buffer<model::record_batch>;
+    class memory_batch_consumer {
+    public:
+        ss::future<ss::stop_iteration> operator()(model::record_batch b) {
+            _result.push_back(std::move(b));
+            return ss::make_ready_future<ss::stop_iteration>(
+              ss::stop_iteration::no);
+        }
+        data_t end_of_stream() { return std::move(_result); }
+
+    private:
+        data_t _result;
+    };
+
+    return reader.consume(memory_batch_consumer{}, model::no_timeout);
+}
+
+FIXTURE_TEST(reader_prevents_log_shutdown, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    cfg.cache = storage::with_cache::no;
+    cfg.max_segment_size = 10_MiB;
+    storage::ntp_config::default_overrides overrides;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp,
+                   mgr.config().base_dir,
+                   std::make_unique<storage::ntp_config::default_overrides>(
+                     overrides)))
+                 .get0();
+    // append some batches
+    append_exactly(log, 5, 128).get0();
+
+    // drain whole log with reader so it is not reusable anymore.
+    storage::log_reader_config reader_cfg(
+      model::offset(0),
+      model::model_limits<model::offset>::max(),
+      0,
+      std::numeric_limits<int64_t>::max(),
+      ss::default_priority_class(),
+      std::nullopt,
+      std::nullopt,
+      std::nullopt);
+    auto f = ss::now();
+    {
+        auto reader = log.make_reader(reader_cfg).get();
+        auto batches = copy_to_mem(reader).get();
+
+        f = mgr.shutdown(ntp);
+    }
+    f.get();
+}
