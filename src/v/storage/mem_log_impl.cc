@@ -431,7 +431,7 @@ mem_log_appender::operator()(model::record_batch& batch) {
     _byte_size += batch.header().size_bytes;
     vlog(
       stlog.trace,
-      "Wrting to {} batch of {} records offsets [{},{}], term {}",
+      "Writing to {}, batch size {} bytes, records offsets [{},{}], term {}",
       _log.config().ntp(),
       batch.header().size_bytes,
       batch.base_offset(),
