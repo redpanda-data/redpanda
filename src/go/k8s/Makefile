@@ -56,7 +56,7 @@ uninstall: manifests kustomize
 deploy: manifests kustomize
 	cd config/manager && $(KUSTOMIZE) edit set image vectorized/redpanda-operator=${OPERATOR_IMG_LATEST}
 	$(KUSTOMIZE) build config/default | kubectl apply -f -
-	kind load docker-image ${REDPANDA_IMG}
+	kind load $(KIND_ADDITIONAL_FLAGS) docker-image ${REDPANDA_IMG}
 
 # Deploy pre loaded controller in the configured Kind Kubernetes cluster
 deploy-to-kind: manifests kustomize push-to-kind deploy
