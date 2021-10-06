@@ -100,6 +100,11 @@ ss::future<model::node_id> metadata_cache::get_leader(
     return _leaders.local().wait_for_leader(ntp, tout, as);
 }
 
+std::optional<model::node_id>
+metadata_cache::get_leader_id(const model::ntp& ntp) {
+    return _leaders.local().get_leader(ntp);
+}
+
 /// If present returns a leader of raft0 group
 std::optional<model::node_id> metadata_cache::get_controller_leader_id() {
     return _leaders.local().get_leader(model::controller_ntp);
