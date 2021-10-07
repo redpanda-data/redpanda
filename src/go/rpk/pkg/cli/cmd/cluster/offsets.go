@@ -129,24 +129,27 @@ type offset struct {
 
 func fetchOffsets(
 	cl *kgo.Client, groups []string,
-) (map[string]map[int32]offset, error) {
-	fetched := make(map[string]map[int32]offset)
+) (map[string]map[string]map[int32]offset, error) {
+	fetched := make(map[string]map[string]map[int32]offset)
 	var failures int
 	for i := range groups {
 		req := kmsg.NewPtrOffsetFetchRequest()
 		req.Group = groups[i]
 		resp, err := req.RequestWith(context.Background(), cl)
 		if err != nil {
-			fmt.Printf("Unable to request OffsetFetch: %v\n", err)
+			fmt.Printf("Unable to request OffsetFetch for group %q: %v\n", req.Group, err)
 			failures++
 			continue
 		}
 
+		fetchedg := make(map[string]map[int32]offset)
+		fetched[req.Group] = fetchedg
+
 		for _, topic := range resp.Topics {
-			fetchedt := fetched[topic.Topic]
+			fetchedt := fetchedg[topic.Topic]
 			if fetchedt == nil {
 				fetchedt = make(map[int32]offset)
-				fetched[topic.Topic] = fetchedt
+				fetchedg[topic.Topic] = fetchedt
 			}
 			for _, partition := range topic.Partitions {
 				fetchedt[partition.Partition] = offset{
@@ -239,7 +242,7 @@ type describeRow struct {
 
 func printDescribed(
 	groups []describedGroup,
-	fetched map[string]map[int32]offset,
+	fetched map[string]map[string]map[int32]offset,
 	listed map[string]map[int32]offset,
 ) {
 	lookup := func(m map[string]map[int32]offset, topic string, partition int32) offset {
@@ -259,13 +262,18 @@ func printDescribed(
 	})
 
 	for _, group := range groups {
+		fetchedGroup, exists := fetched[group.Group]
+		if !exists {
+			continue
+		}
+
 		var rows []describeRow
 		var useInstanceID, useErr bool
 		for _, member := range group.Members {
 			for _, topic := range member.MemberAssignment.Topics {
 				t := topic.Topic
 				for _, p := range topic.Partitions {
-					committed := lookup(fetched, t, p)
+					committed := lookup(fetchedGroup, t, p)
 					end := lookup(listed, t, p)
 
 					row := describeRow{
