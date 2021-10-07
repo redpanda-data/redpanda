@@ -383,11 +383,25 @@ class RedpandaService(Service):
         Retrieve a summary of storage on a node.
         """
         def listdir(path, only_dirs=False):
-            ents = node.account.sftp_client.listdir(path)
+            try:
+                ents = node.account.sftp_client.listdir(path)
+            except FileNotFoundError:
+                # Perhaps the directory has been deleted since we saw it.
+                # This is normal if doing a listing concurrently with topic deletion.
+                return []
+
             if not only_dirs:
                 return ents
             paths = map(lambda fn: (fn, os.path.join(path, fn)), ents)
-            return [p[0] for p in paths if node.account.isdir(p[1])]
+
+            def safe_isdir(path):
+                try:
+                    return node.account.isdir(path)
+                except FileNotFoundError:
+                    # Things that no longer exist are also no longer directories
+                    return False
+
+            return [p[0] for p in paths if safe_isdir(p[1])]
 
         store = NodeStorage(RedpandaService.DATA_DIR)
         for ns in listdir(store.data_dir, True):
