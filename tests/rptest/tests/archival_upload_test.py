@@ -117,7 +117,7 @@ def _parse_manifest_segment(manifest, sname, meta, remote_set, logger):
                           size=size_bytes)
 
 
-class ArchivalTest(RedpandaTest):
+class ArchivalUploadTest(RedpandaTest):
     topics = tuple([
         TopicSpec(name=f'panda-topic-{ix}',
                   partition_count=10,
@@ -160,30 +160,30 @@ class ArchivalTest(RedpandaTest):
                 log_segment_size=32 * 1048576  # 32MB
             )
         else:
-            bucket_name = f"{ArchivalTest.MINIO_BUCKET_NAME}-{uuid.uuid1()}"
+            bucket_name = f"{ArchivalUploadTest.MINIO_BUCKET_NAME}-{uuid.uuid1()}"
             self.s3_bucket = bucket_name
-            self.s3_region = ArchivalTest.MINIO_REGION
-            self.s3_access_key = ArchivalTest.MINIO_ACCESS_KEY
-            self.s3_secret_key = ArchivalTest.MINIO_SECRET_KEY
+            self.s3_region = ArchivalUploadTest.MINIO_REGION
+            self.s3_access_key = ArchivalUploadTest.MINIO_ACCESS_KEY
+            self.s3_secret_key = ArchivalUploadTest.MINIO_SECRET_KEY
             extra_rp_conf = dict(
                 developer_mode=True,
                 disable_metrics=True,
                 cloud_storage_enabled=True,
-                cloud_storage_access_key=ArchivalTest.MINIO_ACCESS_KEY,
-                cloud_storage_secret_key=ArchivalTest.MINIO_SECRET_KEY,
-                cloud_storage_region=ArchivalTest.MINIO_REGION,
+                cloud_storage_access_key=ArchivalUploadTest.MINIO_ACCESS_KEY,
+                cloud_storage_secret_key=ArchivalUploadTest.MINIO_SECRET_KEY,
+                cloud_storage_region=ArchivalUploadTest.MINIO_REGION,
                 cloud_storage_bucket=bucket_name,
                 cloud_storage_disable_tls=True,
-                cloud_storage_api_endpoint=ArchivalTest.MINIO_HOST_NAME,
+                cloud_storage_api_endpoint=ArchivalUploadTest.MINIO_HOST_NAME,
                 cloud_storage_api_endpoint_port=9000,
                 cloud_storage_reconciliation_interval_ms=10000,
                 cloud_storage_max_connections=5,
                 log_segment_size=32 * 1048576  # 32MB
             )
-            self.s3_endpoint = f'http://{ArchivalTest.MINIO_HOST_NAME}:9000'
+            self.s3_endpoint = f'http://{ArchivalUploadTest.MINIO_HOST_NAME}:9000'
 
-        super(ArchivalTest, self).__init__(test_context=test_context,
-                                           extra_rp_conf=extra_rp_conf)
+        super(ArchivalUploadTest, self).__init__(test_context=test_context,
+                                                 extra_rp_conf=extra_rp_conf)
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
         self.s3_client = S3Client(region=self.s3_region,
@@ -207,7 +207,7 @@ class ArchivalTest(RedpandaTest):
     def test_write(self):
         """Simpe smoke test, write data to redpanda and check if the
         data hit the S3 storage bucket"""
-        for topic in ArchivalTest.topics:
+        for topic in ArchivalUploadTest.topics:
             time.sleep(5)
             self.kafka_tools.produce(topic.name, 10000, 64 * 1024)
         time.sleep(30)
