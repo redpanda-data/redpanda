@@ -11,6 +11,7 @@
 
 #include "coproc/pacemaker.h"
 
+#include "coproc/exception.h"
 #include "coproc/logger.h"
 #include "coproc/ntp_context.h"
 #include "coproc/offset_storage_utils.h"
@@ -137,12 +138,12 @@ std::vector<errc> pacemaker::add_source(
             return ss::now();
         }
         return found->second->start().handle_exception_type(
-          [this, id](const script_failed_exception& e) {
+          [this, id](const script_exception& e) {
               /// A script must be deregistered due to an internal script error.
               /// The wasm engine determines the case, most likley the apply()
               /// method has thrown or there is a syntax error within the script
               /// itself.
-              vlog(coproclog.info, "Handling script_failed_exception: {}", e);
+              vlog(coproclog.error, "Script failure handler: {}", e.what());
               vassert(
                 id == e.get_id(),
                 "script_failed_handler id mismatch detected, observed: {} "

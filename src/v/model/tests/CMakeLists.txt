@@ -16,7 +16,6 @@ rp_test(
   SOURCES
     record_batch_test.cc
     record_batch_reader_test.cc
-    materialized_type_test.cc
     model_serialization_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main v::model v::storage_test_utils

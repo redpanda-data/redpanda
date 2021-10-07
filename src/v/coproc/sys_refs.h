@@ -23,6 +23,9 @@ namespace coproc {
 /// leverage
 struct sys_refs {
     ss::sharded<storage::api>& storage;
+    ss::sharded<cluster::non_replicable_topics_frontend>& mt_frontend;
+    ss::sharded<cluster::topics_frontend>& topics_frontend;
+    ss::sharded<cluster::metadata_cache>& metadata_cache;
     ss::sharded<cluster::partition_manager>& partition_manager;
 };
 

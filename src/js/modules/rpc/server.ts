@@ -288,12 +288,14 @@ export class ProcessBatchServer extends SupervisorServer {
         );
         this.repository.remove(handle);
         return Promise.resolve({
+          source: processBatchRequest.ntp,
           ntp: processBatchRequest.ntp,
           coprocessorId: coprocessor.globalId,
           resultRecordBatch: undefined,
         });
       case PolicyError.SkipOnFailure:
         return Promise.resolve({
+          source: processBatchRequest.ntp,
           ntp: processBatchRequest.ntp,
           coprocessorId: coprocessor.globalId,
           resultRecordBatch: [],

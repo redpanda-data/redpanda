@@ -96,6 +96,7 @@ class Repository {
   ): ProcessBatchReplyItem {
     return {
       coprocessorId: BigInt(handle.coprocessor.globalId),
+      source: requestItem.ntp,
       ntp: {
         ...requestItem.ntp,
         topic: `${requestItem.ntp.topic}`,
@@ -150,9 +151,10 @@ class Repository {
         value.header.term = recordBatch.header.term;
         results.push({
           coprocessorId: BigInt(handle.coprocessor.globalId),
+          source: requestItem.ntp,
           ntp: {
             ...requestItem.ntp,
-            topic: `${requestItem.ntp.topic}.$${key}$`,
+            topic: `${requestItem.ntp.topic}._${key}_`,
           },
           resultRecordBatch: [value],
         });

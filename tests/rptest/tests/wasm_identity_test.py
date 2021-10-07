@@ -100,7 +100,7 @@ class WasmBasicIdentityTest(WasmIdentityTest):
         """
         The materialized log:
         [
-          itopic.$script_a_output$,
+          itopic._script_a_output_,
         ]
         Should exist by tests end and be identical to its respective input log
         """
@@ -127,9 +127,9 @@ class WasmMultiScriptIdentityTest(WasmIdentityTest):
         """
         The materialized logs:
         [
-          itopic.$script_a_output$,
-          itopic.$script_b_output$,
-          itopic.$script_c_output$,
+          itopic._script_a_output_,
+          itopic._script_b_output_,
+          itopic._script_c_output_,
         ]
         Should exist by tests end and be identical to their respective input logs
 
@@ -165,15 +165,15 @@ class WasmMultiInputTopicIdentityTest(WasmIdentityTest):
         """
         The materialized logs:
         [
-          itopic[0].$script_a_output$,
-          itopic[1].$script_a_output$,
-          itopic[2].$script_a_output$,
-          itopic[0].$script_b_output$,
-          itopic[1].$script_b_output$,
-          itopic[2].$script_b_output$,
-          itopic[0].$script_c_output$,
-          itopic[1].$script_c_output$,
-          itopic[2].$script_c_output$,
+          itopic[0]._script_a_output_,
+          itopic[1]._script_a_output_,
+          itopic[2]._script_a_output_,
+          itopic[0]._script_b_output_,
+          itopic[1]._script_b_output_,
+          itopic[2]._script_b_output_,
+          itopic[0]._script_c_output_,
+          itopic[1]._script_c_output_,
+          itopic[2]._script_c_output_,
         ]
         Should exist by tests end and be identical to their respective input logs
         """
@@ -208,15 +208,15 @@ class WasmAllInputsToAllOutputsIdentityTest(WasmIdentityTest):
         """
         The materialized logs:
         [
-          itopic[0].$script_a_output$,
-          itopic[1].$script_a_output$,
-          itopic[2].$script_a_output$,
-          itopic[0].$script_b_output$,
-          itopic[1].$script_b_output$,
-          itopic[2].$script_b_output$,
-          itopic[0].$script_c_output$,
-          itopic[1].$script_c_output$,
-          itopic[2].$script_c_output$,
+          itopic[0]._script_a_output_,
+          itopic[1]._script_a_output_,
+          itopic[2]._script_a_output_,
+          itopic[0]._script_b_output_,
+          itopic[1]._script_b_output_,
+          itopic[2]._script_b_output_,
+          itopic[0]._script_c_output_,
+          itopic[1]._script_c_output_,
+          itopic[2]._script_c_output_,
         ]
         Should exist by tests end and be identical to their respective input logs.
 

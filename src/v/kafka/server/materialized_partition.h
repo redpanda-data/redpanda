@@ -16,9 +16,11 @@
 namespace kafka {
 class materialized_partition final : public kafka::partition_proxy::impl {
 public:
-    explicit materialized_partition(storage::log log)
+    materialized_partition(
+      storage::log log, ss::lw_shared_ptr<cluster::partition> p)
       : _log(log)
-      , _probe(cluster::make_materialized_partition_probe()) {}
+      , _probe(cluster::make_materialized_partition_probe())
+      , _partition(p) {}
 
     const model::ntp& ntp() const final { return _log.config().ntp(); }
     model::offset start_offset() const final {
@@ -33,6 +35,8 @@ public:
     model::offset last_stable_offset() const final {
         return raft::details::next_offset(_log.offsets().dirty_offset);
     }
+
+    bool is_leader() const final { return _partition->is_leader(); }
 
     ss::future<model::record_batch_reader> make_reader(
       storage::log_reader_config cfg,
@@ -61,6 +65,7 @@ private:
 
     storage::log _log;
     cluster::partition_probe _probe;
+    ss::lw_shared_ptr<cluster::partition> _partition;
 };
 
 } // namespace kafka

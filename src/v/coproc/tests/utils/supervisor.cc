@@ -55,6 +55,7 @@ ss::future<std::vector<process_batch_reply::data>> resultmap_to_vector(
           rmap, [id, ntp](coprocessor::result::value_type& vt) {
               return process_batch_reply::data{
                 .id = id,
+                .source = ntp,
                 .ntp = model::ntp(
                   ntp.ns,
                   to_materialized_topic(ntp.tp.topic, vt.first),
@@ -75,6 +76,7 @@ make_empty_response(script_id id, const model::ntp& ntp) {
     std::vector<process_batch_reply::data> eresp;
     eresp.emplace_back(process_batch_reply::data{
       .id = id,
+      .source = ntp,
       .ntp = ntp,
       .reader = model::make_memory_record_batch_reader(
         model::record_batch_reader::data_t())});
@@ -88,8 +90,8 @@ make_null_response(script_id id, const model::ntp& ntp) {
     /// a fatal error has occurred within the wasm engine and it should not send
     /// more records to that script id
     std::vector<process_batch_reply::data> null_resp;
-    null_resp.emplace_back(
-      process_batch_reply::data{.id = id, .ntp = ntp, .reader = std::nullopt});
+    null_resp.emplace_back(process_batch_reply::data{
+      .id = id, .source = ntp, .ntp = ntp, .reader = std::nullopt});
     co_return null_resp;
 }
 

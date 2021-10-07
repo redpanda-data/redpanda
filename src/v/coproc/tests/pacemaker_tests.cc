@@ -85,8 +85,7 @@ FIXTURE_TEST(test_coproc_router_off_by_one, coproc_test_fixture) {
       model::kafka_namespace, src_topic, model::partition_id(0));
     model::ntp output_ntp(
       model::kafka_namespace,
-      model::to_materialized_topic(
-        src_topic, identity_coprocessor::identity_topic),
+      to_materialized_topic(src_topic, identity_coprocessor::identity_topic),
       model::partition_id(0));
     setup({{src_topic, 1}}).get();
     enable_coprocessors(
@@ -138,7 +137,7 @@ FIXTURE_TEST(test_coproc_router_double, coproc_test_fixture) {
     model::ntp input_ntp(model::kafka_namespace, foo, model::partition_id(0));
     model::ntp output_ntp(
       model::kafka_namespace,
-      model::to_materialized_topic(foo, identity_coprocessor::identity_topic),
+      to_materialized_topic(foo, identity_coprocessor::identity_topic),
       model::partition_id(0));
 
     auto f1 = push(

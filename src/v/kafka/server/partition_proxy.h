@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "cluster/metadata_cache.h"
 #include "cluster/partition.h"
 #include "model/fundamental.h"
 #include "storage/types.h"
@@ -29,6 +30,7 @@ public:
         virtual model::offset start_offset() const = 0;
         virtual model::offset high_watermark() const = 0;
         virtual model::offset last_stable_offset() const = 0;
+        virtual bool is_leader() const = 0;
         virtual ss::future<model::record_batch_reader> make_reader(
           storage::log_reader_config,
           std::optional<model::timeout_clock::time_point>)
@@ -51,6 +53,8 @@ public:
     model::offset last_stable_offset() const {
         return _impl->last_stable_offset();
     }
+
+    bool is_leader() const { return _impl->is_leader(); }
 
     const model::ntp& ntp() const { return _impl->ntp(); }
 
@@ -82,8 +86,6 @@ partition_proxy make_partition_proxy(Args&&... args) {
 }
 
 std::optional<partition_proxy> make_partition_proxy(
-  const model::materialized_ntp&,
-  ss::lw_shared_ptr<cluster::partition>,
-  cluster::partition_manager&);
+  const model::ntp&, cluster::metadata_cache&, cluster::partition_manager&);
 
 } // namespace kafka

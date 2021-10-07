@@ -176,7 +176,7 @@ describe("Server", function () {
           assert(spyGetHandles.called);
           assert(spyGetHandles.calledWith([coprocessorId]));
           const resultBatch = res.result[0];
-          assert.strictEqual(resultBatch.ntp.topic, "BaseTopic.$newTopic$");
+          assert.strictEqual(resultBatch.ntp.topic, "BaseTopic._newTopic_");
           assert.deepStrictEqual(
             resultBatch.resultRecordBatch.flatMap(({ records }) =>
               records.map((r) => r.value.toString())
@@ -231,7 +231,7 @@ describe("Server", function () {
           assert(spyGetHandles.called);
           assert(spyGetHandles.calledWith([coprocessorId]));
           const resultBatch = res.result[0];
-          assert.strictEqual(resultBatch.ntp.topic, "produce.$newTopic$");
+          assert.strictEqual(resultBatch.ntp.topic, "produce._newTopic_");
           assert.deepStrictEqual(
             resultBatch.resultRecordBatch.flatMap(({ records }) =>
               records.map((r) => r.value.toString())

@@ -18,16 +18,32 @@
 namespace kafka {
 
 std::optional<partition_proxy> make_partition_proxy(
-  const model::materialized_ntp& mntp,
-  ss::lw_shared_ptr<cluster::partition> partition,
+  const model::ntp& ntp,
+  cluster::metadata_cache& md_cache,
   cluster::partition_manager& pm) {
-    if (!mntp.is_materialized()) {
-        return make_partition_proxy<replicated_partition>(partition);
+    auto log = pm.get(ntp);
+    if (log) {
+        return make_partition_proxy<replicated_partition>(log);
     }
-    if (auto log = pm.log(mntp.input_ntp()); log) {
-        return make_partition_proxy<materialized_partition>(*log);
+    auto mts = md_cache.get_source_topic(model::topic_namespace_view{ntp});
+    if (!mts) {
+        return std::nullopt;
     }
-    return std::nullopt;
+    auto source_ntp = model::ntp(ntp.ns, *mts, ntp.tp.partition);
+    auto src_log = pm.get(source_ntp);
+    if (!src_log) {
+        /// Unlikley casse where controller_backend hasn't yet created the
+        /// partition for the source ntp.
+        return std::nullopt;
+    }
+    auto materialized_log = pm.log(ntp);
+    if (!materialized_log) {
+        /// Unlikley case where controller_backend hasn't yet created the
+        /// storage::log for the materialized ntp
+        return std::nullopt;
+    }
+    return make_partition_proxy<materialized_partition>(
+      *materialized_log, src_log);
 }
 
 } // namespace kafka

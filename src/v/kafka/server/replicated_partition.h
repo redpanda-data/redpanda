@@ -43,6 +43,8 @@ public:
         return _translator->to_kafka_offset(_partition->last_stable_offset());
     }
 
+    bool is_leader() const final { return _partition->is_leader(); }
+
     ss::future<std::optional<storage::timequery_result>>
     timequery(model::timestamp ts, ss::io_priority_class io_pc) final;
 
