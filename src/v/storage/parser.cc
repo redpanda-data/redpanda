@@ -35,7 +35,7 @@
 namespace storage {
 using stop_parser = batch_consumer::stop_parser;
 
-model::record_batch_header header_from_iobuf(iobuf b) {
+static model::record_batch_header header_from_iobuf(iobuf b) {
     iobuf_parser parser(std::move(b));
     auto header_crc = reflection::adl<uint32_t>{}.from(parser);
     auto sz = reflection::adl<int32_t>{}.from(parser);
@@ -138,7 +138,7 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
 }
 
 template<class Consumer>
-ss::future<result<model::record_batch_header>>
+static ss::future<result<model::record_batch_header>>
 read_header_impl(ss::input_stream<char>& input, const Consumer& consumer) {
     auto b = co_await read_iobuf_exactly(
       input, model::packed_record_batch_header_size);
