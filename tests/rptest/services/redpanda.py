@@ -284,7 +284,7 @@ class RedpandaService(Service):
 
     def clean_node(self, node):
         node.account.kill_process("redpanda", clean_shutdown=False)
-        node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/data/*")
+        node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/*")
         node.account.remove(f"{RedpandaService.CONFIG_FILE}")
 
     def redpanda_pid(self, node):
