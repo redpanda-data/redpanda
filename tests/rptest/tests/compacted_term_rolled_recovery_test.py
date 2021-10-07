@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from ducktape.mark.resource import cluster
+from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
@@ -29,6 +30,7 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
                              num_brokers=3,
                              extra_rp_conf=extra_rp_conf)
 
+    @ignore  # https://github.com/vectorizedio/redpanda/issues/2553
     @cluster(num_nodes=3)
     def test_compact_term_rolled_recovery(self):
         """
