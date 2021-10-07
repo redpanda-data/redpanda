@@ -393,8 +393,8 @@ github.com/tklauser/go-sysconf v0.1.0/go.mod h1:h54uFIrVIJBr8RXt3F5JJdxVkmFeallW
 github.com/tklauser/numcpus v0.1.0 h1:BQeAuOQKZtytv8qblsFbi9mhTfXQdFFkyX0vaV6B4tc=
 github.com/tklauser/numcpus v0.1.0/go.mod h1:i3up9VjARpkV00NkBbexuDd0RAVQz4rV5Gl8miYgd5k=
 github.com/tmc/grpc-websocket-proxy v0.0.0-20190109142713-0ad062ec5ee5/go.mod h1:ncp9v5uamzpCO7NfCPTXjqaC+bZgJeR0sMTm6dMHP7U=
-github.com/twmb/franz-go v1.1.3-0.20211006061146-3baa5225d3d5 h1:p2E4zuN1fEL1RlniSZ4AnjJRNmUFVmU/Fl+CZguO5FM=
-github.com/twmb/franz-go v1.1.3-0.20211006061146-3baa5225d3d5/go.mod h1:KerrVhzNpasYrWJLr2Yj6Cui43f1BxH4U9SJEDVOjqQ=
+github.com/twmb/franz-go v1.1.3-0.20211007190726-58bf74ad2a1a h1:2Yb/car+p2fLBovT/MK1AMguPWbwXOOe14W9InD+mM0=
+github.com/twmb/franz-go v1.1.3-0.20211007190726-58bf74ad2a1a/go.mod h1:KerrVhzNpasYrWJLr2Yj6Cui43f1BxH4U9SJEDVOjqQ=
 github.com/twmb/franz-go/pkg/kmsg v0.0.0-20210914042331-106aef61b693/go.mod h1:SxG/xJKhgPu25SamAq0rrucfp7lbzCpEXOC+vH/ELrY=
 github.com/twmb/franz-go/pkg/kmsg v0.0.0-20210915213851-c153b9a13d31 h1:y62wv5Diwxw2mSe1tQNgxcTC2RRu1rtyO1c73qr+0S0=
 github.com/twmb/franz-go/pkg/kmsg v0.0.0-20210915213851-c153b9a13d31/go.mod h1:SxG/xJKhgPu25SamAq0rrucfp7lbzCpEXOC+vH/ELrY=

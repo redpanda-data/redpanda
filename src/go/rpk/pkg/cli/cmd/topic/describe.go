@@ -152,16 +152,9 @@ partitions section. By default, the summary and configs sections are printed.
 				return
 			}
 
-			offsets, err := listStartEndOffsets(cl, topic, len(t.Partitions))
-			out.MaybeDie(err, "unable to list offsets: %v", err)
-
-			// We optionally include the following columns:
-			//  * epoch, if any leader epoch is non-negative
-			//  * offline-replicas, if any are offline
-			//  * load-error, if metadata indicates load errors any partitions
-			//  * last-stable-offset, if it is ever not equal to the high watermark (transactions)
-
 			header("PARTITIONS", partitions, func() {
+				offsets := listStartEndOffsets(cl, topic, len(t.Partitions))
+
 				tw := out.NewTable(describePartitionsHeaders(
 					t.Partitions,
 					offsets,
@@ -194,6 +187,11 @@ partitions section. By default, the summary and configs sections are printed.
 	return cmd
 }
 
+// We optionally include the following columns:
+//  * epoch, if any leader epoch is non-negative
+//  * offline-replicas, if any are offline
+//  * load-error, if metadata indicates load errors any partitions
+//  * last-stable-offset, if it is ever not equal to the high watermark (transactions)
 func getDescribeUsed(
 	partitions []kmsg.MetadataResponseTopicPartition,
 	offsets []startStableEndOffset,
@@ -268,39 +266,37 @@ func describePartitionsRows(
 			}
 		}
 
-		// For offsets, if loading the offset had an error, we write
-		// the error rather than a number.
+		// For offsets, we have three options:
+		//   - we listed the offset successfully, we write the number
+		//   - list offsets, we write "-"
+		//   - the partition had a partition error, we write the kerr.Error message
 		o := offsets[p.Partition]
 		if o.startErr == nil {
 			row = append(row, o.start)
+		} else if errors.Is(o.startErr, errUnlisted) {
+			row = append(row, "-")
 		} else {
-			row = append(row, maybeKerrMessage(o.startErr))
+			row = append(row, o.startErr.(*kerr.Error).Message)
 		}
 		if stable {
 			if o.stableErr == nil {
 				row = append(row, o.stable)
+			} else if errors.Is(o.stableErr, errUnlisted) {
+				row = append(row, "-")
 			} else {
-				row = append(row, maybeKerrMessage(o.stableErr))
+				row = append(row, o.stableErr.(*kerr.Error).Message)
 			}
 		}
 		if o.endErr == nil {
 			row = append(row, o.end)
+		} else if errors.Is(o.endErr, errUnlisted) {
+			row = append(row, "-")
 		} else {
-			row = append(row, maybeKerrMessage(o.endErr))
+			row = append(row, o.endErr.(*kerr.Error).Message)
 		}
 		rows = append(rows, row)
 	}
 	return rows
-}
-
-// For offset errors, it is either a *kerr.Error or "server error". If a
-// *kerr.Error, we want to just print the message ("UNKNOWN_SERVER_ERROR")
-// rather than the default Message: Description.
-func maybeKerrMessage(err error) interface{} {
-	if k := (*kerr.Error)(nil); errors.As(err, &k) {
-		return k.Message
-	}
-	return err
 }
 
 type startStableEndOffset struct {
@@ -312,6 +308,8 @@ type startStableEndOffset struct {
 	endErr    error
 }
 
+var errUnlisted = errors.New("list failed")
+
 // There are three offsets we are interested in: the log start offsets, the
 // last stable offsets, and the high watermarks. Unfortunately this requires
 // three requests.
@@ -322,22 +320,23 @@ type startStableEndOffset struct {
 // incorrectly.
 func listStartEndOffsets(
 	cl *kgo.Client, topic string, numPartitions int,
-) ([]startStableEndOffset, error) {
+) []startStableEndOffset {
 	offsets := make([]startStableEndOffset, 0, numPartitions)
 
 	for i := 0; i < numPartitions; i++ {
 		offsets = append(offsets, startStableEndOffset{
 			start:     -1,
-			startErr:  errors.New("server error"),
+			startErr:  errUnlisted,
 			stable:    -1,
-			stableErr: errors.New("server error"),
+			stableErr: errUnlisted,
 			end:       -1,
-			endErr:    errors.New("server error"),
+			endErr:    errUnlisted,
 		})
 	}
 
 	// First we ask for the earliest offsets (special timestamp -2).
 	req := kmsg.NewPtrListOffsetsRequest()
+	req.ReplicaID = -1
 	reqTopic := kmsg.NewListOffsetsRequestTopic()
 	reqTopic.Topic = topic
 	for i := 0; i < numPartitions; i++ {
@@ -356,8 +355,13 @@ func listStartEndOffsets(
 			o.startErr = kerr.ErrorForCode(partition.ErrorCode)
 		}
 	})
+
+	// If we fail entirely on the *first* ListOffsets, we return early and
+	// avoid attempting two more times. EachShard prints an error message
+	// on shard failures, and we do not want two additional wasted attempts
+	// and two additional useless duplicate log messages.
 	if allFailed {
-		return nil, fmt.Errorf("all %d ListOffsets requests for the log start offsets failed", len(shards))
+		return offsets
 	}
 
 	// Next we ask for the latest offsets (special timestamp -1).
@@ -373,14 +377,16 @@ func listStartEndOffsets(
 			o.endErr = kerr.ErrorForCode(partition.ErrorCode)
 		}
 	})
+	// It is less likely to succeed on the first attempt and fail the second,
+	// but we may as well avoid trying a third if we do.
 	if allFailed {
-		return nil, fmt.Errorf("all %d ListOffsets requests for the high watermark offsets failed", len(shards))
+		return offsets
 	}
 
 	// Finally, we ask for the last stable offsets (relevant for transactions).
 	req.IsolationLevel = 1
 	shards = cl.RequestSharded(context.Background(), req)
-	allFailed = kafka.EachShard(req, shards, func(shard kgo.ResponseShard) {
+	kafka.EachShard(req, shards, func(shard kgo.ResponseShard) {
 		resp := shard.Resp.(*kmsg.ListOffsetsResponse)
 		for _, partition := range resp.Topics[0].Partitions {
 			o := &offsets[partition.Partition]
@@ -388,11 +394,8 @@ func listStartEndOffsets(
 			o.stableErr = kerr.ErrorForCode(partition.ErrorCode)
 		}
 	})
-	if allFailed {
-		return nil, fmt.Errorf("all %d ListOffsets requests for the last stable offsets failed", len(shards))
-	}
 
-	return offsets, nil
+	return offsets
 }
 
 type int32s []int32

@@ -81,33 +81,48 @@ func NewFranzClient(
 
 // MetaString returns what we will print within rpk for kgo.BrokerMetadata.
 func MetaString(meta kgo.BrokerMetadata) string {
-	return net.JoinHostPort(meta.Host, strconv.Itoa(int(meta.Port)))
+	return fmt.Sprintf("%s (%d)", net.JoinHostPort(meta.Host, strconv.Itoa(int(meta.Port))), meta.NodeID)
 }
 
-// PrintShardError prints a standard message for shard failures in sharded
-// requests.
-func PrintShardError(req kmsg.Request, shard kgo.ResponseShard) {
-	fmt.Printf("Unable to issue %s request to broker %s: %v\n",
-		kmsg.NameForKey(req.Key()),
-		MetaString(shard.Meta),
-		shard.Err,
-	)
-}
-
-// EachShard calls fn for each non-erroring response in shards. Any errored
-// response calls PrintShardError, and this returns if all shards failed.
+// EachShard calls fn for each non-erroring response in shards. If some, but not
+// all, requests fail, this prints a summary message.
 func EachShard(
 	req kmsg.Request, shards []kgo.ResponseShard, fn func(kgo.ResponseShard),
 ) (allFailed bool) {
+
+	if len(shards) == 1 && shards[0].Err != nil {
+		shard := shards[0]
+		meta := ""
+		if shard.Meta.NodeID >= 0 {
+			meta = " to broker " + MetaString(shard.Meta)
+		}
+		fmt.Printf("(%s%s failure: %v)\n",
+			kmsg.NameForKey(req.Key()),
+			meta,
+			shard.Err,
+		)
+		return true
+	}
+
 	var failures int
+
 	for _, shard := range shards {
 		if shard.Err != nil {
-			PrintShardError(req, shard)
 			failures++
+			meta := ""
+			if shard.Meta.NodeID >= 0 {
+				meta = " to broker " + MetaString(shard.Meta)
+			}
+			fmt.Printf("(partial %s%s failure: %v)\n",
+				kmsg.NameForKey(req.Key()),
+				meta,
+				shard.Err,
+			)
 			continue
 		}
 		fn(shard)
 	}
+
 	return failures == len(shards)
 }
 
