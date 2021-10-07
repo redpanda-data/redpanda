@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from ducktape.mark.resource import cluster
+from ducktape.mark import ignore
 from ducktape.errors import DucktapeError
 
 from rptest.tests.redpanda_test import RedpandaTest
@@ -32,6 +33,7 @@ class TxVerifierTest(RedpandaTest):
         super(TxVerifierTest, self).__init__(test_context=test_context,
                                              extra_rp_conf=extra_rp_conf)
 
+    @ignore  # https://github.com/vectorizedio/redpanda/issues/2519
     @cluster(num_nodes=3)
     def test_tx(self):
         verifier_jar = "/opt/tx-verifier/tx-verifier.jar"
