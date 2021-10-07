@@ -43,6 +43,7 @@ public:
 
     kvstore& kvs() { return *_kvstore; }
     log_manager& log_mgr() { return *_log_mgr; }
+    const log_manager& log_mgr() const { return *_log_mgr; }
 
 private:
     kvstore_config _kv_conf;

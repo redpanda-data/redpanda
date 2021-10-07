@@ -203,7 +203,7 @@ public:
     size_t size() const { return _logs.size(); }
 
     /// Returns the log for the specified ntp.
-    std::optional<log> get(const model::ntp& ntp) {
+    std::optional<log> get(const model::ntp& ntp) const {
         if (auto it = _logs.find(ntp); it != _logs.end()) {
             return it->second.handle;
         }
