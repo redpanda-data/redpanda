@@ -18,11 +18,11 @@ import (
 const (
 	// NamePrefix is the expected prefix of the basename of plugins that do
 	// not support the --help-autocomplete flag.
-	NamePrefix = "rpk-"
+	NamePrefix = ".rpk-"
 
 	// NamePrefixAutoComplete is the expected prefix of the basename of
 	// plugins that support the --help-autocomplete flag.
-	NamePrefixAutoComplete = "rpk.ac-"
+	NamePrefixAutoComplete = ".rpk.ac-"
 
 	// FlagAutoComplete is the expected flag if a plugin has the rpk.ac-
 	// name prefix.
@@ -107,29 +107,27 @@ func ListPlugins(fs afero.Fs, searchDirs []string) Plugins {
 			}
 
 			name := info.Name()
-			if !strings.HasPrefix(name, NamePrefix) &&
-				!strings.HasPrefix(name, NamePrefixAutoComplete) {
+			originalName := name
+
+			switch {
+			case strings.HasPrefix(name, NamePrefix):
+				name = strings.TrimPrefix(name, NamePrefix)
+			case strings.HasPrefix(name, NamePrefixAutoComplete):
+				name = strings.TrimPrefix(name, NamePrefixAutoComplete)
+			default:
 				continue // missing required name prefix; skip
 			}
-
-			fullPath := filepath.Join(searchDir, name)
-
+			if len(name) == 0 { // e.g., ".rpk-"
+				continue
+			}
 			if info.Mode()&0111 == 0 {
 				continue // not executable; skip
-			}
-
-			if strings.HasPrefix(name, NamePrefix) {
-				name = strings.TrimPrefix(name, NamePrefix)
-			} else {
-				name = strings.TrimPrefix(name, NamePrefixAutoComplete)
-			}
-			if len(name) == 0 { // e.g., "rpk-"
-				continue
 			}
 
 			arguments := NameToArgs(name)
 			pluginName := arguments[0]
 
+			fullPath := filepath.Join(searchDir, originalName)
 			priorAt, exists := uniquePlugins[pluginName]
 			if exists {
 				prior := &plugins[priorAt]
@@ -194,7 +192,7 @@ func Sha256Path(fs afero.Fs, path string) (string, error) {
 func WriteBinary(
 	fs afero.Fs, name, dstDir string, contents []byte, autocomplete bool,
 ) (string, error) {
-	tmp, err := afero.TempFile(fs, "", fmt.Sprintf("rpk-plugin-%s-*", name))
+	tmp, err := afero.TempFile(fs, dstDir, fmt.Sprintf("rpk-plugin-part-%s-*", name))
 	if err != nil {
 		return "", fmt.Errorf("unable to create temp file for plugin %q: %v", name, err)
 	}
@@ -207,9 +205,9 @@ func WriteBinary(
 		return "", fmt.Errorf("unable to write plugin %q: %v; temporary file has been removed", name, err)
 	}
 
-	dstBase := "rpk-" + name
+	dstBase := NamePrefix + name
 	if autocomplete {
-		dstBase = "rpk.ac-" + name
+		dstBase = NamePrefixAutoComplete + name
 	}
 	dst := filepath.Join(dstDir, dstBase)
 

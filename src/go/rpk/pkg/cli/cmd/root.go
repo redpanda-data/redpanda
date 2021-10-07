@@ -177,11 +177,11 @@ func tryExecPlugin(h pluginHandler, args []string) (string, error) {
 	foundPath := ""
 	for len(pieces) > 0 {
 		joined := strings.Join(pieces, "_")
-		if path, ok := h.lookPath(plugin.NamePrefix + joined); ok {
+		if path, ok := h.lookPath(plugin.NamePrefixAutoComplete + joined); ok {
 			foundPath = path
 			break
 		}
-		if path, ok := h.lookPath(plugin.NamePrefixAutoComplete + joined); ok {
+		if path, ok := h.lookPath(plugin.NamePrefix + joined); ok {
 			foundPath = path
 			break
 		}
