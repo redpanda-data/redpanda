@@ -18,7 +18,6 @@
 #include "kafka/client/configuration.h"
 #include "kafka/client/fwd.h"
 #include "kafka/server/fwd.h"
-#include "kafka/server/rm_group_frontend.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/fwd.h"
 #include "pandaproxy/schema_registry/configuration.h"
@@ -145,7 +144,7 @@ private:
     ss::sharded<storage::compaction_controller> _compaction_controller;
 
     ss::metrics::metric_groups _metrics;
-    kafka::rm_group_proxy_impl _rm_group_proxy;
+    std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
     // run these first on destruction
     deferred_actions _deferred;
 };
