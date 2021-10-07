@@ -594,7 +594,11 @@ void application::wire_up_redpanda_services() {
                 [&c](cloud_storage::configuration cfg) { c = std::move(cfg); });
           })
           .get();
-        construct_service(cloud_storage_api, std::ref(cloud_configs)).get();
+        // todo: maybe start?
+        ss::sharded<cloud_storage::cache> cache;
+        construct_service(
+          cloud_storage_api, std::ref(cloud_configs), std::ref(cache))
+          .get();
 
         construct_service(
           partition_recovery_manager,

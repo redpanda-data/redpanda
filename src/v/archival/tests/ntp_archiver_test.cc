@@ -12,6 +12,7 @@
 #include "archival/ntp_archiver_service.h"
 #include "archival/tests/service_fixture.h"
 #include "bytes/iobuf.h"
+#include "cloud_storage/cache_service.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
@@ -165,8 +166,9 @@ FIXTURE_TEST(test_download_manifest, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen(default_expectations);
     auto [arch_conf, remote_conf] = get_configurations();
     service_probe probe(service_metrics_disabled::yes);
+    ss::sharded<cloud_storage::cache> cache;
     cloud_storage::remote remote(
-      remote_conf.connection_limit, remote_conf.client_config);
+      remote_conf.connection_limit, remote_conf.client_config, cache);
     archival::ntp_archiver archiver(
       get_ntp_conf(), arch_conf, remote, nullptr, probe);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
@@ -181,8 +183,9 @@ FIXTURE_TEST(test_upload_manifest, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen(default_expectations);
     auto [arch_conf, remote_conf] = get_configurations();
     service_probe probe(service_metrics_disabled::yes);
+    ss::sharded<cloud_storage::cache> cache;
     cloud_storage::remote remote(
-      remote_conf.connection_limit, remote_conf.client_config);
+      remote_conf.connection_limit, remote_conf.client_config, cache);
     archival::ntp_archiver archiver(
       get_ntp_conf(), arch_conf, remote, nullptr, probe);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
@@ -217,8 +220,9 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     set_expectations_and_listen(default_expectations);
     auto [arch_conf, remote_conf] = get_configurations();
     service_probe probe(service_metrics_disabled::yes);
+    ss::sharded<cloud_storage::cache> cache;
     cloud_storage::remote remote(
-      remote_conf.connection_limit, remote_conf.client_config);
+      remote_conf.connection_limit, remote_conf.client_config, cache);
 
     std::vector<segment_desc> segments = {
       {manifest_ntp, model::offset(1), model::term_id(2)},
@@ -399,8 +403,9 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     set_expectations_and_listen(expectations);
     auto [arch_conf, remote_conf] = get_configurations();
     service_probe probe(service_metrics_disabled::yes);
+    ss::sharded<cloud_storage::cache> cache;
     cloud_storage::remote remote(
-      remote_conf.connection_limit, remote_conf.client_config);
+      remote_conf.connection_limit, remote_conf.client_config, cache);
     archival::ntp_archiver archiver(
       get_ntp_conf(), arch_conf, remote, part, probe);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
@@ -607,7 +612,9 @@ static void test_partial_upload_impl(
 
     auto [aconf, cconf] = get_configurations();
     service_probe probe(service_metrics_disabled::yes);
-    cloud_storage::remote remote(cconf.connection_limit, cconf.client_config);
+    ss::sharded<cloud_storage::cache> cache;
+    cloud_storage::remote remote(
+      cconf.connection_limit, cconf.client_config, cache);
     aconf.time_limit = segment_time_limit(0s);
     archival::ntp_archiver archiver(get_ntp_conf(), aconf, remote, part, probe);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });

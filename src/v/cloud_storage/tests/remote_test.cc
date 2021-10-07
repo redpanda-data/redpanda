@@ -91,7 +91,8 @@ static manifest load_manifest_from_str(std::string_view v) {
 FIXTURE_TEST(test_download_manifest, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen(default_expectations);
     auto conf = get_configuration();
-    remote remote(s3_connection_limit(10), conf);
+    ss::sharded<cloud_storage::cache> cache;
+    remote remote(s3_connection_limit(10), conf, cache);
     manifest actual(manifest_ntp, manifest_revision);
     auto action = ss::defer([&remote] { remote.stop().get(); });
     retry_chain_node fib(100ms, 20ms);
@@ -109,7 +110,8 @@ FIXTURE_TEST(test_download_manifest, s3_imposter_fixture) { // NOLINT
 
 FIXTURE_TEST(test_download_manifest_timeout, s3_imposter_fixture) { // NOLINT
     auto conf = get_configuration();
-    remote remote(s3_connection_limit(10), conf);
+    ss::sharded<cloud_storage::cache> cache;
+    remote remote(s3_connection_limit(10), conf, cache);
     manifest actual(manifest_ntp, manifest_revision);
     auto action = ss::defer([&remote] { remote.stop().get(); });
     retry_chain_node fib(100ms, 20ms);
@@ -126,7 +128,8 @@ FIXTURE_TEST(test_download_manifest_timeout, s3_imposter_fixture) { // NOLINT
 FIXTURE_TEST(test_upload_segment, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen(default_expectations);
     auto conf = get_configuration();
-    remote remote(s3_connection_limit(10), conf);
+    ss::sharded<cloud_storage::cache> cache;
+    remote remote(s3_connection_limit(10), conf, cache);
     manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("1-2-v1.log");
     uint64_t clen = manifest_payload.size();
@@ -149,7 +152,8 @@ FIXTURE_TEST(test_upload_segment, s3_imposter_fixture) { // NOLINT
 
 FIXTURE_TEST(test_upload_segment_timeout, s3_imposter_fixture) { // NOLINT
     auto conf = get_configuration();
-    remote remote(s3_connection_limit(10), conf);
+    ss::sharded<cloud_storage::cache> cache;
+    remote remote(s3_connection_limit(10), conf, cache);
     manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("1-2-v1.log");
     uint64_t clen = manifest_payload.size();
@@ -171,7 +175,8 @@ FIXTURE_TEST(test_download_segment, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen(default_expectations);
     auto conf = get_configuration();
     auto bucket = s3::bucket_name("bucket");
-    remote remote(s3_connection_limit(10), conf);
+    ss::sharded<cloud_storage::cache> cache;
+    remote remote(s3_connection_limit(10), conf, cache);
     manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("1-2-v1.log");
     uint64_t clen = manifest_payload.size();
@@ -207,7 +212,8 @@ FIXTURE_TEST(test_download_segment, s3_imposter_fixture) { // NOLINT
 FIXTURE_TEST(test_download_segment_timeout, s3_imposter_fixture) { // NOLINT
     auto conf = get_configuration();
     auto bucket = s3::bucket_name("bucket");
-    remote remote(s3_connection_limit(10), conf);
+    ss::sharded<cloud_storage::cache> cache;
+    remote remote(s3_connection_limit(10), conf, cache);
     manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("1-2-v1.log");
 
@@ -220,4 +226,52 @@ FIXTURE_TEST(test_download_segment_timeout, s3_imposter_fixture) { // NOLINT
     auto dnl_res
       = remote.download_segment(bucket, name, m, try_consume, fib).get();
     BOOST_REQUIRE(dnl_res == download_result::timedout);
+}
+
+FIXTURE_TEST(test_download_segment_is_cached, s3_imposter_fixture) { // NOLINT
+    set_expectations_and_listen(default_expectations);
+    auto conf = get_configuration();
+    auto bucket = s3::bucket_name("bucket");
+
+    ss::sharded<cloud_storage::cache> cache;
+    const std::filesystem::path CACHE_DIR{"test_cache_dir"};
+    std::cout << "about to start cache\n" << std::flush;
+    // todo: cache is not started
+    cache.start(CACHE_DIR, 1_MiB + 500_KiB, ss::lowres_clock::duration(10s))
+      .get();
+    std::cout << "after starting cache\n" << std::flush;
+    remote remote(s3_connection_limit(10), conf, cache);
+    manifest m(manifest_ntp, manifest_revision);
+    auto name = segment_name("1-2-v1.log");
+    uint64_t clen = manifest_payload.size();
+    auto action = ss::defer([&remote] { remote.stop().get(); });
+    auto reset_stream = [] {
+        iobuf out;
+        out.append(manifest_payload.data(), manifest_payload.size());
+        return make_iobuf_input_stream(std::move(out));
+    };
+    retry_chain_node fib(100ms, 20ms);
+    auto upl_res
+      = remote.upload_segment(bucket, name, clen, reset_stream, m, fib).get();
+    BOOST_REQUIRE(upl_res == upload_result::success);
+
+    iobuf downloaded;
+    auto try_consume = [&downloaded](
+                         uint64_t len,
+                         ss::input_stream<char> is) -> ss::future<uint64_t> {
+        downloaded.clear();
+        auto rds = make_iobuf_ref_output_stream(downloaded);
+        co_await ss::copy(is, rds);
+        co_return downloaded.size_bytes();
+    };
+    auto dnl_res
+      = remote.download_segment(bucket, name, m, try_consume, fib).get();
+    std::cout << "about to stop cache\n" << std::flush;
+    cache.stop().get();
+    std::cout << "after stopping cache\n" << std::flush;
+
+    BOOST_REQUIRE(dnl_res == download_result::success);
+    iobuf_parser p(std::move(downloaded));
+    auto actual = p.read_string(p.bytes_left());
+    BOOST_REQUIRE(actual == manifest_payload);
 }

@@ -77,9 +77,13 @@ FIXTURE_TEST(test_reconciliation_manifest_download, archiver_fixture) {
     auto& pm = app.partition_manager;
     auto& api = app.storage;
     auto& topics = app.controller->get_topics_state();
+    ss::sharded<cloud_storage::cache> cache;
     ss::sharded<cloud_storage::remote> remote;
     remote
-      .start_single(remote_config.connection_limit, remote_config.client_config)
+      .start_single(
+        remote_config.connection_limit,
+        remote_config.client_config,
+        std::ref(cache))
       .get();
     archival::internal::scheduler_service_impl service(
       arch_config, remote, api, pm, topics);
@@ -112,9 +116,13 @@ FIXTURE_TEST(test_reconciliation_drop_ntp, archiver_fixture) {
     auto& pm = app.partition_manager;
     auto& api = app.storage;
     auto& topics = app.controller->get_topics_state();
+    ss::sharded<cloud_storage::cache> cache;
     ss::sharded<cloud_storage::remote> remote;
     remote
-      .start_single(remote_config.connection_limit, remote_config.client_config)
+      .start_single(
+        remote_config.connection_limit,
+        remote_config.client_config,
+        std::ref(cache))
       .get();
     archival::internal::scheduler_service_impl service(
       arch_config, remote, api, pm, topics);
@@ -173,9 +181,13 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
     auto& pm = app.partition_manager;
     auto& api = app.storage;
     auto& topics = app.controller->get_topics_state();
+    ss::sharded<cloud_storage::cache> cache;
     ss::sharded<cloud_storage::remote> remote;
     remote
-      .start_single(remote_config.connection_limit, remote_config.client_config)
+      .start_single(
+        remote_config.connection_limit,
+        remote_config.client_config,
+        std::ref(cache))
       .get();
     archival::internal::scheduler_service_impl service(
       arch_config, remote, api, pm, topics);

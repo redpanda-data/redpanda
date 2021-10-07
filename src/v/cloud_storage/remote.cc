@@ -11,26 +11,18 @@
 #include "cloud_storage/remote.h"
 
 #include "cloud_storage/logger.h"
-#include "cloud_storage/types.h"
+// #include "cloud_storage/types.h"
 #include "s3/client.h"
-#include "ssx/sformat.h"
-#include "utils/intrusive_list_helpers.h"
-#include "utils/retry_chain_node.h"
-#include "utils/string_switch.h"
+// #include "utils/intrusive_list_helpers.h"
+// #include "utils/retry_chain_node.h"
 
-#include <seastar/core/loop.hh>
-#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/sleep.hh>
-#include <seastar/core/timed_out_error.hh>
-#include <seastar/core/weak_ptr.hh>
 
 #include <boost/beast/http/error.hpp>
 #include <utils/stream_utils.h>
 
 #include <exception>
-#include <optional>
-#include <variant>
 
 namespace cloud_storage {
 
@@ -135,12 +127,16 @@ static error_outcome categorize_error(
     return result;
 }
 
-remote::remote(s3_connection_limit limit, const s3::configuration& conf)
+remote::remote(
+  s3_connection_limit limit,
+  const s3::configuration& conf,
+  ss::sharded<cache>& cache)
   : _pool(limit(), conf)
-  , _probe(remote_metrics_disabled(static_cast<bool>(conf.disable_metrics))) {}
+  , _probe(remote_metrics_disabled(static_cast<bool>(conf.disable_metrics)))
+  , _cache(cache) {}
 
-remote::remote(ss::sharded<configuration>& conf)
-  : remote(conf.local().connection_limit, conf.local().client_config) {}
+remote::remote(ss::sharded<configuration>& conf, ss::sharded<cache>& cache)
+  : remote(conf.local().connection_limit, conf.local().client_config, cache) {}
 
 ss::future<> remote::start() { return ss::now(); }
 

@@ -13,14 +13,11 @@
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/manifest.h"
 #include "cloud_storage/probe.h"
-#include "cloud_storage/types.h"
-#include "random/simple_time_jitter.h"
+// #include "cloud_storage/types.h"
 #include "s3/client.h"
 #include "utils/retry_chain_node.h"
 
-#include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
-#include <seastar/core/loop.hh>
 #include <seastar/core/sharded.hh>
 
 #include <optional>
@@ -58,12 +55,18 @@ public:
     ///
     /// \param limit is a number of simultaneous connections
     /// \param conf is an S3 configuration
-    remote(s3_connection_limit limit, const s3::configuration& conf);
+    // todo: \param cache
+    remote(
+      s3_connection_limit limit,
+      const s3::configuration& conf,
+      ss::sharded<cache>& cache);
 
     /// \brief Initialize 'remote'
     ///
     /// \param conf is an archival configuration
-    explicit remote(ss::sharded<configuration>& conf);
+    // todo: \param cache
+    explicit remote(
+      ss::sharded<configuration>& conf, ss::sharded<cache>& cache);
 
     /// \brief Start the remote
     ss::future<> start();
@@ -144,7 +147,7 @@ private:
     ss::gate _gate;
     ss::abort_source _as;
     remote_probe _probe;
-    ss::sharded<cache> _cache;
+    ss::sharded<cache>& _cache;
 };
 
 } // namespace cloud_storage
