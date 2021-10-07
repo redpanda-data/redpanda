@@ -67,7 +67,7 @@ public:
     }
 
     ss::future<> start() { return ss::now(); }
-    ss::future<> stop();
+    ss::future<> stop_partitions();
     ss::future<consensus_ptr>
       manage(storage::ntp_config, raft::group_id, std::vector<model::broker>);
 
