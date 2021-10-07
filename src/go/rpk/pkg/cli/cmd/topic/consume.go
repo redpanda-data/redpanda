@@ -89,17 +89,27 @@ func NewConsumeCommand(fs afero.Fs) *cobra.Command {
 			c.cl, err = kafka.NewFranzClient(fs, p, cfg, opts...)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 
-			done := make(chan struct{})
+			doneConsume := make(chan struct{})
 			go func() {
-				defer close(done)
+				defer close(doneConsume)
 				c.consume()
+				c.cl.LeaveGroup()
 			}()
 
-			<-sigs
-			go c.cl.Close()
 			select {
 			case <-sigs:
-			case <-done:
+			case <-doneConsume:
+			}
+
+			doneClose := make(chan struct{})
+			go func() {
+				defer close(doneClose)
+				c.cl.Close()
+			}()
+
+			select {
+			case <-sigs:
+			case <-doneClose:
 			}
 		},
 	}
@@ -129,24 +139,52 @@ func NewConsumeCommand(fs afero.Fs) *cobra.Command {
 
 func (c *consumer) consume() {
 	var buf []byte
+	var n int
+	var marks []*kgo.Record
 	for {
 		fs := c.cl.PollFetches(context.Background())
 		if fs.IsClientClosed() {
 			return
 		}
+
 		fs.EachError(func(t string, p int32, err error) {
 			fmt.Fprintf(os.Stderr, "ERR: topic %s partition %d: %v", t, p, err)
 		})
-		fs.EachPartition(func(p kgo.FetchTopicPartition) {
-			p.EachRecord(func(r *kgo.Record) {
-				if c.f == nil {
-					c.writeRecordJSON(r)
-				} else {
-					buf = c.f.AppendPartitionRecord(buf[:0], &p.FetchPartition, r)
-					os.Stdout.Write(buf)
+
+		marks = marks[:0]
+		for _, f := range fs {
+			for _, t := range f.Topics {
+				for _, p := range t.Partitions {
+					for _, r := range p.Records {
+						// We've seen a new record: if this pushes us
+						// past the --num flag (if non-zero), we return.
+						// We have to mark any seen records so that when
+						// we LeaveGroup on return, the autocommit will
+						// commit what we want.
+						n++
+						if c.num > 0 && n > c.num {
+							c.cl.MarkCommitRecords(marks...)
+							return
+						}
+
+						if c.f == nil {
+							c.writeRecordJSON(r)
+						} else {
+							buf = c.f.AppendPartitionRecord(buf[:0], &p, r)
+							os.Stdout.Write(buf)
+						}
+
+						// Track this record to be "marked" once this loop
+						// is over.
+						marks = append(marks, r)
+					}
 				}
-			})
-		})
+			}
+		}
+
+		// Before we poll, we mark everything we just processed to be
+		// available for autocommitting.
+		c.cl.MarkCommitRecords(marks...)
 	}
 }
 
@@ -255,6 +293,7 @@ func (c *consumer) intoOptions(topics []string) ([]kgo.Opt, error) {
 		opts = append(opts, kgo.ConsumeTopics(topics...))
 		if len(c.group) > 0 {
 			opts = append(opts, kgo.ConsumerGroup(c.group))
+			opts = append(opts, kgo.AutoCommitMarks())
 		}
 	} else {
 		if len(c.group) != 0 {
