@@ -113,7 +113,10 @@ def _find_offset_matches(baseline_per_host, restored_per_host, expected_topics,
         for path, entry in fdata.items():
             it = _parse_checksum_entry(path, entry, ignore_rev=True)
             if it.ntp.topic in expected_topics:
-                ntp_meta[it.ntp].append((it.base_offset, it.size))
+                if it.size > 4096:
+                    # filter out empty segments created at the end of the log
+                    # which are created after recovery
+                    ntp_meta[it.ntp].append((it.base_offset, it.size))
 
         for ntp, offsets_sizes in ntp_meta.items():
             if ntp in restored_ntps:
