@@ -23,6 +23,7 @@
 #include "kafka/server/group.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/logger.h"
+#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -50,17 +51,29 @@ ss::future<bool> try_create_consumer_group_topic(
     return topics_frontend
       .autocreate_topics(
         {std::move(topic)}, config::shard_local_cfg().create_topic_timeout_ms())
-      .then([](std::vector<cluster::topic_result> res) {
+      .then([&mapper](std::vector<cluster::topic_result> res) {
           /*
            * kindly ask client to retry on error
            */
           vassert(res.size() == 1, "expected exactly one result");
           if (res[0].ec != cluster::errc::success) {
+              vlog(
+                klog.warn,
+                "can not create {}/{} topic - error: {}",
+                mapper.ns()(),
+                mapper.topic()(),
+                cluster::make_error_code(res[0].ec).message());
               return false;
           }
           return true;
       })
-      .handle_exception([]([[maybe_unused]] std::exception_ptr e) {
+      .handle_exception([&mapper](const std::exception_ptr& e) {
+          vlog(
+            klog.warn,
+            "can not create {}/{} topic - exception: {}",
+            mapper.ns()(),
+            mapper.topic()(),
+            e);
           // various errors may returned such as a timeout, or if the
           // controller group doesn't have a leader. client will retry.
           return false;
