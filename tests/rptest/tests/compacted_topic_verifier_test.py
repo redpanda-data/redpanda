@@ -14,7 +14,7 @@ from ducktape.errors import DucktapeError
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.compacted_verifier import CompactedTopicVerifier
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkTool, RpkException
 
 
 class CompactedTopicVerifierTest(RedpandaTest):
@@ -43,7 +43,17 @@ class CompactedTopicVerifierTest(RedpandaTest):
                         key_cardinality=key_cardinality)
 
         def records_readable():
-            partitions = rpk.describe_topic(v.topic)
+            try:
+                partitions = rpk.describe_topic(v.topic)
+            except RpkException as e:
+                if "Unable to issue ListOffsets" in e.msg:
+                    # Issue https://github.com/vectorizedio/redpanda/issues/2558
+                    # rpk may terminate with an error if asked to describe a topic
+                    # in the middle of an election.
+                    self.logger.warn(
+                        f"RPK describe failed, topic not ready yet? {e}")
+                    return False
+
             for p in partitions:
                 if p.high_watermark < record_count:
                     return False
