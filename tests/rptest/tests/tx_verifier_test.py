@@ -33,7 +33,7 @@ class TxVerifierTest(RedpandaTest):
         super(TxVerifierTest, self).__init__(test_context=test_context,
                                              extra_rp_conf=extra_rp_conf)
 
-    @ignore  #  https://github.com/vectorizedio/redpanda/issues/2519
+    @ignore  # https://github.com/vectorizedio/redpanda/issues/2519
     @cluster(num_nodes=3)
     def test_tx(self):
         verifier_jar = "/opt/tx-verifier/tx-verifier.jar"
