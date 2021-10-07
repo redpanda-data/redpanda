@@ -23,15 +23,16 @@ struct avro_schema_definition
     using named_type<avro::ValidSchema, struct avro_schema_definition_tag>::
       named_type;
 
-    explicit operator schema_definition() const {
-        return schema_definition{_value.toJson(false)};
+    explicit operator canonical_schema_definition() const {
+        return canonical_schema_definition{
+          _value.toJson(false), schema_type::avro};
     }
 };
 
 result<avro_schema_definition> make_avro_schema_definition(std::string_view sv);
 
-result<schema_definition>
-sanitize_avro_schema_definition(schema_definition def);
+result<canonical_schema_definition>
+sanitize_avro_schema_definition(unparsed_schema_definition def);
 
 bool check_compatible(
   const avro_schema_definition& reader, const avro_schema_definition& writer);

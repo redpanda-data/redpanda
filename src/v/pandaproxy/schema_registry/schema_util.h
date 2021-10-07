@@ -16,8 +16,8 @@
 
 namespace pandaproxy::schema_registry {
 
-result<void> validate(std::string_view def, schema_type type);
+result<void> validate(const canonical_schema& def);
 
-result<schema_definition> sanitize(schema_definition def, schema_type type);
+result<canonical_schema> sanitize(unparsed_schema def);
 
 } // namespace pandaproxy::schema_registry

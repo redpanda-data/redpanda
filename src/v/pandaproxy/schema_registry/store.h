@@ -51,9 +51,9 @@ public:
     /// version.
     ///
     /// return the schema_version and schema_id, and whether it's new.
-    insert_result insert(subject sub, schema_definition def, schema_type type) {
-        auto id = insert_schema(std::move(def), type).id;
-        auto [version, inserted] = insert_subject(std::move(sub), id);
+    insert_result insert(canonical_schema schema) {
+        auto id = insert_schema(std::move(schema).def()).id;
+        auto [version, inserted] = insert_subject(std::move(schema).sub(), id);
         return {version, id, inserted};
     }
 
@@ -63,16 +63,16 @@ public:
         if (it == _schemas.end()) {
             return not_found(id);
         }
-        return {it->first, it->second.type, it->second.definition};
+        return {it->first, it->second.definition};
     }
 
     ///\brief Return the id of the schema, if it already exists.
     std::optional<schema_id>
-    get_schema_id(const schema_definition& def, schema_type type) const {
+    get_schema_id(const canonical_schema_definition& def) const {
         const auto s_it = std::find_if(
           _schemas.begin(), _schemas.end(), [&](const auto& s) {
               const auto& entry = s.second;
-              return type == entry.type && def == entry.definition;
+              return def == entry.definition;
           });
         return s_it == _schemas.end() ? std::optional<schema_id>{}
                                       : s_it->first;
@@ -113,11 +113,9 @@ public:
         auto s = BOOST_OUTCOME_TRYX(get_schema(v_id.id));
 
         return subject_schema{
-          .sub = sub,
+          .schema = {sub, std::move(s).definition},
           .version = v_id.version,
           .id = v_id.id,
-          .type = s.type,
-          .definition = std::move(s).definition,
           .deleted = v_id.deleted};
     }
 
@@ -235,10 +233,10 @@ public:
             return schema_version{1};
         }
 
-        auto& versions = subject_iter->second.versions;
+        const auto& versions = subject_iter->second.versions;
 
         schema_version maxver{0};
-        for (auto v : versions) {
+        for (const auto& v : versions) {
             if (v.id == sid && !(v.deleted || subject_iter->second.deleted)) {
                 // No version to project, the schema is already
                 // present (and not deleted) in this subject.
@@ -380,12 +378,11 @@ public:
         schema_id id;
         bool inserted;
     };
-    insert_schema_result
-    insert_schema(schema_definition def, schema_type type) {
+    insert_schema_result insert_schema(canonical_schema_definition def) {
         const auto s_it = std::find_if(
           _schemas.begin(), _schemas.end(), [&](const auto& s) {
               const auto& entry = s.second;
-              return type == entry.type && def == entry.definition;
+              return def == entry.definition;
           });
         if (s_it != _schemas.end()) {
             return {s_it->first, false};
@@ -393,12 +390,12 @@ public:
 
         const auto id = _schemas.empty() ? schema_id{1}
                                          : std::prev(_schemas.end())->first + 1;
-        auto [_, inserted] = _schemas.try_emplace(id, type, std::move(def));
+        auto [_, inserted] = _schemas.try_emplace(id, std::move(def));
         return {id, inserted};
     }
 
-    bool upsert_schema(schema_id id, schema_definition def, schema_type type) {
-        return _schemas.insert_or_assign(id, schema_entry(type, std::move(def)))
+    bool upsert_schema(schema_id id, canonical_schema_definition def) {
+        return _schemas.insert_or_assign(id, schema_entry(std::move(def)))
           .second;
     }
 
@@ -467,12 +464,10 @@ public:
 
 private:
     struct schema_entry {
-        schema_entry(schema_type type, schema_definition definition)
-          : type{type}
-          , definition{std::move(definition)} {}
+        explicit schema_entry(canonical_schema_definition definition)
+          : definition{std::move(definition)} {}
 
-        schema_type type;
-        schema_definition definition;
+        canonical_schema_definition definition;
     };
 
     struct subject_entry {

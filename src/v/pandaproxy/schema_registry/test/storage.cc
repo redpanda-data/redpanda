@@ -47,11 +47,12 @@ constexpr std::string_view avro_schema_value_sv{
   "deleted": true
 })"};
 const pps::schema_value avro_schema_value{
-  .sub{pps::subject{"my-kafka-value"}},
+  .schema{
+    pps::subject{"my-kafka-value"},
+    pps::canonical_schema_definition{
+      R"({"type":"string"})", pps::schema_type::avro}},
   .version{pps::schema_version{1}},
-  .type = pps::schema_type::avro,
   .id{pps::schema_id{1}},
-  .schema{pps::schema_definition{R"({"type":"string"})"}},
   .deleted = pps::is_deleted::yes};
 
 constexpr std::string_view config_key_sv{

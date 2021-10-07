@@ -298,11 +298,9 @@ public:
 };
 
 struct schema_value {
-    subject sub;
+    canonical_schema schema;
     schema_version version;
-    schema_type type{schema_type::avro};
     schema_id id;
-    schema_definition schema;
     is_deleted deleted{false};
 
     friend bool operator==(const schema_value&, const schema_value&) = default;
@@ -310,12 +308,10 @@ struct schema_value {
     friend std::ostream& operator<<(std::ostream& os, const schema_value& v) {
         fmt::print(
           os,
-          "subject: {}, version: {}, type: {}, id: {}, schema: {}, deleted: {}",
-          v.sub,
-          v.version,
-          v.type,
-          v.id,
+          "{}, version: {}, id: {}, deleted: {}",
           v.schema,
+          v.version,
+          v.id,
           v.deleted);
         return os;
     }
@@ -326,18 +322,18 @@ inline void rjson_serialize(
   const schema_registry::schema_value& val) {
     w.StartObject();
     w.Key("subject");
-    ::json::rjson_serialize(w, val.sub);
+    ::json::rjson_serialize(w, val.schema.sub());
     w.Key("version");
     ::json::rjson_serialize(w, val.version);
     w.Key("id");
     ::json::rjson_serialize(w, val.id);
     w.Key("schema");
-    ::json::rjson_serialize(w, val.schema);
+    ::json::rjson_serialize(w, val.schema.def().raw());
     w.Key("deleted");
     ::json::rjson_serialize(w, bool(val.deleted));
-    if (val.type != schema_type::avro) {
+    if (val.schema.type() != schema_type::avro) {
         w.Key("schemaType");
-        ::json::rjson_serialize(w, to_string_view(val.type));
+        ::json::rjson_serialize(w, to_string_view(val.schema.type()));
     }
     w.EndObject();
 }
@@ -355,6 +351,14 @@ class schema_value_handler final : public json::base_handler<Encoding> {
         deleted,
     };
     state _state = state::empty;
+
+    struct mutable_schema {
+        subject sub{invalid_subject};
+        canonical_schema_definition::raw_string def;
+        schema_type type{schema_type::avro};
+        canonical_schema::references refs;
+    };
+    mutable_schema _schema;
 
 public:
     using Ch = typename json::base_handler<Encoding>::Ch;
@@ -439,19 +443,20 @@ public:
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::subject: {
-            result.sub = subject{ss::sstring{sv}};
+            _schema.sub = subject{ss::sstring{sv}};
             _state = state::object;
             return true;
         }
         case state::definition: {
-            result.schema = schema_definition{ss::sstring{sv}};
+            _schema.def = canonical_schema_definition::raw_string{
+              ss::sstring{sv}};
             _state = state::object;
             return true;
         }
         case state::type: {
             auto type = from_string_view<schema_type>(sv);
             if (type.has_value()) {
-                result.type = *type;
+                _schema.type = *type;
                 _state = state::object;
             }
             return type.has_value();
@@ -471,6 +476,10 @@ public:
     }
 
     bool EndObject(rapidjson::SizeType) {
+        result.schema = {
+          std::move(_schema.sub),
+          {std::move(_schema.def), _schema.type},
+          std::move(_schema.refs)};
         return std::exchange(_state, state::empty) == state::object;
     }
 };
@@ -1116,9 +1125,7 @@ struct consume_to_store {
                     .node = key.node,
                     .version = val->version,
                     .key_type = seq_marker_key_type::schema},
-                  std::move(key.sub),
                   std::move(val->schema),
-                  val->type,
                   val->id,
                   val->version,
                   val->deleted);

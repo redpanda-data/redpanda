@@ -218,12 +218,13 @@ BOOST_AUTO_TEST_CASE(test_basic_full_transitive_compatibility) {
 BOOST_AUTO_TEST_CASE(test_avro_schema_definition) {
     // Parsing Canonical Form requires fields to be ordered:
     // name, type, fields, symbols, items, values, size
-    pps::schema_definition expected{
-      R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"},{"name":"f2","type":"string","default":"foo"}]})"};
+    pps::canonical_schema_definition expected{
+      R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"},{"name":"f2","type":"string","default":"foo"}]})",
+      pps::schema_type::avro};
     static_assert(
       std::
         is_same_v<std::decay_t<decltype(schema2)>, pps::avro_schema_definition>,
       "schema2 is an avro_schema_definition");
-    pps::schema_definition avro_conversion{schema2};
+    pps::canonical_schema_definition avro_conversion{schema2};
     BOOST_CHECK_EQUAL(expected, avro_conversion);
 }
