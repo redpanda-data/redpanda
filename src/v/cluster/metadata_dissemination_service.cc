@@ -67,7 +67,7 @@ metadata_dissemination_service::metadata_dissemination_service(
     });
     _dispatch_timer.arm(_dissemination_interval);
 
-    for (auto& seed : config::shard_local_cfg().seed_servers()) {
+    for (auto& seed : config::node().seed_servers()) {
         _seed_servers.push_back(seed.addr);
     }
 }

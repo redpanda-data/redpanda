@@ -141,14 +141,6 @@ configuration::configuration()
       "connection.  Set to 0 to disable force disconnection.",
       required::no,
       3)
-  , seed_servers(
-      *this,
-      "seed_servers",
-      "List of the seed servers used to join current cluster. If the "
-      "seed_server list is empty the node will be a cluster root and it will "
-      "form a new cluster",
-      required::no,
-      {})
   , min_version(
       *this, "min_version", "minimum redpanda compat version", required::no, 0)
   , max_version(

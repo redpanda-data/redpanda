@@ -13,6 +13,7 @@
 #include "config/convert.h"
 #include "config/data_directory_path.h"
 #include "config/property.h"
+#include "config/seed_server.h"
 #include "config_store.h"
 
 namespace config {
@@ -22,6 +23,7 @@ public:
     property<data_directory_path> data_directory;
     property<model::node_id> node_id;
     property<std::optional<ss::sstring>> rack;
+    property<std::vector<seed_server>> seed_servers;
 
     // Internal RPC listener
     property<unresolved_address> rpc_server;

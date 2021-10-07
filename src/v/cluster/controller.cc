@@ -69,7 +69,7 @@ ss::future<> controller::wire_up() {
 
 ss::future<> controller::start() {
     std::vector<model::broker> initial_raft0_brokers;
-    if (config::shard_local_cfg().seed_servers().empty()) {
+    if (config::node().seed_servers().empty()) {
         initial_raft0_brokers.push_back(
           cluster::make_self_broker(config::node()));
     }

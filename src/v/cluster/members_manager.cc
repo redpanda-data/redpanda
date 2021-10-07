@@ -44,7 +44,7 @@ members_manager::members_manager(
   ss::sharded<partition_allocator>& allocator,
   ss::sharded<storage::api>& storage,
   ss::sharded<ss::abort_source>& as)
-  : _seed_servers(config::shard_local_cfg().seed_servers())
+  : _seed_servers(config::node().seed_servers())
   , _self(make_self_broker(config::node()))
   , _join_retry_jitter(config::shard_local_cfg().join_retry_timeout_ms())
   , _join_timeout(std::chrono::seconds(2))

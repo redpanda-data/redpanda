@@ -25,6 +25,14 @@ node_config::node_config() noexcept
       "Unique id identifying a node in the cluster",
       required::yes)
   , rack(*this, "rack", "Rack identifier", required::no, std::nullopt)
+  , seed_servers(
+      *this,
+      "seed_servers",
+      "List of the seed servers used to join current cluster. If the "
+      "seed_server list is empty the node will be a cluster root and it will "
+      "form a new cluster",
+      required::no,
+      {})
   , rpc_server(
       *this,
       "rpc_server",

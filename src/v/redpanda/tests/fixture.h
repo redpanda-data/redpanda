@@ -154,7 +154,6 @@ public:
                                 base_path]() mutable {
             auto& config = config::shard_local_cfg();
 
-            config.get("seed_servers").set_value(seed_servers);
             config.get("enable_pid_file").set_value(false);
             config.get("developer_mode").set_value(true);
             config.get("enable_admin_api").set_value(false);
@@ -166,6 +165,7 @@ public:
             node_config.get("node_id").set_value(node_id);
             node_config.get("rack").set_value(
               std::optional<ss::sstring>(rack_name));
+            node_config.get("seed_servers").set_value(seed_servers);
             node_config.get("rpc_server")
               .set_value(unresolved_address("127.0.0.1", rpc_port));
             node_config.get("kafka_api")

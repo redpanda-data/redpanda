@@ -16,7 +16,6 @@
 #include "config/data_directory_path.h"
 #include "config/endpoint_tls_config.h"
 #include "config/property.h"
-#include "config/seed_server.h"
 #include "config/tls_config.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
@@ -61,7 +60,6 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> raft_heartbeat_interval_ms;
     property<std::chrono::milliseconds> raft_heartbeat_timeout_ms;
     property<size_t> raft_heartbeat_disconnect_failures;
-    property<std::vector<seed_server>> seed_servers;
     property<int16_t> min_version;
     property<int16_t> max_version;
     // Kafka
