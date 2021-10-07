@@ -71,6 +71,19 @@ public:
       , _overrides(std::move(overrides))
       , _revision_id(id) {}
 
+    ntp_config(const ntp_config& o)
+      : _ntp(o._ntp)
+      , _base_dir(o._base_dir)
+      , _overrides(nullptr)
+      , _revision_id(o._revision_id) {
+        if (o._overrides) {
+            _overrides = std::make_unique<default_overrides>(*o._overrides);
+        }
+    }
+
+    ntp_config(ntp_config&&) = default;
+    ntp_config& operator=(ntp_config&&) = default;
+
     const model::ntp& ntp() const { return _ntp; }
     model::ntp& ntp() { return _ntp; }
 
