@@ -187,6 +187,13 @@ ss::future<try_abort_reply> tx_gateway_frontend::try_abort_locally(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
+    vlog(
+      clusterlog.trace,
+      "processing name:try_abort, pid:{}, tx_seq:{}, coordinator:{}",
+      pid,
+      tx_seq,
+      tm);
+
     auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
 
     auto retries = _metadata_dissemination_retries;
@@ -468,6 +475,8 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
   model::timeout_clock::duration timeout) {
+    vlog(clusterlog.trace, "processing name:init_tm_tx, tx_id:{}", tx_id);
+
     auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
 
     auto retries = _metadata_dissemination_retries;

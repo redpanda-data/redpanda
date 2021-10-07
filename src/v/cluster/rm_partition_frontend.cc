@@ -230,6 +230,13 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   std::chrono::milliseconds transaction_timeout_ms) {
+    vlog(
+      clusterlog.trace,
+      "processing name:begin_tx, ntp:{}, pid:{}, tx_seq:{}",
+      ntp,
+      pid,
+      tx_seq);
+
     if (!is_leader_of(ntp)) {
         vlog(clusterlog.warn, "current node isn't the leader for {}", ntp);
         return ss::make_ready_future<begin_tx_reply>(
@@ -367,6 +374,16 @@ ss::future<prepare_tx_reply> rm_partition_frontend::do_prepare_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
+    vlog(
+      clusterlog.trace,
+      "processing name:prepare_tx, ntp:{}, etag:{}, pid:{}, tx_seq:{}, "
+      "coordinator: {}",
+      ntp,
+      etag,
+      pid,
+      tx_seq,
+      tm);
+
     if (!is_leader_of(ntp)) {
         vlog(clusterlog.warn, "current node isn't the leader for {}", ntp);
         return ss::make_ready_future<prepare_tx_reply>(
@@ -473,6 +490,13 @@ ss::future<commit_tx_reply> rm_partition_frontend::do_commit_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
+    vlog(
+      clusterlog.trace,
+      "processing name:commit_tx, ntp:{}, pid:{}, tx_seq:{}",
+      ntp,
+      pid,
+      tx_seq);
+
     if (!is_leader_of(ntp)) {
         vlog(clusterlog.warn, "current node isn't the leader for {}", ntp);
         return ss::make_ready_future<commit_tx_reply>(
@@ -578,6 +602,13 @@ ss::future<abort_tx_reply> rm_partition_frontend::do_abort_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
+    vlog(
+      clusterlog.trace,
+      "processing name:abort_tx, ntp:{}, pid:{}, tx_seq:{}",
+      ntp,
+      pid,
+      tx_seq);
+
     if (!is_leader_of(ntp)) {
         vlog(clusterlog.warn, "current node isn't the leader for {}", ntp);
         return ss::make_ready_future<abort_tx_reply>(
