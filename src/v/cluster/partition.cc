@@ -71,6 +71,10 @@ partition::partition(
             stm_manager->add_stm(_rm_stm);
         }
     }
+
+    if (_nop_stm) {
+        _nop_stm->set_collectible_offset(model::offset::max());
+    }
 }
 
 ss::future<result<raft::replicate_result>> partition::replicate(
