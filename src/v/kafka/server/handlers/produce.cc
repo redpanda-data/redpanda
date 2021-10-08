@@ -291,7 +291,8 @@ static partition_produce_stages produce_topic_partition(
           .invoke_on(
             *shard,
             octx.ssg,
-            [batch_ptr = ss::make_foreign(std::make_unique<model::record_batch>(std::move(batch))),
+            [batch_ptr = ss::make_foreign(
+               std::make_unique<model::record_batch>(std::move(batch))),
              ntp = std::move(ntp),
              dispatch = std::move(dispatch),
              num_records,
@@ -324,7 +325,8 @@ static partition_produce_stages produce_topic_partition(
                         .partition_index = ntp.tp.partition,
                         .error_code = error_code::not_leader_for_partition});
                 }
-                return try_decompress(partition->is_compacted(), std::move(batch_ptr))
+                return try_decompress(
+                         partition->is_compacted(), std::move(batch_ptr))
                   .then([partition = std::move(partition),
                          ntp = std::move(ntp),
                          dispatch = std::move(dispatch),
@@ -332,54 +334,56 @@ static partition_produce_stages produce_topic_partition(
                          bid,
                          acks,
                          source_shard](model::record_batch batch) mutable {
-                if (partition->is_compacted()) {
-                    auto error_opt = validate_keys(ntp, batch);
-                    if (error_opt) {
-                        // submit back to promise source shard
-                        (void)ss::smp::submit_to(
-                          source_shard,
-                          [dispatch = std::move(dispatch)]() mutable {
-                              dispatch->set_value();
-                              dispatch.reset();
-                          });
-                        return ss::make_ready_future<
-                          produce_response::partition>(error_opt.value());
-                    }
-                }
-
-                auto reader = model::make_memory_record_batch_reader(std::move(batch));
-                auto stages = partition_append(
-                  ntp.tp.partition,
-                  ss::make_lw_shared<replicated_partition>(
-                    std::move(partition)),
-                  bid,
-                  std::move(reader),
-                  acks,
-                  num_records);
-                return stages.dispatched
-                  .then_wrapped([source_shard, dispatch = std::move(dispatch)](
-                                  ss::future<> f) mutable {
-                      if (f.failed()) {
-                          (void)ss::smp::submit_to(
-                            source_shard,
-                            [dispatch = std::move(dispatch),
-                             e = f.get_exception()]() mutable {
-                                dispatch->set_exception(e);
-                                dispatch.reset();
-                            });
-                          return;
+                      if (partition->is_compacted()) {
+                          auto error_opt = validate_keys(ntp, batch);
+                          if (error_opt) {
+                              // submit back to promise source shard
+                              (void)ss::smp::submit_to(
+                                source_shard,
+                                [dispatch = std::move(dispatch)]() mutable {
+                                    dispatch->set_value();
+                                    dispatch.reset();
+                                });
+                              return ss::make_ready_future<
+                                produce_response::partition>(error_opt.value());
+                          }
                       }
-                      (void)ss::smp::submit_to(
-                        source_shard,
-                        [dispatch = std::move(dispatch)]() mutable {
-                            dispatch->set_value();
-                            dispatch.reset();
+
+                      auto reader = model::make_memory_record_batch_reader(
+                        std::move(batch));
+                      auto stages = partition_append(
+                        ntp.tp.partition,
+                        ss::make_lw_shared<replicated_partition>(
+                          std::move(partition)),
+                        bid,
+                        std::move(reader),
+                        acks,
+                        num_records);
+                      return stages.dispatched
+                        .then_wrapped(
+                          [source_shard, dispatch = std::move(dispatch)](
+                            ss::future<> f) mutable {
+                              if (f.failed()) {
+                                  (void)ss::smp::submit_to(
+                                    source_shard,
+                                    [dispatch = std::move(dispatch),
+                                     e = f.get_exception()]() mutable {
+                                        dispatch->set_exception(e);
+                                        dispatch.reset();
+                                    });
+                                  return;
+                              }
+                              (void)ss::smp::submit_to(
+                                source_shard,
+                                [dispatch = std::move(dispatch)]() mutable {
+                                    dispatch->set_value();
+                                    dispatch.reset();
+                                });
+                          })
+                        .then([f = std::move(stages.produced)]() mutable {
+                            return std::move(f);
                         });
-                  })
-                  .then([f = std::move(stages.produced)]() mutable {
-                      return std::move(f);
                   });
-                });
             })
           .then([&octx, start, m = std::move(m)](
                   produce_response::partition p) {
