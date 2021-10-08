@@ -27,6 +27,21 @@
 
 namespace cloud_storage {
 
+std::ostream& operator<<(std::ostream& o, cache_element_status s) {
+    switch (s) {
+    case cache_element_status::available:
+        o << "cache_element_available";
+        break;
+    case cache_element_status::not_available:
+        o << "cache_element_not_available";
+        break;
+    case cache_element_status::in_progress:
+        o << "cache_element_in_progress";
+        break;
+    }
+    return o;
+}
+
 static constexpr std::string_view tmp_extension{".part"};
 
 cache::cache(
@@ -139,7 +154,8 @@ ss::future<> cache::stop() {
     co_await _gate.close();
 }
 
-ss::future<std::optional<cache_item>> cache::get(std::filesystem::path key) {
+ss::future<std::optional<cache_item>>
+cache::get(std::filesystem::path key, size_t file_pos) {
     gate_guard guard{_gate};
     vlog(cst_log.debug, "Trying to get {} from archival cache.", key.native());
     ss::file cache_file;
@@ -162,7 +178,7 @@ ss::future<std::optional<cache_item>> cache::get(std::filesystem::path key) {
     }
 
     auto data_size = co_await cache_file.size();
-    auto data_stream = ss::make_file_input_stream(cache_file);
+    auto data_stream = ss::make_file_input_stream(cache_file, file_pos);
     co_return std::optional(cache_item{std::move(data_stream), data_size});
 }
 
@@ -207,10 +223,14 @@ cache::put(std::filesystem::path key, ss::input_stream<char>& data) {
       (dir_path / tmp_filename).native(), (dir_path / filename).native());
 }
 
-ss::future<bool> cache::is_cached(const std::filesystem::path& key) {
+ss::future<cache_element_status>
+cache::is_cached(const std::filesystem::path& key) {
     gate_guard guard{_gate};
     vlog(cst_log.debug, "Checking {} in archival cache.", key.native());
-    return ss::file_exists((_cache_dir / key).native());
+    return ss::file_exists((_cache_dir / key).native()).then([](bool exists) {
+        return exists ? cache_element_status::available
+                      : cache_element_status::not_available;
+    });
 }
 
 ss::future<> cache::invalidate(const std::filesystem::path& key) {

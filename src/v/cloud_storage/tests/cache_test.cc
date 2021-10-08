@@ -75,9 +75,9 @@ FIXTURE_TEST(get_missing_file, cache_test_fixture) {
 }
 
 FIXTURE_TEST(missing_file_not_cached, cache_test_fixture) {
-    bool is_cached = cache_service.is_cached(WRONG_KEY).get();
+    auto is_cached = cache_service.is_cached(WRONG_KEY).get();
 
-    BOOST_CHECK(!is_cached);
+    BOOST_CHECK_EQUAL(is_cached, cache_element_status::not_available);
 }
 
 FIXTURE_TEST(is_cached_after_put_success, cache_test_fixture) {
@@ -85,9 +85,9 @@ FIXTURE_TEST(is_cached_after_put_success, cache_test_fixture) {
     auto input = make_iobuf_input_stream(std::move(buf));
     cache_service.put(KEY, input).get();
 
-    bool is_cached = cache_service.is_cached(KEY).get();
+    auto is_cached = cache_service.is_cached(KEY).get();
 
-    BOOST_CHECK(is_cached);
+    BOOST_CHECK_EQUAL(is_cached, cache_element_status::available);
 }
 
 FIXTURE_TEST(after_invalidate_is_not_cached, cache_test_fixture) {
@@ -96,8 +96,8 @@ FIXTURE_TEST(after_invalidate_is_not_cached, cache_test_fixture) {
 
     cache_service.invalidate(KEY).get();
 
-    bool is_cached = cache_service.is_cached(KEY).get();
-    BOOST_CHECK(!is_cached);
+    auto is_cached = cache_service.is_cached(KEY).get();
+    BOOST_CHECK_EQUAL(is_cached, cache_element_status::not_available);
 }
 
 FIXTURE_TEST(invalidate_missing_file_ok, cache_test_fixture) {

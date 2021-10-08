@@ -26,6 +26,9 @@ struct cache_item {
     size_t size;
 };
 
+enum class cache_element_status { available, not_available, in_progress };
+std::ostream& operator<<(std::ostream& o, cache_element_status);
+
 class cache {
 public:
     /// C-tor.
@@ -40,13 +43,15 @@ public:
     ss::future<> stop();
 
     /// Get cached value as a stream if it exists on disk
-    ss::future<std::optional<cache_item>> get(std::filesystem::path key);
+    ss::future<std::optional<cache_item>>
+    get(std::filesystem::path key, size_t file_pos = 0);
 
     /// Add new value to the cache, overwrite if it's already exist
     ss::future<> put(std::filesystem::path key, ss::input_stream<char>& data);
 
     /// Return true if the following object is already in the cache
-    ss::future<bool> is_cached(const std::filesystem::path& key);
+    ss::future<cache_element_status>
+    is_cached(const std::filesystem::path& key);
 
     /// Remove element from cache by key
     ss::future<> invalidate(const std::filesystem::path& key);
