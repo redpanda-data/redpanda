@@ -117,10 +117,10 @@ describe("Server", function () {
       });
     });
 
-    afterEach(async () => {
+    afterEach(() => {
       client.close();
       sinonInstance.restore();
-      await server.closeConnection();
+      return server.closeConnection();
     });
 
     it(
