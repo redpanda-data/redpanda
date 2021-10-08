@@ -112,6 +112,15 @@ public:
         _group_idx.erase(g);
     }
 
+    void erase(const model::ntp& ntp, model::revision_id rev) {
+        if (auto it = _ntp_idx.find(ntp); it != _ntp_idx.end()) {
+            if (it->second.revision > rev) {
+                return;
+            }
+            _ntp_idx.erase(it);
+        }
+    }
+
 private:
     /**
      * Controller backend executes per NTP reconciliation loop on every core of
