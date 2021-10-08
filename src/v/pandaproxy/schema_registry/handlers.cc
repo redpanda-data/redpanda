@@ -33,6 +33,8 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/core/std-coroutine.hh>
 
+#include <exception>
+
 namespace ppj = pandaproxy::json;
 
 namespace pandaproxy::schema_registry {
@@ -259,6 +261,11 @@ post_subject(server::request_t rq, server::reply_t rp) {
           rq.req->content.data(), post_subject_versions_request_handler<>{sub});
         schema = co_await rq.service().schema_store().make_canonical_schema(
           std::move(unparsed));
+    } catch (const exception& e) {
+        if (e.code() == error_code::schema_empty) {
+            throw as_exception(invalid_subject_schema(sub));
+        }
+        throw;
     } catch (const ppj::parse_error&) {
         throw as_exception(invalid_subject_schema(sub));
     }

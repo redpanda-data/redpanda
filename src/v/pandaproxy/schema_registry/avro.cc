@@ -12,6 +12,7 @@
 #include "pandaproxy/schema_registry/avro.h"
 
 #include "pandaproxy/schema_registry/error.h"
+#include "pandaproxy/schema_registry/errors.h"
 #include "utils/string_switch.h"
 
 #include <avro/Compiler.hh>
@@ -355,6 +356,10 @@ sanitize_avro_schema_definition(unparsed_schema_definition def) {
     constexpr auto flags = rapidjson::kParseDefaultFlags
                            | rapidjson::kParseStopWhenDoneFlag;
     const auto& raw = def.raw()();
+    if (raw.empty()) {
+        auto ec = error_code::schema_empty;
+        return error_info{ec, make_error_code(ec).message()};
+    }
     doc.Parse<flags>(raw.data(), raw.size());
     if (doc.HasParseError()) {
         return error_info{

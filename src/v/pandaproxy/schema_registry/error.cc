@@ -28,6 +28,8 @@ struct error_category final : std::error_category {
             return "Schema not found";
         case error_code::schema_invalid:
             return "Invalid schema";
+        case error_code::schema_empty:
+            return "Empty schema";
         case error_code::schema_incompatible:
             return "Schema being registered is incompatible with an earlier "
                    "schema for subject";
@@ -79,6 +81,8 @@ struct error_category final : std::error_category {
             return reply_error_code::write_collision; // 50301
         case error_code::schema_invalid:
             return reply_error_code::unprocessable_entity;
+        case error_code::schema_empty:
+            return reply_error_code::schema_empty; // 42201
         case error_code::schema_incompatible:
             return reply_error_code::conflict; // 409
         case error_code::topic_parse_error:
