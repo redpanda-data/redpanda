@@ -146,6 +146,7 @@ struct follower_index_metadata {
      * - follower log indices moved backward
      * - disk append happened on the leader
      * - follower is going to be removed
+     * - started leadership transfer to this follower
      */
     ss::condition_variable follower_state_change;
     /**
