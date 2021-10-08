@@ -52,7 +52,7 @@ std::optional<model::topic>
 metadata_cache::get_source_topic(model::topic_namespace_view tp) const {
     auto& topics_map = _topics_state.local().topics_map();
     auto mt = topics_map.find(tp);
-    if (mt == topics_map.end() || !mt->second.is_topic_replicable()) {
+    if (mt == topics_map.end() || mt->second.is_topic_replicable()) {
         return std::nullopt;
     }
     return mt->second.get_source_topic();

@@ -46,7 +46,7 @@ std::optional<model::node_id> partition_leaders_table::get_leader(
     } else if (auto it = topics_map.find(tp_ns); it != topics_map.end()) {
         // Possible leadership query for materialized topic, search for it
         // in the topics table.
-        if (it->second.is_topic_replicable()) {
+        if (!it->second.is_topic_replicable()) {
             // Leadership properties of non replicated topic are that of its
             // parent
             return get_leader(

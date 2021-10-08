@@ -274,7 +274,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
      */
     std::optional<model::ntp> ntp;
     for (const auto& topic : _topics.topics_map()) {
-        if (topic.second.is_topic_replicable()) {
+        if (!topic.second.is_topic_replicable()) {
             continue;
         }
         for (const auto& partition :
@@ -433,7 +433,7 @@ leader_balancer::index_type leader_balancer::build_index() {
 
     // for each ntp in the cluster
     for (const auto& topic : _topics.topics_map()) {
-        if (topic.second.is_topic_replicable()) {
+        if (!topic.second.is_topic_replicable()) {
             continue;
         }
         for (const auto& partition :
