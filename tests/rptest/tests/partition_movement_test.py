@@ -312,7 +312,7 @@ class PartitionMovementTest(EndToEndTest):
                     time.sleep(5)
                     for m in consumer.messages:
                         self.logger.info(f"message: {m}")
-                    consumed = set([(m['key'], m['message'])
+                    consumed = set([(m['key'], m['value'])
                                     for m in consumer.messages])
 
             self.logger.info(f"Stopping consumer...")
