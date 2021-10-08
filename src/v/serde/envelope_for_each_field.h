@@ -10,6 +10,7 @@
 #pragma once
 
 #include "reflection/arity.h"
+#include "reflection/to_tuple.h"
 #include "serde/envelope.h"
 
 #include <tuple>
@@ -186,15 +187,26 @@ template<typename T, typename Fn>
 inline auto envelope_for_each_field(T& t, Fn&& fn) -> std::enable_if_t<
   !std::is_convertible_v<decltype(fn(std::declval<int&>())), bool>> {
     static_assert(is_envelope_v<std::decay_t<T>>);
-    std::apply([&](auto&&... args) { (fn(args), ...); }, envelope_to_tuple(t));
+    if constexpr (inherits_from_envelope_v<std::decay_t<T>>) {
+        std::apply(
+          [&](auto&&... args) { (fn(args), ...); }, envelope_to_tuple(t));
+    } else {
+        std::apply(
+          [&](auto&&... args) { (fn(args), ...); }, reflection::to_tuple(t));
+    }
 }
 
 template<typename T, typename Fn>
 inline auto envelope_for_each_field(T& t, Fn&& fn) -> std::enable_if_t<
   std::is_convertible_v<decltype(fn(std::declval<int&>())), bool>> {
     static_assert(is_envelope_v<std::decay_t<T>>);
-    std::apply(
-      [&](auto&&... args) { (fn(args) && ...); }, envelope_to_tuple(t));
+    if constexpr (inherits_from_envelope_v<std::decay_t<T>>) {
+        std::apply(
+          [&](auto&&... args) { (fn(args) && ...); }, envelope_to_tuple(t));
+    } else {
+        std::apply(
+          [&](auto&&... args) { (fn(args) && ...); }, reflection::to_tuple(t));
+    }
 }
 
 } // namespace serde
