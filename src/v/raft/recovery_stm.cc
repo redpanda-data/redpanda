@@ -509,11 +509,16 @@ bool recovery_stm::is_recovery_finished() {
      * recoveries to be send immediately after leader disk append. For low
      * volume producers we might have to wait for the next heartbeat to send
      * recovery request to follower which would lead to increased E2E latency
+     *
+     * The exception to this is leadership transfer: if our offset is up to
+     * date and leadership transfer is up to date, the transfer is probably
+     * waiting for us to complete, so we drop out.
      */
-    return (is_up_to_date && quorum_writes) // fully caught up
-           || _stop_requested               // stop requested
-           || _term != _ptr->term()         // term changed
-           || !_ptr->is_leader();           // no longer a leader
+    return (is_up_to_date
+            && (quorum_writes || _ptr->_transferring_leadership)) // caught up
+           || _stop_requested       // stop requested
+           || _term != _ptr->term() // term changed
+           || !_ptr->is_leader();   // no longer a leader
 }
 
 ss::future<> recovery_stm::apply() {
