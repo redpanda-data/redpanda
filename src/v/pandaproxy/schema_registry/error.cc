@@ -53,6 +53,10 @@ struct error_category final : std::error_category {
             return "Too many retries on write collision";
         case error_code::topic_parse_error:
             return "Unexpected data found in topic";
+        case error_code::compatibility_level_invalid:
+            return "Invalid compatibility level. Valid values are none, "
+                   "backward, forward, full, backward_transitive, "
+                   "forward_transitive, and full_transitive";
         }
         return "(unrecognized error)";
     }
@@ -87,6 +91,8 @@ struct error_category final : std::error_category {
             return reply_error_code::conflict; // 409
         case error_code::topic_parse_error:
             return reply_error_code::zookeeper_error; // 50001
+        case error_code::compatibility_level_invalid:
+            return reply_error_code::compatibility_level_invalid; // 42203
         }
         return {};
     }

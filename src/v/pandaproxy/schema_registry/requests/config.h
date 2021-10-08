@@ -13,6 +13,7 @@
 
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/rjson_util.h"
+#include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/types.h"
 
 namespace pandaproxy::schema_registry {
@@ -61,6 +62,10 @@ public:
             if (s.has_value()) {
                 result.compat = *s;
                 _state = state::object;
+            } else {
+                auto code = error_code::compatibility_level_invalid;
+                throw as_exception(
+                  error_info{code, make_error_code(code).message()});
             }
             return s.has_value();
         }

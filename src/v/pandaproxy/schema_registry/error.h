@@ -30,6 +30,7 @@ enum class error_code {
     subject_schema_invalid,
     write_collision,
     topic_parse_error,
+    compatibility_level_invalid,
 };
 
 std::error_code make_error_code(error_code);
