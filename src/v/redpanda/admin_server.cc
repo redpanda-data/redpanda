@@ -428,8 +428,7 @@ void admin_server::register_security_routes() {
 
     ss::httpd::security_json::delete_user.set(
       _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
-          auto user = security::credential_user(
-            model::topic(req->param["user"]));
+          auto user = security::credential_user(req->param["user"]);
 
           return _controller->get_security_frontend()
             .local()
@@ -447,8 +446,7 @@ void admin_server::register_security_routes() {
 
     ss::httpd::security_json::update_user.set(
       _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
-          auto user = security::credential_user(
-            model::topic(req->param["user"]));
+          auto user = security::credential_user(req->param["user"]);
 
           rapidjson::Document doc;
           doc.Parse(req->content.data());
