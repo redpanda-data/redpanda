@@ -2448,6 +2448,8 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
               config::shard_local_cfg()
                 .raft_transfer_leader_recovery_timeout_ms());
             f = meta.recovery_finished.wait(timeout);
+
+            meta.follower_state_change.broadcast();
         }
 
         return f.then([this, target_rni] {
