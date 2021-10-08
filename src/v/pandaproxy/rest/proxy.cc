@@ -80,7 +80,8 @@ ss::future<> proxy::start() {
     return _server.start(
       _config.pandaproxy_api(),
       _config.pandaproxy_api_tls(),
-      _config.advertised_pandaproxy_api());
+      _config.advertised_pandaproxy_api(),
+      json::serialization_format::application_json);
 }
 
 ss::future<> proxy::stop() { return _server.stop(); }

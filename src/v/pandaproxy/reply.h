@@ -113,4 +113,13 @@ inline std::unique_ptr<ss::httpd::reply> exception_reply(std::exception_ptr e) {
     }
 }
 
+struct exception_replier {
+    ss::sstring mime_type;
+    std::unique_ptr<ss::httpd::reply> operator()(const std::exception_ptr& e) {
+        auto res = exception_reply(e);
+        res->set_mime_type(mime_type);
+        return res;
+    }
+};
+
 } // namespace pandaproxy

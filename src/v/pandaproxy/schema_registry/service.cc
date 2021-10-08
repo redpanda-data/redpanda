@@ -230,7 +230,8 @@ ss::future<> service::start() {
     return _server.start(
       _config.schema_registry_api(),
       _config.schema_registry_api_tls(),
-      not_advertised);
+      not_advertised,
+      json::serialization_format::schema_registry_v1_json);
 }
 
 ss::future<> service::stop() {

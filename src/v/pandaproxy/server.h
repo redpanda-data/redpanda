@@ -91,7 +91,8 @@ public:
     ss::future<> start(
       const std::vector<model::broker_endpoint>& endpoints,
       const std::vector<config::endpoint_tls_config>& endpoints_tls,
-      const std::vector<model::broker_endpoint>& advertised);
+      const std::vector<model::broker_endpoint>& advertised,
+      json::serialization_format exceptional_mime_type);
     ss::future<> stop();
 
 private:
