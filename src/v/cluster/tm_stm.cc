@@ -320,15 +320,8 @@ ss::future<stm_snapshot> tm_stm::take_snapshot() {
     iobuf tm_ss_buf;
     reflection::adl<tm_snapshot>{}.to(tm_ss_buf, tm_ss);
 
-    stm_snapshot_header header;
-    header.version = supported_version;
-    header.snapshot_size = tm_ss_buf.size_bytes();
-    header.offset = _insync_offset;
-
-    stm_snapshot stm_ss;
-    stm_ss.header = header;
-    stm_ss.data = std::move(tm_ss_buf);
-    co_return stm_ss;
+    co_return stm_snapshot::create(
+      supported_version, _insync_offset, std::move(tm_ss_buf));
 }
 
 ss::future<> tm_stm::apply(model::record_batch b) {
