@@ -1309,15 +1309,8 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
     iobuf tx_ss_buf;
     reflection::adl<tx_snapshot>{}.to(tx_ss_buf, tx_ss);
 
-    stm_snapshot_header header;
-    header.version = tx_snapshot_version;
-    header.snapshot_size = tx_ss_buf.size_bytes();
-    header.offset = _insync_offset;
-
-    stm_snapshot stx_ss;
-    stx_ss.header = header;
-    stx_ss.data = std::move(tx_ss_buf);
-    co_return stx_ss;
+    co_return stm_snapshot::create(
+      tx_snapshot_version, _insync_offset, std::move(tx_ss_buf));
 }
 
 ss::future<> rm_stm::save_abort_snapshot(abort_snapshot snapshot) {
