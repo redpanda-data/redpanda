@@ -287,6 +287,9 @@ class RedpandaService(Service):
         node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/*")
         node.account.remove(f"{RedpandaService.CONFIG_FILE}")
 
+    def remove_local_data(self, node):
+        node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/data/*")
+
     def redpanda_pid(self, node):
         # we need to look for redpanda pid. pids() method returns pids of both
         # nodejs server and redpanda

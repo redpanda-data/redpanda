@@ -1454,7 +1454,7 @@ class TopicRecoveryTest(RedpandaTest):
         for node in self.redpanda.nodes:
             self.logger.info(
                 f"All data will be removed from node {node.account.hostname}")
-            self.redpanda.clean_node(node)
+            self.redpanda.remove_local_data(node)
 
     def _wait_for_topic(self,
                         recovered_topics,
