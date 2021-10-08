@@ -537,7 +537,7 @@ class RedpandaService(Service):
             specs = [specs]
         client = self._client_type(self)
         for spec in specs:
-            self.logger.debug(f"Creating topic {spec}")
+            self.logger.info(f"Creating topic {spec}")
             client.create_topic(spec)
 
     def delete_topic(self, name):

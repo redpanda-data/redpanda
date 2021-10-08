@@ -22,8 +22,8 @@ from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
 from rptest.services.honey_badger import HoneyBadger
 from rptest.services.rpk_producer import RpkProducer
-from kafka import KafkaProducer
-from kafka import KafkaConsumer
+from rptest.services.kaf_producer import KafProducer
+from rptest.services.rpk_consumer import RpkConsumer
 
 
 class PartitionMovementTest(EndToEndTest):
@@ -245,11 +245,12 @@ class PartitionMovementTest(EndToEndTest):
         for _ in range(25):
             self._move_and_verify()
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=4)
     def test_static(self):
         """
         Move partitions with data, but no active producers or consumers.
         """
+        self.logger.info(f"Starting redpanda...")
         self.start_redpanda(num_nodes=3)
 
         topics = []
@@ -261,39 +262,40 @@ class PartitionMovementTest(EndToEndTest):
                                  replication_factor=replication_factor)
                 topics.append(spec)
 
+        self.logger.info(f"Creating topics...")
         for spec in topics:
             self.redpanda.create_topic(spec)
 
         num_records = 1000
-        produced = set(((f"key-{i}".encode(), f"value-{i}".encode())
-                        for i in range(num_records)))
+        produced = set(
+            ((f"key-{i:08d}", f"record-{i:08d}") for i in range(num_records)))
 
         for spec in topics:
             self.logger.info(f"Producing to {spec}")
-            producer = KafkaProducer(
-                batch_size=4096,
-                bootstrap_servers=self.redpanda.brokers_list())
-            for key, value in produced:
-                producer.send(spec.name, key=key, value=value)
-            producer.flush()
-            self.logger.info(f"Finished producing to {spec}")
+            producer = KafProducer(self.test_context, self.redpanda, spec.name,
+                                   num_records)
+            producer.start()
+            self.logger.info(
+                f"Finished producing to {spec}, waiting for producer...")
+            producer.wait()
+            producer.free()
+            self.logger.info(f"Producer stop complete.")
 
         for _ in range(25):
             self._move_and_verify()
 
         for spec in topics:
             self.logger.info(f"Verifying records in {spec}")
-            consumer = KafkaConsumer(
-                spec.name,
-                bootstrap_servers=self.redpanda.brokers_list(),
-                group_id=None,
-                auto_offset_reset='earliest',
-                request_timeout_ms=5000,
-                consumer_timeout_ms=10000)
 
+            consumer = RpkConsumer(self.test_context,
+                                   self.redpanda,
+                                   spec.name,
+                                   ignore_errors=False,
+                                   retries=0)
+            consumer.start()
             timeout = 30
-            consumed = set()
             t1 = time.time()
+            consumed = set()
             while consumed != produced:
                 if time.time() > t1 + timeout:
                     self.logger.error(
@@ -306,8 +308,19 @@ class PartitionMovementTest(EndToEndTest):
                         f"Messages produced but not consumed: {sorted(produced - consumed)}"
                     )
                     assert set(consumed) == produced
-                for msg in consumer:
-                    consumed.add((msg.key, msg.value))
+                else:
+                    time.sleep(5)
+                    for m in consumer.messages:
+                        self.logger.info(f"message: {m}")
+                    consumed = set([(m['key'], m['message'])
+                                    for m in consumer.messages])
+
+            self.logger.info(f"Stopping consumer...")
+            consumer.stop()
+            self.logger.info(f"Awaiting consumer...")
+            consumer.wait()
+            self.logger.info(f"Freeing consumer...")
+            consumer.free()
 
             self.logger.info(f"Finished verifying records in {spec}")
 
