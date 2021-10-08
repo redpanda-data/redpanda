@@ -102,6 +102,8 @@ public:
 protected:
     void set_next(model::offset offset);
     virtual ss::future<> handle_eviction();
+
+    consensus* _raft;
     ss::gate _gate;
 
 private:
@@ -121,7 +123,6 @@ private:
     ss::future<> apply();
     bool stop_batch_applicator();
 
-    consensus* _raft;
     ss::io_priority_class _io_prio;
     ss::logger& _log;
     offset_monitor _waiters;

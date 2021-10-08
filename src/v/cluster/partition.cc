@@ -15,6 +15,8 @@
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/types.h"
 
+#include <seastar/core/shared_ptr.hh>
+
 namespace cluster {
 
 static bool is_id_allocator_topic(model::ntp ntp) {
@@ -42,7 +44,7 @@ partition::partition(
           clusterlog, _raft.get());
     } else if (is_tx_manager_topic(_raft->ntp())) {
         if (_raft->log_config().is_collectable()) {
-            _nop_stm = ss::make_lw_shared<raft::log_eviction_stm>(
+            _log_eviction_stm = ss::make_lw_shared<raft::log_eviction_stm>(
               _raft.get(), clusterlog, stm_manager, _as);
         }
 
@@ -52,7 +54,7 @@ partition::partition(
         }
     } else {
         if (_raft->log_config().is_collectable()) {
-            _nop_stm = ss::make_lw_shared<raft::log_eviction_stm>(
+            _log_eviction_stm = ss::make_lw_shared<raft::log_eviction_stm>(
               _raft.get(), clusterlog, stm_manager, _as);
         }
 
@@ -70,10 +72,24 @@ partition::partition(
               clusterlog, _raft.get(), _tx_gateway_frontend);
             stm_manager->add_stm(_rm_stm);
         }
+
+        // TODO: check topic config if archival is enabled for this topic
+        if (
+          config::shard_local_cfg().cloud_storage_enabled()
+          && _raft->ntp().ns != model::redpanda_ns) {
+            _archival_meta_stm
+              = ss::make_shared<cluster::archival_metadata_stm>(
+                _raft.get(), _log_eviction_stm);
+            stm_manager->add_stm(_archival_meta_stm);
+        }
     }
 
-    if (_nop_stm) {
-        _nop_stm->set_collectible_offset(model::offset::max());
+    if (_log_eviction_stm && !_archival_meta_stm) {
+        // If archival is not enabled, determine eviction offset according to
+        // the storage logic. Otherwise, _archival_meta_stm will control the
+        // collectible offset so that eviction doesn't touch segments that
+        // aren't yet archived.
+        _log_eviction_stm->set_collectible_offset(model::offset::max());
     }
 }
 
@@ -279,8 +295,8 @@ ss::future<> partition::start() {
 
     if (is_id_allocator_topic(ntp)) {
         return f.then([this] { return _id_allocator_stm->start(); });
-    } else if (_nop_stm) {
-        f = f.then([this] { return _nop_stm->start(); });
+    } else if (_log_eviction_stm) {
+        f = f.then([this] { return _log_eviction_stm->start(); });
     }
 
     if (_rm_stm) {
@@ -289,6 +305,10 @@ ss::future<> partition::start() {
 
     if (_tm_stm) {
         f = f.then([this] { return _tm_stm->start(); });
+    }
+
+    if (_archival_meta_stm) {
+        f = f.then([this] { return _archival_meta_stm->start(); });
     }
 
     return f;
@@ -303,8 +323,8 @@ ss::future<> partition::stop() {
         return _id_allocator_stm->stop();
     }
 
-    if (_nop_stm) {
-        f = _nop_stm->stop();
+    if (_log_eviction_stm) {
+        f = _log_eviction_stm->stop();
     }
 
     if (_rm_stm) {
@@ -313,6 +333,10 @@ ss::future<> partition::stop() {
 
     if (_tm_stm) {
         f = f.then([this] { return _tm_stm->stop(); });
+    }
+
+    if (_archival_meta_stm) {
+        f = f.then([this] { return _archival_meta_stm->stop(); });
     }
 
     // no state machine

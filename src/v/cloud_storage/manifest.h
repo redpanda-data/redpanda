@@ -18,6 +18,7 @@
 #include "model/metadata.h"
 #include "s3/client.h"
 #include "seastarx.h"
+#include "serde/serde.h"
 #include "tristate.h"
 
 #include <seastar/util/bool_class.hh>
@@ -130,6 +131,10 @@ public:
 class manifest final : public base_manifest {
 public:
     struct segment_meta {
+        using value_t = segment_meta;
+        static constexpr serde::version_t redpanda_serde_version = 0;
+        static constexpr serde::version_t redpanda_serde_compat_version = 0;
+
         bool is_compacted;
         size_t size_bytes;
         model::offset base_offset;
@@ -157,6 +162,8 @@ public:
     remote_manifest_path get_manifest_path() const override;
 
     /// Segment file name in S3
+    static remote_segment_path generate_remote_segment_path(
+      const model::ntp, model::revision_id, const segment_name&);
     remote_segment_path get_remote_segment_path(const segment_name& name) const;
     remote_segment_path get_remote_segment_path(const key& name) const;
 
