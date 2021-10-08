@@ -55,12 +55,12 @@ ss::future<> api::start() {
 }
 
 ss::future<> api::stop() {
-    // co_await _service.invoke_on_all(&service::stop);
-
     co_await _service.stop();
     co_await _sequencer.stop();
     co_await _client.stop();
-    co_await _store->stop();
+    if (_store) {
+        co_await _store->stop();
+    }
 }
 
 } // namespace pandaproxy::schema_registry
