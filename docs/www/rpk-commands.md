@@ -472,63 +472,6 @@ Aliases:
   list, ls
 ```
 
-## wasm 
-
-OS support: ![Linux][linux] ![MacOS][mac]
-
-Deploy and remove inline WASM engine scripts
-
-The global flags for `rpk wasm` are:
-```cmd
-      --brokers strings         Comma-separated list of broker ip:port pairs
-      --config string           Redpanda config file, if not set the file will be searched for in the default locations
-      --password string         SASL password to be used for authentication.
-      --sasl-mechanism string   The authentication mechanism to use. Supported values: SCRAM-SHA-256, SCRAM-SHA-512.
-      --tls-cert string         The certificate to be used for TLS authentication with the broker.
-      --tls-key string          The certificate key to be used for TLS authentication with the broker.
-      --tls-truststore string   The truststore to be used for TLS communication with the broker.
-      --user string             SASL user to be used for authentication.
-  -v, --verbose                 enable verbose logging (default false)
-```
-
-### wasm generate 
-
-OS support: ![Linux][linux] ![MacOS][mac]
-
-Create an npm template project for the inline WASM engine
-
-```cmd
-Usage:
-  rpk wasm generate <project directory> [flags]
-```
-
-
-### wasm deploy 
-
-OS support: ![Linux][linux] ![MacOS][mac]
-
-Deploy inline WASM scripts
-
-```cmd
-Usage:
-  rpk wasm deploy <path> [flags]
-
-Flags:
-      --description string   Optional description about what the wasm function does, for reference.
-```
-
-### wasm remove 
-
-OS support: ![Linux][linux] ![MacOS][mac]
-
-Remove an inline WASM script
-
-```cmd
-Usage:
-  rpk wasm remove <name> [flags]
-```
-
-
 ## iotune 
 
 OS support: ![Linux][linux]
