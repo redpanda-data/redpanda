@@ -203,6 +203,9 @@ public:
     get_versions(const subject& sub, include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
         const auto& versions = sub_it->second.versions;
+        if (versions.empty()) {
+            return not_found(sub);
+        }
         std::vector<schema_version> res;
         res.reserve(versions.size());
         for (const auto& ver : versions) {
