@@ -205,6 +205,13 @@ static ss::future<read_result> do_read_from_ntp(
     }
 
     if (ntp_config.cfg.start_offset < kafka_partition->start_offset()) {
+        vlog(
+          klog.warn,
+          "fetch offset out of range for {}, requested offset: {}, partition "
+          "start offset: {}",
+          ntp_config.ntp(),
+          ntp_config.cfg.start_offset,
+          kafka_partition->start_offset());
         return ss::make_ready_future<read_result>(
           error_code::offset_out_of_range);
     }
