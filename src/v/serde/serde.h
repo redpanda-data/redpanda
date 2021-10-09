@@ -10,6 +10,7 @@
 #pragma once
 
 #include "bytes/iobuf_parser.h"
+#include "hashing/crc32c.h"
 #include "reflection/type_traits.h"
 #include "serde/envelope_for_each_field.h"
 #include "serde/logger.h"
@@ -35,6 +36,14 @@ inline constexpr bool serde_is_enum_v =
   std::is_enum_v<T>;
 #endif
 
+#if defined(SERDE_TEST)
+using serde_size_t = uint16_t;
+#else
+using serde_size_t = uint32_t;
+#endif
+
+using checksum_t = uint32_t;
+
 template<typename To, typename From>
 To bit_cast(From const& f) {
     static_assert(sizeof(From) == sizeof(To));
@@ -47,6 +56,7 @@ To bit_cast(From const& f) {
 struct header {
     version_t _version, _compat_version;
     size_t _bytes_left_limit;
+    checksum_t _checksum;
 };
 
 template<typename T, typename = void>
@@ -137,8 +147,13 @@ void write(iobuf& out, T t) {
         write(out, Type::redpanda_serde_compat_version);
 
         auto size_placeholder = out.reserve(sizeof(serde_size_t));
-        auto const size_before = out.size_bytes();
 
+        auto checksum_placeholder = iobuf::placeholder{};
+        if constexpr (is_checksum_envelope_v<Type>) {
+            checksum_placeholder = out.reserve(sizeof(checksum_t));
+        }
+
+        auto const size_before = out.size_bytes();
         if constexpr (has_serde_write<Type>) {
             t.serde_write(out);
         } else {
@@ -154,6 +169,22 @@ void write(iobuf& out, T t) {
           static_cast<serde_size_t>(written_size));
         size_placeholder.write(
           reinterpret_cast<char const*>(&size), sizeof(serde_size_t));
+
+        if constexpr (is_checksum_envelope_v<Type>) {
+            auto crc = crc::crc32c{};
+            auto in = iobuf_const_parser{out};
+            in.skip(size_before);
+            in.consume(
+              in.bytes_left(), [&crc](char const* src, size_t const n) {
+                  crc.extend(src, n);
+                  return ss::stop_iteration::no;
+              });
+            auto const checksum = ss::cpu_to_le(crc.value());
+            static_assert(
+              std::is_same_v<std::decay_t<decltype(checksum)>, checksum_t>);
+            checksum_placeholder.write(
+              reinterpret_cast<char const*>(&checksum), sizeof(checksum_t));
+        }
     } else if constexpr (std::is_same_v<bool, Type>) {
         write<int8_t>(out, t);
     } else if constexpr (serde_is_enum_v<Type>) {
@@ -242,6 +273,11 @@ header read_header(iobuf_parser& in, std::size_t const bytes_left_limit) {
     auto const compat_version = read_nested<version_t>(in, bytes_left_limit);
     auto const size = read_nested<serde_size_t>(in, bytes_left_limit);
 
+    auto checksum = checksum_t{};
+    if constexpr (is_checksum_envelope_v<T>) {
+        checksum = read_nested<checksum_t>(in, bytes_left_limit);
+    }
+
     if (unlikely(in.bytes_left() < size)) {
         throw serde_exception(fmt_with_ctx(
           ssx::sformat,
@@ -273,7 +309,8 @@ header read_header(iobuf_parser& in, std::size_t const bytes_left_limit) {
     return header{
       ._version = version,
       ._compat_version = compat_version,
-      ._bytes_left_limit = in.bytes_left() - size};
+      ._bytes_left_limit = in.bytes_left() - size,
+      ._checksum = checksum};
 }
 
 template<typename T>
@@ -283,6 +320,29 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
 
     if constexpr (is_envelope_v<Type>) {
         auto const h = read_header<Type>(in, bytes_left_limit);
+
+        if constexpr (is_checksum_envelope_v<Type>) {
+            auto const shared = in.share(in.bytes_left() - h._bytes_left_limit);
+            auto read_only_in = iobuf_const_parser{shared};
+            auto crc = crc::crc32c{};
+            read_only_in.consume(
+              read_only_in.bytes_left(),
+              [&crc](char const* src, size_t const n) {
+                  crc.extend(src, n);
+                  return ss::stop_iteration::no;
+              });
+            if (unlikely(crc.value() != h._checksum)) {
+                throw serde_exception(fmt_with_ctx(
+                  ssx::sformat,
+                  "serde: envelope {} (ends at bytes_left={}) has bad "
+                  "checksum: stored={}, actual={}",
+                  type_str<Type>(),
+                  h._bytes_left_limit,
+                  h._checksum,
+                  crc.value()));
+            }
+        }
+
         if constexpr (has_serde_read<Type>) {
             t.serde_read(in, h);
         } else {
@@ -324,7 +384,12 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         t = static_cast<Type>(val);
     } else if constexpr (std::is_scalar_v<Type>) {
         if (unlikely(in.bytes_left() < sizeof(Type))) {
-            throw serde_exception{"message too short"};
+            throw serde_exception(fmt_with_ctx(
+              ssx::sformat,
+              "reading type {} of size {}: {} bytes left",
+              type_str<Type>(),
+              sizeof(Type),
+              in.bytes_left()));
         }
 
         if constexpr (sizeof(Type) == 1) {
@@ -435,6 +500,14 @@ ss::future<> write_async(iobuf& out, T const& t) {
         write(out, t);
         return ss::make_ready_future<>();
     }
+}
+
+inline version_t peek_version(iobuf_parser& in) {
+    if (unlikely(in.bytes_left() < sizeof(serde::version_t))) {
+        throw serde_exception{"cannot peek version"};
+    }
+    auto version_reader = iobuf_parser{in.peek(sizeof(serde::version_t))};
+    return serde::read_nested<serde::version_t>(version_reader, 0);
 }
 
 template<typename T>
