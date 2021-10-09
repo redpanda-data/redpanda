@@ -71,11 +71,34 @@ struct test_msg1_new
     int _b, _c;
 };
 
+struct test_msg1_new_manual {
+    using value_t = test_msg1_new_manual;
+    static constexpr auto redpanda_serde_version = 10;
+    static constexpr auto redpanda_serde_compat_version = 5;
+
+    bool operator==(test_msg1_new_manual const&) const = default;
+
+    int _a;
+    test_msg0 _m;
+    int _b, _c;
+};
+
 struct not_an_envelope {};
 static_assert(!serde::is_envelope_v<not_an_envelope>);
 static_assert(serde::is_envelope_v<test_msg1>);
+static_assert(serde::inherits_from_envelope_v<test_msg1_new>);
+static_assert(!serde::inherits_from_envelope_v<test_msg1_new_manual>);
 static_assert(test_msg1::redpanda_serde_version == 4);
 static_assert(test_msg1::redpanda_serde_compat_version == 0);
+
+SEASTAR_THREAD_TEST_CASE(manual_and_envelope_equal) {
+    auto const roundtrip = serde::from_iobuf<test_msg1_new_manual>(
+      serde::to_iobuf(test_msg1_new{
+        ._a = 77, ._m = test_msg0{._i = 2, ._j = 3}, ._b = 88, ._c = 99}));
+    auto const check = test_msg1_new_manual{
+      ._a = 77, ._m = test_msg0{._i = 2, ._j = 3}, ._b = 88, ._c = 99};
+    BOOST_CHECK(roundtrip == check);
+}
 
 SEASTAR_THREAD_TEST_CASE(reserve_test) {
     auto b = iobuf();

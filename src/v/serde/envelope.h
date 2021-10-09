@@ -43,6 +43,7 @@ struct envelope {
     using value_t = T;
     static constexpr auto redpanda_serde_version = Version::v;
     static constexpr auto redpanda_serde_compat_version = CompatVersion::v;
+    static constexpr auto redpanda_inherits_from_envelope = true;
 };
 
 namespace detail {
@@ -65,11 +66,24 @@ struct has_version_attribute<
   std::void_t<decltype(std::declval<T>().redpanda_serde_compat_version)>>
   : std::true_type {};
 
+template<typename T, typename = void>
+struct inherits_from_envelope : std::false_type {};
+
+template<typename T>
+struct inherits_from_envelope<
+  T,
+  std::void_t<decltype(std::declval<T>().redpanda_inherits_from_envelope)>>
+  : std::true_type {};
+
 } // namespace detail
 
 template<typename T>
 inline constexpr auto const is_envelope_v = std::conjunction_v<
   detail::has_compat_attribute<T>,
   detail::has_version_attribute<T>>;
+
+template<typename T>
+inline constexpr auto const inherits_from_envelope_v
+  = detail::inherits_from_envelope<T>::value;
 
 } // namespace serde
