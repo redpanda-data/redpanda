@@ -407,8 +407,10 @@ ss::future<> group_manager::recover_partition(
     for (auto& [group_id, group_stm] : ctx.groups) {
         if (group_stm.is_removed()) {
             if (_groups.contains(group_id) && group_stm.offsets().size() > 0) {
-                return ss::make_exception_future<>(
-                  std::runtime_error("unexpected unload of active group"));
+                klog.warn(
+                  "Unexpected active group unload {} loading {}",
+                  group_id,
+                  p->partition->ntp());
             }
         }
     }
