@@ -41,22 +41,6 @@ group_manager::group_manager(
 
 ss::future<> group_manager::start() {
     /*
-     * receive notifications for partition leadership changes. when we become a
-     * leader we recovery. when we become a follower (or the partition is
-     * mapped to another node/core) the in-memory cache may be cleared.
-     */
-    _leader_notify_handle = _gm.local().register_leadership_notification(
-      [this](
-        raft::group_id group,
-        model::term_id term,
-        std::optional<model::node_id> leader_id) {
-          auto p = _pm.local().partition_for(group);
-          if (p) {
-              handle_leader_change(term, p, leader_id);
-          }
-      });
-
-    /*
      * receive notifications when group-metadata partitions come under
      * management on this core. note that the notify callback will be
      * synchronously invoked for all existing partitions that match the query.
@@ -74,6 +58,22 @@ ss::future<> group_manager::start() {
       [this](model::partition_id p_id) {
           detach_partition(model::ntp(
             model::kafka_internal_namespace, model::kafka_group_topic, p_id));
+      });
+
+    /*
+     * receive notifications for partition leadership changes. when we become a
+     * leader we recovery. when we become a follower (or the partition is
+     * mapped to another node/core) the in-memory cache may be cleared.
+     */
+    _leader_notify_handle = _gm.local().register_leadership_notification(
+      [this](
+        raft::group_id group,
+        model::term_id term,
+        std::optional<model::node_id> leader_id) {
+          auto p = _pm.local().partition_for(group);
+          if (p) {
+              handle_leader_change(term, p, leader_id);
+          }
       });
 
     /*
@@ -211,6 +211,22 @@ void group_manager::handle_leader_change(
   std::optional<model::node_id> leader) {
     (void)with_gate(_gate, [this, term, part = std::move(part), leader] {
         if (auto it = _partitions.find(part->ntp()); it != _partitions.end()) {
+            /*
+             * In principle a race could occur by which a validate_group_status
+             * might return true even when the underlying partition hasn't
+             * recovered. a request would need to sneak in after leadership is
+             * set and clients were able to route to the new coordinator, but
+             * before we set loading=true to block operations while recover
+             * happens.
+             *
+             * since upcall happens synchrnously from rafter on leadership
+             * change, we early set this flag to block out any requests in case
+             * we would end up waiting on recovery and cause the situation
+             * above.
+             */
+            if (leader == _self.id()) {
+                it->second->loading = true;
+            }
             return ss::with_semaphore(
               it->second->sem, 1, [this, term, p = it->second, leader] {
                   return handle_partition_leader_change(term, p, leader);
@@ -264,26 +280,6 @@ ss::future<> group_manager::handle_partition_leader_change(
   model::term_id term,
   ss::lw_shared_ptr<attached_partition> p,
   std::optional<model::node_id> leader_id) {
-    /*
-     * When a partition is attached it is initially NOT in the loading state.
-     * Shortly after we should receive a leadership change upcall. If we are the
-     * leader then we will start loading (and clear the loading bit when we are
-     * done). Otherwise, we clear the loading bit.
-     *
-     * The reason that a newly attached partition AND partitions that lose
-     * leadership have their loading bit cleared is not because this state makes
-     * total sense (it is really neither loading nor non-loading state as it
-     * should never be queried in a non-leader state), but rather because some
-     * APIs like list_groups will return an error if _any_ partition is in the
-     * loading state. However, this should only apply to leader partitions, and
-     * we rely on higher level routing to avoid requests from hitting non-leader
-     * partitions (this check is circumvented for list groups).
-     *
-     * Ideally what we do disconnect or detatch partitions when leadership is
-     * lost. At this time we could also GC group state:
-     *
-     *    https://github.com/vectorizedio/redpanda/issues/2217
-     */
     if (leader_id != _self.id()) {
         p->loading = false;
         return gc_partition_state(p);
@@ -411,8 +407,10 @@ ss::future<> group_manager::recover_partition(
     for (auto& [group_id, group_stm] : ctx.groups) {
         if (group_stm.is_removed()) {
             if (_groups.contains(group_id) && group_stm.offsets().size() > 0) {
-                return ss::make_exception_future<>(
-                  std::runtime_error("unexpected unload of active group"));
+                klog.warn(
+                  "Unexpected active group unload {} loading {}",
+                  group_id,
+                  p->partition->ntp());
             }
         }
     }
