@@ -146,7 +146,7 @@ void members_backend::calculate_reallocations(update_meta& meta) {
         // reallocate all partitons for which any of replicas is placed on
         // decommissioned node
         for (const auto& [tp_ns, cfg] : _topics.local().topics_map()) {
-            if (cfg.is_topic_replicable()) {
+            if (!cfg.is_topic_replicable()) {
                 continue;
             }
             for (auto& pas : cfg.get_configuration().assignments) {
@@ -257,7 +257,7 @@ void members_backend::calculate_reallocations_after_node_added(
           || tp_ns.ns == model::redpanda_ns) {
             continue;
         }
-        if (metadata.is_topic_replicable()) {
+        if (!metadata.is_topic_replicable()) {
             continue;
         }
         // do not move topics that were created after node was added, they are
