@@ -340,6 +340,7 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
     total.num_succeded = std::count(
       begin(results), end(results), cloud_storage::upload_result::success);
     total.num_failed = flist.size() - total.num_succeded;
+    std::vector<cluster::archival_metadata_stm::segment> segments;
     for (size_t i = 0; i < results.size(); i++) {
         if (results[i] != cloud_storage::upload_result::success) {
             break;
@@ -347,16 +348,30 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
         const auto& upload = scheduled[ixupload[i]];
         _probe.uploaded(*upload.delta);
         _manifest.add(segment_name(*upload.name), *upload.meta);
+        cluster::archival_metadata_stm::segment segment{
+          .ntp_revision = _manifest.get_revision_id(),
+          .name = segment_name(*upload.name),
+          .meta = *upload.meta,
+        };
+        segments.push_back(std::move(segment));
     }
     if (total.num_succeded != 0) {
         vlog(
           ctxlog.debug,
-          "Uploading next candidates for {}, re-uploading manifest file",
+          "Uploaded next candidates for {}, re-uploading manifest file",
           _ntp);
+
         auto res = co_await upload_manifest(parent);
+
+        // TODO: error handling
+        if (_partition->archival_meta_stm()) {
+            co_await _partition->archival_meta_stm()->add_segments(segments);
+        }
+
         if (res != cloud_storage::upload_result::success) {
             vlog(ctxlog.debug, "Manifest upload for {} failed", _ntp);
         }
+
         _last_upload_time = ss::lowres_clock::now();
     }
     co_return total;
