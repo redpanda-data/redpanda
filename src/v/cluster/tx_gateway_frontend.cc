@@ -78,8 +78,15 @@ tx_gateway_frontend::tx_gateway_frontend(
   , _metadata_dissemination_retry_delay_ms(
       config::shard_local_cfg().metadata_dissemination_retry_delay_ms.value())
   , _transactional_id_expiration(
-      config::shard_local_cfg().transactional_id_expiration_ms.value()) {
-    start_expire_timer();
+      config::shard_local_cfg().transactional_id_expiration_ms.value())
+  , _transactions_enabled(
+      config::shard_local_cfg().enable_transactions.value()) {
+    /**
+     * do not start expriry timer when transactions are disabled
+     */
+    if (_transactions_enabled) {
+        start_expire_timer();
+    }
 }
 
 void tx_gateway_frontend::start_expire_timer() {
