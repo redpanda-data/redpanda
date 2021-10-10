@@ -248,6 +248,8 @@ static model::record_batch_header read_single_batch_from_remote_partition(
     auto headers_read
       = reader.consume(test_consumer(), model::no_timeout).get();
 
+    partition.stop().get();
+
     vlog(test_log.debug, "num headers: {}", headers_read.size());
     BOOST_REQUIRE(headers_read.size() == 1);
     vlog(test_log.debug, "batch found: {}", headers_read.front());
@@ -277,6 +279,7 @@ static std::vector<model::record_batch_header> scan_remote_partition(
     auto headers_read
       = reader.consume(test_consumer(), model::no_timeout).get();
 
+    partition.stop().get();
     return headers_read;
 }
 

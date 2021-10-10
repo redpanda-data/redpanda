@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/cache_service.h"
+#include "cloud_storage/logger.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
@@ -27,6 +28,7 @@
 
 namespace cloud_storage {
 
+static constexpr size_t max_index_error_bytes = 32_KiB;
 class download_exception : public std::exception {
 public:
     explicit download_exception(download_result r, std::filesystem::path p);
@@ -52,6 +54,8 @@ public:
       const manifest& m,
       manifest::key path,
       retry_chain_node& parent);
+
+    ~remote_segment() { vlog(cst_log.info, "remote_segment d-tor"); }
 
     const model::ntp& get_ntp() const;
 
@@ -112,7 +116,10 @@ public:
     remote_segment_batch_reader(const remote_segment_batch_reader&) = delete;
     remote_segment_batch_reader& operator=(const remote_segment_batch_reader&)
       = delete;
-    ~remote_segment_batch_reader() noexcept = default;
+    // ~remote_segment_batch_reader() noexcept = default;
+    ~remote_segment_batch_reader() noexcept {
+        vlog(cst_log.info, "remote_segment_batch_reader d-tor");
+    }
 
     ss::future<result<ss::circular_buffer<model::record_batch>>>
       read_some(model::timeout_clock::time_point);
@@ -132,7 +139,7 @@ private:
     size_t produce(model::record_batch batch);
 
     remote_segment& _seg;
-    gate_guard _guard;
+    // std::optional<gate_guard> _guard;
     storage::log_reader_config& _config;
     std::unique_ptr<storage::continuous_batch_parser> _parser;
     bool _done{false};

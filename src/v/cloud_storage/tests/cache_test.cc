@@ -46,6 +46,7 @@ FIXTURE_TEST(get_after_put, cache_test_fixture) {
     BOOST_CHECK_EQUAL(
       std::string_view(read_buf.get(), read_buf.size()), data_string);
     BOOST_CHECK(!returned_item->body.read().get().get());
+    returned_item->body.close().get();
 }
 
 FIXTURE_TEST(put_rewrites_file, cache_test_fixture) {
@@ -65,6 +66,7 @@ FIXTURE_TEST(put_rewrites_file, cache_test_fixture) {
     BOOST_CHECK_EQUAL(
       std::string_view(read_buf.get(), read_buf.size()), data_string2);
     BOOST_CHECK(!returned_item->body.read().get().get());
+    returned_item->body.close().get();
 }
 
 FIXTURE_TEST(get_missing_file, cache_test_fixture) {

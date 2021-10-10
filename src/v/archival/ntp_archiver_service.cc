@@ -89,7 +89,10 @@ ntp_archiver::ntp_archiver(
 
 ss::future<> ntp_archiver::stop() {
     _as.request_abort();
-    return _gate.close();
+    if (_remote_partition) {
+        co_await _remote_partition->stop();
+    }
+    co_await _gate.close();
 }
 
 const model::ntp& ntp_archiver::get_ntp() const { return _ntp; }

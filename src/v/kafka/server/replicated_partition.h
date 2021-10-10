@@ -32,6 +32,11 @@ public:
     const model::ntp& ntp() const final { return _partition->ntp(); }
 
     model::offset start_offset() const final {
+        if (
+          _partition->cloud_data_available()
+          && (_partition->start_offset() > _partition->start_cloud_offset())) {
+            return _partition->start_cloud_offset(); // TODO: translate offset
+        }
         return _translator->to_kafka_offset(_partition->start_offset());
     }
 

@@ -90,18 +90,10 @@ const model::ntp& remote_segment::get_ntp() const {
 }
 
 const model::offset remote_segment::get_max_offset() const {
-    vlog(
-      _ctxlog.debug,
-      "get_max_offset called, key {}",
-      manifest_key_to_string(_path));
     return _manifest.get(_path)->committed_offset;
 }
 
 const model::offset remote_segment::get_base_offset() const {
-    vlog(
-      _ctxlog.debug,
-      "get_base_offset called, key {}",
-      manifest_key_to_string(_path));
     return _manifest.get(_path)->base_offset;
 }
 
@@ -300,7 +292,7 @@ remote_segment_batch_reader::remote_segment_batch_reader(
   storage::log_reader_config& config,
   model::term_id term) noexcept
   : _seg(s)
-  , _guard(_seg.get_gate_guard())
+  //   , _guard(_seg.get_gate_guard())
   , _config(config)
   , _term(term) {}
 
@@ -360,6 +352,7 @@ ss::future<> remote_segment_batch_reader::close() {
           cst_log.debug, "remote_segment_batch_reader::close - parser-close");
         return _parser->close();
     }
+    // _guard = std::nullopt;
     return ss::now();
 }
 

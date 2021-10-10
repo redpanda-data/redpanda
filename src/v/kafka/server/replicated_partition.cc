@@ -31,6 +31,13 @@ replicated_partition::replicated_partition(
 ss::future<model::record_batch_reader> replicated_partition::make_reader(
   storage::log_reader_config cfg,
   std::optional<model::timeout_clock::time_point> deadline) {
+    if (
+      _partition->cloud_data_available()
+      && cfg.start_offset < _partition->start_offset()
+      && cfg.start_offset >= _partition->start_cloud_offset()) {
+        co_return co_await _partition->make_cloud_reader(cfg, deadline);
+    }
+
     cfg.start_offset = _translator->from_kafka_offset(cfg.start_offset);
     cfg.max_offset = _translator->from_kafka_offset(cfg.max_offset);
     cfg.type_filter = {model::record_batch_type::raft_data};
