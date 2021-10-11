@@ -30,14 +30,26 @@ class KafkaCat:
             f"{offset}", "-c1"
         ])
 
-    def _cmd(self, cmd):
+    def produce_one(self, topic, msg, tx_id=None):
+        cmd = ['-P', '-t', topic]
+        if tx_id:
+            cmd += ['-X', f'transactional.id={tx_id}']
+        return self._cmd_raw(cmd, input=f"{msg}\n")
+
+    def _cmd(self, cmd, input=None):
+        res = self._cmd_raw(cmd + ['-J'], input=input)
+        res = json.loads(res)
+        self._redpanda.logger.debug(json.dumps(res, indent=2))
+        return res
+
+    def _cmd_raw(self, cmd, input=None):
         for retry in reversed(range(10)):
             try:
                 res = subprocess.check_output(
-                    ["kcat", "-b",
-                     self._redpanda.brokers(), "-J"] + cmd)
-                res = json.loads(res)
-                self._redpanda.logger.debug(json.dumps(res, indent=2))
+                    ["kcat", "-b", self._redpanda.brokers()] + cmd,
+                    text=True,
+                    input=input)
+                self._redpanda.logger.debug(res)
                 return res
             except subprocess.CalledProcessError as e:
                 if retry == 0:
