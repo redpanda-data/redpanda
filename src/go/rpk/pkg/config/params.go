@@ -295,6 +295,7 @@ func (p *Params) readConfig(fs afero.Fs, c *Config) error {
 		if err := yaml.Unmarshal(file, c); err != nil {
 			return fmt.Errorf("unable to yaml decode %s: %v", path, err)
 		}
+		yaml.Unmarshal(file, &c.file) // cannot error since previous did not
 		return nil
 	}
 

@@ -18,6 +18,8 @@ import (
 )
 
 type Config struct {
+	file *Config
+
 	NodeUuid             string                 `yaml:"node_uuid,omitempty" mapstructure:"node_uuid,omitempty" json:"nodeUuid"`
 	Organization         string                 `yaml:"organization,omitempty" mapstructure:"organization,omitempty" json:"organization"`
 	LicenseKey           string                 `yaml:"license_key,omitempty" mapstructure:"license_key,omitempty" json:"licenseKey"`
@@ -30,6 +32,13 @@ type Config struct {
 	SchemaRegistry       *SchemaRegistry        `yaml:"schema_registry,omitempty" mapstructure:"schema_registry,omitempty" json:"schemaRegistry,omitempty"`
 	SchemaRegistryClient *KafkaClient           `yaml:"schema_registry_client,omitempty" mapstructure:"schema_registry_client,omitempty" json:"schemaRegistryClient,omitempty"`
 	Other                map[string]interface{} `yaml:",inline" mapstructure:",remain"`
+}
+
+// File returns the configuration as read from a file, with no defaults
+// pre-deserializing and no overrides applied after. If the return is nil,
+// no file was read.
+func (c *Config) File() *Config {
+	return c.file
 }
 
 type RedpandaConfig struct {

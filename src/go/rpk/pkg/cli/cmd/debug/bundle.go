@@ -20,25 +20,30 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/Shopify/sarama"
 	"github.com/beevik/ntp"
 	"github.com/docker/go-units"
 	"github.com/hashicorp/go-multierror"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system/syslog"
 	"gopkg.in/yaml.v2"
@@ -88,7 +93,6 @@ func (l *limitedWriter) Write(p []byte) (int, error) {
 
 	if limitReached {
 		return n, errors.New("output size limit reached")
-
 	}
 	return n, nil
 }
@@ -167,7 +171,7 @@ func writeCommandOutputToZip(
 	return writeCommandOutputToZipLimit(ps, filename, -1, command, args...)
 }
 
-func NewBundleCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
+func NewBundleCommand(fs afero.Fs) *cobra.Command {
 	var (
 		configFile string
 
@@ -201,8 +205,8 @@ then bundles the collected data into a zip file.
 
 The following are the data sources that are bundled in the compressed file:
 
- - Kafka metadata: Number of brokers, consumer groups, topics & partitions, topic
-   configuration and replication factor.
+ - Kafka metadata: Broker configs, topic configs, start/committed/end offsets,
+   groups, group commits.
 
  - Data directory structure: A file describing the data directory's contents.
 
@@ -247,66 +251,23 @@ The following are the data sources that are bundled in the compressed file:
    as root.
 `,
 		SilenceUsage: true,
-		RunE: func(ccmd *cobra.Command, args []string) error {
+		Run: func(cmd *cobra.Command, args []string) {
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			admin, err := admin.NewClient(fs, p, cfg)
+			out.MaybeDie(err, "unable to initialize admin client: %v", err)
+
+			cl, err := kafka.NewFranzClient(fs, p, cfg)
+			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
+			defer cl.Close()
 
 			logsLimit, err := units.FromHumanSize(logsSizeLimit)
-			if err != nil {
-				return err
-			}
+			out.MaybeDie(err, "unable to parse --logs-size-limit: %v", err)
 
-			mgr := config.NewManager(fs)
-			conf, err := mgr.ReadOrFind(configFile)
-			if err != nil {
-				return err
-			}
-			// Since we want to use and bundle in the actual config,
-			// common.FindConfigFile can't be used (it defaults to returning
-			// config.Default()). Therefore, we check that the config is in a
-			// the path given by --config or a default path as defined in
-			// Manager#ReadOrFind.
-			configClosure := func() (*config.Config, error) {
-				return conf, nil
-			}
-			brokersClosure := common.DeduceBrokers(
-				common.CreateDockerClient,
-				configClosure,
-				&brokers,
-			)
-			tlsClosure := common.BuildKafkaTLSConfig(fs, &enableTLS, &certFile, &keyFile, &CAFile, configClosure)
-			kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism, configClosure)
-			adm := common.CreateAdmin(brokersClosure, configClosure, tlsClosure, kAuthClosure)
-
-			adminAPITLS := common.BuildAdminApiTLSConfig(
-				fs,
-				&adminEnableTLS,
-				&adminCertFile,
-				&adminKeyFile,
-				&adminCAFile,
-				configClosure,
-			)
-			admAPITLS, err := adminAPITLS()
-			if err != nil {
-				return err
-			}
-			adminURLs := []string{}
-			if adminURL != "" {
-				adminURLs = []string{adminURL}
-			}
-
-			adminURLs = common.DeduceAdminApiAddrs(configClosure, &adminURLs)
-
-			api, err := admin.NewAdminAPI(adminURLs, admAPITLS)
-			if err != nil {
-				return err
-			}
-
-			a, err := adm()
-			if err != nil {
-				return err
-			}
-			defer a.Close()
-
-			return executeBundle(fs, conf, a, api, logsSince, logsUntil, int(logsLimit), timeout)
+			err = executeBundle(fs, cfg, cl, admin, logsSince, logsUntil, int(logsLimit), timeout)
+			out.MaybeDie(err, "unable to create bundle: %v", err)
 		},
 	}
 	command.Flags().StringVar(
@@ -365,8 +326,8 @@ The following are the data sources that are bundled in the compressed file:
 func executeBundle(
 	fs afero.Fs,
 	conf *config.Config,
-	adm sarama.ClusterAdmin,
-	api *admin.AdminAPI,
+	cl *kgo.Client,
+	admin *admin.AdminAPI,
 	logsSince, logsUntil string,
 	logsLimitBytes int,
 	timeout time.Duration,
@@ -396,7 +357,7 @@ func executeBundle(
 	}
 
 	steps := []step{
-		saveKafkaMetadata(ps, adm),
+		saveKafkaMetadata(ps, cl),
 		saveDataDirStructure(ps, conf),
 		saveConfig(ps, conf),
 		saveCPUInfo(ps),
@@ -404,7 +365,7 @@ func executeBundle(
 		saveResourceUsageData(ps, conf),
 		saveNTPDrift(ps),
 		saveSyslog(ps),
-		savePrometheusMetrics(ps, api),
+		savePrometheusMetrics(ps, admin),
 		saveDNSData(ps),
 		saveDiskUsage(ps, conf),
 		saveLogs(ps, logsSince, logsUntil, logsLimitBytes),
@@ -433,102 +394,115 @@ func executeBundle(
 	return nil
 }
 
-type kafkaMetadata struct {
-	Brokers        []*broker        `json:"brokers"`
-	Topics         []*topic         `json:"topics"`
-	ConsumerGroups []*consumerGroup `json:"consumerGroups"`
+// Parses an error return from kadm, and if the return is a shard errors,
+// returns a list of each individual error.
+func stringifyKadmErr(err error) []string {
+	var ae *kadm.AuthError
+	var se *kadm.ShardErrors
+	switch {
+	case err == nil:
+		return nil
+
+	case errors.As(err, &se):
+		var errs []string
+		for _, err := range se.Errs {
+			errs = append(errs, fmt.Sprintf("%s to %s (%d) failed: %s",
+				se.Name,
+				net.JoinHostPort(err.Broker.Host, strconv.Itoa(int(err.Broker.Port))),
+				err.Broker.NodeID,
+				err.Err,
+			))
+		}
+		return errs
+
+	case errors.As(err, &ae):
+		return []string{fmt.Sprintf("authorization error: %s", err)}
+
+	default:
+		return []string{err.Error()}
+	}
 }
 
-type broker struct {
-	Id   int32  `json:"id"`
-	Addr string `json:"addr"`
-}
-
-type topic struct {
-	Name          string             `json:"name"`
-	Config        map[string]*string `json:"config"`
-	NumPartitions int32              `json:"numPartitions"`
-	ReplFactor    int16              `json:"replFactor"`
-}
-
-type consumerGroup struct {
-	Id      string                 `json:"id"`
-	Members []*consumerGroupMember `json:"members"`
-}
-
-type consumerGroupMember struct {
-	Host string `json:"host"`
-	Id   string `json:"id"`
-}
-
-func saveKafkaMetadata(ps *stepParams, admin sarama.ClusterAdmin) step {
+func saveKafkaMetadata(ps *stepParams, cl *kgo.Client) step {
 	return func() error {
-		log.Debug("Reading Kafka metadata")
-		bs, _, err := admin.DescribeCluster()
-		if err != nil {
-			return fmt.Errorf("couldn't list topics: %w", err)
-		}
+		log.Debug("Reading Kafka information")
 
-		brokers := make([]*broker, 0, len(bs))
-		for _, b := range bs {
-			brokers = append(brokers, &broker{
-				Id:   b.ID(),
-				Addr: b.Addr(),
-			})
-		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-		topicsMap, err := admin.ListTopics()
-		if err != nil {
-			return fmt.Errorf("couldn't list topics: %w", err)
+		type resp struct {
+			Name     string      // the request the response is for
+			Response interface{} // a raw response from kadm
+			Error    []string    // no error, or one error, or potentially many shard errors
 		}
-		topics := make([]*topic, 0, len(topicsMap))
-		for topicName, details := range topicsMap {
-			n, ds := topicName, details
-			topics = append(topics, &topic{
-				Name:          n,
-				Config:        ds.ConfigEntries,
-				NumPartitions: ds.NumPartitions,
-				ReplFactor:    ds.ReplicationFactor,
-			})
-		}
-		cgs2proto, err := admin.ListConsumerGroups()
-		if err != nil {
-			return fmt.Errorf("couldn't list consumer groups: %w", err)
-		}
-		cgNames := make([]string, 0, len(cgs2proto))
-		for name := range cgs2proto {
-			cgNames = append(cgNames, name)
-		}
-		cgDescs, err := admin.DescribeConsumerGroups(cgNames)
-		if err != nil {
-			if len(cgDescs) == 0 {
-				return fmt.Errorf("couldn't list describe consumer groups: %w", err)
-			}
-		}
-		cgs := make([]*consumerGroup, 0, len(cgDescs))
-		for _, desc := range cgDescs {
-			d := desc
-			members := make([]*consumerGroupMember, 0, len(d.Members))
-			for _, m := range d.Members {
-				members = append(members, &consumerGroupMember{
-					Host: m.ClientHost,
-					Id:   m.ClientId,
-				})
-			}
-			cgs = append(cgs, &consumerGroup{
-				Id:      d.GroupId,
-				Members: members,
-			})
-		}
-		bytes, err := json.Marshal(&kafkaMetadata{
-			Brokers:        brokers,
-			Topics:         topics,
-			ConsumerGroups: cgs,
+		var resps []resp
+
+		adm := kadm.NewClient(cl)
+
+		meta, err := adm.Metadata(ctx)
+		resps = append(resps, resp{
+			Name:     "metadata",
+			Response: meta,
+			Error:    stringifyKadmErr(err),
 		})
-		if err != nil {
-			return fmt.Errorf("couldn't marshal Kafka metadata: %w", err)
+
+		tcs, err := adm.DescribeTopicConfigs(ctx, meta.Topics.Names()...)
+		resps = append(resps, resp{
+			Name:     "topic_configs",
+			Response: tcs,
+			Error:    stringifyKadmErr(err),
+		})
+
+		bcs, err := adm.DescribeBrokerConfigs(ctx, meta.Brokers.NodeIDs()...)
+		resps = append(resps, resp{
+			Name:     "broker_configs",
+			Response: bcs,
+			Error:    stringifyKadmErr(err),
+		})
+
+		ostart, err := adm.ListStartOffsets(ctx)
+		resps = append(resps, resp{
+			Name:     "log_start_offsets",
+			Response: ostart,
+			Error:    stringifyKadmErr(err),
+		})
+
+		ocommitted, err := adm.ListCommittedOffsets(ctx)
+		resps = append(resps, resp{
+			Name:     "last_stable_offsets",
+			Response: ocommitted,
+			Error:    stringifyKadmErr(err),
+		})
+
+		oend, err := adm.ListEndOffsets(ctx)
+		resps = append(resps, resp{
+			Name:     "high_watermarks",
+			Response: oend,
+			Error:    stringifyKadmErr(err),
+		})
+
+		groups, err := adm.DescribeGroups(ctx)
+		resps = append(resps, resp{
+			Name:     "groups",
+			Response: groups,
+			Error:    stringifyKadmErr(err),
+		})
+
+		fetched := adm.FetchManyOffsets(ctx, groups.Names()...)
+		for _, fetch := range fetched {
+			resps = append(resps, resp{
+				Name:     fmt.Sprintf("group_commits_%s", fetch.Group),
+				Response: fetch.Fetched,
+				Error:    stringifyKadmErr(fetch.Err),
+			})
 		}
-		return writeFileToZip(ps, "kafka.json", bytes)
+
+		marshal, err := json.Marshal(resps)
+		if err != nil {
+			return fmt.Errorf("unable to encode kafka admin responses: %v", err)
+		}
+
+		return writeFileToZip(ps, "kafka.json", marshal)
 	}
 }
 
@@ -664,9 +638,9 @@ func saveSyslog(ps *stepParams) step {
 }
 
 // Queries the given admin API address for prometheus metrics.
-func savePrometheusMetrics(ps *stepParams, api *admin.AdminAPI) step {
+func savePrometheusMetrics(ps *stepParams, admin *admin.AdminAPI) step {
 	return func() error {
-		raw, err := api.PrometheusMetrics()
+		raw, err := admin.PrometheusMetrics()
 		if err != nil {
 			return fmt.Errorf("unable to fetch metrics from the admin API: %w", err)
 		}
@@ -774,6 +748,7 @@ func saveDmidecode(ps *stepParams) step {
 		)
 	}
 }
+
 func walkDir(root string, files map[string]*fileInfo) error {
 	return filepath.WalkDir(
 		root,

@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/spf13/afero"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/net"
 )
 
@@ -34,10 +36,19 @@ type AdminAPI struct {
 	client *http.Client
 }
 
-// NewAdminAPI returns client that talks to each of the input URLs.
-//
-// If tlsConfig is non-nil, the client talks to the URLs over https with the
-// given tls configuration.
+// NewClient returns an AdminAPI client that talks to each of the input URLs.
+func NewClient(
+	fs afero.Fs, p *config.Params, cfg *config.Config,
+) (*AdminAPI, error) {
+	a := &cfg.Rpk.AdminApi
+	addrs := a.Addresses
+	tc, err := a.TLS.Config(fs)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create admin api tls config: %v", err)
+	}
+	return NewAdminAPI(addrs, tc)
+}
+
 func NewAdminAPI(urls []string, tlsConfig *tls.Config) (*AdminAPI, error) {
 	if len(urls) == 0 {
 		return nil, errors.New("at least one url is required for the admin api")

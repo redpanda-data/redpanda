@@ -13,17 +13,16 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/debug"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 )
 
-func NewDebugCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
+func NewDebugCommand(fs afero.Fs) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "debug",
 		Short: "Debug the local Redpanda process",
 	}
-	command.AddCommand(debug.NewInfoCommand(fs, mgr))
+	command.AddCommand(debug.NewInfoCommand(fs))
 
-	debug.AddPlatformDependentCmds(fs, mgr, command)
+	debug.AddPlatformDependentCmds(fs, command)
 
 	return command
 }

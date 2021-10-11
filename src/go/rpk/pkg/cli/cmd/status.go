@@ -19,7 +19,7 @@ import (
 
 func NewStatusCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	return common.Deprecated(
-		debug.NewInfoCommand(fs, mgr),
+		debug.NewInfoCommand(fs),
 		"rpk debug info",
 	)
 }
