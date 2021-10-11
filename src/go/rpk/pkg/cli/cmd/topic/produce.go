@@ -71,7 +71,7 @@ func NewProduceCommand(fs afero.Fs) *cobra.Command {
 			case 0:
 				opts = append(opts, kgo.RequiredAcks(kgo.NoAck()), kgo.DisableIdempotentWrite())
 			case 1:
-				opts = append(opts, kgo.RequiredAcks(kgo.LeaderAck()))
+				opts = append(opts, kgo.RequiredAcks(kgo.LeaderAck()), kgo.DisableIdempotentWrite())
 			default:
 				out.Die("invalid acks %d, only -1, 0, and 1 are supported", acks)
 			}
