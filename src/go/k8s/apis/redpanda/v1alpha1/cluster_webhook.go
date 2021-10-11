@@ -92,6 +92,10 @@ func (r *Cluster) Default() {
 		r.Spec.Configuration.SchemaRegistry.Port = defaultSchemaRegistryPort
 	}
 
+	if r.Spec.CloudStorage.Enabled && r.Spec.CloudStorage.CacheStorage != nil && r.Spec.CloudStorage.CacheStorage.Capacity.Value() == 0 {
+		r.Spec.CloudStorage.CacheStorage.Capacity = resource.MustParse("20G")
+	}
+
 	r.setDefaultAdditionalConfiguration()
 
 	if r.Spec.Sidecars.RpkStatus == nil {
