@@ -9,7 +9,6 @@ v_cc_library(
   NAME pandaproxy_schema_registry
   SRCS
     api.cc
-    client_fetch_batch_reader.cc
     configuration.cc
     handlers.cc
     error.cc
