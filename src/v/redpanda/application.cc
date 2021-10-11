@@ -13,6 +13,7 @@
 #include "archival/service.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/controller.h"
+#include "cluster/fwd.h"
 #include "cluster/id_allocator.h"
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/metadata_dissemination_handler.h"
@@ -521,23 +522,6 @@ void application::wire_up_redpanda_services() {
         return storage::internal::chunks().start();
     }).get();
 
-    /**
-     * Last step in shutdown is to wait for all pending request to be
-     * finished/aborted
-     */
-    _deferred.emplace_back([this] {
-        if (_rpc.local_is_initialized()) {
-            _rpc.invoke_on_all(&rpc::server::wait_for_shutdown).get();
-            _rpc.stop().get();
-        }
-    });
-    _deferred.emplace_back([this] {
-        if (_kafka_server.local_is_initialized()) {
-            _kafka_server.invoke_on_all(&rpc::server::wait_for_shutdown).get();
-            _kafka_server.stop().get();
-        }
-    });
-
     // cluster
     syschecks::systemd_message("Adding raft client cache").get();
     construct_service(_raft_connection_cache).get();
@@ -636,7 +620,28 @@ void application::wire_up_redpanda_services() {
       std::ref(controller->get_members_table()),
       std::ref(controller->get_partition_leaders()))
       .get();
+    /**
+     * Wait for all requests to finish before removing critical redpanda
+     * services, that may be used by
+     */
+    _deferred.emplace_back([this] {
+        if (_rpc.local_is_initialized()) {
+            _rpc.invoke_on_all(&rpc::server::wait_for_shutdown).get();
+            _rpc.stop().get();
+        }
+    });
+    _deferred.emplace_back([this] {
+        if (_kafka_server.local_is_initialized()) {
+            _kafka_server.invoke_on_all(&rpc::server::wait_for_shutdown).get();
+            _kafka_server.stop().get();
+        }
+    });
 
+    _deferred.emplace_back([this] {
+        partition_manager
+          .invoke_on_all(&cluster::partition_manager::stop_partitions)
+          .get();
+    });
     syschecks::systemd_message("Creating metadata dissemination service").get();
     construct_service(
       md_dissemination_service,
