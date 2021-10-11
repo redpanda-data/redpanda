@@ -74,7 +74,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
     auto has_metadata = _metadata_cache.local().contains(nt, ntp.tp.partition);
     while (!aborted && !has_metadata && 0 < retries--) {
         vlog(
-          clusterlog.trace,
+          txlog.trace,
           "waiting for {} to fill metadata cache, retries left: {}",
           ntp,
           retries);
@@ -82,7 +82,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
         has_metadata = _metadata_cache.local().contains(nt, ntp.tp.partition);
     }
     if (!has_metadata) {
-        vlog(clusterlog.warn, "can't find {} in the metadata cache", ntp);
+        vlog(txlog.warn, "can't find {} in the metadata cache", ntp);
         co_return begin_tx_reply{
           .ntp = ntp, .ec = tx_errc::partition_not_exists};
     }
@@ -92,7 +92,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
     auto leader_opt = _leaders.local().get_leader(ntp);
     while (!aborted && !leader_opt && 0 < retries--) {
         vlog(
-          clusterlog.trace,
+          txlog.trace,
           "waiting for {} to fill leaders cache, retries left: {}",
           ntp,
           retries);
@@ -108,7 +108,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
         if (!leader_opt) {
             error = fmt::format("can't find {} in the leaders cache", ntp);
             vlog(
-              clusterlog.trace,
+              txlog.trace,
               "can't find {} in the leaders cache, retries left: {}",
               ntp,
               retries);
@@ -130,7 +130,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
                   "leader'",
                   ntp);
                 vlog(
-                  clusterlog.trace,
+                  txlog.trace,
                   "local execution of begin_tx({},...) failed with 'not a "
                   "leader', retries left: {}",
                   ntp,
@@ -141,7 +141,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
             }
             if (result.ec != tx_errc::none) {
                 vlog(
-                  clusterlog.warn,
+                  txlog.warn,
                   "local execution of begin_tx({},...) failed with {}",
                   ntp,
                   result.ec);
@@ -150,7 +150,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
         }
 
         vlog(
-          clusterlog.trace,
+          txlog.trace,
           "dispatching name:begin_tx, ntp:{}, pid:{}, tx_seq:{}, from:{}, "
           "to:{}",
           ntp,
@@ -161,7 +161,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
         result = co_await dispatch_begin_tx(
           leader, ntp, pid, tx_seq, transaction_timeout_ms, timeout);
         vlog(
-          clusterlog.trace,
+          txlog.trace,
           "received name:begin_tx, ntp:{}, pid:{}, tx_seq:{}, ec:{}, etag: {}",
           ntp,
           pid,
@@ -175,7 +175,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
               ntp,
               leader);
             vlog(
-              clusterlog.trace,
+              txlog.trace,
               "remote execution of begin_tx({},...) on {} failed with 'not a "
               "leader', retries left: {}",
               ntp,
@@ -187,7 +187,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
         }
         if (result.ec != tx_errc::none) {
             vlog(
-              clusterlog.warn,
+              txlog.warn,
               "remote execution of begin_tx({},...) on {} failed with {}",
               ntp,
               leader,
@@ -196,7 +196,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
         co_return result;
     }
     if (error) {
-        vlog(clusterlog.warn, "{}", error.value());
+        vlog(txlog.warn, "{}", error.value());
     }
     co_return begin_tx_reply{.ntp = ntp, .ec = tx_errc::leader_not_found};
 }
@@ -227,8 +227,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::dispatch_begin_tx(
       .then(&rpc::get_ctx_data<begin_tx_reply>)
       .then([ntp](result<begin_tx_reply> r) {
           if (r.has_error()) {
-              vlog(
-                clusterlog.warn, "got error {} on remote begin tx", r.error());
+              vlog(txlog.warn, "got error {} on remote begin tx", r.error());
               return begin_tx_reply{.ntp = ntp, .ec = tx_errc::timeout};
           }
 
@@ -242,14 +241,14 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx_locally(
   model::tx_seq tx_seq,
   std::chrono::milliseconds transaction_timeout_ms) {
     vlog(
-      clusterlog.trace,
+      txlog.trace,
       "processing name:begin_tx, ntp:{}, pid:{}, tx_seq:{}",
       ntp,
       pid,
       tx_seq);
     auto reply = co_await do_begin_tx(ntp, pid, tx_seq, transaction_timeout_ms);
     vlog(
-      clusterlog.trace,
+      txlog.trace,
       "sending name:begin_tx, ntp:{}, pid:{}, tx_seq:{}, ec:{}, etag:{}",
       ntp,
       pid,
@@ -290,7 +289,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
           auto stm = partition->rm_stm();
 
           if (!stm) {
-              vlog(clusterlog.warn, "partition {} doesn't have rm_stm", ntp);
+              vlog(txlog.warn, "partition {} doesn't have rm_stm", ntp);
               return ss::make_ready_future<begin_tx_reply>(
                 begin_tx_reply{.ntp = ntp, .ec = tx_errc::stm_not_found});
           }
@@ -299,7 +298,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
             .then([ntp](checked<model::term_id, tx_errc> etag) {
                 if (!etag.has_value()) {
                     vlog(
-                      clusterlog.warn,
+                      txlog.warn,
                       "rm_stm::begin_tx({},...) failed with {}",
                       ntp,
                       etag.error());
@@ -333,7 +332,7 @@ ss::future<prepare_tx_reply> rm_partition_frontend::prepare_tx(
 
     auto leader = _leaders.local().get_leader(ntp);
     if (!leader) {
-        vlog(clusterlog.warn, "can't find a leader for {}", ntp);
+        vlog(txlog.warn, "can't find a leader for {}", ntp);
         return ss::make_ready_future<prepare_tx_reply>(
           prepare_tx_reply{.ec = tx_errc::leader_not_found});
     }
@@ -345,7 +344,7 @@ ss::future<prepare_tx_reply> rm_partition_frontend::prepare_tx(
     }
 
     vlog(
-      clusterlog.trace,
+      txlog.trace,
       "dispatching name:prepare_tx, ntp:{}, etag:{}, pid:{}, tx_seq:{}, "
       "coordinator:{}, from:{}, to:{}",
       ntp,
@@ -360,7 +359,7 @@ ss::future<prepare_tx_reply> rm_partition_frontend::prepare_tx(
              leader.value(), ntp, etag, tm, pid, tx_seq, timeout)
       .then([ntp, etag, tm, pid, tx_seq](prepare_tx_reply reply) {
           vlog(
-            clusterlog.trace,
+            txlog.trace,
             "received name:prepare_tx, ntp:{}, etag:{}, pid:{}, tx_seq:{}, "
             "coordinator:{}, ec:{}",
             ntp,
@@ -401,10 +400,7 @@ ss::future<prepare_tx_reply> rm_partition_frontend::dispatch_prepare_tx(
       .then(&rpc::get_ctx_data<prepare_tx_reply>)
       .then([](result<prepare_tx_reply> r) {
           if (r.has_error()) {
-              vlog(
-                clusterlog.warn,
-                "got error {} on remote prepare tx",
-                r.error());
+              vlog(txlog.warn, "got error {} on remote prepare tx", r.error());
               return prepare_tx_reply{.ec = tx_errc::timeout};
           }
 
@@ -420,7 +416,7 @@ ss::future<prepare_tx_reply> rm_partition_frontend::prepare_tx_locally(
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
     vlog(
-      clusterlog.trace,
+      txlog.trace,
       "processing name:prepare_tx, ntp:{}, etag:{}, pid:{}, tx_seq:{}, "
       "coordinator:{}",
       ntp,
@@ -430,7 +426,7 @@ ss::future<prepare_tx_reply> rm_partition_frontend::prepare_tx_locally(
       tm);
     auto reply = co_await do_prepare_tx(ntp, etag, tm, pid, tx_seq, timeout);
     vlog(
-      clusterlog.trace,
+      txlog.trace,
       "sending name:prepare_tx, ntp:{}, etag:{}, pid:{}, tx_seq:{}, "
       "coordinator:{}, ec:{}",
       ntp,
@@ -475,8 +471,7 @@ ss::future<prepare_tx_reply> rm_partition_frontend::do_prepare_tx(
           auto stm = partition->rm_stm();
 
           if (!stm) {
-              vlog(
-                clusterlog.warn, "can't get tx stm of the {}' partition", ntp);
+              vlog(txlog.warn, "can't get tx stm of the {}' partition", ntp);
               return ss::make_ready_future<prepare_tx_reply>(
                 prepare_tx_reply{.ec = tx_errc::stm_not_found});
           }
@@ -500,7 +495,7 @@ ss::future<commit_tx_reply> rm_partition_frontend::commit_tx(
 
     auto leader = _leaders.local().get_leader(ntp);
     if (!leader) {
-        vlog(clusterlog.warn, "can't find a leader for {}", ntp);
+        vlog(txlog.warn, "can't find a leader for {}", ntp);
         return ss::make_ready_future<commit_tx_reply>(
           commit_tx_reply{.ec = tx_errc::leader_not_found});
     }
@@ -512,7 +507,7 @@ ss::future<commit_tx_reply> rm_partition_frontend::commit_tx(
     }
 
     vlog(
-      clusterlog.trace,
+      txlog.trace,
       "dispatching name:commit_tx, ntp:{}, pid:{}, tx_seq:{}, from:{}, to:{}",
       ntp,
       pid,
@@ -523,7 +518,7 @@ ss::future<commit_tx_reply> rm_partition_frontend::commit_tx(
     return dispatch_commit_tx(leader.value(), ntp, pid, tx_seq, timeout)
       .then([ntp, pid, tx_seq](commit_tx_reply reply) {
           vlog(
-            clusterlog.trace,
+            txlog.trace,
             "received name:commit_tx, ntp:{}, pid:{}, tx_seq:{}, ec:{}",
             ntp,
             pid,
@@ -554,8 +549,7 @@ ss::future<commit_tx_reply> rm_partition_frontend::dispatch_commit_tx(
       .then(&rpc::get_ctx_data<commit_tx_reply>)
       .then([](result<commit_tx_reply> r) {
           if (r.has_error()) {
-              vlog(
-                clusterlog.warn, "got error {} on remote commit tx", r.error());
+              vlog(txlog.warn, "got error {} on remote commit tx", r.error());
               return commit_tx_reply{.ec = tx_errc::timeout};
           }
 
@@ -569,14 +563,14 @@ ss::future<commit_tx_reply> rm_partition_frontend::commit_tx_locally(
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
     vlog(
-      clusterlog.trace,
+      txlog.trace,
       "processing name:commit_tx, ntp:{}, pid:{}, tx_seq:{}",
       ntp,
       pid,
       tx_seq);
     auto reply = co_await do_commit_tx(ntp, pid, tx_seq, timeout);
     vlog(
-      clusterlog.trace,
+      txlog.trace,
       "sending name:commit_tx, ntp:{}, pid:{}, tx_seq:{}, ec:{}",
       ntp,
       pid,
@@ -615,8 +609,7 @@ ss::future<commit_tx_reply> rm_partition_frontend::do_commit_tx(
           auto stm = partition->rm_stm();
 
           if (!stm) {
-              vlog(
-                clusterlog.warn, "can't get tx stm of the {}' partition", ntp);
+              vlog(txlog.warn, "can't get tx stm of the {}' partition", ntp);
               return ss::make_ready_future<commit_tx_reply>(
                 commit_tx_reply{.ec = tx_errc::stm_not_found});
           }
@@ -641,7 +634,7 @@ ss::future<abort_tx_reply> rm_partition_frontend::abort_tx(
 
     auto leader = _leaders.local().get_leader(ntp);
     if (!leader) {
-        vlog(clusterlog.warn, "can't find a leader for {}", ntp);
+        vlog(txlog.warn, "can't find a leader for {}", ntp);
         return ss::make_ready_future<abort_tx_reply>(
           abort_tx_reply{.ec = tx_errc::leader_not_found});
     }
@@ -653,7 +646,7 @@ ss::future<abort_tx_reply> rm_partition_frontend::abort_tx(
     }
 
     vlog(
-      clusterlog.trace,
+      txlog.trace,
       "dispatching name:abort_tx, ntp:{}, pid:{}, tx_seq:{}, from:{}, to:{}",
       ntp,
       pid,
@@ -664,7 +657,7 @@ ss::future<abort_tx_reply> rm_partition_frontend::abort_tx(
     return dispatch_abort_tx(leader.value(), ntp, pid, tx_seq, timeout)
       .then([ntp, pid, tx_seq](abort_tx_reply reply) {
           vlog(
-            clusterlog.trace,
+            txlog.trace,
             "received name:abort_tx, ntp:{}, pid:{}, tx_seq:{}, ec:{}",
             ntp,
             pid,
@@ -695,8 +688,7 @@ ss::future<abort_tx_reply> rm_partition_frontend::dispatch_abort_tx(
       .then(&rpc::get_ctx_data<abort_tx_reply>)
       .then([](result<abort_tx_reply> r) {
           if (r.has_error()) {
-              vlog(
-                clusterlog.warn, "got error {} on remote abort tx", r.error());
+              vlog(txlog.warn, "got error {} on remote abort tx", r.error());
               return abort_tx_reply{.ec = tx_errc::timeout};
           }
 
@@ -710,14 +702,14 @@ ss::future<abort_tx_reply> rm_partition_frontend::abort_tx_locally(
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
     vlog(
-      clusterlog.trace,
+      txlog.trace,
       "processing name:abort_tx, ntp:{}, pid:{}, tx_seq:{}",
       ntp,
       pid,
       tx_seq);
     auto reply = co_await do_abort_tx(ntp, pid, tx_seq, timeout);
     vlog(
-      clusterlog.trace,
+      txlog.trace,
       "sending name:abort_tx, ntp:{}, pid:{}, tx_seq:{}, ec:{}",
       ntp,
       pid,
@@ -756,8 +748,7 @@ ss::future<abort_tx_reply> rm_partition_frontend::do_abort_tx(
           auto stm = partition->rm_stm();
 
           if (!stm) {
-              vlog(
-                clusterlog.warn, "can't get tx stm of the {}' partition", ntp);
+              vlog(txlog.warn, "can't get tx stm of the {}' partition", ntp);
               return ss::make_ready_future<abort_tx_reply>(
                 abort_tx_reply{.ec = tx_errc::stm_not_found});
           }

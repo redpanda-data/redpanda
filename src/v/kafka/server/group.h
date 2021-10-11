@@ -11,6 +11,7 @@
 
 #pragma once
 #include "cluster/fwd.h"
+#include "cluster/logger.h"
 #include "cluster/partition.h"
 #include "cluster/tx_utils.h"
 #include "kafka/protocol/fwd.h"
@@ -513,12 +514,18 @@ private:
 
     class ctx_log {
     public:
-        explicit ctx_log(const group& group)
-          : _group(group) {}
+        explicit ctx_log(ss::logger& logger, const group& group)
+          : _logger(logger)
+          , _group(group) {}
 
         template<typename... Args>
         void info(const char* format, Args&&... args) const {
             log(ss::log_level::info, format, std::forward<Args>(args)...);
+        }
+
+        template<typename... Args>
+        void error(const char* format, Args&&... args) const {
+            log(ss::log_level::error, format, std::forward<Args>(args)...);
         }
 
         template<typename... Args>
@@ -533,9 +540,9 @@ private:
 
         template<typename... Args>
         void log(ss::log_level lvl, const char* format, Args&&... args) const {
-            if (unlikely(klog.is_enabled(lvl))) {
+            if (unlikely(_logger.is_enabled(lvl))) {
                 auto line_fmt = ss::sstring("[N:{} S:{} G:{}] ") + format;
-                klog.log(
+                _logger.log(
                   lvl,
                   line_fmt.c_str(),
                   _group.id()(),
@@ -546,6 +553,7 @@ private:
         }
 
     private:
+        ss::logger& _logger;
         const group& _group;
     };
 
@@ -572,6 +580,7 @@ private:
     absl::node_hash_map<model::topic_partition, offset_metadata> _offsets;
     model::violation_recovery_policy _recovery_policy;
     ctx_log _ctxlog;
+    ctx_log _ctx_txlog;
 
     mutex _tx_mutex;
     model::term_id _term;
