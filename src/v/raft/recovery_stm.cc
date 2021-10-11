@@ -121,7 +121,10 @@ ss::future<> recovery_stm::do_recover(ss::io_priority_class iopc) {
           "Recovery status: waiting for node {} state change",
           _node_id);
         co_await meta.value()
-          ->follower_state_change.wait([this] { return state_changed(); })
+          ->follower_state_change
+          .wait([this] {
+              return state_changed() || _ptr->_transferring_leadership;
+          })
           .handle_exception_type([this](const ss::broken_condition_variable&) {
               _stop_requested = true;
           })
