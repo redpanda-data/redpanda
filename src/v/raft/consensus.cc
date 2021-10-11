@@ -2537,11 +2537,17 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
         if (meta.is_recovering) {
             vlog(
               _ctxlog.warn,
-              "Waiting on node to recover before requesting election");
+              "Waiting on node {} to recover before requesting election",
+              target_rni);
             auto timeout = ss::semaphore::clock::duration(
               config::shard_local_cfg()
                 .raft_transfer_leader_recovery_timeout_ms());
-            f = meta.recovery_finished.wait(timeout);
+            f = meta.recovery_finished.wait(timeout).then([this, target_rni] {
+                vlog(
+                  _ctxlog.warn,
+                  "Finished waiting for node {} recovery",
+                  target_rni);
+            });
 
             meta.follower_state_change.broadcast();
         }
@@ -2564,17 +2570,33 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
             }
 
             if (_as.abort_requested()) {
+                vlog(
+                  _ctxlog.warn, "Cannot transfer leadership: abort requested");
+
                 return seastar::make_ready_future<std::error_code>(
                   make_error_code(errc::not_leader));
             }
 
             if (!_fstats.contains(target_rni)) {
+                vlog(
+                  _ctxlog.warn,
+                  "Cannot transfer leadership: no stats for {}",
+                  target_rni);
+
                 return seastar::make_ready_future<std::error_code>(
                   make_error_code(errc::node_does_not_exists));
             }
 
             auto& meta = _fstats.get(target_rni);
             if (needs_recovery(meta, _log.offsets().dirty_offset)) {
+                vlog(
+                  _ctxlog.warn,
+                  "Cannot transfer leadership: {} needs recovery ({}, {}, {})",
+                  target_rni,
+                  meta.match_index,
+                  meta.last_dirty_log_index,
+                  _log.offsets().dirty_offset);
+
                 return seastar::make_ready_future<std::error_code>(
                   make_error_code(errc::timeout));
             }
