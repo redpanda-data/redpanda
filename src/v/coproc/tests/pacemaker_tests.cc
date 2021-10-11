@@ -57,7 +57,7 @@ FIXTURE_TEST(test_coproc_router_no_results, coproc_test_fixture) {
     push(
       input_ntp,
       storage::test::make_random_memory_record_batch_reader(
-        model::offset(0), 40, 1))
+        model::offset(0), 40, 1, false))
       .get();
 
     // Wait for any side-effects, ...expecting that none occur
@@ -143,7 +143,7 @@ FIXTURE_TEST(test_coproc_router_double, coproc_test_fixture) {
     auto f1 = push(
       input_ntp,
       storage::test::make_random_memory_record_batch_reader(
-        model::offset(0), 50, 1));
+        model::offset(0), 50, 1, false));
     auto f2 = drain(output_ntp, 100);
     auto read_batches
       = ss::when_all_succeed(std::move(f1), std::move(f2)).get();
@@ -173,7 +173,7 @@ FIXTURE_TEST(test_copro_auto_deregister_function, coproc_test_fixture) {
         fs.emplace_back(push(
           model::ntp(model::kafka_namespace, foo, model::partition_id(i)),
           storage::test::make_random_memory_record_batch_reader(
-            model::offset(0), 10, 1)));
+            model::offset(0), 10, 1, false)));
     }
     ss::when_all_succeed(fs.begin(), fs.end()).get();
 

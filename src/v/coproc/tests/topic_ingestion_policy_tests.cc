@@ -33,7 +33,7 @@ public:
         push(
           infoo_ntp,
           storage::test::make_random_memory_record_batch_reader(
-            model::offset(0), n, 1))
+            model::offset(0), n, 1, false))
           .get();
 
         enable_coprocessors(
@@ -59,7 +59,7 @@ public:
         push(
           infoo_ntp,
           storage::test::make_random_memory_record_batch_reader(
-            model::offset{0}, n, 1))
+            model::offset{0}, n, 1, false))
           .get();
 
         model::ntp output_ntp(
@@ -104,7 +104,7 @@ FIXTURE_TEST(test_copro_tip_stored, coproc_test_fixture) {
     push(
       sttp_ntp,
       storage::test::make_random_memory_record_batch_reader(
-        model::offset{0}, 40, 1))
+        model::offset{0}, 40, 1, false))
       .get();
 
     auto a_results = drain(output_ntp, 40).get();
@@ -118,7 +118,7 @@ FIXTURE_TEST(test_copro_tip_stored, coproc_test_fixture) {
     push(
       sttp_ntp,
       storage::test::make_random_memory_record_batch_reader(
-        model::offset{0}, 40, 1))
+        model::offset{0}, 40, 1, false))
       .get();
 
     auto results = drain(output_ntp, 80).get();

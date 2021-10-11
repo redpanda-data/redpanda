@@ -48,7 +48,7 @@ FIXTURE_TEST(test_metadata_request, coproc_test_fixture) {
     push(
       input_ntp,
       storage::test::make_random_memory_record_batch_reader(
-        model::offset(0), 4, 4))
+        model::offset(0), 4, 4, false))
       .get();
 
     /// Wait for the materialized log to appear
@@ -93,7 +93,7 @@ FIXTURE_TEST(test_read_from_materialized_topic, coproc_test_fixture) {
     push(
       input_ntp,
       storage::test::make_random_memory_record_batch_reader(
-        model::offset(0), 4, 4))
+        model::offset(0), 4, 4, false))
       .get();
 
     // read the materialized topic from disk

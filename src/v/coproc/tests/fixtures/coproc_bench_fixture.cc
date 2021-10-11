@@ -106,7 +106,7 @@ ss::future<> coproc_bench_fixture::do_action(
         return push(
                  ntp,
                  storage::test::make_random_memory_record_batch_reader(
-                   rt, n_batches, 1))
+                   rt, n_batches, 1, false))
           .then([ntp, &rt](model::offset offset) { rt = offset++; });
     } else {
         if (rt.second >= total_expected_batches) {

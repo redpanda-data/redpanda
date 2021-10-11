@@ -47,7 +47,7 @@ FIXTURE_TEST(test_wasm_engine_restart, coproc_test_fixture) {
             fs.emplace_back(push(
               ntp,
               storage::test::make_random_memory_record_batch_reader(
-                model::offset(0), 10, 2)));
+                model::offset(0), 10, 2, false)));
         }
         return ss::when_all_succeed(fs.begin(), fs.end()).discard_result();
     };
