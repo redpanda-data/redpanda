@@ -231,12 +231,23 @@ ss::future<bool> id_allocator_frontend::try_create_id_allocator_topic() {
       .then([](std::vector<cluster::topic_result> res) {
           vassert(res.size() == 1, "expected exactly one result");
           if (res[0].ec != cluster::errc::success) {
+              vlog(
+                clusterlog.warn,
+                "can not create {}/{} topic - error: {}",
+                model::kafka_internal_namespace,
+                model::id_allocator_topic,
+                cluster::make_error_code(res[0].ec).message());
               return false;
           }
           return true;
       })
       .handle_exception([](std::exception_ptr e) {
-          vlog(clusterlog.warn, "cant create allocate id stm topic {}", e);
+          vlog(
+            clusterlog.warn,
+            "can not create {}/{} topic - error: {}",
+            model::kafka_internal_namespace,
+            model::id_allocator_topic,
+            e);
           return false;
       });
 }
