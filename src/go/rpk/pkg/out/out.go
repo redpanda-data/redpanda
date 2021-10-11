@@ -12,6 +12,7 @@
 package out
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/twmb/franz-go/pkg/kadm"
 )
 
 // Pick prompts the user to pick one of many options, returning the selected
@@ -62,6 +64,32 @@ func MaybeDieErr(err error) {
 func Exit(msg string, args ...interface{}) {
 	fmt.Printf(msg+"\n", args...)
 	os.Exit(0)
+}
+
+// HandleShardError prints a message and potentially exits depending on the
+// inner error. If the error is a shard error and not everything failed, this
+// allows the cli to continue
+func HandleShardError(name string, err error) {
+	var se *kadm.ShardErrors
+	var ae *kadm.AuthError
+	switch {
+	case err == nil:
+
+	case errors.As(err, &se):
+		if se.AllFailed {
+			fmt.Printf("all %d %s request failures, first error: %s\n", len(se.Errs), se.Name, se.Errs[0].Err)
+			os.Exit(1)
+		}
+		fmt.Printf("%d %s request failures, first error: %s\n", len(se.Errs), se.Name, se.Errs[0].Err)
+
+	case errors.As(err, &ae):
+		fmt.Printf("%s authorization problem: %s\n", name, err)
+		os.Exit(1)
+
+	default:
+		fmt.Printf("unable to issue %s request: %s\n", name, err)
+		os.Exit(1)
+	}
 }
 
 func args2strings(args []interface{}) []string {
