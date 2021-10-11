@@ -1,4 +1,6 @@
 from ducktape.services.background_thread import BackgroundThreadService
+from ducktape.cluster.remoteaccount import RemoteCommandError
+from threading import Event
 
 
 class RpkProducer(BackgroundThreadService):
@@ -20,6 +22,7 @@ class RpkProducer(BackgroundThreadService):
         self._msg_size = msg_size
         self._msg_count = msg_count
         self._acks = acks
+        self._stopping = Event()
 
     def _worker(self, _idx, node):
         rpk_binary = self._redpanda.find_binary("rpk")
@@ -27,8 +30,16 @@ class RpkProducer(BackgroundThreadService):
         if self._acks is not None:
             cmd += f" --acks {self._acks}"
 
-        for line in node.account.ssh_capture(cmd, timeout_sec=10):
-            self.logger.debug(line.rstrip())
+        self._stopping.clear()
+        try:
+            for line in node.account.ssh_capture(cmd, timeout_sec=10):
+                self.logger.debug(line.rstrip())
+        except RemoteCommandError as e:
+            if self._stopping.is_set():
+                pass
+            else:
+                raise
 
     def stop_node(self, node):
+        self._stopping.set()
         node.account.kill_process("rpk", clean_shutdown=False)
