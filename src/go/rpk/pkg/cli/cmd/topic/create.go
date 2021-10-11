@@ -103,8 +103,8 @@ the cleanup.policy=compact config option set.
 	cmd.Flags().BoolVarP(&dry, "dry", "d", false, "dry run: validate the topic creation request; do not create topics")
 
 	// Sept 2021
-	cmd.Flags().BoolVar(&compact, "compact", false, "alias for -c cleanup-policy=compact")
-	cmd.Flags().MarkDeprecated("compact", "use -c cleanup-policy=compact")
+	cmd.Flags().BoolVar(&compact, "compact", false, "alias for -c cleanup.policy=compact")
+	cmd.Flags().MarkDeprecated("compact", "use -c cleanup.policy=compact")
 
 	return cmd
 }
