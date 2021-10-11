@@ -116,10 +116,21 @@ ss::future<> recovery_stm::do_recover(ss::io_priority_class iopc) {
     // we do not have next entry for the follower yet, wait for next disk append
     // of follower state change
     if (lstats.dirty_offset < follower_next_offset) {
+        vlog(
+          _ctxlog.trace,
+          "Recovery status: waiting for node {} state change",
+          _node_id);
         co_await meta.value()
           ->follower_state_change.wait([this] { return state_changed(); })
           .handle_exception_type([this](const ss::broken_condition_variable&) {
               _stop_requested = true;
+          })
+          .then([this] {
+              vlog(
+                _ctxlog.trace,
+                "Recovery status: finished waiting for node {} state "
+                "change",
+                _node_id);
           });
     }
 
