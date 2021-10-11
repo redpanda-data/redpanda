@@ -35,10 +35,22 @@ To run Redpanda in a 3-node cluster, run: `rpk container start -n 3`
 The first time you run `rpk container start`, it downloads an image matching the rpk version (you can check it by running `rpk version`).
 You now have a 3-node cluster running Redpanda!
 
+The command output shows the addresses of the cluster nodes:
+
+```
+$ rpk container start -n 3
+Starting cluster
+Waiting for the cluster to be ready...
+  NODE ID  ADDRESS          
+  0        127.0.0.1:49462  
+  1        127.0.0.1:49468  
+  2        127.0.0.1:49467  
+```
+
 You can run `rpk` commands to interact with the cluster, for example:
 
 ```bash
-rpk cluster info
+rpk cluster info --brokers 127.0.0.1:49462,127.0.0.1:49468,127.0.0.1:49467
 ```
 
 ## Do some streaming
@@ -48,13 +60,13 @@ Here are the basic commands to produce and consume streams:
 1. Create a topic. We'll call it "twitch_chat":
 
     ```bash
-    rpk topic create twitch_chat
+    rpk topic create twitch_chat --brokers <broker1_address>,<broker2_address>...
     ```
 
 1. Produce messages to the topic:
 
     ```bash
-    rpk topic produce twitch_chat
+    rpk topic produce twitch_chat --brokers <broker1_address>,<broker2_address>...
     ```
 
     Type text into the topic and press Ctrl + D to seperate between messages.
@@ -64,7 +76,7 @@ Here are the basic commands to produce and consume streams:
 1. Consume (or read) the messages in the topic:
 
     ```bash
-    rpk topic consume twitch_chat
+    rpk topic consume twitch_chat --brokers <broker1_address>,<broker2_address>...
     ```
     
     Each message is shown with its metadata, like this:

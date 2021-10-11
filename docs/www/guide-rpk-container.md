@@ -13,31 +13,27 @@ please follow the installation instructions for
 
 It's important to note, however, that you won't need to interact with Docker directly or have experience with it.
 
-To get started, run `rpk container start -n 3`. This will start a 3-node cluster. You should see something like this (the addresses may vary):
+To run Redpanda in a 3-node cluster, run: `rpk container start -n 3`
 
-> `rpk container start` will take a minute the first time you run it, as it will download the latest stable version of Redpanda.
+The first time you run `rpk container start`, it downloads an image matching the rpk version (you can check it by running `rpk version`).
+You now have a 3-node cluster running Redpanda!
+
+The command output shows the addresses of the cluster nodes:
 
 ```
-Downloading latest version of Redpanda
+$ rpk container start -n 3
 Starting cluster
-  NODE ID  ADDRESS
-  0        172.24.1.2:58754
-  2        172.24.1.4:58756
-  1        172.24.1.3:58757
-
-Cluster started! You may use rpk to interact with it. E.g:
-
-rpk cluster info
+Waiting for the cluster to be ready...
+  NODE ID  ADDRESS          
+  0        127.0.0.1:49462  
+  1        127.0.0.1:49468  
+  2        127.0.0.1:49467  
 ```
 
-It says we can check our cluster with `rpk cluster info`
+You can run `rpk` commands to interact with the cluster, for example:
 
-```
-  Redpanda Cluster Info
-
-  0 (127.0.0.1:58754)      (No partitions)
-  1 (127.0.0.1:58757)      (No partitions)
-  2 (127.0.0.1:58756)      (No partitions)
+```bash
+rpk cluster info --brokers 127.0.0.1:49462,127.0.0.1:49468,127.0.0.1:49467
 ```
 
 You can now connect your Kafka compatible applications directly to Redpanda
@@ -49,7 +45,7 @@ Additionally, all of the `rpk topic` subcommands will detect the local cluster a
 For example, you can run `rpk topic create` and it will work!
 
 ```
-$ rpk topic create -p 6 -r 3 new-topic
+$ rpk topic create -p 6 -r 3 new-topic --brokers <broker1_address>,<broker2_address>...
 Created topic 'new-topic'. Partitions: 6, replicas: 3, cleanup policy: 'delete'
 ```
 
