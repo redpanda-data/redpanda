@@ -18,6 +18,7 @@
 #include <seastar/core/iostream.hh>
 
 #include <filesystem>
+#include <set>
 
 namespace cloud_storage {
 
@@ -49,7 +50,14 @@ public:
     /// Add new value to the cache, overwrite if it's already exist
     ss::future<> put(std::filesystem::path key, ss::input_stream<char>& data);
 
-    /// Return true if the following object is already in the cache
+    /// \brief Checks if the value is cached
+    ///
+    /// \note returned value \c cache_element_status::in_progress is
+    /// shard-local, it indicates that the object is being written by this
+    /// shard. If the value is being written by another shard, this function
+    /// returns only committed result. The value
+    /// \c cache_element_status::in_progress can be used as a hint since ntp are
+    /// stored on the same shard most of the time.
     ss::future<cache_element_status>
     is_cached(const std::filesystem::path& key);
 
@@ -78,6 +86,7 @@ private:
     ss::timer<ss::lowres_clock> _timer;
     cloud_storage::recursive_directory_walker _walker;
     uint64_t _total_cleaned;
+    std::set<std::filesystem::path> _files_in_progress;
 };
 
 } // namespace cloud_storage

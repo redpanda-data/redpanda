@@ -18,6 +18,7 @@
 #include <seastar/core/seastar.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/util/defer.hh>
 
 #include <cloud_storage/cache_service.h>
 
@@ -187,6 +188,8 @@ cache::put(std::filesystem::path key, ss::input_stream<char>& data) {
     gate_guard guard{_gate};
     vlog(cst_log.debug, "Trying to put {} to archival cache.", key.native());
 
+    _files_in_progress.insert(key);
+    auto deferred = ss::defer([this, key] { _files_in_progress.erase(key); });
     auto filename = (_cache_dir / key).filename();
     if (std::string_view(filename.native()).ends_with(tmp_extension)) {
         throw std::invalid_argument(fmt::format(
@@ -210,6 +213,7 @@ cache::put(std::filesystem::path key, ss::input_stream<char>& data) {
       tmp_extension));
     auto flags = ss::open_flags::wo | ss::open_flags::create
                  | ss::open_flags::exclusive;
+
     auto tmp_cache_file = co_await ss::open_file_dma(
       (dir_path / tmp_filename).native(), flags);
     auto out = co_await ss::make_file_output_stream(tmp_cache_file);
@@ -227,10 +231,16 @@ ss::future<cache_element_status>
 cache::is_cached(const std::filesystem::path& key) {
     gate_guard guard{_gate};
     vlog(cst_log.debug, "Checking {} in archival cache.", key.native());
-    return ss::file_exists((_cache_dir / key).native()).then([](bool exists) {
-        return exists ? cache_element_status::available
-                      : cache_element_status::not_available;
-    });
+    if (_files_in_progress.contains(key)) {
+        return seastar::make_ready_future<cache_element_status>(
+          cache_element_status::in_progress);
+    } else {
+        return ss::file_exists((_cache_dir / key).native())
+          .then([](bool exists) {
+              return exists ? cache_element_status::available
+                            : cache_element_status::not_available;
+          });
+    }
 }
 
 ss::future<> cache::invalidate(const std::filesystem::path& key) {
