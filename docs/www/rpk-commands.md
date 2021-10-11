@@ -309,6 +309,10 @@ Flags:
       --retries uint   The amount of times to check for the cluster before considering it unstable and exiting. (default: 10)
 ```
 
+The command returns the list of broker addresses.
+You must specify the broker addresses with the `--broker` option in `rpk` commands that interact with the cluster,
+such as `rpk topic` and `rpk acl`.
+
 ### container stop 
 
 OS support: ![Linux][linux] ![MacOS][mac]
