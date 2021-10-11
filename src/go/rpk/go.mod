@@ -49,8 +49,9 @@ require (
 	github.com/spf13/viper v1.7.0
 	github.com/stretchr/testify v1.7.0
 	github.com/tklauser/go-sysconf v0.1.0
-	github.com/twmb/franz-go v1.1.3-0.20211007190726-58bf74ad2a1a
-	github.com/twmb/franz-go/pkg/kmsg v0.0.0-20210915213851-c153b9a13d31
+	github.com/twmb/franz-go v1.1.3-0.20211011063152-40682e5213e8
+	github.com/twmb/franz-go/pkg/kadm v0.0.0-20211011063152-40682e5213e8
+	github.com/twmb/franz-go/pkg/kmsg v0.0.0-20211011063152-40682e5213e8
 	github.com/twmb/tlscfg v1.2.0
 	github.com/twmb/types v1.1.6
 	github.com/xdg/scram v1.0.3
