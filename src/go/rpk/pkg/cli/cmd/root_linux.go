@@ -20,7 +20,7 @@ func addPlatformDependentCmds(
 	fs afero.Fs, mgr config.Manager, cmd *cobra.Command,
 ) {
 	cmd.AddCommand(NewRedpandaCommand(fs, mgr, redpanda.NewLauncher()))
-	cmd.AddCommand(NewDebugCommand(fs, mgr))
+	cmd.AddCommand(NewDebugCommand(fs))
 
 	cmd.AddCommand(NewTuneCommand(fs, mgr))
 	cmd.AddCommand(NewCheckCommand(fs, mgr))
