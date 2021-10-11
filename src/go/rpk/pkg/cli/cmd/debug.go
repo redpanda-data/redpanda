@@ -23,7 +23,7 @@ func NewDebugCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	}
 	command.AddCommand(debug.NewInfoCommand(fs, mgr))
 
-	debug.AddPlatformDependentCmds(fs, mgr, command)
+	debug.AddPlatformDependentCmds(fs, command)
 
 	return command
 }
