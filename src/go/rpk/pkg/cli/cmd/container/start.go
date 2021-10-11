@@ -16,6 +16,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -308,9 +309,13 @@ func startCluster(
 		return err
 	}
 	renderClusterInfo(nodes)
+	var brokers []string
+	for _, node := range nodes {
+		brokers = append(brokers, node.addr)
+	}
 	log.Infof(
-		"\nCluster started! You may use rpk to interact with it." +
-			" E.g:\n\nrpk cluster info\n",
+		"\nCluster started! You may use rpk to interact with it."+
+			" E.g:\n\nrpk cluster info --brokers %s\n", strings.Join(brokers, ","),
 	)
 
 	return nil
