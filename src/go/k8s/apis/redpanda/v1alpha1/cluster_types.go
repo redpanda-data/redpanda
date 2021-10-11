@@ -130,6 +130,8 @@ type CloudStorageConfig struct {
 	APIEndpoint string `json:"apiEndpoint,omitempty"`
 	// Used to override TLS port (443)
 	APIEndpointPort int `json:"apiEndpointPort,omitempty"`
+	// Cache directory that will be mounted for Redpanda
+	CacheStorage *StorageSpec `json:"cacheStorage,omitempty"`
 }
 
 // StorageSpec defines the storage specification of the Cluster

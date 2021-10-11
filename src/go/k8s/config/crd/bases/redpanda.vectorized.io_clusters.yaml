@@ -73,6 +73,20 @@ spec:
                   bucket:
                     description: Cloud storage bucket
                     type: string
+                  cacheStorage:
+                    description: Cache directory that will be mounted for Redpanda
+                    properties:
+                      capacity:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: Storage capacity requested
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      storageClassName:
+                        description: Storage class name - https://kubernetes.io/docs/concepts/storage/storage-classes/
+                        type: string
+                    type: object
                   disableTLS:
                     description: Disable TLS (can be used in tests)
                     type: boolean
