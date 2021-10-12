@@ -59,19 +59,9 @@ func NewACLCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		&adminAPITruststoreFile,
 	)
 
-	configClosure := common.FindConfigFile(mgr, &configFile)
-	adminTlsClosure := common.BuildAdminApiTLSConfig(
-		fs,
-		&adminAPIEnableTLS,
-		&adminAPICertFile,
-		&adminAPIKeyFile,
-		&adminAPITruststoreFile,
-		configClosure,
-	)
-
 	command.AddCommand(acl.NewCreateCommand(fs))
 	command.AddCommand(acl.NewListCommand(fs))
 	command.AddCommand(acl.NewDeleteCommand(fs))
-	command.AddCommand(acl.NewUserCommand(configClosure, adminTlsClosure))
+	command.AddCommand(acl.NewUserCommand(fs))
 	return command
 }

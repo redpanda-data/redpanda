@@ -10,34 +10,23 @@
 package acl
 
 import (
-	"crypto/tls"
+	"fmt"
+	"strings"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/api/admin"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/ui"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
 )
 
-const (
-	newUserFlag     = "new-username"
-	newPasswordFlag = "new-password"
-
-	deleteUsernameFlag = "delete-username"
-)
-
-func NewUserCommand(
-	conf func() (*config.Config, error), tls func() (*tls.Config, error),
-) *cobra.Command {
+func NewUserCommand(fs afero.Fs) *cobra.Command {
 	var apiUrls []string
-
-	command := &cobra.Command{
-		Use:          "user",
-		Short:        "Manage users",
-		SilenceUsage: true,
+	cmd := &cobra.Command{
+		Use:   "user",
+		Short: "Manage users",
 	}
-	command.PersistentFlags().StringSliceVar(
+	cmd.PersistentFlags().StringSliceVar(
 		&apiUrls,
 		config.FlagAdminHosts2,
 		[]string{},
@@ -45,12 +34,10 @@ func NewUserCommand(
 			" You must specify one for each node.",
 	)
 
-	adminApi := buildAdminAPI(conf, &apiUrls, tls)
-
-	command.AddCommand(NewCreateUserCommand(adminApi))
-	command.AddCommand(NewDeleteUserCommand(adminApi))
-	command.AddCommand(NewListUsersCommand(adminApi))
-	return command
+	cmd.AddCommand(NewCreateUserCommand(fs))
+	cmd.AddCommand(NewDeleteUserCommand(fs))
+	cmd.AddCommand(NewListUsersCommand(fs))
+	return cmd
 }
 
 // UserAPI encapsulates functions needed for a user API.
@@ -60,136 +47,130 @@ type UserAPI interface {
 	ListUsers() ([]string, error)
 }
 
-func NewCreateUserCommand(adminApi func() (UserAPI, error)) *cobra.Command {
-	var (
-		newUser     string
-		newPassword string
-	)
-	command := &cobra.Command{
-		Use:          "create",
-		Short:        "Create users",
-		SilenceUsage: true,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			adminApi, err := adminApi()
-			if err != nil {
-				return err
+func NewCreateUserCommand(fs afero.Fs) *cobra.Command {
+	var userOld, pass, passOld, mechanism string
+	cmd := &cobra.Command{
+		Use:   "create [USER} -p [PASS]",
+		Short: "Create an ACL user.",
+		Args:  cobra.MaximumNArgs(1), // when the deprecated user flag is removed, change this to cobra.ExactArgs(1)
+		Run: func(cmd *cobra.Command, args []string) {
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			cl, err := admin.NewClient(fs, cfg)
+			out.MaybeDie(err, "unable to initialize admin client: %v", err)
+
+			// Backwards compatibility: we favor the new user
+			// format and the new password flag. If either are
+			// empty, we check the old. If either of those are
+			// empty, we error.
+			var user string
+			if len(args) > 0 {
+				user = args[0]
+			} else if userOld != "" { // backcompat
+				user = userOld
+			} else {
+				out.Die("missing required username argument")
 			}
-			err = adminApi.CreateUser(newUser, newPassword)
-			if err != nil {
-				return err
+			if pass == "" {
+				if passOld == "" { // backcompat
+					out.Die("missing required --password")
+				}
+				pass = passOld
 			}
 
-			log.Infof("Created user '%s'", newUser)
+			switch strings.ToLower(mechanism) {
+			case "scram-sha-256":
+				mechanism = admin.ScramSha256
+			case "scram-sha-512":
+				mechanism = admin.ScramSha512
+			default:
+				out.Die("unsupported mechanism %q", mechanism)
+			}
 
-			return nil
+			err = cl.CreateUser(user, pass, mechanism)
+			out.MaybeDie(err, "unable to create user %q: %v", user, err)
+			fmt.Printf("Created user %q.\n", user)
 		},
 	}
 
-	command.Flags().StringVar(
-		&newUser,
-		newUserFlag,
-		"",
-		"The user to be created",
-	)
-	command.MarkFlagRequired(newUserFlag)
-	command.Flags().StringVar(
-		&newPassword,
-		newPasswordFlag,
-		"",
-		"The new user's password",
-	)
-	command.MarkFlagRequired(newPasswordFlag)
+	cmd.Flags().StringVar(&userOld, "new-username", "", "")
+	cmd.Flags().MarkDeprecated("new-username", "the username now does not require a flag") // Oct 2021
 
-	return command
+	cmd.Flags().StringVarP(&pass, "password", "p", "", "new user's password")
+	cmd.Flags().StringVar(&passOld, "new-password", "", "")
+	cmd.Flags().MarkDeprecated("new-password", "renamed to --password") // Oct 2021
+
+	cmd.Flags().StringVar(
+		&mechanism,
+		"mechanism",
+		strings.ToLower(admin.ScramSha256),
+		"SASL mechanism to use (scram-sha-256, scram-sha-512, case insensitive)",
+	)
+
+	return cmd
 }
 
-func NewDeleteUserCommand(adminApi func() (UserAPI, error)) *cobra.Command {
-	var username string
-	command := &cobra.Command{
-		Use:          "delete",
-		Short:        "Delete users",
-		SilenceUsage: true,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			adminApi, err := adminApi()
-			if err != nil {
-				return err
-			}
-			err = adminApi.DeleteUser(username)
-			if err != nil {
-				return err
+func NewDeleteUserCommand(fs afero.Fs) *cobra.Command {
+	var oldUser string
+	cmd := &cobra.Command{
+		Use:   "delete [USER]",
+		Short: "Delete an ACL user.",
+		Args:  cobra.MaximumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			cl, err := admin.NewClient(fs, cfg)
+			out.MaybeDie(err, "unable to initialize admin client: %v", err)
+
+			// Backwards compat: we favor the new format (an
+			// argument), but if that is empty, we use the old
+			// flag. If still empty, we error.
+			var user string
+			if len(args) > 0 {
+				user = args[0]
+			} else if len(oldUser) > 0 {
+				user = oldUser
+			} else {
+				out.Die("missing required username argument")
 			}
 
-			log.Infof("Deleted user '%s'", username)
-
-			return nil
+			err = cl.DeleteUser(user)
+			out.MaybeDie(err, "unable to delete user %q: %s", user, err)
+			fmt.Printf("Deleted user %q.\n", user)
 		},
 	}
 
-	command.Flags().StringVar(
-		&username,
-		deleteUsernameFlag,
-		"",
-		"The user to be deleted",
-	)
-	command.MarkFlagRequired(deleteUsernameFlag)
+	cmd.Flags().StringVar(&oldUser, "delete-username", "", "The user to be deleted")
+	cmd.Flags().MarkDeprecated("delete-username", "the username now does not require a flag")
 
-	return command
+	return cmd
 }
 
-func NewListUsersCommand(adminApi func() (UserAPI, error)) *cobra.Command {
-	command := &cobra.Command{
-		Use:          "list",
-		Aliases:      []string{"ls"},
-		Short:        "List users",
-		SilenceUsage: true,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			adminApi, err := adminApi()
-			if err != nil {
-				return err
-			}
-			usernames, err := adminApi.ListUsers()
-			if err != nil {
-				return err
-			}
+func NewListUsersCommand(fs afero.Fs) *cobra.Command {
+	return &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List users.",
+		Run: func(cmd *cobra.Command, _ []string) {
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
 
-			printUsernames(usernames)
+			cl, err := admin.NewClient(fs, cfg)
+			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			return nil
+			users, err := cl.ListUsers()
+			out.MaybeDie(err, "unable to list users: %v", err)
+
+			tw := out.NewTable("Username")
+			defer tw.Flush()
+			for u := range users {
+				tw.Print(u)
+			}
 		},
-	}
-
-	return command
-}
-
-func printUsernames(usernames []string) {
-	if len(usernames) == 0 {
-		log.Info("\nNo usernames found.\n")
-		return
-	}
-	spacer := []string{""}
-	t := ui.NewRpkTable(log.StandardLogger().Out)
-	t.SetColWidth(80)
-	t.SetAutoWrapText(true)
-	t.SetHeader([]string{"Username"})
-	t.Append(spacer)
-	for _, u := range usernames {
-		t.Append([]string{u})
-	}
-	t.Render()
-}
-
-func buildAdminAPI(
-	conf func() (*config.Config, error),
-	apiUrls *[]string,
-	tls func() (*tls.Config, error),
-) func() (UserAPI, error) {
-	return func() (UserAPI, error) {
-		addrs := common.DeduceAdminApiAddrs(conf, apiUrls)
-		tlsConfig, err := tls()
-		if err != nil {
-			return nil, err
-		}
-
-		return admin.NewAdminAPI(addrs, tlsConfig)
 	}
 }
