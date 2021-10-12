@@ -76,7 +76,7 @@ func NewCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	)
 
 	cmd.AddCommand(
-		brokers.NewCommand(hostsClosure, tlsClosure),
+		brokers.NewCommand(fs),
 		configcmd.NewCommand(hostsClosure, tlsClosure),
 	)
 
