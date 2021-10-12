@@ -2434,30 +2434,88 @@ ss::future<> consensus::prepare_transfer_leadership(vnode target_rni) {
      * then wait on that process to complete before sending the
      * election request.
      */
-    auto& meta = _fstats.get(target_rni);
-    if (
-      !meta.is_recovering
-      && needs_recovery(meta, _log.offsets().dirty_offset)) {
-        dispatch_recovery(meta); // sets is_recovering flag
-    }
 
     auto f = ss::now();
-    if (meta.is_recovering) {
-        vlog(
-          _ctxlog.warn,
-          "Waiting on node {} to recover before requesting election",
-          target_rni);
+
+    vlog(
+      _ctxlog.trace,
+      "transfer leadership: preparing target={}, dirty_offset={}",
+      target_rni,
+      _log.offsets().dirty_offset);
+
+    // Enforce ordering wrt anyone currently doing an append under op_lock
+    f = f.then([this] {
+        return _op_lock.get_units().then(
+          [this]([[maybe_unused]] ss::semaphore_units<> u) {
+              vlog(_ctxlog.trace, "transfer leadership: cleared oplock");
+          });
+    });
+
+    // Allow any buffered batches to complete, to avoid racing
+    // advances of dirty offset against new leader's recovery
+    f = f.then([this] { return _batcher.flush({}); });
+
+    // After we have (maybe) waited for op_lock and batcher,
+    // proceed to (maybe) wait for recovery to complete
+    f = f.then([this, target_rni]() {
+        if (!_fstats.contains(target_rni)) {
+            // Gone?  Nothing to wait for, proceed immediately.
+            return;
+        }
+        auto& meta = _fstats.get(target_rni);
+        if (
+          !meta.is_recovering
+          && needs_recovery(meta, _log.offsets().dirty_offset)) {
+            vlog(
+              _ctxlog.debug,
+              "transfer leadership: starting node {} recovery",
+              target_rni);
+            dispatch_recovery(meta); // sets is_recovering flag
+        } else {
+            vlog(
+              _ctxlog.debug,
+              "transfer leadership: node {} doesn't need recovery or "
+              "is already recovering (is_recovering {} dirty offset {})",
+              target_rni,
+              meta.is_recovering,
+              _log.offsets().dirty_offset);
+        }
+    });
+
+    f = f.then([this, target_rni]() -> ss::future<> {
         auto timeout = ss::semaphore::clock::duration(
           config::shard_local_cfg().raft_transfer_leader_recovery_timeout_ms());
-        f = meta.recovery_finished.wait(timeout).then([this, target_rni] {
+
+        if (!_fstats.contains(target_rni)) {
+            // Gone?  Nothing to wait for, proceed immediately.
+            return ss::now();
+        }
+
+        auto& meta = _fstats.get(target_rni);
+        if (meta.is_recovering) {
             vlog(
               _ctxlog.warn,
-              "Finished waiting for node {} recovery",
+              "transfer leadership: waiting for node {} recovery",
               target_rni);
-        });
-
-        meta.follower_state_change.broadcast();
-    }
+            meta.follower_state_change.broadcast();
+            return meta.recovery_finished.wait(timeout).then(
+              [this, target_rni] {
+                  vlog(
+                    _ctxlog.warn,
+                    "transfer leadership: finished waiting on node {} "
+                    "recovery",
+                    target_rni);
+              });
+        } else {
+            vlog(
+              _ctxlog.debug,
+              "transfer leadership: node {} is not recovering, proceeding "
+              "(dirty offset {})",
+              target_rni,
+              _log.offsets().dirty_offset);
+            return ss::now();
+        }
+    });
 
     return f;
 }
