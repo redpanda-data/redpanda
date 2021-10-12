@@ -36,10 +36,9 @@ type AdminAPI struct {
 	client *http.Client
 }
 
-// NewClient returns an AdminAPI client that talks to each of the input URLs.
-func NewClient(
-	fs afero.Fs, p *config.Params, cfg *config.Config,
-) (*AdminAPI, error) {
+// NewClient returns an AdminAPI client that talks to each of the addresses in
+// the rpk.admin_api section of the config.
+func NewClient(fs afero.Fs, cfg *config.Config) (*AdminAPI, error) {
 	a := &cfg.Rpk.AdminApi
 	addrs := a.Addresses
 	tc, err := a.TLS.Config(fs)

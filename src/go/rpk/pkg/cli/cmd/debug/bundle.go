@@ -256,7 +256,7 @@ The following are the data sources that are bundled in the compressed file:
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			admin, err := admin.NewClient(fs, p, cfg)
+			admin, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			cl, err := kafka.NewFranzClient(fs, p, cfg)
