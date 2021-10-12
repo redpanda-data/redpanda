@@ -161,6 +161,7 @@ private:
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     ss::sharded<cloud_storage::partition_recovery_manager>&
       _partition_recovery_mgr;
+    ss::gate _gate;
 
     friend std::ostream& operator<<(std::ostream&, const partition_manager&);
 };

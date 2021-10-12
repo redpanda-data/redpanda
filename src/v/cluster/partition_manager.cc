@@ -57,6 +57,7 @@ ss::future<consensus_ptr> partition_manager::manage(
   storage::ntp_config ntp_cfg,
   raft::group_id group,
   std::vector<model::broker> initial_nodes) {
+    gate_guard guard(_gate);
     bool logs_recovered = co_await maybe_download_log(ntp_cfg);
     if (logs_recovered) {
         vlog(
@@ -103,10 +104,10 @@ partition_manager::maybe_download_log(storage::ntp_config& ntp_cfg) {
 }
 
 ss::future<> partition_manager::stop_partitions() {
+    co_await _gate.close();
     // prevent partitions from being accessed
     auto partitions = std::exchange(_ntp_table, {});
     _raft_table.clear();
-
     // shutdown all partitions
     co_await ss::parallel_for_each(
       partitions, [this](auto& e) { return do_shutdown(e.second); });
