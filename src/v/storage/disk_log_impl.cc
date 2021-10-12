@@ -1105,8 +1105,8 @@ ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
                     "User asked to truncate at:{}, with initial physical "
                     "position of:{}, but internal::offset_to_filepos_consumer "
                     "could not translate physical offsets. Log state: {}",
-                    pidx,
                     cfg,
+                    pidx,
                     *this)));
             }
             auto [prev_last_offset, file_position] = phs.value();

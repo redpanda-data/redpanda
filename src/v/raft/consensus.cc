@@ -12,6 +12,7 @@
 #include "config/configuration.h"
 #include "likely.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/consensus_utils.h"
@@ -40,6 +41,15 @@
 
 namespace raft {
 
+static std::vector<model::record_batch_type>
+offset_translator_batch_types(const model::ntp& ntp) {
+    if (ntp.ns == model::kafka_namespace) {
+        return {model::record_batch_type::raft_configuration};
+    } else {
+        return {};
+    }
+}
+
 consensus::consensus(
   model::node_id nid,
   group_id group,
@@ -56,6 +66,11 @@ consensus::consensus(
   , _group(group)
   , _jit(std::move(jit))
   , _log(l)
+  , _offset_translator(ss::make_lw_shared<offset_translator>(
+      offset_translator_batch_types(_log.config().ntp()),
+      group,
+      _log.config().ntp(),
+      storage))
   , _scheduling(scheduling_config)
   , _disk_timeout(disk_timeout)
   , _client_protocol(client)
@@ -993,9 +1008,27 @@ ss::future<> consensus::do_start() {
                 _ctxlog.trace,
                 "Configuration manager started: {}",
                 _configuration_manager);
-
-              return hydrate_snapshot();
           })
+          .then([this, initial_state] {
+              offset_translator::must_reset must_reset{initial_state};
+
+              absl::btree_map<model::offset, int64_t> offset2delta;
+              for (auto it = _configuration_manager.begin();
+                   it != _configuration_manager.end();
+                   ++it) {
+                  offset2delta.emplace(it->first, it->second.idx());
+              }
+
+              auto bootstrap = offset_translator::bootstrap_state{
+                .offset2delta = std::move(offset2delta),
+                .highest_known_offset
+                = _configuration_manager.get_highest_known_offset(),
+              };
+
+              return _offset_translator->start(
+                must_reset, std::move(bootstrap));
+          })
+          .then([this] { return hydrate_snapshot(); })
           .then([this] {
               vlog(
                 _ctxlog.debug,
@@ -1049,6 +1082,7 @@ ss::future<> consensus::do_start() {
                   update_follower_stats(_configuration_manager.get_latest());
               });
           })
+          .then([this] { return _offset_translator->sync_with_log(_log, _as); })
           .then([this] {
               /**
                * fix for incorrectly persisted configuration index. In previous
@@ -1566,9 +1600,17 @@ consensus::do_append_entries(append_entries_request&& r) {
           lstats.dirty_offset,
           truncate_at);
         _probe.log_truncated();
-        return _log
-          .truncate(
-            storage::truncate_config(truncate_at, _scheduling.default_iopc))
+
+        // We are truncating the offset translator before truncating the log
+        // because if saving offset translator state fails, we will retry and
+        // eventually log and offset translator will become consistent. OTOH if
+        // log truncation were first and saving offset translator state failed,
+        // we wouldn't retry and log and offset translator could diverge.
+        return _offset_translator->truncate(truncate_at)
+          .then([this, truncate_at] {
+              return _log.truncate(storage::truncate_config(
+                truncate_at, _scheduling.default_iopc));
+          })
           .then([this, truncate_at] {
               _last_quorum_replicated_index = std::min(
                 details::prev_offset(truncate_at),
@@ -1662,6 +1704,9 @@ ss::future<> consensus::truncate_to_latest_snapshot() {
     // metadata
     return _configuration_manager.prefix_truncate(_last_snapshot_index)
       .then([this] {
+          return _offset_translator->prefix_truncate(_last_snapshot_index);
+      })
+      .then([this] {
           return _log.truncate_prefix(storage::truncate_prefix_config(
             details::next_offset(_last_snapshot_index),
             _scheduling.default_iopc));
@@ -1689,6 +1734,15 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
         update_follower_stats(metadata.latest_configuration);
         return _configuration_manager
           .add(_last_snapshot_index, std::move(metadata.latest_configuration))
+          .then([this] {
+              // TODO: save and load start delta from snapshot into
+              // _offset_translator
+
+              auto delta = _configuration_manager.offset_delta(
+                details::next_offset(_last_snapshot_index));
+              return _offset_translator->prefix_truncate_reset(
+                _last_snapshot_index, delta);
+          })
           .then([this] {
               _probe.configuration_update();
               _log.set_collectible_offset(_last_snapshot_index);
@@ -1865,7 +1919,11 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
           _last_snapshot_index = last_included_index;
           _last_snapshot_term = term;
           // update configuration manager
-          return _configuration_manager.prefix_truncate(_last_snapshot_index);
+          return _configuration_manager.prefix_truncate(_last_snapshot_index)
+            .then([this] {
+                return _offset_translator->prefix_truncate(
+                  _last_snapshot_index);
+            });
       });
 }
 
@@ -1960,10 +2018,32 @@ ss::future<storage::append_result> consensus::disk_append(
       storage::log_append_config::fsync::no,
       _scheduling.default_iopc,
       model::timeout_clock::now() + _disk_timeout};
+
+    class consumer {
+    public:
+        consumer(offset_translator& translator, storage::log_appender appender)
+          : _translator(translator)
+          , _appender(std::move(appender)) {}
+
+        ss::future<ss::stop_iteration> operator()(model::record_batch& batch) {
+            auto ret = co_await _appender(batch);
+            // passing batch to translator after appender so that correct batch
+            // offsets are filled.
+            _translator.process(batch);
+            co_return ret;
+        }
+
+        auto end_of_stream() { return _appender.end_of_stream(); }
+
+    private:
+        offset_translator& _translator;
+        storage::log_appender _appender;
+    };
+
     return details::for_each_ref_extract_configuration(
              _log.offsets().dirty_offset,
              std::move(reader),
-             _log.make_appender(cfg),
+             consumer(*_offset_translator, _log.make_appender(cfg)),
              cfg.timeout)
       .then([this, should_update_last_quorum_idx](
               std::tuple<ret_t, std::vector<offset_configuration>> t) {
@@ -1999,6 +2079,12 @@ ss::future<storage::append_result> consensus::disk_append(
               if (_bg.is_closed()) {
                   return ret;
               }
+
+              // Do checkpointing in the background to avoid latency spikes in
+              // the write path caused by KVStore flush debouncing.
+
+              (void)ss::with_gate(
+                _bg, [this] { return _offset_translator->maybe_checkpoint(); });
 
               (void)ss::with_gate(
                 _bg, [this, last_offset = ret.last_offset, sz = ret.byte_size] {
@@ -2523,6 +2609,8 @@ ss::future<> consensus::remove_persistent_state() {
       storage::kvstore::key_space::consensus, last_applied_key());
     // configuration manager
     co_await _configuration_manager.remove_persistent_state();
+    // offset translator
+    co_await _offset_translator->remove_persistent_state();
     // snapshot
     co_await _snapshot_mgr.remove_snapshot();
     co_await _snapshot_mgr.remove_partial_snapshots();

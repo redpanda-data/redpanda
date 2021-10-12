@@ -185,7 +185,7 @@ struct mem_log_impl final : log::impl {
     }
     ss::future<> truncate_prefix(truncate_prefix_config cfg) final {
         stlog.debug("PREFIX Truncating {} log at {}", config().ntp(), cfg);
-        if (_data.empty()) {
+        if (cfg.start_offset <= _start_offset) {
             return ss::make_ready_future<>();
         }
         for (auto& reader : _readers) {
@@ -196,15 +196,7 @@ struct mem_log_impl final : log::impl {
           std::end(_data),
           cfg.start_offset,
           entries_ordering{});
-        if (it == _data.end()) {
-            return ss::make_ready_future<>();
-        }
-        if (it->last_offset() > cfg.start_offset) {
-            it = std::prev(it);
-        }
-        if (it == _data.end()) {
-            return ss::make_ready_future<>();
-        }
+
         _probe.remove_bytes_written(std::accumulate(
           _data.begin(),
           it,
@@ -213,6 +205,7 @@ struct mem_log_impl final : log::impl {
               return acc += b.size_bytes();
           }));
         _data.erase(_data.begin(), it);
+        _start_offset = cfg.start_offset;
         return ss::make_ready_future<>();
     }
     ss::future<> truncate(truncate_config cfg) final {
@@ -229,6 +222,15 @@ struct mem_log_impl final : log::impl {
           cfg.base_offset,
           entries_ordering{});
         if (it != _data.end()) {
+            if (it->base_offset() != cfg.base_offset) {
+                throw std::invalid_argument{fmt::format(
+                  "ntp {}: trying to truncate at offset {} which is not at "
+                  "batch base (containing batch base offset: {})",
+                  config().ntp(),
+                  cfg.base_offset,
+                  it->base_offset())};
+            }
+
             _probe.remove_bytes_written(std::accumulate(
               it,
               _data.end(),
@@ -316,6 +318,14 @@ struct mem_log_impl final : log::impl {
 
     ss::future<model::record_batch_reader>
     make_reader(log_reader_config cfg) final {
+        if (cfg.start_offset < _start_offset) {
+            return ss::make_exception_future<model::record_batch_reader>(
+              std::runtime_error(fmt::format(
+                "Reader cannot read before start of the log {} < {}",
+                cfg.start_offset,
+                _start_offset)));
+        }
+
         auto it = std::lower_bound(
           std::begin(_data),
           std::end(_data),
@@ -330,20 +340,31 @@ struct mem_log_impl final : log::impl {
     }
 
     log_appender make_appender(log_append_config) final {
-        auto o = offsets().dirty_offset;
-        if (o() < 0) {
-            o = model::offset(0);
+        auto ofs = offsets();
+        auto next_offset = ofs.dirty_offset;
+        if (next_offset() >= 0) {
+            // non-empty log, start appending at (dirty + 1)
+            next_offset++;
         } else {
-            o = o + model::offset(1);
+            // log is empty, start appending at _start_offset
+            next_offset = ofs.start_offset;
+
+            // but, in the case of a brand new log, no starting offset has been
+            // explicitly set, so it is defined implicitly to be 0.
+            if (next_offset() < 0) {
+                next_offset = model::offset(0);
+            }
         }
-        return log_appender(std::make_unique<mem_log_appender>(*this, o));
+
+        return log_appender(
+          std::make_unique<mem_log_appender>(*this, next_offset));
     }
 
     std::optional<model::term_id> get_term(model::offset o) const final {
         if (o != model::offset{}) {
             auto it = std::lower_bound(
               std::cbegin(_data), std::cend(_data), o, entries_ordering{});
-            if (it != _data.end()) {
+            if (it != _data.end() && o >= _start_offset) {
                 return it->term();
             }
         }
@@ -354,18 +375,26 @@ struct mem_log_impl final : log::impl {
     size_t segment_count() const final { return 1; }
 
     storage::offset_stats offsets() const final {
-        // default value
         if (_data.empty()) {
-            return storage::offset_stats{};
+            offset_stats ret;
+            ret.start_offset = _start_offset;
+            if (ret.start_offset > model::offset(0)) {
+                ret.dirty_offset = ret.start_offset - model::offset(1);
+                ret.committed_offset = ret.dirty_offset;
+            }
+            return ret;
         }
         auto& b = _data.front();
+        auto start_offset = _start_offset() >= 0 ? _start_offset
+                                                 : b.base_offset();
+
         auto& e = _data.back();
         auto it = std::lower_bound(
           std::cbegin(_data), std::cend(_data), e.term(), entries_ordering{});
         auto last_term_base_offset = it->base_offset();
 
         return storage::offset_stats{
-          .start_offset = b.base_offset(),
+          .start_offset = start_offset,
           .committed_offset = e.last_offset(),
           .committed_offset_term = e.term(),
           .dirty_offset = e.last_offset(),
@@ -389,6 +418,7 @@ struct mem_log_impl final : log::impl {
     };
     boost::intrusive::list<mem_iter_reader> _readers;
     underlying_t _data;
+    model::offset _start_offset;
     std::optional<eviction_monitor> _eviction_monitor;
     ss::rwlock _eviction_lock;
     mem_probe _probe;
@@ -401,7 +431,7 @@ mem_log_appender::operator()(model::record_batch& batch) {
     _byte_size += batch.header().size_bytes;
     vlog(
       stlog.trace,
-      "Wrting to {} batch of {} records offsets [{},{}], term {}",
+      "Writing to {}, batch size {} bytes, records offsets [{},{}], term {}",
       _log.config().ntp(),
       batch.header().size_bytes,
       batch.base_offset(),
