@@ -1460,12 +1460,23 @@ ss::future<bool> tx_gateway_frontend::try_create_tx_topic() {
       .then([](std::vector<cluster::topic_result> res) {
           vassert(res.size() == 1, "expected exactly one result");
           if (res[0].ec != cluster::errc::success) {
+              vlog(
+                clusterlog.warn,
+                "can not create {}/{} topic - error: {}",
+                model::kafka_internal_namespace,
+                model::tx_manager_topic,
+                cluster::make_error_code(res[0].ec).message());
               return false;
           }
           return true;
       })
       .handle_exception([](std::exception_ptr e) {
-          vlog(clusterlog.warn, "cant create tx manager topic {}", e);
+          vlog(
+            clusterlog.warn,
+            "can not create {}/{} topic - error: {}",
+            model::kafka_internal_namespace,
+            model::tx_manager_topic,
+            e);
           return false;
       });
 }
