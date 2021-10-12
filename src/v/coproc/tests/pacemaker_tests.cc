@@ -99,11 +99,10 @@ FIXTURE_TEST(test_coproc_router_off_by_one, coproc_test_fixture) {
     auto fn =
       [this, input_ntp, output_ntp](model::offset start) -> ss::future<size_t> {
         co_await push(input_ntp, single_record_record_batch_reader());
-        auto r = co_await drain(output_ntp, 1, start);
-        BOOST_REQUIRE(r);
-        co_return r->size();
+        auto r = co_await consume(output_ntp, start, start + model::offset{1});
+        co_return r.size();
     };
-    // Perform push/drain twice
+    // Perform push/consume twice
     size_t wr = fn(model::offset(0)).get();
     BOOST_CHECK_EQUAL(wr, 1);
     size_t wr2 = fn(model::offset(1)).get();
@@ -134,19 +133,16 @@ FIXTURE_TEST(test_coproc_router_double, coproc_test_fixture) {
       to_materialized_topic(foo, identity_coprocessor::identity_topic),
       model::partition_id(0));
 
-    auto f1 = push(
+    push(
       input_ntp,
       storage::test::make_random_memory_record_batch_reader(
-        model::offset(0), 50, 1, false));
-    auto f2 = drain(output_ntp, 100);
-    auto read_batches
-      = ss::when_all_succeed(std::move(f1), std::move(f2)).get();
+        model::offset(0), 50, 1, false))
+      .get();
+    auto read_batches = consume(output_ntp).get0();
 
     /// The identity coprocessor should not have modified the number of
     /// record batches from the source log onto the output log
-    BOOST_REQUIRE(std::get<1>(read_batches).has_value());
-    const model::record_batch_reader::data_t& data = *std::get<1>(read_batches);
-    BOOST_CHECK_EQUAL(data.size(), 100);
+    BOOST_CHECK_EQUAL(read_batches.size(), 100);
 }
 
 FIXTURE_TEST(test_copro_auto_deregister_function, coproc_test_fixture) {

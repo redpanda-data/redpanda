@@ -16,6 +16,7 @@
 #include "coproc/tests/utils/event_publisher_utils.h"
 #include "coproc/tests/utils/kafka_publish_consumer.h"
 #include "kafka/client/client.h"
+#include "kafka/client/client_fetch_batch_reader.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
@@ -27,6 +28,7 @@
 #include <seastar/core/smp.hh>
 
 #include <chrono>
+#include <variant>
 
 namespace {
 
@@ -35,6 +37,7 @@ std::unique_ptr<kafka::client::client> make_client() {
     cfg.brokers.set_value(std::vector<unresolved_address>{
       config::shard_local_cfg().kafka_api()[0].address});
     cfg.retries.set_value(size_t(1));
+    cfg.produce_batch_delay.set_value(0ms);
     return std::make_unique<kafka::client::client>(to_yaml(cfg));
 }
 
@@ -103,61 +106,70 @@ ss::future<> coproc_test_fixture::restart() {
     co_await _root_fixture->wait_for_controller_leadership();
 }
 
-ss::future<ss::stop_iteration> coproc_test_fixture::fetch_partition(
-  model::record_batch_reader::data_t& events,
-  model::offset& o,
-  model::topic_partition tp) {
-    auto response = co_await _client->fetch_partition(tp, o, 64_KiB, 1000ms);
-    if (
-      response.data.error_code
-      == kafka::error_code::unknown_topic_or_partition) {
-        co_await ss::sleep(50ms);
-        co_await _client->update_metadata();
-        co_return ss::stop_iteration::no;
-    }
-    if (response.data.error_code != kafka::error_code::none) {
-        vlog(
-          coproc::coproclog.info,
-          "error: {}, {}",
-          tp,
-          response.data.error_code);
-        co_return ss::stop_iteration::yes;
-    }
-    vassert(response.data.topics.size() == 1, "Unexpected partition size");
-    auto& p = response.data.topics[0];
-    vassert(p.partitions.size() == 1, "Unexpected responses size");
-    auto& pr = p.partitions[0];
-    if (pr.error_code == kafka::error_code::none) {
-        auto rbr = make_record_batch_reader<kafka::batch_reader>(
-          std::move(*pr.records));
-        auto batches = co_await consume_reader_to_memory(
-          std::move(rbr), model::no_timeout);
-        for (auto& batch : batches) {
-            events.push_back(std::move(batch));
-            o = events.back().last_offset() + model::offset(1);
+template<typename T>
+static ss::future<T> do_kafka_request(
+  kafka::client::client* c,
+  model::timeout_clock::time_point timeout,
+  ss::noncopyable_function<ss::future<T>(kafka::client::client*)> fn) {
+    while (model::timeout_clock::now() < timeout) {
+        auto k_err = kafka::error_code::none;
+        try {
+            co_return co_await fn(c);
+        } catch (const kafka::exception_base& ex) {
+            /// Due to the fact that you can't co_await on a future within a
+            /// catch block, save the error code for use outside of the block
+            k_err = ex.error;
         }
+        if (k_err == kafka::error_code::unknown_topic_or_partition) {
+            co_await c->update_metadata();
+        } else {
+            vlog(coproc::coproclog.error, "Kafka client error: {}", k_err);
+        }
+        co_await ss::sleep(100ms);
     }
-    co_return ss::stop_iteration::no;
+    throw ss::timed_out_error();
 }
 
-ss::future<std::optional<model::record_batch_reader::data_t>>
-coproc_test_fixture::drain(
+static ss::future<model::offset>
+list_topic_offset(kafka::client::client* c, model::topic_partition tp) {
+    vlog(coproc::coproclog.info, "Making request to fetch offset: {}", tp);
+    auto r = co_await c->list_offsets(tp);
+    vassert(r.data.topics.size() == 1, "Expected one response");
+    auto& topics = r.data.topics;
+    vassert(topics[0].name == tp.topic, "Unexpected response");
+    vassert(r.data.topics[0].partitions.size() == 1, "Expected one partition");
+    auto& partitions = r.data.topics[0].partitions;
+    vassert(
+      partitions[0].partition_index == tp.partition, "Unexpected partition id");
+    co_return partitions[0].offset;
+}
+
+ss::future<model::record_batch_reader::data_t> coproc_test_fixture::consume(
   model::ntp ntp,
-  std::size_t limit,
-  model::offset offset,
+  model::offset start_offset,
+  model::offset last_offset,
   model::timeout_clock::time_point timeout) {
-    vlog(coproc::coproclog.info, "Making request to fetch from ntp: {}", ntp);
     model::topic_partition tp{ntp.tp.topic, ntp.tp.partition};
-    model::record_batch_reader::data_t events;
-    ss::stop_iteration stop{};
-    auto start_time = model::timeout_clock::now();
-    while ((stop != ss::stop_iteration::yes) && (events.size() < limit)
-           && (start_time < timeout)) {
-        stop = co_await fetch_partition(events, offset, tp);
-        start_time = model::timeout_clock::now();
+    if (last_offset == model::model_limits<model::offset>::max()) {
+        last_offset = co_await do_kafka_request<model::offset>(
+          _client.get(), timeout, [tp](kafka::client::client* c) {
+              return list_topic_offset(c, tp);
+          });
+        vlog(
+          coproc::coproclog.info,
+          "last_offset {} obtained from ntp: {}",
+          last_offset,
+          ntp);
     }
-    co_return std::optional<model::record_batch_reader::data_t>(
-      std::move(events));
+    vlog(coproc::coproclog.info, "Making request to fetch from ntp: {}", ntp);
+    co_return co_await do_kafka_request<model::record_batch_reader::data_t>(
+      _client.get(),
+      timeout,
+      [tp, start_offset, last_offset, timeout](kafka::client::client* c) {
+          auto rbr = kafka::client::make_client_fetch_batch_reader(
+            *c, tp, start_offset, last_offset);
+          return consume_reader_to_memory(std::move(rbr), timeout);
+      });
 }
 
 ss::future<model::offset>

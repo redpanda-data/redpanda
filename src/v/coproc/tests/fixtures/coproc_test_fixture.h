@@ -67,21 +67,16 @@ public:
 
     /// \brief Read records from storage::api up until 'limit' or 'time'
     /// starting at 'offset'
-    ss::future<std::optional<model::record_batch_reader::data_t>> drain(
-      model::ntp,
-      std::size_t,
-      model::offset = model::offset(0),
-      model::timeout_clock::time_point = model::timeout_clock::now()
-                                         + std::chrono::seconds(5));
+    ss::future<model::record_batch_reader::data_t> consume(
+      model::ntp ntp,
+      model::offset start_offset = model::offset(0),
+      model::offset last_offset = model::model_limits<model::offset>::max(),
+      model::timeout_clock::time_point timeout = model::timeout_clock::now()
+                                                 + std::chrono::seconds(5));
 
     kafka::client::client& get_client() { return *_client; }
 
 protected:
-    ss::future<ss::stop_iteration> fetch_partition(
-      model::record_batch_reader::data_t&,
-      model::offset&,
-      model::topic_partition);
-
     redpanda_thread_fixture* root_fixture() {
         vassert(_root_fixture != nullptr, "Access root_fixture when null");
         return _root_fixture.get();
