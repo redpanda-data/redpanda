@@ -66,6 +66,13 @@ public:
 
     ss::future<std::vector<cluster::rm_stm::tx_range>>
     aborted_transactions(model::offset base, model::offset last) final {
+        model::offset local_kafka_start_offset = _translator->from_log_offset(
+          _partition->start_offset());
+        if (base < local_kafka_start_offset) {
+            // TODO: is this correct?
+            co_return std::vector<cluster::rm_stm::tx_range>{};
+        }
+
         auto source = co_await _partition->aborted_transactions(
           _translator->to_log_offset(base), _translator->to_log_offset(last));
 
