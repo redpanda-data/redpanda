@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "cloud_storage/manifest.h"
+#include "cloud_storage/remote_partition.h"
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/id_allocator_stm.h"
 #include "cluster/partition_probe.h"
@@ -60,6 +62,7 @@ public:
       model::batch_identity,
       model::record_batch_reader&&,
       raft::replicate_options);
+
     /**
      * The reader is modified such that the max offset is configured to be
      * the minimum of the max offset requested and the committed index of the
@@ -68,7 +71,7 @@ public:
     ss::future<model::record_batch_reader> make_reader(
       storage::log_reader_config config,
       std::optional<model::timeout_clock::time_point> deadline = std::nullopt) {
-        return _raft->make_reader(std::move(config), deadline);
+        return _raft->make_reader(config, deadline);
     }
 
     model::offset start_offset() const { return _raft->start_offset(); }
@@ -193,6 +196,61 @@ public:
         return _archival_meta_stm;
     }
 
+    // NOTE: the remaining methods are used in replicated_parititon and
+    // ntp_archiver_service
+
+    /// Check if cloud storage is connected to cluster partition
+    ///
+    /// The remaining 'cloud' methods can only be called if this
+    /// method returned 'true'.
+    bool cloud_data_available() const {
+        return static_cast<bool>(_cloud_storage_partition);
+    }
+
+    /// Starting offset in the object store
+    model::offset start_cloud_offset() const {
+        vassert(
+          cloud_data_available(),
+          "Method can only be called if cloud data is available");
+        return _cloud_storage_partition->first_uploaded_offset();
+    }
+
+    /// Largest uploaded offset in the object store
+    model::offset max_offset_cloud() const {
+        vassert(
+          cloud_data_available(),
+          "Method can only be called if cloud data is available");
+        return _cloud_storage_partition->last_uploaded_offset();
+    }
+
+    /// Attach remote_partition to cluster::partition
+    ///
+    /// This method is called by archival ntp_archiver_service to
+    /// connect partition with cloud data. This makes data from
+    /// the remote object store available via `make_cloud_reader`
+    /// call.
+    void connect_with_cloud_storage(
+      ss::weak_ptr<cloud_storage::remote_partition> part) {
+        _cloud_storage_partition = std::move(part);
+    }
+
+    /// Create a reader that will fetch data from remote storage
+    ss::future<model::record_batch_reader> make_cloud_reader(
+      storage::log_reader_config config,
+      std::optional<model::timeout_clock::time_point> deadline = std::nullopt) {
+        vassert(
+          cloud_data_available(),
+          "Method can only be called if cloud data is available");
+        auto start_offset = _cloud_storage_partition->from_kafka_offset(
+          config.start_offset);
+        auto max_offset = _cloud_storage_partition->from_kafka_offset(
+          config.max_offset);
+        config.start_offset = start_offset ? *start_offset
+                                           : config.start_offset;
+        config.max_offset = max_offset ? *max_offset : config.max_offset;
+        return _cloud_storage_partition->make_reader(config, deadline);
+    }
+
 private:
     friend partition_manager;
     friend replicated_partition_probe;
@@ -211,6 +269,10 @@ private:
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     bool _is_tx_enabled{false};
     bool _is_idempotence_enabled{false};
+    // TODO: next two fields should go away when archival snapshot will be
+    // integrated
+    ss::weak_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
+    // end TODO
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

@@ -12,6 +12,7 @@
 #pragma once
 
 #include "archival/fwd.h"
+#include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_recovery_manager.h"
 #include "cluster/fwd.h"
 #include "coproc/fwd.h"
@@ -92,6 +93,7 @@ public:
     ss::sharded<cluster::rm_partition_frontend> rm_partition_frontend;
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
     ss::sharded<v8_engine::data_policy_table> data_policies;
+    ss::sharded<cloud_storage::cache> shadow_index_cache;
 
 private:
     using deferred_actions

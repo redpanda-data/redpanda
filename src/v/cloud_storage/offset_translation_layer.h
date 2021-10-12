@@ -46,6 +46,9 @@ public:
       ss::output_stream<char> dst,
       retry_chain_node& fib) const;
 
+    ss::input_stream<char>
+    patch_stream(ss::input_stream<char> src, retry_chain_node& fib) const;
+
     /// Get segment name adjusted for all removed offsets
     segment_name get_adjusted_segment_name(
       const segment_name& s, retry_chain_node& fib) const;
