@@ -38,7 +38,11 @@ class partition_manager;
 /// all raft logic is proxied transparently
 class partition {
 public:
-    partition(consensus_ptr r, ss::sharded<cluster::tx_gateway_frontend>&);
+    partition(
+      consensus_ptr r,
+      ss::sharded<cluster::tx_gateway_frontend>&,
+      ss::shared_ptr<archival_metadata_stm>,
+      ss::lw_shared_ptr<cloud_storage::remote_partition>);
 
     raft::group_id group() const { return _raft->group(); }
     ss::future<> start();
@@ -196,9 +200,6 @@ public:
         return _archival_meta_stm;
     }
 
-    // NOTE: the remaining methods are used in replicated_parititon and
-    // ntp_archiver_service
-
     /// Check if cloud storage is connected to cluster partition
     ///
     /// The remaining 'cloud' methods can only be called if this
@@ -213,25 +214,6 @@ public:
           cloud_data_available(),
           "Method can only be called if cloud data is available");
         return _cloud_storage_partition->first_uploaded_offset();
-    }
-
-    /// Largest uploaded offset in the object store
-    model::offset max_offset_cloud() const {
-        vassert(
-          cloud_data_available(),
-          "Method can only be called if cloud data is available");
-        return _cloud_storage_partition->last_uploaded_offset();
-    }
-
-    /// Attach remote_partition to cluster::partition
-    ///
-    /// This method is called by archival ntp_archiver_service to
-    /// connect partition with cloud data. This makes data from
-    /// the remote object store available via `make_cloud_reader`
-    /// call.
-    void connect_with_cloud_storage(
-      ss::weak_ptr<cloud_storage::remote_partition> part) {
-        _cloud_storage_partition = std::move(part);
     }
 
     /// Create a reader that will fetch data from remote storage
@@ -269,10 +251,7 @@ private:
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     bool _is_tx_enabled{false};
     bool _is_idempotence_enabled{false};
-    // TODO: next two fields should go away when archival snapshot will be
-    // integrated
-    ss::weak_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
-    // end TODO
+    ss::lw_shared_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

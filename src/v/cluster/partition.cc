@@ -30,13 +30,17 @@ static bool is_tx_manager_topic(const model::ntp& ntp) {
 
 partition::partition(
   consensus_ptr r,
-  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend)
+  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
+  ss::shared_ptr<archival_metadata_stm> archival_meta_stm,
+  ss::lw_shared_ptr<cloud_storage::remote_partition> cloud_storage_partition)
   : _raft(r)
+  , _archival_meta_stm(std::move(archival_meta_stm))
   , _probe(std::make_unique<replicated_partition_probe>(*this))
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _is_tx_enabled(config::shard_local_cfg().enable_transactions.value())
   , _is_idempotence_enabled(
-      config::shard_local_cfg().enable_idempotence.value()) {
+      config::shard_local_cfg().enable_idempotence.value())
+  , _cloud_storage_partition(std::move(cloud_storage_partition)) {
     auto& stm_manager = _raft->log().stm_manager();
 
     if (is_id_allocator_topic(_raft->ntp())) {
@@ -71,15 +75,6 @@ partition::partition(
             _rm_stm = ss::make_shared<cluster::rm_stm>(
               clusterlog, _raft.get(), _tx_gateway_frontend);
             stm_manager.add_stm(_rm_stm);
-        }
-
-        // TODO: check topic config if archival is enabled for this topic
-        if (
-          config::shard_local_cfg().cloud_storage_enabled()
-          && _raft->ntp().ns != model::redpanda_ns) {
-            _archival_meta_stm
-              = ss::make_shared<cluster::archival_metadata_stm>(_raft.get());
-            stm_manager.add_stm(_archival_meta_stm);
         }
     }
 
@@ -314,6 +309,10 @@ ss::future<> partition::start() {
         f = f.then([this] { return _archival_meta_stm->start(); });
     }
 
+    if (_cloud_storage_partition) {
+        f = f.then([this] { return _cloud_storage_partition->start(); });
+    }
+
     return f;
 }
 
@@ -340,6 +339,10 @@ ss::future<> partition::stop() {
 
     if (_archival_meta_stm) {
         f = f.then([this] { return _archival_meta_stm->stop(); });
+    }
+
+    if (_cloud_storage_partition) {
+        f = f.then([this] { return _cloud_storage_partition->stop(); });
     }
 
     // no state machine

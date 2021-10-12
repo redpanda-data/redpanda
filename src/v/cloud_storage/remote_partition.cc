@@ -318,9 +318,12 @@ remote_partition::remote_partition(
   , _cache(c)
   , _manifest(m)
   , _translator(ss::make_lw_shared<offset_translator>())
-  , _bucket(std::move(bucket)) {
+  , _bucket(std::move(bucket)) {}
+
+ss::future<> remote_partition::start() {
     update_segmnets_incrementally();
     (void)run_eviction_loop();
+    co_return;
 }
 
 ss::future<> remote_partition::run_eviction_loop() {
