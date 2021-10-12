@@ -14,12 +14,11 @@
 #include "cloud_storage/manifest.h"
 #include "cluster/persisted_stm.h"
 #include "model/fundamental.h"
+#include "model/timestamp_serde.h"
 #include "raft/log_eviction_stm.h"
 #include "serde/serde.h"
-#include "model/timestamp_serde.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
-#include "cloud_storage/manifest.h"
 
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
@@ -41,18 +40,18 @@ public:
         cloud_storage::manifest::segment_meta meta;
     };
 
-    explicit archival_metadata_stm(
-      raft::consensus*, const ss::lw_shared_ptr<raft::log_eviction_stm>&);
+    explicit archival_metadata_stm(raft::consensus*);
+
+    void set_log_eviction_stm(
+      ss::lw_shared_ptr<raft::log_eviction_stm> log_eviction_stm) {
+        _log_eviction_stm = std::move(log_eviction_stm);
+    }
 
     ss::future<bool> add_segments(const std::vector<segment>&);
 
-    model::offset start_offset() const {
-        return _start_offset;
-    }
+    model::offset start_offset() const { return _start_offset; }
 
-    model::offset last_offset() {
-        return _last_offset;
-    }
+    model::offset last_offset() { return _last_offset; }
 
     const cloud_storage::manifest& manifest() const { return _manifest; }
 

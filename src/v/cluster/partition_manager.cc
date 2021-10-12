@@ -35,11 +35,15 @@ partition_manager::partition_manager(
   ss::sharded<storage::api>& storage,
   ss::sharded<raft::group_manager>& raft,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
-  ss::sharded<cloud_storage::partition_recovery_manager>& recovery_mgr)
+  ss::sharded<cloud_storage::partition_recovery_manager>& recovery_mgr,
+  ss::sharded<cloud_storage::remote>& cloud_storage_api,
+  ss::sharded<cloud_storage::cache>& cloud_storage_cache)
   : _storage(storage.local())
   , _raft_manager(raft)
   , _tx_gateway_frontend(tx_gateway_frontend)
-  , _partition_recovery_mgr(recovery_mgr) {}
+  , _partition_recovery_mgr(recovery_mgr)
+  , _cloud_storage_api(cloud_storage_api)
+  , _cloud_storage_cache(cloud_storage_cache) {}
 
 partition_manager::ntp_table_container
 partition_manager::get_topic_partition_table(
@@ -80,7 +84,37 @@ ss::future<consensus_ptr> partition_manager::manage(
       = co_await _raft_manager.local().create_group(
         group, std::move(initial_nodes), log);
 
-    auto p = ss::make_lw_shared<partition>(c, _tx_gateway_frontend);
+    ss::shared_ptr<archival_metadata_stm> archival_meta_stm;
+    ss::lw_shared_ptr<cloud_storage::remote_partition> cloud_storage_partition;
+    // TODO: check topic config if archival is enabled for this topic
+    if (
+      config::shard_local_cfg().cloud_storage_enabled()
+      && c->ntp().ns != model::redpanda_ns) {
+        archival_meta_stm = ss::make_shared<cluster::archival_metadata_stm>(
+          c.get());
+        c->log().stm_manager()->add_stm(archival_meta_stm);
+
+        if (
+          _cloud_storage_api.local_is_initialized()
+          && _cloud_storage_cache.local_is_initialized()) {
+            auto bucket
+              = config::shard_local_cfg().cloud_storage_bucket.value();
+            if (!bucket) {
+                throw std::runtime_error{
+                  "configuration property cloud_storage_bucket is not set"};
+            }
+
+            cloud_storage_partition
+              = ss::make_lw_shared<cloud_storage::remote_partition>(
+                archival_meta_stm->manifest(),
+                _cloud_storage_api.local(),
+                _cloud_storage_cache.local(),
+                s3::bucket_name{*bucket});
+        }
+    }
+
+    auto p = ss::make_lw_shared<partition>(
+      c, _tx_gateway_frontend, archival_meta_stm, cloud_storage_partition);
 
     _ntp_table.emplace(log.config().ntp(), p);
     _raft_table.emplace(group, p);

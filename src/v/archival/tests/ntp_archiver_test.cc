@@ -168,7 +168,7 @@ FIXTURE_TEST(test_download_manifest, s3_imposter_fixture) { // NOLINT
     cloud_storage::remote remote(
       remote_conf.connection_limit, remote_conf.client_config);
     archival::ntp_archiver archiver(
-      get_ntp_conf(), arch_conf, remote, std::nullopt, nullptr, probe);
+      get_ntp_conf(), arch_conf, remote, nullptr, probe);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
     retry_chain_node fib;
     auto res = archiver.download_manifest(fib).get0();
@@ -184,7 +184,7 @@ FIXTURE_TEST(test_upload_manifest, s3_imposter_fixture) { // NOLINT
     cloud_storage::remote remote(
       remote_conf.connection_limit, remote_conf.client_config);
     archival::ntp_archiver archiver(
-      get_ntp_conf(), arch_conf, remote, std::nullopt, nullptr, probe);
+      get_ntp_conf(), arch_conf, remote, nullptr, probe);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
     auto pm = const_cast<cloud_storage::manifest*>( // NOLINT
       &archiver.get_remote_manifest());
@@ -241,7 +241,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
       *part);
 
     archival::ntp_archiver archiver(
-      get_ntp_conf(), arch_conf, remote, std::nullopt, part, probe);
+      get_ntp_conf(), arch_conf, remote, part, probe);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
@@ -402,7 +402,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     cloud_storage::remote remote(
       remote_conf.connection_limit, remote_conf.client_config);
     archival::ntp_archiver archiver(
-      get_ntp_conf(), arch_conf, remote, std::nullopt, part, probe);
+      get_ntp_conf(), arch_conf, remote, part, probe);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;
@@ -610,7 +610,7 @@ static void test_partial_upload_impl(
     cloud_storage::remote remote(cconf.connection_limit, cconf.client_config);
     aconf.time_limit = segment_time_limit(0s);
     archival::ntp_archiver archiver(
-      get_ntp_conf(), aconf, remote, std::nullopt, part, probe);
+      get_ntp_conf(), aconf, remote, part, probe);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;

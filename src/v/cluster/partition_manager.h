@@ -12,6 +12,8 @@
 #pragma once
 
 #include "cloud_storage/partition_recovery_manager.h"
+#include "cloud_storage/remote.h"
+#include "cloud_storage/cache_service.h"
 #include "cluster/ntp_callbacks.h"
 #include "cluster/partition.h"
 #include "model/metadata.h"
@@ -33,7 +35,9 @@ public:
       ss::sharded<storage::api>&,
       ss::sharded<raft::group_manager>&,
       ss::sharded<cluster::tx_gateway_frontend>&,
-      ss::sharded<cloud_storage::partition_recovery_manager>&);
+      ss::sharded<cloud_storage::partition_recovery_manager>&,
+      ss::sharded<cloud_storage::remote>&,
+      ss::sharded<cloud_storage::cache>&);
 
     using manage_cb_t
       = ss::noncopyable_function<void(ss::lw_shared_ptr<partition>)>;
@@ -159,9 +163,13 @@ private:
     absl::flat_hash_map<raft::group_id, ss::lw_shared_ptr<partition>>
       _raft_table;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
+
     ss::sharded<cloud_storage::partition_recovery_manager>&
       _partition_recovery_mgr;
     ss::gate _gate;
+
+    ss::sharded<cloud_storage::remote>& _cloud_storage_api;
+    ss::sharded<cloud_storage::cache>& _cloud_storage_cache;
 
     friend std::ostream& operator<<(std::ostream&, const partition_manager&);
 };

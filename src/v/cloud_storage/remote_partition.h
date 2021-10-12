@@ -55,6 +55,8 @@ public:
           _eviction_list.size());
     }
 
+    ss::future<> start();
+
     ss::future<model::record_batch_reader> make_reader(
       storage::log_reader_config config,
       std::optional<model::timeout_clock::time_point> deadline = std::nullopt);
@@ -66,10 +68,6 @@ public:
             starting_offset = std::min(starting_offset, m.second.base_offset);
         }
         return starting_offset;
-    }
-
-    model::offset last_uploaded_offset() const {
-        return _manifest.get_last_offset();
     }
 
     ss::future<> stop();

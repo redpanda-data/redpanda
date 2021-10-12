@@ -593,7 +593,9 @@ void application::wire_up_redpanda_services() {
       std::ref(storage),
       std::ref(raft_group_manager),
       std::ref(tx_gateway_frontend),
-      std::ref(partition_recovery_manager))
+      std::ref(partition_recovery_manager),
+      std::ref(cloud_storage_api),
+      std::ref(shadow_index_cache))
       .get();
     vlog(_log.info, "Partition manager started");
 
@@ -689,7 +691,6 @@ void application::wire_up_redpanda_services() {
         construct_service(
           archival_scheduler,
           std::ref(cloud_storage_api),
-          std::ref(shadow_index_cache),
           std::ref(storage),
           std::ref(partition_manager),
           std::ref(controller->get_topics_state()),

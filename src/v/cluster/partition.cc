@@ -30,13 +30,17 @@ static bool is_tx_manager_topic(const model::ntp& ntp) {
 
 partition::partition(
   consensus_ptr r,
-  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend)
+  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
+  ss::shared_ptr<archival_metadata_stm> archival_meta_stm,
+  ss::lw_shared_ptr<cloud_storage::remote_partition> cloud_storage_partition)
   : _raft(r)
+  , _archival_meta_stm(archival_meta_stm)
   , _probe(std::make_unique<replicated_partition_probe>(*this))
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _is_tx_enabled(config::shard_local_cfg().enable_transactions.value())
   , _is_idempotence_enabled(
-      config::shard_local_cfg().enable_idempotence.value()) {
+      config::shard_local_cfg().enable_idempotence.value())
+  , _cloud_storage_partition(cloud_storage_partition) {
     auto stm_manager = _raft->log().stm_manager();
 
     if (is_id_allocator_topic(_raft->ntp())) {
@@ -72,24 +76,18 @@ partition::partition(
               clusterlog, _raft.get(), _tx_gateway_frontend);
             stm_manager->add_stm(_rm_stm);
         }
-
-        // TODO: check topic config if archival is enabled for this topic
-        if (
-          config::shard_local_cfg().cloud_storage_enabled()
-          && _raft->ntp().ns != model::redpanda_ns) {
-            _archival_meta_stm
-              = ss::make_shared<cluster::archival_metadata_stm>(
-                _raft.get(), _log_eviction_stm);
-            stm_manager->add_stm(_archival_meta_stm);
-        }
     }
 
-    if (_log_eviction_stm && !_archival_meta_stm) {
-        // If archival is not enabled, determine eviction offset according to
-        // the storage logic. Otherwise, _archival_meta_stm will control the
-        // collectible offset so that eviction doesn't touch segments that
-        // aren't yet archived.
-        _log_eviction_stm->set_collectible_offset(model::offset::max());
+    if (_log_eviction_stm) {
+        // If archival is not enabled, determine eviction offset according
+        // to the storage logic. Otherwise, _archival_meta_stm will control
+        // the collectible offset so that eviction doesn't touch segments
+        // that aren't yet archived.
+        if (_archival_meta_stm) {
+            _archival_meta_stm->set_log_eviction_stm(_log_eviction_stm);
+        } else {
+            _log_eviction_stm->set_collectible_offset(model::offset::max());
+        }
     }
 }
 
@@ -311,6 +309,10 @@ ss::future<> partition::start() {
         f = f.then([this] { return _archival_meta_stm->start(); });
     }
 
+    if (_cloud_storage_partition) {
+        f = f.then([this] { return _cloud_storage_partition->start(); });
+    }
+
     return f;
 }
 
@@ -337,6 +339,10 @@ ss::future<> partition::stop() {
 
     if (_archival_meta_stm) {
         f = f.then([this] { return _archival_meta_stm->stop(); });
+    }
+
+    if (_cloud_storage_partition) {
+        f = f.then([this] { return _cloud_storage_partition->stop(); });
     }
 
     // no state machine
