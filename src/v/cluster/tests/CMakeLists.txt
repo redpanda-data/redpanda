@@ -64,7 +64,7 @@ rp_test(
   SOURCES partition_moving_test.cc
   LIBRARIES v::seastar_testing_main v::application v::storage_test_utils
   DEFINITIONS SEASTAR_TESTING_MAIN
-  LABELS cluster
+  LABELS cluster disable_on_ci  # https://github.com/vectorizedio/redpanda/issues/2615
 )
 
 rp_test(
