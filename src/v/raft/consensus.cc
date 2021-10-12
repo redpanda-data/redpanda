@@ -2685,13 +2685,22 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
               .timeout_now(
                 target_rni.id(), std::move(req), rpc::client_opts(timeout))
 
-              .then([](result<timeout_now_reply> reply) {
+              .then([this](result<timeout_now_reply> reply) {
                   if (!reply) {
                       return seastar::make_ready_future<std::error_code>(
                         reply.error());
+                  } else {
+                      // Step down before setting _transferring_leadership
+                      // to false, to ensure we do not accept any more writes
+                      // in the gap between new leader acking timeout now
+                      // and new leader sending a vote for its new term.
+                      // (If we accepted more writes, our log could get
+                      //  ahead of new leader, and it could lose election)
+                      do_step_down();
+
+                      return seastar::make_ready_future<std::error_code>(
+                        make_error_code(errc::success));
                   }
-                  return seastar::make_ready_future<std::error_code>(
-                    make_error_code(errc::success));
               });
         });
     });
