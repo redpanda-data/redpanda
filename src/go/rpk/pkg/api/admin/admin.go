@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -45,6 +46,36 @@ func NewClient(fs afero.Fs, cfg *config.Config) (*AdminAPI, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to create admin api tls config: %v", err)
 	}
+	return NewAdminAPI(addrs, tc)
+}
+
+// NewHostClient returns an AdminAPI that talks to the given host, which is
+// either an int index into the rpk.admin_api section of the config, or a
+// hostname.
+func NewHostClient(
+	fs afero.Fs, cfg *config.Config, host string,
+) (*AdminAPI, error) {
+	if host == "" {
+		return nil, errors.New("invalid empty admin host")
+	}
+
+	a := &cfg.Rpk.AdminApi
+	addrs := a.Addresses
+	tc, err := a.TLS.Config(fs)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create admin api tls config: %v", err)
+	}
+
+	i, err := strconv.Atoi(host)
+	if err == nil {
+		if i < 0 || i >= len(addrs) {
+			return nil, fmt.Errorf("admin host %d is out of allowed range [0, %d)", i, len(addrs))
+		}
+		addrs = []string{addrs[0]}
+	} else {
+		addrs = []string{host} // trust input is hostname (validate below)
+	}
+
 	return NewAdminAPI(addrs, tc)
 }
 
