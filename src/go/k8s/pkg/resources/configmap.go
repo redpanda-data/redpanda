@@ -314,7 +314,7 @@ func (r *ConfigMapResource) createConfiguration(
 
 	// Add arbitrary parameters to configuration
 	for k, v := range r.pandaCluster.Spec.AdditionalConfiguration {
-		err = mgr.Set(k, v, "")
+		err = mgr.Set(k, v, "single")
 		if err != nil {
 			return nil, err
 		}
