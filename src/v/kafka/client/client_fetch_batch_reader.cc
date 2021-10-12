@@ -53,6 +53,10 @@ public:
             vassert(
               res.begin() != res.end() && ++res.begin() == res.end(),
               "Expected exactly one response from client::fetch_partition");
+            if (res.data.error_code != kafka::error_code::none) {
+                throw kafka::exception(
+                  res.data.error_code, "Fetch returned with error");
+            }
             _batch_reader = std::move(res.begin()->partition_response->records);
         }
         auto ret = co_await _batch_reader->do_load_slice(t);
