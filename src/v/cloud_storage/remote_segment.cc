@@ -144,7 +144,8 @@ remote_segment::data_stream(size_t pos, const ss::io_priority_class&) {
 ss::future<std::filesystem::path> remote_segment::hydrate() {
     gate_guard g(_gate);
     auto full_path = _manifest.get_remote_segment_path(_path);
-    if (co_await _cache.is_cached(full_path)) {
+    if (
+      co_await _cache.is_cached(full_path) == cache_element_status::available) {
         vlog(_ctxlog.debug, "{} is in the cache already", full_path);
         co_return full_path;
     }
