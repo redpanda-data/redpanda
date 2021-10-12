@@ -9,12 +9,14 @@
  */
 
 #include "cloud_storage/logger.h"
+#include "storage/segment.h"
 #include "utils/gate_guard.h"
 #include "vassert.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/fstream.hh>
+#include <seastar/core/io_priority_class.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
@@ -178,8 +180,12 @@ cache::get(std::filesystem::path key, size_t file_pos) {
         }
     }
 
+    ss::file_input_stream_options options{};
+    options.buffer_size = storage::default_segment_readahead_size;
+    options.read_ahead = 10;
     auto data_size = co_await cache_file.size();
-    auto data_stream = ss::make_file_input_stream(cache_file, file_pos);
+    auto data_stream = ss::make_file_input_stream(
+      cache_file, file_pos, std::move(options));
     co_return std::optional(cache_item{std::move(data_stream), data_size});
 }
 

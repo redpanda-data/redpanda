@@ -155,6 +155,7 @@ scheduler_service_impl::get_archival_service_config() {
 scheduler_service_impl::scheduler_service_impl(
   const configuration& conf,
   ss::sharded<cloud_storage::remote>& remote,
+  ss::sharded<cloud_storage::cache>& cache,
   ss::sharded<storage::api>& api,
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<cluster::topic_table>& tt)
@@ -168,16 +169,18 @@ scheduler_service_impl::scheduler_service_impl(
   , _rtclog(archival_log, _rtcnode)
   , _probe(conf.svc_metrics_disabled)
   , _remote(remote)
+  , _cache(cache)
   , _topic_manifest_upload_timeout(conf.manifest_upload_timeout)
   , _initial_backoff(conf.initial_backoff) {}
 
 scheduler_service_impl::scheduler_service_impl(
   ss::sharded<cloud_storage::remote>& remote,
+  ss::sharded<cloud_storage::cache>& cache,
   ss::sharded<storage::api>& api,
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<cluster::topic_table>& tt,
   ss::sharded<archival::configuration>& config)
-  : scheduler_service_impl(config.local(), remote, api, pm, tt) {}
+  : scheduler_service_impl(config.local(), remote, cache, api, pm, tt) {}
 
 void scheduler_service_impl::rearm_timer() {
     (void)ss::with_gate(_gate, [this] {
@@ -328,8 +331,17 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
                       if (!log.has_value() || !part) {
                           return ss::now();
                       }
+                      auto cache = _cache.local_is_initialized()
+                                     ? std::make_optional(
+                                       std::ref(_cache.local()))
+                                     : std::nullopt;
                       auto svc = ss::make_lw_shared<ntp_archiver>(
-                        log->config(), _conf, _remote.local(), part, _probe);
+                        log->config(),
+                        _conf,
+                        _remote.local(),
+                        cache,
+                        part,
+                        _probe);
                       return ss::repeat([this, svc = std::move(svc)] {
                           return add_ntp_archiver(svc);
                       });

@@ -82,7 +82,7 @@ FIXTURE_TEST(test_reconciliation_manifest_download, archiver_fixture) {
       .start_single(remote_config.connection_limit, remote_config.client_config)
       .get();
     archival::internal::scheduler_service_impl service(
-      arch_config, remote, api, pm, topics);
+      arch_config, remote, app.shadow_index_cache, api, pm, topics);
     service.reconcile_archivers().get();
     BOOST_REQUIRE(service.contains(pid0));
     BOOST_REQUIRE(service.contains(pid1));
@@ -117,7 +117,7 @@ FIXTURE_TEST(test_reconciliation_drop_ntp, archiver_fixture) {
       .start_single(remote_config.connection_limit, remote_config.client_config)
       .get();
     archival::internal::scheduler_service_impl service(
-      arch_config, remote, api, pm, topics);
+      arch_config, remote, app.shadow_index_cache, api, pm, topics);
 
     service.reconcile_archivers().get();
     BOOST_REQUIRE(service.contains(ntp));
@@ -178,7 +178,7 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
       .start_single(remote_config.connection_limit, remote_config.client_config)
       .get();
     archival::internal::scheduler_service_impl service(
-      arch_config, remote, api, pm, topics);
+      arch_config, remote, app.shadow_index_cache, api, pm, topics);
 
     service.reconcile_archivers().get();
     BOOST_REQUIRE(service.contains(ntp));

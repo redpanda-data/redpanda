@@ -103,11 +103,13 @@ public:
     scheduler_service_impl(
       const configuration& conf,
       ss::sharded<cloud_storage::remote>& remote,
+      ss::sharded<cloud_storage::cache>& cache,
       ss::sharded<storage::api>& api,
       ss::sharded<cluster::partition_manager>& pm,
       ss::sharded<cluster::topic_table>& tt);
     scheduler_service_impl(
       ss::sharded<cloud_storage::remote>& remote,
+      ss::sharded<cloud_storage::cache>& cache,
       ss::sharded<storage::api>& api,
       ss::sharded<cluster::partition_manager>& pm,
       ss::sharded<cluster::topic_table>& tt,
@@ -181,6 +183,7 @@ private:
     retry_chain_logger _rtclog;
     service_probe _probe;
     ss::sharded<cloud_storage::remote>& _remote;
+    ss::sharded<cloud_storage::cache>& _cache;
     ss::lowres_clock::duration _topic_manifest_upload_timeout;
     ss::lowres_clock::duration _initial_backoff;
 };
