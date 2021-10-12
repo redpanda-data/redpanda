@@ -18,14 +18,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Shopify/sarama"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCreateUser(t *testing.T) {
 	username := "Joss"
 	password := "momorocks"
-	algorithm := sarama.SASLTypeSCRAMSHA256
+	algorithm := ScramSha256
 	body := newUser{
 		User:      username,
 		Password:  password,

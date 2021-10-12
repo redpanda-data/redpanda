@@ -24,10 +24,11 @@ import (
 	"github.com/docker/docker/api/types"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/ui"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
 	vnet "github.com/vectorizedio/redpanda/src/go/rpk/pkg/net"
 	"golang.org/x/sync/errgroup"
 )
@@ -386,16 +387,19 @@ func checkBrokers(nodes []node) func() error {
 		for _, n := range nodes {
 			addrs = append(addrs, n.addr)
 		}
-		client, err := kafka.InitClient(addrs...)
+		cl, err := kgo.NewClient(kgo.SeedBrokers(addrs...))
 		if err != nil {
 			return err
 		}
-		lenBrokers := len(client.Brokers())
-		if lenBrokers != len(nodes) {
+		brokers, err := kadm.NewClient(cl).ListBrokers(context.Background())
+		if err != nil {
+			return err
+		}
+		if len(brokers) != len(nodes) {
 			return fmt.Errorf(
 				"Expected %d nodes, got %d.",
 				len(nodes),
-				lenBrokers,
+				len(brokers),
 			)
 		}
 		return nil

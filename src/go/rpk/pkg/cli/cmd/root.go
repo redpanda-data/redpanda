@@ -20,7 +20,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/Shopify/sarama"
 	"github.com/fatih/color"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -49,17 +48,6 @@ func Execute() {
 		// specified.
 		if verbose {
 			log.SetLevel(log.DebugLevel)
-			// Make sure we enable verbose logging for sarama client
-			// we configure the Sarama logger only for verbose output as sarama
-			// logger use no severities. It is either enabled or disabled.
-			sarama.Logger = &log.Logger{
-				Out:          os.Stderr,
-				Formatter:    cli.NewRpkLogFormatter(),
-				Hooks:        make(log.LevelHooks),
-				Level:        log.DebugLevel,
-				ExitFunc:     os.Exit,
-				ReportCaller: false,
-			}
 		} else {
 			log.SetLevel(log.InfoLevel)
 		}
