@@ -2419,6 +2419,49 @@ consensus::transfer_leadership(transfer_leadership_request req) {
     co_return reply;
 }
 
+/**
+ * After we have accepted the request to transfer leadership, carry out
+ * preparatory phase before we actually send a timeout_now to the new
+ * leader.  During this phase we endeavor to make sure the new leader
+ * is sufficiently up to date that they will win the election when
+ * they start it.
+ */
+ss::future<> consensus::prepare_transfer_leadership(vnode target_rni) {
+    /*
+     * the follower's log needs to be up-to-date so that it will
+     * receive votes when we ask it to trigger an immediate
+     * election. so check if the followers needs some recovery, and
+     * then wait on that process to complete before sending the
+     * election request.
+     */
+    auto& meta = _fstats.get(target_rni);
+    if (
+      !meta.is_recovering
+      && needs_recovery(meta, _log.offsets().dirty_offset)) {
+        dispatch_recovery(meta); // sets is_recovering flag
+    }
+
+    auto f = ss::now();
+    if (meta.is_recovering) {
+        vlog(
+          _ctxlog.warn,
+          "Waiting on node {} to recover before requesting election",
+          target_rni);
+        auto timeout = ss::semaphore::clock::duration(
+          config::shard_local_cfg().raft_transfer_leader_recovery_timeout_ms());
+        f = meta.recovery_finished.wait(timeout).then([this, target_rni] {
+            vlog(
+              _ctxlog.warn,
+              "Finished waiting for node {} recovery",
+              target_rni);
+        });
+
+        meta.follower_state_change.broadcast();
+    }
+
+    return f;
+}
+
 ss::future<std::error_code>
 consensus::do_transfer_leadership(std::optional<model::node_id> target) {
     if (!is_leader()) {
@@ -2515,44 +2558,12 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
          */
         _transferring_leadership = true;
 
-        /*
-         * the follower's log needs to be up-to-date so that it will
-         * receive votes when we ask it to trigger an immediate
-         * election. so check if the followers needs some recovery, and
-         * then wait on that process to complete before sending the
-         * election request.
-         */
         if (!_fstats.contains(target_rni)) {
             return seastar::make_ready_future<std::error_code>(
               make_error_code(errc::node_does_not_exists));
         }
-        auto& meta = _fstats.get(target_rni);
-        if (
-          !meta.is_recovering
-          && needs_recovery(meta, _log.offsets().dirty_offset)) {
-            dispatch_recovery(meta); // sets is_recovering flag
-        }
 
-        auto f = ss::now();
-        if (meta.is_recovering) {
-            vlog(
-              _ctxlog.warn,
-              "Waiting on node {} to recover before requesting election",
-              target_rni);
-            auto timeout = ss::semaphore::clock::duration(
-              config::shard_local_cfg()
-                .raft_transfer_leader_recovery_timeout_ms());
-            f = meta.recovery_finished.wait(timeout).then([this, target_rni] {
-                vlog(
-                  _ctxlog.warn,
-                  "Finished waiting for node {} recovery",
-                  target_rni);
-            });
-
-            meta.follower_state_change.broadcast();
-        }
-
-        return f.then([this, target_rni] {
+        return prepare_transfer_leadership(target_rni).then([this, target_rni] {
             /*
              * there are still several scenarios in which we will want
              * to not complete leadership transfer, all of which might
