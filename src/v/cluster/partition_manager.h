@@ -146,6 +146,8 @@ private:
     /// \return true if the recovery was invoked, false otherwise
     ss::future<bool> maybe_download_log(storage::ntp_config& ntp_cfg);
 
+    ss::future<> do_shutdown(ss::lw_shared_ptr<partition>);
+
     storage::api& _storage;
     /// used to wait for concurrent recoveries
     ss::sharded<raft::group_manager>& _raft_manager;
