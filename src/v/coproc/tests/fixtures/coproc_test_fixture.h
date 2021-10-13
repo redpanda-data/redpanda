@@ -82,6 +82,9 @@ protected:
         return _root_fixture.get();
     }
 
+    ss::future<> wait_until_all_idle();
+    ss::future<> wait_until_idle(coproc::script_id id);
+
     ss::future<> push_wasm_events(std::vector<coproc::wasm::event>);
 
 private:
