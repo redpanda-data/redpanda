@@ -12,7 +12,6 @@ import random
 import time
 
 from ducktape.mark.resource import cluster
-from ducktape.mark import ignore
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
 from rptest.services.failure_injector import FailureInjector, FailureSpec
@@ -38,7 +37,6 @@ class AvailabilityTests(EndToEndFinjectorTest):
                             producer_timeout_sec=producer_timeout_sec,
                             consumer_timeout_sec=consumer_timeout_sec)
 
-    @ignore  # https://github.com/vectorizedio/redpanda/issues/2568
     @cluster(num_nodes=5)
     def test_availability_when_one_node_failed(self):
         self.redpanda = RedpandaService(
@@ -59,7 +57,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
         self.redpanda.create_topic(spec)
         self.topic = spec.name
 
-        self.start_producer(1)
+        self.start_producer(1, throughput=10000)
         self.start_consumer(1)
         self.await_startup()
         # start failure injector with default parameters
@@ -88,7 +86,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
         self.redpanda.create_topic(spec)
         self.topic = spec.name
 
-        self.start_producer(1)
+        self.start_producer(1, throughput=10000)
         self.start_consumer(1)
         self.await_startup()
 
