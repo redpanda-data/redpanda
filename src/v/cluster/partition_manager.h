@@ -146,6 +146,8 @@ private:
     /// \return true if the recovery was invoked, false otherwise
     ss::future<bool> maybe_download_log(storage::ntp_config& ntp_cfg);
 
+    ss::future<> do_shutdown(ss::lw_shared_ptr<partition>);
+
     storage::api& _storage;
     /// used to wait for concurrent recoveries
     ss::sharded<raft::group_manager>& _raft_manager;
@@ -159,6 +161,7 @@ private:
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     ss::sharded<cloud_storage::partition_recovery_manager>&
       _partition_recovery_mgr;
+    ss::gate _gate;
 
     friend std::ostream& operator<<(std::ostream&, const partition_manager&);
 };
