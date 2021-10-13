@@ -228,6 +228,13 @@ public:
         vassert(
           cloud_data_available(),
           "Method can only be called if cloud data is available");
+        auto start_offset = _cloud_storage_partition->from_kafka_offset(
+          config.start_offset);
+        auto max_offset = _cloud_storage_partition->from_kafka_offset(
+          config.max_offset);
+        config.start_offset = start_offset ? *start_offset
+                                           : config.start_offset;
+        config.max_offset = max_offset ? *max_offset : config.max_offset;
         return _cloud_storage_partition->make_reader(config, deadline);
     }
 

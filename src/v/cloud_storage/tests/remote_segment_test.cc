@@ -111,6 +111,16 @@ FIXTURE_TEST(
     manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("1-2-v1.log");
     iobuf segment_bytes = generate_segment(model::offset(1), 100);
+    m.add(
+      name,
+      manifest::segment_meta{
+        .is_compacted = false,
+        .size_bytes = segment_bytes.size_bytes(),
+        .base_offset = model::offset(1),
+        .committed_offset = model::offset(100),
+        .base_timestamp = {},
+        .max_timestamp = {},
+        .delta_offset = model::offset(0)});
     uint64_t clen = segment_bytes.size_bytes();
     auto action = ss::defer([&remote] { remote.stop().get(); });
     auto reset_stream = [&segment_bytes] {
@@ -200,6 +210,17 @@ void test_remote_segment_batch_reader(
       begin, end, ss::default_priority_class());
     reader_config.max_bytes = std::numeric_limits<size_t>::max();
 
+    m.add(
+      name,
+      manifest::segment_meta{
+        .is_compacted = false,
+        .size_bytes = segment_bytes.size_bytes(),
+        .base_offset = headers.front().base_offset,
+        .committed_offset = headers.back().last_offset(),
+        .base_timestamp = {},
+        .max_timestamp = {},
+        .delta_offset = model::offset(0)});
+
     remote_segment segment(remote, *fixture.cache, bucket, m, name, fib);
     remote_segment_batch_reader reader(
       segment, reader_config, model::term_id(1));
@@ -288,6 +309,17 @@ FIXTURE_TEST(
     for (const auto& hdr : headers) {
         vlog(test_log.debug, "expected header {}", hdr);
     }
+
+    m.add(
+      name,
+      manifest::segment_meta{
+        .is_compacted = false,
+        .size_bytes = segment_bytes.size_bytes(),
+        .base_offset = headers.front().base_offset,
+        .committed_offset = headers.back().last_offset(),
+        .base_timestamp = {},
+        .max_timestamp = {},
+        .delta_offset = model::offset(0)});
 
     remote_segment segment(remote, *cache, bucket, m, name, fib);
 

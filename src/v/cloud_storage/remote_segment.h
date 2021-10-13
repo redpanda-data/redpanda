@@ -63,6 +63,10 @@ public:
 
     const model::offset get_max_offset() const;
 
+    /// Number of non-data batches in all previous
+    /// segments
+    const model::offset get_base_offset_delta() const;
+
     const model::offset get_base_offset() const;
 
     ss::future<> stop();
@@ -146,6 +150,7 @@ private:
     ss::circular_buffer<model::record_batch> _ringbuf;
     size_t _total_size{0};
     model::term_id _term;
+    model::offset _initial_delta;
 };
 
 } // namespace cloud_storage

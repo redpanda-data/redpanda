@@ -74,6 +74,15 @@ public:
 
     ss::future<> stop();
 
+    /// Translate kafka offset to redpanda offset
+    ///
+    /// The method only handles base_offsets correctly. This means that
+    /// the result will be correct only if the offset is the first on in the
+    /// segment (for which we store delta offset).
+    /// That's enough to be used for segment lookup but not enough to translate
+    /// any offset
+    std::optional<model::offset> from_kafka_offset(model::offset o) const;
+
 private:
     void update_segmnets_incrementally();
 

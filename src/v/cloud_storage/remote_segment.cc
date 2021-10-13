@@ -93,6 +93,16 @@ const model::offset remote_segment::get_max_offset() const {
     return _manifest.get(_path)->committed_offset;
 }
 
+const model::offset remote_segment::get_base_offset_delta() const {
+    auto od = _manifest.get(_path)->delta_offset;
+    if (od != model::offset::min()) {
+        return od;
+    }
+    // We don't know delta since it's not
+    // in the manifest
+    return model::offset{0};
+}
+
 const model::offset remote_segment::get_base_offset() const {
     return _manifest.get(_path)->base_offset;
 }
@@ -163,10 +173,12 @@ public:
     remote_segment_batch_consumer(
       storage::log_reader_config& conf,
       remote_segment_batch_reader& parent,
-      model::term_id term)
+      model::term_id term,
+      model::offset initial_delta)
       : _config(conf)
       , _parent(parent)
-      , _term(term) {}
+      , _term(term)
+      , _delta(initial_delta) {}
 
     consume_result accept_batch_start(
       const model::record_batch_header& header) const override {
@@ -174,6 +186,7 @@ public:
           cst_log.debug,
           "remote_segment_batch_consumer::accept_batch_start {}",
           header);
+
         if (header.base_offset() > _config.max_offset) {
             vlog(
               cst_log.debug,
@@ -183,6 +196,15 @@ public:
               header.base_offset(),
               _config.max_offset);
             return batch_consumer::consume_result::stop_parser;
+        }
+
+        if (_config.type_filter && _config.type_filter != header.type) {
+            vlog(
+              cst_log.debug,
+              "remote_segment_batch_consumer::accept_batch_start skip because "
+              "of filter");
+            _config.start_offset = header.last_offset() + model::offset(1);
+            return batch_consumer::consume_result::skip_batch;
         }
 
         // The segment can be scanned from the begining so we should skip
@@ -209,15 +231,6 @@ public:
             return batch_consumer::consume_result::stop_parser;
         }
 
-        if (_config.type_filter && _config.type_filter != header.type) {
-            vlog(
-              cst_log.debug,
-              "remote_segment_batch_consumer::accept_batch_start skip because "
-              "of filter");
-            _config.start_offset = header.last_offset() + model::offset(1);
-            return batch_consumer::consume_result::skip_batch;
-        }
-
         if (_config.first_timestamp > header.first_timestamp) {
             // kakfa needs to guarantee that the returned record is >=
             // first_timestamp
@@ -240,6 +253,7 @@ public:
       size_t /*physical_base_offset*/,
       size_t /*size_on_disk*/) override {
         _header = header;
+        _header.base_offset += _delta;
         _header.ctx.term = _term;
     }
 
@@ -247,10 +261,12 @@ public:
      * unconditionally skip batch
      */
     void skip_batch_start(
-      model::record_batch_header,
+      model::record_batch_header header,
       size_t /*physical_base_offset*/,
       size_t /*size_on_disk*/) override {
-        // TODO: use this to check invariant
+        if (header.type != model::record_batch_type::raft_data) {
+            ++_delta;
+        }
     }
 
     void consume_records(iobuf&& ib) override { _records = std::move(ib); }
@@ -285,6 +301,7 @@ private:
     model::record_batch_header _header;
     iobuf _records;
     model::term_id _term;
+    mutable model::offset _delta;
 };
 
 remote_segment_batch_reader::remote_segment_batch_reader(
@@ -294,7 +311,8 @@ remote_segment_batch_reader::remote_segment_batch_reader(
   : _seg(s)
   //   , _guard(_seg.get_gate_guard())
   , _config(config)
-  , _term(term) {}
+  , _term(term)
+  , _initial_delta(s.get_base_offset_delta()) {}
 
 ss::future<result<ss::circular_buffer<model::record_batch>>>
 remote_segment_batch_reader::read_some(
@@ -333,7 +351,8 @@ remote_segment_batch_reader::init_parser() {
     vlog(cst_log.debug, "remote_segment_batch_reader::init_parser");
     auto stream = co_await _seg.data_stream(0, ss::default_priority_class());
     auto parser = std::make_unique<storage::continuous_batch_parser>(
-      std::make_unique<remote_segment_batch_consumer>(_config, *this, _term),
+      std::make_unique<remote_segment_batch_consumer>(
+        _config, *this, _term, _initial_delta),
       std::move(stream));
     co_return parser;
 }

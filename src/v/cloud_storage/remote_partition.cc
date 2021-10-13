@@ -195,20 +195,15 @@ private:
         if (!_partition) {
             return std::nullopt;
         }
-        // auto it = _partition->_segments.begin();
         auto it = _partition->_segments.lower_bound(config.start_offset);
-        if (
-          it->first != config.start_offset
-          && it != _partition->_segments.begin()) {
-            --it;
-        }
-        while (it != _partition->_segments.end()) {
+        if (it != _partition->_segments.end()) {
             auto segment = it->second.segment;
             vlog(
               cst_log.debug,
-              "segment offset range {}-{}",
+              "segment offset range {}-{}, delta: {}",
               segment->get_base_offset(),
-              segment->get_max_offset());
+              segment->get_max_offset(),
+              segment->get_base_offset_delta());
             if (
               segment->get_base_offset() <= config.start_offset
               && segment->get_max_offset() >= config.start_offset) {
@@ -231,7 +226,6 @@ private:
                 // Only iterator can be returned
                 return {{.reader_state = nullptr, .iter = it}};
             }
-            ++it;
         }
         return std::nullopt;
     }
@@ -376,8 +370,8 @@ void remote_partition::update_segmnets_incrementally() {
     _translator->update(_manifest);
     // find new segments
     for (const auto& meta : _manifest) {
-        auto b = meta.second.base_offset;
-        if (_segments.contains(b)) {
+        auto o = meta.second.committed_offset;
+        if (_segments.contains(o)) {
             continue;
         }
 
@@ -385,7 +379,7 @@ void remote_partition::update_segmnets_incrementally() {
           _api, _cache, _bucket, _manifest, meta.first, _rtc);
 
         _segments.insert(std::make_pair(
-          b,
+          o,
           remote_segment_state{
             .segment = std::move(s),
             .reader = nullptr,
@@ -412,6 +406,27 @@ ss::future<model::record_batch_reader> remote_partition::make_reader(
       config, weak_from_this());
     model::record_batch_reader rdr(std::move(impl));
     co_return rdr;
+}
+
+std::optional<model::offset>
+remote_partition::from_kafka_offset(model::offset o) const {
+    auto it = _segments.find(o);
+    // The iterators points to the segment which will likeley contain
+    // the desired record batch. The std::map lookup will undershoot. This means
+    // that we might look at the next segment in the partition until we will
+    // find the segment with matching delta_offset value.
+    while (it != _segments.end()) {
+        auto delta = it->second.segment->get_base_offset_delta();
+        auto rp_offset = o + delta;
+        // we stop if rp_offset is inside the segment referenced by the iterator
+        auto begin = it->second.segment->get_base_offset();
+        auto end = it->second.segment->get_max_offset();
+        if (begin >= rp_offset && rp_offset <= end) {
+            return rp_offset;
+        }
+        it++;
+    }
+    return std::nullopt;
 }
 
 } // namespace cloud_storage

@@ -12,6 +12,7 @@
 
 #include "kafka/protocol/errors.h"
 #include "model/fundamental.h"
+#include "model/record.h"
 #include "raft/types.h"
 #include "storage/types.h"
 
@@ -35,6 +36,7 @@ ss::future<model::record_batch_reader> replicated_partition::make_reader(
       _partition->cloud_data_available()
       && cfg.start_offset < _partition->start_offset()
       && cfg.start_offset >= _partition->start_cloud_offset()) {
+        cfg.type_filter = {model::record_batch_type::raft_data};
         co_return co_await _partition->make_cloud_reader(cfg, deadline);
     }
 
