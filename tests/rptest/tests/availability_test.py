@@ -59,7 +59,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
         self.redpanda.create_topic(spec)
         self.topic = spec.name
 
-        self.start_producer(1)
+        self.start_producer(1, throughput=10000)
         self.start_consumer(1)
         self.await_startup()
         # start failure injector with default parameters
@@ -88,7 +88,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
         self.redpanda.create_topic(spec)
         self.topic = spec.name
 
-        self.start_producer(1)
+        self.start_producer(1, throughput=10000)
         self.start_consumer(1)
         self.await_startup()
 
