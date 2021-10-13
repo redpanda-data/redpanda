@@ -177,11 +177,25 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
 
     vlog(
       cluster::txlog.trace,
-      "dispatching begin group tx to {} from {}",
-      leader,
-      _self);
-    co_return co_await dispatch_begin_group_tx(
+      "dispatching name:begin_group_tx, group_id:{}, pid:{}, tx_seq:{}, "
+      "from:{}, to:{}",
+      group_id,
+      pid,
+      tx_seq,
+      _self,
+      leader);
+    auto reply = co_await dispatch_begin_group_tx(
       leader, group_id, pid, tx_seq, timeout);
+    vlog(
+      cluster::txlog.trace,
+      "received name:begin_group_tx, group_id:{}, pid:{}, tx_seq:{}, ec:{}, "
+      "etag:{}",
+      group_id,
+      pid,
+      tx_seq,
+      reply.ec,
+      reply.etag);
+    co_return reply;
 }
 
 ss::future<cluster::begin_group_tx_reply>
@@ -224,7 +238,23 @@ rm_group_frontend::dispatch_begin_group_tx(
 
 ss::future<cluster::begin_group_tx_reply>
 rm_group_frontend::begin_group_tx_locally(cluster::begin_group_tx_request req) {
-    return _group_router.local().begin_tx(std::move(req));
+    vlog(
+      cluster::txlog.trace,
+      "processing name:begin_group_tx, group_id:{}, pid:{}, tx_seq:{}",
+      req.group_id,
+      req.pid,
+      req.tx_seq);
+    auto reply = co_await _group_router.local().begin_tx(req);
+    vlog(
+      cluster::txlog.trace,
+      "sending name:begin_group_tx, group_id:{}, pid:{}, tx_seq:{}, "
+      "ec:{}, etag:{}",
+      req.group_id,
+      req.pid,
+      req.tx_seq,
+      reply.ec,
+      reply.etag);
+    co_return reply;
 }
 
 ss::future<cluster::prepare_group_tx_reply> rm_group_frontend::prepare_group_tx(
@@ -269,11 +299,29 @@ ss::future<cluster::prepare_group_tx_reply> rm_group_frontend::prepare_group_tx(
 
     vlog(
       cluster::txlog.trace,
-      "dispatching prepare group tx to {} from {}",
-      leader,
-      _self);
-    co_return co_await dispatch_prepare_group_tx(
+      "dispatching name:prepare_group_tx, group_id:{}, pid:{}, tx_seq:{}, "
+      "etag:{}, from:{}, to:{}",
+      group_id,
+      pid,
+      tx_seq,
+      etag,
+      _self,
+      leader);
+
+    auto reply = co_await dispatch_prepare_group_tx(
       leader, group_id, etag, pid, tx_seq, timeout);
+
+    vlog(
+      cluster::txlog.trace,
+      "received name:prepare_group_tx, group_id:{}, pid:{}, tx_seq:{}, "
+      "etag:{}, ec:{}",
+      group_id,
+      pid,
+      tx_seq,
+      etag,
+      reply.ec);
+
+    co_return reply;
 }
 
 ss::future<cluster::prepare_group_tx_reply>
@@ -319,7 +367,25 @@ rm_group_frontend::dispatch_prepare_group_tx(
 ss::future<cluster::prepare_group_tx_reply>
 rm_group_frontend::prepare_group_tx_locally(
   cluster::prepare_group_tx_request req) {
-    return _group_router.local().prepare_tx(std::move(req));
+    vlog(
+      cluster::txlog.trace,
+      "processing name:prepare_group_tx, group_id:{}, pid:{}, tx_seq:{}, "
+      "etag:{}",
+      req.group_id,
+      req.pid,
+      req.tx_seq,
+      req.etag);
+    auto reply = co_await _group_router.local().prepare_tx(req);
+    vlog(
+      cluster::txlog.trace,
+      "sending name:prepare_group_tx, group_id:{}, pid:{}, tx_seq:{}, "
+      "etag:{}, ec:{}",
+      req.group_id,
+      req.pid,
+      req.tx_seq,
+      req.etag,
+      reply.ec);
+    co_return reply;
 }
 
 ss::future<cluster::commit_group_tx_reply> rm_group_frontend::commit_group_tx(
@@ -363,11 +429,26 @@ ss::future<cluster::commit_group_tx_reply> rm_group_frontend::commit_group_tx(
 
     vlog(
       cluster::txlog.trace,
-      "dispatching commit group tx to {} from {}",
-      leader,
-      _self);
-    co_return co_await dispatch_commit_group_tx(
+      "dispatching name:commit_group_tx, group_id:{}, pid:{}, tx_seq:{}, "
+      "from:{}, to:{}",
+      group_id,
+      pid,
+      tx_seq,
+      _self,
+      leader);
+
+    auto reply = co_await dispatch_commit_group_tx(
       leader, group_id, pid, tx_seq, timeout);
+
+    vlog(
+      cluster::txlog.trace,
+      "received name:commit_group_tx, group_id:{}, pid:{}, tx_seq:{}, ec:{}",
+      group_id,
+      pid,
+      tx_seq,
+      reply.ec);
+
+    co_return reply;
 }
 
 ss::future<cluster::commit_group_tx_reply>
@@ -411,7 +492,21 @@ rm_group_frontend::dispatch_commit_group_tx(
 ss::future<cluster::commit_group_tx_reply>
 rm_group_frontend::commit_group_tx_locally(
   cluster::commit_group_tx_request req) {
-    return _group_router.local().commit_tx(std::move(req));
+    vlog(
+      cluster::txlog.trace,
+      "processing name:commit_group_tx, group_id:{}, pid:{}, tx_seq:{}",
+      req.group_id,
+      req.pid,
+      req.tx_seq);
+    auto reply = co_await _group_router.local().commit_tx(req);
+    vlog(
+      cluster::txlog.trace,
+      "sending name:commit_group_tx, group_id:{}, pid:{}, tx_seq:{}, ec:{}",
+      req.group_id,
+      req.pid,
+      req.tx_seq,
+      reply.ec);
+    co_return reply;
 }
 
 ss::future<cluster::abort_group_tx_reply> rm_group_frontend::abort_group_tx(
@@ -454,11 +549,26 @@ ss::future<cluster::abort_group_tx_reply> rm_group_frontend::abort_group_tx(
 
     vlog(
       cluster::txlog.trace,
-      "dispatching abort group tx to {} from {}",
-      leader,
-      _self);
-    co_return co_await dispatch_abort_group_tx(
+      "dispatching name:abort_group_tx, group_id:{}, pid:{}, tx_seq:{}, "
+      "from:{}, to:{}",
+      group_id,
+      pid,
+      tx_seq,
+      _self,
+      leader);
+
+    auto reply = co_await dispatch_abort_group_tx(
       leader, group_id, pid, tx_seq, timeout);
+
+    vlog(
+      cluster::txlog.trace,
+      "received name:abort_group_tx, group_id:{}, pid:{}, tx_seq:{}, ec:{}",
+      group_id,
+      pid,
+      tx_seq,
+      reply.ec);
+
+    co_return reply;
 }
 
 ss::future<cluster::abort_group_tx_reply>
@@ -501,7 +611,21 @@ rm_group_frontend::dispatch_abort_group_tx(
 
 ss::future<cluster::abort_group_tx_reply>
 rm_group_frontend::abort_group_tx_locally(cluster::abort_group_tx_request req) {
-    return _group_router.local().abort_tx(std::move(req));
+    vlog(
+      cluster::txlog.trace,
+      "processing name:abort_group_tx, group_id:{}, pid:{}, tx_seq:{}",
+      req.group_id,
+      req.pid,
+      req.tx_seq);
+    auto reply = co_await _group_router.local().abort_tx(req);
+    vlog(
+      cluster::txlog.trace,
+      "sending name:abort_group_tx, group_id:{}, pid:{}, tx_seq:{}, ec:{}",
+      req.group_id,
+      req.pid,
+      req.tx_seq,
+      reply.ec);
+    co_return reply;
 }
 
 } // namespace kafka
