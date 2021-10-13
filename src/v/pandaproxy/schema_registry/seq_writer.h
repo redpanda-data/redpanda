@@ -41,8 +41,7 @@ public:
     // API for readers: notify us when they have read and applied an offset
     ss::future<> advance_offset(model::offset offset);
 
-    ss::future<schema_id>
-    write_subject_version(subject sub, schema_definition def, schema_type type);
+    ss::future<schema_id> write_subject_version(canonical_schema ref);
 
     ss::future<bool>
     write_config(std::optional<subject> sub, compatibility_level compat);

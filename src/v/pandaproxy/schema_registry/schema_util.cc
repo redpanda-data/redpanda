@@ -15,27 +15,31 @@
 
 namespace pandaproxy::schema_registry {
 
-result<void> validate(std::string_view def, schema_type type) {
-    switch (type) {
+result<void> validate(const canonical_schema& def) {
+    switch (def.type()) {
     case schema_type::avro: {
-        auto res = make_avro_schema_definition(def);
+        auto res = make_avro_schema_definition(def.def().raw()());
         if (res.has_error()) {
             return res.assume_error();
         }
         return outcome::success();
     }
     default:
-        return invalid_schema_type(type);
+        return invalid_schema_type(def.type());
     }
 }
 
-result<schema_definition> sanitize(schema_definition def, schema_type type) {
-    switch (type) {
+result<canonical_schema> sanitize(unparsed_schema def) {
+    switch (def.type()) {
     case schema_type::avro: {
-        return sanitize_avro_schema_definition(std::move(def));
+        return canonical_schema{
+          std::move(def).sub(),
+          BOOST_OUTCOME_TRYX(
+            sanitize_avro_schema_definition(std::move(def).def())),
+          std::move(def).refs()};
     }
     default:
-        return invalid_schema_type(type);
+        return invalid_schema_type(def.type());
     }
 }
 

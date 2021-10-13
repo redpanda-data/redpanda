@@ -20,6 +20,26 @@
 
 namespace pandaproxy::schema_registry {
 
+///\brief A mapping of version and schema id for a subject.
+struct subject_version_entry {
+    subject_version_entry(
+      schema_version version,
+      schema_id id,
+      canonical_schema::references refs,
+      is_deleted deleted)
+      : version{version}
+      , id{id}
+      , refs{std::move(refs)}
+      , deleted(deleted) {}
+
+    schema_version version;
+    schema_id id;
+    canonical_schema::references refs;
+    is_deleted deleted{is_deleted::no};
+
+    std::vector<seq_marker> written_at;
+};
+
 namespace detail {
 
 template<typename T>
@@ -51,28 +71,30 @@ public:
     /// version.
     ///
     /// return the schema_version and schema_id, and whether it's new.
-    insert_result insert(subject sub, schema_definition def, schema_type type) {
-        auto id = insert_schema(std::move(def), type).id;
-        auto [version, inserted] = insert_subject(std::move(sub), id);
+    insert_result insert(canonical_schema schema) {
+        auto id = insert_schema(std::move(schema).def()).id;
+        auto [version, inserted] = insert_subject(
+          std::move(schema).sub(), std::move(schema).refs(), id);
         return {version, id, inserted};
     }
 
-    ///\brief Return a schema by id.
-    result<schema> get_schema(const schema_id& id) const {
+    ///\brief Return a schema definition by id.
+    result<canonical_schema_definition>
+    get_schema_definition(const schema_id& id) const {
         auto it = _schemas.find(id);
         if (it == _schemas.end()) {
             return not_found(id);
         }
-        return {it->first, it->second.type, it->second.definition};
+        return {it->second.definition};
     }
 
     ///\brief Return the id of the schema, if it already exists.
     std::optional<schema_id>
-    get_schema_id(const schema_definition& def, schema_type type) const {
+    get_schema_id(const canonical_schema_definition& def) const {
         const auto s_it = std::find_if(
           _schemas.begin(), _schemas.end(), [&](const auto& s) {
               const auto& entry = s.second;
-              return type == entry.type && def == entry.definition;
+              return def == entry.definition;
           });
         return s_it == _schemas.end() ? std::optional<schema_id>{}
                                       : s_it->first;
@@ -92,7 +114,7 @@ public:
     }
 
     ///\brief Return subject_version_id for a subject and version
-    result<subject_version_id> get_subject_version_id(
+    result<subject_version_entry> get_subject_version_id(
       const subject& sub,
       schema_version version,
       include_deleted inc_del) const {
@@ -110,14 +132,12 @@ public:
         auto v_id = BOOST_OUTCOME_TRYX(
           get_subject_version_id(sub, version, inc_del));
 
-        auto s = BOOST_OUTCOME_TRYX(get_schema(v_id.id));
+        auto def = BOOST_OUTCOME_TRYX(get_schema_definition(v_id.id));
 
         return subject_schema{
-          .sub = sub,
+          .schema = {sub, std::move(def), std::move(v_id.refs)},
           .version = v_id.version,
           .id = v_id.id,
-          .type = s.type,
-          .definition = std::move(s).definition,
           .deleted = v_id.deleted};
     }
 
@@ -235,10 +255,10 @@ public:
             return schema_version{1};
         }
 
-        auto& versions = subject_iter->second.versions;
+        const auto& versions = subject_iter->second.versions;
 
         schema_version maxver{0};
-        for (auto v : versions) {
+        for (const auto& v : versions) {
             if (v.id == sid && !(v.deleted || subject_iter->second.deleted)) {
                 // No version to project, the schema is already
                 // present (and not deleted) in this subject.
@@ -254,7 +274,7 @@ public:
     }
 
     ///\brief Return a list of versions and associated schema_id.
-    result<std::vector<subject_version_id>>
+    result<std::vector<subject_version_entry>>
     get_version_ids(const subject& sub, include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
         return sub_it->second.versions;
@@ -380,12 +400,11 @@ public:
         schema_id id;
         bool inserted;
     };
-    insert_schema_result
-    insert_schema(schema_definition def, schema_type type) {
+    insert_schema_result insert_schema(canonical_schema_definition def) {
         const auto s_it = std::find_if(
           _schemas.begin(), _schemas.end(), [&](const auto& s) {
               const auto& entry = s.second;
-              return type == entry.type && def == entry.definition;
+              return def == entry.definition;
           });
         if (s_it != _schemas.end()) {
             return {s_it->first, false};
@@ -393,12 +412,12 @@ public:
 
         const auto id = _schemas.empty() ? schema_id{1}
                                          : std::prev(_schemas.end())->first + 1;
-        auto [_, inserted] = _schemas.try_emplace(id, type, std::move(def));
+        auto [_, inserted] = _schemas.try_emplace(id, std::move(def));
         return {id, inserted};
     }
 
-    bool upsert_schema(schema_id id, schema_definition def, schema_type type) {
-        return _schemas.insert_or_assign(id, schema_entry(type, std::move(def)))
+    bool upsert_schema(schema_id id, canonical_schema_definition def) {
+        return _schemas.insert_or_assign(id, schema_entry(std::move(def)))
           .second;
     }
 
@@ -406,7 +425,8 @@ public:
         schema_version version;
         bool inserted;
     };
-    insert_subject_result insert_subject(subject sub, schema_id id) {
+    insert_subject_result insert_subject(
+      subject sub, canonical_schema::references refs, schema_id id) {
         auto& subject_entry = _subjects[std::move(sub)];
         subject_entry.deleted = is_deleted::no;
         auto& versions = subject_entry.versions;
@@ -421,13 +441,14 @@ public:
 
         const auto version = versions.empty() ? schema_version{1}
                                               : versions.back().version + 1;
-        versions.emplace_back(version, id, is_deleted::no);
+        versions.emplace_back(version, id, std::move(refs), is_deleted::no);
         return {version, true};
     }
 
     bool upsert_subject(
       seq_marker marker,
       subject sub,
+      canonical_schema::references refs,
       schema_version version,
       schema_id id,
       is_deleted deleted) {
@@ -439,15 +460,16 @@ public:
           versions.begin(),
           versions.end(),
           version,
-          [](const subject_version_id& lhs, schema_version rhs) {
+          [](const subject_version_entry& lhs, schema_version rhs) {
               return lhs.version < rhs;
           });
 
         const bool found = v_it != versions.end() && v_it->version == version;
         if (found) {
-            *v_it = subject_version_id(version, id, deleted);
+            *v_it = subject_version_entry(
+              version, id, std::move(refs), deleted);
         } else {
-            versions.insert(v_it, subject_version_id(version, id, deleted));
+            versions.emplace(v_it, version, id, std::move(refs), deleted);
         }
 
         const auto all_deleted = is_deleted(
@@ -467,17 +489,15 @@ public:
 
 private:
     struct schema_entry {
-        schema_entry(schema_type type, schema_definition definition)
-          : type{type}
-          , definition{std::move(definition)} {}
+        explicit schema_entry(canonical_schema_definition definition)
+          : definition{std::move(definition)} {}
 
-        schema_type type;
-        schema_definition definition;
+        canonical_schema_definition definition;
     };
 
     struct subject_entry {
         std::optional<compatibility_level> compatibility;
-        std::vector<subject_version_id> versions;
+        std::vector<subject_version_entry> versions;
         is_deleted deleted{false};
 
         std::vector<seq_marker> written_at;
@@ -505,7 +525,8 @@ private:
         return sub_it;
     }
 
-    static result<std::vector<subject_version_id>::iterator> get_version_iter(
+    static result<std::vector<subject_version_entry>::iterator>
+    get_version_iter(
       subject_map::value_type& sub_entry,
       schema_version version,
       include_deleted inc_del) {
@@ -515,7 +536,7 @@ private:
           get_version_iter(const_entry, version, inc_del));
     }
 
-    static result<std::vector<subject_version_id>::const_iterator>
+    static result<std::vector<subject_version_entry>::const_iterator>
     get_version_iter(
       const subject_map::value_type& sub_entry,
       schema_version version,
@@ -525,7 +546,7 @@ private:
           versions.begin(),
           versions.end(),
           version,
-          [](const subject_version_id& lhs, schema_version rhs) {
+          [](const subject_version_entry& lhs, schema_version rhs) {
               return lhs.version < rhs;
           });
         if (v_it == versions.end() || v_it->version != version) {

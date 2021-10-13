@@ -17,7 +17,7 @@
 namespace pandaproxy::schema_registry {
 
 struct get_schemas_ids_id_response {
-    schema_definition definition;
+    canonical_schema_definition definition;
 };
 
 inline void rjson_serialize(
@@ -25,7 +25,7 @@ inline void rjson_serialize(
   const get_schemas_ids_id_response& res) {
     w.StartObject();
     w.Key("schema");
-    ::json::rjson_serialize(w, res.definition);
+    ::json::rjson_serialize(w, res.definition.raw());
     w.EndObject();
 }
 

@@ -298,11 +298,9 @@ public:
 };
 
 struct schema_value {
-    subject sub;
+    canonical_schema schema;
     schema_version version;
-    schema_type type{schema_type::avro};
     schema_id id;
-    schema_definition schema;
     is_deleted deleted{false};
 
     friend bool operator==(const schema_value&, const schema_value&) = default;
@@ -310,12 +308,10 @@ struct schema_value {
     friend std::ostream& operator<<(std::ostream& os, const schema_value& v) {
         fmt::print(
           os,
-          "subject: {}, version: {}, type: {}, id: {}, schema: {}, deleted: {}",
-          v.sub,
-          v.version,
-          v.type,
-          v.id,
+          "{}, version: {}, id: {}, deleted: {}",
           v.schema,
+          v.version,
+          v.id,
           v.deleted);
         return os;
     }
@@ -326,19 +322,35 @@ inline void rjson_serialize(
   const schema_registry::schema_value& val) {
     w.StartObject();
     w.Key("subject");
-    ::json::rjson_serialize(w, val.sub);
+    ::json::rjson_serialize(w, val.schema.sub());
     w.Key("version");
     ::json::rjson_serialize(w, val.version);
     w.Key("id");
     ::json::rjson_serialize(w, val.id);
+    auto type = val.schema.type();
+    if (type != schema_type::avro) {
+        w.Key("schemaType");
+        ::json::rjson_serialize(w, to_string_view(type));
+    }
+    if (!val.schema.refs().empty()) {
+        w.Key("references");
+        w.StartArray();
+        for (const auto& ref : val.schema.refs()) {
+            w.StartObject();
+            w.Key("name");
+            ::json::rjson_serialize(w, ref.name);
+            w.Key("subject");
+            ::json::rjson_serialize(w, ref.sub);
+            w.Key("version");
+            ::json::rjson_serialize(w, ref.version);
+            w.EndObject();
+        }
+        w.EndArray();
+    }
     w.Key("schema");
-    ::json::rjson_serialize(w, val.schema);
+    ::json::rjson_serialize(w, val.schema.def().raw());
     w.Key("deleted");
     ::json::rjson_serialize(w, bool(val.deleted));
-    if (val.type != schema_type::avro) {
-        w.Key("schemaType");
-        ::json::rjson_serialize(w, to_string_view(val.type));
-    }
     w.EndObject();
 }
 
@@ -353,8 +365,21 @@ class schema_value_handler final : public json::base_handler<Encoding> {
         id,
         definition,
         deleted,
+        references,
+        reference,
+        reference_name,
+        reference_subject,
+        reference_version,
     };
     state _state = state::empty;
+
+    struct mutable_schema {
+        subject sub{invalid_subject};
+        canonical_schema_definition::raw_string def;
+        schema_type type{schema_type::avro};
+        canonical_schema::references refs;
+    };
+    mutable_schema _schema;
 
 public:
     using Ch = typename json::base_handler<Encoding>::Ch;
@@ -375,6 +400,18 @@ public:
                                      .match("schema", state::definition)
                                      .match("id", state::id)
                                      .match("deleted", state::deleted)
+                                     .match("references", state::references)
+                                     .default_match(std::nullopt)};
+            if (s.has_value()) {
+                _state = *s;
+            }
+            return s.has_value();
+        }
+        case state::reference: {
+            std::optional<state> s{string_switch<std::optional<state>>(sv)
+                                     .match("name", state::reference_name)
+                                     .match("subject", state::reference_subject)
+                                     .match("version", state::reference_version)
                                      .default_match(std::nullopt)};
             if (s.has_value()) {
                 _state = *s;
@@ -388,6 +425,10 @@ public:
         case state::id:
         case state::definition:
         case state::deleted:
+        case state::references:
+        case state::reference_name:
+        case state::reference_subject:
+        case state::reference_version:
             return false;
         }
         return false;
@@ -405,12 +446,21 @@ public:
             _state = state::object;
             return true;
         }
+        case state::reference_version: {
+            _schema.refs.back().version = schema_version{i};
+            _state = state::reference;
+            return true;
+        }
         case state::empty:
         case state::object:
         case state::subject:
         case state::type:
         case state::definition:
         case state::deleted:
+        case state::references:
+        case state::reference:
+        case state::reference_name:
+        case state::reference_subject:
             return false;
         }
         return false;
@@ -430,6 +480,11 @@ public:
         case state::type:
         case state::id:
         case state::definition:
+        case state::references:
+        case state::reference:
+        case state::reference_name:
+        case state::reference_subject:
+        case state::reference_version:
             return false;
         }
         return false;
@@ -439,39 +494,110 @@ public:
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::subject: {
-            result.sub = subject{ss::sstring{sv}};
+            _schema.sub = subject{ss::sstring{sv}};
             _state = state::object;
             return true;
         }
         case state::definition: {
-            result.schema = schema_definition{ss::sstring{sv}};
+            _schema.def = canonical_schema_definition::raw_string{
+              ss::sstring{sv}};
             _state = state::object;
             return true;
         }
         case state::type: {
             auto type = from_string_view<schema_type>(sv);
             if (type.has_value()) {
-                result.type = *type;
+                _schema.type = *type;
                 _state = state::object;
             }
             return type.has_value();
+        }
+        case state::reference_name: {
+            _schema.refs.back().name = ss::sstring{sv};
+            _state = state::reference;
+            return true;
+        }
+        case state::reference_subject: {
+            _schema.refs.back().sub = subject{ss::sstring{sv}};
+            _state = state::reference;
+            return true;
         }
         case state::empty:
         case state::object:
         case state::version:
         case state::id:
         case state::deleted:
+        case state::references:
+        case state::reference:
+        case state::reference_version:
             return false;
         }
         return false;
     }
 
     bool StartObject() {
-        return std::exchange(_state, state::object) == state::empty;
+        switch (_state) {
+        case state::empty: {
+            _state = state::object;
+            return true;
+        }
+        case state::references: {
+            _schema.refs.emplace_back();
+            _state = state::reference;
+            return true;
+        }
+        case state::object:
+        case state::subject:
+        case state::version:
+        case state::type:
+        case state::id:
+        case state::definition:
+        case state::deleted:
+        case state::reference:
+        case state::reference_name:
+        case state::reference_subject:
+        case state::reference_version:
+            return false;
+        }
+        return false;
     }
 
     bool EndObject(rapidjson::SizeType) {
-        return std::exchange(_state, state::empty) == state::object;
+        switch (_state) {
+        case state::object: {
+            _state = state::empty;
+            result.schema = {
+              std::move(_schema.sub),
+              {std::move(_schema.def), _schema.type},
+              std::move(_schema.refs)};
+            return true;
+        }
+        case state::reference: {
+            _state = state::references;
+            const auto& ref{_schema.refs.back()};
+            return !ref.name.empty() && ref.sub != invalid_subject
+                   && ref.version != invalid_schema_version;
+        }
+        case state::empty:
+        case state::subject:
+        case state::version:
+        case state::type:
+        case state::id:
+        case state::definition:
+        case state::deleted:
+        case state::references:
+        case state::reference_name:
+        case state::reference_subject:
+        case state::reference_version:
+            return false;
+        }
+        return false;
+    }
+
+    bool StartArray() { return _state == state::references; }
+
+    bool EndArray(rapidjson::SizeType) {
+        return std::exchange(_state, state::object) == state::references;
     }
 };
 
@@ -1116,9 +1242,7 @@ struct consume_to_store {
                     .node = key.node,
                     .version = val->version,
                     .key_type = seq_marker_key_type::schema},
-                  std::move(key.sub),
                   std::move(val->schema),
-                  val->type,
                   val->id,
                   val->version,
                   val->deleted);

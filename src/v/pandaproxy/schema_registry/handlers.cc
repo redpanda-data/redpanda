@@ -23,6 +23,7 @@
 #include "pandaproxy/schema_registry/requests/get_schemas_ids_id_versions.h"
 #include "pandaproxy/schema_registry/requests/get_subject_versions_version.h"
 #include "pandaproxy/schema_registry/requests/post_subject_versions.h"
+#include "pandaproxy/schema_registry/schema_util.h"
 #include "pandaproxy/schema_registry/storage.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/server.h"
@@ -173,11 +174,12 @@ get_schemas_ids_id(server::request_t rq, server::reply_t rp) {
     auto id = parse::request_param<schema_id>(*rq.req, "id");
     rq.req.reset();
 
-    auto schema_val = co_await get_or_load(
-      rq, [&rq, id]() { return rq.service().schema_store().get_schema(id); });
+    auto def = co_await get_or_load(rq, [&rq, id]() {
+        return rq.service().schema_store().get_schema_definition(id);
+    });
 
-    auto json_rslt = ppj::rjson_serialize(get_schemas_ids_id_response{
-      .definition{std::move(schema_val.definition)}});
+    auto json_rslt = ppj::rjson_serialize(
+      get_schemas_ids_id_response{.definition{std::move(def)}});
     rp.rep->write_body("json", json_rslt);
     co_return rp;
 }
@@ -192,7 +194,7 @@ get_schemas_ids_id_versions(server::request_t rq, server::reply_t rp) {
     co_await rq.service().writer().read_sync();
 
     // Force early 40403 if the schema id isn't found
-    co_await rq.service().schema_store().get_schema(id);
+    co_await rq.service().schema_store().get_schema_definition(id);
 
     auto svs = co_await rq.service().schema_store().get_schema_subject_versions(
       id);
@@ -252,26 +254,23 @@ post_subject(server::request_t rq, server::reply_t rp) {
     // Force 40401 if no subject
     co_await rq.service().schema_store().get_versions(sub, include_deleted::no);
 
-    post_subject_versions_request req{};
+    canonical_schema schema;
     try {
-        req = post_subject_versions_request{
-          .sub = sub,
-          .payload = ppj::rjson_parse(
-            rq.req->content.data(), post_subject_versions_request_handler<>{})};
+        auto unparsed = ppj::rjson_parse(
+          rq.req->content.data(), post_subject_versions_request_handler<>{sub});
+        schema = sanitize(std::move(unparsed)).value();
     } catch (const ppj::parse_error&) {
         throw as_exception(invalid_subject_schema(sub));
     }
 
     rq.req.reset();
 
-    auto sub_schema = co_await rq.service().schema_store().has_schema(
-      req.sub, req.payload.schema, req.payload.type);
+    auto sub_schema = co_await rq.service().schema_store().has_schema(schema);
 
     auto json_rslt{json::rjson_serialize(post_subject_versions_version_response{
-      .sub{std::move(sub_schema.sub)},
+      .schema{std::move(sub_schema.schema)},
       .id{sub_schema.id},
-      .version{sub_schema.version},
-      .definition{std::move(sub_schema.definition)}})};
+      .version{sub_schema.version}})};
     rp.rep->write_body("json", json_rslt);
     co_return rp;
 }
@@ -282,14 +281,13 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto sub = parse::request_param<subject>(*rq.req, "subject");
     vlog(plog.debug, "post_subject_versions subject='{}'", sub);
-    auto req = post_subject_versions_request{
-      .sub = sub,
-      .payload = ppj::rjson_parse(
-        rq.req->content.data(), post_subject_versions_request_handler<>{})};
+    auto unparsed = ppj::rjson_parse(
+      rq.req->content.data(), post_subject_versions_request_handler<>{sub});
     rq.req.reset();
 
+    auto schema = sanitize(std::move(unparsed)).value();
     auto schema_id = co_await rq.service().writer().write_subject_version(
-      req.sub, req.payload.schema, req.payload.type);
+      std::move(schema));
 
     auto json_rslt{
       json::rjson_serialize(post_subject_versions_response{.id{schema_id}})};
@@ -328,10 +326,9 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version(
     });
 
     auto json_rslt{json::rjson_serialize(post_subject_versions_version_response{
-      .sub = sub,
+      .schema = std::move(get_res.schema),
       .id = get_res.id,
-      .version = version,
-      .definition = std::move(get_res.definition)})};
+      .version = version})};
     rp.rep->write_body("json", json_rslt);
     co_return rp;
 }
@@ -364,7 +361,7 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version_schema(
     auto get_res = co_await rq.service().schema_store().get_subject_schema(
       sub, version, inc_del);
 
-    rp.rep->write_body("json", get_res.definition());
+    rp.rep->write_body("json", get_res.schema.def().raw()());
     co_return rp;
 }
 
@@ -444,10 +441,9 @@ ss::future<server::reply_t>
 compatibility_subject_version(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
-    auto req = post_subject_versions_request{
-      .sub = parse::request_param<subject>(*rq.req, "subject"),
-      .payload = ppj::rjson_parse(
-        rq.req->content.data(), post_subject_versions_request_handler<>{})};
+    auto sub = parse::request_param<subject>(*rq.req, "subject");
+    auto unparsed = ppj::rjson_parse(
+      rq.req->content.data(), post_subject_versions_request_handler<>{sub});
     rq.req.reset();
 
     // Must read, in case we have the subject in cache with an outdated config
@@ -456,23 +452,23 @@ compatibility_subject_version(server::request_t rq, server::reply_t rp) {
     vlog(
       plog.info,
       "compatibility_subject_version: subject: {}, version: {}",
-      req.sub,
+      unparsed.sub(),
       ver);
     auto version = invalid_schema_version;
     if (ver == "latest") {
         auto versions = co_await rq.service().schema_store().get_versions(
-          req.sub, include_deleted::no);
+          unparsed.sub(), include_deleted::no);
         if (versions.empty()) {
-            throw as_exception(not_found(req.sub, version));
+            throw as_exception(not_found(unparsed.sub(), version));
         }
         version = versions.back();
     } else {
         version = parse::from_chars<schema_version>{}(ver).value();
     }
 
-    auto get_res = co_await get_or_load(rq, [&rq, &req, version]() {
-        return rq.service().schema_store().is_compatible(
-          req.sub, version, req.payload.schema, req.payload.type);
+    auto schema = sanitize(std::move(unparsed)).value();
+    auto get_res = co_await get_or_load(rq, [&rq, &schema, version]() {
+        return rq.service().schema_store().is_compatible(version, schema);
     });
 
     auto json_rslt{
