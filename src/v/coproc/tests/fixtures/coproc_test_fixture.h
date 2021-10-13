@@ -84,6 +84,7 @@ protected:
 
     ss::future<> wait_until_all_idle();
     ss::future<> wait_until_idle(coproc::script_id id);
+    ss::future<> wait_for_copro(coproc::script_id);
 
     ss::future<> push_wasm_events(std::vector<coproc::wasm::event>);
 

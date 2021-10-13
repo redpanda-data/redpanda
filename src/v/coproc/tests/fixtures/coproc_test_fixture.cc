@@ -72,12 +72,15 @@ coproc_test_fixture::push_wasm_events(std::vector<coproc::wasm::event> events) {
 ss::future<>
 coproc_test_fixture::enable_coprocessors(std::vector<deploy> copros) {
     std::vector<coproc::wasm::event> events;
+    std::vector<ss::future<>> wait;
     events.reserve(copros.size());
     for (auto& e : copros) {
         events.emplace_back(e.id, std::move(e.data));
         _active_ids.emplace(coproc::script_id(e.id));
+        wait.push_back(wait_for_copro(coproc::script_id(e.id)));
     }
     co_await push_wasm_events(std::move(events));
+    co_await ss::when_all_succeed(wait.begin(), wait.end());
 }
 
 ss::future<>
@@ -214,4 +217,21 @@ ss::future<> coproc_test_fixture::wait_until_idle(coproc::script_id id) {
         return p.wait_idle_state(id).handle_exception_type(
           [](const coproc::exception&) { return ss::now(); });
     });
+}
+
+ss::future<> coproc_test_fixture::wait_for_copro(coproc::script_id id) {
+    vlog(coproc::coproclog.info, "Waiting for script {}", id);
+    auto& p = _root_fixture->app.coprocessing->get_pacemaker();
+    auto r = co_await p.map_reduce0(
+      [id](coproc::pacemaker& p) { return p.wait_for_script(id); },
+      std::vector<coproc::errc>(),
+      reduce::push_back());
+    bool failed = std::all_of(r.begin(), r.end(), [](coproc::errc e) {
+        return e == coproc::errc::topic_does_not_exist;
+    });
+    if (failed) {
+        throw coproc::exception(
+          fmt_with_ctx(ssx::sformat, "Failed to deploy script: {}", id));
+    }
+    vlog(coproc::coproclog.info, "Script {} successfully deployed!");
 }
