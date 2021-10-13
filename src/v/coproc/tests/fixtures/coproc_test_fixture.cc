@@ -58,31 +58,36 @@ coproc_test_fixture::~coproc_test_fixture() {
 }
 
 ss::future<>
+coproc_test_fixture::push_wasm_events(std::vector<coproc::wasm::event> events) {
+    auto result = co_await coproc::wasm::publish_events(
+      *_client,
+      coproc::wasm::make_event_record_batch_reader({std::move(events)}));
+    vassert(result.size() == 1, "Multiple responses not expected");
+    vassert(
+      result[0].error_code == kafka::error_code::none,
+      "Error when pushing coproc event");
+}
+
+ss::future<>
 coproc_test_fixture::enable_coprocessors(std::vector<deploy> copros) {
     std::vector<coproc::wasm::event> events;
     events.reserve(copros.size());
-    std::transform(
-      copros.begin(), copros.end(), std::back_inserter(events), [](deploy& e) {
-          return coproc::wasm::event(e.id, std::move(e.data));
-      });
-    return coproc::wasm::publish_events(
-             *_client,
-             coproc::wasm::make_event_record_batch_reader({std::move(events)}))
-      .discard_result();
+    for (auto& e : copros) {
+        events.emplace_back(e.id, std::move(e.data));
+        _active_ids.emplace(coproc::script_id(e.id));
+    }
+    co_await push_wasm_events(std::move(events));
 }
 
 ss::future<>
 coproc_test_fixture::disable_coprocessors(std::vector<uint64_t> ids) {
     std::vector<coproc::wasm::event> events;
     events.reserve(ids.size());
-    std::transform(
-      ids.begin(), ids.end(), std::back_inserter(events), [](uint64_t id) {
-          return coproc::wasm::event(id);
-      });
-    return coproc::wasm::publish_events(
-             *_client,
-             coproc::wasm::make_event_record_batch_reader({std::move(events)}))
-      .discard_result();
+    for (auto id : ids) {
+        events.emplace_back(coproc::wasm::event(id));
+        _active_ids.erase(coproc::script_id(id));
+    }
+    co_await push_wasm_events(std::move(events));
 }
 
 ss::future<> coproc_test_fixture::setup(log_layout_map llm) {

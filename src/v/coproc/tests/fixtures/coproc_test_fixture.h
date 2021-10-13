@@ -82,7 +82,10 @@ protected:
         return _root_fixture.get();
     }
 
+    ss::future<> push_wasm_events(std::vector<coproc::wasm::event>);
+
 private:
+    absl::flat_hash_set<coproc::script_id> _active_ids;
     std::unique_ptr<kafka::client::client> _client;
 
     std::unique_ptr<redpanda_thread_fixture> _root_fixture;
