@@ -254,7 +254,7 @@ public:
       size_t /*physical_base_offset*/,
       size_t /*size_on_disk*/) override {
         _header = header;
-        _header.base_offset += _delta;
+        _header.base_offset = _header.base_offset - _delta;
         _header.ctx.term = _term;
     }
 
