@@ -103,8 +103,13 @@ partition_manager::maybe_download_log(storage::ntp_config& ntp_cfg) {
 }
 
 ss::future<> partition_manager::stop_partitions() {
-    return ss::parallel_for_each(
-      _ntp_table, [](auto& p) { return p.second->stop(); });
+    // prevent partitions from being accessed
+    auto partitions = std::exchange(_ntp_table, {});
+    _raft_table.clear();
+
+    // shutdown all partitions
+    co_await ss::parallel_for_each(
+      partitions, [this](auto& e) { return do_shutdown(e.second); });
 }
 
 ss::future<>
