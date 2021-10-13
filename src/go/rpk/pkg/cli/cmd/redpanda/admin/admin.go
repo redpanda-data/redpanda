@@ -20,7 +20,7 @@ import (
 )
 
 // NewCommand returns the redpanda admin command.
-func NewCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
+func NewCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "admin",
 		Short: "Talk to the Redpanda admin listener.",
@@ -43,7 +43,6 @@ func NewCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		"rpk config file, if not set the file will be searched for"+
 			" in the default locations",
 	)
-	configClosure := common.FindConfigFile(mgr, &configFile)
 
 	cmd.PersistentFlags().StringSliceVar(
 		&hosts,
@@ -52,12 +51,6 @@ func NewCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		"A comma-separated list of Admin API addresses (<IP>:<port>)."+
 			" You must specify one for each node.",
 	)
-	hostsClosure := func() []string {
-		return common.DeduceAdminApiAddrs(
-			configClosure,
-			&hosts,
-		)
-	}
 
 	common.AddAdminAPITLSFlags(
 		cmd,
@@ -66,18 +59,10 @@ func NewCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		&adminKeyFile,
 		&adminCAFile,
 	)
-	tlsClosure := common.BuildAdminApiTLSConfig(
-		fs,
-		&adminEnableTLS,
-		&adminCertFile,
-		&adminKeyFile,
-		&adminCAFile,
-		configClosure,
-	)
 
 	cmd.AddCommand(
-		brokers.NewCommand(hostsClosure, tlsClosure),
-		configcmd.NewCommand(hostsClosure, tlsClosure),
+		brokers.NewCommand(fs),
+		configcmd.NewCommand(fs),
 	)
 
 	return cmd

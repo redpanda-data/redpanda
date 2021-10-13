@@ -23,9 +23,19 @@ type newUser struct {
 	Algorithm string `json:"algorithm"`
 }
 
+const (
+	// Redpanda supports only SCRAM at the moment, which has two varieties.
+	//
+	// Both of the below technically go against the Go naming conventions
+	// for acronyms, but 8 uppercase letters for two merged acronyms is a
+	// bit odd.
+	ScramSha256 = "SCRAM-SHA-256"
+	ScramSha512 = "SCRAM-SHA-512"
+)
+
 // CreateUser creates a user with the given username and password using the
-// SCRAM-SHA-256 algorithm.
-func (a *AdminAPI) CreateUser(username, password string) error {
+// given mechanism (SCRAM-SHA-256, SCRAM-SHA-512).
+func (a *AdminAPI) CreateUser(username, password, mechanism string) error {
 	if username == "" {
 		return errors.New("invalid empty username")
 	}
@@ -35,7 +45,7 @@ func (a *AdminAPI) CreateUser(username, password string) error {
 	u := newUser{
 		User:      username,
 		Password:  password,
-		Algorithm: "SCRAM-SHA-256",
+		Algorithm: mechanism,
 	}
 	return a.sendAll(http.MethodPost, usersEndpoint, u, nil)
 }

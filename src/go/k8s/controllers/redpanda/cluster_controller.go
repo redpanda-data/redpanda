@@ -338,7 +338,6 @@ func (r *ClusterReconciler) reportStatus(
 
 			return r.Status().Update(ctx, &cluster)
 		})
-
 		if err != nil {
 			return fmt.Errorf("failed to update cluster status: %w", err)
 		}
@@ -522,11 +521,13 @@ func (r *ClusterReconciler) setInitialSuperUserPassword(
 		username := string(secret.Data[corev1.BasicAuthUsernameKey])
 		password := string(secret.Data[corev1.BasicAuthPasswordKey])
 
-		err = adminAPI.CreateUser(username, password)
+		err = adminAPI.CreateUser(username, password, admin.ScramSha256)
 		// {"message": "Creating user: User already exists", "code": 400}
 		if err != nil && !strings.Contains(err.Error(), "already exists") { // TODO if user already exists, we only receive "400". Check for specific error code when available.
-			return &resources.RequeueAfterError{RequeueAfter: resources.RequeueDuration,
-				Msg: fmt.Sprintf("could not create user: %v", err)}
+			return &resources.RequeueAfterError{
+				RequeueAfter: resources.RequeueDuration,
+				Msg:          fmt.Sprintf("could not create user: %v", err),
+			}
 		}
 	}
 	return nil

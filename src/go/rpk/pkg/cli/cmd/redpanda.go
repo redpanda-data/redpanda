@@ -35,7 +35,7 @@ func NewRedpandaCommand(
 	command.AddCommand(redpanda.NewModeCommand(mgr))
 	command.AddCommand(redpanda.NewConfigCommand(fs, mgr))
 
-	command.AddCommand(admin.NewCommand(fs, mgr))
+	command.AddCommand(admin.NewCommand(fs))
 
 	return command
 }

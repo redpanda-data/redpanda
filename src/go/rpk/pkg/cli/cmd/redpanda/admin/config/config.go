@@ -6,82 +6,44 @@
 package config
 
 import (
-	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"strconv"
 
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
 )
 
 // NewCommand returns the config admin command.
-func NewCommand(
-	hostsClosure func() []string, tlsClosure func() (*tls.Config, error),
-) *cobra.Command {
+func NewCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "View or modify Redpanda configuration through the admin listener.",
 		Args:  cobra.ExactArgs(0),
 	}
-	closures := closures{hostsClosure, tlsClosure}
 	cmd.AddCommand(
-		newPrintCommand(closures),
-		newLogLevelCommand(closures),
+		newPrintCommand(fs),
+		newLogLevelCommand(fs),
 	)
 	return cmd
 }
 
-type closures struct {
-	hosts func() []string
-	tls   func() (*tls.Config, error)
-}
-
-func (c closures) eval() ([]string, *tls.Config, error) {
-	hosts := c.hosts()
-	tls, err := c.tls()
-	return hosts, tls, err
-}
-
-func (c closures) pickAdminAPI(host string) *admin.AdminAPI {
-	hosts, tls, err := c.eval()
-	out.MaybeDie(err, "unable to load configuration: %v", err)
-
-	pick, err := parsePick(host, hosts)
-	out.MaybeDieErr(err)
-
-	cl, err := admin.NewAdminAPI([]string{pick}, tls)
-	out.MaybeDie(err, "unable to initialize admin client: %v", err)
-
-	return cl
-}
-
-func parsePick(input string, hosts []string) (string, error) {
-	if input == "" {
-		return "", errors.New("invalid empty admin host")
-	}
-
-	i, err := strconv.Atoi(input)
-	if err == nil {
-		if i < 0 || i >= len(hosts) {
-			return "", fmt.Errorf("admin host %d is out of allowed range [0, %d)", i, len(hosts))
-		}
-		return hosts[i], nil
-	}
-	return input, nil
-}
-
-func newPrintCommand(c closures) *cobra.Command {
+func newPrintCommand(fs afero.Fs) *cobra.Command {
 	var host string
 	cmd := &cobra.Command{
 		Use:     "print",
 		Aliases: []string{"dump", "list", "ls", "display"},
 		Short:   "Display the current Redpanda configuration",
 		Args:    cobra.ExactArgs(0),
-		Run: func(*cobra.Command, []string) {
-			cl := c.pickAdminAPI(host)
+		Run: func(cmd *cobra.Command, _ []string) {
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			cl, err := admin.NewHostClient(fs, cfg, host)
+			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			conf, err := cl.Config()
 			out.MaybeDie(err, "unable to request configuration: %v", err)
@@ -100,19 +62,19 @@ func newPrintCommand(c closures) *cobra.Command {
 }
 
 // rpk redpanda admin config log-level set
-func newLogLevelCommand(c closures) *cobra.Command {
+func newLogLevelCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "log-level",
 		Short: "Manage a broker's log level.",
 		Args:  cobra.ExactArgs(0),
 	}
 	cmd.AddCommand(
-		newLogLevelSetCommand(c),
+		newLogLevelSetCommand(fs),
 	)
 	return cmd
 }
 
-func newLogLevelSetCommand(c closures) *cobra.Command {
+func newLogLevelSetCommand(fs afero.Fs) *cobra.Command {
 	var host string
 	var level string
 	var expirySeconds int
@@ -140,8 +102,13 @@ independently update your redpanda installations from rpk. The success or
 failure of enabling each logger is individually printed.
 `,
 
-		Run: func(_ *cobra.Command, loggers []string) {
-			cl := c.pickAdminAPI(host)
+		Run: func(cmd *cobra.Command, loggers []string) {
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			cl, err := admin.NewHostClient(fs, cfg, host)
+			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			switch len(loggers) {
 			case 0:

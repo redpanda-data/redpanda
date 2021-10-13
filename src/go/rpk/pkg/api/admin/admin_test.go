@@ -62,7 +62,7 @@ func TestCreateUser(t *testing.T) {
 
 	adminClient, err := NewAdminAPI(urls, nil)
 	require.NoError(t, err)
-	err = adminClient.CreateUser(username, password)
+	err = adminClient.CreateUser(username, password, ScramSha256)
 	require.NoError(t, err)
 }
 
