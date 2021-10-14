@@ -384,6 +384,24 @@ class PartitionMovementTest(EndToEndTest):
         else:
             raise RuntimeError(f"Expected 400 but got {r.status_code}")
 
+        # An syntactically invalid destination (float instead of int)
+        # Reproducer for https://github.com/vectorizedio/redpanda/issues/2286
+        assignments = [{"node_id": valid_dest, "core": 3.14}]
+        try:
+            r = admin.set_partition_replicas(topic, partition, assignments)
+        except requests.exceptions.HTTPError as e:
+            assert e.response.status_code == 400
+        else:
+            raise RuntimeError(f"Expected 400 but got {r.status_code}")
+
+        assignments = [{"node_id": 3.14, "core": 0}]
+        try:
+            r = admin.set_partition_replicas(topic, partition, assignments)
+        except requests.exceptions.HTTPError as e:
+            assert e.response.status_code == 400
+        else:
+            raise RuntimeError(f"Expected 400 but got {r.status_code}")
+
         # Finally a valid move
         assignments = [{"node_id": valid_dest, "core": 0}]
         r = admin.set_partition_replicas(topic, partition, assignments)
