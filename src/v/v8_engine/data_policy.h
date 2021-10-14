@@ -22,17 +22,6 @@
 
 namespace v8_engine {
 
-class data_policy_exeption final : public std::exception {
-public:
-    explicit data_policy_exeption(ss::sstring msg) noexcept
-      : _msg(std::move(msg)) {}
-
-    const char* what() const noexcept final { return _msg.c_str(); }
-
-private:
-    ss::sstring _msg;
-};
-
 // Datapolicy property for v8_engine. In first version it contains only
 // function_name and script_name, in the future it will contain ACLs, geo,
 // e.t.c.
@@ -54,8 +43,6 @@ private:
     friend std::ostream&
     operator<<(std::ostream& os, const data_policy& datapolicy);
 };
-
-std::ostream& operator<<(std::ostream& os, const data_policy& datapolicy);
 
 } // namespace v8_engine
 

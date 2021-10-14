@@ -97,7 +97,6 @@ public:
           app.controller->get_security_frontend(),
           app.controller->get_api(),
           app.tx_gateway_frontend,
-          app.data_policies,
           std::nullopt);
     }
 
