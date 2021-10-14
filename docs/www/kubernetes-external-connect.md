@@ -33,8 +33,7 @@ Create a 3-node cluster on the platform of your choice:
   --node-type m5.xlarge \
   --nodes 3 \
   --nodes-min 1 \
-  --nodes-max 4 \
-  --node-ami auto
+  --nodes-max 4 
   ```
 
   It will take about 10-15 minutes for the process to finish.
