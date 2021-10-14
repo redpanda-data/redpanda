@@ -141,7 +141,7 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
             vlog(
               _logger.warn,
               "hole in the remote offset range detected! previous last offset: "
-              "{}, new segment base offset: ",
+              "{}, new segment base offset: {}",
               _last_offset,
               meta.base_offset);
         }
@@ -153,7 +153,7 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
     }
 
     vlog(
-      _logger.trace,
+      _logger.info,
       "new remote segment (name: {}, base_offset: {} last_offset: {}), "
       "remote start_offset: {}, last_offset: {}",
       segment.name,
