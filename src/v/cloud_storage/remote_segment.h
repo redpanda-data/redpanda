@@ -128,7 +128,7 @@ public:
     ss::future<result<ss::circular_buffer<model::record_batch>>>
       read_some(model::timeout_clock::time_point);
 
-    ss::future<> close();
+    ss::future<> stop();
 
     model::offset max_offset() const noexcept { return _seg.get_max_offset(); }
 

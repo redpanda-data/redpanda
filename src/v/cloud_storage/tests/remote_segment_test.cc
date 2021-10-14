@@ -146,7 +146,7 @@ FIXTURE_TEST(
         // should only recv one batch
         offsets.push_back(batch.base_offset());
     }
-    reader.close().get();
+    reader.stop().get();
 
     BOOST_REQUIRE(offsets.size() == 1);
     BOOST_REQUIRE(offsets.at(0) == model::offset(1));
@@ -245,7 +245,7 @@ void test_remote_segment_batch_reader(
             done = batch.header().last_offset() >= end;
         }
     }
-    reader.close().get();
+    reader.stop().get();
     BOOST_REQUIRE_EQUAL(batch_ix, (ix_end - ix_begin) + 1 /*inclusive range*/);
 }
 
@@ -360,5 +360,5 @@ FIXTURE_TEST(
     BOOST_REQUIRE(offsets.size() == 2);
     BOOST_REQUIRE(offsets.at(1) == headers.at(1).base_offset);
 
-    reader.close().get();
+    reader.stop().get();
 }

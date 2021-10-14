@@ -54,22 +54,6 @@ const char* download_exception::what() const noexcept {
     __builtin_unreachable();
 }
 
-inline ss::sstring manifest_key_to_string(const manifest::key& name) {
-    ss::sstring result;
-    try {
-        if (std::holds_alternative<segment_name>(name)) {
-            result = std::get<segment_name>(name)();
-        } else if (std::holds_alternative<remote_segment_path>(name)) {
-            auto tmp = std::get<remote_segment_path>(name)();
-            result = tmp.string();
-        }
-    } catch (const std::bad_variant_access& e) {
-        vlog(cst_log.error, "Can't decode manifest key");
-        result = "N/A";
-    }
-    return result;
-}
-
 remote_segment::remote_segment(
   remote& r,
   cache& c,
@@ -254,7 +238,6 @@ public:
       size_t /*physical_base_offset*/,
       size_t /*size_on_disk*/) override {
         _header = header;
-        _header.base_offset = _header.base_offset - _delta;
         _header.ctx.term = _term;
     }
 
@@ -277,7 +260,10 @@ public:
         // transitively updates the next batch to consume
         auto batch = model::record_batch{
           _header, std::move(_records), model::record_batch::tag_ctor_ng{}};
+        // we need ot adjust start_offset using redpanda offset
         _config.start_offset = batch.last_offset() + model::offset(1);
+        // but in the returned record batch we need to use kafka offset
+        batch.header().base_offset = batch.base_offset() /* - _delta*/;
         _config.bytes_consumed += batch.size_bytes();
         size_t sz = _parent.produce(std::move(batch));
 
@@ -365,7 +351,7 @@ size_t remote_segment_batch_reader::produce(model::record_batch batch) {
     return _total_size;
 }
 
-ss::future<> remote_segment_batch_reader::close() {
+ss::future<> remote_segment_batch_reader::stop() {
     vlog(cst_log.debug, "remote_segment_batch_reader::close");
     if (_parser) {
         vlog(
