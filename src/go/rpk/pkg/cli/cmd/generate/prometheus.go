@@ -10,6 +10,7 @@
 package generate
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -18,9 +19,10 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
 	"gopkg.in/yaml.v2"
 )
 
@@ -148,21 +150,17 @@ func renderConfig(jobName string, targets []string) ([]byte, error) {
 }
 
 func discoverHosts(url string, port int) ([]string, error) {
-	hosts := []string{}
 	addr := net.JoinHostPort(url, strconv.Itoa(port))
-	client, err := kafka.InitClient(addr)
+	cl, err := kgo.NewClient(kgo.SeedBrokers(addr))
 	if err != nil {
-		return hosts, err
+		return nil, nil
 	}
-	brokers := client.Brokers()
+	var hosts []string
+	brokers, err := kadm.NewClient(cl).ListBrokers(context.Background())
 	for _, b := range brokers {
-		host, _, err := splitAddress(b.Addr())
-		if err != nil {
-			return hosts, err
-		}
 		hosts = append(
 			hosts,
-			net.JoinHostPort(host, strconv.Itoa(config.DefaultAdminPort)),
+			net.JoinHostPort(b.Host, strconv.Itoa(config.DefaultAdminPort)),
 		)
 	}
 	return hosts, nil

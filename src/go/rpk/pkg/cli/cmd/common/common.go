@@ -636,9 +636,7 @@ func AddKafkaFlags(
 		config.FlagSASLMechanism,
 		"",
 		fmt.Sprintf(
-			"The authentication mechanism to use. Supported values: %s, %s.",
-			sarama.SASLTypeSCRAMSHA256,
-			sarama.SASLTypeSCRAMSHA512,
+			"The authentication mechanism to use. Supported values: SCRAM-SHA-256, SCRAM-SHA-512.",
 		),
 	)
 

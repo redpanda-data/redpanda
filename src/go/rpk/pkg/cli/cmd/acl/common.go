@@ -180,7 +180,7 @@ func (a *acls) backcompatList() error {
 	// specified. Emptiness of old flags is significant (it implies "any").
 	var permAny, permAllow, permDeny bool
 	for _, perm := range a.listPermissions {
-		switch strings.ToLower(perm) { // this matches historical sarama parsing
+		switch strings.ToLower(perm) {
 		case "any":
 			permAny = true
 		case "allow":

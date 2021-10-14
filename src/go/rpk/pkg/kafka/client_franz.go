@@ -26,9 +26,6 @@ import (
 )
 
 // NewFranzClient returns a franz-go based kafka client.
-//
-// The settings are close to, but not identical to the sarama client
-// configuration.  Particularly, our timeouts are higher.
 func NewFranzClient(
 	fs afero.Fs, p *config.Params, cfg *config.Config, extraOpts ...kgo.Opt,
 ) (*kgo.Client, error) {
