@@ -348,7 +348,11 @@ void admin_server::register_raft_routes() {
                 }
                 return consensus->do_transfer_leadership(target).then(
                   [](std::error_code err) {
-                      if (err) {
+                      if (err == raft::errc::configuration_change_in_progress) {
+                          throw ss::httpd::base_exception(
+                            "Configuration change in progress",
+                            ss::httpd::reply::status_type::service_unavailable);
+                      } else if (err) {
                           throw ss::httpd::server_error_exception(fmt::format(
                             "Leadership transfer failed: {}", err.message()));
                       }
