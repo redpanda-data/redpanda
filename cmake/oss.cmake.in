@@ -324,7 +324,7 @@ set(v8_flags
   is_clang=${is_clang}\
   use_gold=false\
   clang_use_chrome_plugins=false\
-  treat_warnings_as_errcors=false\
+  treat_warnings_as_errors=false\
   use_custom_libcxx=false\
   use_glib=false\
   use_sysroot=false\
