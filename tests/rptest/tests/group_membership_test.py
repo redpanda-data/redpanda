@@ -8,8 +8,8 @@
 # by the Apache License, Version 2.0
 
 import time
+import requests
 
-from ducktape.mark import matrix
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
@@ -46,9 +46,37 @@ class ListGroupsReplicationFactorTest(RedpandaTest):
         out = kcl.list_groups()
         assert "COORDINATOR_LOAD_IN_PROGRESS" not in out
 
-    # https://github.com/vectorizedio/redpanda/issues/2528
+    def _transfer_with_retry(self, namespace, topic, partition, target_id):
+        """
+        Leadership transfers may return 503 if done in a tight loop, as
+        the current leader might still be writing their configuration after
+        winning their election.
+
+        503 is safe status to retry.
+        """
+        admin = Admin(redpanda=self.redpanda)
+        timeout = time.time() + 10
+
+        while time.time() < timeout:
+            try:
+                admin.transfer_leadership_to(namespace=namespace,
+                                             topic=topic,
+                                             partition=partition,
+                                             target_id=target_id)
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 503:
+                    time.sleep(1)
+                else:
+                    raise
+            else:
+                break
+
     @cluster(num_nodes=3)
     def test_list_groups_has_no_duplicates(self):
+        """
+        Reproducer for:
+        https://github.com/vectorizedio/redpanda/issues/2528
+        """
         kcl = KCL(self.redpanda)
         kcl.produce(self.topic, "msg\n")
         # create 4 groups
@@ -58,12 +86,12 @@ class ListGroupsReplicationFactorTest(RedpandaTest):
         kcl.consume(self.topic, n=1, group="g3")
         # transfer kafka_internal/group/0 leadership across the nodes to trigger
         # group state recovery on each node
-        admin = Admin(redpanda=self.redpanda)
         for n in self.redpanda.nodes:
-            admin.transfer_leadership_to(namespace="kafka_internal",
-                                         topic="group",
-                                         partition=0,
-                                         target_id=self.redpanda.idx(n))
+            self._transfer_with_retry(namespace="kafka_internal",
+                                      topic="group",
+                                      partition=0,
+                                      target_id=self.redpanda.idx(n))
+
         # assert that there are no duplicates in
         def _list_groups():
             out = kcl.list_groups()
