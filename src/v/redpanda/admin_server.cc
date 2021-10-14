@@ -902,7 +902,16 @@ void admin_server::register_partition_routes() {
           }
 
           std::vector<model::broker_shard> replicas;
+          if (!doc.IsArray()) {
+              throw ss::httpd::bad_request_exception("Expected array");
+          }
           for (auto& r : doc.GetArray()) {
+              const auto& node_id_json = r["node_id"];
+              const auto& core_json = r["core"];
+              if (!node_id_json.IsInt() || !core_json.IsInt()) {
+                  throw ss::httpd::bad_request_exception(
+                    "`node_id` and `core` must be integers");
+              }
               const auto node_id = model::node_id(r["node_id"].GetInt());
               const auto shard = static_cast<uint32_t>(r["core"].GetInt());
 
