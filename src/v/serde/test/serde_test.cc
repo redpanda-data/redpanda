@@ -74,8 +74,8 @@ struct test_msg1_new
 
 struct test_msg1_new_manual {
     using value_t = test_msg1_new_manual;
-    static constexpr auto redpanda_serde_version = 10;
-    static constexpr auto redpanda_serde_compat_version = 5;
+    static constexpr auto redpanda_serde_version = serde::version_t{10};
+    static constexpr auto redpanda_serde_compat_version = serde::version_t{5};
 
     bool operator==(test_msg1_new_manual const&) const = default;
 
