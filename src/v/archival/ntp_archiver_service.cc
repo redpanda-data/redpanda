@@ -139,15 +139,6 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
       fib);
 }
 
-static model::offset num_config_batches_before_offset(
-  const raft::configuration_manager& cm, model::offset o) {
-    auto it = cm.lower_bound(o);
-    if (it != cm.begin()) {
-        --it;
-    }
-    return model::offset(it->second.idx());
-}
-
 ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
   storage::log_manager& lm,
   model::offset last_uploaded_offset,
@@ -232,6 +223,8 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
     auto offset = upload.final_offset;
     auto base = upload.starting_offset;
     last_uploaded_offset = offset + model::offset(1);
+    auto delta = base
+                 - _partition->get_offset_translator()->from_log_offset(base);
     co_return scheduled_upload{
       .result = upload_segment(upload, parent),
       .inclusive_last_offset = offset,
@@ -242,8 +235,8 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
         .committed_offset = offset,
         .base_timestamp = upload.base_timestamp,
         .max_timestamp = upload.max_timestamp,
-        .delta_offset = num_config_batches_before_offset(_partition->get_cfg_manager(), base),
-      }, 
+        .delta_offset = delta,
+      },
       .name = upload.exposed_name, .delta = offset - base,
       .stop = ss::stop_iteration::no,
     };

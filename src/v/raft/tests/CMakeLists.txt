@@ -32,7 +32,8 @@ set(srcs
     mutex_buffer_test.cc
     manual_log_deletion_test.cc
     state_removal_test.cc
-    configuration_manager_test.cc)
+    configuration_manager_test.cc
+)
 
 rp_test(
   UNIT_TEST
@@ -40,4 +41,12 @@ rp_test(
   SOURCES ${srcs}
   LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
   LABELS raft
+)
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME test_offset_translator
+  SOURCES offset_translator_tests.cc
+  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
+  LABELS kafka
 )

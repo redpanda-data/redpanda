@@ -181,6 +181,32 @@ public:
         return headers;
     }
 
+    void append_batch(storage::log log, model::record_batch batch) {
+        model::record_batch_reader::data_t buffer;
+        buffer.push_back(std::move(batch));
+        storage::log_append_config append_cfg{
+          storage::log_append_config::fsync::no,
+          ss::default_priority_class(),
+          model::no_timeout};
+
+        model::offset old_dirty_offset = log.offsets().dirty_offset;
+        model::offset base_offset = old_dirty_offset < model::offset(0)
+                                      ? model::offset(0)
+                                      : old_dirty_offset + model::offset(1);
+        auto expected_offset
+          = base_offset + model::offset{batch.header().last_offset_delta};
+
+        auto res = model::make_memory_record_batch_reader(std::move(buffer))
+                     .for_each_ref(
+                       log.make_appender(append_cfg), model::no_timeout)
+                     .get();
+
+        log.flush().get();
+
+        BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, res.last_offset);
+        BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, expected_offset);
+    }
+
     // model::offset start_offset;
     // size_t max_bytes;
     // size_t min_bytes;
