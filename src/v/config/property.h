@@ -75,6 +75,8 @@ public:
 
     void set_value(YAML::Node n) override { _value = std::move(n.as<T>()); }
 
+    void reset() override { _value = default_value(); }
+
     property<T>& operator()(T v) {
         _value = std::move(v);
         return *this;
