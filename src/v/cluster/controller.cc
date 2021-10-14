@@ -128,7 +128,6 @@ ss::future<> controller::start() {
             std::ref(_partition_allocator),
             std::ref(_partition_leaders),
             std::ref(_tp_state),
-            std::ref(_data_policy_frontend),
             std::ref(_as));
       })
       .then([this] {
