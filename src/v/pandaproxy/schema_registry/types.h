@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "avro/ValidSchema.hh"
 #include "model/metadata.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
@@ -108,6 +109,90 @@ using canonical_schema_definition
 
 static const unparsed_schema_definition invalid_schema_definition{
   "", schema_type::avro};
+
+///\brief The definition of an avro schema.
+class avro_schema_definition {
+public:
+    explicit avro_schema_definition(avro::ValidSchema vs);
+
+    canonical_schema_definition::raw_string raw() const;
+
+    const avro::ValidSchema& operator()() const;
+
+    friend bool operator==(
+      const avro_schema_definition& lhs, const avro_schema_definition& rhs);
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const avro_schema_definition& rhs);
+
+    constexpr schema_type type() const { return schema_type::avro; }
+
+    explicit operator canonical_schema_definition() const {
+        return {raw(), type()};
+    }
+
+private:
+    avro::ValidSchema _impl;
+};
+
+///\brief A schema that has been validated.
+class valid_schema {
+    using impl = std::variant<avro_schema_definition>;
+
+    template<typename T>
+    using disable_if_valid_schema = std::
+      enable_if_t<!std::is_same_v<std::remove_cvref_t<T>, valid_schema>, int>;
+
+    template<typename T>
+    using enable_if_can_construct_impl = std::
+      enable_if_t<std::is_constructible_v<impl, std::remove_cvref_t<T>>, int>;
+
+public:
+    ///\brief Converting constructor from variant types
+    template<
+      typename T,
+      disable_if_valid_schema<T> = 0,
+      enable_if_can_construct_impl<T> = 0>
+    valid_schema(T&& def)
+      : _impl{std::forward<T>(def)} {}
+
+    template<typename V, typename... Args>
+    decltype(auto) visit(V&& v, Args... args) const& {
+        return std::visit(
+          std::forward<V>(v), _impl, std::forward<Args>(args)...);
+    }
+
+    template<typename V, typename... Args>
+    decltype(auto) visit(V&& v, Args... args) && {
+        return std::visit(
+          std::forward<V>(v), std::move(_impl), std::forward<Args>(args)...);
+    }
+
+    schema_type type() const {
+        return visit([](const auto& def) { return def.type(); });
+    }
+
+    unparsed_schema_definition::raw_string raw() const& {
+        return visit([](auto&& def) {
+            return unparsed_schema_definition::raw_string{def.raw()()};
+        });
+    }
+
+    unparsed_schema_definition::raw_string raw() && {
+        return visit([](auto def) {
+            return unparsed_schema_definition::raw_string{
+              std::move(def).raw()()};
+        });
+    }
+
+    friend std::ostream& operator<<(std::ostream& os, const valid_schema& def) {
+        def.visit([&os](const auto& def) { os << def; });
+        return os;
+    }
+
+private:
+    impl _impl;
+};
 
 ///\brief The version of the schema registered with a subject.
 ///

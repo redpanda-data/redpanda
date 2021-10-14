@@ -23,7 +23,6 @@
 #include "pandaproxy/schema_registry/requests/get_schemas_ids_id_versions.h"
 #include "pandaproxy/schema_registry/requests/get_subject_versions_version.h"
 #include "pandaproxy/schema_registry/requests/post_subject_versions.h"
-#include "pandaproxy/schema_registry/schema_util.h"
 #include "pandaproxy/schema_registry/storage.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/server.h"
@@ -258,7 +257,8 @@ post_subject(server::request_t rq, server::reply_t rp) {
     try {
         auto unparsed = ppj::rjson_parse(
           rq.req->content.data(), post_subject_versions_request_handler<>{sub});
-        schema = sanitize(std::move(unparsed)).value();
+        schema = co_await rq.service().schema_store().make_canonical_schema(
+          std::move(unparsed));
     } catch (const ppj::parse_error&) {
         throw as_exception(invalid_subject_schema(sub));
     }
@@ -285,7 +285,8 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
       rq.req->content.data(), post_subject_versions_request_handler<>{sub});
     rq.req.reset();
 
-    auto schema = sanitize(std::move(unparsed)).value();
+    auto schema = co_await rq.service().schema_store().make_canonical_schema(
+      std::move(unparsed));
     auto schema_id = co_await rq.service().writer().write_subject_version(
       std::move(schema));
 
@@ -466,7 +467,8 @@ compatibility_subject_version(server::request_t rq, server::reply_t rp) {
         version = parse::from_chars<schema_version>{}(ver).value();
     }
 
-    auto schema = sanitize(std::move(unparsed)).value();
+    auto schema = co_await rq.service().schema_store().make_canonical_schema(
+      std::move(unparsed));
     auto get_res = co_await get_or_load(rq, [&rq, &schema, version]() {
         return rq.service().schema_store().is_compatible(version, schema);
     });

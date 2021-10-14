@@ -26,6 +26,15 @@ public:
     ss::future<> start(ss::smp_service_group sg);
     ss::future<> stop();
 
+    ///\brief Make the canonical form of the schema
+    ss::future<canonical_schema> make_canonical_schema(unparsed_schema schema);
+
+    ///\brief Check the schema parses with the native format
+    ss::future<void> validate_schema(const canonical_schema& schema);
+
+    ///\brief Construct a schema in the native format
+    ss::future<valid_schema> make_valid_schema(const canonical_schema& schema);
+
     struct insert_result {
         schema_version version;
         schema_id id;

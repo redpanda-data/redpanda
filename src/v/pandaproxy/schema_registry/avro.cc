@@ -312,6 +312,31 @@ result<void> sanitize(
 
 } // namespace
 
+avro_schema_definition::avro_schema_definition(avro::ValidSchema vs)
+  : _impl(std::move(vs)) {}
+
+const avro::ValidSchema& avro_schema_definition::operator()() const {
+    return _impl;
+}
+
+bool operator==(
+  const avro_schema_definition& lhs, const avro_schema_definition& rhs) {
+    return lhs.raw() == rhs.raw();
+}
+
+std::ostream& operator<<(std::ostream& os, const avro_schema_definition& def) {
+    fmt::print(
+      os,
+      "type: {}, definition: {}",
+      to_string_view(def.type()),
+      def().toJson(false));
+    return os;
+}
+
+canonical_schema_definition::raw_string avro_schema_definition::raw() const {
+    return canonical_schema_definition::raw_string{_impl.toJson(false)};
+}
+
 result<avro_schema_definition>
 make_avro_schema_definition(std::string_view sv) {
     try {
