@@ -11,9 +11,9 @@
 
 #pragma once
 
-#include "cluster/archival_metadata_stm.h"
 #include "cloud_storage/manifest.h"
 #include "cloud_storage/remote_partition.h"
+#include "cluster/archival_metadata_stm.h"
 #include "cluster/id_allocator_stm.h"
 #include "cluster/partition_probe.h"
 #include "cluster/rm_stm.h"
@@ -204,9 +204,9 @@ public:
     ///
     /// The remaining 'cloud' methods can only be called if this
     /// method returned 'true'.
-     bool cloud_data_available() const {
-         return static_cast<bool>(_cloud_storage_partition);
-     }
+    bool cloud_data_available() const {
+        return static_cast<bool>(_cloud_storage_partition);
+    }
 
     /// Starting offset in the object store
     model::offset start_cloud_offset() const {

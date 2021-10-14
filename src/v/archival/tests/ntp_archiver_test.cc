@@ -609,8 +609,7 @@ static void test_partial_upload_impl(
     service_probe probe(service_metrics_disabled::yes);
     cloud_storage::remote remote(cconf.connection_limit, cconf.client_config);
     aconf.time_limit = segment_time_limit(0s);
-    archival::ntp_archiver archiver(
-      get_ntp_conf(), aconf, remote, part, probe);
+    archival::ntp_archiver archiver(get_ntp_conf(), aconf, remote, part, probe);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib;

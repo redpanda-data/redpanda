@@ -657,7 +657,7 @@ void application::wire_up_redpanda_services() {
           = config::shard_local_cfg().cloud_storage_cache_directory.value();
         auto redpanda_dir = config::shard_local_cfg().data_directory.value();
         std::filesystem::path cache_dir = redpanda_dir.path
-                                          / "shadow_indexing_cache";
+                                          / "cloud_storage_cache";
         if (cache_path_cfg) {
             cache_dir = std::filesystem::path(cache_path_cfg.value());
         }
