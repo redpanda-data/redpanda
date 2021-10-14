@@ -10,8 +10,8 @@
 
 set -ex
 root="$(cd $(dirname ${BASH_SOURCE[0]}) && pwd)"
-if [[ -z ${CC} ]]; then export CC=/usr/bin/gcc; fi
-if [[ -z ${CXX} ]]; then export CXX=/usr/bin/g++; fi
+if [[ -z ${CC} ]]; then export CC=clang; fi
+if [[ -z ${CXX} ]]; then export CXX=clang++; fi
 if [[ ! -z ${CCACHE_DIR} && -e /dev/shm ]]; then export CCACHE_DIR=/dev/shm/redpanda; fi
 
 # Change Debug via  -DCMAKE_BUILD_TYPE=Debug
