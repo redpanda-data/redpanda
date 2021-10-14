@@ -12,7 +12,6 @@
 #pragma once
 
 #include "cluster/commands.h"
-#include "v8_engine/data_policy_table.h"
 
 #include <absl/container/flat_hash_map.h>
 
@@ -22,8 +21,8 @@ namespace cluster {
 
 class data_policy_manager {
 public:
-    explicit data_policy_manager(ss::sharded<v8_engine::data_policy_table>& dps)
-      : _dps(dps) {}
+    using container_type
+      = absl::flat_hash_map<model::topic_namespace, v8_engine::data_policy>;
 
     static constexpr auto commands
       = make_commands_list<create_data_policy_cmd, delete_data_policy_cmd>();
@@ -35,8 +34,13 @@ public:
                == model::record_batch_type::data_policy_management_cmd;
     }
 
+    const container_type& get_current_state() const { return _dps.local(); }
+
+    ss::future<> start() { return _dps.start(); }
+    ss::future<> stop() { return _dps.stop(); }
+
 private:
-    ss::sharded<v8_engine::data_policy_table>& _dps;
+    ss::sharded<container_type> _dps;
 };
 
 } // namespace cluster
