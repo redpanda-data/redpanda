@@ -63,7 +63,7 @@ struct has_version_attribute : std::false_type {};
 template<typename T>
 struct has_version_attribute<
   T,
-  std::void_t<decltype(std::declval<T>().redpanda_serde_compat_version)>>
+  std::void_t<decltype(std::declval<T>().redpanda_serde_version)>>
   : std::true_type {};
 
 template<typename T, typename = void>
