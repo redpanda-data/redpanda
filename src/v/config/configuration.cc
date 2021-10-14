@@ -833,7 +833,7 @@ configuration::configuration()
       "Directory for archival cache. Should be present when "
       "`cloud_storage_enabled` is present",
       required::no,
-      (data_directory.value().path / "archival_cache").native())
+      std::nullopt)
   , cloud_storage_cache_size(
       *this,
       "cloud_storage_cache_size",
