@@ -25,8 +25,6 @@ read_nested(iobuf_parser& in, timestamp& ts, size_t const bytes_left_limit) {
     ts = model::timestamp{val};
 }
 
-inline void write(iobuf& out, timestamp ts) {
-    serde::write(out, ts.value());
-}
+inline void write(iobuf& out, timestamp ts) { serde::write(out, ts.value()); }
 
 } // namespace model
