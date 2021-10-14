@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -80,15 +81,21 @@ func latestClientApiVersion() string {
 		return defApiVersion
 	}
 
-	var result map[string]interface{}
-	if err := json.Unmarshal([]byte(output[2]), &result); err != nil {
+	wasmApi := strings.Join(output, "")
+	var result []map[string]interface{}
+	if err := json.Unmarshal([]byte(wasmApi), &result); err != nil {
 		fmt.Println("Can not parse json from npm search: {}, Error: {}", output, err)
 		return defApiVersion
 	}
 
-	version, ok := result["version"].(string)
+	if len(result) != 1 {
+		fmt.Printf("Wrong npm search result: %v", result)
+		return defApiVersion
+	}
+
+	version, ok := result[0]["version"].(string)
 	if !ok {
-		fmt.Println("Can not get version from npm search result: {}", output)
+		fmt.Println("Can not get version from npm search result: {}", result)
 		return defApiVersion
 	}
 	return version
