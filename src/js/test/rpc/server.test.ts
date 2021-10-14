@@ -117,10 +117,10 @@ describe("Server", function () {
       });
     });
 
-    afterEach(async () => {
+    afterEach(() => {
       client.close();
       sinonInstance.restore();
-      await server.closeConnection();
+      return server.closeConnection();
     });
 
     it(
@@ -430,102 +430,49 @@ describe("Server", function () {
     });
 
     it("should enable coprocessor", () => {
-      const server = new ProcessBatchServer();
       server.loadCoprocFromString = () => [
         createHandle().coprocessor,
         undefined,
       ];
-      server.listen(8080);
-      return SupervisorClient.create(8080).then((client) => {
-        client
-          .enable_coprocessors({
-            coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
-          })
-          .then((response) => {
-            response.responses.forEach((responseItem) => {
-              assert.strictEqual(
-                responseItem.enableResponseCode,
-                EnableResponseCodes.success
-              );
-              assert.strictEqual(
-                responseItem.scriptMetadata.id,
-                createHandle().coprocessor.globalId
-              );
-              const metaDataExpected: EnableCoprocessorMetadata = {
-                id: createHandle().coprocessor.globalId,
-                inputTopic: createHandle().coprocessor.inputTopics.map(
-                  ([topic, policy]) => ({
-                    topic,
-                    ingestion_policy: policy,
-                  })
-                ),
-              };
-              assert.deepStrictEqual(
-                responseItem.scriptMetadata,
-                metaDataExpected
-              );
-            });
-          })
-          .finally(() => {
-            client.close();
-            server.closeConnection();
+      return client
+        .enable_coprocessors({
+          coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
+        })
+        .then((response) => {
+          response.responses.forEach((responseItem) => {
+            assert.strictEqual(
+              responseItem.enableResponseCode,
+              EnableResponseCodes.success
+            );
+            assert.strictEqual(
+              responseItem.scriptMetadata.id,
+              createHandle().coprocessor.globalId
+            );
+            const metaDataExpected: EnableCoprocessorMetadata = {
+              id: createHandle().coprocessor.globalId,
+              inputTopic: createHandle().coprocessor.inputTopics.map(
+                ([topic, policy]) => ({
+                  topic,
+                  ingestion_policy: policy,
+                })
+              ),
+            };
+            assert.deepStrictEqual(
+              responseItem.scriptMetadata,
+              metaDataExpected
+            );
           });
-      });
+        });
     });
 
     it(
       "shouldn't enable coprocessor if the coprocessor doesn't " +
         "have topics",
       () => {
-        const server = new ProcessBatchServer();
         const coprocessor = createHandle().coprocessor;
         coprocessor.inputTopics = [];
         server.loadCoprocFromString = () => [coprocessor, undefined];
-        server.listen(8080);
-        return SupervisorClient.create(8080).then((client) => {
-          client
-            .enable_coprocessors({
-              coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
-            })
-            .then((response) => {
-              response.responses.forEach((responseItem) => {
-                assert.strictEqual(
-                  responseItem.enableResponseCode,
-                  EnableResponseCodes.scriptContainsNoTopics
-                );
-                assert.strictEqual(
-                  responseItem.scriptMetadata.id,
-                  createHandle().coprocessor.globalId
-                );
-                const metaDataExpected: EnableCoprocessorMetadata = {
-                  id: createHandle().coprocessor.globalId,
-                  inputTopic: [],
-                };
-                assert.deepStrictEqual(
-                  responseItem.scriptMetadata,
-                  metaDataExpected
-                );
-              });
-            })
-            .finally(() => {
-              client.close();
-              server.closeConnection();
-            });
-        });
-      }
-    );
-
-    it("shouldn't enable coprocessor if the coprocessor has invalid topics", () => {
-      const server = new ProcessBatchServer();
-      const coprocessor = createHandle().coprocessor;
-      // % isn't a available character for a topic name, for that reason
-      // 'topic%' should fail when we try to enable a coproc with that
-      // topic subscription
-      coprocessor.inputTopics = [["topic%", PolicyInjection.Stored]];
-      server.loadCoprocFromString = (_, _2) => [coprocessor, undefined];
-      server.listen(8080);
-      return SupervisorClient.create(8080).then((client) => {
-        client
+        return client
           .enable_coprocessors({
             coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
           })
@@ -533,7 +480,7 @@ describe("Server", function () {
             response.responses.forEach((responseItem) => {
               assert.strictEqual(
                 responseItem.enableResponseCode,
-                EnableResponseCodes.scriptContainsInvalidTopic
+                EnableResponseCodes.scriptContainsNoTopics
               );
               assert.strictEqual(
                 responseItem.scriptMetadata.id,
@@ -548,16 +495,44 @@ describe("Server", function () {
                 metaDataExpected
               );
             });
-          })
-          .finally(() => {
-            client.close();
-            server.closeConnection();
           });
-      });
+      }
+    );
+
+    it("shouldn't enable coprocessor if the coprocessor has invalid topics", () => {
+      const coprocessor = createHandle().coprocessor;
+      // % isn't a available character for a topic name, for that reason
+      // 'topic%' should fail when we try to enable a coproc with that
+      // topic subscription
+      coprocessor.inputTopics = [["topic%", PolicyInjection.Stored]];
+      server.loadCoprocFromString = (_, _2) => [coprocessor, undefined];
+      return client
+        .enable_coprocessors({
+          coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
+        })
+        .then((response) => {
+          response.responses.forEach((responseItem) => {
+            assert.strictEqual(
+              responseItem.enableResponseCode,
+              EnableResponseCodes.scriptContainsInvalidTopic
+            );
+            assert.strictEqual(
+              responseItem.scriptMetadata.id,
+              createHandle().coprocessor.globalId
+            );
+            const metaDataExpected: EnableCoprocessorMetadata = {
+              id: createHandle().coprocessor.globalId,
+              inputTopic: [],
+            };
+            assert.deepStrictEqual(
+              responseItem.scriptMetadata,
+              metaDataExpected
+            );
+          });
+        });
     });
 
     it("shouldn't enable coprocessor if the coprocessor has js errors", () => {
-      const server = new ProcessBatchServer();
       server.loadCoprocFromString = (_, _2) => [
         undefined,
         err.createResponseInternalError({
@@ -565,154 +540,115 @@ describe("Server", function () {
           source_code: Buffer.from(""),
         }),
       ];
-      server.listen(8080);
-      return SupervisorClient.create(8080).then((client) => {
-        client
-          .enable_coprocessors({
-            coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
-          })
-          .then((response) => {
-            response.responses.forEach((responseItem) => {
-              assert.strictEqual(
-                responseItem.enableResponseCode,
-                EnableResponseCodes.internalError
-              );
-              assert.strictEqual(
-                responseItem.scriptMetadata.id,
-                createHandle().coprocessor.globalId
-              );
-              const metaDataExpected: EnableCoprocessorMetadata = {
-                id: createHandle().coprocessor.globalId,
-                inputTopic: [],
-              };
-              assert.deepStrictEqual(
-                responseItem.scriptMetadata,
-                metaDataExpected
-              );
-            });
-          })
-          .finally(() => {
-            client.close();
-            server.closeConnection();
+      return client
+        .enable_coprocessors({
+          coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
+        })
+        .then((response) => {
+          response.responses.forEach((responseItem) => {
+            assert.strictEqual(
+              responseItem.enableResponseCode,
+              EnableResponseCodes.internalError
+            );
+            assert.strictEqual(
+              responseItem.scriptMetadata.id,
+              createHandle().coprocessor.globalId
+            );
+            const metaDataExpected: EnableCoprocessorMetadata = {
+              id: createHandle().coprocessor.globalId,
+              inputTopic: [],
+            };
+            assert.deepStrictEqual(
+              responseItem.scriptMetadata,
+              metaDataExpected
+            );
           });
-      });
+        });
     });
 
     it("should disable coprocessor", () => {
-      const server = new ProcessBatchServer();
       const coprocessor = createHandle().coprocessor;
       server.loadCoprocFromString = () => [coprocessor, undefined];
-      server.listen(8080);
-      return SupervisorClient.create(8080).then((client) => {
-        client
-          .enable_coprocessors({
-            coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
-          })
-          .then((response) => {
-            response.responses.forEach((responseItem) => {
-              assert.strictEqual(
-                responseItem.enableResponseCode,
-                EnableResponseCodes.success
-              );
-            });
-          })
-          .then(() =>
-            client.disable_coprocessors({ ids: [coprocessor.globalId] })
-          )
-          .then((disableResponse) => {
-            disableResponse.responses.forEach((response) => {
-              assert.strictEqual(
-                response.disableResponseCode,
-                DisableResponseCode.success
-              );
-              assert.strictEqual(response.id, coprocessor.globalId);
-            });
-          })
-          .finally(() => {
-            client.close();
-            server.closeConnection();
+      return client
+        .enable_coprocessors({
+          coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
+        })
+        .then((response) => {
+          response.responses.forEach((responseItem) => {
+            assert.strictEqual(
+              responseItem.enableResponseCode,
+              EnableResponseCodes.success
+            );
           });
-      });
+        })
+        .then(() =>
+          client.disable_coprocessors({ ids: [coprocessor.globalId] })
+        )
+        .then((disableResponse) => {
+          disableResponse.responses.forEach((response) => {
+            assert.strictEqual(
+              response.disableResponseCode,
+              DisableResponseCode.success
+            );
+            assert.strictEqual(response.id, coprocessor.globalId);
+          });
+        });
     });
 
     it("shouldn't disable a coprocessor if this given id doesn't exist", () => {
-      const server = new ProcessBatchServer();
       const coprocessor = createHandle().coprocessor;
       server.loadCoprocFromString = () => [coprocessor, undefined];
-      server.listen(8080);
-      return SupervisorClient.create(8080).then((client) => {
-        client
-          .disable_coprocessors({ ids: [coprocessor.globalId] })
-          .then((disableResponse) => {
-            disableResponse.responses.forEach((response) => {
-              assert.strictEqual(
-                response.disableResponseCode,
-                DisableResponseCode.scriptDoesNotExist
-              );
-              assert.strictEqual(response.id, coprocessor.globalId);
-            });
-          })
-          .finally(() => {
-            client.close();
-            server.closeConnection();
+      return client
+        .disable_coprocessors({ ids: [coprocessor.globalId] })
+        .then((disableResponse) => {
+          disableResponse.responses.forEach((response) => {
+            assert.strictEqual(
+              response.disableResponseCode,
+              DisableResponseCode.scriptDoesNotExist
+            );
+            assert.strictEqual(response.id, coprocessor.globalId);
           });
-      });
+        });
     });
 
     it("should disable all coprocessor", () => {
-      const server = new ProcessBatchServer();
       const coprocessor = createHandle().coprocessor;
       server.loadCoprocFromString = () => [coprocessor, undefined];
-      server.listen(8080);
-      return SupervisorClient.create(8080).then((client) => {
-        client
-          .enable_coprocessors({
-            coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
-          })
-          .then((response) => {
-            response.responses.forEach((responseItem) => {
-              assert.strictEqual(
-                responseItem.enableResponseCode,
-                EnableResponseCodes.success
-              );
-            });
-          })
-          .then(() => client.disable_all_coprocessors({ empty: 0 }))
-          .then((response) => {
-            response.responses.forEach((response) => {
-              assert.strictEqual(response.id, coprocessor.globalId);
-              assert.strictEqual(
-                response.disableResponseCode,
-                DisableResponseCode.success
-              );
-            });
-          })
-          .finally(() => {
-            client.close();
-            server.closeConnection();
+      return client
+        .enable_coprocessors({
+          coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
+        })
+        .then((response) => {
+          response.responses.forEach((responseItem) => {
+            assert.strictEqual(
+              responseItem.enableResponseCode,
+              EnableResponseCodes.success
+            );
           });
-      });
+        })
+        .then(() => client.disable_all_coprocessors({ empty: 0 }))
+        .then((response) => {
+          response.responses.forEach((response) => {
+            assert.strictEqual(response.id, coprocessor.globalId);
+            assert.strictEqual(
+              response.disableResponseCode,
+              DisableResponseCode.success
+            );
+          });
+        });
     });
 
     it(
       "should disable all coprocessor though there aren't " +
         "registered coprocessor",
       () => {
-        const server = new ProcessBatchServer();
         const coprocessor = createHandle().coprocessor;
         server.loadCoprocFromString = () => [coprocessor, undefined];
-        server.listen(8080);
-        return SupervisorClient.create(8080).then((client) => {
-          client
-            .disable_all_coprocessors({ empty: 0 })
-            .then((response) => {
-              assert.deepStrictEqual(response.responses, []);
-            })
-            .finally(() => {
-              client.close();
-              server.closeConnection();
-            });
-        });
+        return client
+          .disable_all_coprocessors({ empty: 0 })
+          .then((response) => {
+            assert.deepStrictEqual(response.responses, []);
+          });
       }
     );
 
@@ -749,21 +685,11 @@ describe("Server", function () {
             },
           ],
         };
-        const server = new ProcessBatchServer();
-        server.listen(8080);
-        return SupervisorClient.create(8080).then((client) =>
-          client
-            .process_batch(request)
-            .then((results) => {
-              const result = results.result[0];
-              assert.deepStrictEqual(result.resultRecordBatch, []);
-              assert.strictEqual(result.coprocessorId, BigInt(1));
-            })
-            .finally(() => {
-              client.close();
-              server.closeConnection();
-            })
-        );
+        return client.process_batch(request).then((results) => {
+          const result = results.result[0];
+          assert.deepStrictEqual(result.resultRecordBatch, []);
+          assert.strictEqual(result.coprocessorId, BigInt(1));
+        });
       }
     );
 
@@ -805,23 +731,13 @@ describe("Server", function () {
             },
           ],
         };
-        const server = new ProcessBatchServer();
-        server.listen(8080);
-        return SupervisorClient.create(8080).then((client) =>
-          client
-            .process_batch(request)
-            .then((results) => {
-              const result = results.result[0];
-              assert.deepStrictEqual(result.resultRecordBatch, undefined);
-              assert.strictEqual(result.coprocessorId, BigInt(1));
-              assert(removeRepositoryMock.called);
-              assert(removeRepositoryMock.withArgs(handle));
-            })
-            .finally(() => {
-              client.close();
-              server.closeConnection();
-            })
-        );
+        return client.process_batch(request).then((results) => {
+          const result = results.result[0];
+          assert.deepStrictEqual(result.resultRecordBatch, undefined);
+          assert.strictEqual(result.coprocessorId, BigInt(1));
+          assert(removeRepositoryMock.called);
+          assert(removeRepositoryMock.withArgs(handle));
+        });
       }
     );
 
