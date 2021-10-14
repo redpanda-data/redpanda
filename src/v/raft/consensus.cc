@@ -124,6 +124,13 @@ void consensus::setup_metrics() {
 
 void consensus::do_step_down() {
     _hbeat = clock_type::now();
+    if (_vstate == vote_state::leader) {
+        vlog(
+          _ctxlog.info,
+          "Stepping down as leader in term {}, dirty offset {}",
+          _term,
+          _log.offsets().dirty_offset);
+    }
     _vstate = vote_state::follower;
 }
 
