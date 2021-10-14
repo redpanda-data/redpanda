@@ -13,6 +13,7 @@
 #include "cluster/types.h"
 #include "rpc/connection_cache.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
 
 #include <vector>
@@ -48,7 +49,13 @@ public:
     ss::future<allocate_id_reply>
     allocate_id(model::timeout_clock::duration timeout);
 
+    ss::future<> stop() {
+        _as.request_abort();
+        return ss::make_ready_future<>();
+    }
+
 private:
+    ss::abort_source _as;
     ss::smp_service_group _ssg;
     ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<cluster::shard_table>& _shard_table;

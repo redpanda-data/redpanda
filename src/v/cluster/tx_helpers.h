@@ -5,5 +5,6 @@
 #include <seastar/core/sleep.hh>
 
 namespace cluster {
-ss::future<bool> sleep_abortable(std::chrono::milliseconds dur);
+ss::future<bool>
+sleep_abortable(std::chrono::milliseconds dur, ss::abort_source& as);
 }

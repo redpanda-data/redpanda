@@ -87,7 +87,7 @@ id_allocator_frontend::allocate_id(model::timeout_clock::duration timeout) {
               "waiting for {} to fill leaders cache, retries left: {}",
               model::id_allocator_ntp,
               retries);
-            aborted = !co_await sleep_abortable(delay_ms);
+            aborted = !co_await sleep_abortable(delay_ms, _as);
             continue;
         }
         auto leader = leader_opt.value();
@@ -116,7 +116,7 @@ id_allocator_frontend::allocate_id(model::timeout_clock::duration timeout) {
         error = fmt::format("id allocation failed with {}", r.ec);
         vlog(
           clusterlog.trace, "id allocation failed, retries left: {}", retries);
-        aborted = !co_await sleep_abortable(delay_ms);
+        aborted = !co_await sleep_abortable(delay_ms, _as);
     }
 
     if (error) {
@@ -162,7 +162,7 @@ id_allocator_frontend::do_allocate_id(model::timeout_clock::duration timeout) {
         auto delay_ms = _metadata_dissemination_retry_delay_ms;
         auto aborted = false;
         while (!aborted && !shard && 0 < retries--) {
-            aborted = !co_await sleep_abortable(delay_ms);
+            aborted = !co_await sleep_abortable(delay_ms, _as);
             shard = _shard_table.local().shard_for(model::id_allocator_ntp);
         }
 

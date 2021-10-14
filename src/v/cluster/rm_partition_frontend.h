@@ -17,6 +17,8 @@
 #include "rpc/fwd.h"
 #include "seastarx.h"
 
+#include <seastar/core/abort_source.hh>
+
 namespace cluster {
 
 class rm_partition_frontend {
@@ -53,8 +55,13 @@ public:
       model::producer_identity,
       model::tx_seq,
       model::timeout_clock::duration);
+    ss::future<> stop() {
+        _as.request_abort();
+        return ss::make_ready_future<>();
+    }
 
 private:
+    ss::abort_source _as;
     ss::smp_service_group _ssg;
     ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<cluster::shard_table>& _shard_table;
