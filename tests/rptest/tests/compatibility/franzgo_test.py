@@ -1,4 +1,4 @@
-# Copyright 2020 Vectorized, Inc.
+# Copyright 2021 Vectorized, Inc.
 #
 # Use of this software is governed by the Business Source License
 # included in the file licenses/BSL.md
@@ -13,6 +13,7 @@ from ducktape.utils.util import wait_until
 from rptest.services.compatibility.compat_example import CompatExample
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
+import math
 
 
 class FranzGoBase(RedpandaTest):
@@ -23,42 +24,47 @@ class FranzGoBase(RedpandaTest):
     """
     topics = (TopicSpec(), )
 
-    def __init__(self, test_context):
+    def __init__(self, test_context, enable_sasl=False):
         # idempotence is necessary for bench example
-        extra_rp_conf = {"enable_idempotence": True}
+        extra_rp_conf = {
+            "enable_idempotence": True,
+            "enable_sasl": enable_sasl
+        }
         self._ctx = test_context
 
         super(FranzGoBase, self).__init__(test_context=test_context,
                                           extra_rp_conf=extra_rp_conf)
 
+        # In CI, it takes approx 300s to produce/consume 1mill records (or 3333.33 records/s).
+        # The closest factor of 1mill is 320s (or 3125 records/s).
+        # Also, add 30 seconds because sometimes franzgo doesn't produce/consume
+        # immediatly since RP is in middle of election or other
+        # background tasks.
+        gen_timeout = lambda r: math.ceil(r / 3125) + 30
+
         # A representation of the bench producer endpoint
         self._prod_conf = {
             "consume": False,
-
             # Amount of records to produce.
-            # 1mill seems like a good starting point. Could be scaled.
-            "max_records": 1000000,
-
-            # Custom timeout of 30s instead of the default 10s
-            # because sometimes no records are produced early on
-            # which eats-up execution time.
-            "timeout": 300
+            "max_records": 1000 if self.scale.local else 1000000,
+            "enable_sasl": enable_sasl
         }
-        self._producer = None
+        self._prod_conf["timeout"] = gen_timeout(
+            self._prod_conf["max_records"])
+        self.logger.debug(self._prod_conf["timeout"])
 
         # A representation of the bench consumer endpoint
         self._cons_conf = {
             "consume": True,
-
-            # Amount of records to consume
-            # 1mill seems like a good starting point. Could be scaled.
-            "max_records": 1000000,
-
-            # Custom timeout of 120s instead of the default 10s
-            # because the default is not long enough to consume
-            # 1mill records.
-            "timeout": 300
+            # Amount of records to consume.
+            "max_records": 1000 if self.scale.local else 1000000,
+            "enable_sasl": enable_sasl
         }
+        self._cons_conf["timeout"] = gen_timeout(
+            self._cons_conf["max_records"])
+        self.logger.debug(self._cons_conf["timeout"])
+
+        self._producer = None
         self._consumer = None
 
     def setUp(self):
@@ -91,10 +97,8 @@ class FranzGoWithoutGroupTest(FranzGoBase):
         self._producer.start()
 
         # Wait until the example is ok.
-        # Add 30s to the timeout incase the example
-        # took the full amount of time to produce
         wait_until(lambda: self._producer.ok(),
-                   timeout_sec=self._prod_conf["timeout"] + 30,
+                   timeout_sec=self._prod_conf["timeout"],
                    backoff_sec=5,
                    err_msg="franz-go bench_wo_group produce test failed")
 
@@ -104,10 +108,8 @@ class FranzGoWithoutGroupTest(FranzGoBase):
         self._consumer.start()
 
         # Wait until the example is OK to terminate
-        # Add 30s to the timeout incase the example
-        # took the full amount of time to consume
         wait_until(lambda: self._consumer.ok(),
-                   timeout_sec=self._cons_conf["timeout"] + 30,
+                   timeout_sec=self._cons_conf["timeout"],
                    backoff_sec=5,
                    err_msg="franz-go bench_wo_group consume test failed")
 
@@ -119,11 +121,9 @@ class FranzGoWithGroupTest(FranzGoBase):
     def __init__(self, test_context):
         super(FranzGoWithGroupTest, self).__init__(test_context=test_context)
 
-        # Using TopicSpec to generate random string
-        string_gen = TopicSpec()
-
         # Add group to the consumer configuration
-        self._cons_conf["group"] = f"group-{string_gen._random_topic_suffix()}"
+        self._cons_conf[
+            "group"] = f"group-{self.topics[0]._random_topic_suffix()}"
 
     @cluster(num_nodes=5)
     def test_franzgo_bench_w_group(self):
@@ -131,10 +131,8 @@ class FranzGoWithGroupTest(FranzGoBase):
         self._producer.start()
 
         # Wait until the example is ok.
-        # Add 30s to the timeout incase the example
-        # took the full amount of time to produce
         wait_until(lambda: self._producer.ok(),
-                   timeout_sec=self._prod_conf["timeout"] + 30,
+                   timeout_sec=self._prod_conf["timeout"],
                    backoff_sec=5,
                    err_msg="franz-go bench_w_group produce test failed")
 
@@ -144,9 +142,38 @@ class FranzGoWithGroupTest(FranzGoBase):
         self._consumer.start()
 
         # Wait until the example is OK to terminate
-        # Add 30s to the timeout incase the example
-        # took the full amount of time to consume
         wait_until(lambda: self._consumer.ok(),
-                   timeout_sec=self._cons_conf["timeout"] + 30,
+                   timeout_sec=self._cons_conf["timeout"],
                    backoff_sec=5,
                    err_msg="franz-go bench_w_group consume test failed")
+
+
+class FranzGoAuthTest(FranzGoBase):
+    """
+    Test FranzGo bench example using sasl authentication.
+    """
+    def __init__(self, test_context):
+        super(FranzGoAuthTest, self).__init__(test_context=test_context,
+                                              enable_sasl=True)
+
+    @cluster(num_nodes=5)
+    def test_franzgo_bench_w_auth(self):
+        # Start the produce bench
+        self._producer.start()
+
+        # Wait until the example is ok.
+        wait_until(lambda: self._producer.ok(),
+                   timeout_sec=self._prod_conf["timeout"],
+                   backoff_sec=5,
+                   err_msg="franz-go bench_no_auth produce test failed")
+
+        # Start the consume bench.
+        # Running the example sequentially because
+        # it's easier to debug.
+        self._consumer.start()
+
+        # Wait until the example is OK to terminate
+        wait_until(lambda: self._consumer.ok(),
+                   timeout_sec=self._cons_conf["timeout"],
+                   backoff_sec=5,
+                   err_msg="franz-go bench_no_auth consume test failed")
