@@ -43,7 +43,7 @@ public:
 
 class remote_segment_exception : public std::runtime_error {
 public:
-    explicit remote_segment_exception(const char* m)
+    explicit remote_segment_exception(const std::string& m)
       : std::runtime_error(m) {}
 };
 
@@ -56,6 +56,12 @@ public:
       const manifest& m,
       manifest::key path,
       retry_chain_node& parent);
+
+    remote_segment(const remote_segment&) = delete;
+    remote_segment(remote_segment&&) = delete;
+    remote_segment& operator=(const remote_segment&) = delete;
+    remote_segment& operator=(remote_segment&&) = delete;
+    ~remote_segment() = default;
 
     const model::ntp& get_ntp() const;
 
@@ -79,14 +85,17 @@ public:
     /// create an input stream _sharing_ the underlying file handle
     /// starting at position @pos
     ss::future<ss::input_stream<char>>
-    data_stream(size_t pos, const ss::io_priority_class&);
+    data_stream(size_t pos, ss::io_priority_class);
 
     /// Hydrate the segment
     ///
     /// Method returns key of the segment in cache.
     ss::future<std::filesystem::path> hydrate();
 
+    retry_chain_node* get_retry_chain_node() { return &_rtc; }
+
 private:
+
     /// Hydrates segment in the background if there is any consumer
     ss::future<> run_hydrate_bg();
 
@@ -97,7 +106,7 @@ private:
     const manifest& _manifest;
     manifest::key _path;
     retry_chain_node _rtc;
-    mutable retry_chain_logger _ctxlog;
+    retry_chain_logger _ctxlog;
     ss::abort_source _as;
     /// Notifies the background hydration fiber
     ss::condition_variable _bg_cvar;
@@ -110,6 +119,25 @@ private:
       _wait_list;
 };
 
+/// Log reader config for shadow-indexing
+///
+/// The difference between storage::log_reader_config and this
+/// object is that storage::log_reader_config stores redpanda
+/// offsets in start_offset and max_offset fields. The
+/// cloud_storage::log_reader_config stores kafka offsets in these
+/// fields. It also adds extra field 'start_offset_redpanda' which
+/// always contain the same offset as 'start_offset' but translated
+/// from kafka to redpanda.
+///
+/// The problem here is that shadow-indexing operates on sparse data.
+/// It can't translate every offset. Only the base offsets of uploaded
+/// segment. But it can also translate offsets as it scans the segment.
+/// But this is all done internally, so caller have to proviede kafka
+/// offsets. Mechanisms which require redpanda offset can use
+/// 'start_offset_redpanda' field. It's guaranteed to point to the same
+/// record batch but the offset is not translated back to kafka. This is
+/// useful since we can, for instance, compare it to committed_offset of
+/// the uploaded segment to know that we scanned the whole segment.
 struct log_reader_config : public storage::log_reader_config {
     explicit log_reader_config(const storage::log_reader_config& cfg)
       : storage::log_reader_config(cfg)
@@ -131,6 +159,8 @@ class remote_segment_batch_consumer;
 ///
 /// The reader invokes 'data_stream' method of the 'remote_segment'
 /// which returns hydrated segment from disk.
+/// The batches returned from the reader have offsets which are already
+/// translated.
 class remote_segment_batch_reader final {
     friend class remote_segment_batch_consumer;
 
@@ -140,7 +170,7 @@ public:
       const log_reader_config& config) noexcept;
 
     remote_segment_batch_reader(
-      remote_segment_batch_reader&&) noexcept = default;
+      remote_segment_batch_reader&&) noexcept = delete;
     remote_segment_batch_reader&
     operator=(remote_segment_batch_reader&&) noexcept = delete;
     remote_segment_batch_reader(const remote_segment_batch_reader&) = delete;
@@ -173,6 +203,9 @@ private:
     std::unique_ptr<storage::continuous_batch_parser> _parser;
     ss::circular_buffer<model::record_batch> _ringbuf;
     size_t _total_size{0};
+    retry_chain_node _rtc;
+    retry_chain_logger _ctxlog;
+    model::term_id _term;
     model::offset _initial_delta;
 };
 

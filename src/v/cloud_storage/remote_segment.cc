@@ -14,15 +14,13 @@
 #include "cloud_storage/logger.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
+#include "resource_mgmt/io_priority.h"
 #include "storage/parser.h"
-#include "utils/gate_guard.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_utils.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
-#include <seastar/core/condition-variable.hh>
-#include <seastar/core/future.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -32,7 +30,6 @@
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/util/log.hh>
 
-#include <cstdio>
 #include <exception>
 
 namespace cloud_storage {
@@ -60,7 +57,7 @@ const char* download_exception::what() const noexcept {
     case download_result::timedout:
         return "TimedOut";
     case download_result::success:
-        return "Success";
+        vassert(false, "Successful result can't be used as an error");
     }
     __builtin_unreachable();
 }
@@ -96,40 +93,40 @@ const model::offset remote_segment::get_max_rp_offset() const {
     const auto meta = _manifest.get(_path);
     // The remote_segment is built based on manifest so we can
     // expect the _path to be present in the manifest.
-    vassert(meta, "Can't find segment metadata in manifest");
+    vassert(
+      meta, "Can't find segment metadata in manifest, segment path: {}", _path);
     return meta->committed_offset;
 }
 
 const model::offset remote_segment::get_base_offset_delta() const {
     const auto meta = _manifest.get(_path);
-    vassert(meta, "Can't find segment metadata in manifest");
+    vassert(
+      meta, "Can't find segment metadata in manifest, segment path: {}", _path);
     return std::clamp(
       meta->delta_offset, model::offset(0), model::offset::max());
 }
 
 const model::offset remote_segment::get_base_rp_offset() const {
     const auto meta = _manifest.get(_path);
-    vassert(meta, "Can't find segment metadata in manifest");
+    vassert(
+      meta, "Can't find segment metadata in manifest, segment path: {}", _path);
     return meta->base_offset;
 }
 
 const model::offset remote_segment::get_base_kafka_offset() const {
     const auto meta = _manifest.get(_path);
-    vassert(meta, "Can't find segment metadata in manifest");
+    vassert(
+      meta, "Can't find segment metadata in manifest, segment path: {}", _path);
     auto delta = std::clamp(
       meta->delta_offset, model::offset(0), model::offset::max());
     return meta->base_offset - delta;
 }
 
 const model::term_id remote_segment::get_term() const {
-    std::filesystem::path p;
-    if (std::holds_alternative<segment_name>(_path)) {
-        p = std::get<segment_name>(_path)();
-    } else {
-        p = std::get<remote_segment_path>(_path)();
-    }
+    std::filesystem::path p = std::visit(
+      [](auto&& arg) { return std::filesystem::path(arg()); }, _path);
     auto [_, term, success] = parse_segment_name(p);
-    vassert(success, "Can't parse segment name");
+    vassert(success, "Can't parse segment name, name: {}", p);
     return term;
 }
 
@@ -141,9 +138,9 @@ ss::future<> remote_segment::stop() {
 }
 
 ss::future<ss::input_stream<char>>
-remote_segment::data_stream(size_t pos, const ss::io_priority_class&) {
+remote_segment::data_stream(size_t pos, ss::io_priority_class) {
     vlog(_ctxlog.debug, "remote segment file input stream at {}", pos);
-    gate_guard g(_gate);
+    ss::gate::holder g(_gate);
     // Hydrate segment on disk
     auto full_path = co_await hydrate();
     // Create a file stream
@@ -151,7 +148,8 @@ remote_segment::data_stream(size_t pos, const ss::io_priority_class&) {
     if (opt) {
         co_return std::move(opt->body);
     }
-    throw remote_segment_exception("Segment already evicted");
+    throw remote_segment_exception(
+      fmt::format("Segment {} already evicted", full_path));
 }
 
 ss::future<> remote_segment::run_hydrate_bg() {
@@ -275,11 +273,15 @@ public:
       log_reader_config& conf,
       remote_segment_batch_reader& parent,
       model::term_id term,
-      model::offset initial_delta)
+      model::offset initial_delta,
+      const model::ntp& ntp,
+      retry_chain_node& rtc)
       : _config(conf)
       , _parent(parent)
       , _term(term)
-      , _delta(initial_delta) {}
+      , _delta(initial_delta)
+      , _rtc(&rtc)
+      , _ctxlog(cst_log, _rtc, ntp.path()) {}
 
     /// Translate redpanda offset to kafka offset
     ///
@@ -322,17 +324,15 @@ public:
     consume_result accept_batch_start(
       const model::record_batch_header& header) const override {
         vlog(
-          cst_log.debug,
-          "remote_segment_batch_consumer::accept_batch_start {}, current "
-          "delta: {}",
+          _ctxlog.trace,
+          "accept_batch_start {}, current delta: {}",
           header,
           _delta);
 
         if (rp_to_kafka(header.base_offset) > _config.max_offset) {
             vlog(
-              cst_log.debug,
-              "remote_segment_batch_consumer::accept_batch_start stop parser "
-              "because {} > {}(kafka offset)",
+              _ctxlog.debug,
+              "accept_batch_start stop parser because {} > {}(kafka offset)",
               header.base_offset(),
               _config.max_offset);
             return batch_consumer::consume_result::stop_parser;
@@ -343,9 +343,9 @@ public:
         // handle this scenario anyway.
         if (model::record_batch_type::raft_data != header.type) {
             vlog(
-              cst_log.debug,
-              "remote_segment_batch_consumer::accept_batch_start skip because "
-              "of filter");
+              _ctxlog.debug,
+              "accept_batch_start skip because record batch type is {}",
+              header.type);
             return batch_consumer::consume_result::skip_batch;
         }
 
@@ -354,8 +354,8 @@ public:
         if (unlikely(
               rp_to_kafka(header.last_offset()) < _config.start_offset)) {
             vlog(
-              cst_log.debug,
-              "remote_segment_batch_consumer::accept_batch_start skip because "
+              _ctxlog.debug,
+              "accept_batch_start skip because "
               "last_kafka_offset {} (last_rp_offset: {}) < "
               "config.start_offset: {}",
               rp_to_kafka(header.last_offset()),
@@ -367,11 +367,7 @@ public:
         if (
           (_config.strict_max_bytes || _config.bytes_consumed)
           && (_config.bytes_consumed + header.size_bytes) > _config.max_bytes) {
-            vlog(
-              cst_log.debug,
-              "remote_segment_batch_consumer::accept_batch_start stop because "
-              "overbudget");
-            // signal to log reader to stop (see log_reader::is_done)
+            vlog(_ctxlog.debug, "accept_batch_start stop because overbudget");
             _config.over_budget = true;
             return batch_consumer::consume_result::stop_parser;
         }
@@ -380,24 +376,22 @@ public:
             // kakfa needs to guarantee that the returned record is >=
             // first_timestamp
             vlog(
-              cst_log.debug,
-              "remote_segment_batch_consumer::accept_batch_start skip because "
-              "of timestamp");
+              _ctxlog.debug,
+              "accept_batch_start skip because header timestamp is {}",
+              header.first_timestamp);
             return batch_consumer::consume_result::skip_batch;
         }
         // we want to consume the batch
         return batch_consumer::consume_result::accept_batch;
     }
 
-    /**
-     * unconditionally consumes batch start
-     */
+    /// Consume batch start
     void consume_batch_start(
       model::record_batch_header header,
       size_t /*physical_base_offset*/,
       size_t /*size_on_disk*/) override {
         vlog(
-          cst_log.debug,
+          _ctxlog.trace,
           "consume_batch_start called for {}",
           header.base_offset);
         _header = header;
@@ -413,7 +407,7 @@ public:
         // changing the _delta. The _delta that is be used for current record
         // batch can only account record batches in all previous batches.
         vlog(
-          cst_log.debug, "skip_batch_start called for {}", header.base_offset);
+          _ctxlog.debug, "skip_batch_start called for {}", header.base_offset);
         advance_config_offsets(header);
         if (header.type != model::record_batch_type::raft_data) {
             _delta += header.last_offset_delta + model::offset{1};
@@ -458,22 +452,22 @@ private:
     model::record_batch_header _header;
     iobuf _records;
     model::term_id _term;
-    mutable model::offset _delta;
+    model::offset _delta;
+    retry_chain_node _rtc;
+    retry_chain_logger _ctxlog;
 };
 
 remote_segment_batch_reader::remote_segment_batch_reader(
   ss::lw_shared_ptr<remote_segment> s, const log_reader_config& config) noexcept
   : _seg(std::move(s))
   , _config(config)
+  , _rtc(_seg->get_retry_chain_node())
+  , _ctxlog(cst_log, _rtc, _seg->get_ntp().path())
   , _initial_delta(_seg->get_base_offset_delta()) {}
 
 ss::future<result<ss::circular_buffer<model::record_batch>>>
 remote_segment_batch_reader::read_some(
   model::timeout_clock::time_point deadline) {
-    vlog(
-      cst_log.debug,
-      "remote_segment_batch_reader::read_some(1) - ringbuf size={}",
-      _ringbuf.size());
     if (_ringbuf.empty()) {
         if (!_parser) {
             _parser = co_await init_parser();
@@ -483,37 +477,39 @@ remote_segment_batch_reader::read_some(
             co_return bytes_consumed.error();
         }
     }
-    vlog(
-      cst_log.debug,
-      "remote_segment_batch_reader::read_some(2) - ringbuf size={}",
-      _ringbuf.size());
     _total_size = 0;
     co_return std::move(_ringbuf);
 }
 
 ss::future<std::unique_ptr<storage::continuous_batch_parser>>
 remote_segment_batch_reader::init_parser() {
-    vlog(cst_log.debug, "remote_segment_batch_reader::init_parser");
-    auto stream = co_await _seg->data_stream(0, ss::default_priority_class());
+    vlog(_ctxlog.debug, "remote_segment_batch_reader::init_parser");
+    auto stream = co_await _seg->data_stream(
+      0, priority_manager::local().shadow_indexing_priority());
     auto parser = std::make_unique<storage::continuous_batch_parser>(
       std::make_unique<remote_segment_batch_consumer>(
-        _config, *this, _seg->get_term(), _initial_delta),
+        _config,
+        *this,
+        _seg->get_term(),
+        _initial_delta,
+        _seg->get_ntp(),
+        *_seg->get_retry_chain_node()),
       std::move(stream));
     co_return parser;
 }
 
 size_t remote_segment_batch_reader::produce(model::record_batch batch) {
-    vlog(cst_log.debug, "remote_segment_batch_reader::produce");
+    vlog(_ctxlog.debug, "remote_segment_batch_reader::produce");
     _total_size += batch.size_bytes();
     _ringbuf.push_back(std::move(batch));
     return _total_size;
 }
 
 ss::future<> remote_segment_batch_reader::stop() {
-    vlog(cst_log.debug, "remote_segment_batch_reader::close");
+    vlog(_ctxlog.debug, "remote_segment_batch_reader::close");
     if (_parser) {
         vlog(
-          cst_log.debug, "remote_segment_batch_reader::close - parser-close");
+          _ctxlog.debug, "remote_segment_batch_reader::close - parser-close");
         return _parser->close();
     }
     return ss::now();
