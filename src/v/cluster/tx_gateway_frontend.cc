@@ -106,6 +106,7 @@ void tx_gateway_frontend::start_expire_timer() {
 
 ss::future<> tx_gateway_frontend::stop() {
     _expire_timer.cancel();
+    _as.request_abort();
     return _gate.close();
 }
 
@@ -166,7 +167,7 @@ ss::future<try_abort_reply> tx_gateway_frontend::try_abort(
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
     auto aborted = false;
     while (!aborted && !leader_opt && 0 < retries--) {
-        aborted = !co_await sleep_abortable(delay_ms);
+        aborted = !co_await sleep_abortable(delay_ms, _as);
         leader_opt = _leaders.local().get_leader(model::tx_manager_ntp);
     }
 
@@ -207,7 +208,7 @@ ss::future<try_abort_reply> tx_gateway_frontend::try_abort_locally(
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
     auto aborted = false;
     while (!aborted && !shard && 0 < retries--) {
-        aborted = !co_await sleep_abortable(delay_ms);
+        aborted = !co_await sleep_abortable(delay_ms, _as);
         shard = _shard_table.local().shard_for(model::tx_manager_ntp);
     }
 
@@ -430,7 +431,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
           "waiting for {}/0 to fill metadata cache, retries left: {}",
           model::tx_manager_nt,
           retries);
-        aborted = !co_await sleep_abortable(delay_ms);
+        aborted = !co_await sleep_abortable(delay_ms, _as);
         has_metadata = _metadata_cache.local().contains(
           model::tx_manager_nt, model::tx_manager_ntp.tp.partition);
     }
@@ -452,7 +453,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
           "waiting for {} to fill leaders cache, retries left: {}",
           model::tx_manager_ntp,
           retries);
-        aborted = !co_await sleep_abortable(delay_ms);
+        aborted = !co_await sleep_abortable(delay_ms, _as);
         leader_opt = _leaders.local().get_leader(model::tx_manager_ntp);
     }
     if (!leader_opt) {
@@ -490,7 +491,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
     auto aborted = false;
     while (!aborted && !shard && 0 < retries--) {
-        aborted = !co_await sleep_abortable(delay_ms);
+        aborted = !co_await sleep_abortable(delay_ms, _as);
         shard = _shard_table.local().shard_for(model::tx_manager_ntp);
     }
 

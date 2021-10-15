@@ -78,7 +78,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
           "waiting for {} to fill metadata cache, retries left: {}",
           ntp,
           retries);
-        aborted = !co_await sleep_abortable(delay_ms);
+        aborted = !co_await sleep_abortable(delay_ms, _as);
         has_metadata = _metadata_cache.local().contains(nt, ntp.tp.partition);
     }
     if (!has_metadata) {
@@ -96,7 +96,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
           "waiting for {} to fill leaders cache, retries left: {}",
           ntp,
           retries);
-        aborted = !co_await sleep_abortable(delay_ms);
+        aborted = !co_await sleep_abortable(delay_ms, _as);
         leader_opt = _leaders.local().get_leader(ntp);
     }
 
@@ -112,7 +112,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
               "can't find {} in the leaders cache, retries left: {}",
               ntp,
               retries);
-            aborted = !co_await sleep_abortable(delay_ms);
+            aborted = !co_await sleep_abortable(delay_ms, _as);
             leader_opt = _leaders.local().get_leader(ntp);
             continue;
         }
@@ -135,7 +135,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
                   "leader', retries left: {}",
                   ntp,
                   retries);
-                aborted = !co_await sleep_abortable(delay_ms);
+                aborted = !co_await sleep_abortable(delay_ms, _as);
                 leader_opt = _leaders.local().get_leader(ntp);
                 continue;
             }
@@ -170,7 +170,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
               ntp,
               leader,
               retries);
-            aborted = !co_await sleep_abortable(delay_ms);
+            aborted = !co_await sleep_abortable(delay_ms, _as);
             leader_opt = _leaders.local().get_leader(ntp);
             continue;
         }

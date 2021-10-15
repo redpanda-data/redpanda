@@ -65,6 +65,7 @@ public:
     ss::future<> stop();
 
 private:
+    ss::abort_source _as;
     ss::gate _gate;
     ss::smp_service_group _ssg;
     ss::sharded<cluster::partition_manager>& _partition_manager;
