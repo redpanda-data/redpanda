@@ -5,6 +5,7 @@ v_cc_library(
     broker.cc
     brokers.cc
     client.cc
+    client_fetch_batch_reader.cc
     configuration.cc
     consumer.cc
     fetcher.cc

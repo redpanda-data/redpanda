@@ -95,6 +95,12 @@ ss::future<> pacemaker::stop() {
     /// prevent add_sources from adding new scripts.
     ss::future<> gate_closed = _gate.close();
     /// Deregister and clean-up resources
+    for (auto& [id, ps] : _updates) {
+        for (auto& p : ps) {
+            p.set_exception(wait_on_script_future_stranded(
+              fmt::format("Script {} startup future abandoned", id)));
+        }
+    }
     const size_t n_active_scripts = _scripts.size();
     const auto results = co_await remove_all_sources();
     const size_t n_removed = std::accumulate(
@@ -125,6 +131,7 @@ std::vector<errc> pacemaker::add_source(
     if (ctxs.empty()) {
         /// Failure occurred or no matching topics/ntps found
         /// Reasons are returned in the 'acks' structure
+        fire_updates(id, errc::topic_does_not_exist);
         return acks;
     }
     auto script_ctx = std::make_unique<script_context>(
@@ -133,6 +140,7 @@ std::vector<errc> pacemaker::add_source(
     vassert(success, "Double coproc insert detected");
     vlog(coproclog.debug, "Adding source with id: {}", id);
     (void)ss::with_gate(_gate, [this, id] {
+        fire_updates(id, errc::success);
         auto found = _scripts.find(id);
         if (found == _scripts.end()) {
             return ss::now();
@@ -235,6 +243,37 @@ ss::future<absl::btree_map<script_id, errc>> pacemaker::remove_all_sources() {
         results_map.emplace(id, result);
     }
     co_return results_map;
+}
+
+void pacemaker::fire_updates(script_id id, errc e) {
+    auto handle = _updates.extract(id);
+    if (!handle.empty()) {
+        auto update_vec = std::move(handle.mapped());
+        for (auto& p : update_vec) {
+            p.set_value(e);
+        }
+    }
+}
+
+ss::future<errc> pacemaker::wait_for_script(script_id id) {
+    if (_gate.is_closed()) {
+        return ss::make_exception_future<errc>(ss::gate_closed_exception());
+    }
+    if (_scripts.count(id)) {
+        return ss::make_ready_future<errc>(errc::success);
+    }
+    auto [itr, _] = _updates.try_emplace(id);
+    itr->second.emplace_back();
+    return itr->second.back().get_future();
+}
+
+ss::future<> pacemaker::wait_idle_state(script_id id) {
+    auto found = _scripts.find(id);
+    if (found == _scripts.end()) {
+        return ss::make_exception_future<>(
+          script_not_found(fmt::format("script {} not found", id)));
+    }
+    return found->second->wait_idle_state();
 }
 
 bool pacemaker::local_script_id_exists(script_id id) {

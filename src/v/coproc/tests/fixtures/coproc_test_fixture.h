@@ -10,7 +10,7 @@
 
 #pragma once
 #include "coproc/tests/fixtures/supervisor_test_fixture.h"
-#include "coproc/tests/utils/event_publisher.h"
+#include "kafka/client/fwd.h"
 #include "kafka/protocol/schemata/produce_response.h"
 #include "redpanda/tests/fixture.h"
 
@@ -37,6 +37,8 @@ public:
     /// destroyed and re-initialized in the middle of a test
     coproc_test_fixture();
 
+    ~coproc_test_fixture() override;
+
     /// Higher level abstraction of 'publish_events'
     ///
     /// Maps tuple to proper encoded wasm record and calls 'publish_events'
@@ -61,19 +63,18 @@ public:
     ss::future<> restart();
 
     /// \brief Write records to storage::api
-    ss::future<model::offset>
-    push(const model::ntp&, model::record_batch_reader);
+    ss::future<model::offset> push(model::ntp, model::record_batch_reader);
 
     /// \brief Read records from storage::api up until 'limit' or 'time'
     /// starting at 'offset'
-    ss::future<std::optional<model::record_batch_reader::data_t>> drain(
-      model::ntp,
-      std::size_t,
-      model::offset = model::offset(0),
-      model::timeout_clock::time_point = model::timeout_clock::now()
-                                         + std::chrono::seconds(5));
+    ss::future<model::record_batch_reader::data_t> consume(
+      model::ntp ntp,
+      model::offset start_offset = model::offset(0),
+      model::offset last_offset = model::model_limits<model::offset>::max(),
+      model::timeout_clock::time_point timeout = model::timeout_clock::now()
+                                                 + std::chrono::seconds(5));
 
-    coproc::wasm::event_publisher& get_publisher() { return _publisher; };
+    kafka::client::client& get_client() { return *_client; }
 
 protected:
     redpanda_thread_fixture* root_fixture() {
@@ -81,8 +82,15 @@ protected:
         return _root_fixture.get();
     }
 
+    ss::future<> wait_until_all_idle();
+    ss::future<> wait_until_idle(coproc::script_id id);
+    ss::future<> wait_for_copro(coproc::script_id);
+
+    ss::future<> push_wasm_events(std::vector<coproc::wasm::event>);
+
 private:
-    coproc::wasm::event_publisher _publisher;
+    absl::flat_hash_set<coproc::script_id> _active_ids;
+    std::unique_ptr<kafka::client::client> _client;
 
     std::unique_ptr<redpanda_thread_fixture> _root_fixture;
 };

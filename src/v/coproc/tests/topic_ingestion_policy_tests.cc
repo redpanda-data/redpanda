@@ -23,8 +23,7 @@
 
 class tip_fixture : public coproc_test_fixture {
 public:
-    std::optional<std::size_t> run(
-      coproc::topic_ingestion_policy tip, std::size_t n, std::size_t drain_n) {
+    std::size_t run(coproc::topic_ingestion_policy tip, std::size_t n) {
         model::topic infoo("infoo");
         model::ntp infoo_ntp(
           model::kafka_namespace, infoo, model::partition_id(0));
@@ -33,7 +32,7 @@ public:
         push(
           infoo_ntp,
           storage::test::make_random_memory_record_batch_reader(
-            model::offset(0), n, 1))
+            model::offset(0), n, 1, false))
           .get();
 
         enable_coprocessors(
@@ -59,30 +58,26 @@ public:
         push(
           infoo_ntp,
           storage::test::make_random_memory_record_batch_reader(
-            model::offset{0}, n, 1))
+            model::offset{0}, n, 1, false))
           .get();
 
         model::ntp output_ntp(
           model::kafka_namespace,
           to_materialized_topic(infoo, identity_coprocessor::identity_topic),
           model::partition_id(0));
-        auto r = drain(output_ntp, drain_n).get();
-        return !r.has_value() ? std::nullopt
-                              : std::optional<std::size_t>(r->size());
+        return consume(output_ntp).get0().size();
     }
 };
 
 /// 'tip' stands for topic_ingestion_policy
 FIXTURE_TEST(test_copro_tip_latest, tip_fixture) {
-    auto result = run(tp_latest, 40, 40);
-    BOOST_CHECK(result);
-    BOOST_CHECK_EQUAL(*result, 40);
+    auto result = run(tp_latest, 40);
+    BOOST_CHECK_EQUAL(result, 40);
 }
 
 FIXTURE_TEST(test_copro_tip_earliest, tip_fixture) {
-    auto result = run(tp_earliest, 40, 80);
-    BOOST_CHECK(result);
-    BOOST_CHECK_EQUAL(*result, 80);
+    auto result = run(tp_earliest, 40);
+    BOOST_CHECK_EQUAL(result, 80);
 }
 
 FIXTURE_TEST(test_copro_tip_stored, coproc_test_fixture) {
@@ -104,12 +99,11 @@ FIXTURE_TEST(test_copro_tip_stored, coproc_test_fixture) {
     push(
       sttp_ntp,
       storage::test::make_random_memory_record_batch_reader(
-        model::offset{0}, 40, 1))
+        model::offset{0}, 40, 1, false))
       .get();
 
-    auto a_results = drain(output_ntp, 40).get();
-    BOOST_CHECK(a_results);
-    BOOST_CHECK(a_results->size() == 40);
+    auto a_results = consume(output_ntp).get();
+    BOOST_CHECK(a_results.size() == 40);
 
     ss::sleep(1s).get();
     info("Restarting....");
@@ -118,10 +112,9 @@ FIXTURE_TEST(test_copro_tip_stored, coproc_test_fixture) {
     push(
       sttp_ntp,
       storage::test::make_random_memory_record_batch_reader(
-        model::offset{0}, 40, 1))
+        model::offset{0}, 40, 1, false))
       .get();
 
-    auto results = drain(output_ntp, 80).get();
-    BOOST_CHECK(results);
-    BOOST_CHECK(results->size() >= 80);
+    auto results = consume(output_ntp).get();
+    BOOST_CHECK(results.size() >= 80);
 }

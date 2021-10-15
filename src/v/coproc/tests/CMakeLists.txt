@@ -1,5 +1,5 @@
 set(fixture_srcs
-    utils/event_publisher.cc
+    utils/event_publisher_utils.cc
     utils/supervisor.cc
     utils/wasm_event_generator.cc
     fixtures/coproc_test_fixture.cc

@@ -9,6 +9,7 @@
 
 #include "pandaproxy/schema_registry/service.h"
 
+#include "kafka/client/client_fetch_batch_reader.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/list_offsets.h"
@@ -17,7 +18,6 @@
 #include "pandaproxy/api/api-doc/schema_registry.json.h"
 #include "pandaproxy/error.h"
 #include "pandaproxy/logger.h"
-#include "pandaproxy/schema_registry/client_fetch_batch_reader.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/handlers.h"
 #include "pandaproxy/schema_registry/storage.h"
@@ -195,7 +195,7 @@ ss::future<> service::fetch_internal_topic() {
     auto max_offset = partition.offset;
     vlog(plog.debug, "Schema registry: _schemas max_offset: {}", max_offset);
 
-    co_await make_client_fetch_batch_reader(
+    co_await kafka::client::make_client_fetch_batch_reader(
       _client.local(),
       model::schema_registry_internal_tp,
       model::offset{0},

@@ -47,7 +47,7 @@ FIXTURE_TEST(test_wasm_engine_restart, coproc_test_fixture) {
             fs.emplace_back(push(
               ntp,
               storage::test::make_random_memory_record_batch_reader(
-                model::offset(0), 10, 2)));
+                model::offset(0), 10, 2, false)));
         }
         return ss::when_all_succeed(fs.begin(), fs.end()).discard_result();
     };
@@ -67,11 +67,10 @@ FIXTURE_TEST(test_wasm_engine_restart, coproc_test_fixture) {
     /// themselves have an at-least-once durability guarantee, so it would be
     /// more likely that a script processed a duplicate record. The wider the
     /// commit interval, the more likely this is.
-    std::vector<ss::future<std::optional<model::record_batch_reader::data_t>>>
-      fs;
+    std::vector<ss::future<model::record_batch_reader::data_t>> fs;
     for (const auto& ntp : outputs) {
-        fs.emplace_back(drain(ntp, 20));
+        fs.emplace_back(consume(ntp));
     }
     auto data = ss::when_all_succeed(fs.begin(), fs.end()).get0();
-    BOOST_CHECK(!data.empty() && data[0]);
+    BOOST_CHECK(!data[0].empty());
 }

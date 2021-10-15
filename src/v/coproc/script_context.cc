@@ -54,6 +54,7 @@ ss::future<> script_context::start() {
               /// exception, \ref script_failed_exception for which there is a
               /// handler setup by the invoker of this start() method
               return do_execute().then([this] {
+                  process_idle_callbacks();
                   return ss::sleep_abortable(
                            _resources.jitter.next_jitter_duration(),
                            _abort_source)
@@ -105,7 +106,27 @@ ss::future<> script_context::do_execute() {
     });
 }
 
+void script_context::process_idle_callbacks() {
+    auto ps = std::exchange(_idle, std::vector<ss::promise<>>());
+    for (auto& p : ps) {
+        p.set_value();
+    }
+}
+
+ss::future<> script_context::wait_idle_state() {
+    if (_gate.is_closed()) {
+        return ss::make_exception_future<>(ss::gate_closed_exception());
+    }
+    _idle.emplace_back();
+    return _idle.back().get_future();
+}
+
 ss::future<> script_context::shutdown() {
+    auto ps = std::exchange(_idle, std::vector<ss::promise<>>());
+    for (auto& p : ps) {
+        p.set_exception(wait_idle_state_future_stranded(fmt::format(
+          "Idle callback futures abandoned due to shutdown, id: {}", _id)));
+    }
     _abort_source.request_abort();
     return _gate.close().then([this] { _ntp_ctxs.clear(); });
 }

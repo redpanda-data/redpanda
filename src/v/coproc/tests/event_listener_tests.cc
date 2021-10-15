@@ -10,6 +10,7 @@
 
 #include "coproc/tests/fixtures/coproc_test_fixture.h"
 #include "coproc/tests/utils/coprocessor.h"
+#include "coproc/tests/utils/event_publisher_utils.h"
 #include "coproc/tests/utils/wasm_event_generator.h"
 #include "coproc/wasm_event.h"
 #include "model/record_batch_reader.h"
@@ -36,7 +37,8 @@ FIXTURE_TEST(test_copro_internal_topic_do_undo, coproc_test_fixture) {
     auto rbr = make_event_record_batch_reader(std::move(events));
 
     /// Push and assert
-    auto rset = get_publisher().publish_events(std::move(rbr)).get0();
+    auto rset
+      = coproc::wasm::publish_events(get_client(), std::move(rbr)).get0();
     BOOST_CHECK_EQUAL(rset.size(), 2);
 
     tests::cooperative_spin_wait_with_timeout(5s, [&] {

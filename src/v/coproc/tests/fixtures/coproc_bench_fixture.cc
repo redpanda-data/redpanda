@@ -106,22 +106,23 @@ ss::future<> coproc_bench_fixture::do_action(
         return push(
                  ntp,
                  storage::test::make_random_memory_record_batch_reader(
-                   rt, n_batches, 1))
+                   rt, n_batches, 1, false))
           .then([ntp, &rt](model::offset offset) { rt = offset++; });
     } else {
         if (rt.second >= total_expected_batches) {
             /// All records have been read, exit out
             return ss::now();
         }
-        return drain(
-                 ntp, n_batches, rt.first, model::timeout_clock::now() + 1min)
-          .then(
-            [ntp, &rt](
-              std::optional<model::record_batch_reader::data_t> maybe_data) {
-                if (maybe_data && !maybe_data->empty()) {
-                    rt.first = ++maybe_data->back().last_offset();
-                    rt.second += maybe_data->size();
-                }
-            });
+        return consume(
+                 ntp,
+                 rt.first,
+                 model::model_limits<model::offset>::max(),
+                 model::timeout_clock::now() + 1min)
+          .then([ntp, &rt](model::record_batch_reader::data_t data) {
+              if (!data.empty()) {
+                  rt.first = ++data.back().last_offset();
+                  rt.second += data.size();
+              }
+          });
     }
 }

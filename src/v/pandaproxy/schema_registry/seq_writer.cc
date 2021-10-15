@@ -9,9 +9,9 @@
 
 #include "pandaproxy/schema_registry/seq_writer.h"
 
+#include "kafka/client/client_fetch_batch_reader.h"
 #include "pandaproxy/error.h"
 #include "pandaproxy/logger.h"
-#include "pandaproxy/schema_registry/client_fetch_batch_reader.h"
 #include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/storage.h"
 #include "random/simple_time_jitter.h"
@@ -56,7 +56,7 @@ ss::future<> seq_writer::wait_for(model::offset offset) {
                   seq._loaded_offset,
                   offset);
 
-                return make_client_fetch_batch_reader(
+                return kafka::client::make_client_fetch_batch_reader(
                          seq._client.local(),
                          model::schema_registry_internal_tp,
                          seq._loaded_offset + model::offset{1},

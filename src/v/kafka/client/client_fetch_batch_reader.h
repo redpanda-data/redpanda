@@ -11,11 +11,11 @@
 
 #pragma once
 
-#include "kafka/client/client.h"
+#include "kafka/client/fwd.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 
-namespace pandaproxy::schema_registry {
+namespace kafka::client {
 
 ///\brief Adapt a kafka::client to fetch from a tp as a
 /// kafka::record_batch_reader.
@@ -25,4 +25,4 @@ model::record_batch_reader make_client_fetch_batch_reader(
   model::offset first,
   model::offset last);
 
-} // namespace pandaproxy::schema_registry
+} // namespace kafka::client

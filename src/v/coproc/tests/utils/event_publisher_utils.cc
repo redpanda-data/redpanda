@@ -8,35 +8,16 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "coproc/tests/utils/event_publisher.h"
+#include "coproc/tests/utils/event_publisher_utils.h"
 
 #include "coproc/logger.h"
 #include "coproc/reference_window_consumer.hpp"
-#include "coproc/tests/utils/wasm_event_generator.h"
-#include "coproc/types.h"
+#include "coproc/tests/utils/kafka_publish_consumer.h"
 #include "coproc/wasm_event.h"
 #include "kafka/protocol/create_topics.h"
-#include "kafka/protocol/errors.h"
-#include "kafka/protocol/produce.h"
-#include "model/namespace.h"
-#include "model/record.h"
 #include "storage/parser_utils.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
-#include <seastar/core/loop.hh>
-
-namespace {
-
-kafka::client::client make_client() {
-    kafka::client::configuration cfg;
-    cfg.brokers.set_value(std::vector<unresolved_address>{
-      config::shard_local_cfg().kafka_api()[0].address});
-    cfg.retries.set_value(size_t(1));
-    return kafka::client::client{to_yaml(cfg)};
-}
-
-} // namespace
 
 namespace coproc::wasm {
 
@@ -59,41 +40,8 @@ private:
     bool _all_valid{true};
 };
 
-class publisher {
-public:
-    explicit publisher(kafka::client::client& client, model::topic_partition tp)
-      : _client(client)
-      , _publish_tp(std::move(tp)) {}
-
-    ss::future<ss::stop_iteration> operator()(model::record_batch& rb) {
-        _results.push_back(
-          co_await _client.produce_record_batch(_publish_tp, std::move(rb)));
-        co_return ss::stop_iteration::no;
-    }
-
-    std::vector<kafka::produce_response::partition> end_of_stream() {
-        return std::move(_results);
-    }
-
-private:
-    std::vector<kafka::produce_response::partition> _results;
-    kafka::client::client& _client;
-    model::topic_partition _publish_tp;
-};
-
-event_publisher::event_publisher()
-  : _client{make_client()} {}
-
-ss::future<> event_publisher::start() {
-    /// Create the internal topic, THEN update the clients internal metadata so
-    /// it can have the correct list of topics per broker
-    return _client.connect()
-      .then([this] { return create_coproc_internal_topic(); })
-      .then([this] { return _client.update_metadata(); });
-}
-
-ss::future<> event_publisher::create_coproc_internal_topic() {
-    return _client
+ss::future<> create_coproc_internal_topic(kafka::client::client& client) {
+    return client
       .dispatch([]() {
           return kafka::create_topics_request{.data{
             .topics = {kafka::creatable_topic{
@@ -116,25 +64,24 @@ ss::future<> event_publisher::create_coproc_internal_topic() {
       });
 }
 
-ss::future<std::vector<kafka::produce_response::partition>>
-event_publisher::publish_events(model::record_batch_reader reader) {
+ss::future<std::vector<kafka::produce_response::partition>> publish_events(
+  kafka::client::client& client, model::record_batch_reader reader) {
     /// TODO: our kafka client doesn't support producing compressed batches,
     /// however to emmulate the real situation best we should eventually
     /// have our unit tests do this once support for this lands.
     return std::move(reader)
       .for_each_ref(
         storage::internal::decompress_batch_consumer(), model::no_timeout)
-      .then([this](model::record_batch_reader rbr) {
+      .then([&client](model::record_batch_reader rbr) {
           return std::move(rbr)
             .for_each_ref(
               coproc::reference_window_consumer(
                 coproc::wasm::batch_verifier(),
-                coproc::wasm::publisher(
-                  _client, model::coprocessor_internal_tp)),
+                kafka_publish_consumer(client, model::coprocessor_internal_tp)),
               model::no_timeout)
             .then([](auto tuple) {
                 vassert(std::get<0>(tuple), "crc checks failed");
-                return std::move(std::get<1>(tuple));
+                return std::move(std::get<1>(tuple)).responses;
             });
       });
 }

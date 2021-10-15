@@ -15,6 +15,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/topics_frontend.h"
 #include "config/configuration.h"
+#include "coproc/exception.h"
 #include "coproc/ntp_context.h"
 #include "coproc/offset_storage_utils.h"
 #include "coproc/script_context.h"
@@ -32,6 +33,23 @@
 #include <absl/container/node_hash_map.h>
 
 namespace coproc {
+
+/**
+ * Currently only thrown by 'wait_for_script' when attempting to lookup a script
+ * with an id that doesn't exist.
+ */
+class script_not_found final : public exception {
+    using exception::exception;
+};
+
+/**
+ * Thrown when there are promises queued waiting on coprocessors to be created,
+ * but shutdown is called before that occurs
+ */
+class wait_on_script_future_stranded final : public exception {
+    using exception::exception;
+};
+
 /**
  * Sharded service that manages the registration of scripts to registered
  * topics. Each script is its own 'fiber', containing its own event loop which
@@ -89,6 +107,17 @@ public:
     ss::future<absl::btree_map<script_id, errc>> remove_all_sources();
 
     /**
+     * Returns a future which resolves when script id is started
+     */
+    ss::future<errc> wait_for_script(script_id);
+
+    /**
+     * Returns future which resolves when fiber for script_id on 'this' shard
+     * moves into an idle state
+     */
+    ss::future<> wait_idle_state(script_id);
+
+    /**
      * @returns true if a matching script id exists on 'this' shard
      */
     bool local_script_id_exists(script_id);
@@ -105,6 +134,8 @@ private:
       ntp_context_cache&,
       std::vector<errc>& acks,
       const std::vector<topic_namespace_policy>&);
+
+    void fire_updates(script_id, errc);
 
     struct offset_flush_fiber_state {
         ss::timer<ss::lowres_clock> timer;
@@ -128,6 +159,9 @@ private:
     };
 
 private:
+    /// Alerting mechanism for script startup
+    absl::node_hash_map<script_id, std::vector<ss::promise<errc>>> _updates;
+
     /// Data to be referenced by script_contexts on the current shard
     shared_script_resources _shared_res;
 

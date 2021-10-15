@@ -9,16 +9,17 @@
  * by the Apache License, Version 2.0
  */
 
-#include "pandaproxy/schema_registry/client_fetch_batch_reader.h"
+#include "kafka/client/client_fetch_batch_reader.h"
 
+#include "kafka/client/client.h"
+#include "kafka/client/logger.h"
 #include "kafka/protocol/exceptions.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
-#include "pandaproxy/logger.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/std-coroutine.hh>
 
-namespace pandaproxy::schema_registry {
+namespace kafka::client {
 
 class client_fetcher final : public model::record_batch_reader::impl {
     using storage_t = model::record_batch_reader::storage_t;
@@ -42,13 +43,20 @@ public:
     ss::future<storage_t>
     do_load_slice(model::timeout_clock::time_point t) final {
         if (!_batch_reader || _batch_reader->is_end_of_stream()) {
-            vlog(plog.debug, "Schema registry: fetch offset: {}", _next_offset);
+            vlog(
+              kclog.debug,
+              "fetch_batch_reader: fetch offset: {}",
+              _next_offset);
             auto res = co_await _client.fetch_partition(
               _tp, _next_offset, 1_MiB, t - model::timeout_clock::now());
-            vlog(plog.debug, "Schema registry: fetch result: {}", res);
+            vlog(kclog.debug, "fetch_batch_reader: fetch result: {}", res);
             vassert(
               res.begin() != res.end() && ++res.begin() == res.end(),
               "Expected exactly one response from client::fetch_partition");
+            if (res.data.error_code != kafka::error_code::none) {
+                throw kafka::exception(
+                  res.data.error_code, "Fetch returned with error");
+            }
             _batch_reader = std::move(res.begin()->partition_response->records);
         }
         auto ret = co_await _batch_reader->do_load_slice(t);
@@ -63,7 +71,7 @@ public:
               kafka::error_code::unknown_server_error, "No records returned");
         }
         _next_offset = ++data.back().last_offset();
-        vlog(plog.debug, "Schema registry: next_offset: {}", _next_offset);
+        vlog(kclog.debug, "fetch_batch_reader: next_offset: {}", _next_offset);
         co_return ret;
     }
 
@@ -89,4 +97,4 @@ model::record_batch_reader make_client_fetch_batch_reader(
       client, std::move(tp), first, last);
 }
 
-} // namespace pandaproxy::schema_registry
+} // namespace kafka::client

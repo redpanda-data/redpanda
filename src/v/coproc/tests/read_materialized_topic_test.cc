@@ -48,11 +48,11 @@ FIXTURE_TEST(test_metadata_request, coproc_test_fixture) {
     push(
       input_ntp,
       storage::test::make_random_memory_record_batch_reader(
-        model::offset(0), 4, 4))
+        model::offset(0), 4, 4, false))
       .get();
 
     /// Wait for the materialized log to appear
-    drain(output_ntp, 1).get();
+    consume(output_ntp).get();
 
     /// Make a metadata request specifically for the materialized topic
     kafka::metadata_request req{
@@ -93,12 +93,12 @@ FIXTURE_TEST(test_read_from_materialized_topic, coproc_test_fixture) {
     push(
       input_ntp,
       storage::test::make_random_memory_record_batch_reader(
-        model::offset(0), 4, 4))
+        model::offset(0), 4, 4, false))
       .get();
 
     // read the materialized topic from disk
-    const auto data = drain(output_ntp, 16).get0();
-    BOOST_REQUIRE(data);
+    const auto data = consume(output_ntp).get0();
+    BOOST_REQUIRE(!data.empty());
 
     // Connect a kafka client to the expected output topic
     kafka::fetch_request req;
