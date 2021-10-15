@@ -204,6 +204,16 @@ ss::future<> archival_metadata_stm::apply_snapshot(
     co_return;
 }
 
+ss::future<> archival_metadata_stm::handle_eviction() {
+    vlog(
+      _logger.warn,
+      "ignoring prefix truncate, insync offset: {}, raft start offset: {}",
+      _insync_offset,
+      _c->start_offset());
+    set_next(_c->start_offset());
+    return ss::now();
+}
+
 ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
     auto segments = segments_from_manifest(_manifest);
     iobuf snap_data = serde::to_iobuf(
