@@ -61,9 +61,11 @@ archival_metadata_stm::archival_metadata_stm(
   , _manifest(raft->ntp(), raft->config().revision_id())
   , _log_eviction_stm(log_eviction_stm) {}
 
-ss::future<bool>
-archival_metadata_stm::add_segments(const cloud_storage::manifest& manifest) {
-    return _lock.with([this, &manifest] { return do_add_segments(manifest); });
+ss::future<bool> archival_metadata_stm::add_segments(
+  const cloud_storage::manifest& manifest, retry_chain_node& rc_node) {
+    return _lock.with(rc_node.get_timeout(), [this, &manifest, &rc_node] {
+        return do_add_segments(manifest, rc_node);
+    });
 }
 
 std::vector<archival_metadata_stm::segment>
@@ -100,8 +102,8 @@ archival_metadata_stm::segments_from_manifest(
 }
 
 ss::future<bool> archival_metadata_stm::do_add_segments(
-  const cloud_storage::manifest& new_manifest) {
-    if (!co_await sync(model::max_duration)) {
+  const cloud_storage::manifest& new_manifest, retry_chain_node& rc_node) {
+    if (!co_await sync(rc_node.get_timeout())) {
         co_return false;
     }
 
@@ -134,7 +136,7 @@ ss::future<bool> archival_metadata_stm::do_add_segments(
     }
 
     auto applied = co_await wait_no_throw(
-      result.value().last_offset, model::max_duration);
+      result.value().last_offset, rc_node.get_timeout());
 
     if (!applied) {
         co_return false;

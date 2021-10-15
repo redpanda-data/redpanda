@@ -14,12 +14,12 @@
 #include "cloud_storage/manifest.h"
 #include "cluster/persisted_stm.h"
 #include "model/fundamental.h"
+#include "model/timestamp_serde.h"
 #include "raft/log_eviction_stm.h"
 #include "serde/serde.h"
-#include "model/timestamp_serde.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
-#include "cloud_storage/manifest.h"
+#include "utils/retry_chain_node.h"
 
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
@@ -44,15 +44,12 @@ public:
     explicit archival_metadata_stm(
       raft::consensus*, const ss::lw_shared_ptr<raft::log_eviction_stm>&);
 
-    ss::future<bool> add_segments(const cloud_storage::manifest&);
+    ss::future<bool>
+    add_segments(const cloud_storage::manifest&, retry_chain_node&);
 
-    model::offset start_offset() const {
-        return _start_offset;
-    }
+    model::offset start_offset() const { return _start_offset; }
 
-    model::offset last_offset() {
-        return _last_offset;
-    }
+    model::offset last_offset() { return _last_offset; }
 
     const cloud_storage::manifest& manifest() const { return _manifest; }
 
@@ -60,7 +57,8 @@ private:
     std::vector<segment>
     segments_from_manifest(const cloud_storage::manifest&) const;
 
-    ss::future<bool> do_add_segments(const cloud_storage::manifest&);
+    ss::future<bool>
+    do_add_segments(const cloud_storage::manifest&, retry_chain_node&);
 
     ss::future<> apply(model::record_batch batch) override;
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;

@@ -348,14 +348,21 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
           _ntp);
 
         auto res = co_await upload_manifest(parent);
+        if (res != cloud_storage::upload_result::success) {
+            vlog(ctxlog.warn, "Manifest upload for {} failed", _ntp);
+        }
 
         // TODO: error handling
         if (_partition->archival_meta_stm()) {
-            co_await _partition->archival_meta_stm()->add_segments(_manifest);
-        }
-
-        if (res != cloud_storage::upload_result::success) {
-            vlog(ctxlog.debug, "Manifest upload for {} failed", _ntp);
+            retry_chain_node rc_node(
+              _manifest_upload_timeout, _initial_backoff, &parent);
+            if (!co_await _partition->archival_meta_stm()->add_segments(
+                  _manifest, rc_node)) {
+                vlog(
+                  ctxlog.warn,
+                  "archival metadata STM update for {} failed",
+                  _ntp);
+            }
         }
 
         _last_upload_time = ss::lowres_clock::now();
