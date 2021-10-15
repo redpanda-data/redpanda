@@ -245,12 +245,13 @@ ss::future<bool> persisted_stm::wait_no_throw(
     auto deadline = model::timeout_clock::now() + timeout;
     return wait(offset, deadline)
       .then([] { return true; })
-      .handle_exception([offset](std::exception_ptr e) {
+      .handle_exception([offset, ntp = _c->ntp()](std::exception_ptr e) {
           vlog(
             clusterlog.error,
-            "An error {} happened during waiting for offset:{}",
+            "An error {} happened during waiting for offset: {}, ntp: {}",
             e,
-            offset);
+            offset,
+            ntp);
           return false;
       });
 }
