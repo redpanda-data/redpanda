@@ -53,17 +53,6 @@ public:
         return std::nullopt;
     }
 
-    bool insert(model::ntp ntp, ss::shard_id i, model::revision_id rev) {
-        auto [_, success] = _ntp_idx.insert(
-          {std::move(ntp), shard_revision{i, rev}});
-        return success;
-    }
-
-    bool insert(raft::group_id g, ss::shard_id i, model::revision_id rev) {
-        auto [_, success] = _group_idx.insert({g, shard_revision{i, rev}});
-        return success;
-    }
-
     bool update_shard(
       const model::ntp& ntp, ss::shard_id i, model::revision_id rev) {
         if (auto it = _ntp_idx.find(ntp); it != _ntp_idx.end()) {
