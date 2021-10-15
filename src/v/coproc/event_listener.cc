@@ -74,10 +74,17 @@ ss::future<> event_listener::start() {
         return ss::do_until(
           [this] { return _abort_source.abort_requested(); },
           [this] {
-              return do_start().then([this] {
-                  return ss::sleep_abortable(1s, _abort_source)
-                    .handle_exception_type([](const ss::sleep_aborted&) {});
-              });
+              return do_start()
+                .then([this] {
+                    return ss::sleep_abortable(1s, _abort_source)
+                      .handle_exception_type([](const ss::sleep_aborted&) {});
+                })
+                .handle_exception([](const std::exception_ptr& e) {
+                    vlog(
+                      coproclog.warn,
+                      "Error listening for coproc events - {}",
+                      e);
+                });
           });
     });
     co_return;
