@@ -347,6 +347,9 @@ struct property_update<tristate<T>> {
 };
 
 struct incremental_topic_updates {
+    // negative version indicating new format (with included data_policy
+    // property)
+    static constexpr int8_t version = -1;
     property_update<std::optional<model::compression>> compression;
     property_update<std::optional<model::cleanup_policy_bitflags>>
       cleanup_policy_bitflags;
@@ -807,4 +810,9 @@ struct adl<cluster::non_replicable_topic> {
     cluster::non_replicable_topic from(iobuf_parser&);
 };
 
+template<>
+struct adl<cluster::incremental_topic_updates> {
+    void to(iobuf& out, cluster::incremental_topic_updates&&);
+    cluster::incremental_topic_updates from(iobuf_parser&);
+};
 } // namespace reflection

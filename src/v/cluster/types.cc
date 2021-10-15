@@ -866,4 +866,73 @@ adl<cluster::non_replicable_topic>::from(iobuf_parser& in) {
       .source = std::move(source), .name = std::move(name)};
 }
 
+void adl<cluster::incremental_topic_updates>::to(
+  iobuf& out, cluster::incremental_topic_updates&& t) {
+    reflection::serialize(
+      out,
+      cluster::incremental_topic_updates::version,
+      t.compression,
+      t.cleanup_policy_bitflags,
+      t.compaction_strategy,
+      t.timestamp_type,
+      t.segment_size,
+      t.retention_bytes,
+      t.retention_duration,
+      t.data_policy);
+}
+
+cluster::incremental_topic_updates
+adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
+    /**
+     * We use the same versioning trick as for `cluster::topic_configuration`.
+     *
+     * NOTE: The first field of the incremental_topic_updates is a
+     * property_value<std::optional<model::compression>>. Serialized
+     * std::optional starts from either 0 or 1 (int8_t). We use negative version
+     * to encode new format of incremental topic updates
+     */
+
+    auto version = adl<int8_t>{}.from(in.peek(1));
+    if (version < 0) {
+        // Consume version from stream
+        in.skip(1);
+        vassert(
+          version == cluster::incremental_topic_updates::version,
+          "topic_configuration version {} is not supported",
+          version);
+    } else {
+        version = 0;
+    }
+
+    cluster::incremental_topic_updates updates;
+    updates.compression
+      = adl<cluster::property_update<std::optional<model::compression>>>{}.from(
+        in);
+    updates.cleanup_policy_bitflags = adl<cluster::property_update<
+      std::optional<model::cleanup_policy_bitflags>>>{}
+                                        .from(in);
+    updates.compaction_strategy
+      = adl<
+          cluster::property_update<std::optional<model::compaction_strategy>>>{}
+          .from(in);
+    updates.timestamp_type
+      = adl<cluster::property_update<std::optional<model::timestamp_type>>>{}
+          .from(in);
+    updates.segment_size
+      = adl<cluster::property_update<std::optional<size_t>>>{}.from(in);
+    updates.retention_bytes
+      = adl<cluster::property_update<tristate<size_t>>>{}.from(in);
+    updates.retention_duration
+      = adl<cluster::property_update<tristate<std::chrono::milliseconds>>>{}
+          .from(in);
+
+    if (version < 0) {
+        updates.data_policy
+          = adl<
+              cluster::property_update<std::optional<v8_engine::data_policy>>>{}
+              .from(in);
+    }
+    return updates;
+}
+
 } // namespace reflection
