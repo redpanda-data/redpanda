@@ -90,6 +90,12 @@ archival_metadata_stm::segments_from_manifest(
         segments.push_back(
           segment{.ntp_revision = ntp_revision, .name = name, .meta = meta});
     }
+
+    std::sort(
+      segments.begin(), segments.end(), [](const auto& s1, const auto& s2) {
+          return s1.meta.base_offset < s2.meta.base_offset;
+      });
+
     return segments;
 }
 
@@ -99,14 +105,16 @@ ss::future<bool> archival_metadata_stm::do_add_segments(
         co_return false;
     }
 
-    cloud_storage::manifest diff = new_manifest.difference(_manifest);
+    auto segments = segments_from_manifest(new_manifest.difference(_manifest));
+    if (segments.empty()) {
+        co_return true;
+    }
 
     storage::record_batch_builder b(
       model::record_batch_type::archival_metadata, model::offset(0));
-
-    for (auto& segment : segments_from_manifest(diff)) {
+    for (const auto& segment : segments) {
         iobuf key_buf = serde::to_iobuf(add_segment_cmd::key);
-        auto record_val = add_segment_cmd::value{std::move(segment)};
+        auto record_val = add_segment_cmd::value{segment};
         iobuf val_buf = serde::to_iobuf(std::move(record_val));
         b.add_raw_kv(std::move(key_buf), std::move(val_buf));
     }
@@ -118,11 +126,34 @@ ss::future<bool> archival_metadata_stm::do_add_segments(
       raft::replicate_options{raft::consistency_level::quorum_ack});
 
     if (!result) {
+        vlog(
+          _logger.warn,
+          "error on replicating remote segment metadata: {}",
+          result.error());
         co_return false;
     }
 
-    co_return co_await wait_no_throw(
+    auto applied = co_await wait_no_throw(
       result.value().last_offset, model::max_duration);
+
+    if (!applied) {
+        co_return false;
+    }
+
+    for (const auto& segment : segments) {
+        vlog(
+          _logger.info,
+          "new remote segment added (name: {}, base_offset: {} last_offset: "
+          "{}), "
+          "remote start_offset: {}, last_offset: {}",
+          segment.name,
+          segment.meta.base_offset,
+          segment.meta.committed_offset,
+          start_offset(),
+          _last_offset);
+    }
+
+    co_return result;
 }
 
 ss::future<> archival_metadata_stm::apply(model::record_batch b) {
@@ -180,27 +211,23 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
             _log_eviction_stm->set_collectible_offset(_last_offset);
         }
     }
-
-    vlog(
-      _logger.info,
-      "new remote segment (name: {}, base_offset: {} last_offset: {}), "
-      "remote start_offset: {}, last_offset: {}",
-      segment.name,
-      meta.base_offset,
-      meta.committed_offset,
-      start_offset(),
-      _last_offset);
 }
 
 ss::future<> archival_metadata_stm::apply_snapshot(
   stm_snapshot_header header, iobuf&& data) {
-    vlog(_logger.info, "applying snapshot at offset: {}", header.offset);
-
     auto snap = serde::from_iobuf<snapshot>(std::move(data));
 
     for (const auto& segment : snap.segments) {
         apply_add_segment(segment);
     }
+
+    vlog(
+      _logger.info,
+      "applied snapshot at offset: {}, remote start_offset: {}, last_offset: "
+      "{}",
+      header.offset,
+      _start_offset,
+      _last_offset);
 
     _last_snapshot_offset = header.offset;
     _insync_offset = header.offset;
@@ -222,7 +249,13 @@ ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
     iobuf snap_data = serde::to_iobuf(
       snapshot{.segments = std::move(segments)});
 
-    vlog(_logger.trace, "created snapshot at offset: {}", _insync_offset);
+    vlog(
+      _logger.info,
+      "creating snapshot at offset: {}, remote start_offset: {}, last_offset: "
+      "{}",
+      _insync_offset,
+      _start_offset,
+      _last_offset);
     co_return stm_snapshot::create(0, _insync_offset, std::move(snap_data));
 }
 
