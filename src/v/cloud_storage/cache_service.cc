@@ -9,12 +9,14 @@
  */
 
 #include "cloud_storage/logger.h"
+#include "storage/segment.h"
 #include "utils/gate_guard.h"
 #include "vassert.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/fstream.hh>
+#include <seastar/core/io_priority_class.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
@@ -138,7 +140,10 @@ ss::future<> cache::clean_up_cache() {
 }
 
 ss::future<> cache::start() {
-    vlog(cst_log.debug, "Starting archival cache service");
+    vlog(
+      cst_log.debug,
+      "Starting archival cache service, data directory: {}",
+      _cache_dir);
     // TODO: implement more optimal cache eviction
     if (ss::this_shard_id() == 0) {
         co_await clean_up_at_start();
@@ -155,8 +160,12 @@ ss::future<> cache::stop() {
     co_await _gate.close();
 }
 
-ss::future<std::optional<cache_item>>
-cache::get(std::filesystem::path key, size_t file_pos) {
+ss::future<std::optional<cache_item>> cache::get(
+  std::filesystem::path key,
+  size_t file_pos,
+  ss::io_priority_class io_priority,
+  size_t read_buffer_size,
+  unsigned int readahead) {
     gate_guard guard{_gate};
     vlog(cst_log.debug, "Trying to get {} from archival cache.", key.native());
     ss::file cache_file;
@@ -178,13 +187,22 @@ cache::get(std::filesystem::path key, size_t file_pos) {
         }
     }
 
+    ss::file_input_stream_options options{};
+    options.buffer_size = read_buffer_size;
+    options.read_ahead = readahead;
+    options.io_priority_class = io_priority;
     auto data_size = co_await cache_file.size();
-    auto data_stream = ss::make_file_input_stream(cache_file, file_pos);
+    auto data_stream = ss::make_file_input_stream(
+      cache_file, file_pos, std::move(options));
     co_return std::optional(cache_item{std::move(data_stream), data_size});
 }
 
-ss::future<>
-cache::put(std::filesystem::path key, ss::input_stream<char>& data) {
+ss::future<> cache::put(
+  std::filesystem::path key,
+  ss::input_stream<char>& data,
+  ss::io_priority_class io_priority,
+  size_t write_buffer_size,
+  unsigned int write_behind) {
     gate_guard guard{_gate};
     vlog(cst_log.debug, "Trying to put {} to archival cache.", key.native());
 
@@ -216,7 +234,11 @@ cache::put(std::filesystem::path key, ss::input_stream<char>& data) {
 
     auto tmp_cache_file = co_await ss::open_file_dma(
       (dir_path / tmp_filename).native(), flags);
-    auto out = co_await ss::make_file_output_stream(tmp_cache_file);
+    ss::file_output_stream_options options{};
+    options.buffer_size = write_buffer_size;
+    options.write_behind = write_behind;
+    options.io_priority_class = io_priority;
+    auto out = co_await ss::make_file_output_stream(tmp_cache_file, options);
 
     co_await ss::copy(data, out)
       .then([&out]() { return out.flush(); })
