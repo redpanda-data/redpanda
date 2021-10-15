@@ -160,8 +160,12 @@ ss::future<> cache::stop() {
     co_await _gate.close();
 }
 
-ss::future<std::optional<cache_item>>
-cache::get(std::filesystem::path key, size_t file_pos) {
+ss::future<std::optional<cache_item>> cache::get(
+  std::filesystem::path key,
+  size_t file_pos,
+  ss::io_priority_class io_priority,
+  size_t read_buffer_size,
+  unsigned int readahead) {
     gate_guard guard{_gate};
     vlog(cst_log.debug, "Trying to get {} from archival cache.", key.native());
     ss::file cache_file;
@@ -184,16 +188,21 @@ cache::get(std::filesystem::path key, size_t file_pos) {
     }
 
     ss::file_input_stream_options options{};
-    options.buffer_size = storage::default_segment_readahead_size;
-    options.read_ahead = 10;
+    options.buffer_size = read_buffer_size;
+    options.read_ahead = readahead;
+    options.io_priority_class = io_priority;
     auto data_size = co_await cache_file.size();
     auto data_stream = ss::make_file_input_stream(
       cache_file, file_pos, std::move(options));
     co_return std::optional(cache_item{std::move(data_stream), data_size});
 }
 
-ss::future<>
-cache::put(std::filesystem::path key, ss::input_stream<char>& data) {
+ss::future<> cache::put(
+  std::filesystem::path key,
+  ss::input_stream<char>& data,
+  ss::io_priority_class io_priority,
+  size_t write_buffer_size,
+  unsigned int write_behind) {
     gate_guard guard{_gate};
     vlog(cst_log.debug, "Trying to put {} to archival cache.", key.native());
 
@@ -225,7 +234,11 @@ cache::put(std::filesystem::path key, ss::input_stream<char>& data) {
 
     auto tmp_cache_file = co_await ss::open_file_dma(
       (dir_path / tmp_filename).native(), flags);
-    auto out = co_await ss::make_file_output_stream(tmp_cache_file);
+    ss::file_output_stream_options options{};
+    options.buffer_size = write_buffer_size;
+    options.write_behind = write_behind;
+    options.io_priority_class = io_priority;
+    auto out = co_await ss::make_file_output_stream(tmp_cache_file, options);
 
     co_await ss::copy(data, out)
       .then([&out]() { return out.flush(); })
