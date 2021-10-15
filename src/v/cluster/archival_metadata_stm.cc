@@ -62,22 +62,51 @@ archival_metadata_stm::archival_metadata_stm(
   , _log_eviction_stm(log_eviction_stm) {}
 
 ss::future<bool>
-archival_metadata_stm::add_segments(const std::vector<segment>& segments) {
-    return _lock.with([this, &segments] { return do_add_segments(segments); });
+archival_metadata_stm::add_segments(const cloud_storage::manifest& manifest) {
+    return _lock.with([this, manifest] { return do_add_segments(manifest); });
 }
 
-ss::future<bool>
-archival_metadata_stm::do_add_segments(const std::vector<segment>& segments) {
+std::vector<archival_metadata_stm::segment>
+archival_metadata_stm::segments_from_manifest(
+  const cloud_storage::manifest& manifest) const {
+    std::vector<segment> segments;
+    segments.reserve(_manifest.size());
+    for (const auto& [key, meta] : manifest) {
+        model::revision_id ntp_revision;
+        cloud_storage::segment_name name;
+
+        if (std::holds_alternative<cloud_storage::remote_segment_path>(key)) {
+            const auto& path = std::get<cloud_storage::remote_segment_path>(
+              key);
+            auto components = get_segment_path_components(path);
+            vassert(components, "can't parse remote segment path {}", path);
+            ntp_revision = components->_rev;
+            name = components->_name;
+        } else {
+            ntp_revision = _raft->config().revision_id();
+            name = std::get<cloud_storage::segment_name>(key);
+        }
+
+        segments.push_back(
+          segment{.ntp_revision = ntp_revision, .name = name, .meta = meta});
+    }
+    return segments;
+}
+
+ss::future<bool> archival_metadata_stm::do_add_segments(
+  const cloud_storage::manifest& new_manifest) {
     if (!co_await sync(model::max_duration)) {
         co_return false;
     }
 
+    cloud_storage::manifest diff = new_manifest.difference(_manifest);
+
     storage::record_batch_builder b(
       model::record_batch_type::archival_metadata, model::offset(0));
 
-    for (const auto& segment : segments) {
+    for (auto& segment : segments_from_manifest(diff)) {
         iobuf key_buf = serde::to_iobuf(add_segment_cmd::key);
-        auto record_val = add_segment_cmd::value{segment};
+        auto record_val = add_segment_cmd::value{std::move(segment)};
         iobuf val_buf = serde::to_iobuf(std::move(record_val));
         b.add_raw_kv(std::move(key_buf), std::move(val_buf));
     }
@@ -179,28 +208,7 @@ ss::future<> archival_metadata_stm::apply_snapshot(
 }
 
 ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
-    std::vector<segment> segments;
-    segments.reserve(_manifest.size());
-    for (const auto& [key, meta] : _manifest) {
-        model::revision_id ntp_revision;
-        cloud_storage::segment_name name;
-
-        if (std::holds_alternative<cloud_storage::remote_segment_path>(key)) {
-            const auto& path = std::get<cloud_storage::remote_segment_path>(
-              key);
-            auto components = get_segment_path_components(path);
-            vassert(components, "can't parse remote segment path {}", path);
-            ntp_revision = components->_rev;
-            name = components->_name;
-        } else {
-            ntp_revision = _raft->config().revision_id();
-            name = std::get<cloud_storage::segment_name>(key);
-        }
-
-        segments.push_back(
-          segment{.ntp_revision = ntp_revision, .name = name, .meta = meta});
-    }
-
+    auto segments = segments_from_manifest(_manifest);
     iobuf snap_data = serde::to_iobuf(
       snapshot{.segments = std::move(segments)});
 
