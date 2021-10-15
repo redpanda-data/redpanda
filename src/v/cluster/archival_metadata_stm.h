@@ -47,7 +47,7 @@ public:
         _log_eviction_stm = std::move(log_eviction_stm);
     }
 
-    ss::future<bool> add_segments(const std::vector<segment>&);
+    ss::future<bool> add_segments(const cloud_storage::manifest&);
 
     model::offset start_offset() const { return _start_offset; }
 
@@ -56,7 +56,10 @@ public:
     const cloud_storage::manifest& manifest() const { return _manifest; }
 
 private:
-    ss::future<bool> do_add_segments(const std::vector<segment>&);
+    std::vector<segment>
+    segments_from_manifest(const cloud_storage::manifest&) const;
+
+    ss::future<bool> do_add_segments(const cloud_storage::manifest&);
 
     ss::future<> apply(model::record_batch batch) override;
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
