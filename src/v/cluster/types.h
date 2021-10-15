@@ -331,12 +331,19 @@ template<typename T>
 struct property_update {
     T value;
     incremental_update_operation op = incremental_update_operation::none;
+
+    friend bool operator==(const property_update<T>&, const property_update<T>&)
+      = default;
 };
 
 template<typename T>
 struct property_update<tristate<T>> {
     tristate<T> value = tristate<T>(std::nullopt);
     incremental_update_operation op = incremental_update_operation::none;
+
+    friend bool operator==(
+      const property_update<tristate<T>>&, const property_update<tristate<T>>&)
+      = default;
 };
 
 struct incremental_topic_updates {
@@ -353,6 +360,10 @@ struct incremental_topic_updates {
     // Data-policy property is replicated by data_policy_frontend and handled by
     // data_policy_manager.
     property_update<std::optional<v8_engine::data_policy>> data_policy;
+
+    friend bool operator==(
+      const incremental_topic_updates&, const incremental_topic_updates&)
+      = default;
 };
 
 /**
