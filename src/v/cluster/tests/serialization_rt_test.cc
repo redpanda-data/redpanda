@@ -12,11 +12,20 @@
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/timestamp.h"
+#include "random/generators.h"
 #include "test_utils/randoms.h"
 #include "test_utils/rpc.h"
+#include "tristate.h"
 #include "units.h"
 
 #include <seastar/testing/thread_test_case.hh>
+
+#include <boost/test/tools/old/interface.hpp>
+
+#include <chrono>
+#include <cstdint>
+#include <optional>
 
 using namespace std::chrono_literals; // NOLINT
 
@@ -190,4 +199,130 @@ SEASTAR_THREAD_TEST_CASE(config_update_req_resp_test) {
     cluster::configuration_update_reply reply{true};
     auto reply_res = serialize_roundtrip_rpc(std::move(reply));
     BOOST_REQUIRE_EQUAL(reply_res.success, true);
+}
+
+namespace old {
+struct incremental_topic_updates {
+    cluster::property_update<std::optional<model::compression>> compression;
+    cluster::property_update<std::optional<model::cleanup_policy_bitflags>>
+      cleanup_policy_bitflags;
+    cluster::property_update<std::optional<model::compaction_strategy>>
+      compaction_strategy;
+    cluster::property_update<std::optional<model::timestamp_type>>
+      timestamp_type;
+    cluster::property_update<std::optional<size_t>> segment_size;
+    cluster::property_update<tristate<size_t>> retention_bytes;
+    cluster::property_update<tristate<std::chrono::milliseconds>>
+      retention_duration;
+};
+
+} // namespace old
+
+bool rand_bool() { return random_generators::get_int(0, 100) > 50; }
+
+cluster::incremental_update_operation random_op() {
+    return cluster::incremental_update_operation(
+      random_generators::get_int<int8_t>(0, 2));
+}
+
+cluster::incremental_topic_updates random_incremental_topic_updates() {
+    cluster::incremental_topic_updates ret;
+    if (rand_bool()) {
+        ret.compression.value = model::compression(
+          random_generators::get_int(0, 4));
+        ret.compression.op = random_op();
+    }
+
+    if (rand_bool()) {
+        ret.cleanup_policy_bitflags.value = model::cleanup_policy_bitflags(
+          random_generators::get_int(0, 3));
+        ret.cleanup_policy_bitflags.op = random_op();
+    }
+
+    if (rand_bool()) {
+        ret.compaction_strategy.value = model::compaction_strategy(
+          random_generators::get_int(0, 2));
+        ret.compaction_strategy.op = random_op();
+    }
+
+    if (rand_bool()) {
+        ret.timestamp_type.value = model::timestamp_type(
+          random_generators::get_int(0, 1));
+        ret.timestamp_type.op = random_op();
+    }
+
+    if (rand_bool()) {
+        if (!rand_bool()) {
+            ret.retention_bytes.value = tristate<size_t>();
+            ret.retention_bytes.op = random_op();
+        } else {
+            ret.retention_bytes.value = tristate<size_t>(
+              random_generators::get_int<size_t>(0, 10_GiB));
+            ret.retention_bytes.op = random_op();
+        }
+    }
+
+    if (rand_bool()) {
+        if (!rand_bool()) {
+            ret.retention_duration.value
+              = tristate<std::chrono::milliseconds>();
+            ret.retention_duration.op = random_op();
+        } else {
+            ret.retention_duration.value = tristate<std::chrono::milliseconds>(
+              std::chrono::milliseconds(
+                random_generators::get_int(0, 500000000)));
+            ret.retention_duration.op = random_op();
+        }
+    }
+    if (rand_bool()) {
+        ret.data_policy.value = v8_engine::data_policy(
+          random_generators::gen_alphanum_string(6),
+          random_generators::gen_alphanum_string(6));
+        ret.data_policy.op = random_op();
+    }
+
+    return ret;
+}
+
+SEASTAR_THREAD_TEST_CASE(incremental_topic_updates_rt_test) {
+    cluster::incremental_topic_updates updates
+      = random_incremental_topic_updates();
+    auto original = updates;
+
+    auto result = serialize_roundtrip_rpc(std::move(updates));
+
+    BOOST_CHECK(result == original);
+}
+
+SEASTAR_THREAD_TEST_CASE(incremental_topic_updates_backward_compatibilty_test) {
+    cluster::incremental_topic_updates updates
+      = random_incremental_topic_updates();
+
+    old::incremental_topic_updates old_updates;
+    old_updates.cleanup_policy_bitflags = updates.cleanup_policy_bitflags;
+    old_updates.compaction_strategy = updates.compaction_strategy;
+    old_updates.compression = updates.compression;
+    old_updates.timestamp_type = updates.timestamp_type;
+    old_updates.retention_bytes = updates.retention_bytes;
+    old_updates.retention_duration = updates.retention_duration;
+    old_updates.segment_size = updates.segment_size;
+
+    // serialize old version
+    iobuf buf = reflection::to_iobuf(old_updates);
+    iobuf_parser parser(std::move(buf));
+    // deserialize with new type
+    auto result = reflection::adl<cluster::incremental_topic_updates>{}.from(
+      parser);
+
+    BOOST_CHECK(
+      old_updates.cleanup_policy_bitflags == result.cleanup_policy_bitflags);
+    BOOST_CHECK(old_updates.compaction_strategy == result.compaction_strategy);
+    BOOST_CHECK(old_updates.compression == result.compression);
+    BOOST_CHECK(old_updates.timestamp_type == result.timestamp_type);
+    BOOST_CHECK(old_updates.retention_bytes == result.retention_bytes);
+    BOOST_CHECK(old_updates.retention_duration == result.retention_duration);
+    BOOST_CHECK(old_updates.segment_size == result.segment_size);
+    BOOST_CHECK(
+      cluster::property_update<std::optional<v8_engine::data_policy>>{}
+      == result.data_policy);
 }

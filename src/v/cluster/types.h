@@ -331,15 +331,25 @@ template<typename T>
 struct property_update {
     T value;
     incremental_update_operation op = incremental_update_operation::none;
+
+    friend bool operator==(const property_update<T>&, const property_update<T>&)
+      = default;
 };
 
 template<typename T>
 struct property_update<tristate<T>> {
     tristate<T> value = tristate<T>(std::nullopt);
     incremental_update_operation op = incremental_update_operation::none;
+
+    friend bool operator==(
+      const property_update<tristate<T>>&, const property_update<tristate<T>>&)
+      = default;
 };
 
 struct incremental_topic_updates {
+    // negative version indicating new format (with included data_policy
+    // property)
+    static constexpr int8_t version = -1;
     property_update<std::optional<model::compression>> compression;
     property_update<std::optional<model::cleanup_policy_bitflags>>
       cleanup_policy_bitflags;
@@ -353,6 +363,10 @@ struct incremental_topic_updates {
     // Data-policy property is replicated by data_policy_frontend and handled by
     // data_policy_manager.
     property_update<std::optional<v8_engine::data_policy>> data_policy;
+
+    friend bool operator==(
+      const incremental_topic_updates&, const incremental_topic_updates&)
+      = default;
 };
 
 /**
@@ -796,4 +810,9 @@ struct adl<cluster::non_replicable_topic> {
     cluster::non_replicable_topic from(iobuf_parser&);
 };
 
+template<>
+struct adl<cluster::incremental_topic_updates> {
+    void to(iobuf& out, cluster::incremental_topic_updates&&);
+    cluster::incremental_topic_updates from(iobuf_parser&);
+};
 } // namespace reflection

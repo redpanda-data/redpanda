@@ -47,6 +47,8 @@ public:
     const ss::sstring& function_name() const { return _function_name; }
     const ss::sstring& script_name() const { return _script_name; }
 
+    friend bool operator==(const data_policy&, const data_policy&) = default;
+
 private:
     ss::sstring _function_name;
     ss::sstring _script_name;
