@@ -1,4 +1,4 @@
-# Copyright 2020 Vectorized, Inc.
+# Copyright 2021 Vectorized, Inc.
 #
 # Use of this software is governed by the Business Source License
 # included in the file licenses/BSL.md
@@ -44,6 +44,7 @@ class SaramaScramTest(RedpandaTest):
             result = node.account.ssh_output(cmd,
                                              allow_fail=True,
                                              timeout_sec=10).decode()
+            self.logger.debug(result)
             return "wrote message at partition:" in result
 
         # Using wait_until for auto-retry because sometimes
