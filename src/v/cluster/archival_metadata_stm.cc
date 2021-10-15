@@ -63,7 +63,7 @@ archival_metadata_stm::archival_metadata_stm(
 
 ss::future<bool>
 archival_metadata_stm::add_segments(const cloud_storage::manifest& manifest) {
-    return _lock.with([this, manifest] { return do_add_segments(manifest); });
+    return _lock.with([this, &manifest] { return do_add_segments(manifest); });
 }
 
 std::vector<archival_metadata_stm::segment>
