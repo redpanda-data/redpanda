@@ -89,7 +89,7 @@ ss::future<consensus_ptr> partition_manager::manage(
     // TODO: check topic config if archival is enabled for this topic
     if (
       config::shard_local_cfg().cloud_storage_enabled()
-      && c->ntp().ns != model::redpanda_ns) {
+      && c->ntp().ns == model::kafka_namespace) {
         archival_meta_stm = ss::make_shared<cluster::archival_metadata_stm>(
           c.get());
         c->log().stm_manager().add_stm(archival_meta_stm);
