@@ -41,8 +41,12 @@ public:
         cloud_storage::manifest::segment_meta meta;
     };
 
-    explicit archival_metadata_stm(
-      raft::consensus*, const ss::lw_shared_ptr<raft::log_eviction_stm>&);
+    explicit archival_metadata_stm(raft::consensus*);
+
+    void set_log_eviction_stm(
+      ss::lw_shared_ptr<raft::log_eviction_stm> log_eviction_stm) {
+        _log_eviction_stm = std::move(log_eviction_stm);
+    }
 
     ss::future<bool>
     add_segments(const cloud_storage::manifest&, retry_chain_node&);

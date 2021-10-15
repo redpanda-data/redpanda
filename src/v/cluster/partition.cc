@@ -78,18 +78,21 @@ partition::partition(
           config::shard_local_cfg().cloud_storage_enabled()
           && _raft->ntp().ns != model::redpanda_ns) {
             _archival_meta_stm
-              = ss::make_shared<cluster::archival_metadata_stm>(
-                _raft.get(), _log_eviction_stm);
+              = ss::make_shared<cluster::archival_metadata_stm>(_raft.get());
             stm_manager.add_stm(_archival_meta_stm);
         }
     }
 
-    if (_log_eviction_stm && !_archival_meta_stm) {
-        // If archival is not enabled, determine eviction offset according to
-        // the storage logic. Otherwise, _archival_meta_stm will control the
-        // collectible offset so that eviction doesn't touch segments that
-        // aren't yet archived.
-        _log_eviction_stm->set_collectible_offset(model::offset::max());
+    if (_log_eviction_stm) {
+        // If archival is not enabled, determine eviction offset according
+        // to the storage logic. Otherwise, _archival_meta_stm will control
+        // the collectible offset so that eviction doesn't touch segments
+        // that aren't yet archived.
+        if (_archival_meta_stm) {
+            _archival_meta_stm->set_log_eviction_stm(_log_eviction_stm);
+        } else {
+            _log_eviction_stm->set_collectible_offset(model::offset::max());
+        }
     }
 }
 

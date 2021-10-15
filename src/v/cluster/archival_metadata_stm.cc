@@ -53,13 +53,10 @@ struct snapshot : public serde::envelope<snapshot, serde::version<0>> {
 
 } // namespace
 
-archival_metadata_stm::archival_metadata_stm(
-  raft::consensus* raft,
-  const ss::lw_shared_ptr<raft::log_eviction_stm>& log_eviction_stm)
+archival_metadata_stm::archival_metadata_stm(raft::consensus* raft)
   : cluster::persisted_stm("archival_metadata.snapshot", logger, raft)
   , _logger(logger, ssx::sformat("ntp: {}", raft->ntp()))
-  , _manifest(raft->ntp(), raft->config().revision_id())
-  , _log_eviction_stm(log_eviction_stm) {}
+  , _manifest(raft->ntp(), raft->config().revision_id()) {}
 
 ss::future<bool> archival_metadata_stm::add_segments(
   const cloud_storage::manifest& manifest, retry_chain_node& rc_node) {
