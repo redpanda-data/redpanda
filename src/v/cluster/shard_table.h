@@ -26,6 +26,8 @@ class shard_table final {
     struct shard_revision {
         ss::shard_id shard;
         model::revision_id revision;
+        /// Only used for additional sanity checks
+        bool non_replicable;
     };
 
 public:
@@ -59,8 +61,12 @@ public:
             if (it->second.revision > rev) {
                 return false;
             }
+            vassert(
+              it->second.non_replicable,
+              "Attempting to update replicable entry from non_replicable "
+              "interface");
         }
-        _ntp_idx.insert_or_assign(ntp, shard_revision{i, rev});
+        _ntp_idx.insert_or_assign(ntp, shard_revision{i, rev, true});
         return true;
     }
 
@@ -73,15 +79,23 @@ public:
             if (it->second.revision > rev) {
                 return;
             }
+            vassert(
+              !it->second.non_replicable,
+              "Attempting to update non_replicable entry from replicable "
+              "interface");
         }
         if (auto it = _group_idx.find(g); it != _group_idx.end()) {
             if (it->second.revision > rev) {
                 return;
             }
+            vassert(
+              !it->second.non_replicable,
+              "Attempting to update non_replicable entry from replicable "
+              "interface");
         }
 
-        _ntp_idx.insert_or_assign(ntp, shard_revision{shard, rev});
-        _group_idx.insert_or_assign(g, shard_revision{shard, rev});
+        _ntp_idx.insert_or_assign(ntp, shard_revision{shard, rev, false});
+        _group_idx.insert_or_assign(g, shard_revision{shard, rev, false});
     }
 
     void
@@ -90,11 +104,17 @@ public:
             if (it->second.revision > rev) {
                 return;
             }
+            vassert(
+              !it->second.non_replicable,
+              "erasing non_replicable entry from replicable erase interface");
         }
         if (auto it = _group_idx.find(g); it != _group_idx.end()) {
             if (it->second.revision > rev) {
                 return;
             }
+            vassert(
+              !it->second.non_replicable,
+              "erasing non_replicable entry from replicable erase interface");
         }
 
         _ntp_idx.erase(ntp);
@@ -106,6 +126,9 @@ public:
             if (it->second.revision > rev) {
                 return;
             }
+            vassert(
+              it->second.non_replicable,
+              "erassing replicable entry from non_replicable erase interface");
             _ntp_idx.erase(it);
         }
     }
