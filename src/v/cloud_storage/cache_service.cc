@@ -140,7 +140,10 @@ ss::future<> cache::clean_up_cache() {
 }
 
 ss::future<> cache::start() {
-    vlog(cst_log.debug, "Starting archival cache service");
+    vlog(
+      cst_log.debug,
+      "Starting archival cache service, data directory: {}",
+      _cache_dir);
     // TODO: implement more optimal cache eviction
     if (ss::this_shard_id() == 0) {
         co_await clean_up_at_start();
