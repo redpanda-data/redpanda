@@ -64,6 +64,7 @@ private:
 
     ss::future<> apply(model::record_batch batch) override;
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
+    ss::future<> handle_eviction() override;
 
     ss::future<stm_snapshot> take_snapshot() override;
 
