@@ -92,7 +92,7 @@ ss::future<consensus_ptr> partition_manager::manage(
       && c->ntp().ns != model::redpanda_ns) {
         archival_meta_stm = ss::make_shared<cluster::archival_metadata_stm>(
           c.get());
-        c->log().stm_manager()->add_stm(archival_meta_stm);
+        c->log().stm_manager().add_stm(archival_meta_stm);
 
         if (
           _cloud_storage_api.local_is_initialized()

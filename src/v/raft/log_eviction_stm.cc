@@ -19,7 +19,7 @@ namespace raft {
 log_eviction_stm::log_eviction_stm(
   consensus* raft,
   ss::logger& logger,
-  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  ss::weak_ptr<storage::stm_manager> stm_manager,
   ss::abort_source& as)
   : _raft(raft)
   , _logger(logger)
@@ -80,7 +80,11 @@ log_eviction_stm::handle_deletion_notification(model::offset last_evicted) {
 
           if (_stm_manager) {
               f = _raft->refresh_commit_index().then([this, last_evicted] {
-                  return _stm_manager->ensure_snapshot_exists(last_evicted);
+                  if (_stm_manager) {
+                      return _stm_manager->ensure_snapshot_exists(last_evicted);
+                  } else {
+                      return ss::now();
+                  }
               });
           }
 

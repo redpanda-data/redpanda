@@ -41,7 +41,7 @@ partition::partition(
   , _is_idempotence_enabled(
       config::shard_local_cfg().enable_idempotence.value())
   , _cloud_storage_partition(cloud_storage_partition) {
-    auto stm_manager = _raft->log().stm_manager();
+    auto& stm_manager = _raft->log().stm_manager();
 
     if (is_id_allocator_topic(_raft->ntp())) {
         _id_allocator_stm = ss::make_lw_shared<cluster::id_allocator_stm>(
@@ -49,17 +49,17 @@ partition::partition(
     } else if (is_tx_manager_topic(_raft->ntp())) {
         if (_raft->log_config().is_collectable()) {
             _log_eviction_stm = ss::make_lw_shared<raft::log_eviction_stm>(
-              _raft.get(), clusterlog, stm_manager, _as);
+              _raft.get(), clusterlog, stm_manager.weak_from_this(), _as);
         }
 
         if (_is_tx_enabled) {
             _tm_stm = ss::make_shared<cluster::tm_stm>(clusterlog, _raft.get());
-            stm_manager->add_stm(_tm_stm);
+            stm_manager.add_stm(_tm_stm);
         }
     } else {
         if (_raft->log_config().is_collectable()) {
             _log_eviction_stm = ss::make_lw_shared<raft::log_eviction_stm>(
-              _raft.get(), clusterlog, stm_manager, _as);
+              _raft.get(), clusterlog, stm_manager.weak_from_this(), _as);
         }
 
         bool is_group_ntp = _raft->ntp().ns == model::kafka_internal_namespace
@@ -74,7 +74,7 @@ partition::partition(
         if (has_rm_stm) {
             _rm_stm = ss::make_shared<cluster::rm_stm>(
               clusterlog, _raft.get(), _tx_gateway_frontend);
-            stm_manager->add_stm(_rm_stm);
+            stm_manager.add_stm(_rm_stm);
         }
     }
 
