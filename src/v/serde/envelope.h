@@ -63,7 +63,7 @@ struct has_version_attribute : std::false_type {};
 template<typename T>
 struct has_version_attribute<
   T,
-  std::void_t<decltype(std::declval<T>().redpanda_serde_compat_version)>>
+  std::void_t<decltype(std::declval<T>().redpanda_serde_version)>>
   : std::true_type {};
 
 template<typename T, typename = void>
@@ -75,12 +75,28 @@ struct inherits_from_envelope<
   std::void_t<decltype(std::declval<T>().redpanda_inherits_from_envelope)>>
   : std::true_type {};
 
+template<typename T>
+struct compat_version_has_serde_version_type {
+    static constexpr auto const value = std::is_same_v<
+      std::decay_t<decltype(std::declval<T>().redpanda_serde_compat_version)>,
+      version_t>;
+};
+
+template<typename T>
+struct version_has_serde_version_type {
+    static constexpr auto const value = std::is_same_v<
+      std::decay_t<decltype(std::declval<T>().redpanda_serde_version)>,
+      version_t>;
+};
+
 } // namespace detail
 
 template<typename T>
 inline constexpr auto const is_envelope_v = std::conjunction_v<
   detail::has_compat_attribute<T>,
-  detail::has_version_attribute<T>>;
+  detail::has_version_attribute<T>,
+  detail::compat_version_has_serde_version_type<T>,
+  detail::version_has_serde_version_type<T>>;
 
 template<typename T>
 inline constexpr auto const inherits_from_envelope_v
