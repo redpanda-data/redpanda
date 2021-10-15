@@ -35,14 +35,15 @@ struct custom_read_write {
     int _x;
 };
 
+enum class not_blessed_enum_1 : uint8_t { x, y, z };
+static_assert(!serde::is_serde_compatible_v<not_blessed_enum_1>);
+
+enum class not_blessed_enum_2 : uint8_t { x, y, z };
+constexpr bool serde_bless_enum(not_blessed_enum_2) { return {}; }
+static_assert(!serde::is_serde_compatible_v<not_blessed_enum_2>);
+
 enum class my_enum : uint8_t { x, y, z };
-
-inline void
-read_nested(iobuf_parser& in, my_enum& el, size_t const bytes_left_limit) {
-    serde::read_enum(in, el, bytes_left_limit);
-}
-
-inline void write(iobuf& out, my_enum el) { serde::write_enum(out, el); }
+constexpr uint8_t serde_bless_enum(my_enum) { return {}; }
 
 SEASTAR_THREAD_TEST_CASE(custom_read_write_test) {
     BOOST_CHECK(
@@ -327,6 +328,12 @@ SEASTAR_THREAD_TEST_CASE(all_types_test) {
         serde::write(b, model::ns{"abc"});
         auto parser = iobuf_parser{std::move(b)};
         BOOST_CHECK(serde::read<model::ns>(parser) == "abc");
+    }
+
+    {
+        serde::write(b, my_enum::z);
+        auto parser = iobuf_parser{std::move(b)};
+        BOOST_CHECK(serde::read<my_enum>(parser) == my_enum::z);
     }
 }
 
