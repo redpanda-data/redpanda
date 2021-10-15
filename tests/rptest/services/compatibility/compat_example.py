@@ -1,4 +1,4 @@
-# Copyright 2020 Vectorized, Inc.
+# Copyright 2021 Vectorized, Inc.
 #
 # Use of this software is governed by the Business Source License
 # included in the file licenses/BSL.md
@@ -10,6 +10,7 @@
 import sys
 import time
 from ducktape.services.background_thread import BackgroundThreadService
+from rptest.util import Scale
 from .compat_helpers import create_helper
 
 
@@ -29,6 +30,8 @@ class CompatExample(BackgroundThreadService):
         # If user removes timeout key, then use 10 seconds.
         self._timeout = extra_conf.get("timeout") or 10
 
+        self._scale = Scale(context)
+
     def _worker(self, idx, node):
         start_time = time.time()
 
@@ -40,9 +43,12 @@ class CompatExample(BackgroundThreadService):
         while not self._helper.condition_met(
         ) and time.time() < start_time + self._timeout:
             line = next(output_iter)
+            line = line.rstrip()
+            self.logger.debug(line)
+
             # Call to helper.condition will automatically
             # store result in a boolean variable
-            self._helper.condition(line.rstrip())
+            self._helper.condition(line)
 
     # Used to determine if the condition is met
     def ok(self):

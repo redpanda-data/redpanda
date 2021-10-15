@@ -28,9 +28,11 @@ class SaramaTest(RedpandaTest):
     def __init__(self, test_context):
         super(SaramaTest, self).__init__(test_context=test_context)
 
+        msg_gen = lambda: "redpanda is fast"
+
         # The produce is only for the consumer group example
         self._producer = CompatProducer(test_context, self.redpanda,
-                                        self.topic)
+                                        self.topic, msg_gen)
 
         # A representation of the example to be run in the background
         self._example = CompatExample(test_context, self.redpanda, self.topic)
