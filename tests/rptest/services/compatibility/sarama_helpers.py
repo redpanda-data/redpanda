@@ -119,8 +119,9 @@ class SaramaHelperFactory(HelperFactoryBase):
     The concrete factory for creating Sarama's
     helper classes.
     """
-    def __init__(self, func_name, redpanda, topic):
-        super(SaramaHelperFactory, self).__init__(func_name, redpanda, topic)
+    def __init__(self, func_name, redpanda, topic, extra_conf):
+        super(SaramaHelperFactory, self).__init__(func_name, redpanda, topic,
+                                                  extra_conf)
 
     # The factory method for sarama
     def create_sarama_helpers(self):

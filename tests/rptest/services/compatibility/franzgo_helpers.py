@@ -98,9 +98,8 @@ class FranzGoHelperFactory(HelperFactoryBase):
     helper classes.
     """
     def __init__(self, func_name, redpanda, topic, extra_conf):
-        super(FranzGoHelperFactory, self).__init__(func_name, redpanda, topic)
-
-        self._extra_conf = extra_conf or dict()
+        super(FranzGoHelperFactory, self).__init__(func_name, redpanda, topic,
+                                                   extra_conf)
 
     # The factory method for franz-go
     def create_franzgo_helpers(self):
