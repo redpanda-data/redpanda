@@ -22,6 +22,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/file.hh> //io_priority
 #include <seastar/core/rwlock.hh>
+#include <seastar/core/weak_ptr.hh>
 #include <seastar/util/bool_class.hh>
 
 #include <optional>
@@ -66,7 +67,7 @@ public:
  * after a segment roll. It's up to a state machine to decide whether to make
  * it now or on its own pace.
  */
-class stm_manager {
+class stm_manager : public ss::weakly_referencable<stm_manager> {
 public:
     void add_stm(ss::shared_ptr<snapshotable_stm> stm) { _stms.push_back(stm); }
 
