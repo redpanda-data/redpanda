@@ -356,9 +356,11 @@ void remote_partition::gc_stale_materialized_segments() {
     std::vector<model::offset> offsets;
     for (auto& st : _materialized) {
         if (now - st.atime > stm_max_idle_time) {
-            auto o = st.segment->get_base_offset();
+            auto o = st.segment->get_max_offset();
             vlog(
-              _ctxlog.debug, "reader for segment with base offset {} is stale");
+              _ctxlog.debug,
+              "reader for segment with base offset {} is stale",
+              o);
             // this will delete and unlink the object from
             // _materialized collection
             offsets.push_back(o);
@@ -398,12 +400,7 @@ void remote_partition::update_segmnets_incrementally() {
         }
 
         _segments.insert(std::make_pair(
-          o,
-          std::make_unique<offloaded_segment_state>(
-            offloaded_segment_state{.key = meta.first})));
-
-        auto s = ss::make_lw_shared<remote_segment>(
-          _api, _cache, _bucket, _manifest, meta.first, _rtc);
+          o, std::make_unique<offloaded_segment_state>(meta.first)));
     }
 }
 
@@ -509,6 +506,17 @@ remote_partition::from_kafka_offset(model::offset o) {
         auto rp_offset = o + delta;
         // we stop if rp_offset is inside the segment referenced by the iterator
         if (begin >= rp_offset && rp_offset <= end) {
+            if (rp_offset == begin) {
+                vlog(
+                  _ctxlog.debug,
+                  "translated offset {} translated precisely",
+                  rp_offset);
+            } else {
+                vlog(
+                  _ctxlog.debug,
+                  "translated offset {} can't be translated precisely",
+                  rp_offset);
+            }
             return rp_offset;
         }
         it++;

@@ -95,6 +95,7 @@ private:
     manifest::key _path;
     retry_chain_node _rtc;
     mutable retry_chain_logger _ctxlog;
+    ss::abort_source _as;
 };
 
 class remote_segment_batch_consumer;

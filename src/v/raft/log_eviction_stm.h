@@ -15,9 +15,9 @@
 #include "seastarx.h"
 #include "storage/types.h"
 
-#include <seastar/core/weak_ptr.hh>
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/weak_ptr.hh>
 #include <seastar/util/log.hh>
 
 namespace raft {
