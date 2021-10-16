@@ -160,8 +160,10 @@ void server::routes(server::routes_t&& rts) {
 ss::future<> server::start(
   const std::vector<model::broker_endpoint>& endpoints,
   const std::vector<config::endpoint_tls_config>& endpoints_tls,
-  const std::vector<model::broker_endpoint>& advertised) {
-    _server._routes.register_exeption_handler(exception_reply);
+  const std::vector<model::broker_endpoint>& advertised,
+  json::serialization_format exceptional_mime_type) {
+    _server._routes.register_exeption_handler(
+      exception_replier{ss::sstring{name(exceptional_mime_type)}});
     _ctx.advertised_listeners.reserve(endpoints.size());
     for (auto& server_endpoint : endpoints) {
         auto addr = co_await rpc::resolve_dns(server_endpoint.address);

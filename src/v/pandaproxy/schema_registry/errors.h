@@ -120,6 +120,15 @@ inline error_info invalid_schema_type(schema_type type) {
       fmt::format("Invalid schema type {}", to_string_view(type))};
 }
 
+inline error_info schema_version_invalid(ss::sstring v) {
+    return {
+      error_code::schema_version_invalid,
+      fmt::format(
+        "The specified version '{}' is not a valid version id. Allowed values "
+        "are between [1, 2^31-1] and the string \"latest\"",
+        v)};
+}
+
 inline error_info invalid_subject_schema(const subject& sub) {
     return {
       error_code::subject_schema_invalid,

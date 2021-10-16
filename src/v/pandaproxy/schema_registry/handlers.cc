@@ -33,6 +33,9 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/core/std-coroutine.hh>
 
+#include <exception>
+#include <limits>
+
 namespace ppj = pandaproxy::json;
 
 namespace pandaproxy::schema_registry {
@@ -55,6 +58,17 @@ void parse_content_type_header(const server::request_t& rq) {
       ppj::serialization_format::application_json,
       ppj::serialization_format::application_octet};
     parse::content_type_header(*rq.req, headers);
+}
+
+result<schema_version> parse_numerical_schema_version(const ss::sstring& ver) {
+    auto res = parse::from_chars<int64_t>{}(ver);
+    if (
+      res.has_error() || res.assume_value() < 1
+      || res.assume_value() > std::numeric_limits<int32_t>::max()) {
+        return schema_version_invalid(ver);
+    }
+
+    return schema_version{static_cast<int32_t>(res.assume_value())};
 }
 
 ss::future<server::reply_t>
@@ -259,6 +273,11 @@ post_subject(server::request_t rq, server::reply_t rp) {
           rq.req->content.data(), post_subject_versions_request_handler<>{sub});
         schema = co_await rq.service().schema_store().make_canonical_schema(
           std::move(unparsed));
+    } catch (const exception& e) {
+        if (e.code() == error_code::schema_empty) {
+            throw as_exception(invalid_subject_schema(sub));
+        }
+        throw;
     } catch (const ppj::parse_error&) {
         throw as_exception(invalid_subject_schema(sub));
     }
@@ -318,7 +337,7 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version(
         }
         version = versions.back();
     } else {
-        version = parse::from_chars<schema_version>{}(ver).value();
+        version = parse_numerical_schema_version(ver).value();
     }
 
     auto get_res = co_await get_or_load(rq, [&rq, sub, version, inc_del]() {
@@ -356,7 +375,7 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version_schema(
         }
         version = versions.back();
     } else {
-        version = parse::from_chars<schema_version>{}(ver).value();
+        version = parse_numerical_schema_version(ver).value();
     }
 
     auto get_res = co_await rq.service().schema_store().get_subject_schema(
@@ -416,7 +435,7 @@ delete_subject_version(server::request_t rq, server::reply_t rp) {
         }
         version = versions.back();
     } else {
-        version = parse::from_chars<schema_version>{}(ver).value();
+        version = parse_numerical_schema_version(ver).value();
     }
 
     // A permanent deletion emits tombstones for prior schema_key messages
@@ -464,7 +483,7 @@ compatibility_subject_version(server::request_t rq, server::reply_t rp) {
         }
         version = versions.back();
     } else {
-        version = parse::from_chars<schema_version>{}(ver).value();
+        version = parse_numerical_schema_version(ver).value();
     }
 
     auto schema = co_await rq.service().schema_store().make_canonical_schema(

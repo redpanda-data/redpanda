@@ -28,9 +28,14 @@ struct error_category final : std::error_category {
             return "Schema not found";
         case error_code::schema_invalid:
             return "Invalid schema";
+        case error_code::schema_empty:
+            return "Empty schema";
         case error_code::schema_incompatible:
             return "Schema being registered is incompatible with an earlier "
                    "schema for subject";
+        case error_code::schema_version_invalid:
+            return "The specified version is not a valid version id. Allowed "
+                   "values are between [1, 2^31-1] and the string \"latest\"";
         case error_code::subject_not_found:
             return "Subject not found";
         case error_code::subject_version_not_found:
@@ -51,6 +56,10 @@ struct error_category final : std::error_category {
             return "Too many retries on write collision";
         case error_code::topic_parse_error:
             return "Unexpected data found in topic";
+        case error_code::compatibility_level_invalid:
+            return "Invalid compatibility level. Valid values are none, "
+                   "backward, forward, full, backward_transitive, "
+                   "forward_transitive, and full_transitive";
         }
         return "(unrecognized error)";
     }
@@ -79,10 +88,16 @@ struct error_category final : std::error_category {
             return reply_error_code::write_collision; // 50301
         case error_code::schema_invalid:
             return reply_error_code::unprocessable_entity;
+        case error_code::schema_empty:
+            return reply_error_code::schema_empty; // 42201
+        case error_code::schema_version_invalid:
+            return reply_error_code::schema_version_invalid; // 42202
         case error_code::schema_incompatible:
             return reply_error_code::conflict; // 409
         case error_code::topic_parse_error:
             return reply_error_code::zookeeper_error; // 50001
+        case error_code::compatibility_level_invalid:
+            return reply_error_code::compatibility_level_invalid; // 42203
         }
         return {};
     }
