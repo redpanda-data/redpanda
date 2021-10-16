@@ -125,26 +125,23 @@ private:
 
     /// State that have to be materialized before use
     struct offloaded_segment_state {
-        manifest::key key;
+        explicit offloaded_segment_state(manifest::key key)
+          : key(std::move(key)) {}
 
         std::unique_ptr<materialized_segment_state>
         materialize(remote_partition& p) {
-            auto st = std::make_unique<materialized_segment_state>();
-            st->key = key;
-            st->segment = std::make_unique<remote_segment>(
-              p._api, p._cache, p._bucket, p._manifest, key, p._rtc);
-            st->atime = ss::lowres_clock::now();
-            p._materialized.push_back(*st);
+            auto st = std::make_unique<materialized_segment_state>(key, p);
             return st;
         }
 
         ss::future<> stop() { return ss::now(); }
 
         std::unique_ptr<offloaded_segment_state> offload(remote_partition*) {
-            auto st = std::make_unique<offloaded_segment_state>();
-            st->key = key;
+            auto st = std::make_unique<offloaded_segment_state>(key);
             return st;
         }
+
+        manifest::key key;
     };
 
     /// State with materialized segment and cached reader
@@ -153,14 +150,13 @@ private:
     /// least one active reader that consumes data from the
     /// remote segment.
     struct materialized_segment_state {
-        manifest::key key;
-        std::unique_ptr<remote_segment> segment;
-        /// Batch reader that can be used to scan the segment
-        std::list<std::unique_ptr<reader_state>> readers;
-        /// Reader access time
-        ss::lowres_clock::time_point atime;
-        /// List hook for the list of all materalized segments
-        intrusive_list_hook _hook;
+        materialized_segment_state(manifest::key mk, remote_partition& p)
+          : key(std::move(mk))
+          , segment(std::make_unique<remote_segment>(
+              p._api, p._cache, p._bucket, p._manifest, key, p._rtc))
+          , atime(ss::lowres_clock::now()) {
+            p._materialized.push_back(*this);
+        }
 
         void return_reader(std::unique_ptr<reader_state> state) {
             atime = ss::lowres_clock::now();
@@ -199,19 +195,23 @@ private:
 
         std::unique_ptr<offloaded_segment_state>
         offload(remote_partition* partition) {
-            vassert(
-              readers.empty(),
-              "Can't offload materialized_segment_state with non-empty list of "
-              "readers");
             _hook.unlink();
             for (auto&& rs : readers) {
                 partition->evict_reader(std::move(rs->reader));
             }
             partition->evict_segment(std::move(segment));
-            auto st = std::make_unique<offloaded_segment_state>();
-            st->key = key;
+            auto st = std::make_unique<offloaded_segment_state>(key);
             return st;
         }
+
+        manifest::key key;
+        std::unique_ptr<remote_segment> segment;
+        /// Batch reader that can be used to scan the segment
+        std::list<std::unique_ptr<reader_state>> readers;
+        /// Reader access time
+        ss::lowres_clock::time_point atime;
+        /// List hook for the list of all materalized segments
+        intrusive_list_hook _hook;
     };
 
     using offloaded_segment_ptr = std::unique_ptr<offloaded_segment_state>;

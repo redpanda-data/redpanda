@@ -10,6 +10,7 @@
 
 #include "cloud_storage/remote_segment.h"
 
+#include "cloud_storage/cache_service.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
@@ -22,14 +23,18 @@
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/queue.hh>
 #include <seastar/core/temporary_buffer.hh>
+#include <seastar/util/log.hh>
 
 #include <exception>
 
 namespace cloud_storage {
 
 static constexpr size_t max_consume_size = 128_KiB;
+static ss::lowres_clock::duration cache_poll_timeout = 20s;
+static ss::lowres_clock::duration cache_poll_interval = 100ms;
 
 download_exception::download_exception(
   download_result r, std::filesystem::path p)
@@ -105,6 +110,7 @@ const model::term_id remote_segment::get_term() const {
 
 ss::future<> remote_segment::stop() {
     vlog(_ctxlog.debug, "remote segment stop");
+    _as.request_abort();
     return _gate.close();
 }
 
@@ -128,6 +134,20 @@ remote_segment::data_stream(size_t pos, const ss::io_priority_class&) {
 ss::future<std::filesystem::path> remote_segment::hydrate() {
     gate_guard g(_gate);
     auto full_path = _manifest.get_remote_segment_path(_path);
+    vlog(_ctxlog.debug, "hydrating segment {}", full_path);
+    auto poll_deadline = ss::lowres_clock::now() + cache_poll_timeout;
+    while (co_await _cache.is_cached(full_path)
+           == cache_element_status::in_progress) {
+        vlog(
+          _ctxlog.debug,
+          "segment {} is being written to cache, waiting...",
+          full_path);
+        // poll cache periodically until status changes
+        co_await ss::sleep_abortable(cache_poll_interval, _as);
+        if (ss::lowres_clock::now() > poll_deadline) {
+            break;
+        }
+    }
     if (
       co_await _cache.is_cached(full_path) == cache_element_status::available) {
         vlog(_ctxlog.debug, "{} is in the cache already", full_path);
