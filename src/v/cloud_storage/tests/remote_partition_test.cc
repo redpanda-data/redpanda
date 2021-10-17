@@ -236,7 +236,7 @@ static model::record_batch_header read_single_batch_from_remote_partition(
     auto m = ss::make_lw_shared<cloud_storage::manifest>(
       manifest_ntp, manifest_revision);
     offset_translator ot;
-    storage::log_reader_config reader_config(
+    log_reader_config reader_config(
       target, target, ss::default_priority_class());
 
     auto manifest = hydrate_manifest(api, bucket);
@@ -267,8 +267,7 @@ static std::vector<model::record_batch_header> scan_remote_partition(
     auto m = ss::make_lw_shared<cloud_storage::manifest>(
       manifest_ntp, manifest_revision);
     offset_translator ot;
-    storage::log_reader_config reader_config(
-      base, max, ss::default_priority_class());
+    log_reader_config reader_config(base, max, ss::default_priority_class());
 
     auto manifest = hydrate_manifest(api, bucket);
 
