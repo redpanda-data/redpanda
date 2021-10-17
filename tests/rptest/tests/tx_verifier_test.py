@@ -27,7 +27,9 @@ class TxVerifierTest(RedpandaTest):
             "enable_idempotence": True,
             "enable_transactions": True,
             "default_topic_replications": 3,
-            "default_topic_partitions": 1
+            "default_topic_partitions": 1,
+            "enable_leader_balancer": False,
+            "enable_auto_rebalance_on_node_add": False
         }
 
         super(TxVerifierTest, self).__init__(test_context=test_context,
