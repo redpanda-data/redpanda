@@ -66,6 +66,8 @@ class Verifier {
         System.out.println(
             "Executing " + name + " test, retries left: " + retries);
         action.run(connection);
+        initPasses(connection, txId1);
+        initPasses(connection, txId2);
         return;
       } catch (RetryableException e) {
         if (retries > 0) {
@@ -96,9 +98,13 @@ class Verifier {
   }
 
   static void initPasses(String connection) throws Exception {
+    initPasses(connection, txId1);
+  }
+
+  static void initPasses(String connection, String txId) throws Exception {
     TxProducer producer = null;
     try {
-      producer = new TxProducer(connection, txId1);
+      producer = new TxProducer(connection, txId);
       producer.initTransactions();
     } finally {
       if (producer != null) {
