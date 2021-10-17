@@ -276,11 +276,11 @@ void admin_server::register_config_routes() {
           return "";
       };
 
-    static ss::httpd::function_handler get_config_handler_f{
+    auto get_config_handler_f = new ss::httpd::function_handler{
       get_config_handler, "json"};
 
     ss::httpd::config_json::get_config.set(
-      _server._routes, &get_config_handler_f);
+      _server._routes, get_config_handler_f);
 
     ss::httpd::config_json::set_log_level.set(
       _server._routes, [this](ss::const_req req) {
