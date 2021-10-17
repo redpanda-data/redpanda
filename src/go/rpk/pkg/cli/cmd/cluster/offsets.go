@@ -23,6 +23,7 @@ import (
 )
 
 func NewOffsetsCommand(fs afero.Fs) *cobra.Command {
+	var printEmpty bool
 	cmd := &cobra.Command{
 		Use:   "offsets",
 		Short: "Print group offset status & lag.",
@@ -32,6 +33,12 @@ This command describes group members, calculates their lag, and prints detailed
 information about the members. By default, if no groups are explicitly listed,
 this command describes all groups. Specific groups to describe can be passed as
 arguments.
+
+By default, offsets are only printed for non-empty groups. If you are managing
+groups manually outside of the context of consumer groups but are using
+Redpanda to store offsets, you can use the --print-empty flag to print offsets
+for empty groups. If you specify any groups directly, their lag is printed even
+if the groups are empty.
 `,
 
 		Run: func(cmd *cobra.Command, groups []string) {
@@ -47,6 +54,8 @@ arguments.
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
+
+			printEmpty = printEmpty || len(groups) > 0
 
 			if len(groups) == 0 {
 				kgroups, err := adm.ListGroups(ctx)
@@ -77,9 +86,11 @@ arguments.
 				described,
 				fetched,
 				listed,
+				printEmpty,
 			)
 		},
 	}
+	cmd.Flags().BoolVarP(&printEmpty, "print-empty", "e", false, "print lag for empty groups if printing all groups")
 	return cmd
 }
 
@@ -106,6 +117,7 @@ func printDescribed(
 	groups kadm.DescribedGroups,
 	fetched map[string]kadm.FetchOffsetsResponse,
 	listed kadm.ListedOffsets,
+	printEmpty bool,
 ) {
 	for _, group := range groups.Sorted() {
 		lag := kadm.CalculateGroupLag(group, fetched[group.Group].Fetched, listed)
@@ -113,6 +125,9 @@ func printDescribed(
 		var rows []describeRow
 		var useInstanceID, useErr bool
 		for _, l := range lag.Sorted() {
+			if l.IsEmpty() && !printEmpty {
+				continue
+			}
 			row := describeRow{
 				topic:     l.End.Topic,
 				partition: l.End.Partition,
@@ -121,12 +136,14 @@ func printDescribed(
 				logEndOffset:  l.End.Offset,
 				lag:           strconv.FormatInt(l.Lag, 10),
 
-				memberID:   l.Member.MemberID,
-				instanceID: l.Member.InstanceID,
-				clientID:   l.Member.ClientID,
-				host:       l.Member.ClientHost,
-
 				err: l.Err,
+			}
+
+			if !l.IsEmpty() {
+				row.memberID = l.Member.MemberID
+				row.instanceID = l.Member.InstanceID
+				row.clientID = l.Member.ClientID
+				row.host = l.Member.ClientHost
 			}
 
 			if l.Commit.Offset == -1 { // nothing committed
