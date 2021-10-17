@@ -55,19 +55,22 @@ public:
       manifest::key path,
       retry_chain_node& parent);
 
-    ~remote_segment() { vlog(cst_log.info, "remote_segment d-tor"); }
-
     const model::ntp& get_ntp() const;
 
     const model::term_id get_term() const;
 
-    const model::offset get_max_offset() const;
+    /// Get max offset of the segment (redpada offset)
+    const model::offset get_max_rp_offset() const;
 
     /// Number of non-data batches in all previous
     /// segments
     const model::offset get_base_offset_delta() const;
 
-    const model::offset get_base_offset() const;
+    /// Get base offset of the segment (redpanda offset)
+    const model::offset get_base_rp_offset() const;
+
+    /// Get base offset of the segment (kafka offset)
+    const model::offset get_base_kafka_offset() const;
 
     ss::future<> stop();
 
@@ -79,12 +82,7 @@ public:
     /// Hydrate the segment
     ///
     /// Method returns key of the segment in cache.
-    /// TODO: implement cache lease system and return a lease instead
-    ///       it shouldn't be possible to evict the segment when it's leased
     ss::future<std::filesystem::path> hydrate();
-
-    /// Enter gate
-    gate_guard get_gate_guard();
 
 private:
     ss::gate _gate;
@@ -98,6 +96,21 @@ private:
     ss::abort_source _as;
 };
 
+struct log_reader_config : public storage::log_reader_config {
+    explicit log_reader_config(const storage::log_reader_config& cfg)
+      : storage::log_reader_config(cfg)
+      , start_offset_redpanda(model::offset::min()) {}
+
+    log_reader_config(
+      model::offset start_offset,
+      model::offset max_offset,
+      ss::io_priority_class prio)
+      : storage::log_reader_config(start_offset, max_offset, prio) {}
+
+    /// Same as started_offset but not translated to kafka
+    model::offset start_offset_redpanda;
+};
+
 class remote_segment_batch_consumer;
 
 /// The segment reader that can be used to fetch data from cloud storage
@@ -108,11 +121,8 @@ class remote_segment_batch_reader final {
     friend class remote_segment_batch_consumer;
 
 public:
-    // TODO: pass batch-cache
     remote_segment_batch_reader(
-      remote_segment&,
-      storage::log_reader_config& config,
-      model::term_id term) noexcept;
+      remote_segment&, log_reader_config& config, model::term_id term) noexcept;
 
     remote_segment_batch_reader(
       remote_segment_batch_reader&&) noexcept = default;
@@ -121,21 +131,18 @@ public:
     remote_segment_batch_reader(const remote_segment_batch_reader&) = delete;
     remote_segment_batch_reader& operator=(const remote_segment_batch_reader&)
       = delete;
-    // ~remote_segment_batch_reader() noexcept = default;
-    ~remote_segment_batch_reader() noexcept {
-        vlog(cst_log.info, "remote_segment_batch_reader d-tor");
-    }
+    ~remote_segment_batch_reader() noexcept = default;
 
     ss::future<result<ss::circular_buffer<model::record_batch>>>
       read_some(model::timeout_clock::time_point);
 
     ss::future<> stop();
 
-    model::offset max_offset() const noexcept { return _seg.get_max_offset(); }
+    /// Get max offset (redpanda offset)
+    model::offset max_rp_offset() const { return _seg.get_max_rp_offset(); }
 
-    model::offset base_offset() const noexcept {
-        return _seg.get_base_offset();
-    }
+    /// Get base offset (redpanda offset)
+    model::offset base_rp_offset() const { return _seg.get_base_rp_offset(); }
 
 private:
     friend class single_record_consumer;
@@ -144,8 +151,7 @@ private:
     size_t produce(model::record_batch batch);
 
     remote_segment& _seg;
-    // std::optional<gate_guard> _guard;
-    storage::log_reader_config& _config;
+    log_reader_config& _config;
     std::unique_ptr<storage::continuous_batch_parser> _parser;
     bool _done{false};
     ss::circular_buffer<model::record_batch> _ringbuf;

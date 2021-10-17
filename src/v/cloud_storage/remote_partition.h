@@ -64,29 +64,20 @@ public:
 
     ss::future<> start();
 
+    /// Create a reader
+    ///
+    /// Note that config.start_offset and config.max_offset are kafka offsets.
+    /// All offset translation is done internally. The returned record batch
+    /// reader will produce batches with kafka offsets and the config will be
+    /// updated using kafka offsets.
     ss::future<model::record_batch_reader> make_reader(
       storage::log_reader_config config,
       std::optional<model::timeout_clock::time_point> deadline = std::nullopt);
 
-    model::offset first_uploaded_offset() const {
-        // TODO: cache in the field
-        model::offset starting_offset = model::offset::max();
-        for (const auto& m : _manifest) {
-            starting_offset = std::min(starting_offset, m.second.base_offset);
-        }
-        return starting_offset;
-    }
+    /// Return first uploaded kafka offset
+    model::offset first_uploaded_offset();
 
     ss::future<> stop();
-
-    /// Translate kafka offset to redpanda offset
-    ///
-    /// The method only handles base_offsets correctly. This means that
-    /// the result will be correct only if the offset is the first on in the
-    /// segment (for which we store delta offset).
-    /// That's enough to be used for segment lookup but not enough to translate
-    /// any offset
-    std::optional<model::offset> from_kafka_offset(model::offset o);
 
 private:
     void update_segmnets_incrementally();
@@ -102,7 +93,7 @@ private:
     /// have longer lifetime than the config. This is acheived by
     /// storing both objects in the same struct.
     struct reader_state {
-        explicit reader_state(const storage::log_reader_config& cfg)
+        explicit reader_state(const log_reader_config& cfg)
           : config(cfg)
           , reader(nullptr) {}
 
@@ -114,7 +105,7 @@ private:
         }
 
         /// Config which was used to create a reader
-        storage::log_reader_config config;
+        log_reader_config config;
         /// Batch reader that can be used to scan the segment
         std::unique_ptr<remote_segment_batch_reader> reader;
     };
@@ -166,7 +157,7 @@ private:
         /// Borrow reader or make a new one.
         /// In either case return a reader.
         std::unique_ptr<reader_state>
-        borrow_reader(const storage::log_reader_config& cfg) {
+        borrow_reader(const log_reader_config& cfg) {
             atime = ss::lowres_clock::now();
             for (auto it = readers.begin(); it != readers.end(); it++) {
                 if ((*it)->config.start_offset == cfg.start_offset) {
@@ -222,7 +213,7 @@ private:
 
     /// Materialize segment if needed and create a reader
     std::unique_ptr<reader_state>
-    borrow_reader(storage::log_reader_config config, segment_state& st);
+    borrow_reader(log_reader_config config, segment_state& st);
 
     /// Return reader back to segment_state
     void return_reader(std::unique_ptr<reader_state>, segment_state& st);
@@ -254,7 +245,7 @@ private:
     remote& _api;
     cache& _cache;
     const manifest& _manifest;
-    ss::lw_shared_ptr<offset_translator> _translator;
+    std::optional<model::offset> _first_uploaded_offset;
     s3::bucket_name _bucket;
     segment_map_t _segments;
     eviction_list_t _eviction_list;
