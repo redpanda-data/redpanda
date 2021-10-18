@@ -101,7 +101,7 @@ helm install \
   --set installCRDs=true
 ```
 
-We recommend that you use [the verification procedure](https://cert-manager.io/docs/installation/kubernetes/#verifying-the-installation) in the cert-manager docs
+We recommend that you use [the verification procedure](https://cert-manager.io/docs/installation/verify/#manual-verification) in the cert-manager docs
 to verify that cert-manager is working correcly.
 
 ## Use Helm to install Redpanda operator

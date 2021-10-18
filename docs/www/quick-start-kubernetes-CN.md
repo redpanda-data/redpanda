@@ -87,7 +87,7 @@ helm install \
   --set installCRDs=true
 ```
 
-我们建议您使用cert-manager文档中的[验证过程](https://cert-manager.io/docs/installation/kubernetes/#verifying-the-installation)
+我们建议您使用cert-manager文档中的[验证过程](https://cert-manager.io/docs/installation/verify/#manual-verification)
 来验证cert-manager是否正常工作。
 
 ## 使用Helm安装Redpanda
