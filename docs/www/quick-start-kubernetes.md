@@ -62,8 +62,7 @@ You can either create a Kubernetes cluster on your local machine or on a cloud p
   --node-type m5.xlarge \
   --nodes 1 \
   --nodes-min 1 \
-  --nodes-max 4 \
-  --node-ami auto
+  --nodes-max 4
   ```
 
   It will take about 10-15 minutes for the process to finish.
