@@ -274,14 +274,18 @@ ss::future<> persisted_stm::start() {
         auto next_offset = raft::details::next_offset(snapshot.header.offset);
         if (next_offset >= _c->start_offset()) {
             co_await apply_snapshot(snapshot.header, std::move(snapshot.data));
-            set_next(next_offset);
         } else {
+            // This can happen on an out-of-date replica that re-joins the group
+            // after other replicas have already evicted logs to some offset
+            // greater than snapshot.header.offset. We print a warning and
+            // continue. The stm will later detect this situation and deal with
+            // it in the apply fiber by calling handle_eviction.
             vlog(
               clusterlog.warn,
               "Skipping snapshot {} since it's out of sync with the log",
               _snapshot_mgr.snapshot_path());
-            set_next(_c->start_offset());
         }
+        set_next(next_offset);
 
         _resolved_when_snapshot_hydrated.set_value();
     } else {
