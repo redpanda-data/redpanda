@@ -56,18 +56,15 @@ FIXTURE_TEST(test_coproc_router_multi_route, coproc_bench_fixture) {
 
     /// Run the test
     router_test_plan test_plan{
-      .input = build_simple_opts(inputs, 50),
-      .output = build_simple_opts(outputs, 25)};
-    auto result_tuple = start_benchmark(std::move(test_plan)).get0();
-    const auto& [push_results, drain_results] = result_tuple;
+      .inputs = build_simple_opts(std::move(inputs), 50, 1),
+      .outputs = expand(std::move(outputs))};
+    auto drain_results = start_benchmark(std::move(test_plan)).get0();
 
     /// Expect all 4 partitions to exist and verify the exact number of
     // record  batches accross all
-    BOOST_REQUIRE_EQUAL(push_results.size(), 2);
     BOOST_REQUIRE_EQUAL(drain_results.size(), 4);
-    for (const auto& [_, pair] : drain_results) {
-        const auto& [__, n_batches] = pair;
-        BOOST_REQUIRE_EQUAL(n_batches, 25);
+    for (const auto& [_, size] : drain_results) {
+        BOOST_REQUIRE_EQUAL(size, 25);
     }
 }
 
@@ -92,16 +89,15 @@ FIXTURE_TEST(test_coproc_router_giant_fanin, coproc_bench_fixture) {
     enable_coprocessors(std::move(deploys)).get();
 
     router_test_plan test_plan{
-      .input = build_simple_opts(inputs, 10),
-      .output = build_simple_opts(outputs, 500)};
-    auto result_tuple = start_benchmark(std::move(test_plan)).get0();
-    const auto& [push_results, drain_results] = result_tuple;
+      .inputs = build_simple_opts(std::move(inputs), 10, 1),
+      .outputs = expand(std::move(outputs))};
+    auto drain_results = start_benchmark(std::move(test_plan)).get0();
     const std::size_t n_record_batches = std::accumulate(
       drain_results.begin(),
       drain_results.end(),
       std::size_t(0),
       [](std::size_t acc, const auto& kv_pair) {
-          return acc += kv_pair.second.second;
+          return acc += kv_pair.second;
       });
     const std::size_t expected_record_batches = 10 * n_copros * n_partitions;
     BOOST_CHECK_EQUAL(n_record_batches, expected_record_batches);
@@ -131,16 +127,15 @@ FIXTURE_TEST(test_coproc_router_giant_one_to_many, coproc_bench_fixture) {
     enable_coprocessors(std::move(deploys)).get();
 
     router_test_plan test_plan{
-      .input = build_simple_opts(inputs, 10),
-      .output = build_simple_opts(outputs, 10)};
-    auto result_tuple = start_benchmark(std::move(test_plan)).get0();
-    const auto& [push_results, drain_results] = result_tuple;
+      .inputs = build_simple_opts(std::move(inputs), 10, 1),
+      .outputs = expand(outputs)};
+    auto results = start_benchmark(std::move(test_plan)).get0();
     const std::size_t n_record_batches = std::accumulate(
-      drain_results.begin(),
-      drain_results.end(),
+      results.begin(),
+      results.end(),
       std::size_t(0),
       [](std::size_t acc, const auto& kv_pair) {
-          return acc += kv_pair.second.second;
+          return acc += kv_pair.second;
       });
     const std::size_t expected_record_batches = 10 * n_copros * n_partitions;
     BOOST_CHECK_EQUAL(n_record_batches, expected_record_batches);
