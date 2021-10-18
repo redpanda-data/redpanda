@@ -274,14 +274,13 @@ ss::future<> persisted_stm::start() {
         auto next_offset = raft::details::next_offset(snapshot.header.offset);
         if (next_offset >= _c->start_offset()) {
             co_await apply_snapshot(snapshot.header, std::move(snapshot.data));
-            set_next(next_offset);
         } else {
             vlog(
               clusterlog.warn,
               "Skipping snapshot {} since it's out of sync with the log",
               _snapshot_mgr.snapshot_path());
-            set_next(_c->start_offset());
         }
+        set_next(next_offset);
 
         _resolved_when_snapshot_hydrated.set_value();
     } else {

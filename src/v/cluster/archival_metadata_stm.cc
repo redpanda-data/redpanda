@@ -13,6 +13,7 @@
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "model/record_utils.h"
+#include "model/timestamp_serde.h"
 #include "raft/consensus.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
@@ -21,55 +22,43 @@
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
-#include <seastar/core/future.hh>
-#include <seastar/core/io_priority_class.hh>
-#include <seastar/core/shared_ptr.hh>
-#include <seastar/core/sstring.hh>
-#include <seastar/util/log.hh>
-
-#include <cstdint>
-#include <memory>
-#include <type_traits>
+#include <seastar/core/sleep.hh>
 
 namespace cluster {
 
-static_assert(std::is_aggregate_v<archival_metadata_stm::segment>);
-
 namespace {
-
-static ss::logger logger{"archival_metadata_stm"};
 
 using cmd_key = named_type<uint8_t, struct cmd_key_tag>;
 
-struct add_segment_cmd {
-    static constexpr cmd_key key{0};
-
-    using value = archival_metadata_stm::segment;
-};
-
-struct snapshot : public serde::envelope<snapshot, serde::version<0>> {
-    std::vector<archival_metadata_stm::segment> segments;
-};
-
 } // namespace
 
-archival_metadata_stm::archival_metadata_stm(raft::consensus* raft)
-  : cluster::persisted_stm("archival_metadata.snapshot", logger, raft)
-  , _logger(logger, ssx::sformat("ntp: {}", raft->ntp()))
-  , _manifest(raft->ntp(), raft->config().revision_id()) {}
+struct archival_metadata_stm::segment
+  : public serde::
+      envelope<segment, serde::version<0>, serde::compat_version<0>> {
+    // ntp_revision is needed to reconstruct full remote path of
+    // the segment.
+    model::revision_id ntp_revision;
+    cloud_storage::segment_name name;
+    cloud_storage::manifest::segment_meta meta;
+};
 
-ss::future<bool> archival_metadata_stm::add_segments(
-  const cloud_storage::manifest& manifest, retry_chain_node& rc_node) {
-    return _lock.with(rc_node.get_timeout(), [this, &manifest, &rc_node] {
-        return do_add_segments(manifest, rc_node);
-    });
-}
+struct archival_metadata_stm::add_segment_cmd {
+    static constexpr cmd_key key{0};
+
+    using value = segment;
+};
+
+struct archival_metadata_stm::snapshot
+  : public serde::
+      envelope<snapshot, serde::version<0>, serde::compat_version<0>> {
+    std::vector<segment> segments;
+};
 
 std::vector<archival_metadata_stm::segment>
 archival_metadata_stm::segments_from_manifest(
-  const cloud_storage::manifest& manifest) const {
+  const cloud_storage::manifest& manifest) {
     std::vector<segment> segments;
-    segments.reserve(_manifest.size());
+    segments.reserve(manifest.size());
     for (const auto& [key, meta] : manifest) {
         model::revision_id ntp_revision;
         cloud_storage::segment_name name;
@@ -82,7 +71,7 @@ archival_metadata_stm::segments_from_manifest(
             ntp_revision = components->_rev;
             name = components->_name;
         } else {
-            ntp_revision = _raft->config().revision_id();
+            ntp_revision = manifest.get_revision_id();
             name = std::get<cloud_storage::segment_name>(key);
         }
 
@@ -96,6 +85,20 @@ archival_metadata_stm::segments_from_manifest(
       });
 
     return segments;
+}
+
+archival_metadata_stm::archival_metadata_stm(
+  raft::consensus* raft, cloud_storage::remote& remote, ss::logger& logger)
+  : cluster::persisted_stm("archival_metadata.snapshot", logger, raft)
+  , _logger(logger, ssx::sformat("ntp: {}", raft->ntp()))
+  , _manifest(raft->ntp(), raft->config().revision_id())
+  , _cloud_storage_api(remote) {}
+
+ss::future<bool> archival_metadata_stm::add_segments(
+  const cloud_storage::manifest& manifest, retry_chain_node& rc_node) {
+    return _lock.with(rc_node.get_timeout(), [this, &manifest, &rc_node] {
+        return do_add_segments(manifest, rc_node);
+    });
 }
 
 ss::future<bool> archival_metadata_stm::do_add_segments(
@@ -148,7 +151,7 @@ ss::future<bool> archival_metadata_stm::do_add_segments(
           segment.name,
           segment.meta.base_offset,
           segment.meta.committed_offset,
-          start_offset(),
+          _start_offset,
           _last_offset);
     }
 
@@ -171,6 +174,95 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
     });
 
     _insync_offset = b.last_offset();
+}
+
+ss::future<> archival_metadata_stm::handle_eviction() {
+    cloud_storage::manifest manifest;
+
+    auto bucket = config::shard_local_cfg().cloud_storage_bucket.value();
+    vassert(bucket, "configuration property cloud_storage_bucket must be set");
+
+    auto timeout
+      = config::shard_local_cfg().cloud_storage_manifest_upload_timeout_ms();
+    auto backoff = config::shard_local_cfg().cloud_storage_initial_backoff_ms();
+
+    retry_chain_node rc_node(_download_as, timeout, backoff);
+    auto res = co_await _cloud_storage_api.download_manifest(
+      s3::bucket_name{*bucket},
+      _manifest.get_manifest_path(),
+      manifest,
+      rc_node);
+
+    if (res != cloud_storage::download_result::success) {
+        // sleep to the end of timeout to avoid calling handle_eviction in a
+        // busy loop.
+        co_await ss::sleep_abortable(rc_node.get_timeout(), _download_as);
+        throw std::runtime_error{fmt::format(
+          "couldn't download manifest {}: {}",
+          _manifest.get_manifest_path(),
+          res)};
+    }
+
+    _manifest = std::move(manifest);
+    for (const auto& segment : _manifest) {
+        if (
+          _start_offset == model::offset{}
+          || segment.second.base_offset < _start_offset) {
+            _start_offset = segment.second.base_offset;
+        }
+    }
+    _last_offset = _manifest.get_last_offset();
+
+    // We can skip all offsets up to the _last_offset because we can be sure
+    // that in the skipped batches there won't be any new remote segments.
+    _insync_offset = _last_offset;
+    auto next_offset = std::max(
+      _raft->start_offset(), raft::details::next_offset(_insync_offset));
+    set_next(next_offset);
+
+    vlog(
+      _logger.info,
+      "handled log eviction, next offset: {}, remote start_offset: {}, "
+      "last_offset: {}",
+      next_offset,
+      _start_offset,
+      _last_offset);
+}
+
+ss::future<> archival_metadata_stm::apply_snapshot(
+  stm_snapshot_header header, iobuf&& data) {
+    auto snap = serde::from_iobuf<snapshot>(std::move(data));
+
+    for (const auto& segment : snap.segments) {
+        apply_add_segment(segment);
+    }
+
+    vlog(
+      _logger.info,
+      "applied snapshot at offset: {}, remote start_offset: {}, last_offset: "
+      "{}",
+      header.offset,
+      _start_offset,
+      _last_offset);
+
+    _last_snapshot_offset = header.offset;
+    _insync_offset = header.offset;
+    co_return;
+}
+
+ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
+    auto segments = segments_from_manifest(_manifest);
+    iobuf snap_data = serde::to_iobuf(
+      snapshot{.segments = std::move(segments)});
+
+    vlog(
+      _logger.info,
+      "creating snapshot at offset: {}, remote start_offset: {}, last_offset: "
+      "{}",
+      _insync_offset,
+      _start_offset,
+      _last_offset);
+    co_return stm_snapshot::create(0, _insync_offset, std::move(snap_data));
 }
 
 void archival_metadata_stm::apply_add_segment(const segment& segment) {
@@ -212,50 +304,9 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
     }
 }
 
-ss::future<> archival_metadata_stm::apply_snapshot(
-  stm_snapshot_header header, iobuf&& data) {
-    auto snap = serde::from_iobuf<snapshot>(std::move(data));
-
-    for (const auto& segment : snap.segments) {
-        apply_add_segment(segment);
-    }
-
-    vlog(
-      _logger.info,
-      "applied snapshot at offset: {}, remote start_offset: {}, last_offset: "
-      "{}",
-      header.offset,
-      _start_offset,
-      _last_offset);
-
-    _last_snapshot_offset = header.offset;
-    _insync_offset = header.offset;
-    co_return;
-}
-
-ss::future<> archival_metadata_stm::handle_eviction() {
-    vlog(
-      _logger.warn,
-      "ignoring prefix truncate, insync offset: {}, raft start offset: {}",
-      _insync_offset,
-      _c->start_offset());
-    set_next(_c->start_offset());
-    return ss::now();
-}
-
-ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
-    auto segments = segments_from_manifest(_manifest);
-    iobuf snap_data = serde::to_iobuf(
-      snapshot{.segments = std::move(segments)});
-
-    vlog(
-      _logger.info,
-      "creating snapshot at offset: {}, remote start_offset: {}, last_offset: "
-      "{}",
-      _insync_offset,
-      _start_offset,
-      _last_offset);
-    co_return stm_snapshot::create(0, _insync_offset, std::move(snap_data));
+ss::future<> archival_metadata_stm::stop() {
+    _download_as.request_abort();
+    co_await raft::state_machine::stop();
 }
 
 } // namespace cluster

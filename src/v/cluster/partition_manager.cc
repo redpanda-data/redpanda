@@ -89,14 +89,13 @@ ss::future<consensus_ptr> partition_manager::manage(
     // TODO: check topic config if archival is enabled for this topic
     if (
       config::shard_local_cfg().cloud_storage_enabled()
+      && _cloud_storage_api.local_is_initialized()
       && c->ntp().ns == model::kafka_namespace) {
         archival_meta_stm = ss::make_shared<cluster::archival_metadata_stm>(
-          c.get());
+          c.get(), _cloud_storage_api.local(), clusterlog);
         c->log().stm_manager().add_stm(archival_meta_stm);
 
-        if (
-          _cloud_storage_api.local_is_initialized()
-          && _cloud_storage_cache.local_is_initialized()) {
+        if (_cloud_storage_cache.local_is_initialized()) {
             auto bucket
               = config::shard_local_cfg().cloud_storage_bucket.value();
             if (!bucket) {

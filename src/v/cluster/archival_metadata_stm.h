@@ -12,63 +12,60 @@
 #pragma once
 
 #include "cloud_storage/manifest.h"
+#include "cloud_storage/remote.h"
 #include "cluster/persisted_stm.h"
-#include "model/fundamental.h"
-#include "model/timestamp_serde.h"
 #include "raft/log_eviction_stm.h"
-#include "serde/serde.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 #include "utils/retry_chain_node.h"
 
-#include <seastar/core/shared_ptr.hh>
-#include <seastar/core/sstring.hh>
 #include <seastar/util/log.hh>
-
-#include <absl/container/btree_set.h>
-
-#include <compare>
 
 namespace cluster {
 
+/// This replicated state machine allows storing archival manifest (a set of
+/// segments archived to cloud storage) in the archived partition log itself.
+/// This is needed to 1) avoid querying cloud storage on partition startup and
+/// 2) to replicate metadata to raft followers so that they can decide which
+/// segments can be safely evicted.
 class archival_metadata_stm final : public persisted_stm {
 public:
-    struct segment : public serde::envelope<segment, serde::version<0>> {
-        // ntp revision id is needed to reconstruct full remote path of
-        // the segment.
-        model::revision_id ntp_revision;
-        cloud_storage::segment_name name;
-        cloud_storage::manifest::segment_meta meta;
-    };
+    explicit archival_metadata_stm(
+      raft::consensus*, cloud_storage::remote& remote, ss::logger& logger);
 
-    explicit archival_metadata_stm(raft::consensus*);
-
+    /// If log_eviction_stm is set, archival_metadata_stm will only allow
+    /// eviction of archived segments.
     void set_log_eviction_stm(
       ss::lw_shared_ptr<raft::log_eviction_stm> log_eviction_stm) {
         _log_eviction_stm = std::move(log_eviction_stm);
     }
 
+    /// Add the difference between manifests to the raft log, replicate it and
+    /// wait until it is applied to the STM.
     ss::future<bool>
     add_segments(const cloud_storage::manifest&, retry_chain_node&);
 
-    model::offset start_offset() const { return _start_offset; }
-
-    model::offset last_offset() { return _last_offset; }
-
+    /// A set of archived segments.
     const cloud_storage::manifest& manifest() const { return _manifest; }
 
-private:
-    std::vector<segment>
-    segments_from_manifest(const cloud_storage::manifest&) const;
+    ss::future<> stop() override;
 
+private:
     ss::future<bool>
     do_add_segments(const cloud_storage::manifest&, retry_chain_node&);
 
     ss::future<> apply(model::record_batch batch) override;
-    ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<> handle_eviction() override;
 
+    ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_snapshot() override;
+
+    struct segment;
+    struct add_segment_cmd;
+    struct snapshot;
+
+    static std::vector<segment>
+    segments_from_manifest(const cloud_storage::manifest& manifest);
 
     void apply_add_segment(const segment& segment);
 
@@ -80,6 +77,9 @@ private:
     cloud_storage::manifest _manifest;
     model::offset _start_offset;
     model::offset _last_offset;
+
+    cloud_storage::remote& _cloud_storage_api;
+    ss::abort_source _download_as;
 
     ss::lw_shared_ptr<raft::log_eviction_stm> _log_eviction_stm;
 };
