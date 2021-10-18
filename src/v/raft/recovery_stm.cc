@@ -17,6 +17,7 @@
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/raftgen_service.h"
+#include "ssx/sformat.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/io_priority_class.hh>
@@ -33,7 +34,13 @@ recovery_stm::recovery_stm(
   , _node_id(node_id)
   , _term(_ptr->term())
   , _scheduling(scheduling)
-  , _ctxlog(_ptr->_ctxlog) {}
+  , _ctxlog(
+      raftlog,
+      ssx::sformat(
+        "[follower: {}] [group_id:{}, {}]",
+        _node_id,
+        _ptr->group(),
+        _ptr->ntp())) {}
 
 ss::future<> recovery_stm::recover() {
     auto meta = get_follower_meta();
@@ -212,10 +219,9 @@ ss::future<> recovery_stm::read_range_for_recovery(
 
     vlog(
       _ctxlog.trace,
-      "Reading batches in range [{},{}] for node {} recovery",
+      "Reading batches in range [{},{}]",
       start_offset,
-      end_offset,
-      _node_id);
+      end_offset);
 
     // TODO: add timeout of maybe 1minute?
     return _ptr->_log.make_reader(cfg)
@@ -225,11 +231,7 @@ ss::future<> recovery_stm::read_range_for_recovery(
       })
       .then([this, start_offset, follower_committed_match_index, is_learner](
               ss::circular_buffer<model::record_batch> batches) {
-          vlog(
-            _ctxlog.trace,
-            "Read {} batches for {} node recovery",
-            batches.size(),
-            _node_id);
+          vlog(_ctxlog.trace, "Read {} batches for recovery", batches.size());
           if (batches.empty()) {
               _stop_requested = true;
               return ss::make_ready_future<>();
@@ -299,8 +301,7 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
 
           vlog(
             _ctxlog.trace,
-            "Sending install snapshot request to {}, last included index: {}",
-            _node_id,
+            "Sending install snapshot request, last included index: {}",
             req.last_included_index);
           return _ptr->_client_protocol
             .install_snapshot(
@@ -422,8 +423,7 @@ ss::future<> recovery_stm::replicate(
           if (!r) {
               vlog(
                 _ctxlog.error,
-                "recovery_stm: not replicate entry: {} - {}",
-                r,
+                "recovery append entries error: {}",
                 r.error().message());
               _stop_requested = true;
               _ptr->get_probe().recovery_request_error();
@@ -459,8 +459,7 @@ ss::future<> recovery_stm::replicate(
                 model::offset(0), details::prev_offset(_base_batch_offset));
               vlog(
                 _ctxlog.trace,
-                "Move node {} next index {} backward",
-                _node_id,
+                "Move next index {} backward",
                 meta.value()->next_index);
           }
       });
@@ -496,8 +495,7 @@ bool recovery_stm::is_recovery_finished() {
     auto max_offset = lstats.dirty_offset();
     vlog(
       _ctxlog.trace,
-      "Recovery status - node {}, match idx: {}, max offset: {}",
-      _node_id,
+      "Recovery status - match idx: {}, max offset: {}",
       meta.value()->match_index,
       max_offset);
 
@@ -532,7 +530,7 @@ ss::future<> recovery_stm::apply() {
                  });
              })
       .finally([this] {
-          vlog(_ctxlog.trace, "Finished node {} recovery", _node_id);
+          vlog(_ctxlog.trace, "Finished recovery");
           auto meta = get_follower_meta();
           if (meta) {
               meta.value()->is_recovering = false;
@@ -548,7 +546,7 @@ ss::future<> recovery_stm::apply() {
 std::optional<follower_index_metadata*> recovery_stm::get_follower_meta() {
     auto it = _ptr->_fstats.find(_node_id);
     if (it == _ptr->_fstats.end()) {
-        vlog(_ctxlog.info, "Node {} is not longer in followers list", _node_id);
+        vlog(_ctxlog.info, "Node is not longer in followers list");
         return std::nullopt;
     }
     return &it->second;

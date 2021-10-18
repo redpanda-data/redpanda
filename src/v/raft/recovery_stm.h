@@ -15,6 +15,7 @@
 #include "outcome.h"
 #include "raft/logger.h"
 #include "storage/snapshot.h"
+#include "utils/prefix_logger.h"
 
 namespace raft {
 
@@ -51,7 +52,7 @@ private:
     model::offset _committed_offset;
     model::term_id _term;
     scheduling_config _scheduling;
-    ctx_log _ctxlog;
+    prefix_logger _ctxlog;
     // tracking follower snapshot delivery
     std::unique_ptr<storage::snapshot_reader> _snapshot_reader;
     size_t _sent_snapshot_bytes = 0;
