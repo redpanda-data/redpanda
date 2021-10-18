@@ -205,7 +205,7 @@ private:
         if (it != _partition->_segments.end()) {
             if (auto tmp = it; ++tmp != _partition->_segments.end()) {
                 auto key = std::visit(
-                  [](auto&& st) { return st->key; }, tmp->second);
+                  [](auto&& st) { return st->manifest_key; }, tmp->second);
                 const auto meta = _partition->_manifest.get(key);
                 vassert(
                   meta != nullptr,
@@ -216,7 +216,8 @@ private:
                     it = tmp;
                 }
             }
-            auto reader = _partition->borrow_reader(config, it->second);
+            auto reader = _partition->borrow_reader(
+              config, it->first, it->second);
             // Here we know the exact type of the reader_state because of
             // the invariant of the borrow_reader
             const auto& segment
@@ -277,7 +278,8 @@ private:
                 // reuse state but replace the reader
                 _partition->evict_reader(std::move(_state->reader));
                 vlog(cst_log.debug, "initializing new log reader");
-                _state = _partition->borrow_reader(_state->config, _it->second);
+                _state = _partition->borrow_reader(
+                  _state->config, _it->first, _it->second);
             }
         }
         vlog(
@@ -352,13 +354,14 @@ void remote_partition::start_readahead(
     struct visit_hydrate {
         segment_state& state;
         remote_partition* part;
+        const model::offset offset_key;
 
         void operator()(offloaded_segment_ptr& st) {
             vlog(
               cst_log.debug,
               "remote partition readahead, hydrating {}",
-              manifest_key_to_string(st->key));
-            auto tmp = st->materialize(*part);
+              manifest_key_to_string(st->manifest_key));
+            auto tmp = st->materialize(*part, offset_key);
             (void)tmp->segment->hydrate().discard_result();
             state = std::move(tmp);
         }
@@ -374,7 +377,9 @@ void remote_partition::start_readahead(
         pi++;
         if (pi != _segments.end()) {
             std::visit(
-              visit_hydrate{.state = pi->second, .part = this}, pi->second);
+              visit_hydrate{
+                .state = pi->second, .part = this, .offset_key = pi->first},
+              pi->second);
         } else {
             break;
         }
@@ -392,19 +397,20 @@ void remote_partition::gc_stale_materialized_segments() {
     std::vector<model::offset> offsets;
     for (auto& st : _materialized) {
         if (now - st.atime > stm_max_idle_time) {
-            auto o = st.segment->get_max_rp_offset();
             vlog(
               _ctxlog.debug,
               "reader for segment with base offset {} is stale",
-              o);
+              st.offset_key);
             // this will delete and unlink the object from
             // _materialized collection
-            offsets.push_back(o);
+            offsets.push_back(st.offset_key);
         }
     }
     vlog(_ctxlog.debug, "found {} eviction candidates ", offsets.size());
     for (auto o : offsets) {
         vlog(_ctxlog.debug, "about to offload segment {}", o);
+        auto it = _segments.find(o);
+        vassert(it != _segments.end(), "Can't find offset {}", o);
         auto tmp = std::visit(
           [this](auto&& st) { return st->offload(this); }, _segments[o]);
         _segments[o] = std::move(tmp);
@@ -412,16 +418,34 @@ void remote_partition::gc_stale_materialized_segments() {
 }
 
 model::offset remote_partition::first_uploaded_offset() {
-    if (_first_uploaded_offset) {
-        return *_first_uploaded_offset;
+    vlog(_ctxlog.debug, "remote partition first_uploaded_offset");
+    try {
+        if (_first_uploaded_offset) {
+            return *_first_uploaded_offset;
+        }
+        model::offset starting_offset = model::offset::max();
+        for (const auto& m : _manifest) {
+            starting_offset = std::min(
+              starting_offset, get_kafka_base_offset(m.second));
+            vlog(
+              _ctxlog.debug,
+              "remote partition first_uploaded_offset .. {}",
+              starting_offset);
+        }
+        _first_uploaded_offset = starting_offset;
+        vlog(
+          _ctxlog.debug,
+          "remote partition first_uploaded_offset set to {}",
+          starting_offset);
+        return starting_offset;
+    } catch (...) {
+        vlog(
+          _ctxlog.error,
+          "remote partition first_uploaded_offset error {}",
+          std::current_exception());
+
+        throw;
     }
-    model::offset starting_offset = model::offset::max();
-    for (const auto& m : _manifest) {
-        starting_offset = std::min(
-          starting_offset, get_kafka_base_offset(m.second));
-    }
-    _first_uploaded_offset = starting_offset;
-    return starting_offset;
 }
 
 ss::future<> remote_partition::stop() {
@@ -452,15 +476,16 @@ void remote_partition::update_segmnets_incrementally() {
 }
 
 /// Materialize segment if needed and create a reader
-std::unique_ptr<remote_partition::reader_state>
-remote_partition::borrow_reader(log_reader_config config, segment_state& st) {
+std::unique_ptr<remote_partition::reader_state> remote_partition::borrow_reader(
+  log_reader_config config, model::offset key, segment_state& st) {
     struct visit_materialize_make_reader {
         segment_state& state;
         remote_partition* part;
         const log_reader_config& config;
+        const model::offset offset_key;
 
         std::unique_ptr<reader_state> operator()(offloaded_segment_ptr& st) {
-            auto tmp = st->materialize(*part);
+            auto tmp = st->materialize(*part, offset_key);
             auto res = tmp->borrow_reader(config);
             state = std::move(tmp);
             return res;
@@ -471,7 +496,7 @@ remote_partition::borrow_reader(log_reader_config config, segment_state& st) {
     };
     return std::visit(
       visit_materialize_make_reader{
-        .state = st, .part = this, .config = config},
+        .state = st, .part = this, .config = config, .offset_key = key},
       st);
 }
 
@@ -483,10 +508,8 @@ void remote_partition::return_reader(
         remote_partition* part;
         std::unique_ptr<reader_state> rst;
 
-        void operator()(offloaded_segment_ptr& st) {
-            auto tmp = st->materialize(*part);
-            tmp->return_reader(std::move(rst));
-            state = std::move(tmp);
+        void operator()(offloaded_segment_ptr&) {
+            part->evict_reader(std::move(rst->reader));
         }
         void operator()(materialized_segment_ptr& st) {
             st->return_reader(std::move(rst));
@@ -515,6 +538,98 @@ ss::future<model::record_batch_reader> remote_partition::make_reader(
       log_reader_config(config), weak_from_this());
     model::record_batch_reader rdr(std::move(impl));
     co_return rdr;
+}
+
+remote_partition::reader_state::reader_state(const log_reader_config& cfg)
+  : config(cfg)
+  , reader(nullptr) {}
+
+ss::future<> remote_partition::reader_state::stop() {
+    if (reader) {
+        co_await reader->stop();
+        reader.reset();
+    }
+}
+
+remote_partition::offloaded_segment_state::offloaded_segment_state(
+  manifest::key key)
+  : manifest_key(std::move(key)) {}
+
+std::unique_ptr<remote_partition::materialized_segment_state>
+remote_partition::offloaded_segment_state::materialize(
+  remote_partition& p, model::offset offset_key) {
+    auto st = std::make_unique<materialized_segment_state>(
+      manifest_key, offset_key, p);
+    return st;
+}
+
+ss::future<> remote_partition::offloaded_segment_state::stop() {
+    return ss::now();
+}
+
+std::unique_ptr<remote_partition::offloaded_segment_state>
+remote_partition::offloaded_segment_state::offload(remote_partition*) {
+    auto st = std::make_unique<offloaded_segment_state>(manifest_key);
+    return st;
+}
+
+remote_partition::materialized_segment_state::materialized_segment_state(
+  manifest::key mk, model::offset off_key, remote_partition& p)
+  : manifest_key(std::move(mk))
+  , offset_key(off_key)
+  , segment(std::make_unique<remote_segment>(
+      p._api, p._cache, p._bucket, p._manifest, manifest_key, p._rtc))
+  , atime(ss::lowres_clock::now()) {
+    p._materialized.push_back(*this);
+}
+
+void remote_partition::materialized_segment_state::return_reader(
+  std::unique_ptr<reader_state> state) {
+    atime = ss::lowres_clock::now();
+    readers.push_back(std::move(state));
+}
+
+/// Borrow reader or make a new one.
+/// In either case return a reader.
+std::unique_ptr<remote_partition::reader_state>
+remote_partition::materialized_segment_state::borrow_reader(
+  const log_reader_config& cfg) {
+    atime = ss::lowres_clock::now();
+    for (auto it = readers.begin(); it != readers.end(); it++) {
+        if ((*it)->config.start_offset == cfg.start_offset) {
+            // here we're reusing the existing reader
+            auto tmp = std::move(*it);
+            tmp->config = cfg;
+            readers.erase(it);
+            return tmp;
+        }
+    }
+    // this may only happen if we have some concurrency
+    auto state = std::make_unique<reader_state>(cfg);
+    state->reader = std::make_unique<remote_segment_batch_reader>(
+      *segment, state->config, segment->get_term());
+    return state;
+}
+
+ss::future<> remote_partition::materialized_segment_state::stop() {
+    for (auto& rs : readers) {
+        if (rs->reader) {
+            co_await rs->reader->stop();
+        }
+    }
+    co_await segment->stop();
+}
+
+std::unique_ptr<remote_partition::offloaded_segment_state>
+remote_partition::materialized_segment_state::offload(
+  remote_partition* partition) {
+    _hook.unlink();
+    for (auto&& rs : readers) {
+        partition->evict_reader(std::move(rs->reader));
+    }
+    partition->evict_segment(std::move(segment));
+    auto st = std::make_unique<offloaded_segment_state>(manifest_key);
+    return st;
 }
 
 } // namespace cloud_storage
