@@ -33,6 +33,47 @@
 namespace cluster {
 using namespace std::chrono_literals;
 
+template<typename Func>
+static auto with(
+  ss::shared_ptr<tm_stm> stm,
+  kafka::transactional_id tx_id,
+  const std::string_view name,
+  Func&& func) noexcept {
+    return stm->get_tx_lock(tx_id)->with(
+      [name, tx_id, func = std::forward<Func>(func)]() mutable {
+          vlog(clusterlog.trace, "got_lock name:{}, tx_id:{}", name, tx_id);
+          return ss::futurize_invoke(std::forward<Func>(func))
+            .finally([name, tx_id]() {
+                vlog(
+                  clusterlog.trace,
+                  "released_lock name:{}, tx_id:{}",
+                  name,
+                  tx_id);
+            });
+      });
+}
+
+template<typename Func>
+static auto with(
+  ss::shared_ptr<tm_stm> stm,
+  kafka::transactional_id tx_id,
+  const std::string_view name,
+  model::timeout_clock::duration timeout,
+  Func&& func) noexcept {
+    return stm->get_tx_lock(tx_id)->with(
+      timeout, [name, tx_id, func = std::forward<Func>(func)]() mutable {
+          vlog(clusterlog.trace, "got_lock name:{}, tx_id:{}", name, tx_id);
+          return ss::futurize_invoke(std::forward<Func>(func))
+            .finally([name, tx_id]() {
+                vlog(
+                  clusterlog.trace,
+                  "released_lock name:{}, tx_id:{}",
+                  name,
+                  tx_id);
+            });
+      });
+}
+
 static add_paritions_tx_reply make_add_partitions_error_response(
   add_paritions_tx_request request, tx_errc ec) {
     add_paritions_tx_reply response;
@@ -185,9 +226,26 @@ ss::future<try_abort_reply> tx_gateway_frontend::try_abort(
     }
 
     vlog(
-      clusterlog.trace, "dispatching try_abort to {} from {}", leader, _self);
+      clusterlog.trace,
+      "dispatching name:try_abort, pid:{}, tx_seq:{}, from:{}, to:{}",
+      pid,
+      tx_seq,
+      _self,
+      leader);
 
-    co_return co_await dispatch_try_abort(leader, tm, pid, tx_seq, timeout);
+    auto reply = co_await dispatch_try_abort(leader, tm, pid, tx_seq, timeout);
+
+    vlog(
+      clusterlog.trace,
+      "received name:try_abort, pid:{}, tx_seq:{}, ec:{}, committed:{}, "
+      "aborted:{}",
+      pid,
+      tx_seq,
+      reply.ec,
+      reply.commited,
+      reply.aborted);
+
+    co_return reply;
 }
 
 ss::future<try_abort_reply> tx_gateway_frontend::try_abort_locally(
@@ -197,10 +255,9 @@ ss::future<try_abort_reply> tx_gateway_frontend::try_abort_locally(
   model::timeout_clock::duration timeout) {
     vlog(
       clusterlog.trace,
-      "processing name:try_abort, pid:{}, tx_seq:{}, coordinator:{}",
+      "processing name:try_abort, pid:{}, tx_seq:{}",
       pid,
-      tx_seq,
-      tm);
+      tx_seq);
 
     auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
 
@@ -214,11 +271,25 @@ ss::future<try_abort_reply> tx_gateway_frontend::try_abort_locally(
 
     if (!shard) {
         vlog(
-          clusterlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
+          clusterlog.trace,
+          "sending name:try_abort, pid:{}, tx_seq:{}, ec:{}",
+          pid,
+          tx_seq,
+          tx_errc::shard_not_found);
         co_return try_abort_reply{.ec = tx_errc::shard_not_found};
     }
 
-    co_return co_await do_try_abort(*shard, tm, pid, tx_seq, timeout);
+    auto reply = co_await do_try_abort(*shard, tm, pid, tx_seq, timeout);
+    vlog(
+      clusterlog.trace,
+      "sending name:try_abort, pid:{}, tx_seq:{}, ec:{}, committed:{}, "
+      "aborted:{}",
+      pid,
+      tx_seq,
+      reply.ec,
+      reply.commited,
+      reply.aborted);
+    co_return reply;
 }
 
 ss::future<try_abort_reply> tx_gateway_frontend::dispatch_try_abort(
@@ -310,13 +381,15 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
                             .aborted = true, .ec = tx_errc::none});
                     }
 
-                    return stm->get_tx_lock(tx_id)
-                      ->with(
-                        timeout,
-                        [&self, stm, tx_id, pid, tx_seq, timeout]() {
-                            return self.do_try_abort(
-                              stm, tx_id, pid, tx_seq, timeout);
-                        })
+                    return with(
+                             stm,
+                             tx_id,
+                             "try_abort",
+                             timeout,
+                             [&self, stm, tx_id, pid, tx_seq, timeout]() {
+                                 return self.do_try_abort(
+                                   stm, tx_id, pid, tx_seq, timeout);
+                             })
                       .handle_exception_type(
                         [](const ss::semaphore_timed_out&) {
                             return try_abort_reply{
@@ -366,9 +439,11 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
         co_return try_abort_reply{.aborted = true, .ec = tx_errc::none};
     } else if (tx.status == tm_transaction::tx_status::preparing) {
         (void)ss::with_gate(_gate, [this, stm, tx, timeout] {
-            return stm->get_tx_lock(tx.id)->with([this, stm, tx, timeout]() {
-                return do_commit_tm_tx(stm, tx.id, tx.pid, tx.tx_seq, timeout);
-            });
+            return with(
+              stm, tx.id, "try_abort:commit", [this, stm, tx, timeout]() {
+                  return do_commit_tm_tx(
+                    stm, tx.id, tx.pid, tx.tx_seq, timeout);
+              });
         });
         co_return try_abort_reply{.ec = tx_errc::none};
     } else if (tx.status == tm_transaction::tx_status::ongoing) {
@@ -473,10 +548,23 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
     }
 
     vlog(
-      clusterlog.trace, "dispatching init_tm_tx from {} to {}", _self, leader);
+      clusterlog.trace,
+      "dispatching name:init_tm_tx, tx_id:{}, from:{}, to:{}",
+      tx_id,
+      _self,
+      leader);
 
-    co_return co_await dispatch_init_tm_tx(
+    auto reply = co_await dispatch_init_tm_tx(
       leader, tx_id, transaction_timeout_ms, timeout);
+
+    vlog(
+      clusterlog.trace,
+      "received name:init_tm_tx, tx_id:{}, pid:{}, ec: {}",
+      tx_id,
+      reply.pid,
+      reply.ec);
+
+    co_return reply;
 }
 
 ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
@@ -497,12 +585,24 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
 
     if (!shard) {
         vlog(
-          clusterlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
+          clusterlog.trace,
+          "sending name:init_tm_tx, tx_id:{}, ec: {}",
+          tx_id,
+          tx_errc::shard_not_found);
         co_return cluster::init_tm_tx_reply{.ec = tx_errc::shard_not_found};
     }
 
-    co_return co_await do_init_tm_tx(
+    auto reply = co_await do_init_tm_tx(
       *shard, tx_id, transaction_timeout_ms, timeout);
+
+    vlog(
+      clusterlog.trace,
+      "sending name:init_tm_tx, tx_id:{}, pid:{}, ec: {}",
+      tx_id,
+      reply.pid,
+      reply.ec);
+
+    co_return reply;
 }
 
 ss::future<init_tm_tx_reply> tx_gateway_frontend::dispatch_init_tm_tx(
@@ -570,17 +670,22 @@ ss::future<init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
                 init_tm_tx_reply{.ec = tx_errc::stm_not_found});
           }
 
-          return stm->read_lock().then(
-            [&self, stm, tx_id, transaction_timeout_ms, timeout](
-              ss::basic_rwlock<>::holder unit) {
-                return stm->get_tx_lock(tx_id)
-                  ->with(
-                    [&self, stm, tx_id, transaction_timeout_ms, timeout]() {
-                        return self.do_init_tm_tx(
-                          stm, tx_id, transaction_timeout_ms, timeout);
-                    })
-                  .finally([u = std::move(unit)] {});
-            });
+          return stm->read_lock().then([&self,
+                                        stm,
+                                        tx_id,
+                                        transaction_timeout_ms,
+                                        timeout](
+                                         ss::basic_rwlock<>::holder unit) {
+              return with(
+                       stm,
+                       tx_id,
+                       "init_tm_tx",
+                       [&self, stm, tx_id, transaction_timeout_ms, timeout]() {
+                           return self.do_init_tm_tx(
+                             stm, tx_id, transaction_timeout_ms, timeout);
+                       })
+                .finally([u = std::move(unit)] {});
+          });
       });
 }
 
@@ -755,10 +860,14 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
 
           return stm->read_lock().then(
             [&self, stm, request, timeout](ss::basic_rwlock<>::holder unit) {
-                return stm->get_tx_lock(request.transactional_id)
-                  ->with([&self, stm, request, timeout]() {
-                      return self.do_add_partition_to_tx(stm, request, timeout);
-                  })
+                return with(
+                         stm,
+                         request.transactional_id,
+                         "add_partition_to_tx",
+                         [&self, stm, request, timeout]() {
+                             return self.do_add_partition_to_tx(
+                               stm, request, timeout);
+                         })
                   .finally([u = std::move(unit)] {});
             });
       });
@@ -914,10 +1023,14 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
 
           return stm->read_lock().then(
             [&self, stm, request, timeout](ss::basic_rwlock<>::holder unit) {
-                return stm->get_tx_lock(request.transactional_id)
-                  ->with([&self, stm, request, timeout]() {
-                      return self.do_add_offsets_to_tx(stm, request, timeout);
-                  })
+                return with(
+                         stm,
+                         request.transactional_id,
+                         "add_offsets_to_tx",
+                         [&self, stm, request, timeout]() {
+                             return self.do_add_offsets_to_tx(
+                               stm, request, timeout);
+                         })
                   .finally([u = std::move(unit)] {});
             });
       });
@@ -1008,22 +1121,29 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
                 return stm->read_lock().then(
                   [request = std::move(request), &self, stm, timeout, outcome](
                     ss::basic_rwlock<>::holder unit) {
-                      return stm->get_tx_lock(request.transactional_id)
-                        ->with([request = std::move(request),
+                      auto tx_id = request.transactional_id;
+                      return with(
+                               stm,
+                               tx_id,
+                               "end_txn",
+                               [request = std::move(request),
                                 &self,
                                 stm,
                                 timeout,
                                 outcome]() mutable {
-                            return self
-                              .do_end_txn(
-                                std::move(request), stm, timeout, outcome)
-                              .finally([outcome]() {
-                                  if (!outcome->available()) {
-                                      outcome->set_value(
-                                        tx_errc::unknown_server_error);
-                                  }
-                              });
-                        })
+                                   return self
+                                     .do_end_txn(
+                                       std::move(request),
+                                       stm,
+                                       timeout,
+                                       outcome)
+                                     .finally([outcome]() {
+                                         if (!outcome->available()) {
+                                             outcome->set_value(
+                                               tx_errc::unknown_server_error);
+                                         }
+                                     });
+                               })
                         .finally([u = std::move(unit)] {});
                   });
             });
@@ -1535,7 +1655,7 @@ ss::future<> tx_gateway_frontend::expire_old_txs(ss::shared_ptr<tm_stm> stm) {
 
 ss::future<> tx_gateway_frontend::expire_old_tx(
   ss::shared_ptr<tm_stm> stm, kafka::transactional_id tx_id) {
-    return stm->get_tx_lock(tx_id)->with([this, stm, tx_id]() {
+    return with(stm, tx_id, "expire_old_tx", [this, stm, tx_id]() {
         return do_expire_old_tx(
           stm, tx_id, config::shard_local_cfg().create_topic_timeout_ms());
     });
