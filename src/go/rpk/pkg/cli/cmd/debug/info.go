@@ -78,6 +78,7 @@ func NewInfoCommand(fs afero.Fs) *cobra.Command {
 
 			wg.Add(1)
 			go func() {
+				defer wg.Done()
 				ctx, cancel := context.WithTimeout(context.Background(), timeout)
 				defer cancel()
 				if ts, err := kadm.NewClient(cl).ListTopics(ctx); err != nil {
