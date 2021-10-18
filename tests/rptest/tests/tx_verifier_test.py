@@ -71,7 +71,6 @@ class TxVerifierTest(RedpandaTest):
         if len(errors) > 0:
             raise DucktapeError(errors)
 
-    @ignore  # https://github.com/vectorizedio/redpanda/issues/2519
     @cluster(num_nodes=3)
     def test_all_tx_tests(self):
         self.verify([
