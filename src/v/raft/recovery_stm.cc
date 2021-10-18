@@ -25,6 +25,7 @@
 #include <seastar/core/with_scheduling_group.hh>
 
 #include <chrono>
+#include <optional>
 
 namespace raft {
 using namespace std::chrono_literals;
@@ -122,12 +123,19 @@ ss::future<> recovery_stm::do_recover(ss::io_priority_class iopc) {
           });
     }
 
-    co_await read_range_for_recovery(
+    auto reader = co_await read_range_for_recovery(
       follower_next_offset,
       _ptr->_log.offsets().dirty_offset,
       follower_committed_match_index,
       iopc,
       is_learner);
+    // no batches for recovery, do nothing
+    if (!reader) {
+        co_return;
+    }
+
+    co_await replicate(
+      std::move(*reader), should_flush(follower_committed_match_index));
 
     meta = get_follower_meta();
 
@@ -183,7 +191,8 @@ recovery_stm::should_flush(model::offset follower_committed_match_index) const {
       && (follower_has_batches_to_commit || last_replicate_with_quorum));
 }
 
-ss::future<> recovery_stm::read_range_for_recovery(
+ss::future<std::optional<model::record_batch_reader>>
+recovery_stm::read_range_for_recovery(
   model::offset start_offset,
   model::offset end_offset,
   model::offset follower_committed_match_index,
@@ -223,7 +232,7 @@ ss::future<> recovery_stm::read_range_for_recovery(
     if (batches.empty()) {
         vlog(_ctxlog.trace, "Read no batches for recovery, stopping");
         _stop_requested = true;
-        co_return;
+        co_return std::nullopt;
     }
     vlog(
       _ctxlog.trace,
@@ -251,11 +260,8 @@ ss::future<> recovery_stm::read_range_for_recovery(
           });
     }
 
-    auto f_reader = model::make_foreign_memory_record_batch_reader(
+    co_return model::make_foreign_memory_record_batch_reader(
       std::move(gap_filled_batches));
-
-    co_await replicate(
-      std::move(f_reader), should_flush(follower_committed_match_index));
 }
 
 ss::future<> recovery_stm::open_snapshot_reader() {
