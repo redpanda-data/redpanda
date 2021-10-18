@@ -14,6 +14,7 @@ class Verifier {
     void run(String connection) throws Exception;
   }
 
+  final static int RETRY_TIMEOUT_SEC = 5;
   final static String txId1 = "tx1";
   final static String txId2 = "tx2";
   final static String topic1 = "topic1";
@@ -72,14 +73,14 @@ class Verifier {
       } catch (RetryableException e) {
         if (retries > 0) {
           e.printStackTrace();
-          Thread.sleep(Duration.ofSeconds(1).toMillis());
+          Thread.sleep(Duration.ofSeconds(RETRY_TIMEOUT_SEC).toMillis());
           continue;
         }
         throw e;
       } catch (KafkaException e) {
         if (retries > 0) {
           e.printStackTrace();
-          Thread.sleep(Duration.ofSeconds(1).toMillis());
+          Thread.sleep(Duration.ofSeconds(RETRY_TIMEOUT_SEC).toMillis());
           continue;
         }
         throw e;
@@ -88,7 +89,7 @@ class Verifier {
         if (cause != null && cause instanceof KafkaException) {
           if (retries > 0) {
             e.printStackTrace();
-            Thread.sleep(Duration.ofSeconds(1).toMillis());
+            Thread.sleep(Duration.ofSeconds(RETRY_TIMEOUT_SEC).toMillis());
             continue;
           }
         }
