@@ -54,14 +54,6 @@ public:
     remote_partition(
       const manifest& m, remote& api, cache& c, s3::bucket_name bucket);
 
-    ~remote_partition() noexcept {
-        vlog(
-          cst_log.info,
-          "remote_partition d-tor, {} segments, {} in eviction list",
-          _segments.size(),
-          _eviction_list.size());
-    }
-
     ss::future<> start();
 
     /// Create a reader
@@ -93,16 +85,9 @@ private:
     /// have longer lifetime than the config. This is acheived by
     /// storing both objects in the same struct.
     struct reader_state {
-        explicit reader_state(const log_reader_config& cfg)
-          : config(cfg)
-          , reader(nullptr) {}
+        explicit reader_state(const log_reader_config& cfg);
 
-        ss::future<> stop() {
-            if (reader) {
-                co_await reader->stop();
-                reader.reset();
-            }
-        }
+        ss::future<> stop();
 
         /// Config which was used to create a reader
         log_reader_config config;
@@ -116,23 +101,16 @@ private:
 
     /// State that have to be materialized before use
     struct offloaded_segment_state {
-        explicit offloaded_segment_state(manifest::key key)
-          : key(std::move(key)) {}
+        explicit offloaded_segment_state(manifest::key key);
 
         std::unique_ptr<materialized_segment_state>
-        materialize(remote_partition& p) {
-            auto st = std::make_unique<materialized_segment_state>(key, p);
-            return st;
-        }
+        materialize(remote_partition& p, model::offset offset_key);
 
-        ss::future<> stop() { return ss::now(); }
+        ss::future<> stop();
 
-        std::unique_ptr<offloaded_segment_state> offload(remote_partition*) {
-            auto st = std::make_unique<offloaded_segment_state>(key);
-            return st;
-        }
+        std::unique_ptr<offloaded_segment_state> offload(remote_partition*);
 
-        manifest::key key;
+        manifest::key manifest_key;
     };
 
     /// State with materialized segment and cached reader
@@ -141,61 +119,25 @@ private:
     /// least one active reader that consumes data from the
     /// remote segment.
     struct materialized_segment_state {
-        materialized_segment_state(manifest::key mk, remote_partition& p)
-          : key(std::move(mk))
-          , segment(std::make_unique<remote_segment>(
-              p._api, p._cache, p._bucket, p._manifest, key, p._rtc))
-          , atime(ss::lowres_clock::now()) {
-            p._materialized.push_back(*this);
-        }
+        materialized_segment_state(
+          manifest::key mk, model::offset offk, remote_partition& p);
 
-        void return_reader(std::unique_ptr<reader_state> state) {
-            atime = ss::lowres_clock::now();
-            readers.push_back(std::move(state));
-        }
+        void return_reader(std::unique_ptr<reader_state> state);
 
         /// Borrow reader or make a new one.
         /// In either case return a reader.
         std::unique_ptr<reader_state>
-        borrow_reader(const log_reader_config& cfg) {
-            atime = ss::lowres_clock::now();
-            for (auto it = readers.begin(); it != readers.end(); it++) {
-                if ((*it)->config.start_offset == cfg.start_offset) {
-                    // here we're reusing the existing reader
-                    auto tmp = std::move(*it);
-                    tmp->config = cfg;
-                    readers.erase(it);
-                    return tmp;
-                }
-            }
-            // this may only happen if we have some concurrency
-            auto state = std::make_unique<reader_state>(cfg);
-            state->reader = std::make_unique<remote_segment_batch_reader>(
-              *segment, state->config, segment->get_term());
-            return state;
-        }
+        borrow_reader(const log_reader_config& cfg);
 
-        ss::future<> stop() {
-            for (auto& rs : readers) {
-                if (rs->reader) {
-                    co_await rs->reader->stop();
-                }
-            }
-            co_await segment->stop();
-        }
+        ss::future<> stop();
 
         std::unique_ptr<offloaded_segment_state>
-        offload(remote_partition* partition) {
-            _hook.unlink();
-            for (auto&& rs : readers) {
-                partition->evict_reader(std::move(rs->reader));
-            }
-            partition->evict_segment(std::move(segment));
-            auto st = std::make_unique<offloaded_segment_state>(key);
-            return st;
-        }
+        offload(remote_partition* partition);
 
-        manifest::key key;
+        /// Key of the segment metatdata in the manifest
+        manifest::key manifest_key;
+        /// Key of the segment in _segments collection of the remote_partition
+        model::offset offset_key;
         std::unique_ptr<remote_segment> segment;
         /// Batch reader that can be used to scan the segment
         std::list<std::unique_ptr<reader_state>> readers;
@@ -212,8 +154,12 @@ private:
       = std::variant<offloaded_segment_ptr, materialized_segment_ptr>;
 
     /// Materialize segment if needed and create a reader
-    std::unique_ptr<reader_state>
-    borrow_reader(log_reader_config config, segment_state& st);
+    ///
+    /// \param config is a reader config
+    /// \param offset_key is an key of the segment state in the _segments
+    /// \param st is a segment state referenced by offset_key
+    std::unique_ptr<reader_state> borrow_reader(
+      log_reader_config config, model::offset offset_key, segment_state& st);
 
     /// Return reader back to segment_state
     void return_reader(std::unique_ptr<reader_state>, segment_state& st);

@@ -34,7 +34,7 @@ public:
         if (
           _partition->cloud_data_available()
           && (_partition->start_offset() > _partition->start_cloud_offset())) {
-            return _partition->start_cloud_offset(); // TODO: translate offset
+            return _partition->start_cloud_offset();
         }
         return _translator->from_log_offset(_partition->start_offset());
     }
