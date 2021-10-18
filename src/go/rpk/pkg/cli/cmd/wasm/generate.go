@@ -82,9 +82,10 @@ func latestClientApiVersion() string {
 	}
 
 	wasmApi := strings.Join(output, "")
+
 	var result []map[string]interface{}
-	if err := json.Unmarshal([]byte(wasmApi), &result); err != nil {
-		fmt.Println("Can not parse json from npm search: {}, Error: {}", output, err)
+	if err = json.Unmarshal([]byte(wasmApi), &result); err != nil {
+		fmt.Printf("Can not parse json from npm search: '%s', Error: %s\n", wasmApi, err)
 		return defApiVersion
 	}
 
@@ -95,7 +96,7 @@ func latestClientApiVersion() string {
 
 	version, ok := result[0]["version"].(string)
 	if !ok {
-		fmt.Println("Can not get version from npm search result: {}", result)
+		fmt.Printf("Can not get version from npm search result: %s\n", result)
 		return defApiVersion
 	}
 	return version
