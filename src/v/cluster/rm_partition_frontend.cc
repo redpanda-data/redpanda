@@ -122,7 +122,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
 
         begin_tx_reply result;
         if (leader == _self) {
-            result = co_await do_begin_tx(
+            result = co_await begin_tx_locally(
               ntp, pid, tx_seq, transaction_timeout_ms);
             if (result.ec == tx_errc::leader_not_found) {
                 error = fmt::format(
@@ -151,12 +151,23 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
 
         vlog(
           clusterlog.trace,
-          "dispatching begin_tx({},...) from {} to {}",
+          "dispatching name:begin_tx, ntp:{}, pid:{}, tx_seq:{}, from:{}, "
+          "to:{}",
           ntp,
+          pid,
+          tx_seq,
           _self,
           leader);
         result = co_await dispatch_begin_tx(
           leader, ntp, pid, tx_seq, transaction_timeout_ms, timeout);
+        vlog(
+          clusterlog.trace,
+          "received name:begin_tx, ntp:{}, pid:{}, tx_seq:{}, ec:{}, etag: {}",
+          ntp,
+          pid,
+          tx_seq,
+          result.ec,
+          result.etag);
         if (result.ec == tx_errc::leader_not_found) {
             error = fmt::format(
               "remote execution of begin_tx({},...) on {} failed with 'not a "
@@ -225,7 +236,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::dispatch_begin_tx(
       });
 }
 
-ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
+ss::future<begin_tx_reply> rm_partition_frontend::begin_tx_locally(
   model::ntp ntp,
   model::producer_identity pid,
   model::tx_seq tx_seq,
@@ -236,9 +247,24 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
       ntp,
       pid,
       tx_seq);
+    auto reply = co_await do_begin_tx(ntp, pid, tx_seq, transaction_timeout_ms);
+    vlog(
+      clusterlog.trace,
+      "sending name:begin_tx, ntp:{}, pid:{}, tx_seq:{}, ec:{}, etag:{}",
+      ntp,
+      pid,
+      tx_seq,
+      reply.ec,
+      reply.etag);
+    co_return reply;
+}
 
+ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
+  model::ntp ntp,
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  std::chrono::milliseconds transaction_timeout_ms) {
     if (!is_leader_of(ntp)) {
-        vlog(clusterlog.warn, "current node isn't the leader for {}", ntp);
         return ss::make_ready_future<begin_tx_reply>(
           begin_tx_reply{.ntp = ntp, .ec = tx_errc::leader_not_found});
     }
@@ -246,7 +272,6 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
     auto shard = _shard_table.local().shard_for(ntp);
 
     if (!shard) {
-        vlog(clusterlog.warn, "can't find a shard for {}", ntp);
         return ss::make_ready_future<begin_tx_reply>(
           begin_tx_reply{.ntp = ntp, .ec = tx_errc::shard_not_found});
     }
@@ -258,8 +283,6 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
         cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(ntp);
           if (!partition) {
-              vlog(
-                clusterlog.warn, "can't find {} in the partition manager", ntp);
               return ss::make_ready_future<begin_tx_reply>(
                 begin_tx_reply{.ntp = ntp, .ec = tx_errc::partition_not_found});
           }
@@ -318,14 +341,36 @@ ss::future<prepare_tx_reply> rm_partition_frontend::prepare_tx(
     auto _self = _controller->self();
 
     if (leader == _self) {
-        return do_prepare_tx(ntp, etag, tm, pid, tx_seq, timeout);
+        return prepare_tx_locally(ntp, etag, tm, pid, tx_seq, timeout);
     }
 
     vlog(
-      clusterlog.trace, "dispatching prepare tx to {} from {}", leader, _self);
+      clusterlog.trace,
+      "dispatching name:prepare_tx, ntp:{}, etag:{}, pid:{}, tx_seq:{}, "
+      "coordinator:{}, from:{}, to:{}",
+      ntp,
+      etag,
+      pid,
+      tx_seq,
+      tm,
+      _self,
+      leader);
 
     return dispatch_prepare_tx(
-      leader.value(), ntp, etag, tm, pid, tx_seq, timeout);
+             leader.value(), ntp, etag, tm, pid, tx_seq, timeout)
+      .then([ntp, etag, tm, pid, tx_seq](prepare_tx_reply reply) {
+          vlog(
+            clusterlog.trace,
+            "received name:prepare_tx, ntp:{}, etag:{}, pid:{}, tx_seq:{}, "
+            "coordinator:{}, ec:{}",
+            ntp,
+            etag,
+            pid,
+            tx_seq,
+            tm,
+            reply.ec);
+          return reply;
+      });
 }
 
 ss::future<prepare_tx_reply> rm_partition_frontend::dispatch_prepare_tx(
@@ -367,7 +412,7 @@ ss::future<prepare_tx_reply> rm_partition_frontend::dispatch_prepare_tx(
       });
 }
 
-ss::future<prepare_tx_reply> rm_partition_frontend::do_prepare_tx(
+ss::future<prepare_tx_reply> rm_partition_frontend::prepare_tx_locally(
   model::ntp ntp,
   model::term_id etag,
   model::partition_id tm,
@@ -377,15 +422,34 @@ ss::future<prepare_tx_reply> rm_partition_frontend::do_prepare_tx(
     vlog(
       clusterlog.trace,
       "processing name:prepare_tx, ntp:{}, etag:{}, pid:{}, tx_seq:{}, "
-      "coordinator: {}",
+      "coordinator:{}",
       ntp,
       etag,
       pid,
       tx_seq,
       tm);
+    auto reply = co_await do_prepare_tx(ntp, etag, tm, pid, tx_seq, timeout);
+    vlog(
+      clusterlog.trace,
+      "sending name:prepare_tx, ntp:{}, etag:{}, pid:{}, tx_seq:{}, "
+      "coordinator:{}, ec:{}",
+      ntp,
+      etag,
+      pid,
+      tx_seq,
+      tm,
+      reply.ec);
+    co_return reply;
+}
 
+ss::future<prepare_tx_reply> rm_partition_frontend::do_prepare_tx(
+  model::ntp ntp,
+  model::term_id etag,
+  model::partition_id tm,
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  model::timeout_clock::duration timeout) {
     if (!is_leader_of(ntp)) {
-        vlog(clusterlog.warn, "current node isn't the leader for {}", ntp);
         return ss::make_ready_future<prepare_tx_reply>(
           prepare_tx_reply{.ec = tx_errc::leader_not_found});
     }
@@ -393,7 +457,6 @@ ss::future<prepare_tx_reply> rm_partition_frontend::do_prepare_tx(
     auto shard = _shard_table.local().shard_for(ntp);
 
     if (!shard) {
-        vlog(clusterlog.warn, "can't find a shard for {}", ntp);
         return ss::make_ready_future<prepare_tx_reply>(
           prepare_tx_reply{.ec = tx_errc::shard_not_found});
     }
@@ -405,7 +468,6 @@ ss::future<prepare_tx_reply> rm_partition_frontend::do_prepare_tx(
         cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(ntp);
           if (!partition) {
-              vlog(clusterlog.warn, "can't get partition by {} ntp", ntp);
               return ss::make_ready_future<prepare_tx_reply>(
                 prepare_tx_reply{.ec = tx_errc::partition_not_found});
           }
@@ -446,13 +508,29 @@ ss::future<commit_tx_reply> rm_partition_frontend::commit_tx(
     auto _self = _controller->self();
 
     if (leader == _self) {
-        return do_commit_tx(ntp, pid, tx_seq, timeout);
+        return commit_tx_locally(ntp, pid, tx_seq, timeout);
     }
 
     vlog(
-      clusterlog.trace, "dispatching commit tx to {} from {}", leader, _self);
+      clusterlog.trace,
+      "dispatching name:commit_tx, ntp:{}, pid:{}, tx_seq:{}, from:{}, to:{}",
+      ntp,
+      pid,
+      tx_seq,
+      _self,
+      leader);
 
-    return dispatch_commit_tx(leader.value(), ntp, pid, tx_seq, timeout);
+    return dispatch_commit_tx(leader.value(), ntp, pid, tx_seq, timeout)
+      .then([ntp, pid, tx_seq](commit_tx_reply reply) {
+          vlog(
+            clusterlog.trace,
+            "received name:commit_tx, ntp:{}, pid:{}, tx_seq:{}, ec:{}",
+            ntp,
+            pid,
+            tx_seq,
+            reply.ec);
+          return reply;
+      });
 }
 
 ss::future<commit_tx_reply> rm_partition_frontend::dispatch_commit_tx(
@@ -485,7 +563,7 @@ ss::future<commit_tx_reply> rm_partition_frontend::dispatch_commit_tx(
       });
 }
 
-ss::future<commit_tx_reply> rm_partition_frontend::do_commit_tx(
+ss::future<commit_tx_reply> rm_partition_frontend::commit_tx_locally(
   model::ntp ntp,
   model::producer_identity pid,
   model::tx_seq tx_seq,
@@ -496,9 +574,23 @@ ss::future<commit_tx_reply> rm_partition_frontend::do_commit_tx(
       ntp,
       pid,
       tx_seq);
+    auto reply = co_await do_commit_tx(ntp, pid, tx_seq, timeout);
+    vlog(
+      clusterlog.trace,
+      "sending name:commit_tx, ntp:{}, pid:{}, tx_seq:{}, ec:{}",
+      ntp,
+      pid,
+      tx_seq,
+      reply.ec);
+    co_return reply;
+}
 
+ss::future<commit_tx_reply> rm_partition_frontend::do_commit_tx(
+  model::ntp ntp,
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  model::timeout_clock::duration timeout) {
     if (!is_leader_of(ntp)) {
-        vlog(clusterlog.warn, "current node isn't the leader for {}", ntp);
         return ss::make_ready_future<commit_tx_reply>(
           commit_tx_reply{.ec = tx_errc::leader_not_found});
     }
@@ -506,7 +598,6 @@ ss::future<commit_tx_reply> rm_partition_frontend::do_commit_tx(
     auto shard = _shard_table.local().shard_for(ntp);
 
     if (!shard) {
-        vlog(clusterlog.warn, "can't find a shard for {}", ntp);
         return ss::make_ready_future<commit_tx_reply>(
           commit_tx_reply{.ec = tx_errc::shard_not_found});
     }
@@ -517,7 +608,6 @@ ss::future<commit_tx_reply> rm_partition_frontend::do_commit_tx(
       [pid, ntp, tx_seq, timeout](cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(ntp);
           if (!partition) {
-              vlog(clusterlog.warn, "can't get partition by {} ntp", ntp);
               return ss::make_ready_future<commit_tx_reply>(
                 commit_tx_reply{.ec = tx_errc::partition_not_found});
           }
@@ -559,12 +649,29 @@ ss::future<abort_tx_reply> rm_partition_frontend::abort_tx(
     auto _self = _controller->self();
 
     if (leader == _self) {
-        return do_abort_tx(ntp, pid, tx_seq, timeout);
+        return abort_tx_locally(ntp, pid, tx_seq, timeout);
     }
 
-    vlog(clusterlog.trace, "dispatching abort tx to {} from {}", leader, _self);
+    vlog(
+      clusterlog.trace,
+      "dispatching name:abort_tx, ntp:{}, pid:{}, tx_seq:{}, from:{}, to:{}",
+      ntp,
+      pid,
+      tx_seq,
+      _self,
+      leader);
 
-    return dispatch_abort_tx(leader.value(), ntp, pid, tx_seq, timeout);
+    return dispatch_abort_tx(leader.value(), ntp, pid, tx_seq, timeout)
+      .then([ntp, pid, tx_seq](abort_tx_reply reply) {
+          vlog(
+            clusterlog.trace,
+            "received name:abort_tx, ntp:{}, pid:{}, tx_seq:{}, ec:{}",
+            ntp,
+            pid,
+            tx_seq,
+            reply.ec);
+          return reply;
+      });
 }
 
 ss::future<abort_tx_reply> rm_partition_frontend::dispatch_abort_tx(
@@ -597,7 +704,7 @@ ss::future<abort_tx_reply> rm_partition_frontend::dispatch_abort_tx(
       });
 }
 
-ss::future<abort_tx_reply> rm_partition_frontend::do_abort_tx(
+ss::future<abort_tx_reply> rm_partition_frontend::abort_tx_locally(
   model::ntp ntp,
   model::producer_identity pid,
   model::tx_seq tx_seq,
@@ -608,9 +715,23 @@ ss::future<abort_tx_reply> rm_partition_frontend::do_abort_tx(
       ntp,
       pid,
       tx_seq);
+    auto reply = co_await do_abort_tx(ntp, pid, tx_seq, timeout);
+    vlog(
+      clusterlog.trace,
+      "sending name:abort_tx, ntp:{}, pid:{}, tx_seq:{}, ec:{}",
+      ntp,
+      pid,
+      tx_seq,
+      reply.ec);
+    co_return reply;
+}
 
+ss::future<abort_tx_reply> rm_partition_frontend::do_abort_tx(
+  model::ntp ntp,
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  model::timeout_clock::duration timeout) {
     if (!is_leader_of(ntp)) {
-        vlog(clusterlog.warn, "current node isn't the leader for {}", ntp);
         return ss::make_ready_future<abort_tx_reply>(
           abort_tx_reply{.ec = tx_errc::leader_not_found});
     }
@@ -618,7 +739,6 @@ ss::future<abort_tx_reply> rm_partition_frontend::do_abort_tx(
     auto shard = _shard_table.local().shard_for(ntp);
 
     if (!shard) {
-        vlog(clusterlog.warn, "can't find a shard for {}", ntp);
         return ss::make_ready_future<abort_tx_reply>(
           abort_tx_reply{.ec = tx_errc::shard_not_found});
     }
@@ -629,7 +749,6 @@ ss::future<abort_tx_reply> rm_partition_frontend::do_abort_tx(
       [pid, ntp, tx_seq, timeout](cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(ntp);
           if (!partition) {
-              vlog(clusterlog.warn, "can't get partition by {} ntp", ntp);
               return ss::make_ready_future<abort_tx_reply>(
                 abort_tx_reply{.ec = tx_errc::partition_not_found});
           }
