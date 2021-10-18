@@ -124,11 +124,7 @@ ss::future<> recovery_stm::do_recover(ss::io_priority_class iopc) {
     }
 
     auto reader = co_await read_range_for_recovery(
-      follower_next_offset,
-      _ptr->_log.offsets().dirty_offset,
-      follower_committed_match_index,
-      iopc,
-      is_learner);
+      follower_next_offset, iopc, is_learner);
     // no batches for recovery, do nothing
     if (!reader) {
         co_return;
@@ -193,14 +189,10 @@ recovery_stm::should_flush(model::offset follower_committed_match_index) const {
 
 ss::future<std::optional<model::record_batch_reader>>
 recovery_stm::read_range_for_recovery(
-  model::offset start_offset,
-  model::offset end_offset,
-  model::offset follower_committed_match_index,
-  ss::io_priority_class iopc,
-  bool is_learner) {
+  model::offset start_offset, ss::io_priority_class iopc, bool is_learner) {
     storage::log_reader_config cfg(
       start_offset,
-      end_offset,
+      model::offset::max(),
       1,
       // 32KB is a modest estimate. It has good batching and it also prevents an
       // OOM situation where we have a lot of raft groups recovering at the same
@@ -218,11 +210,7 @@ recovery_stm::read_range_for_recovery(
         cfg.skip_batch_cache = true;
     }
 
-    vlog(
-      _ctxlog.trace,
-      "Reading batches in range [{},{}]",
-      start_offset,
-      end_offset);
+    vlog(_ctxlog.trace, "Reading batches, starting from: {}", start_offset);
 
     // TODO: add timeout of maybe 1minute?
     auto reader = co_await _ptr->_log.make_reader(cfg);
