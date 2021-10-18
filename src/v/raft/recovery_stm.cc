@@ -220,11 +220,17 @@ ss::future<> recovery_stm::read_range_for_recovery(
     auto batches = co_await model::consume_reader_to_memory(
       std::move(reader), model::no_timeout);
 
-    vlog(_ctxlog.trace, "Read {} batches for recovery", batches.size());
     if (batches.empty()) {
+        vlog(_ctxlog.trace, "Read no batches for recovery, stopping");
         _stop_requested = true;
         co_return;
     }
+    vlog(
+      _ctxlog.trace,
+      "Read batches in range [{},{}] for recovery",
+      batches.front().base_offset(),
+      batches.back().last_offset());
+
     auto gap_filled_batches = details::make_ghost_batches_in_gaps(
       start_offset, std::move(batches));
     _base_batch_offset = gap_filled_batches.begin()->base_offset();
