@@ -2,6 +2,14 @@
 title: RPK commands
 order: 7
 ---
+
+# What is RPK?
+RPK is a CLI tool that Vectorized created to help you better manage RedPanda.   
+You can interact directly with RedPanda like [tuning for performance](#redpanda-tune), or you can [create and read topics](#topic) from the CLI.   
+If you're on Docker, you can find additional info here: [RPK container](https://vectorized.io/docs/guide-rpk-container/)   
+Check what else you can do below.
+
+
 # RPK commands
 
 Commands marked with ![Linux][linux] are available on Linux operating systems.
