@@ -55,6 +55,11 @@ public:
       topic_metadata,
       model::topic_namespace_hash,
       model::topic_namespace_eq>;
+    using hierarchy_t = absl::node_hash_map<
+      model::topic_namespace,
+      absl::flat_hash_set<model::topic_namespace>,
+      model::topic_namespace_hash,
+      model::topic_namespace_eq>;
 
     using delta_cb_t
       = ss::noncopyable_function<void(const std::vector<delta>&)>;
@@ -166,6 +171,7 @@ private:
     transform_topics(Func&&) const;
 
     underlying_t _topics;
+    hierarchy_t _topics_hierarchy;
 
     absl::flat_hash_set<model::ntp> _update_in_progress;
 

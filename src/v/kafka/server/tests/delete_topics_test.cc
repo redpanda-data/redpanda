@@ -175,8 +175,22 @@ FIXTURE_TEST(delete_non_replicable_topics, delete_topics_request_fixture) {
     auto resp = send_delete_topics_request(
       make_delete_topics_request({model::topic("topic-5")}, 10s));
     for (const auto& r : resp.data.responses) {
+        BOOST_REQUIRE_EQUAL(r.error_code, kafka::error_code::none);
+    }
+}
+
+FIXTURE_TEST(
+  error_delete_non_replicable_topics, delete_topics_request_fixture) {
+    wait_for_controller_leadership().get();
+
+    // Until subsequent changes, its illegal to delete a non_replicable topic
+    create_topic("topic-1", 1, 1);
+    create_non_replicable_topic("topic-1", "topic-5");
+    auto resp = send_delete_topics_request(
+      make_delete_topics_request({model::topic("topic-1")}, 10s));
+    for (const auto& r : resp.data.responses) {
         BOOST_REQUIRE_EQUAL(
-          r.error_code, kafka::error_code::unknown_topic_or_partition);
+          r.error_code, kafka::error_code::cluster_authorization_failed);
     }
 }
 

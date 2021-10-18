@@ -23,7 +23,7 @@ rp_test(
     wasm_event_tests.cc
     event_handler_tests.cc
     event_listener_tests.cc
-    read_materialized_topic_test.cc
+    kafka_api_materialized_tests.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main ${fixture_deps}
   LABELS coproc

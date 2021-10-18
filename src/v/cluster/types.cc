@@ -224,6 +224,8 @@ operator<<(std::ostream& o, const topic_table_delta::op_type& tp) {
         return o << "update_properties";
     case topic_table_delta::op_type::add_non_replicable:
         return o << "add_non_replicable_addition";
+    case topic_table_delta::op_type::del_non_replicable:
+        return o << "del_non_replicable_deletion";
     }
     __builtin_unreachable();
 }
