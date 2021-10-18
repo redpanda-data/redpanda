@@ -37,17 +37,17 @@ inline ss::logger test_log("test"); // NOLINT
 
 static constexpr std::string_view manifest_payload = R"json({
     "version": 1,
-    "namespace": "test-ns",
+    "namespace": "kafka",
     "topic": "test-topic",
     "partition": 42,
     "revision": 0,
     "last_offset": 1004,
     "segments": {
-        "1-2-v1.log": {
+        "0-1-v1.log": {
             "is_compacted": false,
             "size_bytes": 100,
             "committed_offset": 2,
-            "base_offset": 1
+            "base_offset": 0
         },
         "1000-4-v1.log": {
             "is_compacted": false,
@@ -59,7 +59,7 @@ static constexpr std::string_view manifest_payload = R"json({
 })json";
 static constexpr std::string_view manifest_with_deleted_segment = R"json({
     "version": 1,
-    "namespace": "test-ns",
+    "namespace": "kafka",
     "topic": "test-topic",
     "partition": 42,
     "revision": 0,
@@ -74,7 +74,7 @@ static constexpr std::string_view manifest_with_deleted_segment = R"json({
     }
 })json";
 
-static const auto manifest_namespace = model::ns("test-ns");    // NOLINT
+static const auto manifest_namespace = model::ns("kafka");      // NOLINT
 static const auto manifest_topic = model::topic("test-topic");  // NOLINT
 static const auto manifest_partition = model::partition_id(42); // NOLINT
 static const auto manifest_ntp = model::ntp(                    // NOLINT
@@ -83,16 +83,16 @@ static const auto manifest_ntp = model::ntp(                    // NOLINT
   manifest_partition);
 static const auto manifest_revision = model::revision_id(0); // NOLINT
 static const ss::sstring manifest_url = ssx::sformat(        // NOLINT
-  "/20000000/meta/{}_{}/manifest.json",
+  "/10000000/meta/{}_{}/manifest.json",
   manifest_ntp.path(),
   manifest_revision());
 
 // NOLINTNEXTLINE
 static const ss::sstring segment1_url
-  = "/ce4fd1a3/test-ns/test-topic/42_0/1-2-v1.log";
+  = "/3ed95428/kafka/test-topic/42_0/0-1-v1.log";
 // NOLINTNEXTLINE
 static const ss::sstring segment2_url
-  = "/e622410d/test-ns/test-topic/42_0/1000-4-v1.log";
+  = "/0bbed744/kafka/test-topic/42_0/1000-4-v1.log";
 
 static const std::vector<s3_imposter_fixture::expectation>
   default_expectations({
@@ -189,11 +189,11 @@ FIXTURE_TEST(test_upload_manifest, s3_imposter_fixture) { // NOLINT
     auto pm = const_cast<cloud_storage::manifest*>( // NOLINT
       &archiver.get_remote_manifest());
     pm->add(
-      segment_name("1-2-v1.log"),
+      segment_name("0-1-v1.log"),
       {
         .is_compacted = false,
         .size_bytes = 100, // NOLINT
-        .base_offset = model::offset(1),
+        .base_offset = model::offset(0),
         .committed_offset = model::offset(2),
       });
     pm->add(
@@ -221,7 +221,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
       remote_conf.connection_limit, remote_conf.client_config);
 
     std::vector<segment_desc> segments = {
-      {manifest_ntp, model::offset(1), model::term_id(2)},
+      {manifest_ntp, model::offset(0), model::term_id(1)},
       {manifest_ntp, model::offset(1000), model::term_id(4)},
     };
     init_storage_api_local(segments);
@@ -278,6 +278,18 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
         verify_segment(manifest_ntp, archival::segment_name(name), req.content);
         BOOST_REQUIRE(req._method == "PUT"); // NOLINT
     }
+
+    BOOST_REQUIRE(part->archival_meta_stm());
+    const auto& stm_manifest = part->archival_meta_stm()->manifest();
+    BOOST_REQUIRE_EQUAL(stm_manifest.size(), segments.size());
+    for (size_t i = 0; i < segments.size(); ++i) {
+        const auto& segment = segments[i];
+        auto it = stm_manifest.begin();
+        std::advance(it, i);
+
+        BOOST_CHECK_EQUAL(segment.base_offset, it->second.base_offset);
+    }
+    BOOST_REQUIRE(stm_manifest == archiver.get_remote_manifest());
 }
 
 // NOLINTNEXTLINE
@@ -352,7 +364,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     // that clashes with the partial upload.
     model::offset lso = model::offset::max();
     std::vector<segment_desc> segments = {
-      {manifest_ntp, model::offset(1), model::term_id(2)},
+      {manifest_ntp, model::offset(0), model::term_id(1)},
       {manifest_ntp, model::offset(1000), model::term_id(4)},
     };
     init_storage_api_local(segments);
@@ -369,7 +381,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
       part->committed_offset(),
       *part);
 
-    auto s1name = archival::segment_name("1-2-v1.log");
+    auto s1name = archival::segment_name("0-1-v1.log");
     auto s2name = archival::segment_name("1000-4-v1.log");
     auto segment1 = get_segment(manifest_ntp, s1name);
     BOOST_REQUIRE(static_cast<bool>(segment1));
@@ -386,7 +398,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     old_manifest.add(oldname, old_meta);
     std::stringstream old_str;
     old_manifest.serialize(old_str);
-    ss::sstring segment3_url = "/dfee62b1/test-ns/test-topic/42_0/2-2-v1.log";
+    ss::sstring segment3_url = "/dfee62b1/kafka/test-topic/42_0/2-2-v1.log";
 
     std::vector<s3_imposter_fixture::expectation> expectations({
       s3_imposter_fixture::expectation{
@@ -443,6 +455,22 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
         BOOST_REQUIRE_EQUAL(len, 1);
         BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
     }
+
+    BOOST_REQUIRE(part->archival_meta_stm());
+    const auto& stm_manifest = part->archival_meta_stm()->manifest();
+    // including the segment from the old manifest
+    BOOST_REQUIRE_EQUAL(stm_manifest.size(), segments.size() + 1);
+
+    for (const auto& [name, base_offset] :
+         std::vector<std::pair<segment_name, model::offset>>{
+           {s1name, segments[0].base_offset},
+           {s2name, segments[1].base_offset},
+           {oldname, old_meta.base_offset}}) {
+        BOOST_CHECK(stm_manifest.get(s1name));
+        BOOST_CHECK_EQUAL(stm_manifest.get(name)->base_offset, base_offset);
+    }
+
+    BOOST_CHECK(stm_manifest == archiver.get_remote_manifest());
 }
 
 class counting_batch_consumer : public storage::batch_consumer {
@@ -693,6 +721,10 @@ static void test_partial_upload_impl(
         BOOST_REQUIRE_EQUAL(stats.min_offset, base_upl2);
         BOOST_REQUIRE_EQUAL(stats.max_offset, last_upl2);
     }
+
+    BOOST_REQUIRE(part->archival_meta_stm());
+    const auto& stm_manifest = part->archival_meta_stm()->manifest();
+    BOOST_REQUIRE(stm_manifest == archiver.get_remote_manifest());
 }
 
 // NOLINTNEXTLINE
