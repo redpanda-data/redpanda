@@ -37,13 +37,6 @@ struct custom_read_write {
 
 enum class my_enum : uint8_t { x, y, z };
 
-inline void
-read_nested(iobuf_parser& in, my_enum& el, size_t const bytes_left_limit) {
-    serde::read_enum(in, el, bytes_left_limit);
-}
-
-inline void write(iobuf& out, my_enum el) { serde::write_enum(out, el); }
-
 SEASTAR_THREAD_TEST_CASE(custom_read_write_test) {
     BOOST_CHECK(
       serde::from_iobuf<custom_read_write>(
@@ -327,6 +320,36 @@ SEASTAR_THREAD_TEST_CASE(all_types_test) {
         serde::write(b, model::ns{"abc"});
         auto parser = iobuf_parser{std::move(b)};
         BOOST_CHECK(serde::read<model::ns>(parser) == "abc");
+    }
+
+    {
+        auto b = iobuf();
+        serde::write(b, my_enum::z);
+        auto parser = iobuf_parser{std::move(b)};
+        BOOST_CHECK(serde::read<my_enum>(parser) == my_enum::z);
+    }
+
+    {
+        auto b = iobuf();
+        serde::write(
+          b,
+          static_cast<serde::serde_enum_serialized_t>(
+            std::numeric_limits<std::underlying_type_t<my_enum>>::max())
+            + 1);
+        auto parser = iobuf_parser{std::move(b)};
+        BOOST_CHECK_THROW(
+          { serde::read<my_enum>(parser); }, serde::serde_exception);
+    }
+
+    {
+        enum class big_enum : uint32_t { x };
+        auto b = iobuf();
+        BOOST_CHECK_THROW(
+          serde::write(
+            b,
+            static_cast<big_enum>(
+              std::numeric_limits<std::underlying_type_t<big_enum>>::max())),
+          serde::serde_exception);
     }
 }
 
