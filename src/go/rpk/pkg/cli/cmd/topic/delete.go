@@ -14,54 +14,67 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/twmb/franz-go/pkg/kerr"
-	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
 )
 
 func NewDeleteCommand(fs afero.Fs) *cobra.Command {
-	return &cobra.Command{
+	var re bool
+	cmd := &cobra.Command{
 		Use:   "delete [TOPICS...]",
-		Short: "Delete a topic",
-		Args:  cobra.MinimumNArgs(1),
+		Short: "Delete topics.",
+		Long: `Delete topics.
+
+This command deletes all requested topics, printing the success or fail status
+per topic.
+
+The --regex flag (-r) opts into parsing the input topics as regular expressions
+and deleting any non-internal topic that matches any of expressions. The input
+expressions are wrapped with ^ and $ so that the expression must match the
+whole topic name (which also prevents accidental delete-everything mistakes).
+
+The topic list command accepts the same input regex format as this delete
+command. If you want to check what your regular expressions will delete before
+actually deleting them, you can check the output of 'rpk topic list -r'.
+
+For example,
+
+    delete foo bar            # deletes topics foo and bar
+    delete -r '^f.*' '.*r$'   # deletes any topic starting with f and any topics ending in r
+    delete -r '.*'            # deletes all topics
+    delete -r .               # deletes any one-character topics
+
+`,
+
+		Args: cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, topics []string) {
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := kafka.NewFranzClient(fs, p, cfg)
+			adm, err := kafka.NewAdmin(fs, p, cfg)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
-			defer cl.Close()
+			defer adm.Close()
 
-			req := kmsg.NewPtrDeleteTopicsRequest()
-			req.TimeoutMillis = 5000
-			req.TopicNames = topics        // v0 thru v5
-			for _, topic := range topics { // v6+
-				t := kmsg.NewDeleteTopicsRequestTopic()
-				t.Topic = kmsg.StringPtr(topic)
-				req.Topics = append(req.Topics, t)
+			if re {
+				topics, err = regexTopics(adm, topics)
+				out.MaybeDie(err, "unable to filter topics by regex: %v", err)
 			}
 
-			resp, err := req.RequestWith(context.Background(), cl)
+			resps, err := adm.DeleteTopics(context.Background(), topics...)
 			out.MaybeDie(err, "unable to issue delete topics request: %v", err)
 			tw := out.NewTable("topic", "status")
 			defer tw.Flush()
-			for _, respTopic := range resp.Topics {
+			for _, t := range resps.Sorted() {
 				msg := "OK"
-				if err := kerr.ErrorForCode(respTopic.ErrorCode); err != nil {
-					msg = err.Error()
+				if t.Err != nil {
+					msg = t.Err.Error()
 				}
-				// v6+ introduced topic IDs and allows the
-				// response topic to be nil if we request with
-				// IDs. We aren't, so we should have a topic.
-				topic := "[BUG:empty!]"
-				if respTopic.Topic != nil {
-					topic = *respTopic.Topic
-				}
-				tw.Print(topic, msg)
+				tw.Print(t.Topic, msg)
 			}
 		},
 	}
+	cmd.Flags().BoolVarP(&re, "regex", "r", false, "parse topics as regex; delete any topic that matches any input topic expression")
+	return cmd
 }
