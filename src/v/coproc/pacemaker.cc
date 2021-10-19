@@ -237,12 +237,17 @@ ss::future<absl::btree_map<script_id, errc>> pacemaker::remove_all_sources() {
     for (const auto& [id, _] : _scripts) {
         ids.push_back(id);
     }
-    absl::btree_map<script_id, errc> results_map;
+    std::vector<ss::future<errc>> fs;
     for (const script_id& id : ids) {
-        errc result = co_await remove_source(id);
-        results_map.emplace(id, result);
+        fs.emplace_back(remove_source(id));
     }
-    co_return results_map;
+    auto errors = co_await ss::when_all_succeed(fs.begin(), fs.end());
+    absl::btree_map<script_id, errc> r;
+    vassert(ids.size() == errors.size(), "Mismatch number of responses");
+    for (std::size_t i = 0; i < ids.size(); ++i) {
+        r.emplace(ids[i], errors[i]);
+    }
+    co_return r;
 }
 
 void pacemaker::fire_updates(script_id id, errc e) {
