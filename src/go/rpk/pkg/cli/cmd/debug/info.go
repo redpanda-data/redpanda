@@ -48,11 +48,15 @@ func NewInfoCommand(fs afero.Fs) *cobra.Command {
 		Aliases: []string{"status"},
 		Args:    cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
+			if !send {
+				return
+			}
+
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			if !cfg.Rpk.EnableUsageStats && send {
+			if !cfg.Rpk.EnableUsageStats {
 				log.Debug("Usage stats reporting is disabled. To enable, set rpk.enable_usage_stats true")
 				return
 			}
