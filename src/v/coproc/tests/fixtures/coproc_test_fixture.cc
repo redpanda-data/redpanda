@@ -225,5 +225,5 @@ ss::future<> coproc_test_fixture::wait_for_copro(coproc::script_id id) {
         throw coproc::exception(
           fmt_with_ctx(ssx::sformat, "Failed to deploy script: {}", id));
     }
-    vlog(coproc::coproclog.info, "Script {} successfully deployed!");
+    vlog(coproc::coproclog.info, "Script {} successfully deployed!", id);
 }
