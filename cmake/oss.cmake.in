@@ -40,6 +40,8 @@ set(cmake_build_env)
 if (@CMAKE_CXX_COMPILER_ID@ MATCHES "GNU")
   set(seastar_ld_flags "${ld_flags} -pthread")
   set(seastar_cxx_flags "-Wno-error$<SEMICOLON>-fcoroutines")
+else()
+  set(seastar_cxx_flags "-Wno-error")
 endif()
 
 if ("@CMAKE_CXX_COMPILER_ID@" MATCHES "Clang")
