@@ -12,7 +12,10 @@ from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.kafka_cli_tools import KafkaCliTools
+
+from kafka import KafkaProducer
+import sys
+import traceback
 
 
 class CompactionTermRollRecoveryTest(RedpandaTest):
@@ -58,6 +61,29 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
         # ensure that the first stopped node recovered ok
         self._wait_until_recovered(all_replicas, self.topic, partition.index)
 
+    def _produce(self, topic, num_records, record_size, timeout_s):
+        producer = None
+        try:
+            producer = KafkaProducer(bootstrap_servers=self.redpanda.brokers(),
+                                     acks="all")
+            value = ("x" * num_records).encode("utf-8")
+            key = "key1".encode("utf-8")
+            future = None
+            for i in range(0, num_records):
+                future = producer.send(topic, value=value, key=key)
+            if future != None:
+                future.get(timeout=timeout_s)
+        except:
+            e, v = sys.exc_info()[:2]
+            stacktrace = traceback.format_exc()
+            self.logger.debug(
+                f"Error on produce: {e}, stacktrace: {stacktrace}")
+        if producer != None:
+            try:
+                producer.close()
+            except:
+                pass
+
     def _produce_until_compaction(self, nodes, topic, partition):
         """
         Produce into the topic until some new segments have been compacted.
@@ -68,10 +94,8 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
             map(lambda cnt: cnt + num_segs,
                 self._compacted_segments(nodes, topic, partition)))
 
-        kafka_tools = KafkaCliTools(self.redpanda)
-
         def done():
-            kafka_tools.produce(self.topic, 1024, 1024)
+            self._produce(self.topic, 1024, 1024, 10)
             curr = self._compacted_segments(nodes, topic, partition)
             return all(map(lambda cnt: cnt[0] > cnt[1], zip(curr, target)))
 
