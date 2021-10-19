@@ -26,19 +26,26 @@ namespace config {
 
 class config_store;
 using required = ss::bool_class<struct required_tag>;
+using needs_restart = ss::bool_class<struct needs_restart_tag>;
 
 class base_property {
 public:
+    struct metadata {
+        required required{required::no};
+        needs_restart needs_restart{needs_restart::yes};
+    };
+
     base_property(
       config_store& conf,
       std::string_view name,
       std::string_view desc,
-      required req);
+      metadata meta);
 
     const std::string_view& name() const { return _name; }
     const std::string_view& desc() const { return _desc; }
 
-    const required is_required() const { return _required; }
+    const required is_required() const { return _meta.required; }
+    bool needs_restart() { return bool(_meta.needs_restart); }
 
     // this serializes the property value. a full configuration serialization is
     // performed in config_store::to_json where the json object key is taken
@@ -58,6 +65,6 @@ private:
     friend std::ostream& operator<<(std::ostream&, const base_property&);
     std::string_view _name;
     std::string_view _desc;
-    required _required;
+    metadata _meta;
 };
 }; // namespace config

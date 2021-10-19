@@ -31,10 +31,22 @@ public:
       config_store& conf,
       std::string_view name,
       std::string_view desc,
-      required req = required::yes,
+      base_property::metadata meta = {},
       T def = T{},
       property::validator validator = property::noop_validator)
-      : base_property(conf, name, desc, req)
+      : base_property(conf, name, desc, meta)
+      , _value(def)
+      , _default(std::move(def))
+      , _validator(std::move(validator)) {}
+
+    property(
+      config_store& conf,
+      std::string_view name,
+      std::string_view desc,
+      required req = {},
+      T def = T{},
+      property::validator validator = property::noop_validator)
+      : base_property(conf, name, desc, {.required = req})
       , _value(def)
       , _default(std::move(def))
       , _validator(std::move(validator)) {}

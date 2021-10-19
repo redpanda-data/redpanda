@@ -18,10 +18,10 @@ base_property::base_property(
   config_store& conf,
   std::string_view name,
   std::string_view desc,
-  required req)
+  base_property::metadata meta)
   : _name(name)
   , _desc(desc)
-  , _required(req) {
+  , _meta(meta) {
     conf._properties.emplace(name, this);
 }
 
