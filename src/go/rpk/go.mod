@@ -50,8 +50,8 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/tklauser/go-sysconf v0.1.0
 	github.com/twmb/franz-go v1.1.3-0.20211011202156-c82819093251
-	github.com/twmb/franz-go/pkg/kadm v0.0.0-20211017224045-8e793efaef43
-	github.com/twmb/franz-go/pkg/kmsg v0.0.0-20211017223218-8f7af361b808
+	github.com/twmb/franz-go/pkg/kadm v0.0.0-20211019184032-1d51332a9bbe
+	github.com/twmb/franz-go/pkg/kmsg v0.0.0-20211019182131-c44763e95e25
 	github.com/twmb/tlscfg v1.2.0
 	github.com/twmb/types v1.1.6
 	golang.org/x/crypto v0.0.0-20210817164053-32db794688a5
