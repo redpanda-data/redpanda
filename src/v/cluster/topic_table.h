@@ -110,6 +110,15 @@ public:
 
     /// Delta API
 
+    /**
+     * NOTE: There can only be one entity at a time consuming from this API.
+     *
+     * Even though many entities could call this method and register for an
+     * update, in the case there are already pending updates ready by the time
+     * this method is called, the first caller to this method will recieve the
+     * updates; consume them and the next caller will observe no updates and
+     * register for future updates.
+     */
     ss::future<std::vector<delta>> wait_for_changes(ss::abort_source&);
 
     bool has_pending_changes() const { return !_pending_deltas.empty(); }
