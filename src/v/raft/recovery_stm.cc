@@ -17,12 +17,15 @@
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/raftgen_service.h"
+#include "ssx/sformat.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/with_scheduling_group.hh>
 
 #include <chrono>
+#include <optional>
 
 namespace raft {
 using namespace std::chrono_literals;
@@ -33,7 +36,13 @@ recovery_stm::recovery_stm(
   , _node_id(node_id)
   , _term(_ptr->term())
   , _scheduling(scheduling)
-  , _ctxlog(_ptr->_ctxlog) {}
+  , _ctxlog(
+      raftlog,
+      ssx::sformat(
+        "[follower: {}] [group_id:{}, {}]",
+        _node_id,
+        _ptr->group(),
+        _ptr->ntp())) {}
 
 ss::future<> recovery_stm::recover() {
     auto meta = get_follower_meta();
@@ -59,13 +68,13 @@ ss::future<> recovery_stm::do_recover(ss::io_priority_class iopc) {
     if (!meta) {
         // stop recovery when node was removed
         _stop_requested = true;
-        return ss::make_ready_future<>();
+        co_return;
     }
 
     auto lstats = _ptr->_log.offsets();
     // follower last index was already evicted at the leader, use snapshot
     if (meta.value()->next_index < lstats.start_offset) {
-        return install_snapshot();
+        co_return co_await install_snapshot();
     }
 
     /**
@@ -102,49 +111,43 @@ ss::future<> recovery_stm::do_recover(ss::io_priority_class iopc) {
 
     auto follower_next_offset = meta.value()->next_index;
     auto follower_committed_match_index = meta.value()->match_committed_index();
-    auto f = ss::now();
+    auto is_learner = meta.value()->is_learner;
 
     // we do not have next entry for the follower yet, wait for next disk append
     // of follower state change
     if (lstats.dirty_offset < follower_next_offset) {
-        f = meta.value()
-              ->follower_state_change.wait([this] { return state_changed(); })
-              .handle_exception_type(
-                [this](const ss::broken_condition_variable&) {
-                    _stop_requested = true;
-                });
+        co_await meta.value()
+          ->follower_state_change.wait([this] { return state_changed(); })
+          .handle_exception_type([this](const ss::broken_condition_variable&) {
+              _stop_requested = true;
+          });
     }
 
-    // read & replicate log entries
-    return f
-      .then([this,
-             follower_next_offset,
-             follower_committed_match_index,
-             iopc,
-             is_learner = meta.value()->is_learner] {
-          return read_range_for_recovery(
-            follower_next_offset,
-            _ptr->_log.offsets().dirty_offset,
-            follower_committed_match_index,
-            iopc,
-            is_learner);
-      })
-      .then([this] {
-          auto meta = get_follower_meta();
-          if (!meta) {
-              _stop_requested = true;
-              return;
-          }
-          /**
-           * since we do not stop recovery for relaxed consistency writes we
-           * have to notify recovery_finished condition variable when follower
-           * is up to date, but before finishing recovery
-           */
-          auto max_offset = _ptr->_log.offsets().dirty_offset();
-          if (meta.value()->match_index == max_offset) {
-              meta.value()->recovery_finished.broadcast();
-          }
-      });
+    auto reader = co_await read_range_for_recovery(
+      follower_next_offset, iopc, is_learner);
+    // no batches for recovery, do nothing
+    if (!reader) {
+        co_return;
+    }
+
+    co_await replicate(
+      std::move(*reader), should_flush(follower_committed_match_index));
+
+    meta = get_follower_meta();
+
+    if (!meta) {
+        _stop_requested = true;
+        co_return;
+    }
+    /**
+     * since we do not stop recovery for relaxed consistency writes we
+     * have to notify recovery_finished condition variable when follower
+     * is up to date, but before finishing recovery
+     */
+    auto max_offset = _ptr->_log.offsets().dirty_offset();
+    if (meta.value()->match_index == max_offset) {
+        meta.value()->recovery_finished.broadcast();
+    }
 }
 
 bool recovery_stm::state_changed() {
@@ -184,15 +187,12 @@ recovery_stm::should_flush(model::offset follower_committed_match_index) const {
       && (follower_has_batches_to_commit || last_replicate_with_quorum));
 }
 
-ss::future<> recovery_stm::read_range_for_recovery(
-  model::offset start_offset,
-  model::offset end_offset,
-  model::offset follower_committed_match_index,
-  ss::io_priority_class iopc,
-  bool is_learner) {
+ss::future<std::optional<model::record_batch_reader>>
+recovery_stm::read_range_for_recovery(
+  model::offset start_offset, ss::io_priority_class iopc, bool is_learner) {
     storage::log_reader_config cfg(
       start_offset,
-      end_offset,
+      model::offset::max(),
       1,
       // 32KB is a modest estimate. It has good batching and it also prevents an
       // OOM situation where we have a lot of raft groups recovering at the same
@@ -210,63 +210,46 @@ ss::future<> recovery_stm::read_range_for_recovery(
         cfg.skip_batch_cache = true;
     }
 
-    vlog(
-      _ctxlog.trace,
-      "Reading batches in range [{},{}] for node {} recovery",
-      start_offset,
-      end_offset,
-      _node_id);
+    vlog(_ctxlog.trace, "Reading batches, starting from: {}", start_offset);
 
     // TODO: add timeout of maybe 1minute?
-    return _ptr->_log.make_reader(cfg)
-      .then([](model::record_batch_reader reader) {
-          return model::consume_reader_to_memory(
-            std::move(reader), model::no_timeout);
-      })
-      .then([this, start_offset, follower_committed_match_index, is_learner](
-              ss::circular_buffer<model::record_batch> batches) {
-          vlog(
-            _ctxlog.trace,
-            "Read {} batches for {} node recovery",
-            batches.size(),
-            _node_id);
-          if (batches.empty()) {
-              _stop_requested = true;
-              return ss::make_ready_future<>();
-          }
-          auto gap_filled_batches = details::make_ghost_batches_in_gaps(
-            start_offset, std::move(batches));
-          _base_batch_offset = gap_filled_batches.begin()->base_offset();
-          _last_batch_offset = gap_filled_batches.back().last_offset();
+    auto reader = co_await _ptr->_log.make_reader(cfg);
+    auto batches = co_await model::consume_reader_to_memory(
+      std::move(reader), model::no_timeout);
 
-          auto throttle_f = ss::now();
-          if (is_learner && _ptr->_recovery_throttle) {
-              const auto size = std::accumulate(
-                gap_filled_batches.cbegin(),
-                gap_filled_batches.cend(),
-                size_t{0},
-                [](size_t acc, const auto& batch) {
-                    return acc + batch.size_bytes();
-                });
-              throttle_f
-                = _ptr->_recovery_throttle->get()
-                    .throttle(size)
-                    .handle_exception_type([this](const ss::broken_semaphore&) {
-                        vlog(_ctxlog.info, "Recovery throttling has stopped");
-                    });
-          }
+    if (batches.empty()) {
+        vlog(_ctxlog.trace, "Read no batches for recovery, stopping");
+        _stop_requested = true;
+        co_return std::nullopt;
+    }
+    vlog(
+      _ctxlog.trace,
+      "Read batches in range [{},{}] for recovery",
+      batches.front().base_offset(),
+      batches.back().last_offset());
 
-          auto f_reader = model::make_foreign_memory_record_batch_reader(
-            std::move(gap_filled_batches));
+    auto gap_filled_batches = details::make_ghost_batches_in_gaps(
+      start_offset, std::move(batches));
+    _base_batch_offset = gap_filled_batches.begin()->base_offset();
+    _last_batch_offset = gap_filled_batches.back().last_offset();
 
-          return throttle_f.then([this,
-                                  f_reader = std::move(f_reader),
-                                  follower_committed_match_index]() mutable {
-              return replicate(
-                std::move(f_reader),
-                should_flush(follower_committed_match_index));
+    if (is_learner && _ptr->_recovery_throttle) {
+        const auto size = std::accumulate(
+          gap_filled_batches.cbegin(),
+          gap_filled_batches.cend(),
+          size_t{0},
+          [](size_t acc, const auto& batch) {
+              return acc + batch.size_bytes();
           });
-      });
+        co_await _ptr->_recovery_throttle->get()
+          .throttle(size)
+          .handle_exception_type([this](const ss::broken_semaphore&) {
+              vlog(_ctxlog.info, "Recovery throttling has stopped");
+          });
+    }
+
+    co_return model::make_foreign_memory_record_batch_reader(
+      std::move(gap_filled_batches));
 }
 
 ss::future<> recovery_stm::open_snapshot_reader() {
@@ -299,8 +282,7 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
 
           vlog(
             _ctxlog.trace,
-            "Sending install snapshot request to {}, last included index: {}",
-            _node_id,
+            "Sending install snapshot request, last included index: {}",
             req.last_included_index);
           return _ptr->_client_protocol
             .install_snapshot(
@@ -422,8 +404,7 @@ ss::future<> recovery_stm::replicate(
           if (!r) {
               vlog(
                 _ctxlog.error,
-                "recovery_stm: not replicate entry: {} - {}",
-                r,
+                "recovery append entries error: {}",
                 r.error().message());
               _stop_requested = true;
               _ptr->get_probe().recovery_request_error();
@@ -459,8 +440,7 @@ ss::future<> recovery_stm::replicate(
                 model::offset(0), details::prev_offset(_base_batch_offset));
               vlog(
                 _ctxlog.trace,
-                "Move node {} next index {} backward",
-                _node_id,
+                "Move next index {} backward",
                 meta.value()->next_index);
           }
       });
@@ -496,8 +476,7 @@ bool recovery_stm::is_recovery_finished() {
     auto max_offset = lstats.dirty_offset();
     vlog(
       _ctxlog.trace,
-      "Recovery status - node {}, match idx: {}, max offset: {}",
-      _node_id,
+      "Recovery status - match idx: {}, max offset: {}",
       meta.value()->match_index,
       max_offset);
 
@@ -532,7 +511,7 @@ ss::future<> recovery_stm::apply() {
                  });
              })
       .finally([this] {
-          vlog(_ctxlog.trace, "Finished node {} recovery", _node_id);
+          vlog(_ctxlog.trace, "Finished recovery");
           auto meta = get_follower_meta();
           if (meta) {
               meta.value()->is_recovering = false;
@@ -548,7 +527,7 @@ ss::future<> recovery_stm::apply() {
 std::optional<follower_index_metadata*> recovery_stm::get_follower_meta() {
     auto it = _ptr->_fstats.find(_node_id);
     if (it == _ptr->_fstats.end()) {
-        vlog(_ctxlog.info, "Node {} is not longer in followers list", _node_id);
+        vlog(_ctxlog.info, "Node is not longer in followers list");
         return std::nullopt;
     }
     return &it->second;

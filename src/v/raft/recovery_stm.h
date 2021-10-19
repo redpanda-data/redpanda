@@ -15,6 +15,7 @@
 #include "outcome.h"
 #include "raft/logger.h"
 #include "storage/snapshot.h"
+#include "utils/prefix_logger.h"
 
 namespace raft {
 
@@ -26,8 +27,9 @@ public:
 private:
     ss::future<> recover();
     ss::future<> do_recover(ss::io_priority_class);
-    ss::future<> read_range_for_recovery(
-      model::offset, model::offset, model::offset, ss::io_priority_class, bool);
+    ss::future<std::optional<model::record_batch_reader>>
+    read_range_for_recovery(model::offset, ss::io_priority_class, bool);
+
     ss::future<> replicate(
       model::record_batch_reader&&, append_entries_request::flush_after_append);
     ss::future<result<append_entries_reply>>
@@ -51,7 +53,7 @@ private:
     model::offset _committed_offset;
     model::term_id _term;
     scheduling_config _scheduling;
-    ctx_log _ctxlog;
+    prefix_logger _ctxlog;
     // tracking follower snapshot delivery
     std::unique_ptr<storage::snapshot_reader> _snapshot_reader;
     size_t _sent_snapshot_bytes = 0;
