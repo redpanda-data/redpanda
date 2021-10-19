@@ -295,4 +295,6 @@ private:
     model::revision_id _rev;
 };
 
+std::ostream& operator<<(std::ostream& o, const manifest::key& k);
+
 } // namespace cloud_storage
