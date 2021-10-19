@@ -25,26 +25,39 @@ else
 fi
 
 deb_deps=(
+  ccache
+  clang
   curl
-  libzstd-dev
-  libsnappy-dev
-  rapidjson-dev
-  libxxhash-dev
-  python3-venv
-  python3-jinja2
-  pkg-config
   git
+  libsnappy-dev
+  libxxhash-dev
+  libzstd-dev
+  llvm
+  lld
+  pkg-config
+  procps
+  python3-jinja2
+  python3-venv
+  rapidjson-dev
   zip
 )
 fedora_deps=(
+  ccache
+  clang
   curl
-  libzstd-static
+  git
   libzstd-devel
-  snappy-devel
-  rapidjson-devel
-  xxhash-devel
-  python3-virtualenv
+  libzstd-static
+  llvm
+  lld
+  pkg-config
+  procps
   python3-jinja2
+  python3-virtualenv
+  rapidjson-devel
+  snappy-devel
+  xxhash-devel
+  xz
   zip
 )
 
