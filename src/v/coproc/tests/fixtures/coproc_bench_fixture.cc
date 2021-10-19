@@ -51,11 +51,10 @@ coproc_bench_fixture::start_benchmark(router_test_plan plan) {
 ss::future<> coproc_bench_fixture::push_all(
   absl::flat_hash_map<model::ntp, router_test_plan::options> inputs) {
     for (const auto& [ntp, opts] : inputs) {
-        co_await push(
+        co_await produce(
           ntp,
           storage::test::make_random_memory_record_batch_reader(
-            model::offset{0}, opts.batch_size, opts.number_of_batches, false))
-          .discard_result();
+            model::offset{0}, opts.batch_size, opts.number_of_batches, false));
     }
 }
 

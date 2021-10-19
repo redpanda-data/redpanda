@@ -38,7 +38,7 @@ public:
               .tid = coproc::registry::type_identifier::identity_coprocessor,
               .topics = {
                 {input_topic, coproc::topic_ingestion_policy::stored}}}}});
-        co_await push(
+        co_await produce(
           input_ntp,
           storage::test::make_random_memory_record_batch_reader(
             model::offset(0), 4, 4, false));

@@ -55,7 +55,7 @@ FIXTURE_TEST(test_coproc_router_no_results, coproc_test_fixture) {
     // Test -> Start pushing to registered topics and check that NO
     // materialized logs have been created
     model::ntp input_ntp(model::kafka_namespace, foo, model::partition_id(0));
-    push(
+    produce(
       input_ntp,
       storage::test::make_random_memory_record_batch_reader(
         model::offset(0), 40, 1, false))
@@ -98,7 +98,7 @@ FIXTURE_TEST(test_coproc_router_off_by_one, coproc_test_fixture) {
       .get();
     auto fn =
       [this, input_ntp, output_ntp](model::offset start) -> ss::future<size_t> {
-        co_await push(input_ntp, single_record_record_batch_reader());
+        co_await produce(input_ntp, single_record_record_batch_reader());
         auto r = co_await consume(output_ntp, start, start + model::offset{1});
         co_return r.size();
     };
@@ -133,7 +133,7 @@ FIXTURE_TEST(test_coproc_router_double, coproc_test_fixture) {
       to_materialized_topic(foo, identity_coprocessor::identity_topic),
       model::partition_id(0));
 
-    push(
+    produce(
       input_ntp,
       storage::test::make_random_memory_record_batch_reader(
         model::offset(0), 50, 1, false))
@@ -158,9 +158,9 @@ FIXTURE_TEST(test_copro_auto_deregister_function, coproc_test_fixture) {
       .get();
 
     // Push some data across input topic....
-    std::vector<ss::future<model::offset>> fs;
+    std::vector<ss::future<>> fs;
     for (auto i = 0; i < 24; ++i) {
-        fs.emplace_back(push(
+        fs.emplace_back(produce(
           model::ntp(model::kafka_namespace, foo, model::partition_id(i)),
           storage::test::make_random_memory_record_batch_reader(
             model::offset(0), 10, 1, false)));

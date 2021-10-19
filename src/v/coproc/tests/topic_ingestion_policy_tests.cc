@@ -29,7 +29,7 @@ public:
           model::kafka_namespace, infoo, model::partition_id(0));
         setup({{infoo, 1}}).get();
 
-        push(
+        produce(
           infoo_ntp,
           storage::test::make_random_memory_record_batch_reader(
             model::offset(0), n, 1, false))
@@ -55,7 +55,7 @@ public:
                 std::logical_or<>());
         }).get();
 
-        push(
+        produce(
           infoo_ntp,
           storage::test::make_random_memory_record_batch_reader(
             model::offset{0}, n, 1, false))
@@ -96,7 +96,7 @@ FIXTURE_TEST(test_copro_tip_stored, coproc_test_fixture) {
           .topics = {{sttp, tp_stored}}}}})
       .get();
 
-    push(
+    produce(
       sttp_ntp,
       storage::test::make_random_memory_record_batch_reader(
         model::offset{0}, 40, 1, false))
@@ -109,7 +109,7 @@ FIXTURE_TEST(test_copro_tip_stored, coproc_test_fixture) {
     info("Restarting....");
     restart().get();
 
-    push(
+    produce(
       sttp_ntp,
       storage::test::make_random_memory_record_batch_reader(
         model::offset{0}, 40, 1, false))
