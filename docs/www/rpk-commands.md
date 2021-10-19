@@ -2,6 +2,9 @@
 title: RPK commands
 order: 7
 ---
+<!-- References for links to OS icons -->
+[linux]: https://vectorized.io/images/icon-linux.svg "Available on Linux"
+[mac]: https://vectorized.io/images/icon-mac.svg "Available on Mac"
 
 # What is RPK?
 RPK is a CLI tool that Vectorized created to help you better manage RedPanda.   
