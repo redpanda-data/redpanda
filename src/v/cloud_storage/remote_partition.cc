@@ -419,6 +419,9 @@ void remote_partition::gc_stale_materialized_segments() {
 
 model::offset remote_partition::first_uploaded_offset() {
     vlog(_ctxlog.debug, "remote partition first_uploaded_offset");
+    if (_manifest.size() == 0) {
+        return model::offset(0);
+    }
     try {
         if (_first_uploaded_offset) {
             return *_first_uploaded_offset;
