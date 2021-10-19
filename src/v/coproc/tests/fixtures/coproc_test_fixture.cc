@@ -197,8 +197,8 @@ ss::future<model::record_batch_reader::data_t> coproc_test_fixture::consume(
     co_return batches;
 }
 
-ss::future<model::offset>
-coproc_test_fixture::push(model::ntp ntp, model::record_batch_reader rbr) {
+ss::future<>
+coproc_test_fixture::produce(model::ntp ntp, model::record_batch_reader rbr) {
     vlog(coproc::coproclog.info, "About to produce to ntp: {}", ntp);
     auto result = co_await std::move(rbr).for_each_ref(
       kafka_publish_consumer(
@@ -209,7 +209,6 @@ coproc_test_fixture::push(model::ntp ntp, model::record_batch_reader rbr) {
           r.error_code != kafka::error_code::unknown_topic_or_partition,
           "Input logs should already exist, use setup() before starting test");
     }
-    co_return result.last_offset;
 }
 
 ss::future<> coproc_test_fixture::wait_for_copro(coproc::script_id id) {

@@ -48,11 +48,10 @@ public:
         return ss::parallel_for_each(
           r, [this, topic, fn = std::forward<Func>(make_reader_fn)](int32_t i) {
               model::record_batch_reader rbr = fn();
-              return push(
-                       model::ntp(
-                         model::kafka_namespace, topic, model::partition_id(i)),
-                       std::move(rbr))
-                .discard_result();
+              return produce(
+                model::ntp(
+                  model::kafka_namespace, topic, model::partition_id(i)),
+                std::move(rbr));
           });
     };
 

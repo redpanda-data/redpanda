@@ -33,7 +33,7 @@ public:
           model::kafka_namespace, infoo, model::partition_id(0));
         setup({{infoo, 1}}).get();
 
-        push(infoo_ntp, make_random_batch(records)).get();
+        produce(infoo_ntp, make_random_batch(records)).get();
         consume(infoo_ntp, 400).get();
 
         enable_coprocessors(
@@ -43,7 +43,7 @@ public:
               .topics = {{infoo, tip}}}}})
           .get();
 
-        push(infoo_ntp, make_random_batch(records)).get();
+        produce(infoo_ntp, make_random_batch(records)).get();
         consume(infoo_ntp, records).get();
 
         model::ntp output_ntp(
@@ -82,7 +82,7 @@ FIXTURE_TEST(test_copro_tip_stored, coproc_test_fixture) {
           .topics = {{sttp, tp_stored}}}}})
       .get();
 
-    push(sttp_ntp, make_random_batch(200)).get();
+    produce(sttp_ntp, make_random_batch(200)).get();
     auto a_results = consume(output_ntp, 200).get();
     BOOST_CHECK_EQUAL(num_records(a_results), 200);
 
@@ -90,7 +90,7 @@ FIXTURE_TEST(test_copro_tip_stored, coproc_test_fixture) {
     info("Restarting....");
     restart().get();
 
-    push(sttp_ntp, make_random_batch(200)).get();
+    produce(sttp_ntp, make_random_batch(200)).get();
     auto results = consume(output_ntp, 400).get();
     BOOST_CHECK_GE(num_records(results), 400);
 }

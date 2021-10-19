@@ -38,7 +38,7 @@ coproc_bench_fixture::start_benchmark(router_test_plan plan) {
 
 ss::future<> coproc_bench_fixture::push_all(router_test_plan::plan_t inputs) {
     for (const auto& [ntp, records_per_partition] : inputs) {
-        co_await push(ntp, make_random_batch(records_per_partition));
+        co_await produce(ntp, make_random_batch(records_per_partition));
     }
 }
 
