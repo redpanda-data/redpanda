@@ -155,27 +155,27 @@ public:
 
     void wait_for_metadata_update(
       model::ntp ntp, const std::vector<model::broker_shard>& replica_set) {
-        return tests::cooperative_spin_wait_with_timeout(
-                 5s,
-                 [this, ntp = std::move(ntp), &replica_set]() mutable {
-                     return std::all_of(
-                       nodes.cbegin(),
-                       nodes.cbegin(),
-                       [this, ntp = std::move(ntp), &replica_set](
-                         model::node_id nid) mutable {
-                           auto app = get_node_application(nid);
-                           auto md = app->controller->get_topics_state()
-                                       .local()
-                                       .get_partition_assignment(ntp);
+        tests::cooperative_spin_wait_with_timeout(
+          5s,
+          [this, ntp, &replica_set]() mutable {
+              return std::all_of(
+                nodes.cbegin(),
+                nodes.cbegin(),
+                [this, ntp = std::move(ntp), &replica_set](
+                  model::node_id nid) mutable {
+                    auto app = get_node_application(nid);
+                    auto md = app->controller->get_topics_state()
+                                .local()
+                                .get_partition_assignment(ntp);
 
-                           if (!md) {
-                               return false;
-                           }
+                    if (!md) {
+                        return false;
+                    }
 
-                           return cluster::are_replica_sets_equal(
-                             replica_set, md->replicas);
-                       });
-                 })
+                    return cluster::are_replica_sets_equal(
+                      replica_set, md->replicas);
+                });
+          })
           .handle_exception([&replica_set](const std::exception_ptr&) {
               BOOST_FAIL(fmt::format(
                 "Timeout waiting for replica set metadata update, replica set "
@@ -183,6 +183,12 @@ public:
                 replica_set));
           })
           .get0();
+        vlog(
+          logger.info,
+          "SUCCESS: partition {} metadata are up to date with requested "
+          "replica set: {}",
+          ntp,
+          replica_set);
     }
 
     std::vector<model::broker_shard>
@@ -200,29 +206,34 @@ public:
       model::ntp ntp,
       const std::vector<model::broker_shard>& replicas) {
         print_configuration(ntp).get0();
-        return wait_for_all_replicas(
-                 tout,
-                 replicas,
-                 [this, ntp = std::move(ntp), &replicas](
-                   const model::broker_shard& bs) mutable {
-                     auto ptr = ss::make_lw_shared<replicas_t>(replicas);
-                     auto f_replicas = ss::make_foreign(ptr);
-                     return get_partition_manager(bs.node_id)
-                       .invoke_on(
-                         bs.shard,
-                         [ntp, f_replicas = std::move(f_replicas)](
-                           const cluster::partition_manager& pm) mutable {
-                             return validate_partiton(
-                               ntp, pm, std::move(f_replicas));
-                         })
-                       .finally([ptr] {});
-                 })
+        wait_for_all_replicas(
+          tout,
+          replicas,
+          [this, ntp, &replicas](const model::broker_shard& bs) mutable {
+              auto ptr = ss::make_lw_shared<replicas_t>(replicas);
+              auto f_replicas = ss::make_foreign(ptr);
+              return get_partition_manager(bs.node_id)
+                .invoke_on(
+                  bs.shard,
+                  [ntp, f_replicas = std::move(f_replicas)](
+                    const cluster::partition_manager& pm) mutable {
+                      return validate_partiton(ntp, pm, std::move(f_replicas));
+                  })
+                .finally([ptr] {});
+          })
           .handle_exception([&replicas](const std::exception_ptr& e) {
               BOOST_FAIL(fmt::format(
                 "Timeout waiting for replica set partitions to be updated {}",
                 replicas));
           })
           .get0();
+
+        vlog(
+          logger.info,
+          "SUCCESS: partition {} are in align with requested "
+          "replica set: {}",
+          ntp,
+          replicas);
     }
 
     void check_if_ntp_replica_not_exists(
@@ -353,8 +364,7 @@ public:
         wait_for_all_replicas(
           tout,
           replicas,
-          [this, ntp = std::move(ntp), &reference_batches, max_offset](
-            model::broker_shard bs) {
+          [this, ntp, &reference_batches, max_offset](model::broker_shard bs) {
               return read_replica_batches(bs, ntp, max_offset)
                 .then(
                   [this, &reference_batches, bs](foreign_batches_t batches) {
@@ -368,6 +378,11 @@ public:
                 replicas));
           })
           .get0();
+        vlog(
+          logger.info,
+          "SUCCESS: partition {} log successfully recovered",
+          ntp,
+          replicas);
     }
 
     std::vector<model::broker_shard> random_replicas(

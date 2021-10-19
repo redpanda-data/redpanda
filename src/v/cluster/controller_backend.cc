@@ -377,6 +377,13 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
             if (ec) {
                 if (it->type == topic_table_delta::op_type::update) {
                     /**
+                     * do not skip cross core partition updates waiting for
+                     * partition to be shut down on the other core
+                     */
+                    if (ec == errc::wating_for_partition_shutdown) {
+                        continue;
+                    }
+                    /**
                      * check if pending update isn't already finished, if so it
                      * is safe to proceed to the next step
                      */
@@ -720,7 +727,9 @@ ss::future<std::error_code> controller_backend::process_partition_update(
      * currently present. On this core we will just wait for partition to be
      * created.
      */
-    if (contains_node(_self, previous.replicas)) {
+    if (
+      contains_node(_self, previous.replicas)
+      && !has_local_replicas(_self, previous.replicas)) {
         auto previous_shard = get_target_shard(_self, previous.replicas);
         std::optional<model::revision_id> initial_revision;
         std::vector<model::broker> initial_brokers;
@@ -736,13 +745,14 @@ ss::future<std::error_code> controller_backend::process_partition_update(
             // ask previous controller for partition initial revision
             auto x_core_move_req = co_await ask_remote_shard_for_initail_rev(
               ntp, *previous_shard);
-            if (x_core_move_req) {
-                initial_revision = x_core_move_req->revision;
-                std::copy(
-                  x_core_move_req->initial_configuration.brokers().begin(),
-                  x_core_move_req->initial_configuration.brokers().end(),
-                  std::back_inserter(initial_brokers));
+            if (!x_core_move_req) {
+                co_return errc::wating_for_partition_shutdown;
             }
+            initial_revision = x_core_move_req->revision;
+            std::copy(
+              x_core_move_req->initial_configuration.brokers().begin(),
+              x_core_move_req->initial_configuration.brokers().end(),
+              std::back_inserter(initial_brokers));
         }
         if (initial_revision) {
             vlog(
