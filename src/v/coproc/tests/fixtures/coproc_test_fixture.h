@@ -63,7 +63,7 @@ public:
     ss::future<> restart();
 
     /// \brief Write records to storage::api
-    ss::future<model::offset> push(model::ntp, model::record_batch_reader);
+    ss::future<> produce(model::ntp, model::record_batch_reader);
 
     /// \brief Read records from storage::api up until 'limit' or 'time'
     /// starting at 'offset'

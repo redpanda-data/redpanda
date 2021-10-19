@@ -43,11 +43,11 @@ FIXTURE_TEST(test_wasm_engine_restart, coproc_test_fixture) {
 
     auto push_inputs =
       [this](const std::vector<model::ntp>& ntps) -> ss::future<> {
-        std::vector<ss::future<model::offset>> fs;
+        std::vector<ss::future<>> fs;
         for (const auto& ntp : ntps) {
-            fs.emplace_back(push(ntp, make_random_batch(500)));
+            fs.emplace_back(produce(ntp, make_random_batch(500)));
         }
-        return ss::when_all_succeed(fs.begin(), fs.end()).discard_result();
+        return ss::when_all_succeed(fs.begin(), fs.end());
     };
     /// Push some data...
     push_inputs(inputs).get();

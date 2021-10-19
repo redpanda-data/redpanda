@@ -39,7 +39,7 @@ public:
               .tid = coproc::registry::type_identifier::identity_coprocessor,
               .topics = {
                 {input_topic, coproc::topic_ingestion_policy::stored}}}}});
-        co_await push(input_ntp, make_random_batch(160));
+        co_await produce(input_ntp, make_random_batch(160));
         co_return co_await consume(output_ntp, 160);
     }
 
