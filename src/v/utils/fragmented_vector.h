@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "serde/serde.h"
 #include "vassert.h"
 
 #include <cstddef>
@@ -45,11 +46,25 @@ class fragmented_vector {
 
 public:
     fragmented_vector() noexcept = default;
-    fragmented_vector(const fragmented_vector&) noexcept = delete;
-    fragmented_vector& operator=(const fragmented_vector&) noexcept = delete;
+    fragmented_vector(const fragmented_vector&) noexcept = default;
+    fragmented_vector& operator=(const fragmented_vector&) noexcept = default;
     fragmented_vector(fragmented_vector&&) noexcept = default;
     fragmented_vector& operator=(fragmented_vector&&) noexcept = default;
     ~fragmented_vector() noexcept = default;
+
+    friend inline void read_nested(
+      iobuf_parser& in, fragmented_vector& el, size_t const bytes_left_limit) {
+        serde::read_nested(in, el._size, bytes_left_limit);
+        serde::read_nested(in, el._capacity, bytes_left_limit);
+        serde::read_nested(in, el._frags, bytes_left_limit);
+        el.shrink_to_fit();
+    }
+
+    friend inline void write(iobuf& out, fragmented_vector el) {
+        serde::write(out, el._size);
+        serde::write(out, el._capacity);
+        serde::write(out, el._frags);
+    }
 
     void push_back(T elem) {
         if (_size == _capacity) {
@@ -111,7 +126,6 @@ public:
             ++_index;
             return *this;
         }
-
         const_iterator& operator--() {
             --_index;
             return *this;

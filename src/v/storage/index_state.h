@@ -14,6 +14,7 @@
 #include "bytes/iobuf.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
+#include "serde/envelope.h"
 #include "utils/fragmented_vector.h"
 
 #include <cstdint>
@@ -34,15 +35,10 @@ namespace storage {
    [] relative_time_index
    [] position_index
  */
-struct index_state {
-    static constexpr int8_t ondisk_version = 3;
-
-    index_state() = default;
-    index_state(index_state&&) noexcept = default;
-    index_state& operator=(index_state&&) noexcept = default;
-    index_state(const index_state&) = delete;
-    index_state& operator=(const index_state&) = delete;
-    ~index_state() noexcept = default;
+struct index_state
+  : serde::envelope<index_state, serde::version<4>, serde::compat_version<4>> {
+    static constexpr int8_t ondisk_version = 4;
+    static constexpr int8_t serde_min_version = 4;
 
     /// \brief sizeof the index in bytes
     uint32_t size{0};

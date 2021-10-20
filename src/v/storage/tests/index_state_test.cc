@@ -24,6 +24,15 @@ static void set_version(iobuf& buf, int8_t version) {
     buf.append(bytes_to_iobuf(tmp.substr(1)));
 }
 
+static void
+set_serde_version(iobuf& buf, int8_t version, uint8_t compat_version) {
+    auto tmp = iobuf_to_bytes(buf);
+    buf.clear();
+    buf.append((const char*)&version, sizeof(version));
+    buf.append((const char*)&compat_version, sizeof(compat_version));
+    buf.append(bytes_to_iobuf(tmp.substr(1)));
+}
+
 static void set_size(iobuf& buf, uint32_t size) {
     auto tmp = iobuf_to_bytes(buf);
     buf.clear();
@@ -91,7 +100,10 @@ BOOST_AUTO_TEST_CASE(encode_decode_v2) {
 BOOST_AUTO_TEST_CASE(encode_decode_future_version) {
     auto src = make_random_index_state();
     auto src_buf = src.checksum_and_serialize();
-    set_version(src_buf, storage::index_state::ondisk_version + 1);
+    set_serde_version(
+      src_buf,
+      storage::index_state::ondisk_version + 1,
+      storage::index_state::ondisk_version + 1);
 
     // cannot decode future version
     auto dst = storage::index_state::hydrate_from_buffer(src_buf.copy());

@@ -102,7 +102,27 @@ std::ostream& operator<<(std::ostream& o, const index_state& s) {
 }
 
 std::optional<index_state> index_state::hydrate_from_buffer(iobuf b) {
-    iobuf_parser parser(std::move(b));
+    auto parser = iobuf_parser{std::move(b)};
+
+    if (serde::peek_version(parser) >= serde_min_version) {
+        try {
+            auto const retval = serde::read<index_state>(parser);
+            auto const computed_checksum = storage::index_state::checksum_state(
+              retval);
+            if (unlikely(retval.checksum != computed_checksum)) {
+                vlog(
+                  stlog.debug,
+                  "Invalid checksum for index. Got:{}, expected:{}",
+                  computed_checksum,
+                  retval.checksum);
+                return std::nullopt;
+            }
+            return retval;
+        } catch (...) {
+            return std::nullopt;
+        }
+    }
+
     index_state retval;
 
     auto version = reflection::adl<int8_t>{}.from(parser);
@@ -186,51 +206,7 @@ std::optional<index_state> index_state::hydrate_from_buffer(iobuf b) {
 }
 
 iobuf index_state::checksum_and_serialize() {
-    iobuf out;
-    vassert(
-      relative_offset_index.size() == relative_time_index.size()
-        && relative_offset_index.size() == position_index.size(),
-      "ALL indexes must match in size. {}",
-      *this);
-    const uint32_t final_size
-      = sizeof(storage::index_state::checksum)
-        + sizeof(storage::index_state::bitflags)
-        + sizeof(storage::index_state::base_offset)
-        + sizeof(storage::index_state::max_offset)
-        + sizeof(storage::index_state::base_timestamp)
-        + sizeof(storage::index_state::max_timestamp)
-        + sizeof(uint32_t) // index size
-        + (relative_offset_index.size() * (sizeof(uint32_t) * 2 + sizeof(uint64_t)));
-    size = final_size;
     checksum = storage::index_state::checksum_state(*this);
-    reflection::serialize(
-      out,
-      index_state::ondisk_version,
-      size,
-      checksum,
-      bitflags,
-      base_offset(),
-      max_offset(),
-      base_timestamp(),
-      max_timestamp(),
-      uint32_t(relative_offset_index.size()));
-    const uint32_t vsize = relative_offset_index.size();
-    for (auto i = 0U; i < vsize; ++i) {
-        reflection::adl<uint32_t>{}.to(out, relative_offset_index[i]);
-    }
-    for (auto i = 0U; i < vsize; ++i) {
-        reflection::adl<uint32_t>{}.to(out, relative_time_index[i]);
-    }
-    for (auto i = 0U; i < vsize; ++i) {
-        reflection::adl<uint64_t>{}.to(out, position_index[i]);
-    }
-    // add back the version and size field
-    const auto expected_size = size + sizeof(int8_t) + sizeof(uint32_t);
-    vassert(
-      out.size_bytes() == expected_size,
-      "Unexpected serialization size {} != expected {}",
-      out.size_bytes(),
-      expected_size);
-    return out;
+    return serde::to_iobuf(*this);
 }
 } // namespace storage
