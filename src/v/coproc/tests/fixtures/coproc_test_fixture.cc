@@ -129,11 +129,14 @@ static ss::future<T> do_kafka_request(
             /// Due to the fact that you can't co_await on a future within a
             /// catch block, save the error code for use outside of the block
             k_err = ex.error;
+            vlog(
+              coproc::coproclog.error,
+              "Kafka client error: {} - code: {}",
+              ex,
+              ex.error);
         }
         if (k_err == kafka::error_code::unknown_topic_or_partition) {
             co_await c->update_metadata();
-        } else {
-            vlog(coproc::coproclog.error, "Kafka client error: {}", k_err);
         }
         co_await ss::sleep(100ms);
     }
