@@ -54,7 +54,7 @@ public:
     to_json(rapidjson::Writer<rapidjson::StringBuffer>& w) const = 0;
 
     virtual void print(std::ostream&) const = 0;
-    virtual void set_value(YAML::Node) = 0;
+    virtual bool set_value(YAML::Node) = 0;
     virtual void set_value(std::any) = 0;
     virtual void reset() = 0;
     virtual bool is_default() const = 0;

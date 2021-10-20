@@ -87,7 +87,9 @@ public:
         _value = std::any_cast<T>(std::move(v));
     }
 
-    void set_value(YAML::Node n) override { _value = std::move(n.as<T>()); }
+    bool set_value(YAML::Node n) override {
+        return update_value(std::move(n.as<T>()));
+    }
 
     void reset() override { _value = default_value(); }
 
@@ -102,6 +104,15 @@ public:
     }
 
 protected:
+    bool update_value(T&& new_value) {
+        if (new_value != _value) {
+            _value = std::move(new_value);
+            return true;
+        } else {
+            return false;
+        }
+    }
+
     T _value;
     const T _default;
 
@@ -122,7 +133,7 @@ class one_or_many_property : public property<std::vector<T>> {
 public:
     using property<std::vector<T>>::property;
 
-    void set_value(YAML::Node n) override {
+    bool set_value(YAML::Node n) override {
         std::vector<T> value;
         if (n.IsSequence()) {
             for (auto elem : n) {
@@ -131,7 +142,7 @@ public:
         } else {
             value.push_back(std::move(n.as<T>()));
         }
-        this->_value = std::move(value);
+        return property<std::vector<T>>::update_value(std::move(value));
     }
 };
 
@@ -155,7 +166,7 @@ public:
       , _min(min)
       , _max(max) {}
 
-    void set_value(YAML::Node n) override {
+    bool set_value(YAML::Node n) override {
         auto val = std::move(n.as<T>());
 
         if (val.has_value()) {
@@ -166,7 +177,8 @@ public:
                 val = std::min(val, _max.value());
             }
         }
-        this->_value = std::move(val);
+
+        return property<T>::update_value(std::move(val));
     };
 
 private:
