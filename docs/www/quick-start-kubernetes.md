@@ -62,8 +62,7 @@ You can either create a Kubernetes cluster on your local machine or on a cloud p
   --node-type m5.xlarge \
   --nodes 1 \
   --nodes-min 1 \
-  --nodes-max 4 \
-  --node-ami auto
+  --nodes-max 4
   ```
 
   It will take about 10-15 minutes for the process to finish.
@@ -101,7 +100,7 @@ helm install \
   --set installCRDs=true
 ```
 
-We recommend that you use [the verification procedure](https://cert-manager.io/docs/installation/kubernetes/#verifying-the-installation) in the cert-manager docs
+We recommend that you use [the verification procedure](https://cert-manager.io/docs/installation/verify/#manual-verification) in the cert-manager docs
 to verify that cert-manager is working correcly.
 
 ## Use Helm to install Redpanda operator
