@@ -43,10 +43,11 @@ class HelperFactoryBase:
     for a particular kafka client. The class instance
     is determined by the test function name.
     """
-    def __init__(self, func_name, redpanda, topic):
+    def __init__(self, func_name, redpanda, topic, extra_conf):
         self._func_name = func_name
         self._redpanda = redpanda
         self._topic = topic
+        self._extra_conf = extra_conf or dict()
 
     # The factory method for sarama
     def create_sarama_helpers(self):

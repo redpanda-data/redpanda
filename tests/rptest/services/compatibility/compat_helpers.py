@@ -16,7 +16,7 @@ from .franzgo_helpers import FranzGoHelperFactory
 # kafka client factory
 def create_helper(func_name, redpanda, topic, extra_conf):
     if "sarama" in func_name:
-        factory = SaramaHelperFactory(func_name, redpanda, topic)
+        factory = SaramaHelperFactory(func_name, redpanda, topic, extra_conf)
         return factory.create_sarama_helpers()
     elif "franzgo" in func_name:
         factory = FranzGoHelperFactory(func_name, redpanda, topic, extra_conf)

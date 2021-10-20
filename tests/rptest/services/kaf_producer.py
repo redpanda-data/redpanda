@@ -32,3 +32,6 @@ class KafProducer(BackgroundThreadService):
                 pass
             else:
                 raise
+
+    def clean_node(self, nodes):
+        pass

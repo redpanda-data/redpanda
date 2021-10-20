@@ -1,4 +1,4 @@
-# Copyright 2020 Vectorized, Inc.
+# Copyright 2021 Vectorized, Inc.
 #
 # Use of this software is governed by the Business Source License
 # included in the file licenses/BSL.md
@@ -11,7 +11,7 @@ import random
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
-from rptest.services.compatibility.compat_producer import CompatProducer
+from rptest.services.kaf_producer import KafProducer
 from rptest.services.compatibility.compat_example import CompatExample
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
@@ -28,12 +28,20 @@ class SaramaTest(RedpandaTest):
     def __init__(self, test_context):
         super(SaramaTest, self).__init__(test_context=test_context)
 
+        self._extra_conf = {
+            # timeout 600s was sufficient for 5k events on local
+            # so 1200s should be OK for CI & release
+            "timeout": 30 if self.scale.local else 1200,
+            "count": 10 if self.scale.local else 5000
+        }
+
         # The produce is only for the consumer group example
-        self._producer = CompatProducer(test_context, self.redpanda,
-                                        self.topic)
+        self._producer = KafProducer(test_context, self.redpanda, self.topic,
+                                     self._extra_conf["count"])
 
         # A representation of the example to be run in the background
-        self._example = CompatExample(test_context, self.redpanda, self.topic)
+        self._example = CompatExample(test_context, self.redpanda, self.topic,
+                                      self._extra_conf)
 
     @cluster(num_nodes=5)
     def test_sarama_interceptors(self):
@@ -42,7 +50,7 @@ class SaramaTest(RedpandaTest):
 
         # Wait until the example is OK to terminate
         wait_until(lambda: self._example.ok(),
-                   timeout_sec=30,
+                   timeout_sec=self._extra_conf["timeout"],
                    backoff_sec=5,
                    err_msg="sarama interceptors test failed")
 
@@ -53,7 +61,7 @@ class SaramaTest(RedpandaTest):
 
         # Wait for the server to load
         wait_until(lambda: self._example.ok(),
-                   timeout_sec=30,
+                   timeout_sec=self._extra_conf["timeout"],
                    backoff_sec=5,
                    err_msg="sarama http_server failed to load")
 
@@ -68,26 +76,41 @@ class SaramaTest(RedpandaTest):
 
         def try_curl():
             result = node.account.ssh_output(curl, timeout_sec=5).decode()
+            self.logger.debug(result)
             return "Your data is stored with unique identifier" in result
 
         # Using wait_until for auto-retry because sometimes
         # redpanda is in the middle of a leadership election when
         # we try to http get.
         wait_until(lambda: try_curl(),
-                   timeout_sec=60,
+                   timeout_sec=self._extra_conf["timeout"],
                    backoff_sec=5,
                    err_msg="sarama http_server test failed")
 
     @cluster(num_nodes=5)
     def test_sarama_consumergroup(self):
-        # Run the publisher
+        def until_partitions():
+            storage = self.redpanda.storage()
+            return len(list(storage.partitions("kafka", self.topic))) == 3
+
+        # Must wait for the paritions to materialize or else
+        # kaf may try to produce during leadership election.
+        # This results in a skipped record since kaf doesn't auto-retry.
+        wait_until(until_partitions,
+                   timeout_sec=30,
+                   backoff_sec=2,
+                   err_msg="Expected partition did not materialize")
+
+        # Run the producer and wait for the worker
+        # threads to finish producing
         self._producer.start()
+        self._producer.wait()
 
         # Start the example
         self._example.start()
 
         # Wait until the example is OK to terminate
         wait_until(lambda: self._example.ok(),
-                   timeout_sec=30,
+                   timeout_sec=self._extra_conf["timeout"],
                    backoff_sec=5,
                    err_msg="sarama consumergroup test failed")

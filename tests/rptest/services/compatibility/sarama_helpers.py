@@ -80,16 +80,19 @@ class SaramaConsumerGroupHelper(HelperBase):
     """
     The helper class for Sarama's consumergroup example
     """
-    def __init__(self, redpanda, topic):
+    def __init__(self, redpanda, topic, extra_conf):
         super(SaramaConsumerGroupHelper, self).__init__(redpanda)
 
         # The kafka topic
         self._topic = topic
 
+        self._count = extra_conf.get("count") or 1
+
     # The internal condition to determine if the
     # example is successful. Returns boolean.
     def _condition(self, line):
-        return 'Message claimed:' in line
+        self._count -= 'Message claimed:' in line
+        return self._count <= 0
 
     # Return the command to call in the shell
     def cmd(self):
@@ -119,8 +122,9 @@ class SaramaHelperFactory(HelperFactoryBase):
     The concrete factory for creating Sarama's
     helper classes.
     """
-    def __init__(self, func_name, redpanda, topic):
-        super(SaramaHelperFactory, self).__init__(func_name, redpanda, topic)
+    def __init__(self, func_name, redpanda, topic, extra_conf):
+        super(SaramaHelperFactory, self).__init__(func_name, redpanda, topic,
+                                                  extra_conf)
 
     # The factory method for sarama
     def create_sarama_helpers(self):
@@ -129,6 +133,7 @@ class SaramaHelperFactory(HelperFactoryBase):
         elif self._func_name == "test_sarama_http_server":
             return SaramaHttpServerHelper(self._redpanda)
         elif self._func_name == "test_sarama_consumergroup":
-            return SaramaConsumerGroupHelper(self._redpanda, self._topic)
+            return SaramaConsumerGroupHelper(self._redpanda, self._topic,
+                                             self._extra_conf)
         else:
             raise RuntimeError("create_helper failed: Invalid function name")
