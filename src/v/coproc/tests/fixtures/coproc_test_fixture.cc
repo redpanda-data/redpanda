@@ -44,7 +44,8 @@ std::unique_ptr<kafka::client::client> make_client() {
 
 } // namespace
 
-coproc_test_fixture::coproc_test_fixture() {
+coproc_test_fixture::coproc_test_fixture()
+  : supervisor_test_fixture() {
     ss::smp::invoke_on_all([]() {
         auto& config = config::shard_local_cfg();
         config.get("coproc_offset_flush_interval_ms").set_value(500ms);
