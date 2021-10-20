@@ -10,6 +10,7 @@ v_cc_library(
     probe.cc
     partition_recovery_manager.cc
     types.cc
+    remote_segment.cc
   DEPS
     Seastar::seastar
     v::bytes
