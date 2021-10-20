@@ -27,6 +27,14 @@
 
 namespace serde {
 
+template<typename T>
+inline constexpr bool serde_is_enum_v =
+#if __has_cpp_attribute(__cpp_lib_is_scoped_enum)
+  std::is_scoped_enum_v<T>;
+#else
+  std::is_enum_v<T>;
+#endif
+
 template<typename To, typename From>
 To bit_cast(From const& f) {
     static_assert(sizeof(From) == sizeof(To));
@@ -93,13 +101,21 @@ template<typename T>
 inline constexpr auto const has_serde_async_write
   = help_has_serde_async_write<T>::value;
 
+using serde_enum_serialized_t = int32_t;
+
+#if defined(SERDE_TEST)
+using serde_size_t = uint16_t;
+#else
+using serde_size_t = uint32_t;
+#endif
+
 template<typename T>
 inline constexpr auto const is_serde_compatible_v
   = is_envelope_v<T>
     || (std::is_scalar_v<T>  //
          && (!std::is_same_v<float, T> || std::numeric_limits<float>::is_iec559)
          && (!std::is_same_v<double, T> || std::numeric_limits<double>::is_iec559)
-         && !std::is_enum_v<T>)
+         && (!serde_is_enum_v<T> || sizeof(T{}) <= sizeof(serde_enum_serialized_t)))
     || reflection::is_std_vector_v<T>
     || reflection::is_named_type_v<T>
     || reflection::is_ss_bool_v<T>
@@ -107,12 +123,6 @@ inline constexpr auto const is_serde_compatible_v
     || std::is_same_v<T, std::chrono::milliseconds>
     || std::is_same_v<T, iobuf>
     || std::is_same_v<T, ss::sstring>;
-
-#if defined(SERDE_TEST)
-using serde_size_t = uint16_t;
-#else
-using serde_size_t = uint32_t;
-#endif
 
 template<typename T>
 void write(iobuf&, T);
@@ -146,7 +156,20 @@ void write(iobuf& out, T t) {
           reinterpret_cast<char const*>(&size), sizeof(serde_size_t));
     } else if constexpr (std::is_same_v<bool, Type>) {
         write<int8_t>(out, t);
-    } else if constexpr (std::is_scalar_v<Type> && !std::is_enum_v<Type>) {
+    } else if constexpr (serde_is_enum_v<Type>) {
+        auto const val = static_cast<std::underlying_type_t<Type>>(t);
+        if (unlikely(
+              val > std::numeric_limits<serde_enum_serialized_t>::max()
+              || val < std::numeric_limits<serde_enum_serialized_t>::min())) {
+            throw serde_exception{fmt_with_ctx(
+              ssx::sformat,
+              "serde: enum of type {} has value {} which is out of bounds for "
+              "serde_enum_serialized_t",
+              type_str<T>(),
+              val)};
+        }
+        write(out, static_cast<serde_enum_serialized_t>(val));
+    } else if constexpr (std::is_scalar_v<Type>) {
         if constexpr (sizeof(Type) == 1) {
             out.append(reinterpret_cast<char const*>(&t), sizeof(t));
         } else if constexpr (std::is_same_v<float, Type>) {
@@ -287,7 +310,19 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         }
     } else if constexpr (std::is_same_v<Type, bool>) {
         t = read_nested<int8_t>(in, bytes_left_limit) != 0;
-    } else if constexpr (std::is_scalar_v<Type> && !std::is_enum_v<Type>) {
+    } else if constexpr (serde_is_enum_v<Type>) {
+        auto const val = read_nested<serde_enum_serialized_t>(
+          in, bytes_left_limit);
+        if (unlikely(
+              val > std::numeric_limits<std::underlying_type_t<Type>>::max())) {
+            throw serde_exception(fmt_with_ctx(
+              ssx::sformat,
+              "enum value {} too large for {}",
+              val,
+              type_str<Type>()));
+        }
+        t = static_cast<Type>(val);
+    } else if constexpr (std::is_scalar_v<Type>) {
         if (unlikely(in.bytes_left() < sizeof(Type))) {
             throw serde_exception{"message too short"};
         }
@@ -400,29 +435,6 @@ ss::future<> write_async(iobuf& out, T const& t) {
         write(out, t);
         return ss::make_ready_future<>();
     }
-}
-
-/**
- * Only use this method for enums specifying the underlying datatype explicitly.
- * Otherwise, the serialization format might change depending on the compiler.
- */
-template<
-  typename T,
-  std::enable_if_t<std::is_enum_v<std::decay_t<T>>, void*> = nullptr>
-void read_enum(iobuf_parser& in, T& el, size_t const bytes_left_limit) {
-    serde::read_nested(
-      in, *reinterpret_cast<std::underlying_type_t<T>*>(&el), bytes_left_limit);
-}
-
-/**
- * Only use this method for enums specifying the underlying datatype explicitly.
- * Otherwise, the serialization format might change depending on the compiler.
- */
-template<
-  typename T,
-  std::enable_if_t<std::is_enum_v<std::decay_t<T>>, void*> = nullptr>
-void write_enum(iobuf& out, T const el) {
-    serde::write(out, static_cast<std::underlying_type_t<T>>(el));
 }
 
 template<typename T>
