@@ -494,8 +494,12 @@ ss::future<> scheduler_service_impl::run_uploads() {
         vlog(_rtclog.debug, "Upload loop aborted (abort requested)");
     } catch (...) {
         vlog(_rtclog.error, "Upload loop error: {}", std::current_exception());
-        throw;
     }
+    // The loop can be stopped by gate or abort_source (if it was waiting inside
+    // sleep_abortable)
+    vassert(
+      _as.abort_requested() || _gate.is_closed(),
+      "Upload loop is not stopped properly");
 }
 
 } // namespace archival::internal
