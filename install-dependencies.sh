@@ -81,17 +81,13 @@ curl -1sLf "https://raw.githubusercontent.com/vectorizedio/seastar/master/instal
 
 set -e
 
-root="$(cd $(dirname ${BASH_SOURCE[0]}) && pwd)"
-
-cd $root
-
-rm -rf $root/depot_tools
+mkdir -p /opt/
+rm -rf /opt/depot_tools
+cd /opt
 git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-cd $root/depot_tools
+cd /opt/depot_tools
 git checkout ecdc362593cfee1ade115ead7be6c3e96b2e7384
-mkdir $root/depot_tools/installed-gn
-
-link_for_gn=""
+mkdir /opt/depot_tools/installed-gn
 
 # Download gn (git_revision:e0c476ffc83dc10897cb90b45c03ae2539352c5c)
 case $(uname -i) in
@@ -103,7 +99,6 @@ case $(uname -i) in
     ;;
 esac
 
-curl -L $link_for_gn --output $root/depot_tools/gn_zip
-unzip -d $root/depot_tools/installed-gn/ $root/depot_tools/gn_zip
-
-chmod -R 777 $root/depot_tools
+curl -L $link_for_gn --output /opt/depot_tools/gn_zip
+unzip -d /opt/depot_tools/installed-gn/ /opt/depot_tools/gn_zip
+chmod -R 777 /opt/depot_tools

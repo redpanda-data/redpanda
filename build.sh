@@ -24,7 +24,7 @@ cmake -DCMAKE_BUILD_TYPE=Release \
   -GNinja \
   -DCMAKE_C_COMPILER=$CC \
   -DCMAKE_CXX_COMPILER=$CXX \
-  -DDEPOT_TOOLS_DIR="$root/depot_tools" \
+  -DDEPOT_TOOLS_DIR="/opt/depot_tools" \
   "$@"
 
 (cd $root/build && ninja && LD_LIBRARY_PATH=$PWD/deps_install/lib ctest --output-on-failure -R _rpunit)
