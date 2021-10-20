@@ -23,8 +23,10 @@
 #include "storage/parser.h"
 #include "utils/gate_guard.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/file.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/semaphore.hh>
@@ -376,6 +378,9 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
   std::optional<model::offset> lso_override) {
     retry_chain_logger ctxlog(archival_log, parent, _ntp.path());
     vlog(ctxlog.debug, "Uploading next candidates called for {}", _ntp);
+    if (_gate.is_closed()) {
+      return ss::make_ready_future<batch_result>(batch_result{});
+    }
     auto last_stable_offset = lso_override ? *lso_override
                                            : _partition->last_stable_offset();
     return ss::with_gate(_gate, [this, &lm, last_stable_offset, &parent] {
@@ -387,6 +392,10 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
                       std::move(scheduled), parent);
                 });
           });
+    }).handle_exception_type([](const ss::gate_closed_exception&) {
+      return ss::make_ready_future<batch_result>(batch_result{});
+    }).handle_exception_type([](const ss::abort_requested_exception&) {
+      return ss::make_ready_future<batch_result>(batch_result{});
     });
 }
 
