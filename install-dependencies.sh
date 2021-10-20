@@ -9,7 +9,7 @@
 # by the Apache License, Version 2.0
 set -e
 
-echo "installing seastar dependencies"
+echo "installing redpanda toolchain"
 
 if [[ $EUID -ne 0 ]]; then
   echo "This script should be run as root."
