@@ -217,10 +217,8 @@ ss::future<> coproc_test_fixture::wait_until_all_idle() {
 ss::future<> coproc_test_fixture::wait_until_idle(coproc::script_id id) {
     vlog(coproc::coproclog.info, "Waiting for script {} to be idle", id);
     auto& p = _root_fixture->app.coprocessing->get_pacemaker();
-    return p.invoke_on_all([id](coproc::pacemaker& p) {
-        return p.wait_idle_state(id).handle_exception_type(
-          [](const coproc::exception&) { return ss::now(); });
-    });
+    return p.invoke_on_all(
+      [id](coproc::pacemaker& p) { return p.wait_idle_state(id); });
 }
 
 ss::future<> coproc_test_fixture::wait_for_copro(coproc::script_id id) {
