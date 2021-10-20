@@ -59,6 +59,8 @@ public:
 
     bool is_overriden() const { return is_required() || _value != _default; }
 
+    bool is_default() const override { return _value == _default; }
+
     const T& operator()() { return value(); }
 
     const T& operator()() const { return value(); }
