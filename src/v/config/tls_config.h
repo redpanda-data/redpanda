@@ -33,6 +33,10 @@ namespace config {
 struct key_cert {
     ss::sstring key_file;
     ss::sstring cert_file;
+
+    bool operator==(const key_cert& rhs) const {
+        return key_file == rhs.key_file && cert_file == rhs.cert_file;
+    }
 };
 
 class tls_config {
@@ -110,6 +114,8 @@ public:
 
         return std::nullopt;
     }
+
+    bool operator==(const tls_config& rhs) const = default;
 
 private:
     bool _enabled{false};
