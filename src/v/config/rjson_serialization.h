@@ -54,4 +54,15 @@ void rjson_serialize(
   rapidjson::Writer<rapidjson::StringBuffer>& w,
   const std::vector<config::endpoint_tls_config>& v);
 
+void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w, const model::compression& v);
+
+void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const model::timestamp_type& v);
+
+void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const model::cleanup_policy_bitflags& v);
+
 } // namespace json

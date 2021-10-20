@@ -127,4 +127,32 @@ void rjson_serialize(
     }
     w.EndArray();
 }
+
+/**
+ * Helper for enum/bitfield types that implement operator<< for ostream.
+ * Otherwise they would be JSON-ized as their integer representation.
+ */
+template<typename T>
+static void
+stringize(rapidjson::Writer<rapidjson::StringBuffer>& w, const T& v) {
+    w.String(fmt::format("{}", v));
+}
+
+void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w, const model::compression& v) {
+    stringize(w, v);
+}
+
+void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const model::timestamp_type& v) {
+    stringize(w, v);
+}
+
+void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const model::cleanup_policy_bitflags& v) {
+    stringize(w, v);
+}
+
 } // namespace json
