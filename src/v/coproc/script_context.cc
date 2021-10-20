@@ -46,6 +46,7 @@ script_context::script_context(
 
 ss::future<> script_context::start() {
     vassert(_gate.get_count() == 0, "Cannot call start() twice");
+    _fstate = fiber_state::active;
     return ss::with_gate(_gate, [this] {
         return ss::do_until(
           [this] { return _abort_source.abort_requested(); },
@@ -54,6 +55,7 @@ ss::future<> script_context::start() {
               /// exception, \ref script_failed_exception for which there is a
               /// handler setup by the invoker of this start() method
               return do_execute().then([this] {
+                  _fstate = fiber_state::inactive;
                   process_idle_callbacks();
                   return ss::sleep_abortable(
                            _resources.jitter.next_jitter_duration(),
@@ -82,6 +84,7 @@ ss::future<> script_context::do_execute() {
                   return ss::make_ready_future<ss::stop_iteration>(
                     ss::stop_iteration::yes);
               }
+              _fstate = fiber_state::active;
               supervisor_client_protocol client(*transport.value());
               input_read_args args{
                 .id = _id,
@@ -116,6 +119,9 @@ void script_context::process_idle_callbacks() {
 ss::future<> script_context::wait_idle_state() {
     if (_gate.is_closed()) {
         return ss::make_exception_future<>(ss::gate_closed_exception());
+    }
+    if (_fstate == fiber_state::inactive) {
+        return ss::now();
     }
     _idle.emplace_back();
     return _idle.back().get_future();

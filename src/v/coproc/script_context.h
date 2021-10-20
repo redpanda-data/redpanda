@@ -48,6 +48,8 @@ class wait_idle_state_future_stranded final : public exception {
  */
 class script_context {
 public:
+    enum class fiber_state { not_started = 0, active, inactive };
+
     /**
      * class constructor
      * @param script_id Uniquely identifyable id
@@ -95,6 +97,9 @@ private:
 private:
     /// Idle state promises
     std::vector<ss::promise<>> _idle;
+
+    /// If the coprocessor is churning or periodically sleeping
+    fiber_state _fstate{fiber_state::not_started};
 
     /// Killswitch for in-process reads
     ss::abort_source _abort_source;
