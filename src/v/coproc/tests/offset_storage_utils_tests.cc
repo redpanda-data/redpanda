@@ -57,11 +57,14 @@ public:
     ss::future<> wait_on(const model::topic& topic, int32_t n_partitions) {
         auto r = boost::irange<int32_t>(0, n_partitions);
         return ss::parallel_for_each(r, [this, topic](int32_t i) {
+            auto timeout = model::timeout_clock::now()
+                           + std::chrono::minutes(1);
             return consume(
                      model::ntp(
                        model::kafka_namespace, topic, model::partition_id(i)),
                      model::offset{0},
-                     model::offset{1})
+                     model::offset{1},
+                     timeout)
               .discard_result();
         });
     }
