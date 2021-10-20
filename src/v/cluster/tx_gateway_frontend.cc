@@ -833,7 +833,10 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
     }
 
     return container().invoke_on(
-      *shard, _ssg, [request, timeout](tx_gateway_frontend& self) {
+      *shard,
+      _ssg,
+      [request = std::move(request),
+       timeout](tx_gateway_frontend& self) mutable {
           auto partition = self._partition_manager.local().get(
             model::tx_manager_ntp);
           if (!partition) {
@@ -859,14 +862,19 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
           }
 
           return stm->read_lock().then(
-            [&self, stm, request, timeout](ss::basic_rwlock<>::holder unit) {
+            [&self, stm, request = std::move(request), timeout](
+              ss::basic_rwlock<>::holder unit) mutable {
+                auto tx_id = request.transactional_id;
                 return with(
                          stm,
-                         request.transactional_id,
+                         tx_id,
                          "add_partition_to_tx",
-                         [&self, stm, request, timeout]() {
+                         [&self,
+                          stm,
+                          request = std::move(request),
+                          timeout]() mutable {
                              return self.do_add_partition_to_tx(
-                               stm, request, timeout);
+                               stm, std::move(request), timeout);
                          })
                   .finally([u = std::move(unit)] {});
             });
@@ -998,7 +1006,10 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
     }
 
     return container().invoke_on(
-      *shard, _ssg, [request, timeout](tx_gateway_frontend& self) {
+      *shard,
+      _ssg,
+      [request = std::move(request),
+       timeout](tx_gateway_frontend& self) mutable {
           auto partition = self._partition_manager.local().get(
             model::tx_manager_ntp);
           if (!partition) {
@@ -1022,14 +1033,19 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
           }
 
           return stm->read_lock().then(
-            [&self, stm, request, timeout](ss::basic_rwlock<>::holder unit) {
+            [&self, stm, request = std::move(request), timeout](
+              ss::basic_rwlock<>::holder unit) mutable {
+                auto tx_id = request.transactional_id;
                 return with(
                          stm,
-                         request.transactional_id,
+                         tx_id,
                          "add_offsets_to_tx",
-                         [&self, stm, request, timeout]() {
+                         [&self,
+                          stm,
+                          request = std::move(request),
+                          timeout]() mutable {
                              return self.do_add_offsets_to_tx(
-                               stm, request, timeout);
+                               stm, std::move(request), timeout);
                          })
                   .finally([u = std::move(unit)] {});
             });
@@ -1080,7 +1096,8 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
     return container().invoke_on(
       *shard,
       _ssg,
-      [request = std::move(request), timeout](tx_gateway_frontend& self) {
+      [request = std::move(request),
+       timeout](tx_gateway_frontend& self) mutable {
           auto partition = self._partition_manager.local().get(
             model::tx_manager_ntp);
           if (!partition) {
@@ -1120,7 +1137,7 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
              outcome]() mutable {
                 return stm->read_lock().then(
                   [request = std::move(request), &self, stm, timeout, outcome](
-                    ss::basic_rwlock<>::holder unit) {
+                    ss::basic_rwlock<>::holder unit) mutable {
                       auto tx_id = request.transactional_id;
                       return with(
                                stm,
