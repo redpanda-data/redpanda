@@ -119,8 +119,24 @@ class Admin:
         r.raise_for_status()
         return r
 
-    def get_config(self):
-        return self._request("GET", "config").json()
+    def get_cluster_config(self, node=None):
+        return self._request("GET", "config", node=node).json()
+
+    def patch_cluster_config(self, upsert=None, remove=None):
+        if upsert is None:
+            upsert = {}
+        if remove is None:
+            remove = []
+
+        return self._request("PUT",
+                             "cluster_config",
+                             json={
+                                 'upsert': upsert,
+                                 'remove': remove
+                             }).json()
+
+    def get_cluster_config_status(self):
+        return self._request("GET", "cluster_config/status").json()
 
     def get_node_config(self):
         return self._request("GET", "node_config").json()
