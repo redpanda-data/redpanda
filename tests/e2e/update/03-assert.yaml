@@ -6,9 +6,6 @@ spec:
   template:
     spec:
       volumes:
-      - name: datadir
-        persistentVolumeClaim:
-          claimName: datadir
       - configMap:
           defaultMode: 420
           name: update-cluster-base
@@ -19,3 +16,6 @@ spec:
         secret:
           defaultMode: 420
           secretName: update-cluster-redpanda
+      - name: datadir
+        persistentVolumeClaim:
+          claimName: datadir
