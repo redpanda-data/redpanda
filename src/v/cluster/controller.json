@@ -59,6 +59,11 @@
             "name": "finish_reallocation",
             "input_type": "finish_reallocation_request",
             "output_type": "finish_reallocation_reply"
+        },
+        {
+            "name": "config_status",
+            "input_type": "config_status_request",
+            "output_type": "config_status_reply"
         }
     ]
 }

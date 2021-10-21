@@ -36,6 +36,8 @@ v_cc_library(
     partition_manager.cc
     scheduling/partition_allocator.cc
     logger.cc
+    config_frontend.cc
+    config_manager.cc
     cluster_utils.cc
     id_allocator.cc
     id_allocator_frontend.cc

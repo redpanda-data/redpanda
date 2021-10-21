@@ -13,6 +13,7 @@
 
 #include "archival/fwd.h"
 #include "cloud_storage/partition_recovery_manager.h"
+#include "cluster/config_manager.h"
 #include "cluster/fwd.h"
 #include "coproc/fwd.h"
 #include "kafka/client/configuration.h"
@@ -125,6 +126,7 @@ private:
     void setup_metrics();
     std::unique_ptr<ss::app_template> _app;
     bool _redpanda_enabled{true};
+    cluster::config_manager::preload_result _config_preload;
     std::optional<pandaproxy::rest::configuration> _proxy_config;
     std::optional<kafka::client::configuration> _proxy_client_config;
     std::optional<pandaproxy::schema_registry::configuration>

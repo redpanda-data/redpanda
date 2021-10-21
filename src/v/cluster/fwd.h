@@ -33,6 +33,7 @@ class metadata_dissemination_service;
 class security_frontend;
 class controller_api;
 class members_frontend;
+class config_frontend;
 class members_backend;
 class data_policy_frontend;
 class tx_gateway;

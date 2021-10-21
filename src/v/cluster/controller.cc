@@ -43,13 +43,15 @@
 namespace cluster {
 
 controller::controller(
+  config_manager::preload_result&& config_preload,
   ss::sharded<rpc::connection_cache>& ccache,
   ss::sharded<partition_manager>& pm,
   ss::sharded<shard_table>& st,
   ss::sharded<storage::api>& storage,
   ss::sharded<raft::group_manager>& raft_manager,
   ss::sharded<v8_engine::data_policy_table>& data_policy_table)
-  : _connections(ccache)
+  : _config_preload(std::move(config_preload))
+  , _connections(ccache)
   , _partition_manager(pm)
   , _shard_table(st)
   , _storage(storage)
@@ -94,6 +96,17 @@ ss::future<> controller::start() {
           return _members_manager.local().validate_configuration_invariants();
       })
       .then([this] {
+          return _config_frontend.start(std::ref(_stm), std::ref(_as));
+      })
+      .then([this] {
+          return _config_manager.start(
+            std::ref(_config_preload),
+            std::ref(_config_frontend),
+            std::ref(_connections),
+            std::ref(_partition_leaders),
+            std::ref(_as));
+      })
+      .then([this] {
           return _stm.start_single(
             std::ref(clusterlog),
             _raft0.get(),
@@ -101,7 +114,8 @@ ss::future<> controller::start() {
             std::ref(_tp_updates_dispatcher),
             std::ref(_security_manager),
             std::ref(_members_manager),
-            std::ref(_data_policy_manager));
+            std::ref(_data_policy_manager),
+            std::ref(_config_manager));
       })
       .then([this] {
           return _members_frontend.start(
@@ -198,6 +212,10 @@ ss::future<> controller::start() {
             members_manager::shard, &members_backend::start);
       })
       .then([this] {
+          return _config_manager.invoke_on(
+            config_manager::shard, &config_manager::start);
+      })
+      .then([this] {
           if (!config::shard_local_cfg().enable_leader_balancer()) {
               return ss::now();
           }
@@ -254,12 +272,14 @@ ss::future<> controller::stop() {
         return stop_leader_balancer
           .then([this] { return _health_manager.stop(); })
           .then([this] { return _members_backend.stop(); })
+          .then([this] { return _config_manager.stop(); })
           .then([this] { return _api.stop(); })
           .then([this] { return _backend.stop(); })
           .then([this] { return _tp_frontend.stop(); })
           .then([this] { return _security_frontend.stop(); })
           .then([this] { return _data_policy_frontend.stop(); })
           .then([this] { return _members_frontend.stop(); })
+          .then([this] { return _config_frontend.stop(); })
           .then([this] { return _stm.stop(); })
           .then([this] { return _authorizer.stop(); })
           .then([this] { return _credentials.stop(); })

@@ -30,7 +30,8 @@ public:
       ss::sharded<metadata_cache>&,
       ss::sharded<security_frontend>&,
       ss::sharded<controller_api>&,
-      ss::sharded<members_frontend>&);
+      ss::sharded<members_frontend>&,
+      ss::sharded<config_frontend>&);
 
     virtual ss::future<join_reply>
     join(join_request&&, rpc::streaming_context&) override;
@@ -64,6 +65,9 @@ public:
     ss::future<finish_reallocation_reply> finish_reallocation(
       finish_reallocation_request&&, rpc::streaming_context&) final;
 
+    ss::future<config_status_reply>
+    config_status(config_status_request&&, rpc::streaming_context&) final;
+
 private:
     std::
       pair<std::vector<model::topic_metadata>, std::vector<topic_configuration>>
@@ -87,5 +91,6 @@ private:
     ss::sharded<security_frontend>& _security_frontend;
     ss::sharded<controller_api>& _api;
     ss::sharded<members_frontend>& _members_frontend;
+    ss::sharded<config_frontend>& _config_frontend;
 };
 } // namespace cluster
