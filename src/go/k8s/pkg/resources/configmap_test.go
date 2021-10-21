@@ -10,6 +10,7 @@ import (
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/deprecated/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -38,12 +39,27 @@ func TestEnsureConfigMap(t *testing.T) {
           port: 8081
           name: external`,
 		},
+		{
+			name: "shadow index cache directory",
+			expectedString: `cloud_storage_cache_directory: /var/lib/shadow-index-cache
+    cloud_storage_cache_size: "10737418240"`,
+		},
 	}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			panda := pandaCluster().DeepCopy()
 			panda.Spec.AdditionalConfiguration = tc.additionalConfiguration
 			c := fake.NewClientBuilder().Build()
+			secret := v1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "archival",
+					Namespace: "default",
+				},
+				Data: map[string][]byte{
+					"archival": []byte("XXX"),
+				},
+			}
+			require.NoError(t, c.Create(context.TODO(), &secret))
 			cfgRes := resources.NewConfigMap(
 				c,
 				panda,
