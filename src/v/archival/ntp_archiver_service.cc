@@ -379,24 +379,29 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
     retry_chain_logger ctxlog(archival_log, parent, _ntp.path());
     vlog(ctxlog.debug, "Uploading next candidates called for {}", _ntp);
     if (_gate.is_closed()) {
-      return ss::make_ready_future<batch_result>(batch_result{});
+        return ss::make_ready_future<batch_result>(batch_result{});
     }
     auto last_stable_offset = lso_override ? *lso_override
                                            : _partition->last_stable_offset();
-    return ss::with_gate(_gate, [this, &lm, last_stable_offset, &parent] {
-        return ss::with_semaphore(
-          _mutex, 1, [this, &lm, last_stable_offset, &parent] {
-              return schedule_uploads(lm, last_stable_offset, parent)
-                .then([this, &parent](std::vector<scheduled_upload> scheduled) {
-                    return wait_all_scheduled_uploads(
-                      std::move(scheduled), parent);
-                });
-          });
-    }).handle_exception_type([](const ss::gate_closed_exception&) {
-      return ss::make_ready_future<batch_result>(batch_result{});
-    }).handle_exception_type([](const ss::abort_requested_exception&) {
-      return ss::make_ready_future<batch_result>(batch_result{});
-    });
+    return ss::with_gate(
+             _gate,
+             [this, &lm, last_stable_offset, &parent] {
+                 return ss::with_semaphore(
+                   _mutex, 1, [this, &lm, last_stable_offset, &parent] {
+                       return schedule_uploads(lm, last_stable_offset, parent)
+                         .then([this, &parent](
+                                 std::vector<scheduled_upload> scheduled) {
+                             return wait_all_scheduled_uploads(
+                               std::move(scheduled), parent);
+                         });
+                   });
+             })
+      .handle_exception_type([](const ss::gate_closed_exception&) {
+          return ss::make_ready_future<batch_result>(batch_result{});
+      })
+      .handle_exception_type([](const ss::abort_requested_exception&) {
+          return ss::make_ready_future<batch_result>(batch_result{});
+      });
 }
 
 } // namespace archival

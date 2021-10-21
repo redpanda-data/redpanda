@@ -172,7 +172,11 @@ private:
             auto&& [state, it] = lookup_result.value();
             _state = std::move(state);
             _it = it;
-            vlog(cst_log.debug, "record_batch_reader_impl reader initialized ");
+            vlog(
+              cst_log.debug,
+              "record_batch_reader_impl reader initialized, starting "
+              "readahead");
+            _partition->start_readahead(_it);
             return;
         }
         vlog(
@@ -229,10 +233,6 @@ private:
               segment->get_base_rp_offset(),
               segment->get_max_rp_offset(),
               segment->get_base_offset_delta());
-            if (segment->get_base_kafka_offset() == config.start_offset) {
-                // prefetch if on the segment's boundary
-                _partition->start_readahead(it);
-            }
             return {{.reader_state = std::move(reader), .iter = it}};
         }
         return std::nullopt;
@@ -280,6 +280,8 @@ private:
                 vlog(cst_log.debug, "initializing new log reader");
                 _state = _partition->borrow_reader(
                   _state->config, _it->first, _it->second);
+                vlog(cst_log.debug, "starting readahead for the next segment");
+                _partition->start_readahead(_it);
             }
         }
         vlog(
@@ -362,7 +364,10 @@ void remote_partition::start_readahead(
               "remote partition readahead, hydrating {}",
               manifest_key_to_string(st->manifest_key));
             auto tmp = st->materialize(*part, offset_key);
-            (void)tmp->segment->hydrate().discard_result();
+            (void)tmp->segment->hydrate().discard_result().handle_exception(
+              [](const std::exception_ptr& e) {
+                  vlog(cst_log.error, "Error {} while prefetching segment", e);
+              });
             state = std::move(tmp);
         }
         void operator()(materialized_segment_ptr&) {
