@@ -185,9 +185,7 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 }
 
 func preparePVCResource(
-	name, namespace string,
-	storage redpandav1alpha1.StorageSpec,
-	clusterLabels labels.CommonLabels,
+	name, namespace string, storage redpandav1alpha1.StorageSpec,
 ) corev1.PersistentVolumeClaim {
 	fileSystemMode := corev1.PersistentVolumeFilesystem
 
@@ -195,7 +193,6 @@ func preparePVCResource(
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      name,
-			Labels:    clusterLabels,
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
@@ -223,7 +220,6 @@ func preparePVCResource(
 func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 	var clusterLabels = labels.ForCluster(r.pandaCluster)
 
-	pvc := preparePVCResource(datadirName, r.pandaCluster.Namespace, r.pandaCluster.Spec.Storage, clusterLabels)
 	annotations := r.pandaCluster.Spec.Annotations
 	tolerations := r.pandaCluster.Spec.Tolerations
 	nodeSelector := r.pandaCluster.Spec.NodeSelector
@@ -270,14 +266,6 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 						FSGroup: pointer.Int64Ptr(fsGroup),
 					},
 					Volumes: append([]corev1.Volume{
-						{
-							Name: datadirName,
-							VolumeSource: corev1.VolumeSource{
-								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: datadirName,
-								},
-							},
-						},
 						{
 							Name: "configmap-dir",
 							VolumeSource: corev1.VolumeSource{
@@ -417,10 +405,6 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 							},
 							VolumeMounts: append([]corev1.VolumeMount{
 								{
-									Name:      datadirName,
-									MountPath: dataDirectory,
-								},
-								{
 									Name:      "config-dir",
 									MountPath: configDestinationDir,
 								},
@@ -459,11 +443,10 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 					},
 				},
 			},
-			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
-				pvc,
-			},
 		},
 	}
+
+	setCloudStorage(ss, r.pandaCluster)
 
 	rpkStatusContainer := r.rpkStatusContainer()
 	if rpkStatusContainer != nil {
@@ -477,6 +460,37 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 
 	return ss, nil
 }
+
+// setCloudStorage manipulates v1.StatefulSet object in order to add cloud storage specific
+// properties to Redpanda pod.
+func setCloudStorage(
+	ss *appsv1.StatefulSet, cluster *redpandav1alpha1.Cluster,
+) {
+	pvcDataDir := preparePVCResource(datadirName, cluster.Namespace, cluster.Spec.Storage)
+	pvcDataDir.Labels = ss.Labels
+	ss.Spec.VolumeClaimTemplates = append(ss.Spec.VolumeClaimTemplates, pvcDataDir)
+	vol := corev1.Volume{
+		Name: datadirName,
+		VolumeSource: corev1.VolumeSource{
+			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+				ClaimName: datadirName,
+			},
+		},
+	}
+	ss.Spec.Template.Spec.Volumes = append(ss.Spec.Template.Spec.Volumes, vol)
+
+	containers := ss.Spec.Template.Spec.Containers
+	for i := range containers {
+		if containers[i].Name == redpandaContainerName {
+			volMount := corev1.VolumeMount{
+				Name:      datadirName,
+				MountPath: dataDirectory,
+			}
+			containers[i].VolumeMounts = append(containers[i].VolumeMounts, volMount)
+		}
+	}
+}
+
 func (r *StatefulSetResource) rpkStatusContainer() *corev1.Container {
 	if r.pandaCluster.Spec.Sidecars.RpkStatus == nil {
 		r.logger.Info("BUG! No resources found for rpk status - this should never happen with defaulting webhook enabled - please consider enabling the webhook")
