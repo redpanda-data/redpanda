@@ -13,6 +13,7 @@ import (
 	res "github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/deprecated/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -109,6 +110,17 @@ func TestEnsure_ConfigMap(t *testing.T) {
 	cluster := pandaCluster()
 	cluster = cluster.DeepCopy()
 	cluster.Name = "ensure-integration-cm-cluster"
+
+	secret := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "archival",
+			Namespace: "default",
+		},
+		Data: map[string][]byte{
+			"archival": []byte("XXX"),
+		},
+	}
+	assert.NoError(t, c.Create(context.Background(), &secret))
 
 	cm := res.NewConfigMap(
 		c,

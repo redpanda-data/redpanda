@@ -170,7 +170,7 @@ func stsFromCluster(pandaCluster *redpandav1alpha1.Cluster) *v1.StatefulSet {
 				{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: pandaCluster.Namespace,
-						Name:      "dataDir",
+						Name:      "datadir",
 					},
 					Spec: corev1.PersistentVolumeClaimSpec{
 						AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
@@ -219,8 +219,19 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 		},
 		Spec: redpandav1alpha1.ClusterSpec{
 			Image:    "image",
-			Version:  "latest",
+			Version:  "v21.10.1",
 			Replicas: pointer.Int32Ptr(replicas),
+			CloudStorage: redpandav1alpha1.CloudStorageConfig{
+				Enabled: true,
+				CacheStorage: &redpandav1alpha1.StorageSpec{
+					Capacity:         resource.MustParse("10Gi"),
+					StorageClassName: "local",
+				},
+				SecretKeyRef: corev1.ObjectReference{
+					Namespace: "default",
+					Name:      "archival",
+				},
+			},
 			Configuration: redpandav1alpha1.RedpandaConfig{
 				AdminAPI: []redpandav1alpha1.AdminAPI{{Port: 345}},
 				KafkaAPI: []redpandav1alpha1.KafkaAPI{{Port: 123}},
