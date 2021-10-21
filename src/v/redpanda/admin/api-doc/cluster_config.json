@@ -1,0 +1,84 @@
+{
+  "apiVersion": "0.0.1",
+  "swaggerVersion": "1.2",
+  "basePath": "/v1",
+  "resourcePath": "/cluster_config",
+  "produces": [
+    "application/json"
+  ],
+  "apis": [
+    {
+      "path": "/v1/cluster_config",
+      "operations": [
+        {"method": "PUT",
+          "summary": "Update cluster configuration",
+          "type": "void",
+          "nickname": "patch_cluster_config",
+          "produces": ["application/json"],
+          "parameters": [
+          ]
+        }
+      ]
+    },
+    {
+      "path": "/v1/cluster_config/status",
+      "operations": [
+        {"method": "GET",
+          "summary": "Get configuration status of nodes",
+          "type": "array",
+          "items": {
+            "type": "cluster_config_status"
+          },
+          "nickname": "get_cluster_config_status",
+          "produces": ["application/json"],
+          "parameters": [
+          ]
+        }
+      ]
+    }
+  ],
+  "models": {
+    "cluster_config_status": {
+      "id": "cluster_config_status",
+      "description": "Per-node configuration status",
+      "properties": {
+        "node_id": {
+          "type": "long",
+          "description": "node id"
+        },
+        "restart": {
+          "type": "boolean",
+          "description": "Restart required to apply pending configuration"
+        },
+        "version": {
+          "type": "long",
+          "description": "Configuration version number, for cross referencing with PUT results"
+        },
+        "invalid": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of properties with invalid values"
+        },
+        "unknown": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of properties unknown to this node"
+        }
+      }
+    },
+    "cluster_config_write_result": {
+      "id": "cluster_config_write_result",
+      "description": "Result of writing changes to cluster configuration",
+      "properties": {
+        "version": {
+          "type": "long",
+          "description": "Configuration version number, for cross referencing with node config status"
+        }
+      }
+    }
+  }
+}

@@ -30,6 +30,7 @@
 #include "model/namespace.h"
 #include "raft/types.h"
 #include "redpanda/admin/api-doc/broker.json.h"
+#include "redpanda/admin/api-doc/cluster_config.json.h"
 #include "redpanda/admin/api-doc/config.json.h"
 #include "redpanda/admin/api-doc/hbadger.json.h"
 #include "redpanda/admin/api-doc/partition.json.h"
@@ -108,6 +109,8 @@ void admin_server::configure_admin_routes() {
     rb->register_api_file(_server._routes, "header");
     rb->register_api_file(_server._routes, "config");
     rb->register_function(_server._routes, insert_comma);
+    rb->register_api_file(_server._routes, "cluster_config");
+    rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "raft");
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "kafka");
@@ -123,6 +126,7 @@ void admin_server::configure_admin_routes() {
     rb->register_api_file(_server._routes, "broker");
 
     register_config_routes();
+    register_cluster_config_routes();
     register_raft_routes();
     register_kafka_routes();
     register_security_routes();
@@ -512,6 +516,120 @@ void admin_server::register_config_routes() {
           rearm_log_level_timer();
 
           return ss::json::json_return_type(ss::json::json_void());
+      });
+}
+
+static json_validator make_cluster_config_validator() {
+    const std::string schema = R"(
+{
+    "type": "object",
+    "properties": {
+        "upsert": {
+            "type": "object"
+        },
+        "remove": {
+            "type": "array",
+            "items": "string"
+        }
+    },
+    "additionalProperties": false,
+    "required": ["upsert", "remove"]
+}
+)";
+    return json_validator(schema);
+}
+
+void admin_server::register_cluster_config_routes() {
+    static thread_local auto cluster_config_validator(
+      make_cluster_config_validator());
+
+    ss::httpd::cluster_config_json::get_cluster_config_status.set(
+      _server._routes,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          std::vector<ss::httpd::cluster_config_json::cluster_config_status>
+            res;
+
+          auto& cfg = _controller->get_config_manager();
+          auto statuses = co_await cfg.invoke_on(
+            cluster::controller_stm_shard,
+            [](cluster::config_manager& manager) {
+                // Intentional copy, do not want to pass reference to mutable
+                // status map back to originating core.
+                return cluster::config_manager::status_map(
+                  manager.get_status());
+            });
+
+          for (const auto& s : statuses) {
+              vlog(logger.trace, "status: {}", s.second);
+              auto& rs = res.emplace_back();
+              rs.node_id = s.first;
+              rs.restart = s.second.restart;
+              rs.version = s.second.version;
+
+              // Workaround: seastar json_list hides empty lists by
+              // default.  This complicates API clients, so always push
+              // in a dummy element to get _set=true on json_list (this
+              // is then cleared in the subsequent operator=).
+              rs.invalid.push(ss::sstring("hack"));
+              rs.unknown.push(ss::sstring("hack"));
+
+              rs.invalid = s.second.invalid;
+              rs.unknown = s.second.unknown;
+          }
+
+          co_return ss::json::json_return_type(std::move(res));
+      });
+
+    ss::httpd::cluster_config_json::patch_cluster_config.set(
+      _server._routes,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+
+          auto doc = parse_json_body(*req);
+          apply_validator(cluster_config_validator, doc);
+
+          cluster::config_update update;
+
+          // Deserialize removes
+          const auto& json_remove = doc["remove"];
+          for (const auto& v : json_remove.GetArray()) {
+              update.remove.push_back(v.GetString());
+          }
+
+          // Deserialize upserts
+          const auto& json_upsert = doc["upsert"];
+          for (const auto& i : json_upsert.GetObject()) {
+              // Re-serialize the individual value.  Our on-disk format
+              // for property values is a YAML value (JSON is a subset
+              // of YAML, so encoding with JSON is fine)
+              rapidjson::StringBuffer val_buf;
+              rapidjson::Writer<rapidjson::StringBuffer> w{val_buf};
+              i.value.Accept(w);
+              auto s = ss::sstring{val_buf.GetString(), val_buf.GetSize()};
+              update.upsert.push_back({i.name.GetString(), s});
+          }
+
+          vlog(
+            logger.trace,
+            "patch_cluster_config: {} upserts, {} removes",
+            update.upsert.size(),
+            update.remove.size());
+
+          auto err = co_await _controller->get_config_frontend().invoke_on(
+            cluster::config_frontend::version_shard,
+            [update](cluster::config_frontend& fe) mutable
+            -> ss::future<std::error_code> {
+                return fe.patch(update, model::timeout_clock::now() + 5s);
+            });
+
+          co_await throw_on_error(*req, err, model::controller_ntp);
+
+          ss::httpd::cluster_config_json::cluster_config_write_result result;
+          result.version = co_await _controller->get_config_manager().invoke_on(
+            cluster::controller_stm_shard,
+            [](cluster::config_manager& mgr) { return mgr.get_version(); });
+          co_return ss::json::json_return_type(std::move(result));
       });
 }
 
