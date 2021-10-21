@@ -78,6 +78,18 @@ node_config::node_config() noexcept
       "IpAddress and port for supervisor service",
       required::no,
       unresolved_address("127.0.0.1", 43189))
+  , admin_api_doc_dir(
+      *this,
+      "admin_api_doc_dir",
+      "Admin API doc directory",
+      required::no,
+      "/usr/share/redpanda/admin-api-doc")
+  , dashboard_dir(
+      *this,
+      "dashboard_dir",
+      "serve http dashboard on / url",
+      required::no,
+      std::nullopt)
   , cloud_storage_cache_directory(
       *this,
       "cloud_storage_cache_directory",

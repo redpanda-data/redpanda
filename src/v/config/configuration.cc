@@ -153,12 +153,6 @@ configuration::configuration()
       false)
   , enable_admin_api(
       *this, "enable_admin_api", "Enable the admin API", required::no, true)
-  , admin_api_doc_dir(
-      *this,
-      "admin_api_doc_dir",
-      "Admin API doc directory",
-      required::no,
-      "/usr/share/redpanda/admin-api-doc")
   , default_num_windows(
       *this,
       "default_num_windows",
@@ -185,12 +179,6 @@ configuration::configuration()
       2_GiB)
   , cluster_id(
       *this, "cluster_id", "Cluster identifier", required::no, std::nullopt)
-  , dashboard_dir(
-      *this,
-      "dashboard_dir",
-      "serve http dashboard on / url",
-      required::no,
-      std::nullopt)
   , disable_metrics(
       *this,
       "disable_metrics",

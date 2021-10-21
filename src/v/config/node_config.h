@@ -40,6 +40,11 @@ public:
     // Coproc/wasm
     property<unresolved_address> coproc_supervisor_server;
 
+    // HTTP server content dirs
+    property<ss::sstring> admin_api_doc_dir;
+    property<std::optional<ss::sstring>> dashboard_dir;
+
+    // Shadow indexing/S3 cache location
     property<std::optional<ss::sstring>> cloud_storage_cache_directory;
 
     // build pidfile path: `<data_directory>/pid.lock`
