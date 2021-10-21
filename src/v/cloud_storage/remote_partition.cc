@@ -401,7 +401,7 @@ void remote_partition::gc_stale_materialized_segments() {
     auto now = ss::lowres_clock::now();
     std::vector<model::offset> offsets;
     for (auto& st : _materialized) {
-        if (now - st.atime > stm_max_idle_time) {
+        if (now - st.atime > stm_max_idle_time && st.segment.owned()) {
             vlog(
               _ctxlog.debug,
               "reader for segment with base offset {} is stale",
@@ -585,7 +585,7 @@ remote_partition::materialized_segment_state::materialized_segment_state(
   manifest::key mk, model::offset off_key, remote_partition& p)
   : manifest_key(std::move(mk))
   , offset_key(off_key)
-  , segment(std::make_unique<remote_segment>(
+  , segment(ss::make_lw_shared<remote_segment>(
       p._api, p._cache, p._bucket, p._manifest, manifest_key, p._rtc))
   , atime(ss::lowres_clock::now()) {
     p._materialized.push_back(*this);
@@ -615,7 +615,7 @@ remote_partition::materialized_segment_state::borrow_reader(
     // this may only happen if we have some concurrency
     auto state = std::make_unique<reader_state>(cfg);
     state->reader = std::make_unique<remote_segment_batch_reader>(
-      *segment, state->config, segment->get_term());
+      segment, state->config, segment->get_term());
     return state;
 }
 

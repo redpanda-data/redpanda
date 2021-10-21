@@ -138,7 +138,7 @@ private:
         manifest::key manifest_key;
         /// Key of the segment in _segments collection of the remote_partition
         model::offset offset_key;
-        std::unique_ptr<remote_segment> segment;
+        ss::lw_shared_ptr<remote_segment> segment;
         /// Batch reader that can be used to scan the segment
         std::list<std::unique_ptr<reader_state>> readers;
         /// Reader access time
@@ -170,7 +170,7 @@ private:
         _eviction_list.push_back(std::move(reader));
         _cvar.signal();
     }
-    void evict_segment(std::unique_ptr<remote_segment> segment) {
+    void evict_segment(ss::lw_shared_ptr<remote_segment> segment) {
         _eviction_list.push_back(std::move(segment));
         _cvar.signal();
     }
@@ -181,7 +181,7 @@ private:
     void start_readahead(segment_map_t::iterator current);
     using evicted_resource_t = std::variant<
       std::unique_ptr<remote_segment_batch_reader>,
-      std::unique_ptr<remote_segment>>;
+      ss::lw_shared_ptr<remote_segment>>;
 
     using eviction_list_t = std::deque<evicted_resource_t>;
 

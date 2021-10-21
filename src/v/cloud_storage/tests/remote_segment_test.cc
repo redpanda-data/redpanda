@@ -134,7 +134,8 @@ FIXTURE_TEST(
 
     log_reader_config reader_config(
       model::offset(1), model::offset(1), ss::default_priority_class());
-    remote_segment segment(remote, *cache, bucket, m, name, fib);
+    auto segment = ss::make_lw_shared<remote_segment>(
+      remote, *cache, bucket, m, name, fib);
     remote_segment_batch_reader reader(
       segment, reader_config, model::term_id(1));
 
@@ -220,7 +221,8 @@ void test_remote_segment_batch_reader(
         .max_timestamp = {},
         .delta_offset = model::offset(0)});
 
-    remote_segment segment(remote, *fixture.cache, bucket, m, name, fib);
+    auto segment = ss::make_lw_shared<remote_segment>(
+      remote, *fixture.cache, bucket, m, name, fib);
     remote_segment_batch_reader reader(
       segment, reader_config, model::term_id(1));
 
@@ -320,7 +322,8 @@ FIXTURE_TEST(
         .max_timestamp = {},
         .delta_offset = model::offset(0)});
 
-    remote_segment segment(remote, *cache, bucket, m, name, fib);
+    auto segment = ss::make_lw_shared<remote_segment>(
+      remote, *cache, bucket, m, name, fib);
 
     log_reader_config reader_config(
       headers.at(0).base_offset,

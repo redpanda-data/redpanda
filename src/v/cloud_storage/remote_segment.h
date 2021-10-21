@@ -122,7 +122,9 @@ class remote_segment_batch_reader final {
 
 public:
     remote_segment_batch_reader(
-      remote_segment&, log_reader_config& config, model::term_id term) noexcept;
+      ss::lw_shared_ptr<remote_segment>,
+      log_reader_config& config,
+      model::term_id term) noexcept;
 
     remote_segment_batch_reader(
       remote_segment_batch_reader&&) noexcept = default;
@@ -139,10 +141,10 @@ public:
     ss::future<> stop();
 
     /// Get max offset (redpanda offset)
-    model::offset max_rp_offset() const { return _seg.get_max_rp_offset(); }
+    model::offset max_rp_offset() const { return _seg->get_max_rp_offset(); }
 
     /// Get base offset (redpanda offset)
-    model::offset base_rp_offset() const { return _seg.get_base_rp_offset(); }
+    model::offset base_rp_offset() const { return _seg->get_base_rp_offset(); }
 
 private:
     friend class single_record_consumer;
@@ -150,7 +152,7 @@ private:
 
     size_t produce(model::record_batch batch);
 
-    remote_segment& _seg;
+    ss::lw_shared_ptr<remote_segment> _seg;
     log_reader_config& _config;
     std::unique_ptr<storage::continuous_batch_parser> _parser;
     bool _done{false};

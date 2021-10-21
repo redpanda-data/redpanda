@@ -393,11 +393,13 @@ private:
 };
 
 remote_segment_batch_reader::remote_segment_batch_reader(
-  remote_segment& s, log_reader_config& config, model::term_id term) noexcept
-  : _seg(s)
+  ss::lw_shared_ptr<remote_segment> s,
+  log_reader_config& config,
+  model::term_id term) noexcept
+  : _seg(std::move(s))
   , _config(config)
   , _term(term)
-  , _initial_delta(s.get_base_offset_delta()) {}
+  , _initial_delta(_seg->get_base_offset_delta()) {}
 
 ss::future<result<ss::circular_buffer<model::record_batch>>>
 remote_segment_batch_reader::read_some(
@@ -434,7 +436,7 @@ remote_segment_batch_reader::read_some(
 ss::future<std::unique_ptr<storage::continuous_batch_parser>>
 remote_segment_batch_reader::init_parser() {
     vlog(cst_log.debug, "remote_segment_batch_reader::init_parser");
-    auto stream = co_await _seg.data_stream(0, ss::default_priority_class());
+    auto stream = co_await _seg->data_stream(0, ss::default_priority_class());
     auto parser = std::make_unique<storage::continuous_batch_parser>(
       std::make_unique<remote_segment_batch_consumer>(
         _config, *this, _term, _initial_delta),
