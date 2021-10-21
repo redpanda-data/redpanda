@@ -20,6 +20,7 @@ import (
 	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
+	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources/featuregates"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -48,8 +49,9 @@ const (
 	configSourceDir      = "/mnt/operator"
 	configFile           = "redpanda.yaml"
 
-	datadirName            = "datadir"
-	defaultDatadirCapacity = "100Gi"
+	datadirName                  = "datadir"
+	archivalCacheIndexAnchorName = "shadow-index-cache"
+	defaultDatadirCapacity       = "100Gi"
 )
 
 // ConfiguratorSettings holds settings related to configurator container and deployment
@@ -161,31 +163,14 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	}
 	r.LastObservedState = &sts
 
-	partitioned, err := r.shouldUsePartitionedUpdate(&sts)
-	if err != nil {
-		return err
-	}
-	if partitioned {
-		r.logger.Info(fmt.Sprintf("Going to run partitioned update on resource %s", r.Key().Name))
-		if err := r.runPartitionedUpdate(ctx, &sts); err != nil {
-			return fmt.Errorf("failed to run partitioned update: %w", err)
-		}
-	} else {
-		modified, err := r.obj()
-		if err != nil {
-			return err
-		}
-		err = Update(ctx, &sts, modified, r.Client, r.logger)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	r.logger.Info("Running update", "resource name", r.Key().Name)
+	return r.runUpdate(ctx, &sts, obj.(*appsv1.StatefulSet))
 }
 
 func preparePVCResource(
-	name, namespace string, storage redpandav1alpha1.StorageSpec,
+	name, namespace string,
+	storage redpandav1alpha1.StorageSpec,
+	clusterLabels map[string]string,
 ) corev1.PersistentVolumeClaim {
 	fileSystemMode := corev1.PersistentVolumeFilesystem
 
@@ -193,6 +178,7 @@ func preparePVCResource(
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      name,
+			Labels:    clusterLabels,
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
@@ -250,7 +236,7 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 			PodManagementPolicy: appsv1.ParallelPodManagement,
 			Selector:            clusterLabels.AsAPISelector(),
 			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
-				Type: appsv1.RollingUpdateStatefulSetStrategyType,
+				Type: appsv1.OnDeleteStatefulSetStrategyType,
 			},
 			ServiceName: r.pandaCluster.Name,
 			Template: corev1.PodTemplateSpec{
@@ -466,8 +452,7 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 func setCloudStorage(
 	ss *appsv1.StatefulSet, cluster *redpandav1alpha1.Cluster,
 ) {
-	pvcDataDir := preparePVCResource(datadirName, cluster.Namespace, cluster.Spec.Storage)
-	pvcDataDir.Labels = ss.Labels
+	pvcDataDir := preparePVCResource(datadirName, cluster.Namespace, cluster.Spec.Storage, ss.Labels)
 	ss.Spec.VolumeClaimTemplates = append(ss.Spec.VolumeClaimTemplates, pvcDataDir)
 	vol := corev1.Volume{
 		Name: datadirName,
@@ -487,6 +472,30 @@ func setCloudStorage(
 				MountPath: dataDirectory,
 			}
 			containers[i].VolumeMounts = append(containers[i].VolumeMounts, volMount)
+		}
+	}
+
+	if cluster.Spec.CloudStorage.Enabled && featuregates.ShadowIndex(cluster.Spec.Version) && cluster.Spec.CloudStorage.CacheStorage != nil {
+		pvcArchivalDir := preparePVCResource(archivalCacheIndexAnchorName, cluster.Namespace, *cluster.Spec.CloudStorage.CacheStorage, ss.Labels)
+		ss.Spec.VolumeClaimTemplates = append(ss.Spec.VolumeClaimTemplates, pvcArchivalDir)
+		archivalVol := corev1.Volume{
+			Name: archivalCacheIndexAnchorName,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: archivalCacheIndexAnchorName,
+				},
+			},
+		}
+		ss.Spec.Template.Spec.Volumes = append(ss.Spec.Template.Spec.Volumes, archivalVol)
+
+		for i := range containers {
+			if containers[i].Name == redpandaContainerName {
+				archivalVolMount := corev1.VolumeMount{
+					Name:      archivalCacheIndexAnchorName,
+					MountPath: archivalCacheIndexDirectory,
+				}
+				containers[i].VolumeMounts = append(containers[i].VolumeMounts, archivalVolMount)
+			}
 		}
 	}
 }
