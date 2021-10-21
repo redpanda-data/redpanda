@@ -282,6 +282,22 @@ void admin_server::register_config_routes() {
     ss::httpd::config_json::get_config.set(
       _server._routes, get_config_handler_f);
 
+    static ss::httpd::handle_function get_node_config_handler =
+      []([[maybe_unused]] ss::const_req req, ss::reply& reply) {
+          rapidjson::StringBuffer buf;
+          rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+          config::node().to_json(writer);
+
+          reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
+          return "";
+      };
+
+    auto get_node_config_handler_f = new ss::httpd::function_handler{
+      get_node_config_handler, "json"};
+
+    ss::httpd::config_json::get_node_config.set(
+      _server._routes, get_node_config_handler_f);
+
     ss::httpd::config_json::set_log_level.set(
       _server._routes, [this](ss::const_req req) {
           auto name = req.param["name"];
