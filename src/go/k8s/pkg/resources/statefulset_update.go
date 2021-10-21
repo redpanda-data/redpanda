@@ -13,17 +13,23 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"reflect"
+	"sort"
+	"strings"
 	"time"
 
+	"github.com/banzaicloud/k8s-objectmatcher/patch"
 	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
+	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -35,68 +41,168 @@ const (
 
 var errRedpandaNotReady = errors.New("redpanda not ready")
 
-// runPartitionedUpdate handles image changes in the redpanda cluster CR by triggering
-// a rolling update (using partitions) against the statefulset underneath the CR.
-// The partitioned rolling update allows us to verify the ith pod in a custom manner
-// before proceeding to the next pod.
+// runUpdate handles image changes and additional storage in the redpanda cluster
+// CR by removing statefulset with orphans Pods. The stateful set is then recreated
+// and all Pods are restarted accordingly to the ordinal number.
 //
 // The process maintains an Upgrading bool status that is set to true once the
-// CR and statefulset images differ. It is set back to false when all pods are
-// verified to be updated.
+// generated stateful differentiate from the actual state. It is set back to
+// false when all pods are verified.
 //
-// The steps are as follows: 1) check the Upgrading status or if the statefulset image
-// version differs from that of the cluster CR; 2) if true, set the Upgrading status
-// to true and modify the image in the sts spec, in-memory; 3) perform rolling update
-// starting from the last pod to the first; 4) in each iteration apply the update
-// on the pod and requeue until the pod is in ready state; 5) prior to a pod update
+// The steps are as follows: 1) check the Upgrading status or if the statefulset
+// differentiate from the current stored statefulset definition 2) if true,
+// set the Upgrading status to true and remove statefulset with the orphan Pods
+// 3) perform rolling update like removing Pods accordingly to theirs ordinal
+// number 4) requeue until the pod is in ready state 5) prior to a pod update
 // verify the previously updated pod and requeue as necessary. Currently, the
 // verification checks the pod has started listening in its http Admin API port and may be
 // extended.
-func (r *StatefulSetResource) runPartitionedUpdate(
-	ctx context.Context, sts *appsv1.StatefulSet,
+func (r *StatefulSetResource) runUpdate(
+	ctx context.Context, current, modified *appsv1.StatefulSet,
 ) error {
-	newRedpandaImage := r.pandaCluster.FullImageName()
-	newConfiguratorImage := r.fullConfiguratorImage()
+	update, err := r.shouldUpdate(current, modified)
+	if err != nil {
+		return fmt.Errorf("unable to determine the update procedure: %w", err)
+	}
 
-	r.logger.Info("Continuing cluster partitioned update",
-		"cluster image", newRedpandaImage,
-		"configurator image", newConfiguratorImage)
+	if !update {
+		return nil
+	}
 
-	if err := r.updateUpgradingStatus(ctx, true); err != nil {
+	if err = r.updateUpgradingStatus(ctx, true); err != nil {
+		return fmt.Errorf("unable to turn on upgrading status in cluster custom resource: %w", err)
+	}
+	if err = r.updateStatefulSet(ctx, current, modified); err != nil {
 		return err
 	}
 
-	if err := r.partitionUpdateImage(ctx, sts, newRedpandaImage, newConfiguratorImage); err != nil {
+	if err = r.rollingUpdate(ctx, &modified.Spec.Template.Spec); err != nil {
 		return err
 	}
 
 	// Update is complete for all pods (and all are ready). Set upgrading status to false.
-	if err := r.updateUpgradingStatus(ctx, false); err != nil {
-		return err
+	if err = r.updateUpgradingStatus(ctx, false); err != nil {
+		return fmt.Errorf("unable to turn off upgrading status in cluster custom resource: %w", err)
 	}
 
 	return nil
 }
 
-// shouldUsePartitionedUpdate returns true if changes on the CR require partitioned update
-func (r *StatefulSetResource) shouldUsePartitionedUpdate(
-	sts *appsv1.StatefulSet,
+func (r *StatefulSetResource) rollingUpdate(
+	ctx context.Context, spec *corev1.PodSpec,
+) error {
+	var podList corev1.PodList
+	err := r.List(ctx, &podList, &k8sclient.ListOptions{
+		Namespace:     r.pandaCluster.Namespace,
+		LabelSelector: labels.ForCluster(r.pandaCluster).AsClientSelector(),
+	})
+	if err != nil {
+		return fmt.Errorf("unable to list panda pods: %w", err)
+	}
+
+	sort.Slice(podList.Items, func(i, j int) bool {
+		return podList.Items[i].Name < podList.Items[j].Name
+	})
+
+	var artificialPod corev1.Pod
+	artificialPod.Spec = *spec
+
+	volumes := make(map[string]interface{})
+	for i := range spec.Volumes {
+		vol := spec.Volumes[i]
+		volumes[vol.Name] = new(interface{})
+	}
+
+	opts := []patch.CalculateOption{
+		patch.IgnoreStatusFields(),
+		ignoreKubernetesTokenVolumeMounts(),
+		ignoreDefaultToleration(),
+		ignoreExistingVolumes(volumes),
+	}
+
+	for i := range podList.Items {
+		pod := podList.Items[i]
+
+		patchResult, err := patch.DefaultPatchMaker.Calculate(&pod, &artificialPod, opts...)
+		if err != nil {
+			return err
+		}
+
+		if !patchResult.IsEmpty() {
+			r.logger.Info("Changes in Pod definition other than activeDeadlineSeconds, configurator and Redpanda container name. Deleting pod",
+				"pod-name", pod.Name,
+				"patch", patchResult.Patch)
+			if err = r.Delete(ctx, &pod); err != nil {
+				return fmt.Errorf("unable to remove Redpanda pod: %w", err)
+			}
+			return &RequeueAfterError{RequeueAfter: RequeueDuration, Msg: "wait for pod restart"}
+		}
+
+		if !podIsReady(&pod) {
+			return &RequeueAfterError{RequeueAfter: RequeueDuration,
+				Msg: fmt.Sprintf("wait for %s pod to become ready", pod.Name)}
+		}
+
+		headlessServiceWithPort := fmt.Sprintf("%s:%d", r.serviceFQDN,
+			r.pandaCluster.AdminAPIInternal().Port)
+
+		adminURL := url.URL{
+			Scheme: "http",
+			Host:   fmt.Sprintf("%s.%s", pod.Name, headlessServiceWithPort),
+			Path:   "v1/status/ready",
+		}
+
+		r.logger.Info("Verify that Ready endpoint returns HTTP status OK")
+		if err = r.queryRedpandaStatus(ctx, &adminURL); err != nil {
+			return fmt.Errorf("unable to query Redpanda ready status: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (r *StatefulSetResource) updateStatefulSet(
+	ctx context.Context,
+	current *appsv1.StatefulSet,
+	modified *appsv1.StatefulSet,
+) error {
+	err := Update(ctx, current, modified, r.Client, r.logger)
+	if err != nil && strings.Contains(err.Error(), "spec: Forbidden: updates to statefulset spec for fields other than") {
+		// REF: https://github.com/kubernetes/kubernetes/issues/69041#issuecomment-723757166
+		// https://www.giffgaff.io/tech/resizing-statefulset-persistent-volumes-with-zero-downtime
+		// in-place rolling update of a pod - https://github.com/kubernetes/kubernetes/issues/9043
+		orphan := metav1.DeletePropagationOrphan
+		err = r.Client.Delete(ctx, current, &k8sclient.DeleteOptions{
+			PropagationPolicy: &orphan,
+		})
+		if err != nil {
+			return fmt.Errorf("unable to delete statefulset using orphan propagation policy: %w", err)
+		}
+		return &RequeueAfterError{RequeueAfter: RequeueDuration, Msg: "wait for sts to be deleted"}
+	}
+	if err != nil {
+		return fmt.Errorf("unable to update statefulset: %w", err)
+	}
+	return nil
+}
+
+// shouldUpdate returns true if changes on the CR require update
+func (r *StatefulSetResource) shouldUpdate(
+	current, modified *appsv1.StatefulSet,
 ) (bool, error) {
 	upgrading := r.pandaCluster.Status.Upgrading
 
-	rpContainer, err := findContainer(sts.Spec.Template.Spec.Containers, redpandaContainerName)
+	prepareResourceForPatch(current, modified)
+	opts := []patch.CalculateOption{
+		patch.IgnoreStatusFields(),
+		patch.IgnoreVolumeClaimTemplateTypeMetaAndStatus(),
+	}
+	patchResult, err := patch.DefaultPatchMaker.Calculate(current, modified, opts...)
 	if err != nil {
 		return false, err
 	}
 
-	configuratorContainer, err := findContainer(sts.Spec.Template.Spec.InitContainers, configuratorContainerName)
-	if err != nil {
-		return false, err
-	}
-
-	newImage := r.pandaCluster.FullImageName()
-	newConfiguratorImage := r.fullConfiguratorImage()
-	return rpContainer.Image != newImage || configuratorContainer.Image != newConfiguratorImage || upgrading, nil
+	return !patchResult.IsEmpty() || upgrading, nil
 }
 
 func (r *StatefulSetResource) updateUpgradingStatus(
@@ -104,6 +210,9 @@ func (r *StatefulSetResource) updateUpgradingStatus(
 ) error {
 	if !reflect.DeepEqual(upgrading, r.pandaCluster.Status.Upgrading) {
 		r.pandaCluster.Status.Upgrading = upgrading
+		r.logger.Info("Status updated",
+			"status", upgrading,
+			"resource name", r.pandaCluster.Name)
 		if err := r.Status().Update(ctx, r.pandaCluster); err != nil {
 			return err
 		}
@@ -112,75 +221,146 @@ func (r *StatefulSetResource) updateUpgradingStatus(
 	return nil
 }
 
-func (r *StatefulSetResource) partitionUpdateImage(
-	ctx context.Context,
-	sts *appsv1.StatefulSet,
-	newRedpandaImage, newConfiguratorImage string,
-) error {
-	replicas := *sts.Spec.Replicas
-
-	// When a StatefulSet's partition number is set to `i`, only Pods with ordinal
-	// greater than or equal to `i` will be updated.
-	// https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#partitions
-	for ordinal := replicas - 1; ordinal >= 0; ordinal-- {
-		// Update() on statefulset has not been called yet in this run, however,
-		// this could be a retry call in which case we skip the current partition.
-		poderr := r.podImageIdenticalToClusterImage(ctx, sts, newRedpandaImage, newConfiguratorImage, ordinal)
-		if poderr == nil {
-			r.logger.Info("Pod already updated, skip", "ordinal", ordinal)
-			continue
+func ignoreExistingVolumes(
+	volumes map[string]interface{},
+) patch.CalculateOption {
+	return func(current, modified []byte) ([]byte, []byte, error) {
+		current, err := deleteExistingVolumes(current, volumes)
+		if err != nil {
+			return []byte{}, []byte{}, fmt.Errorf("could not delete configurator init container field from current byte sequence: %w", err)
 		}
 
-		// Continue only if error is due to Pod not ready, or unchanged image
-		// as an attempt to fix the Pod.
-		if !errors.Is(poderr, errContainerHasWrongImage) && !errors.Is(poderr, errPodNotReady) {
-			return poderr
+		modified, err = deleteExistingVolumes(modified, volumes)
+		if err != nil {
+			return []byte{}, []byte{}, fmt.Errorf("could not delete configurator init container field from modified byte sequence: %w", err)
 		}
 
-		// Before continuing to update the ith Pod, verify that the previously updated
-		// Pod (if any) has rejoined its groups after restarting, i.e., is ready for I/O.
-		if err := r.ensureRedpandaGroupsReady(ctx, sts, replicas, ordinal+1); err != nil {
-			return &RequeueAfterError{RequeueAfter: RequeueDuration,
-				Msg: fmt.Sprintf("redpanda on pod (ordinal: %d) not ready: %s", ordinal, err)}
-		}
-
-		if err := r.rollingUpdatePartition(ctx, ordinal, sts); err != nil {
-			return err
-		}
-
-		// Restarting the Pod takes enough time to warrant a requeue.
-		return &RequeueAfterError{RequeueAfter: RequeueDuration,
-			Msg: fmt.Sprintf("wait for pod (ordinal: %d) to restart", ordinal)}
+		return current, modified, nil
 	}
-
-	// Ensure 0th Pod is ready for I/O before completing the upgrade.
-	if err := r.ensureRedpandaGroupsReady(ctx, sts, replicas, 0); err != nil {
-		return &RequeueAfterError{RequeueAfter: RequeueDuration,
-			Msg: fmt.Sprintf("redpanda on pod (ordinal: %d) not ready: %s", 0, err)}
-	}
-
-	return nil
 }
 
-// Ensures the Redpanda pod has rejoined its groups after restarting,
-// i.e., is ready for I/O.
-func (r *StatefulSetResource) ensureRedpandaGroupsReady(
-	ctx context.Context, sts *appsv1.StatefulSet, replicas, ordinal int32,
-) error {
-	if replicas == 0 || ordinal == replicas {
-		return nil
+func deleteExistingVolumes(
+	obj []byte, volumes map[string]interface{},
+) ([]byte, error) {
+	var pod corev1.Pod
+	err := json.Unmarshal(obj, &pod)
+	if err != nil {
+		return nil, fmt.Errorf("could not unmarshal byte sequence: %w", err)
 	}
 
-	headlessServiceWithPort := fmt.Sprintf("%s:%d", r.serviceFQDN,
-		r.pandaCluster.AdminAPIInternal().Port)
+	var newVolumes []corev1.Volume
+	for i := range pod.Spec.Volumes {
+		_, ok := volumes[pod.Spec.Volumes[i].Name]
+		if !ok {
+			newVolumes = append(newVolumes, pod.Spec.Volumes[i])
+		}
+	}
+	pod.Spec.Volumes = newVolumes
 
-	adminURL := url.URL{
-		Scheme: "http",
-		Host:   fmt.Sprintf("%s-%d.%s", sts.Name, ordinal, headlessServiceWithPort),
-		Path:   "v1/status/ready",
+	obj, err = json.Marshal(pod)
+	if err != nil {
+		return nil, fmt.Errorf("could not marshal byte sequence: %w", err)
 	}
 
-	return r.queryRedpandaStatus(ctx, &adminURL)
+	return obj, nil
+}
+
+func ignoreDefaultToleration() patch.CalculateOption {
+	return func(current, modified []byte) ([]byte, []byte, error) {
+		current, err := deleteDefaultToleration(current)
+		if err != nil {
+			return []byte{}, []byte{}, fmt.Errorf("could not delete configurator init container field from current byte sequence: %w", err)
+		}
+
+		modified, err = deleteDefaultToleration(modified)
+		if err != nil {
+			return []byte{}, []byte{}, fmt.Errorf("could not delete configurator init container field from modified byte sequence: %w", err)
+		}
+
+		return current, modified, nil
+	}
+}
+
+func deleteDefaultToleration(obj []byte) ([]byte, error) {
+	var pod corev1.Pod
+	err := json.Unmarshal(obj, &pod)
+	if err != nil {
+		return nil, fmt.Errorf("could not unmarshal byte sequence: %w", err)
+	}
+
+	var newToleration []corev1.Toleration
+	tolerations := pod.Spec.Tolerations
+	for i := range tolerations {
+		switch tolerations[i].Key {
+		case "node.kubernetes.io/not-ready":
+		case "node.kubernetes.io/unreachable":
+			continue
+		default:
+			newToleration = append(newToleration, tolerations[i])
+		}
+	}
+	pod.Spec.Tolerations = newToleration
+
+	obj, err = json.Marshal(pod)
+	if err != nil {
+		return nil, fmt.Errorf("could not marshal byte sequence: %w", err)
+	}
+
+	return obj, nil
+}
+
+func ignoreKubernetesTokenVolumeMounts() patch.CalculateOption {
+	return func(current, modified []byte) ([]byte, []byte, error) {
+		current, err := deleteKubernetesTokenVolumeMounts(current)
+		if err != nil {
+			return []byte{}, []byte{}, fmt.Errorf("could not delete configurator init container field from current byte sequence: %w", err)
+		}
+
+		modified, err = deleteKubernetesTokenVolumeMounts(modified)
+		if err != nil {
+			return []byte{}, []byte{}, fmt.Errorf("could not delete configurator init container field from modified byte sequence: %w", err)
+		}
+
+		return current, modified, nil
+	}
+}
+
+func deleteKubernetesTokenVolumeMounts(obj []byte) ([]byte, error) {
+	var pod corev1.Pod
+	err := json.Unmarshal(obj, &pod)
+	if err != nil {
+		return nil, fmt.Errorf("could not unmarshal byte sequence: %w", err)
+	}
+
+	tokenVolumeName := fmt.Sprintf("%s-token-", pod.Name)
+	containers := pod.Spec.Containers
+	for i := range containers {
+		c := containers[i]
+		for j := range c.VolumeMounts {
+			vol := c.VolumeMounts[j]
+			if strings.HasPrefix(vol.Name, tokenVolumeName) {
+				c.VolumeMounts = append(c.VolumeMounts[:j], c.VolumeMounts[j+1:]...)
+			}
+		}
+	}
+
+	initContainers := pod.Spec.InitContainers
+	for i := range initContainers {
+		ic := initContainers[i]
+		for j := range ic.VolumeMounts {
+			vol := ic.VolumeMounts[j]
+			if strings.HasPrefix(vol.Name, tokenVolumeName) {
+				ic.VolumeMounts = append(ic.VolumeMounts[:j], ic.VolumeMounts[j+1:]...)
+			}
+		}
+	}
+
+	obj, err = json.Marshal(pod)
+	if err != nil {
+		return nil, fmt.Errorf("could not marshal byte sequence: %w", err)
+	}
+
+	return obj, nil
 }
 
 // Temporarily using the status/ready endpoint until we have a specific one for upgrading.
@@ -255,92 +435,6 @@ func (r *StatefulSetResource) populateTLSConfigCert(
 	return nil
 }
 
-func (r *StatefulSetResource) podImageIdenticalToClusterImage(
-	ctx context.Context,
-	sts *appsv1.StatefulSet,
-	newRedpandaImage string,
-	newConfiguratorImage string,
-	ordinal int32,
-) error {
-	podName := fmt.Sprintf("%s-%d", sts.Name, ordinal)
-
-	var pod corev1.Pod
-	if err := r.Get(ctx, types.NamespacedName{Name: podName, Namespace: sts.Namespace}, &pod); err != nil {
-		return err
-	}
-
-	redpandaContainer, err := findContainer(pod.Spec.Containers, redpandaContainerName)
-	if err != nil {
-		return err
-	}
-
-	if redpandaContainer.Image != newRedpandaImage {
-		r.logger.Info("Redpanda container image not updated to desired image", "pod", pod.Name,
-			"container", redpandaContainer.Name,
-			"container image", redpandaContainer.Image,
-			"cluster image", newRedpandaImage)
-		return containerHasWrongImageError(podName, redpandaContainer.Name, redpandaContainer.Image, newRedpandaImage)
-	}
-
-	configuratorContainer, err := findContainer(pod.Spec.InitContainers, configuratorContainerName)
-	if err != nil {
-		return err
-	}
-
-	if configuratorContainer.Image != newConfiguratorImage {
-		r.logger.Info("Configurator container image not updated to desired image", "pod", pod.Name,
-			"container", configuratorContainer.Name,
-			"container image", configuratorContainer.Image,
-			"desired image", newConfiguratorImage)
-		return containerHasWrongImageError(podName, configuratorContainer.Name, configuratorContainer.Image, newConfiguratorImage)
-	}
-
-	if !podIsReady(&pod) {
-		r.logger.Info("Pod not ready yet", "pod", pod.Name)
-		return podNotReadyError(pod.Name)
-	}
-
-	r.logger.Info("Pod is ready", "pod", pod.Name,
-		"redpanda image", redpandaContainer.Image,
-		"desired image", newRedpandaImage,
-		"configurator image", configuratorContainer.Image,
-		"desired image", newConfiguratorImage)
-
-	return nil
-}
-
-func (r *StatefulSetResource) rollingUpdatePartition(
-	ctx context.Context, ordinal int32, sts *appsv1.StatefulSet,
-) error {
-	r.logger.Info("Call update on statefulset", "ordinal", ordinal)
-
-	modified, err := r.obj()
-	if err != nil {
-		return err
-	}
-	modifiedSts := modified.(*appsv1.StatefulSet)
-	modifiedSts.Spec.UpdateStrategy.RollingUpdate = &appsv1.RollingUpdateStatefulSetStrategy{
-		Partition: &ordinal,
-	}
-	if err := Update(ctx, sts, modifiedSts, r.Client, r.logger); err != nil {
-		return fmt.Errorf("failed to update StatefulSet (ordinal %d): %w", ordinal, err)
-	}
-
-	return nil
-}
-
-func findContainer(
-	containers []corev1.Container, container string,
-) (*corev1.Container, error) {
-	for i := range containers {
-		if containers[i].Name == container {
-			return &containers[i], nil
-		}
-	}
-
-	return nil, containerNotFoundError(container)
-}
-
 func podIsReady(pod *corev1.Pod) bool {
 	for _, c := range pod.Status.Conditions {
 		if c.Type == corev1.PodReady &&
@@ -360,26 +454,4 @@ type RequeueAfterError struct {
 
 func (e *RequeueAfterError) Error() string {
 	return fmt.Sprintf("RequeueAfterError %s", e.Msg)
-}
-
-var errContainerHasWrongImage = errors.New("container has wrong image")
-
-func containerHasWrongImageError(
-	podName, containerName, currentImage, expectedImage string,
-) error {
-	return fmt.Errorf("containerHasWrongImage %w : pod: %s; container: %s, image: %s; expected: %s",
-		errContainerHasWrongImage, podName, containerName, currentImage, expectedImage)
-}
-
-var errContainerNotFound = errors.New("container not found")
-
-func containerNotFoundError(container string) error {
-	return fmt.Errorf("containerNotFound %w : container %s",
-		errContainerNotFound, container)
-}
-
-var errPodNotReady = errors.New("pod not in ready state")
-
-func podNotReadyError(pod string) error {
-	return fmt.Errorf("podNotReady %w : pod: %s", errPodNotReady, pod)
 }
