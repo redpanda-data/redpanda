@@ -81,7 +81,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
             if op == ADD_TOPIC:
                 operations.append((
                     ADD_TOPIC,
-                    f"test-topic-{random.randint(0,2000)}-{time.time()*1000.0}",
+                    f"test-topic-{random.randint(0,2000)}-{round(time.time()*1000000)}",
                     random.choice(ALLOWED_REPLICATION), 3))
             else:
                 operations.append((DELETE_TOPIC, random.choice(topics)))
