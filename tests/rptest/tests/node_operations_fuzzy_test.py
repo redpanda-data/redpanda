@@ -10,6 +10,8 @@
 import random
 import threading
 import time
+import requests
+import urllib3
 
 from ducktape.mark import parametrize
 from ducktape.mark.resource import cluster
@@ -170,13 +172,34 @@ class NodeOperationFuzzyTest(EndToEndTest):
 
         def decommission(node_id):
             self.logger.info(f"decommissioning node: {node_id}")
-            admin = Admin(self.redpanda)
-            r = admin.decommission_broker(id=node_id)
+
+            def decommissioned():
+                try:
+                    admin = Admin(self.redpanda)
+                    # if broker is already draining, it is suceess
+                    brokers = admin.get_brokers()
+                    for b in brokers:
+                        if b['node_id'] == node_id and b[
+                                'membership_status'] == 'draining':
+                            return True
+
+                    r = admin.decommission_broker(id=node_id)
+                    return r.status_code == 200
+                except requests.exceptions.RetryError:
+                    return False
+                except requests.exceptions.ConnectionError:
+                    return False
+                except requests.exceptions.HTTPError:
+                    return False
+
+            wait_until(decommissioned,
+                       timeout_sec=NODE_OP_TIMEOUT,
+                       backoff_sec=2)
 
             def node_removed():
                 admin = Admin(self.redpanda)
                 try:
-                    brokers = admin.get_brokers()
+                    brokers = admin.get_brokers(node=self.redpanda.nodes[0])
                     for b in brokers:
                         if b['node_id'] == node_id:
                             return False
