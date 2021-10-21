@@ -16,11 +16,6 @@ linters-settings:
       - opinionated
       - performance
       - style
-  golint:
-    # The package comment is false positive so the min-confidance needs to be
-    # set to at least 0.3
-    # Ref https://github.com/golangci/golangci-lint/issues/1556#issuecomment-744021989
-    min-confidence: 0.3
   gomnd:
     settings:
       mnd:
@@ -54,7 +49,7 @@ linters:
     - goconst
     - gocritic
     - gocyclo
-    - golint
+    - revive
     - gomnd
     - goprintffuncname
     - gosec
@@ -104,8 +99,6 @@ issues:
   exclude:
     # errcheck: Almost all programs ignore errors on these functions and in most cases it's ok
     - Error return value of .((os\.)?std(out|err)\..*|.*Close|.*Flush|os\.Remove(All)?|.*printf?|os\.(Un)?Setenv). is not checked
-    # golint: False positive when tests are defined in package 'test'
-    - func name will be used as test\.Test.* by other packages, and that stutters; consider calling this
     # govet: Common false positives
     - (possible misuse of unsafe.Pointer|should have signature)
     # staticcheck: Developers tend to write in C-style with an explicit 'break' in a 'switch', so it's ok to ignore
