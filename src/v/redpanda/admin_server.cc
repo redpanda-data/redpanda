@@ -585,6 +585,10 @@ void admin_server::register_cluster_config_routes() {
       _server._routes,
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
+          if (!config::node().enable_central_config) {
+              throw ss::httpd::bad_request_exception(
+                "Requires enable_central_config=True in node configuration");
+          }
 
           auto doc = parse_json_body(*req);
           apply_validator(cluster_config_validator, doc);

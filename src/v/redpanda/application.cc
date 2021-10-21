@@ -335,7 +335,10 @@ void application::hydrate_config(const po::variables_map& cfg) {
             config::node().load(config);
         }).get0();
 
-        _config_preload = cluster::config_manager::preload().get0();
+        if (config::node().enable_central_config) {
+            _config_preload = cluster::config_manager::preload().get0();
+        }
+
         if (_config_preload.version == cluster::config_version_unset) {
             // This node has never seen a cluster configuration message.
             // Bootstrap configuration from local yaml file.

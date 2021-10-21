@@ -212,8 +212,12 @@ ss::future<> controller::start() {
             members_manager::shard, &members_backend::start);
       })
       .then([this] {
-          return _config_manager.invoke_on(
-            config_manager::shard, &config_manager::start);
+          if (config::node().enable_central_config()) {
+              return _config_manager.invoke_on(
+                config_manager::shard, &config_manager::start);
+          } else {
+              return ss::now();
+          }
       })
       .then([this] {
           if (!config::shard_local_cfg().enable_leader_balancer()) {

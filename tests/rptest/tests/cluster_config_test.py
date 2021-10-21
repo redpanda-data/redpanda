@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import time
+import requests
 
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
@@ -16,14 +17,19 @@ from ducktape.utils.util import wait_until
 
 BOOTSTRAP_CONFIG = {
     # A non-default value for checking bootstrap import works
-    'enable_idempotence': True
+    'enable_idempotence': True,
 }
 
 
 class ClusterConfigTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
+        rp_conf = BOOTSTRAP_CONFIG.copy()
+
+        # Enable our feature flag
+        rp_conf['enable_central_config'] = True
+
         super(ClusterConfigTest, self).__init__(*args,
-                                                extra_rp_conf=BOOTSTRAP_CONFIG,
+                                                extra_rp_conf=rp_conf,
                                                 **kwargs)
 
         self.admin = Admin(self.redpanda)
@@ -227,6 +233,34 @@ class ClusterConfigTest(RedpandaTest):
         # TODO as well as specific invalid examples, do a pass across the whole
         # schema to check that
         pass
+
+    @cluster(num_nodes=3)
+    def test_bad_requests(self):
+        """
+        Verify that syntactically malformed configuration requests result
+        in proper 400 responses (rather than 500s or crashes)
+        """
+
+        for content_type, body in [
+            ('text/html', ""),  # Wrong type, empty
+            ('text/html', "garbage"),  # Wrong type, nonempty
+            ('application/json', ""),  # Empty
+            ('application/json', "garbage"),  # Not JSON
+            ('application/json', "{\"a\": 123}"),  # Wrong top level attributes
+            ('application/json', "{\"upsert\": []}"),  # Wrong type of 'upsert'
+        ]:
+            try:
+                self.logger.info(f"Checking {content_type}, {body}")
+                self.admin._request("PUT",
+                                    "cluster_config",
+                                    node=self.redpanda.nodes[0],
+                                    headers={'content-type': content_type},
+                                    data=body)
+            except requests.exceptions.HTTPError as e:
+                assert e.response.status_code == 400
+            else:
+                # Should not succeed!
+                assert False
 
     @cluster(num_nodes=3)
     def test_valid_settings(self):
