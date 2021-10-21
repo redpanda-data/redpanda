@@ -254,6 +254,35 @@ std::ostream& operator<<(std::ostream& o, const backend_operation& op) {
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const cluster_config_delta_cmd_data& data) {
+    fmt::print(
+      o,
+      "{{cluster_config_delta_cmd_data: {} upserts, {} removes)}}",
+      data.upsert.size(),
+      data.remove.size());
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const config_status& s) {
+    fmt::print(
+      o,
+      "{{cluster_status: node {}, version: {}, restart: {} ({} invalid, {} "
+      "unknown)}}",
+      s.node,
+      s.version,
+      s.restart,
+      s.invalid.size(),
+      s.unknown.size());
+    return o;
+}
+
+bool config_status::operator==(const config_status& rhs) const {
+    return std::tie(node, version, restart, unknown, invalid)
+           == std::tie(
+             rhs.node, rhs.version, rhs.restart, rhs.unknown, rhs.invalid);
+}
+
 std::ostream& operator<<(std::ostream& o, const non_replicable_topic& d) {
     fmt::print(
       o, "{{Source topic: {}, non replicable topic: {}}}", d.source, d.name);
@@ -935,6 +964,70 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
               .from(in);
     }
     return updates;
+}
+
+void adl<cluster::config_status>::to(iobuf& out, cluster::config_status&& s) {
+    return serialize(out, s.node, s.version, s.restart, s.unknown, s.invalid);
+}
+
+cluster::config_status adl<cluster::config_status>::from(iobuf_parser& in) {
+    auto node_id = adl<model::node_id>().from(in);
+    auto version = adl<cluster::config_version>().from(in);
+    auto restart = adl<bool>().from(in);
+    auto unknown = adl<std::vector<ss::sstring>>().from(in);
+    auto invalid = adl<std::vector<ss::sstring>>().from(in);
+
+    return cluster::config_status{
+      .node = std::move(node_id),
+      .version = std::move(version),
+      .restart = std::move(restart),
+      .unknown = std::move(unknown),
+      .invalid = std::move(invalid),
+    };
+}
+
+void adl<cluster::cluster_config_delta_cmd_data>::to(
+  iobuf& out, cluster::cluster_config_delta_cmd_data&& cmd) {
+    return serialize(
+      out, cmd.current_version, std::move(cmd.upsert), std::move(cmd.remove));
+}
+
+cluster::cluster_config_delta_cmd_data
+adl<cluster::cluster_config_delta_cmd_data>::from(iobuf_parser& in) {
+    auto version = adl<int8_t>{}.from(in);
+    vassert(
+      version == cluster::cluster_config_delta_cmd_data::current_version,
+      "Unexpected version: {} (expected {})",
+      version,
+      cluster::cluster_config_delta_cmd_data::current_version);
+    auto upsert = adl<std::vector<std::pair<ss::sstring, ss::sstring>>>().from(
+      in);
+    auto remove = adl<std::vector<ss::sstring>>().from(in);
+
+    return cluster::cluster_config_delta_cmd_data{
+      .upsert = std::move(upsert),
+      .remove = std::move(remove),
+    };
+}
+
+void adl<cluster::cluster_config_status_cmd_data>::to(
+  iobuf& out, cluster::cluster_config_status_cmd_data&& cmd) {
+    return serialize(out, cmd.current_version, std::move(cmd.status));
+}
+
+cluster::cluster_config_status_cmd_data
+adl<cluster::cluster_config_status_cmd_data>::from(iobuf_parser& in) {
+    auto version = adl<int8_t>{}.from(in);
+    vassert(
+      version == cluster::cluster_config_status_cmd_data::current_version,
+      "Unexpected version: {} (expected {})",
+      version,
+      cluster::cluster_config_status_cmd_data::current_version);
+    auto status = adl<cluster::config_status>().from(in);
+
+    return cluster::cluster_config_status_cmd_data{
+      .status = std::move(status),
+    };
 }
 
 } // namespace reflection

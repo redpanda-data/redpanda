@@ -619,6 +619,32 @@ struct non_replicable_topic {
 };
 std::ostream& operator<<(std::ostream&, const non_replicable_topic&);
 
+using config_version = named_type<int64_t, struct config_version_type>;
+constexpr config_version config_version_unset = config_version{-1};
+
+struct config_status {
+    model::node_id node;
+    config_version version{config_version_unset};
+    bool restart{false};
+    std::vector<ss::sstring> unknown;
+    std::vector<ss::sstring> invalid;
+
+    bool operator==(const config_status&) const;
+    friend std::ostream& operator<<(std::ostream&, const config_status&);
+};
+
+struct cluster_config_delta_cmd_data {
+    static constexpr int8_t current_version = 0;
+    std::vector<std::pair<ss::sstring, ss::sstring>> upsert;
+    std::vector<ss::sstring> remove;
+};
+std::ostream& operator<<(std::ostream&, const cluster_config_delta_cmd_data&);
+
+struct cluster_config_status_cmd_data {
+    static constexpr int8_t current_version = 0;
+    config_status status;
+};
+
 enum class reconciliation_status : int8_t {
     done,
     in_progress,
@@ -688,6 +714,14 @@ struct finish_reallocation_request {
 };
 
 struct finish_reallocation_reply {
+    errc error;
+};
+
+struct config_status_request {
+    config_status status;
+};
+
+struct config_status_reply {
     errc error;
 };
 
@@ -816,4 +850,23 @@ struct adl<cluster::incremental_topic_updates> {
     void to(iobuf& out, cluster::incremental_topic_updates&&);
     cluster::incremental_topic_updates from(iobuf_parser&);
 };
+
+template<>
+struct adl<cluster::config_status> {
+    void to(iobuf& out, cluster::config_status&&);
+    cluster::config_status from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::cluster_config_delta_cmd_data> {
+    void to(iobuf& out, cluster::cluster_config_delta_cmd_data&&);
+    cluster::cluster_config_delta_cmd_data from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::cluster_config_status_cmd_data> {
+    void to(iobuf& out, cluster::cluster_config_status_cmd_data&&);
+    cluster::cluster_config_status_cmd_data from(iobuf_parser&);
+};
+
 } // namespace reflection
