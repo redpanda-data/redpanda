@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from os import error
 import random
 import threading
 import time
@@ -19,6 +20,7 @@ from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.kcl import KCL
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.failure_injector import FailureInjector, FailureSpec
@@ -243,6 +245,39 @@ class NodeOperationFuzzyTest(EndToEndTest):
                        timeout_sec=NODE_OP_TIMEOUT,
                        backoff_sec=2)
 
+        def is_topic_present(name):
+            kcl = KCL(self.redpanda)
+            lines = kcl.list_topics().splitlines()
+            self.redpanda.logger.debug(
+                f"checking if topic {name} is present in {lines}")
+            for l in lines:
+                if l.startswith(name):
+                    return True
+            return False
+
+        def create_topic(spec):
+            try:
+                self.redpanda.create_topic(spec)
+            except Exception as e:
+                self.redpanda.logger.warn(
+                    f"error creating topic {spec.name} - {e}")
+            try:
+                return is_topic_present(spec.name)
+            except Exception as e:
+                self.redpanda.logger.warn(f"error while listing topics - {e}")
+                return False
+
+        def delete_topic(name):
+            try:
+                self.redpanda.delete_topic(name)
+            except Exception as e:
+                self.redpanda.logger.warn(f"error deleting topic {name} - {e}")
+            try:
+                return not is_topic_present(name)
+            except Exception as e:
+                self.redpanda.logger.warn(f"error while listing topics - {e}")
+                return False
+
         work = self.generate_random_workload(10, skip_nodes=set())
         self.redpanda.logger.info(f"node operations to execute: {work}")
         for op in work:
@@ -261,10 +296,13 @@ class NodeOperationFuzzyTest(EndToEndTest):
                 spec = TopicSpec(name=op[1],
                                  replication_factor=op[2],
                                  partition_count=op[3])
-
-                self.redpanda.create_topic(spec)
+                wait_until(lambda: create_topic(spec) == True,
+                           timeout_sec=180,
+                           backoff_sec=2)
             elif op_type == DELETE_TOPIC:
-                self.redpanda.delete_topic(op[1])
+                wait_until(lambda: delete_topic(op[1]) == True,
+                           timeout_sec=180,
+                           backoff_sec=2)
 
         enable_failures = False
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=180)
