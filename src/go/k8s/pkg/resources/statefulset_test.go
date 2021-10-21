@@ -11,7 +11,6 @@ package resources_test
 
 import (
 	"context"
-	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+// nolint:funlen // Test function can have more than 100 lines
 func TestEnsure(t *testing.T) {
 	cluster := pandaCluster()
 	stsResource := stsFromCluster(cluster)
@@ -56,6 +56,12 @@ func TestEnsure(t *testing.T) {
 	}
 	noSidecarSts := stsFromCluster(noSidecarCluster)
 
+	withoutShadowIndexCacheDirectory := cluster.DeepCopy()
+	withoutShadowIndexCacheDirectory.Spec.Version = "dev"
+	stsWithoutSecondPersistentVolume := stsFromCluster(withoutShadowIndexCacheDirectory)
+	// Remove shadow-indexing-cache from the volume claim templates
+	stsWithoutSecondPersistentVolume.Spec.VolumeClaimTemplates = stsWithoutSecondPersistentVolume.Spec.VolumeClaimTemplates[:1]
+
 	var tests = []struct {
 		name           string
 		existingObject client.Object
@@ -66,67 +72,74 @@ func TestEnsure(t *testing.T) {
 		{"update replicas", stsResource, replicasUpdatedCluster, replicasUpdatedSts},
 		{"update resources", stsResource, resourcesUpdatedCluster, resourcesUpdatedSts},
 		{"disabled sidecar", nil, noSidecarCluster, noSidecarSts},
+		{"cluster without shadow index cache dir", stsResource, withoutShadowIndexCacheDirectory, stsWithoutSecondPersistentVolume},
 	}
 
 	for _, tt := range tests {
-		c := fake.NewClientBuilder().Build()
+		t.Run(tt.name, func(t *testing.T) {
+			c := fake.NewClientBuilder().Build()
 
-		err := redpandav1alpha1.AddToScheme(scheme.Scheme)
-		assert.NoError(t, err, tt.name)
-
-		if tt.existingObject != nil {
-			tt.existingObject.SetResourceVersion("")
-
-			err = c.Create(context.Background(), tt.existingObject)
+			err := redpandav1alpha1.AddToScheme(scheme.Scheme)
 			assert.NoError(t, err, tt.name)
-		}
 
-		sts := res.NewStatefulSet(
-			c,
-			tt.pandaCluster,
-			scheme.Scheme,
-			"cluster.local",
-			"servicename",
-			types.NamespacedName{Name: "test", Namespace: "test"},
-			types.NamespacedName{},
-			types.NamespacedName{},
-			types.NamespacedName{},
-			types.NamespacedName{},
-			types.NamespacedName{},
-			types.NamespacedName{},
-			types.NamespacedName{},
-			"",
-			res.ConfiguratorSettings{
-				ConfiguratorBaseImage: "vectorized/configurator",
-				ConfiguratorTag:       "latest",
-				ImagePullPolicy:       "Always",
-			},
-			ctrl.Log.WithName("test"))
+			if tt.existingObject != nil {
+				tt.existingObject.SetResourceVersion("")
 
-		err = sts.Ensure(context.Background())
-		assert.NoError(t, err, tt.name)
+				err = c.Create(context.Background(), tt.existingObject)
+				assert.NoError(t, err, tt.name)
+			}
 
-		actual := &v1.StatefulSet{}
-		err = c.Get(context.Background(), sts.Key(), actual)
-		assert.NoError(t, err, tt.name)
+			err = c.Create(context.Background(), tt.pandaCluster)
+			assert.NoError(t, err)
 
-		actualInitResources := actual.Spec.Template.Spec.InitContainers[0].Resources
-		actualRedpandaResources := actual.Spec.Template.Spec.Containers[0].Resources
+			sts := res.NewStatefulSet(
+				c,
+				tt.pandaCluster,
+				scheme.Scheme,
+				"cluster.local",
+				"servicename",
+				types.NamespacedName{Name: "test", Namespace: "test"},
+				types.NamespacedName{},
+				types.NamespacedName{},
+				types.NamespacedName{},
+				types.NamespacedName{},
+				types.NamespacedName{},
+				types.NamespacedName{},
+				types.NamespacedName{},
+				"",
+				res.ConfiguratorSettings{
+					ConfiguratorBaseImage: "vectorized/configurator",
+					ConfiguratorTag:       "latest",
+					ImagePullPolicy:       "Always",
+				},
+				ctrl.Log.WithName("test"))
 
-		expectedInitResources := tt.expectedObject.Spec.Template.Spec.InitContainers[0].Resources
-		expectedRedpandaResources := tt.expectedObject.Spec.Template.Spec.Containers[0].Resources
+			err = sts.Ensure(context.Background())
+			assert.NoError(t, err, tt.name)
 
-		assert.Equal(t, expectedRedpandaResources, actualRedpandaResources)
-		assert.Equal(t, expectedInitResources, actualInitResources)
+			actual := &v1.StatefulSet{}
+			err = c.Get(context.Background(), sts.Key(), actual)
+			assert.NoError(t, err, tt.name)
 
-		if *actual.Spec.Replicas != *tt.expectedObject.Spec.Replicas {
-			t.Errorf("%s: expecting replicas %d, got replicas %d", tt.name,
-				*tt.expectedObject.Spec.Replicas, *actual.Spec.Replicas)
-		}
+			actualInitResources := actual.Spec.Template.Spec.InitContainers[0].Resources
+			actualRedpandaResources := actual.Spec.Template.Spec.Containers[0].Resources
 
-		if len(actual.Spec.VolumeClaimTemplates) == 0 || !reflect.DeepEqual(actual.Spec.VolumeClaimTemplates[0].Spec, tt.expectedObject.Spec.VolumeClaimTemplates[0].Spec) {
-			t.Errorf("%s: expecting volume claim template %v, but got %v", tt.name, tt.expectedObject.Spec.VolumeClaimTemplates[0].Spec, actual.Spec.VolumeClaimTemplates[0].Spec)
-		}
+			expectedInitResources := tt.expectedObject.Spec.Template.Spec.InitContainers[0].Resources
+			expectedRedpandaResources := tt.expectedObject.Spec.Template.Spec.Containers[0].Resources
+
+			assert.Equal(t, expectedRedpandaResources, actualRedpandaResources)
+			assert.Equal(t, expectedInitResources, actualInitResources)
+
+			if *actual.Spec.Replicas != *tt.expectedObject.Spec.Replicas {
+				t.Errorf("%s: expecting replicas %d, got replicas %d", tt.name,
+					*tt.expectedObject.Spec.Replicas, *actual.Spec.Replicas)
+			}
+
+			for i := range actual.Spec.VolumeClaimTemplates {
+				actual.Spec.VolumeClaimTemplates[i].Labels = nil
+			}
+			assert.Equal(t, tt.expectedObject.Spec.VolumeClaimTemplates, actual.Spec.VolumeClaimTemplates)
+		})
 	}
 }
 
@@ -180,6 +193,22 @@ func stsFromCluster(pandaCluster *redpandav1alpha1.Cluster) *v1.StatefulSet {
 							},
 						},
 						StorageClassName: &pandaCluster.Spec.Storage.StorageClassName,
+						VolumeMode:       &fileSystemMode,
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: pandaCluster.Namespace,
+						Name:      "shadow-index-cache",
+					},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceStorage: pandaCluster.Spec.CloudStorage.CacheStorage.Capacity,
+							},
+						},
+						StorageClassName: &pandaCluster.Spec.CloudStorage.CacheStorage.StorageClassName,
 						VolumeMode:       &fileSystemMode,
 					},
 				},
