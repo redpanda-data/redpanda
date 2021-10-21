@@ -11,8 +11,6 @@ linters-settings:
     min-occurrences: 2
   gocritic:
     enabled-tags:
-      - diagnostic
-      - experimental
       - opinionated
       - performance
       - style
