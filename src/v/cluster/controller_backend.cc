@@ -947,10 +947,11 @@ ss::future<> controller_backend::remove_from_shard_table(
 
 ss::future<> controller_backend::delete_non_replicable_partition(
   model::ntp ntp, model::revision_id rev) {
-    auto existing = _shard_table.local().revision_for(ntp);
-    if (existing && *existing <= rev) {
-        co_await _shard_table.invoke_on_all(
-          [ntp, rev](shard_table& st) { st.erase(ntp, rev); });
+    vlog(clusterlog.trace, "removing {} from shard table at {}", ntp, rev);
+    co_await _shard_table.invoke_on_all(
+      [ntp, rev](shard_table& st) { st.erase(ntp, rev); });
+    auto log = _storage.local().log_mgr().get(ntp);
+    if (log && log->config().get_revision() < rev) {
         co_await _storage.local().log_mgr().remove(ntp);
     }
 }
