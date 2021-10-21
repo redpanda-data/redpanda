@@ -78,23 +78,6 @@ private:
 
     void gc_stale_materialized_segments();
 
-    /// The object is used to store data for a reader
-    ///
-    /// The reader (remote_segment_batch_reader) is storing the
-    /// reference to the config. Because of that the reader souldn't
-    /// have longer lifetime than the config. This is acheived by
-    /// storing both objects in the same struct.
-    struct reader_state {
-        explicit reader_state(const log_reader_config& cfg);
-
-        ss::future<> stop();
-
-        /// Config which was used to create a reader
-        log_reader_config config;
-        /// Batch reader that can be used to scan the segment
-        std::unique_ptr<remote_segment_batch_reader> reader;
-    };
-
     friend struct offloaded_segment_state;
 
     struct materialized_segment_state;
@@ -122,11 +105,11 @@ private:
         materialized_segment_state(
           manifest::key mk, model::offset offk, remote_partition& p);
 
-        void return_reader(std::unique_ptr<reader_state> state);
+        void return_reader(std::unique_ptr<remote_segment_batch_reader> reader);
 
         /// Borrow reader or make a new one.
         /// In either case return a reader.
-        std::unique_ptr<reader_state>
+        std::unique_ptr<remote_segment_batch_reader>
         borrow_reader(const log_reader_config& cfg);
 
         ss::future<> stop();
@@ -139,8 +122,8 @@ private:
         /// Key of the segment in _segments collection of the remote_partition
         model::offset offset_key;
         ss::lw_shared_ptr<remote_segment> segment;
-        /// Batch reader that can be used to scan the segment
-        std::list<std::unique_ptr<reader_state>> readers;
+        /// Batch readers that can be used to scan the segment
+        std::list<std::unique_ptr<remote_segment_batch_reader>> readers;
         /// Reader access time
         ss::lowres_clock::time_point atime;
         /// List hook for the list of all materalized segments
@@ -158,11 +141,12 @@ private:
     /// \param config is a reader config
     /// \param offset_key is an key of the segment state in the _segments
     /// \param st is a segment state referenced by offset_key
-    std::unique_ptr<reader_state> borrow_reader(
+    std::unique_ptr<remote_segment_batch_reader> borrow_reader(
       log_reader_config config, model::offset offset_key, segment_state& st);
 
     /// Return reader back to segment_state
-    void return_reader(std::unique_ptr<reader_state>, segment_state& st);
+    void return_reader(
+      std::unique_ptr<remote_segment_batch_reader>, segment_state& st);
 
     /// Put reader into the eviction list which will
     /// eventually lead to it being closed and deallocated

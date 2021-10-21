@@ -90,7 +90,7 @@ public:
             } else {
                 vlog(cst_log.debug, "abort_source is triggered in c-tor");
                 _it = _partition->_segments.end();
-                _state = {};
+                _reader = {};
             }
         }
         if (!is_end_of_stream()) {
@@ -117,28 +117,28 @@ public:
               cst_log.debug, "record_batch_reader_impl do_load_slize - empty");
             co_return storage_t{};
         }
-        if (_state->config.over_budget) {
+        if (_reader->config().over_budget) {
             vlog(cst_log.debug, "We're overbudget, stopping");
             // We need to stop in such way that will keep the
             // reader in the reusable state, so we could reuse
             // it on next itertaion
 
             // The existing state have to be rebuilt
-            _partition->return_reader(std::move(_state), _it->second);
+            _partition->return_reader(std::move(_reader), _it->second);
             _it = _partition->_segments.end();
             co_return storage_t{};
         }
-        while (_state) {
+        while (_reader) {
             if (co_await maybe_reset_reader()) {
                 vlog(
                   cst_log.debug, "Invoking 'read_some' on current log reader");
-                auto result = co_await _state->reader->read_some(deadline);
+                auto result = co_await _reader->read_some(deadline);
                 if (
                   !result
                   && result.error() == storage::parser_errc::end_of_stream) {
                     vlog(cst_log.debug, "EOF error while reading from stream");
-                    _state->config.start_offset_redpanda
-                      = _state->reader->max_rp_offset() + model::offset(1);
+                    _reader->config().start_offset_redpanda
+                      = _reader->max_rp_offset() + model::offset(1);
                     // Next iteration will trigger transition in
                     // 'maybe_reset_reader'
                     continue;
@@ -154,7 +154,7 @@ public:
         vlog(
           cst_log.debug,
           "EOS reached {} {}",
-          static_cast<bool>(_state),
+          static_cast<bool>(_reader),
           is_end_of_stream());
         co_return storage_t{};
     }
@@ -169,8 +169,8 @@ private:
         vlog(cst_log.debug, "record_batch_reader_impl initialize reader state");
         auto lookup_result = find_cached_reader(config);
         if (lookup_result) {
-            auto&& [state, it] = lookup_result.value();
-            _state = std::move(state);
+            auto&& [reader, it] = lookup_result.value();
+            _reader = std::move(reader);
             _it = it;
             vlog(
               cst_log.debug,
@@ -184,11 +184,11 @@ private:
           "record_batch_reader_impl initialize reader state - segment not "
           "found");
         _it = _partition->_segments.end();
-        _state = {};
+        _reader = {};
     }
 
     struct cache_reader_lookup_result {
-        std::unique_ptr<remote_partition::reader_state> reader_state;
+        std::unique_ptr<remote_segment_batch_reader> reader;
         remote_partition::segment_map_t::iterator iter;
     };
 
@@ -233,7 +233,7 @@ private:
               segment->get_base_rp_offset(),
               segment->get_max_rp_offset(),
               segment->get_base_offset_delta());
-            return {{.reader_state = std::move(reader), .iter = it}};
+            return {{.reader = std::move(reader), .iter = it}};
         }
         return std::nullopt;
     }
@@ -244,17 +244,17 @@ private:
     /// attached.
     ss::future<bool> maybe_reset_reader() {
         vlog(cst_log.debug, "maybe_reset_reader called");
-        if (!_state) {
+        if (!_reader) {
             co_return false;
         }
-        if (_state->config.start_offset > _state->config.max_offset) {
+        if (_reader->config().start_offset > _reader->config().max_offset) {
             vlog(
               cst_log.debug,
               "maybe_reset_stream called - stream already consumed, start "
               "{}, "
               "max {}",
-              _state->config.start_offset,
-              _state->config.max_offset);
+              _reader->config().start_offset,
+              _reader->config().max_offset);
             // Entire range is consumed, detach from remote_partition and
             // close the reader.
             co_await set_end_of_stream();
@@ -264,22 +264,22 @@ private:
           cst_log.debug,
           "maybe_reset_reader, config start_offset_redpanda: {}, reader "
           "max_offset: {}",
-          _state->config.start_offset_redpanda,
-          _state->reader->max_rp_offset());
+          _reader->config().start_offset_redpanda,
+          _reader->max_rp_offset());
         if (
-          _state->config.start_offset_redpanda
-          > _state->reader->max_rp_offset()) {
+          _reader->config().start_offset_redpanda > _reader->max_rp_offset()) {
             // move to the next segment
             vlog(cst_log.debug, "maybe_reset_stream condition triggered");
             _it++;
             if (_it == _partition->_segments.end()) {
                 co_await set_end_of_stream();
             } else {
-                // reuse state but replace the reader
-                _partition->evict_reader(std::move(_state->reader));
-                vlog(cst_log.debug, "initializing new log reader");
-                _state = _partition->borrow_reader(
-                  _state->config, _it->first, _it->second);
+                // reuse config but replace the reader
+                auto config = _reader->config();
+                _partition->evict_reader(std::move(_reader));
+                vlog(cst_log.debug, "initializing new segment reader");
+                _reader = _partition->borrow_reader(
+                  config, _it->first, _it->second);
                 vlog(cst_log.debug, "starting readahead for the next segment");
                 _partition->start_readahead(_it);
             }
@@ -287,25 +287,24 @@ private:
         vlog(
           cst_log.debug,
           "maybe_reset_stream completed {} {}",
-          static_cast<bool>(_state),
+          static_cast<bool>(_reader),
           is_end_of_stream());
-        co_return static_cast<bool>(_state);
+        co_return static_cast<bool>(_reader);
     }
 
     /// Transition reader to the completed state. Stop tracking state in
     /// the 'remote_partition'
     ss::future<> set_end_of_stream() {
-        auto tmp = std::move(_state->reader);
-        co_await tmp->stop();
+        co_await _reader->stop();
         _it = _partition->_segments.end();
-        _state = {};
+        _reader = {};
     }
 
     ss::weak_ptr<remote_partition> _partition;
     /// Currently accessed segment
     remote_partition::segment_map_t::iterator _it;
     /// Reader state that was borrowed from the materialized_segment_state
-    std::unique_ptr<remote_partition::reader_state> _state;
+    std::unique_ptr<remote_segment_batch_reader> _reader;
     /// Cancelation subscription
     ss::abort_source::subscription _as_sub;
 };
@@ -484,7 +483,7 @@ void remote_partition::update_segmnets_incrementally() {
 }
 
 /// Materialize segment if needed and create a reader
-std::unique_ptr<remote_partition::reader_state> remote_partition::borrow_reader(
+std::unique_ptr<remote_segment_batch_reader> remote_partition::borrow_reader(
   log_reader_config config, model::offset key, segment_state& st) {
     struct visit_materialize_make_reader {
         segment_state& state;
@@ -492,13 +491,15 @@ std::unique_ptr<remote_partition::reader_state> remote_partition::borrow_reader(
         const log_reader_config& config;
         const model::offset offset_key;
 
-        std::unique_ptr<reader_state> operator()(offloaded_segment_ptr& st) {
+        std::unique_ptr<remote_segment_batch_reader>
+        operator()(offloaded_segment_ptr& st) {
             auto tmp = st->materialize(*part, offset_key);
             auto res = tmp->borrow_reader(config);
             state = std::move(tmp);
             return res;
         }
-        std::unique_ptr<reader_state> operator()(materialized_segment_ptr& st) {
+        std::unique_ptr<remote_segment_batch_reader>
+        operator()(materialized_segment_ptr& st) {
             return st->borrow_reader(config);
         }
     };
@@ -510,21 +511,20 @@ std::unique_ptr<remote_partition::reader_state> remote_partition::borrow_reader(
 
 /// Return reader back to segment_state
 void remote_partition::return_reader(
-  std::unique_ptr<reader_state> rs, segment_state& st) {
+  std::unique_ptr<remote_segment_batch_reader> reader, segment_state& st) {
     struct visit_return_reader {
-        segment_state& state;
         remote_partition* part;
-        std::unique_ptr<reader_state> rst;
+        std::unique_ptr<remote_segment_batch_reader> reader;
 
         void operator()(offloaded_segment_ptr&) {
-            part->evict_reader(std::move(rst->reader));
+            part->evict_reader(std::move(reader));
         }
         void operator()(materialized_segment_ptr& st) {
-            st->return_reader(std::move(rst));
+            st->return_reader(std::move(reader));
         }
     };
     std::visit(
-      visit_return_reader{.state = st, .part = this, .rst = std::move(rs)}, st);
+      visit_return_reader{.part = this, .reader = std::move(reader)}, st);
 }
 
 ss::future<model::record_batch_reader> remote_partition::make_reader(
@@ -546,17 +546,6 @@ ss::future<model::record_batch_reader> remote_partition::make_reader(
       log_reader_config(config), weak_from_this());
     model::record_batch_reader rdr(std::move(impl));
     co_return rdr;
-}
-
-remote_partition::reader_state::reader_state(const log_reader_config& cfg)
-  : config(cfg)
-  , reader(nullptr) {}
-
-ss::future<> remote_partition::reader_state::stop() {
-    if (reader) {
-        co_await reader->stop();
-        reader.reset();
-    }
 }
 
 remote_partition::offloaded_segment_state::offloaded_segment_state(
@@ -592,38 +581,33 @@ remote_partition::materialized_segment_state::materialized_segment_state(
 }
 
 void remote_partition::materialized_segment_state::return_reader(
-  std::unique_ptr<reader_state> state) {
+  std::unique_ptr<remote_segment_batch_reader> state) {
     atime = ss::lowres_clock::now();
     readers.push_back(std::move(state));
 }
 
 /// Borrow reader or make a new one.
 /// In either case return a reader.
-std::unique_ptr<remote_partition::reader_state>
+std::unique_ptr<remote_segment_batch_reader>
 remote_partition::materialized_segment_state::borrow_reader(
   const log_reader_config& cfg) {
     atime = ss::lowres_clock::now();
     for (auto it = readers.begin(); it != readers.end(); it++) {
-        if ((*it)->config.start_offset == cfg.start_offset) {
+        if ((*it)->config().start_offset == cfg.start_offset) {
             // here we're reusing the existing reader
             auto tmp = std::move(*it);
-            tmp->config = cfg;
+            tmp->config() = cfg;
             readers.erase(it);
             return tmp;
         }
     }
     // this may only happen if we have some concurrency
-    auto state = std::make_unique<reader_state>(cfg);
-    state->reader = std::make_unique<remote_segment_batch_reader>(
-      segment, state->config, segment->get_term());
-    return state;
+    return std::make_unique<remote_segment_batch_reader>(segment, cfg);
 }
 
 ss::future<> remote_partition::materialized_segment_state::stop() {
     for (auto& rs : readers) {
-        if (rs->reader) {
-            co_await rs->reader->stop();
-        }
+        co_await rs->stop();
     }
     co_await segment->stop();
 }
@@ -633,7 +617,7 @@ remote_partition::materialized_segment_state::offload(
   remote_partition* partition) {
     _hook.unlink();
     for (auto&& rs : readers) {
-        partition->evict_reader(std::move(rs->reader));
+        partition->evict_reader(std::move(rs));
     }
     partition->evict_segment(std::move(segment));
     auto st = std::make_unique<offloaded_segment_state>(manifest_key);
