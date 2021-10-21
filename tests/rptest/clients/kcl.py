@@ -15,6 +15,9 @@ class KCL:
     def __init__(self, redpanda):
         self._redpanda = redpanda
 
+    def list_topics(self):
+        return self._cmd(['topic', 'list'])
+
     def list_groups(self):
         return self._cmd(["group", "list"])
 
