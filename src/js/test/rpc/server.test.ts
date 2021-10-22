@@ -41,6 +41,7 @@ let sinonInstance: SinonSandbox;
 let server: ProcessBatchServer;
 let client: SupervisorClient;
 let writeError: SinonStub;
+let portNumber = 43000;
 
 const createStubs = (sandbox: SinonSandbox) => {
   const watchMock = sandbox.stub(chokidar, "watch");
@@ -106,9 +107,30 @@ describe("Server", function () {
         error: writeError,
       });
       server = new ProcessBatchServer();
-      server.listen(43000);
+
+      // Sometimes JS tests fail in CI because "port already in use"
+      // error when the server tries to listen. The problem maybe
+      // because previous instance of the test didn't shutdown completely.
+      // Here we tried to fix it by catching the EADDRINUSE exception and
+      // try to listen a different port number when the exception happens.
+      for (let index = 0; index < 10; index++) {
+        try {
+          server.listen(portNumber);
+          break;
+        } catch (err) {
+          if (err.code === "EADDRINUSE") {
+            console.log(
+              "Port %d is already in use, try another port.",
+              portNumber
+            );
+            portNumber++;
+            continue;
+          } else throw err;
+        }
+      }
+
       return new Promise<void>((resolve, reject) => {
-        return SupervisorClient.create(43000)
+        return SupervisorClient.create(portNumber)
           .then((c) => {
             client = c;
             resolve();
