@@ -31,12 +31,14 @@ public:
     const model::ntp& ntp() const final { return _partition->ntp(); }
 
     model::offset start_offset() const final {
+        auto local_kafka_start_offset = _translator->from_log_offset(
+          _partition->start_offset());
         if (
           _partition->cloud_data_available()
-          && (_partition->start_offset() > _partition->start_cloud_offset())) {
+          && (_partition->start_cloud_offset() < local_kafka_start_offset)) {
             return _partition->start_cloud_offset();
         }
-        return _translator->from_log_offset(_partition->start_offset());
+        return local_kafka_start_offset;
     }
 
     model::offset high_watermark() const final {
