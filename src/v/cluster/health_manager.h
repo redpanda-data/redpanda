@@ -41,6 +41,7 @@ public:
       ss::sharded<topics_frontend>&,
       ss::sharded<partition_allocator>&,
       ss::sharded<partition_leaders_table>&,
+      ss::sharded<members_table>&,
       ss::sharded<ss::abort_source>&);
 
     ss::future<> start();
@@ -58,6 +59,7 @@ private:
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<partition_allocator>& _allocator;
     ss::sharded<partition_leaders_table>& _leaders;
+    ss::sharded<members_table>& _members;
     ss::sharded<ss::abort_source>& _as;
     ss::gate _gate;
     ss::timer<clock_type> _timer;

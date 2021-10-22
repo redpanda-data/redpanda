@@ -11,6 +11,7 @@
 #include "cluster/health_manager.h"
 
 #include "cluster/logger.h"
+#include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/topic_table.h"
@@ -33,6 +34,7 @@ health_manager::health_manager(
   ss::sharded<topics_frontend>& topics_frontend,
   ss::sharded<partition_allocator>& allocator,
   ss::sharded<partition_leaders_table>& leaders,
+  ss::sharded<members_table>& members,
   ss::sharded<ss::abort_source>& as)
   : _self(self)
   , _target_replication_factor(target_replication_factor)
@@ -41,6 +43,7 @@ health_manager::health_manager(
   , _topics_frontend(topics_frontend)
   , _allocator(allocator)
   , _leaders(leaders)
+  , _members(members)
   , _as(as)
   , _timer([this] { tick(); }) {}
 
@@ -181,19 +184,25 @@ void health_manager::tick() {
               co_return;
           }
 
-          /*
-           * we try to be conservative here. if something goes wrong we'll back
-           * off and wait before trying to fix replication for any other
-           * internal topics.
-           */
-          auto ok = co_await ensure_topic_replication(model::kafka_group_nt);
+          // Only ensure replication if we have a big enough cluster, to avoid
+          // spamming log with replication complaints on single node cluster
+          if (_members.local().all_brokers().size() >= 3) {
+              /*
+               * we try to be conservative here. if something goes wrong we'll
+               * back off and wait before trying to fix replication for any
+               * other internal topics.
+               */
+              auto ok = co_await ensure_topic_replication(
+                model::kafka_group_nt);
 
-          if (ok) {
-              ok = co_await ensure_topic_replication(model::id_allocator_nt);
-          }
+              if (ok) {
+                  ok = co_await ensure_topic_replication(
+                    model::id_allocator_nt);
+              }
 
-          if (ok) {
-              ok = co_await ensure_topic_replication(model::tx_manager_nt);
+              if (ok) {
+                  ok = co_await ensure_topic_replication(model::tx_manager_nt);
+              }
           }
 
           _timer.arm(_tick_interval);
