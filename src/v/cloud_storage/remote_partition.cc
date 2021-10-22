@@ -74,7 +74,7 @@ class record_batch_reader_impl final : public model::record_batch_reader::impl {
 public:
     explicit record_batch_reader_impl(
       const log_reader_config& config,
-      ss::weak_ptr<remote_partition> part) noexcept
+      ss::lw_shared_ptr<remote_partition> part) noexcept
       : _partition(std::move(part))
       , _it(_partition->_segments.begin()) {
         vlog(cst_log.debug, "record_batch_reader_impl c-tor");
@@ -112,44 +112,56 @@ public:
 
     ss::future<storage_t>
     do_load_slice(model::timeout_clock::time_point deadline) override {
-        if (is_end_of_stream()) {
-            vlog(
-              cst_log.debug, "record_batch_reader_impl do_load_slize - empty");
-            co_return storage_t{};
-        }
-        if (_reader->config().over_budget) {
-            vlog(cst_log.debug, "We're overbudget, stopping");
-            // We need to stop in such way that will keep the
-            // reader in the reusable state, so we could reuse
-            // it on next itertaion
-
-            // The existing state have to be rebuilt
-            _partition->return_reader(std::move(_reader), _it->second);
-            _it = _partition->_segments.end();
-            co_return storage_t{};
-        }
-        while (_reader) {
-            if (co_await maybe_reset_reader()) {
+        try {
+            if (is_end_of_stream()) {
                 vlog(
-                  cst_log.debug, "Invoking 'read_some' on current log reader");
-                auto result = co_await _reader->read_some(deadline);
-                if (
-                  !result
-                  && result.error() == storage::parser_errc::end_of_stream) {
-                    vlog(cst_log.debug, "EOF error while reading from stream");
-                    _reader->config().start_offset_redpanda
-                      = _reader->max_rp_offset() + model::offset(1);
-                    // Next iteration will trigger transition in
-                    // 'maybe_reset_reader'
-                    continue;
-                } else if (!result) {
-                    vlog(cst_log.debug, "Unexpected error");
-                    throw std::system_error(result.error());
-                }
-                // empty result will also be propagated here
-                data_t d = std::move(result.value());
-                co_return storage_t{std::move(d)};
+                  cst_log.debug,
+                  "record_batch_reader_impl do_load_slize - empty");
+                co_return storage_t{};
             }
+            if (_reader->config().over_budget) {
+                vlog(cst_log.debug, "We're overbudget, stopping");
+                // We need to stop in such way that will keep the
+                // reader in the reusable state, so we could reuse
+                // it on next itertaion
+
+                // The existing state have to be rebuilt
+                _partition->return_reader(std::move(_reader), _it->second);
+                _it = _partition->_segments.end();
+                co_return storage_t{};
+            }
+            while (_reader) {
+                if (co_await maybe_reset_reader()) {
+                    vlog(
+                      cst_log.debug,
+                      "Invoking 'read_some' on current log reader");
+                    auto result = co_await _reader->read_some(deadline);
+                    if (
+                      !result
+                      && result.error()
+                           == storage::parser_errc::end_of_stream) {
+                        vlog(
+                          cst_log.debug, "EOF error while reading from stream");
+                        _reader->config().start_offset_redpanda
+                          = _reader->max_rp_offset() + model::offset(1);
+                        // Next iteration will trigger transition in
+                        // 'maybe_reset_reader'
+                        continue;
+                    } else if (!result) {
+                        vlog(cst_log.debug, "Unexpected error");
+                        throw std::system_error(result.error());
+                    }
+                    // empty result will also be propagated here
+                    data_t d = std::move(result.value());
+                    co_return storage_t{std::move(d)};
+                }
+            }
+        } catch (const ss::gate_closed_exception&) {
+            vlog(
+              cst_log.debug,
+              "gate_closed_exception while reading from remote_partition");
+            _it = _partition->_segments.end();
+            _reader = {};
         }
         vlog(
           cst_log.debug,
@@ -300,7 +312,7 @@ private:
         _reader = {};
     }
 
-    ss::weak_ptr<remote_partition> _partition;
+    ss::lw_shared_ptr<remote_partition> _partition;
     /// Currently accessed segment
     remote_partition::segment_map_t::iterator _it;
     /// Reader state that was borrowed from the materialized_segment_state
@@ -543,7 +555,7 @@ ss::future<model::record_batch_reader> remote_partition::make_reader(
         update_segmnets_incrementally();
     }
     auto impl = std::make_unique<record_batch_reader_impl>(
-      log_reader_config(config), weak_from_this());
+      log_reader_config(config), shared_from_this());
     model::record_batch_reader rdr(std::move(impl));
     co_return rdr;
 }

@@ -236,19 +236,20 @@ static model::record_batch_header read_single_batch_from_remote_partition(
     auto m = ss::make_lw_shared<cloud_storage::manifest>(
       manifest_ntp, manifest_revision);
     offset_translator ot;
-    log_reader_config reader_config(
+    storage::log_reader_config reader_config(
       target, target, ss::default_priority_class());
 
     auto manifest = hydrate_manifest(api, bucket);
 
-    remote_partition partition(manifest, api, *fixture.cache, bucket);
+    auto partition = ss::make_lw_shared<remote_partition>(
+      manifest, api, *fixture.cache, bucket);
 
-    auto reader = partition.make_reader(reader_config).get();
+    auto reader = partition->make_reader(reader_config).get();
 
     auto headers_read
       = reader.consume(test_consumer(), model::no_timeout).get();
 
-    partition.stop().get();
+    partition->stop().get();
 
     vlog(test_log.debug, "num headers: {}", headers_read.size());
     BOOST_REQUIRE(headers_read.size() == 1);
@@ -267,18 +268,20 @@ static std::vector<model::record_batch_header> scan_remote_partition(
     auto m = ss::make_lw_shared<cloud_storage::manifest>(
       manifest_ntp, manifest_revision);
     offset_translator ot;
-    log_reader_config reader_config(base, max, ss::default_priority_class());
+    storage::log_reader_config reader_config(
+      base, max, ss::default_priority_class());
 
     auto manifest = hydrate_manifest(api, bucket);
 
-    remote_partition partition(manifest, api, *imposter.cache, bucket);
+    auto partition = ss::make_lw_shared<remote_partition>(
+      manifest, api, *imposter.cache, bucket);
 
-    auto reader = partition.make_reader(reader_config).get();
+    auto reader = partition->make_reader(reader_config).get();
 
     auto headers_read
       = reader.consume(test_consumer(), model::no_timeout).get();
 
-    partition.stop().get();
+    partition->stop().get();
     return headers_read;
 }
 
@@ -467,4 +470,37 @@ FIXTURE_TEST(test_remote_partition_scan_off, cloud_storage_fixture) {
 
     auto headers_read = scan_remote_partition(*this, base, max);
     BOOST_REQUIRE_EQUAL(headers_read.size(), 0);
+}
+/// This test scans batches in the middle
+FIXTURE_TEST(test_remote_partition_lifetime_issue, cloud_storage_fixture) {
+    constexpr int batches_per_segment = 10;
+    constexpr int num_segments = 3;
+    constexpr int total_batches = batches_per_segment * num_segments;
+
+    auto segments = setup_s3_imposter(*this, 3, 10);
+    auto base = segments[0].headers[batches_per_segment / 2].last_offset();
+    auto max = segments[2].headers[batches_per_segment / 2 - 1].last_offset();
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+    print_segments(segments);
+
+    auto conf = get_configuration();
+    static auto bucket = s3::bucket_name("bucket");
+    remote api(s3_connection_limit(10), conf);
+    auto action = ss::defer([&api] { api.stop().get(); });
+
+    auto manifest = hydrate_manifest(api, bucket);
+
+    auto partition = ss::make_lw_shared<remote_partition>(
+      manifest, api, *cache, bucket);
+
+    storage::log_reader_config reader_config(
+      base, max, ss::default_priority_class());
+    auto reader = partition->make_reader(reader_config).get();
+
+    partition->stop().get();
+    partition = {};
+
+    auto res = reader.consume(test_consumer(), model::no_timeout).get();
+    BOOST_REQUIRE_EQUAL(res.size(), 0);
 }
