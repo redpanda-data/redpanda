@@ -174,18 +174,31 @@ func (a *AdminAPI) sendAll(method, path string, body, into interface{}) error {
 		res    *http.Response
 		grp    multierror.Group
 
-		ctx, cancel = context.WithCancel(context.Background())
+		// When one request is successful, we want to cancel all other
+		// outstanding requests. We do not cancel the successful
+		// request's context, because the context is used all the way
+		// through reading a response body.
+		cancels      []func()
+		cancelExcept = func(except int) {
+			for i, cancel := range cancels {
+				if i != except {
+					cancel()
+				}
+			}
+		}
 	)
 
-	defer cancel()
-	for _, url := range a.urlsWithPath(path) {
+	for i, url := range a.urlsWithPath(path) {
+		ctx, cancel := context.WithCancel(context.Background())
 		myURL := url
+		except := i
+		cancels = append(cancels, cancel)
 		grp.Go(func() error {
 			myRes, err := a.sendAndReceive(ctx, method, myURL, body)
 			if err != nil {
 				return err
 			}
-			cancel() // kill all other requests
+			cancelExcept(except) // kill all other requests
 
 			// Only one request should be successful, but for
 			// paranoia, we guard keeping the first successful
