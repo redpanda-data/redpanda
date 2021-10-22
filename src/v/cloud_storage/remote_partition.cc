@@ -56,17 +56,6 @@ static model::offset get_kafka_base_offset(const manifest::segment_meta& m) {
     return m.base_offset - delta;
 }
 
-/// This function returns segment max offset as kafka offset.
-/// It doesn't return precise value, only the estimate. But the
-/// error is limited by number of configuration batches inside the
-/// segment.
-static model::offset
-estimate_kafka_max_offset(const manifest::segment_meta& m) {
-    auto delta = std::clamp(
-      m.delta_offset, model::offset(0), model::offset::max());
-    return m.committed_offset - delta;
-}
-
 class record_batch_reader_impl final : public model::record_batch_reader::impl {
     using remote_segment_list_t = std::vector<std::unique_ptr<remote_segment>>;
     using remote_segment_iterator = remote_segment_list_t::iterator;
@@ -134,7 +123,8 @@ public:
                 if (co_await maybe_reset_reader()) {
                     vlog(
                       cst_log.debug,
-                      "Invoking 'read_some' on current log reader");
+                      "Invoking 'read_some' on current log reader {}",
+                      _reader->config());
                     auto result = co_await _reader->read_some(deadline);
                     if (
                       !result
@@ -142,7 +132,7 @@ public:
                            == storage::parser_errc::end_of_stream) {
                         vlog(
                           cst_log.debug, "EOF error while reading from stream");
-                        _reader->config().start_offset_redpanda
+                        _reader->config().next_offset_redpanda
                           = _reader->max_rp_offset() + model::offset(1);
                         // Next iteration will trigger transition in
                         // 'maybe_reset_reader'
@@ -206,47 +196,31 @@ private:
 
     std::optional<cache_reader_lookup_result>
     find_cached_reader(const log_reader_config& config) {
-        if (!_partition) {
+        if (!_partition || _partition->_segments.empty()) {
             return std::nullopt;
         }
-        // NOTE: config.start_offset is a kafka offset, the _segments collection
-        // contains estimated kafka offsets of segment committed offsets. This
-        // offsets can be larger than the real value. But the error is limited
-        // by the size of the individual segment. We can still have errors on
-        // segment boundaries. In case of error the search will return previous
-        // segment. The reader will scan and skip all batches from that segment.
-        // To prevent this we double check the start_offset over the base-offset
-        // of the next segment (which can be known precisely).
         auto it = _partition->_segments.lower_bound(config.start_offset);
-        if (it != _partition->_segments.end()) {
-            if (auto tmp = it; ++tmp != _partition->_segments.end()) {
-                auto key = std::visit(
-                  [](auto&& st) { return st->manifest_key; }, tmp->second);
-                const auto meta = _partition->_manifest.get(key);
-                vassert(
-                  meta != nullptr,
-                  "Manifest doesn't have key {}",
-                  manifest_key_to_string(key));
-                auto base = get_kafka_base_offset(*meta);
-                if (base <= config.start_offset) {
-                    it = tmp;
-                }
-            }
-            auto reader = _partition->borrow_reader(
-              config, it->first, it->second);
-            // Here we know the exact type of the reader_state because of
-            // the invariant of the borrow_reader
-            const auto& segment
-              = std::get<remote_partition::materialized_segment_ptr>(it->second)
-                  ->segment;
-            vlog(
-              cst_log.debug,
-              "segment offset range {}-{}, delta: {}",
-              segment->get_base_rp_offset(),
-              segment->get_max_rp_offset(),
-              segment->get_base_offset_delta());
-            return {{.reader = std::move(reader), .iter = it}};
+        if (it == _partition->_segments.end()) {
+            it = std::prev(it);
         }
+        while (it->first > config.start_offset
+               && it != _partition->_segments.begin()) {
+            // scan back until the matching segment is found
+            it = std::prev(it);
+        }
+        auto reader = _partition->borrow_reader(config, it->first, it->second);
+        // Here we know the exact type of the reader_state because of
+        // the invariant of the borrow_reader
+        const auto& segment
+          = std::get<remote_partition::materialized_segment_ptr>(it->second)
+              ->segment;
+        vlog(
+          cst_log.debug,
+          "segment offset range {}-{}, delta: {}",
+          segment->get_base_rp_offset(),
+          segment->get_max_rp_offset(),
+          segment->get_base_offset_delta());
+        return {{.reader = std::move(reader), .iter = it}};
         return std::nullopt;
     }
 
@@ -274,12 +248,12 @@ private:
         }
         vlog(
           cst_log.debug,
-          "maybe_reset_reader, config start_offset_redpanda: {}, reader "
-          "max_offset: {}",
-          _reader->config().start_offset_redpanda,
+          "maybe_reset_reader, config next_offset_redpanda: {}, start_offset: "
+          "{}, reader max_offset: {}",
+          _reader->config().next_offset_redpanda,
+          _reader->config().start_offset,
           _reader->max_rp_offset());
-        if (
-          _reader->config().start_offset_redpanda > _reader->max_rp_offset()) {
+        if (_reader->config().next_offset_redpanda > _reader->max_rp_offset()) {
             // move to the next segment
             vlog(cst_log.debug, "maybe_reset_stream condition triggered");
             _it++;
@@ -484,13 +458,36 @@ void remote_partition::update_segmnets_incrementally() {
     vlog(_ctxlog.debug, "remote partition update segments incrementally");
     // find new segments
     for (const auto& meta : _manifest) {
-        auto o = estimate_kafka_max_offset(meta.second);
-        if (_segments.contains(o)) {
-            continue;
+        auto o = get_kafka_base_offset(meta.second);
+        auto prev_it = _segments.find(o);
+        if (prev_it != _segments.end()) {
+            // The key can be in the ma in two cases:
+            // - we've already added the segment to the map
+            // - the key that we've added previously doesn't have data batches
+            //   in this case it can be safely replaced by the new one
+            auto prev_key = std::visit(
+              [](auto&& p) { return p->manifest_key; }, prev_it->second);
+            auto prev_meta = _manifest.get(prev_key);
+            vassert(prev_meta, "Can't find key in the manifest");
+            if (
+              meta.second == *prev_meta
+              || prev_meta->base_offset > meta.second.base_offset) {
+                continue;
+            }
+            vlog(
+              _ctxlog.debug,
+              "Segment with kafka-offset {} will be replaced. New segment "
+              "{{base: {}, max: {}, delta: {}}}, previous segment "
+              "{{base: {}, max: {}, delta: {}}}",
+              o,
+              meta.second.base_offset,
+              meta.second.committed_offset,
+              meta.second.delta_offset,
+              prev_meta->base_offset,
+              prev_meta->committed_offset,
+              prev_meta->delta_offset);
         }
-
-        _segments.insert(std::make_pair(
-          o, std::make_unique<offloaded_segment_state>(meta.first)));
+        _segments[o] = std::make_unique<offloaded_segment_state>(meta.first);
     }
 }
 

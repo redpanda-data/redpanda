@@ -242,14 +242,15 @@ public:
     ///
     /// \param header is a record batch header with redpanda offset
     /// \note this can only be applied to current record batch
-    void advance_config_start_offset(
-      const model::record_batch_header& header) noexcept {
+    void
+    advance_config_offsets(const model::record_batch_header& header) noexcept {
         auto next = rp_to_kafka(header.last_offset()) + model::offset(1);
         if (next > _config.start_offset) {
             _config.start_offset = next;
             _config.start_offset_redpanda = header.last_offset()
                                             + model::offset(1);
         }
+        _config.next_offset_redpanda = header.last_offset() + model::offset(1);
     }
 
     consume_result accept_batch_start(
@@ -345,7 +346,7 @@ public:
         // batch can only account record batches in all previous batches.
         vlog(
           cst_log.debug, "skip_batch_start called for {}", header.base_offset);
-        advance_config_start_offset(header);
+        advance_config_offsets(header);
         if (header.type != model::record_batch_type::raft_data) {
             ++_delta;
         }
@@ -359,7 +360,7 @@ public:
           _header, std::move(_records), model::record_batch::tag_ctor_ng{}};
 
         _config.bytes_consumed += batch.size_bytes();
-        advance_config_start_offset(batch.header());
+        advance_config_offsets(batch.header());
 
         // NOTE: we need to translate offset of the batch after we updated
         // start offset of the config since it assumes that the header has

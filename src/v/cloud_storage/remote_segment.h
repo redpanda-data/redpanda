@@ -109,6 +109,8 @@ struct log_reader_config : public storage::log_reader_config {
 
     /// Same as started_offset but not translated to kafka
     model::offset start_offset_redpanda;
+    /// Next redpanda offset that we're going to look at
+    model::offset next_offset_redpanda;
 };
 
 class remote_segment_batch_consumer;
