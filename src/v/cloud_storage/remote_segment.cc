@@ -347,7 +347,7 @@ public:
           cst_log.debug, "skip_batch_start called for {}", header.base_offset);
         advance_config_start_offset(header);
         if (header.type != model::record_batch_type::raft_data) {
-            ++_delta;
+            _delta += header.last_offset_delta + model::offset{1};
         }
     }
 
