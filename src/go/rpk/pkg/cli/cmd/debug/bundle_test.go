@@ -68,3 +68,15 @@ func TestLimitedWriter(t *testing.T) {
 		})
 	}
 }
+
+func TestWalkDirMissingRoot(t *testing.T) {
+	files := make(map[string]*fileInfo)
+	root := "/etc/its_highly_unlikely_that_a_dir_named_like_this_exists_anywhere"
+	err := walkDir(root, files)
+
+	require.NoError(t, err)
+
+	// The actual output differs from OS to OS, so to prevent a flaky test, just check that the file
+	// was added to the files map, and that it has an associated error related to the filename.
+	require.Contains(t, files[root].Error, "/etc/its_highly_unlikely_that_a_dir_named_like_this_exists_anywhere")
+}

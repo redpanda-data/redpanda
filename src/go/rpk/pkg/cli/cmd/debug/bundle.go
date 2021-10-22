@@ -761,6 +761,12 @@ func walkDir(root string, files map[string]*fileInfo) error {
 			i := new(fileInfo)
 			files[path] = i
 
+			// If the directory's contents couldn't be read, skip it.
+			if readErr != nil {
+				i.Error = readErr.Error()
+				return fs.SkipDir
+			}
+
 			info, err := d.Info()
 			if err != nil {
 				i.Error = err.Error()
@@ -792,13 +798,6 @@ func walkDir(root string, files map[string]*fileInfo) error {
 					i.Group = g.Name
 				} else {
 					i.Group = fmt.Sprintf("group lookup failed for GID %d: %v", sys.Gid, err)
-				}
-			}
-			// If the directory's contents couldn't be read, skip it.
-			if readErr != nil {
-				i.Error = readErr.Error()
-				if d.IsDir() {
-					return fs.SkipDir
 				}
 			}
 
