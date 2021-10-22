@@ -171,6 +171,9 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         }
         _need_controller_refresh = true;
         co_return ss::stop_iteration::yes;
+    } else if (_raft0->config().brokers().size() == 0) {
+        vlog(clusterlog.trace, "Leadership balancer tick: single node cluster");
+        co_return ss::stop_iteration::yes;
     }
 
     /*
