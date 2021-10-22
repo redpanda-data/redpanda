@@ -283,7 +283,7 @@ public:
      */
     ss::future<transfer_leadership_reply>
       transfer_leadership(transfer_leadership_request);
-    ss::future<> prepare_transfer_leadership(vnode);
+    ss::future<std::error_code> prepare_transfer_leadership(vnode);
     ss::future<std::error_code>
       do_transfer_leadership(std::optional<model::node_id>);
 

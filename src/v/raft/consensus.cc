@@ -2433,7 +2433,8 @@ consensus::transfer_leadership(transfer_leadership_request req) {
  * is sufficiently up to date that they will win the election when
  * they start it.
  */
-ss::future<> consensus::prepare_transfer_leadership(vnode target_rni) {
+ss::future<std::error_code>
+consensus::prepare_transfer_leadership(vnode target_rni) {
     /*
      * the follower's log needs to be up-to-date so that it will
      * receive votes when we ask it to trigger an immediate
@@ -2462,7 +2463,7 @@ ss::future<> consensus::prepare_transfer_leadership(vnode target_rni) {
     // proceed to (maybe) wait for recovery to complete
     if (!_fstats.contains(target_rni)) {
         // Gone?  Nothing to wait for, proceed immediately.
-        co_return;
+        co_return make_error_code(errc::node_does_not_exists);
     }
     auto& meta = _fstats.get(target_rni);
     if (
@@ -2492,7 +2493,16 @@ ss::future<> consensus::prepare_transfer_leadership(vnode target_rni) {
           "transfer leadership: waiting for node {} recovery",
           target_rni);
         meta.follower_state_change.broadcast();
-        co_await meta.recovery_finished.wait(timeout);
+        try {
+            co_await meta.recovery_finished.wait(timeout);
+        } catch (ss::timed_out_error) {
+            vlog(
+              _ctxlog.warn,
+              "transfer leadership: timed out waiting on node {} "
+              "recovery",
+              target_rni);
+            co_return make_error_code(errc::timeout);
+        }
         vlog(
           _ctxlog.warn,
           "transfer leadership: finished waiting on node {} "
@@ -2506,6 +2516,8 @@ ss::future<> consensus::prepare_transfer_leadership(vnode target_rni) {
           target_rni,
           _log.offsets().dirty_offset);
     }
+
+    co_return make_error_code(errc::success);
 }
 
 ss::future<std::error_code>
@@ -2609,88 +2621,94 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
               make_error_code(errc::node_does_not_exists));
         }
 
-        return prepare_transfer_leadership(target_rni).then([this, target_rni] {
-            /*
-             * there are still several scenarios in which we will want
-             * to not complete leadership transfer, all of which might
-             * have occurred during the recovery process.
-             *
-             *   - we might have lost leadership status
-             *   - shutdown may be in progress
-             *   - other: identified by follower not caught-up
-             */
-            if (!is_leader()) {
-                vlog(
-                  _ctxlog.warn, "Cannot transfer leadership from non-leader");
-                return seastar::make_ready_future<std::error_code>(
-                  make_error_code(errc::not_leader));
-            }
+        return prepare_transfer_leadership(target_rni)
+          .then([this, target_rni](std::error_code prepare_err) {
+              if (prepare_err) {
+                  return ss::make_ready_future<std::error_code>(prepare_err);
+              }
+              /*
+               * there are still several scenarios in which we will want
+               * to not complete leadership transfer, all of which might
+               * have occurred during the recovery process.
+               *
+               *   - we might have lost leadership status
+               *   - shutdown may be in progress
+               *   - other: identified by follower not caught-up
+               */
+              if (!is_leader()) {
+                  vlog(
+                    _ctxlog.warn, "Cannot transfer leadership from non-leader");
+                  return seastar::make_ready_future<std::error_code>(
+                    make_error_code(errc::not_leader));
+              }
 
-            if (_as.abort_requested()) {
-                vlog(
-                  _ctxlog.warn, "Cannot transfer leadership: abort requested");
+              if (_as.abort_requested()) {
+                  vlog(
+                    _ctxlog.warn,
+                    "Cannot transfer leadership: abort requested");
 
-                return seastar::make_ready_future<std::error_code>(
-                  make_error_code(errc::not_leader));
-            }
+                  return seastar::make_ready_future<std::error_code>(
+                    make_error_code(errc::not_leader));
+              }
 
-            if (!_fstats.contains(target_rni)) {
-                vlog(
-                  _ctxlog.warn,
-                  "Cannot transfer leadership: no stats for {}",
-                  target_rni);
+              if (!_fstats.contains(target_rni)) {
+                  vlog(
+                    _ctxlog.warn,
+                    "Cannot transfer leadership: no stats for {}",
+                    target_rni);
 
-                return seastar::make_ready_future<std::error_code>(
-                  make_error_code(errc::node_does_not_exists));
-            }
+                  return seastar::make_ready_future<std::error_code>(
+                    make_error_code(errc::node_does_not_exists));
+              }
 
-            auto& meta = _fstats.get(target_rni);
-            if (needs_recovery(meta, _log.offsets().dirty_offset)) {
-                vlog(
-                  _ctxlog.warn,
-                  "Cannot transfer leadership: {} needs recovery ({}, {}, {})",
-                  target_rni,
-                  meta.match_index,
-                  meta.last_dirty_log_index,
-                  _log.offsets().dirty_offset);
+              auto& meta = _fstats.get(target_rni);
+              if (needs_recovery(meta, _log.offsets().dirty_offset)) {
+                  vlog(
+                    _ctxlog.warn,
+                    "Cannot transfer leadership: {} needs recovery ({}, {}, "
+                    "{})",
+                    target_rni,
+                    meta.match_index,
+                    meta.last_dirty_log_index,
+                    _log.offsets().dirty_offset);
 
-                return seastar::make_ready_future<std::error_code>(
-                  make_error_code(errc::timeout));
-            }
+                  return seastar::make_ready_future<std::error_code>(
+                    make_error_code(errc::timeout));
+              }
 
-            timeout_now_request req{
-              .target_node_id = target_rni,
-              .node_id = _self,
-              .group = _group,
-              .term = _term,
-            };
+              timeout_now_request req{
+                .target_node_id = target_rni,
+                .node_id = _self,
+                .group = _group,
+                .term = _term,
+              };
 
-            auto timeout
-              = raft::clock_type::now()
-                + config::shard_local_cfg().raft_timeout_now_timeout_ms();
+              auto timeout
+                = raft::clock_type::now()
+                  + config::shard_local_cfg().raft_timeout_now_timeout_ms();
 
-            return _client_protocol
-              .timeout_now(
-                target_rni.id(), std::move(req), rpc::client_opts(timeout))
+              return _client_protocol
+                .timeout_now(
+                  target_rni.id(), std::move(req), rpc::client_opts(timeout))
 
-              .then([this](result<timeout_now_reply> reply) {
-                  if (!reply) {
-                      return seastar::make_ready_future<std::error_code>(
-                        reply.error());
-                  } else {
-                      // Step down before setting _transferring_leadership
-                      // to false, to ensure we do not accept any more writes
-                      // in the gap between new leader acking timeout now
-                      // and new leader sending a vote for its new term.
-                      // (If we accepted more writes, our log could get
-                      //  ahead of new leader, and it could lose election)
-                      do_step_down();
+                .then([this](result<timeout_now_reply> reply) {
+                    if (!reply) {
+                        return seastar::make_ready_future<std::error_code>(
+                          reply.error());
+                    } else {
+                        // Step down before setting _transferring_leadership
+                        // to false, to ensure we do not accept any more writes
+                        // in the gap between new leader acking timeout now
+                        // and new leader sending a vote for its new term.
+                        // (If we accepted more writes, our log could get
+                        //  ahead of new leader, and it could lose election)
+                        do_step_down();
 
-                      return seastar::make_ready_future<std::error_code>(
-                        make_error_code(errc::success));
-                  }
-              });
-        });
+                        return seastar::make_ready_future<std::error_code>(
+                          make_error_code(errc::success));
+                    }
+                });
+          });
     });
 
     return f.finally([this] { _transferring_leadership = false; });
