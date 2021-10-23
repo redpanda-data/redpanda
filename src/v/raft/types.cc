@@ -629,23 +629,41 @@ async_adl<raft::heartbeat_reply>::from(iobuf_parser& in) {
 raft::snapshot_metadata adl<raft::snapshot_metadata>::from(iobuf_parser& in) {
     auto last_included_index = adl<model::offset>{}.from(in);
     auto last_included_term = adl<model::term_id>{}.from(in);
+    raft::offset_translator_delta log_start_delta;
+
+    auto version = adl<int8_t>{}.from(in.peek(sizeof(int8_t)));
+
+    // if peeked buffer contains version greater than initial version we deal
+    // with new snapshot metadata
+    if (version >= raft::snapshot_metadata::initial_version) {
+        in.skip(sizeof(int8_t));
+    }
+
     auto cfg = adl<raft::group_configuration>{}.from(in);
     ss::lowres_clock::time_point cluster_time{
       adl<ss::lowres_clock::duration>{}.from(in)};
+
+    if (version >= raft::snapshot_metadata::initial_version) {
+        log_start_delta = adl<raft::offset_translator_delta>{}.from(in);
+    }
+
     return raft::snapshot_metadata{
       .last_included_index = last_included_index,
       .last_included_term = last_included_term,
       .latest_configuration = std::move(cfg),
-      .cluster_time = cluster_time};
+      .cluster_time = cluster_time,
+      .log_start_delta = log_start_delta};
 }
 
 void adl<raft::snapshot_metadata>::to(
-  iobuf& out, raft::snapshot_metadata&& request) {
+  iobuf& out, raft::snapshot_metadata&& md) {
     reflection::serialize(
       out,
-      request.last_included_index,
-      request.last_included_term,
-      request.latest_configuration,
-      request.cluster_time.time_since_epoch());
+      md.last_included_index,
+      md.last_included_term,
+      md.version,
+      md.latest_configuration,
+      md.cluster_time.time_since_epoch(),
+      md.log_start_delta);
 }
 } // namespace reflection

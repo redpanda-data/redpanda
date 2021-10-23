@@ -334,11 +334,28 @@ struct replicate_options {
     consistency_level consistency;
 };
 
+using offset_translator_delta = named_type<int64_t, struct ot_delta_tag>;
 struct snapshot_metadata {
+    // we start snasphot metadata version at 64 to leave room for configuration
+    // version updates
+    static constexpr int8_t initial_version = 64;
+    static constexpr int8_t current_version = initial_version;
+
     model::offset last_included_index;
     model::term_id last_included_term;
+    int8_t version = current_version;
     group_configuration latest_configuration;
     ss::lowres_clock::time_point cluster_time;
+    offset_translator_delta log_start_delta;
+    /**
+     * Since snapshot metadata did not include a version field we are going to
+     * use group configuration version field as a indicator of snapshot metadata
+     * version.
+     */
+    static_assert(
+      group_configuration::current_version <= initial_version,
+      "snapshot metadata is based on the assumption that group configuration "
+      "version is equal to 3, please change it accordignly");
 };
 
 struct install_snapshot_request {
