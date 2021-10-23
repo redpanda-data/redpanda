@@ -103,9 +103,9 @@ public:
 
     ss::future<> remove_persistent_state();
 
-private:
     int64_t delta(model::offset) const;
 
+private:
     void do_add(const model::record_batch_header&);
 
     bytes offsets_map_key() const;
