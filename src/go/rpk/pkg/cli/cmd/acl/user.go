@@ -168,7 +168,7 @@ func NewListUsersCommand(fs afero.Fs) *cobra.Command {
 
 			tw := out.NewTable("Username")
 			defer tw.Flush()
-			for u := range users {
+			for _, u := range users {
 				tw.Print(u)
 			}
 		},
