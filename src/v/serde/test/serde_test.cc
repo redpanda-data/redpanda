@@ -57,6 +57,11 @@ struct test_msg1
     int _b, _c;
 };
 
+struct test_msg1_imcompatible
+  : serde::envelope<test_msg1, serde::version<5>, serde::compat_version<5>> {
+    test_msg0 _m;
+};
+
 struct test_msg1_new
   : serde::
       envelope<test_msg1_new, serde::version<10>, serde::compat_version<5>> {
@@ -84,6 +89,12 @@ static_assert(serde::inherits_from_envelope_v<test_msg1_new>);
 static_assert(!serde::inherits_from_envelope_v<test_msg1_new_manual>);
 static_assert(test_msg1::redpanda_serde_version == 4);
 static_assert(test_msg1::redpanda_serde_compat_version == 0);
+
+SEASTAR_THREAD_TEST_CASE(incompatible_version_throws) {
+    BOOST_CHECK_THROW(
+      serde::from_iobuf<test_msg1_imcompatible>(serde::to_iobuf(test_msg1{})),
+      serde::serde_exception);
+}
 
 SEASTAR_THREAD_TEST_CASE(manual_and_envelope_equal) {
     auto const roundtrip = serde::from_iobuf<test_msg1_new_manual>(
