@@ -85,26 +85,17 @@ private:
     iobuf& _buf;
 };
 
-inline iobuf do_compress(const char* src, size_t src_size) {
-    size_t max = snappy::MaxCompressedLength(src_size);
-    iobuf ret;
-    auto ph = ret.reserve(max);
-    char* output = ph.mutable_index();
-    snappy::RawCompress(src, src_size, output, &max);
-    ret.trim_back(ret.size_bytes() - max);
-    return ret;
-}
-
 iobuf snappy_standard_compressor::compress(const iobuf& b) {
-    if (std::distance(b.begin(), b.end()) == 1) {
-        return do_compress(b.begin()->get(), b.size_bytes());
-    }
-    // TODO: use snappy::Source interface instead
-    auto linearized = iobuf_to_bytes(b);
-    return do_compress(
-      // NOLINTNEXTLINE
-      reinterpret_cast<const char*>(linearized.data()),
-      linearized.size());
+    iobuf ret;
+    iobuf_sink sink(ret);
+    iobuf_source source(b);
+    auto n = ::snappy::Compress(&source, &sink);
+    vassert(
+      ret.size_bytes() == n,
+      "Snappy compression expected {} bytes written found {}",
+      n,
+      ret.size_bytes());
+    return ret;
 }
 
 iobuf do_uncompressed(const char* src, size_t src_size) {
