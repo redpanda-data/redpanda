@@ -157,7 +157,6 @@ private:
     ss::lw_shared_ptr<remote_segment> _seg;
     log_reader_config _config;
     std::unique_ptr<storage::continuous_batch_parser> _parser;
-    bool _done{false};
     ss::circular_buffer<model::record_batch> _ringbuf;
     size_t _total_size{0};
     model::offset _initial_delta;

@@ -410,28 +410,20 @@ remote_segment_batch_reader::read_some(
   model::timeout_clock::time_point deadline) {
     vlog(
       cst_log.debug,
-      "remote_segment_batch_reader::read_some(1) - done={}, ringbuf size={}",
-      _done,
+      "remote_segment_batch_reader::read_some(1) - ringbuf size={}",
       _ringbuf.size());
-    if (_done) {
-        co_return storage::parser_errc::end_of_stream;
-    }
     if (_ringbuf.empty()) {
-        if (!_parser && !_done) {
+        if (!_parser) {
             _parser = co_await init_parser();
         }
         auto bytes_consumed = co_await _parser->consume();
         if (!bytes_consumed) {
             co_return bytes_consumed.error();
         }
-        if (bytes_consumed.value() == 0) {
-            _done = true;
-        }
     }
     vlog(
       cst_log.debug,
-      "remote_segment_batch_reader::read_some(2) - done={}, ringbuf size={}",
-      _done,
+      "remote_segment_batch_reader::read_some(2) - ringbuf size={}",
       _ringbuf.size());
     _total_size = 0;
     co_return std::move(_ringbuf);
