@@ -11,12 +11,79 @@
 
 #include "bytes/bytes.h"
 #include "likely.h"
+#include "units.h"
 
 #include <fmt/format.h>
 
+#include <snappy-sinksource.h>
 #include <snappy.h>
 
 namespace compression {
+
+class iobuf_source final : public snappy::Source {
+    static constexpr auto max_region_size = 128_KiB;
+
+public:
+    explicit iobuf_source(const iobuf& buf)
+      : _buf(buf)
+      , _in(_buf.cbegin(), _buf.cend())
+      , _available(_buf.size_bytes()) {}
+
+    size_t Available() const override { return _available; }
+
+    const char* Peek(size_t* len) override {
+        const char* region = nullptr;
+        size_t region_size = 0;
+
+        // peek at the next contiguous region
+        auto in = _in;
+        (void)in.consume(
+          max_region_size,
+          [&region, &region_size](const char* ptr, size_t size) {
+              region = ptr;
+              region_size = size;
+              return ss::stop_iteration::yes;
+          });
+
+        vassert(
+          ((region && region_size && _available)
+           || (!region && !region_size && !_available)),
+          "Inconsistent snappy source: region_null {} region_size {} "
+          "_available {}",
+          region == nullptr,
+          region_size,
+          _available);
+
+        *len = region_size;
+        return region;
+    }
+
+    void Skip(size_t n) override {
+        vassert(
+          _available >= n,
+          "Cannot skip snappy source: available {} < n {}",
+          _available,
+          n);
+        _in.skip(n);
+        _available -= n;
+    }
+
+private:
+    const iobuf& _buf;
+    iobuf::iterator_consumer _in;
+    size_t _available;
+};
+
+class iobuf_sink final : public snappy::Sink {
+public:
+    explicit iobuf_sink(iobuf& buf)
+      : _buf(buf) {}
+
+    void Append(const char* bytes, size_t n) override { _buf.append(bytes, n); }
+
+private:
+    iobuf& _buf;
+};
 
 inline iobuf do_compress(const char* src, size_t src_size) {
     size_t max = snappy::MaxCompressedLength(src_size);
