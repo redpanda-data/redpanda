@@ -18,6 +18,14 @@ namespace compression {
 struct snappy_standard_compressor {
     static iobuf compress(const iobuf&);
     static iobuf uncompress(const iobuf&);
+
+    /*
+     * uncompress data from the input iobuf and append to the output iobuf. the
+     * input data is expected to have the output size bytes.
+     */
+    static void uncompress_append(const iobuf&, iobuf&, size_t output_size);
+
+    static size_t get_uncompressed_length(const iobuf&);
 };
 
 } // namespace compression

@@ -134,4 +134,56 @@ iobuf snappy_standard_compressor::uncompress(const iobuf& b) {
       reinterpret_cast<const char*>(linearized.data()),
       linearized.size());
 }
+
+size_t snappy_standard_compressor::get_uncompressed_length(const iobuf& b) {
+    iobuf_source src(b);
+    uint32_t output_size = 0;
+    if (unlikely(!::snappy::GetUncompressedLength(&src, &output_size))) {
+        throw std::runtime_error(fmt::format(
+          "Could not find uncompressed size from input buffer of size: {}",
+          b.size_bytes()));
+    }
+    return output_size;
+}
+
+void snappy_standard_compressor::uncompress_append(
+  const iobuf& input, iobuf& output, size_t output_size) {
+    /*
+     * allocate buffers to decompress into
+     */
+    size_t remaining = output_size;
+    std::vector<ss::temporary_buffer<char>> bufs;
+    while (remaining) {
+        auto size = details::io_allocation_size::next_allocation_size(
+          remaining);
+        size = std::min(remaining, size);
+        bufs.emplace_back(size);
+        remaining -= size;
+    }
+
+    /*
+     * setup vectors for iovec decompression interface
+     */
+    std::vector<iovec> iovecs;
+    for (auto& buf : bufs) {
+        iovec vec{
+          .iov_base = buf.get_write(),
+          .iov_len = buf.size(),
+        };
+        iovecs.push_back(vec);
+    }
+
+    iobuf_source src(input);
+    if (!::snappy::RawUncompressToIOVec(&src, iovecs.data(), iovecs.size())) {
+        throw std::runtime_error(fmt::format(
+          "snappy: Could not decompress input size: {}, to output size:{}",
+          input.size_bytes(),
+          output_size));
+    }
+
+    for (auto& buf : bufs) {
+        output.append(std::move(buf));
+    }
+}
+
 } // namespace compression
