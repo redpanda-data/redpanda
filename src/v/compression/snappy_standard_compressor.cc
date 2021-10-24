@@ -98,41 +98,13 @@ iobuf snappy_standard_compressor::compress(const iobuf& b) {
     return ret;
 }
 
-iobuf do_uncompressed(const char* src, size_t src_size) {
-    size_t output_size = 0;
-    if (unlikely(
-          !::snappy::GetUncompressedLength(src, src_size, &output_size))) {
-        throw std::runtime_error(fmt::format(
-          "Could not find uncompressed size from input buffer of size: {}",
-          src_size));
-    }
+iobuf snappy_standard_compressor::uncompress(const iobuf& b) {
     iobuf ret;
-    if (output_size == 0) {
-        // empty frame
-        return ret;
-    }
-    auto ph = ret.reserve(output_size);
-    char* output = ph.mutable_index();
-    if (!::snappy::RawUncompress(src, src_size, output)) {
-        throw std::runtime_error(fmt::format(
-          "snappy: Could not decompress input size: {}, to output size:{}",
-          src_size,
-          output_size));
+    auto output_size = get_uncompressed_length(b);
+    if (output_size > 0) {
+        uncompress_append(b, ret, output_size);
     }
     return ret;
-}
-
-iobuf snappy_standard_compressor::uncompress(const iobuf& b) {
-    if (std::distance(b.begin(), b.end()) == 1) {
-        return do_uncompressed(b.begin()->get(), b.size_bytes());
-    }
-    // linearize buffer
-    // TODO: use snappy::Sink interface instead
-    auto linearized = iobuf_to_bytes(b);
-    return do_uncompressed(
-      // NOLINTNEXTLINE
-      reinterpret_cast<const char*>(linearized.data()),
-      linearized.size());
 }
 
 size_t snappy_standard_compressor::get_uncompressed_length(const iobuf& b) {
