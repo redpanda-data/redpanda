@@ -99,31 +99,12 @@ iobuf snappy_java_compressor::uncompress(const iobuf& x) {
     const size_t input_bytes = x.size_bytes();
     while (iter.bytes_consumed() != input_bytes) {
         auto compressed_length = iter.consume_be_type<int32_t>();
-        auto chunk = ss::uninitialized_string<bytes>(compressed_length);
-        iter.consume_to(chunk.size(), chunk.data());
-        size_t output_size = 0;
-        if (unlikely(!::snappy::GetUncompressedLength(
-              // NOLINTNEXTLINE
-              reinterpret_cast<const char*>(chunk.data()),
-              chunk.size(),
-              &output_size))) {
-            throw std::runtime_error(fmt::format(
-              "Could not find uncompressed size from input buffer of size: {}",
-              chunk.size()));
-        }
-        auto ph = ret.reserve(output_size);
-        char* output = ph.mutable_index();
-        if (!::snappy::RawUncompress(
-              // NOLINTNEXTLINE
-              reinterpret_cast<const char*>(chunk.data()),
-              chunk.size(),
-              output)) {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "snappy: Could not decompress frame: {}, from:{}",
-              chunk.size(),
-              x));
-        }
+        // iobuf doesn't have a const compatible share interface so we make a
+        // copy here which is inefficient compared to a zero-copy approach.
+        auto chunk = iobuf_copy(iter, compressed_length);
+        auto output_size = snappy_standard_compressor::get_uncompressed_length(
+          chunk);
+        snappy_standard_compressor::uncompress_append(chunk, ret, output_size);
     }
     return ret;
 }
