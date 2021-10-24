@@ -25,12 +25,24 @@ Before you start installing Redpanda you need to setup your Kubernetes environme
 
 You'll need to install:
 
-- Kubernetes v1.16 or above
+- [Kubernetes](https://kubernetes.io/docs/setup/) v1.16 or above
 - [kubectl](https://kubernetes.io/docs/tasks/tools/) v1.16 or above
 - [helm](https://github.com/helm/helm/releases) v3.0.0 or above
 - [cert-manager](https://cert-manager.io/docs/installation/kubernetes/) v1.2.0 or above
 
     Follow the instructions to verify that cert-manager is ready to create certificates.
+
+Make sure you also have these common tools installed:
+- [Go](https://golang.org/doc/install) v1.17 or above
+- [Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) 
+
+To run locally
+- [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/) v0.12 or above
+
+**_Note_** Make sure that you have kind configured in your path. [This reference in the GO documentation](https://golang.org/doc/code#GOPATH) can help you configure the path.
+
+
+
 
 ### Create a Kubernetes cluster
 
@@ -62,8 +74,7 @@ You can either create a Kubernetes cluster on your local machine or on a cloud p
   --node-type m5.xlarge \
   --nodes 1 \
   --nodes-min 1 \
-  --nodes-max 4 \
-  --node-ami auto
+  --nodes-max 4
   ```
 
   It will take about 10-15 minutes for the process to finish.
@@ -119,7 +130,26 @@ to verify that cert-manager is working correcly.
     export VERSION=$(curl -s https://api.github.com/repos/vectorizedio/redpanda/releases/latest | jq -r .tag_name)
     ```
 
-    **_Note_** - You can find information about the versions of the operator in the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).
+
+
+
+    **_Note_** - You can find information about the versions of the operator in the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).   
+    We're using `jq` to help us. If you don't have it installed run this command:   
+    <tabs>
+      <tab id="apt">
+
+    ```bash
+      sudo apt-get update
+      sudo apt-get install jq
+    ```
+      </tab>
+      <tab id="brew">
+      
+    ```bash
+      brew install jq
+    ```
+      </tab>
+    </tabs>
 
 3. Install the Redpanda operator CRD:
 
