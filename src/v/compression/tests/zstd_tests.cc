@@ -19,9 +19,13 @@
 
 #include <seastar/testing/thread_test_case.hh>
 
-static inline constexpr std::array<size_t, 12> sizes{{
+static inline constexpr std::array<size_t, 16> sizes{{
   0,
+  1,
+  2,
+  3,
   8,
+  9,
   16,
   32,
   64,
@@ -34,10 +38,24 @@ static inline constexpr std::array<size_t, 12> sizes{{
   10_KiB,
 }};
 
+static std::vector<size_t> get_test_sizes() {
+    std::vector<size_t> test_sizes;
+    for (auto size : sizes) {
+        test_sizes.push_back(size);
+    }
+    // add in some extras sizes from iobuf allocator
+    for (auto size : details::io_allocation_size::alloc_table) {
+        test_sizes.push_back(size);
+    }
+    test_sizes.push_back(details::io_allocation_size::alloc_table.back() * 2);
+    test_sizes.push_back(details::io_allocation_size::alloc_table.back() * 3);
+    return test_sizes;
+}
+
 static inline iobuf gen(const size_t data_size) {
-    const auto data = random_generators::gen_alphanum_string(512);
     iobuf ret;
     for (auto i = 0; i < data_size; i += 512) {
+        const auto data = random_generators::gen_alphanum_string(512);
         ret.append(data.data(), data.size());
     }
     ret.trim_back(ret.size_bytes() - data_size);
@@ -47,7 +65,8 @@ static inline iobuf gen(const size_t data_size) {
 template<typename CompressFunc, typename DecompressFunc>
 inline void
 roundtrip_compression(CompressFunc&& comp_fn, DecompressFunc&& decomp_fn) {
-    for (size_t i : sizes) {
+    auto test_sizes = get_test_sizes();
+    for (size_t i : test_sizes) {
         iobuf buf = gen(i);
         auto cbuf = comp_fn(buf.share(0, i));
         auto dbuf = decomp_fn(cbuf);
@@ -57,6 +76,7 @@ roundtrip_compression(CompressFunc&& comp_fn, DecompressFunc&& decomp_fn) {
 
 SEASTAR_THREAD_TEST_CASE(stream_zstd_test) {
     compression::stream_zstd fn;
+    auto test_sizes = get_test_sizes();
     for (size_t i : sizes) {
         iobuf buf = gen(i);
         auto cbuf = fn.compress(buf.share(0, i));
