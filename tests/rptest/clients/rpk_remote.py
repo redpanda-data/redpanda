@@ -32,6 +32,12 @@ class RpkRemoteTool:
 
         return self._run_config(cmd, path=path, timeout=timeout)
 
+    def debug_bundle(self, working_dir):
+        # Run the bundle command.  It outputs into pwd, so switch to working dir first
+        return self._execute(
+            ["cd", working_dir, ";",
+             self._rpk_binary(), "debug", "bundle"])
+
     def _run_config(self, cmd, path=None, timeout=30):
         cmd = [self._rpk_binary(), 'redpanda', 'config'] + cmd
 
