@@ -23,15 +23,6 @@
 #include <seastar/core/shared_ptr.hh>
 
 namespace coproc {
-
-/**
- * Thrown when there are promises queued waiting on the fiber to reach an idle
- * state, but shutdown is called before that occurs
- */
-class wait_idle_state_future_stranded final : public exception {
-    using exception::exception;
-};
-
 /**
  * The script_context is the smallest schedulable unit in the coprocessor
  * framework. One context is created per registered coprocessor script,
@@ -77,11 +68,6 @@ public:
      */
     ss::future<> shutdown();
 
-    /// Primarily used for testing, future resolves when the fiber moves from
-    /// the state of continuous ingestion, into a poll/sleep phase. This occurs
-    /// when there is no more data to read.
-    ss::future<> wait_idle_state();
-
 private:
     ss::future<> do_execute();
 
@@ -90,12 +76,7 @@ private:
 
     ss::future<> process_reply(process_batch_reply);
 
-    void process_idle_callbacks();
-
 private:
-    /// Idle state promises
-    std::vector<ss::promise<>> _idle;
-
     /// Killswitch for in-process reads
     ss::abort_source _abort_source;
 

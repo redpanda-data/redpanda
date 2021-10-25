@@ -112,12 +112,6 @@ public:
     ss::future<errc> wait_for_script(script_id);
 
     /**
-     * Returns future which resolves when fiber for script_id on 'this' shard
-     * moves into an idle state
-     */
-    ss::future<> wait_idle_state(script_id);
-
-    /**
      * @returns true if a matching script id exists on 'this' shard
      */
     bool local_script_id_exists(script_id);
