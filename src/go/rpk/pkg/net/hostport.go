@@ -79,11 +79,14 @@ var schemeHostPortRe = regexp.MustCompile(`^(?:([a-zA-Z][a-zA-Z0-9+.-]*)://)?(.*
 //
 //   - the tld must not be all-numeric; to keep it easy, we will require a-zA-Z
 //   - labels must begin or end with alphanum
-//   - labels can contain a-zA-Z0-9_-
+//   - labels can contain a-zA-Z0-9-
 //   - labels must be 1 to 63 chars
 //   - the full domain must not exceed 255 characters
 //
-// As a special case, we allow "localhost".
+// In support of docker / docker-compose and local setups, we allow single
+// labels and we do not validate the tld is strictly alphanumeric. We also
+// allow underscores, which are technically only valid in DNS names, not
+// hostnames ("docker_n_1").
 func isDomain(d string) bool {
 	if len(d) > 255 {
 		return false
@@ -93,19 +96,10 @@ func isDomain(d string) bool {
 	d = strings.TrimSuffix(d, ".")
 
 	labels := strings.Split(d, ".")
-	if len(labels) <= 1 {
-		if d == "localhost" {
-			return true
-		}
+	if len(labels) == 0 {
 		return false
 	}
-	last := len(labels) - 1
-	tld := labels[last]
-	if !tldRe.MatchString(tld) {
-		return false
-	}
-
-	for _, label := range labels[:last] {
+	for _, label := range labels {
 		if l := len(label); l == 0 || l > 63 {
 			return false
 		}
@@ -116,15 +110,9 @@ func isDomain(d string) bool {
 	return true
 }
 
-var (
-	// tls must not be all numeric; to keep it easy we will require just
-	// all letters.
-	tldRe = regexp.MustCompile(`^[a-zA-Z]{1,63}$`)
-
-	// labels must begin or end with alphanum, but can include dashes or
-	// underscores in the middle.
-	labelRe = regexp.MustCompile(`^[a-zA-Z0-9](?:[a-zA-Z0-9_-]*[a-zA-Z0-9])?$`)
-)
+// labels must begin or end with alphanum, but can include dashes or
+// underscores in the middle.
+var labelRe = regexp.MustCompile(`^[a-zA-Z0-9](?:[a-zA-Z0-9_-]*[a-zA-Z0-9])?$`)
 
 // Returns whether the input is an ip address.
 //
