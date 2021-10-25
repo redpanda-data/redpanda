@@ -66,6 +66,7 @@ FIXTURE_TEST(test_copro_tip_earliest, tip_fixture) {
     BOOST_CHECK_EQUAL(800, results);
 }
 
+#if 0
 FIXTURE_TEST(test_copro_tip_stored, coproc_test_fixture) {
     model::topic sttp("sttp");
     model::ntp sttp_ntp(model::kafka_namespace, sttp, model::partition_id(0));
@@ -94,3 +95,4 @@ FIXTURE_TEST(test_copro_tip_stored, coproc_test_fixture) {
     auto results = consume(output_ntp, 400).get();
     BOOST_CHECK_GE(num_records(results), 400);
 }
+#endif
