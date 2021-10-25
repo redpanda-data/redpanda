@@ -43,7 +43,7 @@ partition::partition(
           clusterlog, _raft.get());
     } else if (is_tx_manager_topic(_raft->ntp())) {
         if (_raft->log_config().is_collectable()) {
-            _nop_stm = ss::make_lw_shared<raft::log_eviction_stm>(
+            _log_eviction_stm = ss::make_lw_shared<raft::log_eviction_stm>(
               _raft.get(), clusterlog, stm_manager, _as);
         }
 
@@ -53,7 +53,7 @@ partition::partition(
         }
     } else {
         if (_raft->log_config().is_collectable()) {
-            _nop_stm = ss::make_lw_shared<raft::log_eviction_stm>(
+            _log_eviction_stm = ss::make_lw_shared<raft::log_eviction_stm>(
               _raft.get(), clusterlog, stm_manager, _as);
         }
 
@@ -287,8 +287,8 @@ ss::future<> partition::start() {
 
     if (is_id_allocator_topic(ntp)) {
         return f.then([this] { return _id_allocator_stm->start(); });
-    } else if (_nop_stm) {
-        f = f.then([this] { return _nop_stm->start(); });
+    } else if (_log_eviction_stm) {
+        f = f.then([this] { return _log_eviction_stm->start(); });
     }
 
     if (_rm_stm) {
@@ -315,8 +315,8 @@ ss::future<> partition::stop() {
         return _id_allocator_stm->stop();
     }
 
-    if (_nop_stm) {
-        f = _nop_stm->stop();
+    if (_log_eviction_stm) {
+        f = _log_eviction_stm->stop();
     }
 
     if (_rm_stm) {

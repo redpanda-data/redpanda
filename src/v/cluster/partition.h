@@ -204,7 +204,7 @@ private:
 
 private:
     consensus_ptr _raft;
-    ss::lw_shared_ptr<raft::log_eviction_stm> _nop_stm;
+    ss::lw_shared_ptr<raft::log_eviction_stm> _log_eviction_stm;
     ss::lw_shared_ptr<cluster::id_allocator_stm> _id_allocator_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
     ss::shared_ptr<cluster::tm_stm> _tm_stm;
