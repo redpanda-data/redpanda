@@ -546,6 +546,7 @@ template<>
 ss::future<response_ptr>
 fetch_handler::handle(request_context rctx, ss::smp_service_group ssg) {
     return ss::do_with(op_context(std::move(rctx), ssg), [](op_context& octx) {
+        vlog(klog.trace, "handling fetch request: {}", octx.request);
         // top-level error is used for session-level errors
         if (octx.session_ctx.has_error()) {
             octx.response.data.error_code = octx.session_ctx.error();
