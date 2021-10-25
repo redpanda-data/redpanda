@@ -50,6 +50,7 @@
 #include <chrono>
 #include <exception>
 #include <numeric>
+#include <random>
 
 using namespace std::chrono_literals;
 using namespace cloud_storage;
@@ -86,6 +87,7 @@ struct in_memory_segment {
     model::offset base_offset, max_offset;
     segment_name sname;
     int num_config_batches{0};
+    int num_config_records{0};
 };
 
 static in_memory_segment make_segment(model::offset base, int num_batches) {
@@ -113,6 +115,13 @@ make_segment(model::offset base, const std::vector<batch_t>& batches) {
       batches.begin(), batches.end(), [](batch_t t) {
           return t.type != model::record_batch_type::raft_data;
       });
+    auto num_config_records = std::accumulate(
+      batches.begin(), batches.end(), 0U, [](size_t acc, batch_t b) {
+          if (b.type == model::record_batch_type::raft_data) {
+              return acc;
+          }
+          return acc + b.num_records;
+      });
     iobuf segment_bytes = generate_segment(base, batches);
     std::vector<model::record_batch_header> hdr;
     std::vector<iobuf> rec;
@@ -129,6 +138,7 @@ make_segment(model::offset base, const std::vector<batch_t>& batches) {
     s.file_offsets = std::move(off);
     s.sname = segment_name(fmt::format("{}-1-v1.log", s.base_offset()));
     s.num_config_batches = num_config_batches;
+    s.num_config_records = num_config_records;
     return s;
 }
 
@@ -194,7 +204,7 @@ make_imposter_expectations(
           .delta_offset = model::offset(delta),
         };
         m.add(s.sname, meta);
-        delta = delta + model::offset(s.num_config_batches);
+        delta = delta + model::offset(s.num_config_records);
     }
     std::stringstream ostr;
     m.serialize(ostr);
@@ -773,4 +783,67 @@ FIXTURE_TEST(
     auto headers_read = scan_remote_partition(*this, base, max);
 
     BOOST_REQUIRE_EQUAL(headers_read.size(), 0);
+}
+
+struct segment_layout {
+    std::vector<std::vector<batch_t>> segments;
+    size_t num_data_batches;
+};
+
+static segment_layout generate_segment_layout(int num_segments, int seed) {
+    static constexpr size_t max_segment_size = 20;
+    static constexpr size_t max_batch_size = 100;
+    std::seed_seq seq{seed};
+    std::mt19937 re(seq);
+    std::uniform_int_distribution<unsigned> dist;
+    size_t num_data_batches = 0;
+    auto gen_segment = [&re, &dist, &num_data_batches]() {
+        size_t sz = 1 + dist(re) % max_segment_size;
+        std::vector<batch_t> res;
+        res.reserve(sz);
+        for (size_t i = 0; i < sz; i++) {
+            size_t batch_size = 1 + dist(re) % max_batch_size;
+            size_t type = dist(re) % 2;
+            batch_t b{
+              .num_records = static_cast<int>(batch_size),
+              .type = type == 0 ? model::record_batch_type::raft_data
+                                : model::record_batch_type::raft_configuration,
+            };
+            if (b.type == model::record_batch_type::raft_data) {
+                num_data_batches++;
+            }
+            res.push_back(b);
+        }
+        return res;
+    };
+    std::vector<std::vector<batch_t>> all_batches;
+    all_batches.reserve(num_segments);
+    for (int i = 0; i < num_segments; i++) {
+        all_batches.push_back(gen_segment());
+    }
+    return {.segments = all_batches, .num_data_batches = num_data_batches};
+}
+
+/// This test scans the entire range of offsets
+FIXTURE_TEST(
+  test_remote_partition_scan_translate_full_random, cloud_storage_fixture) {
+    constexpr int num_segments = 1000;
+    const auto [batch_types, num_data_batches] = generate_segment_layout(
+      num_segments, 42);
+    auto segments = setup_s3_imposter(*this, batch_types);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments - 1].max_offset;
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+    auto headers_read = scan_remote_partition(*this, base, max);
+    model::offset expected_offset{0};
+    for (const auto& header : headers_read) {
+        vlog(
+          test_log.debug,
+          "Expected offset {}, actual header {}",
+          expected_offset,
+          header);
+        BOOST_REQUIRE_EQUAL(expected_offset, header.base_offset);
+        expected_offset = header.last_offset() + model::offset(1);
+    }
+    BOOST_REQUIRE_EQUAL(headers_read.size(), num_data_batches);
 }
