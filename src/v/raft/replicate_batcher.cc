@@ -59,7 +59,7 @@ replicate_stages replicate_batcher::replicate(
                     auto item = f.get();
                     return _lock.get_units()
                       .then([this](ss::semaphore_units<> u) {
-                          return flush(std::move(u));
+                          return flush(std::move(u), false);
                       })
                       .then_wrapped(
                         [this, item, guard = std::move(guard)](ss::future<> f) {
@@ -155,9 +155,10 @@ replicate_batcher::do_cache_with_backpressure(
       });
 }
 
-ss::future<> replicate_batcher::flush(ss::semaphore_units<> u) {
+ss::future<>
+replicate_batcher::flush(ss::semaphore_units<> u, bool const transfer_flush) {
     return ss::try_with_gate(
-      _bg, [this, batcher_units = std::move(u)]() mutable {
+      _bg, [this, batcher_units = std::move(u), transfer_flush]() mutable {
           auto item_cache = std::exchange(_item_cache, {});
           if (item_cache.empty()) {
               return ss::now();
@@ -166,8 +167,8 @@ ss::future<> replicate_batcher::flush(ss::semaphore_units<> u) {
           return _ptr->_op_lock.get_units().then_wrapped(
             [this,
              item_cache = std::move(item_cache),
-             batcher_units = std::move(batcher_units)](
-              ss::future<ss::semaphore_units<>> f) mutable {
+             batcher_units = std::move(batcher_units),
+             transfer_flush](ss::future<ss::semaphore_units<>> f) mutable {
                 // if we failed to acquire units, propagate exception to cached
                 // promises
                 if (f.failed()) {
@@ -177,6 +178,17 @@ ss::future<> replicate_batcher::flush(ss::semaphore_units<> u) {
                     return ss::now();
                 }
                 auto u = f.get();
+
+                if (!transfer_flush && _ptr->_transferring_leadership) {
+                    vlog(
+                      _ptr->_ctxlog.warn,
+                      "Dropping flush, leadership transferring");
+                    for (auto& n : item_cache) {
+                        n->_promise.set_value(errc::not_leader);
+                    }
+                    return ss::now();
+                }
+
                 // release batcher replicate batcher lock
                 batcher_units.return_all();
                 // we have to check if we are the leader

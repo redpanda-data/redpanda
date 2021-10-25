@@ -49,7 +49,7 @@ public:
     replicate_stages
     replicate(std::optional<model::term_id>, model::record_batch_reader&&);
 
-    ss::future<> flush(ss::semaphore_units<> u);
+    ss::future<> flush(ss::semaphore_units<> u, bool const transfer_flush);
 
     ss::future<> stop();
 

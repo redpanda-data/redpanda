@@ -2457,7 +2457,7 @@ consensus::prepare_transfer_leadership(vnode target_rni) {
 
     // Allow any buffered batches to complete, to avoid racing
     // advances of dirty offset against new leader's recovery
-    co_await _batcher.flush({});
+    co_await _batcher.flush({}, true);
 
     // After we have (maybe) waited for op_lock and batcher,
     // proceed to (maybe) wait for recovery to complete
