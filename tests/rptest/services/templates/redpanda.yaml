@@ -20,17 +20,20 @@ redpanda:
     address: "{{node.account.hostname}}"
     port: 33145
   kafka_api:
-    address: "{{node.account.hostname}}"
-    port: 9092
+    - address: "{{node.account.hostname}}"
+      port: 9092
   admin:
-    address: "{{node.account.hostname}}"
-    port: 9644
+    - address: 127.0.0.1
+      port: 9644
+    - address: "{{node.account.hostname}}"
+      port: 9644
 
   # for librdkafka
   auto_create_topics_enabled: true
   default_topic_partitions: 4
 
-  superusers: {{superuser[0]}}
+  superusers:
+    - {{superuser[0]}}
 
   enable_auto_rebalance_on_node_add: true
 
