@@ -35,7 +35,7 @@ func NewDescribeCommand(fs afero.Fs) *cobra.Command {
 		partitions bool
 	)
 	cmd := &cobra.Command{
-		Use:     "describe [TOPICS...]",
+		Use:     "describe [TOPIC]",
 		Aliases: []string{"info"},
 		Short:   "Describe a topic.",
 		Long: `Describe a topic.

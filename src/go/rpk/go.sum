@@ -339,12 +339,12 @@ github.com/tmc/grpc-websocket-proxy v0.0.0-20190109142713-0ad062ec5ee5/go.mod h1
 github.com/twmb/franz-go v1.1.2/go.mod h1:KerrVhzNpasYrWJLr2Yj6Cui43f1BxH4U9SJEDVOjqQ=
 github.com/twmb/franz-go v1.1.3-0.20211011202156-c82819093251 h1:kltd+R1cjGt5crzuj5+nKJldjaqYYXn1gDg1oln2qXc=
 github.com/twmb/franz-go v1.1.3-0.20211011202156-c82819093251/go.mod h1:KerrVhzNpasYrWJLr2Yj6Cui43f1BxH4U9SJEDVOjqQ=
-github.com/twmb/franz-go/pkg/kadm v0.0.0-20211017224045-8e793efaef43 h1:PHGN84oHs7cNuYlS3fShdxV2jQTv60yZ5fNGmj5guz4=
-github.com/twmb/franz-go/pkg/kadm v0.0.0-20211017224045-8e793efaef43/go.mod h1:IfPX6t+NBXmMhU5v4ewAJGhLpoEsQVkfNhXCTzBe0Ck=
+github.com/twmb/franz-go/pkg/kadm v0.0.0-20211019184032-1d51332a9bbe h1:2fXeWRU2G9s3GV8lOHu7EOqEEkzLVBMIRIuca2HzgZA=
+github.com/twmb/franz-go/pkg/kadm v0.0.0-20211019184032-1d51332a9bbe/go.mod h1:IfPX6t+NBXmMhU5v4ewAJGhLpoEsQVkfNhXCTzBe0Ck=
 github.com/twmb/franz-go/pkg/kmsg v0.0.0-20210914042331-106aef61b693/go.mod h1:SxG/xJKhgPu25SamAq0rrucfp7lbzCpEXOC+vH/ELrY=
 github.com/twmb/franz-go/pkg/kmsg v0.0.0-20211010181717-11efd498dac5/go.mod h1:SxG/xJKhgPu25SamAq0rrucfp7lbzCpEXOC+vH/ELrY=
-github.com/twmb/franz-go/pkg/kmsg v0.0.0-20211017223218-8f7af361b808 h1:x7OQpMXYB0ch+2vbDxiBk1y2nOHU4t0dM+kbH8CJNXI=
-github.com/twmb/franz-go/pkg/kmsg v0.0.0-20211017223218-8f7af361b808/go.mod h1:SxG/xJKhgPu25SamAq0rrucfp7lbzCpEXOC+vH/ELrY=
+github.com/twmb/franz-go/pkg/kmsg v0.0.0-20211019182131-c44763e95e25 h1:rf11TceUZZejbiwnU0sAInaVIX2Mwbhm5+DUumvdQoo=
+github.com/twmb/franz-go/pkg/kmsg v0.0.0-20211019182131-c44763e95e25/go.mod h1:SxG/xJKhgPu25SamAq0rrucfp7lbzCpEXOC+vH/ELrY=
 github.com/twmb/go-rbtree v1.0.0 h1:KxN7dXJ8XaZ4cvmHV1qqXTshxX3EBvX/toG5+UR49Mg=
 github.com/twmb/go-rbtree v1.0.0/go.mod h1:UlIAI8gu3KRPkXSobZnmJfVwCJgEhD/liWzT5ppzIyc=
 github.com/twmb/tlscfg v1.2.0 h1:WCzLHtmnVJ94+veAO4TLTB1ENx7TPYLkTl4Q6WFF4Vo=

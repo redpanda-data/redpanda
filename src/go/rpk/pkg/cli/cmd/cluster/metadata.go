@@ -19,8 +19,7 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/twmb/franz-go/pkg/kerr"
-	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
@@ -59,9 +58,9 @@ In the broker section, the controller node is suffixed with *.
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := kafka.NewFranzClient(fs, p, cfg)
+			adm, err := kafka.NewAdmin(fs, p, cfg)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
-			defer cl.Close()
+			defer adm.Close()
 
 			// We first evaluate whether any section was requested.
 			// If none were, we default to all sections. Only after
@@ -93,38 +92,29 @@ In the broker section, the controller node is suffixed with *.
 				fn()
 			}
 
-			req := kmsg.NewPtrMetadataRequest()
-			if len(args) > 0 {
-				for _, topic := range args {
-					reqTopic := kmsg.NewMetadataRequestTopic()
-					reqTopic.Topic = kmsg.StringPtr(topic)
-					req.Topics = append(req.Topics, reqTopic)
-				}
-			} else if !topics {
-				// If the topic section is not requested and no
-				// topics are specified, setting Topics to
-				// non-nil avoids requesting any topics.
-				req.Topics = []kmsg.MetadataRequestTopic{}
+			var m kadm.Metadata
+			if topics || len(args) > 0 {
+				m, err = adm.Metadata(context.Background(), args...)
+			} else {
+				m, err = adm.MetadataWithoutTopics(context.Background())
 			}
-
-			resp, err := req.RequestWith(context.Background(), cl)
 			out.MaybeDie(err, "unable to request metadata: %v", err)
 
 			// We only print the cluster section if the response
 			// has a cluster.
-			if cluster && resp.ClusterID != nil {
+			if cluster && m.Cluster != "" {
 				header("CLUSTER", func() {
-					fmt.Printf("%s\n", *resp.ClusterID)
+					fmt.Printf("%s\n", m.Cluster)
 				})
 			}
 			if brokers {
 				header("BROKERS", func() {
-					printBrokers(resp.ControllerID, resp.Brokers)
+					printBrokers(m.Controller, m.Brokers)
 				})
 			}
-			if topics && len(resp.Topics) > 0 {
+			if topics && len(m.Topics) > 0 {
 				header("TOPICS", func() {
-					PrintTopics(resp.Topics, internal, detailed)
+					PrintTopics(m.Topics, internal, detailed)
 				})
 			}
 		},
@@ -138,13 +128,9 @@ In the broker section, the controller node is suffixed with *.
 	return cmd
 }
 
-func printBrokers(controllerID int32, brokers []kmsg.MetadataResponseBroker) {
-	sort.Slice(brokers, func(i, j int) bool {
-		return brokers[i].NodeID < brokers[j].NodeID
-	})
-
+func printBrokers(controllerID int32, brokers kadm.BrokerDetails) {
 	headers := []string{"ID", "HOST", "PORT"}
-	args := func(b *kmsg.MetadataResponseBroker) []interface{} {
+	args := func(b *kadm.BrokerDetail) []interface{} {
 		ret := []interface{}{b.NodeID, b.Host, b.Port}
 		if b.NodeID == controllerID {
 			ret[0] = fmt.Sprintf("%d*", b.NodeID)
@@ -157,7 +143,7 @@ func printBrokers(controllerID int32, brokers []kmsg.MetadataResponseBroker) {
 		if brokers[i].Rack != nil {
 			headers = append(headers, "RACK")
 			orig := args
-			args = func(b *kmsg.MetadataResponseBroker) []interface{} {
+			args = func(b *kadm.BrokerDetail) []interface{} {
 				var rack string
 				if b.Rack != nil {
 					rack = *b.Rack
@@ -176,27 +162,18 @@ func printBrokers(controllerID int32, brokers []kmsg.MetadataResponseBroker) {
 	}
 }
 
-func PrintTopics(topics []kmsg.MetadataResponseTopic, internal, detailed bool) {
-	sort.Slice(topics, func(i, j int) bool {
-		// Topics is only non-nil if we requested with topic IDs,
-		// which we are not doing.
-		return *topics[i].Topic < *topics[j].Topic
-	})
-
+func PrintTopics(topics kadm.TopicDetails, internal, detailed bool) {
 	if !detailed {
 		tw := out.NewTable("NAME", "PARTITIONS", "REPLICAS")
 		defer tw.Flush()
 
-		for _, topic := range topics {
+		for _, topic := range topics.Sorted() {
 			if !internal && topic.IsInternal {
 				continue
 			}
 			parts := len(topic.Partitions)
-			replicas := 0
-			if parts > 0 {
-				replicas = len(topic.Partitions[0].Replicas)
-			}
-			tw.Print(*topic.Topic, parts, replicas)
+			replicas := topic.Partitions.NumReplicas()
+			tw.Print(topic.Topic, parts, replicas)
 		}
 		return
 	}
@@ -205,7 +182,7 @@ func PrintTopics(topics []kmsg.MetadataResponseTopic, internal, detailed bool) {
 	buf.Grow(512)
 	defer func() { os.Stdout.Write(buf.Bytes()) }()
 
-	for i, topic := range topics {
+	for i, topic := range topics.Sorted() {
 		if topic.IsInternal && !internal {
 			continue
 		}
@@ -214,7 +191,7 @@ func PrintTopics(topics []kmsg.MetadataResponseTopic, internal, detailed bool) {
 		}
 
 		// "foo, 20 partitions, 3 replicas"
-		fmt.Fprintf(buf, "%s", *topic.Topic)
+		fmt.Fprintf(buf, "%s", topic.Topic)
 		if topic.IsInternal {
 			fmt.Fprint(buf, " (internal)")
 		}
@@ -227,15 +204,14 @@ func PrintTopics(topics []kmsg.MetadataResponseTopic, internal, detailed bool) {
 		// We include certain columns if any partition has a
 		// non-default value.
 		var useEpoch, useOffline, useErr bool
-		for i := range topic.Partitions {
-			p := &topic.Partitions[i]
+		for _, p := range topic.Partitions.Sorted() {
 			if p.LeaderEpoch != -1 {
 				useEpoch = true
 			}
 			if len(p.OfflineReplicas) > 0 {
 				useOffline = true
 			}
-			if p.ErrorCode != 0 {
+			if p.Err != nil {
 				useErr = true
 			}
 		}
@@ -255,7 +231,7 @@ func PrintTopics(topics []kmsg.MetadataResponseTopic, internal, detailed bool) {
 			headers = append(headers, "load-error")
 		}
 
-		args := func(p *kmsg.MetadataResponseTopicPartition) []interface{} {
+		args := func(p *kadm.PartitionDetail) []interface{} {
 			ret := []interface{}{"", p.Partition, p.Leader}
 			if useEpoch {
 				ret = append(ret, p.LeaderEpoch)
@@ -265,8 +241,8 @@ func PrintTopics(topics []kmsg.MetadataResponseTopic, internal, detailed bool) {
 				ret = append(ret, int32s(p.OfflineReplicas).sort())
 			}
 			if useErr {
-				if err := kerr.ErrorForCode(p.ErrorCode); err != nil {
-					ret = append(ret, err)
+				if p.Err != nil {
+					ret = append(ret, p.Err.Error())
 				} else {
 					ret = append(ret, "-")
 				}
@@ -274,12 +250,8 @@ func PrintTopics(topics []kmsg.MetadataResponseTopic, internal, detailed bool) {
 			return ret
 		}
 
-		sort.Slice(topic.Partitions, func(i, j int) bool {
-			return topic.Partitions[i].Partition < topic.Partitions[j].Partition
-		})
-
 		tw := out.NewTableTo(buf, headers...)
-		for _, part := range topic.Partitions {
+		for _, part := range topic.Partitions.Sorted() {
 			tw.Print(args(&part)...)
 		}
 		tw.Flush()
