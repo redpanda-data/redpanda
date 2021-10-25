@@ -69,10 +69,10 @@ public:
     /// starting at 'offset'
     ss::future<model::record_batch_reader::data_t> consume(
       model::ntp ntp,
+      std::size_t limit,
       model::offset start_offset = model::offset(0),
-      model::offset last_offset = model::model_limits<model::offset>::max(),
       model::timeout_clock::time_point timeout = model::timeout_clock::now()
-                                                 + std::chrono::seconds(5));
+                                                 + std::chrono::seconds(10));
 
     kafka::client::client& get_client() { return *_client; }
 
@@ -81,6 +81,12 @@ protected:
         vassert(_root_fixture != nullptr, "Access root_fixture when null");
         return _root_fixture.get();
     }
+
+    ss::future<model::record_batch_reader::data_t> do_consume(
+      model::topic_partition,
+      model::offset,
+      std::size_t,
+      model::timeout_clock::time_point);
 
     ss::future<> wait_for_copro(coproc::script_id);
 

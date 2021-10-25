@@ -9,6 +9,7 @@
  */
 
 #include "coproc/tests/fixtures/coproc_test_fixture.h"
+#include "coproc/tests/utils/batch_utils.h"
 #include "coproc/tests/utils/coprocessor.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
@@ -44,10 +45,7 @@ FIXTURE_TEST(test_wasm_engine_restart, coproc_test_fixture) {
       [this](const std::vector<model::ntp>& ntps) -> ss::future<> {
         std::vector<ss::future<model::offset>> fs;
         for (const auto& ntp : ntps) {
-            fs.emplace_back(push(
-              ntp,
-              storage::test::make_random_memory_record_batch_reader(
-                model::offset(0), 10, 2, false)));
+            fs.emplace_back(push(ntp, make_random_batch(500)));
         }
         return ss::when_all_succeed(fs.begin(), fs.end()).discard_result();
     };
@@ -69,8 +67,10 @@ FIXTURE_TEST(test_wasm_engine_restart, coproc_test_fixture) {
     /// commit interval, the more likely this is.
     std::vector<ss::future<model::record_batch_reader::data_t>> fs;
     for (const auto& ntp : outputs) {
-        fs.emplace_back(consume(ntp));
+        fs.emplace_back(consume(ntp, (500 * 2)));
     }
-    auto data = ss::when_all_succeed(fs.begin(), fs.end()).get0();
-    BOOST_CHECK(!data[0].empty());
+    auto results = ss::when_all_succeed(fs.begin(), fs.end()).get0();
+    for (const auto& data : results) {
+        BOOST_CHECK_GE(num_records(data), (500 * 2));
+    }
 }
