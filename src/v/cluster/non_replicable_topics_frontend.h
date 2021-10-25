@@ -15,9 +15,8 @@
 #include "coproc/exception.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
-#include <seastar/core/shared_future.hh>
-#include <seastar/core/shared_ptr.hh>
 
 #include <absl/container/node_hash_map.h>
 
@@ -55,6 +54,9 @@ public:
     explicit non_replicable_topics_frontend(
       ss::sharded<cluster::topics_frontend>&) noexcept;
 
+    /// \brief ensures clean shutdown of pending futures
+    ss::future<> stop();
+
     /// \brief Creates desired materialized topics by disseminating the command
     /// across the cluster. If a command is already in progress for a given
     /// topic_namespace, a future will be returned which resolves when the
@@ -75,6 +77,9 @@ private:
     /// the associate shared_promise will be returned. When the original request
     /// resolves the shared promise will be set.
     underlying_t _topics;
+
+    /// Ensures shutdown without leaving futures stranded
+    ss::gate _gate;
 };
 
 /// \brief non_replicable_topics_frontend is a sharded service that only exists

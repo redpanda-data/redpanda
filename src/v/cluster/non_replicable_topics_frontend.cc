@@ -27,6 +27,16 @@ non_replicable_topics_frontend::non_replicable_topics_frontend(
   ss::sharded<cluster::topics_frontend>& topics_frontend) noexcept
   : _topics_frontend(topics_frontend) {}
 
+ss::future<> non_replicable_topics_frontend::stop() {
+    co_await _gate.close();
+    for (auto& [tn, ps] : _topics) {
+        for (auto& p : ps) {
+            p.set_exception(non_replicable_topic_creation_exception(
+              fmt::format("Could not create topic {} due to shutdown", tn)));
+        }
+    }
+}
+
 void non_replicable_topics_frontend::topic_creation_resolved(
   const std::vector<cluster::topic_result>& results) {
     for (const auto& result : results) {
@@ -72,6 +82,7 @@ ss::future<std::vector<cluster::topic_result>>
 non_replicable_topics_frontend::create_non_replicable_topics(
   std::vector<cluster::non_replicable_topic> topics,
   model::timeout_clock::time_point timeout) {
+    auto holder = _gate.hold();
     std::vector<ss::future<cluster::topic_result>> all;
     std::vector<cluster::non_replicable_topic> todos;
     for (auto& topic : topics) {
@@ -87,11 +98,12 @@ non_replicable_topics_frontend::create_non_replicable_topics(
     if (!todos.empty()) {
         co_await _topics_frontend.local()
           .create_non_replicable_topics(todos, timeout)
-          .then([this](const std::vector<cluster::topic_result>& result) {
-              topic_creation_resolved(result);
-          })
+          .then(
+            [this, holder](const std::vector<cluster::topic_result>& result) {
+                topic_creation_resolved(result);
+            })
           .handle_exception_type(
-            [this, todos = std::move(todos)](const std::exception& ex) {
+            [this, holder, todos = std::move(todos)](const std::exception& ex) {
                 topic_creation_exception(todos, ex);
             });
     }
