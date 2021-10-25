@@ -43,6 +43,7 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
+	osutil "github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system/syslog"
@@ -127,6 +128,9 @@ func writeCommandOutputToZipLimit(
 	ctx, cancel := context.WithTimeout(context.Background(), ps.timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, command, args...)
+
+	// Strip any non-default library path
+	cmd.Env = osutil.SystemLdPathEnv()
 
 	wr, err := ps.w.Create(filename)
 	if err != nil {
