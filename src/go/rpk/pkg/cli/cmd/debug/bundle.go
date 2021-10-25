@@ -704,7 +704,7 @@ func saveTopOutput(ps *stepParams) step {
 		return writeCommandOutputToZip(
 			ps,
 			"top.txt",
-			"top", "-n", "10", "-H",
+			"top", "-b", "-n", "10", "-H", "-d", "1",
 		)
 	}
 }
