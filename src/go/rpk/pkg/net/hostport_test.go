@@ -3,7 +3,30 @@ package net
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
+
+func TestSplitHostPortDefault(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		inHost string
+		inDef  int
+
+		expHost string
+		expPort int
+	}{
+		{"valid split", "foo:80", 90, "foo", 80},
+		{"invalid host uses default", "foo::80", 90, "foo::80", 90},
+		{"invalid port uses default", "foo:asdf", 90, "foo:asdf", 90},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h, p := SplitHostPortDefault(test.inHost, test.inDef)
+			require.Equal(t, h, test.expHost)
+			require.Equal(t, p, test.expPort)
+		})
+	}
+}
 
 func TestParseHostMaybeScheme(t *testing.T) {
 	for _, test := range []struct {

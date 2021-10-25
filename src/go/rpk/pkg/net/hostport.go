@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -25,6 +26,24 @@ func ParseHostMaybeScheme(h string) (scheme, host string, err error) {
 		return scheme, net.JoinHostPort(host, port), nil
 	}
 	return scheme, host, nil
+}
+
+// SplitHostPortDefault splits h into its host and port parts and returns the
+// port as an int. If the host has no port, the returns the default port.
+//
+// The input is expected to be a valid parsed address as returned from
+// ParseHostMaybeScheme. This always returns the input host and default port if
+// any split / int conversion error occurs.
+func SplitHostPortDefault(h string, def int) (host string, port int) {
+	host, p, err := net.SplitHostPort(h)
+	if err != nil {
+		return h, def
+	}
+	port, err = strconv.Atoi(p)
+	if err != nil {
+		return h, def
+	}
+	return host, port
 }
 
 // https://en.wikipedia.org/wiki/Uniform_Resource_Identifier#Syntax
