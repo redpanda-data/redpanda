@@ -202,10 +202,12 @@ inline auto envelope_for_each_field(T& t, Fn&& fn) -> std::enable_if_t<
     static_assert(is_envelope_v<std::decay_t<T>>);
     if constexpr (inherits_from_envelope_v<std::decay_t<T>>) {
         std::apply(
-          [&](auto&&... args) { (fn(args) && ...); }, envelope_to_tuple(t));
+          [&](auto&&... args) { (void)(fn(args) && ...); },
+          envelope_to_tuple(t));
     } else {
         std::apply(
-          [&](auto&&... args) { (fn(args) && ...); }, reflection::to_tuple(t));
+          [&](auto&&... args) { (void)(fn(args) && ...); },
+          reflection::to_tuple(t));
     }
 }
 
