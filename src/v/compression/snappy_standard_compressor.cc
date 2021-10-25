@@ -29,9 +29,9 @@ public:
       , _in(_buf.cbegin(), _buf.cend())
       , _available(_buf.size_bytes()) {}
 
-    size_t Available() const override { return _available; }
+    size_t Available() const final { return _available; }
 
-    const char* Peek(size_t* len) override {
+    const char* Peek(size_t* len) final {
         const char* region = nullptr;
         size_t region_size = 0;
 
@@ -58,7 +58,7 @@ public:
         return region;
     }
 
-    void Skip(size_t n) override {
+    void Skip(size_t n) final {
         vassert(
           _available >= n,
           "Cannot skip snappy source: available {} < n {}",
@@ -79,7 +79,7 @@ public:
     explicit snappy_iobuf_sink(iobuf& buf)
       : _buf(buf) {}
 
-    void Append(const char* bytes, size_t n) override { _buf.append(bytes, n); }
+    void Append(const char* bytes, size_t n) final { _buf.append(bytes, n); }
 
 private:
     iobuf& _buf;
