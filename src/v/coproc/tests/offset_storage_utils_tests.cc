@@ -12,6 +12,7 @@
 #include "coproc/ntp_context.h"
 #include "coproc/offset_storage_utils.h"
 #include "coproc/tests/fixtures/coproc_test_fixture.h"
+#include "coproc/tests/utils/batch_utils.h"
 #include "model/namespace.h"
 #include "storage/api.h"
 #include "storage/snapshot.h"
@@ -61,8 +62,8 @@ public:
             return consume(
                      model::ntp(
                        model::kafka_namespace, topic, model::partition_id(i)),
-                     model::offset{0},
-                     model::offset{1})
+                     1,
+                     model::offset{0})
               .discard_result();
         });
     }
@@ -93,15 +94,8 @@ FIXTURE_TEST(offset_keeper_saved_offsets, offset_keeper_fixture) {
     model::topic foo("foo");
     model::topic bar("bar");
     setup({{foo, 50}, {bar, 50}}).get();
-    push_all(foo, 50, []() {
-        return storage::test::make_random_memory_record_batch_reader(
-          model::offset{0}, 5, 1, false);
-    }).get();
-    push_all(bar, 50, []() {
-        return storage::test::make_random_memory_record_batch_reader(
-          model::offset{0}, 10, 1, false);
-    }).get();
-
+    push_all(foo, 50, []() { return make_random_batch(40); }).get();
+    push_all(bar, 50, []() { return make_random_batch(40); }).get();
     using copro_typeid = coproc::registry::type_identifier;
     enable_coprocessors(
       {{.id = 4444,
