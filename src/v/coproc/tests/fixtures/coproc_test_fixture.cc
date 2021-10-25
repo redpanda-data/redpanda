@@ -159,10 +159,6 @@ ss::future<model::record_batch_reader::data_t> coproc_test_fixture::consume(
   model::offset start_offset,
   model::offset last_offset,
   model::timeout_clock::time_point timeout) {
-    /// Waits for all coprocessors to enter an idle state, if they are currently
-    /// ingesting/pushing data and the consume occurs, then its highly likley
-    /// that less data then expected will be read
-    co_await wait_until_all_idle();
     model::topic_partition tp{ntp.tp.topic, ntp.tp.partition};
     if (last_offset == model::model_limits<model::offset>::max()) {
         last_offset = co_await do_kafka_request<model::offset>(
@@ -199,25 +195,6 @@ coproc_test_fixture::push(model::ntp ntp, model::record_batch_reader rbr) {
           "Input logs should already exist, use setup() before starting test");
     }
     co_return result.last_offset;
-}
-
-ss::future<> coproc_test_fixture::wait_until_all_idle() {
-    std::vector<ss::future<>> fs;
-    for (const coproc::script_id id : _active_ids) {
-        fs.push_back(wait_until_idle(id).then([id] {
-            vlog(coproc::coproclog.info, "Script {} entered idle state", id);
-        }));
-    }
-    co_return co_await ss::when_all_succeed(fs.begin(), fs.end());
-}
-
-ss::future<> coproc_test_fixture::wait_until_idle(coproc::script_id id) {
-    vlog(coproc::coproclog.info, "Waiting for script {} to be idle", id);
-    auto& p = _root_fixture->app.coprocessing->get_pacemaker();
-    return p.invoke_on_all([id](coproc::pacemaker& p) {
-        return p.wait_idle_state(id).handle_exception_type(
-          [](const coproc::exception&) { return ss::now(); });
-    });
 }
 
 ss::future<> coproc_test_fixture::wait_for_copro(coproc::script_id id) {

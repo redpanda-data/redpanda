@@ -267,15 +267,6 @@ ss::future<errc> pacemaker::wait_for_script(script_id id) {
     return itr->second.back().get_future();
 }
 
-ss::future<> pacemaker::wait_idle_state(script_id id) {
-    auto found = _scripts.find(id);
-    if (found == _scripts.end()) {
-        return ss::make_exception_future<>(
-          script_not_found(fmt::format("script {} not found", id)));
-    }
-    return found->second->wait_idle_state();
-}
-
 bool pacemaker::local_script_id_exists(script_id id) {
     return _scripts.find(id) != _scripts.end();
 }
