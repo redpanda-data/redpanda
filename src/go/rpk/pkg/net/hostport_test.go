@@ -59,9 +59,10 @@ func TestParseHostMaybeScheme(t *testing.T) {
 		},
 
 		{
-			name:   "invalid scheme",
-			input:  "scheme_bar://foo.com",
-			expErr: true,
+			name:      "relaxed restrictions allow underscore in scheme",
+			input:     "scheme_bar://foo.com",
+			expScheme: "scheme_bar",
+			expHost:   "foo.com",
 		},
 
 		{
