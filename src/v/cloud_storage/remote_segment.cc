@@ -244,13 +244,17 @@ public:
     /// \note this can only be applied to current record batch
     void
     advance_config_offsets(const model::record_batch_header& header) noexcept {
-        auto next = rp_to_kafka(header.last_offset()) + model::offset(1);
-        if (next > _config.start_offset) {
-            _config.start_offset = next;
-            _config.start_offset_redpanda = header.last_offset()
-                                            + model::offset(1);
+        if (header.type == model::record_batch_type::raft_data) {
+            auto next = rp_to_kafka(header.last_offset()) + model::offset(1);
+            if (next > _config.start_offset) {
+                _config.start_offset = next;
+            }
         }
-        _config.next_offset_redpanda = header.last_offset() + model::offset(1);
+
+        auto next_rp = header.last_offset() + model::offset{1};
+        if (next_rp > _config.next_offset_redpanda) {
+            _config.next_offset_redpanda = next_rp;
+        }
     }
 
     consume_result accept_batch_start(
@@ -289,8 +293,10 @@ public:
               rp_to_kafka(header.last_offset()) < _config.start_offset)) {
             vlog(
               cst_log.debug,
-              "remote_segment_batch_consumer::accept_batch_start skip becuse "
-              "{} < {}(kafka offset)",
+              "remote_segment_batch_consumer::accept_batch_start skip because "
+              "last_kafka_offset {} (last_rp_offset: {}) < "
+              "config.start_offset: {}",
+              rp_to_kafka(header.last_offset()),
               header.last_offset(),
               _config.start_offset);
             return batch_consumer::consume_result::skip_batch;
@@ -404,28 +410,20 @@ remote_segment_batch_reader::read_some(
   model::timeout_clock::time_point deadline) {
     vlog(
       cst_log.debug,
-      "remote_segment_batch_reader::read_some(1) - done={}, ringbuf size={}",
-      _done,
+      "remote_segment_batch_reader::read_some(1) - ringbuf size={}",
       _ringbuf.size());
-    if (_done) {
-        co_return storage::parser_errc::end_of_stream;
-    }
     if (_ringbuf.empty()) {
-        if (!_parser && !_done) {
+        if (!_parser) {
             _parser = co_await init_parser();
         }
         auto bytes_consumed = co_await _parser->consume();
         if (!bytes_consumed) {
             co_return bytes_consumed.error();
         }
-        if (bytes_consumed.value() == 0) {
-            _done = true;
-        }
     }
     vlog(
       cst_log.debug,
-      "remote_segment_batch_reader::read_some(2) - done={}, ringbuf size={}",
-      _done,
+      "remote_segment_batch_reader::read_some(2) - ringbuf size={}",
       _ringbuf.size());
     _total_size = 0;
     co_return std::move(_ringbuf);

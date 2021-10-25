@@ -99,7 +99,7 @@ private:
 struct log_reader_config : public storage::log_reader_config {
     explicit log_reader_config(const storage::log_reader_config& cfg)
       : storage::log_reader_config(cfg)
-      , start_offset_redpanda(model::offset::min()) {}
+      , next_offset_redpanda(model::offset::min()) {}
 
     log_reader_config(
       model::offset start_offset,
@@ -107,8 +107,6 @@ struct log_reader_config : public storage::log_reader_config {
       ss::io_priority_class prio)
       : storage::log_reader_config(start_offset, max_offset, prio) {}
 
-    /// Same as started_offset but not translated to kafka
-    model::offset start_offset_redpanda;
     /// Next redpanda offset that we're going to look at
     model::offset next_offset_redpanda;
 };
@@ -159,7 +157,6 @@ private:
     ss::lw_shared_ptr<remote_segment> _seg;
     log_reader_config _config;
     std::unique_ptr<storage::continuous_batch_parser> _parser;
-    bool _done{false};
     ss::circular_buffer<model::record_batch> _ringbuf;
     size_t _total_size{0};
     model::offset _initial_delta;

@@ -221,7 +221,6 @@ private:
           segment->get_max_rp_offset(),
           segment->get_base_offset_delta());
         return {{.reader = std::move(reader), .iter = it}};
-        return std::nullopt;
     }
 
     /// Reset reader if current segment is fully consumed.
@@ -607,10 +606,15 @@ remote_partition::materialized_segment_state::borrow_reader(
             auto tmp = std::move(*it);
             tmp->config() = cfg;
             readers.erase(it);
+            vlog(
+              cst_log.debug,
+              "reusing existing reader, config: {}",
+              tmp->config());
             return tmp;
         }
     }
     // this may only happen if we have some concurrency
+    vlog(cst_log.debug, "creating new reader, config: {}", cfg);
     return std::make_unique<remote_segment_batch_reader>(segment, cfg);
 }
 
