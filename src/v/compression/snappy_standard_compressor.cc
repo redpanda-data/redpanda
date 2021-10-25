@@ -20,11 +20,11 @@
 
 namespace compression {
 
-class iobuf_source final : public snappy::Source {
+class snappy_iobuf_source final : public snappy::Source {
     static constexpr auto max_region_size = 128_KiB;
 
 public:
-    explicit iobuf_source(const iobuf& buf)
+    explicit snappy_iobuf_source(const iobuf& buf)
       : _buf(buf)
       , _in(_buf.cbegin(), _buf.cend())
       , _available(_buf.size_bytes()) {}
@@ -74,9 +74,9 @@ private:
     size_t _available;
 };
 
-class iobuf_sink final : public snappy::Sink {
+class snappy_iobuf_sink final : public snappy::Sink {
 public:
-    explicit iobuf_sink(iobuf& buf)
+    explicit snappy_iobuf_sink(iobuf& buf)
       : _buf(buf) {}
 
     void Append(const char* bytes, size_t n) override { _buf.append(bytes, n); }
@@ -87,8 +87,8 @@ private:
 
 iobuf snappy_standard_compressor::compress(const iobuf& b) {
     iobuf ret;
-    iobuf_sink sink(ret);
-    iobuf_source source(b);
+    snappy_iobuf_sink sink(ret);
+    snappy_iobuf_source source(b);
     auto n = ::snappy::Compress(&source, &sink);
     vassert(
       ret.size_bytes() == n,
@@ -108,7 +108,7 @@ iobuf snappy_standard_compressor::uncompress(const iobuf& b) {
 }
 
 size_t snappy_standard_compressor::get_uncompressed_length(const iobuf& b) {
-    iobuf_source src(b);
+    snappy_iobuf_source src(b);
     uint32_t output_size = 0;
     if (unlikely(!::snappy::GetUncompressedLength(&src, &output_size))) {
         throw std::runtime_error(fmt::format(
@@ -145,7 +145,7 @@ void snappy_standard_compressor::uncompress_append(
         iovecs.push_back(vec);
     }
 
-    iobuf_source src(input);
+    snappy_iobuf_source src(input);
     if (!::snappy::RawUncompressToIOVec(&src, iovecs.data(), iovecs.size())) {
         throw std::runtime_error(fmt::format(
           "snappy: Could not decompress input size: {}, to output size:{}",
