@@ -222,13 +222,13 @@ assemble_request_context(output_write_inputs replies, output_write_args args) {
     return rctx;
 }
 
-static ss::future<> make_materialized_topics(
+static ss::future<std::vector<cluster::topic_result>> make_materialized_topics(
   ss::sharded<cluster::non_replicable_topics_frontend>& frontend,
   std::vector<cluster::non_replicable_topic> topics) {
     /// All requests are debounced, therefore if multiple entities attempt
     /// to create a materialized topic (would occur across fibers), all requests
     /// will wait for the first to complete.
-    co_await frontend.invoke_on(
+    co_return co_await frontend.invoke_on(
       cluster::non_replicable_topics_frontend_shard,
       [topics = std::move(topics)](
         cluster::non_replicable_topics_frontend& mtfe) mutable {
@@ -269,6 +269,21 @@ logs_for_context(
     co_return std::make_tuple(std::move(labs), std::move(ipts));
 }
 
+static void prune_failures(
+  request_context& rctx, std::vector<cluster::topic_result> results) {
+    for (const auto& r : results) {
+        if (
+          r.ec != cluster::errc::success
+          && r.ec != cluster::errc::topic_already_exists) {
+            vlog(coproclog.warn, "Removing {} from result set", r.tp_ns);
+            absl::erase_if(rctx.rgrp, [tp = r.tp_ns](const auto& value_type) {
+                const auto& ntp = value_type.first;
+                return ntp.ns == tp.ns && ntp.tp.topic == tp.tp;
+            });
+        }
+    }
+}
+
 ss::future<>
 write_materialized(output_write_inputs replies, output_write_args args) {
     if (replies.empty()) {
@@ -284,17 +299,19 @@ write_materialized(output_write_inputs replies, output_write_args args) {
     request_context rctx = assemble_request_context(std::move(replies), args);
     try {
         /// 1. Make all materialized topics
-        co_await make_materialized_topics(
+        auto results = co_await make_materialized_topics(
           args.rs.mt_frontend, std::move(rctx.topics));
-        /// 2. Obtain all storage::logs for all requests
+        /// 2. Remove replies w/ error from manifest
+        prune_failures(rctx, std::move(results));
+        /// 3. Obtain all storage::logs for all requests
         auto [labs, ipts] = co_await logs_for_context(
           args.rs.storage.local().log_mgr(), std::move(rctx.rgrp));
-        /// 3. Perform writes (only failures are fatal, i.e. crc exception)
+        /// 4. Perform writes (only failures are fatal, i.e. crc exception)
         co_await ss::parallel_for_each(labs, [args](auto& t) -> ss::future<> {
             co_await write_materialized_partition(
               std::get<0>(t), std::move(std::get<1>(t)), args.locks);
         });
-        /// 4. Commit offsets
+        /// 5. Commit offsets
         push_offsets_ahead(std::move(ipts), args.id);
     } catch (const cluster::non_replicable_topic_creation_exception& ex) {
         vlog(
