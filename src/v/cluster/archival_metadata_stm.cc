@@ -266,6 +266,10 @@ ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
     co_return stm_snapshot::create(0, _insync_offset, std::move(snap_data));
 }
 
+model::offset archival_metadata_stm::max_collectible_offset() {
+    return _last_offset;
+}
+
 void archival_metadata_stm::apply_add_segment(const segment& segment) {
     if (segment.ntp_revision == _manifest.get_revision_id()) {
         _manifest.add(segment.name, segment.meta);

@@ -54,6 +54,7 @@ private:
 
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_snapshot() override;
+    model::offset max_collectible_offset() override;
 
     struct segment;
     struct add_segment_cmd;

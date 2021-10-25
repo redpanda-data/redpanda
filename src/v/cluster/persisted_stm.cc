@@ -153,6 +153,10 @@ persisted_stm::ensure_snapshot_exists(model::offset target_offset) {
     });
 }
 
+model::offset persisted_stm::max_collectible_offset() {
+    return model::offset::max();
+}
+
 ss::future<> persisted_stm::wait_offset_committed(
   model::timeout_clock::duration timeout,
   model::offset offset,
