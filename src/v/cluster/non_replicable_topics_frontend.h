@@ -46,8 +46,9 @@ class non_replicable_topics_frontend {
 public:
     /// \brief Mapping between requested topic_namespace to create and shared
     /// promise that is associated with an outstanding request
-    using underlying_t
-      = absl::node_hash_map<model::topic_namespace, std::vector<ss::promise<>>>;
+    using underlying_t = absl::node_hash_map<
+      model::topic_namespace,
+      std::vector<ss::promise<cluster::topic_result>>>;
 
     /// \brief Class constructor
     /// Depends on topics_frontend so 'create_non_replicable_topics' can be used
@@ -58,7 +59,7 @@ public:
     /// across the cluster. If a command is already in progress for a given
     /// topic_namespace, a future will be returned which resolves when the
     /// command completes.
-    ss::future<> create_non_replicable_topics(
+    ss::future<std::vector<cluster::topic_result>> create_non_replicable_topics(
       std::vector<cluster::non_replicable_topic>,
       model::timeout_clock::time_point timeout);
 

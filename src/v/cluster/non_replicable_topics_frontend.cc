@@ -15,6 +15,8 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/topics_frontend.h"
 #include "vlog.h"
+
+#include <seastar/core/coroutine.hh>
 namespace cluster {
 
 non_replicable_topic_creation_exception::
@@ -33,32 +35,8 @@ void non_replicable_topics_frontend::topic_creation_resolved(
           found != _topics.end(),
           "Missing promise with associated event: {}",
           result.tp_ns);
-        if (
-          result.ec == cluster::errc::success
-          || result.ec == cluster::errc::topic_already_exists) {
-            if (result.ec == cluster::errc::success) {
-                vlog(
-                  clusterlog.info,
-                  "Non replicable topic created: {}",
-                  result.tp_ns);
-            } else {
-                vlog(
-                  clusterlog.debug,
-                  "Non replicable log has come into existance via "
-                  "another node: {}",
-                  result.tp_ns);
-            }
-            for (auto& p : found->second) {
-                p.set_value();
-            }
-        } else {
-            for (auto& p : found->second) {
-                p.set_exception(
-                  non_replicable_topic_creation_exception(fmt::format(
-                    "Failed to disseminate non replicable topic: {}, error: {}",
-                    result.tp_ns,
-                    result.ec)));
-            }
+        for (auto& p : found->second) {
+            p.set_value(result);
         }
         _topics.erase(found);
     }
@@ -90,34 +68,33 @@ void non_replicable_topics_frontend::topic_creation_exception(
     }
 }
 
-ss::future<> non_replicable_topics_frontend::create_non_replicable_topics(
+ss::future<std::vector<cluster::topic_result>>
+non_replicable_topics_frontend::create_non_replicable_topics(
   std::vector<cluster::non_replicable_topic> topics,
   model::timeout_clock::time_point timeout) {
-    std::vector<ss::future<>> all;
+    std::vector<ss::future<cluster::topic_result>> all;
     std::vector<cluster::non_replicable_topic> todos;
     for (auto& topic : topics) {
         auto [itr, success] = _topics.try_emplace(
-          topic.name, std::vector<ss::promise<>>());
+          topic.name, std::vector<ss::promise<cluster::topic_result>>());
         if (!success) {
-            itr->second.emplace_back();
+            itr->second.push_back(ss::promise<cluster::topic_result>());
             all.emplace_back(itr->second.back().get_future());
         } else {
             todos.emplace_back(std::move(topic));
         }
     }
     if (!todos.empty()) {
-        auto f = _topics_frontend.local()
-                   .create_non_replicable_topics(todos, timeout)
-                   .then(
-                     [this](const std::vector<cluster::topic_result>& result) {
-                         topic_creation_resolved(result);
-                     })
-                   .handle_exception_type([this, todos = std::move(todos)](
-                                            const std::exception& ex) {
-                       topic_creation_exception(todos, ex);
-                   });
-        all.emplace_back(std::move(f));
+        co_await _topics_frontend.local()
+          .create_non_replicable_topics(todos, timeout)
+          .then([this](const std::vector<cluster::topic_result>& result) {
+              topic_creation_resolved(result);
+          })
+          .handle_exception_type(
+            [this, todos = std::move(todos)](const std::exception& ex) {
+                topic_creation_exception(todos, ex);
+            });
     }
-    return ss::when_all_succeed(all.begin(), all.end());
+    co_return co_await ss::when_all_succeed(all.begin(), all.end());
 }
 } // namespace cluster
