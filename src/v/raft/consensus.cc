@@ -1196,8 +1196,16 @@ consensus::write_voted_for(consensus::voted_for_configuration config) {
 }
 
 ss::future<> consensus::write_last_applied(model::offset o) {
+    /**
+     * it is possible that the offset is applied to the state machine before it
+     * is flushed on the leader disk. This may lead to situations in which last
+     * applied offset stored by a state machine is not readable.
+     * In order to keep an invariant that: 'last applied offset MUST be
+     * readable' we limit it here to committed (leader flushed) offset.
+     */
+    auto const limited_offset = std::min(o, _log.offsets().committed_offset);
     auto key = last_applied_key();
-    iobuf val = reflection::to_iobuf(o);
+    iobuf val = reflection::to_iobuf(limited_offset);
     return _storage.kvs().put(
       storage::kvstore::key_space::consensus, std::move(key), std::move(val));
 }
