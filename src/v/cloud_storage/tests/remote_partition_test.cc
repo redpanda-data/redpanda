@@ -847,3 +847,73 @@ FIXTURE_TEST(
     }
     BOOST_REQUIRE_EQUAL(headers_read.size(), num_data_batches);
 }
+
+/// Similar to prev function but scans the range of offsets instead of
+/// returning a single one
+static std::vector<model::record_batch_header>
+scan_remote_partition_incrementally(
+  cloud_storage_fixture& imposter, model::offset base, model::offset max) {
+    auto conf = imposter.get_configuration();
+    static auto bucket = s3::bucket_name("bucket");
+    remote api(s3_connection_limit(10), conf);
+    auto action = ss::defer([&api] { api.stop().get(); });
+    auto m = ss::make_lw_shared<cloud_storage::manifest>(
+      manifest_ntp, manifest_revision);
+
+    auto manifest = hydrate_manifest(api, bucket);
+
+    auto partition = ss::make_lw_shared<remote_partition>(
+      manifest, api, *imposter.cache, bucket);
+
+    std::vector<model::record_batch_header> headers;
+
+    storage::log_reader_config reader_config(
+      base, max, ss::default_priority_class());
+    reader_config.max_bytes = 4_KiB;
+
+    auto next = base;
+
+    int num_fetches = 0;
+    while (next < max) {
+        reader_config.start_offset = next;
+        auto reader = partition->make_reader(reader_config).get();
+        auto headers_read
+          = reader.consume(test_consumer(), model::no_timeout).get();
+        if (headers_read.empty()) {
+            break;
+        }
+        next = headers_read.back().last_offset() + model::offset(1);
+        std::copy(
+          headers_read.begin(),
+          headers_read.end(),
+          std::back_inserter(headers));
+        num_fetches++;
+    }
+    BOOST_REQUIRE(num_fetches != 1);
+    partition->stop().get();
+    vlog(test_log.info, "{} fetch operations performed", num_fetches);
+    return headers;
+}
+
+FIXTURE_TEST(
+  test_remote_partition_scan_incrementally_random, cloud_storage_fixture) {
+    constexpr int num_segments = 1000;
+    const auto [batch_types, num_data_batches] = generate_segment_layout(
+      num_segments, 42);
+    auto segments = setup_s3_imposter(*this, batch_types);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments - 1].max_offset;
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+    auto headers_read = scan_remote_partition_incrementally(*this, base, max);
+    model::offset expected_offset{0};
+    for (const auto& header : headers_read) {
+        vlog(
+          test_log.debug,
+          "Expected offset {}, actual header {}",
+          expected_offset,
+          header);
+        BOOST_REQUIRE_EQUAL(expected_offset, header.base_offset);
+        expected_offset = header.last_offset() + model::offset(1);
+    }
+    BOOST_REQUIRE_EQUAL(headers_read.size(), num_data_batches);
+}
