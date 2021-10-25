@@ -22,6 +22,7 @@ struct record_batch_spec {
     model::offset offset{0};
     bool allow_compression{true};
     int count{0};
+    std::optional<int> records{std::nullopt};
     model::record_batch_type bt{model::record_batch_type::raft_data};
     bool enable_idempotence{false};
     int64_t producer_id{0};

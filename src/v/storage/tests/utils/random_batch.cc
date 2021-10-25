@@ -188,7 +188,7 @@ make_random_batches(record_batch_spec spec) {
     model::offset o = spec.offset;
     int32_t base_sequence = spec.base_sequence;
     for (int i = 0; i < spec.count; i++) {
-        auto num_records = get_int(2, 30);
+        auto num_records = spec.records ? *spec.records : get_int(2, 30);
         auto batch_spec = spec;
         batch_spec.offset = o;
         batch_spec.count = num_records;
