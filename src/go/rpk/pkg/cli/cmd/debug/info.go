@@ -26,15 +26,6 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system"
 )
 
-type metricsResult struct {
-	metrics *system.Metrics
-}
-
-type kafkaInfo struct {
-	partitions *int
-	topics     *int
-}
-
 func NewInfoCommand(fs afero.Fs) *cobra.Command {
 	var (
 		configFile string

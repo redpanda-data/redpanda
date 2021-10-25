@@ -30,10 +30,8 @@ import (
 )
 
 var (
-	registry          = "docker.io"
 	tag               = "latest"
 	redpandaImageBase = "vectorized/redpanda:" + tag
-	redpandaImage     = registry + "/" + redpandaImageBase
 )
 
 const (

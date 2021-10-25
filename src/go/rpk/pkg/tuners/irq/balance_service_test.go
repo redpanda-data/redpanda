@@ -249,8 +249,6 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 }
 
 func Test_balanceService_GetBannedIRQs(t *testing.T) {
-	type fields struct {
-	}
 	tests := []struct {
 		name   string
 		before func(afero.Fs)
@@ -305,8 +303,6 @@ func Test_balanceService_GetBannedIRQs(t *testing.T) {
 }
 
 func TestAreIRQsStaticallyAssigned(t *testing.T) {
-	type args struct {
-	}
 	tests := []struct {
 		name           string
 		irqs           []int

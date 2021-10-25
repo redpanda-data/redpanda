@@ -53,14 +53,6 @@ func sysConfDirectory() ([]string, error) {
 	return []string{"/etc/redpanda"}, nil
 }
 
-func getCurrentDirectory() (string, error) {
-	path, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	return path, nil
-}
-
 func currentDirectory() ([]string, error) {
 	currentDir, err := os.Getwd()
 	if err != nil {

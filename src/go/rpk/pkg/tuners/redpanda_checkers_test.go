@@ -55,51 +55,6 @@ func setUpCgroup(fs afero.Fs, file, val string, v2 bool) error {
 	return afero.WriteFile(fs, fullPath, []byte(val), 0644)
 }
 
-func setUpCgroupsV1(fs afero.Fs, file, val string) error {
-	if err := fs.MkdirAll("/proc/self/", 0755); err != nil {
-		return err
-	}
-	err := afero.WriteFile(
-		fs,
-		"/proc/self/cgroup",
-		[]byte(`2:cpu,cpuacct:/user.slice
-1:name=systemd:/user.slice/user-1.slice/user@1.service
-`),
-		0644,
-	)
-	if err != nil {
-		return err
-	}
-	fullPath := "/sys/fs/cgroup" + file
-	dir := filepath.Dir(fullPath)
-	if err = fs.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-	return afero.WriteFile(fs, fullPath, []byte(val), 0644)
-}
-
-func setUpCgroupsV2(fs afero.Fs, file, val string) error {
-	cgroup := filepath.Dir(file)
-	fullPath := "/sys/fs/cgroup" + file
-	dir := filepath.Dir(fullPath)
-	if err := fs.MkdirAll("/proc/self/", 0755); err != nil {
-		return err
-	}
-	err := afero.WriteFile(
-		fs,
-		"/proc/self/cgroup",
-		[]byte("0::"+cgroup),
-		0644,
-	)
-	if err != nil {
-		return err
-	}
-	if err = fs.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-	return afero.WriteFile(fs, fullPath, []byte(val), 0644)
-}
-
 func TestNtpCheckTimeout(t *testing.T) {
 	timeout := time.Duration(0)
 	check := tuners.NewNTPSyncChecker(timeout, afero.NewMemMapFs())
