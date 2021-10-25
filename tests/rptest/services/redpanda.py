@@ -35,6 +35,18 @@ Partition = collections.namedtuple('Partition',
                                    ['index', 'leader', 'replicas'])
 
 
+def one_or_many(value):
+    """
+    Helper for reading `one_or_many_property` configs when
+    they are expected to hold a single value.
+    """
+    if isinstance(value, list):
+        assert len(value) == 1
+        return value[0]
+    else:
+        return value
+
+
 class RedpandaService(Service):
     PERSISTENT_ROOT = "/var/lib/redpanda"
     DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
@@ -451,7 +463,7 @@ class RedpandaService(Service):
     def broker_address(self, node):
         assert node in self._started
         cfg = self.read_configuration(node)
-        return f"{node.account.hostname}:{cfg['redpanda']['kafka_api']['port']}"
+        return f"{node.account.hostname}:{one_or_many(cfg['redpanda']['kafka_api'])['port']}"
 
     def brokers(self, limit=None):
         return ",".join(self.brokers_list(limit))
