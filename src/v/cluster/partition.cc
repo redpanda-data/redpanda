@@ -28,7 +28,8 @@ static bool is_tx_manager_topic(const model::ntp& ntp) {
 
 partition::partition(
   consensus_ptr r,
-  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend)
+  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
+  ss::sharded<cloud_storage::remote>& cloud_storage_api)
   : _raft(r)
   , _probe(std::make_unique<replicated_partition_probe>(*this))
   , _tx_gateway_frontend(tx_gateway_frontend)
@@ -69,6 +70,17 @@ partition::partition(
             _rm_stm = ss::make_shared<cluster::rm_stm>(
               clusterlog, _raft.get(), _tx_gateway_frontend);
             stm_manager->add_stm(_rm_stm);
+        }
+
+        // TODO: check topic config if archival is enabled for this topic
+        if (
+          config::shard_local_cfg().cloud_storage_enabled()
+          && cloud_storage_api.local_is_initialized()
+          && _raft->ntp().ns == model::kafka_namespace) {
+            _archival_meta_stm
+              = ss::make_shared<cluster::archival_metadata_stm>(
+                _raft.get(), cloud_storage_api.local(), clusterlog);
+            stm_manager->add_stm(_archival_meta_stm);
         }
     }
 }
@@ -287,6 +299,10 @@ ss::future<> partition::start() {
         f = f.then([this] { return _tm_stm->start(); });
     }
 
+    if (_archival_meta_stm) {
+        f = f.then([this] { return _archival_meta_stm->start(); });
+    }
+
     return f;
 }
 
@@ -309,6 +325,10 @@ ss::future<> partition::stop() {
 
     if (_tm_stm) {
         f = f.then([this] { return _tm_stm->stop(); });
+    }
+
+    if (_archival_meta_stm) {
+        f = f.then([this] { return _archival_meta_stm->stop(); });
     }
 
     // no state machine

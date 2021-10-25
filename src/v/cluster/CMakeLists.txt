@@ -31,6 +31,7 @@ rpcgen(
 v_cc_library(
   NAME cluster
   SRCS
+    archival_metadata_stm.cc
     metadata_cache.cc
     partition_manager.cc
     scheduling/partition_allocator.cc
@@ -89,5 +90,6 @@ v_cc_library(
     absl::flat_hash_map
     v::model
     v::v8_engine
+    v::cloud_storage
   )
 add_subdirectory(tests)
