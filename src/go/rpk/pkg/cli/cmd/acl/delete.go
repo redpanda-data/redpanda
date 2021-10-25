@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
@@ -88,6 +89,9 @@ func deleteReqResp(
 	req.Filters = deletions
 	resp, err := req.RequestWith(context.Background(), cl)
 	out.MaybeDie(err, "unable to issue ACL deletion request: %v", err)
+	if len(resp.Results) != len(deletions) {
+		out.Die("received %d filter results to %d filter requests", len(resp.Results), len(deletions))
+	}
 
 	// If any filters failed, or if all filters are requested, we print the
 	// filter section.
@@ -105,7 +109,7 @@ func deleteReqResp(
 		fmt.Println("matches")
 	}
 
-	printDeleteResults(resp.Results)
+	printDeleteResults(deletions, resp.Results)
 }
 
 func printDeleteFilters(
@@ -131,10 +135,37 @@ func printDeleteFilters(
 	}
 }
 
-func printDeleteResults(results []kmsg.DeleteACLsResponseResult) {
+func printDeleteResults(
+	deletions []kmsg.DeleteACLsRequestFilter,
+	results []kmsg.DeleteACLsResponseResult,
+) {
 	tw := out.NewTable(headersWithError...)
 	defer tw.Flush()
-	for _, r := range results {
+	for i, r := range results {
+		if err := kerr.TypedErrorForCode(r.ErrorCode); err != nil {
+			d := deletions[i]
+			var principal, host, resource string
+			if d.Principal != nil {
+				principal = *d.Principal
+			}
+			if d.Host != nil {
+				host = *d.Host
+			}
+			if d.ResourceName != nil {
+				resource = *d.ResourceName
+			}
+			tw.PrintStructFields(aclWithMessage{
+				principal,
+				host,
+				d.ResourceType,
+				resource,
+				d.ResourcePatternType,
+				d.Operation,
+				d.PermissionType,
+				err.Message,
+			})
+			continue
+		}
 		for _, m := range r.MatchingACLs {
 			tw.PrintStructFields(aclWithMessage{
 				m.Principal,
@@ -144,7 +175,7 @@ func printDeleteResults(results []kmsg.DeleteACLsResponseResult) {
 				m.ResourcePatternType,
 				m.Operation,
 				m.PermissionType,
-				kafka.MaybeErrMessage(r.ErrorCode),
+				kafka.MaybeErrMessage(m.ErrorCode),
 			})
 		}
 	}
