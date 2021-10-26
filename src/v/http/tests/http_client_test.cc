@@ -827,7 +827,8 @@ SEASTAR_THREAD_TEST_CASE(test_http_cancel_reconnect) {
     auto config = transport_configuration();
     ss::abort_source as;
     http::client client(config, as);
-    auto fut = client.get_connected(10s);
+    auto fut = client.get_connected(
+      10s, prefix_logger(http::http_log, "test-url"));
     ss::sleep(10ms).get();
     BOOST_REQUIRE(fut.failed() == false);
     BOOST_REQUIRE(fut.available() == false);
@@ -839,7 +840,8 @@ SEASTAR_THREAD_TEST_CASE(test_http_reconnect_graceful_shutdown) {
     auto config = transport_configuration();
     ss::abort_source as;
     http::client client(config, as);
-    auto fut = client.get_connected(10s);
+    auto fut = client.get_connected(
+      10s, prefix_logger(http::http_log, "test-url"));
     ss::sleep(10ms).get();
     BOOST_REQUIRE(fut.failed() == false);
     BOOST_REQUIRE(fut.available() == false);
