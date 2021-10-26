@@ -8,8 +8,7 @@
 # by the Apache License, Version 2.0
 
 import subprocess
-import tempfile
-import time
+import socket
 import re
 
 DEFAULT_TIMEOUT = 30
@@ -181,6 +180,12 @@ class RpkTool:
         output = self._execute(cmd, stdin=None, timeout=timeout)
         parsed = map(_parse_out, output.splitlines())
         return [p for p in parsed if p is not None]
+
+    def admin_config_print(self, node):
+        return self._execute([
+            self._rpk_binary(), "redpanda", "admin", "config", "print",
+            "--host", f"{node.account.hostname}:9644"
+        ])
 
     def _execute(self, cmd, stdin=None, timeout=None):
         if timeout is None:

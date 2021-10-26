@@ -19,19 +19,25 @@ ENV TZ="UTC" \
 
 # - install openssh, jvm and kafka cli tools
 # - allow user env variables in ssh sessions
+# - install dependencies of 'rpk debug' system scan
 RUN apt update && \
     apt install -y \
+      bind9-utils \
+      bind9-dnsutils \
       build-essential \
       curl \
       default-jdk \
+      dmidecode \
       cmake \
       git \
+      iproute2 \
       iptables \
       libatomic1 \
       libyajl-dev \
       libsasl2-dev \
       libssl-dev \
       maven \
+      pciutils \
       nodejs \
       npm \
       openssh-server \
@@ -92,6 +98,7 @@ RUN mvn clean package --batch-mode --file /tmp/java/kafka-verifier --define buil
 
 # copy ssh keys
 COPY --chown=0:0 tests/docker/ssh /root/.ssh
+
 
 # install python dependencies and rptest package.
 # rptest package installed in editable mode so it can be overridden.
