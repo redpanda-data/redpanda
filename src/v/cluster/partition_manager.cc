@@ -70,7 +70,7 @@ ss::future<consensus_ptr> partition_manager::manage(
       });
 }
 
-ss::future<> partition_manager::stop() {
+ss::future<> partition_manager::stop_partitions() {
     return ss::parallel_for_each(
       _ntp_table, [](auto& p) { return p.second->stop(); });
 }
