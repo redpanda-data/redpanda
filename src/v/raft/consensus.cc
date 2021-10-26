@@ -1742,12 +1742,7 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
         update_follower_stats(metadata.latest_configuration);
         return _configuration_manager
           .add(_last_snapshot_index, std::move(metadata.latest_configuration))
-          .then([this] {
-              // TODO: save and load start delta from snapshot into
-              // _offset_translator
-
-              auto delta = _configuration_manager.offset_delta(
-                details::next_offset(_last_snapshot_index));
+          .then([this, delta = metadata.log_start_delta] {
               return _offset_translator->prefix_truncate_reset(
                 _last_snapshot_index, delta);
           })
@@ -1918,6 +1913,8 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
       .last_included_term = last_included_term.value(),
       .latest_configuration = *config,
       .cluster_time = clock_type::time_point::min(),
+      .log_start_delta = offset_translator_delta(
+        _offset_translator->delta(details::next_offset(last_included_index))),
     };
 
     return details::persist_snapshot(

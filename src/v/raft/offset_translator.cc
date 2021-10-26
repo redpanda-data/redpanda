@@ -518,6 +518,17 @@ offset_translator::prefix_truncate_reset(model::offset offset, int64_t delta) {
         co_return;
     }
 
+    vassert(
+      delta >= 0,
+      "not enough state to recover offset translator. Requested to reset "
+      "at offset {}. Translator highest_known offset {}, last delta: {}, base "
+      "offset: {}, base delta: {}",
+      offset,
+      _highest_known_offset,
+      _last_offset2batch.begin()->second.base_offset,
+      _last_offset2batch.begin()->second.next_delta,
+      _last_offset2batch.rbegin()->second.next_delta);
+
     _last_offset2batch.clear();
     _last_offset2batch.emplace(
       offset, batch_info{.base_offset = offset, .next_delta = delta});
