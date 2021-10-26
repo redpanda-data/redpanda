@@ -152,15 +152,14 @@ FIXTURE_TEST(test_copro_auto_deregister_function, coproc_test_fixture) {
     }
     ss::when_all_succeed(fs.begin(), fs.end()).get();
 
-    /// Assert that the coproc does not exist in memory
-    auto n_registered = root_fixture()
-                          ->app.coprocessing->get_pacemaker()
-                          .map_reduce0(
-                            [id](coproc::pacemaker& p) {
-                                return p.local_script_id_exists(id);
-                            },
-                            false,
-                            std::logical_or<>())
-                          .get();
-    BOOST_CHECK_EQUAL(n_registered, false);
+    /// Wait a max of 5s to observe that copro with id 497563 has been
+    /// deregistered, throws ss::timed_on_error on failure
+    tests::cooperative_spin_wait_with_timeout(5s, [this, id] {
+        /// Assert that the coproc does not exist in memory
+        auto map = [id](coproc::pacemaker& p) {
+            return !p.local_script_id_exists(id);
+        };
+        return root_fixture()->app.coprocessing->get_pacemaker().map_reduce0(
+          std::move(map), true, std::logical_and<>());
+    }).get();
 }
