@@ -306,4 +306,6 @@ class NodeOperationFuzzyTest(EndToEndTest):
                            backoff_sec=2)
 
         enable_failures = False
-        self.run_validation(enable_idempotence=False, consumer_timeout_sec=180)
+        self.run_validation(enable_idempotence=False,
+                            producer_timeout_sec=60,
+                            consumer_timeout_sec=180)
