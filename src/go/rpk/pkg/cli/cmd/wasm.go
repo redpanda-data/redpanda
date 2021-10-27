@@ -32,7 +32,7 @@ func NewWasmCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 
 	command := &cobra.Command{
 		Use:   "wasm",
-		Short: "Deploy and remove inline WASM engine scripts",
+		Short: "Deploy and remove inline WASM engine scripts.",
 	}
 	common.AddKafkaFlags(
 		command,

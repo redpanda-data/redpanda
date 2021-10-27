@@ -35,7 +35,7 @@ func newPrintCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "print",
 		Aliases: []string{"dump", "list", "ls", "display"},
-		Short:   "Display the current Redpanda configuration",
+		Short:   "Display the current Redpanda configuration.",
 		Args:    cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
 			p := config.ParamsFromCommand(cmd)

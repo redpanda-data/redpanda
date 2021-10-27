@@ -136,7 +136,7 @@ func NewStartCommand(
 
 	command := &cobra.Command{
 		Use:   "start",
-		Short: "Start redpanda",
+		Short: "Start redpanda.",
 		FParseErrWhitelist: cobra.FParseErrWhitelist{
 			// Allow unknown flags so that arbitrary flags can be passed
 			// through to redpanda/seastar without the need to pass '--'
@@ -368,7 +368,7 @@ func NewStartCommand(
 		configFlag,
 		"",
 		"Redpanda config file, if not set the file will be searched for"+
-			" in the default locations",
+			" in the default locations.",
 	)
 	command.Flags().IntVar(
 		&nodeID,

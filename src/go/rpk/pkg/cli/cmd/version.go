@@ -19,7 +19,7 @@ import (
 func NewVersionCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:          "version",
-		Short:        "Check the current version",
+		Short:        "Check the current version.",
 		Long:         "",
 		SilenceUsage: true,
 		Run: func(_ *cobra.Command, _ []string) {

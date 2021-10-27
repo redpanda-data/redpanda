@@ -35,7 +35,7 @@ func NewACLCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	)
 	command := &cobra.Command{
 		Use:          "acl",
-		Short:        "Manage ACLs",
+		Short:        "Manage ACLs.",
 		SilenceUsage: true,
 	}
 

@@ -30,7 +30,7 @@ func NewListCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls", "describe"},
-		Short:   "List ACLs",
+		Short:   "List ACLs.",
 		Args:    cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
 			p := config.ParamsFromCommand(cmd)

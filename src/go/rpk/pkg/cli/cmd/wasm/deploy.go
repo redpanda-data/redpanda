@@ -19,7 +19,7 @@ func NewDeployCommand(fs afero.Fs) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "deploy [PATH]",
-		Short: "deploy inline WASM function",
+		Short: "Deploy inline WASM function.",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			p := config.ParamsFromCommand(cmd)

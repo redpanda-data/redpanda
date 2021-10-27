@@ -15,7 +15,7 @@ func NewRemoveCommand(fs afero.Fs) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "remove [NAME]",
-		Short: "remove inline WASM function",
+		Short: "Remove inline WASM function.",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			p := config.ParamsFromCommand(cmd)

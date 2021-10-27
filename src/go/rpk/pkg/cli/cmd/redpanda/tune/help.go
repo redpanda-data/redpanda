@@ -34,7 +34,7 @@ func NewHelpCommand() *cobra.Command {
 
 	return &cobra.Command{
 		Use:   "help <tuner>",
-		Short: "Display detailed infromation about the tuner",
+		Short: "Display detailed information about the tuner.",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return errors.New("requires the tuner name")

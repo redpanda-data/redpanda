@@ -50,7 +50,7 @@ Usage:
   rpk redpanda tune [command]
 
 Available Commands:
-  help        Display detailed infromation about the tuner
+  help        Display detailed information about the tuner
 
 Flags:
       --config string          Redpanda config file, if not set the file will be searched for in the default locations
@@ -61,7 +61,7 @@ Flags:
   -m, --mode string            Operation Mode: one of: [sq, sq_split, mq]
   -n, --nic strings            Network Interface Controllers to tune
       --output-script string   If set tuners will generate tuning file that can later be used to tune the system
-      --reboot-allowed         If set will allow tuners to tune boot paramters  and request system reboot
+      --reboot-allowed         If set will allow tuners to tune boot parameters  and request system reboot
       --timeout duration       The maximum time to wait for the tune processes to complete. The value passed is a sequence of decimal numbers, each with optional fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h' (default: 10s)
 ```
 
