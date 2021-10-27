@@ -174,11 +174,11 @@ private:
             auto&& [reader, it] = lookup_result.value();
             _reader = std::move(reader);
             _it = it;
-            vlog(
-              cst_log.debug,
-              "record_batch_reader_impl reader initialized, starting "
-              "readahead");
-            _partition->start_readahead(_it);
+            // vlog(
+            //   cst_log.debug,
+            //   "record_batch_reader_impl reader initialized, starting "
+            //   "readahead");
+            // _partition->start_readahead(_it);
             return;
         }
         vlog(
@@ -265,8 +265,8 @@ private:
                 vlog(cst_log.debug, "initializing new segment reader");
                 _reader = _partition->borrow_reader(
                   config, _it->first, _it->second);
-                vlog(cst_log.debug, "starting readahead for the next segment");
-                _partition->start_readahead(_it);
+                // vlog(cst_log.debug, "starting readahead for the next
+                // segment"); _partition->start_readahead(_it);
             }
         }
         vlog(
@@ -407,7 +407,6 @@ void remote_partition::gc_stale_materialized_segments() {
 }
 
 model::offset remote_partition::first_uploaded_offset() {
-    vlog(_ctxlog.debug, "remote partition first_uploaded_offset");
     if (_manifest.size() == 0) {
         return model::offset(0);
     }
@@ -420,7 +419,7 @@ model::offset remote_partition::first_uploaded_offset() {
             starting_offset = std::min(
               starting_offset, get_kafka_base_offset(m.second));
             vlog(
-              _ctxlog.debug,
+              _ctxlog.trace,
               "remote partition first_uploaded_offset .. {}",
               starting_offset);
         }

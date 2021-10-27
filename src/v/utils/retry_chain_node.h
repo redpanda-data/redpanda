@@ -350,7 +350,7 @@ public:
       , _node(node)
       , _ctx(std::move(context)) {}
     template<typename... Args>
-    void log(ss::log_level lvl, const char* format, Args&&... args) {
+    void log(ss::log_level lvl, const char* format, Args&&... args) const {
         if (_log.is_enabled(lvl)) {
             auto msg = ssx::sformat(format, std::forward<Args>(args)...);
             if (_ctx) {
@@ -362,23 +362,23 @@ public:
         }
     }
     template<typename... Args>
-    void error(const char* format, Args&&... args) {
+    void error(const char* format, Args&&... args) const {
         log(ss::log_level::error, format, std::forward<Args>(args)...);
     }
     template<typename... Args>
-    void warn(const char* format, Args&&... args) {
+    void warn(const char* format, Args&&... args) const {
         log(ss::log_level::warn, format, std::forward<Args>(args)...);
     }
     template<typename... Args>
-    void info(const char* format, Args&&... args) {
+    void info(const char* format, Args&&... args) const {
         log(ss::log_level::info, format, std::forward<Args>(args)...);
     }
     template<typename... Args>
-    void debug(const char* format, Args&&... args) {
+    void debug(const char* format, Args&&... args) const {
         log(ss::log_level::debug, format, std::forward<Args>(args)...);
     }
     template<typename... Args>
-    void trace(const char* format, Args&&... args) {
+    void trace(const char* format, Args&&... args) const {
         log(ss::log_level::trace, format, std::forward<Args>(args)...);
     }
 

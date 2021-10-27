@@ -22,6 +22,8 @@
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/core/condition-variable.hh>
+#include <seastar/core/expiring_fifo.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
@@ -85,6 +87,9 @@ public:
     ss::future<std::filesystem::path> hydrate();
 
 private:
+    /// Hydrates segment in the background if there is any consumer
+    ss::future<> run_hydrate_bg();
+
     ss::gate _gate;
     remote& _api;
     cache& _cache;
@@ -94,6 +99,15 @@ private:
     retry_chain_node _rtc;
     mutable retry_chain_logger _ctxlog;
     ss::abort_source _as;
+    /// Notifies the background hydration fiber
+    ss::condition_variable _bg_cvar;
+
+    using expiry_handler
+      = std::function<void(ss::promise<std::filesystem::path>&)>;
+
+    /// List of fibers that wait for the segment to be hydrated
+    ss::expiring_fifo<ss::promise<std::filesystem::path>, expiry_handler>
+      _wait_list;
 };
 
 struct log_reader_config : public storage::log_reader_config {
