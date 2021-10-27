@@ -319,13 +319,33 @@ func (r *ConfigMapResource) createConfiguration(
 
 	// Add arbitrary parameters to configuration
 	for k, v := range r.pandaCluster.Spec.AdditionalConfiguration {
-		err = mgr.Set(k, v, "single")
-		if err != nil {
-			return nil, err
+		if buildInType(v) {
+			err = mgr.Set(k, v, "single")
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			err = mgr.Set(k, v, "")
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
 	return mgr.Get()
+}
+
+func buildInType(value string) bool {
+	if _, err := strconv.Atoi(value); err == nil {
+		return true
+	}
+	if _, err := strconv.ParseFloat(value, 64); err == nil {
+		return true
+	}
+	if _, err := strconv.ParseBool(value); err == nil {
+		return true
+	}
+	return false
 }
 
 // calculateExternalPort can calculate external Kafka API port based on the internal Kafka API port
