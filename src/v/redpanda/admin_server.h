@@ -17,6 +17,7 @@
 
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/http/exception.hh>
 #include <seastar/http/file_handler.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/util/log.hh>
@@ -79,6 +80,13 @@ private:
     void register_broker_routes();
     void register_partition_routes();
     void register_hbadger_routes();
+
+    ss::future<> throw_on_error(
+      ss::httpd::request& req,
+      std::error_code ec,
+      model::node_id id = model::node_id{-1}) const;
+    ss::future<ss::httpd::redirect_exception>
+    redirect_to_leader(ss::httpd::request& req) const;
 
     struct level_reset {
         using time_point = ss::timer<>::clock::time_point;

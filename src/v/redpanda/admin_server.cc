@@ -47,7 +47,6 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/http/api_docs.hh>
-#include <seastar/http/exception.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/http/json_path.hh>
 
@@ -213,6 +212,43 @@ void admin_server::log_level_timer_handler() {
     rearm_log_level_timer();
 }
 
+ss::future<ss::httpd::redirect_exception>
+admin_server::redirect_to_leader(ss::httpd::request& req) const {
+    auto leader_id_opt = _metadata_cache.local().get_leader_id(
+      model::controller_ntp);
+
+    if (!leader_id_opt.has_value()) {
+        throw ss::httpd::base_exception(
+          fmt::format("Controller leader not available"),
+          ss::httpd::reply::status_type::service_unavailable);
+    }
+    auto leader_opt = _metadata_cache.local().get_broker(leader_id_opt.value());
+
+    if (!leader_opt.has_value()) {
+        throw ss::httpd::base_exception(
+          fmt::format("Controller leader metadata not available"),
+          ss::httpd::reply::status_type::service_unavailable);
+    }
+
+    // FIXME: We assume that our peers are listening on the same admin port as
+    // we are.
+    auto port = config::node_config().admin()[0].address.port();
+
+    // FIXME: We assume that our peer is listening on the same network interface
+    // as they use for RPCs.
+    auto url = fmt::format(
+      "{}://{}:{}{}",
+      req.get_protocol_name(),
+      leader_opt.value()->rpc_address().host(),
+      port,
+      req._url);
+
+    vlog(logger.info, "Redirecting admin API call to leader at {}", url);
+
+    co_return ss::httpd::redirect_exception(
+      url, ss::httpd::reply::status_type::temporary_redirect);
+}
+
 /**
  * Throw an appropriate seastar HTTP exception if we saw
  * a redpanda error during a request.
@@ -221,10 +257,10 @@ void admin_server::log_level_timer_handler() {
  * @param id optional node ID, for operations that acted on a particular
  *           node and would like it referenced in per-node cluster errors
  */
-void throw_on_error(
-  std::error_code ec, model::node_id id = model::node_id{-1}) {
+ss::future<> admin_server::throw_on_error(
+  ss::httpd::request& req, std::error_code ec, model::node_id id) const {
     if (!ec) {
-        return;
+        co_return;
     }
 
     if (ec.category() == cluster::error_category()) {
@@ -242,6 +278,9 @@ void throw_on_error(
             throw ss::httpd::base_exception(
               fmt::format("Not ready ({})", ec.message()),
               ss::httpd::reply::status_type::service_unavailable);
+        case cluster::errc::not_leader:
+        case cluster::errc::not_leader_controller:
+            throw co_await redirect_to_leader(req);
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected cluster error: {}", ec.message()));
@@ -255,6 +294,8 @@ void throw_on_error(
             throw ss::httpd::base_exception(
               fmt::format("Not ready: {}", ec.message()),
               ss::httpd::reply::status_type::service_unavailable);
+        case raft::errc::not_leader:
+            throw co_await redirect_to_leader(req);
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected raft error: {}", ec.message()));
@@ -417,15 +458,19 @@ void admin_server::register_raft_routes() {
           auto shard = _shard_table.local().shard_for(group_id);
 
           return _partition_manager.invoke_on(
-            shard, [group_id, target](cluster::partition_manager& pm) mutable {
+            shard,
+            [group_id, target, this, req = std::move(req)](
+              cluster::partition_manager& pm) mutable {
                 auto consensus = pm.consensus_for(group_id);
                 if (!consensus) {
                     throw ss::httpd::not_found_exception();
                 }
                 return consensus->do_transfer_leadership(target).then(
-                  [](std::error_code err) {
-                      throw_on_error(err);
-                      return ss::json::json_return_type(ss::json::json_void());
+                  [this, req = std::move(req)](std::error_code err)
+                    -> ss::future<ss::json::json_return_type> {
+                      co_await throw_on_error(*req, err);
+                      co_return ss::json::json_return_type(
+                        ss::json::json_void());
                   });
             });
       });
@@ -471,7 +516,9 @@ parse_scram_credential(const rapidjson::Document& doc) {
 
 void admin_server::register_security_routes() {
     ss::httpd::security_json::create_user.set(
-      _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+      _server._routes,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
           rapidjson::Document doc;
           doc.Parse(req->content.data());
 
@@ -485,18 +532,12 @@ void admin_server::register_security_routes() {
           auto username = security::credential_user(
             doc["username"].GetString());
 
-          return _controller->get_security_frontend()
-            .local()
-            .create_user(username, credential, model::timeout_clock::now() + 5s)
-            .then([](std::error_code err) {
-                vlog(logger.debug, "Creating user {}:{}", err, err.message());
-                if (err) {
-                    throw ss::httpd::bad_request_exception(
-                      fmt::format("Creating user: {}", err.message()));
-                }
-                return ss::make_ready_future<ss::json::json_return_type>(
-                  ss::json::json_return_type(ss::json::json_void()));
-            });
+          auto err
+            = co_await _controller->get_security_frontend().local().create_user(
+              username, credential, model::timeout_clock::now() + 5s);
+          vlog(logger.debug, "Creating user {}:{}", err, err.message());
+          co_await throw_on_error(*req, err);
+          co_return ss::json::json_return_type(ss::json::json_void());
       });
 
     ss::httpd::security_json::delete_user.set(
@@ -608,16 +649,18 @@ void admin_server::register_kafka_routes() {
 
           return _partition_manager.invoke_on(
             *shard,
-            [ntp = std::move(ntp),
-             target](cluster::partition_manager& pm) mutable {
+            [ntp = std::move(ntp), target, this, req = std::move(req)](
+              cluster::partition_manager& pm) mutable {
                 auto partition = pm.get(ntp);
                 if (!partition) {
                     throw ss::httpd::not_found_exception();
                 }
                 return partition->transfer_leadership(target).then(
-                  [](std::error_code err) {
-                      throw_on_error(err);
-                      return ss::json::json_return_type(ss::json::json_void());
+                  [this, req = std::move(req)](std::error_code err)
+                    -> ss::future<ss::json::json_return_type> {
+                      co_await throw_on_error(*req, err);
+                      co_return ss::json::json_return_type(
+                        ss::json::json_void());
                   });
             });
       });
@@ -674,32 +717,29 @@ void admin_server::register_broker_routes() {
       });
 
     ss::httpd::broker_json::decommission.set(
-      _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+      _server._routes,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
           model::node_id id = parse_broker_id(*req);
 
-          return _controller->get_members_frontend()
-            .local()
-            .decommission_node(id)
-            .then([id](std::error_code ec) {
-                throw_on_error(ec, id);
+          auto ec = co_await _controller->get_members_frontend()
+                      .local()
+                      .decommission_node(id);
 
-                return ss::make_ready_future<ss::json::json_return_type>(
-                  ss::json::json_void());
-            });
+          co_await throw_on_error(*req, ec, id);
+          co_return ss::json::json_void();
       });
     ss::httpd::broker_json::recommission.set(
-      _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+      _server._routes,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
           model::node_id id = parse_broker_id(*req);
 
-          return _controller->get_members_frontend()
-            .local()
-            .recommission_node(id)
-            .then([id](std::error_code ec) {
-                throw_on_error(ec, id);
-
-                return ss::make_ready_future<ss::json::json_return_type>(
-                  ss::json::json_void());
-            });
+          auto ec = co_await _controller->get_members_frontend()
+                      .local()
+                      .recommission_node(id);
+          co_await throw_on_error(*req, ec, id);
+          co_return ss::json::json_void();
       });
 }
 
