@@ -81,6 +81,22 @@ function generateRpcHeader(
     rpc.headerChecksum = createCrc32(auxHeader.slice(0, 26), 5, 26)
     RpcHeader.toBytes(rpc, reserve);
 }
+
+function writeToSocketWithCheck(
+  buffer: IOBuf,
+  socket: Socket){
+    try {
+      buffer.forEach((fragment =>
+        socket.write(fragment.buffer.slice(0, fragment.used))
+      ));
+    }
+    catch(e) {
+      console.log('Fail write to socket: ', e);
+      socket.destroy();
+      socket.emit("close", true);
+    }
+}
+
 /**
  * it adds listener for "data" event, when this listener is fired the data
  * buffer is going to pass to readBufferRequest, in this case, that buffer
@@ -216,9 +232,7 @@ export class {{service_name.title()}}Server {
                 200,
                 rpcHeader.correlationId
               )
-              buffer.forEach((fragment =>
-                  socket.write(fragment.buffer.slice(0, fragment.used))
-              ));
+              writeToSocketWithCheck(buffer, socket);
           })
         break;
       }
@@ -233,9 +247,7 @@ export class {{service_name.title()}}Server {
           404,
           rpcHeader.correlationId
         );
-        buffer.forEach((fragment =>
-          socket.write(fragment.buffer.slice(0, fragment.used))
-        ));
+        writeToSocketWithCheck(buffer, socket);
       }
     }
   }
