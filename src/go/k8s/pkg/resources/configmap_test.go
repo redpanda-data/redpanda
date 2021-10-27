@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -16,22 +17,48 @@ import (
 )
 
 func TestEnsureConfigMap(t *testing.T) {
-	panda := pandaCluster().DeepCopy()
-	panda.Spec.AdditionalConfiguration = map[string]string{"redpanda.transactional_id_expiration_ms": "25920000000"}
-	c := fake.NewClientBuilder().Build()
-	cfgRes := resources.NewConfigMap(
-		c,
-		panda,
-		scheme.Scheme,
-		"cluster.local",
-		types.NamespacedName{Name: "test", Namespace: "test"},
-		types.NamespacedName{Name: "test", Namespace: "test"},
-		ctrl.Log.WithName("test"))
-	require.NoError(t, cfgRes.Ensure(context.TODO()))
+	require.NoError(t, redpandav1alpha1.AddToScheme(scheme.Scheme))
 
-	actual := &v1.ConfigMap{}
-	err := c.Get(context.Background(), cfgRes.Key(), actual)
-	require.NoError(t, err)
-	data := actual.Data["redpanda.yaml"]
-	require.True(t, strings.Contains(data, "transactional_id_expiration_ms: 25920000000"), fmt.Sprintf("expecting transactional_id_expiration_ms: 25920000000 but got %v", data))
+	testcases := []struct {
+		name                    string
+		additionalConfiguration map[string]string
+		expectedString          string
+	}{
+		{
+			name:                    "Primitive object in additional configuration",
+			additionalConfiguration: map[string]string{"redpanda.transactional_id_expiration_ms": "25920000000"},
+			expectedString:          "transactional_id_expiration_ms: 25920000000",
+		},
+		{
+			name:                    "Complex struct in additional configuration",
+			additionalConfiguration: map[string]string{"schema_registry.schema_registry_api": "[{'name':'external','address':'0.0.0.0','port':8081}]}"},
+			expectedString: `schema_registry:
+    schema_registry_api:
+        - address: 0.0.0.0
+          port: 8081
+          name: external`,
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			panda := pandaCluster().DeepCopy()
+			panda.Spec.AdditionalConfiguration = tc.additionalConfiguration
+			c := fake.NewClientBuilder().Build()
+			cfgRes := resources.NewConfigMap(
+				c,
+				panda,
+				scheme.Scheme,
+				"cluster.local",
+				types.NamespacedName{Name: "test", Namespace: "test"},
+				types.NamespacedName{Name: "test", Namespace: "test"},
+				ctrl.Log.WithName("test"))
+			require.NoError(t, cfgRes.Ensure(context.TODO()))
+
+			actual := &v1.ConfigMap{}
+			err := c.Get(context.Background(), cfgRes.Key(), actual)
+			require.NoError(t, err)
+			data := actual.Data["redpanda.yaml"]
+			require.True(t, strings.Contains(data, tc.expectedString), fmt.Sprintf("expecting %s but got %v", tc.expectedString, data))
+		})
+	}
 }
