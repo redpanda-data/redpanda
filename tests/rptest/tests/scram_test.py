@@ -87,6 +87,66 @@ class ScramTest(RedpandaTest):
                                 algorithm=algorithm)
 
     @cluster(num_nodes=3)
+    def test_redirects(self):
+        controller_id = None
+        t1 = time.time()
+        while controller_id is None:
+            node = self.redpanda.nodes[0]
+            controller_id = r = requests.get(
+                f"http://{node.account.hostname}:9644/v1/partitions/redpanda/controller/0",
+            )
+            if r.status_code != 200:
+                time.sleep(1)
+                continue
+
+            controller_id = r.json()['leader_id']
+            if controller_id == -1:
+                time.sleep(1)
+                controller_id = None
+                continue
+
+            if time.time() - t1 > 10:
+                raise RuntimeError("Timed out waiting for a leader")
+
+        leader = self.redpanda.get_node(controller_id).account.hostname
+
+        # Request to all nodes, with redirect-following disabled.  Expect success
+        # from the leader, and redirect responses from followers.
+        for i, node in enumerate(self.redpanda.nodes):
+            resp = requests.request(
+                "post",
+                f"http://{node.account.hostname}:9644/v1/security/users",
+                json={
+                    'username': f'user_a_{i}',
+                    'password': 'password',
+                    'algorithm': "SCRAM-SHA-256"
+                },
+                allow_redirects=False)
+            self.logger.info(
+                f"Response: {resp.status_code} {resp.headers} {resp.text}")
+
+            if node.account.hostname == leader:
+                assert resp.status_code == 200
+            else:
+                assert resp.status_code == 307
+
+                # Again, this time let requests follow the redirect
+                resp = requests.request(
+                    "post",
+                    f"http://{node.account.hostname}:9644/v1/security/users",
+                    json={
+                        'username': f'user_a_{i}',
+                        'password': 'password',
+                        'algorithm': "SCRAM-SHA-256"
+                    },
+                    allow_redirects=True)
+
+                self.logger.info(
+                    f"Response (via redirect): {resp.status_code} {resp.headers.get('location', None)} {resp.text} {resp.history}"
+                )
+                assert resp.status_code == 200
+
+    @cluster(num_nodes=3)
     def test_scram(self):
         topic = TopicSpec()
 
