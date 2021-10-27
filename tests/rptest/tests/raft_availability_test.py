@@ -7,18 +7,22 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import sys
 import time
-import json
 import re
+import requests
+import random
 
 from ducktape.mark.resource import cluster
+from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
-import random
+from rptest.services.rpk_producer import RpkProducer
+from rptest.services.kaf_producer import KafProducer
 
 ELECTION_TIMEOUT = 10
 
@@ -117,8 +121,10 @@ class RaftAvailabilityTest(RedpandaTest):
     """
     topics = (TopicSpec(partition_count=1, replication_factor=3), )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, test_ctx, *args, **kwargs):
+        self._ctx = test_ctx
         super(RaftAvailabilityTest, self).__init__(
+            test_ctx,
             *args,
             extra_rp_conf={
                 # Disable leader balancer to enable testing
@@ -392,3 +398,86 @@ class RaftAvailabilityTest(RedpandaTest):
             self.redpanda.start_node(initial_leader_node)
             time.sleep(ELECTION_TIMEOUT)
             assert new_leader_id == self._get_leader()[0]
+
+    @cluster(num_nodes=4)
+    @parametrize(acks=1)
+    @parametrize(acks=-1)
+    def test_leader_transfers_recovery(self, acks):
+        """
+        Validate that leadership transfers complete successfully
+        under acks=1 writes that prompt the leader to frequently
+        activate recovery_stm.
+
+        When acks=1, this is a reproducer for
+        https://github.com/vectorizedio/redpanda/issues/2580
+
+        When acks=-1, this is a reproducer rfor
+        https://github.com/vectorizedio/redpanda/issues/2606
+        """
+
+        # Redpanda lies on startup, claims there's a leader before there is one
+        # https://github.com/vectorizedio/redpanda/issues/2546
+        time.sleep(5)
+
+        leader_node_id, replicas = self._wait_for_leader()
+
+        if acks == -1:
+            producer = RpkProducer(self._ctx,
+                                   self.redpanda,
+                                   self.topic,
+                                   16384,
+                                   sys.maxsize,
+                                   acks=acks)
+        else:
+            # To reproduce acks=1 issue, we need an intermittent producer that
+            # waits long enough between messages to let recovery_stm go to sleep
+            # waiting for follower_state_change
+
+            # KafProducer is intermittent because it starts a fresh process for
+            # each message, whereas RpkProducer writes a continuous stream.
+            # TODO: create a test traffic generator that has inter-message
+            # delay as an explicit parameter, rather than relying on implementation
+            # details of the producer helpers.
+            producer = KafProducer(self._ctx, self.redpanda, self.topic)
+
+        producer.start()
+
+        # Pass leadership around in a ring
+        self.logger.info(f"Initial leader of {self.topic} is {leader_node_id}")
+
+        transfer_count = 50
+
+        # FIXME: with a transfer count >100, we tend to see
+        # reactor stalls and corresponding nondeterministic behaviour/failures.
+        # This appears unrelated to the functionality under test, something else
+        # is tripping up the cluster when we have so many leadership transfers.
+
+        initial_leader_id = leader_node_id
+        for n in range(0, transfer_count):
+            target_idx = (initial_leader_id + n) % len(self.redpanda.nodes)
+            target_node_id = target_idx + 1
+
+            api_host = self.redpanda.nodes[leader_node_id - 1].account.hostname
+
+            url = "http://{}:9644/v1/partitions/kafka/{}/{}/transfer_leadership?target={}".format(
+                api_host, self.topic, 0, target_node_id)
+            self.logger.info(f"Starting transfer to {target_node_id}")
+
+            # Leadership transfer is a blocking API endpoint, important to use a timeout
+            # to avoid a test hang if something goes hangs on the server side.
+            r = requests.post(url, timeout=30)
+            if r.status_code not in (200, 500):
+                r.raise_for_status()
+
+            self._wait_for_leader(
+                lambda l: l is not None and l == target_node_id,
+                timeout=ELECTION_TIMEOUT * 2)
+            self.logger.info(f"Completed transfer to {target_node_id}")
+            leader_node_id = target_node_id
+
+        self.logger.info(f"Completed {transfer_count} transfers successfully")
+
+        # Explicit stop of producer so that we see any errors
+        producer.stop()
+        producer.wait()
+        producer.free()

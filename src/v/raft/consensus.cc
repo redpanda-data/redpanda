@@ -124,6 +124,13 @@ void consensus::setup_metrics() {
 
 void consensus::do_step_down() {
     _hbeat = clock_type::now();
+    if (_vstate == vote_state::leader) {
+        vlog(
+          _ctxlog.info,
+          "Stepping down as leader in term {}, dirty offset {}",
+          _term,
+          _log.offsets().dirty_offset);
+    }
     _vstate = vote_state::follower;
 }
 
@@ -2416,6 +2423,100 @@ consensus::transfer_leadership(transfer_leadership_request req) {
     co_return reply;
 }
 
+/**
+ * After we have accepted the request to transfer leadership, carry out
+ * preparatory phase before we actually send a timeout_now to the new
+ * leader.  During this phase we endeavor to make sure the new leader
+ * is sufficiently up to date that they will win the election when
+ * they start it.
+ */
+ss::future<std::error_code>
+consensus::prepare_transfer_leadership(vnode target_rni) {
+    /*
+     * the follower's log needs to be up-to-date so that it will
+     * receive votes when we ask it to trigger an immediate
+     * election. so check if the followers needs some recovery, and
+     * then wait on that process to complete before sending the
+     * election request.
+     */
+
+    vlog(
+      _ctxlog.trace,
+      "transfer leadership: preparing target={}, dirty_offset={}",
+      target_rni,
+      _log.offsets().dirty_offset);
+
+    // Enforce ordering wrt anyone currently doing an append under op_lock
+    {
+        auto units = co_await _op_lock.get_units();
+        vlog(_ctxlog.trace, "transfer leadership: cleared oplock");
+    }
+
+    // Allow any buffered batches to complete, to avoid racing
+    // advances of dirty offset against new leader's recovery
+    co_await _batcher.flush({}, true);
+
+    // After we have (maybe) waited for op_lock and batcher,
+    // proceed to (maybe) wait for recovery to complete
+    if (!_fstats.contains(target_rni)) {
+        // Gone?  Nothing to wait for, proceed immediately.
+        co_return make_error_code(errc::node_does_not_exists);
+    }
+    auto& meta = _fstats.get(target_rni);
+    if (
+      !meta.is_recovering
+      && needs_recovery(meta, _log.offsets().dirty_offset)) {
+        vlog(
+          _ctxlog.debug,
+          "transfer leadership: starting node {} recovery",
+          target_rni);
+        dispatch_recovery(meta); // sets is_recovering flag
+    } else {
+        vlog(
+          _ctxlog.debug,
+          "transfer leadership: node {} doesn't need recovery or "
+          "is already recovering (is_recovering {} dirty offset {})",
+          target_rni,
+          meta.is_recovering,
+          _log.offsets().dirty_offset);
+    }
+
+    auto timeout = ss::semaphore::clock::duration(
+      config::shard_local_cfg().raft_transfer_leader_recovery_timeout_ms());
+
+    if (meta.is_recovering) {
+        vlog(
+          _ctxlog.warn,
+          "transfer leadership: waiting for node {} recovery",
+          target_rni);
+        meta.follower_state_change.broadcast();
+        try {
+            co_await meta.recovery_finished.wait(timeout);
+        } catch (ss::timed_out_error) {
+            vlog(
+              _ctxlog.warn,
+              "transfer leadership: timed out waiting on node {} "
+              "recovery",
+              target_rni);
+            co_return make_error_code(errc::timeout);
+        }
+        vlog(
+          _ctxlog.warn,
+          "transfer leadership: finished waiting on node {} "
+          "recovery",
+          target_rni);
+    } else {
+        vlog(
+          _ctxlog.debug,
+          "transfer leadership: node {} is not recovering, proceeding "
+          "(dirty offset {})",
+          target_rni,
+          _log.offsets().dirty_offset);
+    }
+
+    co_return make_error_code(errc::success);
+}
+
 ss::future<std::error_code>
 consensus::do_transfer_leadership(std::optional<model::node_id> target) {
     if (!is_leader()) {
@@ -2512,94 +2613,99 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
          */
         _transferring_leadership = true;
 
-        /*
-         * the follower's log needs to be up-to-date so that it will
-         * receive votes when we ask it to trigger an immediate
-         * election. so check if the followers needs some recovery, and
-         * then wait on that process to complete before sending the
-         * election request.
-         */
         if (!_fstats.contains(target_rni)) {
             return seastar::make_ready_future<std::error_code>(
               make_error_code(errc::node_does_not_exists));
         }
-        auto& meta = _fstats.get(target_rni);
-        if (
-          !meta.is_recovering
-          && needs_recovery(meta, _log.offsets().dirty_offset)) {
-            dispatch_recovery(meta); // sets is_recovering flag
-        }
 
-        auto f = ss::now();
-        if (meta.is_recovering) {
-            vlog(
-              _ctxlog.warn,
-              "Waiting on node to recover before requesting election");
-            auto timeout = ss::semaphore::clock::duration(
-              config::shard_local_cfg()
-                .raft_transfer_leader_recovery_timeout_ms());
-            f = meta.recovery_finished.wait(timeout);
-
-            meta.follower_state_change.broadcast();
-        }
-
-        return f.then([this, target_rni] {
-            /*
-             * there are still several scenarios in which we will want
-             * to not complete leadership transfer, all of which might
-             * have occurred during the recovery process.
-             *
-             *   - we might have lost leadership status
-             *   - shutdown may be in progress
-             *   - other: identified by follower not caught-up
-             */
-            if (!is_leader()) {
-                vlog(
-                  _ctxlog.warn, "Cannot transfer leadership from non-leader");
-                return seastar::make_ready_future<std::error_code>(
-                  make_error_code(errc::not_leader));
-            }
-
-            if (_as.abort_requested()) {
-                return seastar::make_ready_future<std::error_code>(
-                  make_error_code(errc::not_leader));
-            }
-
-            if (!_fstats.contains(target_rni)) {
-                return seastar::make_ready_future<std::error_code>(
-                  make_error_code(errc::node_does_not_exists));
-            }
-
-            auto& meta = _fstats.get(target_rni);
-            if (needs_recovery(meta, _log.offsets().dirty_offset)) {
-                return seastar::make_ready_future<std::error_code>(
-                  make_error_code(errc::timeout));
-            }
-
-            timeout_now_request req{
-              .target_node_id = target_rni,
-              .node_id = _self,
-              .group = _group,
-              .term = _term,
-            };
-
-            auto timeout
-              = raft::clock_type::now()
-                + config::shard_local_cfg().raft_timeout_now_timeout_ms();
-
-            return _client_protocol
-              .timeout_now(
-                target_rni.id(), std::move(req), rpc::client_opts(timeout))
-
-              .then([](result<timeout_now_reply> reply) {
-                  if (!reply) {
-                      return seastar::make_ready_future<std::error_code>(
-                        reply.error());
-                  }
+        return prepare_transfer_leadership(target_rni)
+          .then([this, target_rni](std::error_code prepare_err) {
+              if (prepare_err) {
+                  return ss::make_ready_future<std::error_code>(prepare_err);
+              }
+              /*
+               * there are still several scenarios in which we will want
+               * to not complete leadership transfer, all of which might
+               * have occurred during the recovery process.
+               *
+               *   - we might have lost leadership status
+               *   - shutdown may be in progress
+               *   - other: identified by follower not caught-up
+               */
+              if (!is_leader()) {
+                  vlog(
+                    _ctxlog.warn, "Cannot transfer leadership from non-leader");
                   return seastar::make_ready_future<std::error_code>(
-                    make_error_code(errc::success));
-              });
-        });
+                    make_error_code(errc::not_leader));
+              }
+
+              if (_as.abort_requested()) {
+                  vlog(
+                    _ctxlog.warn,
+                    "Cannot transfer leadership: abort requested");
+
+                  return seastar::make_ready_future<std::error_code>(
+                    make_error_code(errc::not_leader));
+              }
+
+              if (!_fstats.contains(target_rni)) {
+                  vlog(
+                    _ctxlog.warn,
+                    "Cannot transfer leadership: no stats for {}",
+                    target_rni);
+
+                  return seastar::make_ready_future<std::error_code>(
+                    make_error_code(errc::node_does_not_exists));
+              }
+
+              auto& meta = _fstats.get(target_rni);
+              if (needs_recovery(meta, _log.offsets().dirty_offset)) {
+                  vlog(
+                    _ctxlog.warn,
+                    "Cannot transfer leadership: {} needs recovery ({}, {}, "
+                    "{})",
+                    target_rni,
+                    meta.match_index,
+                    meta.last_dirty_log_index,
+                    _log.offsets().dirty_offset);
+
+                  return seastar::make_ready_future<std::error_code>(
+                    make_error_code(errc::timeout));
+              }
+
+              timeout_now_request req{
+                .target_node_id = target_rni,
+                .node_id = _self,
+                .group = _group,
+                .term = _term,
+              };
+
+              auto timeout
+                = raft::clock_type::now()
+                  + config::shard_local_cfg().raft_timeout_now_timeout_ms();
+
+              return _client_protocol
+                .timeout_now(
+                  target_rni.id(), std::move(req), rpc::client_opts(timeout))
+
+                .then([this](result<timeout_now_reply> reply) {
+                    if (!reply) {
+                        return seastar::make_ready_future<std::error_code>(
+                          reply.error());
+                    } else {
+                        // Step down before setting _transferring_leadership
+                        // to false, to ensure we do not accept any more writes
+                        // in the gap between new leader acking timeout now
+                        // and new leader sending a vote for its new term.
+                        // (If we accepted more writes, our log could get
+                        //  ahead of new leader, and it could lose election)
+                        do_step_down();
+
+                        return seastar::make_ready_future<std::error_code>(
+                          make_error_code(errc::success));
+                    }
+                });
+          });
     });
 
     return f.finally([this] { _transferring_leadership = false; });

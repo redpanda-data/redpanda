@@ -10,6 +10,7 @@
 import sys
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.cluster.remoteaccount import RemoteCommandError
+from threading import Event
 
 
 class KafProducer(BackgroundThreadService):
@@ -18,17 +19,27 @@ class KafProducer(BackgroundThreadService):
         self._redpanda = redpanda
         self._topic = topic
         self._num_records = num_records
+        self._stopping = Event()
 
     def _worker(self, _idx, node):
         cmd = f"for (( i=0; i < {self._num_records}; i++ )) ; do export KEY=key-$(printf %08d $i) ; export VALUE=record-$(printf %08d $i) ; echo $VALUE | kaf produce -b {self._redpanda.brokers()} --key $KEY {self._topic} ; done"
-        for line in node.account.ssh_capture(cmd, timeout_sec=10):
-            self.logger.debug(line.rstrip())
+
+        self._stopping.clear()
+        try:
+            for line in node.account.ssh_capture(cmd, timeout_sec=10):
+                self.logger.debug(line.rstrip())
+        except RemoteCommandError:
+            if self._stopping.is_set():
+                pass
+            else:
+                raise
 
     def stop_node(self, node):
+        self._stopping.set()
         try:
             node.account.kill_process("kaf", clean_shutdown=False)
         except RemoteCommandError as e:
-            if "no such process" in e.msg:
+            if b"No such process" in e.msg:
                 pass
             else:
                 raise
