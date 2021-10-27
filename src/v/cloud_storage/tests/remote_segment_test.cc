@@ -47,6 +47,7 @@
 
 #include <chrono>
 #include <exception>
+#include <stdexcept>
 
 using namespace std::chrono_literals;
 using namespace cloud_storage;
@@ -99,6 +100,7 @@ FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT
     BOOST_REQUIRE_THROW(
       segment.data_stream(0, ss::default_priority_class()).get(),
       download_exception);
+    segment.stop().get();
 }
 
 FIXTURE_TEST(
@@ -147,6 +149,7 @@ FIXTURE_TEST(
         offsets.push_back(batch.base_offset());
     }
     reader.stop().get();
+    segment->stop().get();
 
     BOOST_REQUIRE(offsets.size() == 1);
     BOOST_REQUIRE(offsets.at(0) == model::offset(1));
@@ -245,6 +248,7 @@ void test_remote_segment_batch_reader(
         }
     }
     reader.stop().get();
+    segment->stop().get();
     BOOST_REQUIRE_EQUAL(batch_ix, (ix_end - ix_begin) + 1 /*inclusive range*/);
 }
 
@@ -361,4 +365,5 @@ FIXTURE_TEST(
     BOOST_REQUIRE(offsets.at(1) == headers.at(1).base_offset);
 
     reader.stop().get();
+    segment->stop().get();
 }
