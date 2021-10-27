@@ -66,7 +66,8 @@ group::group(
   , _partition(std::move(partition))
   , _recovery_policy(
       config::shard_local_cfg().rm_violation_recovery_policy.value())
-  , _ctxlog(*this) {}
+  , _ctxlog(klog, *this)
+  , _ctx_txlog(cluster::txlog, *this) {}
 
 group::group(
   kafka::group_id id,
@@ -80,7 +81,8 @@ group::group(
   , _partition(std::move(partition))
   , _recovery_policy(
       config::shard_local_cfg().rm_violation_recovery_policy.value())
-  , _ctxlog(*this) {
+  , _ctxlog(klog, *this)
+  , _ctx_txlog(cluster::txlog, *this) {
     _state = md.members.empty() ? group_state::empty : group_state::stable;
     _generation = md.generation;
     _protocol_type = md.protocol_type;
@@ -1356,7 +1358,9 @@ group::commit_tx(cluster::commit_group_tx_request r) {
     auto prepare_it = _prepared_txs.find(r.pid);
     if (prepare_it == _prepared_txs.end()) {
         vlog(
-          klog.trace, "can't find a tx {}, probably already comitted", r.pid);
+          _ctx_txlog.trace,
+          "can't find a tx {}, probably already comitted",
+          r.pid);
         co_return make_commit_tx_reply(cluster::tx_errc::none);
     }
 
@@ -1367,7 +1371,7 @@ group::commit_tx(cluster::commit_group_tx_request r) {
         //   * during recovery tm_stm recommits (tx_seq)
         // existence of {pid, tx_seq+1} implies {pid, tx_seq} is committed
         vlog(
-          klog.trace,
+          _ctx_txlog.trace,
           "prepare for pid:{} has higher tx_seq:{} than given: {} => replaying "
           "already comitted commit",
           r.pid,
@@ -1377,7 +1381,7 @@ group::commit_tx(cluster::commit_group_tx_request r) {
     } else if (prepare_it->second.tx_seq < r.tx_seq) {
         if (_recovery_policy == violation_recovery_policy::best_effort) {
             vlog(
-              klog.error,
+              _ctx_txlog.error,
               "Rejecting commit with tx_seq:{} since prepare with lesser "
               "tx_seq:{} exists",
               r.tx_seq,
@@ -1481,7 +1485,7 @@ group::begin_tx(cluster::begin_group_tx_request r) {
 
         if (!e) {
             vlog(
-              klog.error,
+              _ctx_txlog.error,
               "Error \"{}\" on replicating pid:{} fencing batch",
               e.error(),
               r.pid);
@@ -1496,7 +1500,10 @@ group::begin_tx(cluster::begin_group_tx_request r) {
         fence_it->second = r.pid.get_epoch();
     } else {
         vlog(
-          klog.error, "pid {} fenced out by epoch {}", r.pid, fence_it->second);
+          _ctx_txlog.error,
+          "pid {} fenced out by epoch {}",
+          r.pid,
+          fence_it->second);
         co_return make_begin_tx_reply(cluster::tx_errc::fenced);
     }
 
@@ -1538,7 +1545,7 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
     if (fence_it != _fence_pid_epoch.end()) {
         if (r.pid.get_epoch() < fence_it->second) {
             vlog(
-              klog.trace,
+              _ctx_txlog.trace,
               "Can't prepare pid:{} - fenced out by epoch {}",
               r.pid,
               fence_it->second);
@@ -1554,7 +1561,7 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
     if (tx_it == _volatile_txs.end()) {
         // impossible situation, a transaction coordinator tries
         // to prepare a transaction which wasn't started
-        vlog(klog.error, "Can't prepare pid:{} - unknown session", r.pid);
+        vlog(_ctx_txlog.error, "Can't prepare pid:{} - unknown session", r.pid);
         co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
     }
 
@@ -1656,7 +1663,7 @@ group::abort_tx(cluster::abort_group_tx_request r) {
         // abort of the current transaction it should begin it and abort all
         // previous transactions with the same pid
         vlog(
-          klog.error,
+          _ctx_txlog.error,
           "Rejecting abort (pid:{}, tx_seq: {}) because it isn't consistent "
           "with the current ongoing transaction",
           r.pid,
@@ -1813,7 +1820,7 @@ group::handle_commit_tx(cluster::commit_group_tx_request r) {
     } else if (in_state(group_state::completing_rebalance)) {
         co_return make_commit_tx_reply(cluster::tx_errc::rebalance_in_progress);
     } else {
-        vlog(klog.error, "Unexpected group state {} for {}", _state, *this);
+        vlog(_ctx_txlog.error, "Unexpected group state");
         co_return make_commit_tx_reply(cluster::tx_errc::timeout);
     }
 }
@@ -1833,7 +1840,7 @@ group::handle_txn_offset_commit(txn_offset_commit_request r) {
         co_return txn_offset_commit_response(
           r, error_code::rebalance_in_progress);
     } else {
-        vlog(klog.error, "Unexpected group state {} for {}", _state, *this);
+        vlog(_ctx_txlog.error, "Unexpected group state");
         co_return txn_offset_commit_response(
           r, error_code::unknown_server_error);
     }
@@ -1856,7 +1863,7 @@ group::handle_begin_tx(cluster::begin_group_tx_request r) {
         reply.ec = cluster::tx_errc::rebalance_in_progress;
         co_return reply;
     } else {
-        vlog(klog.error, "Unexpected group state {} for {}", _state, *this);
+        vlog(_ctx_txlog.error, "Unexpected group state");
         cluster::begin_group_tx_reply reply;
         reply.ec = cluster::tx_errc::timeout;
         co_return reply;
@@ -1880,7 +1887,7 @@ group::handle_prepare_tx(cluster::prepare_group_tx_request r) {
         reply.ec = cluster::tx_errc::rebalance_in_progress;
         co_return reply;
     } else {
-        vlog(klog.error, "Unexpected group state {} for {}", _state, *this);
+        vlog(_ctx_txlog.error, "Unexpected group state");
         cluster::prepare_group_tx_reply reply;
         reply.ec = cluster::tx_errc::timeout;
         co_return reply;
@@ -1904,7 +1911,7 @@ group::handle_abort_tx(cluster::abort_group_tx_request r) {
         reply.ec = cluster::tx_errc::rebalance_in_progress;
         co_return reply;
     } else {
-        vlog(klog.error, "Unexpected group state {} for {}", _state, *this);
+        vlog(_ctx_txlog.error, "Unexpected group state");
         cluster::abort_group_tx_reply reply;
         reply.ec = cluster::tx_errc::timeout;
         co_return reply;

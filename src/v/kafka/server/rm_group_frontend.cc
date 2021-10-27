@@ -11,6 +11,7 @@
 
 #include "cluster/controller.h"
 #include "cluster/id_allocator_frontend.h"
+#include "cluster/logger.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
@@ -22,7 +23,6 @@
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group.h"
 #include "kafka/server/group_router.h"
-#include "kafka/server/logger.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
@@ -107,14 +107,17 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
     auto ntp_opt = _coordinator_mapper.local().ntp_for(group_id);
     if (!ntp_opt) {
         vlog(
-          klog.trace,
+          cluster::txlog.trace,
           "can't find ntp for {}, creating a consumer group topic",
           group_id);
         auto has_created = co_await try_create_consumer_group_topic(
           _coordinator_mapper.local(),
           _controller->get_topics_frontend().local());
         if (!has_created) {
-            vlog(klog.warn, "can't create consumer group topic", group_id);
+            vlog(
+              cluster::txlog.warn,
+              "can't create consumer group topic",
+              group_id);
             co_return cluster::begin_group_tx_reply{
               .ec = cluster::tx_errc::partition_not_exists};
         }
@@ -127,7 +130,10 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
     while (!leader_opt && 0 < retries--) {
         ntp_opt = _coordinator_mapper.local().ntp_for(group_id);
         if (!ntp_opt) {
-            vlog(klog.trace, "can't find ntp for {}, retrying", group_id);
+            vlog(
+              cluster::txlog.trace,
+              "can't find ntp for {}, retrying",
+              group_id);
             ec = cluster::tx_errc::partition_not_exists;
             co_await ss::sleep(delay_ms);
             continue;
@@ -136,7 +142,10 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
         auto ntp = std::move(ntp_opt.value());
         auto nt = model::topic_namespace_view(ntp.ns, ntp.tp.topic);
         if (!_metadata_cache.local().contains(nt, ntp.tp.partition)) {
-            vlog(klog.trace, "can't find meta info for {}, retrying", ntp);
+            vlog(
+              cluster::txlog.trace,
+              "can't find meta info for {}, retrying",
+              ntp);
             ec = cluster::tx_errc::partition_not_exists;
             co_await ss::sleep(delay_ms);
             continue;
@@ -144,7 +153,7 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
 
         leader_opt = _leaders.local().get_leader(ntp);
         if (!leader_opt) {
-            vlog(klog.trace, "can't find a leader for {}", ntp);
+            vlog(cluster::txlog.trace, "can't find a leader for {}", ntp);
             ec = cluster::tx_errc::leader_not_found;
             co_await ss::sleep(delay_ms);
         }
@@ -166,9 +175,27 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
         co_return co_await begin_group_tx_locally(std::move(req));
     }
 
-    vlog(klog.trace, "dispatching begin group tx to {} from {}", leader, _self);
-    co_return co_await dispatch_begin_group_tx(
+    vlog(
+      cluster::txlog.trace,
+      "dispatching name:begin_group_tx, group_id:{}, pid:{}, tx_seq:{}, "
+      "from:{}, to:{}",
+      group_id,
+      pid,
+      tx_seq,
+      _self,
+      leader);
+    auto reply = co_await dispatch_begin_group_tx(
       leader, group_id, pid, tx_seq, timeout);
+    vlog(
+      cluster::txlog.trace,
+      "received name:begin_group_tx, group_id:{}, pid:{}, tx_seq:{}, ec:{}, "
+      "etag:{}",
+      group_id,
+      pid,
+      tx_seq,
+      reply.ec,
+      reply.etag);
+    co_return reply;
 }
 
 ss::future<cluster::begin_group_tx_reply>
@@ -198,7 +225,9 @@ rm_group_frontend::dispatch_begin_group_tx(
       .then([](result<cluster::begin_group_tx_reply> r) {
           if (r.has_error()) {
               vlog(
-                klog.warn, "got error {} on remote begin group tx", r.error());
+                cluster::txlog.warn,
+                "got error {} on remote begin group tx",
+                r.error());
               return cluster::begin_group_tx_reply{
                 .ec = cluster::tx_errc::timeout};
           }
@@ -209,7 +238,23 @@ rm_group_frontend::dispatch_begin_group_tx(
 
 ss::future<cluster::begin_group_tx_reply>
 rm_group_frontend::begin_group_tx_locally(cluster::begin_group_tx_request req) {
-    return _group_router.local().begin_tx(std::move(req));
+    vlog(
+      cluster::txlog.trace,
+      "processing name:begin_group_tx, group_id:{}, pid:{}, tx_seq:{}",
+      req.group_id,
+      req.pid,
+      req.tx_seq);
+    auto reply = co_await _group_router.local().begin_tx(req);
+    vlog(
+      cluster::txlog.trace,
+      "sending name:begin_group_tx, group_id:{}, pid:{}, tx_seq:{}, "
+      "ec:{}, etag:{}",
+      req.group_id,
+      req.pid,
+      req.tx_seq,
+      reply.ec,
+      reply.etag);
+    co_return reply;
 }
 
 ss::future<cluster::prepare_group_tx_reply> rm_group_frontend::prepare_group_tx(
@@ -220,7 +265,7 @@ ss::future<cluster::prepare_group_tx_reply> rm_group_frontend::prepare_group_tx(
   model::timeout_clock::duration timeout) {
     auto ntp_opt = _coordinator_mapper.local().ntp_for(group_id);
     if (!ntp_opt) {
-        vlog(klog.warn, "can't find ntp for {} ", group_id);
+        vlog(cluster::txlog.warn, "can't find ntp for {} ", group_id);
         co_return cluster::prepare_group_tx_reply{
           .ec = cluster::tx_errc::partition_not_exists};
     }
@@ -228,14 +273,14 @@ ss::future<cluster::prepare_group_tx_reply> rm_group_frontend::prepare_group_tx(
 
     auto nt = model::topic_namespace(ntp.ns, ntp.tp.topic);
     if (!_metadata_cache.local().contains(nt, ntp.tp.partition)) {
-        vlog(klog.warn, "can't find meta info for {}", ntp);
+        vlog(cluster::txlog.warn, "can't find meta info for {}", ntp);
         co_return cluster::prepare_group_tx_reply{
           .ec = cluster::tx_errc::partition_not_exists};
     }
 
     auto leader_opt = _leaders.local().get_leader(ntp);
     if (!leader_opt) {
-        vlog(klog.warn, "can't find a leader for {}", ntp);
+        vlog(cluster::txlog.warn, "can't find a leader for {}", ntp);
         co_return cluster::prepare_group_tx_reply{
           .ec = cluster::tx_errc::leader_not_found};
     }
@@ -252,9 +297,31 @@ ss::future<cluster::prepare_group_tx_reply> rm_group_frontend::prepare_group_tx(
         co_return co_await prepare_group_tx_locally(std::move(req));
     }
 
-    vlog(klog.trace, "dispatching begin group tx to {} from {}", leader, _self);
-    co_return co_await dispatch_prepare_group_tx(
+    vlog(
+      cluster::txlog.trace,
+      "dispatching name:prepare_group_tx, group_id:{}, pid:{}, tx_seq:{}, "
+      "etag:{}, from:{}, to:{}",
+      group_id,
+      pid,
+      tx_seq,
+      etag,
+      _self,
+      leader);
+
+    auto reply = co_await dispatch_prepare_group_tx(
       leader, group_id, etag, pid, tx_seq, timeout);
+
+    vlog(
+      cluster::txlog.trace,
+      "received name:prepare_group_tx, group_id:{}, pid:{}, tx_seq:{}, "
+      "etag:{}, ec:{}",
+      group_id,
+      pid,
+      tx_seq,
+      etag,
+      reply.ec);
+
+    co_return reply;
 }
 
 ss::future<cluster::prepare_group_tx_reply>
@@ -286,7 +353,7 @@ rm_group_frontend::dispatch_prepare_group_tx(
       .then([](result<cluster::prepare_group_tx_reply> r) {
           if (r.has_error()) {
               vlog(
-                klog.warn,
+                cluster::txlog.warn,
                 "got error {} on remote prepare group tx",
                 r.error());
               return cluster::prepare_group_tx_reply{
@@ -300,7 +367,25 @@ rm_group_frontend::dispatch_prepare_group_tx(
 ss::future<cluster::prepare_group_tx_reply>
 rm_group_frontend::prepare_group_tx_locally(
   cluster::prepare_group_tx_request req) {
-    return _group_router.local().prepare_tx(std::move(req));
+    vlog(
+      cluster::txlog.trace,
+      "processing name:prepare_group_tx, group_id:{}, pid:{}, tx_seq:{}, "
+      "etag:{}",
+      req.group_id,
+      req.pid,
+      req.tx_seq,
+      req.etag);
+    auto reply = co_await _group_router.local().prepare_tx(req);
+    vlog(
+      cluster::txlog.trace,
+      "sending name:prepare_group_tx, group_id:{}, pid:{}, tx_seq:{}, "
+      "etag:{}, ec:{}",
+      req.group_id,
+      req.pid,
+      req.tx_seq,
+      req.etag,
+      reply.ec);
+    co_return reply;
 }
 
 ss::future<cluster::commit_group_tx_reply> rm_group_frontend::commit_group_tx(
@@ -310,7 +395,7 @@ ss::future<cluster::commit_group_tx_reply> rm_group_frontend::commit_group_tx(
   model::timeout_clock::duration timeout) {
     auto ntp_opt = _coordinator_mapper.local().ntp_for(group_id);
     if (!ntp_opt) {
-        vlog(klog.warn, "can't find ntp for {}", group_id);
+        vlog(cluster::txlog.warn, "can't find ntp for {}", group_id);
         co_return cluster::commit_group_tx_reply{
           .ec = cluster::tx_errc::partition_not_exists};
     }
@@ -319,14 +404,14 @@ ss::future<cluster::commit_group_tx_reply> rm_group_frontend::commit_group_tx(
 
     auto nt = model::topic_namespace(ntp.ns, ntp.tp.topic);
     if (!_metadata_cache.local().contains(nt, ntp.tp.partition)) {
-        vlog(klog.warn, "can' find meta info for {}", ntp);
+        vlog(cluster::txlog.warn, "can' find meta info for {}", ntp);
         co_return cluster::commit_group_tx_reply{
           .ec = cluster::tx_errc::partition_not_exists};
     }
 
     auto leader_opt = _leaders.local().get_leader(ntp);
     if (!leader_opt) {
-        vlog(klog.warn, "can't find a leader for {}", ntp);
+        vlog(cluster::txlog.warn, "can't find a leader for {}", ntp);
         co_return cluster::commit_group_tx_reply{
           .ec = cluster::tx_errc::leader_not_found};
     }
@@ -343,9 +428,27 @@ ss::future<cluster::commit_group_tx_reply> rm_group_frontend::commit_group_tx(
     }
 
     vlog(
-      klog.trace, "dispatching commit group tx to {} from {}", leader, _self);
-    co_return co_await dispatch_commit_group_tx(
+      cluster::txlog.trace,
+      "dispatching name:commit_group_tx, group_id:{}, pid:{}, tx_seq:{}, "
+      "from:{}, to:{}",
+      group_id,
+      pid,
+      tx_seq,
+      _self,
+      leader);
+
+    auto reply = co_await dispatch_commit_group_tx(
       leader, group_id, pid, tx_seq, timeout);
+
+    vlog(
+      cluster::txlog.trace,
+      "received name:commit_group_tx, group_id:{}, pid:{}, tx_seq:{}, ec:{}",
+      group_id,
+      pid,
+      tx_seq,
+      reply.ec);
+
+    co_return reply;
 }
 
 ss::future<cluster::commit_group_tx_reply>
@@ -374,7 +477,10 @@ rm_group_frontend::dispatch_commit_group_tx(
       .then(&rpc::get_ctx_data<cluster::commit_group_tx_reply>)
       .then([](result<cluster::commit_group_tx_reply> r) {
           if (r.has_error()) {
-              vlog(klog.warn, "got error {} on remote commit tx", r.error());
+              vlog(
+                cluster::txlog.warn,
+                "got error {} on remote commit tx",
+                r.error());
               return cluster::commit_group_tx_reply{
                 .ec = cluster::tx_errc::timeout};
           }
@@ -386,7 +492,21 @@ rm_group_frontend::dispatch_commit_group_tx(
 ss::future<cluster::commit_group_tx_reply>
 rm_group_frontend::commit_group_tx_locally(
   cluster::commit_group_tx_request req) {
-    return _group_router.local().commit_tx(std::move(req));
+    vlog(
+      cluster::txlog.trace,
+      "processing name:commit_group_tx, group_id:{}, pid:{}, tx_seq:{}",
+      req.group_id,
+      req.pid,
+      req.tx_seq);
+    auto reply = co_await _group_router.local().commit_tx(req);
+    vlog(
+      cluster::txlog.trace,
+      "sending name:commit_group_tx, group_id:{}, pid:{}, tx_seq:{}, ec:{}",
+      req.group_id,
+      req.pid,
+      req.tx_seq,
+      reply.ec);
+    co_return reply;
 }
 
 ss::future<cluster::abort_group_tx_reply> rm_group_frontend::abort_group_tx(
@@ -396,7 +516,7 @@ ss::future<cluster::abort_group_tx_reply> rm_group_frontend::abort_group_tx(
   model::timeout_clock::duration timeout) {
     auto ntp_opt = _coordinator_mapper.local().ntp_for(group_id);
     if (!ntp_opt) {
-        vlog(klog.warn, "can't find ntp for {} ", group_id);
+        vlog(cluster::txlog.warn, "can't find ntp for {} ", group_id);
         co_return cluster::abort_group_tx_reply{
           .ec = cluster::tx_errc::partition_not_exists};
     }
@@ -404,14 +524,14 @@ ss::future<cluster::abort_group_tx_reply> rm_group_frontend::abort_group_tx(
 
     auto nt = model::topic_namespace(ntp.ns, ntp.tp.topic);
     if (!_metadata_cache.local().contains(nt, ntp.tp.partition)) {
-        vlog(klog.warn, "can't find meta info for {}", ntp);
+        vlog(cluster::txlog.warn, "can't find meta info for {}", ntp);
         co_return cluster::abort_group_tx_reply{
           .ec = cluster::tx_errc::partition_not_exists};
     }
 
     auto leader_opt = _leaders.local().get_leader(ntp);
     if (!leader_opt) {
-        vlog(klog.warn, "can't find a leader for {}", ntp);
+        vlog(cluster::txlog.warn, "can't find a leader for {}", ntp);
         co_return cluster::abort_group_tx_reply{
           .ec = cluster::tx_errc::leader_not_found};
     }
@@ -427,9 +547,28 @@ ss::future<cluster::abort_group_tx_reply> rm_group_frontend::abort_group_tx(
         co_return co_await abort_group_tx_locally(std::move(req));
     }
 
-    vlog(klog.trace, "dispatching abort group tx to {} from {}", leader, _self);
-    co_return co_await dispatch_abort_group_tx(
+    vlog(
+      cluster::txlog.trace,
+      "dispatching name:abort_group_tx, group_id:{}, pid:{}, tx_seq:{}, "
+      "from:{}, to:{}",
+      group_id,
+      pid,
+      tx_seq,
+      _self,
+      leader);
+
+    auto reply = co_await dispatch_abort_group_tx(
       leader, group_id, pid, tx_seq, timeout);
+
+    vlog(
+      cluster::txlog.trace,
+      "received name:abort_group_tx, group_id:{}, pid:{}, tx_seq:{}, ec:{}",
+      group_id,
+      pid,
+      tx_seq,
+      reply.ec);
+
+    co_return reply;
 }
 
 ss::future<cluster::abort_group_tx_reply>
@@ -459,7 +598,9 @@ rm_group_frontend::dispatch_abort_group_tx(
       .then([](result<cluster::abort_group_tx_reply> r) {
           if (r.has_error()) {
               vlog(
-                klog.warn, "got error {} on remote abort group tx", r.error());
+                cluster::txlog.warn,
+                "got error {} on remote abort group tx",
+                r.error());
               return cluster::abort_group_tx_reply{
                 .ec = cluster::tx_errc::timeout};
           }
@@ -470,7 +611,21 @@ rm_group_frontend::dispatch_abort_group_tx(
 
 ss::future<cluster::abort_group_tx_reply>
 rm_group_frontend::abort_group_tx_locally(cluster::abort_group_tx_request req) {
-    return _group_router.local().abort_tx(std::move(req));
+    vlog(
+      cluster::txlog.trace,
+      "processing name:abort_group_tx, group_id:{}, pid:{}, tx_seq:{}",
+      req.group_id,
+      req.pid,
+      req.tx_seq);
+    auto reply = co_await _group_router.local().abort_tx(req);
+    vlog(
+      cluster::txlog.trace,
+      "sending name:abort_group_tx, group_id:{}, pid:{}, tx_seq:{}, ec:{}",
+      req.group_id,
+      req.pid,
+      req.tx_seq,
+      reply.ec);
+    co_return reply;
 }
 
 } // namespace kafka

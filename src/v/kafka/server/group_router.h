@@ -190,49 +190,19 @@ public:
         return route(std::move(request), &group_manager::txn_offset_commit);
     }
 
-    auto commit_tx(cluster::commit_group_tx_request&& request) {
-        vlog(
-          klog.trace,
-          "processing name:commit_tx, ntp:{}, pid:{}, tx_seq:{}, group_id:{}",
-          request.ntp,
-          request.pid,
-          request.tx_seq,
-          request.group_id);
+    auto commit_tx(cluster::commit_group_tx_request request) {
         return route_tx(std::move(request), &group_manager::commit_tx);
     }
 
-    auto begin_tx(cluster::begin_group_tx_request&& request) {
-        vlog(
-          klog.trace,
-          "processing name:begin_tx, ntp:{}, pid:{}, tx_seq:{}, group_id:{}",
-          request.ntp,
-          request.pid,
-          request.tx_seq,
-          request.group_id);
+    auto begin_tx(cluster::begin_group_tx_request request) {
         return route_tx(std::move(request), &group_manager::begin_tx);
     }
 
-    auto prepare_tx(cluster::prepare_group_tx_request&& request) {
-        vlog(
-          klog.trace,
-          "processing name:prepare_tx, ntp:{}, pid:{}, tx_seq:{}, group_id:{}, "
-          "etag:{}",
-          request.ntp,
-          request.pid,
-          request.tx_seq,
-          request.group_id,
-          request.etag);
+    auto prepare_tx(cluster::prepare_group_tx_request request) {
         return route_tx(std::move(request), &group_manager::prepare_tx);
     }
 
-    auto abort_tx(cluster::abort_group_tx_request&& request) {
-        vlog(
-          klog.trace,
-          "processing name:abort_tx, ntp:{}, pid:{}, tx_seq:{}, group_id:{}",
-          request.ntp,
-          request.pid,
-          request.tx_seq,
-          request.group_id);
+    auto abort_tx(cluster::abort_group_tx_request request) {
         return route_tx(std::move(request), &group_manager::abort_tx);
     }
 

@@ -3,7 +3,6 @@
 #include "cluster/partition.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/server/group.h"
-#include "kafka/server/logger.h"
 #include "kafka/server/member.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"

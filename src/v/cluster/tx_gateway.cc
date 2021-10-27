@@ -46,13 +46,13 @@ tx_gateway::init_tm_tx(init_tm_tx_request&& request, rpc::streaming_context&) {
 
 ss::future<begin_tx_reply>
 tx_gateway::begin_tx(begin_tx_request&& request, rpc::streaming_context&) {
-    return _rm_partition_frontend.local().do_begin_tx(
+    return _rm_partition_frontend.local().begin_tx_locally(
       request.ntp, request.pid, request.tx_seq, request.transaction_timeout_ms);
 }
 
 ss::future<prepare_tx_reply>
 tx_gateway::prepare_tx(prepare_tx_request&& request, rpc::streaming_context&) {
-    return _rm_partition_frontend.local().do_prepare_tx(
+    return _rm_partition_frontend.local().prepare_tx_locally(
       request.ntp,
       request.etag,
       request.tm,
@@ -63,13 +63,13 @@ tx_gateway::prepare_tx(prepare_tx_request&& request, rpc::streaming_context&) {
 
 ss::future<commit_tx_reply>
 tx_gateway::commit_tx(commit_tx_request&& request, rpc::streaming_context&) {
-    return _rm_partition_frontend.local().do_commit_tx(
+    return _rm_partition_frontend.local().commit_tx_locally(
       request.ntp, request.pid, request.tx_seq, request.timeout);
 }
 
 ss::future<abort_tx_reply>
 tx_gateway::abort_tx(abort_tx_request&& request, rpc::streaming_context&) {
-    return _rm_partition_frontend.local().do_abort_tx(
+    return _rm_partition_frontend.local().abort_tx_locally(
       request.ntp, request.pid, request.tx_seq, request.timeout);
 }
 

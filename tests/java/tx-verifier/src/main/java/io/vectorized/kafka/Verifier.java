@@ -1,5 +1,7 @@
 package io.vectorized.kafka;
 
+import static java.util.Map.entry;
+
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -12,49 +14,48 @@ class Verifier {
     void run(String connection) throws Exception;
   }
 
+  final static int RETRY_TIMEOUT_SEC = 5;
   final static String txId1 = "tx1";
   final static String txId2 = "tx2";
   final static String topic1 = "topic1";
   final static String topic2 = "topic2";
   final static String groupId = "groupId";
 
+  final static Map<String, StringAction> tests = Map.ofEntries(
+      entry("init", Verifier::initPasses), entry("tx", Verifier::txPasses),
+      entry("txes", Verifier::txesPasses),
+      entry("abort", Verifier::abortPasses),
+      entry("commuting-txes", Verifier::commutingTxesPass),
+      entry("conflicting-tx", Verifier::conflictingTxFails),
+      entry("read-committed-seek", Verifier::readCommittedSeekTest),
+      entry("read-uncommitted-seek", Verifier::readUncommittedSeekTest),
+      entry("read-committed-tx-seek", Verifier::readCommittedTxSeekTest),
+      entry("read-uncommitted-tx-seek", Verifier::readUncommittedTxSeekTest),
+      entry("fetch-reads-committed-txs", Verifier::fetchReadsCommittedTxsTest),
+      entry("fetch-skips-aborted-txs", Verifier::fetchDoesntReadAbortedTxsTest),
+      entry(
+          "read-committed-seek-waits-ongoing-tx",
+          Verifier::readCommittedSeekRespectsOngoingTx),
+      entry(
+          "read-committed-seek-waits-long-hanging-tx",
+          Verifier::readCommittedSeekRespectsLongHangingTx),
+      entry(
+          "read-committed-seek-reads-short-hanging-tx",
+          Verifier::readCommittedSeekDoesntRespectShortHangingTx),
+      entry(
+          "read-uncommitted-seek-reads-ongoing-tx",
+          Verifier::readUncommittedSeekDoesntRespectOngoingTx),
+      entry("set-group-start-offset", Verifier::setGroupStartOffsetPasses),
+      entry("read-process-write", Verifier::readProcessWrite));
+
   public static void main(final String[] args) throws Exception {
-    retry("initPasses", Verifier::initPasses, args[0]);
-    retry("txPasses", Verifier::txPasses, args[0]);
-    retry("txesPasses", Verifier::txesPasses, args[0]);
-    retry("abortPasses", Verifier::abortPasses, args[0]);
-    retry("commutingTxesPass", Verifier::commutingTxesPass, args[0]);
-    retry("conflictingTxFails", Verifier::conflictingTxFails, args[0]);
-    retry("readCommittedSeekTest", Verifier::readCommittedSeekTest, args[0]);
-    retry(
-        "readUncommittedSeekTest", Verifier::readUncommittedSeekTest, args[0]);
-    retry(
-        "readCommittedTxSeekTest", Verifier::readCommittedTxSeekTest, args[0]);
-    retry(
-        "readUncommittedTxSeekTest", Verifier::readUncommittedTxSeekTest,
-        args[0]);
-    retry(
-        "fetchReadsCommittedTxsTest", Verifier::fetchReadsCommittedTxsTest,
-        args[0]);
-    retry(
-        "fetchDoesntReadAbortedTxsTest",
-        Verifier::fetchDoesntReadAbortedTxsTest, args[0]);
-    retry(
-        "readCommittedSeekRespectsOngoingTx",
-        Verifier::readCommittedSeekRespectsOngoingTx, args[0]);
-    retry(
-        "readCommittedSeekRespectsLongHangingTx",
-        Verifier::readCommittedSeekRespectsLongHangingTx, args[0]);
-    retry(
-        "readCommittedSeekDoesntRespectShortHangingTx",
-        Verifier::readCommittedSeekDoesntRespectShortHangingTx, args[0]);
-    retry(
-        "readUncommittedSeekDoesntRespectOngoingTx",
-        Verifier::readUncommittedSeekDoesntRespectOngoingTx, args[0]);
-    retry(
-        "setGroupStartOffsetPasses", Verifier::setGroupStartOffsetPasses,
-        args[0]);
-    retry("readProcessWrite", Verifier::readProcessWrite, args[0]);
+    if (args.length != 2) {
+      throw new Exception("Verifier expects two args");
+    }
+    if (!tests.containsKey(args[0])) {
+      throw new Exception("Unknown test: " + args[0]);
+    }
+    retry(args[0], tests.get(args[0]), args[1]);
   }
 
   static void retry(String name, StringAction action, String connection)
@@ -66,18 +67,20 @@ class Verifier {
         System.out.println(
             "Executing " + name + " test, retries left: " + retries);
         action.run(connection);
+        initPasses(connection, txId1);
+        initPasses(connection, txId2);
         return;
       } catch (RetryableException e) {
         if (retries > 0) {
           e.printStackTrace();
-          Thread.sleep(Duration.ofSeconds(1).toMillis());
+          Thread.sleep(Duration.ofSeconds(RETRY_TIMEOUT_SEC).toMillis());
           continue;
         }
         throw e;
       } catch (KafkaException e) {
         if (retries > 0) {
           e.printStackTrace();
-          Thread.sleep(Duration.ofSeconds(1).toMillis());
+          Thread.sleep(Duration.ofSeconds(RETRY_TIMEOUT_SEC).toMillis());
           continue;
         }
         throw e;
@@ -86,7 +89,7 @@ class Verifier {
         if (cause != null && cause instanceof KafkaException) {
           if (retries > 0) {
             e.printStackTrace();
-            Thread.sleep(Duration.ofSeconds(1).toMillis());
+            Thread.sleep(Duration.ofSeconds(RETRY_TIMEOUT_SEC).toMillis());
             continue;
           }
         }
@@ -96,9 +99,13 @@ class Verifier {
   }
 
   static void initPasses(String connection) throws Exception {
+    initPasses(connection, txId1);
+  }
+
+  static void initPasses(String connection, String txId) throws Exception {
     TxProducer producer = null;
     try {
-      producer = new TxProducer(connection, txId1);
+      producer = new TxProducer(connection, txId);
       producer.initTransactions();
     } finally {
       if (producer != null) {

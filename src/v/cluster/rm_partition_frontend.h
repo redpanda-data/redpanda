@@ -81,6 +81,11 @@ private:
       model::tx_seq,
       std::chrono::milliseconds,
       model::timeout_clock::duration);
+    ss::future<begin_tx_reply> begin_tx_locally(
+      model::ntp,
+      model::producer_identity,
+      model::tx_seq,
+      std::chrono::milliseconds);
     ss::future<begin_tx_reply> do_begin_tx(
       model::ntp,
       model::producer_identity,
@@ -88,6 +93,13 @@ private:
       std::chrono::milliseconds);
     ss::future<prepare_tx_reply> dispatch_prepare_tx(
       model::node_id,
+      model::ntp,
+      model::term_id,
+      model::partition_id,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
+    ss::future<prepare_tx_reply> prepare_tx_locally(
       model::ntp,
       model::term_id,
       model::partition_id,
@@ -107,6 +119,11 @@ private:
       model::producer_identity,
       model::tx_seq,
       model::timeout_clock::duration);
+    ss::future<commit_tx_reply> commit_tx_locally(
+      model::ntp,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
     ss::future<commit_tx_reply> do_commit_tx(
       model::ntp,
       model::producer_identity,
@@ -114,6 +131,11 @@ private:
       model::timeout_clock::duration);
     ss::future<abort_tx_reply> dispatch_abort_tx(
       model::node_id,
+      model::ntp,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
+    ss::future<abort_tx_reply> abort_tx_locally(
       model::ntp,
       model::producer_identity,
       model::tx_seq,
