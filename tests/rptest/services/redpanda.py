@@ -140,8 +140,10 @@ class RedpandaService(Service):
                 else:
                     self.logger.debug("%s: skip cleaning node" %
                                       self.who_am_i(node))
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.exception(
+                    f"Error cleaning data files on {node.account.hostname}:")
+                raise
 
         for node in to_start:
             self.logger.debug("%s: starting node" % self.who_am_i(node))
@@ -164,8 +166,12 @@ class RedpandaService(Service):
         self.logger.info("Verifying storage is in expected state")
         storage = self.storage()
         for node in storage.nodes:
-            assert set(node.ns) == {"redpanda"}
-            assert set(node.ns["redpanda"].topics) == {"controller", "kvstore"}
+            if not set(node.ns) == {"redpanda"} or not set(
+                    node.ns["redpanda"].topics) == {"controller", "kvstore"}:
+                self.logger.error(
+                    f"Unexpected files: ns={node.ns} redpanda topics={node.ns['redpanda'].topics}"
+                )
+                raise RuntimeError("Unexpected files in data directory")
 
         security_settings = dict()
         if self.sasl_enabled():
@@ -296,8 +302,12 @@ class RedpandaService(Service):
 
     def clean_node(self, node):
         node.account.kill_process("redpanda", clean_shutdown=False)
-        node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/*")
-        node.account.remove(f"{RedpandaService.CONFIG_FILE}")
+        if node.account.exists(RedpandaService.PERSISTENT_ROOT):
+            if node.account.sftp_client.listdir(
+                    RedpandaService.PERSISTENT_ROOT):
+                node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/*")
+        if node.account.exists(RedpandaService.CONFIG_FILE):
+            node.account.remove(f"{RedpandaService.CONFIG_FILE}")
 
     def remove_local_data(self, node):
         node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/data/*")
