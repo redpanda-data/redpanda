@@ -11,6 +11,7 @@
 #include "kafka/server/handlers/describe_log_dirs.h"
 
 #include "cluster/partition_manager.h"
+#include "config/node_config.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
@@ -104,7 +105,7 @@ ss::future<response_ptr> describe_log_dirs_handler::handle(
     // redpanda only supports a single data directory right now
     response.data.results.push_back(describe_log_dirs_result{
       .error_code = error_code::none,
-      .log_dir = config::shard_local_cfg().data_directory().as_sstring(),
+      .log_dir = config::node().data_directory().as_sstring(),
     });
 
     if (!ctx.authorized(

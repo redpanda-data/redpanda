@@ -226,11 +226,14 @@ std::unique_ptr<storage::disk_log_builder>
 archiver_fixture::get_started_log_builder(
   model::ntp ntp, model::revision_id rev) {
     storage::ntp_config ntp_cfg(
-      std::move(ntp), lconf().data_directory().as_sstring(), nullptr, rev);
+      std::move(ntp),
+      config::node().data_directory().as_sstring(),
+      nullptr,
+      rev);
 
     auto conf = storage::log_config(
       storage::log_config::storage_type::disk,
-      lconf().data_directory().as_sstring(),
+      config::node().data_directory().as_sstring(),
       1_MiB,
       storage::debug_sanitize_files::yes);
     auto builder = std::make_unique<storage::disk_log_builder>(std::move(conf));

@@ -185,14 +185,14 @@ std::vector<topic_result> create_topic_results(
     return results;
 }
 
-model::broker make_self_broker(const config::configuration& cfg) {
-    auto kafka_addr = cfg.advertised_kafka_api();
-    auto rpc_addr = cfg.advertised_rpc_api();
+model::broker make_self_broker(const config::node_config& node_cfg) {
+    auto kafka_addr = node_cfg.advertised_kafka_api();
+    auto rpc_addr = node_cfg.advertised_rpc_api();
     return model::broker(
-      model::node_id(cfg.node_id),
+      model::node_id(node_cfg.node_id),
       kafka_addr,
       rpc_addr,
-      cfg.rack,
+      node_cfg.rack,
       // FIXME: Fill broker properties with all the information
       model::broker_properties{.cores = ss::smp::count});
 }

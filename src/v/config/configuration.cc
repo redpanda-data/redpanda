@@ -10,6 +10,7 @@
 #include "config/configuration.h"
 
 #include "config/base_property.h"
+#include "config/node_config.h"
 #include "model/metadata.h"
 #include "storage/chunk_cache.h"
 #include "units.h"
@@ -43,18 +44,13 @@ uint32_t default_raft_non_local_requests() {
 }
 
 configuration::configuration()
-  : data_directory(
+  : developer_mode(
     *this,
-    "data_directory",
-    "Place where redpanda will keep the data",
-    required::yes)
-  , developer_mode(
-      *this,
-      "developer_mode",
-      "Skips most of the checks performed at startup, not recomended for "
-      "production use",
-      required::no,
-      false)
+    "developer_mode",
+    "Skips most of the checks performed at startup, not recomended for "
+    "production use",
+    required::no,
+    false)
   , log_segment_size(
       *this,
       "log_segment_size",
@@ -74,19 +70,6 @@ configuration::configuration()
       "Duration after which inactive readers will be evicted from cache",
       required::no,
       30s)
-  , rpc_server(
-      *this,
-      "rpc_server",
-      "IpAddress and port for RPC server",
-      required::no,
-      unresolved_address("127.0.0.1", 33145))
-  , rpc_server_tls(
-      *this,
-      "rpc_server_tls",
-      "TLS configuration for RPC server",
-      required::no,
-      tls_config(),
-      tls_config::validate)
   , rpc_server_listen_backlog(
       *this,
       "rpc_server_listen_backlog",
@@ -109,12 +92,6 @@ configuration::configuration()
       32_KiB)
   , enable_coproc(
       *this, "enable_coproc", "Enable coprocessing mode", required::no, false)
-  , coproc_supervisor_server(
-      *this,
-      "coproc_supervisor_server",
-      "IpAddress and port for supervisor service",
-      required::no,
-      unresolved_address("127.0.0.1", 43189))
   , coproc_max_inflight_bytes(
       *this,
       "coproc_max_inflight_bytes",
@@ -139,11 +116,6 @@ configuration::configuration()
       "Interval for which all coprocessor offsets are flushed to disk",
       required::no,
       300000ms) // five minutes
-  , node_id(
-      *this,
-      "node_id",
-      "Unique id identifying a node in the cluster",
-      required::yes)
   , seed_server_meta_topic_partitions(
       *this,
       "seed_server_meta_topic_partitions",
@@ -169,58 +141,18 @@ configuration::configuration()
       "connection.  Set to 0 to disable force disconnection.",
       required::no,
       3)
-  , seed_servers(
-      *this,
-      "seed_servers",
-      "List of the seed servers used to join current cluster. If the "
-      "seed_server list is empty the node will be a cluster root and it will "
-      "form a new cluster",
-      required::no,
-      {})
   , min_version(
       *this, "min_version", "minimum redpanda compat version", required::no, 0)
   , max_version(
       *this, "max_version", "max redpanda compat version", required::no, 1)
-  , kafka_api(
-      *this,
-      "kafka_api",
-      "Address and port of an interface to listen for Kafka API requests",
-      required::no,
-      {model::broker_endpoint(unresolved_address("127.0.0.1", 9092))})
-  , kafka_api_tls(
-      *this,
-      "kafka_api_tls",
-      "TLS configuration for Kafka API endpoint",
-      required::no,
-      {},
-      endpoint_tls_config::validate_many)
   , use_scheduling_groups(
       *this,
       "use_scheduling_groups",
       "Manage CPU scheduling",
       required::no,
       false)
-  , admin(
-      *this,
-      "admin",
-      "Address and port of admin server",
-      required::no,
-      {model::broker_endpoint(unresolved_address("127.0.0.1", 9644))})
-  , admin_api_tls(
-      *this,
-      "admin_api_tls",
-      "TLS configuration for admin HTTP server",
-      required::no,
-      {},
-      endpoint_tls_config::validate_many)
   , enable_admin_api(
       *this, "enable_admin_api", "Enable the admin API", required::no, true)
-  , admin_api_doc_dir(
-      *this,
-      "admin_api_doc_dir",
-      "Admin API doc directory",
-      required::no,
-      "/usr/share/redpanda/admin-api-doc")
   , default_num_windows(
       *this,
       "default_num_windows",
@@ -247,13 +179,6 @@ configuration::configuration()
       2_GiB)
   , cluster_id(
       *this, "cluster_id", "Cluster identifier", required::no, std::nullopt)
-  , rack(*this, "rack", "Rack identifier", required::no, std::nullopt)
-  , dashboard_dir(
-      *this,
-      "dashboard_dir",
-      "serve http dashboard on / url",
-      required::no,
-      std::nullopt)
   , disable_metrics(
       *this,
       "disable_metrics",
@@ -827,13 +752,6 @@ configuration::configuration()
       "remote storage (sec)",
       required::no,
       std::nullopt)
-  , cloud_storage_cache_directory(
-      *this,
-      "cloud_storage_cache_directory",
-      "Directory for archival cache. Should be present when "
-      "`cloud_storage_enabled` is present",
-      required::no,
-      (data_directory.value().path / "archival_cache").native())
   , cloud_storage_cache_size(
       *this,
       "cloud_storage_cache_size",
@@ -961,27 +879,16 @@ configuration::configuration()
       "health_manager_tick_interval",
       "How often the health manager runs",
       required::no,
-      3min)
-  , _advertised_kafka_api(
-      *this,
-      "advertised_kafka_api",
-      "Address of Kafka API published to the clients",
-      required::no,
-      {})
-  , _advertised_rpc_api(
-      *this,
-      "advertised_rpc_api",
-      "Address of RPC endpoint published to other cluster members",
-      required::no,
-      std::nullopt)
+      3min) {}
 
-{}
-
-void configuration::read_yaml(const YAML::Node& root_node) {
+void configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
         throw std::invalid_argument("'redpanda'root is required");
     }
-    config_store::read_yaml(root_node["redpanda"]);
+
+    const auto& ignore = node().property_names();
+
+    config_store::read_yaml(root_node["redpanda"], ignore);
 }
 
 configuration& shard_local_cfg() {

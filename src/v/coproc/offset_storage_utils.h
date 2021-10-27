@@ -11,6 +11,7 @@
 
 #pragma once
 #include "cluster/partition_manager.h"
+#include "config/node_config.h"
 #include "coproc/ntp_context.h"
 
 #include <filesystem>
@@ -18,7 +19,7 @@
 namespace coproc {
 
 inline std::filesystem::path offsets_snapshot_path() {
-    return config::shard_local_cfg().data_directory().path
+    return config::node().data_directory().path
            / ".coprocessor_offset_checkpoints";
 }
 

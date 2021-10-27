@@ -18,6 +18,7 @@
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
+#include "config/node_config.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
@@ -152,27 +153,30 @@ public:
                                 seed_servers = std::move(seed_servers),
                                 base_path]() mutable {
             auto& config = config::shard_local_cfg();
-            config.get("node_id").set_value(node_id);
 
-            config.get("rpc_server")
-              .set_value(unresolved_address("127.0.0.1", rpc_port));
-            config.get("kafka_api")
-              .set_value(
-                std::vector<model::broker_endpoint>{model::broker_endpoint(
-                  unresolved_address("127.0.0.1", kafka_port))});
-            config.get("seed_servers").set_value(seed_servers);
             config.get("enable_pid_file").set_value(false);
             config.get("developer_mode").set_value(true);
             config.get("enable_admin_api").set_value(false);
             config.get("join_retry_timeout_ms").set_value(100ms);
             config.get("members_backend_retry_ms").set_value(1000ms);
-            config.get("coproc_supervisor_server")
+            config.get("disable_metrics").set_value(true);
+
+            auto& node_config = config::node();
+            node_config.get("node_id").set_value(node_id);
+            node_config.get("rack").set_value(
+              std::optional<ss::sstring>(rack_name));
+            node_config.get("seed_servers").set_value(seed_servers);
+            node_config.get("rpc_server")
+              .set_value(unresolved_address("127.0.0.1", rpc_port));
+            node_config.get("kafka_api")
+              .set_value(
+                std::vector<model::broker_endpoint>{model::broker_endpoint(
+                  unresolved_address("127.0.0.1", kafka_port))});
+            node_config.get("data_directory")
+              .set_value(config::data_directory_path{.path = base_path});
+            node_config.get("coproc_supervisor_server")
               .set_value(
                 unresolved_address("127.0.0.1", coproc_supervisor_port));
-            config.get("rack").set_value(std::optional<ss::sstring>(rack_name));
-            config.get("disable_metrics").set_value(true);
-            config.get("data_directory")
-              .set_value(config::data_directory_path{.path = base_path});
         }).get0();
     }
 
@@ -185,12 +189,10 @@ public:
     }
 
     YAML::Node proxy_client_config(
-      uint16_t kafka_api_port
-      = config::shard_local_cfg().kafka_api()[0].address.port()) {
+      uint16_t kafka_api_port = config::node().kafka_api()[0].address.port()) {
         kafka::client::configuration cfg;
         unresolved_address kafka_api{
-          config::shard_local_cfg().kafka_api()[0].address.host(),
-          kafka_api_port};
+          config::node().kafka_api()[0].address.host(), kafka_api_port};
         cfg.brokers.set_value(std::vector<unresolved_address>({kafka_api}));
         return to_yaml(cfg);
     }
@@ -220,7 +222,7 @@ public:
     ss::future<kafka::client::transport> make_kafka_client() {
         return ss::make_ready_future<kafka::client::transport>(
           rpc::base_transport::configuration{
-            .server_addr = config::shard_local_cfg().kafka_api()[0].address,
+            .server_addr = config::node().kafka_api()[0].address,
           });
     }
 
@@ -308,7 +310,7 @@ public:
           model::partition_id(0));
 
         storage::ntp_config ntp_cfg(
-          ntp, lconf().data_directory().as_sstring(), nullptr, rev);
+          ntp, config::node().data_directory().as_sstring(), nullptr, rev);
 
         storage::disk_log_builder builder(make_default_config());
         using namespace storage; // NOLINT

@@ -26,7 +26,9 @@ public:
         return *_properties.at(name);
     }
 
-    virtual void read_yaml(const YAML::Node& root_node) {
+    virtual void read_yaml(
+      const YAML::Node& root_node,
+      const std::set<std::string_view> ignore_missing = {}) {
         for (auto const& [name, property] : _properties) {
             if (property->is_required() == required::no) {
                 continue;
@@ -42,10 +44,13 @@ public:
             auto name = node.first.as<ss::sstring>();
             auto found = _properties.find(name);
             if (found == _properties.end()) {
-                throw std::invalid_argument(
-                  fmt::format("Unknown property {}", name));
+                if (!ignore_missing.contains(name)) {
+                    throw std::invalid_argument(
+                      fmt::format("Unknown property {}", name));
+                }
+            } else {
+                found->second->set_value(node.second);
             }
-            found->second->set_value(node.second);
         }
     }
 
@@ -77,6 +82,15 @@ public:
         w.EndObject();
     }
 
+    std::set<std::string_view> property_names() const {
+        std::set<std::string_view> result;
+        for (const auto& i : _properties) {
+            result.insert(i.first);
+        }
+
+        return result;
+    }
+
     virtual ~config_store() noexcept = default;
 
 private:
@@ -102,38 +116,3 @@ static inline ostream& operator<<(ostream& o, const config::config_store& c) {
     return o;
 }
 } // namespace std
-
-namespace YAML {
-template<>
-struct convert<ss::sstring> {
-    static Node encode(const ss::sstring& rhs) { return Node(rhs.c_str()); }
-    static bool decode(const Node& node, ss::sstring& rhs) {
-        if (!node.IsScalar()) {
-            return false;
-        }
-        rhs = node.as<std::string>();
-        return true;
-    }
-};
-
-template<typename T>
-struct convert<std::optional<T>> {
-    using type = std::optional<T>;
-
-    static Node encode(const type& rhs) {
-        if (rhs) {
-            return Node(*rhs);
-        }
-    }
-
-    static bool decode(const Node& node, type& rhs) {
-        if (node && !node.IsNull()) {
-            rhs = std::make_optional<T>(node.as<T>());
-        } else {
-            rhs = std::nullopt;
-        }
-        return true;
-    }
-};
-
-}; // namespace YAML

@@ -27,6 +27,7 @@
 #include "cluster/tx_gateway_frontend.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
+#include "config/node_config.h"
 #include "config/seed_server.h"
 #include "coproc/api.h"
 #include "kafka/client/configuration.h"
@@ -78,13 +79,13 @@
 
 static void set_local_kafka_client_config(
   std::optional<kafka::client::configuration>& client_config,
-  const config::configuration& config) {
+  const config::node_config& config) {
     client_config.emplace();
     const auto& kafka_api = config.kafka_api.value();
     vassert(!kafka_api.empty(), "There are no kafka_api listeners");
     client_config->brokers.set_value(
       std::vector<unresolved_address>{kafka_api[0].address});
-    const auto& kafka_api_tls = config::shard_local_cfg().kafka_api_tls.value();
+    const auto& kafka_api_tls = config::node().kafka_api_tls.value();
     auto tls_it = std::find_if(
       kafka_api_tls.begin(),
       kafka_api_tls.end(),
@@ -98,7 +99,7 @@ static void set_local_kafka_client_config(
 
 static void set_sr_local_kafka_client_config(
   std::optional<kafka::client::configuration>& client_config,
-  const config::configuration& config) {
+  const config::node_config& config) {
     set_local_kafka_client_config(client_config, config);
     if (client_config.has_value()) {
         if (!client_config->produce_batch_delay.is_overriden()) {
@@ -220,7 +221,7 @@ void application::initialize(
     }).get0();
 
     if (config::shard_local_cfg().enable_pid_file()) {
-        syschecks::pidfile_create(config::shard_local_cfg().pidfile_path());
+        syschecks::pidfile_create(config::node().pidfile_path());
     }
     smp_groups::config smp_groups_cfg{
       .raft_group_max_non_local_requests
@@ -331,17 +332,22 @@ void application::hydrate_config(const po::variables_map& cfg) {
     _redpanda_enabled = config["redpanda"];
     if (_redpanda_enabled) {
         ss::smp::invoke_on_all([&config] {
-            config::shard_local_cfg().read_yaml(config);
+            config::shard_local_cfg().load(config);
         }).get0();
+
+        ss::smp::invoke_on_all([&config] {
+            config::node().load(config);
+        }).get0();
+
         config::shard_local_cfg().for_each(config_printer("redpanda"));
+        config::node().for_each(config_printer("redpanda"));
     }
     if (config["pandaproxy"]) {
         _proxy_config.emplace(config["pandaproxy"]);
         if (config["pandaproxy_client"]) {
             _proxy_client_config.emplace(config["pandaproxy_client"]);
         } else {
-            set_local_kafka_client_config(
-              _proxy_client_config, config::shard_local_cfg());
+            set_local_kafka_client_config(_proxy_client_config, config::node());
         }
         _proxy_config->for_each(config_printer("pandaproxy"));
         _proxy_client_config->for_each(config_printer("pandaproxy_client"));
@@ -352,7 +358,7 @@ void application::hydrate_config(const po::variables_map& cfg) {
             _schema_reg_client_config.emplace(config["schema_registry_client"]);
         } else {
             set_sr_local_kafka_client_config(
-              _schema_reg_client_config, config::shard_local_cfg());
+              _schema_reg_client_config, config::node());
         }
         _schema_reg_config->for_each(config_printer("schema_registry"));
         _schema_reg_client_config->for_each(
@@ -366,7 +372,7 @@ void application::check_environment() {
     syschecks::memory(config::shard_local_cfg().developer_mode());
     if (_redpanda_enabled) {
         storage::directories::initialize(
-          config::shard_local_cfg().data_directory().as_sstring())
+          config::node().data_directory().as_sstring())
           .get();
     }
 }
@@ -374,10 +380,10 @@ void application::check_environment() {
 static admin_server_cfg
 admin_server_cfg_from_global_cfg(scheduling_groups& sgs) {
     return admin_server_cfg{
-      .endpoints = config::shard_local_cfg().admin(),
-      .endpoints_tls = config::shard_local_cfg().admin_api_tls(),
-      .dashboard_dir = config::shard_local_cfg().dashboard_dir(),
-      .admin_api_docs_dir = config::shard_local_cfg().admin_api_doc_dir(),
+      .endpoints = config::node().admin(),
+      .endpoints_tls = config::node().admin_api_tls(),
+      .dashboard_dir = config::node().dashboard_dir(),
+      .admin_api_docs_dir = config::node().admin_api_doc_dir(),
       .enable_admin_api = config::shard_local_cfg().enable_admin_api(),
       .sg = sgs.admin_sg(),
     };
@@ -413,7 +419,7 @@ static storage::kvstore_config kvstore_config_from_global_config() {
     return storage::kvstore_config(
       config::shard_local_cfg().kvstore_max_segment_size(),
       config::shard_local_cfg().kvstore_flush_interval(),
-      config::shard_local_cfg().data_directory().as_sstring(),
+      config::node().data_directory().as_sstring(),
       storage::debug_sanitize_files::no);
 }
 
@@ -421,7 +427,7 @@ static storage::log_config
 manager_config_from_global_config(scheduling_groups& sgs) {
     return storage::log_config(
       storage::log_config::storage_type::disk,
-      config::shard_local_cfg().data_directory().as_sstring(),
+      config::node().data_directory().as_sstring(),
       config::shard_local_cfg().log_segment_size(),
       config::shard_local_cfg().compacted_log_segment_size(),
       config::shard_local_cfg().max_compacted_log_segment_size(),
@@ -444,7 +450,7 @@ manager_config_from_global_config(scheduling_groups& sgs) {
 static storage::backlog_controller_config compaction_controller_config(
   ss::scheduling_group sg, const ss::io_priority_class& iopc) {
     auto space_info = std::filesystem::space(
-      config::shard_local_cfg().data_directory().path);
+      config::node().data_directory().path);
     /**
      * By default we set desired compaction backlog size to 10% of disk
      * capacity.
@@ -507,7 +513,7 @@ void application::wire_up_services() {
     if (_schema_reg_config) {
         construct_single_service(
           _schema_registry,
-          config::shard_local_cfg().node_id(),
+          config::node().node_id(),
           smp_service_groups.proxy_smp_sg(),
           // TODO: Improve memory budget for services
           // https://github.com/vectorizedio/redpanda/issues/1392
@@ -545,7 +551,7 @@ void application::wire_up_redpanda_services() {
     syschecks::systemd_message("Intializing raft group manager").get();
     raft_group_manager
       .start(
-        model::node_id(config::shard_local_cfg().node_id()),
+        model::node_id(config::node().node_id()),
         config::shard_local_cfg().raft_io_timeout_ms(),
         _scheduling_groups.raft_sg(),
         config::shard_local_cfg().raft_heartbeat_interval_ms(),
@@ -699,7 +705,7 @@ void application::wire_up_redpanda_services() {
         syschecks::systemd_message("Creating coproc::api").get();
         construct_single_service(
           coprocessing,
-          config::shard_local_cfg().coproc_supervisor_server(),
+          config::node().coproc_supervisor_server(),
           std::ref(storage),
           std::ref(controller->get_topics_frontend()),
           std::ref(metadata_cache),
@@ -716,9 +722,8 @@ void application::wire_up_redpanda_services() {
     rpc_cfg
       .invoke_on_all([this](rpc::server_configuration& c) {
           return ss::async([this, &c] {
-              auto rpc_server_addr = rpc::resolve_dns(
-                                       config::shard_local_cfg().rpc_server())
-                                       .get0();
+              auto rpc_server_addr
+                = rpc::resolve_dns(config::node().rpc_server()).get0();
               c.load_balancing_algo
                 = ss::server_socket::load_balancing_algorithm::port;
               c.max_service_memory_per_core = memory_groups::rpc_total_memory();
@@ -730,7 +735,7 @@ void application::wire_up_redpanda_services() {
                 = config::shard_local_cfg().rpc_server_tcp_recv_buf;
               c.tcp_send_buf
                 = config::shard_local_cfg().rpc_server_tcp_send_buf;
-              auto rpc_builder = config::shard_local_cfg()
+              auto rpc_builder = config::node()
                                    .rpc_server_tls()
                                    .get_credentials_builder()
                                    .get0();
@@ -833,9 +838,8 @@ void application::wire_up_redpanda_services() {
                 = config::shard_local_cfg().rpc_server_tcp_recv_buf;
               c.tcp_send_buf
                 = config::shard_local_cfg().rpc_server_tcp_send_buf;
-              auto& tls_config
-                = config::shard_local_cfg().kafka_api_tls.value();
-              for (const auto& ep : config::shard_local_cfg().kafka_api()) {
+              auto& tls_config = config::node().kafka_api_tls.value();
+              for (const auto& ep : config::node().kafka_api()) {
                   ss::shared_ptr<ss::tls::server_credentials> credentails;
                   // find credentials for this endpoint
                   auto it = find_if(
@@ -1014,12 +1018,14 @@ void application::start_redpanda() {
           s.set_protocol(std::move(proto));
       })
       .get();
-    auto& conf = config::shard_local_cfg();
     _rpc.invoke_on_all(&rpc::server::start).get();
     // shutdown input on RPC server
     _deferred.emplace_back(
       [this] { _rpc.invoke_on_all(&rpc::server::shutdown_input).get(); });
-    vlog(_log.info, "Started RPC server listening at {}", conf.rpc_server());
+    vlog(
+      _log.info,
+      "Started RPC server listening at {}",
+      config::node().rpc_server());
 
     if (archival_storage_enabled()) {
         syschecks::systemd_message("Starting archival storage").get();
@@ -1077,7 +1083,9 @@ void application::start_redpanda() {
         _kafka_server.invoke_on_all(&rpc::server::shutdown_input).get();
     });
     vlog(
-      _log.info, "Started Kafka API server listening at {}", conf.kafka_api());
+      _log.info,
+      "Started Kafka API server listening at {}",
+      config::node().kafka_api());
 
     if (config::shard_local_cfg().enable_admin_api()) {
         _admin.invoke_on_all(&admin_server::start).get0();

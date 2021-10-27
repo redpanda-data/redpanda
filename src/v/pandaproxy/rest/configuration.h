@@ -37,6 +37,4 @@ struct configuration final : public config::config_store {
     explicit configuration(const YAML::Node& cfg);
 };
 
-using conf_ref = typename std::reference_wrapper<configuration>;
-
 } // namespace pandaproxy::rest
