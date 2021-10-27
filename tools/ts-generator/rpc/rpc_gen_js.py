@@ -321,6 +321,14 @@ export class {{service_name.title()}}Client {
     ));
     return this.correlationId;
   }
+
+  rawSend(buffer: IOBuf): number{
+    buffer.forEach((fragment =>
+      this.client.write(fragment.buffer.slice(0, fragment.used))
+    ));
+    return this.correlationId;
+  }
+  
   {% for method in methods %}
   {{method.name}}(input: {{method.input_ts}}): Promise<{{method.output_ts}}> {
     return new Promise((resolve, reject) => {
