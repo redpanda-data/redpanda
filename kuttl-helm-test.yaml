@@ -11,7 +11,7 @@ kindNodeCache: false
 commands:
   - command: "./hack/install-cert-manager.sh"
   - command: "kubectl apply -k ./config/crd"
-  - command: "kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/master/bundle.yaml"
+  - command: "kubectl create -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/master/bundle.yaml"
   - command: "helm dep up ./helm-chart/charts/redpanda-operator"
   - command: "helm install --set configurator.tag=latest --set image.tag=latest --namespace helm-test --create-namespace redpanda-operator ./helm-chart/charts/redpanda-operator"
   - command: "./hack/wait-for-webhook-ready.sh"
