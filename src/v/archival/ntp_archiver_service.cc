@@ -151,8 +151,17 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
   retry_chain_node& parent) {
     retry_chain_logger ctxlog(archival_log, parent, _ntp.path());
 
+    std::optional<storage::log> log = lm.get(_ntp);
+    if (!log) {
+        vlog(ctxlog.warn, "couldn't find log in log manager");
+        co_return scheduled_upload{.stop = ss::stop_iteration::yes};
+    }
+
     auto upload = co_await _policy.get_next_candidate(
-      start_upload_offset, last_stable_offset, lm);
+      start_upload_offset,
+      last_stable_offset,
+      *log,
+      *_partition->get_offset_translator());
 
     if (upload.source.get() == nullptr) {
         vlog(
