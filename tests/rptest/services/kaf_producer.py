@@ -26,7 +26,12 @@ class KafProducer(BackgroundThreadService):
 
         self._stopping.clear()
         try:
-            for line in node.account.ssh_capture(cmd, timeout_sec=10):
+            out_iter = node.account.ssh_capture(cmd, timeout_sec=10)
+            for line in out_iter:
+                if self._stopping.is_set():
+                    # Promptly close SSH channel to terminate the bash for loop
+                    del out_iter
+                    break
                 self.logger.debug(line.rstrip())
         except RemoteCommandError:
             if self._stopping.is_set():

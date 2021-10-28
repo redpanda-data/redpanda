@@ -1,5 +1,7 @@
 #include "kafka/server/group_stm.h"
 
+#include "cluster/logger.h"
+
 namespace kafka {
 
 void group_stm::overwrite_metadata(group_log_group_metadata&& metadata) {
@@ -26,13 +28,15 @@ void group_stm::update_prepared(
     auto [prepared_it, inserted] = _prepared_txs.try_emplace(
       tx.pid.get_id(), tx);
     if (!inserted && prepared_it->second.pid.epoch > tx.pid.epoch) {
-        klog.warn(
+        vlog(
+          cluster::txlog.warn,
           "a logged tx {} is fenced off by prev logged tx {}",
           val.pid,
           prepared_it->second.pid);
         return;
     } else if (!inserted && prepared_it->second.pid.epoch < tx.pid.epoch) {
-        klog.warn(
+        vlog(
+          cluster::txlog.warn,
           "a logged tx {} overwrites prev logged tx {}",
           val.pid,
           prepared_it->second.pid);
@@ -56,10 +60,11 @@ void group_stm::commit(model::producer_identity pid) {
     auto prepared_it = _prepared_txs.find(pid.get_id());
     if (prepared_it == _prepared_txs.end()) {
         // missing prepare may happen when the consumer log gets truncated
-        vlog(klog.trace, "can't find ongoing tx {}", pid);
+        vlog(cluster::txlog.trace, "can't find ongoing tx {}", pid);
         return;
     } else if (prepared_it->second.pid.epoch != pid.epoch) {
-        klog.warn(
+        vlog(
+          cluster::txlog.warn,
           "a comitting tx {} doesn't match ongoing tx {}",
           pid,
           prepared_it->second.pid);

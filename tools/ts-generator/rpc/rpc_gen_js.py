@@ -114,48 +114,55 @@ const startReadRequest = (fn: ApplyFn) => (socket: Socket): void => {
  * the rest of the buffer.
 */
 const readBufferRequest = (buffer: Buffer, fn: ApplyFn, socket: Socket) => {
-  const [rpcHeader, crcValidation, crc32] = validateRpcHeader(
-    buffer.slice(0, rpcHeaderSize)
-  );
-  if (!crcValidation) {
-    throw (
-      `Crc32 inconsistent, expected: ${rpcHeader.headerChecksum} ` +
-      `generated: ${crc32}`
+  try {
+    const [rpcHeader, crcValidation, crc32] = validateRpcHeader(
+      buffer.slice(0, rpcHeaderSize)
     );
-  }
-  const size = rpcHeader.payloadSize;
-  const availableBytesOnBuffer = buffer.length - rpcHeaderSize;
-  if (availableBytesOnBuffer == size) {
-    const result = buffer.slice(rpcHeaderSize, size + rpcHeaderSize);
-    startReadRequest(fn)(socket)
-    return fn(rpcHeader, result, socket);
-  } else if (availableBytesOnBuffer > size) {
-    const result = buffer.slice(rpcHeaderSize, size + rpcHeaderSize);
-    const restBuffer = buffer.slice(size + rpcHeaderSize)
-    if( restBuffer.length >= rpcHeaderSize ) {
-      // in this case, we can read a rpc header from residual buffer
-      readBufferRequest(buffer.slice(size + rpcHeaderSize), fn, socket);
-      return fn(rpcHeader, result, socket);
-    } else {
-      // in this case, we can't read a rpc header from residual buffer, therefore
-      // we need to wait for next chunk, before we continue reading 
-      return readNextChunk(socket, 0, fn, true)
-        .then(nextChunk => {
-          readBufferRequest(
-            Buffer.concat([restBuffer, nextChunk]),
-            fn,
-            socket
-          );
-          return fn(rpcHeader, result, socket)
-        })
+    if (!crcValidation) {
+      throw (
+        `Crc32 inconsistent, expected: ${rpcHeader.headerChecksum} ` +
+        `generated: ${crc32}`
+      );
     }
-  } else {
-    const bytesForReading = size - availableBytesOnBuffer;
-    return readNextChunk(socket, bytesForReading, fn)
-      .then((nextBuffer) =>
-        Buffer.concat([buffer.slice(rpcHeaderSize), nextBuffer])
-      )
-      .then((result) => fn(rpcHeader, result, socket));
+    const size = rpcHeader.payloadSize;
+    const availableBytesOnBuffer = buffer.length - rpcHeaderSize;
+    if (availableBytesOnBuffer == size) {
+      const result = buffer.slice(rpcHeaderSize, size + rpcHeaderSize);
+      startReadRequest(fn)(socket)
+      return fn(rpcHeader, result, socket);
+    } else if (availableBytesOnBuffer > size) {
+      const result = buffer.slice(rpcHeaderSize, size + rpcHeaderSize);
+      const restBuffer = buffer.slice(size + rpcHeaderSize)
+      if( restBuffer.length >= rpcHeaderSize ) {
+        // in this case, we can read a rpc header from residual buffer
+        readBufferRequest(buffer.slice(size + rpcHeaderSize), fn, socket);
+        return fn(rpcHeader, result, socket);
+      } else {
+        // in this case, we can't read a rpc header from residual buffer, therefore
+        // we need to wait for next chunk, before we continue reading 
+        return readNextChunk(socket, 0, fn, true)
+          .then(nextChunk => {
+            readBufferRequest(
+              Buffer.concat([restBuffer, nextChunk]),
+              fn,
+              socket
+            );
+            return fn(rpcHeader, result, socket)
+          })
+      }
+    } else {
+      const bytesForReading = size - availableBytesOnBuffer;
+      return readNextChunk(socket, bytesForReading, fn)
+        .then((nextBuffer) =>
+          Buffer.concat([buffer.slice(rpcHeaderSize), nextBuffer])
+        )
+        .then((result) => fn(rpcHeader, result, socket));
+    }
+  }
+  catch(e) {
+    console.log('Read request error: ', e);
+    socket.destroy();
+    socket.emit("close", true);
   }
 };
 
@@ -326,6 +333,14 @@ export class {{service_name.title()}}Client {
     ));
     return this.correlationId;
   }
+
+  rawSend(buffer: IOBuf): number{
+    buffer.forEach((fragment =>
+      this.client.write(fragment.buffer.slice(0, fragment.used))
+    ));
+    return this.correlationId;
+  }
+  
   {% for method in methods %}
   {{method.name}}(input: {{method.input_ts}}): Promise<{{method.output_ts}}> {
     return new Promise((resolve, reject) => {

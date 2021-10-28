@@ -34,6 +34,8 @@ import {
   wasmWithoutTopic,
   webpackScript,
 } from "./coprocString";
+import { IOBuf } from "../../modules/utilities/IOBuf";
+import { createConnection } from "net";
 
 const fs = require("fs");
 
@@ -143,6 +145,65 @@ describe("Server", function () {
       client.close();
       sinonInstance.restore();
       return server.closeConnection();
+    });
+
+    it("server should ignore incorrect RPC header and does not fail", function (done) {
+      const buffer = new IOBuf();
+      const rpcHeaderReserve = buffer.getReserve(26);
+      buffer.appendString("123");
+      const size = 3;
+      const correlationId = client.send(
+        buffer,
+        rpcHeaderReserve,
+        size,
+        123456789
+      );
+      client.close;
+
+      SupervisorClient.create(portNumber).then((c) => {
+        client = c;
+        const coprocessor = createHandle().coprocessor;
+        server.loadCoprocFromString = () => [coprocessor, undefined];
+        client
+          .enable_coprocessors({
+            coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
+          })
+          .then((response) => {
+            response.responses.forEach((responseItem) => {
+              assert.strictEqual(
+                responseItem.enableResponseCode,
+                EnableResponseCodes.success
+              );
+            });
+            done();
+          });
+      });
+    });
+
+    it("server should ignore random msgs and does not fail", function (done) {
+      const buffer = new IOBuf();
+      buffer.appendString("111111111111111");
+      client.rawSend(buffer);
+      client.close;
+
+      SupervisorClient.create(portNumber).then((c) => {
+        client = c;
+        const coprocessor = createHandle().coprocessor;
+        server.loadCoprocFromString = () => [coprocessor, undefined];
+        client
+          .enable_coprocessors({
+            coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
+          })
+          .then((response) => {
+            response.responses.forEach((responseItem) => {
+              assert.strictEqual(
+                responseItem.enableResponseCode,
+                EnableResponseCodes.success
+              );
+            });
+            done();
+          });
+      });
     });
 
     it(

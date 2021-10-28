@@ -10,6 +10,7 @@
 #include "kafka/server/group_manager.h"
 
 #include "cluster/cluster_utils.h"
+#include "cluster/logger.h"
 #include "cluster/partition_manager.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/topic_table.h"
@@ -538,8 +539,6 @@ ss::future<> recovery_batch_consumer::handle_record(model::record r) {
         // skip control structure
         return ss::make_ready_future<>();
 
-        // todo: process tx commit offset by caching in group
-
     default:
         return ss::make_exception_future<>(std::runtime_error(fmt::format(
           "Unknown record type={} in group recovery", int(key.record_type))));
@@ -756,7 +755,9 @@ group_manager::txn_offset_commit(txn_offset_commit_request&& r) {
     if (!p || !p->catchup_lock.try_read_lock()) {
         // transaction operations can't run in parallel with loading
         // state from the log (happens once per term change)
-        vlog(klog.trace, "can't process a tx: coordinator_load_in_progress");
+        vlog(
+          cluster::txlog.trace,
+          "can't process a tx: coordinator_load_in_progress");
         return ss::make_ready_future<txn_offset_commit_response>(
           txn_offset_commit_response(
             r, error_code::coordinator_load_in_progress));
@@ -765,6 +766,8 @@ group_manager::txn_offset_commit(txn_offset_commit_request&& r) {
 
     return p->catchup_lock.hold_read_lock().then(
       [this, p, r = std::move(r)](ss::basic_rwlock<>::holder unit) mutable {
+          // TODO: use correct key instead of offset_commit_api::key
+          // check other txn places
           auto error = validate_group_status(
             r.ntp, r.data.group_id, offset_commit_api::key);
           if (error != error_code::none) {
@@ -795,7 +798,9 @@ group_manager::commit_tx(cluster::commit_group_tx_request&& r) {
     if (!p || !p->catchup_lock.try_read_lock()) {
         // transaction operations can't run in parallel with loading
         // state from the log (happens once per term change)
-        vlog(klog.trace, "can't process a tx: coordinator_load_in_progress");
+        vlog(
+          cluster::txlog.trace,
+          "can't process a tx: coordinator_load_in_progress");
         return ss::make_ready_future<cluster::commit_group_tx_reply>(
           make_commit_tx_reply(cluster::tx_errc::coordinator_load_in_progress));
     }
@@ -832,7 +837,9 @@ group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
     if (!p || !p->catchup_lock.try_read_lock()) {
         // transaction operations can't run in parallel with loading
         // state from the log (happens once per term change)
-        vlog(klog.trace, "can't process a tx: coordinator_load_in_progress");
+        vlog(
+          cluster::txlog.trace,
+          "can't process a tx: coordinator_load_in_progress");
         return ss::make_ready_future<cluster::begin_group_tx_reply>(
           make_begin_tx_reply(cluster::tx_errc::coordinator_load_in_progress));
     }
@@ -870,7 +877,9 @@ group_manager::prepare_tx(cluster::prepare_group_tx_request&& r) {
     if (!p || !p->catchup_lock.try_read_lock()) {
         // transaction operations can't run in parallel with loading
         // state from the log (happens once per term change)
-        vlog(klog.trace, "can't process a tx: coordinator_load_in_progress");
+        vlog(
+          cluster::txlog.trace,
+          "can't process a tx: coordinator_load_in_progress");
         return ss::make_ready_future<cluster::prepare_group_tx_reply>(
           make_prepare_tx_reply(
             cluster::tx_errc::coordinator_load_in_progress));
@@ -906,7 +915,9 @@ group_manager::abort_tx(cluster::abort_group_tx_request&& r) {
     if (!p || !p->catchup_lock.try_read_lock()) {
         // transaction operations can't run in parallel with loading
         // state from the log (happens once per term change)
-        vlog(klog.trace, "can't process a tx: coordinator_load_in_progress");
+        vlog(
+          cluster::txlog.trace,
+          "can't process a tx: coordinator_load_in_progress");
         return ss::make_ready_future<cluster::abort_group_tx_reply>(
           make_abort_tx_reply(cluster::tx_errc::coordinator_load_in_progress));
     }

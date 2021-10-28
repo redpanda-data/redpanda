@@ -11,4 +11,5 @@
 
 namespace cluster {
 ss::logger clusterlog{"cluster"};
+ss::logger txlog{"tx"};
 } // namespace cluster
