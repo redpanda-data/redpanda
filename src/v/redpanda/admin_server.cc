@@ -567,25 +567,23 @@ void admin_server::register_security_routes() {
       });
 
     ss::httpd::security_json::delete_user.set(
-      _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+      _server._routes,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
           auto user = security::credential_user(req->param["user"]);
 
-          return _controller->get_security_frontend()
-            .local()
-            .delete_user(user, model::timeout_clock::now() + 5s)
-            .then([](std::error_code err) {
-                vlog(logger.debug, "Deleting user {}:{}", err, err.message());
-                if (err) {
-                    throw ss::httpd::bad_request_exception(
-                      fmt::format("Deleting user: {}", err.message()));
-                }
-                return ss::make_ready_future<ss::json::json_return_type>(
-                  ss::json::json_return_type(ss::json::json_void()));
-            });
+          auto err
+            = co_await _controller->get_security_frontend().local().delete_user(
+              user, model::timeout_clock::now() + 5s);
+          vlog(logger.debug, "Deleting user {}:{}", err, err.message());
+          co_await throw_on_error(*req, err, model::controller_ntp);
+          co_return ss::json::json_return_type(ss::json::json_void());
       });
 
     ss::httpd::security_json::update_user.set(
-      _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+      _server._routes,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
           auto user = security::credential_user(req->param["user"]);
 
           rapidjson::Document doc;
@@ -593,18 +591,12 @@ void admin_server::register_security_routes() {
 
           auto credential = parse_scram_credential(doc);
 
-          return _controller->get_security_frontend()
-            .local()
-            .update_user(user, credential, model::timeout_clock::now() + 5s)
-            .then([](std::error_code err) {
-                vlog(logger.debug, "Updating user {}:{}", err, err.message());
-                if (err) {
-                    throw ss::httpd::bad_request_exception(
-                      fmt::format("Updating user: {}", err.message()));
-                }
-                return ss::make_ready_future<ss::json::json_return_type>(
-                  ss::json::json_return_type(ss::json::json_void()));
-            });
+          auto err
+            = co_await _controller->get_security_frontend().local().update_user(
+              user, credential, model::timeout_clock::now() + 5s);
+          vlog(logger.debug, "Updating user {}:{}", err, err.message());
+          co_await throw_on_error(*req, err, model::controller_ntp);
+          co_return ss::json::json_return_type(ss::json::json_void());
       });
 
     ss::httpd::security_json::list_users.set(
