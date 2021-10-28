@@ -84,3 +84,16 @@ class KafkaCat:
             return None, replicas
         else:
             return leader_id, replicas
+
+    def list_offsets(self, topic, partition):
+        def cmd(ts):
+            return ["-Q", "-t", f"{topic}:{partition}:{ts}"]
+
+        def offset(res):
+            # partition is a string in the output
+            return res[topic][f"{partition}"]["offset"]
+
+        oldest = offset(self._cmd(cmd(-2)))
+        newest = offset(self._cmd(cmd(-1)))
+
+        return (oldest, newest)
