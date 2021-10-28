@@ -123,30 +123,20 @@ class Admin:
 
         path = f"security/users"
 
-        def handle(node):
-            url = self._url(node, path)
-            data = dict(
-                username=username,
-                password=password,
-                algorithm=algorithm,
-            )
-            reply = requests.post(url, json=data)
-            self.redpanda.logger.debug(f"{reply.status_code} {reply.text}")
-            return reply.status_code == 200
-
-        self._request_to_any(handle)
+        self._request("POST",
+                      path,
+                      json=dict(
+                          username=username,
+                          password=password,
+                          algorithm=algorithm,
+                      ))
 
     def delete_user(self, username):
         self.redpanda.logger.info(f"Deleting user {username}")
 
         path = f"security/users/{username}"
 
-        def handle(node):
-            url = self._url(node, path)
-            reply = requests.delete(url)
-            return reply.status_code == 200
-
-        self._request_to_any(handle)
+        self._request("delete", path)
 
     def transfer_leadership_to(self, namespace, topic, partition, target_id):
         """
@@ -180,16 +170,3 @@ class Admin:
         leader = self.redpanda.get_node(details['leader_id'])
         ret = self._request('post', path=path, node=leader)
         return ret.status_code == 200
-
-    def _request_to_any(self, handler):
-        def try_send():
-            nodes = [n for n in self.redpanda.started_nodes()]
-            random.shuffle(nodes)
-            for node in nodes:
-                if handler(node):
-                    return True
-
-        wait_until(try_send,
-                   timeout_sec=30,
-                   backoff_sec=2,
-                   err_msg="Failed to complete request")
