@@ -394,14 +394,26 @@ class RedpandaService(Service):
         return broker is not None
 
     def controller(self):
-        kc = KafkaCat(self)
-        cid = kc.metadata()["controllerid"]
-        self.logger.debug("Controller reported with id: {}".format(cid))
-        if cid != -1:
-            node = self.get_node(cid)
-            self.logger.debug("Controller node found: {}".format(
-                node.account.hostname))
-            return node
+        """
+        :return: the ClusterNode that is currently controller leader, or None if no leader exists
+        """
+        for node in self.nodes:
+            try:
+                r = requests.request(
+                    "get",
+                    f"http://{node.account.hostname}:9644/v1/partitions/redpanda/controller/0",
+                    timeout=10)
+            except requests.exceptions.RequestException:
+                continue
+
+            if r.status_code != 200:
+                continue
+            else:
+                resp_leader_id = r.json()['leader_id']
+                if resp_leader_id != -1:
+                    return self.get_node(resp_leader_id)
+
+        return None
 
     def node_storage(self, node):
         """
