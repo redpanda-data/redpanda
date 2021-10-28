@@ -34,7 +34,8 @@ class Admin:
 
     def _request(self, verb, path, node=None, **kwargs):
         if node is None:
-            node = self.redpanda.controller()
+            node = random.choice(self.redpanda.nodes)
+
         r = requests.request(verb, self._url(node, path), **kwargs)
 
         # Log the response
