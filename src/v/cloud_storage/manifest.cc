@@ -28,6 +28,7 @@
 #include <boost/lexical_cast.hpp>
 #include <ctll/fixed_string.hpp>
 #include <ctre/functions.hpp>
+#include <fmt/ostream.h>
 #include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>
 #include <rapidjson/ostreamwrapper.h>
@@ -235,6 +236,14 @@ get_segment_path_components(const std::filesystem::path& path) {
     res._term = term;
     res._is_full = true;
     return res;
+}
+
+std::ostream& operator<<(std::ostream& o, const manifest::key& key) {
+    fmt::print(
+      o,
+      "{{{}}}",
+      std::visit([](auto&& k) { return std::filesystem::path(k()); }, key));
+    return o;
 }
 
 manifest::manifest()
