@@ -153,6 +153,9 @@ private:
 ss::future<const pb::FileDescriptor*> build_file_with_deps(
   pb::DescriptorPool& dp, sharded_store& store, const canonical_schema& schema);
 
+ss::future<const pb::FileDescriptor*> build_file_with_refs(
+  pb::DescriptorPool& dp, sharded_store& store, const canonical_schema& schema);
+
 ///\brief Build a FileDescriptor using the DescriptorPool.
 ///
 /// Dependencies are required to be in the DescriptorPool.
@@ -171,10 +174,32 @@ ss::future<const pb::FileDescriptor*> import_schema(
   sharded_store& store,
   const canonical_schema& schema) {
     try {
-        co_return co_await build_file_with_deps(dp, store, schema);
+        co_return co_await build_file_with_refs(dp, store, schema);
     } catch (const exception& e) {
         throw as_exception(invalid_schema(schema));
     }
+}
+
+///\brief Build a FileDescriptor and import references from the store.
+///
+/// Recursively import references into the DescriptorPool, building the files
+/// on stack unwind.
+ss::future<const pb::FileDescriptor*> build_file_with_refs(
+  pb::DescriptorPool& dp,
+  sharded_store& store,
+  const canonical_schema& schema) {
+    for (const auto& ref : schema.refs()) {
+        auto dep = co_await store.get_subject_schema(
+          ref.sub, ref.version, include_deleted::no);
+        co_await build_file_with_refs(
+          dp,
+          store,
+          canonical_schema{
+            subject{ref.name},
+            std::move(dep.schema).def(),
+            std::move(dep.schema).refs()});
+    }
+    co_return co_await build_file_with_deps(dp, store, schema);
 }
 
 ///\brief Build a FileDescriptor and import dependencies from the store.
@@ -195,7 +220,7 @@ ss::future<const pb::FileDescriptor*> build_file_with_deps(
             auto sub_schema = co_await store.get_subject_schema(
               sub, std::nullopt, include_deleted::no);
 
-            co_await build_file_with_deps(
+            co_await build_file_with_refs(
               dp,
               store,
               canonical_schema{
