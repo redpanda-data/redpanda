@@ -764,7 +764,9 @@ bool consensus::should_skip_vote(bool ignore_heartbeat) {
 ss::future<bool> consensus::dispatch_prevote(bool leadership_transfer) {
     auto pvstm_p = std::make_unique<prevote_stm>(this);
     auto pvstm = pvstm_p.get();
-
+    if (leadership_transfer) {
+        return ss::make_ready_future<bool>(true);
+    }
     return pvstm->prevote(leadership_transfer)
       .then_wrapped([this, pvstm_p = std::move(pvstm_p), pvstm](
                       ss::future<bool> prevote_f) mutable {
