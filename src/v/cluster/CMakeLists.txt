@@ -71,6 +71,7 @@ v_cc_library(
     members_backend.cc
     health_manager.cc
     non_replicable_partition.cc
+    non_replicable_partition_manager.cc
     non_replicable_topics_frontend.cc
     scheduling/allocation_node.cc
     scheduling/types.cc
