@@ -11,6 +11,7 @@
 #include "archival/archival_policy.h"
 
 #include "archival/logger.h"
+#include "raft/offset_translator.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
 #include "storage/parser.h"
@@ -79,18 +80,14 @@ bool archival_policy::upload_deadline_reached() {
 archival_policy::lookup_result archival_policy::find_segment(
   model::offset start_offset,
   model::offset adjusted_lso,
-  storage::log_manager& lm) {
+  storage::log log,
+  const raft::offset_translator& offset_translator) {
     vlog(
       archival_log.debug,
       "Upload policy for {} invoked, start offset: {}",
       _ntp,
       start_offset);
-    std::optional<storage::log> log = lm.get(_ntp);
-    if (!log) {
-        vlog(archival_log.warn, "Upload policy for {}: no such ntp", _ntp);
-        return {};
-    }
-    auto plog = dynamic_cast<storage::disk_log_impl*>(log->get_impl());
+    auto plog = dynamic_cast<storage::disk_log_impl*>(log.get_impl());
     // NOTE: we need to break encapsulation here to access underlying
     // implementation because upload policy and archival subsystem needs to
     // access individual log segments (disk backed).
@@ -154,6 +151,30 @@ archival_policy::lookup_result archival_policy::find_segment(
           reason);
         return {};
     }
+
+    if (!closed) {
+        auto kafka_start_offset = offset_translator.from_log_offset(
+          start_offset);
+        auto kafka_lso = offset_translator.from_log_offset(adjusted_lso);
+        if (kafka_start_offset >= kafka_lso) {
+            // If timeboxed uploads are enabled and there is no producer
+            // activity, we can get into a nasty loop where we upload a segment,
+            // add an archival metadata batch, upload a segment containing that
+            // batch, add another archival metadata batch, etc. This leads to
+            // lots of small segments that don't contain data being uploaded. To
+            // avoid it, we check that kafka (translated) offset increases.
+            vlog(
+              archival_log.debug,
+              "Upload policy for {}: can't find candidate, only non-data "
+              "batches to upload (kafka start_offset: {}, kafka "
+              "last_stable_offset: {})",
+              _ntp,
+              kafka_start_offset,
+              kafka_lso);
+            return {};
+        }
+    }
+
     auto dirty_offset = (*it)->offsets().dirty_offset;
     if (dirty_offset > adjusted_lso && !force_upload) {
         vlog(
@@ -427,12 +448,13 @@ static ss::future<upload_candidate> create_upload_candidate(
 ss::future<upload_candidate> archival_policy::get_next_candidate(
   model::offset begin_inclusive,
   model::offset end_exclusive,
-  storage::log_manager& lm) {
+  storage::log log,
+  const raft::offset_translator& offset_translator) {
     // NOTE: end_exclusive (which is initialized with LSO) points to the first
     // unstable recordbatch we need to look at the previous batch if needed.
     auto adjusted_lso = end_exclusive - model::offset(1);
     auto [segment, ntp_conf, forced] = find_segment(
-      begin_inclusive, adjusted_lso, lm);
+      begin_inclusive, adjusted_lso, std::move(log), offset_translator);
     if (segment.get() == nullptr || ntp_conf == nullptr) {
         co_return upload_candidate{};
     }

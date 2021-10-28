@@ -16,5 +16,6 @@ namespace raft {
 class consensus;
 class group_manager;
 class recovery_throttle;
+class offset_translator;
 
 } // namespace raft
