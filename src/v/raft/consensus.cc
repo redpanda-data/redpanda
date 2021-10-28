@@ -145,6 +145,10 @@ void consensus::maybe_step_down() {
 
                 if (majority_hbeat + _jit.base_duration() < clock_type::now()) {
                     do_step_down();
+                    if (_leader_id) {
+                        _leader_id = std::nullopt;
+                        trigger_leadership_notification();
+                    }
                 }
             }
         });
@@ -1416,6 +1420,10 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         _term = r.term;
         _voted_for = {};
         do_step_down();
+        if (_leader_id) {
+            _leader_id = std::nullopt;
+            trigger_leadership_notification();
+        }
 
         // do not grant vote if log isn't ok
         if (!reply.log_ok) {
@@ -2703,6 +2711,10 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
                         // (If we accepted more writes, our log could get
                         //  ahead of new leader, and it could lose election)
                         do_step_down();
+                        if (_leader_id) {
+                            _leader_id = std::nullopt;
+                            trigger_leadership_notification();
+                        }
 
                         return seastar::make_ready_future<std::error_code>(
                           make_error_code(errc::success));
