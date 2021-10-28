@@ -18,6 +18,7 @@
 #include "pandaproxy/schema_registry/avro.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/exceptions.h"
+#include "pandaproxy/schema_registry/protobuf.h"
 #include "pandaproxy/schema_registry/store.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "vlog.h"
@@ -62,25 +63,43 @@ ss::future<> sharded_store::stop() { return _store.stop(); }
 
 ss::future<canonical_schema>
 sharded_store::make_canonical_schema(unparsed_schema schema) {
-    auto def = co_await _store.invoke_on(
-      shard_for(schema.sub()),
-      _smp_opts,
-      &store::make_canonical_schema,
-      schema);
-    co_return std::move(def).value();
+    switch (schema.type()) {
+    case schema_type::avro: {
+        co_return canonical_schema{
+          std::move(schema.sub()),
+          sanitize_avro_schema_definition(schema.def()).value(),
+          std::move(schema.refs())};
+    }
+    case schema_type::protobuf:
+    case schema_type::json:
+        throw as_exception(invalid_schema_type(schema.type()));
+    }
+    __builtin_unreachable();
 }
 
 ss::future<> sharded_store::validate_schema(const canonical_schema& schema) {
-    auto def = co_await _store.invoke_on(
-      shard_for(schema.sub()), _smp_opts, &store::validate_schema, schema);
-    co_return std::move(def).value();
+    switch (schema.type()) {
+    case schema_type::avro: {
+        make_avro_schema_definition(schema.def().raw()()).value();
+        co_return;
+    }
+    case schema_type::protobuf:
+    case schema_type::json:
+        throw as_exception(invalid_schema_type(schema.type()));
+    }
+    __builtin_unreachable();
 }
 
 ss::future<valid_schema>
 sharded_store::make_valid_schema(const canonical_schema& schema) {
-    auto def = co_await _store.invoke_on(
-      shard_for(schema.sub()), _smp_opts, &store::make_valid_schema, schema);
-    co_return std::move(def).value();
+    switch (schema.type()) {
+    case schema_type::avro:
+        co_return make_avro_schema_definition(schema.def().raw()()).value();
+    case schema_type::protobuf:
+    case schema_type::json:
+        throw as_exception(invalid_schema_type(schema.type()));
+    }
+    __builtin_unreachable();
 }
 
 ss::future<sharded_store::insert_result>
