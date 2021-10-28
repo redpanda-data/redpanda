@@ -28,7 +28,7 @@ import (
 func NewGenerateCommand(fs afero.Fs) *cobra.Command {
 	return &cobra.Command{
 		Use:          "generate [PROJECT DIRECTORY]",
-		Short:        "Create an npm template project for inline WASM engine",
+		Short:        "Create an npm template project for inline WASM engine.",
 		SilenceUsage: true,
 		Args:         cobra.ExactArgs(1),
 		Run: func(_ *cobra.Command, args []string) {

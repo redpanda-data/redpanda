@@ -31,7 +31,7 @@ func NewDeleteCommand(fs afero.Fs) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "delete",
-		Short: "Delete ACLs",
+		Short: "Delete ACLs.",
 		Args:  cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
 			p := config.ParamsFromCommand(cmd)

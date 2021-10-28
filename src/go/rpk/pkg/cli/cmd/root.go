@@ -55,12 +55,12 @@ func Execute() {
 
 	rootCmd := &cobra.Command{
 		Use:   "rpk",
-		Short: "rpk is the Redpanda CLI & toolbox",
+		Short: "rpk is the Redpanda CLI & toolbox.",
 		Long:  "",
 	}
 	rootCmd.SilenceUsage = true
 	rootCmd.PersistentFlags().BoolVarP(&verbose, config.FlagVerbose,
-		"v", false, "enable verbose logging (default false)")
+		"v", false, "Enable verbose logging (default: false).")
 
 	rootCmd.AddCommand(NewGenerateCommand(mgr))
 	rootCmd.AddCommand(NewVersionCommand())

@@ -26,7 +26,7 @@ const configFileFlag = "config"
 func NewConfigCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "config <command>",
-		Short: "Edit configuration",
+		Short: "Edit configuration.",
 	}
 	root.AddCommand(set(fs, mgr))
 	root.AddCommand(bootstrap(mgr))
@@ -42,7 +42,7 @@ func set(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:   "set <key> <value>",
-		Short: "Set configuration values, such as the node IDs or the list of seed servers",
+		Short: "Set configuration values, such as the node IDs or the list of seed servers.",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			var err error
@@ -77,7 +77,7 @@ func set(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		configFileFlag,
 		"",
 		"Redpanda config file, if not set the file will be searched"+
-			" for in the default location",
+			" for in the default location.",
 	)
 	return c
 }
@@ -91,7 +91,7 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:   "bootstrap --id <id> [--self <ip>] [--ips <ip1,ip2,...>]",
-		Short: "Initialize the configuration to bootstrap a cluster",
+		Short: "Initialize the configuration to bootstrap a cluster.",
 		Long: "Initialize the configuration to bootstrap a cluster." +
 			" --id is mandatory. bootstrap will expect the machine" +
 			" it's running on to have only one private non-" +
@@ -167,7 +167,7 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 		configFileFlag,
 		"",
 		"Redpanda config file, if not set the file will be searched"+
-			" for in the default location",
+			" for in the default location.",
 	)
 	c.Flags().StringVar(
 		&self,
@@ -210,7 +210,7 @@ func initNode(mgr config.Manager) *cobra.Command {
 		configFileFlag,
 		"",
 		"Redpanda config file, if not set the file will be searched"+
-			" for in the default location",
+			" for in the default location.",
 	)
 	return c
 }
