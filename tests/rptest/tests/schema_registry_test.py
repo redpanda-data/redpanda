@@ -40,6 +40,22 @@ schema2_def = '{"type":"record","name":"myrecord","fields":[{"type":"string","na
 schema3_def = '{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2"}]}'
 invalid_avro = '{"type":"notatype","name":"myrecord","fields":[{"type":"string","name":"f1"}]}'
 
+simple_proto_def = """
+syntax = "proto3";
+
+message Simple {
+  string id = 1;
+}"""
+
+imported_proto_def = """
+syntax = "proto3";
+
+import "simple";
+
+message Test2 {
+  Simple id =  1;
+}"""
+
 
 class SchemaRegistryTest(RedpandaTest):
     """
@@ -928,3 +944,52 @@ class SchemaRegistryTest(RedpandaTest):
         svc = StressTest(self._ctx)
         svc.start()
         svc.wait()
+
+    @cluster(num_nodes=3)
+    def test_protobuf(self):
+        """
+        Verify basic protobuf functionality
+        """
+
+        self.logger.info("Posting failed schema should be 422")
+        result_raw = self._post_subjects_subject_versions(
+            subject="imported",
+            data=json.dumps({
+                "schema": imported_proto_def,
+                "schemaType": "PROTOBUF"
+            }))
+        self.logger.info(result_raw)
+        self.logger.info(result_raw.content)
+        assert result_raw.status_code == requests.codes.unprocessable_entity
+
+        self.logger.info("Posting simple as a subject key")
+        result_raw = self._post_subjects_subject_versions(subject="simple",
+                                                          data=json.dumps({
+                                                              "schema":
+                                                              simple_proto_def,
+                                                              "schemaType":
+                                                              "PROTOBUF"
+                                                          }))
+        self.logger.info(result_raw)
+        self.logger.info(result_raw.content)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == 1
+
+        self.logger.info("Posting imported as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject="imported",
+            data=json.dumps({
+                "schema": imported_proto_def,
+                "schemaType": "PROTOBUF"
+            }))
+        self.logger.info(result_raw)
+        self.logger.info(result_raw.content)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == 2
+
+        result_raw = self._request("GET",
+                                   f"subjects/simple/versions/1/schema",
+                                   headers=HTTP_GET_HEADERS)
+        self.logger.info(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.text.strip() == simple_proto_def.strip()

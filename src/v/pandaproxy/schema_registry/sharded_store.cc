@@ -71,6 +71,8 @@ sharded_store::make_canonical_schema(unparsed_schema schema) {
           std::move(schema.refs())};
     }
     case schema_type::protobuf:
+        co_return co_await make_canonical_protobuf_schema(
+          *this, std::move(schema));
     case schema_type::json:
         throw as_exception(invalid_schema_type(schema.type()));
     }
@@ -84,6 +86,8 @@ ss::future<> sharded_store::validate_schema(const canonical_schema& schema) {
         co_return;
     }
     case schema_type::protobuf:
+        co_await validate_protobuf_schema(*this, schema);
+        co_return;
     case schema_type::json:
         throw as_exception(invalid_schema_type(schema.type()));
     }
@@ -96,6 +100,7 @@ sharded_store::make_valid_schema(const canonical_schema& schema) {
     case schema_type::avro:
         co_return make_avro_schema_definition(schema.def().raw()()).value();
     case schema_type::protobuf:
+        co_return co_await make_protobuf_schema_definition(*this, schema);
     case schema_type::json:
         throw as_exception(invalid_schema_type(schema.type()));
     }
