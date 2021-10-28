@@ -98,11 +98,13 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
           if (_ptr->should_skip_vote(leadership_transfer)) {
               return ss::make_ready_future<skip_vote>(skip_vote::yes);
           }
-
-          // 5.2.1
+          // 5.2.1 mark node as candidate, and update leader id
           _ptr->_vstate = consensus::vote_state::candidate;
-          _ptr->_leader_id = std::nullopt;
-          _ptr->trigger_leadership_notification();
+          //  only trigger notification when we had a leader previosly
+          if (_ptr->_leader_id) {
+              _ptr->_leader_id = std::nullopt;
+              _ptr->trigger_leadership_notification();
+          }
 
           // 5.2.1.2
           _ptr->_term += model::term_id(1);

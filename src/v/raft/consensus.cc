@@ -145,6 +145,10 @@ void consensus::maybe_step_down() {
 
                 if (majority_hbeat + _jit.base_duration() < clock_type::now()) {
                     do_step_down();
+                    if (_leader_id) {
+                        _leader_id = std::nullopt;
+                        trigger_leadership_notification();
+                    }
                 }
             }
         });
@@ -760,7 +764,9 @@ bool consensus::should_skip_vote(bool ignore_heartbeat) {
 ss::future<bool> consensus::dispatch_prevote(bool leadership_transfer) {
     auto pvstm_p = std::make_unique<prevote_stm>(this);
     auto pvstm = pvstm_p.get();
-
+    if (leadership_transfer) {
+        return ss::make_ready_future<bool>(true);
+    }
     return pvstm->prevote(leadership_transfer)
       .then_wrapped([this, pvstm_p = std::move(pvstm_p), pvstm](
                       ss::future<bool> prevote_f) mutable {
@@ -1416,6 +1422,10 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         _term = r.term;
         _voted_for = {};
         do_step_down();
+        if (_leader_id) {
+            _leader_id = std::nullopt;
+            trigger_leadership_notification();
+        }
 
         // do not grant vote if log isn't ok
         if (!reply.log_ok) {
@@ -2313,10 +2323,13 @@ void consensus::update_follower_stats(const group_configuration& cfg) {
 
 void consensus::trigger_leadership_notification() {
     _probe.leadership_changed();
+    vlog(
+      _ctxlog.debug,
+      "triggering leadership notification with term: {}, new leader: {}",
+      _term,
+      _leader_id);
     _leader_notification(leadership_status{
-      .term = model::term_id(_term),
-      .group = group_id(_group),
-      .current_leader = _leader_id});
+      .term = _term, .group = _group, .current_leader = _leader_id});
 }
 
 std::ostream& operator<<(std::ostream& o, const consensus& c) {
@@ -2700,6 +2713,10 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
                         // (If we accepted more writes, our log could get
                         //  ahead of new leader, and it could lose election)
                         do_step_down();
+                        if (_leader_id) {
+                            _leader_id = std::nullopt;
+                            trigger_leadership_notification();
+                        }
 
                         return seastar::make_ready_future<std::error_code>(
                           make_error_code(errc::success));
