@@ -31,7 +31,6 @@ import (
 )
 
 type consumer struct {
-	topics     []string
 	partitions []int32
 	regex      bool
 

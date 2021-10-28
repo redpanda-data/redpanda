@@ -149,9 +149,7 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 	}
 }
 
-func TestOtionsNeedChange(t *testing.T) {
-	type args struct {
-	}
+func TestOptionsNeedChange(t *testing.T) {
 	tests := []struct {
 		name      string
 		current   []string

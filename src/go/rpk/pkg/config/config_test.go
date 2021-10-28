@@ -435,9 +435,6 @@ func TestRead(t *testing.T) {
 }
 
 func TestWrite(t *testing.T) {
-	const path string = "/redpanda.yaml"
-	type args struct {
-	}
 	tests := []struct {
 		name         string
 		existingConf string
