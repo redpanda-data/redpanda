@@ -43,7 +43,10 @@ RUN apt update && \
       openssh-server \
       python3-pip && \
     rm -rf /var/lib/apt/lists/* && \
-    echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config
+    echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config && \
+    echo 'UsePAM yes' >> /etc/ssh/sshd_config && \
+    echo 'root soft nofile 65535' >> /etc/security/limits.conf && \
+    echo 'root hard nofile 65535' >> /etc/security/limits.conf
 
 # install go
 RUN mkdir -p /usr/local/go/ && \
