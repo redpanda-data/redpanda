@@ -22,6 +22,7 @@ v_cc_library(
     event_listener.cc
     script_dispatcher.cc
     event_handler.cc
+    partition.cc
   DEPS
     v::rpc
     v::model
