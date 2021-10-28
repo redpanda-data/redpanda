@@ -263,6 +263,25 @@ ss::future<protobuf_schema_definition> make_protobuf_schema_definition(
     co_return protobuf_schema_definition{std::move(impl)};
 }
 
+ss::future<canonical_schema_definition>
+validate_protobuf_schema(sharded_store& store, const canonical_schema& schema) {
+    auto res = co_await make_protobuf_schema_definition(store, schema);
+    co_return canonical_schema_definition{std::move(res)};
+}
+
+ss::future<canonical_schema>
+make_canonical_protobuf_schema(sharded_store& store, unparsed_schema schema) {
+    canonical_schema temp{
+      std::move(schema).sub(),
+      {canonical_schema_definition::raw_string{schema.def().raw()()},
+       schema.def().type()},
+      std::move(schema).refs()};
+
+    auto validated = co_await validate_protobuf_schema(store, temp);
+    co_return canonical_schema{
+      std::move(temp).sub(), std::move(validated), std::move(temp).refs()};
+}
+
 } // namespace pandaproxy::schema_registry
 
 template<>
