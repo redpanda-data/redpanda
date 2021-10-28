@@ -16,6 +16,7 @@ namespace coproc {
 class api;
 class pacemaker;
 class script_context;
+class partition_manager;
 
 namespace wasm {
 
