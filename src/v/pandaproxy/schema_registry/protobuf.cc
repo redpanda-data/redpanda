@@ -11,8 +11,16 @@
 
 #include "pandaproxy/schema_registry/protobuf.h"
 
+#include "pandaproxy/schema_registry/errors.h"
+#include "pandaproxy/schema_registry/sharded_store.h"
+
+#include <seastar/core/coroutine.hh>
+
 #include <fmt/ostream.h>
+#include <google/protobuf/compiler/parser.h>
 #include <google/protobuf/descriptor.h>
+#include <google/protobuf/io/tokenizer.h>
+#include <google/protobuf/io/zero_copy_stream.h>
 
 namespace pandaproxy::schema_registry {
 
@@ -20,6 +28,152 @@ namespace {
 
 namespace pb = google::protobuf;
 
+}
+
+class io_error_collector final : public pb::io::ErrorCollector {
+    enum class level {
+        error,
+        warn,
+    };
+    struct err {
+        level lvl;
+        int line;
+        int column;
+        ss::sstring message;
+    };
+
+public:
+    void AddError(int line, int column, const std::string& message) final {
+        _errors.emplace_back(err{level::error, line, column, message});
+    }
+    void AddWarning(int line, int column, const std::string& message) final {
+        _errors.emplace_back(err{level::warn, line, column, message});
+    }
+
+    error_info error() const {
+        return error_info{
+          error_code::schema_invalid,
+          fmt::format("{}", fmt::join(_errors, "; "))};
+    }
+
+private:
+    friend struct fmt::formatter<err>;
+
+    std::vector<err> _errors;
+};
+
+class dp_error_collector final : public pb::DescriptorPool::ErrorCollector {
+public:
+    void AddError(
+      const std::string& filename,
+      const std::string& element_name,
+      const pb::Message* descriptor,
+      ErrorLocation location,
+      const std::string& message) final {
+        _errors.emplace_back(err{
+          level::error, filename, element_name, descriptor, location, message});
+    }
+    void AddWarning(
+      const std::string& filename,
+      const std::string& element_name,
+      const pb::Message* descriptor,
+      ErrorLocation location,
+      const std::string& message) final {
+        _errors.emplace_back(err{
+          level::warn, filename, element_name, descriptor, location, message});
+    }
+
+    error_info error() const {
+        return error_info{
+          error_code::schema_invalid,
+          fmt::format("{}", fmt::join(_errors, "; "))};
+    }
+
+private:
+    enum class level {
+        error,
+        warn,
+    };
+    struct err {
+        level lvl;
+        std::string filename;
+        std::string element_name;
+        const pb::Message* descriptor;
+        ErrorLocation location;
+        std::string message;
+    };
+    friend struct fmt::formatter<err>;
+
+    std::vector<err> _errors;
+};
+
+///\brief Implements ZeroCopyInputStream with a copy of the definition
+class schema_def_input_stream : public pb::io::ZeroCopyInputStream {
+public:
+    explicit schema_def_input_stream(const canonical_schema_definition& def)
+      : _str(def.raw())
+      , _impl{_str().data(), static_cast<int>(_str().size())} {}
+
+    bool Next(const void** data, int* size) override {
+        return _impl.Next(data, size);
+    }
+    void BackUp(int count) override { return _impl.BackUp(count); }
+    bool Skip(int count) override { return _impl.Skip(count); }
+    int64_t ByteCount() const override { return _impl.ByteCount(); }
+
+private:
+    canonical_schema_definition::raw_string _str;
+    pb::io::ArrayInputStream _impl;
+};
+
+class parser {
+public:
+    parser()
+      : _parser{}
+      , _fdp{} {}
+
+    const pb::FileDescriptorProto& parse(const canonical_schema& schema) {
+        schema_def_input_stream is{schema.def()};
+        io_error_collector error_collector;
+        pb::io::Tokenizer t{&is, &error_collector};
+
+        if (!_parser.Parse(&t, &_fdp)) {
+            throw as_exception(error_collector.error());
+        }
+
+        _fdp.set_name(schema.sub()());
+        return _fdp;
+    }
+
+private:
+    pb::compiler::Parser _parser;
+    pb::FileDescriptorProto _fdp;
+};
+
+///\brief Build a FileDescriptor using the DescriptorPool.
+///
+/// Dependencies are required to be in the DescriptorPool.
+const pb::FileDescriptor*
+build_file(pb::DescriptorPool& dp, const pb::FileDescriptorProto& fdp) {
+    dp_error_collector dp_ec;
+    if (auto fd = dp.BuildFileCollectingErrors(fdp, &dp_ec); fd) {
+        return fd;
+    }
+    throw as_exception(dp_ec.error());
+}
+
+///\brief Import a schema in the DescriptorPool and return the FileDescriptor.
+ss::future<const pb::FileDescriptor*> import_schema(
+  pb::DescriptorPool& dp,
+  sharded_store& store,
+  const canonical_schema& schema) {
+    try {
+        parser p;
+        auto fdp = p.parse(schema);
+        co_return build_file(dp, fdp);
+    } catch (const exception& e) {
+        throw as_exception(invalid_schema(schema));
+    }
 }
 
 struct protobuf_schema_definition::impl {
@@ -45,4 +199,50 @@ operator<<(std::ostream& os, const protobuf_schema_definition& def) {
     return os;
 }
 
+ss::future<protobuf_schema_definition> make_protobuf_schema_definition(
+  sharded_store& store, const canonical_schema& schema) {
+    auto impl = ss::make_shared<protobuf_schema_definition::impl>();
+    impl->fd = co_await import_schema(impl->_dp, store, schema);
+    co_return protobuf_schema_definition{std::move(impl)};
+}
+
 } // namespace pandaproxy::schema_registry
+
+template<>
+struct fmt::formatter<pandaproxy::schema_registry::io_error_collector::err> {
+    using type = pandaproxy::schema_registry::io_error_collector;
+
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+    template<typename FormatContext>
+    auto format(const type::err& e, FormatContext& ctx) {
+        return format_to(
+          ctx.out(),
+          "{}: line: '{}', col: '{}', msg: '{}'",
+          e.lvl == type::level::error ? "error" : "warn",
+          e.line,
+          e.column,
+          e.message);
+    }
+};
+
+template<>
+struct fmt::formatter<pandaproxy::schema_registry::dp_error_collector::err> {
+    using type = pandaproxy::schema_registry::dp_error_collector;
+
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+    template<typename FormatContext>
+    auto format(const type::err& e, FormatContext& ctx) {
+        return format_to(
+          ctx.out(),
+          "{}: subject: '{}', element_name: '{}', descriptor: '{}', location: "
+          "'{}', msg: '{}'",
+          e.lvl == type::level::error ? "error" : "warn",
+          e.filename,
+          e.element_name,
+          e.descriptor->DebugString(),
+          e.location,
+          e.message);
+    }
+};

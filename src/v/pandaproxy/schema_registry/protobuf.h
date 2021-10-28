@@ -11,8 +11,12 @@
 
 #pragma once
 
+#include "pandaproxy/schema_registry/fwd.h"
 #include "pandaproxy/schema_registry/types.h"
 
 namespace pandaproxy::schema_registry {
+
+ss::future<protobuf_schema_definition> make_protobuf_schema_definition(
+  sharded_store& store, const canonical_schema& schema);
 
 } // namespace pandaproxy::schema_registry
