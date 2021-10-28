@@ -84,9 +84,10 @@ private:
     ss::future<> throw_on_error(
       ss::httpd::request& req,
       std::error_code ec,
+      model::ntp const& ntp,
       model::node_id id = model::node_id{-1}) const;
     ss::future<ss::httpd::redirect_exception>
-    redirect_to_leader(ss::httpd::request& req) const;
+    redirect_to_leader(ss::httpd::request& req, model::ntp const& ntp) const;
 
     struct level_reset {
         using time_point = ss::timer<>::clock::time_point;

@@ -212,21 +212,40 @@ void admin_server::log_level_timer_handler() {
     rearm_log_level_timer();
 }
 
-ss::future<ss::httpd::redirect_exception>
-admin_server::redirect_to_leader(ss::httpd::request& req) const {
-    auto leader_id_opt = _metadata_cache.local().get_leader_id(
-      model::controller_ntp);
+ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
+  ss::httpd::request& req, model::ntp const& ntp) const {
+    auto leader_id_opt = _metadata_cache.local().get_leader_id(ntp);
 
     if (!leader_id_opt.has_value()) {
+        vlog(
+          logger.info,
+          "Can't redirect to leader {}, no leader for ntp {}",
+          leader_id_opt.value(),
+          ntp);
+
         throw ss::httpd::base_exception(
-          fmt::format("Controller leader not available"),
+          fmt::format(
+            "Partition {} does not have a leader, cannot redirect", ntp),
           ss::httpd::reply::status_type::service_unavailable);
     }
-    auto leader_opt = _metadata_cache.local().get_broker(leader_id_opt.value());
 
+    if (leader_id_opt.value() == config::node().node_id()) {
+        vlog(
+          logger.info,
+          "Can't redirect to leader from leader node ({})",
+          leader_id_opt.value());
+        throw ss::httpd::base_exception(
+          fmt::format("Leader not available"),
+          ss::httpd::reply::status_type::service_unavailable);
+    }
+
+    auto leader_opt = _metadata_cache.local().get_broker(leader_id_opt.value());
     if (!leader_opt.has_value()) {
         throw ss::httpd::base_exception(
-          fmt::format("Controller leader metadata not available"),
+          fmt::format(
+            "Partition {} leader {} metadata not available",
+            ntp,
+            leader_id_opt.value()),
           ss::httpd::reply::status_type::service_unavailable);
     }
 
@@ -243,7 +262,8 @@ admin_server::redirect_to_leader(ss::httpd::request& req) const {
       port,
       req._url);
 
-    vlog(logger.info, "Redirecting admin API call to leader at {}", url);
+    vlog(
+      logger.info, "Redirecting admin API call to {} leader at {}", ntp, url);
 
     co_return ss::httpd::redirect_exception(
       url, ss::httpd::reply::status_type::temporary_redirect);
@@ -253,12 +273,16 @@ admin_server::redirect_to_leader(ss::httpd::request& req) const {
  * Throw an appropriate seastar HTTP exception if we saw
  * a redpanda error during a request.
  *
- * @param ec error code, may be from any subsystem
- * @param id optional node ID, for operations that acted on a particular
- *           node and would like it referenced in per-node cluster errors
+ * @param ec  error code, may be from any subsystem
+ * @param ntp on errors like not_leader, redirect to the leader of this NTP
+ * @param id  optional node ID, for operations that acted on a particular
+ *            node and would like it referenced in per-node cluster errors
  */
 ss::future<> admin_server::throw_on_error(
-  ss::httpd::request& req, std::error_code ec, model::node_id id) const {
+  ss::httpd::request& req,
+  std::error_code ec,
+  model::ntp const& ntp,
+  model::node_id id) const {
     if (!ec) {
         co_return;
     }
@@ -279,8 +303,9 @@ ss::future<> admin_server::throw_on_error(
               fmt::format("Not ready ({})", ec.message()),
               ss::httpd::reply::status_type::service_unavailable);
         case cluster::errc::not_leader:
+            throw co_await redirect_to_leader(req, ntp);
         case cluster::errc::not_leader_controller:
-            throw co_await redirect_to_leader(req);
+            throw co_await redirect_to_leader(req, model::controller_ntp);
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected cluster error: {}", ec.message()));
@@ -295,7 +320,7 @@ ss::future<> admin_server::throw_on_error(
               fmt::format("Not ready: {}", ec.message()),
               ss::httpd::reply::status_type::service_unavailable);
         case raft::errc::not_leader:
-            throw co_await redirect_to_leader(req);
+            throw co_await redirect_to_leader(req, ntp);
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected raft error: {}", ec.message()));
@@ -465,10 +490,11 @@ void admin_server::register_raft_routes() {
                 if (!consensus) {
                     throw ss::httpd::not_found_exception();
                 }
+                const auto ntp = consensus->ntp();
                 return consensus->do_transfer_leadership(target).then(
-                  [this, req = std::move(req)](std::error_code err)
+                  [this, req = std::move(req), ntp](std::error_code err)
                     -> ss::future<ss::json::json_return_type> {
-                      co_await throw_on_error(*req, err);
+                      co_await throw_on_error(*req, err, ntp);
                       co_return ss::json::json_return_type(
                         ss::json::json_void());
                   });
@@ -536,7 +562,7 @@ void admin_server::register_security_routes() {
             = co_await _controller->get_security_frontend().local().create_user(
               username, credential, model::timeout_clock::now() + 5s);
           vlog(logger.debug, "Creating user {}:{}", err, err.message());
-          co_await throw_on_error(*req, err);
+          co_await throw_on_error(*req, err, model::controller_ntp);
           co_return ss::json::json_return_type(ss::json::json_void());
       });
 
@@ -595,7 +621,9 @@ void admin_server::register_security_routes() {
 
 void admin_server::register_kafka_routes() {
     ss::httpd::partition_json::kafka_transfer_leadership.set(
-      _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+      _server._routes,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
           auto ns = model::ns(req->param["namespace"]);
 
           auto topic = model::topic(req->param["topic"]);
@@ -643,11 +671,11 @@ void admin_server::register_kafka_routes() {
 
           auto shard = _shard_table.local().shard_for(ntp);
           if (!shard) {
-              throw ss::httpd::not_found_exception(fmt::format(
-                "Topic partition {}:{} not found", topic, partition));
+              // This node is not a member of the raft group, redirect.
+              throw co_await redirect_to_leader(*req, ntp);
           }
 
-          return _partition_manager.invoke_on(
+          co_return co_await _partition_manager.invoke_on(
             *shard,
             [ntp = std::move(ntp), target, this, req = std::move(req)](
               cluster::partition_manager& pm) mutable {
@@ -656,9 +684,9 @@ void admin_server::register_kafka_routes() {
                     throw ss::httpd::not_found_exception();
                 }
                 return partition->transfer_leadership(target).then(
-                  [this, req = std::move(req)](std::error_code err)
+                  [this, req = std::move(req), ntp](std::error_code err)
                     -> ss::future<ss::json::json_return_type> {
-                      co_await throw_on_error(*req, err);
+                      co_await throw_on_error(*req, err, ntp);
                       co_return ss::json::json_return_type(
                         ss::json::json_void());
                   });
@@ -726,7 +754,7 @@ void admin_server::register_broker_routes() {
                       .local()
                       .decommission_node(id);
 
-          co_await throw_on_error(*req, ec, id);
+          co_await throw_on_error(*req, ec, model::controller_ntp, id);
           co_return ss::json::json_void();
       });
     ss::httpd::broker_json::recommission.set(
@@ -738,7 +766,7 @@ void admin_server::register_broker_routes() {
           auto ec = co_await _controller->get_members_frontend()
                       .local()
                       .recommission_node(id);
-          co_await throw_on_error(*req, ec, id);
+          co_await throw_on_error(*req, ec, model::controller_ntp, id);
           co_return ss::json::json_void();
       });
 }
