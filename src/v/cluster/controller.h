@@ -33,6 +33,7 @@ public:
     controller(
       ss::sharded<rpc::connection_cache>& ccache,
       ss::sharded<partition_manager>& pm,
+      ss::sharded<non_replicable_partition_manager>& nr_pm,
       ss::sharded<shard_table>& st,
       ss::sharded<storage::api>& storage,
       ss::sharded<raft::group_manager>&,
@@ -95,6 +96,7 @@ private:
     ss::sharded<members_backend> _members_backend;   // single instance
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_manager>& _partition_manager;
+    ss::sharded<non_replicable_partition_manager>& _nr_partition_manager;
     ss::sharded<shard_table>& _shard_table;
     ss::sharded<storage::api>& _storage;
     topic_updates_dispatcher _tp_updates_dispatcher;

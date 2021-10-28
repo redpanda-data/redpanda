@@ -18,6 +18,7 @@
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/metadata_dissemination_handler.h"
 #include "cluster/metadata_dissemination_service.h"
+#include "cluster/non_replicable_partition_manager.h"
 #include "cluster/partition_manager.h"
 #include "cluster/rm_partition_frontend.h"
 #include "cluster/security_frontend.h"
@@ -603,6 +604,10 @@ void application::wire_up_redpanda_services() {
       .get();
     vlog(_log.info, "Partition manager started");
 
+    syschecks::systemd_message("Adding non_replicable partition manager").get();
+    construct_service(nr_partition_manager, std::ref(storage)).get();
+    vlog(_log.info, "Non replicable partition manager started");
+
     // controller
 
     construct_service(data_policies).get();
@@ -613,6 +618,7 @@ void application::wire_up_redpanda_services() {
       controller,
       _raft_connection_cache,
       partition_manager,
+      nr_partition_manager,
       shard_table,
       storage,
       std::ref(raft_group_manager),
@@ -648,6 +654,14 @@ void application::wire_up_redpanda_services() {
           .invoke_on_all(&cluster::partition_manager::stop_partitions)
           .get();
     });
+
+    _deferred.emplace_back([this] {
+        nr_partition_manager
+          .invoke_on_all(
+            &cluster::non_replicable_partition_manager::stop_partitions)
+          .get();
+    });
+
     syschecks::systemd_message("Creating metadata dissemination service").get();
     construct_service(
       md_dissemination_service,
@@ -950,6 +964,12 @@ void application::start_redpanda() {
 
     syschecks::systemd_message("Starting the partition manager").get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();
+
+    syschecks::systemd_message("Starting the materialized partition manager")
+      .get();
+    nr_partition_manager
+      .invoke_on_all(&cluster::non_replicable_partition_manager::start)
+      .get();
 
     syschecks::systemd_message("Starting Raft group manager").get();
     raft_group_manager.invoke_on_all(&raft::group_manager::start).get();

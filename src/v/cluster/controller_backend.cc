@@ -164,6 +164,7 @@ controller_backend::controller_backend(
   ss::sharded<topic_table>& tp_state,
   ss::sharded<shard_table>& st,
   ss::sharded<partition_manager>& pm,
+  ss::sharded<non_replicable_partition_manager>& nrpm,
   ss::sharded<members_table>& members,
   ss::sharded<partition_leaders_table>& leaders,
   ss::sharded<topics_frontend>& frontend,
@@ -172,6 +173,7 @@ controller_backend::controller_backend(
   : _topics(tp_state)
   , _shard_table(st)
   , _partition_manager(pm)
+  , _nr_partition_manager(nrpm)
   , _members_table(members)
   , _partition_leaders_table(leaders)
   , _topics_frontend(frontend)

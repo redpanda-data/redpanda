@@ -45,12 +45,14 @@ namespace cluster {
 controller::controller(
   ss::sharded<rpc::connection_cache>& ccache,
   ss::sharded<partition_manager>& pm,
+  ss::sharded<non_replicable_partition_manager>& nr_pm,
   ss::sharded<shard_table>& st,
   ss::sharded<storage::api>& storage,
   ss::sharded<raft::group_manager>& raft_manager,
   ss::sharded<v8_engine::data_policy_table>& data_policy_table)
   : _connections(ccache)
   , _partition_manager(pm)
+  , _nr_partition_manager(nr_pm)
   , _shard_table(st)
   , _storage(storage)
   , _tp_updates_dispatcher(_partition_allocator, _tp_state)
@@ -150,6 +152,7 @@ ss::future<> controller::start() {
             std::ref(_tp_state),
             std::ref(_shard_table),
             std::ref(_partition_manager),
+            std::ref(_nr_partition_manager),
             std::ref(_members_table),
             std::ref(_partition_leaders),
             std::ref(_tp_frontend),
