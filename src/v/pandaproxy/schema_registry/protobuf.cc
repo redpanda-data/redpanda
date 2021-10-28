@@ -150,6 +150,9 @@ private:
     pb::FileDescriptorProto _fdp;
 };
 
+ss::future<const pb::FileDescriptor*> build_file_with_deps(
+  pb::DescriptorPool& dp, sharded_store& store, const canonical_schema& schema);
+
 ///\brief Build a FileDescriptor using the DescriptorPool.
 ///
 /// Dependencies are required to be in the DescriptorPool.
@@ -168,12 +171,41 @@ ss::future<const pb::FileDescriptor*> import_schema(
   sharded_store& store,
   const canonical_schema& schema) {
     try {
-        parser p;
-        auto fdp = p.parse(schema);
-        co_return build_file(dp, fdp);
+        co_return co_await build_file_with_deps(dp, store, schema);
     } catch (const exception& e) {
         throw as_exception(invalid_schema(schema));
     }
+}
+
+///\brief Build a FileDescriptor and import dependencies from the store.
+///
+/// Recursively import dependencies into the DescriptorPool, building the files
+/// on stack unwind.
+ss::future<const pb::FileDescriptor*> build_file_with_deps(
+  pb::DescriptorPool& dp,
+  sharded_store& store,
+  const canonical_schema& schema) {
+    parser p;
+    auto fdp = p.parse(schema);
+
+    const auto dependency_size = fdp.dependency_size();
+    for (int i = 0; i < dependency_size; ++i) {
+        auto sub = subject{fdp.dependency(i)};
+        if (auto fd = dp.FindFileByName(sub()); !fd) {
+            auto sub_schema = co_await store.get_subject_schema(
+              sub, std::nullopt, include_deleted::no);
+
+            co_await build_file_with_deps(
+              dp,
+              store,
+              canonical_schema{
+                sub,
+                std::move(sub_schema.schema).def(),
+                std::move(sub_schema.schema).refs()});
+        }
+    }
+
+    co_return build_file(dp, fdp);
 }
 
 struct protobuf_schema_definition::impl {

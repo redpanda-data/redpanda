@@ -75,3 +75,23 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_imported_failure) {
           return ex.code() == pps::error_code::schema_invalid;
       });
 }
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_imported) {
+    simple_sharded_store store;
+
+    auto schema1 = pps::canonical_schema{pps::subject{"simple"}, simple};
+    auto schema2 = pps::canonical_schema{pps::subject{"imported"}, imported};
+    auto schema3 = pps::canonical_schema{
+      pps::subject{"imported-again"}, imported_again};
+
+    auto sch1 = store.insert(schema1, pps::schema_version{1});
+    auto sch2 = store.insert(schema2, pps::schema_version{1});
+    auto sch3 = store.insert(schema3, pps::schema_version{1});
+
+    auto valid_simple
+      = pps::make_protobuf_schema_definition(store.store, schema1).get();
+    auto valid_imported
+      = pps::make_protobuf_schema_definition(store.store, schema2).get();
+    auto valid_imported_again
+      = pps::make_protobuf_schema_definition(store.store, schema3).get();
+}
