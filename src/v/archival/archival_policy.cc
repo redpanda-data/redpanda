@@ -30,12 +30,17 @@ namespace archival {
 using namespace std::chrono_literals;
 
 std::ostream& operator<<(std::ostream& s, const upload_candidate& c) {
+    if (!c.source) {
+        s << "{empty}";
+        return s;
+    }
+
     fmt::print(
       s,
-      "{{segment: {}, exposed_name: {}, starting_offset:{}, "
+      "{{source segment offsets: {}, exposed_name: {}, starting_offset: {}, "
       "file_offset: {}, content_length: {}, final_offset: {}, "
       "final_file_offset: {}}}",
-      *c.source,
+      c.source->offsets(),
       c.exposed_name,
       c.starting_offset,
       c.file_offset,
@@ -72,17 +77,17 @@ bool archival_policy::upload_deadline_reached() {
 }
 
 archival_policy::lookup_result archival_policy::find_segment(
-  model::offset last_offset,
+  model::offset start_offset,
   model::offset adjusted_lso,
   storage::log_manager& lm) {
     vlog(
       archival_log.debug,
-      "Upload policy for {} invoked, last-offset: {}",
+      "Upload policy for {} invoked, start offset: {}",
       _ntp,
-      last_offset);
+      start_offset);
     std::optional<storage::log> log = lm.get(_ntp);
     if (!log) {
-        vlog(archival_log.warn, "Upload policy for {} no such ntp", _ntp);
+        vlog(archival_log.warn, "Upload policy for {}: no such ntp", _ntp);
         return {};
     }
     auto plog = dynamic_cast<storage::disk_log_impl*>(log->get_impl());
@@ -92,28 +97,29 @@ archival_policy::lookup_result archival_policy::find_segment(
     if (plog == nullptr || plog->segment_count() == 0) {
         vlog(
           archival_log.debug,
-          "Upload policy for {} no segments or in-memory log",
+          "Upload policy for {}: can't find candidate, no segments or "
+          "in-memory log",
           _ntp);
         return {};
     }
     const auto& set = plog->segments();
 
-    if (last_offset <= adjusted_lso) {
-        _ntp_probe.upload_lag(adjusted_lso - last_offset);
+    if (start_offset <= adjusted_lso) {
+        _ntp_probe.upload_lag(adjusted_lso - start_offset);
     }
 
     const auto& ntp_conf = plog->config();
-    auto it = set.lower_bound(last_offset);
+    auto it = set.lower_bound(start_offset);
     if (it == set.end() || (*it)->is_compacted_segment()) {
         // Skip forward if we hit a gap or compacted segment
         for (auto i = set.begin(); i != set.end(); i++) {
             const auto& sg = *i;
-            if (last_offset < sg->offsets().base_offset) {
+            if (start_offset < sg->offsets().base_offset) {
                 // Move last offset forward
                 it = i;
                 auto offset = sg->offsets().base_offset;
-                auto delta = offset - last_offset;
-                last_offset = offset;
+                auto delta = offset - start_offset;
+                start_offset = offset;
                 _svc_probe.add_gap();
                 _ntp_probe.gap_detected(delta);
                 break;
@@ -122,34 +128,38 @@ archival_policy::lookup_result archival_policy::find_segment(
     }
     if (it == set.end()) {
         vlog(
-          archival_log.trace,
-          "Upload policy for {}, upload candidate is not found",
-          _ntp);
+          archival_log.debug,
+          "Upload policy for {}: can't find candidate, all segment offsets are "
+          "less than start_offset: {}",
+          _ntp,
+          start_offset);
         return {};
     }
     // Invariant: it != set.end()
     bool closed = !(*it)->has_appender();
     bool force_upload = upload_deadline_reached();
     if (!closed && !force_upload) {
+        std::string_view reason = _upload_limit.has_value()
+                                    ? "upload deadline not reached"
+                                    : "candidate is not closed";
         // Fast path, next upload candidate is not yet ready. We may want to
         // optimize this case because it's expected to happen pretty often. This
         // can be done by saving weak_ptr to the segment inside the policy
         // object. The segment must be changed to derive from
         // ss::weakly_referencable.
-        if (archival_log.is_enabled(ss::log_level::debug)) {
-            vlog(
-              archival_log.debug,
-              "Upload policy for {}, upload candidate is not closed",
-              _ntp);
-        }
+        vlog(
+          archival_log.debug,
+          "Upload policy for {}: can't find candidate, {}",
+          _ntp,
+          reason);
         return {};
     }
     auto dirty_offset = (*it)->offsets().dirty_offset;
     if (dirty_offset > adjusted_lso && !force_upload) {
         vlog(
           archival_log.debug,
-          "Upload policy for {}, upload candidate offset {} is above high "
-          "watermark {}",
+          "Upload policy for {}: can't find candidate, candidate dirty offset "
+          "{} is above last_stable_offset {}",
           _ntp,
           dirty_offset,
           adjusted_lso);
@@ -302,7 +312,7 @@ static ss::future<> get_file_range(
                                   : segment->offsets().base_offset;
         vlog(
           archival_log.debug,
-          "Sement index lookup returned: {}, scanning from pos {} - offset {}",
+          "Segment index lookup returned: {}, scanning from pos {} - offset {}",
           ix_end,
           scan_from,
           fo);
@@ -399,11 +409,17 @@ static ss::future<upload_candidate> create_upload_candidate(
         auto path = storage::segment_path::make_segment_path(
           *ntp_conf, result.starting_offset, term, version);
         result.exposed_name = segment_name(path.filename().string());
-        vlog(archival_log.debug, "Using adjusted segment name: {}", result);
+        vlog(
+          archival_log.debug,
+          "Using adjusted segment name: {}",
+          result.exposed_name);
     } else {
         auto orig_path = std::filesystem::path(segment->reader().filename());
         result.exposed_name = segment_name(orig_path.filename().string());
-        vlog(archival_log.debug, "Using original segment name: {}", result);
+        vlog(
+          archival_log.debug,
+          "Using original segment name: {}",
+          result.exposed_name);
     }
     co_return result;
 }
@@ -425,10 +441,11 @@ ss::future<upload_candidate> archival_policy::get_next_candidate(
     auto last = forced ? std::make_optional(adjusted_lso) : std::nullopt;
     vlog(
       archival_log.debug,
-      "Create upload candidate: Last uploaded {}, segment CO {}, adjusted LSO "
-      "{}",
+      "Upload policy for {}, creating upload candidate: start_offset {}, "
+      "segment offsets {}, adjusted LSO {}",
+      _ntp,
       begin_inclusive,
-      segment->offsets().committed_offset,
+      segment->offsets(),
       adjusted_lso);
     auto upload = co_await create_upload_candidate(
       begin_inclusive, last, segment, ntp_conf);
