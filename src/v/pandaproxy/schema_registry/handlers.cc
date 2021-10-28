@@ -306,6 +306,9 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto sub = parse::request_param<subject>(*rq.req, "subject");
     vlog(plog.debug, "post_subject_versions subject='{}'", sub);
+
+    co_await rq.service().writer().read_sync();
+
     auto unparsed = ppj::rjson_parse(
       rq.req->content.data(), post_subject_versions_request_handler<>{sub});
     rq.req.reset();
