@@ -194,7 +194,8 @@ We'll use Helm to install cert-manager:
   ```
 
 
-5. Security access
+5. Configure security access
+
 <tabs>
   <tab id="AWS EKS">
 
@@ -214,23 +215,23 @@ We'll use Helm to install cert-manager:
   </tab>
   <tab id="Google GKE">
   For GKE, open the firewall for access to the cluster:
-    a. Get the port number that Redpanda is listening on:
+  a. Get the port number that Redpanda is listening on:
 
-    ```
-    kubectl get service external-connectivity-external -o=jsonpath='{.spec.ports[0].nodePort}'
-    ```
+  ```
+  kubectl get service external-connectivity-external -o=jsonpath='{.spec.ports[0].nodePort}'
+  ```
 
-    The port is shown in the command output.
+  The port is shown in the command output.
 
   b. Create a firewall rule that allows traffic to Redpanda on that port:
 
-    ```
-    gcloud compute firewall-rules create redpanda-nodeport --allow tcp:<port_number>
-    ```
+  ```
+  gcloud compute firewall-rules create redpanda-nodeport --allow tcp:<port_number>
+  ```
 
-    The port that Redpanda is listening on is shown in the command output, for example:
+  The port that Redpanda is listening on is shown in the command output, for example:
 
-    `30249`
+  `30249`
   </tab>
 
   <tab id="Digital Ocean">
@@ -239,9 +240,6 @@ We'll use Helm to install cert-manager:
 
   </tab>
 </tabs>
-
-
-
 
 ## Verify the connection
 
