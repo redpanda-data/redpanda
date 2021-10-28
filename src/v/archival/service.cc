@@ -433,10 +433,6 @@ ss::future<> scheduler_service_impl::run_uploads() {
                   auto archiver = _queue.get_upload_candidate();
                   storage::api& api = _storage_api.local();
                   storage::log_manager& lm = api.log_mgr();
-                  vlog(
-                    _rtclog.debug,
-                    "Checking {} for S3 upload candidates",
-                    archiver->get_ntp());
                   return archiver->upload_next_candidates(lm, _rtcnode);
               });
 
@@ -464,7 +460,7 @@ ss::future<> scheduler_service_impl::run_uploads() {
             } else if (total.num_succeded != 0) {
                 vlog(
                   _rtclog.debug,
-                  "Successfuly upload {} segments",
+                  "Successfuly uploaded {} segments",
                   total.num_succeded);
             }
 
