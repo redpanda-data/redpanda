@@ -12,12 +12,56 @@ package wasm
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/wasm/template"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/testfs"
 )
 
 func init() {
 	inTests = true
+}
+
+func TestGetWasmApiVersion(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		output string
+	}{
+		{
+			name: "should get correct vectorized WASM API version from npm search",
+			input: `[{"name":"@vectorizedio/wasm-api",
+		    "scope":"vectorizedio",
+		    "version":"21.10.1-si-beta13",
+		    "description":"wasm api helps to define wasm function",
+		    "date":"2021-10-27T17:00:30.090Z",
+		    "links":{"npm":"https://www.npmjs.com/package/%40vectorizedio%2Fwasm-api"},
+		    "publisher":{"username":"vectorizedio","email":"billing@vectorized.io"},
+		    "maintainers":[{"username":"vectorizedio","email":"billing@vectorized.io"}]}
+		    ]`,
+			output: "21.10.1-si-beta13",
+		},
+		{
+			name:   "should get default vectorized WASM API version if npm search returns random string",
+			input:  "Random string\n",
+			output: defApiVersion,
+		},
+		{
+			name:   "should get default vectorized WASM API version if npm search returns null string",
+			input:  "",
+			output: defApiVersion,
+		},
+		{
+			name:   "should get default vectorized WASM API version if npm search returns null JSON array",
+			input:  "[]",
+			output: defApiVersion,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			version := getWasmApiVersion(test.input)
+			require.Exactly(t, version, test.output)
+		})
+	}
 }
 
 func TestWasmCommand(t *testing.T) {
