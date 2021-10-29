@@ -45,7 +45,7 @@ class remote_partition
 
     static constexpr ss::lowres_clock::duration stm_jitter_duration = 10s;
     static constexpr ss::lowres_clock::duration stm_max_idle_time = 60s;
-    static constexpr size_t stm_readahead = 1;
+    static constexpr int stm_readahead = 0;
 
 public:
     /// C-tor
@@ -55,7 +55,13 @@ public:
     remote_partition(
       const manifest& m, remote& api, cache& c, s3::bucket_name bucket);
 
+    /// Start remote partition
     ss::future<> start();
+
+    /// Stop remote partition
+    ///
+    /// This will stop all readers and background gc loop
+    ss::future<> stop();
 
     /// Create a reader
     ///
@@ -70,9 +76,12 @@ public:
     /// Return first uploaded kafka offset
     model::offset first_uploaded_offset();
 
-    ss::future<> stop();
+    /// Get partition NTP
+    model::ntp get_ntp() const;
 
 private:
+    /// Create new remote_segment instances for all new
+    /// items in the manifest.
     void update_segmnets_incrementally();
 
     ss::future<> run_eviction_loop();
@@ -111,7 +120,7 @@ private:
         /// Borrow reader or make a new one.
         /// In either case return a reader.
         std::unique_ptr<remote_segment_batch_reader>
-        borrow_reader(const log_reader_config& cfg);
+        borrow_reader(const log_reader_config& cfg, retry_chain_logger& ctxlog);
 
         ss::future<> stop();
 

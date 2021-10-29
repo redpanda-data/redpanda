@@ -56,7 +56,8 @@ log_eviction_stm::handle_deletion_notification(model::offset last_evicted) {
       "Handling log deletion notification for offset: {}",
       last_evicted);
 
-    model::offset max_collectible_offset = _stm_manager->max_collectible_offset();
+    model::offset max_collectible_offset
+      = _stm_manager->max_collectible_offset();
     if (last_evicted > max_collectible_offset) {
         vlog(
           _logger.trace,
