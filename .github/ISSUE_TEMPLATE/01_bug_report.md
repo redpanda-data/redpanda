@@ -6,12 +6,18 @@ labels: "kind/bug"
 
 ### Version & Environment
 
-Redpanda Version:
+Redpanda version: (use `rpk version`):
 
 <!--
-Client libraries in use (e.g. rdkafka, franz-go)
-Operating system, container runtime, etc.
-Link to test failure for automated tests
+
+Please also give versions of other components:
+- Operating System (e.g. from `/etc/os-release`):
+- Any Kafka client libraries in use (e.g. rdkafka, franz-go)
+- Docker (use `docker info`):
+- Kubernetes (use `kubectl version`):
+
+Include link to test results for automated test failures
+
 -->
 
 ### What went wrong?
