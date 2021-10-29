@@ -161,18 +161,27 @@ public:
     ///\brief Return subject_version_id for a subject and version
     result<subject_version_entry> get_subject_version_id(
       const subject& sub,
-      schema_version version,
+      std::optional<schema_version> version,
       include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
+
+        if (!version.has_value()) {
+            auto const& versions = sub_it->second.versions;
+            if (versions.empty() || (!inc_del && versions.back().deleted)) {
+                return not_found(sub);
+            }
+            return *std::prev(versions.end());
+        }
+
         auto v_it = BOOST_OUTCOME_TRYX(
-          get_version_iter(*sub_it, version, inc_del));
+          get_version_iter(*sub_it, *version, inc_del));
         return *v_it;
     }
 
     ///\brief Return a schema by subject and version.
     result<subject_schema> get_subject_schema(
       const subject& sub,
-      schema_version version,
+      std::optional<schema_version> version,
       include_deleted inc_del) const {
         auto v_id = BOOST_OUTCOME_TRYX(
           get_subject_version_id(sub, version, inc_del));

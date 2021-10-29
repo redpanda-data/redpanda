@@ -206,7 +206,9 @@ sharded_store::get_schema_subject_versions(schema_id id) {
 }
 
 ss::future<subject_schema> sharded_store::get_subject_schema(
-  const subject& sub, schema_version version, include_deleted inc_del) {
+  const subject& sub,
+  std::optional<schema_version> version,
+  include_deleted inc_del) {
     auto v_id = (co_await _store.invoke_on(
                    shard_for(sub),
                    _smp_opts,
