@@ -39,7 +39,6 @@ func TestCreateUser(t *testing.T) {
 	urls := []string{}
 
 	for i := 0; i < int(nNodes); i++ {
-		n := i
 		ts := httptest.NewServer(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				b, err := ioutil.ReadAll(r.Body)
@@ -47,11 +46,7 @@ func TestCreateUser(t *testing.T) {
 				require.Exactly(t, bs, b)
 				// Have only one server return OK, to simulate a single
 				// node being the leader and being able to respond.
-				if n == 0 {
-					w.WriteHeader(http.StatusOK)
-				} else {
-					w.WriteHeader(http.StatusInternalServerError)
-				}
+				w.WriteHeader(http.StatusOK)
 			}),
 		)
 		defer ts.Close()
@@ -73,18 +68,11 @@ func TestDeleteUser(t *testing.T) {
 	urls := []string{}
 
 	for i := 0; i < int(nNodes); i++ {
-		n := i
 		ts := httptest.NewServer(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				require.Exactly(t, "/v1/security/users/Lola", r.URL.Path)
 
-				// Have only one server return OK, to simulate a single
-				// node being the leader and being able to respond.
-				if n == 0 {
-					w.WriteHeader(http.StatusOK)
-				} else {
-					w.WriteHeader(http.StatusInternalServerError)
-				}
+				w.WriteHeader(http.StatusOK)
 			}),
 		)
 		defer ts.Close()
@@ -104,16 +92,11 @@ func TestListUsers(t *testing.T) {
 	urls := []string{}
 
 	for i := 0; i < int(nNodes); i++ {
-		n := i
 		ts := httptest.NewServer(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if n == 0 {
-					w.Write([]byte(
-						`["Joss", "lola", "jeff", "tobias"]`,
-					))
-				} else {
-					w.WriteHeader(http.StatusInternalServerError)
-				}
+				w.Write([]byte(
+					`["Joss", "lola", "jeff", "tobias"]`,
+				))
 			}),
 		)
 		defer ts.Close()
