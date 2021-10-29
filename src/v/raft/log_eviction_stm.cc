@@ -19,7 +19,7 @@ namespace raft {
 log_eviction_stm::log_eviction_stm(
   consensus* raft,
   ss::logger& logger,
-  ss::weak_ptr<storage::stm_manager> stm_manager,
+  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
   ss::abort_source& as)
   : _raft(raft)
   , _logger(logger)
@@ -56,12 +56,13 @@ log_eviction_stm::handle_deletion_notification(model::offset last_evicted) {
       "Handling log deletion notification for offset: {}",
       last_evicted);
 
-    if (last_evicted > _max_collectible_offset) {
+    model::offset max_collectible_offset = _stm_manager->max_collectible_offset();
+    if (last_evicted > max_collectible_offset) {
         vlog(
           _logger.trace,
           "Can only evict up to offset: {}",
-          _max_collectible_offset);
-        last_evicted = _max_collectible_offset;
+          max_collectible_offset);
+        last_evicted = max_collectible_offset;
     }
 
     // do nothing, we already taken the snapshot
@@ -80,11 +81,7 @@ log_eviction_stm::handle_deletion_notification(model::offset last_evicted) {
 
           if (_stm_manager) {
               f = _raft->refresh_commit_index().then([this, last_evicted] {
-                  if (_stm_manager) {
-                      return _stm_manager->ensure_snapshot_exists(last_evicted);
-                  } else {
-                      return ss::now();
-                  }
+                  return _stm_manager->ensure_snapshot_exists(last_evicted);
               });
           }
 

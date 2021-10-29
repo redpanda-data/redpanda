@@ -14,7 +14,6 @@
 #include "cloud_storage/manifest.h"
 #include "cloud_storage/remote.h"
 #include "cluster/persisted_stm.h"
-#include "raft/log_eviction_stm.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 #include "utils/retry_chain_node.h"
@@ -33,19 +32,15 @@ public:
     explicit archival_metadata_stm(
       raft::consensus*, cloud_storage::remote& remote, ss::logger& logger);
 
-    /// If log_eviction_stm is set, archival_metadata_stm will only allow
-    /// eviction of archived segments.
-    void set_log_eviction_stm(
-      ss::lw_shared_ptr<raft::log_eviction_stm> log_eviction_stm) {
-        _log_eviction_stm = std::move(log_eviction_stm);
-    }
-
     /// Add the difference between manifests to the raft log, replicate it and
     /// wait until it is applied to the STM.
     ss::future<bool>
     add_segments(const cloud_storage::manifest&, retry_chain_node&);
 
-    /// A set of archived segments.
+    /// A set of archived segments. NOTE: manifest can be out-of-date if this
+    /// node is not leader; or if the STM hasn't yet performed sync; or if the
+    /// node has lost leadership. But it will contain segments successfully
+    /// added with `add_segments`.
     const cloud_storage::manifest& manifest() const { return _manifest; }
 
     ss::future<> stop() override;
@@ -59,6 +54,7 @@ private:
 
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_snapshot() override;
+    model::offset max_collectible_offset() override;
 
     struct segment;
     struct add_segment_cmd;
@@ -80,8 +76,6 @@ private:
 
     cloud_storage::remote& _cloud_storage_api;
     ss::abort_source _download_as;
-
-    ss::lw_shared_ptr<raft::log_eviction_stm> _log_eviction_stm;
 };
 
 } // namespace cluster

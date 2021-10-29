@@ -14,7 +14,6 @@
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
-#include "raft/log_eviction_stm.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/types.h"
 #include "resource_mgmt/io_priority.h"
@@ -84,36 +83,8 @@ ss::future<consensus_ptr> partition_manager::manage(
       = co_await _raft_manager.local().create_group(
         group, std::move(initial_nodes), log);
 
-    ss::shared_ptr<archival_metadata_stm> archival_meta_stm;
-    ss::lw_shared_ptr<cloud_storage::remote_partition> cloud_storage_partition;
-    // TODO: check topic config if archival is enabled for this topic
-    if (
-      config::shard_local_cfg().cloud_storage_enabled()
-      && _cloud_storage_api.local_is_initialized()
-      && c->ntp().ns == model::kafka_namespace) {
-        archival_meta_stm = ss::make_shared<cluster::archival_metadata_stm>(
-          c.get(), _cloud_storage_api.local(), clusterlog);
-        c->log().stm_manager().add_stm(archival_meta_stm);
-
-        if (_cloud_storage_cache.local_is_initialized()) {
-            auto bucket
-              = config::shard_local_cfg().cloud_storage_bucket.value();
-            if (!bucket) {
-                throw std::runtime_error{
-                  "configuration property cloud_storage_bucket is not set"};
-            }
-
-            cloud_storage_partition
-              = ss::make_lw_shared<cloud_storage::remote_partition>(
-                archival_meta_stm->manifest(),
-                _cloud_storage_api.local(),
-                _cloud_storage_cache.local(),
-                s3::bucket_name{*bucket});
-        }
-    }
-
     auto p = ss::make_lw_shared<partition>(
-      c, _tx_gateway_frontend, archival_meta_stm, cloud_storage_partition);
+      c, _tx_gateway_frontend, _cloud_storage_api, _cloud_storage_cache);
 
     _ntp_table.emplace(log.config().ntp(), p);
     _raft_table.emplace(group, p);

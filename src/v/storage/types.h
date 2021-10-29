@@ -22,7 +22,6 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/file.hh> //io_priority
 #include <seastar/core/rwlock.hh>
-#include <seastar/core/weak_ptr.hh>
 #include <seastar/util/bool_class.hh>
 
 #include <optional>
@@ -39,6 +38,9 @@ public:
     virtual ss::future<> ensure_snapshot_exists(model::offset) = 0;
     // hints stm_manager that now it's a good time to make a snapshot
     virtual ss::future<> make_snapshot() = 0;
+    // lets the stm control snapshotting and log eviction by limiting possible
+    // log eviction to this offset.
+    virtual model::offset max_collectible_offset() = 0;
 };
 
 /**
@@ -67,7 +69,7 @@ public:
  * after a segment roll. It's up to a state machine to decide whether to make
  * it now or on its own pace.
  */
-class stm_manager : public ss::weakly_referencable<stm_manager> {
+class stm_manager {
 public:
     void add_stm(ss::shared_ptr<snapshotable_stm> stm) { _stms.push_back(stm); }
 
@@ -86,6 +88,14 @@ public:
             f = f.then([stm]() { return stm->make_snapshot(); });
         }
         return f;
+    }
+
+    model::offset max_collectible_offset() {
+        model::offset result = model::offset::max();
+        for (const auto& stm : _stms) {
+            result = std::min(result, stm->max_collectible_offset());
+        }
+        return result;
     }
 
 private:

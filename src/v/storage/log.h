@@ -39,7 +39,7 @@ public:
     public:
         explicit impl(ntp_config cfg) noexcept
           : _config(std::move(cfg))
-          , _stm_manager(std::make_unique<storage::stm_manager>()) {}
+          , _stm_manager(ss::make_lw_shared<storage::stm_manager>()) {}
         impl(impl&&) noexcept = default;
         impl& operator=(impl&&) noexcept = default;
         impl(const impl&) = delete;
@@ -76,7 +76,9 @@ public:
         virtual ss::future<model::offset>
         monitor_eviction(ss::abort_source&) = 0;
         virtual void set_collectible_offset(model::offset) = 0;
-        storage::stm_manager& stm_manager() { return *_stm_manager; }
+        ss::lw_shared_ptr<storage::stm_manager> stm_manager() {
+            return _stm_manager;
+        }
 
         virtual size_t size_bytes() const = 0;
         virtual ss::future<>
@@ -89,7 +91,7 @@ public:
 
     protected:
         ntp_config& mutable_config() { return _config; }
-        std::unique_ptr<storage::stm_manager> _stm_manager;
+        ss::lw_shared_ptr<storage::stm_manager> _stm_manager;
     };
 
 public:
@@ -167,7 +169,9 @@ public:
         return _impl->monitor_eviction(as);
     }
 
-    storage::stm_manager& stm_manager() { return _impl->stm_manager(); }
+    ss::lw_shared_ptr<storage::stm_manager> stm_manager() {
+        return _impl->stm_manager();
+    }
     /**
      * Controlls the max offset that may be evicted by log retention policy
      */

@@ -192,9 +192,8 @@ struct raft_node {
             _nop_stm = std::make_unique<raft::log_eviction_stm>(
               consensus.get(),
               tstlog,
-              log->stm_manager().weak_from_this(),
+              ss::make_lw_shared<storage::stm_manager>(),
               _as);
-            _nop_stm->set_collectible_offset(model::offset::max());
             _nop_stm->start().get0();
         }
     }

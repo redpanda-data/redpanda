@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "bytes/iobuf.h"
+#include "bytes/iobuf_parser.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -15,6 +16,7 @@
 #include "model/record_batch_types.h"
 #include "model/timestamp.h"
 #include "model/validation.h"
+#include "serde/serde.h"
 #include "utils/string_switch.h"
 #include "utils/to_string.h"
 
@@ -35,6 +37,13 @@ std::ostream& operator<<(std::ostream& os, timestamp ts) {
     }
     return os << "{timestamp: missing}";
 }
+
+void read_nested(
+  iobuf_parser& in, timestamp& ts, size_t const bytes_left_limit) {
+    serde::read_nested(in, ts._v, bytes_left_limit);
+}
+
+void write(iobuf& out, timestamp ts) { serde::write(out, ts._v); }
 
 std::ostream& operator<<(std::ostream& os, const topic_partition& tp) {
     return ss::fmt_print(

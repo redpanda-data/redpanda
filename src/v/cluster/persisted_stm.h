@@ -88,6 +88,7 @@ public:
 
     ss::future<> make_snapshot() final;
     ss::future<> ensure_snapshot_exists(model::offset) final;
+    model::offset max_collectible_offset() override;
 
     /*
      * Usually start() acts as a barrier and we don't call any methods on the

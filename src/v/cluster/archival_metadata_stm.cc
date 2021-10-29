@@ -13,7 +13,6 @@
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "model/record_utils.h"
-#include "model/timestamp_serde.h"
 #include "raft/consensus.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
@@ -61,22 +60,22 @@ archival_metadata_stm::segments_from_manifest(
     segments.reserve(manifest.size());
     for (const auto& [key, meta] : manifest) {
         model::revision_id ntp_revision;
-        cloud_storage::segment_name name;
+        cloud_storage::segment_name segment_name;
+        ss::visit(
+          key,
+          [&](const cloud_storage::remote_segment_path& path) {
+              auto components = get_segment_path_components(path);
+              vassert(components, "can't parse remote segment path {}", path);
+              ntp_revision = components->_rev;
+              segment_name = components->_name;
+          },
+          [&](const cloud_storage::segment_name& name) {
+              ntp_revision = manifest.get_revision_id();
+              segment_name = name;
+          });
 
-        if (std::holds_alternative<cloud_storage::remote_segment_path>(key)) {
-            const auto& path = std::get<cloud_storage::remote_segment_path>(
-              key);
-            auto components = get_segment_path_components(path);
-            vassert(components, "can't parse remote segment path {}", path);
-            ntp_revision = components->_rev;
-            name = components->_name;
-        } else {
-            ntp_revision = manifest.get_revision_id();
-            name = std::get<cloud_storage::segment_name>(key);
-        }
-
-        segments.push_back(
-          segment{.ntp_revision = ntp_revision, .name = name, .meta = meta});
+        segments.push_back(segment{
+          .ntp_revision = ntp_revision, .name = segment_name, .meta = meta});
     }
 
     std::sort(
@@ -233,6 +232,8 @@ ss::future<> archival_metadata_stm::apply_snapshot(
   stm_snapshot_header header, iobuf&& data) {
     auto snap = serde::from_iobuf<snapshot>(std::move(data));
 
+    _manifest = cloud_storage::manifest(
+      _raft->ntp(), _raft->config().revision_id());
     for (const auto& segment : snap.segments) {
         apply_add_segment(segment);
     }
@@ -263,6 +264,10 @@ ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
       _start_offset,
       _last_offset);
     co_return stm_snapshot::create(0, _insync_offset, std::move(snap_data));
+}
+
+model::offset archival_metadata_stm::max_collectible_offset() {
+    return _last_offset;
 }
 
 void archival_metadata_stm::apply_add_segment(const segment& segment) {
@@ -298,9 +303,6 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
         }
 
         _last_offset = meta.committed_offset;
-        if (_log_eviction_stm) {
-            _log_eviction_stm->set_collectible_offset(_last_offset);
-        }
     }
 }
 

@@ -41,8 +41,8 @@ public:
     partition(
       consensus_ptr r,
       ss::sharded<cluster::tx_gateway_frontend>&,
-      ss::shared_ptr<archival_metadata_stm>,
-      ss::lw_shared_ptr<cloud_storage::remote_partition>);
+      ss::sharded<cloud_storage::remote>&,
+      ss::sharded<cloud_storage::cache>&);
 
     raft::group_id group() const { return _raft->group(); }
     ss::future<> start();
