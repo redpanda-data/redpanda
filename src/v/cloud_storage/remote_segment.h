@@ -95,7 +95,6 @@ public:
     retry_chain_node* get_retry_chain_node() { return &_rtc; }
 
 private:
-
     /// Hydrates segment in the background if there is any consumer
     ss::future<> run_hydrate_bg();
 
