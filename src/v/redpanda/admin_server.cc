@@ -1049,17 +1049,14 @@ void admin_server::register_partition_routes() {
                   model::timeout_clock::now()
                     + 10s); // NOLINT(cppcoreguidelines-avoid-magic-numbers)
 
-          if (err) {
-              vlog(
-                logger.error,
-                "Error changing ntp {} replicas: {}:{}",
-                ntp,
-                err,
-                err.message());
-              throw ss::httpd::bad_request_exception(
-                fmt::format("Error moving partition: {}", err.message()));
-          }
+          vlog(
+            logger.debug,
+            "Request to change ntp {} replica set to {}: err={}",
+            ntp,
+            replicas,
+            err);
 
+          co_await throw_on_error(*req, err, model::controller_ntp);
           co_return ss::json::json_void();
       });
 }
