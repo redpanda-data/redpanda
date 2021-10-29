@@ -2,10 +2,13 @@
 #include "bytes/iobuf.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "model/fundamental.h"
+#include "model/record_batch_types.h"
 #include "storage/parser.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "storage/tests/utils/random_batch.h"
+
+#include <boost/test/tools/interface.hpp>
 
 namespace cloud_storage {
 static constexpr std::string_view manifest_payload = R"json({
@@ -58,12 +61,43 @@ inline iobuf iobuf_deep_copy(const iobuf& i) {
 
 inline iobuf generate_segment(model::offset base_offset, int count) {
     auto buff = storage::test::make_random_batches(base_offset, count, false);
-
     iobuf result;
     for (auto&& batch : buff) {
         auto hdr = storage::disk_header_to_iobuf(batch.header());
         result.append(std::move(hdr));
         result.append(iobuf_deep_copy(batch.data()));
+    }
+    return result;
+}
+
+struct batch_t {
+    int num_records;
+    model::record_batch_type type;
+};
+
+inline ss::circular_buffer<model::record_batch>
+make_random_batches(model::offset o, const std::vector<batch_t>& batches) {
+    ss::circular_buffer<model::record_batch> ret;
+    ret.reserve(batches.size());
+    for (auto batch : batches) {
+        auto b = storage::test::make_random_batch(
+          o, batch.num_records, false, batch.type);
+        o = b.last_offset() + model::offset(1);
+        b.set_term(model::term_id(0));
+        ret.push_back(std::move(b));
+    }
+    return ret;
+}
+inline iobuf generate_segment(
+  model::offset base_offset, const std::vector<batch_t>& batches) {
+    auto buff = make_random_batches(base_offset, batches);
+    iobuf result;
+    int ix = 0;
+    for (auto&& batch : buff) {
+        auto hdr = storage::disk_header_to_iobuf(batch.header());
+        result.append(std::move(hdr));
+        result.append(iobuf_deep_copy(batch.data()));
+        ix++;
     }
     return result;
 }
