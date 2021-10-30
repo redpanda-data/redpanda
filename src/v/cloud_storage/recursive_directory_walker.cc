@@ -25,6 +25,7 @@
 #include <chrono>
 #include <string_view>
 #include <vector>
+#include <deque>
 
 namespace cloud_storage {
 
