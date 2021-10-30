@@ -112,6 +112,11 @@ public:
             return *this;
         }
 
+        const_iterator& operator--() {
+            --_index;
+            return *this;
+        }
+
         bool operator==(const const_iterator&) const = default;
 
         friend ssize_t
