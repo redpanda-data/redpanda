@@ -39,7 +39,7 @@ deb_deps=(
   python3-jinja2
   python3-venv
   rapidjson-dev
-  xz
+  xz-utils
   zip
 )
 fedora_deps=(
