@@ -365,3 +365,17 @@ ExternalProject_Add(avro
   BUILD_COMMAND ninja avrocpp avrocpp_s avrogencpp
   DEPENDS ${default_depends} boost
 )
+
+ExternalProject_Add(rapidjson
+  GIT_REPOSITORY https://github.com/vectorizedio/rapidjson.git
+  GIT_TAG 00dbcf2c6e03c47d6c399338b6de060c71356464
+  INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  DEPENDS ${default_depends}
+  CMAKE_ARGS
+    ${common_cmake_args}
+    -DRAPIDJSON_BUILD_EXAMPLES=OFF
+    -DRAPIDJSON_BUILD_TESTS=OFF
+    -DRAPIDJSON_BUILD_DOC=OFF
+    -DRAPIDJSON_HAS_STDSTRING=ON
+)
