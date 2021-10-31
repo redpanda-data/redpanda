@@ -86,7 +86,7 @@ Most of the metrics are used for debugging, but these metrics can be useful to m
 | --- | --- | --- |
 | vectorized_application_uptime | Redpanda uptime in milliseconds |  |
 | vectorized_cluster_partition_last_stable_offset | Last stable offset | If this is the last record received by the cluster, then the cluster is up-to-date and ready for maintenance |
-| vectorized_io_queue_delay | Total delay time in the queue | Can indicate latency caused by disk operations |
+| vectorized_io_queue_delay | Total delay time in the queue | Can indicate latency caused by disk operations in seconds |
 | vectorized_io_queue_queue_length | Number of requests in the queue | Can indicate latency caused by disk operations |
 | vectorized_kafka_rpc_active_connections | kafka_rpc: Currently active connections | Shows the number of clients actively connected |
 | vectorized_kafka_rpc_connects | kafka_rpc: Number of accepted connections | Compare to the value at a previous time to derive the rate of accepted connections |
