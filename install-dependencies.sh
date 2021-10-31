@@ -7,6 +7,10 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+
+# version of clang we want to use
+GITHUB_CLANG_VERSION=12
+
 set -e
 
 echo "installing redpanda toolchain"
@@ -26,7 +30,7 @@ fi
 
 deb_deps=(
   ccache
-  clang
+  clang-${GITHUB_CLANG_VERSION}
   curl
   git
   libsnappy-dev
@@ -44,7 +48,7 @@ deb_deps=(
 )
 fedora_deps=(
   ccache
-  clang
+  clang-${GITHUB_CLANG_VERSION}
   curl
   git
   libzstd-devel
@@ -102,3 +106,6 @@ esac
 curl -L $link_for_gn --output /opt/depot_tools/gn_zip
 unzip -d /opt/depot_tools/installed-gn/ /opt/depot_tools/gn_zip
 chmod -R 777 /opt/depot_tools
+
+update-alternatives --install /usr/bin/clang clang /usr/bin/clang-${GITHUB_CLANG_VERSION} 100
+update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-${GITHUB_CLANG_VERSION} 100
