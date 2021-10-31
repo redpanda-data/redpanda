@@ -7,12 +7,11 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cluster/topic_table.h"
-
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
+#include "cluster/topic_table.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -62,9 +61,15 @@ const model::topic& topic_table::topic_metadata::get_source_topic() const {
 }
 const topic_configuration_assignment&
 topic_table::topic_metadata::get_configuration() const {
-    vassert(
-      is_topic_replicable(),
-      "Query for configuration on a non-replicable topic");
+    bool nr_grp = std::all_of(
+      configuration.assignments.begin(),
+      configuration.assignments.end(),
+      [](const partition_assignment& pa) { return pa.group() == -1; });
+    if (!is_topic_replicable()) {
+        vassert(nr_grp, "Mis configured non_replicable topic");
+    } else {
+        vassert(!nr_grp, "Bad raft group id for replicable topic");
+    }
     return configuration;
 }
 
