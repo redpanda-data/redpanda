@@ -16,6 +16,7 @@ rp_test(
 )
 
 set(srcs
+    non_replicable_topic_tests.cc
     partition_allocator_tests.cc
     simple_batch_builder_test.cc
     serialization_rt_test.cc
