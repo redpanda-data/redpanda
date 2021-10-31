@@ -99,6 +99,10 @@ public:
         return &_instances[id]->app;
     }
 
+    fixture_ptr::pointer get_node_fixture(model::node_id id) {
+        return _instances[id].get();
+    }
+
     cluster::metadata_cache& get_local_cache(model::node_id id) {
         return _instances[id]->app.metadata_cache.local();
     }
