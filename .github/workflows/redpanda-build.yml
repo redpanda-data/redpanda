@@ -38,6 +38,9 @@ jobs:
             key: ccache-${{github.ref}}
             restore-keys: ccache
 
+        - name: set fx.aio-max-nr
+          run: sudo sysctl -w fs.aio-max-nr=10485760
+
         - name: build & test
           run: |
             export CCACHE_COMPRESS=true
