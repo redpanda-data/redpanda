@@ -52,9 +52,9 @@ but still allow for the Kafka API to be available on the localhost.
 We'll also create the persistent volumes that let the Redpanda instances keep state during instance restarts.
 
 ```bash
-docker network create -d bridge redpandanet && \
-docker volume create redpanda1 && \
-docker volume create redpanda2 && \
+docker network create -d bridge redpandanet && ^
+docker volume create redpanda1 && ^
+docker volume create redpanda2 && ^
 docker volume create redpanda3
 ```
 
