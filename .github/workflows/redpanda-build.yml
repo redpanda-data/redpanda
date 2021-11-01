@@ -31,23 +31,13 @@ jobs:
               .
             rm .dockerignore
 
-        # there is no analog to ${{ github.workspace }} for the home directory
-        - name: prepare cache variables
-          id: prepare_cache_variables
-          run: |
-            echo ::set-output name=home::$HOME
-            echo ::set-output name=timestamp::$(date +'%Y-%m-%d-%H-%M-%S')
-
         - name: ccache cache files
           uses: actions/cache@v2
           with:
-            path: ${{ steps.prepare_cache_variables.outputs.home }}/.ccache
-            key: ${{ matrix.container }}-ccache-${{ steps.prepare_cache_variables.outputs.timestamp }}
-            restore-keys: ${{ matrix.container }}-ccache-
+            path: /dev/shm/redpanda
+            key: ccache-${{github.ref}}
+            restore-keys: ccache
 
-        # at the time of this writing the ccache for a full build is about
-        # 70MB (due to the compression) but it may grow if there are many
-        # commits with changes within 1 branch and thus the 200MB upper limit
         - name: build & test
           run: |
             export CCACHE_COMPRESS=true
