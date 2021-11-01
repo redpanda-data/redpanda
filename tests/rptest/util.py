@@ -8,9 +8,6 @@
 # by the Apache License, Version 2.0
 
 
-from ducktape.utils.util import wait_until
-
-
 class Scale:
     KEY = "scale"
     LOCAL = "local"
@@ -41,51 +38,3 @@ class Scale:
     @property
     def release(self):
         return self._scale == Scale.RELEASE
-
-
-def _segments_count(storage, topic, partition_idx):
-    topic_partitions = storage.partitions("kafka", topic)
-
-    return map(
-        lambda p: len(p.segments),
-        filter(lambda p: p.num == partition_idx, topic_partitions),
-    )
-
-
-def produce_until_segments(storage, kafka_tools, topic, partition_idx, count, acks=-1):
-    """
-    Produce into the topic until given number of segments will appear
-    """
-
-    def done():
-        kafka_tools.produce(topic, 10000, 1024, acks=acks)
-        topic_partitions = _segments_count(
-            storage=storage,
-            topic=topic,
-            partition_idx=partition_idx,
-        )
-        partitions = []
-        for p in topic_partitions:
-            partitions.append(p >= count)
-        return all(partitions)
-
-    wait_until(
-        done, timeout_sec=120, backoff_sec=2, err_msg="Segments were not created"
-    )
-
-
-def wait_for_segments_removal(storage, topic, partition_idx, count):
-    """
-    Wait until only given number of segments will left in a partitions
-    """
-
-    def done():
-        topic_partitions = _segments_count(storage, topic, partition_idx)
-        partitions = []
-        for p in topic_partitions:
-            partitions.append(p <= count)
-        return all(partitions)
-
-    wait_until(
-        done, timeout_sec=120, backoff_sec=5, err_msg="Segments were not removed"
-    )
