@@ -12,33 +12,24 @@ on: [push, pull_request]
 
 jobs:
   build:
-    name: Build on ${{ matrix.container }}
+    name: build redpanda
     runs-on: ubuntu-20.04
-    container: ${{ matrix.container }}
-    strategy:
-      matrix:
-        container: ['ubuntu:21.04']
 
     steps:
         - name: checkout
           uses: actions/checkout@v2
 
-        - name: update container base
+        - name: prepare toolchain container
           run: |
-            export DEBIAN_FRONTEND=noninteractive
-            apt-get update -y
-            apt-get install -y git sudo pkg-config ccache
-
-        - name: install dependencies
-          run: ./install-dependencies.sh
-
-        - name: install g++-11
-          run: |
-            DEBIAN_FRONTEND=noninteractive apt install -y g++-11
-            sudo update-alternatives \
-              --install /usr/bin/gcc gcc /usr/bin/gcc-11 60 \
-              --slave /usr/bin/g++ g++ /usr/bin/g++-11
-            sudo update-alternatives --auto gcc
+            docker pull docker.io/vectorized/redpanda-toolchain || true
+            chmod 0775 install-dependencies.sh
+            cp tools/docker/Dockerfile.ignore .dockerignore
+            docker build \
+              --cache-from docker.io/vectorized/redpanda-toolchain \
+              --tag rp-toolchain \
+              --file tools/docker/Dockerfile \
+              .
+            rm .dockerignore
 
         # there is no analog to ${{ github.workspace }} for the home directory
         - name: prepare cache variables
@@ -66,5 +57,13 @@ jobs:
             ccache -p # print the config
             ccache -s # print the stats before reusing
             ccache -z # zero the stats
-            ./build.sh
+
+            docker run --rm \
+              --privileged \
+              --ipc=host \
+              -v $PWD:$PWD \
+              -w $PWD \
+              rp-toolchain \
+              ./build.sh
+
             ccache -s # print the stats after the build
