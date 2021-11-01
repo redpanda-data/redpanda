@@ -28,7 +28,8 @@ static bool is_tx_manager_topic(const model::ntp& ntp) {
 
 partition::partition(
   consensus_ptr r,
-  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend)
+  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
+  ss::sharded<cloud_storage::remote>& cloud_storage_api)
   : _raft(r)
   , _probe(std::make_unique<replicated_partition_probe>(*this))
   , _tx_gateway_frontend(tx_gateway_frontend)
@@ -42,7 +43,7 @@ partition::partition(
           clusterlog, _raft.get());
     } else if (is_tx_manager_topic(_raft->ntp())) {
         if (_raft->log_config().is_collectable()) {
-            _nop_stm = ss::make_lw_shared<raft::log_eviction_stm>(
+            _log_eviction_stm = ss::make_lw_shared<raft::log_eviction_stm>(
               _raft.get(), clusterlog, stm_manager, _as);
         }
 
@@ -52,7 +53,7 @@ partition::partition(
         }
     } else {
         if (_raft->log_config().is_collectable()) {
-            _nop_stm = ss::make_lw_shared<raft::log_eviction_stm>(
+            _log_eviction_stm = ss::make_lw_shared<raft::log_eviction_stm>(
               _raft.get(), clusterlog, stm_manager, _as);
         }
 
@@ -69,6 +70,17 @@ partition::partition(
             _rm_stm = ss::make_shared<cluster::rm_stm>(
               clusterlog, _raft.get(), _tx_gateway_frontend);
             stm_manager->add_stm(_rm_stm);
+        }
+
+        // TODO: check topic config if archival is enabled for this topic
+        if (
+          config::shard_local_cfg().cloud_storage_enabled()
+          && cloud_storage_api.local_is_initialized()
+          && _raft->ntp().ns == model::kafka_namespace) {
+            _archival_meta_stm
+              = ss::make_shared<cluster::archival_metadata_stm>(
+                _raft.get(), cloud_storage_api.local(), clusterlog);
+            stm_manager->add_stm(_archival_meta_stm);
         }
     }
 }
@@ -275,8 +287,8 @@ ss::future<> partition::start() {
 
     if (is_id_allocator_topic(ntp)) {
         return f.then([this] { return _id_allocator_stm->start(); });
-    } else if (_nop_stm) {
-        f = f.then([this] { return _nop_stm->start(); });
+    } else if (_log_eviction_stm) {
+        f = f.then([this] { return _log_eviction_stm->start(); });
     }
 
     if (_rm_stm) {
@@ -285,6 +297,10 @@ ss::future<> partition::start() {
 
     if (_tm_stm) {
         f = f.then([this] { return _tm_stm->start(); });
+    }
+
+    if (_archival_meta_stm) {
+        f = f.then([this] { return _archival_meta_stm->start(); });
     }
 
     return f;
@@ -299,8 +315,8 @@ ss::future<> partition::stop() {
         return _id_allocator_stm->stop();
     }
 
-    if (_nop_stm) {
-        f = _nop_stm->stop();
+    if (_log_eviction_stm) {
+        f = _log_eviction_stm->stop();
     }
 
     if (_rm_stm) {
@@ -309,6 +325,10 @@ ss::future<> partition::stop() {
 
     if (_tm_stm) {
         f = f.then([this] { return _tm_stm->stop(); });
+    }
+
+    if (_archival_meta_stm) {
+        f = f.then([this] { return _archival_meta_stm->stop(); });
     }
 
     // no state machine

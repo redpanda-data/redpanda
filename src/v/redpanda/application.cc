@@ -599,7 +599,8 @@ void application::wire_up_redpanda_services() {
       std::ref(storage),
       std::ref(raft_group_manager),
       std::ref(tx_gateway_frontend),
-      std::ref(partition_recovery_manager))
+      std::ref(partition_recovery_manager),
+      std::ref(cloud_storage_api))
       .get();
     vlog(_log.info, "Partition manager started");
 

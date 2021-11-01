@@ -21,6 +21,9 @@
 #include <iosfwd>
 #include <limits>
 
+class iobuf;
+class iobuf_parser;
+
 namespace model {
 
 enum class timestamp_type : uint8_t { create_time, append_time };
@@ -63,6 +66,11 @@ public:
     auto operator<=>(const timestamp&) const = default;
 
     friend std::ostream& operator<<(std::ostream&, timestamp);
+
+    // ADL helpers for interfacing with the serde library.
+    friend void write(iobuf& out, timestamp ts);
+    friend void
+    read_nested(iobuf_parser& in, timestamp& ts, size_t const bytes_left_limit);
 
     static timestamp now();
 

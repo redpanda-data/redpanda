@@ -285,11 +285,16 @@ remote_manifest_path manifest::get_manifest_path() const {
     return generate_partition_manifest_path(_ntp, _rev);
 }
 
-remote_segment_path
-manifest::get_remote_segment_path(const segment_name& name) const {
-    auto path = ssx::sformat("{}_{}/{}", _ntp.path(), _rev(), name());
+remote_segment_path manifest::generate_remote_segment_path(
+  const model::ntp ntp, model::revision_id rev_id, const segment_name& name) {
+    auto path = ssx::sformat("{}_{}/{}", ntp.path(), rev_id(), name());
     uint32_t hash = xxhash_32(path.data(), path.size());
     return remote_segment_path(fmt::format("{:08x}/{}", hash, path));
+}
+
+remote_segment_path
+manifest::get_remote_segment_path(const segment_name& name) const {
+    return generate_remote_segment_path(_ntp, _rev, name);
 }
 
 remote_segment_path

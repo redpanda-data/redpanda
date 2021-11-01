@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/archival_metadata_stm.h"
 #include "cluster/id_allocator_stm.h"
 #include "cluster/partition_probe.h"
 #include "cluster/rm_stm.h"
@@ -26,6 +27,8 @@
 #include "raft/types.h"
 #include "storage/types.h"
 
+#include <seastar/core/shared_ptr.hh>
+
 namespace cluster {
 class partition_manager;
 
@@ -33,7 +36,10 @@ class partition_manager;
 /// all raft logic is proxied transparently
 class partition {
 public:
-    partition(consensus_ptr r, ss::sharded<cluster::tx_gateway_frontend>&);
+    partition(
+      consensus_ptr r,
+      ss::sharded<cluster::tx_gateway_frontend>&,
+      ss::sharded<cloud_storage::remote>&);
 
     raft::group_id group() const { return _raft->group(); }
     ss::future<> start();
@@ -185,6 +191,11 @@ public:
         return _rm_stm->aborted_transactions(from, to);
     }
 
+    const ss::shared_ptr<cluster::archival_metadata_stm>&
+    archival_meta_stm() const {
+        return _archival_meta_stm;
+    }
+
 private:
     friend partition_manager;
     friend replicated_partition_probe;
@@ -193,10 +204,11 @@ private:
 
 private:
     consensus_ptr _raft;
-    ss::lw_shared_ptr<raft::log_eviction_stm> _nop_stm;
+    ss::lw_shared_ptr<raft::log_eviction_stm> _log_eviction_stm;
     ss::lw_shared_ptr<cluster::id_allocator_stm> _id_allocator_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
     ss::shared_ptr<cluster::tm_stm> _tm_stm;
+    ss::shared_ptr<archival_metadata_stm> _archival_meta_stm;
     ss::abort_source _as;
     partition_probe _probe;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
