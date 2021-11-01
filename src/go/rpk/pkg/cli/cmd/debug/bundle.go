@@ -31,6 +31,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/avast/retry-go"
 	"github.com/beevik/ntp"
 	"github.com/docker/go-units"
 	"github.com/hashicorp/go-multierror"
@@ -599,23 +600,53 @@ func saveResourceUsageData(ps *stepParams, conf *config.Config) step {
 // Queries 'pool.ntp.org' and writes a file with the reported RTT, time & precision.
 func saveNTPDrift(ps *stepParams) step {
 	return func() error {
-		const host = "pool.ntp.org"
+		const (
+			host    = "pool.ntp.org"
+			retries = 3
+		)
 
-		response, err := ntp.Query(host)
+		var (
+			response  *ntp.Response
+			localTime time.Time
+			err       error
+		)
+
+		queryNTP := func() error {
+			localTime = time.Now()
+			response, err = ntp.Query(host)
+			return err
+		}
+
+		err = retry.Do(
+			queryNTP,
+			retry.Attempts(retries),
+			retry.DelayType(retry.FixedDelay),
+			retry.Delay(1*time.Second),
+			retry.LastErrorOnly(true),
+			retry.OnRetry(func(n uint, err error) {
+				log.Debugf("Couldn't retrieve NTP data from %s: %v", host, err)
+				log.Debugf("Retrying (%d retries left)", retries-n)
+			}),
+		)
+
 		if err != nil {
 			return fmt.Errorf("error querying '%s': %w", host, err)
 		}
 
 		result := struct {
-			Host            string    `json:"host"`
-			RoundTripTimeMs int64     `json:"roundTripTimeMs"`
-			Time            time.Time `json:"time"`
-			PrecisionMs     int64     `json:"precisionMs"`
+			Host            string        `json:"host"`
+			RoundTripTimeMs int64         `json:"roundTripTimeMs"`
+			RemoteTimeUTC   time.Time     `json:"remoteTimeUTC"`
+			LocalTimeUTC    time.Time     `json:"localTimeUTC"`
+			PrecisionMs     int64         `json:"precisionMs"`
+			Offset          time.Duration `json:"offset"`
 		}{
 			Host:            host,
 			RoundTripTimeMs: response.RTT.Milliseconds(),
-			Time:            response.Time,
+			RemoteTimeUTC:   response.Time.UTC(),
+			LocalTimeUTC:    localTime.UTC(),
 			PrecisionMs:     response.Precision.Milliseconds(),
+			Offset:          response.ClockOffset,
 		}
 
 		marshalled, err := json.Marshal(result)
