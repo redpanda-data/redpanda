@@ -88,6 +88,11 @@ private:
     // shard
     shared_script_resources& _resources;
 
+    /// Collection representing all inputs and outputs for this coprocessor.
+    /// Offsets per materialized topic are tracked and input is only incremented
+    /// when all outputs are up to date.
+    routes_t _routes;
+
     /// References to input topics that this script is interested in
     /// receiving updates for
     ntp_context_cache _ntp_ctxs;

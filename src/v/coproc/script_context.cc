@@ -86,7 +86,7 @@ ss::future<> script_context::do_execute() {
                 .id = _id,
                 .read_sem = _resources.read_sem,
                 .abort_src = _abort_source,
-                .inputs = _ntp_ctxs};
+                .inputs = _routes};
               return read_from_inputs(args).then(
                 [this, client = std::move(client)](
                   std::vector<process_batch_request::data> requests) mutable {
