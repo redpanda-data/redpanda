@@ -15,6 +15,7 @@
 #include "cloud_storage/fwd.h"
 #include "cluster/config_manager.h"
 #include "cluster/fwd.h"
+#include "coproc/event_listener.h"
 #include "coproc/fwd.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/fwd.h"
@@ -151,6 +152,10 @@ private:
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
     // run these first on destruction
     deferred_actions _deferred;
+
+    // Coproc stuff
+    std::unique_ptr<coproc::wasm::event_listener> _coproc_event_listener;
+    std::unique_ptr<coproc::wasm::async_event_handler> _async_event_handler;
 };
 
 namespace debug {

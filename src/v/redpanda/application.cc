@@ -31,6 +31,7 @@
 #include "config/node_config.h"
 #include "config/seed_server.h"
 #include "coproc/api.h"
+#include "coproc/wasm_event.h"
 #include "kafka/client/configuration.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
@@ -789,6 +790,16 @@ void application::wire_up_redpanda_services() {
           std::ref(metadata_cache),
           std::ref(partition_manager));
         coprocessing->start().get();
+
+        construct_single_service(_coproc_event_listener);
+
+        _async_event_handler
+          = std::make_unique<coproc::wasm::async_event_handler>(
+            _coproc_event_listener->get_abort_source(),
+            coprocessing->get_pacemaker());
+
+        _coproc_event_listener->register_handler(
+          coproc::wasm::event_type::async, _async_event_handler.get());
     }
 
     // metrics and quota management
