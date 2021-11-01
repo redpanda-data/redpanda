@@ -86,6 +86,10 @@ class RpkClusterTest(RedpandaTest):
                 # dmidecode doesn't work in ducktape containers, ignore
                 # errors about it.
                 continue
+            elif "pool.ntp.org" in l:
+                # rpk's NTP queries frequently fail
+                # https://github.com/vectorizedio/redpanda/issues/2802
+                continue
             else:
                 self.logger.error(f"Bad output line: {l}")
                 filtered_errors.append(l)
