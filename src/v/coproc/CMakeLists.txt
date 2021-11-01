@@ -15,6 +15,7 @@ v_cc_library(
     script_context.cc
     script_context_frontend.cc
     script_context_backend.cc
+    script_context_router.cc
     pacemaker.cc
     offset_storage_utils.cc
     wasm_event.cc

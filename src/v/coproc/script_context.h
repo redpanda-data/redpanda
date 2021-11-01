@@ -13,6 +13,7 @@
 
 #include "coproc/exception.h"
 #include "coproc/ntp_context.h"
+#include "coproc/script_context_router.h"
 #include "coproc/supervisor.h"
 #include "coproc/types.h"
 #include "random/simple_time_jitter.h"
