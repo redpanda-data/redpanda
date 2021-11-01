@@ -43,20 +43,13 @@ jobs:
 
         - name: build & test
           run: |
-            export CCACHE_COMPRESS=true
-            export CCACHE_COMPRESSLEVEL=6
-            export CCACHE_MAXSIZE=200M
-
-            ccache -p # print the config
-            ccache -s # print the stats before reusing
-            ccache -z # zero the stats
-
             docker run --rm \
+              -e CCACHE_COMPRESS=true \
+              -e CCACHE_COMPRESSLEVEL=6 \
+              -e CCACHE_MAXSIZE=200M \
               --privileged \
               --ipc=host \
               -v $PWD:$PWD \
               -w $PWD \
               rp-toolchain \
               ./build.sh
-
-            ccache -s # print the stats after the build
