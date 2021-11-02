@@ -13,6 +13,7 @@
 #include "archival/probe.h"
 #include "archival/types.h"
 #include "model/fundamental.h"
+#include "raft/fwd.h"
 #include "storage/log_manager.h"
 #include "storage/ntp_config.h"
 #include "storage/segment_set.h"
@@ -55,7 +56,8 @@ public:
     ss::future<upload_candidate> get_next_candidate(
       model::offset begin_inclusive,
       model::offset end_exclusive,
-      storage::log_manager& lm);
+      storage::log,
+      const raft::offset_translator&);
 
 private:
     /// Check if the upload have to be forced due to timeout
@@ -74,7 +76,8 @@ private:
     lookup_result find_segment(
       model::offset last_offset,
       model::offset adjusted_lso,
-      storage::log_manager& lm);
+      storage::log,
+      const raft::offset_translator&);
 
     model::ntp _ntp;
     service_probe& _svc_probe;

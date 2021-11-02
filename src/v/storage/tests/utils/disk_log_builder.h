@@ -323,6 +323,8 @@ public:
 
     size_t bytes_written() const { return _bytes_written; }
 
+    storage::api& storage() { return _storage; }
+
 private:
     template<typename Consumer>
     auto consume_impl(Consumer c, log_reader_config config) {
