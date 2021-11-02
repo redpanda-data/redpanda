@@ -9,6 +9,7 @@
 
 import time
 import requests
+import json
 
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
@@ -265,13 +266,99 @@ class ClusterConfigTest(RedpandaTest):
     @cluster(num_nodes=3)
     def test_valid_settings(self):
         # TODO
-        #  - for all properties in the schema, set them with a valid non-default value
-        #  - check the new values are reflected in config GET
-        #  - restart all nodes (prompt a reload from cache file)
-        #  - check the new values are reflected in config GET
-
-        # This is not just checking the central config infrastructure: it's also
-        # validating that all the property types are outputting the same format
-        # as their input (e.g. they have proper rjson_serialize implementations)
 
         pass
+
+    @cluster(num_nodes=3)
+    def test_valid_settings(self):
+        """
+        Bulk exercise of all config settings & the schema endpoint:
+        - for all properties in the schema, set them with a valid non-default value
+        - check the new values are reflected in config GET
+        - restart all nodes (prompt a reload from cache file)
+        - check the new values are reflected in config GET
+
+        This is not just checking the central config infrastructure: it's also
+        validating that all the property types are outputting the same format
+        as their input (e.g. they have proper rjson_serialize implementations)
+        """
+        schema_properties = self.admin.get_cluster_config_schema(
+        )['properties']
+        updates = {}
+        properties_require_restart = False
+
+        # Don't change these settings, they prevent the test from subsequently
+        # using the cluster
+        exclude_settings = {'enable_sasl', 'enable_admin_api'}
+
+        initial_config = self.admin.get_cluster_config()
+
+        for name, p in schema_properties.items():
+            if name in exclude_settings:
+                continue
+
+            properties_require_restart |= p['needs_restart']
+
+            initial_value = initial_config[name]
+            if 'example' in p:
+                valid_value = p['example']
+            elif p['type'] == 'integer':
+                if initial_value:
+                    valid_value = initial_value * 2
+                else:
+                    valid_value = 100
+            elif p['type'] == 'number':
+                if initial_value:
+                    valid_value = float(initial_value * 2)
+                else:
+                    valid_value = 1000.0
+            elif p['type'] == 'string':
+                valid_value = "rhubarb"
+            elif p['type'] == 'boolean':
+                valid_value = not initial_config[name]
+            elif p['type'] == "array" and p['items']['type'] == 'string':
+                valid_value = ["custard", "cream"]
+            else:
+                raise NotImplementedError(p['type'])
+
+            updates[name] = valid_value
+
+        patch_result = self.admin.patch_cluster_config(upsert=updates,
+                                                       remove=[])
+        self._wait_for_version_sync(patch_result['version'])
+
+        def check_status(expect_restart):
+            # Use one node's status, they should be symmetric
+            status = self.admin.get_cluster_config_status()[0]
+
+            self.logger.info(f"Status: {json.dumps(status, indent=2)}")
+
+            assert status['invalid'] == []
+            assert status['restart'] is expect_restart
+
+        def check_values():
+            read_back = self.admin.get_cluster_config()
+            mismatch = []
+            for k, expect in updates.items():
+                actual = read_back.get(k, None)
+                # String-ized comparison, because the example values are strings,
+                # whereas by the time we read them back they're properly typed.
+                if str(actual) != str(expect):
+                    self.logger.error(
+                        f"Config set failed ({k}) {actual}!={expect}")
+                    mismatch.append((k, actual, expect))
+
+            assert len(mismatch) == 0
+
+        check_status(properties_require_restart)
+        check_values()
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        # We have to sleep here because in the success case there is no status update
+        # being sent: it's a no-op after node startup when they realize their config
+        # status is the same as the one already reported.
+        time.sleep(10)
+
+        # Check after restart that confuration persisted and status shows valid
+        check_status(False)
+        check_values()
