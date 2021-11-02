@@ -10,6 +10,7 @@
 package kafka
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -145,4 +146,16 @@ func MaybeErrMessage(code int16) string {
 		msg = err.Message
 	}
 	return msg
+}
+
+// ErrMessage returns the Message if err is a *kerr.Error, otherwise the error
+// text.
+func ErrMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	if ke := (*kerr.Error)(nil); errors.As(err, &ke) {
+		return ke.Message
+	}
+	return err.Error()
 }
