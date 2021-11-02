@@ -1,4 +1,5 @@
-// Copyright 2020 Vectorized, Inc.
+early
+  - career members // Copyright 2020 Vectorized, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -31,6 +32,7 @@
 #include "config/node_config.h"
 #include "config/seed_server.h"
 #include "coproc/api.h"
+#include "coproc/event_handler.h"
 #include "coproc/wasm_event.h"
 #include "kafka/client/configuration.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
@@ -61,6 +63,7 @@
 #include "utils/file_io.h"
 #include "utils/human.h"
 #include "v8_engine/data_policy_table.h"
+#include "v8_engine/api.h"
 #include "version.h"
 #include "vlog.h"
 
@@ -81,9 +84,10 @@
 #include <exception>
 #include <vector>
 
-static void set_local_kafka_client_config(
-  std::optional<kafka::client::configuration>& client_config,
-  const config::node_config& config) {
+  static void
+  set_local_kafka_client_config(
+    std::optional<kafka::client::configuration>& client_config,
+    const config::node_config& config) {
     client_config.emplace();
     const auto& kafka_api = config.kafka_api.value();
     vassert(!kafka_api.empty(), "There are no kafka_api listeners");
@@ -791,16 +795,44 @@ void application::wire_up_redpanda_services() {
           std::ref(metadata_cache),
           std::ref(partition_manager));
         coprocessing->start().get();
+    }
 
+    if (v8_enabled()) {
+        syschecks::systemd_message("Creating v8::api").get();
+        const auto& cfg = config::shard_local_cfg();
+        construct_single_service(
+          _v8_engine,
+          ss::engine().alien(),
+          cfg.executor_queue_size);
+        _v8_engine->start().get();
+    }
+
+    if (coproc_enabled() || v8_enabled()) {
+        syschecks::systemd_message(
+          "Creating event listener for coproc internal topic")
+          .get();
         construct_single_service(_coproc_event_listener);
 
-        _async_event_handler
-          = std::make_unique<coproc::wasm::async_event_handler>(
-            _coproc_event_listener->get_abort_source(),
-            coprocessing->get_pacemaker());
+        if (coproc_enabled()) {
+            _async_event_handler
+              = std::make_unique<coproc::wasm::async_event_handler>(
+                _coproc_event_listener->get_abort_source(),
+                coprocessing->get_pacemaker());
 
-        _coproc_event_listener->register_handler(
-          coproc::wasm::event_type::async, _async_event_handler.get());
+            _coproc_event_listener->register_handler(
+              coproc::wasm::event_type::async, _async_event_handler.get());
+        }
+
+        if (v8_enabled()) {
+            _data_policy_event_handler
+              = std::make_unique<coproc::wasm::data_policy_event_handler>();
+
+            _coproc_event_listener->register_handler(
+              coproc::wasm::event_type::data_policy,
+              _data_policy_event_handler.get());
+        }
+
+        _coproc_event_listener->start().get();
     }
 
     // metrics and quota management

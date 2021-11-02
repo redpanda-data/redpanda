@@ -15,6 +15,7 @@
 #include "cloud_storage/fwd.h"
 #include "cluster/config_manager.h"
 #include "cluster/fwd.h"
+#include "coproc/event_handler.h"
 #include "coproc/event_listener.h"
 #include "coproc/fwd.h"
 #include "kafka/client/configuration.h"
@@ -111,6 +112,11 @@ private:
         return cfg.developer_mode() && cfg.enable_coproc();
     }
 
+    bool v8_enabled() {
+        const auto& cfg = config::shard_local_cfg();
+        return cfg.developer_mode() && cfg.enable_v8();
+    }
+
     bool archival_storage_enabled();
 
     template<typename Service, typename... Args>
@@ -153,9 +159,13 @@ private:
     // run these first on destruction
     deferred_actions _deferred;
 
+    std::unique_ptr<v8_engine::api> _v8_engine;
+
     // Coproc stuff
     std::unique_ptr<coproc::wasm::event_listener> _coproc_event_listener;
     std::unique_ptr<coproc::wasm::async_event_handler> _async_event_handler;
+    std::unique_ptr<coproc::wasm::data_policy_event_handler>
+      _data_policy_event_handler;
 };
 
 namespace debug {
