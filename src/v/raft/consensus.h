@@ -154,7 +154,7 @@ public:
     const model::ntp& ntp() const { return _log.config().ntp(); }
     clock_type::time_point last_heartbeat() const { return _hbeat; };
 
-    clock_type::time_point last_append_timestamp(vnode);
+    clock_type::time_point last_sent_append_entries_req_timesptamp(vnode);
     /**
      * \brief Persist snapshot with given data and start offset
      *

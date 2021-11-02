@@ -208,7 +208,7 @@ inline bool replicate_entries_stm::should_skip_follower_request(vnode id) {
         const auto timeout = clock_type::now()
                              - _ptr->_replicate_append_timeout;
 
-        return it->second.last_hbeat_timestamp < timeout
+        return it->second.last_received_append_entries_reply_timestamp < timeout
                || it->second.is_recovering;
     }
 
