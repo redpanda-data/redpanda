@@ -483,6 +483,12 @@ class RedpandaService(Service):
         random.shuffle(brokers)
         return brokers
 
+    def schema_reg(self, limit=None):
+        schema_reg = [
+            f"http://{n.account.hostname}:8081" for n in self._started[:limit]
+        ]
+        return ",".join(schema_reg)
+
     def metrics(self, node):
         assert node in self._started
         url = f"http://{node.account.hostname}:9644/metrics"
