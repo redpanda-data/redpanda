@@ -112,6 +112,22 @@ You can either create a Kubernetes cluster on your local machine or on a cloud p
   </tab>
 </tabs>
 
+## Kubectl context
+Most cloud utility tools will automatically change your `kubectl` config file.   
+To check if you're in the correct context, run the command:
+
+```bash
+kubectl config current-context
+```
+
+For Digital Ocean for example, the output will look similar to this:
+
+```bash
+do-nyc1-redpanda
+```
+   
+If you're running multiple clusters or if the config file wasn't set up automatically, look for more information in the [Kubernetes documentation](https://kubernetes.io/docs/tasks/access-application-cluster/configure-access-multiple-clusters/).
+
 ## Install cert-manager
 
 The Redpanda operator requires cert-manager to create certificates for TLS communication.
@@ -147,23 +163,21 @@ to verify that cert-manager is working correcly.
     export VERSION=$(curl -s https://api.github.com/repos/vectorizedio/redpanda/releases/latest | jq -r .tag_name)
     ```
 
-
-
-
     **_Note_** - You can find information about the versions of the operator in the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).   
-    We're using `jq` to help us. If you don't have it installed run this command:   
+    We're using `jq` to help us. If you don't have it installed run this command:
+
     <tabs>
       <tab id="apt">
 
     ```bash
-      sudo apt-get update
-      sudo apt-get install jq
+    sudo apt-get update \
+    sudo apt-get install jq
     ```
       </tab>
       <tab id="brew">
-      
+
     ```bash
-      brew install jq
+    brew install jq
     ```
       </tab>
     </tabs>
