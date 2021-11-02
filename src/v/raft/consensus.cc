@@ -2135,7 +2135,6 @@ consensus::last_sent_append_entries_req_timesptamp(vnode id) {
 void consensus::update_node_append_timestamp(vnode id) {
     if (auto it = _fstats.find(id); it != _fstats.end()) {
         it->second.last_sent_append_entries_req_timesptamp = clock_type::now();
-        update_node_hbeat_timestamp(id);
     }
 }
 
