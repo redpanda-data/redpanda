@@ -65,4 +65,8 @@ void rjson_serialize(
   rapidjson::Writer<rapidjson::StringBuffer>& w,
   const model::cleanup_policy_bitflags& v);
 
+void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const model::violation_recovery_policy& v);
+
 } // namespace json

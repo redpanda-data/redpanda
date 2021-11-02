@@ -306,8 +306,12 @@ struct topic_metadata {
 
 inline std::ostream&
 operator<<(std::ostream& o, const model::violation_recovery_policy& x) {
-    fmt::print(o, "violation_recovery_policy: {}", (int32_t)x);
-    return o;
+    switch (x) {
+    case model::violation_recovery_policy::best_effort:
+        return o << "best_effort";
+    case model::violation_recovery_policy::crash:
+        return o << "crash";
+    }
 }
 
 namespace internal {

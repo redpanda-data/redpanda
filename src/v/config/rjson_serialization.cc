@@ -155,4 +155,10 @@ void rjson_serialize(
     stringize(w, v);
 }
 
+void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const model::violation_recovery_policy& v) {
+    stringize(w, v);
+}
+
 } // namespace json
