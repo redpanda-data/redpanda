@@ -10,7 +10,7 @@
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
-from rptest.services.compatibility.compat_example import CompatExample
+from rptest.services.compatibility.example_runner import ExampleRunner
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 import math
@@ -71,11 +71,11 @@ class FranzGoBase(RedpandaTest):
         if self._producer or self._consumer:
             raise RuntimeError("producer or consumer bench already init")
 
-        self._producer = CompatExample(self._ctx,
+        self._producer = ExampleRunner(self._ctx,
                                        self.redpanda,
                                        self.topic,
                                        extra_conf=self._prod_conf)
-        self._consumer = CompatExample(self._ctx,
+        self._consumer = ExampleRunner(self._ctx,
                                        self.redpanda,
                                        self.topic,
                                        extra_conf=self._cons_conf)

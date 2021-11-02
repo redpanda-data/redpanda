@@ -12,7 +12,8 @@ from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
 from rptest.services.kaf_producer import KafProducer
-from rptest.services.compatibility.compat_example import CompatExample
+from rptest.services.compatibility.example_runner import ExampleRunner
+from rptest.services.compatibility.sarama_examples import sarama_sasl_scram
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 
@@ -21,7 +22,7 @@ class SaramaTest(RedpandaTest):
     """
     Test three of Sarama's examples: topic interceptor, http server, and consumer group.
     All three examples have some piece that runs in the background, so we use a 
-    BackgroundThreadService (i.e., CompatExample).
+    BackgroundThreadService (i.e., ExampleRunner).
     """
     topics = (TopicSpec(), )
 
@@ -40,7 +41,7 @@ class SaramaTest(RedpandaTest):
                                      self._extra_conf["count"])
 
         # A representation of the example to be run in the background
-        self._example = CompatExample(test_context, self.redpanda, self.topic,
+        self._example = ExampleRunner(test_context, self.redpanda, self.topic,
                                       self._extra_conf)
 
     @cluster(num_nodes=5)
@@ -114,3 +115,42 @@ class SaramaTest(RedpandaTest):
                    timeout_sec=self._extra_conf["timeout"],
                    backoff_sec=5,
                    err_msg="sarama consumergroup test failed")
+
+
+class SaramaScramTest(RedpandaTest):
+    """
+    Test Sarama's example that uses SASL/SCRAM authentication.
+    The example runs in the foreground so there is no need for
+    a BackgroundThreadService.
+    """
+    topics = (TopicSpec(), )
+
+    def __init__(self, test_context):
+        extra_rp_conf = dict(enable_sasl=True, )
+        super(SaramaScramTest, self).__init__(test_context,
+                                              extra_rp_conf=extra_rp_conf)
+
+    @cluster(num_nodes=3)
+    def test_sarama_sasl_scram(self):
+        # Get the SASL SCRAM command and a ducktape node
+        cmd = sarama_sasl_scram(self.redpanda, self.topic)
+        n = random.randint(0, len(self.redpanda.nodes))
+        node = self.redpanda.get_node(n)
+
+        def try_cmd():
+            # Allow fail because the process exits with
+            # non-zero if redpanda is in the middle of a
+            # leadership election. Instead we want to
+            # retry the cmd.
+            result = node.account.ssh_output(cmd,
+                                             allow_fail=True,
+                                             timeout_sec=10).decode()
+            self.logger.debug(result)
+            return "wrote message at partition:" in result
+
+        # Using wait_until for auto-retry because sometimes
+        # redpanda is in the middle of a leadership election
+        wait_until(lambda: try_cmd(),
+                   timeout_sec=60,
+                   backoff_sec=5,
+                   err_msg="sarama sasl scram test failed")

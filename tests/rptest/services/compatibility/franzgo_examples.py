@@ -8,14 +8,14 @@
 # by the Apache License, Version 2.0
 
 import os
-from .helpers_base import HelperBase, HelperFactoryBase
+from .example_base import ExampleBase, ExampleFactoryBase
 import time
 
 # The franz-go root directory
 TESTS_DIR = os.path.join("/opt", "franz-go")
 
 
-class FranzGoBench(HelperBase):
+class FranzGoBench(ExampleBase):
     """
     The common items between helper classes
     for the franz-go bench example.
@@ -44,14 +44,13 @@ class FranzGoBench(HelperBase):
         return "bench"
 
 
-class FranzGoBenchProduceHelper(FranzGoBench):
+class FranzGoBenchProduce(FranzGoBench):
     """
     The helper class for franz-go's bench example
     using the producer endpoint
     """
     def __init__(self, redpanda, topic, extra_conf):
-        super(FranzGoBenchProduceHelper,
-              self).__init__(redpanda, topic, extra_conf)
+        super(FranzGoBenchProduce, self).__init__(redpanda, topic, extra_conf)
 
     # Return the command to call in the shell
     def cmd(self):
@@ -66,14 +65,13 @@ class FranzGoBenchProduceHelper(FranzGoBench):
         return os.path.join(EXAMPLE_DIR, cmd)
 
 
-class FranzGoBenchConsumeHelper(FranzGoBench):
+class FranzGoBenchConsume(FranzGoBench):
     """
     The helper class for franz-go's bench example
     using the consumer endpoint
     """
     def __init__(self, redpanda, topic, extra_conf):
-        super(FranzGoBenchConsumeHelper,
-              self).__init__(redpanda, topic, extra_conf)
+        super(FranzGoBenchConsume, self).__init__(redpanda, topic, extra_conf)
 
     # Return the command to call in the shell
     def cmd(self):
@@ -92,17 +90,17 @@ class FranzGoBenchConsumeHelper(FranzGoBench):
         return os.path.join(EXAMPLE_DIR, cmd)
 
 
-class FranzGoHelperFactory(HelperFactoryBase):
+class FranzGoFactory(ExampleFactoryBase):
     """
     The concrete factory for creating FranzGo's
     helper classes.
     """
-    def __init__(self, func_name, redpanda, topic, extra_conf):
-        super(FranzGoHelperFactory, self).__init__(func_name, redpanda, topic,
-                                                   extra_conf)
+    def __init__(self, context, redpanda, topic, extra_conf):
+        super(FranzGoFactory, self).__init__(context, redpanda, topic,
+                                             extra_conf)
 
     # The factory method for franz-go
-    def create_franzgo_helpers(self):
+    def create_franzgo_examples(self):
         # Explictly checking None because "consume" is boolean
         # and False may satisfy this condition
         if not isinstance(self._extra_conf.get("consume"), bool):
@@ -110,8 +108,8 @@ class FranzGoHelperFactory(HelperFactoryBase):
                 "create_franzgo_helpers failed: consume must be bool.")
 
         if self._extra_conf.get("consume"):
-            return FranzGoBenchConsumeHelper(self._redpanda, self._topic,
-                                             self._extra_conf)
+            return FranzGoBenchConsume(self._redpanda, self._topic,
+                                       self._extra_conf)
         else:
-            return FranzGoBenchProduceHelper(self._redpanda, self._topic,
-                                             self._extra_conf)
+            return FranzGoBenchProduce(self._redpanda, self._topic,
+                                       self._extra_conf)

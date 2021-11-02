@@ -8,18 +8,18 @@
 # by the Apache License, Version 2.0
 
 import os
-from .helpers_base import HelperBase, HelperFactoryBase
+from .example_base import ExampleBase, ExampleFactoryBase
 
 # The Sarama root directory
 TESTS_DIR = os.path.join("/opt", "sarama")
 
 
-class SaramaInterceptorsHelper(HelperBase):
+class SaramaInterceptors(ExampleBase):
     """
     The helper class for Sarama's interceptors example
     """
     def __init__(self, redpanda, topic):
-        super(SaramaInterceptorsHelper, self).__init__(redpanda)
+        super(SaramaInterceptors, self).__init__(redpanda)
 
         # The kafka topic
         self._topic = topic
@@ -40,12 +40,12 @@ class SaramaInterceptorsHelper(HelperBase):
         return "interceptors"
 
 
-class SaramaHttpServerHelper(HelperBase):
+class SaramaHttpServer(ExampleBase):
     """
     The helper class for Sarama's http server example
     """
     def __init__(self, redpanda):
-        super(SaramaHttpServerHelper, self).__init__(redpanda)
+        super(SaramaHttpServer, self).__init__(redpanda)
 
         # The name of the node assigned to this example
         self._node_name = ""
@@ -76,12 +76,12 @@ class SaramaHttpServerHelper(HelperBase):
         self._node_name = node_name
 
 
-class SaramaConsumerGroupHelper(HelperBase):
+class SaramaConsumerGroup(ExampleBase):
     """
     The helper class for Sarama's consumergroup example
     """
     def __init__(self, redpanda, topic, extra_conf):
-        super(SaramaConsumerGroupHelper, self).__init__(redpanda)
+        super(SaramaConsumerGroup, self).__init__(redpanda)
 
         # The kafka topic
         self._topic = topic
@@ -107,7 +107,7 @@ class SaramaConsumerGroupHelper(HelperBase):
 
 # A factory method to produce the command to run
 # Sarama's SASL/SCRAM authentication example.
-# Here, we do not create a HelperBase because
+# Here, we do not create a ExampleBase because
 # the SASL/SCRAM example runs in the foreground.
 def sarama_sasl_scram(redpanda, topic):
     EXAMPLE_DIR = os.path.join(TESTS_DIR, "examples/sasl_scram_client")
@@ -117,23 +117,23 @@ def sarama_sasl_scram(redpanda, topic):
     return os.path.join(EXAMPLE_DIR, cmd)
 
 
-class SaramaHelperFactory(HelperFactoryBase):
+class SaramaFactory(ExampleFactoryBase):
     """
     The concrete factory for creating Sarama's
     helper classes.
     """
-    def __init__(self, func_name, redpanda, topic, extra_conf):
-        super(SaramaHelperFactory, self).__init__(func_name, redpanda, topic,
-                                                  extra_conf)
+    def __init__(self, context, redpanda, topic, extra_conf):
+        super(SaramaFactory, self).__init__(context, redpanda, topic,
+                                            extra_conf)
 
     # The factory method for sarama
-    def create_sarama_helpers(self):
-        if self._func_name == "test_sarama_interceptors":
-            return SaramaInterceptorsHelper(self._redpanda, self._topic)
-        elif self._func_name == "test_sarama_http_server":
-            return SaramaHttpServerHelper(self._redpanda)
-        elif self._func_name == "test_sarama_consumergroup":
-            return SaramaConsumerGroupHelper(self._redpanda, self._topic,
-                                             self._extra_conf)
+    def create_sarama_examples(self):
+        if self._ctx.function_name == "test_sarama_interceptors":
+            return SaramaInterceptors(self._redpanda, self._topic)
+        elif self._ctx.function_name == "test_sarama_http_server":
+            return SaramaHttpServer(self._redpanda)
+        elif self._ctx.function_name == "test_sarama_consumergroup":
+            return SaramaConsumerGroup(self._redpanda, self._topic,
+                                       self._extra_conf)
         else:
             raise RuntimeError("create_helper failed: Invalid function name")

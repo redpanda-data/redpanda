@@ -11,20 +11,19 @@ import sys
 import time
 from ducktape.services.background_thread import BackgroundThreadService
 from rptest.util import Scale
-from .compat_helpers import create_helper
+from .compat_examples import create_example
 
 
-class CompatExample(BackgroundThreadService):
+class ExampleRunner(BackgroundThreadService):
     """
     The service that runs examples in the background
     """
     def __init__(self, context, redpanda, topic, extra_conf={}):
-        super(CompatExample, self).__init__(context, num_nodes=1)
+        super(ExampleRunner, self).__init__(context, num_nodes=1)
 
-        # Create the correct helper instance from the test function being run.
-        # helper is an object with various methods to help run the example
-        self._helper = create_helper(context.function_name, redpanda, topic,
-                                     extra_conf)
+        # Create the correct example instance from the test function being run.
+        # example is an object with various methods to help run the example
+        self._example = create_example(context, redpanda, topic, extra_conf)
 
         # The amount of time to run the example.
         # If user removes timeout key, then use 10 seconds.
@@ -36,30 +35,30 @@ class CompatExample(BackgroundThreadService):
         start_time = time.time()
 
         # Some examples require the hostname of the node
-        self._helper.set_node_name(node.name)
+        self._example.set_node_name(node.name)
 
         # Run the example until the condition is met or timeout occurs
-        output_iter = node.account.ssh_capture(self._helper.cmd())
-        while not self._helper.condition_met(
+        output_iter = node.account.ssh_capture(self._example.cmd())
+        while not self._example.condition_met(
         ) and time.time() < start_time + self._timeout:
             line = next(output_iter)
             line = line.rstrip()
             self.logger.debug(line)
 
-            # Call to helper.condition will automatically
+            # Call to example.condition will automatically
             # store result in a boolean variable
-            self._helper.condition(line)
+            self._example.condition(line)
 
     # Used to determine if the condition is met
     def ok(self):
-        return self._helper.condition_met()
+        return self._example.condition_met()
 
     # Returns the node name that the example is running on
     def node_name(self):
-        return self._helper.node_name()
+        return self._example.node_name()
 
     def stop_node(self, node):
-        node.account.kill_process(self._helper.process_to_kill())
+        node.account.kill_process(self._example.process_to_kill())
 
     def clean_node(self, nodes):
         pass

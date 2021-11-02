@@ -8,9 +8,9 @@
 # by the Apache License, Version 2.0
 
 
-class HelperBase:
+class ExampleBase:
     """
-    The base class for example helpers
+    The base class for example
     """
     def __init__(self, redpanda):
         # Instance of redpanda
@@ -37,22 +37,22 @@ class HelperBase:
         pass
 
 
-class HelperFactoryBase:
+class ExampleFactoryBase:
     """
     The abstract factory for creating helper classes
     for a particular kafka client. The class instance
     is determined by the test function name.
     """
-    def __init__(self, func_name, redpanda, topic, extra_conf):
-        self._func_name = func_name
+    def __init__(self, context, redpanda, topic, extra_conf):
+        self._ctx = context
         self._redpanda = redpanda
         self._topic = topic
         self._extra_conf = extra_conf or dict()
 
     # The factory method for sarama
-    def create_sarama_helpers(self):
+    def create_sarama_examples(self):
         pass
 
     # The factory method for franz-go
-    def create_franzgo_helpers(self):
+    def create_franzgo_examples(self):
         pass
