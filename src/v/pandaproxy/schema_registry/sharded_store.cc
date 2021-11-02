@@ -207,14 +207,27 @@ sharded_store::get_schema_subject_versions(schema_id id) {
 
 ss::future<subject_schema> sharded_store::get_subject_schema(
   const subject& sub, schema_version version, include_deleted inc_del) {
-    auto res = co_await _store.invoke_on(
-      shard_for(sub),
-      _smp_opts,
-      &store::get_subject_schema,
-      sub,
-      version,
-      inc_del);
-    co_return res.value();
+    auto v_id = (co_await _store.invoke_on(
+                   shard_for(sub),
+                   _smp_opts,
+                   &store::get_subject_version_id,
+                   sub,
+                   version,
+                   inc_del))
+                  .value();
+
+    auto def = (co_await _store.invoke_on(
+                  shard_for(v_id.id),
+                  _smp_opts,
+                  &store::get_schema_definition,
+                  v_id.id))
+                 .value();
+
+    co_return subject_schema{
+      .schema = {sub, std::move(def), std::move(v_id.refs)},
+      .version = v_id.version,
+      .id = v_id.id,
+      .deleted = v_id.deleted};
 }
 
 ss::future<std::vector<subject>>
