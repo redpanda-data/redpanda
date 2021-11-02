@@ -29,7 +29,26 @@ func NewListCommand(fs afero.Fs) *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"ls", "describe"},
 		Short:   "List ACLs.",
-		Args:    cobra.ExactArgs(0),
+		Long: `List ACLs.
+
+See the 'rpk acl' help text for a full write up on ACLs. List flags work in a
+similar multiplying effect as creating ACLs, but list is more advanced:
+listing works on a filter basis. Any unspecified flag defaults to matching
+everything (all operations, or all allowed principals, etc).
+
+As mentioned, not specifying flags matches everything. If no resources are
+specified, all resources are matched. If no operations are specified, all
+operations are matched. You can also opt in to matching everything with "any":
+--operation any matches any operation.
+
+The --resource-pattern-type, defaulting to "any", configures how to filter
+resource names:
+  * "any" returns exact name matches of either prefixed or literal pattern type
+  * "match" returns wildcard matches, prefix patterns that match your input, and literal matches
+  * "prefix" returns prefix patterns that match your input (prefix "fo" matches "foo")
+  * "literal" returns exact name matches
+`,
+		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
