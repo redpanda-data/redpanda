@@ -55,14 +55,14 @@ configuration::configuration()
       *this,
       "log_segment_size",
       "How large in bytes should each log segment be (default 1G)",
-      required::no,
+      {.example = "2147483648"},
       1_GiB)
   , compacted_log_segment_size(
       *this,
       "compacted_log_segment_size",
       "How large in bytes should each compacted log segment be (default "
       "256MiB)",
-      required::no,
+      {.example = "268435456"},
       256_MiB)
   , readers_cache_eviction_timeout_ms(
       *this,
@@ -80,14 +80,14 @@ configuration::configuration()
       *this,
       "rpc_server_tcp_recv_buf",
       "TCP receive buffer size in bytes.",
-      required::no,
+      {.example = "65536"},
       std::nullopt,
       32_KiB)
   , rpc_server_tcp_send_buf(
       *this,
       "rpc_server_tcp_send_buf",
       "TCP transmit buffer size in bytes.",
-      required::no,
+      {.example = "65536"},
       std::nullopt,
       32_KiB)
   , enable_coproc(
@@ -175,7 +175,7 @@ configuration::configuration()
       *this,
       "target_quota_byte_rate",
       "Target quota byte rate (bytes per second) - 2GB default",
-      required::no,
+      {.example = "1073741824"},
       2_GiB)
   , cluster_id(
       *this, "cluster_id", "Cluster identifier", required::no, std::nullopt)
@@ -219,7 +219,7 @@ configuration::configuration()
       *this,
       "metadata_dissemination_interval_ms",
       "Interaval for metadata dissemination batching",
-      required::no,
+      {.example = "5000"},
       3'000ms)
   , metadata_dissemination_retry_delay_ms(
       *this,
@@ -245,7 +245,7 @@ configuration::configuration()
       "tm_violation_recovery_policy",
       "Describes how to recover from an invariant violation happened on the "
       "transaction coordinator level",
-      required::no,
+      {.example = "best_effort"},
       model::violation_recovery_policy::crash)
   , rm_sync_timeout_ms(
       *this,
@@ -264,7 +264,7 @@ configuration::configuration()
       "rm_violation_recovery_policy",
       "Describes how to recover from an invariant violation happened on the "
       "partition level",
-      required::no,
+      {.example = "best_effort"},
       model::violation_recovery_policy::crash)
   , fetch_reads_debounce_timeout(
       *this,
@@ -284,19 +284,19 @@ configuration::configuration()
       *this,
       "log_cleanup_policy",
       "Default topic cleanup policy",
-      {required::no, needs_restart::no},
+      {required::no, needs_restart::no, "compact,delete"},
       model::cleanup_policy_bitflags::deletion)
   , log_message_timestamp_type(
       *this,
       "log_message_timestamp_type",
       "Default topic messages timestamp type",
-      {required::no, needs_restart::no},
+      {required::no, needs_restart::no, "LogAppendTime"},
       model::timestamp_type::create_time)
   , log_compression_type(
       *this,
       "log_compression_type",
       "Default topic compression type",
-      {required::no, needs_restart::no},
+      {required::no, needs_restart::no, "snappy"},
       model::compression::producer)
   , fetch_max_bytes(
       *this,
@@ -378,7 +378,7 @@ configuration::configuration()
       *this,
       "transaction_coordinator_cleanup_policy",
       "Cleanup policy for a transaction coordinator topic",
-      required::no,
+      {.required = required::no, .example = "compact,delete"},
       model::cleanup_policy_bitflags::deletion)
   , transaction_coordinator_delete_retention_ms(
       *this,
@@ -572,14 +572,14 @@ configuration::configuration()
       *this,
       "append_chunk_size",
       "Size of direct write operations to disk",
-      required::no,
+      {.example = "32768"},
       16_KiB,
       storage::internal::chunk_cache::validate_chunk_size)
   , max_compacted_log_segment_size(
       *this,
       "max_compacted_log_segment_size",
       "Max compacted segment size after consolidation",
-      required::no,
+      {.example = "10737418240"},
       5_GiB)
   , id_allocator_log_capacity(
       *this,
