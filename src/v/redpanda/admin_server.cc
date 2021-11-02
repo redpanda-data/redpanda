@@ -581,6 +581,66 @@ void admin_server::register_cluster_config_routes() {
           co_return ss::json::json_return_type(std::move(res));
       });
 
+    ss::httpd::cluster_config_json::get_cluster_config_schema.set(
+      _server._routes,
+      [](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          using property_map = std::map<
+            ss::sstring,
+            ss::httpd::cluster_config_json::cluster_config_property_metadata>;
+
+          property_map properties;
+
+          config::shard_local_cfg().for_each(
+            [&properties](const config::base_property& p) {
+                if (p.get_visibility() == config::visibility::deprecated) {
+                    // Do not mention deprecated settings in schema: they
+                    // only exist internally to avoid making existing stored
+                    // configs invalid.
+                    return;
+                }
+
+                auto [pm_i, inserted] = properties.emplace(
+                  ss::sstring(p.name()),
+                  ss::httpd::cluster_config_json::
+                    cluster_config_property_metadata());
+                vassert(inserted, "Emplace failed, duplicate property name?");
+
+                auto& pm = pm_i->second;
+                pm.description = ss::sstring(p.desc());
+                pm.needs_restart = p.needs_restart();
+                pm.visibility = ss::sstring(
+                  config::to_string_view(p.get_visibility()));
+                pm.nullable = p.is_nullable();
+
+                if (p.is_array()) {
+                    pm.type = "array";
+
+                    auto items = ss::httpd::cluster_config_json::
+                      cluster_config_property_metadata_items();
+                    items.type = ss::sstring(p.type_name());
+                    pm.items = items;
+                } else {
+                    pm.type = ss::sstring(p.type_name());
+                }
+
+                const auto& example = p.example();
+                if (example.has_value()) {
+                    pm.example = ss::sstring(example.value());
+                }
+
+                const auto& units = p.units_name();
+                if (units.has_value()) {
+                    pm.units = ss::sstring(units.value());
+                }
+            });
+
+          std::map<ss::sstring, property_map> response = {
+            {ss::sstring("properties"), std::move(properties)}};
+
+          co_return ss::json::json_return_type(std::move(response));
+      });
+
     ss::httpd::cluster_config_json::patch_cluster_config.set(
       _server._routes,
       [this](std::unique_ptr<ss::httpd::request> req)
