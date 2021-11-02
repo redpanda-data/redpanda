@@ -289,11 +289,11 @@ public:
       config_store& conf,
       std::string_view name,
       std::string_view desc,
-      required req = required::yes,
+      base_property::metadata meta,
       T def = T{},
       std::optional<T> min = std::nullopt,
       std::optional<T> max = std::nullopt)
-      : property<T>(conf, name, desc, req, def)
+      : property<T>(conf, name, desc, meta, def)
       , _min(min)
       , _max(max) {}
 
