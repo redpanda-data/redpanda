@@ -24,6 +24,16 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 )
 
+// Confirm prompts the user to confirm the formatted message and returns the
+// confirmation result or an error.
+func Confirm(msg string, args ...interface{}) (bool, error) {
+	var confirmation bool
+	return confirmation, survey.AskOne(&survey.Confirm{
+		Message: fmt.Sprintf(msg, args...),
+		Default: true,
+	}, &confirmation)
+}
+
 // Pick prompts the user to pick one of many options, returning the selected
 // option or an error.
 func Pick(options []string, msg string, args ...interface{}) (string, error) {

@@ -24,7 +24,15 @@ func NewUserCommand(fs afero.Fs) *cobra.Command {
 	var apiUrls []string
 	cmd := &cobra.Command{
 		Use:   "user",
-		Short: "Manage users",
+		Short: "Manage SASL users.",
+		Long: `Manage SASL users.
+
+If SASL is enabled, a SASL user is what you use to talk to Redpanda, and ACLs
+control what your user has access to. See 'rpk acl --help' for more information
+about ACLs, and 'rpk acl user create --help' for more information about
+creating SASL users. Using SASL requires setting "enable_sasl: true" in the
+redpanda section of your redpanda.yaml.
+`,
 	}
 	cmd.PersistentFlags().StringSliceVar(
 		&apiUrls,
@@ -51,8 +59,24 @@ func NewCreateUserCommand(fs afero.Fs) *cobra.Command {
 	var userOld, pass, passOld, mechanism string
 	cmd := &cobra.Command{
 		Use:   "create [USER} -p [PASS]",
-		Short: "Create an ACL user.",
-		Args:  cobra.MaximumNArgs(1), // when the deprecated user flag is removed, change this to cobra.ExactArgs(1)
+		Short: "Create a SASL user.",
+		Long: `Create a SASL user.
+
+This command creates a single SASL user with the given password, optionally
+with a custom "mechanism". SASL consists of three parts: a username, a
+password, and a mechanism. The mechanism determines which authentication flow
+the client will use for this user/pass.
+
+Redpanda currently supports two mechanisms: SCRAM-SHA-256, the default, and
+SCRAM-SHA-512, which is the same flow but uses sha512 rather than sha256.
+
+Using SASL requires setting "enable_sasl: true" in the redpanda section of your
+redpanda.yaml. Before a created SASL account can be used, you must also create
+ACLs to grant the account access to certain resources in your cluster. See the
+acl help text for more info.
+`,
+
+		Args: cobra.MaximumNArgs(1), // when the deprecated user flag is removed, change this to cobra.ExactArgs(1)
 		Run: func(cmd *cobra.Command, args []string) {
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
@@ -116,8 +140,13 @@ func NewDeleteUserCommand(fs afero.Fs) *cobra.Command {
 	var oldUser string
 	cmd := &cobra.Command{
 		Use:   "delete [USER]",
-		Short: "Delete an ACL user.",
-		Args:  cobra.MaximumNArgs(1),
+		Short: "Delete a SASL user.",
+		Long: `Delete a SASL user.
+
+This command deletes the specified SASL account from Redpanda. This does not
+delete any ACLs that may exist for this user.
+`,
+		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
@@ -154,7 +183,7 @@ func NewListUsersCommand(fs afero.Fs) *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List users.",
+		Short:   "List SASL users.",
 		Run: func(cmd *cobra.Command, _ []string) {
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
