@@ -187,8 +187,9 @@ deleted at once. Because this can be risky for deleting, the delete command
 prompts for confirmation by default. More details and examples for creating,
 listing, and deleting can be seen in each of the commands.
 
-User management is a separate, simpler concept that is described in the user
-command.
+Using SASL requires setting "enable_sasl: true" in the redpanda section of your
+redpanda.yaml. User management is a separate, simpler concept that is
+described in the user command.
 `
 
 const helpACLOperations = `Brokers support many operations for many resources:
