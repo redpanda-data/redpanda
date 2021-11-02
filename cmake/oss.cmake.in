@@ -184,7 +184,7 @@ ExternalProject_Add(HdrHistogram
 
 ExternalProject_Add(abseil
   GIT_REPOSITORY https://github.com/vectorizedio/abseil-cpp.git
-  GIT_TAG e1d388e7e74803050423d035e4374131b9b57919
+  GIT_TAG 20210324.2
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   DEPENDS ${default_depends}
