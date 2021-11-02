@@ -119,14 +119,14 @@ We'll use Helm to install cert-manager:
       <tab id="apt">
 
     ```bash
-      sudo apt-get update
-      sudo apt-get install jq
+    sudo apt-get update \
+    sudo apt-get install jq
     ```
       </tab>
       <tab id="brew">
 
     ```bash
-      brew install jq
+    brew install jq
     ```
       </tab>
     </tabs>
