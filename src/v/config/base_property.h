@@ -33,6 +33,7 @@ public:
     struct metadata {
         required required{required::no};
         needs_restart needs_restart{needs_restart::yes};
+        std::optional<ss::sstring> example{std::nullopt};
     };
 
     base_property(
@@ -45,7 +46,7 @@ public:
     const std::string_view& desc() const { return _desc; }
 
     const required is_required() const { return _meta.required; }
-    bool needs_restart() { return bool(_meta.needs_restart); }
+    bool needs_restart() const { return bool(_meta.needs_restart); }
 
     // this serializes the property value. a full configuration serialization is
     // performed in config_store::to_json where the json object key is taken
@@ -58,6 +59,13 @@ public:
     virtual void set_value(std::any) = 0;
     virtual void reset() = 0;
     virtual bool is_default() const = 0;
+
+    virtual std::string_view type_name() const = 0;
+    virtual std::optional<std::string_view> units_name() const = 0;
+    virtual bool is_nullable() const = 0;
+    virtual bool is_array() const = 0;
+    std::optional<std::string_view> example() const { return _meta.example; }
+
     virtual std::optional<validation_error> validate() const = 0;
     virtual base_property& operator=(const base_property&) = 0;
     virtual ~base_property() noexcept = default;
