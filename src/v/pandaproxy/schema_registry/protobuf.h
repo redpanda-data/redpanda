@@ -25,4 +25,8 @@ validate_protobuf_schema(sharded_store& store, const canonical_schema& schema);
 ss::future<canonical_schema>
 make_canonical_protobuf_schema(sharded_store& store, unparsed_schema schema);
 
+bool check_compatible(
+  const protobuf_schema_definition& reader,
+  const protobuf_schema_definition& writer);
+
 } // namespace pandaproxy::schema_registry
