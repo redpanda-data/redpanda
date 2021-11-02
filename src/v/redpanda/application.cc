@@ -174,6 +174,7 @@ int application::run(int ac, char** av) {
       ".yaml file config for redpanda");
 
     return app.run(ac, av, [this, &app] {
+        vassert(ss::smp::count > 0, "Seastar core count must be more 0");
         auto& cfg = app.configuration();
         log_system_resources(_log, cfg);
         validate_arguments(cfg);
