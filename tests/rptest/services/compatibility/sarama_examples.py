@@ -1,4 +1,4 @@
-# Copyright 2020 Vectorized, Inc.
+# Copyright 2021 Vectorized, Inc.
 #
 # Use of this software is governed by the Business Source License
 # included in the file licenses/BSL.md
@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 import os
-from .example_base import ExampleBase, ExampleFactoryBase
+from .example_base import ExampleBase
 
 # The Sarama root directory
 TESTS_DIR = os.path.join("/opt", "sarama")
@@ -80,13 +80,13 @@ class SaramaConsumerGroup(ExampleBase):
     """
     The helper class for Sarama's consumergroup example
     """
-    def __init__(self, redpanda, topic, extra_conf):
+    def __init__(self, redpanda, topic, count):
         super(SaramaConsumerGroup, self).__init__(redpanda)
 
         # The kafka topic
         self._topic = topic
 
-        self._count = extra_conf.get("count") or 1
+        self._count = count
 
     # The internal condition to determine if the
     # example is successful. Returns boolean.
@@ -115,25 +115,3 @@ def sarama_sasl_scram(redpanda, topic):
     cmd = f"sasl_scram_client -brokers {redpanda.brokers()} -username {creds[0]} -passwd {creds[1]} -topic {topic} -algorithm sha256"
 
     return os.path.join(EXAMPLE_DIR, cmd)
-
-
-class SaramaFactory(ExampleFactoryBase):
-    """
-    The concrete factory for creating Sarama's
-    helper classes.
-    """
-    def __init__(self, context, redpanda, topic, extra_conf):
-        super(SaramaFactory, self).__init__(context, redpanda, topic,
-                                            extra_conf)
-
-    # The factory method for sarama
-    def create_sarama_examples(self):
-        if self._ctx.function_name == "test_sarama_interceptors":
-            return SaramaInterceptors(self._redpanda, self._topic)
-        elif self._ctx.function_name == "test_sarama_http_server":
-            return SaramaHttpServer(self._redpanda)
-        elif self._ctx.function_name == "test_sarama_consumergroup":
-            return SaramaConsumerGroup(self._redpanda, self._topic,
-                                       self._extra_conf)
-        else:
-            raise RuntimeError("create_helper failed: Invalid function name")

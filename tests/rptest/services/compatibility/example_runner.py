@@ -10,26 +10,18 @@
 import sys
 import time
 from ducktape.services.background_thread import BackgroundThreadService
-from rptest.util import Scale
-from .compat_examples import create_example
 
 
 class ExampleRunner(BackgroundThreadService):
     """
     The service that runs examples in the background
     """
-    def __init__(self, context, redpanda, topic, extra_conf={}):
+    def __init__(self, context, example, timeout_sec=10):
         super(ExampleRunner, self).__init__(context, num_nodes=1)
 
-        # Create the correct example instance from the test function being run.
-        # example is an object with various methods to help run the example
-        self._example = create_example(context, redpanda, topic, extra_conf)
+        self._example = example
 
-        # The amount of time to run the example.
-        # If user removes timeout key, then use 10 seconds.
-        self._timeout = extra_conf.get("timeout") or 10
-
-        self._scale = Scale(context)
+        self._timeout = timeout_sec
 
     def _worker(self, idx, node):
         start_time = time.time()
@@ -48,10 +40,6 @@ class ExampleRunner(BackgroundThreadService):
             # Call to example.condition will automatically
             # store result in a boolean variable
             self._example.condition(line)
-
-    # Used to determine if the condition is met
-    def ok(self):
-        return self._example.condition_met()
 
     # Returns the node name that the example is running on
     def node_name(self):
