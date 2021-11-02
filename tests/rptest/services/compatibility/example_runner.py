@@ -10,6 +10,7 @@
 import sys
 import time
 from ducktape.services.background_thread import BackgroundThreadService
+from ducktape.cluster.remoteaccount import RemoteCommandError
 
 
 class ExampleRunner(BackgroundThreadService):
@@ -23,6 +24,8 @@ class ExampleRunner(BackgroundThreadService):
 
         self._timeout = timeout_sec
 
+        self._pid = None
+
     def _worker(self, idx, node):
         start_time = time.time()
 
@@ -30,23 +33,37 @@ class ExampleRunner(BackgroundThreadService):
         self._example.set_node_name(node.name)
 
         # Run the example until the condition is met or timeout occurs
-        output_iter = node.account.ssh_capture(self._example.cmd())
+        cmd = "echo $$ ; " + self._example.cmd()
+        output_iter = node.account.ssh_capture(cmd)
         while not self._example.condition_met(
         ) and time.time() < start_time + self._timeout:
             line = next(output_iter)
-            line = line.rstrip()
+            line = line.strip()
             self.logger.debug(line)
 
-            # Call to example.condition will automatically
-            # store result in a boolean variable
-            self._example.condition(line)
+            # Take first line as pid
+            if not self._pid:
+                self._pid = line
+            else:
+                # Call to example.condition will automatically
+                # store result in a boolean variable
+                self._example.condition(line)
 
     # Returns the node name that the example is running on
     def node_name(self):
         return self._example.node_name()
 
     def stop_node(self, node):
-        node.account.kill_process(self._example.process_to_kill())
+        try:
+            if self._pid:
+                node.account.signal(self._pid, 9, allow_fail=True)
+            node.account.kill_process(self._example.process_to_kill(),
+                                      clean_shutdown=False)
+        except RemoteCommandError as e:
+            if b"No such process" in e.msg:
+                pass
+            else:
+                raise
 
     def clean_node(self, nodes):
         pass
