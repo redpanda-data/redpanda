@@ -22,7 +22,7 @@ class KafProducer(BackgroundThreadService):
         self._stopping = Event()
 
     def _worker(self, _idx, node):
-        cmd = f"echo $$ ; for (( i=0; i < {self._num_records}; i++ )) ; do export KEY=key-$(printf %08d $i) ; export VALUE=record-$(printf %08d $i) ; echo $VALUE | kaf produce -b {self._redpanda.brokers()} --key $KEY {self._topic} ; done"
+        cmd = f"echo $$ ; for (( i=0; i < {self._num_records}; i++ )) ; do export KEY=key-$(printf %08d $i) ; export VALUE={self.value_gen()} ; echo $VALUE | kaf produce -b {self._redpanda.brokers()} --key $KEY {self._topic} ; done"
 
         self._stopping.clear()
         self._pid = None
@@ -57,3 +57,6 @@ class KafProducer(BackgroundThreadService):
 
     def clean_node(self, nodes):
         pass
+
+    def value_gen(self):
+        return "record-$(printf %08d $i)"
