@@ -11,10 +11,11 @@ package acl
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/types"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
@@ -32,37 +33,32 @@ func NewCreateCommand(fs afero.Fs) *cobra.Command {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := kafka.NewFranzClient(fs, p, cfg)
+			adm, err := kafka.NewAdmin(fs, p, cfg)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
-			defer cl.Close()
+			defer adm.Close()
 
-			creations, err := a.createCreations()
+			b, err := a.createCreations()
 			out.MaybeDieErr(err)
-			if len(creations) == 0 {
-				out.Exit("Specified flags result in no ACLs to be created.")
+			results, err := adm.CreateACLs(context.Background(), b)
+			out.MaybeDie(err, "unable to create ACLs: %v", err)
+			if len(results) == 0 {
+				fmt.Println("Specified flags created no ACLs.")
+				return
 			}
-
-			req := kmsg.NewPtrCreateACLsRequest()
-			req.Creations = creations
-			resp, err := req.RequestWith(context.Background(), cl)
-			out.MaybeDie(err, "unable to issue ACL creation request: %v", err)
-			if len(resp.Results) != len(req.Creations) {
-				out.Die("response contained only %d results out of the expected %d", len(resp.Results), len(req.Creations))
-			}
+			types.Sort(results)
 
 			tw := out.NewTable(headersWithError...)
 			defer tw.Flush()
-			for i, r := range resp.Results {
-				c := req.Creations[i]
+			for _, c := range results {
 				tw.PrintStructFields(aclWithMessage{
 					c.Principal,
 					c.Host,
-					c.ResourceType,
-					c.ResourceName,
-					c.ResourcePatternType,
+					c.Type,
+					c.Name,
+					c.Pattern,
 					c.Operation,
-					c.PermissionType,
-					kafka.MaybeErrMessage(r.ErrorCode),
+					c.Permission,
+					kafka.ErrMessage(c.Err),
 				})
 			}
 		},
@@ -74,10 +70,10 @@ func NewCreateCommand(fs afero.Fs) *cobra.Command {
 func (a *acls) addCreateFlags(cmd *cobra.Command) {
 	a.addDeprecatedFlags(cmd)
 
-	cmd.Flags().StringArrayVar(&a.topics, topicFlag, nil, "topic to grant ACLs for (repeatable)")
-	cmd.Flags().StringArrayVar(&a.groups, groupFlag, nil, "group to grant ACLs for (repeatable)")
+	cmd.Flags().StringSliceVar(&a.topics, topicFlag, nil, "topic to grant ACLs for (repeatable)")
+	cmd.Flags().StringSliceVar(&a.groups, groupFlag, nil, "group to grant ACLs for (repeatable)")
 	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "whether to grant ACLs to the cluster")
-	cmd.Flags().StringArrayVar(&a.txnIDs, txnIDFlag, nil, "transactional IDs to grant ACLs for (repeatable)")
+	cmd.Flags().StringSliceVar(&a.txnIDs, txnIDFlag, nil, "transactional IDs to grant ACLs for (repeatable)")
 
 	cmd.Flags().StringVar(&a.resourcePatternType, patternFlag, "literal", "pattern to use when matching resource names (literal or prefixed)")
 
