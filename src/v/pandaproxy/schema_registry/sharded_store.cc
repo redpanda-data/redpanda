@@ -470,8 +470,10 @@ ss::future<bool> sharded_store::is_compatible(
         co_return true;
     }
 
-    // Currently only support AVRO
-    if (new_schema.type() != schema_type::avro) {
+    // Currently support PROTOBUF, AVRO
+    if (
+      new_schema.type() != schema_type::avro
+      && new_schema.type() != schema_type::protobuf) {
         throw as_exception(invalid_schema_type(new_schema.type()));
     }
 

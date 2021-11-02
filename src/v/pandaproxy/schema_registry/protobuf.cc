@@ -24,11 +24,7 @@
 
 namespace pandaproxy::schema_registry {
 
-namespace {
-
 namespace pb = google::protobuf;
-
-}
 
 class io_error_collector final : public pb::io::ErrorCollector {
     enum class level {
@@ -245,6 +241,134 @@ make_canonical_protobuf_schema(sharded_store& store, unparsed_schema schema) {
     auto validated = co_await validate_protobuf_schema(store, temp);
     co_return canonical_schema{
       std::move(temp).sub(), std::move(validated), std::move(temp).refs()};
+}
+
+namespace {
+
+enum class encoding {
+    struct_ = 0,
+    varint,
+    zigzag,
+    bytes,
+    int32,
+    int64,
+    float_,
+    double_,
+};
+
+encoding get_encoding(pb::FieldDescriptor::Type type) {
+    switch (type) {
+    case pb::FieldDescriptor::Type::TYPE_MESSAGE:
+    case pb::FieldDescriptor::Type::TYPE_GROUP:
+        return encoding::struct_;
+    case pb::FieldDescriptor::Type::TYPE_FLOAT:
+        return encoding::float_;
+    case pb::FieldDescriptor::Type::TYPE_DOUBLE:
+        return encoding::double_;
+    case pb::FieldDescriptor::Type::TYPE_INT64:
+    case pb::FieldDescriptor::Type::TYPE_UINT64:
+    case pb::FieldDescriptor::Type::TYPE_INT32:
+    case pb::FieldDescriptor::Type::TYPE_UINT32:
+    case pb::FieldDescriptor::Type::TYPE_BOOL:
+    case pb::FieldDescriptor::Type::TYPE_ENUM:
+        return encoding::varint;
+    case pb::FieldDescriptor::Type::TYPE_SINT32:
+    case pb::FieldDescriptor::Type::TYPE_SINT64:
+        return encoding::zigzag;
+    case pb::FieldDescriptor::Type::TYPE_STRING:
+    case pb::FieldDescriptor::Type::TYPE_BYTES:
+        return encoding::bytes;
+    case pb::FieldDescriptor::Type::TYPE_FIXED32:
+    case pb::FieldDescriptor::Type::TYPE_SFIXED32:
+        return encoding::int32;
+    case pb::FieldDescriptor::Type::TYPE_FIXED64:
+    case pb::FieldDescriptor::Type::TYPE_SFIXED64:
+        return encoding::int64;
+    }
+    __builtin_unreachable();
+}
+
+struct compatibility_checker {
+    bool check_compatible() { return check_compatible(_writer.fd); }
+
+    bool check_compatible(const pb::FileDescriptor* writer) {
+        // There must be a compatible reader message for every writer message
+        for (int i = 0; i < writer->message_type_count(); ++i) {
+            auto w = writer->message_type(i);
+            auto r = _reader._dp.FindMessageTypeByName(w->full_name());
+            if (!r || !check_compatible(r, w)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool check_compatible(
+      const pb::Descriptor* reader, const pb::Descriptor* writer) {
+        for (int i = 0; i < writer->field_count(); ++i) {
+            if (reader->IsReservedNumber(i) || writer->IsReservedNumber(i)) {
+                continue;
+            }
+            int number = writer->field(i)->number();
+            auto r = reader->FindFieldByNumber(number);
+            // A reader may ignore a writer field
+            if (r && !check_compatible(r, writer->field(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool check_compatible(
+      const pb::FieldDescriptor* reader, const pb::FieldDescriptor* writer) {
+        switch (writer->type()) {
+        case pb::FieldDescriptor::Type::TYPE_MESSAGE:
+        case pb::FieldDescriptor::Type::TYPE_GROUP: {
+            bool type_is_compat = reader->type()
+                                    == pb::FieldDescriptor::Type::TYPE_MESSAGE
+                                  || reader->type()
+                                       == pb::FieldDescriptor::Type::TYPE_GROUP;
+            return type_is_compat
+                   && check_compatible(
+                     reader->message_type(), writer->message_type());
+        }
+        case pb::FieldDescriptor::Type::TYPE_FLOAT:
+        case pb::FieldDescriptor::Type::TYPE_DOUBLE:
+        case pb::FieldDescriptor::Type::TYPE_INT64:
+        case pb::FieldDescriptor::Type::TYPE_UINT64:
+        case pb::FieldDescriptor::Type::TYPE_INT32:
+        case pb::FieldDescriptor::Type::TYPE_UINT32:
+        case pb::FieldDescriptor::Type::TYPE_BOOL:
+        case pb::FieldDescriptor::Type::TYPE_ENUM:
+        case pb::FieldDescriptor::Type::TYPE_SINT32:
+        case pb::FieldDescriptor::Type::TYPE_SINT64:
+        case pb::FieldDescriptor::Type::TYPE_STRING:
+        case pb::FieldDescriptor::Type::TYPE_BYTES:
+        case pb::FieldDescriptor::Type::TYPE_FIXED32:
+        case pb::FieldDescriptor::Type::TYPE_SFIXED32:
+        case pb::FieldDescriptor::Type::TYPE_FIXED64:
+        case pb::FieldDescriptor::Type::TYPE_SFIXED64:
+            return check_compatible(
+              get_encoding(reader->type()), get_encoding(writer->type()));
+        }
+        __builtin_unreachable();
+    }
+
+    bool check_compatible(encoding reader, encoding writer) {
+        return reader == writer && reader != encoding::struct_;
+    }
+
+    const protobuf_schema_definition::impl& _reader;
+    const protobuf_schema_definition::impl& _writer;
+};
+
+} // namespace
+
+bool check_compatible(
+  const protobuf_schema_definition& reader,
+  const protobuf_schema_definition& writer) {
+    compatibility_checker checker{reader(), writer()};
+    return checker.check_compatible();
 }
 
 } // namespace pandaproxy::schema_registry
