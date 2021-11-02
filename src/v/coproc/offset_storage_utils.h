@@ -10,9 +10,9 @@
  */
 
 #pragma once
-#include "cluster/partition_manager.h"
 #include "config/node_config.h"
-#include "coproc/ntp_context.h"
+#include "coproc/script_context_router.h"
+#include "coproc/types.h"
 
 #include <filesystem>
 
@@ -23,13 +23,13 @@ inline std::filesystem::path offsets_snapshot_path() {
            / ".coprocessor_offset_checkpoints";
 }
 
+using all_routes = absl::flat_hash_map<coproc::script_id, routes_t>;
+
 /// Reads the snapshot on disk (if one exists) and returns an initialized
 /// ntp_context_cache with all proper storage::logs and stored offsets
-ss::future<ntp_context_cache>
-recover_offsets(storage::simple_snapshot_manager&, cluster::partition_manager&);
+ss::future<all_routes> recover_offsets(storage::simple_snapshot_manager&);
 
 /// Writes all offsets to disk using the snapshot manager
-ss::future<>
-save_offsets(storage::simple_snapshot_manager&, const ntp_context_cache&);
+ss::future<> save_offsets(storage::simple_snapshot_manager&, all_routes);
 
 } // namespace coproc

@@ -14,7 +14,6 @@
 #include "coproc/exception.h"
 #include "coproc/logger.h"
 #include "coproc/ntp_context.h"
-#include "coproc/offset_storage_utils.h"
 #include "coproc/types.h"
 #include "model/validation.h"
 #include "rpc/reconnect_transport.h"
@@ -55,21 +54,11 @@ pacemaker::pacemaker(unresolved_address addr, sys_refs& rs)
     rpc::reconnect_transport(
       wasm_transport_cfg(addr), wasm_transport_backoff()),
     rs) {
-    _offs.timer.set_callback([this] {
-        (void)ss::with_gate(_gate, [this] {
-            return save_offsets(_offs.snap, _ntps).then([this] {
-                if (!_offs.timer.armed()) {
-                    _offs.timer.arm(_offs.duration);
-                }
-            });
-        });
-    });
+    _offs.timer.set_callback([] {});
 }
 
 ss::future<> pacemaker::start() {
     co_await ss::recursive_touch_directory(offsets_snapshot_path().string());
-    _ntps = co_await recover_offsets(
-      _offs.snap, _shared_res.rs.partition_manager.local());
     if (!_offs.timer.armed()) {
         _offs.timer.arm(_offs.duration);
     }
@@ -77,10 +66,8 @@ ss::future<> pacemaker::start() {
 
 ss::future<> pacemaker::reset() {
     _offs.timer.cancel();
-    ntp_context_cache ncc = std::exchange(_ntps, {});
     auto removed = co_await remove_all_sources();
     vlog(coproclog.info, "Pacemaker reset {} scripts", removed.size());
-    std::swap(_ntps, ncc);
     if (!_offs.timer.armed()) {
         _offs.timer.arm(_offs.duration);
     }

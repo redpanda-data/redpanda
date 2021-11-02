@@ -9,7 +9,6 @@
  */
 
 #include "config/configuration.h"
-#include "coproc/ntp_context.h"
 #include "coproc/offset_storage_utils.h"
 #include "coproc/tests/fixtures/coproc_test_fixture.h"
 #include "coproc/tests/utils/batch_utils.h"
@@ -18,6 +17,7 @@
 #include "storage/snapshot.h"
 #include "test_utils/fixture.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/defer.hh>
 
@@ -32,10 +32,6 @@ public:
     }
 
     ~offset_keeper_fixture() override { _smk.stop().get(); }
-
-    cluster::partition_manager& get_pm() {
-        return root_fixture()->app.partition_manager.local();
-    }
 
     storage::simple_snapshot_manager& snapshot_mgr() {
         return _smk.local().snap;
@@ -115,40 +111,25 @@ FIXTURE_TEST(offset_keeper_saved_offsets, offset_keeper_fixture) {
       to_materialized_topic(bar, identity_coprocessor::identity_topic), 50)
       .get();
 
-    /// Attempt to retrieve the data that should have been written to disk
-    /// We can assume this because the coproc_offset_flush_interval is
-    /// within the sleep interval
-    ss::sleep(1s).get();
+    /// Wait until at-least one attempt to write offsets to disk was made
+    tests::cooperative_spin_wait_with_timeout(5s, [this]() {
+        return ss::file_exists(coproc::offsets_snapshot_path().string());
+    }).get();
 
-    using ntp_offset_cache
-      = absl::flat_hash_map<model::ntp, coproc::ntp_context::offset_tracker>;
     auto r = boost::irange<unsigned int>(0, ss::smp::count);
     auto mapper = [this](unsigned int c) {
-        return ss::smp::submit_to(c, [this] {
-            return coproc::recover_offsets(snapshot_mgr(), get_pm())
-              .then([](auto ofs) {
-                  ntp_offset_cache c;
-                  std::transform(
-                    ofs.begin(),
-                    ofs.end(),
-                    std::inserter(c, c.begin()),
-                    [](const auto& p) {
-                        return std::make_pair<>(p.first, p.second->offsets);
-                    });
-                  return c;
-              });
+        return ss::smp::submit_to(c, [this]() -> ss::future<size_t> {
+            auto r = co_await coproc::recover_offsets(snapshot_mgr());
+            size_t n = 0;
+            for (auto& [id, routes] : r) {
+                n += routes.size();
+            }
+            co_return n;
         });
     };
-    auto results = ss::map_reduce(
-                     r,
-                     std::move(mapper),
-                     ntp_offset_cache(),
-                     [](ntp_offset_cache ncca, ntp_offset_cache nccb) {
-                         ncca.merge(nccb);
-                         return std::move(ncca);
-                     })
-                     .get();
+    auto results
+      = ss::map_reduce(r, std::move(mapper), size_t{0}, std::plus<>()).get();
 
     /// Created test cache with 50 partitions across 2 topics...
-    BOOST_CHECK_EQUAL(results.size(), 100);
+    BOOST_CHECK_EQUAL(results, 100);
 }
