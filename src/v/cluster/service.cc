@@ -13,6 +13,7 @@
 #include "cluster/controller_api.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
+#include "cluster/health_monitor_frontend.h"
 #include "cluster/members_frontend.h"
 #include "cluster/members_manager.h"
 #include "cluster/metadata_cache.h"
@@ -21,6 +22,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/timeout_clock.h"
+#include "rpc/errc.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -36,7 +38,8 @@ service::service(
   ss::sharded<security_frontend>& sf,
   ss::sharded<controller_api>& api,
   ss::sharded<members_frontend>& members_frontend,
-  ss::sharded<config_frontend>& config_frontend)
+  ss::sharded<config_frontend>& config_frontend,
+  ss::sharded<health_monitor_frontend>& hm_frontend)
   : controller_service(sg, ssg)
   , _topics_frontend(tf)
   , _members_manager(mm)
@@ -44,7 +47,8 @@ service::service(
   , _security_frontend(sf)
   , _api(api)
   , _members_frontend(members_frontend)
-  , _config_frontend(config_frontend) {}
+  , _config_frontend(config_frontend)
+  , _hm_frontend(hm_frontend) {}
 
 ss::future<join_reply>
 service::join(join_request&& req, rpc::streaming_context&) {
@@ -276,4 +280,66 @@ service::do_finish_reallocation(finish_reallocation_request req) {
 
     co_return finish_reallocation_reply{.error = errc::success};
 }
+
+cluster::errc map_health_monitor_error_code(std::error_code e) {
+    if (e.category() == cluster::error_category()) {
+        return cluster::errc(e.value());
+    } else if (e.category() == rpc::error_category()) {
+        switch (rpc::errc(e.value())) {
+        case rpc::errc::client_request_timeout:
+            return errc::timeout;
+        default:
+            return cluster::errc::error_collecting_health_report;
+        }
+    }
+
+    return cluster::errc::error_collecting_health_report;
+}
+
+ss::future<get_node_health_reply> service::collect_node_health_report(
+  get_node_health_request&& req, rpc::streaming_context&) {
+    return ss::with_scheduling_group(
+      get_scheduling_group(), [this, req = std::move(req)]() mutable {
+          return do_collect_node_health_report(std::move(req));
+      });
+}
+
+ss::future<get_cluster_health_reply> service::get_cluster_health_report(
+  get_cluster_health_request&& req, rpc::streaming_context&) {
+    return ss::with_scheduling_group(
+      get_scheduling_group(), [this, req = std::move(req)]() mutable {
+          return do_get_cluster_health_report(std::move(req));
+      });
+}
+
+ss::future<get_node_health_reply>
+service::do_collect_node_health_report(get_node_health_request req) {
+    auto res = co_await _hm_frontend.local().collect_node_health(
+      std::move(req.filter));
+    if (res.has_error()) {
+        co_return get_node_health_reply{
+          .error = map_health_monitor_error_code(res.error())};
+    }
+    co_return get_node_health_reply{
+      .error = errc::success,
+      .report = res.value(),
+    };
+}
+
+ss::future<get_cluster_health_reply>
+service::do_get_cluster_health_report(get_cluster_health_request req) {
+    auto tout = config::shard_local_cfg().health_monitor_max_metadata_age()
+                + model::timeout_clock::now();
+    auto res = co_await _hm_frontend.local().get_cluster_health(
+      req.filter, req.refresh, tout);
+    if (res.has_error()) {
+        co_return get_cluster_health_reply{
+          .error = map_health_monitor_error_code(res.error())};
+    }
+    co_return get_cluster_health_reply{
+      .error = errc::success,
+      .report = res.value(),
+    };
+}
+
 } // namespace cluster

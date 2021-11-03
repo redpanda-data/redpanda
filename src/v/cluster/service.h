@@ -31,7 +31,8 @@ public:
       ss::sharded<security_frontend>&,
       ss::sharded<controller_api>&,
       ss::sharded<members_frontend>&,
-      ss::sharded<config_frontend>&);
+      ss::sharded<config_frontend>&,
+      ss::sharded<health_monitor_frontend>&);
 
     virtual ss::future<join_reply>
     join(join_request&&, rpc::streaming_context&) override;
@@ -68,6 +69,12 @@ public:
     ss::future<config_status_reply>
     config_status(config_status_request&&, rpc::streaming_context&) final;
 
+    ss::future<get_node_health_reply> collect_node_health_report(
+      get_node_health_request&&, rpc::streaming_context&) final;
+
+    ss::future<get_cluster_health_reply> get_cluster_health_report(
+      get_cluster_health_request&&, rpc::streaming_context&) final;
+
 private:
     std::
       pair<std::vector<model::topic_metadata>, std::vector<topic_configuration>>
@@ -85,6 +92,12 @@ private:
     ss::future<finish_reallocation_reply>
       do_finish_reallocation(finish_reallocation_request);
 
+    ss::future<get_node_health_reply>
+      do_collect_node_health_report(get_node_health_request);
+
+    ss::future<get_cluster_health_reply>
+      do_get_cluster_health_report(get_cluster_health_request);
+
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<members_manager>& _members_manager;
     ss::sharded<metadata_cache>& _md_cache;
@@ -92,5 +105,6 @@ private:
     ss::sharded<controller_api>& _api;
     ss::sharded<members_frontend>& _members_frontend;
     ss::sharded<config_frontend>& _config_frontend;
+    ss::sharded<health_monitor_frontend>& _hm_frontend;
 };
 } // namespace cluster
