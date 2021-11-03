@@ -381,3 +381,14 @@ ExternalProject_Add(rapidjson
     -DRAPIDJSON_BUILD_DOC=OFF
     -DRAPIDJSON_HAS_STDSTRING=ON
 )
+
+ExternalProject_Add(protobuf
+  GIT_REPOSITORY https://github.com/protocolbuffers/protobuf
+  GIT_TAG v3.18.1
+  INSTALL_DIR   @REDPANDA_DEPS_INSTALL_DIR@
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  SOURCE_SUBDIR cmake
+  CMAKE_ARGS
+    -Dprotobuf_BUILD_TESTS=OFF
+    ${common_cmake_args}
+)
