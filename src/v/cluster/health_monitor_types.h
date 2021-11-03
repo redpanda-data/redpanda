@@ -144,6 +144,38 @@ struct cluster_report_filter {
 
 using force_refresh = ss::bool_class<struct hm_force_refresh_tag>;
 
+/**
+ * RPC requests
+ */
+
+struct get_node_health_request {
+    static constexpr int8_t current_version = 0;
+
+    node_report_filter filter;
+};
+
+struct get_node_health_reply {
+    static constexpr int8_t current_version = 0;
+
+    errc error = cluster::errc::success;
+    std::optional<node_health_report> report;
+};
+
+struct get_cluster_health_request {
+    static constexpr int8_t current_version = 0;
+
+    cluster_report_filter filter;
+    // if set to true will force node health metadata refresh
+    force_refresh refresh = force_refresh::no;
+};
+
+struct get_cluster_health_reply {
+    static constexpr int8_t current_version = 0;
+
+    errc error = cluster::errc::success;
+    std::optional<cluster_health_report> report;
+};
+
 } // namespace cluster
 
 namespace reflection {
@@ -210,4 +242,29 @@ struct adl<cluster::cluster_report_filter> {
     void to(iobuf&, cluster::cluster_report_filter&&);
     cluster::cluster_report_filter from(iobuf_parser&);
 };
+
+template<>
+struct adl<cluster::get_node_health_request> {
+    void to(iobuf&, cluster::get_node_health_request&&);
+    cluster::get_node_health_request from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::get_node_health_reply> {
+    void to(iobuf&, cluster::get_node_health_reply&&);
+    cluster::get_node_health_reply from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::get_cluster_health_request> {
+    void to(iobuf&, cluster::get_cluster_health_request&&);
+    cluster::get_cluster_health_request from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::get_cluster_health_reply> {
+    void to(iobuf&, cluster::get_cluster_health_reply&&);
+    cluster::get_cluster_health_reply from(iobuf_parser&);
+};
+
 } // namespace reflection

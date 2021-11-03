@@ -377,4 +377,77 @@ adl<cluster::cluster_report_filter>::from(iobuf_parser& p) {
     };
 }
 
+void adl<cluster::get_node_health_request>::to(
+  iobuf& out, cluster::get_node_health_request&& req) {
+    reflection::serialize(out, req.current_version, std::move(req.filter));
+}
+
+cluster::get_node_health_request
+adl<cluster::get_node_health_request>::from(iobuf_parser& p) {
+    read_and_assert_version<cluster::get_node_health_request>(
+      "cluster::get_node_health_request", p);
+
+    auto filter = adl<cluster::node_report_filter>{}.from(p);
+
+    return cluster::get_node_health_request{
+      .filter = std::move(filter),
+    };
+}
+
+void adl<cluster::get_node_health_reply>::to(
+  iobuf& out, cluster::get_node_health_reply&& reply) {
+    reflection::serialize(out, reply.current_version, std::move(reply.report));
+}
+
+cluster::get_node_health_reply
+adl<cluster::get_node_health_reply>::from(iobuf_parser& p) {
+    read_and_assert_version<cluster::get_node_health_reply>(
+      "cluster::get_node_health_reply", p);
+
+    auto report = adl<std::optional<cluster::node_health_report>>{}.from(p);
+
+    return cluster::get_node_health_reply{
+      .report = std::move(report),
+    };
+}
+
+void adl<cluster::get_cluster_health_request>::to(
+  iobuf& out, cluster::get_cluster_health_request&& req) {
+    reflection::serialize(
+      out, req.current_version, std::move(req.filter), req.refresh);
+}
+
+cluster::get_cluster_health_request
+adl<cluster::get_cluster_health_request>::from(iobuf_parser& p) {
+    read_and_assert_version<cluster::get_cluster_health_request>(
+      "cluster::get_cluster_health_request", p);
+
+    auto filter = adl<cluster::cluster_report_filter>{}.from(p);
+    auto refresh = adl<cluster::force_refresh>{}.from(p);
+
+    return cluster::get_cluster_health_request{
+      .filter = std::move(filter),
+      .refresh = refresh,
+    };
+}
+
+void adl<cluster::get_cluster_health_reply>::to(
+  iobuf& out, cluster::get_cluster_health_reply&& reply) {
+    reflection::serialize(
+      out, reply.current_version, reply.error, reply.report);
+}
+
+cluster::get_cluster_health_reply
+adl<cluster::get_cluster_health_reply>::from(iobuf_parser& p) {
+    read_and_assert_version<cluster::get_cluster_health_reply>(
+      "cluster::get_cluster_health_reply", p);
+    auto err = adl<cluster::errc>{}.from(p);
+    auto report = adl<std::optional<cluster::cluster_health_report>>{}.from(p);
+
+    return cluster::get_cluster_health_reply{
+      .error = err,
+      .report = std::move(report),
+    };
+}
+
 } // namespace reflection

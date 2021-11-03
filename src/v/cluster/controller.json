@@ -2,7 +2,8 @@
     "namespace": "cluster",
     "service_name": "controller",
     "includes": [
-        "cluster/types.h"
+        "cluster/types.h",
+        "cluster/health_monitor_types.h"
     ],
     "methods": [
         {
@@ -64,6 +65,16 @@
             "name": "config_status",
             "input_type": "config_status_request",
             "output_type": "config_status_reply"
+        },
+        {
+            "name": "collect_node_health_report",
+            "input_type": "get_node_health_request",
+            "output_type": "get_node_health_reply"
+        },
+        {
+            "name": "get_cluster_health_report",
+            "input_type": "get_cluster_health_request",
+            "output_type": "get_cluster_health_reply"
         }
     ]
 }
