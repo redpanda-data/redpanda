@@ -82,6 +82,8 @@ v_cc_library(
     scheduling/leader_balancer.cc
     scheduling/leader_balancer_probe.cc
     health_monitor_types.cc
+    health_monitor_backend.cc
+    health_monitor_frontend.cc
   DEPS
     Seastar::seastar
     controller_rpc
