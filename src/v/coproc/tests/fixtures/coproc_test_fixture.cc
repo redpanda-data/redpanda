@@ -201,8 +201,9 @@ coproc_test_fixture::produce(model::ntp ntp, model::record_batch_reader rbr) {
       model::no_timeout);
     for (const auto& r : result.responses) {
         vassert(
-          r.error_code != kafka::error_code::unknown_topic_or_partition,
-          "Input logs should already exist, use setup() before starting test");
+          r.error_code == kafka::error_code::none,
+          "Produce did not occur: {}",
+          r.error_code);
     }
 }
 
