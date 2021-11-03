@@ -29,16 +29,15 @@ class EndToEndShadowIndexingTest(EndToEndTest):
     s3_secret_key = "panda-secret"
     s3_region = "panda-region"
     s3_topic_name = "panda-topic"
-    topics = (
-        TopicSpec(
-            name=s3_topic_name,
-            partition_count=1,
-            replication_factor=3,
-        ),
-    )
+    topics = (TopicSpec(
+        name=s3_topic_name,
+        partition_count=1,
+        replication_factor=3,
+    ), )
 
     def __init__(self, test_context):
-        super(EndToEndShadowIndexingTest, self).__init__(test_context=test_context)
+        super(EndToEndShadowIndexingTest,
+              self).__init__(test_context=test_context)
 
         self.s3_bucket_name = f"panda-bucket-{uuid.uuid1()}"
         self.topic = EndToEndShadowIndexingTest.s3_topic_name
@@ -98,13 +97,14 @@ class EndToEndShadowIndexingTest(EndToEndTest):
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
-                TopicSpec.PROPERTY_RETENTION_BYTES: 5
-                * EndToEndShadowIndexingTest.segment_size,
+                TopicSpec.PROPERTY_RETENTION_BYTES:
+                5 * EndToEndShadowIndexingTest.segment_size,
             },
         )
-        wait_for_segments_removal(
-            redpanda=self.redpanda, topic=self.topic, partition_idx=0, count=6
-        )
+        wait_for_segments_removal(redpanda=self.redpanda,
+                                  topic=self.topic,
+                                  partition_idx=0,
+                                  count=6)
 
         self.start_consumer()
         self.run_validation()
