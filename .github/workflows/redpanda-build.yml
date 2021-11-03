@@ -12,59 +12,44 @@ on: [push, pull_request]
 
 jobs:
   build:
-    name: Build on ${{ matrix.container }}
+    name: build redpanda
     runs-on: ubuntu-20.04
-    container: ${{ matrix.container }}
-    strategy:
-      matrix:
-        container: ['ubuntu:21.04']
 
     steps:
         - name: checkout
           uses: actions/checkout@v2
 
-        - name: update container base
+        - name: prepare toolchain container
           run: |
-            export DEBIAN_FRONTEND=noninteractive
-            apt-get update -y
-            apt-get install -y git sudo pkg-config ccache
-
-        - name: install dependencies
-          run: ./install-dependencies.sh
-
-        - name: install g++-11
-          run: |
-            DEBIAN_FRONTEND=noninteractive apt install -y g++-11
-            sudo update-alternatives \
-              --install /usr/bin/gcc gcc /usr/bin/gcc-11 60 \
-              --slave /usr/bin/g++ g++ /usr/bin/g++-11
-            sudo update-alternatives --auto gcc
-
-        # there is no analog to ${{ github.workspace }} for the home directory
-        - name: prepare cache variables
-          id: prepare_cache_variables
-          run: |
-            echo ::set-output name=home::$HOME
-            echo ::set-output name=timestamp::$(date +'%Y-%m-%d-%H-%M-%S')
+            docker pull docker.io/vectorized/redpanda-toolchain || true
+            chmod 0775 install-dependencies.sh
+            cp tools/docker/Dockerfile.ignore .dockerignore
+            docker build \
+              --cache-from docker.io/vectorized/redpanda-toolchain \
+              --tag rp-toolchain \
+              --file tools/docker/Dockerfile \
+              .
+            rm .dockerignore
 
         - name: ccache cache files
           uses: actions/cache@v2
           with:
-            path: ${{ steps.prepare_cache_variables.outputs.home }}/.ccache
-            key: ${{ matrix.container }}-ccache-${{ steps.prepare_cache_variables.outputs.timestamp }}
-            restore-keys: ${{ matrix.container }}-ccache-
+            path: /dev/shm/redpanda
+            key: ccache-${{github.ref}}
+            restore-keys: ccache
 
-        # at the time of this writing the ccache for a full build is about
-        # 70MB (due to the compression) but it may grow if there are many
-        # commits with changes within 1 branch and thus the 200MB upper limit
+        - name: set fx.aio-max-nr
+          run: sudo sysctl -w fs.aio-max-nr=10485760
+
         - name: build & test
           run: |
-            export CCACHE_COMPRESS=true
-            export CCACHE_COMPRESSLEVEL=6
-            export CCACHE_MAXSIZE=200M
-
-            ccache -p # print the config
-            ccache -s # print the stats before reusing
-            ccache -z # zero the stats
-            ./build.sh
-            ccache -s # print the stats after the build
+            docker run --rm \
+              -e CCACHE_COMPRESS=true \
+              -e CCACHE_COMPRESSLEVEL=6 \
+              -e CCACHE_MAXSIZE=200M \
+              --privileged \
+              --ipc=host \
+              -v $PWD:$PWD \
+              -w $PWD \
+              rp-toolchain \
+              ./build.sh
