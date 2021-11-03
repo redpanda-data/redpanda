@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: update-cluster
+spec:
+  template:
+    spec:
+      volumes:
+      - name: datadir
+        persistentVolumeClaim:
+          claimName: datadir
+      - configMap:
+          defaultMode: 420
+          name: update-cluster-base
+        name: configmap-dir
+      - emptyDir: {}
+        name: config-dir
+      - name: tlscert
+        secret:
+          defaultMode: 420
+          secretName: update-cluster-redpanda
