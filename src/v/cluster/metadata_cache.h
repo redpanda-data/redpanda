@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "cluster/fwd.h"
+#include "cluster/health_monitor_types.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
@@ -52,7 +54,8 @@ public:
     metadata_cache(
       ss::sharded<topic_table>&,
       ss::sharded<members_table>&,
-      ss::sharded<partition_leaders_table>&);
+      ss::sharded<partition_leaders_table>&,
+      ss::sharded<health_monitor_frontend>&);
 
     ss::future<> stop() { return ss::now(); }
 
@@ -86,6 +89,9 @@ public:
 
     /// Returns all brokers, returns copy as the content of broker can change
     std::vector<broker_ptr> all_brokers() const;
+
+    /// Returns all brokers, returns copy as the content of broker can change
+    ss::future<std::vector<broker_ptr>> all_alive_brokers() const;
 
     /// Returns all broker ids
     std::vector<model::node_id> all_broker_ids() const;
@@ -136,5 +142,6 @@ private:
     ss::sharded<topic_table>& _topics_state;
     ss::sharded<members_table>& _members_table;
     ss::sharded<partition_leaders_table>& _leaders;
+    ss::sharded<health_monitor_frontend>& _health_monitor;
 };
 } // namespace cluster
