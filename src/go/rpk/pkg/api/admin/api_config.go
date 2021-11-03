@@ -20,7 +20,7 @@ import (
 // Config represents a Redpanda configuration. There are many keys returned, so
 // the raw response is just unmarshaled into an interface. The expectation is
 // that the client will just dump the response out as json.
-type Config interface{}
+type Config map[string]interface{}
 
 // Config returns a single admin endpoint's configuration. This errors if
 // multiple URLs are configured.
@@ -59,4 +59,65 @@ func (a *AdminAPI) SetLogLevel(name, level string, expirySeconds int) error {
 
 	path := fmt.Sprintf("/v1/config/log_level/%s?level=%s&expires=%d", url.PathEscape(name), level, expirySeconds)
 	return a.sendOne(http.MethodPut, path, nil, nil)
+}
+
+type ConfigPropertyItems struct {
+	Type string `json:"type"`
+}
+
+type ConfigPropertyMetadata struct {
+	Type         string              `json:"type"`
+	Description  string              `json:"description"`
+	Nullable     bool                `json:"nullable"`
+	NeedsRestart bool                `json:"needs_restart"`
+	Visibility   string              `json:"visibility"`
+	Units        string              `json:"units,omitempty"`
+	Example      string              `json:"example,omitempty"`
+	Items        ConfigPropertyItems `json:"items,omitempty"`
+}
+
+type ConfigSchema map[string]ConfigPropertyMetadata
+
+type ConfigSchemaResponse struct {
+	Properties ConfigSchema `json:"properties"`
+}
+
+func (a *AdminAPI) ClusterConfigSchema() (ConfigSchema, error) {
+	var rawResp []byte
+	err := a.sendOne(http.MethodGet, "/v1/cluster_config/schema", nil, &rawResp)
+	if err != nil {
+		return nil, err
+	}
+
+	var unmarshaled ConfigSchemaResponse
+	if err := json.Unmarshal(rawResp, &unmarshaled); err != nil {
+		return nil, fmt.Errorf("unable to decode response body: %w", err)
+	}
+
+	return unmarshaled.Properties, nil
+}
+
+type ClusterConfigWriteResult struct {
+	ConfigVersion int `json:"config_version"`
+}
+
+func (a *AdminAPI) PatchClusterConfig(
+	upsert map[string]interface{}, remove []string,
+) (ClusterConfigWriteResult, error) {
+
+	body := make(map[string]interface{})
+	body["upsert"] = upsert
+	body["remove"] = remove
+
+	var result ClusterConfigWriteResult
+	var rawResp []byte
+	err := a.sendOne(http.MethodPut, "/v1/cluster_config", body, &rawResp)
+	if err != nil {
+		return result, err
+	}
+
+	if err := json.Unmarshal(rawResp, &result); err != nil {
+		return result, fmt.Errorf("unable to decode response body: %w", err)
+	}
+	return result, nil
 }
