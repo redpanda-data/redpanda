@@ -60,7 +60,10 @@ class RetentionPolicyTest(RedpandaTest):
         kafka_tools.alter_topic_config(self.topic, {
             property: 10000,
         })
-        self._wait_for_segments_removal(self.topic, 0, 5)
+        wait_for_segments_removal(self.redpanda,
+                                  self.topic,
+                                  partition_idx=0,
+                                  count=5)
 
     @cluster(num_nodes=3)
     def test_changing_topic_retention_with_restart(self):

@@ -44,7 +44,8 @@ class Scale:
 
 
 def _segments_count(redpanda, topic, partition_idx):
-    topic_partitions = redpanda.storage.partitions("kafka", topic)
+    storage = redpanda.storage()
+    topic_partitions = storage.partitions("kafka", topic)
 
     return map(
         lambda p: len(p.segments),
