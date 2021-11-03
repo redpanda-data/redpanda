@@ -29,5 +29,5 @@ rp_test(
     kafka_api_materialized_tests.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main ${fixture_deps}
-  LABELS coproc disable_on_ci  # https://github.com/vectorizedio/redpanda/issues/2613
+  LABELS coproc
 )
