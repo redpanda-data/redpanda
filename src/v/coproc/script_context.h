@@ -69,6 +69,9 @@ public:
      */
     ss::future<> shutdown();
 
+    /// Returns copy of active routes
+    routes_t get_routes() const { return _routes; }
+
 private:
     ss::future<> do_execute();
 

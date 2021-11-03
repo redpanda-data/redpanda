@@ -131,6 +131,8 @@ private:
 
     void fire_updates(script_id, errc);
 
+    void save_routes();
+
     struct offset_flush_fiber_state {
         ss::timer<ss::lowres_clock> timer;
         model::timeout_clock::duration duration;
@@ -155,6 +157,9 @@ private:
 private:
     /// Alerting mechanism for script startup
     absl::node_hash_map<script_id, std::vector<ss::promise<errc>>> _updates;
+
+    /// Cached offsets read from disk on startup
+    absl::flat_hash_map<script_id, routes_t> _cached_routes;
 
     /// Data to be referenced by script_contexts on the current shard
     shared_script_resources _shared_res;

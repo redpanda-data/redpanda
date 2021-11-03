@@ -49,16 +49,39 @@ rpc::backoff_policy wasm_transport_backoff() {
     return rpc::make_exponential_backoff_policy<rpc::clock_type>(1s, 10s);
 }
 
+void pacemaker::save_routes() {
+    (void)ss::with_gate(_gate, [this] {
+        all_routes routes;
+        routes.reserve(_scripts.size());
+        for (auto& [id, script] : _scripts) {
+            routes.emplace(id, script->get_routes());
+        }
+        return save_offsets(_offs.snap, std::move(routes)).then([this] {
+            if (!_offs.timer.armed()) {
+                _offs.timer.arm(_offs.duration);
+            }
+        });
+    });
+}
+
 pacemaker::pacemaker(unresolved_address addr, sys_refs& rs)
   : _shared_res(
     rpc::reconnect_transport(
       wasm_transport_cfg(addr), wasm_transport_backoff()),
     rs) {
-    _offs.timer.set_callback([] {});
+    _offs.timer.set_callback([this] {
+        try {
+            save_routes();
+        } catch (const ss::gate_closed_exception&) {
+            vlog(
+              coproclog.debug, "Gate closed while attempting to write offsets");
+        }
+    });
 }
 
 ss::future<> pacemaker::start() {
     co_await ss::recursive_touch_directory(offsets_snapshot_path().string());
+    _cached_routes = co_await recover_offsets(_offs.snap);
     if (!_offs.timer.armed()) {
         _offs.timer.arm(_offs.duration);
     }
@@ -66,7 +89,13 @@ ss::future<> pacemaker::start() {
 
 ss::future<> pacemaker::reset() {
     _offs.timer.cancel();
+    all_routes routes;
+    routes.reserve(_scripts.size());
+    for (auto& [id, script] : _scripts) {
+        routes.emplace(id, script->get_routes());
+    }
     auto removed = co_await remove_all_sources();
+    _cached_routes = std::move(routes);
     vlog(coproclog.info, "Pacemaker reset {} scripts", removed.size());
     if (!_offs.timer.armed()) {
         _offs.timer.arm(_offs.duration);
