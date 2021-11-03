@@ -108,6 +108,38 @@
                 "membership_status": {
                     "type": "string",
                     "description": "Broker membership status"
+                },
+                "is_alive": {
+                    "type": "boolean",
+                    "description": "is node seen as alive by the cluster"
+                },
+                "disk_space": {
+                    "type": "array",
+                    "items": {
+                        "type": "disk_space_info"
+                    },
+                    "description": "Array of disk space information per directory path. If disk space information is not available the array may be empty"
+                },
+                "version": {
+                    "type": "string",
+                    "description": "Redpanda version"
+                }
+            }
+        },
+        "disk_space_info": {
+            "id": "disk_space_info",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "data directory path"
+                },
+                "free": {
+                    "type": "long",
+                    "description": "free space bytes"
+                },
+                "total": {
+                    "type": "long",
+                    "description": "total space bytes"
                 }
             }
         }
