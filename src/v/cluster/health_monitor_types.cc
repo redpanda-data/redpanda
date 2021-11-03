@@ -19,6 +19,33 @@
 
 namespace cluster {
 
+bool partitions_filter::matches(const model::ntp& ntp) const {
+    return matches(model::topic_namespace_view(ntp), ntp.tp.partition);
+}
+
+bool partitions_filter::matches(
+  model::topic_namespace_view tp_ns, model::partition_id p_id) const {
+    if (namespaces.empty()) {
+        return true;
+    }
+
+    if (auto it = namespaces.find(tp_ns.ns); it != namespaces.end()) {
+        auto& [_, topics_map] = *it;
+
+        if (topics_map.empty()) {
+            return true;
+        }
+
+        if (auto topic_it = topics_map.find(tp_ns.tp);
+            topic_it != topics_map.end()) {
+            auto& [_, partitions] = *topic_it;
+            return partitions.empty() || partitions.contains(p_id);
+        }
+    }
+
+    return false;
+}
+
 std::ostream& operator<<(std::ostream& o, const node_state& s) {
     fmt::print(
       o,
@@ -69,6 +96,45 @@ std::ostream& operator<<(std::ostream& o, const topic_status& tl) {
     fmt::print(o, "{{topic: {}, leaders: {}}}", tl.tp_ns, tl.partitions);
     return o;
 }
+
+std::ostream& operator<<(std::ostream& o, const node_report_filter& s) {
+    fmt::print(
+      o,
+      "{{include_partitions: {}, ntp_filters: {}}}",
+      s.include_partitions,
+      s.ntp_filters);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const cluster_report_filter& s) {
+    fmt::print(
+      o, "{{per_node_filter: {}, nodes: {}}}", s.node_report_filter, s.nodes);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const partitions_filter& filter) {
+    fmt::print(o, "{{");
+    for (auto& [ns, tp_f] : filter.namespaces) {
+        fmt::print(o, "{{namespace: {}, topics: [", ns);
+        for (auto& [tp, p_f] : tp_f) {
+            fmt::print(o, "{{topic: {}, paritions: [", tp);
+            if (!p_f.empty()) {
+                auto it = p_f.begin();
+                fmt::print(o, "{}", *it);
+                ++it;
+                for (; it != p_f.end(); ++it) {
+                    fmt::print(o, ",{}", *it);
+                }
+            }
+            fmt::print(o, "] }},");
+        }
+        fmt::print(o, "]}},");
+    }
+    fmt::print(o, "]}}");
+
+    return o;
+}
+
 } // namespace cluster
 namespace reflection {
 
@@ -218,4 +284,97 @@ adl<cluster::cluster_health_report>::from(iobuf_parser& p) {
       .node_reports = std::move(node_reports),
     };
 }
+
+void adl<cluster::partitions_filter>::to(
+  iobuf& out, cluster::partitions_filter&& filter) {
+    std::vector<raw_ns_filter> raw_filters;
+    raw_filters.reserve(filter.namespaces.size());
+    for (auto& [ns, topics] : filter.namespaces) {
+        raw_ns_filter nsf{.ns = ns};
+        nsf.topics.reserve(topics.size());
+        for (auto& [tp, partitions] : topics) {
+            raw_tp_filter tpf{.topic = tp};
+            tpf.partitions.reserve(partitions.size());
+            std::move(
+              partitions.begin(),
+              partitions.end(),
+              std::back_inserter(tpf.partitions));
+
+            nsf.topics.push_back(std::move(tpf));
+        }
+        raw_filters.push_back(nsf);
+    }
+
+    serialize(out, filter.current_version, std::move(raw_filters));
+}
+
+cluster::partitions_filter
+adl<cluster::partitions_filter>::from(iobuf_parser& p) {
+    read_and_assert_version<cluster::partitions_filter>(
+      "cluster::partitions_filter", p);
+
+    cluster::partitions_filter ret;
+    auto raw_filters = adl<std::vector<raw_ns_filter>>{}.from(p);
+    ret.namespaces.reserve(raw_filters.size());
+    for (auto& rf : raw_filters) {
+        cluster::partitions_filter::topic_map_t topics;
+        topics.reserve(rf.topics.size());
+        for (auto& tp : rf.topics) {
+            cluster::partitions_filter::partitions_set_t paritions;
+            paritions.reserve(tp.partitions.size());
+            for (auto& p : tp.partitions) {
+                paritions.emplace(p);
+            }
+
+            topics.emplace(tp.topic, std::move(paritions));
+        }
+        ret.namespaces.emplace(std::move(rf.ns), std::move(topics));
+    }
+
+    return ret;
+}
+
+void adl<cluster::node_report_filter>::to(
+  iobuf& out, cluster::node_report_filter&& f) {
+    reflection::serialize(
+      out, f.current_version, f.include_partitions, std::move(f.ntp_filters));
+}
+
+cluster::node_report_filter
+adl<cluster::node_report_filter>::from(iobuf_parser& p) {
+    read_and_assert_version<cluster::node_report_filter>(
+      "cluster::node_report_filter", p);
+
+    auto include_partitions = adl<cluster::include_partitions_info>{}.from(p);
+    auto ntp_filters = adl<cluster::partitions_filter>{}.from(p);
+
+    return cluster::node_report_filter{
+      .include_partitions = include_partitions,
+      .ntp_filters = std::move(ntp_filters),
+    };
+}
+
+void adl<cluster::cluster_report_filter>::to(
+  iobuf& out, cluster::cluster_report_filter&& f) {
+    reflection::serialize(
+      out,
+      f.current_version,
+      std::move(f.node_report_filter),
+      std::move(f.nodes));
+}
+
+cluster::cluster_report_filter
+adl<cluster::cluster_report_filter>::from(iobuf_parser& p) {
+    read_and_assert_version<cluster::cluster_report_filter>(
+      "cluster::cluster_report_filter", p);
+
+    auto node_filter = adl<cluster::node_report_filter>{}.from(p);
+    auto nodes = adl<std::vector<model::node_id>>{}.from(p);
+
+    return cluster::cluster_report_filter{
+      .node_report_filter = std::move(node_filter),
+      .nodes = std::move(nodes),
+    };
+}
+
 } // namespace reflection

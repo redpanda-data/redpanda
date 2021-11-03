@@ -103,6 +103,46 @@ struct cluster_health_report {
     operator<<(std::ostream&, const cluster_health_report&);
 };
 
+using include_partitions_info = ss::bool_class<struct include_partitions_tag>;
+
+/**
+ * Filters are used to limit amout of data returned in health reports
+ */
+struct partitions_filter {
+    static constexpr int8_t current_version = 0;
+
+    using partitions_set_t = absl::node_hash_set<model::partition_id>;
+    using topic_map_t = absl::node_hash_map<model::topic, partitions_set_t>;
+    using ns_map_t = absl::node_hash_map<model::ns, topic_map_t>;
+
+    bool matches(const model::ntp& ntp) const;
+    bool matches(model::topic_namespace_view, model::partition_id) const;
+
+    ns_map_t namespaces;
+};
+
+struct node_report_filter {
+    static constexpr int8_t current_version = 0;
+
+    include_partitions_info include_partitions = include_partitions_info::yes;
+
+    partitions_filter ntp_filters;
+
+    friend std::ostream& operator<<(std::ostream&, const node_report_filter&);
+};
+
+struct cluster_report_filter {
+    static constexpr int8_t current_version = 0;
+    // filtering that will be applied to node reports
+    node_report_filter node_report_filter;
+    // list of requested nodes, if empty report will contain all nodes
+    std::vector<model::node_id> nodes;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const cluster_report_filter&);
+};
+
+using force_refresh = ss::bool_class<struct hm_force_refresh_tag>;
 
 } // namespace cluster
 
@@ -141,5 +181,33 @@ template<>
 struct adl<cluster::topic_status> {
     void to(iobuf&, cluster::topic_status&&);
     cluster::topic_status from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::partitions_filter> {
+    struct raw_tp_filter {
+        model::topic topic;
+        std::vector<model::partition_id> partitions;
+    };
+
+    struct raw_ns_filter {
+        model::ns ns;
+        std::vector<raw_tp_filter> topics;
+    };
+
+    void to(iobuf&, cluster::partitions_filter&&);
+    cluster::partitions_filter from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::node_report_filter> {
+    void to(iobuf&, cluster::node_report_filter&&);
+    cluster::node_report_filter from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::cluster_report_filter> {
+    void to(iobuf&, cluster::cluster_report_filter&&);
+    cluster::cluster_report_filter from(iobuf_parser&);
 };
 } // namespace reflection
