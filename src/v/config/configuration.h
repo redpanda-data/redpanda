@@ -217,6 +217,9 @@ struct configuration final : public config_store {
     property<int> internal_topic_replication_factor;
     property<std::chrono::milliseconds> health_manager_tick_interval;
 
+    // health monitor
+    property<std::chrono::milliseconds> health_monitor_tick_interval;
+    property<std::chrono::milliseconds> health_monitor_max_metadata_age;
     configuration();
 
     void load(const YAML::Node& root_node);

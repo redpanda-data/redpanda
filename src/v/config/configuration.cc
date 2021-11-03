@@ -909,7 +909,19 @@ configuration::configuration()
       "health_manager_tick_interval",
       "How often the health manager runs",
       required::no,
-      3min) {}
+      3min)
+  , health_monitor_tick_interval(
+      *this,
+      "health_monitor_tick_interval",
+      "How often health monitor refresh cluster state",
+      required::no,
+      10s)
+  , health_monitor_max_metadata_age(
+      *this,
+      "health_monitor_max_metadata_age",
+      "Max age of metadata cached in the health monitor of non controller node",
+      required::no,
+      10s) {}
 
 void configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
