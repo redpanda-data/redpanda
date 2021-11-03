@@ -16,9 +16,9 @@
 #include "cluster/topics_frontend.h"
 #include "config/configuration.h"
 #include "coproc/exception.h"
-#include "coproc/ntp_context.h"
 #include "coproc/offset_storage_utils.h"
 #include "coproc/script_context.h"
+#include "coproc/shared_script_resources.h"
 #include "coproc/sys_refs.h"
 #include "coproc/types.h"
 #include "rpc/reconnect_transport.h"
@@ -125,7 +125,7 @@ public:
 private:
     void do_add_source(
       script_id,
-      ntp_context_cache&,
+      routes_t&,
       std::vector<errc>& acks,
       const std::vector<topic_namespace_policy>&);
 
@@ -166,9 +166,6 @@ private:
 
     /// Main datastructure containing all active script_contexts
     absl::node_hash_map<script_id, std::unique_ptr<script_context>> _scripts;
-
-    /// Referencable cache of active ntps
-    ntp_context_cache _ntps;
 
     /// Responsible for timed persistence of offsets to disk
     offset_flush_fiber_state _offs;
