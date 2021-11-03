@@ -10,7 +10,6 @@
 package admin
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -31,10 +30,6 @@ func (a *AdminAPI) Config() (Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The current config endpoint returns a json object wrapped in quotes.
-	// We trim the quotes here, then unmarshal the object into an
-	// interface{}. We do not expect to hit an unmarshal error here.
-	rawResp = bytes.Trim(rawResp, `"`)
 	var unmarshaled Config
 	if err := json.Unmarshal(rawResp, &unmarshaled); err != nil {
 		return nil, fmt.Errorf("unable to decode response body: %w", err)
