@@ -2899,6 +2899,26 @@ model::offset consensus::get_latest_configuration_offset() const {
     return _configuration_manager.get_latest_offset();
 }
 
+follower_metrics build_follower_metrics(
+  model::node_id id,
+  const storage::offset_stats& lstats,
+  std::chrono::milliseconds liveness_timeout,
+  const follower_index_metadata& meta) {
+    const auto is_live = meta.last_received_append_entries_reply_timestamp
+                           + liveness_timeout
+                         > clock_type::now();
+    return follower_metrics{
+      .id = id,
+      .is_learner = meta.is_learner,
+      .committed_log_index = meta.last_flushed_log_index,
+      .dirty_log_index = meta.last_dirty_log_index,
+      .match_index = meta.match_index,
+      .last_heartbeat = meta.last_received_append_entries_reply_timestamp,
+      .is_live = is_live,
+      .under_replicated = (meta.is_recovering || !is_live)
+                          && meta.match_index < lstats.dirty_offset};
+}
+
 std::vector<follower_metrics> consensus::get_follower_metrics() const {
     // if not leader return empty vector, as metrics wouldn't have any sense
     if (!is_leader()) {
@@ -2906,23 +2926,29 @@ std::vector<follower_metrics> consensus::get_follower_metrics() const {
     }
     std::vector<follower_metrics> ret;
     ret.reserve(_fstats.size());
-    auto dirty_offset = _log.offsets().dirty_offset;
+    const auto offsets = _log.offsets();
     for (const auto& f : _fstats) {
-        auto last_hbeat = f.second.last_received_append_entries_reply_timestamp;
-        auto is_live = last_hbeat + _jit.base_duration() > clock_type::now();
-        ret.push_back(follower_metrics{
-          .id = f.first.id(),
-          .is_learner = f.second.is_learner,
-          .committed_log_index = f.second.last_flushed_log_index,
-          .dirty_log_index = f.second.last_dirty_log_index,
-          .match_index = f.second.match_index,
-          .last_heartbeat = last_hbeat,
-          .is_live = is_live,
-          .under_replicated = (f.second.is_recovering || !is_live)
-                              && f.second.match_index < dirty_offset});
+        ret.push_back(build_follower_metrics(
+          f.first.id(), offsets, _jit.base_duration(), f.second));
     }
 
     return ret;
+}
+
+result<follower_metrics>
+consensus::get_follower_metrics(model::node_id id) const {
+    // if not leader return empty vector, as metrics wouldn't have any sense
+    if (!is_leader()) {
+        return errc::not_leader;
+    }
+    auto it = std::find_if(_fstats.begin(), _fstats.end(), [id](const auto& p) {
+        return p.first.id() == id;
+    });
+    if (it == _fstats.end()) {
+        return errc::node_does_not_exists;
+    }
+    return build_follower_metrics(
+      id, _log.offsets(), _jit.base_duration(), it->second);
 }
 
 } // namespace raft
