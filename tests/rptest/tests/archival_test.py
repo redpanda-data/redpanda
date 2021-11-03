@@ -270,7 +270,7 @@ class ArchivalTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_single_partition_leadership_transfer(self):
-        """Start uploading data, restart leader node of the partition 0 to trigger the 
+        """Start uploading data, restart leader node of the partition 0 to trigger the
         leadership transfer, continue upload, verify S3 bucket content"""
         self.kafka_tools.produce(self.topic, 5000, 1024)
         time.sleep(5)
@@ -285,7 +285,7 @@ class ArchivalTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_all_partitions_leadership_transfer(self):
-        """Start uploading data, restart leader nodes of all partitions to trigger the 
+        """Start uploading data, restart leader nodes of all partitions to trigger the
         leadership transfer, continue upload, verify S3 bucket content"""
         self.kafka_tools.produce(self.topic, 5000, 1024)
         time.sleep(5)
@@ -453,9 +453,9 @@ class ArchivalTest(RedpandaTest):
     def _cross_node_verify(self):
         """Verify data on all nodes taking into account possible alignment issues
         caused by leadership transitions.
-        The verification algorithm is following: 
+        The verification algorithm is following:
         - Download and verify partition manifest;
-        - Partition manifest has all segments and metadata like committed offset 
+        - Partition manifest has all segments and metadata like committed offset
           and base offset. We can also retrieve MD5 hash of every segment;
         - Load segment metadata for every redpanda node.
         - Scan every node's metadata and match segments with manifest, on success
@@ -467,7 +467,7 @@ class ArchivalTest(RedpandaTest):
         - The base offset and md5 hashes are the same;
         - The committed offset of both segments are the same, md5 hashes are different,
           and base offset of the segment from manifest is larger than base offset of the
-          segment from redpanda node. In this case we should also compare the data 
+          segment from redpanda node. In this case we should also compare the data
           directly by scanning both segments.
         """
         nodes = {}
