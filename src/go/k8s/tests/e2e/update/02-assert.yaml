@@ -1,0 +1,14 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: update-cluster
+spec:
+  template:
+    spec:
+      containers:
+        - resources:
+            requests:
+              memory: 99M
+        - resources:
+            requests:
+              memory: 10M
