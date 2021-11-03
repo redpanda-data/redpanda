@@ -25,7 +25,9 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/net/dns.hh>
@@ -64,6 +66,38 @@ struct aws_header_values {
 
 // configuration //
 
+/// Find CA trust file using the predefined set of locations
+///
+/// Historically, different linux distributions use different locations to
+/// store certificates for their private key infrastructure. This is just a
+/// convention and can't be queried by the application code. The application
+/// is required to 'know' where to find the certs. In case of GnuTLS the
+/// location is configured during build time. It depend on distribution on
+/// which GnuTLS is built. This approach doesn't work for Redpanda because
+/// single Redpanda binary can be executed on any linux distro. So the default
+/// option only work on some distributions. The rest require the location to
+/// be explicitly specified. This function does different thing. It probes
+/// the set of default locations for different distributions untill it finds
+/// the one that exists. This path is then passed to GnuTLS.
+static ss::future<std::optional<ss::sstring>> find_ca_file() {
+    // list of all possible ca-cert file locations on different linux distros
+    static constexpr std::array<std::string_view, 6> ca_cert_locations = {{
+      "/etc/ssl/certs/ca-certificates.crt",
+      "/etc/pki/tls/certs/ca-bundle.crt",
+      "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+      "/etc/ssl/cert.pem",
+      "/etc/ssl/ca-bundle.pem",
+      "/etc/pki/tls/cacert.pem",
+    }};
+
+    for (auto ca_loc : ca_cert_locations) {
+        if (co_await ss::file_exists(ca_loc)) {
+            co_return ca_loc;
+        }
+    }
+    co_return std::nullopt;
+}
+
 static ss::sstring make_endpoint_url(
   const aws_region_name& region,
   const std::optional<endpoint_url>& url_override) {
@@ -101,7 +135,21 @@ ss::future<configuration> configuration::make_configuration(
               file().string(), ss::tls::x509_crt_format::PEM);
         } else {
             // Use GnuTLS defaults, might not work on all systems
-            co_await cred_builder.set_system_trust();
+            auto ca_file = co_await find_ca_file();
+            if (ca_file) {
+                vlog(
+                  s3_log.info,
+                  "Use automatically discovered trust file {}",
+                  ca_file.value());
+                co_await cred_builder.set_x509_trust_file(
+                  ca_file.value(), ss::tls::x509_crt_format::PEM);
+            } else {
+                vlog(
+                  s3_log.info,
+                  "Trust file can't be detected automatically, using GnuTLS "
+                  "default");
+                co_await cred_builder.set_system_trust();
+            }
         }
         client_cfg.credentials
           = co_await cred_builder.build_reloadable_certificate_credentials();

@@ -14,7 +14,7 @@
 #include "http/logger.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/types.h"
-#include "utils/gate_guard.h"
+#include "ssx/sformat.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
@@ -75,11 +75,13 @@ void client::check() const {
 
 ss::future<client::request_response_t> client::make_request(
   client::request_header&& header, ss::lowres_clock::duration timeout) {
-    vlog(http_log.trace, "client.make_request {}", header);
     auto verb = header.method();
     auto target = header.target();
+    ss::sstring target_str(target.data(), target.size());
     auto req = ss::make_shared<request_stream>(this, std::move(header));
-    auto res = ss::make_shared<response_stream>(this, verb);
+    auto res = ss::make_shared<response_stream>(this, verb, target_str);
+    prefix_logger ctxlog(http_log, ssx::sformat("[{}]", target_str));
+    vlog(ctxlog.trace, "client.make_request {}", header);
     auto now = ss::lowres_clock::now();
     auto age = _last_response == ss::lowres_clock::time_point::min()
                  ? ss::lowres_clock::duration::max()
@@ -87,22 +89,22 @@ ss::future<client::request_response_t> client::make_request(
     if (is_valid()) {
         if (age < _max_idle_time) {
             // Reuse connection
-            vlog(http_log.debug, "reusing connection, age {}", age.count());
+            vlog(ctxlog.debug, "reusing connection, age {}", age.count());
             return ss::make_ready_future<request_response_t>(
               std::make_tuple(req, res));
         } else {
-            vlog(http_log.debug, "shutdown connection, age {}", age.count());
+            vlog(ctxlog.debug, "shutdown connection, age {}", age.count());
             // Connection is too old and likeley already received
             // RST packet from the server. If we will try to use
             // it the broken pipe (32) error will be triggered.
             shutdown();
         }
     }
-    return get_connected(timeout)
-      .then([req, res, target](reconnect_result_t r) {
+    return get_connected(timeout, ctxlog)
+      .then([req, res, target, ctxlog](reconnect_result_t r) {
           if (r == reconnect_result_t::timed_out) {
               vlog(
-                http_log.warn,
+                ctxlog.warn,
                 "make_request timed-out connection attempt {}",
                 target);
               ss::timed_out_error err;
@@ -118,10 +120,10 @@ ss::future<client::request_response_t> client::make_request(
       });
 }
 
-ss::future<reconnect_result_t>
-client::get_connected(ss::lowres_clock::duration timeout) {
+ss::future<reconnect_result_t> client::get_connected(
+  ss::lowres_clock::duration timeout, prefix_logger ctxlog) {
     vlog(
-      http_log.debug,
+      ctxlog.debug,
       "about to start connecting, {}, is-closed {}",
       is_valid(),
       _dispatch_gate.is_closed());
@@ -143,19 +145,19 @@ client::get_connected(ss::lowres_clock::duration timeout) {
             // to base_transport::stop could lead to failure because
             // _dispatcher_gate is already closed. We need to synchronize
             // this loop with the `stop` call.
-            gate_guard gg(_connect_gate);
+            ss::gate::holder gg(_connect_gate);
             co_await connect(current + interval);
             break;
         } catch (const std::system_error& err) {
-            vlog(http_log.trace, "connection refused {}", err);
+            vlog(ctxlog.trace, "connection refused {}", err);
         } catch (const ss::timed_out_error&) {
-            vlog(http_log.trace, "connection timeout");
+            vlog(ctxlog.trace, "connection timeout");
         }
         current = ss::lowres_clock::now();
         // Any TLS error have to be propagated because it's not
         // transient. It won't help to try once again.
     }
-    vlog(http_log.debug, "connected, {}", is_valid());
+    vlog(ctxlog.debug, "connected, {}", is_valid());
     co_return is_valid() ? reconnect_result_t::connected
                          : reconnect_result_t::timed_out;
 }
@@ -205,8 +207,9 @@ static client_probe::verb convert_to_pverb(client::response_stream::verb v) {
 }
 
 client::response_stream::response_stream(
-  client* client, client::response_stream::verb v)
+  client* client, client::response_stream::verb v, ss::sstring target)
   : _client(client)
+  , _ctxlog(http_log, ssx::sformat("{{}}", std::move(target)))
   , _parser()
   , _buffer()
   , _sprobe(client->_probe->create_request_subprobe(convert_to_pverb(v))) {
@@ -242,11 +245,12 @@ iobuf_to_constbufseq(const iobuf& iobuf) {
 ss::future<> client::response_stream::shutdown() { return _client->stop(); }
 
 /// Return failed future if ec is set, otherwise return future in ready state
-static ss::future<iobuf> fail_on_error(const boost::beast::error_code& ec) {
+static ss::future<iobuf>
+fail_on_error(prefix_logger& ctxlog, const boost::beast::error_code& ec) {
     if (!ec) {
         return ss::make_ready_future<iobuf>(iobuf());
     }
-    vlog(http_log.error, "'{}' error triggered", ec);
+    vlog(ctxlog.error, "'{}' error triggered", ec);
     boost::system::system_error except(ec);
     return ss::make_exception_future<iobuf>(except);
 }
@@ -275,7 +279,7 @@ ss::future<iobuf> client::response_stream::recv_some() {
     }
     return _client->receive()
       .then([this](ss::temporary_buffer<char> chunk) mutable {
-          vlog(http_log.trace, "chunk received, chunk length {}", chunk.size());
+          vlog(_ctxlog.trace, "chunk received, chunk length {}", chunk.size());
           if (chunk.empty()) {
               // NOTE: to make the parser stop we need to use the 'put_eof'
               // method, because it will handle situation when the data is
@@ -291,14 +295,14 @@ ss::future<iobuf> client::response_stream::recv_some() {
               } else {
                   _parser.put_eof(ec);
               }
-              return fail_on_error(ec);
+              return fail_on_error(_ctxlog, ec);
           }
           _buffer.append(std::move(chunk));
           _parser.get().body().set_temporary_source(_buffer);
           // Feed the parser
           if (_parser.is_done()) {
               vlog(
-                http_log.error,
+                _ctxlog.error,
                 "parser done, remaining input {}",
                 _buffer.size_bytes());
               // this is an error, shouldn't get here if parser is done
@@ -321,18 +325,18 @@ ss::future<iobuf> client::response_stream::recv_some() {
           if (ec) {
               // Parser error, response doesn't make sence
               vlog(
-                http_log.error,
+                _ctxlog.error,
                 "parser returned error-code {}, remaining bytes {}",
                 ec,
                 _buffer.size_bytes());
               _buffer.clear();
-              return fail_on_error(ec);
+              return fail_on_error(_ctxlog, ec);
           }
           auto out = _parser.get().body().consume();
           _buffer.trim_front(noctets);
           if (!_buffer.empty()) {
               vlog(
-                http_log.trace,
+                _ctxlog.trace,
                 "not all consumed, noctets {}, input size {}, output size "
                 "{}, ec {}",
                 noctets,
@@ -348,7 +352,7 @@ ss::future<iobuf> client::response_stream::recv_some() {
             [err] { return ss::make_exception_future<iobuf>(err); });
       })
       .handle_exception_type([this](const std::system_error& ec) {
-          vlog(http_log.error, "receive error {}", ec);
+          vlog(_ctxlog.error, "receive error {}", ec);
           _client->shutdown();
           return ss::make_exception_future<iobuf>(ec);
       });
@@ -358,6 +362,7 @@ ss::future<iobuf> client::response_stream::recv_some() {
 
 client::request_stream::request_stream(client* client, request_header&& hdr)
   : _client(client)
+  , _ctxlog(http_log, ssx::sformat("{{}}", hdr.target()))
   , _request(std::move(hdr))
   , _serializer{_request}
   , _chunk_encode(true, max_chunk_size) {
@@ -393,11 +398,11 @@ client::request_stream::send_some(ss::temporary_buffer<char>&& buf) {
 
 ss::future<> client::request_stream::send_some(iobuf&& seq) {
     _client->check();
-    vlog(http_log.trace, "request_stream.send_some {}", seq.size_bytes());
+    vlog(_ctxlog.trace, "request_stream.send_some {}", seq.size_bytes());
     if (_serializer.is_header_done()) {
         // Fast path
         return ss::with_gate(_gate, [this, seq = std::move(seq)]() mutable {
-            vlog(http_log.trace, "header is done, bypass protocol serializer");
+            vlog(_ctxlog.trace, "header is done, bypass protocol serializer");
             return forward(_client, _chunk_encode(std::move(seq)));
         });
     }
@@ -407,7 +412,7 @@ ss::future<> client::request_stream::send_some(iobuf&& seq) {
     parser_visitor visitor{outbuf, _serializer};
     _serializer.next(error_code, visitor);
     if (error_code) {
-        vlog(http_log.error, "serialization error {}", error_code);
+        vlog(_ctxlog.error, "serialization error {}", error_code);
         boost::system::system_error except(error_code);
         return ss::make_exception_future<>(except);
     }
@@ -425,7 +430,7 @@ ss::future<> client::request_stream::send_some(iobuf&& seq) {
                     [err] { return ss::make_exception_future<>(err); });
               })
             .handle_exception_type([this](const std::system_error& ec) {
-                vlog(http_log.error, "send error {}", ec);
+                vlog(_ctxlog.error, "send error {}", ec);
                 _client->shutdown();
                 return ss::make_exception_future<>(ec);
             });
