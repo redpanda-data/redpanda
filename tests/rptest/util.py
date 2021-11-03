@@ -43,7 +43,7 @@ class Scale:
         return self._scale == Scale.RELEASE
 
 
-def _segments_count(redpanda, topic, partition_idx):
+def segments_count(redpanda, topic, partition_idx):
     storage = redpanda.storage()
     topic_partitions = storage.partitions("kafka", topic)
 
@@ -61,7 +61,7 @@ def produce_until_segments(redpanda, topic, partition_idx, count, acks=-1):
 
     def done():
         kafka_tools.produce(topic, 10000, 1024, acks=acks)
-        topic_partitions = _segments_count(redpanda, topic, partition_idx)
+        topic_partitions = segments_count(redpanda, topic, partition_idx)
         partitions = []
         for p in topic_partitions:
             partitions.append(p >= count)
@@ -78,7 +78,7 @@ def wait_for_segments_removal(redpanda, topic, partition_idx, count):
     Wait until only given number of segments will left in a partitions
     """
     def done():
-        topic_partitions = _segments_count(redpanda, topic, partition_idx)
+        topic_partitions = segments_count(redpanda, topic, partition_idx)
         partitions = []
         for p in topic_partitions:
             partitions.append(p <= count)
