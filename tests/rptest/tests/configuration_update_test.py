@@ -108,14 +108,10 @@ class ConfigurationUpdateTest(RedpandaTest):
         def metadata_updated():
             client = PythonLibrdkafka(self.redpanda)
             brokers = client.brokers()
-            self.logger.debug(f"brokers metadata: {brokers}")
-            if brokers[1].port != 10091:
-                return False
-            if brokers[2].port != 10092:
-                return False
-            if brokers[3].port != 10093:
-                return False
-            return True
+            self.redpanda.logger.debug(f"brokers metadata: {brokers}")
+            ports = [b.port for _, b in brokers.items()]
+            ports.sort()
+            return ports == [10091, 10092, 10093]
 
         wait_until(lambda: metadata_updated(),
                    timeout_sec=60,
