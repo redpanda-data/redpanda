@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/cluster"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/cluster/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/group"
 )
@@ -53,6 +54,8 @@ func NewClusterCommand(fs afero.Fs) *cobra.Command {
 	offsets.Hidden = true
 	offsets.Use = "offsets"
 	command.AddCommand(offsets)
+
+	command.AddCommand(config.NewConfigCommand(fs))
 
 	return command
 }
