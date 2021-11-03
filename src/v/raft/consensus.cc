@@ -2507,7 +2507,7 @@ consensus::prepare_transfer_leadership(vnode target_rni) {
         meta.follower_state_change.broadcast();
         try {
             co_await meta.recovery_finished.wait(timeout);
-        } catch (ss::timed_out_error) {
+        } catch (const ss::timed_out_error&) {
             vlog(
               _ctxlog.warn,
               "transfer leadership: timed out waiting on node {} "
