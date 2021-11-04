@@ -10,6 +10,7 @@
 #include "cluster/partition_leaders_table.h"
 
 #include "cluster/cluster_utils.h"
+#include "cluster/logger.h"
 #include "cluster/topic_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -37,25 +38,38 @@ ss::future<> partition_leaders_table::stop() {
     return ss::now();
 }
 
-std::optional<model::node_id> partition_leaders_table::get_leader(
+std::optional<partition_leaders_table::leader_meta>
+partition_leaders_table::find_leader_meta(
   model::topic_namespace_view tp_ns, model::partition_id pid) const {
     const auto& topics_map = _topic_table.local().topics_map();
     if (auto it = _leaders.find(leader_key_view{tp_ns, pid});
         it != _leaders.end()) {
-        return it->second.id;
+        return it->second;
     } else if (auto it = topics_map.find(tp_ns); it != topics_map.end()) {
         // Possible leadership query for materialized topic, search for it
         // in the topics table.
         if (!it->second.is_topic_replicable()) {
             // Leadership properties of non replicated topic are that of its
             // parent
-            return get_leader(
+            return find_leader_meta(
               model::topic_namespace_view{
                 tp_ns.ns, it->second.get_source_topic()},
               pid);
         }
     }
     return std::nullopt;
+}
+
+std::optional<model::node_id> partition_leaders_table::get_previous_leader(
+  model::topic_namespace_view tp_ns, model::partition_id pid) const {
+    const auto meta = find_leader_meta(tp_ns, pid);
+    return meta ? meta->previous_leader : std::nullopt;
+}
+
+std::optional<model::node_id> partition_leaders_table::get_leader(
+  model::topic_namespace_view tp_ns, model::partition_id pid) const {
+    const auto meta = find_leader_meta(tp_ns, pid);
+    return meta ? meta->current_leader : std::nullopt;
 }
 
 std::optional<model::node_id>
@@ -74,18 +88,29 @@ void partition_leaders_table::update_partition_leader(
         auto [new_it, _] = _leaders.emplace(
           leader_key{
             model::topic_namespace(ntp.ns, ntp.tp.topic), ntp.tp.partition},
-          leader_meta{leader_id, term});
+          leader_meta{.current_leader = leader_id, .update_term = term});
         it = new_it;
+    } else {
+        // existing partition
+        if (it->second.update_term > term) {
+            // Do nothing if update term is older
+            return;
+        }
+        // if current leader has value, store it as a previous leader
+        if (it->second.current_leader) {
+            it->second.previous_leader = it->second.current_leader;
+        }
+        it->second.current_leader = leader_id;
+        it->second.update_term = term;
     }
-
-    if (it->second.update_term > term) {
-        // Do nothing if update term is older
-        return;
-    }
-    // existing partition
-    it->second.id = leader_id;
-    it->second.update_term = term;
-
+    vlog(
+      clusterlog.trace,
+      "updated partition: {} leader: {{term: {}, current leader: {}, previous "
+      "leader: {}}}",
+      ntp,
+      it->second.update_term,
+      it->second.current_leader,
+      it->second.previous_leader);
     // notify waiters if update is setting the leader
     if (!leader_id) {
         return;
