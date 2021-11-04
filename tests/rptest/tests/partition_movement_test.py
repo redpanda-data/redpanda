@@ -453,9 +453,18 @@ class PartitionMovementTest(EndToEndTest):
         self.logger.info(
             f"Write complete {write_bytes} in {time.time() - t1} seconds")
 
+        # - Admin API redirects writes but not reads.  Because we want synchronous
+        #   status after submitting operations, send all operations to the controller
+        #   leader.  This is not necessary for operations to work, just to simplify
+        #   this test by letting it see synchronous status updates.
+        # - Because we will later verify that a 503 is sent in response to
+        #   a move request to an in_progress topic, set retry_codes=[] to
+        #   disable default retries on 503.
+        admin_node = self.redpanda.controller()
+        admin = Admin(self.redpanda, default_node=admin_node, retry_codes=[])
+
         # Start an inter-node move, which should take some time
         # to complete because of recovery network traffic
-        admin = Admin(self.redpanda)
         assignments = self._get_assignments(admin, name, 0)
         new_node = list(node_ids - set([a['node_id'] for a in assignments]))[0]
         self.logger.info(f"old assignments: {assignments}")
@@ -471,9 +480,9 @@ class PartitionMovementTest(EndToEndTest):
         try:
             r = admin.set_partition_replicas(name, 0, old_assignments)
         except requests.exceptions.HTTPError as e:
-            assert e.response.status_code == 400
+            assert e.response.status_code == 503
         else:
-            raise RuntimeError(f"Expected 400 but got {r.status_code}")
+            raise RuntimeError(f"Expected 503 but got {r.status_code}")
 
         # An update to partition properties should succeed
         # (issue https://github.com/vectorizedio/redpanda/issues/2300)

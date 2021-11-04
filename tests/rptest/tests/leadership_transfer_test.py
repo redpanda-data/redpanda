@@ -14,9 +14,9 @@ import time
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
-import requests
 
 from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 
 
@@ -58,16 +58,16 @@ class LeadershipTransferTest(RedpandaTest):
             filter(lambda b: b["id"] == target_node_id, brokers))
         self.logger.debug(f"Source broker {source_broker}")
         self.logger.debug(f"Target broker {target_broker}")
-        host = source_broker["name"]
-        host = host.split(":")[0]
-        partition_id = partition["partition"]
-        url = "http://{}:9644/v1/partitions/kafka/{}/{}/transfer_leadership?target={}".format(
-            host, self.topic, partition["partition"], target_node_id)
 
-        def try_transfer():
-            self.logger.debug(url)
-            res = requests.post(url)
-            self.logger.debug(res.text)
+        # Send the request to any host, they should redirect to
+        # the leader of the partition.
+        partition_id = partition['partition']
+
+        admin = Admin(self.redpanda)
+        admin.partition_transfer_leadership("kafka", self.topic, partition_id,
+                                            target_node_id)
+
+        def transfer_complete():
             for _ in range(3):  # just give it a moment
                 time.sleep(1)
                 meta = kc.metadata()
@@ -78,7 +78,7 @@ class LeadershipTransferTest(RedpandaTest):
                     return True
             return False
 
-        wait_until(lambda: try_transfer(),
+        wait_until(lambda: transfer_complete(),
                    timeout_sec=30,
                    backoff_sec=5,
                    err_msg="Transfer did not complete")

@@ -10,7 +10,6 @@
 import sys
 import time
 import re
-import requests
 import random
 
 from ducktape.mark.resource import cluster
@@ -23,6 +22,7 @@ from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.kaf_producer import KafProducer
+from rptest.services.admin import Admin
 
 ELECTION_TIMEOUT = 10
 
@@ -451,29 +451,23 @@ class RaftAvailabilityTest(RedpandaTest):
         # reactor stalls and corresponding nondeterministic behaviour/failures.
         # This appears unrelated to the functionality under test, something else
         # is tripping up the cluster when we have so many leadership transfers.
+        # https://github.com/vectorizedio/redpanda/issues/2623
+
+        admin = Admin(self.redpanda)
 
         initial_leader_id = leader_node_id
         for n in range(0, transfer_count):
             target_idx = (initial_leader_id + n) % len(self.redpanda.nodes)
             target_node_id = target_idx + 1
 
-            api_host = self.redpanda.nodes[leader_node_id - 1].account.hostname
-
-            url = "http://{}:9644/v1/partitions/kafka/{}/{}/transfer_leadership?target={}".format(
-                api_host, self.topic, 0, target_node_id)
             self.logger.info(f"Starting transfer to {target_node_id}")
-
-            # Leadership transfer is a blocking API endpoint, important to use a timeout
-            # to avoid a test hang if something goes hangs on the server side.
-            r = requests.post(url, timeout=30)
-            if r.status_code not in (200, 500):
-                r.raise_for_status()
+            admin.partition_transfer_leadership("kafka", self.topic, 0,
+                                                target_node_id)
 
             self._wait_for_leader(
                 lambda l: l is not None and l == target_node_id,
                 timeout=ELECTION_TIMEOUT * 2)
             self.logger.info(f"Completed transfer to {target_node_id}")
-            leader_node_id = target_node_id
 
         self.logger.info(f"Completed {transfer_count} transfers successfully")
 

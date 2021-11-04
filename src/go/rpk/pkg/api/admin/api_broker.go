@@ -35,7 +35,7 @@ func (a *AdminAPI) Brokers() ([]Broker, error) {
 
 // DecommissionBroker issues a decommission request for the given broker.
 func (a *AdminAPI) DecommissionBroker(node int) error {
-	return a.sendAll(
+	return a.sendAny(
 		http.MethodPut,
 		fmt.Sprintf("%s/%d/decommission", brokersEndpoint, node),
 		nil,
@@ -45,7 +45,7 @@ func (a *AdminAPI) DecommissionBroker(node int) error {
 
 // RecommissionBroker issues a recommission request for the given broker.
 func (a *AdminAPI) RecommissionBroker(node int) error {
-	return a.sendAll(
+	return a.sendAny(
 		http.MethodPut,
 		fmt.Sprintf("%s/%d/recommission", brokersEndpoint, node),
 		nil,
