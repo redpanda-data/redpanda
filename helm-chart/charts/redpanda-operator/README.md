@@ -38,7 +38,7 @@ kubectl apply -k 'https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd
 > The example command should be invoked from `src/go/k8s/helm-chart/charts`
 
 ```sh
-helm install --namespace redpanda-system --create-namespace redpanda-operator ./redpanda-operator
+helm install --namespace redpanda-system --create-namespace redpanda-system ./redpanda-operator
 ```
 
 Alternative installation with kube-prometheus-stack that includes prometheus operator CRD
