@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -61,6 +62,26 @@ const defApiVersion = "21.8.2"
 
 var inTests bool
 
+func getWasmApiVersion(wasmApi string) string {
+	var result []map[string]interface{}
+	if err := json.Unmarshal([]byte(wasmApi), &result); err != nil {
+		fmt.Printf("Can not parse json from npm search: '%s', Error: %s\n", wasmApi, err)
+		return defApiVersion
+	}
+
+	if len(result) != 1 {
+		fmt.Printf("Wrong npm search result: %v", result)
+		return defApiVersion
+	}
+
+	version, ok := result[0]["version"].(string)
+	if !ok {
+		fmt.Printf("Can not get version from npm search result: %s\n", result)
+		return defApiVersion
+	}
+	return version
+}
+
 // Looks up the latest version of our client library using npm, defaulting
 // if anything fails.
 func latestClientApiVersion() string {
@@ -80,18 +101,9 @@ func latestClientApiVersion() string {
 		return defApiVersion
 	}
 
-	var result map[string]interface{}
-	if err := json.Unmarshal([]byte(output[2]), &result); err != nil {
-		fmt.Println("Can not parse json from npm search: {}, Error: {}", output, err)
-		return defApiVersion
-	}
+	wasmApi := strings.Join(output, "")
 
-	version, ok := result["version"].(string)
-	if !ok {
-		fmt.Println("Can not get version from npm search result: {}", output)
-		return defApiVersion
-	}
-	return version
+	return getWasmApiVersion(wasmApi)
 }
 
 func executeGenerate(fs afero.Fs, path string) error {
