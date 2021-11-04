@@ -14,11 +14,13 @@ import random
 
 from ducktape.mark.resource import cluster
 from ducktape.mark import parametrize
+from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
+from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.kaf_producer import KafProducer
@@ -477,3 +479,31 @@ class RaftAvailabilityTest(RedpandaTest):
         producer.stop()
         producer.wait()
         producer.free()
+
+    @cluster(num_nodes=3)
+    def test_follower_isolation(self):
+        """
+        Simplest HA test.  Stop the leader for our partition.  Validate that
+        the cluster remains available afterwards, and that the expected
+        peer takes over as the new leader.
+        """
+        # Find which node is the leader
+        initial_leader_id, replicas = self._wait_for_leader()
+        assert initial_leader_id == replicas[0]
+
+        self._expect_available()
+
+        leader_node = self.redpanda.get_node(initial_leader_id)
+        self.logger.info(
+            f"Initial leader {initial_leader_id} {leader_node.account.hostname}"
+        )
+
+        with FailureInjector(self.redpanda) as fi:
+            # isolate one of the followers
+            fi.inject_failure(
+                FailureSpec(FailureSpec.FAILURE_ISOLATE,
+                            self.redpanda.get_node(replicas[1])))
+
+            # expect messages to be produced and consumed without a timeout
+            for i in range(0, 128):
+                self._ping_pong()
