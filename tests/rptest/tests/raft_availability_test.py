@@ -175,11 +175,13 @@ class RaftAvailabilityTest(RedpandaTest):
         rpk = RpkTool(self.redpanda)
 
         payload = str(random.randint(0, 1000))
-
+        start = time.time()
         offset = rpk.produce(self.topic, "tkey", payload, timeout=5)
         consumed = kc.consume_one(self.topic, 0, offset)
+        latency = time.time() - start
         self.logger.info(
-            f"_ping_pong produced '{payload}' consumed '{consumed}'")
+            f"_ping_pong produced '{payload}' consumed '{consumed}' in {(latency)*1000.0:.2f} ms"
+        )
         if consumed['payload'] != payload:
             raise RuntimeError(f"expected '{payload}' got '{consumed}'")
 
