@@ -1,4 +1,4 @@
-# Copyright 2020 Vectorized, Inc.
+# Copyright 2021 Vectorized, Inc.
 #
 # Use of this software is governed by the Business Source License
 # included in the file licenses/BSL.md
@@ -8,9 +8,9 @@
 # by the Apache License, Version 2.0
 
 
-class HelperBase:
+class ExampleBase:
     """
-    The base class for example helpers
+    The base class for example
     """
     def __init__(self, redpanda):
         # Instance of redpanda
@@ -34,25 +34,4 @@ class HelperBase:
     def set_node_name(self, node_name):
         # Noop by default since some examples
         # don't need this
-        pass
-
-
-class HelperFactoryBase:
-    """
-    The abstract factory for creating helper classes
-    for a particular kafka client. The class instance
-    is determined by the test function name.
-    """
-    def __init__(self, func_name, redpanda, topic, extra_conf):
-        self._func_name = func_name
-        self._redpanda = redpanda
-        self._topic = topic
-        self._extra_conf = extra_conf or dict()
-
-    # The factory method for sarama
-    def create_sarama_helpers(self):
-        pass
-
-    # The factory method for franz-go
-    def create_franzgo_helpers(self):
         pass

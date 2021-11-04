@@ -85,7 +85,9 @@ RUN git -C /opt clone https://github.com/Shopify/sarama.git && \
     cd /opt/sarama/examples/consumergroup && go mod tidy && go build && \
     cd /opt/sarama/examples/sasl_scram_client && go mod tidy && go build && \
     git -C /opt clone https://github.com/twmb/franz-go.git && cd /opt/franz-go && \
-    cd /opt/franz-go/examples/bench && go mod tidy && go build
+    cd /opt/franz-go/examples/bench && go mod tidy && go build && \
+    git -C /opt clone --branch ducktape2 https://github.com/vectorizedio/kafka-streams-examples.git && \
+    cd /opt/kafka-streams-examples && mvn -DskipTests=true clean package
 
 RUN go install github.com/twmb/kcl@latest && \
     mv /root/go/bin/kcl /usr/local/bin/
