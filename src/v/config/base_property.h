@@ -28,12 +28,28 @@ class config_store;
 using required = ss::bool_class<struct required_tag>;
 using needs_restart = ss::bool_class<struct needs_restart_tag>;
 
+enum class visibility {
+    // Tunables can be set by the user, but they control implementation
+    // details like (e.g. buffer sizes, queue lengths)
+    tunable,
+    // User properties are normal, end-user visible settings that control
+    // functional redpanda behaviours (e.g. enable a feature)
+    user,
+    // Deprecated properties are kept around to avoid complaining
+    // about invalid config after upgrades, but they do nothing and
+    // should never be presented to the user for editing.
+    deprecated,
+};
+
+std::string_view to_string_view(visibility v);
+
 class base_property {
 public:
     struct metadata {
         required required{required::no};
         needs_restart needs_restart{needs_restart::yes};
         std::optional<ss::sstring> example{std::nullopt};
+        visibility visibility{visibility::user};
     };
 
     base_property(
@@ -47,6 +63,7 @@ public:
 
     const required is_required() const { return _meta.required; }
     bool needs_restart() const { return bool(_meta.needs_restart); }
+    visibility get_visibility() const { return _meta.visibility; }
 
     // this serializes the property value. a full configuration serialization is
     // performed in config_store::to_json where the json object key is taken

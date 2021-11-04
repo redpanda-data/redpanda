@@ -39,13 +39,13 @@ struct test_config : public config::config_store {
         *this,
         "optional_int",
         "An optional int value",
-        config::required::no,
+        {.visibility = config::visibility::tunable},
         100)
       , required_string(
           *this,
           "required_string",
           "Required string value",
-          config::base_property::metadata{})
+          {.visibility = config::visibility::user})
       , an_int64_t(
           *this, "an_int64_t", "Some other int type", config::required::no, 200)
       , an_aggregate(
@@ -282,10 +282,16 @@ SEASTAR_THREAD_TEST_CASE(deserialize_explicit_null) {
 SEASTAR_THREAD_TEST_CASE(property_metadata) {
     auto cfg = test_config();
     BOOST_TEST(cfg.optional_int.type_name() == "integer");
+    BOOST_TEST(
+      config::to_string_view(cfg.optional_int.get_visibility()) == "tunable");
+
     BOOST_TEST(cfg.boolean.is_nullable() == false);
     BOOST_TEST(cfg.nullable_string.is_array() == false);
 
     BOOST_TEST(cfg.required_string.type_name() == "string");
+    BOOST_TEST(
+      config::to_string_view(cfg.required_string.get_visibility()) == "user");
+
     BOOST_TEST(cfg.boolean.is_nullable() == false);
     BOOST_TEST(cfg.nullable_string.is_array() == false);
 
