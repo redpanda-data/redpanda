@@ -69,7 +69,7 @@ static error_outcome categorize_error(
         std::rethrow_exception(err);
     } catch (const s3::rest_error_response& err) {
         if (err.code() == s3::s3_error_code::no_such_key) {
-            vlog(ctxlog.warn, "NoSuchKey response received {}", path);
+            vlog(ctxlog.info, "NoSuchKey response received {}", path);
             result = error_outcome::notfound;
         } else if (err.code() == s3::s3_error_code::slow_down) {
             // This can happen when we're dealing with high request rate to
