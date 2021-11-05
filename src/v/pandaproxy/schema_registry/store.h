@@ -12,7 +12,6 @@
 #pragma once
 
 #include "pandaproxy/logger.h"
-#include "pandaproxy/schema_registry/avro.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/types.h"
@@ -61,49 +60,6 @@ make_non_const_iterator(T& container, result<typename T::const_iterator> it) {
 
 class store {
 public:
-    result<canonical_schema> make_canonical_schema(unparsed_schema schema) {
-        switch (schema.type()) {
-        case schema_type::avro: {
-            return canonical_schema{
-              std::move(schema.sub()),
-              BOOST_OUTCOME_TRYX(sanitize_avro_schema_definition(schema.def())),
-              std::move(schema.refs())};
-        }
-        case schema_type::protobuf:
-        case schema_type::json:
-            return invalid_schema_type(schema.type());
-        }
-        __builtin_unreachable();
-    }
-
-    result<void> validate_schema(const canonical_schema& schema) {
-        switch (schema.type()) {
-        case schema_type::avro: {
-            auto res = make_avro_schema_definition(schema.def().raw()());
-            if (res.has_error()) {
-                return res.assume_error();
-            }
-            return outcome::success();
-        }
-        case schema_type::protobuf:
-        case schema_type::json:
-            return invalid_schema_type(schema.type());
-        }
-        __builtin_unreachable();
-    }
-
-    result<valid_schema> make_valid_schema(const canonical_schema& schema) {
-        switch (schema.type()) {
-        case schema_type::avro:
-            return BOOST_OUTCOME_TRYX(
-              make_avro_schema_definition(schema.def().raw()()));
-        case schema_type::protobuf:
-        case schema_type::json:
-            return invalid_schema_type(schema.type());
-        }
-        __builtin_unreachable();
-    }
-
     struct insert_result {
         schema_version version;
         schema_id id;
@@ -161,18 +117,27 @@ public:
     ///\brief Return subject_version_id for a subject and version
     result<subject_version_entry> get_subject_version_id(
       const subject& sub,
-      schema_version version,
+      std::optional<schema_version> version,
       include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
+
+        if (!version.has_value()) {
+            auto const& versions = sub_it->second.versions;
+            if (versions.empty() || (!inc_del && versions.back().deleted)) {
+                return not_found(sub);
+            }
+            return *std::prev(versions.end());
+        }
+
         auto v_it = BOOST_OUTCOME_TRYX(
-          get_version_iter(*sub_it, version, inc_del));
+          get_version_iter(*sub_it, *version, inc_del));
         return *v_it;
     }
 
     ///\brief Return a schema by subject and version.
     result<subject_schema> get_subject_schema(
       const subject& sub,
-      schema_version version,
+      std::optional<schema_version> version,
       include_deleted inc_del) const {
         auto v_id = BOOST_OUTCOME_TRYX(
           get_subject_version_id(sub, version, inc_del));

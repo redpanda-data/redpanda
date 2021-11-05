@@ -135,9 +135,39 @@ private:
     avro::ValidSchema _impl;
 };
 
+class protobuf_schema_definition {
+public:
+    struct impl;
+    using pimpl = ss::shared_ptr<const impl>;
+
+    explicit protobuf_schema_definition(pimpl p)
+      : _impl{std::move(p)} {}
+
+    canonical_schema_definition::raw_string raw() const;
+
+    const impl& operator()() const { return *_impl; }
+
+    friend bool operator==(
+      const protobuf_schema_definition& lhs,
+      const protobuf_schema_definition& rhs);
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const protobuf_schema_definition& rhs);
+
+    constexpr schema_type type() const { return schema_type::protobuf; }
+
+    explicit operator canonical_schema_definition() const {
+        return {raw(), type()};
+    }
+
+private:
+    pimpl _impl;
+};
+
 ///\brief A schema that has been validated.
 class valid_schema {
-    using impl = std::variant<avro_schema_definition>;
+    using impl
+      = std::variant<avro_schema_definition, protobuf_schema_definition>;
 
     template<typename T>
     using disable_if_valid_schema = std::

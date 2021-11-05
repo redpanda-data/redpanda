@@ -71,6 +71,12 @@ result<schema_version> parse_numerical_schema_version(const ss::sstring& ver) {
     return schema_version{static_cast<int32_t>(res.assume_value())};
 }
 
+result<std::optional<schema_version>>
+parse_schema_version(const ss::sstring& ver) {
+    return ver == "latest" ? std::optional<schema_version>{}
+                           : parse_numerical_schema_version(ver).value();
+}
+
 ss::future<server::reply_t>
 get_config(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
@@ -300,6 +306,9 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto sub = parse::request_param<subject>(*rq.req, "subject");
     vlog(plog.debug, "post_subject_versions subject='{}'", sub);
+
+    co_await rq.service().writer().read_sync();
+
     auto unparsed = ppj::rjson_parse(
       rq.req->content.data(), post_subject_versions_request_handler<>{sub});
     rq.req.reset();
@@ -325,20 +334,9 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version(
         .value_or(include_deleted::no)};
     rq.req.reset();
 
-    auto version = invalid_schema_version;
-    if (ver == "latest") {
-        // We must sync to reliably say what is 'latest'
-        co_await rq.service().writer().read_sync();
+    co_await rq.service().writer().read_sync();
 
-        auto versions = co_await rq.service().schema_store().get_versions(
-          sub, inc_del);
-        if (versions.empty()) {
-            throw as_exception(not_found(sub, version));
-        }
-        version = versions.back();
-    } else {
-        version = parse_numerical_schema_version(ver).value();
-    }
+    auto version = parse_schema_version(ver).value();
 
     auto get_res = co_await get_or_load(rq, [&rq, sub, version, inc_del]() {
         return rq.service().schema_store().get_subject_schema(
@@ -348,7 +346,7 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version(
     auto json_rslt{json::rjson_serialize(post_subject_versions_version_response{
       .schema = std::move(get_res.schema),
       .id = get_res.id,
-      .version = version})};
+      .version = get_res.version})};
     rp.rep->write_body("json", json_rslt);
     co_return rp;
 }
@@ -363,20 +361,9 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version_schema(
         .value_or(include_deleted::no)};
     rq.req.reset();
 
-    auto version = invalid_schema_version;
-    if (ver == "latest") {
-        // We must sync to reliably say what is 'latest'
-        co_await rq.service().writer().read_sync();
+    co_await rq.service().writer().read_sync();
 
-        auto versions = co_await rq.service().schema_store().get_versions(
-          sub, inc_del);
-        if (versions.empty()) {
-            throw as_exception(not_found(sub, version));
-        }
-        version = versions.back();
-    } else {
-        version = parse_numerical_schema_version(ver).value();
-    }
+    auto version = parse_schema_version(ver).value();
 
     auto get_res = co_await rq.service().schema_store().get_subject_schema(
       sub, version, inc_del);

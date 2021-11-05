@@ -135,4 +135,9 @@ inline error_info invalid_subject_schema(const subject& sub) {
       fmt::format("Error while looking up schema under subject {}", sub())};
 }
 
+inline error_info invalid_schema(const canonical_schema& schema) {
+    return {
+      error_code::schema_invalid, fmt::format("Invalid schema {}", schema)};
+}
+
 } // namespace pandaproxy::schema_registry
