@@ -15,14 +15,15 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kmsg"
-	"github.com/twmb/types"
 )
 
 const (
-	resourceFlag       = "resource"      // deprecated
-	resourceNameFlag   = "resource-name" // deprecated
-	namePatternFlag    = "name-pattern"  // deprecated
+	resourceFlag     = "resource"      // deprecated
+	resourceNameFlag = "resource-name" // deprecated
+	namePatternFlag  = "name-pattern"  // deprecated
+
 	topicFlag          = "topic"
 	groupFlag          = "group"
 	clusterFlag        = "cluster"
@@ -33,7 +34,6 @@ const (
 	denyPrincipalFlag  = "deny-principal"
 	denyHostFlag       = "deny-host"
 	operationFlag      = "operation"
-	anyFlag            = "any"
 
 	kafkaCluster = "kafka-cluster"
 )
@@ -112,41 +112,26 @@ type acls struct {
 	listHosts       []string
 
 	// create & delete & list flags
-	topics              []string
-	groups              []string
-	cluster             bool
-	txnIDs              []string
-	resourcePatternType string
-	allowPrincipals     []string
-	allowHosts          []string
-	denyPrincipals      []string
-	denyHosts           []string
-	operations          []string
+	topics          []string
+	groups          []string
+	cluster         bool
+	txnIDs          []string
+	allowPrincipals []string
+	allowHosts      []string
+	denyPrincipals  []string
+	denyHosts       []string
 
-	// delete & list
-	any []string
+	// create & delete & list flags, to be parsed
+	resourcePatternType string
+	operations          []string
 
 	parsed parsed
 }
 
-// parsed contains the parsed results of any flags that need parsing.
+// parsed contains the results of flags that need parsing.
 type parsed struct {
-	// clusters contains either no elements, or one "kafka-cluster" element.
-	clusters   []string
 	operations []kmsg.ACLOperation
 	pattern    kmsg.ACLResourcePatternType
-
-	anyAll            bool
-	anyTopic          bool
-	anyGroup          bool
-	anyCluster        bool
-	anyTxn            bool
-	anyPattern        bool
-	anyAllowPrincipal bool
-	anyAllowHost      bool
-	anyDenyPrincipal  bool
-	anyDenyHost       bool
-	anyOperation      bool
 }
 
 func (a *acls) addDeprecatedFlags(cmd *cobra.Command) {
@@ -160,8 +145,7 @@ func (a *acls) addDeprecatedFlags(cmd *cobra.Command) {
 
 func (a *acls) backcompatList() error {
 	// We reject using the new flags with their replacements.
-	if len(a.any) > 0 ||
-		len(a.allowPrincipals) > 0 ||
+	if len(a.allowPrincipals) > 0 ||
 		len(a.allowHosts) > 0 ||
 		len(a.denyPrincipals) > 0 ||
 		len(a.denyHosts) > 0 {
@@ -192,7 +176,7 @@ func (a *acls) backcompatList() error {
 		}
 	}
 
-	// If no permissions were specified, or any was specified, or both
+	// If no permissions were specified, or "any" was specified, or both
 	// allow and deny were specified, then the user is asking for any
 	// permission.
 	permAny = permAny || len(a.listPermissions) == 0
@@ -202,26 +186,24 @@ func (a *acls) backcompatList() error {
 	permAllow = permAllow || permAny
 	permDeny = permDeny || permAny
 
+	// We now migrate the old flags to the new: principals/hosts get added
+	// to {allow,deny}{principals,hosts} based on whether we allow or deny.
+	// The builder harmonizes the rest below (only allow vs. only deny vs.
+	// any).
 	for _, migrate := range []struct {
-		perm    bool
-		source  []string
-		anyFlag string
-		dest    *[]string
+		perm   bool
+		source []string
+		dest   *[]string
 	}{
-		{permAllow, a.listPrincipals, allowPrincipalFlag, &a.allowPrincipals},
-		{permAllow, a.listHosts, allowHostFlag, &a.allowHosts},
-		{permDeny, a.listPrincipals, denyPrincipalFlag, &a.denyPrincipals},
-		{permDeny, a.listHosts, denyHostFlag, &a.denyHosts},
+		{permAllow, a.listPrincipals, &a.allowPrincipals},
+		{permAllow, a.listHosts, &a.allowHosts},
+		{permDeny, a.listPrincipals, &a.denyPrincipals},
+		{permDeny, a.listHosts, &a.denyHosts},
 	} {
-		if !migrate.perm {
-			continue
-		}
-		if len(migrate.source) == 0 {
-			a.any = append(a.any, migrate.anyFlag)
-			continue
-		}
-		for _, value := range migrate.source {
-			*migrate.dest = append(*migrate.dest, value)
+		if migrate.perm {
+			for _, value := range migrate.source {
+				*migrate.dest = append(*migrate.dest, value)
+			}
 		}
 	}
 
@@ -283,9 +265,6 @@ func (a *acls) parseCommon() error {
 		}
 		a.parsed.operations = append(a.parsed.operations, parsed)
 	}
-	if a.cluster {
-		a.parsed.clusters = []string{kafkaCluster}
-	}
 	if a.resourcePatternType == "" {
 		a.resourcePatternType = "literal"
 	}
@@ -297,72 +276,7 @@ func (a *acls) parseCommon() error {
 	return nil
 }
 
-func (a *acls) parseAny() error {
-	// For deletions, we never opt in by default to match anything. The
-	// --any flag can be used to opt in other flags.
-	p := &a.parsed
-	if len(a.any) == 1 && (a.any[0] == "all" || a.any[0] == "any") {
-		a.any = allIndividualFlags
-		a.parsed.anyAll = true
-	}
-
-	// We set a fake element into our slices so that the ranges
-	// in our createXyz loops iterate. We do not use this fake
-	// element because we check the relevant anyXyz field.
-	for _, any := range a.any {
-		var set *[]string
-		doSet := func() { *set = []string{"injection for ranges"} }
-		switch any {
-		default:
-			return fmt.Errorf("unrecognized --any value %s", any)
-
-		case topicFlag:
-			set = &a.topics
-			p.anyTopic = true
-
-		case groupFlag:
-			set = &a.groups
-			p.anyGroup = true
-
-		case clusterFlag:
-			set = &a.parsed.clusters
-			p.anyCluster = true
-
-		case txnIDFlag:
-			set = &a.txnIDs
-			p.anyTxn = true
-
-		case patternFlag:
-			doSet = func() { a.parsed.pattern = kmsg.ACLResourcePatternTypeAny }
-			p.anyPattern = true
-
-		case allowPrincipalFlag:
-			set = &a.allowPrincipals
-			p.anyAllowPrincipal = true
-
-		case allowHostFlag:
-			set = &a.allowHosts
-			p.anyAllowHost = true
-
-		case denyPrincipalFlag:
-			set = &a.denyPrincipals
-			p.anyDenyPrincipal = true
-
-		case denyHostFlag:
-			set = &a.denyHosts
-			p.anyDenyHost = true
-
-		case operationFlag:
-			doSet = func() { a.parsed.operations = []kmsg.ACLOperation{kmsg.ACLOperationAny} }
-			p.anyOperation = true
-		}
-
-		doSet()
-	}
-	return nil
-}
-
-func (a *acls) createCreations() ([]kmsg.CreateACLsRequestCreation, error) {
+func (a *acls) createCreations() (*kadm.ACLBuilder, error) {
 	if err := a.backcompat(false); err != nil {
 		return nil, err
 	}
@@ -370,206 +284,68 @@ func (a *acls) createCreations() ([]kmsg.CreateACLsRequestCreation, error) {
 		return nil, err
 	}
 
-	// ANY operation, and ANY / MATCH pattern are invalid for creations.
-	for _, op := range a.parsed.operations {
-		if op == kmsg.ACLOperationAny {
-			return nil, fmt.Errorf("invalid --%s for creating ACLs: %v", operationFlag, op)
-		}
-	}
-	switch a.parsed.pattern {
-	case kmsg.ACLResourcePatternTypeLiteral,
-		kmsg.ACLResourcePatternTypePrefixed:
-	default:
-		return nil, fmt.Errorf("invalid --%s for creating ACLs: %v", patternFlag, a.parsed.pattern)
-	}
+	// Using empty lists / non-Maybe functions when building create ACLs is
+	// fine, since creation does not opt in to "any" when things are empty.
+	b := kadm.NewACLs().
+		ResourcePatternType(a.parsed.pattern).
+		MaybeOperations(a.parsed.operations...). // avoid defaulting to "any" if none are provided
+		Topics(a.topics...).
+		Groups(a.groups...).
+		MaybeClusters(a.cluster). // avoid opting in to all clusters by default
+		TransactionalIDs(a.txnIDs...).
+		Allow(a.allowPrincipals...).
+		AllowHosts(a.allowHosts...).
+		Deny(a.denyPrincipals...).
+		DenyHosts(a.denyHosts...)
 
-	// We do not require principals nor hosts; on return, if we create no
-	// ACLs, we will exit saying so.
-	//
-	// Any allow or deny principals with a corresponding empty hosts
-	// defaults the host to '*', meaning we allow or deny all hosts.
-	if len(a.allowPrincipals) != 0 && len(a.allowHosts) == 0 {
-		a.allowHosts = []string{"*"}
-	}
-	if len(a.denyPrincipals) != 0 && len(a.denyHosts) == 0 {
-		a.denyHosts = []string{"*"}
-	}
-	if len(a.allowHosts) != 0 && len(a.allowPrincipals) == 0 {
-		return nil, fmt.Errorf("invalid --%s with no --%s", allowHostFlag, allowPrincipalFlag)
-	}
-	if len(a.denyHosts) != 0 && len(a.denyPrincipals) == 0 {
-		return nil, fmt.Errorf("invalid --%s with no --%s", denyHostFlag, denyPrincipalFlag)
-	}
+	b.PrefixUserExcept() // add "User:" prefix to everything if needed
 
-	// The creations below are ordered / sorted such that our responses
-	// will have nicer output, because we receive responses in the order
-	// that we issue the creations.
-	var creations []kmsg.CreateACLsRequestCreation
-	for _, typeNames := range []struct {
-		t     kmsg.ACLResourceType
-		names []string
-	}{
-		{kmsg.ACLResourceTypeTopic, a.topics},
-		{kmsg.ACLResourceTypeGroup, a.groups},
-		{kmsg.ACLResourceTypeCluster, a.parsed.clusters},
-		{kmsg.ACLResourceTypeTransactionalId, a.txnIDs},
-	} {
-		for _, name := range typeNames.names {
-			for _, op := range a.parsed.operations {
-				for _, perm := range []struct {
-					principals []string
-					hosts      []string
-					permType   kmsg.ACLPermissionType
-				}{
-					{a.allowPrincipals, a.allowHosts, kmsg.ACLPermissionTypeAllow},
-					{a.denyPrincipals, a.denyHosts, kmsg.ACLPermissionTypeDeny},
-				} {
-					for _, principal := range perm.principals {
-						for _, host := range perm.hosts {
-							creation := kmsg.NewCreateACLsRequestCreation()
-							creation.ResourceType = typeNames.t
-							creation.ResourceName = name
-							creation.ResourcePatternType = a.parsed.pattern
-							creation.Operation = op
-							creation.Principal = principal
-							creation.Host = host
-							creation.PermissionType = perm.permType
-							creations = append(creations, creation)
-						}
-					}
-				}
-			}
-		}
-	}
-	types.Sort(creations)
-	return creations, nil
+	return b, b.ValidateCreate()
 }
 
 func (a *acls) createDeletionsAndDescribes(
 	list bool,
-) ([]kmsg.DeleteACLsRequestFilter, []*kmsg.DescribeACLsRequest, error) {
+) (*kadm.ACLBuilder, error) {
 	if err := a.backcompat(list); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := a.parseCommon(); err != nil {
-		return nil, nil, err
-	}
-	if err := a.parseAny(); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	// Asking for **everything** allows us to take a single-request shortcut.
-	if a.parsed.anyAll {
-		deletion := kmsg.NewDeleteACLsRequestFilter()
-		describe := kmsg.NewPtrDescribeACLsRequest()
+	// Deleting & describing works on a filter basis: empty matches all.
+	// The builder opts in to all when using functions if the input slice
+	// is empty, but we can use the Maybe functions to avoid optin into all
+	// by default.
+	b := kadm.NewACLs().
+		ResourcePatternType(a.parsed.pattern).
+		Operations(a.parsed.operations...).
+		MaybeTopics(a.topics...).
+		MaybeGroups(a.groups...).
+		MaybeClusters(a.cluster).
+		MaybeTransactionalIDs(a.txnIDs...).
+		MaybeAllow(a.allowPrincipals...).
+		MaybeAllowHosts(a.allowHosts...).
+		MaybeDeny(a.denyPrincipals...).
+		MaybeDenyHosts(a.denyHosts...)
 
-		deletion.ResourceType = kmsg.ACLResourceTypeAny
-		describe.ResourceType = kmsg.ACLResourceTypeAny
-
-		deletion.ResourcePatternType = kmsg.ACLResourcePatternTypeAny
-		describe.ResourcePatternType = kmsg.ACLResourcePatternTypeAny
-
-		deletion.Operation = kmsg.ACLOperationAny
-		describe.Operation = kmsg.ACLOperationAny
-
-		deletion.PermissionType = kmsg.ACLPermissionTypeAny
-		describe.PermissionType = kmsg.ACLPermissionTypeAny
-
-		return []kmsg.DeleteACLsRequestFilter{deletion}, []*kmsg.DescribeACLsRequest{describe}, nil
+	// Resources: if no resources are specified, we use all resources.
+	if !b.HasResource() {
+		b.AnyResource()
+	}
+	// User & host: when unspecified, we default to everything. This means
+	// that if a user wants to specifically filter for allowed or denied,
+	// they must either allow or deny flags.
+	if !b.HasPrincipals() {
+		b.Allow()
+		b.Deny()
+	}
+	if !b.HasHosts() {
+		b.AllowHosts()
+		b.DenyHosts()
 	}
 
-	// We require either both hosts & principals to be specified, or an
-	// "any" opt in for the missing host / principal.
-	if len(a.allowHosts) != 0 && len(a.allowPrincipals) == 0 && !a.parsed.anyAllowPrincipal {
-		return nil, nil, fmt.Errorf("invalid --%[1]s with no --%[2]s and no --%[3]s=%[2]s", allowHostFlag, allowPrincipalFlag, anyFlag)
-	}
-	if len(a.allowPrincipals) != 0 && len(a.allowHosts) == 0 && !a.parsed.anyAllowHost {
-		return nil, nil, fmt.Errorf("invalid --%[1]s with no --%[2]s and no --%[3]s=%[2]s", allowPrincipalFlag, allowHostFlag, anyFlag)
-	}
-	if len(a.denyHosts) != 0 && len(a.denyPrincipals) == 0 && !a.parsed.anyDenyPrincipal {
-		return nil, nil, fmt.Errorf("invalid --%[1]s with no --%[2]s and no --%[3]s=%[2]s", denyHostFlag, denyPrincipalFlag, anyFlag)
-	}
-	if len(a.denyPrincipals) != 0 && len(a.denyHosts) == 0 && !a.parsed.anyDenyHost {
-		return nil, nil, fmt.Errorf("invalid --%[1]s with no --%[2]s and no --%[3]s=%[2]s", denyPrincipalFlag, denyHostFlag, anyFlag)
-	}
+	b.PrefixUserExcept() // add "User:" prefix to everything if needed
 
-	var deletions []kmsg.DeleteACLsRequestFilter
-	var describes []*kmsg.DescribeACLsRequest
-	for _, typeNames := range []struct {
-		t     kmsg.ACLResourceType
-		names []string
-		any   bool
-	}{
-		{kmsg.ACLResourceTypeTopic, a.topics, a.parsed.anyTopic},
-		{kmsg.ACLResourceTypeGroup, a.groups, a.parsed.anyGroup},
-		{kmsg.ACLResourceTypeCluster, a.parsed.clusters, a.parsed.anyCluster},
-		{kmsg.ACLResourceTypeTransactionalId, a.txnIDs, a.parsed.anyTxn},
-	} {
-		for _, name := range typeNames.names {
-			for _, op := range a.parsed.operations {
-				for _, perm := range []struct {
-					principals   []string
-					anyPrincipal bool
-					hosts        []string
-					anyHost      bool
-					permType     kmsg.ACLPermissionType
-				}{
-					{
-						a.allowPrincipals,
-						a.parsed.anyAllowPrincipal,
-						a.allowHosts,
-						a.parsed.anyAllowHost,
-						kmsg.ACLPermissionTypeAllow,
-					},
-					{
-						a.denyPrincipals,
-						a.parsed.anyDenyPrincipal,
-						a.denyHosts,
-						a.parsed.anyDenyHost,
-						kmsg.ACLPermissionTypeDeny,
-					},
-				} {
-					for _, principal := range perm.principals {
-						for _, host := range perm.hosts {
-							deletion := kmsg.NewDeleteACLsRequestFilter()
-							describe := kmsg.NewPtrDescribeACLsRequest()
-
-							deletion.ResourceType = typeNames.t
-							describe.ResourceType = typeNames.t
-
-							if !typeNames.any {
-								deletion.ResourceName = kmsg.StringPtr(name)
-								describe.ResourceName = kmsg.StringPtr(name)
-							}
-
-							deletion.ResourcePatternType = a.parsed.pattern
-							describe.ResourcePatternType = a.parsed.pattern
-
-							deletion.Operation = op
-							describe.Operation = op
-
-							if !perm.anyPrincipal {
-								deletion.Principal = kmsg.StringPtr(principal)
-								describe.Principal = kmsg.StringPtr(principal)
-							}
-
-							if !perm.anyHost {
-								deletion.Host = kmsg.StringPtr(host)
-								describe.Host = kmsg.StringPtr(host)
-							}
-
-							deletion.PermissionType = perm.permType
-							describe.PermissionType = perm.permType
-
-							deletions = append(deletions, deletion)
-							describes = append(describes, describe)
-						}
-					}
-				}
-			}
-		}
-	}
-	types.Sort(deletions)
-	types.Sort(describes)
-	return deletions, describes, nil
+	return b, b.ValidateFilter()
 }

@@ -11,10 +11,11 @@ package acl
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/types"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
@@ -25,6 +26,24 @@ func NewCreateCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create ACLs.",
+		Long: `Create ACLs.
+
+See the 'rpk acl' help text for a full write up on ACLs. Following the
+multiplying effect of combining flags, the create command works on a
+straightforward basis: every ACL combination is a created ACL.
+
+As mentioned in the 'rpk acl' help text, if no host is specified, an allowed
+principal is allowed access from all hosts. The wildcard principal '*' allows
+all principals. At least one principal, one host, one resource, and one
+operation is required to create a single ACL.
+
+Allow all permissions to user bar on topic "foo" and group "g":
+    --allow-principal bar --operation all --topic foo --group g
+Allow read permissions to all users on topics biz and baz:
+    --allow-principal '*' --operation read --topic biz,baz
+Allow write permissions to user buzz to transactional id "txn":
+    --allow-principal User:buzz --operation write --transactional-id txn
+`,
 
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
@@ -32,37 +51,32 @@ func NewCreateCommand(fs afero.Fs) *cobra.Command {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := kafka.NewFranzClient(fs, p, cfg)
+			adm, err := kafka.NewAdmin(fs, p, cfg)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
-			defer cl.Close()
+			defer adm.Close()
 
-			creations, err := a.createCreations()
+			b, err := a.createCreations()
 			out.MaybeDieErr(err)
-			if len(creations) == 0 {
-				out.Exit("Specified flags result in no ACLs to be created.")
+			results, err := adm.CreateACLs(context.Background(), b)
+			out.MaybeDie(err, "unable to create ACLs: %v", err)
+			if len(results) == 0 {
+				fmt.Println("Specified flags created no ACLs.")
+				return
 			}
-
-			req := kmsg.NewPtrCreateACLsRequest()
-			req.Creations = creations
-			resp, err := req.RequestWith(context.Background(), cl)
-			out.MaybeDie(err, "unable to issue ACL creation request: %v", err)
-			if len(resp.Results) != len(req.Creations) {
-				out.Die("response contained only %d results out of the expected %d", len(resp.Results), len(req.Creations))
-			}
+			types.Sort(results)
 
 			tw := out.NewTable(headersWithError...)
 			defer tw.Flush()
-			for i, r := range resp.Results {
-				c := req.Creations[i]
+			for _, c := range results {
 				tw.PrintStructFields(aclWithMessage{
 					c.Principal,
 					c.Host,
-					c.ResourceType,
-					c.ResourceName,
-					c.ResourcePatternType,
+					c.Type,
+					c.Name,
+					c.Pattern,
 					c.Operation,
-					c.PermissionType,
-					kafka.MaybeErrMessage(r.ErrorCode),
+					c.Permission,
+					kafka.ErrMessage(c.Err),
 				})
 			}
 		},
@@ -74,10 +88,10 @@ func NewCreateCommand(fs afero.Fs) *cobra.Command {
 func (a *acls) addCreateFlags(cmd *cobra.Command) {
 	a.addDeprecatedFlags(cmd)
 
-	cmd.Flags().StringArrayVar(&a.topics, topicFlag, nil, "topic to grant ACLs for (repeatable)")
-	cmd.Flags().StringArrayVar(&a.groups, groupFlag, nil, "group to grant ACLs for (repeatable)")
+	cmd.Flags().StringSliceVar(&a.topics, topicFlag, nil, "topic to grant ACLs for (repeatable)")
+	cmd.Flags().StringSliceVar(&a.groups, groupFlag, nil, "group to grant ACLs for (repeatable)")
 	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "whether to grant ACLs to the cluster")
-	cmd.Flags().StringArrayVar(&a.txnIDs, txnIDFlag, nil, "transactional IDs to grant ACLs for (repeatable)")
+	cmd.Flags().StringSliceVar(&a.txnIDs, txnIDFlag, nil, "transactional IDs to grant ACLs for (repeatable)")
 
 	cmd.Flags().StringVar(&a.resourcePatternType, patternFlag, "literal", "pattern to use when matching resource names (literal or prefixed)")
 
