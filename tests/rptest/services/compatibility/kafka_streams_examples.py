@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import os
+import re
 from .example_base import ExampleBase
 
 # The kafka-streams root directory which is made in the
@@ -55,8 +56,11 @@ class KafkaStreamsWikipedia(KafkaStreams):
         super(KafkaStreamsWikipedia, self).__init__(redpanda, is_driver,
                                                     jar_args)
 
+        self.users_re = re.compile(
+            "(erica|bob|joe|damian|tania|phil|sam|lauren|joseph)")
+
     def driver_cond(self, line):
-        return "phil" in line or "sam" in line or "lauren" in line or "joseph" in line
+        return self.users_re.search(line) is not None
 
 
 class KafkaStreamsTopArticles(KafkaStreams):
@@ -117,7 +121,7 @@ class KafkaStreamsPageView(KafkaStreams):
                                                    jar_args)
 
     def driver_cond(self, line):
-        return "europe@" in line
+        return "europe@" in line or "usa@" in line or "asia@" in line or "africa@" in line
 
 
 class KafkaStreamsSumLambda(KafkaStreams):
