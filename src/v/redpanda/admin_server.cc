@@ -217,11 +217,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
     auto leader_id_opt = _metadata_cache.local().get_leader_id(ntp);
 
     if (!leader_id_opt.has_value()) {
-        vlog(
-          logger.info,
-          "Can't redirect to leader {}, no leader for ntp {}",
-          leader_id_opt.value(),
-          ntp);
+        vlog(logger.info, "Can't redirect, no leader for ntp {}", ntp);
 
         throw ss::httpd::base_exception(
           fmt::format(
