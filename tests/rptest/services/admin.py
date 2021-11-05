@@ -12,6 +12,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from ducktape.utils.util import wait_until
+from ducktape.cluster.cluster import ClusterNode
 
 DEFAULT_TIMEOUT = 30
 
@@ -206,12 +207,14 @@ class Admin:
         path = f"partitions/{namespace}/{topic}/{partition}/transfer_leadership?target={target_id}"
         self._request("POST", path)
 
-    def transfer_leadership_to(self, namespace, topic, partition, target_id):
+    def transfer_leadership_to(self, *, namespace, topic, partition, target):
         """
         Looks up current ntp leader and transfer leadership to target node, 
         this operations is NOP when current leader is the same as target. 
         If leadership transfer was performed this function return True
         """
+        target_id = self.redpanda.idx(target) if isinstance(
+            target, ClusterNode) else target
 
         #  check which node is current leader
 
