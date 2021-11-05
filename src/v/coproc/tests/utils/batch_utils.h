@@ -20,3 +20,6 @@ std::size_t num_records(const model::record_batch_reader::data_t&);
 /// \brief Makes a batch with the exact number of records specified, across a
 /// random number of record_batches
 model::record_batch_reader make_random_batch(std::size_t n_records);
+
+model::record_batch_reader::data_t
+copy_batch(const model::record_batch_reader::data_t&);

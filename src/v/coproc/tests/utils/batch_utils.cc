@@ -40,3 +40,15 @@ model::record_batch_reader make_random_batch(std::size_t n_records) {
         .records = static_cast<int>(recs_per_batch)},
       1);
 }
+
+model::record_batch_reader::data_t
+copy_batch(const model::record_batch_reader::data_t& data) {
+    model::record_batch_reader::data_t new_batch;
+    new_batch.reserve(data.size());
+    std::transform(
+      data.cbegin(),
+      data.cend(),
+      std::back_inserter(new_batch),
+      [](const model::record_batch& rb) { return rb.copy(); });
+    return new_batch;
+}
