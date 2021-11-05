@@ -5,6 +5,7 @@ set(fixture_srcs
     utils/batch_utils.cc
     fixtures/coproc_test_fixture.cc
     fixtures/coproc_bench_fixture.cc
+    fixtures/fiber_mock_fixture.cc
 )
 
 set(fixture_deps
