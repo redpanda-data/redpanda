@@ -385,7 +385,9 @@ void remote_partition::gc_stale_materialized_segments() {
     auto now = ss::lowres_clock::now();
     std::vector<model::offset> offsets;
     for (auto& st : _materialized) {
-        if (now - st.atime > stm_max_idle_time && st.segment.owned()) {
+        if (
+          now - st.atime > stm_max_idle_time
+          && !st.segment->download_in_progress() && st.segment.owned()) {
             vlog(
               _ctxlog.debug,
               "reader for segment with base offset {} is stale",
