@@ -36,7 +36,7 @@ namespace cloud_storage {
 
 static constexpr size_t max_consume_size = 128_KiB;
 
-static ss::lowres_clock::duration cache_hydration_timeout = 30s;
+static ss::lowres_clock::duration cache_hydration_timeout = 60s;
 static ss::lowres_clock::duration cache_hydration_backoff = 250ms;
 
 download_exception::download_exception(
@@ -234,8 +234,7 @@ ss::future<std::filesystem::path> remote_segment::hydrate() {
         vlog(_ctxlog.debug, "segment {} hydration requested", full_path);
         ss::promise<std::filesystem::path> p;
         auto fut = p.get_future();
-        _wait_list.push_back(
-          std::move(p), ss::lowres_clock::now() + cache_hydration_timeout);
+        _wait_list.push_back(std::move(p), ss::lowres_clock::time_point::max());
         _bg_cvar.signal();
         return fut;
     });
