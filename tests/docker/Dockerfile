@@ -87,7 +87,10 @@ RUN git -C /opt clone https://github.com/Shopify/sarama.git && \
     git -C /opt clone https://github.com/twmb/franz-go.git && cd /opt/franz-go && \
     cd /opt/franz-go/examples/bench && go mod tidy && go build && \
     git -C /opt clone --branch ducktape2 https://github.com/vectorizedio/kafka-streams-examples.git && \
-    cd /opt/kafka-streams-examples && mvn -DskipTests=true clean package
+    cd /opt/kafka-streams-examples && mvn -DskipTests=true clean package && \
+    curl -SL "https://dlcdn.apache.org/flink/flink-1.14.0/flink-1.14.0-bin-scala_2.11.tgz" | tar -xz -C /opt && \
+    git -C /opt clone https://github.com/vectorizedio/flink-kafka-examples.git && \
+    cd /opt/flink-kafka-examples && mvn clean package
 
 RUN go install github.com/twmb/kcl@latest && \
     mv /root/go/bin/kcl /usr/local/bin/
