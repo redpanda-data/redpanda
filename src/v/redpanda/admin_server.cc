@@ -176,6 +176,23 @@ static json_validator make_set_replicas_validator() {
     return json_validator(schema);
 }
 
+/**
+ * A helper around rapidjson's Parse that checks for errors & raises
+ * seastar HTTP exception.  Without that check, something as simple
+ * as an empty request body causes a redpanda crash via a rapidjson
+ * assertion when trying to GetObject on the resulting document.
+ */
+static rapidjson::Document parse_json_body(ss::httpd::request const& req) {
+    rapidjson::Document doc;
+    doc.Parse(req.content.data());
+    if (doc.Parse(req.content.data()).HasParseError()) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("JSON parse error: {}", doc.GetParseError()));
+    } else {
+        return doc;
+    }
+}
+
 void admin_server::configure_dashboard() {
     if (_cfg.dashboard_dir) {
         auto handler = std::make_unique<dashboard_handler>(*_cfg.dashboard_dir);
@@ -585,8 +602,7 @@ void admin_server::register_security_routes() {
       _server._routes,
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
-          rapidjson::Document doc;
-          doc.Parse(req->content.data());
+          auto doc = parse_json_body(*req);
 
           auto credential = parse_scram_credential(doc);
 
@@ -626,8 +642,7 @@ void admin_server::register_security_routes() {
         -> ss::future<ss::json::json_return_type> {
           auto user = security::credential_user(req->param["user"]);
 
-          rapidjson::Document doc;
-          doc.Parse(req->content.data());
+          auto doc = parse_json_body(*req);
 
           auto credential = parse_scram_credential(doc);
 
@@ -969,11 +984,7 @@ void admin_server::register_partition_routes() {
                 fmt::format("Unsupported namespace: {}", ns));
           }
 
-          rapidjson::Document doc;
-          if (doc.Parse(req->content.data()).HasParseError()) {
-              throw ss::httpd::bad_request_exception(
-                "Could not replica set json");
-          }
+          auto doc = parse_json_body(*req);
 
           set_replicas_validator.validator.Reset();
           if (!doc.Accept(set_replicas_validator.validator)) {
