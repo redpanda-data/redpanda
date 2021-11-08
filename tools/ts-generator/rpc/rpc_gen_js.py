@@ -25,7 +25,8 @@ import {
   createConnection,
   Socket,
   createServer,
-  Server as NetServer
+  Server as NetServer,
+  AddressInfo,
 } from "net";
 import { XXHash64 } from "xxhash";
 import { calculate } from  "fast-crc32c/impls/js_crc32c";
@@ -216,8 +217,30 @@ export class {{service_name.title()}}Server {
     this.process = this.process.bind(this)
   }
 
-  listen(port: number){
-    this.server.listen(port)
+  // Sometimes JS tests fail in CI because "port already in use"
+  // error when the server tries to listen. The problem maybe because
+  // previous instance of the test didn't shutdown completely. Here
+  // we tried to fix it by listening to random port.
+  listenRandomPort() {
+    return new Promise<number>((resolve, reject) => {
+      this.server.on("error", (err: NodeJS.ErrnoException) => {
+        console.error("Server listen error: ", err);
+        reject(err);
+      });
+
+      this.server.listen(() => {
+        const { port } = this.server.address() as AddressInfo;
+        resolve(port);
+      });
+    });
+  }
+
+  listen(port: number) {
+    this.server.on("error", (err: NodeJS.ErrnoException) => {
+      console.error("Server listen error: ", err);
+    });
+
+    this.server.listen(port);
   }
 
   process(rpcHeader: RpcHeader, payload: Buffer, socket: Socket) {
