@@ -132,6 +132,50 @@ void admin_server::configure_admin_routes() {
     register_hbadger_routes();
 }
 
+struct json_validator {
+    explicit json_validator(const std::string& schema_text)
+      : schema(make_schema_document(schema_text))
+      , validator(schema) {}
+
+    static rapidjson::SchemaDocument
+    make_schema_document(const std::string& schema) {
+        rapidjson::Document doc;
+        if (doc.Parse(schema).HasParseError()) {
+            throw std::runtime_error(
+              fmt::format("Invalid schema document: {}", schema));
+        }
+        return rapidjson::SchemaDocument(doc);
+    }
+
+    const rapidjson::SchemaDocument schema;
+    rapidjson::SchemaValidator validator;
+};
+
+static json_validator make_set_replicas_validator() {
+    const std::string schema = R"(
+{
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "node_id": {
+                "type": "number"
+            },
+            "core": {
+                "type": "number"
+            }
+        },
+        "required": [
+            "node_id",
+            "core"
+        ],
+        "additionalProperties": false
+    }
+}
+)";
+    return json_validator(schema);
+}
+
 void admin_server::configure_dashboard() {
     if (_cfg.dashboard_dir) {
         auto handler = std::make_unique<dashboard_handler>(*_cfg.dashboard_dir);
@@ -757,50 +801,6 @@ void admin_server::register_broker_routes() {
           co_await throw_on_error(*req, ec, model::controller_ntp, id);
           co_return ss::json::json_void();
       });
-}
-
-struct json_validator {
-    explicit json_validator(const std::string& schema_text)
-      : schema(make_schema_document(schema_text))
-      , validator(schema) {}
-
-    static rapidjson::SchemaDocument
-    make_schema_document(const std::string& schema) {
-        rapidjson::Document doc;
-        if (doc.Parse(schema).HasParseError()) {
-            throw std::runtime_error(
-              fmt::format("Invalid schema document: {}", schema));
-        }
-        return rapidjson::SchemaDocument(doc);
-    }
-
-    const rapidjson::SchemaDocument schema;
-    rapidjson::SchemaValidator validator;
-};
-
-static json_validator make_set_replicas_validator() {
-    const std::string schema = R"(
-{
-    "type": "array",
-    "items": {
-        "type": "object",
-        "properties": {
-            "node_id": {
-                "type": "number"
-            },
-            "core": {
-                "type": "number"
-            }
-        },
-        "required": [
-            "node_id",
-            "core"
-        ],
-        "additionalProperties": false
-    }
-}
-)";
-    return json_validator(schema);
 }
 
 void admin_server::register_partition_routes() {
