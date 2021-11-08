@@ -115,6 +115,12 @@ metadata_cache::get_leader_id(const model::ntp& ntp) const {
     return _leaders.local().get_leader(ntp);
 }
 
+std::optional<model::node_id>
+metadata_cache::get_previous_leader_id(const model::ntp& ntp) const {
+    return _leaders.local().get_previous_leader(
+      model::topic_namespace_view(ntp), ntp.tp.partition);
+}
+
 /// If present returns a leader of raft0 group
 std::optional<model::node_id> metadata_cache::get_controller_leader_id() {
     return _leaders.local().get_leader(model::controller_ntp);
