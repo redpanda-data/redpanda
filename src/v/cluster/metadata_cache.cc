@@ -111,7 +111,7 @@ ss::future<model::node_id> metadata_cache::get_leader(
 }
 
 std::optional<model::node_id>
-metadata_cache::get_leader_id(const model::ntp& ntp) {
+metadata_cache::get_leader_id(const model::ntp& ntp) const {
     return _leaders.local().get_leader(ntp);
 }
 
