@@ -77,12 +77,12 @@ public:
     model::offset first_uploaded_offset();
 
     /// Get partition NTP
-    model::ntp get_ntp() const;
+    const model::ntp& get_ntp() const;
 
 private:
     /// Create new remote_segment instances for all new
     /// items in the manifest.
-    void update_segmnets_incrementally();
+    void update_segments_incrementally();
 
     ss::future<> run_eviction_loop();
 
@@ -182,6 +182,7 @@ private:
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
     ss::gate _gate;
+    ss::abort_source _as;
     remote& _api;
     cache& _cache;
     const manifest& _manifest;
