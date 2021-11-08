@@ -13,6 +13,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "config/node_config.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/handlers/details/security.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
@@ -29,17 +30,69 @@
 
 namespace kafka {
 
-metadata_response::topic
-make_topic_response_from_topic_metadata(model::topic_metadata&& tp_md) {
+static constexpr model::node_id no_leader(-1);
+/**
+ * We use simple heuristic to tolerate isolation of a node hosting both
+ * partition leader and follower.
+ *
+ * Kafka clients request metadata refresh in case they receive error that is
+ * related with stale metadata - f.e. NOT_LEADER. Metadata request can be
+ * processed by any broker and there is no general rule for that which
+ * broker to choose to refresh metadata from. (f.e. Java kafka client uses the
+ * broker with active least loaded connection.) This may lead to the situation
+ * in which client will ask for metadata always the same broker. When that
+ * broker is isolated from rest of the cluster it will never update its metadata
+ * view. This way the client will always receive stale metadata.
+ *
+ * This behavior may lead to a live lock in an event of network partition. If
+ * current partition leader is isolated from the cluster it will keep answering
+ * with its id in the leader_id field for that partition (according to policy
+ * where we return a former leader - there is no leader for that broker, it is a
+ * candidate). Client will retry produce or fetch request and receive NOT_LEADER
+ * error, this will force client to request metadata update, broker will respond
+ * with the same metadata and the whole cycle will loop indefinitely.
+ *
+ * In order to break the loop and force client to make progress we use following
+ * heuristics:
+ *
+ * 1) when current leader is unknown, return former leader (Kafka behavior)
+ *
+ * 2) when current leader is unknown and previous leader is equal to current
+ *    node id select random replica_id as a leader (indicate leader isolation)
+ *
+ * With those heuristics we will always force the client to communicate with the
+ * nodes that may not be partitioned.
+ */
+model::node_id get_leader(
+  const model::ntp& ntp,
+  const cluster::metadata_cache& md_cache,
+  const std::vector<model::node_id>& replicas) {
+    const auto current = md_cache.get_leader_id(ntp);
+    if (current) {
+        return *current;
+    }
+
+    const auto previous = md_cache.get_previous_leader_id(ntp);
+    if (previous == config::node().node_id()) {
+        auto idx = fast_prng_source() % replicas.size();
+        return replicas[idx];
+    }
+
+    return previous.value_or(no_leader);
+}
+
+metadata_response::topic make_topic_response_from_topic_metadata(
+  const cluster::metadata_cache& md_cache, model::topic_metadata&& tp_md) {
     metadata_response::topic tp;
     tp.error_code = error_code::none;
+    auto tp_ns = tp_md.tp_ns;
     tp.name = std::move(tp_md.tp_ns.tp);
     tp.is_internal = false; // no internal topics yet
     std::transform(
       tp_md.partitions.begin(),
       tp_md.partitions.end(),
       std::back_inserter(tp.partitions),
-      [](model::partition_metadata& p_md) {
+      [tp_ns = std::move(tp_ns), &md_cache](model::partition_metadata& p_md) {
           std::vector<model::node_id> replicas{};
           replicas.reserve(p_md.replicas.size());
           std::transform(
@@ -50,7 +103,8 @@ make_topic_response_from_topic_metadata(model::topic_metadata&& tp_md) {
           metadata_response::partition p;
           p.error_code = error_code::none;
           p.partition_index = p_md.id;
-          p.leader_id = p_md.leader_node.value_or(model::node_id(-1));
+          p.leader_id = get_leader(
+            model::ntp(tp_ns.ns, tp_ns.tp, p_md.id), md_cache, replicas);
           p.replica_nodes = std::move(replicas);
           p.isr_nodes = p.replica_nodes;
           p.offline_replicas = {};
@@ -95,9 +149,9 @@ create_topic(request_context& ctx, model::topic&& topic) {
                    res,
                    ctx.controller_api(),
                    tout + model::timeout_clock::now())
-            .then([tp_md = std::move(tp_md)]() mutable {
+            .then([&ctx, tp_md = std::move(tp_md)]() mutable {
                 return make_topic_response_from_topic_metadata(
-                  std::move(tp_md.value()));
+                  ctx.metadata_cache(), std::move(tp_md.value()));
             });
       })
       .handle_exception([topic = std::move(topic)](
@@ -125,7 +179,8 @@ static metadata_response::topic make_topic_response(
           details::authorized_operations(ctx, md.tp_ns.tp));
     }
 
-    auto res = make_topic_response_from_topic_metadata(std::move(md));
+    auto res = make_topic_response_from_topic_metadata(
+      ctx.metadata_cache(), std::move(md));
     res.topic_authorized_operations = auth_operations;
     return res;
 }
