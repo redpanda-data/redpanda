@@ -193,6 +193,26 @@ static rapidjson::Document parse_json_body(ss::httpd::request const& req) {
     }
 }
 
+/**
+ * A helper to apply a schema validator to a request and on error,
+ * string-ize any schema errors in the 400 response to help
+ * caller see what went wrong.
+ */
+static void
+apply_validator(json_validator& validator, rapidjson::Document const& doc) {
+    validator.validator.Reset();
+    validator.validator.ResetError();
+
+    if (!doc.Accept(validator.validator)) {
+        rapidjson::StringBuffer val_buf;
+        rapidjson::Writer<rapidjson::StringBuffer> w{val_buf};
+        validator.validator.GetError().Accept(w);
+        auto s = ss::sstring{val_buf.GetString(), val_buf.GetSize()};
+        throw ss::httpd::bad_request_exception(
+          fmt::format("JSON request body does not conform to schema: {}", s));
+    }
+}
+
 void admin_server::configure_dashboard() {
     if (_cfg.dashboard_dir) {
         auto handler = std::make_unique<dashboard_handler>(*_cfg.dashboard_dir);
@@ -985,12 +1005,7 @@ void admin_server::register_partition_routes() {
           }
 
           auto doc = parse_json_body(*req);
-
-          set_replicas_validator.validator.Reset();
-          if (!doc.Accept(set_replicas_validator.validator)) {
-              throw ss::httpd::bad_request_exception(
-                "Replica set json is invalid");
-          }
+          apply_validator(set_replicas_validator, doc);
 
           std::vector<model::broker_shard> replicas;
           if (!doc.IsArray()) {
