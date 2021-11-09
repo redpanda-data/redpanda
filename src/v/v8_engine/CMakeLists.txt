@@ -10,6 +10,7 @@ v_cc_library(
   DEPS
     Seastar::seastar
     v8_monolith
-    v_reflection)
+    absl::node_hash_map
+    v::rphashing)
 
 add_subdirectory(tests)

@@ -14,6 +14,7 @@
 namespace v8_engine {
 
 class api;
+class code_database;
 class data_policy_table;
 class executor_service;
 
