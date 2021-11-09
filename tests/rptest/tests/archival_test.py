@@ -17,6 +17,11 @@ from rptest.services.redpanda import RedpandaService
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.util import (
+    segments_count,
+    produce_until_segments,
+    wait_for_segments_removal,
+)
 
 from collections import namedtuple, defaultdict
 import time
@@ -144,6 +149,9 @@ def _parse_manifest_segment(manifest, sname, meta, remote_set, logger):
 
 
 class ArchivalTest(RedpandaTest):
+    log_segment_size = 1048576  # 1MB
+    log_compaction_interval_ms = 10000
+
     s3_host_name = "minio-s3"
     s3_access_key = "panda-user"
     s3_secret_key = "panda-secret"
@@ -166,7 +174,8 @@ class ArchivalTest(RedpandaTest):
             cloud_storage_api_endpoint_port=9000,
             cloud_storage_reconciliation_interval_ms=500,
             cloud_storage_max_connections=5,
-            log_segment_size=1048576  # 1MB
+            log_compaction_interval_ms=self.log_compaction_interval_ms,
+            log_segment_size=self.log_segment_size,
         )
         if test_context.function_name == "test_timeboxed_uploads":
             self._extra_rp_conf.update(
@@ -270,7 +279,7 @@ class ArchivalTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_single_partition_leadership_transfer(self):
-        """Start uploading data, restart leader node of the partition 0 to trigger the 
+        """Start uploading data, restart leader node of the partition 0 to trigger the
         leadership transfer, continue upload, verify S3 bucket content"""
         self.kafka_tools.produce(self.topic, 5000, 1024)
         time.sleep(5)
@@ -285,7 +294,7 @@ class ArchivalTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_all_partitions_leadership_transfer(self):
-        """Start uploading data, restart leader nodes of all partitions to trigger the 
+        """Start uploading data, restart leader nodes of all partitions to trigger the
         leadership transfer, continue upload, verify S3 bucket content"""
         self.kafka_tools.produce(self.topic, 5000, 1024)
         time.sleep(5)
@@ -376,6 +385,42 @@ class ArchivalTest(RedpandaTest):
 
         validate(check_upload, self.logger, 90)
 
+    @cluster(num_nodes=3)
+    def test_retention_archival_coordination(self):
+        """
+        Test that only archived segments can be evicted and that eviction
+        restarts once the segments have been archived.
+        """
+        self.kafka_tools.alter_topic_config(
+            self.topic,
+            {
+                TopicSpec.PROPERTY_RETENTION_BYTES: 5 * self.log_segment_size,
+            },
+        )
+
+        with firewall_blocked(self.redpanda.nodes, self._get_s3_endpoint_ip()):
+            produce_until_segments(redpanda=self.redpanda,
+                                   topic=self.topic,
+                                   partition_idx=0,
+                                   count=10)
+
+            # Sleep some time sufficient for log eviction under normal conditions
+            # and check that no segment has been evicted (because we can't upload
+            # segments to the cloud storage).
+            time.sleep(3 * self.log_compaction_interval_ms / 1000.0)
+            counts = list(
+                segments_count(self.redpanda, self.topic, partition_idx=0))
+            self.logger.info(f"node segment counts: {counts}")
+            assert len(counts) == len(self.redpanda.nodes)
+            assert all(c >= 10 for c in counts)
+
+        # Check that eviction restarts after we restored the connection to cloud
+        # storage.
+        wait_for_segments_removal(redpanda=self.redpanda,
+                                  topic=self.topic,
+                                  partition_idx=0,
+                                  count=6)
+
     def _check_bucket_is_emtpy(self):
         allobj = self._list_objects()
         for obj in allobj:
@@ -453,9 +498,9 @@ class ArchivalTest(RedpandaTest):
     def _cross_node_verify(self):
         """Verify data on all nodes taking into account possible alignment issues
         caused by leadership transitions.
-        The verification algorithm is following: 
+        The verification algorithm is following:
         - Download and verify partition manifest;
-        - Partition manifest has all segments and metadata like committed offset 
+        - Partition manifest has all segments and metadata like committed offset
           and base offset. We can also retrieve MD5 hash of every segment;
         - Load segment metadata for every redpanda node.
         - Scan every node's metadata and match segments with manifest, on success
@@ -467,7 +512,7 @@ class ArchivalTest(RedpandaTest):
         - The base offset and md5 hashes are the same;
         - The committed offset of both segments are the same, md5 hashes are different,
           and base offset of the segment from manifest is larger than base offset of the
-          segment from redpanda node. In this case we should also compare the data 
+          segment from redpanda node. In this case we should also compare the data
           directly by scanning both segments.
         """
         nodes = {}
