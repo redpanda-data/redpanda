@@ -13,6 +13,7 @@
 #include "v8_engine/code_database.h"
 #include "v8_engine/environment.h"
 #include "v8_engine/executor.h"
+#include "v8_engine/script_dispatcher.h"
 
 #include <seastar/core/sharded.hh>
 
@@ -66,10 +67,14 @@ public:
     ss::sharded<code_database>& get_code_database();
     code_database& get_code_database_local();
 
+    using script_dispatcher_t = script_dispatcher<executor_service>;
+    script_dispatcher_t& get_script_dispatcher();
+
 private:
     enviroment _env;
     executor_service _executor_service;
     ss::sharded<code_database> _dp_code_database;
+    ss::sharded<script_dispatcher_t> _script_dispatcher;
 };
 
 } // namespace v8_engine

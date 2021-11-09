@@ -46,4 +46,8 @@ code_database& api::get_code_database_local() {
     return _dp_code_database.local();
 }
 
+api::script_dispatcher_t& api::get_script_dispatcher() {
+    return _script_dispatcher.local();
+}
+
 } // namespace v8_engine
