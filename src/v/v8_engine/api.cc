@@ -26,10 +26,24 @@ ss::future<> executor_service::stop() { return _executor.stop(); }
 api::api(ss::alien::instance& instance, int64_t size)
   : _executor_service(instance, size) {}
 
-ss::future<> api::start() { return _executor_service.start(); }
+ss::future<> api::start() {
+    co_await _executor_service.start();
+    co_await _dp_code_database.start();
+}
 
-ss::future<> api::stop() { return _executor_service.stop(); }
+ss::future<> api::stop() {
+    co_await _dp_code_database.stop();
+    co_await _executor_service.stop();
+}
 
 executor_service& api::get_executor() { return _executor_service; }
+
+ss::sharded<code_database>& api::get_code_database() {
+    return _dp_code_database;
+}
+
+code_database& api::get_code_database_local() {
+    return _dp_code_database.local();
+}
 
 } // namespace v8_engine

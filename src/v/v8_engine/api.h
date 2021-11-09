@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "v8_engine/code_database.h"
 #include "v8_engine/environment.h"
 #include "v8_engine/executor.h"
 
@@ -62,10 +63,13 @@ public:
     ss::future<> stop();
 
     executor_service& get_executor();
+    ss::sharded<code_database>& get_code_database();
+    code_database& get_code_database_local();
 
 private:
     enviroment _env;
     executor_service _executor_service;
+    ss::sharded<code_database> _dp_code_database;
 };
 
 } // namespace v8_engine
