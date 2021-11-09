@@ -161,23 +161,10 @@ redpanda:
     - host:
       address: 192.168.0.1
       port: 33145
-  # Number of partitions for the internal raft metadata topic.
-  # Default: 7
-  seed_server_meta_topic_partitions: 7
 
   # The raft leader heartbeat interval in milliseconds.
   # Default: 150
   raft_heartbeat_interval_ms: 150
-  
-  # Minimum redpanda version
-  min_version: 0
-  
-  # Maximum redpanda version
-  max_version: 1
-  
-  # Manage CPU scheduling.
-  # Default: false
-  use_scheduling_groups: false 
   
   # Default number of quota tracking windows.
   # Default: 10
@@ -751,7 +738,7 @@ Here is a more comprehensive view of the configration so that you can see all of
 | `max_version` | max redpanda compat version | 1 |
 | `metadata_dissemination_interval_ms` | Interaval for metadata dissemination batching | 3000ms |
 | `metadata_dissemination_retries` | Number of attempts of looking up a topic's meta data like shard before failing a request | 10 |
-| `metadata_dissemination_retry_delay_ms` | Delay before retry a topic lookup in a shard or other meta tables | 100ms |
+| `metadata_dissemination_retry_delay_ms` | Delay before retry a topic lookup in a shard or other meta tables | 500ms |
 | `min_version` | minimum redpanda compat version | 0 |
 | `pandaproxy_api` | Rest API listen address and port | 0.0.0.0:8082 |
 | `pandaproxy_api_tls` | TLS configuration for Pandaproxy api | validate_many |
