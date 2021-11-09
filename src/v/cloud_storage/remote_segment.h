@@ -108,7 +108,6 @@ private:
     manifest::key _path;
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
-    ss::abort_source _as;
     /// Notifies the background hydration fiber
     ss::condition_variable _bg_cvar;
 

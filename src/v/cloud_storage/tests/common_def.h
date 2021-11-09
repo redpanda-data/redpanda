@@ -77,7 +77,6 @@ struct batch_t {
 
 inline ss::circular_buffer<model::record_batch>
 make_random_batches(model::offset o, const std::vector<batch_t>& batches) {
-    // start offset + count
     ss::circular_buffer<model::record_batch> ret;
     ret.reserve(batches.size());
     for (auto batch : batches) {
