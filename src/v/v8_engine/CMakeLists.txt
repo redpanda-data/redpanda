@@ -7,6 +7,7 @@ v_cc_library(
     script.cc
     data_policy.cc
     data_policy_table.cc
+    logger.cc
   DEPS
     Seastar::seastar
     v8_monolith
