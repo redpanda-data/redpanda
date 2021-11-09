@@ -9,6 +9,7 @@
 
 #include "kafka/client/topic_cache.h"
 
+#include "kafka/client/brokers.h"
 #include "kafka/client/exceptions.h"
 #include "kafka/client/partitioners.h"
 #include "kafka/protocol/metadata.h"
@@ -48,6 +49,10 @@ topic_cache::leader(model::topic_partition tp) const {
         const auto& parts = topic_it->second.partitions;
         if (auto part_it = parts.find(tp.partition); part_it != parts.end()) {
             const auto& part = part_it->second;
+            if (part.leader == unknown_node_id) {
+                return ss::make_exception_future<model::node_id>(
+                  partition_error(tp, error_code::leader_not_available));
+            }
             return ss::make_ready_future<model::node_id>(part.leader);
         }
     }
