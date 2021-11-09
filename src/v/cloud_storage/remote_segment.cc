@@ -132,7 +132,6 @@ const model::term_id remote_segment::get_term() const {
 
 ss::future<> remote_segment::stop() {
     vlog(_ctxlog.debug, "remote segment stop");
-    _as.request_abort();
     _bg_cvar.broken();
     return _gate.close();
 }
@@ -156,9 +155,9 @@ ss::future<> remote_segment::run_hydrate_bg() {
     ss::gate::holder guard(_gate);
     auto full_path = _manifest.get_remote_segment_path(_path);
     try {
-        while (!_gate.is_closed() && !_as.abort_requested()) {
+        while (!_gate.is_closed()) {
             co_await _bg_cvar.wait(
-              [this] { return !_wait_list.empty() || _as.abort_requested(); });
+              [this] { return !_wait_list.empty() || _gate.is_closed(); });
             vlog(
               _ctxlog.info,
               "Start hydrating segment {}, {} consumers are awaiting",

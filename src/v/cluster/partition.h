@@ -206,7 +206,7 @@ public:
     /// method returned 'true'.
     bool cloud_data_available() const {
         return static_cast<bool>(_cloud_storage_partition)
-               && _cloud_storage_partition->is_available();
+               && _cloud_storage_partition->is_data_available();
     }
 
     /// Starting offset in the object store

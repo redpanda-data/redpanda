@@ -41,11 +41,10 @@ class record_batch_reader_impl;
 /// for remote segments).
 class remote_partition
   : public ss::enable_lw_shared_from_this<remote_partition> {
-    friend class record_batch_reader_impl;
+    friend class partition_record_batch_reader_impl;
 
     static constexpr ss::lowres_clock::duration stm_jitter_duration = 10s;
     static constexpr ss::lowres_clock::duration stm_max_idle_time = 60s;
-    static constexpr int stm_readahead = 0;
 
 public:
     /// C-tor
@@ -80,7 +79,7 @@ public:
     const model::ntp& get_ntp() const;
 
     /// Returns true if at least one segment is uploaded to the bucket
-    bool is_available() const;
+    bool is_data_available() const;
 
 private:
     /// Create new remote_segment instances for all new
@@ -174,8 +173,6 @@ private:
 
     using segment_map_t = std::map<model::offset, segment_state>;
 
-    /// Start hydrating segments
-    void start_readahead(segment_map_t::iterator current);
     using evicted_resource_t = std::variant<
       std::unique_ptr<remote_segment_batch_reader>,
       ss::lw_shared_ptr<remote_segment>>;
