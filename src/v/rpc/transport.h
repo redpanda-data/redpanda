@@ -149,9 +149,7 @@ result<rpc::client_context<T>> map_result(const header& hdr, T data) {
     auto st = static_cast<status>(hdr.meta);
 
     if (st == status::success) {
-        rpc::client_context<T> ctx(hdr);
-        ctx.data = std::move(data);
-        return ret_t(std::move(ctx));
+        return ret_t(rpc::client_context<T>(hdr, std::move(data)));
     }
 
     if (st == status::request_timeout) {
