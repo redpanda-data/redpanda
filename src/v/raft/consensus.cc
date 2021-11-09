@@ -1618,10 +1618,9 @@ consensus::do_append_entries(append_entries_request&& r) {
         auto truncate_at = details::next_offset(
           model::offset(r.meta.prev_log_index));
         vlog(
-          _ctxlog.debug,
-          "Truncate log, request for the same term:{}. Request offset:{} "
-          "is "
-          "earlier than what we have:{}. Truncating to: {}",
+          _ctxlog.info,
+          "Truncating log in term: {}, Request previous log index: {} is "
+          "earlier than log end offset: {}. Truncating to: {}",
           r.meta.term,
           r.meta.prev_log_index,
           lstats.dirty_offset,
