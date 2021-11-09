@@ -23,7 +23,8 @@ std::ostream& operator<<(std::ostream& o, const ::human::latency& l) {
     auto x = l.value;
     for (size_t i = 0; i < 3; ++i) {
         if (x <= step) {
-            return ss::fmt_print(o, "{:03.3f}{}", x, units[i]);
+            fmt::print(o, "{:03.3f}{}", x, units[i]);
+            return o;
         }
         x /= step;
     }
@@ -35,7 +36,8 @@ std::ostream& operator<<(std::ostream& o, const ::human::bytes& l) {
     auto x = l.value;
     for (size_t i = 0; i < 6; ++i) {
         if (x <= step) {
-            return ss::fmt_print(o, "{:03.3f}{}", x, units[i]);
+            fmt::print(o, "{:03.3f}{}", x, units[i]);
+            return o;
         }
         x /= step;
     }
