@@ -205,7 +205,8 @@ public:
     /// The remaining 'cloud' methods can only be called if this
     /// method returned 'true'.
     bool cloud_data_available() const {
-        return static_cast<bool>(_cloud_storage_partition);
+        return static_cast<bool>(_cloud_storage_partition)
+               && _cloud_storage_partition->is_available();
     }
 
     /// Starting offset in the object store

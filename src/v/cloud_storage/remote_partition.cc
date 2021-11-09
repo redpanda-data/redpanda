@@ -437,6 +437,8 @@ const model::ntp& remote_partition::get_ntp() const {
     return _manifest.get_ntp();
 }
 
+bool remote_partition::is_available() const { return _manifest.size() > 0; }
+
 ss::future<> remote_partition::stop() {
     vlog(_ctxlog.debug, "remote partition stop {} segments", _segments.size());
     _as.request_abort();
