@@ -69,7 +69,7 @@
           "type": "boolean",
           "description": "Restart required to apply pending configuration"
         },
-        "version": {
+        "config_version": {
           "type": "long",
           "description": "Configuration version number, for cross referencing with PUT results"
         },
@@ -93,7 +93,7 @@
       "id": "cluster_config_write_result",
       "description": "Result of writing changes to cluster configuration",
       "properties": {
-        "version": {
+        "config_version": {
           "type": "long",
           "description": "Configuration version number, for cross referencing with node config status"
         }

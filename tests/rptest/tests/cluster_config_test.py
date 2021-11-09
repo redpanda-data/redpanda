@@ -79,7 +79,8 @@ class ClusterConfigTest(RedpandaTest):
     def _wait_for_version_sync(self, version):
         wait_until(
             lambda: set([
-                n['version'] for n in self.admin.get_cluster_config_status()
+                n['config_version']
+                for n in self.admin.get_cluster_config_status()
             ]) == {version},
             timeout_sec=10,
             backoff_sec=0.5,
@@ -122,7 +123,7 @@ class ClusterConfigTest(RedpandaTest):
 
         patch_result = self.admin.patch_cluster_config(
             upsert=dict([new_setting]))
-        new_version = patch_result['version']
+        new_version = patch_result['config_version']
         self._wait_for_version_sync(new_version)
 
         assert self.admin.get_cluster_config()[
@@ -133,7 +134,7 @@ class ClusterConfigTest(RedpandaTest):
         # Test that a reset to default triggers the restart flag the same way as
         # an upsert does
         patch_result = self.admin.patch_cluster_config(remove=[new_setting[0]])
-        new_version = patch_result['version']
+        new_version = patch_result['config_version']
         self._wait_for_version_sync(new_version)
         assert self.admin.get_cluster_config()[
             new_setting[0]] != new_setting[1]
@@ -165,7 +166,7 @@ class ClusterConfigTest(RedpandaTest):
             norestart_new_setting[0]] == "CreateTime"  # Initially default
         patch_result = self.admin.patch_cluster_config(
             upsert=dict([norestart_new_setting]))
-        new_version = patch_result['version']
+        new_version = patch_result['config_version']
         self._wait_for_version_sync(new_version)
 
         assert self.admin.get_cluster_config()[
@@ -188,7 +189,7 @@ class ClusterConfigTest(RedpandaTest):
             invalid_setting[0]] == default_value
         patch_result = self.admin.patch_cluster_config(
             upsert=dict([invalid_setting]))
-        new_version = patch_result['version']
+        new_version = patch_result['config_version']
         self._wait_for_version_sync(new_version)
 
         assert self.admin.get_cluster_config()[
@@ -216,7 +217,7 @@ class ClusterConfigTest(RedpandaTest):
         # Reset the properties, check that it disappears from the list of invalid settings
         patch_result = self.admin.patch_cluster_config(
             remove=[invalid_setting[0]])
-        self._wait_for_version_sync(patch_result['version'])
+        self._wait_for_version_sync(patch_result['config_version'])
         assert self.admin.get_cluster_config()[
             invalid_setting[0]] == default_value
 
@@ -325,7 +326,7 @@ class ClusterConfigTest(RedpandaTest):
 
         patch_result = self.admin.patch_cluster_config(upsert=updates,
                                                        remove=[])
-        self._wait_for_version_sync(patch_result['version'])
+        self._wait_for_version_sync(patch_result['config_version'])
 
         def check_status(expect_restart):
             # Use one node's status, they should be symmetric

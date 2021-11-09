@@ -565,7 +565,7 @@ void admin_server::register_cluster_config_routes() {
               auto& rs = res.emplace_back();
               rs.node_id = s.first;
               rs.restart = s.second.restart;
-              rs.version = s.second.version;
+              rs.config_version = s.second.version;
 
               // Workaround: seastar json_list hides empty lists by
               // default.  This complicates API clients, so always push
@@ -690,9 +690,10 @@ void admin_server::register_cluster_config_routes() {
           co_await throw_on_error(*req, err, model::controller_ntp);
 
           ss::httpd::cluster_config_json::cluster_config_write_result result;
-          result.version = co_await _controller->get_config_manager().invoke_on(
-            cluster::controller_stm_shard,
-            [](cluster::config_manager& mgr) { return mgr.get_version(); });
+          result.config_version
+            = co_await _controller->get_config_manager().invoke_on(
+              cluster::controller_stm_shard,
+              [](cluster::config_manager& mgr) { return mgr.get_version(); });
           co_return ss::json::json_return_type(std::move(result));
       });
 }
