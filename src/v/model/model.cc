@@ -33,7 +33,8 @@ namespace model {
 
 std::ostream& operator<<(std::ostream& os, timestamp ts) {
     if (ts != timestamp::missing()) {
-        return ss::fmt_print(os, "{{timestamp: {}}}", ts.value());
+        fmt::print(os, "{{timestamp: {}}}", ts.value());
+        return os;
     }
     return os << "{timestamp: missing}";
 }
@@ -46,8 +47,8 @@ void read_nested(
 void write(iobuf& out, timestamp ts) { serde::write(out, ts._v); }
 
 std::ostream& operator<<(std::ostream& os, const topic_partition& tp) {
-    return ss::fmt_print(
-      os, "{{topic_partition: {}:{}}}", tp.topic, tp.partition);
+    fmt::print(os, "{{topic_partition: {}:{}}}", tp.topic, tp.partition);
+    return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const ntp& n) {
@@ -56,12 +57,14 @@ std::ostream& operator<<(std::ostream& os, const ntp& n) {
 }
 
 std::ostream& operator<<(std::ostream& o, const model::topic_namespace& tp_ns) {
-    return ss::fmt_print(o, "{{ns: {}, topic: {}}}", tp_ns.ns, tp_ns.tp);
+    fmt::print(o, "{{ns: {}, topic: {}}}", tp_ns.ns, tp_ns.tp);
+    return o;
 }
 
 std::ostream&
 operator<<(std::ostream& o, const model::topic_namespace_view& tp_ns) {
-    return ss::fmt_print(o, "{{ns: {}, topic: {}}}", tp_ns.ns, tp_ns.tp);
+    fmt::print(o, "{{ns: {}, topic: {}}}", tp_ns.ns, tp_ns.tp);
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& os, timestamp_type ts) {
@@ -142,8 +145,9 @@ std::ostream& operator<<(std::ostream& o, const record_batch_header& h) {
 
 std::ostream&
 operator<<(std::ostream& os, const record_batch::compressed_records& records) {
-    return ss::fmt_print(
+    fmt::print(
       os, "{{compressed_records: size_bytes={}}}", records.size_bytes());
+    return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const record_batch& batch) {
@@ -181,7 +185,7 @@ std::istream& operator>>(std::istream& i, compression& c) {
 }
 
 std::ostream& operator<<(std::ostream& o, const model::broker_properties& b) {
-    return ss::fmt_print(
+    fmt::print(
       o,
       "{{cores {}, mem_available {}, disk_available {}}}",
       b.cores,
@@ -189,10 +193,11 @@ std::ostream& operator<<(std::ostream& o, const model::broker_properties& b) {
       b.available_disk,
       b.mount_paths,
       b.etc_props);
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const model::broker& b) {
-    return ss::fmt_print(
+    fmt::print(
       o,
       "{{id: {}, kafka_advertised_listeners: {}, rpc_address: {}, rack: {}, "
       "properties: {}, membership_state: {}}}",
@@ -202,6 +207,7 @@ std::ostream& operator<<(std::ostream& o, const model::broker& b) {
       b.rack(),
       b.properties(),
       b.get_membership_state());
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const topic_metadata& t_md) {

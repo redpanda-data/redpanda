@@ -24,14 +24,16 @@ namespace std {
 template<typename T>
 std::ostream& operator<<(std::ostream& os, const std::optional<T>& opt) {
     if (opt) {
-        return ss::fmt_print(os, "{{{}}}", *opt);
+        fmt::print(os, "{{{}}}", *opt);
+        return os;
     }
     return os << "{nullopt}";
 }
 
 static inline std::ostream&
 operator<<(std::ostream& o, const ss::lowres_clock::duration& d) {
-    return ss::fmt_print(o, "{}", d.count());
+    fmt::print(o, "{}", d.count());
+    return o;
 }
 
 } // namespace std

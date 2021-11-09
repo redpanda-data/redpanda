@@ -76,7 +76,7 @@ bool group_member::should_keep_alive(
 }
 
 std::ostream& operator<<(std::ostream& o, const group_member& m) {
-    return fmt_print(
+    fmt::print(
       o,
       "id={} group={} group_inst={} proto_type={} assignment_len={} "
       "timeouts={}/{} protocols={}",
@@ -88,6 +88,7 @@ std::ostream& operator<<(std::ostream& o, const group_member& m) {
       m.session_timeout(),
       m.rebalance_timeout(),
       m._state.protocols);
+    return o;
 }
 
 described_group_member
