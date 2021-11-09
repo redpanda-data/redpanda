@@ -79,6 +79,9 @@ public:
     /// Get partition NTP
     const model::ntp& get_ntp() const;
 
+    /// Returns true if at least one segment is uploaded to the bucket
+    bool is_available() const;
+
 private:
     /// Create new remote_segment instances for all new
     /// items in the manifest.
