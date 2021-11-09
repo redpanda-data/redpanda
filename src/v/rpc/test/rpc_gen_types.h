@@ -54,6 +54,8 @@ enum class failure_type { throw_exception, exceptional_future, none };
 
 using throw_req = failure_type;
 
-struct throw_resp {};
+struct throw_resp {
+    ss::sstring reply;
+};
 
 } // namespace echo
