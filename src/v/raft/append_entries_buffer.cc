@@ -137,14 +137,13 @@ void append_entries_buffer::propagate_results(
       replies.size());
     auto resp_it = response_promises.begin();
     for (auto& reply : replies) {
-        auto lstats = _consensus._log.offsets();
         ss::visit(
           reply,
-          [&resp_it, &lstats](append_entries_reply r) {
+          [&resp_it, this](append_entries_reply r) {
               // this is important, we want to update response committed
               // offset here as we flushed after the response structure was
               // created
-              r.last_committed_log_index = lstats.committed_offset;
+              r.last_flushed_log_index = _consensus._flushed_offset;
               resp_it->set_value(r);
           },
           [&resp_it](std::exception_ptr& e) {

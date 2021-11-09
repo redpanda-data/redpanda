@@ -429,9 +429,6 @@ private:
 
     /// \brief _does not_ hold the lock.
     ss::future<> flush_log();
-    /// \brief called by the vote timer, to dispatch a write under
-    /// the ops semaphore
-    void dispatch_flush_with_lock();
 
     void maybe_step_down();
 
@@ -542,6 +539,7 @@ private:
     // consensus state
     model::offset _commit_index;
     model::term_id _term;
+    model::offset _flushed_offset{};
 
     // read at `ss::future<> start()`
     vnode _voted_for;
