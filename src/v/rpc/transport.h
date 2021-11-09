@@ -143,29 +143,46 @@ private:
 };
 
 namespace internal {
+
+inline errc map_server_error(status status) {
+    switch (status) {
+    case status::success:
+        return errc::success;
+    case status::request_timeout:
+        return errc::client_request_timeout;
+    case rpc::status::server_error:
+        return errc::service_error;
+    case status::method_not_found:
+        return errc::method_not_found;
+    };
+};
+
 template<typename T>
-result<rpc::client_context<T>> map_result(const header& hdr, T data) {
+ss::future<result<rpc::client_context<T>>> parse_result(
+  ss::input_stream<char>& in, std::unique_ptr<streaming_context> sctx) {
     using ret_t = result<rpc::client_context<T>>;
-    auto st = static_cast<status>(hdr.meta);
+    // check status first
+    auto st = static_cast<status>(sctx->get_header().meta);
 
+    // success case
     if (st == status::success) {
-        return ret_t(rpc::client_context<T>(hdr, std::move(data)));
+        return parse_type<T>(in, sctx->get_header())
+          .then([sctx = std::move(sctx)](T data) {
+              sctx->signal_body_parse();
+              return ret_t(
+                rpc::client_context<T>(sctx->get_header(), std::move(data)));
+          });
     }
 
-    if (st == status::request_timeout) {
-        return ret_t(errc::client_request_timeout);
-    }
+    /**
+     * signal that request body is parsed since it is empty when status
+     * indicates server error.
+     */
+    sctx->signal_body_parse();
 
-    if (st == status::server_error) {
-        return ret_t(errc::service_error);
-    }
-
-    if (st == status::method_not_found) {
-        return ret_t(errc::method_not_found);
-    }
-
-    return ret_t(errc::service_error);
+    return ss::make_ready_future<ret_t>(map_server_error(st));
 }
+
 } // namespace internal
 
 template<typename Input, typename Output>
@@ -191,12 +208,7 @@ transport::send_typed(Input r, uint32_t method_id, rpc::client_opts opts) {
           if (!sctx) {
               return ss::make_ready_future<ret_t>(sctx.error());
           }
-          return parse_type<Output>(_in, sctx.value()->get_header())
-            .then([sctx = std::move(sctx)](Output o) {
-                sctx.value()->signal_body_parse();
-                return internal::map_result<Output>(
-                  sctx.value()->get_header(), std::move(o));
-            });
+          return internal::parse_result<Output>(_in, std::move(sctx.value()));
       });
 }
 
