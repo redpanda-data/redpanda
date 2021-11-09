@@ -13,6 +13,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/errc.h"
+#include "config/configuration.h"
 #include "v8_engine/api.h"
 #include "v8_engine/data_policy_table.h"
 
@@ -30,18 +31,47 @@ template<typename Cmd>
 std::error_code do_apply(
   Cmd cmd,
   v8_engine::data_policy_table& db,
-  std::unique_ptr<v8_engine::api>&) {
+  std::unique_ptr<v8_engine::api>& v8_engine) {
+    auto& cfg = config::shard_local_cfg();
     return ss::visit(
       std::move(cmd),
-      [&db](create_data_policy_cmd cmd) {
-          return db.insert(cmd.key, std::move(cmd.value.dp))
-                   ? std::error_code(errc::success)
-                   : std::error_code(errc::data_policy_already_exists);
+      [&db, &v8_engine, &cfg](create_data_policy_cmd cmd) {
+          if (!db.insert(cmd.key, std::move(cmd.value.dp))) {
+              return std::error_code(errc::data_policy_already_exists);
+          }
+
+          if (cfg.enable_v8() && cfg.developer_mode) {
+              auto code = v8_engine->get_code_database_local().get_code(
+                cmd.value.dp.script_name());
+              if (!code.has_value()) {
+                  vlog(
+                    clusterlog.error,
+                    "Can not get code for data-policy({}) for topic({}). Did "
+                    "you publich code by using rpk wasm deploy?",
+                    cmd.value.dp,
+                    cmd.key);
+                  // Need to delete dp from mapping
+                  db.erase(cmd.key);
+                  return std::error_code(errc::data_policy_js_code_not_exists);
+              }
+
+              v8_engine->get_script_dispatcher().insert(
+                std::move(cmd.key),
+                cmd.value.dp.function_name(),
+                std::move(code.value()));
+          }
+
+          return std::error_code(errc::success);
       },
-      [&db](delete_data_policy_cmd cmd) {
-          return db.erase(cmd.key)
-                   ? std::error_code(errc::success)
-                   : std::error_code(errc::data_policy_not_exists);
+      [&db, &v8_engine, &cfg](delete_data_policy_cmd cmd) {
+          if (!db.erase(cmd.key)) {
+              return std::error_code(errc::data_policy_not_exists);
+          }
+          if (cfg.enable_v8() && cfg.developer_mode) {
+              v8_engine->get_script_dispatcher().remove(std::move(cmd.key));
+          }
+
+          return std::error_code(errc::success);
       });
 }
 

@@ -53,6 +53,7 @@ enum class errc : int16_t {
     partition_configuration_differs,
     data_policy_already_exists,
     data_policy_not_exists,
+    data_policy_js_code_not_exists,
     source_topic_not_exists,
     source_topic_still_in_use,
     wating_for_partition_shutdown,
@@ -147,6 +148,8 @@ struct errc_category final : public std::error_category {
             return "Data-policy already exists";
         case errc::data_policy_not_exists:
             return "Data-policy does not exist";
+        case errc::data_policy_js_code_not_exists:
+            return "Code for data-policy does not exist";
         case errc::source_topic_not_exists:
             return "Attempted to create a non_replicable log for a source "
                    "topic "
