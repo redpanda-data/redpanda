@@ -316,4 +316,16 @@ private:
     std::optional<T> _min;
     std::optional<T> _max;
 };
+
+/**
+ * A deprecated property only exposes metadata and does not expose a usable
+ * value.
+ */
+class deprecated_property : public property<ss::sstring> {
+public:
+    deprecated_property(config_store& conf, std::string_view name)
+      : property(conf, name, "", {.visibility = visibility::deprecated}) {}
+
+    void set_value(std::any) override { return; }
+};
 }; // namespace config
