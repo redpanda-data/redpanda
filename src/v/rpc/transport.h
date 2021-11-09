@@ -167,10 +167,19 @@ ss::future<result<rpc::client_context<T>>> parse_result(
     // success case
     if (st == status::success) {
         return parse_type<T>(in, sctx->get_header())
-          .then([sctx = std::move(sctx)](T data) {
+          .then_wrapped([sctx = std::move(sctx)](ss::future<T> data_fut) {
+              if (data_fut.failed()) {
+                  sctx->body_parse_exception(data_fut.get_exception());
+                  /**
+                   * we want to throw an exception when body parsing failed.
+                   * this will invalidate the connection since it may not be
+                   * valid any more.
+                   */
+                  std::rethrow_exception(data_fut.get_exception());
+              }
               sctx->signal_body_parse();
-              return ret_t(
-                rpc::client_context<T>(sctx->get_header(), std::move(data)));
+              return ret_t(rpc::client_context<T>(
+                sctx->get_header(), std::move(data_fut.get())));
           });
     }
 

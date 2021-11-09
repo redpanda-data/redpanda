@@ -42,6 +42,9 @@ struct client_context_impl final : streaming_context {
     }
     const header& get_header() const final { return _h; }
     void signal_body_parse() final { pr.set_value(); }
+    void body_parse_exception(std::exception_ptr e) final {
+        pr.set_exception(std::move(e));
+    }
     std::reference_wrapper<transport> _c;
     header _h;
     ss::promise<> pr;
