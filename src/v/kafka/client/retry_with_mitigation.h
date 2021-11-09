@@ -46,7 +46,7 @@ auto retry_with_mitigation(
             [&func, &errFunc, &eptr]() {
                 auto fut = ss::now();
                 if (eptr) {
-                    auto fut = errFunc(eptr).handle_exception(
+                    fut = errFunc(eptr).handle_exception(
                       [](const std::exception_ptr&) {
                           // ignore failed mitigation
                       });
