@@ -14,11 +14,13 @@ import random
 
 from ducktape.mark.resource import cluster
 from ducktape.mark import parametrize
+from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
+from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.kaf_producer import KafProducer
@@ -175,11 +177,13 @@ class RaftAvailabilityTest(RedpandaTest):
         rpk = RpkTool(self.redpanda)
 
         payload = str(random.randint(0, 1000))
-
+        start = time.time()
         offset = rpk.produce(self.topic, "tkey", payload, timeout=5)
         consumed = kc.consume_one(self.topic, 0, offset)
+        latency = time.time() - start
         self.logger.info(
-            f"_ping_pong produced '{payload}' consumed '{consumed}'")
+            f"_ping_pong produced '{payload}' consumed '{consumed}' in {(latency)*1000.0:.2f} ms"
+        )
         if consumed['payload'] != payload:
             raise RuntimeError(f"expected '{payload}' got '{consumed}'")
 
@@ -475,3 +479,31 @@ class RaftAvailabilityTest(RedpandaTest):
         producer.stop()
         producer.wait()
         producer.free()
+
+    @cluster(num_nodes=3)
+    def test_follower_isolation(self):
+        """
+        Simplest HA test.  Stop the leader for our partition.  Validate that
+        the cluster remains available afterwards, and that the expected
+        peer takes over as the new leader.
+        """
+        # Find which node is the leader
+        initial_leader_id, replicas = self._wait_for_leader()
+        assert initial_leader_id == replicas[0]
+
+        self._expect_available()
+
+        leader_node = self.redpanda.get_node(initial_leader_id)
+        self.logger.info(
+            f"Initial leader {initial_leader_id} {leader_node.account.hostname}"
+        )
+
+        with FailureInjector(self.redpanda) as fi:
+            # isolate one of the followers
+            fi.inject_failure(
+                FailureSpec(FailureSpec.FAILURE_ISOLATE,
+                            self.redpanda.get_node(replicas[1])))
+
+            # expect messages to be produced and consumed without a timeout
+            for i in range(0, 128):
+                self._ping_pong()

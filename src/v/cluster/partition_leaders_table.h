@@ -22,6 +22,8 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
 
+#include <optional>
+
 namespace cluster {
 
 /// Partition leaders contains information about currently elected partition
@@ -39,6 +41,14 @@ public:
 
     std::optional<model::node_id>
       get_leader(model::topic_namespace_view, model::partition_id) const;
+
+    /**
+     * Returns previous reader of partition if available. This is required by
+     * Kafka metadata APIs since it require us to return former leader id even
+     * it the leader is not present in a given time point
+     */
+    std::optional<model::node_id> get_previous_leader(
+      model::topic_namespace_view, model::partition_id) const;
 
     ss::future<model::node_id> wait_for_leader(
       const model::ntp&,
@@ -58,7 +68,7 @@ public:
     // clang-format on
     void for_each_leader(Func&& f) const {
         for (auto& [k, v] : _leaders) {
-            f(k.tp_ns, k.pid, v.id, v.update_term);
+            f(k.tp_ns, k.pid, v.current_leader, v.update_term);
         }
     }
 
@@ -128,9 +138,17 @@ private:
 
     // in order to filter out reordered requests we store last update term
     struct leader_meta {
-        std::optional<model::node_id> id;
+        // current leader id, this may be empty if a group is in the middle of
+        // leader election
+        std::optional<model::node_id> current_leader;
+        // previous leader id, this is empty if and only if there were no leader
+        // elected for the topic before
+        std::optional<model::node_id> previous_leader;
         model::term_id update_term;
     };
+
+    std::optional<leader_meta>
+      find_leader_meta(model::topic_namespace_view, model::partition_id) const;
 
     absl::flat_hash_map<leader_key, leader_meta, leader_key_hash, leader_key_eq>
       _leaders;

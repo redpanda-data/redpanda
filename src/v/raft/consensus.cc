@@ -164,7 +164,7 @@ clock_type::time_point consensus::majority_heartbeat() const {
         }
 
         if (auto it = _fstats.find(rni); it != _fstats.end()) {
-            return it->second.last_hbeat_timestamp;
+            return it->second.last_received_append_entries_reply_timestamp;
         }
 
         // if we do not know the follower state yet i.e. we have
@@ -2126,19 +2126,20 @@ model::term_id consensus::get_term(model::offset o) {
     return _log.get_term(o).value_or(model::term_id{});
 }
 
-clock_type::time_point consensus::last_append_timestamp(vnode id) {
-    return _fstats.get(id).last_append_timestamp;
+clock_type::time_point
+consensus::last_sent_append_entries_req_timesptamp(vnode id) {
+    return _fstats.get(id).last_sent_append_entries_req_timesptamp;
 }
 
 void consensus::update_node_append_timestamp(vnode id) {
     if (auto it = _fstats.find(id); it != _fstats.end()) {
-        it->second.last_append_timestamp = clock_type::now();
-        update_node_hbeat_timestamp(id);
+        it->second.last_sent_append_entries_req_timesptamp = clock_type::now();
     }
 }
 
 void consensus::update_node_hbeat_timestamp(vnode id) {
-    _fstats.get(id).last_hbeat_timestamp = clock_type::now();
+    _fstats.get(id).last_received_append_entries_reply_timestamp
+      = clock_type::now();
 }
 
 follower_req_seq consensus::next_follower_sequence(vnode id) {
@@ -2810,7 +2811,7 @@ bool consensus::should_reconnect_follower(vnode id) {
     }
 
     if (auto it = _fstats.find(id); it != _fstats.end()) {
-        auto last_at = it->second.last_hbeat_timestamp;
+        auto last_at = it->second.last_received_append_entries_reply_timestamp;
         const auto fail_count = it->second.heartbeats_failed;
 
         auto is_live = last_at + _jit.base_duration() > clock_type::now();
@@ -2881,7 +2882,7 @@ std::vector<follower_metrics> consensus::get_follower_metrics() const {
     ret.reserve(_fstats.size());
     auto dirty_offset = _log.offsets().dirty_offset;
     for (const auto& f : _fstats) {
-        auto last_hbeat = f.second.last_hbeat_timestamp;
+        auto last_hbeat = f.second.last_received_append_entries_reply_timestamp;
         auto is_live = last_hbeat + _jit.base_duration() > clock_type::now();
         ret.push_back(follower_metrics{
           .id = f.first.id(),
