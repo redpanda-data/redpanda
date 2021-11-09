@@ -91,6 +91,9 @@ func NewProduceCommand(fs afero.Fs) *cobra.Command {
 				defaultTopic = args[0]
 				opts = append(opts, kgo.DefaultProduceTopic(defaultTopic))
 			}
+			if len(inFormat) == 0 {
+				out.Die("invalid empty format")
+			}
 
 			// Parse our input/output formats.
 			inf, err := kgo.NewRecordReader(os.Stdin, inFormat)
