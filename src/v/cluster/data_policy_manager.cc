@@ -13,6 +13,8 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/errc.h"
+#include "v8_engine/api.h"
+#include "v8_engine/data_policy_table.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -25,7 +27,10 @@ namespace cluster {
 namespace {
 
 template<typename Cmd>
-std::error_code do_apply(Cmd cmd, v8_engine::data_policy_table& db) {
+std::error_code do_apply(
+  Cmd cmd,
+  v8_engine::data_policy_table& db,
+  std::unique_ptr<v8_engine::api>&) {
     return ss::visit(
       std::move(cmd),
       [&db](create_data_policy_cmd cmd) {
@@ -42,10 +47,12 @@ std::error_code do_apply(Cmd cmd, v8_engine::data_policy_table& db) {
 
 template<typename Cmd>
 ss::future<std::error_code> dispatch_updates_to_cores(
-  Cmd cmd, ss::sharded<v8_engine::data_policy_table>& db) {
+  Cmd cmd,
+  ss::sharded<v8_engine::data_policy_table>& db,
+  std::unique_ptr<v8_engine::api>& v8_engine_api) {
     auto res = co_await db.map_reduce0(
-      [cmd](v8_engine::data_policy_table& local_db) {
-          return do_apply(std::move(cmd), local_db);
+      [cmd, &v8_engine_api](v8_engine::data_policy_table& local_db) {
+          return do_apply(std::move(cmd), local_db, v8_engine_api);
       },
       std::optional<std::error_code>{},
       [](std::optional<std::error_code> result, std::error_code error_code) {
@@ -69,7 +76,7 @@ ss::future<std::error_code> dispatch_updates_to_cores(
 ss::future<std::error_code>
 data_policy_manager::apply_update(model::record_batch batch) {
     return deserialize(std::move(batch), commands).then([this](auto cmd) {
-        return dispatch_updates_to_cores(std::move(cmd), _dps);
+        return dispatch_updates_to_cores(std::move(cmd), _dps, _v8_engine_api);
     });
 }
 

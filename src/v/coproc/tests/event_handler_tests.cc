@@ -12,6 +12,7 @@
 #include "coproc/wasm_event.h"
 #include "hashing/xx.h"
 #include "seastarx.h"
+#include "v8_engine/code_database.h"
 
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -21,7 +22,9 @@
 #include <optional>
 
 SEASTAR_THREAD_TEST_CASE(data_policy_handler_test) {
-    coproc::wasm::data_policy_event_handler handler;
+    ss::sharded<v8_engine::code_database> scripts;
+    scripts.start().get();
+    coproc::wasm::data_policy_event_handler handler(scripts);
     handler.start().get();
 
     ss::sstring name1 = "foo";
@@ -37,7 +40,7 @@ SEASTAR_THREAD_TEST_CASE(data_policy_handler_test) {
 
     handler.process(std::move(events1)).get();
 
-    auto code = handler.get_code(name1);
+    auto code = scripts.local().get_code(name1);
     auto raw_value
       = iobuf_const_parser(code.value()).read_string(code->size_bytes());
     BOOST_CHECK_EQUAL(raw_value, name1);
@@ -51,9 +54,10 @@ SEASTAR_THREAD_TEST_CASE(data_policy_handler_test) {
 
     handler.process(std::move(events2)).get();
 
-    code = handler.get_code(name1);
+    code = scripts.local().get_code(name1);
 
     BOOST_CHECK(code == std::nullopt);
 
     handler.stop().get();
+    scripts.stop().get();
 }

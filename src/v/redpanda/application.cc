@@ -1,5 +1,4 @@
-early
-  - career members // Copyright 2020 Vectorized, Inc.
+// Copyright 2020 Vectorized, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -62,8 +61,9 @@ early
 #include "test_utils/logs.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
-#include "v8_engine/data_policy_table.h"
 #include "v8_engine/api.h"
+#include "v8_engine/code_database.h"
+#include "v8_engine/data_policy_table.h"
 #include "version.h"
 #include "vlog.h"
 
@@ -84,10 +84,9 @@ early
 #include <exception>
 #include <vector>
 
-  static void
-  set_local_kafka_client_config(
-    std::optional<kafka::client::configuration>& client_config,
-    const config::node_config& config) {
+static void set_local_kafka_client_config(
+  std::optional<kafka::client::configuration>& client_config,
+  const config::node_config& config) {
     client_config.emplace();
     const auto& kafka_api = config.kafka_api.value();
     vassert(!kafka_api.empty(), "There are no kafka_api listeners");
@@ -655,9 +654,17 @@ void application::wire_up_redpanda_services() {
       .get();
     vlog(_log.info, "Partition manager started");
 
-    // controller
-
     construct_service(data_policies).get();
+
+    if (v8_enabled()) {
+        syschecks::systemd_message("Creating v8::api").get();
+        const auto& cfg = config::shard_local_cfg();
+        construct_single_service(
+          _v8_engine, ss::engine().alien(), cfg.executor_queue_size);
+        _v8_engine->start().get();
+    }
+
+    // controller
 
     syschecks::systemd_message("Creating cluster::controller").get();
 
@@ -669,7 +676,8 @@ void application::wire_up_redpanda_services() {
       shard_table,
       storage,
       std::ref(raft_group_manager),
-      data_policies);
+      data_policies,
+      _v8_engine);
 
     controller->wire_up().get0();
     syschecks::systemd_message("Creating kafka metadata cache").get();
@@ -797,16 +805,6 @@ void application::wire_up_redpanda_services() {
         coprocessing->start().get();
     }
 
-    if (v8_enabled()) {
-        syschecks::systemd_message("Creating v8::api").get();
-        const auto& cfg = config::shard_local_cfg();
-        construct_single_service(
-          _v8_engine,
-          ss::engine().alien(),
-          cfg.executor_queue_size);
-        _v8_engine->start().get();
-    }
-
     if (coproc_enabled() || v8_enabled()) {
         syschecks::systemd_message(
           "Creating event listener for coproc internal topic")
@@ -825,7 +823,8 @@ void application::wire_up_redpanda_services() {
 
         if (v8_enabled()) {
             _data_policy_event_handler
-              = std::make_unique<coproc::wasm::data_policy_event_handler>();
+              = std::make_unique<coproc::wasm::data_policy_event_handler>(
+                _v8_engine->get_code_database());
 
             _coproc_event_listener->register_handler(
               coproc::wasm::event_type::data_policy,

@@ -11,6 +11,7 @@
 #include "coproc/event_handler.h"
 
 #include "utils/gate_guard.h"
+#include "v8_engine/code_database.h"
 #include "vlog.h"
 
 namespace coproc::wasm {
@@ -125,17 +126,17 @@ async_event_handler::process(absl::btree_map<script_id, parsed_event> wsas) {
     }
 }
 
-ss::future<> data_policy_event_handler::start() { return _scripts.start(); }
+ss::future<> data_policy_event_handler::start() { co_return; }
 
-ss::future<> data_policy_event_handler::stop() { return _scripts.stop(); }
+ss::future<> data_policy_event_handler::stop() { co_return; }
 
 // event_listener run this method from 0-core
 ss::future<> data_policy_event_handler::process(
   absl::btree_map<script_id, parsed_event> wsas) {
     for (auto& [id, event] : wsas) {
         co_await _scripts.invoke_on_all(
-          [id = id, &event = event](
-            absl::btree_map<script_id, iobuf>& _local_scripts) mutable {
+          [id = id,
+           &event = event](v8_engine::code_database& _local_scripts) mutable {
               if (event.header.action == event_action::deploy) {
                   _local_scripts.insert_or_assign(id, event.data.copy());
               } else {
@@ -144,18 +145,6 @@ ss::future<> data_policy_event_handler::process(
           });
     }
     co_return;
-}
-
-std::optional<iobuf>
-data_policy_event_handler::get_code(std::string_view name) {
-    // rpk use xxhash_64 for create script_is from script name
-    script_id id(xxhash_64(name.data(), name.size()));
-    auto code = _scripts.local().find(id);
-    if (code == _scripts.local().end()) {
-        return std::nullopt;
-    }
-
-    return code->second.copy();
 }
 
 } // namespace coproc::wasm
