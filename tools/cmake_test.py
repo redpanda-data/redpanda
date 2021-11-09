@@ -41,7 +41,8 @@ class BacktraceCapture(threading.Thread):
     """
 
     BACKTRACE_START = re.compile(
-        "(^Backtrace:|.+Sanitizer.*|.+Backtrace below:$)")
+        "(^Backtrace:|.+Sanitizer.*|.+Backtrace below:$|^Direct leak.+|^Indirect leak.+)"
+    )
     BACKTRACE_BODY = re.compile("^(  |==|0x)")
 
     def __init__(self, binary, process):
@@ -95,7 +96,9 @@ class BacktraceCapture(threading.Thread):
                     if accumulator:
                         blocks.append(accumulator)
                     accumulator = None
-                elif self.BACKTRACE_START.search(line):
+
+                # A start of backtrace line, which may also have been an end of backtrace line above
+                if accumulator is None and self.BACKTRACE_START.search(line):
                     accumulator = []
             else:
                 break
