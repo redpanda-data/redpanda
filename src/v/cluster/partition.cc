@@ -29,7 +29,8 @@ static bool is_tx_manager_topic(const model::ntp& ntp) {
 partition::partition(
   consensus_ptr r,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
-  ss::sharded<cloud_storage::remote>& cloud_storage_api)
+  ss::sharded<cloud_storage::remote>& cloud_storage_api,
+  ss::sharded<cloud_storage::cache>& cloud_storage_cache)
   : _raft(r)
   , _probe(std::make_unique<replicated_partition_probe>(*this))
   , _tx_gateway_frontend(tx_gateway_frontend)
@@ -81,6 +82,22 @@ partition::partition(
               = ss::make_shared<cluster::archival_metadata_stm>(
                 _raft.get(), cloud_storage_api.local(), clusterlog);
             stm_manager->add_stm(_archival_meta_stm);
+
+            if (cloud_storage_cache.local_is_initialized()) {
+                auto bucket
+                  = config::shard_local_cfg().cloud_storage_bucket.value();
+                if (!bucket) {
+                    throw std::runtime_error{
+                      "configuration property cloud_storage_bucket is not set"};
+                }
+
+                _cloud_storage_partition
+                  = ss::make_lw_shared<cloud_storage::remote_partition>(
+                    _archival_meta_stm->manifest(),
+                    cloud_storage_api.local(),
+                    cloud_storage_cache.local(),
+                    s3::bucket_name{*bucket});
+            }
         }
     }
 }
@@ -303,6 +320,10 @@ ss::future<> partition::start() {
         f = f.then([this] { return _archival_meta_stm->start(); });
     }
 
+    if (_cloud_storage_partition) {
+        f = f.then([this] { return _cloud_storage_partition->start(); });
+    }
+
     return f;
 }
 
@@ -329,6 +350,10 @@ ss::future<> partition::stop() {
 
     if (_archival_meta_stm) {
         f = f.then([this] { return _archival_meta_stm->stop(); });
+    }
+
+    if (_cloud_storage_partition) {
+        f = f.then([this] { return _cloud_storage_partition->stop(); });
     }
 
     // no state machine
