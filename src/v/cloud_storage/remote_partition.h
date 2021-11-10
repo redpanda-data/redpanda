@@ -29,7 +29,7 @@
 
 namespace cloud_storage {
 
-class record_batch_reader_impl;
+class partition_record_batch_reader_impl;
 
 /// Remote partition manintains list of remote segments
 /// and list of active readers. Only one reader can be
@@ -198,6 +198,6 @@ private:
     /// Timer use to periodically evict stale readers
     ss::timer<ss::lowres_clock> _stm_timer;
     simple_time_jitter<ss::lowres_clock> _stm_jitter;
-}; // namespace cloud_storage
+};
 
 } // namespace cloud_storage
