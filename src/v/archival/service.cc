@@ -50,6 +50,7 @@
 #include <exception>
 #include <optional>
 #include <stdexcept>
+#include <tuple>
 
 using namespace std::chrono_literals;
 
@@ -423,6 +424,16 @@ cloud_storage::remote& scheduler_service_impl::get_remote() {
 
 s3::bucket_name scheduler_service_impl::get_bucket() const {
     return _conf.bucket_name;
+}
+
+uint64_t scheduler_service_impl::estimate_backlog_size() {
+    uint64_t size = 0;
+    for (const auto& [ntp, item] : _queue) {
+        std::ignore = ntp;
+        size += item.archiver->estimate_backlog_size(
+          _partition_manager.local());
+    }
+    return size;
 }
 
 ss::future<> scheduler_service_impl::run_uploads() {

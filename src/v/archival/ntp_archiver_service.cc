@@ -38,6 +38,7 @@
 #include <fmt/format.h>
 
 #include <exception>
+#include <numeric>
 #include <stdexcept>
 
 namespace archival {
@@ -392,6 +393,31 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
       .handle_exception_type([](const ss::abort_requested_exception&) {
           return ss::make_ready_future<batch_result>(batch_result{});
       });
+}
+
+uint64_t ntp_archiver::estimate_backlog_size(cluster::partition_manager& pm) {
+    auto last_offset = _manifest.size() ? _manifest.get_last_offset()
+                                        : model::offset(0);
+    auto opt_log = pm.log(_manifest.get_ntp());
+    if (!opt_log) {
+        return 0U;
+    }
+    auto log = dynamic_cast<storage::disk_log_impl*>(opt_log->get_impl());
+    uint64_t total_size = std::accumulate(
+      std::begin(log->segments()),
+      std::end(log->segments()),
+      0UL,
+      [last_offset](
+        uint64_t acc, const ss::lw_shared_ptr<storage::segment>& s) {
+          if (s->offsets().dirty_offset > last_offset) {
+              return acc + s->size_bytes();
+          }
+          return acc;
+      });
+    // Note: we can safely ignore the fact that the last segment is not uploaded
+    // before it's sealed because the size of the individual segment is small
+    // compared to the capacity of the data volume.
+    return total_size;
 }
 
 } // namespace archival

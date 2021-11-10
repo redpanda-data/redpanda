@@ -14,5 +14,6 @@
 namespace archival {
 
 class scheduler_service;
+class upload_controller;
 
 } // namespace archival

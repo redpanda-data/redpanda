@@ -162,6 +162,9 @@ public:
     /// Get configured bucket
     s3::bucket_name get_bucket() const;
 
+    /// Total size of data that have to be uploaded
+    uint64_t estimate_backlog_size();
+
 private:
     /// Remove archivers from the workingset
     ss::future<> remove_archivers(std::vector<model::ntp> to_remove);
@@ -225,6 +228,9 @@ public:
 
     /// Get configured bucket
     using internal::scheduler_service_impl::get_bucket;
+
+    /// Estimate total size of the upload backlog
+    using internal::scheduler_service_impl::estimate_backlog_size;
 };
 
 } // namespace archival

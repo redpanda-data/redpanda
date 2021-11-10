@@ -16,6 +16,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
 #include "cluster/partition.h"
+#include "cluster/partition_manager.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "s3/client.h"
@@ -108,6 +109,8 @@ public:
       storage::log_manager& lm,
       retry_chain_node& parent,
       std::optional<model::offset> last_stable_offset_override = std::nullopt);
+
+    uint64_t estimate_backlog_size(cluster::partition_manager& pm);
 
 private:
     /// Information about started upload

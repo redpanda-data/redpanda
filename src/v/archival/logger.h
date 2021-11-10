@@ -16,4 +16,5 @@
 
 namespace archival {
 inline ss::logger archival_log("archival");
+inline ss::logger upload_ctrl_log("archival-ctrl");
 } // namespace archival
