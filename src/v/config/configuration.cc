@@ -304,6 +304,13 @@ configuration::configuration()
       "Maximum number of bytes returned in fetch request",
       required::no,
       55_MiB)
+  , metadata_status_wait_timeout_ms(
+      *this,
+      "metadata_status_wait_timeout_ms",
+      "Maximum time to wait in metadata request for cluster health to be "
+      "refreshed",
+      required::no,
+      2s)
   , transactional_id_expiration_ms(
       *this,
       "transactional_id_expiration_ms",

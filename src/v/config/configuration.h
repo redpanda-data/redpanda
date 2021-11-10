@@ -89,6 +89,7 @@ struct configuration final : public config_store {
     property<model::timestamp_type> log_message_timestamp_type;
     property<model::compression> log_compression_type;
     property<size_t> fetch_max_bytes;
+    property<std::chrono::milliseconds> metadata_status_wait_timeout_ms;
     // same as transactional.id.expiration.ms in kafka
     property<std::chrono::milliseconds> transactional_id_expiration_ms;
     property<bool> enable_idempotence;
