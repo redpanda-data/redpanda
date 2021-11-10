@@ -364,9 +364,26 @@ struct incremental_topic_updates {
     // data_policy_manager.
     property_update<std::optional<v8_engine::data_policy>> data_policy;
 
-    friend bool operator==(
-      const incremental_topic_updates&, const incremental_topic_updates&)
-      = default;
+    bool operator==(const incremental_topic_updates& other) const {
+        return std::tie(
+                 version,
+                 compression,
+                 cleanup_policy_bitflags,
+                 compaction_strategy,
+                 timestamp_type,
+                 segment_size,
+                 retention_bytes,
+                 retention_duration)
+               == std::tie(
+                 other.version,
+                 other.compression,
+                 other.cleanup_policy_bitflags,
+                 other.compaction_strategy,
+                 other.timestamp_type,
+                 other.segment_size,
+                 other.retention_bytes,
+                 other.retention_duration);
+    }
 };
 
 /**
