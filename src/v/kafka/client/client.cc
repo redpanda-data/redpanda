@@ -177,9 +177,9 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
         }
     } catch (const ss::gate_closed_exception&) {
         vlog(kclog.debug, "gate_closed_exception");
-    } catch (const std::exception_ptr& ex) {
+    } catch (const std::exception& ex) {
         // TODO(Ben): Probably vassert
-        vlog(kclog.error, "unknown exception");
+        vlog(kclog.error, "unknown exception: {}", ex);
     }
     return ss::make_exception_future(ex);
 }
