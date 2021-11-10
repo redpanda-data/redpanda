@@ -32,6 +32,17 @@ namespace cluster {
 using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
 using broker_ptr = ss::lw_shared_ptr<model::broker>;
 
+// A cluster version is a logical protocol version describing the content
+// of the raft0 on disk structures, and available features.  These are
+// passed over the network via the health_manager, and persisted in
+// the feature_manager
+using cluster_version = named_type<int64_t, struct cluster_version_tag>;
+constexpr cluster_version invalid_version = cluster_version{-1};
+
+// The version that this redpanda node will report: increment this
+// on protocol changes to raft0 structures, like adding new services.
+constexpr cluster_version latest_version = cluster_version{1};
+
 struct allocate_id_request {
     model::timeout_clock::duration timeout;
 };
@@ -693,6 +704,16 @@ struct cluster_config_status_cmd_data {
     config_status status;
 };
 
+struct feature_update_cmd_data {
+    // To avoid ambiguity on 'versions' here: `current_version`
+    // is the encoding version of the struct, subsequent version
+    // fields are the payload.
+    static constexpr int8_t current_version = 0;
+
+    cluster_version logical_version;
+};
+std::ostream& operator<<(std::ostream&, const feature_update_cmd_data&);
+
 enum class reconciliation_status : int8_t {
     done,
     in_progress,
@@ -955,4 +976,11 @@ struct adl<cluster::incremental_topic_custom_updates> {
     void to(iobuf& out, cluster::incremental_topic_custom_updates&&);
     cluster::incremental_topic_custom_updates from(iobuf_parser&);
 };
+
+template<>
+struct adl<cluster::feature_update_cmd_data> {
+    void to(iobuf&, cluster::feature_update_cmd_data&&);
+    cluster::feature_update_cmd_data from(iobuf_parser&);
+};
+
 } // namespace reflection
