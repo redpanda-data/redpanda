@@ -34,6 +34,22 @@ from kafka import KafkaAdminClient
 Partition = collections.namedtuple('Partition',
                                    ['index', 'leader', 'replicas'])
 
+MetricSample = collections.namedtuple(
+    'MetricSample', ['family', 'sample', 'node', 'value', 'labels'])
+
+
+class MetricSamples:
+    def __init__(self, samples):
+        self.samples = samples
+
+    def label_filter(self, labels):
+        def f(sample):
+            for key, value in labels.items():
+                assert key in sample.labels
+                return sample.labels[key] == value
+
+        return MetricSamples([s for s in filter(f, self.samples)])
+
 
 def one_or_many(value):
     """
@@ -507,6 +523,50 @@ class RedpandaService(Service):
         resp = requests.get(url)
         assert resp.status_code == 200
         return text_string_to_metric_families(resp.text)
+
+    def metrics_sample(self, sample_pattern, nodes=None):
+        """
+        Query metrics for a single sample using fuzzy name matching. This
+        interface matches the sample pattern against sample names, and requires
+        that exactly one (family, sample) match the query. All values for the
+        sample across the requested set of nodes are returned in a flat array.
+
+        An exception will be raised unless exactly one (family, sample) matches.
+
+        Example:
+
+           The query:
+
+              redpanda.metrics_sample("under_replicated")
+
+           will return an array containing MetricSample instances for each node and
+           core/shard in the cluster. Each entry will correspond to a value from:
+
+              family = vectorized_cluster_partition_under_replicated_replicas
+              sample = vectorized_cluster_partition_under_replicated_replicas
+        """
+        nodes = nodes or self.nodes
+        found_sample = None
+        sample_values = []
+        for node in nodes:
+            metrics = self.metrics(node)
+            for family in metrics:
+                for sample in family.samples:
+                    if sample_pattern not in sample.name:
+                        continue
+                    if not found_sample:
+                        found_sample = (family.name, sample.name)
+                    if found_sample != (family.name, sample.name):
+                        raise Exception(
+                            f"More than one metric matched '{sample_pattern}'. Found {found_sample} and {(family.name, sample.name)}"
+                        )
+                    sample_values.append(
+                        MetricSample(family.name, sample.name, node,
+                                     sample.value, sample.labels))
+        if not sample_values:
+            raise Exception(
+                f"No metric sample matching '{sample_pattern}' found")
+        return MetricSamples(sample_values)
 
     def read_configuration(self, node):
         assert node in self._started

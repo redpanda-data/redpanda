@@ -15,22 +15,32 @@ from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-
-import storage as vstorage
+from rptest.clients.kafka_cat import KafkaCat
+from rptest.services.admin import Admin
 
 
 class PrefixTruncateRecoveryTest(RedpandaTest):
     """
-    Verify that a kafka log that's been prefix truncated due to retention policy
-    eventually converges with other raft group nodes.
+    The purpose of this test is to exercise recovery of partitions which have
+    had data reclaimed based on retention policy. The testing strategy is:
+
+       1. Stop 1 out 3 nodes
+       2. Produce until retention policy reclaims data
+       3. Restart the stopped node
+       4. Verify that the stopped node recovers
+
+    Leadership balancing is disabled in this test because the final verification
+    step tries to force leadership so that verification may query metadata from
+    specific nodes where the kafka protocol only returns state from leaders.
     """
     topics = (TopicSpec(cleanup_policy=TopicSpec.CLEANUP_DELETE), )
 
     def __init__(self, test_context):
         extra_rp_conf = dict(
             log_segment_size=1048576,
-            retention_bytes=5242880,
-            log_compaction_interval_ms=2000,
+            retention_bytes=3145728,
+            log_compaction_interval_ms=1000,
+            enable_leader_balancer=False,
         )
 
         super(PrefixTruncateRecoveryTest,
@@ -39,97 +49,95 @@ class PrefixTruncateRecoveryTest(RedpandaTest):
                              extra_rp_conf=extra_rp_conf)
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
+        self.kafka_cat = KafkaCat(self.redpanda)
+
+    def fully_replicated(self, nodes):
+        """
+        Test that for each specified node that there are no reported under
+        replicated partitions corresponding to the test topic.
+        """
+        metric = self.redpanda.metrics_sample("under_replicated_replicas",
+                                              nodes)
+        metric = metric.label_filter(dict(namespace="kafka", topic=self.topic))
+        assert len(metric.samples) == len(nodes)
+        return all(map(lambda s: s.value == 0, metric.samples))
+
+    def get_segments_deleted(self, nodes):
+        """
+        Return the values of the log segments removed metric.
+        """
+        metric = self.redpanda.metrics_sample("log_segments_removed", nodes)
+        metric = metric.label_filter(dict(namespace="kafka", topic=self.topic))
+        assert len(metric.samples) == len(nodes)
+        return [s.value for s in metric.samples]
+
+    def produce_until_reclaim(self, initial_deleted, acks):
+        """
+        Produce data until we observe that segments have been deleted. The
+        initial_deleted parameter is the max number of segments deleted across
+        nodes, and we wait for all partitions to report at least initial + 3
+        deletions so that all nodes have experienced some deletion.
+        """
+        deleted = self.get_segments_deleted(self.redpanda.nodes[1:])
+        if all(map(lambda d: d >= initial_deleted + 2, deleted)):
+            return True
+        self.kafka_tools.produce(self.topic, 1024, 1024, acks=acks)
+        return False
 
     @cluster(num_nodes=3)
-    @ignore  #  https://github.com/vectorizedio/redpanda/issues/2460
-    @matrix(acks=[-1, 1])
-    def test_prefix_truncate_recovery(self, acks):
-        # produce a little data
-        self.kafka_tools.produce(self.topic, 1024, 1024, acks=acks)
+    @matrix(acks=[-1, 1], start_empty=[True, False])
+    def test_prefix_truncate_recovery(self, acks, start_empty):
+        # cover boundary conditions of partition being empty/non-empty
+        if not start_empty:
+            self.kafka_tools.produce(self.topic, 2048, 1024, acks=acks)
+            wait_until(lambda: self.fully_replicated(self.redpanda.nodes),
+                       timeout_sec=90,
+                       backoff_sec=5)
 
-        # stop one of the nodes
-        node = self.redpanda.controller()
-        self.redpanda.stop_node(node)
+        # stop this unfortunate node
+        stopped_node = self.redpanda.nodes[0]
+        self.redpanda.stop_node(stopped_node)
 
-        # produce data to the topic until we observe that the retention policy
-        # has kicked in and one or more segments has been deleted.
-        self.produce_until_deleted(node)
+        # produce data into the topic until segments are reclaimed
+        # by the configured retention policy
+        deleted = max(self.get_segments_deleted(self.redpanda.nodes[1:]))
+        wait_until(lambda: self.produce_until_reclaim(deleted, acks),
+                   timeout_sec=90,
+                   backoff_sec=5)
 
-        self.redpanda.start_node(node)
-        self.verify_recovery(node)
+        # we should now observe an under replicated state
+        wait_until(lambda: not self.fully_replicated(self.redpanda.nodes[1:]),
+                   timeout_sec=90,
+                   backoff_sec=5)
 
-    def produce_until_deleted(self, ignore_node):
-        partitions = {}
+        # finally restart the node and wait until fully replicated
+        self.redpanda.start_node(stopped_node)
+        wait_until(lambda: self.fully_replicated(self.redpanda.nodes),
+                   timeout_sec=90,
+                   backoff_sec=5)
 
-        #
-        # Produce until at least 3 segments per partition appear on disk.
-        #
-        def produce_until_segments(count):
-            self.kafka_tools.produce(self.topic, 1000, 1000)
-            storage = self.redpanda.storage()
-            for p in storage.partitions("kafka", self.topic):
-                if p.node == ignore_node:
-                    continue
-                if p.num not in partitions or len(
-                        partitions[p.num].segments) < count:
-                    partitions[p.num] = p
-            self.logger.debug("Found partitions: %s", partitions)
-            return partitions and all(
-                map(lambda p: len(p[1].segments) >= count, partitions.items()))
+        self.verify_offsets()
 
-        wait_until(lambda: produce_until_segments(3),
-                   timeout_sec=60,
-                   backoff_sec=1,
-                   err_msg="Expected segments did not materialize")
+    def verify_offsets(self):
+        """
+        Test that the ending offset for the partition as seen on each
+        node are identical. Since we can only query this from the leader, we
+        disable auto leadership balancing, and manually transfer leadership
+        before querying.
 
-        def make_segment_sets(partitions):
-            return {
-                p[0]: {s[0]
-                       for s in p[1].segments.items()}
-                for p in partitions.items()
-            }
-
-        orig_segments = make_segment_sets(partitions)
-        self.logger.debug(f"Original segments: {orig_segments}")
-
-        #
-        # Continue producing until the original segments above have been deleted
-        # because of the retention / cleanup policy.
-        #
-        def produce_until_segments_deleted():
-            self.kafka_tools.produce(self.topic, 1000, 1000)
-            storage = self.redpanda.storage()
-            curr_segments = make_segment_sets(
-                {p.num: p
-                 for p in storage.partitions("kafka", self.topic)})
-            for p, segs in orig_segments.items():
-                self.logger.debug("Partition %d segment set intersection: %s",
-                                  p, segs.intersection(curr_segments[p]))
-                if not segs.isdisjoint(curr_segments[p]):
-                    return False
-            return True
-
-        wait_until(lambda: produce_until_segments_deleted(),
-                   timeout_sec=60,
-                   backoff_sec=1,
-                   err_msg="Original segments were not deleted")
-
-    def verify_recovery(self, node):
-        # repeat until true
-        #  1. collect segment files from quroum members
-        #  2. verify byte-for-byte equivalence of common range
-        #  3. success
-        with tempfile.TemporaryDirectory() as d:
-            self.redpanda.copy_data(d, node)
-            store = vstorage.Store(d)
-            for ntp in store.ntps:
-                for path in ntp.segments:
-                    try:
-                        s = vstorage.Segment(path)
-                    except vstorage.CorruptBatchError as e:
-                        print("corruption detected in batch {} of segment: {}".
-                              format(e.batch.index, path))
-                        print("header of corrupt batch: {}".format(
-                            e.batch.header))
-                        continue
-                    print("successfully decoded segment: {}".format(path))
+        Note that because each node applies retention policy independently to a
+        prefix of the log we can't reliably compare the starting offsets.
+        """
+        admin = Admin(self.redpanda)
+        offsets = []
+        for node in self.redpanda.nodes:
+            admin.transfer_leadership_to(namespace="kafka",
+                                         topic=self.topic,
+                                         partition=0,
+                                         target=node)
+            # % ERROR: offsets_for_times failed: Local: Unknown partition
+            # may occur here presumably because there is an interaction
+            # with leadership transfer. the built-in retries in list_offsets
+            # appear to deal with this gracefully and we still pass.
+            offsets.append(self.kafka_cat.list_offsets(self.topic, 0))
+        assert all(map(lambda o: o[1] == offsets[0][1], offsets))
