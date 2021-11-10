@@ -63,9 +63,6 @@ make_fetch_response(const model::topic_partition& tp, std::exception_ptr ex) {
     } catch (const std::exception& ex) {
         vlog(kclog.warn, "std::exception {}", ex);
         error = error_code::unknown_server_error;
-    } catch (const std::exception_ptr&) {
-        vlog(kclog.error, "std::exception_ptr");
-        error = error_code::unknown_server_error;
     }
     fetch_response::partition_response pr{
       .partition_index{tp.partition},

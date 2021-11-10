@@ -59,9 +59,6 @@ make_produce_response(model::partition_id p_id, std::exception_ptr ex) {
     } catch (const std::exception& ex) {
         vlog(kclog.warn, "std::exception {}", ex.what());
         response.error_code = error_code::unknown_server_error;
-    } catch (const std::exception_ptr&) {
-        vlog(kclog.error, "std::exception_ptr");
-        response.error_code = error_code::unknown_server_error;
     }
     return response;
 }
