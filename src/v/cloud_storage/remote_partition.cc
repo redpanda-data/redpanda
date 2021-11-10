@@ -51,27 +51,26 @@ static model::offset get_kafka_base_offset(const manifest::segment_meta& m) {
 
 class partition_record_batch_reader_impl final
   : public model::record_batch_reader::impl {
-    using remote_segment_list_t = std::vector<std::unique_ptr<remote_segment>>;
-
 public:
     explicit partition_record_batch_reader_impl(
       const log_reader_config& config,
       ss::lw_shared_ptr<remote_partition> part) noexcept
       : _ctxlog(cst_log, _rtc, part->get_ntp().path())
       , _partition(std::move(part))
-      , _it(_partition->_segments.begin()) {
+      , _it(_partition->_segments.begin())
+      , _end(_partition->_segments.end()) {
         if (config.abort_source) {
             vlog(_ctxlog.debug, "abort_source is set");
             auto sub = config.abort_source->get().subscribe([this]() noexcept {
                 vlog(_ctxlog.debug, "abort requested via config.abort_source");
                 _partition->evict_reader(std::move(_reader));
-                _it = _partition->_segments.end();
+                _it = _end;
             });
             if (sub) {
                 _as_sub = std::move(*sub);
             } else {
                 vlog(_ctxlog.debug, "abort_source is triggered in c-tor");
-                _it = _partition->_segments.end();
+                _it = _end;
                 _reader = {};
             }
         }
@@ -92,9 +91,7 @@ public:
     operator=(const partition_record_batch_reader_impl& o)
       = delete;
 
-    bool is_end_of_stream() const override {
-        return _it == _partition->_segments.end();
-    }
+    bool is_end_of_stream() const override { return _it == _end; }
 
     ss::future<storage_t>
     do_load_slice(model::timeout_clock::time_point deadline) override {
@@ -113,7 +110,7 @@ public:
 
                 // The existing state have to be rebuilt
                 _partition->return_reader(std::move(_reader), _it->second);
-                _it = _partition->_segments.end();
+                _it = _end;
                 co_return storage_t{};
             }
             while (co_await maybe_reset_reader()) {
@@ -143,7 +140,7 @@ public:
             vlog(
               _ctxlog.debug,
               "gate_closed_exception while reading from remote_partition");
-            _it = _partition->_segments.end();
+            _it = _end;
             _reader = {};
         }
         vlog(
@@ -155,7 +152,7 @@ public:
     }
 
     void print(std::ostream& o) override {
-        o << "cloud_storage_record_batch_reader";
+        o << "cloud_storage_partition_record_batch_reader";
     }
 
 private:
@@ -176,7 +173,7 @@ private:
           "partition_record_batch_reader_impl initialize reader state - "
           "segment not "
           "found");
-        _it = _partition->_segments.end();
+        _it = _end;
         _reader = {};
     }
 
@@ -191,9 +188,6 @@ private:
             return std::nullopt;
         }
         auto it = _partition->_segments.upper_bound(config.start_offset);
-        if (it == _partition->_segments.end()) {
-            it = std::prev(it);
-        }
         if (it != _partition->_segments.begin()) {
             it = std::prev(it);
         }
@@ -245,7 +239,19 @@ private:
             // move to the next segment
             vlog(_ctxlog.debug, "maybe_reset_stream condition triggered");
             _it++;
-            if (_it == _partition->_segments.end()) {
+            // We're comparing to the cached _end instead of
+            // _partition->_segments.end() to avoid the following pitfall. If
+            // the currently referenced segment has no data batches and we get
+            // to this point, but at the same time the new segment with the same
+            // base_offset (in kafka terms) was added to the map this new
+            // segment will replace the current one and we won't read it (since
+            // we're already done with the segment). This isn't a problem since
+            // we will just stop and the next fetch request will be able to read
+            // the data. But if not one but two or more segments were added to
+            // the _segments map we will just skip the segment with the same
+            // base_offset and proceed with the next one. The client will see a
+            // gap. The caching of the _segments.end() prevents this.
+            if (_it == _end) {
                 co_await set_end_of_stream();
             } else {
                 // reuse config but replace the reader
@@ -278,6 +284,7 @@ private:
     ss::lw_shared_ptr<remote_partition> _partition;
     /// Currently accessed segment
     remote_partition::segment_map_t::iterator _it;
+    remote_partition::segment_map_t::iterator _end;
     /// Reader state that was borrowed from the materialized_segment_state
     std::unique_ptr<remote_segment_batch_reader> _reader;
     /// Cancelation subscription
@@ -418,7 +425,7 @@ void remote_partition::update_segments_incrementally() {
         auto o = get_kafka_base_offset(meta.second);
         auto prev_it = _segments.find(o);
         if (prev_it != _segments.end()) {
-            // The key can be in the ma in two cases:
+            // The key can be in the map in two cases:
             // - we've already added the segment to the map
             // - the key that we've added previously doesn't have data batches
             //   in this case it can be safely replaced by the new one
@@ -498,6 +505,7 @@ void remote_partition::return_reader(
 ss::future<model::record_batch_reader> remote_partition::make_reader(
   storage::log_reader_config config,
   std::optional<model::timeout_clock::time_point> deadline) {
+    std::ignore = deadline;
     gate_guard g(_gate);
     vlog(
       _ctxlog.debug,
