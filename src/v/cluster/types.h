@@ -347,9 +347,11 @@ struct property_update<tristate<T>> {
 };
 
 struct incremental_topic_updates {
+    static constexpr int8_t version_with_datapolicy = -1;
+
     // negative version indicating new format (with included data_policy
     // property)
-    static constexpr int8_t version = -1;
+    static constexpr int8_t version = -2;
     property_update<std::optional<model::compression>> compression;
     property_update<std::optional<model::cleanup_policy_bitflags>>
       cleanup_policy_bitflags;
@@ -361,7 +363,11 @@ struct incremental_topic_updates {
     property_update<tristate<std::chrono::milliseconds>> retention_duration;
 
     // Data-policy property is replicated by data_policy_frontend and handled by
-    // data_policy_manager.
+    // data_policy_manager. It is used only for parsing kafka request
+    //
+    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    // !IT IS REPLICATED BY data_policy_frontend!
+    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     property_update<std::optional<v8_engine::data_policy>> data_policy;
 
     bool operator==(const incremental_topic_updates& other) const {

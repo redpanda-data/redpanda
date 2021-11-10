@@ -879,8 +879,7 @@ void adl<cluster::incremental_topic_updates>::to(
       t.timestamp_type,
       t.segment_size,
       t.retention_bytes,
-      t.retention_duration,
-      t.data_policy);
+      t.retention_duration);
 }
 
 cluster::incremental_topic_updates
@@ -928,7 +927,8 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
       = adl<cluster::property_update<tristate<std::chrono::milliseconds>>>{}
           .from(in);
 
-    if (version < 0) {
+    if (
+      version == cluster::incremental_topic_updates::version_with_datapolicy) {
         updates.data_policy
           = adl<
               cluster::property_update<std::optional<v8_engine::data_policy>>>{}
