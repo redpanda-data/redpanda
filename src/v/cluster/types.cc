@@ -1103,4 +1103,18 @@ adl<cluster::incremental_topic_custom_updates>::from(iobuf_parser& in) {
     return updates;
 }
 
+void adl<cluster::feature_update_cmd_data>::to(
+  iobuf& out, cluster::feature_update_cmd_data&& data) {
+    reflection::serialize(out, data.current_version, data.logical_version);
+}
+
+cluster::feature_update_cmd_data
+adl<cluster::feature_update_cmd_data>::from(iobuf_parser& in) {
+    auto version = adl<int8_t>{}.from(in);
+    std::ignore = version;
+
+    auto logical_version = adl<cluster::cluster_version>{}.from(in);
+    return {.logical_version = logical_version};
+}
+
 } // namespace reflection
