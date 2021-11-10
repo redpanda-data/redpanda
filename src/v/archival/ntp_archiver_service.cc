@@ -42,21 +42,6 @@
 
 namespace archival {
 
-std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
-    fmt::print(
-      o,
-      "{{bucket_name: {}, interval: {}, initial_backoff: {}, "
-      "segment_upload_timeout: {}, "
-      "manifest_upload_timeout: {}, time_limit: {}}}",
-      cfg.bucket_name,
-      cfg.interval.count(),
-      cfg.initial_backoff.count(),
-      cfg.segment_upload_timeout.count(),
-      cfg.manifest_upload_timeout.count(),
-      cfg.time_limit);
-    return o;
-}
-
 ntp_archiver::ntp_archiver(
   const storage::ntp_config& ntp,
   const configuration& conf,
@@ -75,7 +60,8 @@ ntp_archiver::ntp_archiver(
   , _gate()
   , _initial_backoff(conf.initial_backoff)
   , _segment_upload_timeout(conf.segment_upload_timeout)
-  , _manifest_upload_timeout(conf.manifest_upload_timeout) {
+  , _manifest_upload_timeout(conf.manifest_upload_timeout)
+  , _io_priority(conf.upload_io_priority) {
     vlog(archival_log.trace, "Create ntp_archiver {}", _ntp.path());
 }
 
@@ -128,11 +114,9 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
     vlog(ctxlog.debug, "Uploading segment {}", candidate);
 
-    auto reset_func = [candidate] {
+    auto reset_func = [this, candidate] {
         auto stream = candidate.source->reader().data_stream(
-          candidate.file_offset,
-          candidate.final_file_offset,
-          ss::default_priority_class());
+          candidate.file_offset, candidate.final_file_offset, _io_priority);
         return stream;
     };
     co_return co_await _remote.upload_segment(

@@ -665,8 +665,10 @@ void application::wire_up_redpanda_services() {
         ss::sharded<archival::configuration> arch_configs;
         arch_configs.start().get();
         arch_configs
-          .invoke_on_all([](archival::configuration& c) {
-              return archival::scheduler_service::get_archival_service_config()
+          .invoke_on_all([this](archival::configuration& c) {
+              return archival::scheduler_service::get_archival_service_config(
+                       _scheduling_groups.archival_upload(),
+                       archival_priority())
                 .then(
                   [&c](archival::configuration cfg) { c = std::move(cfg); });
           })

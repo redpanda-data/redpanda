@@ -24,6 +24,7 @@
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/io_priority_class.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -34,29 +35,6 @@
 namespace archival {
 
 using namespace std::chrono_literals;
-
-/// Archiver service configuration
-struct configuration {
-    /// Bucket used to store all archived data
-    s3::bucket_name bucket_name;
-    /// Time interval to run uploads & deletes
-    ss::lowres_clock::duration interval;
-    /// Initial backoff for uploads
-    ss::lowres_clock::duration initial_backoff;
-    /// Long upload timeout
-    ss::lowres_clock::duration segment_upload_timeout;
-    /// Shor upload timeout
-    ss::lowres_clock::duration manifest_upload_timeout;
-    /// Flag that indicates that service level metrics are disabled
-    service_metrics_disabled svc_metrics_disabled;
-    /// Flag that indicates that ntp-archiver level metrics are disabled
-    per_ntp_metrics_disabled ntp_metrics_disabled;
-    /// Upload time limit (if segment is not uploaded this amount of time the
-    /// upload is triggered)
-    std::optional<segment_time_limit> time_limit;
-};
-
-std::ostream& operator<<(std::ostream& o, const configuration& cfg);
 
 /// This class performs per-ntp arhcival workload. Every ntp can be
 /// processed independently, without the knowledge about others. All
@@ -199,6 +177,7 @@ private:
     ss::lowres_clock::duration _initial_backoff;
     ss::lowres_clock::duration _segment_upload_timeout;
     ss::lowres_clock::duration _manifest_upload_timeout;
+    ss::io_priority_class _io_priority;
 };
 
 } // namespace archival
