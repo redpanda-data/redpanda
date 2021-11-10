@@ -156,6 +156,7 @@ public:
     /// \brief because we parse the input as a _stream_ we need to signal
     /// to the dispatching thread that it can resume parsing for a new RPC
     virtual void signal_body_parse() = 0;
+    virtual void body_parse_exception(std::exception_ptr) = 0;
 
     /// \brief keep these units until destruction of context.
     /// usually, we want to keep the reservation of the memory size permanently
@@ -233,8 +234,10 @@ struct method {
 /// \brief used in returned types for client::send_typed() calls
 template<typename T>
 struct client_context {
-    explicit client_context(header h)
-      : hdr(std::move(h)) {}
+    client_context(header h, T data)
+      : hdr(h)
+      , data(std::move(data)) {}
+
     header hdr;
     T data;
 };
