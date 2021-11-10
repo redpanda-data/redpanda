@@ -706,6 +706,28 @@ void application::wire_up_redpanda_services() {
       .get();
 
     if (archival_storage_enabled()) {
+        syschecks::systemd_message("Starting shadow indexing cache").get();
+        auto cache_path_cfg
+          = config::node().cloud_storage_cache_directory.value();
+        auto redpanda_dir = config::node().data_directory.value();
+        std::filesystem::path cache_dir = redpanda_dir.path
+                                          / "cloud_storage_cache";
+        if (cache_path_cfg) {
+            cache_dir = std::filesystem::path(cache_path_cfg.value());
+        }
+        auto cache_size
+          = config::shard_local_cfg().cloud_storage_cache_size.value();
+        auto cache_interval = config::shard_local_cfg()
+                                .cloud_storage_cache_check_interval_ms.value();
+        construct_service(
+          shadow_index_cache, cache_dir, cache_size, cache_interval)
+          .get();
+
+        shadow_index_cache
+          .invoke_on_all(
+            [](cloud_storage::cache& cache) { return cache.start(); })
+          .get();
+
         syschecks::systemd_message("Starting archival scheduler").get();
         ss::sharded<archival::configuration> arch_configs;
         arch_configs.start().get();
