@@ -26,6 +26,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/group"
 	plugincmd "github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/plugin"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/plugin"
@@ -69,6 +70,7 @@ func Execute() {
 	rootCmd.AddCommand(NewTopicCommand(fs, mgr))
 	rootCmd.AddCommand(NewClusterCommand(fs))
 	rootCmd.AddCommand(NewACLCommand(fs, mgr))
+	rootCmd.AddCommand(group.NewCommand(fs, mgr))
 
 	rootCmd.AddCommand(plugincmd.NewCommand(fs))
 

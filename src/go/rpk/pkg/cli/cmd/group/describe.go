@@ -6,7 +6,8 @@
 // As of the Change Date specified in that file, in accordance with
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
-package cluster
+
+package group
 
 import (
 	"context"
@@ -22,57 +23,34 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
 )
 
-func NewOffsetsCommand(fs afero.Fs) *cobra.Command {
-	var printEmpty bool
+func NewDescribeCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "offsets",
-		Short: "Print group offset status & lag.",
-		Long: `Print group offset status & lag.
+		Use:   "describe [GROUPS...]",
+		Short: "Describe group offset status & lag.",
+		Long: `Describe group offset status & lag.
 
 This command describes group members, calculates their lag, and prints detailed
-information about the members. By default, if no groups are explicitly listed,
-this command describes all groups. Specific groups to describe can be passed as
-arguments.
-
-By default, offsets are only printed for non-empty groups. If you are managing
-groups manually outside of the context of consumer groups but are using
-Redpanda to store offsets, you can use the --print-empty flag to print offsets
-for empty groups. If you specify any groups directly, their lag is printed even
-if the groups are empty.
+information about the members.
 `,
-
+		Args: cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, groups []string) {
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := kafka.NewFranzClient(fs, p, cfg)
+			adm, err := kafka.NewAdmin(fs, p, cfg)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
-			defer cl.Close()
-
-			adm := kadm.NewClient(cl)
+			defer adm.Close()
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-
-			printEmpty = printEmpty || len(groups) > 0
-
-			if len(groups) == 0 {
-				kgroups, err := adm.ListGroups(ctx)
-				out.HandleShardError("ListGroups", err)
-				groups = kgroups.Groups()
-			}
-
-			if len(groups) == 0 {
-				out.Exit("There are no groups to describe!")
-			}
 
 			described, err := adm.DescribeGroups(ctx, groups...)
 			out.HandleShardError("DescribeGroups", err)
 
 			fetched := adm.FetchManyOffsets(ctx, groups...)
 			fetched.EachError(func(r kadm.FetchOffsetsResponse) {
-				fmt.Printf("unable to fetch offsets for group %q: %v", r.Group, r.Err)
+				fmt.Printf("unable to fetch offsets for group %q: %v\n", r.Group, r.Err)
 				delete(fetched, r.Group)
 			})
 			if fetched.AllFailed() {
@@ -86,11 +64,9 @@ if the groups are empty.
 				described,
 				fetched,
 				listed,
-				printEmpty,
 			)
 		},
 	}
-	cmd.Flags().BoolVarP(&printEmpty, "print-empty", "e", false, "print lag for empty groups if printing all groups")
 	return cmd
 }
 
@@ -117,7 +93,6 @@ func printDescribed(
 	groups kadm.DescribedGroups,
 	fetched map[string]kadm.FetchOffsetsResponse,
 	listed kadm.ListedOffsets,
-	printEmpty bool,
 ) {
 	for _, group := range groups.Sorted() {
 		lag := kadm.CalculateGroupLag(group, fetched[group.Group].Fetched, listed)
@@ -125,14 +100,11 @@ func printDescribed(
 		var rows []describeRow
 		var useInstanceID, useErr bool
 		for _, l := range lag.Sorted() {
-			if l.IsEmpty() && !printEmpty {
-				continue
-			}
 			row := describeRow{
 				topic:     l.End.Topic,
 				partition: l.End.Partition,
 
-				currentOffset: strconv.FormatInt(l.Commit.Offset, 10),
+				currentOffset: strconv.FormatInt(l.Commit.At, 10),
 				logEndOffset:  l.End.Offset,
 				lag:           strconv.FormatInt(l.Lag, 10),
 
@@ -146,7 +118,7 @@ func printDescribed(
 				row.host = l.Member.ClientHost
 			}
 
-			if l.Commit.Offset == -1 { // nothing committed
+			if l.Commit.At == -1 { // nothing committed
 				row.currentOffset = "-"
 			}
 			if l.End.Offset == 0 { // nothing produced yet
