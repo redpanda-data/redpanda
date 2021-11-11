@@ -373,6 +373,14 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
     bool stop = false;
     auto it = deltas.begin();
     while (!(stop || it == deltas.end())) {
+        if (has_non_replicable_op_type(*it)) {
+            /// This if statement has nothing to do with correctness and is only
+            /// here to reduce the amount of uncessecary logging emitted by the
+            /// controller_backend for events that it eventually will not handle
+            /// anyway.
+            ++it;
+            continue;
+        }
         try {
             auto ec = co_await execute_partitition_op(*it);
             if (ec) {
