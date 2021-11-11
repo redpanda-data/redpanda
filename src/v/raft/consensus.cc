@@ -2577,14 +2577,16 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
           make_error_code(errc::not_leader));
     }
 
-    if (_configuration_manager.get_latest_offset() > _commit_index) {
+    auto conf = _configuration_manager.get_latest();
+    if (
+      _configuration_manager.get_latest_offset() > last_visible_index()
+      || conf.type() == configuration_type::joint) {
         vlog(
           _ctxlog.warn,
           "Cannot transfer leadership during configuration change");
         return ss::make_ready_future<std::error_code>(
           make_error_code(errc::configuration_change_in_progress));
     }
-    auto conf = _configuration_manager.get_latest();
     auto target_rni = conf.current_config().find(*target);
 
     if (!target_rni) {
