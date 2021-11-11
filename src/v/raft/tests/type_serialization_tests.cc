@@ -221,7 +221,7 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_roundtrip) {
           .node_id = raft::vnode(model::node_id(1), model::revision_id(i)),
           .group = raft::group_id(i),
           .term = model::term_id(random_generators::get_int(-1, 1000)),
-          .last_committed_log_index = commited_idx,
+          .last_flushed_log_index = commited_idx,
           .last_dirty_log_index = dirty_idx,
           .result = raft::append_entries_reply::status::success});
     }
@@ -250,8 +250,8 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_roundtrip) {
         BOOST_REQUIRE_EQUAL(expected[gr].group, result.meta[i].group);
         BOOST_REQUIRE_EQUAL(expected[gr].term, result.meta[i].term);
         BOOST_REQUIRE_EQUAL(
-          expected[gr].last_committed_log_index,
-          result.meta[i].last_committed_log_index);
+          expected[gr].last_flushed_log_index,
+          result.meta[i].last_flushed_log_index);
         BOOST_REQUIRE_EQUAL(
           expected[gr].last_dirty_log_index,
           result.meta[i].last_dirty_log_index);

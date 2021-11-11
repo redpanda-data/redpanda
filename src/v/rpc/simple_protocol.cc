@@ -33,6 +33,9 @@ struct server_context_impl final : streaming_context {
     ~server_context_impl() override { res.probe().request_completed(); }
     const header& get_header() const final { return hdr; }
     void signal_body_parse() final { pr.set_value(); }
+    void body_parse_exception(std::exception_ptr e) final {
+        pr.set_exception(std::move(e));
+    }
     server::resources res;
     header hdr;
     ss::promise<> pr;

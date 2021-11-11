@@ -12,6 +12,8 @@
 #include "test_utils/fixture.h"
 
 #include <seastar/core/sleep.hh>
+
+#include <exception>
 using namespace std::chrono_literals; // NOLINT
 
 struct test_str_ctx final : public rpc::streaming_context {
@@ -22,6 +24,7 @@ struct test_str_ctx final : public rpc::streaming_context {
     virtual const rpc::header& get_header() const final { return hdr; }
 
     virtual void signal_body_parse() final {}
+    virtual void body_parse_exception(std::exception_ptr) final {}
 
     rpc::header hdr;
     ss::semaphore s{1};

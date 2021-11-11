@@ -210,7 +210,7 @@ In order to make it possible new fields have to be added to
             // next index to send to this follower
             model::offset next_index;
             // timestamp of last append_entries_rpc call
-            clock_type::time_point last_append_timestamp;
+            clock_type::time_point last_sent_append_entries_req_timesptamp;
             uint64_t failed_appends{0};
             bool is_learner = false;
             bool is_recovering = false;

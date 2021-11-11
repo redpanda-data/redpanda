@@ -44,7 +44,7 @@ std::ostream& operator<<(std::ostream& o, const append_entries_reply& r) {
              << r.target_node_id << ", group: " << r.group
              << ", term:" << r.term
              << ", last_dirty_log_index:" << r.last_dirty_log_index
-             << ", last_committed_log_index:" << r.last_committed_log_index
+             << ", last_flushed_log_index:" << r.last_flushed_log_index
              << ", last_term_base_offset:" << r.last_term_base_offset
              << ", result: " << r.result << "}";
 }
@@ -58,7 +58,7 @@ std::ostream& operator<<(std::ostream& o, const vote_request& r) {
 }
 std::ostream& operator<<(std::ostream& o, const follower_index_metadata& i) {
     return o << "{node_id: " << i.node_id
-             << ", last_committed_log_idx: " << i.last_committed_log_index
+             << ", last_committed_log_idx: " << i.last_flushed_log_index
              << ", last_dirty_log_idx: " << i.last_dirty_log_index
              << ", match_index: " << i.match_index
              << ", next_index: " << i.next_index
@@ -285,7 +285,7 @@ struct hbeat_response_array {
     explicit hbeat_response_array(size_t n)
       : groups(n)
       , terms(n)
-      , last_committed_log_index(n)
+      , last_flushed_log_index(n)
       , last_dirty_log_index(n)
       , last_term_base_offset(n)
       , revisions(n)
@@ -293,7 +293,7 @@ struct hbeat_response_array {
 
     std::vector<raft::group_id> groups;
     std::vector<model::term_id> terms;
-    std::vector<model::offset> last_committed_log_index;
+    std::vector<model::offset> last_flushed_log_index;
     std::vector<model::offset> last_dirty_log_index;
     std::vector<model::offset> last_term_base_offset;
     std::vector<model::revision_id> revisions;
@@ -493,7 +493,7 @@ ss::future<> async_adl<raft::heartbeat_reply>::to(
         constexpr bool operator()(
           const raft::append_entries_reply& lhs,
           const raft::append_entries_reply& rhs) const {
-            return lhs.last_committed_log_index < rhs.last_committed_log_index;
+            return lhs.last_flushed_log_index < rhs.last_flushed_log_index;
         }
     };
     adl<uint32_t>{}.to(out, reply.meta.size());
@@ -513,8 +513,8 @@ ss::future<> async_adl<raft::heartbeat_reply>::to(
         encodee.groups[i] = reply.meta[i].group;
         encodee.terms[i] = std::max(model::term_id(-1), reply.meta[i].term);
 
-        encodee.last_committed_log_index[i] = std::max(
-          model::offset(-1), reply.meta[i].last_committed_log_index);
+        encodee.last_flushed_log_index[i] = std::max(
+          model::offset(-1), reply.meta[i].last_flushed_log_index);
         encodee.last_dirty_log_index[i] = std::max(
           model::offset(-1), reply.meta[i].last_dirty_log_index);
         encodee.last_term_base_offset[i] = std::max(
@@ -528,7 +528,7 @@ ss::future<> async_adl<raft::heartbeat_reply>::to(
     internal::encode_one_delta_array<model::term_id>(out, encodee.terms);
 
     internal::encode_one_delta_array<model::offset>(
-      out, encodee.last_committed_log_index);
+      out, encodee.last_flushed_log_index);
     internal::encode_one_delta_array<model::offset>(
       out, encodee.last_dirty_log_index);
     internal::encode_one_delta_array<model::offset>(
@@ -569,11 +569,11 @@ async_adl<raft::heartbeat_reply>::from(iobuf_parser& in) {
           in, reply.meta[i - 1].term);
     }
 
-    reply.meta[0].last_committed_log_index = varlong_reader<model::offset>(in);
+    reply.meta[0].last_flushed_log_index = varlong_reader<model::offset>(in);
     for (size_t i = 1; i < size; ++i) {
-        reply.meta[i].last_committed_log_index
+        reply.meta[i].last_flushed_log_index
           = internal::read_one_varint_delta<model::offset>(
-            in, reply.meta[i - 1].last_committed_log_index);
+            in, reply.meta[i - 1].last_flushed_log_index);
     }
 
     reply.meta[0].last_dirty_log_index = varlong_reader<model::offset>(in);
@@ -614,7 +614,7 @@ async_adl<raft::heartbeat_reply>::from(iobuf_parser& in) {
     }
 
     for (auto& m : reply.meta) {
-        m.last_committed_log_index = decode_signed(m.last_committed_log_index);
+        m.last_flushed_log_index = decode_signed(m.last_flushed_log_index);
         m.last_dirty_log_index = decode_signed(m.last_dirty_log_index);
         m.last_term_base_offset = decode_signed(m.last_term_base_offset);
         m.node_id = raft::vnode(

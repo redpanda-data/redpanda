@@ -64,7 +64,7 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::flush_log() {
                    reply.term = _ptr->term();
                    // we just flushed offsets are the same
                    reply.last_dirty_log_index = new_committed_offset;
-                   reply.last_committed_log_index = new_committed_offset;
+                   reply.last_flushed_log_index = new_committed_offset;
                    reply.result = append_entries_reply::status::success;
                    return ret_t(reply);
                })
@@ -208,7 +208,7 @@ inline bool replicate_entries_stm::should_skip_follower_request(vnode id) {
         const auto timeout = clock_type::now()
                              - _ptr->_replicate_append_timeout;
 
-        return it->second.last_hbeat_timestamp < timeout
+        return it->second.last_received_append_entries_reply_timestamp < timeout
                || it->second.is_recovering;
     }
 
