@@ -6,7 +6,7 @@ order: 1
 # Designed for performance
 
 Great news! Redpanda comes with an autotuner that detects the optimal settings for your hardware.
-To get the best performance for your hardware, set Redpanda to [production mode](./docs/production-deployment).
+To get the best performance for your hardware, set Redpanda to [production mode](https://vectorized.io/docs/production-deployment).
 In production mode, Redpanda identifies your hardware configuration and tunes itself to give you the best performance.
 
 The performance settings listed here are just for general reference.
