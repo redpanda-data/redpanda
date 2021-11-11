@@ -13,10 +13,21 @@ metadata:
   name: up-img-0
 spec:
   containers:
-    - name: redpanda
-      image: "localhost/redpanda:dev"
-    - name: rpk-status
-      image: "localhost/redpanda:dev"
+  - name: redpanda
+    image: "vectorized/redpanda:v21.10.1-si-beta14"
+    volumeMounts:
+    - mountPath: /etc/redpanda
+      name: config-dir
+    - mountPath: /etc/tls/certs/admin
+      name: tlsadmincert
+    - mountPath: /var/lib/redpanda/data
+      name: datadir
+    - mountPath: /var/lib/shadow-index-cache
+      name: shadow-index-cache
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      readOnly: true
+  - name: rpk-status
+    image: "vectorized/redpanda:v21.10.1-si-beta14"
 status:
   phase: "Running"
 
@@ -28,9 +39,20 @@ metadata:
   name: up-img-1
 spec:
   containers:
-    - name: redpanda
-      image: "localhost/redpanda:dev"
-    - name: rpk-status
-      image: "localhost/redpanda:dev"
+  - name: redpanda
+    image: "vectorized/redpanda:v21.10.1-si-beta14"
+    volumeMounts:
+    - mountPath: /etc/redpanda
+      name: config-dir
+    - mountPath: /etc/tls/certs/admin
+      name: tlsadmincert
+    - mountPath: /var/lib/redpanda/data
+      name: datadir
+    - mountPath: /var/lib/shadow-index-cache
+      name: shadow-index-cache
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      readOnly: true
+  - name: rpk-status
+    image: "vectorized/redpanda:v21.10.1-si-beta14"
 status:
   phase: "Running"

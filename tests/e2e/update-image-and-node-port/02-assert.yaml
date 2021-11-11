@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: update-image-cluster-and-node-port
+status:
+  readyReplicas: 2
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: update-image-cluster-and-node-port-0
+spec:
+  containers:
+  - name: redpanda
+    image: "localhost/redpanda:dev"
+  - name: rpk-status
+    image: "localhost/redpanda:dev"
+status:
+  phase: "Running"
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: update-image-cluster-and-node-port-1
+spec:
+  containers:
+  - name: redpanda
+    image: "localhost/redpanda:dev"
+  - name: rpk-status
+    image: "localhost/redpanda:dev"
+status:
+  phase: "Running"
