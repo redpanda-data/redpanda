@@ -1732,6 +1732,11 @@ ss::future<> consensus::truncate_to_latest_snapshot() {
           return _log.truncate_prefix(storage::truncate_prefix_config(
             details::next_offset(_last_snapshot_index),
             _scheduling.default_iopc));
+      })
+      .then([this] {
+          // when log was prefix truncate flushed offset should be equal to at
+          // least last snapshot index
+          _flushed_offset = std::max(_last_snapshot_index, _flushed_offset);
       });
 }
 
