@@ -10,6 +10,8 @@ v_cc_library(
     Seastar::seastar
     v::bytes
     v::rpc
+  DEFINES
+    -DBOOST_ASIO_HAS_STD_INVOKE_RESULT
 )
 
 add_subdirectory(demo)

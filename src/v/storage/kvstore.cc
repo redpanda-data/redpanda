@@ -397,7 +397,7 @@ void kvstore::load_snapshot_in_thread() {
         _next_offset = model::offset(0);
         return;
     }
-    auto close_reader = ss::defer([&reader] { return reader->close().get(); });
+    auto close_reader = ss::defer([&reader] { reader->close().get(); });
 
     // the snapshot metadata contains the last offset represented
     auto snap_meta = reader->read_metadata().get0();
