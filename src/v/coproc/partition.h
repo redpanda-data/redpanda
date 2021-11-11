@@ -50,6 +50,9 @@ public:
     ss::future<std::optional<storage::timequery_result>>
       timequery(storage::timequery_config);
 
+    /// \brief get a handle to the source partition
+    ss::lw_shared_ptr<cluster::partition> source_partition() { return _source; }
+
 private:
     ss::gate _gate;
     storage::log _log;
