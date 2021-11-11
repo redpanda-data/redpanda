@@ -123,7 +123,7 @@ FIXTURE_TEST(test_upload_segment_timeout, s3_imposter_fixture) { // NOLINT
         out.append(manifest_payload.data(), manifest_payload.size());
         return make_iobuf_input_stream(std::move(out));
     };
-    retry_chain_node fib(100ms, 20ms);
+    retry_chain_node fib(20ms, 10ms);
     auto res = remote
                  .upload_segment(
                    s3::bucket_name("bucket"), name, clen, reset_stream, m, fib)
@@ -180,7 +180,7 @@ FIXTURE_TEST(test_download_segment_timeout, s3_imposter_fixture) { // NOLINT
         return ss::make_ready_future<uint64_t>(0);
     };
 
-    retry_chain_node fib(100ms, 20ms);
+    retry_chain_node fib(20ms, 10ms);
     auto dnl_res
       = remote.download_segment(bucket, name, m, try_consume, fib).get();
     BOOST_REQUIRE(dnl_res == download_result::timedout);

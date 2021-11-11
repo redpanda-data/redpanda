@@ -827,7 +827,7 @@ static segment_layout generate_segment_layout(int num_segments, int seed) {
 /// This test scans the entire range of offsets
 FIXTURE_TEST(
   test_remote_partition_scan_translate_full_random, cloud_storage_fixture) {
-    constexpr int num_segments = 1000;
+    constexpr int num_segments = 400;
     const auto [batch_types, num_data_batches] = generate_segment_layout(
       num_segments, 42);
     auto segments = setup_s3_imposter(*this, batch_types);
@@ -897,7 +897,7 @@ scan_remote_partition_incrementally(
 
 FIXTURE_TEST(
   test_remote_partition_scan_incrementally_random, cloud_storage_fixture) {
-    constexpr int num_segments = 1000;
+    constexpr int num_segments = 400;
     const auto [batch_types, num_data_batches] = generate_segment_layout(
       num_segments, 42);
     auto segments = setup_s3_imposter(*this, batch_types);
