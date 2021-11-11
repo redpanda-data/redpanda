@@ -122,6 +122,10 @@ public:
 
     cluster::shard_table& shards() { return _conn->server().shard_table(); }
 
+    ss::sharded<coproc::partition_manager>& coproc_partition_manager() {
+        return _conn->server().coproc_partition_manager();
+    }
+
     ss::sharded<cluster::partition_manager>& partition_manager() {
         return _conn->server().partition_manager();
     }
