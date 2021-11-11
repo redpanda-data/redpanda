@@ -17,6 +17,7 @@ class api;
 class pacemaker;
 class script_context;
 class partition_manager;
+class reconciliation_backend;
 
 namespace wasm {
 

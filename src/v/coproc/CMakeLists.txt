@@ -24,6 +24,7 @@ v_cc_library(
     event_handler.cc
     partition.cc
     partition_manager.cc
+    reconciliation_backend.cc
   DEPS
     v::rpc
     v::model
