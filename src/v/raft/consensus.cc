@@ -1633,6 +1633,10 @@ consensus::do_append_entries(append_entries_request&& r) {
               _last_quorum_replicated_index = std::min(
                 details::prev_offset(truncate_at),
                 _last_quorum_replicated_index);
+              // update flushed offset since truncation may happen to already
+              // flushed entries
+              _flushed_offset = std::min(
+                details::prev_offset(truncate_at), _flushed_offset);
 
               return _configuration_manager.truncate(truncate_at).then([this] {
                   _probe.configuration_update();
