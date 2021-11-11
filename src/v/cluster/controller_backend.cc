@@ -534,16 +534,14 @@ controller_backend::execute_partitition_op(const topic_table::delta& delta) {
           create_brokers_set(
             delta.new_assignment.replicas, _members_table.local()));
     case op_t::add_non_replicable:
-        if (!has_local_replicas(_self, delta.new_assignment.replicas)) {
-            return ss::make_ready_future<std::error_code>(errc::success);
-        }
-        return create_non_replicable_partition(delta.ntp, rev);
+        [[fallthrough]];
+    case op_t::del_non_replicable:
+        vassert(
+          false,
+          "controller_backend attempted to process an event that should only "
+          "be handled by coproc::reconciliation_backend");
     case op_t::del:
         return delete_partition(delta.ntp, rev).then([] {
-            return std::error_code(errc::success);
-        });
-    case op_t::del_non_replicable:
-        return delete_non_replicable_partition(delta.ntp, rev).then([] {
             return std::error_code(errc::success);
         });
     case op_t::update:
@@ -924,18 +922,6 @@ ss::future<> controller_backend::add_to_shard_table(
       });
 }
 
-ss::future<> controller_backend::add_to_shard_table(
-  model::ntp ntp, ss::shard_id shard, model::revision_id revision) {
-    vlog(
-      clusterlog.trace, "adding {} to shard table at {}", revision, ntp, shard);
-    return _shard_table.invoke_on_all(
-      [ntp = std::move(ntp), shard, revision](shard_table& s) mutable {
-          vassert(
-            s.update_shard(ntp, shard, revision),
-            "Newer revision for non-replicable ntp exists");
-      });
-}
-
 ss::future<> controller_backend::remove_from_shard_table(
   model::ntp ntp, raft::group_id raft_group, model::revision_id revision) {
     // update shard_table: broadcast
@@ -944,33 +930,6 @@ ss::future<> controller_backend::remove_from_shard_table(
       [ntp = std::move(ntp), raft_group, revision](shard_table& s) mutable {
           s.erase(ntp, raft_group, revision);
       });
-}
-
-ss::future<> controller_backend::delete_non_replicable_partition(
-  model::ntp ntp, model::revision_id rev) {
-    vlog(clusterlog.trace, "removing {} from shard table at {}", ntp, rev);
-    co_await _shard_table.invoke_on_all(
-      [ntp, rev](shard_table& st) { st.erase(ntp, rev); });
-    auto log = _storage.local().log_mgr().get(ntp);
-    if (log && log->config().get_revision() < rev) {
-        co_await _storage.local().log_mgr().remove(ntp);
-    }
-}
-
-ss::future<std::error_code> controller_backend::create_non_replicable_partition(
-  model::ntp ntp, model::revision_id rev) {
-    auto cfg = _topics.local().get_topic_cfg(model::topic_namespace_view(ntp));
-    if (!cfg) {
-        // partition was already removed, do nothing
-        co_return errc::success;
-    }
-    vassert(
-      !_storage.local().log_mgr().get(ntp),
-      "Log exists for missing entry in topics_table");
-    auto ntp_cfg = cfg->make_ntp_config(_data_directory, ntp.tp.partition, rev);
-    co_await _storage.local().log_mgr().manage(std::move(ntp_cfg));
-    co_await add_to_shard_table(std::move(ntp), ss::this_shard_id(), rev);
-    co_return errc::success;
 }
 
 ss::future<std::error_code> controller_backend::create_partition(
