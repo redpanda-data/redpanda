@@ -15,6 +15,7 @@
 #include "coproc/event_handler.h"
 #include "coproc/event_listener.h"
 #include "coproc/pacemaker.h"
+#include "coproc/reconciliation_backend.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -23,12 +24,16 @@ namespace coproc {
 api::api(
   unresolved_address addr,
   ss::sharded<storage::api>& storage,
+  ss::sharded<cluster::topic_table>& topic_table,
+  ss::sharded<cluster::shard_table>& shard_table,
   ss::sharded<cluster::topics_frontend>& topics_frontend,
   ss::sharded<cluster::metadata_cache>& metadata_cache,
   ss::sharded<cluster::partition_manager>& partition_manager) noexcept
   : _engine_addr(std::move(addr))
   , _rs(sys_refs{
       .storage = storage,
+      .topic_table = topic_table,
+      .shard_table = shard_table,
       .mt_frontend = _mt_frontend,
       .topics_frontend = topics_frontend,
       .metadata_cache = metadata_cache,
@@ -37,6 +42,13 @@ api::api(
 api::~api() = default;
 
 ss::future<> api::start() {
+    co_await _reconciliation_backend.start(
+      std::ref(_rs.topic_table),
+      std::ref(_rs.shard_table),
+      std::ref(_rs.storage));
+    co_await _reconciliation_backend.invoke_on_all(
+      &coproc::reconciliation_backend::start);
+
     co_await _mt_frontend.start_single(std::ref(_rs.topics_frontend));
     co_await _pacemaker.start(_engine_addr, std::ref(_rs));
     co_await _pacemaker.invoke_on_all(&coproc::pacemaker::start);

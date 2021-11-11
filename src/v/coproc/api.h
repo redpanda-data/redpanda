@@ -22,6 +22,8 @@ public:
     api(
       unresolved_address,
       ss::sharded<storage::api>&,
+      ss::sharded<cluster::topic_table>&,
+      ss::sharded<cluster::shard_table>&,
       ss::sharded<cluster::topics_frontend>&,
       ss::sharded<cluster::metadata_cache>&,
       ss::sharded<cluster::partition_manager>&) noexcept;
@@ -42,6 +44,8 @@ private:
     ss::sharded<pacemaker> _pacemaker;               /// one per core
     ss::sharded<cluster::non_replicable_topics_frontend>
       _mt_frontend; /// one instance
+    ss::sharded<reconciliation_backend>
+      _reconciliation_backend; /// one per core
 
     // Event handlers
     std::unique_ptr<wasm::async_event_handler> _wasm_async_handler;
