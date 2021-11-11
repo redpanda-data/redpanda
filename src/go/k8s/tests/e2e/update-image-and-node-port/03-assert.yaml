@@ -14,18 +14,16 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v21.10.1-si-beta14"
+    image: "localhost/redpanda:dev"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
     - mountPath: /var/lib/redpanda/data
       name: datadir
-    - mountPath: /var/lib/shadow-index-cache
-      name: shadow-index-cache
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
       readOnly: true
   - name: rpk-status
-    image: "vectorized/redpanda:v21.10.1-si-beta14"
+    image: "localhost/redpanda:dev"
 status:
   phase: "Running"
 
@@ -38,38 +36,15 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v21.10.1-si-beta14"
+    image: "localhost/redpanda:dev"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
     - mountPath: /var/lib/redpanda/data
       name: datadir
-    - mountPath: /var/lib/shadow-index-cache
-      name: shadow-index-cache
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
       readOnly: true
   - name: rpk-status
-    image: "vectorized/redpanda:v21.10.1-si-beta14"
+    image: "localhost/redpanda:dev"
 status:
   phase: "Running"
-
----
-
-apiVersion: v1
-kind: Service
-metadata:
-  name: update-image-cluster-and-node-port-external
-spec:
-  externalTrafficPolicy: Local
-  ports:
-    - name: kafka-external
-      nodePort: 32748
-      port: 9093
-      protocol: TCP
-      targetPort: 9093
-    - name: admin-external
-      nodePort: 31178
-      port: 9645
-      protocol: TCP
-      targetPort: 9645
-  type: NodePort
