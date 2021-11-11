@@ -43,7 +43,8 @@ private:
     std::unique_ptr<wasm::event_listener> _listener; /// one instance
     ss::sharded<pacemaker> _pacemaker;               /// one per core
     ss::sharded<cluster::non_replicable_topics_frontend>
-      _mt_frontend; /// one instance
+      _mt_frontend;                                    /// one instance
+    ss::sharded<partition_manager> _partition_manager; /// one per core
     ss::sharded<reconciliation_backend>
       _reconciliation_backend; /// one per core
 

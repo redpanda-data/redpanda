@@ -21,6 +21,8 @@
 
 #include <absl/container/node_hash_map.h>
 
+#include <chrono>
+
 namespace coproc {
 
 class reconciliation_backend {
@@ -28,7 +30,8 @@ public:
     explicit reconciliation_backend(
       ss::sharded<cluster::topic_table>&,
       ss::sharded<cluster::shard_table>&,
-      ss::sharded<storage::api>&) noexcept;
+      ss::sharded<cluster::partition_manager>&,
+      ss::sharded<partition_manager>&) noexcept;
 
     /// Starts the reconciliation loop
     ///
@@ -57,6 +60,9 @@ private:
     ss::future<> within_context(Fn&&);
 
 private:
+    static constexpr auto retry_timeout_interval = std::chrono::milliseconds(
+      100);
+
     cluster::notification_id_type _id_cb;
     model::node_id _self;
     ss::sstring _data_directory;
@@ -69,7 +75,8 @@ private:
 
     ss::sharded<cluster::topic_table>& _topics;
     ss::sharded<cluster::shard_table>& _shard_table;
-    ss::sharded<storage::api>& _storage;
+    ss::sharded<cluster::partition_manager>& _cluster_pm;
+    ss::sharded<partition_manager>& _coproc_pm;
 };
 
 } // namespace coproc

@@ -12,10 +12,12 @@
 #include "coproc/reconciliation_backend.h"
 
 #include "cluster/cluster_utils.h"
+#include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
 #include "coproc/logger.h"
 #include "coproc/pacemaker.h"
+#include "coproc/partition_manager.h"
 #include "storage/api.h"
 
 #include <seastar/core/coroutine.hh>
@@ -25,12 +27,14 @@ namespace coproc {
 reconciliation_backend::reconciliation_backend(
   ss::sharded<cluster::topic_table>& topics,
   ss::sharded<cluster::shard_table>& shard_table,
-  ss::sharded<storage::api>& storage) noexcept
+  ss::sharded<cluster::partition_manager>& cluster_pm,
+  ss::sharded<partition_manager>& coproc_pm) noexcept
   : _self(model::node_id(config::node().node_id))
   , _data_directory(config::node().data_directory().as_sstring())
   , _topics(topics)
   , _shard_table(shard_table)
-  , _storage(storage) {
+  , _cluster_pm(cluster_pm)
+  , _coproc_pm(coproc_pm) {
     _retry_timer.set_callback([this] {
         (void)within_context([this]() { return fetch_and_reconcile(); });
     });
@@ -68,6 +72,7 @@ ss::future<> reconciliation_backend::start() {
 }
 
 ss::future<> reconciliation_backend::stop() {
+    _retry_timer.cancel();
     _as.request_abort();
     _topics.local().unregister_delta_notification(_id_cb);
     return _gate.close();
@@ -81,7 +86,7 @@ reconciliation_backend::process_events_for_ntp(
         vlog(coproclog.trace, "executing ntp: {} op: {}", d.ntp, d);
         auto err = co_await process_update(d);
         vlog(coproclog.info, "partition operation {} result {}", d, err);
-        if (err != errc::success) {
+        if (err == errc::partition_not_exists) {
             /// In this case the source topic exists but its
             /// associated partition doesn't, so try again
             retries.push_back(std::move(d));
@@ -149,26 +154,39 @@ ss::future<> reconciliation_backend::delete_non_replicable_partition(
     vlog(coproclog.trace, "removing {} from shard table at {}", ntp, rev);
     co_await _shard_table.invoke_on_all(
       [ntp, rev](cluster::shard_table& st) { st.erase(ntp, rev); });
-    auto log = _storage.local().log_mgr().get(ntp);
-    if (log && log->config().get_revision() < rev) {
-        co_await _storage.local().log_mgr().remove(ntp);
+    auto copro_partition = _coproc_pm.local().get(ntp);
+    if (copro_partition && copro_partition->get_revision_id() < rev) {
+        co_await _coproc_pm.local().remove(ntp);
     }
 }
 
 ss::future<std::error_code>
 reconciliation_backend::create_non_replicable_partition(
   model::ntp ntp, model::revision_id rev) {
-    auto cfg = _topics.local().get_topic_cfg(model::topic_namespace_view(ntp));
-    if (!cfg) {
+    auto& topics_map = _topics.local().topics_map();
+    auto tt_md = topics_map.find(model::topic_namespace_view(ntp));
+    if (tt_md == topics_map.end()) {
         // partition was already removed, do nothing
         co_return errc::success;
     }
     vassert(
-      !_storage.local().log_mgr().get(ntp),
-      "Log exists for missing entry in topics_table {}",
+      !tt_md->second.is_topic_replicable(),
+      "Expected to find non_replicable_topic instead: {}",
       ntp);
-    auto ntp_cfg = cfg->make_ntp_config(_data_directory, ntp.tp.partition, rev);
-    co_await _storage.local().log_mgr().manage(std::move(ntp_cfg));
+    auto copro_partition = _coproc_pm.local().get(ntp);
+    if (likely(!copro_partition)) {
+        // get_source_topic will assert if incorrect API is used
+        auto src_partition = _cluster_pm.local().get(model::ntp(
+          ntp.ns, tt_md->second.get_source_topic(), ntp.tp.partition));
+        if (!src_partition) {
+            co_return errc::partition_not_exists;
+        }
+        auto ntp_cfg = tt_md->second.get_configuration().cfg.make_ntp_config(
+          _data_directory, ntp.tp.partition, rev);
+        co_await _coproc_pm.local().manage(std::move(ntp_cfg), src_partition);
+    } else if (copro_partition->get_revision_id() < rev) {
+        co_return errc::partition_already_exists;
+    }
     co_await add_to_shard_table(std::move(ntp), ss::this_shard_id(), rev);
     co_return errc::success;
 }
