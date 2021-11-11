@@ -15,6 +15,7 @@
 #include "coproc/event_handler.h"
 #include "coproc/event_listener.h"
 #include "coproc/pacemaker.h"
+#include "coproc/partition_manager.h"
 #include "coproc/reconciliation_backend.h"
 
 #include <seastar/core/coroutine.hh>
@@ -42,10 +43,15 @@ api::api(
 api::~api() = default;
 
 ss::future<> api::start() {
+    co_await _partition_manager.start(std::ref(_rs.storage));
+    co_await _partition_manager.invoke_on_all(
+      &coproc::partition_manager::start);
+
     co_await _reconciliation_backend.start(
       std::ref(_rs.topic_table),
       std::ref(_rs.shard_table),
-      std::ref(_rs.storage));
+      std::ref(_rs.partition_manager),
+      std::ref(_partition_manager));
     co_await _reconciliation_backend.invoke_on_all(
       &coproc::reconciliation_backend::start);
 
@@ -63,13 +69,13 @@ ss::future<> api::start() {
 }
 
 ss::future<> api::stop() {
-    auto f = ss::now();
     if (_listener) {
-        f = _listener->stop();
+        co_await _listener->stop();
     }
-    return f.then([this] { return _pacemaker.stop(); }).then([this] {
-        return _mt_frontend.stop();
-    });
+    co_await _pacemaker.stop();
+    co_await _mt_frontend.stop();
+    co_await _reconciliation_backend.stop();
+    co_await _partition_manager.stop();
 }
 
 } // namespace coproc
