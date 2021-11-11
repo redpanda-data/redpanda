@@ -1633,6 +1633,10 @@ consensus::do_append_entries(append_entries_request&& r) {
               _last_quorum_replicated_index = std::min(
                 details::prev_offset(truncate_at),
                 _last_quorum_replicated_index);
+              // update flushed offset since truncation may happen to already
+              // flushed entries
+              _flushed_offset = std::min(
+                details::prev_offset(truncate_at), _flushed_offset);
 
               return _configuration_manager.truncate(truncate_at).then([this] {
                   _probe.configuration_update();
@@ -1728,6 +1732,11 @@ ss::future<> consensus::truncate_to_latest_snapshot() {
           return _log.truncate_prefix(storage::truncate_prefix_config(
             details::next_offset(_last_snapshot_index),
             _scheduling.default_iopc));
+      })
+      .then([this] {
+          // when log was prefix truncate flushed offset should be equal to at
+          // least last snapshot index
+          _flushed_offset = std::max(_last_snapshot_index, _flushed_offset);
       });
 }
 
@@ -2568,14 +2577,16 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
           make_error_code(errc::not_leader));
     }
 
-    if (_configuration_manager.get_latest_offset() > _commit_index) {
+    auto conf = _configuration_manager.get_latest();
+    if (
+      _configuration_manager.get_latest_offset() > last_visible_index()
+      || conf.type() == configuration_type::joint) {
         vlog(
           _ctxlog.warn,
           "Cannot transfer leadership during configuration change");
         return ss::make_ready_future<std::error_code>(
           make_error_code(errc::configuration_change_in_progress));
     }
-    auto conf = _configuration_manager.get_latest();
     auto target_rni = conf.current_config().find(*target);
 
     if (!target_rni) {
