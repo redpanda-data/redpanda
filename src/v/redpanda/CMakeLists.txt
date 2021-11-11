@@ -35,6 +35,13 @@ seastar_generate_swagger(
 )
 
 seastar_generate_swagger(
+        TARGET features_swagger
+        VAR features_swagger_file
+        IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/admin/api-doc/features.json
+        OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/admin/api-doc/features.json.h
+)
+
+seastar_generate_swagger(
   TARGET broker_swagger
   VAR broker_swagger_file
   IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/admin/api-doc/broker.json
@@ -85,7 +92,7 @@ target_link_libraries(redpanda PUBLIC v::application v::raft v::kafka)
 set_property(TARGET redpanda PROPERTY POSITION_INDEPENDENT_CODE ON)
 add_dependencies(v_application config_swagger cluster_config_swagger raft_swagger
     security_swagger status_swagger broker_swagger partition_swagger hbadger_swagger
-    transaction_swagger)
+    transaction_swagger features_swagger)
 
 if(CMAKE_BUILD_TYPE MATCHES Release)
   include(CheckIPOSupported)

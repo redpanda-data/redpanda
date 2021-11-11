@@ -15,6 +15,8 @@
 #include "cluster/controller.h"
 #include "cluster/controller_api.h"
 #include "cluster/errc.h"
+#include "cluster/feature_manager.h"
+#include "cluster/feature_table.h"
 #include "cluster/fwd.h"
 #include "cluster/members_frontend.h"
 #include "cluster/metadata_cache.h"
@@ -35,6 +37,7 @@
 #include "redpanda/admin/api-doc/broker.json.h"
 #include "redpanda/admin/api-doc/cluster_config.json.h"
 #include "redpanda/admin/api-doc/config.json.h"
+#include "redpanda/admin/api-doc/features.json.h"
 #include "redpanda/admin/api-doc/hbadger.json.h"
 #include "redpanda/admin/api-doc/partition.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
@@ -127,6 +130,8 @@ void admin_server::configure_admin_routes() {
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "status");
     rb->register_function(_server._routes, insert_comma);
+    rb->register_api_file(_server._routes, "features");
+    rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "hbadger");
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "broker");
@@ -139,6 +144,7 @@ void admin_server::configure_admin_routes() {
     register_kafka_routes();
     register_security_routes();
     register_status_routes();
+    register_features_routes();
     register_broker_routes();
     register_partition_routes();
     register_hbadger_routes();
@@ -1218,6 +1224,25 @@ void admin_server::register_status_routes() {
           std::unordered_map<ss::sstring, ss::sstring> status_map{
             {"status", _ready ? "ready" : "booting"}};
           return ss::make_ready_future<ss::json::json_return_type>(status_map);
+      });
+}
+
+void admin_server::register_features_routes() {
+    ss::httpd::features_json::get_features.set(
+      _server._routes,
+      [this](std::unique_ptr<ss::httpd::request>)
+        -> ss::future<ss::json::json_return_type> {
+          ss::httpd::features_json::features_response res;
+
+          const auto& ft = _controller->get_feature_table().local();
+          auto version = ft.get_active_version();
+
+          res.cluster_version = version;
+          for (const auto& f : ft.get_active_features()) {
+              res.features.push(ss::sstring(cluster::to_string_view(f)));
+          }
+
+          co_return std::move(res);
       });
 }
 

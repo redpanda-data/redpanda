@@ -80,6 +80,7 @@ private:
     void register_kafka_routes();
     void register_security_routes();
     void register_status_routes();
+    void register_features_routes();
     void register_broker_routes();
     void register_partition_routes();
     void register_hbadger_routes();

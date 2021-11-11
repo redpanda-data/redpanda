@@ -1,0 +1,45 @@
+{
+    "apiVersion": "0.0.1",
+    "swaggerVersion": "1.2",
+    "basePath": "/v1",
+    "resourcePath": "/features",
+    "produces": [
+        "application/json"
+    ],
+    "apis": [
+        {
+            "path": "/v1/features",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get available Redpanda features",
+                    "type": "feature_response",
+                    "nickname": "get_features",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        }
+    ],
+    "models": {
+        "features_response": {
+            "id": "features_response",
+            "description": "Describe available features in this redpanda cluster",
+            "properties": {
+                "cluster_version": {
+                    "type": "long",
+                    "description": "Logical version of cluster"
+                },
+                "features": {
+                    "type": "array",
+                    "description": "list of feature names",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        }
+    }
+}
