@@ -50,6 +50,7 @@ protocol::protocol(
   ss::sharded<cluster::security_frontend>& sec_fe,
   ss::sharded<cluster::controller_api>& controller_api,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
+  ss::sharded<coproc::partition_manager>& coproc_partition_manager,
   ss::sharded<v8_engine::data_policy_table>& data_policy_table,
   std::optional<qdc_monitor::config> qdc_config) noexcept
   : _smp_group(smp)
@@ -71,6 +72,7 @@ protocol::protocol(
   , _security_frontend(sec_fe)
   , _controller_api(controller_api)
   , _tx_gateway_frontend(tx_gateway_frontend)
+  , _coproc_partition_manager(coproc_partition_manager)
   , _data_policy_table(data_policy_table) {
     if (qdc_config) {
         _qdc_mon.emplace(*qdc_config);
