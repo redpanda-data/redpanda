@@ -141,6 +141,7 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/weak_ptr.hh>
 #include <seastar/util/log.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <fmt/format.h>
 #include <fmt/ostream.h>
@@ -352,13 +353,18 @@ public:
     template<typename... Args>
     void log(ss::log_level lvl, const char* format, Args&&... args) const {
         if (_log.is_enabled(lvl)) {
-            auto msg = ssx::sformat(format, std::forward<Args>(args)...);
-            if (_ctx) {
-                _log.log(
-                  lvl, "{} - {}", _node("{}", _ctx.value()), std::move(msg));
-            } else {
-                _log.log(lvl, "{} - {}", _node(), std::move(msg));
-            }
+            auto lambda = [&](ss::logger& logger, ss::log_level lvl) {
+                auto msg = ssx::sformat(format, std::forward<Args>(args)...);
+                if (_ctx) {
+                    logger.log(
+                      lvl,
+                      "{} - {}",
+                      _node("{}", _ctx.value()),
+                      std::move(msg));
+                }
+                logger.log(lvl, "{} - {}", _node(), std::move(msg));
+            };
+            do_log(lvl, std::move(lambda));
         }
     }
     template<typename... Args>
@@ -383,6 +389,10 @@ public:
     }
 
 private:
+    void __attribute__((noinline)) do_log(
+      ss::log_level lvl,
+      ss::noncopyable_function<void(ss::logger&, ss::log_level)>) const;
+
     ss::logger& _log;
     const retry_chain_node& _node;
     std::optional<ss::sstring> _ctx;
