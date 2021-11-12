@@ -2513,8 +2513,8 @@ consensus::prepare_transfer_leadership(vnode target_rni) {
 
     if (meta.is_recovering) {
         vlog(
-          _ctxlog.warn,
-          "transfer leadership: waiting for node {} recovery",
+          _ctxlog.info,
+          "transfer leadership: waiting for node {} to catch up",
           target_rni);
         meta.follower_state_change.broadcast();
         try {
