@@ -253,7 +253,7 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 		},
 		Spec: redpandav1alpha1.ClusterSpec{
 			Image:    "image",
-			Version:  "v21.10.1",
+			Version:  "v21.11.1",
 			Replicas: pointer.Int32Ptr(replicas),
 			CloudStorage: redpandav1alpha1.CloudStorageConfig{
 				Enabled: true,
