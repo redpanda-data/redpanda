@@ -58,8 +58,13 @@ ntp_config config_from_ntp(const model::ntp& ntp) {
 SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     auto conf = make_config();
     storage::api store(
-      storage::kvstore_config(
-        1_MiB, 10ms, conf.base_dir, storage::debug_sanitize_files::yes),
+      [conf]() {
+          return storage::kvstore_config(
+            1_MiB,
+            config::mock_binding(10ms),
+            conf.base_dir,
+            storage::debug_sanitize_files::yes);
+      },
       conf);
     store.start().get();
     auto stop_kvstore = ss::defer([&store] { store.stop().get(); });

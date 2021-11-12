@@ -31,8 +31,13 @@ static inline ss::future<> persist_log_file(
                       file_ntp = std::move(file_ntp),
                       batches = std::move(batches)]() mutable {
         storage::api storage(
-          storage::kvstore_config(
-            1_MiB, 10ms, base_dir, storage::debug_sanitize_files::yes),
+          [base_dir]() {
+              return storage::kvstore_config(
+                1_MiB,
+                config::mock_binding(10ms),
+                base_dir,
+                storage::debug_sanitize_files::yes);
+          },
           storage::log_config(
             storage::log_config::storage_type::disk,
             base_dir,
@@ -85,8 +90,13 @@ read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
     return ss::async([base_dir = std::move(base_dir),
                       file_ntp = std::move(file_ntp)]() mutable {
         storage::api storage(
-          storage::kvstore_config(
-            1_MiB, 10ms, base_dir, storage::debug_sanitize_files::yes),
+          [base_dir]() {
+              return storage::kvstore_config(
+                1_MiB,
+                config::mock_binding(10ms),
+                base_dir,
+                storage::debug_sanitize_files::yes);
+          },
           storage::log_config(
             storage::log_config::storage_type::disk,
             base_dir,

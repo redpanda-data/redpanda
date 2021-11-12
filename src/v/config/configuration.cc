@@ -527,7 +527,7 @@ configuration::configuration()
       *this,
       "kvstore_flush_interval",
       "Key-value store flush interval (ms)",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::chrono::milliseconds(10))
   , kvstore_max_segment_size(
       *this,

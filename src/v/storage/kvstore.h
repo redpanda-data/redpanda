@@ -73,13 +73,13 @@ namespace storage {
  */
 struct kvstore_config {
     size_t max_segment_size;
-    std::chrono::milliseconds commit_interval;
+    config::binding<std::chrono::milliseconds> commit_interval;
     ss::sstring base_dir;
     debug_sanitize_files sanitize_fileops;
 
     kvstore_config(
       size_t max_segment_size,
-      std::chrono::milliseconds commit_interval,
+      config::binding<std::chrono::milliseconds> commit_interval,
       ss::sstring base_dir,
       debug_sanitize_files sanitize_fileops)
       : max_segment_size(max_segment_size)

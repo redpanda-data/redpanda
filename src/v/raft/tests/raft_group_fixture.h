@@ -101,8 +101,13 @@ struct raft_node {
 
         storage
           .start(
-            storage::kvstore_config(
-              1_MiB, 10ms, storage_dir, storage::debug_sanitize_files::yes),
+            [storage_dir]() {
+                return storage::kvstore_config(
+                  1_MiB,
+                  config::mock_binding(10ms),
+                  storage_dir,
+                  storage::debug_sanitize_files::yes);
+            },
             storage::log_config(
               storage_type,
               storage_dir,
