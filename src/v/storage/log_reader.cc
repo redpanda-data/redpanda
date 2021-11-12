@@ -167,7 +167,7 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
       _config.max_offset,
       _config.type_filter,
       _config.first_timestamp,
-      max_buffer_size,
+      std::min(max_buffer_size, _config.max_bytes),
       _config.skip_batch_cache);
 
     // handles cases where the type filter skipped batches. see
