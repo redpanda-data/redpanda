@@ -424,18 +424,21 @@ void segment_matcher<Fixture>::verify_manifest_content(
 template class segment_matcher<archiver_fixture>;
 
 enable_cloud_storage_fixture::enable_cloud_storage_fixture() {
-    auto& cfg = config::shard_local_cfg();
-    cfg.cloud_storage_enabled.set_value(true);
-    cfg.cloud_storage_api_endpoint.set_value(
-      std::optional<ss::sstring>{httpd_host_name});
-    cfg.cloud_storage_api_endpoint_port.set_value(httpd_port_number);
-    cfg.cloud_storage_access_key.set_value(
-      std::optional<ss::sstring>{"access-key"});
-    cfg.cloud_storage_secret_key.set_value(
-      std::optional<ss::sstring>{"secret-key"});
-    cfg.cloud_storage_region.set_value(std::optional<ss::sstring>{"us-east1"});
-    cfg.cloud_storage_bucket.set_value(
-      std::optional<ss::sstring>{"test-bucket"});
+    ss::smp::invoke_on_all([]() {
+        auto& cfg = config::shard_local_cfg();
+        cfg.cloud_storage_enabled.set_value(true);
+        cfg.cloud_storage_api_endpoint.set_value(
+          std::optional<ss::sstring>{httpd_host_name});
+        cfg.cloud_storage_api_endpoint_port.set_value(httpd_port_number);
+        cfg.cloud_storage_access_key.set_value(
+          std::optional<ss::sstring>{"access-key"});
+        cfg.cloud_storage_secret_key.set_value(
+          std::optional<ss::sstring>{"secret-key"});
+        cfg.cloud_storage_region.set_value(
+          std::optional<ss::sstring>{"us-east1"});
+        cfg.cloud_storage_bucket.set_value(
+          std::optional<ss::sstring>{"test-bucket"});
+    }).get0();
 }
 
 enable_cloud_storage_fixture::~enable_cloud_storage_fixture() {
