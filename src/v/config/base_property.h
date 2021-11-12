@@ -92,5 +92,8 @@ private:
     std::string_view _name;
     std::string_view _desc;
     metadata _meta;
+
+protected:
+    void assert_live_settable() const;
 };
 }; // namespace config
