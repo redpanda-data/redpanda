@@ -615,7 +615,7 @@ struct old_cs
 };
 struct new_no_cs
   : public serde::
-      envelope<new_cs, serde::version<4>, serde::compat_version<4>> {
+      envelope<new_cs, serde::version<4>, serde::compat_version<3>> {
     serde::checksum_t unchecked_dummy_checksum_{0U};
     std::vector<test_msg1_new_manual> data_;
 };
