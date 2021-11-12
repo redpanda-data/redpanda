@@ -306,6 +306,16 @@ header read_header(iobuf_parser& in, std::size_t const bytes_left_limit) {
           static_cast<int>(Type::redpanda_serde_version)));
     }
 
+    if (unlikely(version < Type::redpanda_serde_compat_version)) {
+        throw serde_exception(fmt_with_ctx(
+          ssx::sformat,
+          "read {}: version={} < {}::compat_version={}",
+          type_str<Type>(),
+          static_cast<int>(version),
+          type_str<T>(),
+          static_cast<int>(Type::redpanda_serde_compat_version)));
+    }
+
     return header{
       ._version = version,
       ._compat_version = compat_version,
