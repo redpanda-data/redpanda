@@ -15,12 +15,12 @@ import "github.com/Masterminds/semver/v3"
 
 const (
 	major = uint64(21)
-	minor = uint64(10)
+	minor = uint64(11)
 )
 
 // ShadowIndex feature gate should be removed in 3 version starting
-// from v21.10.x where cloud cache directory was introduced
-// TODO in version/month 22.01 remove this if statement GH-2631
+// from v21.11.x where cloud cache directory was introduced
+// TODO in version/month 22.02 remove this if statement GH-2631
 func ShadowIndex(version string) bool {
 	v, err := semver.NewVersion(version)
 	if err != nil {
