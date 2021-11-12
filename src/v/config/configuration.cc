@@ -618,7 +618,7 @@ configuration::configuration()
       *this,
       "enable_sasl",
       "Enable SASL authentication for Kafka connections.",
-      {.visibility = visibility::user},
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
   , controller_backend_housekeeping_interval_ms(
       *this,
