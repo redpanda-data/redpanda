@@ -44,6 +44,15 @@ public:
 
     bool is_leader() const final { return _partition->is_leader(); }
 
+    ss::future<result<model::offset>> linearizable_barrier() {
+        auto r = co_await _partition->linearizable_barrier();
+        if (r) {
+            co_return result<model::offset>(
+              _translator->from_log_offset(r.value()));
+        }
+        co_return r;
+    }
+
     ss::future<std::optional<storage::timequery_result>>
     timequery(model::timestamp ts, ss::io_priority_class io_pc) final;
 
