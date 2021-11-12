@@ -22,6 +22,8 @@
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/core/condition-variable.hh>
+#include <seastar/core/expiring_fifo.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
@@ -92,7 +94,12 @@ public:
 
     retry_chain_node* get_retry_chain_node() { return &_rtc; }
 
+    bool download_in_progress() const noexcept { return !_wait_list.empty(); }
+
 private:
+    /// Hydrates segment in the background if there is any consumer
+    ss::future<> run_hydrate_bg();
+
     ss::gate _gate;
     remote& _api;
     cache& _cache;
@@ -101,7 +108,15 @@ private:
     manifest::key _path;
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
-    ss::abort_source _as;
+    /// Notifies the background hydration fiber
+    ss::condition_variable _bg_cvar;
+
+    using expiry_handler
+      = std::function<void(ss::promise<std::filesystem::path>&)>;
+
+    /// List of fibers that wait for the segment to be hydrated
+    ss::expiring_fifo<ss::promise<std::filesystem::path>, expiry_handler>
+      _wait_list;
 };
 
 /// Log reader config for shadow-indexing
@@ -126,7 +141,7 @@ private:
 struct log_reader_config : public storage::log_reader_config {
     explicit log_reader_config(const storage::log_reader_config& cfg)
       : storage::log_reader_config(cfg)
-      , start_offset_redpanda(model::offset::min()) {}
+      , next_offset_redpanda(model::offset::min()) {}
 
     log_reader_config(
       model::offset start_offset,
@@ -134,8 +149,8 @@ struct log_reader_config : public storage::log_reader_config {
       ss::io_priority_class prio)
       : storage::log_reader_config(start_offset, max_offset, prio) {}
 
-    /// Same as started_offset but not translated to kafka
-    model::offset start_offset_redpanda;
+    /// Next redpanda offset that we're going to look at
+    model::offset next_offset_redpanda;
 };
 
 class remote_segment_batch_consumer;
@@ -151,7 +166,8 @@ class remote_segment_batch_reader final {
 
 public:
     remote_segment_batch_reader(
-      remote_segment&, log_reader_config& config, model::term_id term) noexcept;
+      ss::lw_shared_ptr<remote_segment>,
+      const log_reader_config& config) noexcept;
 
     remote_segment_batch_reader(
       remote_segment_batch_reader&&) noexcept = delete;
@@ -167,11 +183,14 @@ public:
 
     ss::future<> stop();
 
+    const log_reader_config& config() const { return _config; }
+    log_reader_config& config() { return _config; }
+
     /// Get max offset (redpanda offset)
-    model::offset max_rp_offset() const { return _seg.get_max_rp_offset(); }
+    model::offset max_rp_offset() const { return _seg->get_max_rp_offset(); }
 
     /// Get base offset (redpanda offset)
-    model::offset base_rp_offset() const { return _seg.get_base_rp_offset(); }
+    model::offset base_rp_offset() const { return _seg->get_base_rp_offset(); }
 
 private:
     friend class single_record_consumer;
@@ -179,14 +198,13 @@ private:
 
     size_t produce(model::record_batch batch);
 
-    retry_chain_node _rtc;
-    retry_chain_logger _ctxlog;
-    remote_segment& _seg;
-    log_reader_config& _config;
+    ss::lw_shared_ptr<remote_segment> _seg;
+    log_reader_config _config;
     std::unique_ptr<storage::continuous_batch_parser> _parser;
-    bool _done{false};
     ss::circular_buffer<model::record_batch> _ringbuf;
     size_t _total_size{0};
+    retry_chain_node _rtc;
+    retry_chain_logger _ctxlog;
     model::term_id _term;
     model::offset _initial_delta;
 };

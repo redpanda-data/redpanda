@@ -301,3 +301,9 @@ ss::abort_source* retry_chain_node::find_abort_source() {
     }
     return root->get_abort_source();
 }
+
+void retry_chain_logger::do_log(
+  ss::log_level lvl,
+  ss::noncopyable_function<void(ss::logger&, ss::log_level)> fn) const {
+    fn(_log, lvl);
+}

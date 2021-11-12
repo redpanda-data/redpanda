@@ -47,6 +47,7 @@
 
 #include <chrono>
 #include <exception>
+#include <stdexcept>
 
 using namespace std::chrono_literals;
 using namespace cloud_storage;
@@ -99,6 +100,7 @@ FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT
     BOOST_REQUIRE_THROW(
       segment.data_stream(0, ss::default_priority_class()).get(),
       download_exception);
+    segment.stop().get();
 }
 
 FIXTURE_TEST(
@@ -134,9 +136,9 @@ FIXTURE_TEST(
 
     log_reader_config reader_config(
       model::offset(1), model::offset(1), ss::default_priority_class());
-    remote_segment segment(remote, *cache, bucket, m, name, fib);
-    remote_segment_batch_reader reader(
-      segment, reader_config, model::term_id(1));
+    auto segment = ss::make_lw_shared<remote_segment>(
+      remote, *cache, bucket, m, name, fib);
+    remote_segment_batch_reader reader(segment, reader_config);
 
     auto s = reader.read_some(model::no_timeout).get();
     BOOST_REQUIRE(static_cast<bool>(s));
@@ -147,6 +149,7 @@ FIXTURE_TEST(
         offsets.push_back(batch.base_offset());
     }
     reader.stop().get();
+    segment->stop().get();
 
     BOOST_REQUIRE(offsets.size() == 1);
     BOOST_REQUIRE(offsets.at(0) == model::offset(1));
@@ -220,9 +223,9 @@ void test_remote_segment_batch_reader(
         .max_timestamp = {},
         .delta_offset = model::offset(0)});
 
-    remote_segment segment(remote, *fixture.cache, bucket, m, name, fib);
-    remote_segment_batch_reader reader(
-      segment, reader_config, model::term_id(1));
+    auto segment = ss::make_lw_shared<remote_segment>(
+      remote, *fixture.cache, bucket, m, name, fib);
+    remote_segment_batch_reader reader(segment, reader_config);
 
     size_t batch_ix = 0;
     bool done = false;
@@ -245,6 +248,7 @@ void test_remote_segment_batch_reader(
         }
     }
     reader.stop().get();
+    segment->stop().get();
     BOOST_REQUIRE_EQUAL(batch_ix, (ix_end - ix_begin) + 1 /*inclusive range*/);
 }
 
@@ -320,14 +324,15 @@ FIXTURE_TEST(
         .max_timestamp = {},
         .delta_offset = model::offset(0)});
 
-    remote_segment segment(remote, *cache, bucket, m, name, fib);
+    auto segment = ss::make_lw_shared<remote_segment>(
+      remote, *cache, bucket, m, name, fib);
 
-    log_reader_config reader_config(
-      headers.at(0).base_offset,
-      headers.at(0).last_offset(),
-      ss::default_priority_class());
     remote_segment_batch_reader reader(
-      segment, reader_config, model::term_id(1));
+      segment,
+      log_reader_config(
+        headers.at(0).base_offset,
+        headers.at(0).last_offset(),
+        ss::default_priority_class()));
 
     auto s = reader.read_some(model::no_timeout).get();
     BOOST_REQUIRE(static_cast<bool>(s));
@@ -341,7 +346,7 @@ FIXTURE_TEST(
     BOOST_REQUIRE(offsets.size() == 1);
     BOOST_REQUIRE(offsets.at(0) == headers.at(0).base_offset);
     BOOST_REQUIRE(
-      reader_config.start_offset
+      reader.config().start_offset
       == headers.at(0).last_offset() + model::offset{1});
 
     // Without config update we shouldn't be able to read anything
@@ -350,7 +355,7 @@ FIXTURE_TEST(
     BOOST_REQUIRE(f.value().size() == 0);
 
     // Update config and retry read
-    reader_config.max_offset = headers.at(1).last_offset();
+    reader.config().max_offset = headers.at(1).last_offset();
     auto t = reader.read_some(model::no_timeout).get();
     for (const auto& batch : t.value()) {
         // should only recv one batch
@@ -360,4 +365,5 @@ FIXTURE_TEST(
     BOOST_REQUIRE(offsets.at(1) == headers.at(1).base_offset);
 
     reader.stop().get();
+    segment->stop().get();
 }
