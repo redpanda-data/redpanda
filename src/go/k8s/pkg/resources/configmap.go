@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/afero"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
+	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources/featuregates"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
@@ -33,8 +34,11 @@ import (
 )
 
 const (
-	baseSuffix    = "base"
-	dataDirectory = "/var/lib/redpanda/data"
+	baseSuffix                  = "base"
+	dataDirectory               = "/var/lib/redpanda/data"
+	archivalCacheIndexDirectory = "/var/lib/shadow-index-cache"
+
+	cloudStorageCacheDirectory = "cloud_storage_cache_directory"
 
 	tlsDir   = "/etc/tls/certs"
 	tlsDirCA = "/etc/tls/certs/ca"
@@ -381,6 +385,18 @@ func (r *ConfigMapResource) prepareCloudStorage(
 	trustfile := r.pandaCluster.Spec.CloudStorage.Trustfile
 	if trustfile != "" {
 		cr.CloudStorageTrustFile = &trustfile
+	}
+
+	if featuregates.ShadowIndex(r.pandaCluster.Spec.Version) {
+		if cr.Other == nil {
+			cr.Other = make(map[string]interface{})
+		}
+		cr.Other[cloudStorageCacheDirectory] = archivalCacheIndexDirectory
+
+		if r.pandaCluster.Spec.CloudStorage.CacheStorage != nil && r.pandaCluster.Spec.CloudStorage.CacheStorage.Capacity.Value() > 0 {
+			size := strconv.FormatInt(r.pandaCluster.Spec.CloudStorage.CacheStorage.Capacity.Value(), 10)
+			cr.Other["cloud_storage_cache_size"] = size
+		}
 	}
 }
 
