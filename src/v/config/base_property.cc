@@ -10,6 +10,7 @@
 #include "config/base_property.h"
 
 #include "config/config_store.h"
+#include "vassert.h"
 
 #include <ostream>
 
@@ -41,6 +42,17 @@ std::string_view to_string_view(visibility v) {
     }
 
     return "{invalid}";
+}
+
+/**
+ * Helper for property methods that should only be used
+ * on live-settable properties.
+ */
+void base_property::assert_live_settable() const {
+    vassert(
+      _meta.needs_restart == needs_restart::no,
+      "Property must be be marked as "
+      "needs_restart::no");
 }
 
 }; // namespace config
