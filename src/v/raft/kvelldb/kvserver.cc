@@ -95,8 +95,13 @@ public:
       , _consensus_client_protocol(
           raft::make_rpc_client_protocol(self, clients))
       , _storage(
-          storage::kvstore_config(
-            1_MiB, 10ms, directory, storage::debug_sanitize_files::yes),
+          [directory]() {
+              return storage::kvstore_config(
+                1_MiB,
+                config::mock_binding(10ms),
+                directory,
+                storage::debug_sanitize_files::yes);
+          },
           storage::log_config(
             storage::log_config::storage_type::disk,
             std::move(directory),

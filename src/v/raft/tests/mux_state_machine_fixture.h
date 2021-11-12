@@ -41,11 +41,12 @@ struct mux_state_machine_fixture {
         // configure and start kvstore
         storage::kvstore_config kv_conf(
           8192,
-          std::chrono::milliseconds(10),
+          config::mock_binding(std::chrono::milliseconds(10)),
           _data_dir,
           storage::debug_sanitize_files::yes);
 
-        _storage.start(kv_conf, default_log_cfg()).get0();
+        _storage.start([kv_conf]() { return kv_conf; }, default_log_cfg())
+          .get0();
         _storage.invoke_on_all(&storage::api::start).get0();
         _connections.start().get0();
         _recovery_throttle.start(100_MiB).get();

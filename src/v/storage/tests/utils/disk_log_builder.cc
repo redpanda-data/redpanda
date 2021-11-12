@@ -24,8 +24,13 @@ namespace storage {
 disk_log_builder::disk_log_builder(storage::log_config config)
   : _log_config(std::move(config))
   , _storage(
-      kvstore_config(
-        1_MiB, 10ms, _log_config.base_dir, debug_sanitize_files::yes),
+      [this]() {
+          return kvstore_config(
+            1_MiB,
+            config::mock_binding(10ms),
+            _log_config.base_dir,
+            debug_sanitize_files::yes);
+      },
       _log_config) {}
 
 // Batch generation
