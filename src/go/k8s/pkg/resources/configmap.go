@@ -14,12 +14,14 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/go-logr/logr"
 	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	"github.com/spf13/afero"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
+	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources/featuregates"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
@@ -32,8 +34,11 @@ import (
 )
 
 const (
-	baseSuffix    = "base"
-	dataDirectory = "/var/lib/redpanda/data"
+	baseSuffix                  = "base"
+	dataDirectory               = "/var/lib/redpanda/data"
+	archivalCacheIndexDirectory = "/var/lib/shadow-index-cache"
+
+	cloudStorageCacheDirectory = "cloud_storage_cache_directory"
 
 	tlsDir   = "/etc/tls/certs"
 	tlsDirCA = "/etc/tls/certs/ca"
@@ -314,13 +319,33 @@ func (r *ConfigMapResource) createConfiguration(
 
 	// Add arbitrary parameters to configuration
 	for k, v := range r.pandaCluster.Spec.AdditionalConfiguration {
-		err = mgr.Set(k, v, "single")
-		if err != nil {
-			return nil, err
+		if buildInType(v) {
+			err = mgr.Set(k, v, "single")
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			err = mgr.Set(k, v, "")
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
 	return mgr.Get()
+}
+
+func buildInType(value string) bool {
+	if _, err := strconv.Atoi(value); err == nil {
+		return true
+	}
+	if _, err := strconv.ParseFloat(value, 64); err == nil {
+		return true
+	}
+	if _, err := strconv.ParseBool(value); err == nil {
+		return true
+	}
+	return false
 }
 
 // calculateExternalPort can calculate external Kafka API port based on the internal Kafka API port
@@ -360,6 +385,18 @@ func (r *ConfigMapResource) prepareCloudStorage(
 	trustfile := r.pandaCluster.Spec.CloudStorage.Trustfile
 	if trustfile != "" {
 		cr.CloudStorageTrustFile = &trustfile
+	}
+
+	if featuregates.ShadowIndex(r.pandaCluster.Spec.Version) {
+		if cr.Other == nil {
+			cr.Other = make(map[string]interface{})
+		}
+		cr.Other[cloudStorageCacheDirectory] = archivalCacheIndexDirectory
+
+		if r.pandaCluster.Spec.CloudStorage.CacheStorage != nil && r.pandaCluster.Spec.CloudStorage.CacheStorage.Capacity.Value() > 0 {
+			size := strconv.FormatInt(r.pandaCluster.Spec.CloudStorage.CacheStorage.Capacity.Value(), 10)
+			cr.Other["cloud_storage_cache_size"] = size
+		}
 	}
 }
 

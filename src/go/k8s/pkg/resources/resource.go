@@ -94,7 +94,7 @@ func CreateIfNotExists(
 // and applies it if something changed
 func Update(
 	ctx context.Context,
-	current runtime.Object,
+	current client.Object,
 	modified client.Object,
 	c client.Client,
 	logger logr.Logger,
