@@ -30,6 +30,7 @@ rp_test(
     fetch.cc
     produce.cc
     reconnect.cc
+    retry.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES
     v::seastar_testing_main
