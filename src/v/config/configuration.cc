@@ -911,25 +911,25 @@ configuration::configuration()
       *this,
       "enable_leader_balancer",
       "Enable automatic leadership rebalancing",
-      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
       true)
   , leader_balancer_idle_timeout(
       *this,
       "leader_balancer_idle_timeout",
       "Leadership rebalancing idle timeout",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       2min)
   , leader_balancer_mute_timeout(
       *this,
       "leader_balancer_mute_timeout",
       "Leadership rebalancing mute timeout",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5min)
   , leader_balancer_node_mute_timeout(
       *this,
       "leader_balancer_mute_timeout",
       "Leadership rebalancing node mute timeout",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       20s)
   , internal_topic_replication_factor(
       *this,
