@@ -11,8 +11,9 @@
 
 #pragma once
 
+#include "cluster/fwd.h"
+#include "coproc/fwd.h"
 #include "coproc/script_context_router.h"
-#include "coproc/sys_refs.h"
 #include "coproc/types.h"
 #include "utils/mutex.h"
 
@@ -27,7 +28,9 @@ using output_write_inputs = std::vector<process_batch_reply::data>;
 /// Arugments to pass to 'write_materialized', trivially copyable
 struct output_write_args {
     coproc::script_id id;
-    sys_refs& rs;
+    ss::sharded<cluster::metadata_cache>& metadata;
+    ss::sharded<cluster::non_replicable_topics_frontend>& frontend;
+    ss::sharded<storage::api>& storage;
     routes_t& inputs;
     absl::node_hash_map<model::ntp, mutex>& locks;
 };

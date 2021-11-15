@@ -118,7 +118,9 @@ ss::future<> script_context::send_request(
           if (reply) {
               output_write_args args{
                 .id = _id,
-                .rs = _resources.rs,
+                .metadata = _resources.rs.metadata_cache,
+                .frontend = _resources.rs.mt_frontend,
+                .storage = _resources.rs.storage,
                 .inputs = _routes,
                 .locks = _resources.log_mtx};
               return write_materialized(
