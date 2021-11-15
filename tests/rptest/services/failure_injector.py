@@ -18,6 +18,7 @@ class FailureSpec:
     FAILURE_KILL = 0
     FAILURE_TERMINATE = 1
     FAILURE_SUSPEND = 2
+    FAILURE_ISOLATE = 3
 
     FAILURE_TYPES = [FAILURE_KILL, FAILURE_SUSPEND, FAILURE_TERMINATE]
 
@@ -33,6 +34,12 @@ class FailureSpec:
 class FailureInjector:
     def __init__(self, redpanda):
         self.redpanda = redpanda
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self._heal_all()
 
     def inject_failure(self, spec):
         self.redpanda.logger.info(f"injecting failure: {spec}")
@@ -54,12 +61,16 @@ class FailureInjector:
             return self._suspend
         elif tp == FailureSpec.FAILURE_TERMINATE:
             return self._terminate
+        elif tp == FailureSpec.FAILURE_ISOLATE:
+            return self._isolate
 
     def _stop_func(self, tp):
         if tp == FailureSpec.FAILURE_KILL or tp == FailureSpec.FAILURE_TERMINATE:
             return self._start
         elif tp == FailureSpec.FAILURE_SUSPEND:
             return self._continue
+        elif tp == FailureSpec.FAILURE_ISOLATE:
+            return self._heal
 
     def _kill(self, node):
         self.redpanda.logger.info(
@@ -70,6 +81,30 @@ class FailureInjector:
                    timeout_sec=timeout_sec,
                    err_msg="Redpanda failed to kill in %d seconds" %
                    timeout_sec)
+
+    def _isolate(self, node):
+        self.redpanda.logger.info(f"isolating node {node.account}")
+
+        cmd = "iptables -A OUTPUT -p tcp --destination-port 33145 -j DROP"
+        node.account.ssh(cmd)
+        cmd = "iptables -A INPUT -p tcp --destination-port 33145 -j DROP"
+        node.account.ssh(cmd)
+
+    def _heal(self, node):
+        self.redpanda.logger.info(f"healing node {node.account}")
+        cmd = "iptables -D OUTPUT -p tcp --destination-port 33145 -j DROP"
+        node.account.ssh(cmd)
+        cmd = "iptables -D INPUT -p tcp --destination-port 33145 -j DROP"
+        node.account.ssh(cmd)
+
+    def _heal_all(self):
+        self.redpanda.logger.info(f"healling all network failures")
+        for n in self.redpanda.nodes:
+            n.account.ssh("iptables -P INPUT ACCEPT")
+            n.account.ssh("iptables -P FORWARD ACCEPT")
+            n.account.ssh("iptables -P OUTPUT ACCEPT")
+            n.account.ssh("iptables -F")
+            n.account.ssh("iptables -X")
 
     def _suspend(self, node):
         self.redpanda.logger.info(

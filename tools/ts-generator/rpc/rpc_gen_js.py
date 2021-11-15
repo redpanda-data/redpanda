@@ -25,7 +25,8 @@ import {
   createConnection,
   Socket,
   createServer,
-  Server as NetServer
+  Server as NetServer,
+  AddressInfo,
 } from "net";
 import { XXHash64 } from "xxhash";
 import { calculate } from  "fast-crc32c/impls/js_crc32c";
@@ -81,6 +82,22 @@ function generateRpcHeader(
     rpc.headerChecksum = createCrc32(auxHeader.slice(0, 26), 5, 26)
     RpcHeader.toBytes(rpc, reserve);
 }
+
+function writeToSocketWithCheck(
+  buffer: IOBuf,
+  socket: Socket){
+    try {
+      buffer.forEach((fragment =>
+        socket.write(fragment.buffer.slice(0, fragment.used))
+      ));
+    }
+    catch(e) {
+      console.log('Fail write to socket: ', e);
+      socket.destroy();
+      socket.emit("close", true);
+    }
+}
+
 /**
  * it adds listener for "data" event, when this listener is fired the data
  * buffer is going to pass to readBufferRequest, in this case, that buffer
@@ -98,48 +115,55 @@ const startReadRequest = (fn: ApplyFn) => (socket: Socket): void => {
  * the rest of the buffer.
 */
 const readBufferRequest = (buffer: Buffer, fn: ApplyFn, socket: Socket) => {
-  const [rpcHeader, crcValidation, crc32] = validateRpcHeader(
-    buffer.slice(0, rpcHeaderSize)
-  );
-  if (!crcValidation) {
-    throw (
-      `Crc32 inconsistent, expected: ${rpcHeader.headerChecksum} ` +
-      `generated: ${crc32}`
+  try {
+    const [rpcHeader, crcValidation, crc32] = validateRpcHeader(
+      buffer.slice(0, rpcHeaderSize)
     );
-  }
-  const size = rpcHeader.payloadSize;
-  const availableBytesOnBuffer = buffer.length - rpcHeaderSize;
-  if (availableBytesOnBuffer == size) {
-    const result = buffer.slice(rpcHeaderSize, size + rpcHeaderSize);
-    startReadRequest(fn)(socket)
-    return fn(rpcHeader, result, socket);
-  } else if (availableBytesOnBuffer > size) {
-    const result = buffer.slice(rpcHeaderSize, size + rpcHeaderSize);
-    const restBuffer = buffer.slice(size + rpcHeaderSize)
-    if( restBuffer.length >= rpcHeaderSize ) {
-      // in this case, we can read a rpc header from residual buffer
-      readBufferRequest(buffer.slice(size + rpcHeaderSize), fn, socket);
-      return fn(rpcHeader, result, socket);
-    } else {
-      // in this case, we can't read a rpc header from residual buffer, therefore
-      // we need to wait for next chunk, before we continue reading 
-      return readNextChunk(socket, 0, fn, true)
-        .then(nextChunk => {
-          readBufferRequest(
-            Buffer.concat([restBuffer, nextChunk]),
-            fn,
-            socket
-          );
-          return fn(rpcHeader, result, socket)
-        })
+    if (!crcValidation) {
+      throw (
+        `Crc32 inconsistent, expected: ${rpcHeader.headerChecksum} ` +
+        `generated: ${crc32}`
+      );
     }
-  } else {
-    const bytesForReading = size - availableBytesOnBuffer;
-    return readNextChunk(socket, bytesForReading, fn)
-      .then((nextBuffer) =>
-        Buffer.concat([buffer.slice(rpcHeaderSize), nextBuffer])
-      )
-      .then((result) => fn(rpcHeader, result, socket));
+    const size = rpcHeader.payloadSize;
+    const availableBytesOnBuffer = buffer.length - rpcHeaderSize;
+    if (availableBytesOnBuffer == size) {
+      const result = buffer.slice(rpcHeaderSize, size + rpcHeaderSize);
+      startReadRequest(fn)(socket)
+      return fn(rpcHeader, result, socket);
+    } else if (availableBytesOnBuffer > size) {
+      const result = buffer.slice(rpcHeaderSize, size + rpcHeaderSize);
+      const restBuffer = buffer.slice(size + rpcHeaderSize)
+      if( restBuffer.length >= rpcHeaderSize ) {
+        // in this case, we can read a rpc header from residual buffer
+        readBufferRequest(buffer.slice(size + rpcHeaderSize), fn, socket);
+        return fn(rpcHeader, result, socket);
+      } else {
+        // in this case, we can't read a rpc header from residual buffer, therefore
+        // we need to wait for next chunk, before we continue reading 
+        return readNextChunk(socket, 0, fn, true)
+          .then(nextChunk => {
+            readBufferRequest(
+              Buffer.concat([restBuffer, nextChunk]),
+              fn,
+              socket
+            );
+            return fn(rpcHeader, result, socket)
+          })
+      }
+    } else {
+      const bytesForReading = size - availableBytesOnBuffer;
+      return readNextChunk(socket, bytesForReading, fn)
+        .then((nextBuffer) =>
+          Buffer.concat([buffer.slice(rpcHeaderSize), nextBuffer])
+        )
+        .then((result) => fn(rpcHeader, result, socket));
+    }
+  }
+  catch(e) {
+    console.log('Read request error: ', e);
+    socket.destroy();
+    socket.emit("close", true);
   }
 };
 
@@ -193,8 +217,30 @@ export class {{service_name.title()}}Server {
     this.process = this.process.bind(this)
   }
 
-  listen(port: number){
-    this.server.listen(port)
+  // Sometimes JS tests fail in CI because "port already in use"
+  // error when the server tries to listen. The problem maybe because
+  // previous instance of the test didn't shutdown completely. Here
+  // we tried to fix it by listening to random port.
+  listenRandomPort() {
+    return new Promise<number>((resolve, reject) => {
+      this.server.on("error", (err: NodeJS.ErrnoException) => {
+        console.error("Server listen error: ", err);
+        reject(err);
+      });
+
+      this.server.listen(() => {
+        const { port } = this.server.address() as AddressInfo;
+        resolve(port);
+      });
+    });
+  }
+
+  listen(port: number) {
+    this.server.on("error", (err: NodeJS.ErrnoException) => {
+      console.error("Server listen error: ", err);
+    });
+
+    this.server.listen(port);
   }
 
   process(rpcHeader: RpcHeader, payload: Buffer, socket: Socket) {
@@ -216,9 +262,7 @@ export class {{service_name.title()}}Server {
                 200,
                 rpcHeader.correlationId
               )
-              buffer.forEach((fragment =>
-                  socket.write(fragment.buffer.slice(0, fragment.used))
-              ));
+              writeToSocketWithCheck(buffer, socket);
           })
         break;
       }
@@ -233,9 +277,7 @@ export class {{service_name.title()}}Server {
           404,
           rpcHeader.correlationId
         );
-        buffer.forEach((fragment =>
-          socket.write(fragment.buffer.slice(0, fragment.used))
-        ));
+        writeToSocketWithCheck(buffer, socket);
       }
     }
   }
@@ -314,6 +356,14 @@ export class {{service_name.title()}}Client {
     ));
     return this.correlationId;
   }
+
+  rawSend(buffer: IOBuf): number{
+    buffer.forEach((fragment =>
+      this.client.write(fragment.buffer.slice(0, fragment.used))
+    ));
+    return this.correlationId;
+  }
+  
   {% for method in methods %}
   {{method.name}}(input: {{method.input_ts}}): Promise<{{method.output_ts}}> {
     return new Promise((resolve, reject) => {

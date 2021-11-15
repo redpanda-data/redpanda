@@ -55,7 +55,7 @@ public:
             model::ntp ntp(tp_ns.ns, tp_ns.tp, model::partition_id(p));
 
             storage::ntp_config ntp_cfg(
-              ntp, lconf().data_directory().as_sstring(), nullptr, rev);
+              ntp, config::node().data_directory().as_sstring(), nullptr, rev);
 
             storage::disk_log_builder builder(make_default_config());
             using namespace storage; // NOLINT

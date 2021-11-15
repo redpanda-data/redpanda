@@ -31,6 +31,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "config/node_config.h"
 #include "likely.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
@@ -68,14 +69,14 @@ ss::future<> controller::wire_up() {
 
 ss::future<> controller::start() {
     std::vector<model::broker> initial_raft0_brokers;
-    if (config::shard_local_cfg().seed_servers().empty()) {
+    if (config::node().seed_servers().empty()) {
         initial_raft0_brokers.push_back(
-          cluster::make_self_broker(config::shard_local_cfg()));
+          cluster::make_self_broker(config::node()));
     }
     return create_raft0(
              _partition_manager,
              _shard_table,
-             config::shard_local_cfg().data_directory().as_sstring(),
+             config::node().data_directory().as_sstring(),
              std::move(initial_raft0_brokers))
       .then([this](consensus_ptr c) { _raft0 = c; })
       .then([this] { return _partition_leaders.start(std::ref(_tp_state)); })
@@ -223,6 +224,7 @@ ss::future<> controller::start() {
             std::ref(_tp_frontend),
             std::ref(_partition_allocator),
             std::ref(_partition_leaders),
+            std::ref(_members_table),
             std::ref(_as));
       })
       .then([this] {

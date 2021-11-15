@@ -11,16 +11,24 @@
 #pragma once
 
 #include "cloud_storage/recursive_directory_walker.h"
+#include "resource_mgmt/io_priority.h"
 #include "seastarx.h"
+#include "units.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/io_priority_class.hh>
 #include <seastar/core/iostream.hh>
 
 #include <filesystem>
 #include <set>
 
 namespace cloud_storage {
+
+static constexpr size_t default_read_buffer_size = 128_KiB;
+static constexpr unsigned default_readahead = 10;
+static constexpr size_t default_write_buffer_size = 128_KiB;
+static constexpr unsigned default_writebehind = 10;
 
 struct cache_item {
     ss::input_stream<char> body;
@@ -44,11 +52,34 @@ public:
     ss::future<> stop();
 
     /// Get cached value as a stream if it exists on disk
-    ss::future<std::optional<cache_item>>
-    get(std::filesystem::path key, size_t file_pos = 0);
+    ///
+    /// \param key is a cache key
+    /// \param file_pos is an offset to start from in the returned stream
+    /// \param io_priority is an io priority of the resulting stream
+    /// \param read_buffer_size is a buffer size of the returned stream
+    /// \param readahead is a readahead parameter of the returned stream
+    ss::future<std::optional<cache_item>> get(
+      std::filesystem::path key,
+      size_t file_pos = 0,
+      ss::io_priority_class io_priority
+      = priority_manager::local().shadow_indexing_priority(),
+      size_t read_buffer_size = default_read_buffer_size,
+      unsigned int readahead = default_readahead);
 
     /// Add new value to the cache, overwrite if it's already exist
-    ss::future<> put(std::filesystem::path key, ss::input_stream<char>& data);
+    ///
+    /// \param key is a cache key
+    /// \param io_priority is an io priority of disk write operation
+    /// \param data is an input stream containing data
+    /// \param write_buffer_size is a write buffer size for disk write
+    /// \param write_behind number of pages that can be written asynchronously
+    ss::future<> put(
+      std::filesystem::path key,
+      ss::input_stream<char>& data,
+      ss::io_priority_class io_priority
+      = priority_manager::local().shadow_indexing_priority(),
+      size_t write_buffer_size = default_write_buffer_size,
+      unsigned int write_behind = default_write_buffer_size);
 
     /// \brief Checks if the value is cached
     ///

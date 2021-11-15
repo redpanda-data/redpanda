@@ -31,7 +31,6 @@ import (
 )
 
 type consumer struct {
-	topics     []string
 	partitions []int32
 	regex      bool
 
@@ -156,17 +155,6 @@ func (c *consumer) consume() {
 			for _, t := range f.Topics {
 				for _, p := range t.Partitions {
 					for _, r := range p.Records {
-						// We've seen a new record: if this pushes us
-						// past the --num flag (if non-zero), we return.
-						// We have to mark any seen records so that when
-						// we LeaveGroup on return, the autocommit will
-						// commit what we want.
-						n++
-						if c.num > 0 && n > c.num {
-							c.cl.MarkCommitRecords(marks...)
-							return
-						}
-
 						if c.f == nil {
 							c.writeRecordJSON(r)
 						} else {
@@ -177,6 +165,15 @@ func (c *consumer) consume() {
 						// Track this record to be "marked" once this loop
 						// is over.
 						marks = append(marks, r)
+						n++
+
+						// If this pushes us to the --num flag,
+						// we return. We mark any seen records so that
+						// LeaveGroup will autocommit properly.
+						if c.num > 0 && n >= c.num {
+							c.cl.MarkCommitRecords(marks...)
+							return
+						}
 					}
 				}
 			}

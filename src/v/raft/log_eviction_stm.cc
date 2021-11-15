@@ -55,10 +55,22 @@ log_eviction_stm::handle_deletion_notification(model::offset last_evicted) {
       _logger.trace,
       "Handling log deletion notification for offset: {}",
       last_evicted);
+
+    model::offset max_collectible_offset
+      = _stm_manager->max_collectible_offset();
+    if (last_evicted > max_collectible_offset) {
+        vlog(
+          _logger.trace,
+          "Can only evict up to offset: {}",
+          max_collectible_offset);
+        last_evicted = max_collectible_offset;
+    }
+
     // do nothing, we already taken the snapshot
     if (last_evicted <= _previous_eviction_offset) {
         return ss::now();
     }
+
     // persist empty snapshot, we can have no timeout in here as we are passing
     // in an abort source
     _previous_eviction_offset = last_evicted;

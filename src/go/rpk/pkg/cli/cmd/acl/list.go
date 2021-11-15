@@ -12,12 +12,10 @@ package acl
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/types"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
@@ -30,23 +28,39 @@ func NewListCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls", "describe"},
-		Short:   "List ACLs",
-		Args:    cobra.ExactArgs(0),
+		Short:   "List ACLs.",
+		Long: `List ACLs.
+
+See the 'rpk acl' help text for a full write up on ACLs. List flags work in a
+similar multiplying effect as creating ACLs, but list is more advanced:
+listing works on a filter basis. Any unspecified flag defaults to matching
+everything (all operations, or all allowed principals, etc).
+
+As mentioned, not specifying flags matches everything. If no resources are
+specified, all resources are matched. If no operations are specified, all
+operations are matched. You can also opt in to matching everything with "any":
+--operation any matches any operation.
+
+The --resource-pattern-type, defaulting to "any", configures how to filter
+resource names:
+  * "any" returns exact name matches of either prefixed or literal pattern type
+  * "match" returns wildcard matches, prefix patterns that match your input, and literal matches
+  * "prefix" returns prefix patterns that match your input (prefix "fo" matches "foo")
+  * "literal" returns exact name matches
+`,
+		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := kafka.NewFranzClient(fs, p, cfg)
+			adm, err := kafka.NewAdmin(fs, p, cfg)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
-			defer cl.Close()
+			defer adm.Close()
 
-			_, describes, err := a.createDeletionsAndDescribes(true)
+			b, err := a.createDeletionsAndDescribes(true)
 			out.MaybeDieErr(err)
-			if len(describes) == 0 {
-				out.Exit("Specified flags result in no ACL filters for listing.")
-			}
-			describeReqResp(cl, printAllFilters, describes)
+			describeReqResp(adm, printAllFilters, false, b)
 		},
 	}
 	a.addListFlags(cmd)
@@ -65,12 +79,12 @@ func (a *acls) addListFlags(cmd *cobra.Command) {
 	cmd.Flags().MarkDeprecated("principal", "use --{allow,deny}-{host,principal}")
 	cmd.Flags().MarkDeprecated("host", "use --{allow,deny}-{host,principal}")
 
-	cmd.Flags().StringArrayVar(&a.topics, topicFlag, nil, "topic to match ACLs for (repeatable)")
-	cmd.Flags().StringArrayVar(&a.groups, groupFlag, nil, "group to match ACLs for (repeatable)")
+	cmd.Flags().StringSliceVar(&a.topics, topicFlag, nil, "topic to match ACLs for (repeatable)")
+	cmd.Flags().StringSliceVar(&a.groups, groupFlag, nil, "group to match ACLs for (repeatable)")
 	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "whether to match ACLs to the cluster")
-	cmd.Flags().StringArrayVar(&a.txnIDs, txnIDFlag, nil, "transactional IDs to match ACLs for (repeatable)")
+	cmd.Flags().StringSliceVar(&a.txnIDs, txnIDFlag, nil, "transactional IDs to match ACLs for (repeatable)")
 
-	cmd.Flags().StringVar(&a.resourcePatternType, patternFlag, "literal", "pattern to use when matching resource names (any, match, literal, or prefixed)")
+	cmd.Flags().StringVar(&a.resourcePatternType, patternFlag, "any", "pattern to use when matching resource names (any, match, literal, or prefixed)")
 
 	cmd.Flags().StringSliceVar(&a.operations, operationFlag, nil, "operation to match (repeatable)")
 
@@ -78,108 +92,70 @@ func (a *acls) addListFlags(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVar(&a.allowHosts, allowHostFlag, nil, "allowed host ACLs to match (repeatable)")
 	cmd.Flags().StringSliceVar(&a.denyPrincipals, denyPrincipalFlag, nil, "denied principal ACLs to match (repeatable)")
 	cmd.Flags().StringSliceVar(&a.denyHosts, denyHostFlag, nil, "denied host ACLs to match (repeatable)")
-
-	cmd.Flags().StringSliceVar(&a.any, anyFlag, nil, "flags to opt into matching anything for (e.g., --any=topic,group,allow-host or --any=all)")
 }
 
 func describeReqResp(
-	cl *kgo.Client, printAllFilters bool, describes []*kmsg.DescribeACLsRequest,
+	adm *kadm.Client,
+	printAllFilters bool,
+	printMatchesHeader bool,
+	b *kadm.ACLBuilder,
 ) {
-	// Kafka's DescribeACLsRequest actually only describes one filter at a
-	// time. We issue all our filters concurrently and wait.
-	var (
-		wg      sync.WaitGroup
-		results = make([]describeRespAndErr, len(describes))
-	)
-	for i := range describes {
-		describe := describes[i]
-		wg.Add(1)
-		idx := i
-		go func() {
-			defer wg.Done()
-			resp, err := describe.RequestWith(context.Background(), cl)
-			results[idx] = describeRespAndErr{resp, err}
-		}()
-	}
-	wg.Wait()
+	results, err := adm.DescribeACLs(context.Background(), b)
+	out.MaybeDie(err, "unable to list ACLs: %v", err)
+	types.Sort(results)
 
 	// If any filters failed, or if all filters are
 	// requested, we print the filter section.
 	var printFailedFilters bool
-	for _, r := range results {
-		if r.err != nil || r.resp.ErrorCode != 0 {
+	for _, f := range results {
+		if f.Err != nil {
 			printFailedFilters = true
 			break
 		}
 	}
 	if printAllFilters || printFailedFilters {
 		out.Section("filters")
-		printDescribeFilters(printAllFilters, describes, results)
+		printDescribeFilters(printAllFilters, results)
 		fmt.Println()
+		printMatchesHeader = true
+	}
+	if printMatchesHeader {
 		out.Section("matches")
 	}
-
 	printDescribedACLs(results)
 }
 
-type describeRespAndErr struct {
-	resp *kmsg.DescribeACLsResponse
-	err  error
-}
-
-func printDescribeFilters(
-	all bool, reqs []*kmsg.DescribeACLsRequest, results []describeRespAndErr,
-) {
+func printDescribeFilters(all bool, results kadm.DescribeACLsResults) {
 	tw := out.NewTable(headersWithError...)
 	defer tw.Flush()
-	for i, res := range results {
-		req := reqs[i]
-		if !all && res.err == nil && res.resp.ErrorCode == 0 {
-			continue
-		}
-		var msg string
-		if res.err != nil {
-			msg = res.err.Error()
-		} else {
-			msg = kafka.MaybeErrMessage(res.resp.ErrorCode)
-		}
+	for _, f := range results {
 		tw.PrintStructFields(aclWithMessage{
-			unptr(req.Principal),
-			unptr(req.Host),
-			req.ResourceType,
-			unptr(req.ResourceName),
-			req.ResourcePatternType,
-			req.Operation,
-			req.PermissionType,
-			msg,
+			unptr(f.Principal),
+			unptr(f.Host),
+			f.Type,
+			unptr(f.Name),
+			f.Pattern,
+			f.Operation,
+			f.Permission,
+			kafka.ErrMessage(f.Err),
 		})
 	}
 }
 
-func printDescribedACLs(results []describeRespAndErr) {
-	var described []acl
-	for _, res := range results {
-		if res.err != nil {
-			continue
-		}
-		for _, resource := range res.resp.Resources {
-			for _, a := range resource.ACLs {
-				described = append(described, acl{
-					Principal:           a.Principal,
-					Host:                a.Host,
-					ResourceType:        resource.ResourceType,
-					ResourceName:        resource.ResourceName,
-					ResourcePatternType: resource.ResourcePatternType,
-					Operation:           a.Operation,
-					Permission:          a.PermissionType,
-				})
-			}
-		}
-	}
-	types.DistinctInPlace(&described)
-	tw := out.NewTable(headers...)
+func printDescribedACLs(results kadm.DescribeACLsResults) {
+	tw := out.NewTable(headersWithError...)
 	defer tw.Flush()
-	for _, d := range described {
-		tw.PrintStructFields(d)
+	for _, f := range results {
+		for _, d := range f.Described {
+			tw.PrintStructFields(acl{
+				d.Principal,
+				d.Host,
+				d.Type,
+				d.Name,
+				d.Pattern,
+				d.Operation,
+				d.Permission,
+			})
+		}
 	}
 }

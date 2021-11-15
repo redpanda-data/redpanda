@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -25,6 +26,24 @@ func ParseHostMaybeScheme(h string) (scheme, host string, err error) {
 		return scheme, net.JoinHostPort(host, port), nil
 	}
 	return scheme, host, nil
+}
+
+// SplitHostPortDefault splits h into its host and port parts and returns the
+// port as an int. If the host has no port, the returns the default port.
+//
+// The input is expected to be a valid parsed address as returned from
+// ParseHostMaybeScheme. This always returns the input host and default port if
+// any split / int conversion error occurs.
+func SplitHostPortDefault(h string, def int) (host string, port int) {
+	host, p, err := net.SplitHostPort(h)
+	if err != nil {
+		return h, def
+	}
+	port, err = strconv.Atoi(p)
+	if err != nil {
+		return h, def
+	}
+	return host, port
 }
 
 // https://en.wikipedia.org/wiki/Uniform_Resource_Identifier#Syntax
@@ -72,18 +91,26 @@ func splitSchemeHostPort(h string) (scheme, host, port string, err error) {
 //   - index 3: the port, if present
 //
 // We then validate the host against isDomain / net.ParseIP.
-var schemeHostPortRe = regexp.MustCompile(`^(?:([a-zA-Z][a-zA-Z0-9+.-]*)://)?(.*?)(?::(\d+))?(?:/)?$`)
+//
+// For schemes, we relax RFC3986 section 3.1 by also allowing underscores after
+// the furst alphabetic character. This allows us to parse "PLAINTEXT_HOST",
+// which is technically invalid, but which Kafka uses.
+// https://datatracker.ietf.org/doc/html/rfc3986#section-3.1
+var schemeHostPortRe = regexp.MustCompile(`^(?:([a-zA-Z][a-zA-Z0-9+._-]*)://)?(.*?)(?::(\d+))?(?:/)?$`)
 
 // https://serverfault.com/a/638270
 // https://datatracker.ietf.org/doc/html/rfc3986#section-3.2.2
 //
 //   - the tld must not be all-numeric; to keep it easy, we will require a-zA-Z
 //   - labels must begin or end with alphanum
-//   - labels can contain a-zA-Z0-9_-
+//   - labels can contain a-zA-Z0-9-
 //   - labels must be 1 to 63 chars
 //   - the full domain must not exceed 255 characters
 //
-// As a special case, we allow "localhost".
+// In support of docker / docker-compose and local setups, we allow single
+// labels and we do not validate the tld is strictly alphanumeric. We also
+// allow underscores, which are technically only valid in DNS names, not
+// hostnames ("docker_n_1").
 func isDomain(d string) bool {
 	if len(d) > 255 {
 		return false
@@ -93,19 +120,10 @@ func isDomain(d string) bool {
 	d = strings.TrimSuffix(d, ".")
 
 	labels := strings.Split(d, ".")
-	if len(labels) <= 1 {
-		if d == "localhost" {
-			return true
-		}
+	if len(labels) == 0 {
 		return false
 	}
-	last := len(labels) - 1
-	tld := labels[last]
-	if !tldRe.MatchString(tld) {
-		return false
-	}
-
-	for _, label := range labels[:last] {
+	for _, label := range labels {
 		if l := len(label); l == 0 || l > 63 {
 			return false
 		}
@@ -116,15 +134,9 @@ func isDomain(d string) bool {
 	return true
 }
 
-var (
-	// tls must not be all numeric; to keep it easy we will require just
-	// all letters.
-	tldRe = regexp.MustCompile(`^[a-zA-Z]{1,63}$`)
-
-	// labels must begin or end with alphanum, but can include dashes or
-	// underscores in the middle.
-	labelRe = regexp.MustCompile(`^[a-zA-Z0-9](?:[a-zA-Z0-9_-]*[a-zA-Z0-9])?$`)
-)
+// labels must begin or end with alphanum, but can include dashes or
+// underscores in the middle.
+var labelRe = regexp.MustCompile(`^[a-zA-Z0-9](?:[a-zA-Z0-9_-]*[a-zA-Z0-9])?$`)
 
 // Returns whether the input is an ip address.
 //

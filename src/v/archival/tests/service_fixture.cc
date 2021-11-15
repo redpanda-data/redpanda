@@ -45,7 +45,7 @@ using namespace std::chrono_literals;
 
 inline ss::logger fixt_log("fixture"); // NOLINT
 
-static constexpr uint16_t httpd_port_number = 4430;
+static constexpr int16_t httpd_port_number = 4430;
 static constexpr const char* httpd_host_name = "127.0.0.1";
 
 static cloud_storage::manifest load_manifest_from_str(std::string_view v) {
@@ -226,11 +226,14 @@ std::unique_ptr<storage::disk_log_builder>
 archiver_fixture::get_started_log_builder(
   model::ntp ntp, model::revision_id rev) {
     storage::ntp_config ntp_cfg(
-      std::move(ntp), lconf().data_directory().as_sstring(), nullptr, rev);
+      std::move(ntp),
+      config::node().data_directory().as_sstring(),
+      nullptr,
+      rev);
 
     auto conf = storage::log_config(
       storage::log_config::storage_type::disk,
-      lconf().data_directory().as_sstring(),
+      config::node().data_directory().as_sstring(),
       1_MiB,
       storage::debug_sanitize_files::yes);
     auto builder = std::make_unique<storage::disk_log_builder>(std::move(conf));
@@ -419,3 +422,22 @@ void segment_matcher<Fixture>::verify_manifest_content(
 }
 
 template class segment_matcher<archiver_fixture>;
+
+enable_cloud_storage_fixture::enable_cloud_storage_fixture() {
+    auto& cfg = config::shard_local_cfg();
+    cfg.cloud_storage_enabled.set_value(true);
+    cfg.cloud_storage_api_endpoint.set_value(
+      std::optional<ss::sstring>{httpd_host_name});
+    cfg.cloud_storage_api_endpoint_port.set_value(httpd_port_number);
+    cfg.cloud_storage_access_key.set_value(
+      std::optional<ss::sstring>{"access-key"});
+    cfg.cloud_storage_secret_key.set_value(
+      std::optional<ss::sstring>{"secret-key"});
+    cfg.cloud_storage_region.set_value(std::optional<ss::sstring>{"us-east1"});
+    cfg.cloud_storage_bucket.set_value(
+      std::optional<ss::sstring>{"test-bucket"});
+}
+
+enable_cloud_storage_fixture::~enable_cloud_storage_fixture() {
+    config::shard_local_cfg().cloud_storage_enabled.set_value(false);
+}

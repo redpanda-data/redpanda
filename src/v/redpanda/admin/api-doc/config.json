@@ -1,7 +1,21 @@
 "/v1/config": {
   "get": {
-    "summary": "redpanda server configuration",
+    "summary": "redpanda cluster configuration properties",
     "operationId": "get_config",
+    "produces": [
+      "application/json"
+    ],
+    "responses": {
+      "200": {
+        "description": "Configuration"
+      }
+    }
+  }
+},
+"/v1/node_config": {
+  "get": {
+    "summary": "redpanda node configuration properties",
+    "operationId": "get_node_config",
     "produces": [
       "application/json"
     ],

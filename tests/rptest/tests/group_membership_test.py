@@ -62,7 +62,7 @@ class ListGroupsReplicationFactorTest(RedpandaTest):
                 admin.transfer_leadership_to(namespace=namespace,
                                              topic=topic,
                                              partition=partition,
-                                             target_id=target_id)
+                                             target=target_id)
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code == 503:
                     time.sleep(1)

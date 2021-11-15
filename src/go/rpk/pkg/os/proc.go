@@ -38,7 +38,8 @@ type proc struct{}
 func (proc *proc) RunWithSystemLdPath(
 	timeout time.Duration, command string, args ...string,
 ) ([]string, error) {
-	return runWithSystemLdPath(timeout, command, args...)
+
+	return run(timeout, command, SystemLdPathEnv(), args...)
 }
 
 func (proc *proc) IsRunning(timeout time.Duration, processName string) bool {
@@ -78,9 +79,7 @@ func IsRunningPID(fs afero.Fs, pid int) (bool, error) {
 	return true, nil
 }
 
-func runWithSystemLdPath(
-	timeout time.Duration, command string, args ...string,
-) ([]string, error) {
+func SystemLdPathEnv() []string {
 	var env []string
 	ldLibraryPathPattern := regexp.MustCompile("^LD_LIBRARY_PATH=.*$")
 	for _, v := range os.Environ() {
@@ -88,7 +87,8 @@ func runWithSystemLdPath(
 			env = append(env, v)
 		}
 	}
-	return run(timeout, command, env, args...)
+
+	return env
 }
 
 func run(

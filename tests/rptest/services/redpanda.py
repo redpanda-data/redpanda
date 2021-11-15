@@ -34,6 +34,34 @@ from kafka import KafkaAdminClient
 Partition = collections.namedtuple('Partition',
                                    ['index', 'leader', 'replicas'])
 
+MetricSample = collections.namedtuple(
+    'MetricSample', ['family', 'sample', 'node', 'value', 'labels'])
+
+
+class MetricSamples:
+    def __init__(self, samples):
+        self.samples = samples
+
+    def label_filter(self, labels):
+        def f(sample):
+            for key, value in labels.items():
+                assert key in sample.labels
+                return sample.labels[key] == value
+
+        return MetricSamples([s for s in filter(f, self.samples)])
+
+
+def one_or_many(value):
+    """
+    Helper for reading `one_or_many_property` configs when
+    they are expected to hold a single value.
+    """
+    if isinstance(value, list):
+        assert len(value) == 1
+        return value[0]
+    else:
+        return value
+
 
 class RedpandaService(Service):
     PERSISTENT_ROOT = "/var/lib/redpanda"
@@ -128,8 +156,10 @@ class RedpandaService(Service):
                 else:
                     self.logger.debug("%s: skip cleaning node" %
                                       self.who_am_i(node))
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.exception(
+                    f"Error cleaning data files on {node.account.hostname}:")
+                raise
 
         for node in to_start:
             self.logger.debug("%s: starting node" % self.who_am_i(node))
@@ -152,8 +182,12 @@ class RedpandaService(Service):
         self.logger.info("Verifying storage is in expected state")
         storage = self.storage()
         for node in storage.nodes:
-            assert set(node.ns) == {"redpanda"}
-            assert set(node.ns["redpanda"].topics) == {"controller", "kvstore"}
+            if not set(node.ns) == {"redpanda"} or not set(
+                    node.ns["redpanda"].topics) == {"controller", "kvstore"}:
+                self.logger.error(
+                    f"Unexpected files: ns={node.ns} redpanda topics={node.ns['redpanda'].topics}"
+                )
+                raise RuntimeError("Unexpected files in data directory")
 
         security_settings = dict()
         if self.sasl_enabled():
@@ -284,8 +318,12 @@ class RedpandaService(Service):
 
     def clean_node(self, node):
         node.account.kill_process("redpanda", clean_shutdown=False)
-        node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/*")
-        node.account.remove(f"{RedpandaService.CONFIG_FILE}")
+        if node.account.exists(RedpandaService.PERSISTENT_ROOT):
+            if node.account.sftp_client.listdir(
+                    RedpandaService.PERSISTENT_ROOT):
+                node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/*")
+        if node.account.exists(RedpandaService.CONFIG_FILE):
+            node.account.remove(f"{RedpandaService.CONFIG_FILE}")
 
     def remove_local_data(self, node):
         node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/data/*")
@@ -372,14 +410,26 @@ class RedpandaService(Service):
         return broker is not None
 
     def controller(self):
-        kc = KafkaCat(self)
-        cid = kc.metadata()["controllerid"]
-        self.logger.debug("Controller reported with id: {}".format(cid))
-        if cid != -1:
-            node = self.get_node(cid)
-            self.logger.debug("Controller node found: {}".format(
-                node.account.hostname))
-            return node
+        """
+        :return: the ClusterNode that is currently controller leader, or None if no leader exists
+        """
+        for node in self.nodes:
+            try:
+                r = requests.request(
+                    "get",
+                    f"http://{node.account.hostname}:9644/v1/partitions/redpanda/controller/0",
+                    timeout=10)
+            except requests.exceptions.RequestException:
+                continue
+
+            if r.status_code != 200:
+                continue
+            else:
+                resp_leader_id = r.json()['leader_id']
+                if resp_leader_id != -1:
+                    return self.get_node(resp_leader_id)
+
+        return None
 
     def node_storage(self, node):
         """
@@ -451,7 +501,7 @@ class RedpandaService(Service):
     def broker_address(self, node):
         assert node in self._started
         cfg = self.read_configuration(node)
-        return f"{node.account.hostname}:{cfg['redpanda']['kafka_api']['port']}"
+        return f"{node.account.hostname}:{one_or_many(cfg['redpanda']['kafka_api'])['port']}"
 
     def brokers(self, limit=None):
         return ",".join(self.brokers_list(limit))
@@ -461,12 +511,62 @@ class RedpandaService(Service):
         random.shuffle(brokers)
         return brokers
 
+    def schema_reg(self, limit=None):
+        schema_reg = [
+            f"http://{n.account.hostname}:8081" for n in self._started[:limit]
+        ]
+        return ",".join(schema_reg)
+
     def metrics(self, node):
         assert node in self._started
         url = f"http://{node.account.hostname}:9644/metrics"
         resp = requests.get(url)
         assert resp.status_code == 200
         return text_string_to_metric_families(resp.text)
+
+    def metrics_sample(self, sample_pattern, nodes=None):
+        """
+        Query metrics for a single sample using fuzzy name matching. This
+        interface matches the sample pattern against sample names, and requires
+        that exactly one (family, sample) match the query. All values for the
+        sample across the requested set of nodes are returned in a flat array.
+
+        An exception will be raised unless exactly one (family, sample) matches.
+
+        Example:
+
+           The query:
+
+              redpanda.metrics_sample("under_replicated")
+
+           will return an array containing MetricSample instances for each node and
+           core/shard in the cluster. Each entry will correspond to a value from:
+
+              family = vectorized_cluster_partition_under_replicated_replicas
+              sample = vectorized_cluster_partition_under_replicated_replicas
+        """
+        nodes = nodes or self.nodes
+        found_sample = None
+        sample_values = []
+        for node in nodes:
+            metrics = self.metrics(node)
+            for family in metrics:
+                for sample in family.samples:
+                    if sample_pattern not in sample.name:
+                        continue
+                    if not found_sample:
+                        found_sample = (family.name, sample.name)
+                    if found_sample != (family.name, sample.name):
+                        raise Exception(
+                            f"More than one metric matched '{sample_pattern}'. Found {found_sample} and {(family.name, sample.name)}"
+                        )
+                    sample_values.append(
+                        MetricSample(family.name, sample.name, node,
+                                     sample.value, sample.labels))
+        if not sample_values:
+            raise Exception(
+                f"No metric sample matching '{sample_pattern}' found")
+        return MetricSamples(sample_values)
 
     def read_configuration(self, node):
         assert node in self._started

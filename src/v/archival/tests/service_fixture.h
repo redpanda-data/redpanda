@@ -146,9 +146,17 @@ public:
     /// find matching segments and check the fields.
     void verify_manifest_content(const ss::sstring& manifest_content);
 };
+
+class enable_cloud_storage_fixture {
+public:
+    enable_cloud_storage_fixture();
+    ~enable_cloud_storage_fixture();
+};
+
 /// Archiver fixture that contains S3 mock and full redpanda stack.
 class archiver_fixture
   : public s3_imposter_fixture
+  , public enable_cloud_storage_fixture
   , public redpanda_thread_fixture
   , public segment_matcher<archiver_fixture> {
 public:

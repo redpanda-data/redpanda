@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+//go:build linux
 // +build linux
 
 package redpanda
@@ -32,7 +33,7 @@ func NewCheckCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	)
 	command := &cobra.Command{
 		Use:          "check",
-		Short:        "Check if system meets redpanda requirements",
+		Short:        "Check if system meets redpanda requirements.",
 		SilenceUsage: true,
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			return executeCheck(fs, mgr, configFile, timeout)
@@ -43,7 +44,7 @@ func NewCheckCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		"config",
 		"",
 		"Redpanda config file, if not set the file will be searched for"+
-			" in the default locations",
+			" in the default locations.",
 	)
 	command.Flags().DurationVar(
 		&timeout,

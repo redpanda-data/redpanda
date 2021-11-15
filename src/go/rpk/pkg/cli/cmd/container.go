@@ -17,7 +17,7 @@ import (
 func NewContainerCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "container",
-		Short: "Manage a local container cluster",
+		Short: "Manage a local container cluster.",
 	}
 
 	command.AddCommand(container.Start())

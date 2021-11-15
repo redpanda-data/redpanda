@@ -38,6 +38,9 @@ public:
     virtual ss::future<> ensure_snapshot_exists(model::offset) = 0;
     // hints stm_manager that now it's a good time to make a snapshot
     virtual ss::future<> make_snapshot() = 0;
+    // lets the stm control snapshotting and log eviction by limiting
+    // log eviction attempts to offsets not greater than this.
+    virtual model::offset max_collectible_offset() = 0;
 };
 
 /**
@@ -85,6 +88,14 @@ public:
             f = f.then([stm]() { return stm->make_snapshot(); });
         }
         return f;
+    }
+
+    model::offset max_collectible_offset() {
+        model::offset result = model::offset::max();
+        for (const auto& stm : _stms) {
+            result = std::min(result, stm->max_collectible_offset());
+        }
+        return result;
     }
 
 private:

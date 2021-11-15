@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+//go:build linux
 // +build linux
 
 package redpanda
@@ -24,7 +25,7 @@ func NewModeCommand(mgr config.Manager) *cobra.Command {
 	var configFile string
 	command := &cobra.Command{
 		Use:   "mode <mode>",
-		Short: "Enable a default configuration mode",
+		Short: "Enable a default configuration mode.",
 		Long:  "",
 		Args: func(_ *cobra.Command, args []string) error {
 			if len(args) < 1 {
@@ -42,7 +43,7 @@ func NewModeCommand(mgr config.Manager) *cobra.Command {
 		"config",
 		"",
 		"Redpanda config file, if not set the file will be searched for"+
-			" in the default locations",
+			" in the default locations.",
 	)
 	return command
 }

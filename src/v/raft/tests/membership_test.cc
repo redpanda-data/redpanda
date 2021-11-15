@@ -141,6 +141,7 @@ FIXTURE_TEST(remove_current_leader, raft_test_fixture) {
     res = replicate_random_batches(gr, 2).get0();
 
     verify_node_is_behind(gr, old_leader_id);
+    validate_offset_translation(gr);
 }
 
 FIXTURE_TEST(remove_multiple_members, raft_test_fixture) {
@@ -180,6 +181,7 @@ FIXTURE_TEST(remove_multiple_members, raft_test_fixture) {
 
     res = replicate_random_batches(gr, 2).get0();
     BOOST_REQUIRE(res);
+    validate_offset_translation(gr);
 }
 
 FIXTURE_TEST(try_remove_all_voters, raft_test_fixture) {
@@ -195,6 +197,7 @@ FIXTURE_TEST(try_remove_all_voters, raft_test_fixture) {
                     .get0();
 
     BOOST_REQUIRE_EQUAL(result, raft::errc::invalid_configuration_update);
+    validate_offset_translation(gr);
 }
 
 FIXTURE_TEST(replace_whole_group, raft_test_fixture) {
@@ -270,6 +273,7 @@ FIXTURE_TEST(replace_whole_group, raft_test_fixture) {
         auto& new_leader = gr.get_member(*new_leader_id);
         BOOST_REQUIRE_EQUAL(new_leader.consensus->config().brokers().size(), 1);
     }
+    validate_offset_translation(gr);
 }
 
 FIXTURE_TEST(
@@ -310,4 +314,5 @@ FIXTURE_TEST(
     auto logs_after = gr.read_all_logs();
     BOOST_REQUIRE_GT(
       logs_after.begin()->second.size(), logs_before.begin()->second.size());
+    validate_offset_translation(gr);
 }

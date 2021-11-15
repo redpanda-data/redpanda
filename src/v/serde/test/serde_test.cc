@@ -37,13 +37,6 @@ struct custom_read_write {
 
 enum class my_enum : uint8_t { x, y, z };
 
-inline void
-read_nested(iobuf_parser& in, my_enum& el, size_t const bytes_left_limit) {
-    serde::read_enum(in, el, bytes_left_limit);
-}
-
-inline void write(iobuf& out, my_enum el) { serde::write_enum(out, el); }
-
 SEASTAR_THREAD_TEST_CASE(custom_read_write_test) {
     BOOST_CHECK(
       serde::from_iobuf<custom_read_write>(
@@ -62,6 +55,11 @@ struct test_msg1
     int _a;
     test_msg0 _m;
     int _b, _c;
+};
+
+struct test_msg1_imcompatible
+  : serde::envelope<test_msg1, serde::version<5>, serde::compat_version<5>> {
+    test_msg0 _m;
 };
 
 struct test_msg1_new
@@ -91,6 +89,12 @@ static_assert(serde::inherits_from_envelope_v<test_msg1_new>);
 static_assert(!serde::inherits_from_envelope_v<test_msg1_new_manual>);
 static_assert(test_msg1::redpanda_serde_version == 4);
 static_assert(test_msg1::redpanda_serde_compat_version == 0);
+
+SEASTAR_THREAD_TEST_CASE(incompatible_version_throws) {
+    BOOST_CHECK_THROW(
+      serde::from_iobuf<test_msg1_imcompatible>(serde::to_iobuf(test_msg1{})),
+      serde::serde_exception);
+}
 
 SEASTAR_THREAD_TEST_CASE(manual_and_envelope_equal) {
     auto const roundtrip = serde::from_iobuf<test_msg1_new_manual>(
@@ -328,6 +332,36 @@ SEASTAR_THREAD_TEST_CASE(all_types_test) {
         auto parser = iobuf_parser{std::move(b)};
         BOOST_CHECK(serde::read<model::ns>(parser) == "abc");
     }
+
+    {
+        auto b = iobuf();
+        serde::write(b, my_enum::z);
+        auto parser = iobuf_parser{std::move(b)};
+        BOOST_CHECK(serde::read<my_enum>(parser) == my_enum::z);
+    }
+
+    {
+        auto b = iobuf();
+        serde::write(
+          b,
+          static_cast<serde::serde_enum_serialized_t>(
+            std::numeric_limits<std::underlying_type_t<my_enum>>::max())
+            + 1);
+        auto parser = iobuf_parser{std::move(b)};
+        BOOST_CHECK_THROW(
+          { serde::read<my_enum>(parser); }, serde::serde_exception);
+    }
+
+    {
+        enum class big_enum : uint32_t { x };
+        auto b = iobuf();
+        BOOST_CHECK_THROW(
+          serde::write(
+            b,
+            static_cast<big_enum>(
+              std::numeric_limits<std::underlying_type_t<big_enum>>::max())),
+          serde::serde_exception);
+    }
 }
 
 struct test_snapshot_header
@@ -493,4 +527,121 @@ SEASTAR_THREAD_TEST_CASE(compat_test_half_field_2) {
     auto b1 = serde::to_iobuf(
       half_field_2{.a = 1, .b = 2, .c = 3, .d = 0x1234});
     BOOST_CHECK_THROW(serde::from_iobuf<big>(std::move(b1)), std::exception);
+}
+
+SEASTAR_THREAD_TEST_CASE(serde_checksum_envelope_test) {
+    struct checksummed
+      : public serde::checksum_envelope<
+          checksummed,
+          serde::version<3>,
+          serde::compat_version<2>> {
+        std::vector<test_msg1_new_manual> data_;
+    };
+
+    auto const obj = checksummed{
+      .data_ = {
+        test_msg1_new_manual{
+          ._a = 1, ._m = test_msg0{._i = 33, ._j = 44}, ._b = 2, ._c = 3},
+        test_msg1_new_manual{
+          ._a = 4, ._m = test_msg0{._i = 55, ._j = 66}, ._b = 5, ._c = 6},
+        test_msg1_new_manual{
+          ._a = 7, ._m = test_msg0{._i = 77, ._j = 88}, ._b = 8, ._c = 9}}};
+    auto const vec = std::vector<checksummed>{obj, obj};
+    BOOST_CHECK(
+      serde::from_iobuf<std::vector<checksummed>>(serde::to_iobuf(vec)) == vec);
+}
+
+struct old_no_cs
+  : public serde::
+      envelope<old_no_cs, serde::version<3>, serde::compat_version<2>> {
+    std::vector<test_msg1_new_manual> data_;
+};
+struct new_cs
+  : public serde::
+      checksum_envelope<new_cs, serde::version<4>, serde::compat_version<4>> {
+    friend inline void
+    read_nested(iobuf_parser& in, new_cs& ts, size_t const bytes_left_limit) {
+        switch (serde::peek_version(in)) {
+        case 1:
+        case 2:
+            throw std::runtime_error{"not supported"};
+        case 3: {
+            ts.data_
+              = serde::read_nested<old_no_cs>(in, bytes_left_limit).data_;
+            break;
+        }
+        case 4:
+        default:
+            ts = serde::read_nested<new_cs>(in, bytes_left_limit);
+            break;
+        }
+    }
+
+    std::vector<test_msg1_new_manual> data_;
+};
+
+SEASTAR_THREAD_TEST_CASE(serde_checksum_update) {
+    auto const old_obj = old_no_cs{
+      .data_ = {
+        test_msg1_new_manual{
+          ._a = 1, ._m = test_msg0{._i = 33, ._j = 44}, ._b = 2, ._c = 3},
+        test_msg1_new_manual{
+          ._a = 4, ._m = test_msg0{._i = 55, ._j = 66}, ._b = 5, ._c = 6},
+        test_msg1_new_manual{
+          ._a = 7, ._m = test_msg0{._i = 77, ._j = 88}, ._b = 8, ._c = 9}}};
+
+    auto const new_obj = new_cs{
+      .data_ = {
+        test_msg1_new_manual{
+          ._a = 1, ._m = test_msg0{._i = 33, ._j = 44}, ._b = 2, ._c = 3},
+        test_msg1_new_manual{
+          ._a = 4, ._m = test_msg0{._i = 55, ._j = 66}, ._b = 5, ._c = 6},
+        test_msg1_new_manual{
+          ._a = 7, ._m = test_msg0{._i = 77, ._j = 88}, ._b = 8, ._c = 9}}};
+
+    auto const old_vec = std::vector<old_no_cs>{old_obj, old_obj};
+    auto const new_vec = std::vector<new_cs>{new_obj, new_obj};
+    BOOST_CHECK(
+      serde::from_iobuf<std::vector<new_cs>>(serde::to_iobuf(old_vec))
+      == new_vec);
+}
+
+struct old_cs
+  : public serde::checksum_envelope<
+      old_no_cs,
+      serde::version<3>,
+      serde::compat_version<2>> {
+    std::vector<test_msg1_new_manual> data_;
+};
+struct new_no_cs
+  : public serde::
+      envelope<new_cs, serde::version<4>, serde::compat_version<3>> {
+    serde::checksum_t unchecked_dummy_checksum_{0U};
+    std::vector<test_msg1_new_manual> data_;
+};
+
+SEASTAR_THREAD_TEST_CASE(serde_checksum_update_1) {
+    auto const old_obj = old_cs{
+      .data_ = {
+        test_msg1_new_manual{
+          ._a = 1, ._m = test_msg0{._i = 33, ._j = 44}, ._b = 2, ._c = 3},
+        test_msg1_new_manual{
+          ._a = 4, ._m = test_msg0{._i = 55, ._j = 66}, ._b = 5, ._c = 6},
+        test_msg1_new_manual{
+          ._a = 7, ._m = test_msg0{._i = 77, ._j = 88}, ._b = 8, ._c = 9}}};
+
+    auto const new_obj = new_no_cs{
+      .data_ = {
+        test_msg1_new_manual{
+          ._a = 1, ._m = test_msg0{._i = 33, ._j = 44}, ._b = 2, ._c = 3},
+        test_msg1_new_manual{
+          ._a = 4, ._m = test_msg0{._i = 55, ._j = 66}, ._b = 5, ._c = 6},
+        test_msg1_new_manual{
+          ._a = 7, ._m = test_msg0{._i = 77, ._j = 88}, ._b = 8, ._c = 9}}};
+
+    auto const old_vec = std::vector<old_cs>{old_obj, old_obj};
+    auto const new_vec = std::vector<new_no_cs>{new_obj, new_obj};
+    BOOST_CHECK(
+      serde::from_iobuf<std::vector<new_no_cs>>(serde::to_iobuf(old_vec))
+      == new_vec);
 }

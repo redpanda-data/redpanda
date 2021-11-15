@@ -67,20 +67,20 @@ struct follower_index_metadata {
 
     vnode node_id;
     // index of last known log for this follower
-    model::offset last_committed_log_index;
+    model::offset last_flushed_log_index;
     // index of last not flushed offset
     model::offset last_dirty_log_index;
     // index of log for which leader and follower logs matches
     model::offset match_index;
     // Used to establish index persistently replicated by majority
     constexpr model::offset match_committed_index() const {
-        return std::min(last_committed_log_index, match_index);
+        return std::min(last_flushed_log_index, match_index);
     }
     // next index to send to this follower
     model::offset next_index;
     // timestamp of last append_entries_rpc call
-    clock_type::time_point last_append_timestamp;
-    clock_type::time_point last_hbeat_timestamp;
+    clock_type::time_point last_sent_append_entries_req_timesptamp;
+    clock_type::time_point last_received_append_entries_reply_timestamp;
     uint32_t heartbeats_failed{0};
     // The pair of sequences used to track append entries requests sent and
     // received by the follower. Every time append entries request is created
@@ -238,7 +238,7 @@ struct append_entries_reply {
     /// \brief The recipient's last log index after it applied changes to
     /// the log. This is used to speed up finding the correct value for the
     /// nextIndex with a follower that is far behind a leader
-    model::offset last_committed_log_index;
+    model::offset last_flushed_log_index;
     model::offset last_dirty_log_index;
     // the last entry base offset used for the recovery speed up, the value is
     // only valid for not successfull append_entries reply
@@ -334,11 +334,28 @@ struct replicate_options {
     consistency_level consistency;
 };
 
+using offset_translator_delta = named_type<int64_t, struct ot_delta_tag>;
 struct snapshot_metadata {
+    // we start snasphot metadata version at 64 to leave room for configuration
+    // version updates
+    static constexpr int8_t initial_version = 64;
+    static constexpr int8_t current_version = initial_version;
+
     model::offset last_included_index;
     model::term_id last_included_term;
+    int8_t version = current_version;
     group_configuration latest_configuration;
     ss::lowres_clock::time_point cluster_time;
+    offset_translator_delta log_start_delta;
+    /**
+     * Since snapshot metadata did not include a version field we are going to
+     * use group configuration version field as a indicator of snapshot metadata
+     * version.
+     */
+    static_assert(
+      group_configuration::current_version <= initial_version,
+      "snapshot metadata is based on the assumption that group configuration "
+      "version is equal to 3, please change it accordignly");
 };
 
 struct install_snapshot_request {

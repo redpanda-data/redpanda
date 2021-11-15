@@ -357,10 +357,6 @@ func checkSocketAddress(s SocketAddress, configPath string) []error {
 	return errs
 }
 
-func checkNamedSocketAddress(s NamedSocketAddress, configPath string) []error {
-	return checkSocketAddress(s.SocketAddress, configPath)
-}
-
 func checkRpkConfig(v *viper.Viper) []error {
 	errs := []error{}
 	if v.GetBool("rpk.tune_coredump") && v.GetString("rpk.coredump_dir") == "" {

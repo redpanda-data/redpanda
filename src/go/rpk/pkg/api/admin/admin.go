@@ -25,7 +25,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/spf13/afero"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/net"
@@ -156,50 +155,6 @@ func (a *AdminAPI) sendOne(method, path string, body, into interface{}) error {
 		return err
 	}
 	return maybeUnmarshalRespInto(method, url, res, into)
-}
-
-// sendAll sends a request to all URLs in the admin client. The first successful
-// response will be unmarshaled into into if it is non-nil.
-//
-// As of v21.4.15, the Redpanda admin API doesn't do request forwarding, which
-// means that some requests (such as the ones made to /users) will fail unless
-// the reached node is the leader. Therefore, a request needs to be made to
-// each node, and of those requests at least one should succeed.
-// FIXME (@david): when https://github.com/vectorizedio/redpanda/issues/1265
-// is fixed.
-func (a *AdminAPI) sendAll(method, path string, body, into interface{}) error {
-	var (
-		once   sync.Once
-		resURL string
-		res    *http.Response
-		grp    multierror.Group
-
-		ctx, cancel = context.WithCancel(context.Background())
-	)
-
-	defer cancel()
-	for _, url := range a.urlsWithPath(path) {
-		myURL := url
-		grp.Go(func() error {
-			myRes, err := a.sendAndReceive(ctx, method, myURL, body)
-			if err != nil {
-				return err
-			}
-			cancel() // kill all other requests
-
-			// Only one request should be successful, but for
-			// paranoia, we guard keeping the first successful
-			// response.
-			once.Do(func() { resURL, res = myURL, myRes })
-			return nil
-		})
-	}
-
-	err := grp.Wait()
-	if res != nil {
-		return maybeUnmarshalRespInto(method, resURL, res, into)
-	}
-	return err
 }
 
 // Unmarshals a response body into `into`, if it is non-nil.

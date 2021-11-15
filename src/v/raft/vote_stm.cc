@@ -98,11 +98,13 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
           if (_ptr->should_skip_vote(leadership_transfer)) {
               return ss::make_ready_future<skip_vote>(skip_vote::yes);
           }
-
-          // 5.2.1
+          // 5.2.1 mark node as candidate, and update leader id
           _ptr->_vstate = consensus::vote_state::candidate;
-          _ptr->_leader_id = std::nullopt;
-          _ptr->trigger_leadership_notification();
+          //  only trigger notification when we had a leader previosly
+          if (_ptr->_leader_id) {
+              _ptr->_leader_id = std::nullopt;
+              _ptr->trigger_leadership_notification();
+          }
 
           // 5.2.1.2
           _ptr->_term += model::term_id(1);
@@ -244,7 +246,7 @@ ss::future<> vote_stm::update_vote_state(ss::semaphore_units<> u) {
     // Set last heartbeat timestamp to max as we are the leader
     _ptr->_hbeat = clock_type::time_point::max();
     vlog(_ctxlog.info, "became the leader term:{}", _ptr->term());
-    _ptr->_last_quorum_replicated_index = _ptr->_log.offsets().committed_offset;
+    _ptr->_last_quorum_replicated_index = _ptr->_flushed_offset;
     _ptr->trigger_leadership_notification();
 
     return replicate_config_as_new_leader(std::move(u))

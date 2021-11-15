@@ -14,6 +14,7 @@
 #include "cluster/controller_stm.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
+#include "config/node_config.h"
 #include "config/tls_config.h"
 #include "outcome_future_utils.h"
 #include "rpc/connection_cache.h"
@@ -100,7 +101,7 @@ auto with_client(
 }
 
 /// Creates current broker instance using its configuration.
-model::broker make_self_broker(const config::configuration& cfg);
+model::broker make_self_broker(const config::node_config& node_cfg);
 
 /// \brief Log reload credential event
 /// The function is supposed to be invoked from the callback passed to

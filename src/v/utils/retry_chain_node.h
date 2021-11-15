@@ -141,6 +141,7 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/weak_ptr.hh>
 #include <seastar/util/log.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <fmt/format.h>
 #include <fmt/ostream.h>
@@ -350,39 +351,48 @@ public:
       , _node(node)
       , _ctx(std::move(context)) {}
     template<typename... Args>
-    void log(ss::log_level lvl, const char* format, Args&&... args) {
+    void log(ss::log_level lvl, const char* format, Args&&... args) const {
         if (_log.is_enabled(lvl)) {
-            auto msg = ssx::sformat(format, std::forward<Args>(args)...);
-            if (_ctx) {
-                _log.log(
-                  lvl, "{} - {}", _node("{}", _ctx.value()), std::move(msg));
-            } else {
-                _log.log(lvl, "{} - {}", _node(), std::move(msg));
-            }
+            auto lambda = [&](ss::logger& logger, ss::log_level lvl) {
+                auto msg = ssx::sformat(format, std::forward<Args>(args)...);
+                if (_ctx) {
+                    logger.log(
+                      lvl,
+                      "{} - {}",
+                      _node("{}", _ctx.value()),
+                      std::move(msg));
+                }
+                logger.log(lvl, "{} - {}", _node(), std::move(msg));
+            };
+            do_log(lvl, std::move(lambda));
         }
     }
     template<typename... Args>
-    void error(const char* format, Args&&... args) {
+    void error(const char* format, Args&&... args) const {
         log(ss::log_level::error, format, std::forward<Args>(args)...);
     }
     template<typename... Args>
-    void warn(const char* format, Args&&... args) {
+    void warn(const char* format, Args&&... args) const {
         log(ss::log_level::warn, format, std::forward<Args>(args)...);
     }
     template<typename... Args>
-    void info(const char* format, Args&&... args) {
+    void info(const char* format, Args&&... args) const {
         log(ss::log_level::info, format, std::forward<Args>(args)...);
     }
     template<typename... Args>
-    void debug(const char* format, Args&&... args) {
+    void debug(const char* format, Args&&... args) const {
         log(ss::log_level::debug, format, std::forward<Args>(args)...);
     }
     template<typename... Args>
-    void trace(const char* format, Args&&... args) {
+    void trace(const char* format, Args&&... args) const {
         log(ss::log_level::trace, format, std::forward<Args>(args)...);
     }
 
 private:
+    void __attribute__((noinline)) do_log(
+      ss::log_level lvl,
+      ss::noncopyable_function<void(ss::logger&, ss::log_level)>) const;
+
     ss::logger& _log;
     const retry_chain_node& _node;
     std::optional<ss::sstring> _ctx;

@@ -19,3 +19,8 @@ class ClusterConfigTest(RedpandaTest):
         # Pick an arbitrary config property to verify that the result
         # contained some properties
         assert 'enable_transactions' in config
+
+        node_config = admin.get_node_config()
+
+        # Some arbitrary property to check syntax of result
+        assert 'kafka_api' in node_config

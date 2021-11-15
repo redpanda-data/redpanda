@@ -14,7 +14,6 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/cluster"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
@@ -22,33 +21,65 @@ import (
 )
 
 func NewListCommand(fs afero.Fs) *cobra.Command {
-	var detailed bool
-	var internal bool
-
+	var (
+		detailed bool
+		internal bool
+		re       bool
+	)
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List topics",
-		Long:    `List topics (alias for rpk cluster metadata -t).`,
-		Args:    cobra.ExactArgs(0),
-		Run: func(cmd *cobra.Command, _ []string) {
+		Short:   "List topics, optionally listing specific topics.",
+		Long: `List topics, optionally listing specific topics.
+
+This command lists all topics that you have access to by default. If specifying
+topics or regular expressions, this command can be used to know exactly what
+topics you would delete if using the same input to the delete command.
+
+Alternatively, you can request specific topics to list, which can be used to
+check authentication errors (do you not have access to a topic you were
+expecting to see?), or to list all topics that match regular expressions.
+
+The --regex flag (-r) opts into parsing the input topics as regular expressions
+and listing any non-internal topic that matches any of expressions. The input
+expressions are wrapped with ^ and $ so that the expression must match the
+whole topic name. Regular expressions cannot be used to match internal topics,
+as such, specifying both -i and -r will exit with failure.
+
+Lastly, --detailed flag (-d) opts in to printing extra per-partition
+information.
+`,
+		Run: func(cmd *cobra.Command, topics []string) {
+			// The purpose of the regex flag really is for users to
+			// know what topics they will delete when using regex.
+			// We forbit deleting internal topics (redpanda
+			// actually does not expose these currently), so we
+			// make -r and -i incompatible.
+			if internal && re {
+				out.Exit("cannot list with internal topics and list by regular expression")
+			}
+
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := kafka.NewFranzClient(fs, p, cfg)
+			adm, err := kafka.NewAdmin(fs, p, cfg)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
-			defer cl.Close()
+			defer adm.Close()
 
-			req := kmsg.NewPtrMetadataRequest()
-			resp, err := req.RequestWith(context.Background(), cl)
+			if re {
+				topics, err = regexTopics(adm, topics)
+				out.MaybeDie(err, "unable to filter topics by regex: %v", err)
+			}
+
+			listed, err := adm.ListInternalTopics(context.Background(), topics...)
 			out.MaybeDie(err, "unable to request metadata: %v", err)
-
-			cluster.PrintTopics(resp.Topics, internal, detailed)
+			cluster.PrintTopics(listed, internal, detailed)
 		},
 	}
 
 	cmd.Flags().BoolVarP(&detailed, "detailed", "d", false, "print per-partition information for topics")
 	cmd.Flags().BoolVarP(&internal, "internal", "i", false, "print internal topics")
+	cmd.Flags().BoolVarP(&re, "regex", "r", false, "parse topics as regex; list any topic that matches any input topic expression")
 	return cmd
 }

@@ -37,6 +37,20 @@ struct stm_snapshot_header {
 struct stm_snapshot {
     stm_snapshot_header header;
     iobuf data;
+
+    static stm_snapshot
+    create(int8_t version, model::offset offset, iobuf data) {
+        stm_snapshot_header header;
+        header.version = version;
+        header.snapshot_size = data.size_bytes();
+        header.offset = offset;
+
+        stm_snapshot snapshot;
+        snapshot.header = header;
+        snapshot.data = std::move(data);
+
+        return snapshot;
+    }
 };
 
 /**
@@ -74,6 +88,7 @@ public:
 
     ss::future<> make_snapshot() final;
     ss::future<> ensure_snapshot_exists(model::offset) final;
+    model::offset max_collectible_offset() override;
 
     /*
      * Usually start() acts as a barrier and we don't call any methods on the

@@ -19,20 +19,40 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 class CompactionRecoveryTest(RedpandaTest):
     """
     Verify that segment indices are recovered on startup.
+
+    The basic strategy is:
+
+       1. Create some segments
+       2. Shutdown the nodes
+       3. Delete all the segment indexes
+       4. Restart nodes
+       5. Verify that the indexes are recreated
+
+    Having compaction run complicates this in two ways. First, because
+    compaction removes/creates indices and staging files grabbing a consistent
+    view can be a challenge. For this, giving the system time to reach a
+    quiescent state is sufficient.
+
+    The main complication is adjacent segment compaction in which the segments
+    are combined. This isn't related to recovery, but the same process that
+    joins segments also recovers the indexes, and the joining process can take a
+    long time (especially on debug builds) and creates a lot of file system
+    churn.
+
+    The solution to this second problem is to choose a upper bound of 1 byte for
+    the combined segment size so that segment joining is effectively disabled.
     """
-    topics = (TopicSpec(cleanup_policy=TopicSpec.CLEANUP_COMPACT), )
+    topics = (TopicSpec(partition_count=1,
+                        replication_factor=3,
+                        cleanup_policy=TopicSpec.CLEANUP_COMPACT), )
 
     def __init__(self, test_context):
-        extra_rp_conf = dict(
-            log_compaction_interval_ms=2000,
-            compacted_log_segment_size=1048576,
-        )
+        extra_rp_conf = dict(compacted_log_segment_size=1048576, )
 
         super(CompactionRecoveryTest,
               self).__init__(test_context=test_context,
                              extra_rp_conf=extra_rp_conf)
 
-    @ignore  # https://github.com/vectorizedio/redpanda/issues/2455
     @cluster(num_nodes=3)
     def test_index_recovery(self):
         partitions = self.produce_until_segments(3)
@@ -43,11 +63,17 @@ class CompactionRecoveryTest(RedpandaTest):
         for p in partitions:
             p.delete_indices(allow_fail=False)
 
+        extra_rp_conf = dict(compacted_log_segment_size=1048576,
+                             log_compaction_interval_ms=1000,
+                             max_compacted_log_segment_size=1,
+                             compaction_ctrl_min_shares=1000,
+                             compaction_ctrl_max_shares=1000)
+
         for p in partitions:
-            self.redpanda.start_node(p.node)
+            self.redpanda.start_node(p.node, extra_rp_conf)
 
         wait_until(lambda: all(map(lambda p: p.recovered(), partitions)),
-                   timeout_sec=30,
+                   timeout_sec=90,
                    backoff_sec=2,
                    err_msg="Timeout waiting for partitions to recover.")
 
@@ -64,7 +90,7 @@ class CompactionRecoveryTest(RedpandaTest):
                     partitions))
 
         wait_until(lambda: check_partitions(),
-                   timeout_sec=30,
+                   timeout_sec=90,
                    backoff_sec=2,
                    err_msg="Segments not found")
 

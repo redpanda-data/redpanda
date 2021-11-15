@@ -40,6 +40,8 @@ set(cmake_build_env)
 if (@CMAKE_CXX_COMPILER_ID@ MATCHES "GNU")
   set(seastar_ld_flags "${ld_flags} -pthread")
   set(seastar_cxx_flags "-Wno-error$<SEMICOLON>-fcoroutines")
+else()
+  set(seastar_cxx_flags "-Wno-error")
 endif()
 
 if ("@CMAKE_CXX_COMPILER_ID@" MATCHES "Clang")
@@ -149,7 +151,7 @@ ExternalProject_Add(boost
 
 ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/vectorizedio/seastar.git
-  GIT_TAG d8313208857d8362d68b769ec03f338bbcbf482d
+  GIT_TAG a65207afcbaae84d4bc720a7d22995f21f5ff7b2
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
@@ -184,7 +186,7 @@ ExternalProject_Add(HdrHistogram
 
 ExternalProject_Add(abseil
   GIT_REPOSITORY https://github.com/vectorizedio/abseil-cpp.git
-  GIT_TAG e1d388e7e74803050423d035e4374131b9b57919
+  GIT_TAG 20210324.2
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   DEPENDS ${default_depends}
@@ -324,7 +326,7 @@ set(v8_flags
   is_clang=${is_clang}\
   use_gold=false\
   clang_use_chrome_plugins=false\
-  treat_warnings_as_errcors=false\
+  treat_warnings_as_errors=false\
   use_custom_libcxx=false\
   use_glib=false\
   use_sysroot=false\
@@ -355,7 +357,7 @@ INSTALL_COMMAND
 
 ExternalProject_Add(avro
   GIT_REPOSITORY https://github.com/vectorizedio/avro
-  GIT_TAG ce14f60716796462bab73fad19d659f3f1d3b9a8
+  GIT_TAG c64be3b874e3208b54ceb3d34bd464f281082147
   INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
@@ -364,4 +366,29 @@ ExternalProject_Add(avro
   SOURCE_SUBDIR lang/c++
   BUILD_COMMAND ninja avrocpp avrocpp_s avrogencpp
   DEPENDS ${default_depends} boost
+)
+
+ExternalProject_Add(rapidjson
+  GIT_REPOSITORY https://github.com/vectorizedio/rapidjson.git
+  GIT_TAG 00dbcf2c6e03c47d6c399338b6de060c71356464
+  INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  DEPENDS ${default_depends}
+  CMAKE_ARGS
+    ${common_cmake_args}
+    -DRAPIDJSON_BUILD_EXAMPLES=OFF
+    -DRAPIDJSON_BUILD_TESTS=OFF
+    -DRAPIDJSON_BUILD_DOC=OFF
+    -DRAPIDJSON_HAS_STDSTRING=ON
+)
+
+ExternalProject_Add(protobuf
+  GIT_REPOSITORY https://github.com/protocolbuffers/protobuf
+  GIT_TAG v3.18.1
+  INSTALL_DIR   @REDPANDA_DEPS_INSTALL_DIR@
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  SOURCE_SUBDIR cmake
+  CMAKE_ARGS
+    -Dprotobuf_BUILD_TESTS=OFF
+    ${common_cmake_args}
 )

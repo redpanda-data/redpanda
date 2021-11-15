@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/cluster"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/group"
 )
 
 func NewClusterCommand(fs afero.Fs) *cobra.Command {
@@ -30,7 +31,7 @@ func NewClusterCommand(fs afero.Fs) *cobra.Command {
 	)
 	command := &cobra.Command{
 		Use:   "cluster",
-		Short: "Interact with a Redpanda cluster",
+		Short: "Interact with a Redpanda cluster.",
 	}
 	// backcompat: until we switch to -X, we need these flags.
 	common.AddKafkaFlags(
@@ -46,7 +47,12 @@ func NewClusterCommand(fs afero.Fs) *cobra.Command {
 		&brokers,
 	)
 	command.AddCommand(cluster.NewMetadataCommand(fs))
-	command.AddCommand(cluster.NewOffsetsCommand(fs))
+
+	offsets := group.NewDescribeCommand(fs)
+	offsets.Deprecated = "replaced by 'rpk group describe'"
+	offsets.Hidden = true
+	offsets.Use = "offsets"
+	command.AddCommand(offsets)
 
 	return command
 }

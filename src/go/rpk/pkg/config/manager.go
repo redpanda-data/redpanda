@@ -32,10 +32,6 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-type configConverter interface {
-	ToGeneric() (*Config, error)
-}
-
 type Manager interface {
 	// Reads the config from the given path
 	Read(path string) (*Config, error)
@@ -541,15 +537,6 @@ func base58Encode(s string) string {
 	}
 
 	return string(answer)
-}
-
-func checkAndPrintRestartWarning(fieldKey string) {
-	if strings.HasPrefix(fieldKey, "redpanda") {
-		log.Info(
-			"If redpanda is running, please restart it for the" +
-				" changes to take effect.",
-		)
-	}
 }
 
 func parse(val string) interface{} {

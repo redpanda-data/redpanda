@@ -749,7 +749,23 @@ void op_context::response_iterator::set(
             it != session_partitions.end()) {
             auto has_to_be_included = update_fetch_partition(
               *_it->partition_response, it->second->partition);
-
+            /**
+             * From KIP-227
+             *
+             * In order to solve the starvation problem, the server must
+             * rotate the order in which it returns partition information.
+             * The server does this by maintaining a linked list of all
+             * partitions in the fetch session.  When data is returned for a
+             * partition, that partition is moved to the end of the list.
+             * This ensures that we eventually return data about all
+             * partitions for which data is available.
+             *
+             */
+            if (
+              _it->partition_response->records
+              && _it->partition_response->records->size_bytes() > 0) {
+                session_partitions.move_to_end(it);
+            }
             _it->partition_response->has_to_be_included = has_to_be_included;
         }
     }

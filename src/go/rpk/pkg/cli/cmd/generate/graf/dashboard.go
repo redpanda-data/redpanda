@@ -11,8 +11,6 @@ package graf
 
 import "encoding/json"
 
-const panelHeight = "8"
-
 var id uint = 0
 
 func nextID() uint {

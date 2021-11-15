@@ -46,6 +46,26 @@ struct envelope {
     static constexpr auto redpanda_inherits_from_envelope = true;
 };
 
+/**
+ * Checksum envelope uses CRC32c to check data integrity.
+ * The idea is that CRC32 has hardware support and is faster than
+ * disk and network I/O. So it will not be a bottle neck.
+ * This can be changed - for example by a separate template parameter
+ * template <..., typename HashAlgo = crc32c>
+ */
+template<
+  typename T,
+  typename Version,
+  typename CompatVersion = compat_version<Version::v>>
+struct checksum_envelope {
+    bool operator==(checksum_envelope const&) const = default;
+    using value_t = T;
+    static constexpr auto redpanda_serde_version = Version::v;
+    static constexpr auto redpanda_serde_compat_version = CompatVersion::v;
+    static constexpr auto redpanda_inherits_from_envelope = true;
+    static constexpr auto redpanda_serde_build_checksum = true;
+};
+
 namespace detail {
 
 template<typename T, typename = void>
@@ -89,6 +109,15 @@ struct version_has_serde_version_type {
       version_t>;
 };
 
+template<typename T, typename = void>
+struct has_checksum_attribute : std::false_type {};
+
+template<typename T>
+struct has_checksum_attribute<
+  T,
+  std::void_t<decltype(std::declval<T>().redpanda_serde_build_checksum)>>
+  : std::true_type {};
+
 } // namespace detail
 
 template<typename T>
@@ -97,6 +126,14 @@ inline constexpr auto const is_envelope_v = std::conjunction_v<
   detail::has_version_attribute<T>,
   detail::compat_version_has_serde_version_type<T>,
   detail::version_has_serde_version_type<T>>;
+
+template<typename T>
+inline constexpr auto const is_checksum_envelope_v = std::conjunction_v<
+  detail::has_compat_attribute<T>,
+  detail::has_version_attribute<T>,
+  detail::compat_version_has_serde_version_type<T>,
+  detail::version_has_serde_version_type<T>,
+  detail::has_checksum_attribute<T>>;
 
 template<typename T>
 inline constexpr auto const inherits_from_envelope_v

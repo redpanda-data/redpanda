@@ -30,7 +30,7 @@ func NewIoTuneCmd(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	)
 	command := &cobra.Command{
 		Use:   "iotune",
-		Short: "Measure filesystem performance and create IO configuration file",
+		Short: "Measure filesystem performance and create IO configuration file.",
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			timeout += duration
 			conf, err := mgr.FindOrGenerate(configFile)
@@ -54,7 +54,7 @@ func NewIoTuneCmd(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		"config",
 		"",
 		"Redpanda config file, if not set the file will be searched for"+
-			" in the default locations",
+			" in the default locations.",
 	)
 	command.Flags().StringVar(
 		&outputFile,

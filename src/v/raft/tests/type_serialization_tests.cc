@@ -16,6 +16,7 @@
 #include "raft/group_configuration.h"
 #include "raft/types.h"
 #include "random/generators.h"
+#include "reflection/adl.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/random_batch.h"
 #include "test_utils/randoms.h"
@@ -28,6 +29,7 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test_log.hpp>
 
+#include <cstdint>
 #include <vector>
 
 struct checking_consumer {
@@ -219,7 +221,7 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_roundtrip) {
           .node_id = raft::vnode(model::node_id(1), model::revision_id(i)),
           .group = raft::group_id(i),
           .term = model::term_id(random_generators::get_int(-1, 1000)),
-          .last_committed_log_index = commited_idx,
+          .last_flushed_log_index = commited_idx,
           .last_dirty_log_index = dirty_idx,
           .result = raft::append_entries_reply::status::success});
     }
@@ -248,8 +250,8 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_roundtrip) {
         BOOST_REQUIRE_EQUAL(expected[gr].group, result.meta[i].group);
         BOOST_REQUIRE_EQUAL(expected[gr].term, result.meta[i].term);
         BOOST_REQUIRE_EQUAL(
-          expected[gr].last_committed_log_index,
-          result.meta[i].last_committed_log_index);
+          expected[gr].last_flushed_log_index,
+          result.meta[i].last_flushed_log_index);
         BOOST_REQUIRE_EQUAL(
           expected[gr].last_dirty_log_index,
           result.meta[i].last_dirty_log_index);
@@ -270,12 +272,14 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_roundtrip) {
     raft::group_configuration cfg(nodes, current, model::revision_id(0));
 
     auto ct = ss::lowres_clock::now();
+    raft::offset_translator_delta delta{
+      random_generators::get_int<int64_t>(5000)};
     raft::snapshot_metadata metadata{
       .last_included_index = model::offset(123),
       .last_included_term = model::term_id(32),
       .latest_configuration = cfg,
       .cluster_time = ct,
-    };
+      .log_start_delta = delta};
 
     auto d = serialize_roundtrip_rpc(std::move(metadata));
 
@@ -283,4 +287,41 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_roundtrip) {
     BOOST_REQUIRE_EQUAL(d.last_included_term, model::term_id(32));
     BOOST_REQUIRE(d.cluster_time == ct);
     BOOST_REQUIRE_EQUAL(d.latest_configuration, cfg);
+    BOOST_REQUIRE_EQUAL(d.log_start_delta, delta);
+}
+
+SEASTAR_THREAD_TEST_CASE(snapshot_metadata_backward_compatibility) {
+    auto n1 = tests::random_broker(0, 100);
+    auto n2 = tests::random_broker(0, 100);
+    auto n3 = tests::random_broker(0, 100);
+    std::vector<model::broker> nodes{n1, n2, n3};
+    raft::group_nodes current{
+      .voters
+      = {raft::vnode(n1.id(), model::revision_id(1)), raft::vnode(n3.id(), model::revision_id(3))},
+      .learners = {raft::vnode(n2.id(), model::revision_id(1))}};
+
+    raft::group_configuration cfg(nodes, current, model::revision_id(0));
+    auto c = cfg;
+    auto ct = ss::lowres_clock::now();
+    // serialize using old format (no version included)
+    iobuf serialize_buf;
+    reflection::serialize(
+      serialize_buf,
+      model::offset(123),
+      model::term_id(32),
+      std::move(cfg),
+      ct.time_since_epoch());
+
+    iobuf_parser parser(std::move(serialize_buf));
+
+    // deserialize with current format
+    raft::snapshot_metadata metadata
+      = reflection::adl<raft::snapshot_metadata>{}.from(parser);
+
+    BOOST_REQUIRE_EQUAL(metadata.last_included_index, model::offset(123));
+    BOOST_REQUIRE_EQUAL(metadata.last_included_term, model::term_id(32));
+    BOOST_REQUIRE(metadata.cluster_time == ct);
+    BOOST_REQUIRE_EQUAL(metadata.latest_configuration, c);
+    BOOST_REQUIRE_EQUAL(
+      metadata.log_start_delta, raft::offset_translator_delta{});
 }

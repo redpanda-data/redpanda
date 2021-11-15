@@ -35,6 +35,7 @@ FIXTURE_TEST(test_entries_are_replicated_to_all_nodes, raft_test_fixture) {
 
     BOOST_REQUIRE(success);
     validate_logs_replication(gr);
+    validate_offset_translation(gr);
 };
 
 FIXTURE_TEST(test_replicate_multiple_entries_single_node, raft_test_fixture) {
@@ -92,6 +93,7 @@ FIXTURE_TEST(test_replicate_multiple_entries, raft_test_fixture) {
       10s,
       [this, &gr] { return are_all_commit_indexes_the_same(gr); },
       "State is consistent");
+    validate_offset_translation(gr);
 };
 
 FIXTURE_TEST(test_replicate_with_expected_term_leader, raft_test_fixture) {
@@ -191,6 +193,7 @@ FIXTURE_TEST(test_single_node_recovery, raft_test_fixture) {
       "After recovery state is consistent");
 
     validate_logs_replication(gr);
+    validate_offset_translation(gr);
 };
 
 FIXTURE_TEST(test_empty_node_recovery, raft_test_fixture) {
@@ -222,6 +225,7 @@ FIXTURE_TEST(test_empty_node_recovery, raft_test_fixture) {
       10s,
       [this, &gr] { return are_all_commit_indexes_the_same(gr); },
       "After recovery state is consistent");
+    validate_offset_translation(gr);
 };
 
 FIXTURE_TEST(test_empty_node_recovery_relaxed_consistency, raft_test_fixture) {
@@ -254,6 +258,7 @@ FIXTURE_TEST(test_empty_node_recovery_relaxed_consistency, raft_test_fixture) {
       10s,
       [this, &gr] { return are_all_consumable_offsets_are_the_same(gr); },
       "After recovery state is consistent");
+    validate_offset_translation(gr);
 };
 
 FIXTURE_TEST(test_single_node_recovery_multi_terms, raft_test_fixture) {
@@ -293,6 +298,7 @@ FIXTURE_TEST(test_single_node_recovery_multi_terms, raft_test_fixture) {
       10s,
       [this, &gr] { return are_all_commit_indexes_the_same(gr); },
       "State is conistent after recovery");
+    validate_offset_translation(gr);
 };
 
 FIXTURE_TEST(test_recovery_of_crashed_leader_truncation, raft_test_fixture) {
@@ -350,6 +356,7 @@ FIXTURE_TEST(test_recovery_of_crashed_leader_truncation, raft_test_fixture) {
       10s,
       [this, &gr] { return are_all_commit_indexes_the_same(gr); },
       "After recovery state should be consistent");
+    validate_offset_translation(gr);
 };
 
 FIXTURE_TEST(test_append_entries_with_relaxed_consistency, raft_test_fixture) {
@@ -367,6 +374,8 @@ FIXTURE_TEST(test_append_entries_with_relaxed_consistency, raft_test_fixture) {
       10s,
       [this, &gr] { return are_all_consumable_offsets_are_the_same(gr); },
       "After recovery state is consistent");
+
+    validate_offset_translation(gr);
 };
 
 FIXTURE_TEST(
@@ -478,6 +487,7 @@ FIXTURE_TEST(test_compacted_log_recovery, raft_test_fixture) {
       "After recovery state is consistent");
 
     validate_logs_replication(gr);
+    validate_offset_translation(gr);
 };
 
 /**
@@ -552,9 +562,8 @@ FIXTURE_TEST(test_collected_log_recovery, raft_test_fixture) {
       "After recovery state is consistent");
 
     validate_logs_replication(gr);
+    validate_offset_translation(gr);
 };
-/// FIXME: enable those tests back when we figure out how to prevent then
-/// causing build timeout
 
 FIXTURE_TEST(test_snapshot_recovery, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
@@ -602,6 +611,7 @@ FIXTURE_TEST(test_snapshot_recovery, raft_test_fixture) {
       "After recovery state is consistent");
 
     validate_logs_replication(gr);
+    validate_offset_translation(gr);
 };
 
 FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
@@ -654,6 +664,7 @@ FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
       "After recovery state is consistent");
 
     validate_logs_replication(gr);
+    validate_offset_translation(gr);
 };
 
 FIXTURE_TEST(test_last_visible_offset_relaxed_consistency, raft_test_fixture) {
@@ -717,6 +728,7 @@ FIXTURE_TEST(test_mixed_consisteny_levels, raft_test_fixture) {
       10s,
       [this, &gr] { return are_all_consumable_offsets_are_the_same(gr); },
       "After recovery state is consistent");
+    validate_offset_translation(gr);
 };
 
 FIXTURE_TEST(test_linarizable_barrier, raft_test_fixture) {
@@ -795,6 +807,7 @@ FIXTURE_TEST(test_big_batches_replication, raft_test_fixture) {
 
     auto logs = gr.read_all_logs();
     BOOST_REQUIRE(are_logs_the_same_length(logs));
+    validate_offset_translation(gr);
 }
 struct request_ordering_test_fixture : public raft_test_fixture {
     model::record_batch_reader make_indexed_batch_reader(int32_t idx) {

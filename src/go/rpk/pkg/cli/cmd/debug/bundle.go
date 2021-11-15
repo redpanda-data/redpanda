@@ -31,6 +31,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/avast/retry-go"
 	"github.com/beevik/ntp"
 	"github.com/docker/go-units"
 	"github.com/hashicorp/go-multierror"
@@ -43,6 +44,7 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
+	osutil "github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system/syslog"
@@ -127,6 +129,9 @@ func writeCommandOutputToZipLimit(
 	ctx, cancel := context.WithTimeout(context.Background(), ps.timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, command, args...)
+
+	// Strip any non-default library path
+	cmd.Env = osutil.SystemLdPathEnv()
 
 	wr, err := ps.w.Create(filename)
 	if err != nil {
@@ -595,23 +600,53 @@ func saveResourceUsageData(ps *stepParams, conf *config.Config) step {
 // Queries 'pool.ntp.org' and writes a file with the reported RTT, time & precision.
 func saveNTPDrift(ps *stepParams) step {
 	return func() error {
-		const host = "pool.ntp.org"
+		const (
+			host    = "pool.ntp.org"
+			retries = 3
+		)
 
-		response, err := ntp.Query(host)
+		var (
+			response  *ntp.Response
+			localTime time.Time
+			err       error
+		)
+
+		queryNTP := func() error {
+			localTime = time.Now()
+			response, err = ntp.Query(host)
+			return err
+		}
+
+		err = retry.Do(
+			queryNTP,
+			retry.Attempts(retries),
+			retry.DelayType(retry.FixedDelay),
+			retry.Delay(1*time.Second),
+			retry.LastErrorOnly(true),
+			retry.OnRetry(func(n uint, err error) {
+				log.Debugf("Couldn't retrieve NTP data from %s: %v", host, err)
+				log.Debugf("Retrying (%d retries left)", retries-n)
+			}),
+		)
+
 		if err != nil {
 			return fmt.Errorf("error querying '%s': %w", host, err)
 		}
 
 		result := struct {
-			Host            string    `json:"host"`
-			RoundTripTimeMs int64     `json:"roundTripTimeMs"`
-			Time            time.Time `json:"time"`
-			PrecisionMs     int64     `json:"precisionMs"`
+			Host            string        `json:"host"`
+			RoundTripTimeMs int64         `json:"roundTripTimeMs"`
+			RemoteTimeUTC   time.Time     `json:"remoteTimeUTC"`
+			LocalTimeUTC    time.Time     `json:"localTimeUTC"`
+			PrecisionMs     int64         `json:"precisionMs"`
+			Offset          time.Duration `json:"offset"`
 		}{
 			Host:            host,
 			RoundTripTimeMs: response.RTT.Milliseconds(),
-			Time:            response.Time,
+			RemoteTimeUTC:   response.Time.UTC(),
+			LocalTimeUTC:    localTime.UTC(),
 			PrecisionMs:     response.Precision.Milliseconds(),
+			Offset:          response.ClockOffset,
 		}
 
 		marshalled, err := json.Marshal(result)
@@ -700,7 +735,7 @@ func saveTopOutput(ps *stepParams) step {
 		return writeCommandOutputToZip(
 			ps,
 			"top.txt",
-			"top", "-n", "10", "-H",
+			"top", "-b", "-n", "10", "-H", "-d", "1",
 		)
 	}
 }
@@ -761,6 +796,12 @@ func walkDir(root string, files map[string]*fileInfo) error {
 			i := new(fileInfo)
 			files[path] = i
 
+			// If the directory's contents couldn't be read, skip it.
+			if readErr != nil {
+				i.Error = readErr.Error()
+				return fs.SkipDir
+			}
+
 			info, err := d.Info()
 			if err != nil {
 				i.Error = err.Error()
@@ -792,13 +833,6 @@ func walkDir(root string, files map[string]*fileInfo) error {
 					i.Group = g.Name
 				} else {
 					i.Group = fmt.Sprintf("group lookup failed for GID %d: %v", sys.Gid, err)
-				}
-			}
-			// If the directory's contents couldn't be read, skip it.
-			if readErr != nil {
-				i.Error = readErr.Error()
-				if d.IsDir() {
-					return fs.SkipDir
 				}
 			}
 

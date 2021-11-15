@@ -1,4 +1,4 @@
-# Copyright 2020 Vectorized, Inc.
+# Copyright 2021 Vectorized, Inc.
 #
 # Use of this software is governed by the Business Source License
 # included in the file licenses/BSL.md
@@ -11,8 +11,9 @@ import random
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
-from rptest.services.compatibility.compat_producer import CompatProducer
-from rptest.services.compatibility.compat_example import CompatExample
+from rptest.services.kaf_producer import KafProducer
+from rptest.services.compatibility.example_runner import ExampleRunner
+import rptest.services.compatibility.sarama_examples as SaramaExamples
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 
@@ -21,73 +22,134 @@ class SaramaTest(RedpandaTest):
     """
     Test three of Sarama's examples: topic interceptor, http server, and consumer group.
     All three examples have some piece that runs in the background, so we use a 
-    BackgroundThreadService (i.e., CompatExample).
+    BackgroundThreadService (i.e., ExampleRunner).
     """
     topics = (TopicSpec(), )
 
     def __init__(self, test_context):
         super(SaramaTest, self).__init__(test_context=test_context)
 
-        # The produce is only for the consumer group example
-        self._producer = CompatProducer(test_context, self.redpanda,
-                                        self.topic)
+        self._ctx = test_context
 
-        # A representation of the example to be run in the background
-        self._example = CompatExample(test_context, self.redpanda, self.topic)
+        # timeout 600s was sufficient for 5k events on local
+        # so 1200s should be OK for CI & release
+        self._timeout = 30 if self.scale.local else 1200
 
     @cluster(num_nodes=5)
     def test_sarama_interceptors(self):
-        # Start the example
-        self._example.start()
+        sarama_example = SaramaExamples.SaramaInterceptors(
+            self.redpanda, self.topic)
+        example = ExampleRunner(self._ctx,
+                                sarama_example,
+                                timeout_sec=self._timeout)
 
-        # Wait until the example is OK to terminate
-        wait_until(lambda: self._example.ok(),
-                   timeout_sec=30,
-                   backoff_sec=5,
-                   err_msg="sarama interceptors test failed")
+        # Start the example
+        example.start()
+
+        example.wait()
 
     @cluster(num_nodes=5)
     def test_sarama_http_server(self):
+        sarama_example = SaramaExamples.SaramaHttpServer(self.redpanda)
+        example = ExampleRunner(self._ctx,
+                                sarama_example,
+                                timeout_sec=self._timeout)
+
         # Start the example
-        self._example.start()
+        example.start()
 
         # Wait for the server to load
-        wait_until(lambda: self._example.ok(),
-                   timeout_sec=30,
-                   backoff_sec=5,
-                   err_msg="sarama http_server failed to load")
+        example.wait()
 
         # Get the node the server is on and
         # a ducktape node
-        server_name = self._example.node_name()
-        n = random.randint(0, len(self.redpanda.nodes))
-        node = self.redpanda.get_node(n)
+        server_name = example.node_name()
+        node = random.choice(self.redpanda.nodes)
 
         # Http get request using curl
         curl = f"curl -SL http://{server_name}:8080/"
 
         def try_curl():
             result = node.account.ssh_output(curl, timeout_sec=5).decode()
+            self.logger.debug(result)
             return "Your data is stored with unique identifier" in result
 
         # Using wait_until for auto-retry because sometimes
         # redpanda is in the middle of a leadership election when
         # we try to http get.
-        wait_until(lambda: try_curl(),
-                   timeout_sec=60,
+        wait_until(try_curl,
+                   timeout_sec=self._timeout,
                    backoff_sec=5,
                    err_msg="sarama http_server test failed")
 
     @cluster(num_nodes=5)
     def test_sarama_consumergroup(self):
-        # Run the publisher
-        self._producer.start()
+        count = 10 if self.scale.local else 5000
+
+        sarama_example = SaramaExamples.SaramaConsumerGroup(
+            self.redpanda, self.topic, count)
+        example = ExampleRunner(self._ctx,
+                                sarama_example,
+                                timeout_sec=self._timeout)
+        producer = KafProducer(self._ctx, self.redpanda, self.topic, count)
+
+        def until_partitions():
+            storage = self.redpanda.storage()
+            return len(list(storage.partitions("kafka", self.topic))) == 3
+
+        # Must wait for the paritions to materialize or else
+        # kaf may try to produce during leadership election.
+        # This results in a skipped record since kaf doesn't auto-retry.
+        wait_until(until_partitions,
+                   timeout_sec=30,
+                   backoff_sec=2,
+                   err_msg="Expected partition did not materialize")
+
+        # Run the producer and wait for the worker
+        # threads to finish producing
+        producer.start()
+        producer.wait()
 
         # Start the example
-        self._example.start()
+        example.start()
 
         # Wait until the example is OK to terminate
-        wait_until(lambda: self._example.ok(),
-                   timeout_sec=30,
+        example.wait()
+
+
+class SaramaScramTest(RedpandaTest):
+    """
+    Test Sarama's example that uses SASL/SCRAM authentication.
+    The example runs in the foreground so there is no need for
+    a BackgroundThreadService.
+    """
+    topics = (TopicSpec(), )
+
+    def __init__(self, test_context):
+        extra_rp_conf = dict(enable_sasl=True, )
+        super(SaramaScramTest, self).__init__(test_context,
+                                              extra_rp_conf=extra_rp_conf)
+
+    @cluster(num_nodes=3)
+    def test_sarama_sasl_scram(self):
+        # Get the SASL SCRAM command and a ducktape node
+        cmd = SaramaExamples.sarama_sasl_scram(self.redpanda, self.topic)
+        node = random.choice(self.redpanda.nodes)
+
+        def try_cmd():
+            # Allow fail because the process exits with
+            # non-zero if redpanda is in the middle of a
+            # leadership election. Instead we want to
+            # retry the cmd.
+            result = node.account.ssh_output(cmd,
+                                             allow_fail=True,
+                                             timeout_sec=10).decode()
+            self.logger.debug(result)
+            return "wrote message at partition:" in result
+
+        # Using wait_until for auto-retry because sometimes
+        # redpanda is in the middle of a leadership election
+        wait_until(try_cmd,
+                   timeout_sec=60,
                    backoff_sec=5,
-                   err_msg="sarama consumergroup test failed")
+                   err_msg="sarama sasl scram test failed")

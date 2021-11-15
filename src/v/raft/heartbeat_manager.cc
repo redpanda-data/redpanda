@@ -83,9 +83,10 @@ static heartbeat_requests requests_for_range(
             if (ptr->are_heartbeats_suppressed(rni)) {
                 return;
             }
-            auto last_append_timestamp = ptr->last_append_timestamp(rni);
+            auto last_sent_append_entries_req_timesptamp
+              = ptr->last_sent_append_entries_req_timesptamp(rni);
 
-            if (last_append_timestamp > last_heartbeat) {
+            if (last_sent_append_entries_req_timesptamp > last_heartbeat) {
                 vlog(
                   hbeatlog.trace,
                   "Skipping sending beat to {} gr: {} last hb {}, last append "
@@ -93,7 +94,8 @@ static heartbeat_requests requests_for_range(
                   rni,
                   ptr->group(),
                   last_heartbeat.time_since_epoch().count(),
-                  last_append_timestamp.time_since_epoch().count());
+                  last_sent_append_entries_req_timesptamp.time_since_epoch()
+                    .count());
                 // we already sent heartbeat, skip it
                 return;
             }

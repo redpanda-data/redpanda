@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+//go:build linux
 // +build linux
 
 package redpanda
@@ -15,11 +16,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +31,7 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/net"
 	vos "github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
 	rp "github.com/vectorizedio/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners"
@@ -137,7 +137,7 @@ func NewStartCommand(
 
 	command := &cobra.Command{
 		Use:   "start",
-		Short: "Start redpanda",
+		Short: "Start redpanda.",
 		FParseErrWhitelist: cobra.FParseErrWhitelist{
 			// Allow unknown flags so that arbitrary flags can be passed
 			// through to redpanda/seastar without the need to pass '--'
@@ -369,7 +369,7 @@ func NewStartCommand(
 		configFlag,
 		"",
 		"Redpanda config file, if not set the file will be searched for"+
-			" in the default locations",
+			" in the default locations.",
 	)
 	command.Flags().IntVar(
 		&nodeID,
@@ -913,44 +913,19 @@ func parseNamedAddress(
 	if addr == "" {
 		return nil, nil
 	}
-	scheme, hostname, port, err := parseURL(addr)
+	scheme, hostport, err := net.ParseHostMaybeScheme(addr)
 	if err != nil {
 		return nil, err
 	}
-	if port == 0 {
-		port = defaultPort
-	}
+	host, port := net.SplitHostPortDefault(hostport, defaultPort)
 
 	return &config.NamedSocketAddress{
 		SocketAddress: config.SocketAddress{
-			Address: hostname,
+			Address: host,
 			Port:    port,
 		},
 		Name: scheme,
 	}, nil
-}
-
-func parseURL(addr string) (scheme, hostname string, port int, err error) {
-	if strings.HasPrefix(addr, ":") {
-		return "", "", 0, errors.New("missing hostname")
-	}
-	root := "//"
-	if !strings.Contains(addr, root) {
-		addr = fmt.Sprintf("%s%s", root, addr)
-	}
-	u, err := url.Parse(addr)
-	if err != nil {
-		return "", "", 0, err
-	}
-	if u.Port() != "" {
-		port, err = strconv.Atoi(u.Port())
-		if err != nil {
-			return "", "", 0, err
-		}
-	}
-	scheme = u.Scheme
-	hostname = u.Hostname()
-	return scheme, hostname, port, nil
 }
 
 func sendEnv(

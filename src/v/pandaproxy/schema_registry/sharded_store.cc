@@ -18,6 +18,7 @@
 #include "pandaproxy/schema_registry/avro.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/exceptions.h"
+#include "pandaproxy/schema_registry/protobuf.h"
 #include "pandaproxy/schema_registry/store.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "vlog.h"
@@ -62,25 +63,48 @@ ss::future<> sharded_store::stop() { return _store.stop(); }
 
 ss::future<canonical_schema>
 sharded_store::make_canonical_schema(unparsed_schema schema) {
-    auto def = co_await _store.invoke_on(
-      shard_for(schema.sub()),
-      _smp_opts,
-      &store::make_canonical_schema,
-      schema);
-    co_return std::move(def).value();
+    switch (schema.type()) {
+    case schema_type::avro: {
+        co_return canonical_schema{
+          std::move(schema.sub()),
+          sanitize_avro_schema_definition(schema.def()).value(),
+          std::move(schema.refs())};
+    }
+    case schema_type::protobuf:
+        co_return co_await make_canonical_protobuf_schema(
+          *this, std::move(schema));
+    case schema_type::json:
+        throw as_exception(invalid_schema_type(schema.type()));
+    }
+    __builtin_unreachable();
 }
 
 ss::future<> sharded_store::validate_schema(const canonical_schema& schema) {
-    auto def = co_await _store.invoke_on(
-      shard_for(schema.sub()), _smp_opts, &store::validate_schema, schema);
-    co_return std::move(def).value();
+    switch (schema.type()) {
+    case schema_type::avro: {
+        make_avro_schema_definition(schema.def().raw()()).value();
+        co_return;
+    }
+    case schema_type::protobuf:
+        co_await validate_protobuf_schema(*this, schema);
+        co_return;
+    case schema_type::json:
+        throw as_exception(invalid_schema_type(schema.type()));
+    }
+    __builtin_unreachable();
 }
 
 ss::future<valid_schema>
 sharded_store::make_valid_schema(const canonical_schema& schema) {
-    auto def = co_await _store.invoke_on(
-      shard_for(schema.sub()), _smp_opts, &store::make_valid_schema, schema);
-    co_return std::move(def).value();
+    switch (schema.type()) {
+    case schema_type::avro:
+        co_return make_avro_schema_definition(schema.def().raw()()).value();
+    case schema_type::protobuf:
+        co_return co_await make_protobuf_schema_definition(*this, schema);
+    case schema_type::json:
+        throw as_exception(invalid_schema_type(schema.type()));
+    }
+    __builtin_unreachable();
 }
 
 ss::future<sharded_store::insert_result>
@@ -206,15 +230,30 @@ sharded_store::get_schema_subject_versions(schema_id id) {
 }
 
 ss::future<subject_schema> sharded_store::get_subject_schema(
-  const subject& sub, schema_version version, include_deleted inc_del) {
-    auto res = co_await _store.invoke_on(
-      shard_for(sub),
-      _smp_opts,
-      &store::get_subject_schema,
-      sub,
-      version,
-      inc_del);
-    co_return res.value();
+  const subject& sub,
+  std::optional<schema_version> version,
+  include_deleted inc_del) {
+    auto v_id = (co_await _store.invoke_on(
+                   shard_for(sub),
+                   _smp_opts,
+                   &store::get_subject_version_id,
+                   sub,
+                   version,
+                   inc_del))
+                  .value();
+
+    auto def = (co_await _store.invoke_on(
+                  shard_for(v_id.id),
+                  _smp_opts,
+                  &store::get_schema_definition,
+                  v_id.id))
+                 .value();
+
+    co_return subject_schema{
+      .schema = {sub, std::move(def), std::move(v_id.refs)},
+      .version = v_id.version,
+      .id = v_id.id,
+      .deleted = v_id.deleted};
 }
 
 ss::future<std::vector<subject>>

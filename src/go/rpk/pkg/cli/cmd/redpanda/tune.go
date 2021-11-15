@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+//go:build linux
 // +build linux
 
 package redpanda
@@ -135,18 +136,18 @@ Would you like to continue with the default configuration?`,
 		[]string{}, "Network Interface Controllers to tune")
 	command.Flags().StringSliceVarP(&tunerParams.Directories,
 		"dirs", "r",
-		[]string{}, "List of *data* directories. or places to store data."+
+		[]string{}, "List of *data* directories or places to store data,"+
 			" i.e.: '/var/vectorized/redpanda/',"+
-			" usually your XFS filesystem on an NVMe SSD device")
+			" usually your XFS filesystem on an NVMe SSD device.")
 	command.Flags().BoolVar(&tunerParams.RebootAllowed,
-		"reboot-allowed", false, "If set will allow tuners to tune boot paramters "+
-			" and request system reboot")
+		"reboot-allowed", false, "If set will allow tuners to tune boot parameters"+
+			" and request system reboot.")
 	command.Flags().StringVar(
 		&configFile,
 		"config",
 		"",
 		"Redpanda config file, if not set the file will be searched for"+
-			" in the default locations",
+			" in the default locations.",
 	)
 	command.Flags().StringVar(&outTuneScriptFile,
 		"output-script", "", "If set tuners will generate tuning file that "+

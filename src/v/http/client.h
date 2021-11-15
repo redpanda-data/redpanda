@@ -21,6 +21,7 @@
 #include "rpc/transport.h"
 #include "rpc/types.h"
 #include "seastarx.h"
+#include "utils/prefix_logger.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
@@ -96,7 +97,7 @@ public:
     /// Return immediately if connected or make connection attempts
     /// until success, timeout or error
     ss::future<reconnect_result_t>
-    get_connected(ss::lowres_clock::duration timeout);
+    get_connected(ss::lowres_clock::duration timeout, prefix_logger ctxlog);
 
     void fail_outstanding_futures() noexcept override;
 
@@ -106,7 +107,7 @@ public:
     public:
         using verb = boost::beast::http::verb;
         /// C-tor can only be called by http_request
-        explicit response_stream(client* client, verb v);
+        explicit response_stream(client* client, verb v, ss::sstring target);
 
         response_stream(response_stream&&) = delete;
         response_stream(response_stream const&) = delete;
@@ -148,6 +149,7 @@ public:
 
     private:
         client* _client;
+        prefix_logger _ctxlog;
         response_parser _parser;
         iobuf _buffer; /// store incomplete tail elements
         iobuf _prefetch;
@@ -187,6 +189,7 @@ public:
 
     private:
         client* _client;
+        prefix_logger _ctxlog;
         http_request _request;
         http_serializer _serializer;
         chunked_encoder _chunk_encode;

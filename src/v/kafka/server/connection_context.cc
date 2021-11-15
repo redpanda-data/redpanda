@@ -340,7 +340,6 @@ ss::future<> connection_context::process_next_response() {
         }
 
         auto msg = response_as_scattered(std::move(r));
-        _rs.probe().add_bytes_sent(msg.size());
         try {
             return _rs.conn->write(std::move(msg)).then([] {
                 return ss::make_ready_future<ss::stop_iteration>(

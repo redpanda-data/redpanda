@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <iosfwd>
 #include <limits>
+#include <ostream>
 #include <type_traits>
 
 namespace model {

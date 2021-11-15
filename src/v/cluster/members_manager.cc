@@ -44,8 +44,8 @@ members_manager::members_manager(
   ss::sharded<partition_allocator>& allocator,
   ss::sharded<storage::api>& storage,
   ss::sharded<ss::abort_source>& as)
-  : _seed_servers(config::shard_local_cfg().seed_servers())
-  , _self(make_self_broker(config::shard_local_cfg()))
+  : _seed_servers(config::node().seed_servers())
+  , _self(make_self_broker(config::node()))
   , _join_retry_jitter(config::shard_local_cfg().join_retry_timeout_ms())
   , _join_timeout(std::chrono::seconds(2))
   , _raft0(raft0)
@@ -54,7 +54,7 @@ members_manager::members_manager(
   , _allocator(allocator)
   , _storage(storage)
   , _as(as)
-  , _rpc_tls_config(config::shard_local_cfg().rpc_server_tls())
+  , _rpc_tls_config(config::node().rpc_server_tls())
   , _update_queue(max_updates_queue_size) {
     auto sub = _as.local().subscribe([this]() noexcept {
         _update_queue.abort(

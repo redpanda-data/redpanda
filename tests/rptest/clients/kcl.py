@@ -21,12 +21,21 @@ class KCL:
     def produce(self, topic, msg):
         return self._cmd(["produce", topic], input=msg)
 
-    def consume(self, topic, n=None, group=None):
+    def consume(self,
+                topic,
+                n=None,
+                group=None,
+                regex=False,
+                fetch_max_bytes=None):
         cmd = ["consume"]
         if group is not None:
             cmd += ["-g", group]
         if n is not None:
             cmd.append(f"-n{n}")
+        if regex:
+            cmd.append("-r")
+        if fetch_max_bytes is not None:
+            cmd += ["--fetch-max-bytes", str(fetch_max_bytes)]
         cmd.append(topic)
         return self._cmd(cmd)
 

@@ -30,10 +30,8 @@ import (
 )
 
 var (
-	registry          = "docker.io"
 	tag               = "latest"
 	redpandaImageBase = "vectorized/redpanda:" + tag
-	redpandaImage     = registry + "/" + redpandaImageBase
 )
 
 const (
@@ -312,7 +310,7 @@ func CreateNode(
 			pPort: []nat.PortBinding{{
 				HostPort: fmt.Sprint(proxyPort),
 			}},
-			pPort: []nat.PortBinding{{
+			sPort: []nat.PortBinding{{
 				HostPort: fmt.Sprint(schemaRegPort),
 			}},
 			metPort: []nat.PortBinding{{

@@ -17,8 +17,6 @@ import (
 )
 
 func Test_floatChecker_Check(t *testing.T) {
-	type fields struct {
-	}
 	tests := []struct {
 		name           string
 		check          func(c float64) bool

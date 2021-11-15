@@ -10,6 +10,7 @@
 #pragma once
 
 #include "bytes/iobuf_parser.h"
+#include "hashing/crc32c.h"
 #include "reflection/type_traits.h"
 #include "serde/envelope_for_each_field.h"
 #include "serde/logger.h"
@@ -27,6 +28,22 @@
 
 namespace serde {
 
+template<typename T>
+inline constexpr bool serde_is_enum_v =
+#if __has_cpp_attribute(__cpp_lib_is_scoped_enum)
+  std::is_scoped_enum_v<T>;
+#else
+  std::is_enum_v<T>;
+#endif
+
+#if defined(SERDE_TEST)
+using serde_size_t = uint16_t;
+#else
+using serde_size_t = uint32_t;
+#endif
+
+using checksum_t = uint32_t;
+
 template<typename To, typename From>
 To bit_cast(From const& f) {
     static_assert(sizeof(From) == sizeof(To));
@@ -39,6 +56,7 @@ To bit_cast(From const& f) {
 struct header {
     version_t _version, _compat_version;
     size_t _bytes_left_limit;
+    checksum_t _checksum;
 };
 
 template<typename T, typename = void>
@@ -93,13 +111,21 @@ template<typename T>
 inline constexpr auto const has_serde_async_write
   = help_has_serde_async_write<T>::value;
 
+using serde_enum_serialized_t = int32_t;
+
+#if defined(SERDE_TEST)
+using serde_size_t = uint16_t;
+#else
+using serde_size_t = uint32_t;
+#endif
+
 template<typename T>
 inline constexpr auto const is_serde_compatible_v
   = is_envelope_v<T>
     || (std::is_scalar_v<T>  //
          && (!std::is_same_v<float, T> || std::numeric_limits<float>::is_iec559)
          && (!std::is_same_v<double, T> || std::numeric_limits<double>::is_iec559)
-         && !std::is_enum_v<T>)
+         && (!serde_is_enum_v<T> || sizeof(T{}) <= sizeof(serde_enum_serialized_t)))
     || reflection::is_std_vector_v<T>
     || reflection::is_named_type_v<T>
     || reflection::is_ss_bool_v<T>
@@ -107,12 +133,6 @@ inline constexpr auto const is_serde_compatible_v
     || std::is_same_v<T, std::chrono::milliseconds>
     || std::is_same_v<T, iobuf>
     || std::is_same_v<T, ss::sstring>;
-
-#if defined(SERDE_TEST)
-using serde_size_t = uint16_t;
-#else
-using serde_size_t = uint32_t;
-#endif
 
 template<typename T>
 void write(iobuf&, T);
@@ -127,8 +147,13 @@ void write(iobuf& out, T t) {
         write(out, Type::redpanda_serde_compat_version);
 
         auto size_placeholder = out.reserve(sizeof(serde_size_t));
-        auto const size_before = out.size_bytes();
 
+        auto checksum_placeholder = iobuf::placeholder{};
+        if constexpr (is_checksum_envelope_v<Type>) {
+            checksum_placeholder = out.reserve(sizeof(checksum_t));
+        }
+
+        auto const size_before = out.size_bytes();
         if constexpr (has_serde_write<Type>) {
             t.serde_write(out);
         } else {
@@ -144,9 +169,38 @@ void write(iobuf& out, T t) {
           static_cast<serde_size_t>(written_size));
         size_placeholder.write(
           reinterpret_cast<char const*>(&size), sizeof(serde_size_t));
+
+        if constexpr (is_checksum_envelope_v<Type>) {
+            auto crc = crc::crc32c{};
+            auto in = iobuf_const_parser{out};
+            in.skip(size_before);
+            in.consume(
+              in.bytes_left(), [&crc](char const* src, size_t const n) {
+                  crc.extend(src, n);
+                  return ss::stop_iteration::no;
+              });
+            auto const checksum = ss::cpu_to_le(crc.value());
+            static_assert(
+              std::is_same_v<std::decay_t<decltype(checksum)>, checksum_t>);
+            checksum_placeholder.write(
+              reinterpret_cast<char const*>(&checksum), sizeof(checksum_t));
+        }
     } else if constexpr (std::is_same_v<bool, Type>) {
         write<int8_t>(out, t);
-    } else if constexpr (std::is_scalar_v<Type> && !std::is_enum_v<Type>) {
+    } else if constexpr (serde_is_enum_v<Type>) {
+        auto const val = static_cast<std::underlying_type_t<Type>>(t);
+        if (unlikely(
+              val > std::numeric_limits<serde_enum_serialized_t>::max()
+              || val < std::numeric_limits<serde_enum_serialized_t>::min())) {
+            throw serde_exception{fmt_with_ctx(
+              ssx::sformat,
+              "serde: enum of type {} has value {} which is out of bounds for "
+              "serde_enum_serialized_t",
+              type_str<T>(),
+              val)};
+        }
+        write(out, static_cast<serde_enum_serialized_t>(val));
+    } else if constexpr (std::is_scalar_v<Type>) {
         if constexpr (sizeof(Type) == 1) {
             out.append(reinterpret_cast<char const*>(&t), sizeof(t));
         } else if constexpr (std::is_same_v<float, Type>) {
@@ -219,6 +273,11 @@ header read_header(iobuf_parser& in, std::size_t const bytes_left_limit) {
     auto const compat_version = read_nested<version_t>(in, bytes_left_limit);
     auto const size = read_nested<serde_size_t>(in, bytes_left_limit);
 
+    auto checksum = checksum_t{};
+    if constexpr (is_checksum_envelope_v<T>) {
+        checksum = read_nested<checksum_t>(in, bytes_left_limit);
+    }
+
     if (unlikely(in.bytes_left() < size)) {
         throw serde_exception(fmt_with_ctx(
           ssx::sformat,
@@ -247,10 +306,21 @@ header read_header(iobuf_parser& in, std::size_t const bytes_left_limit) {
           static_cast<int>(Type::redpanda_serde_version)));
     }
 
+    if (unlikely(version < Type::redpanda_serde_compat_version)) {
+        throw serde_exception(fmt_with_ctx(
+          ssx::sformat,
+          "read {}: version={} < {}::compat_version={}",
+          type_str<Type>(),
+          static_cast<int>(version),
+          type_str<T>(),
+          static_cast<int>(Type::redpanda_serde_compat_version)));
+    }
+
     return header{
       ._version = version,
       ._compat_version = compat_version,
-      ._bytes_left_limit = in.bytes_left() - size};
+      ._bytes_left_limit = in.bytes_left() - size,
+      ._checksum = checksum};
 }
 
 template<typename T>
@@ -260,6 +330,29 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
 
     if constexpr (is_envelope_v<Type>) {
         auto const h = read_header<Type>(in, bytes_left_limit);
+
+        if constexpr (is_checksum_envelope_v<Type>) {
+            auto const shared = in.share(in.bytes_left() - h._bytes_left_limit);
+            auto read_only_in = iobuf_const_parser{shared};
+            auto crc = crc::crc32c{};
+            read_only_in.consume(
+              read_only_in.bytes_left(),
+              [&crc](char const* src, size_t const n) {
+                  crc.extend(src, n);
+                  return ss::stop_iteration::no;
+              });
+            if (unlikely(crc.value() != h._checksum)) {
+                throw serde_exception(fmt_with_ctx(
+                  ssx::sformat,
+                  "serde: envelope {} (ends at bytes_left={}) has bad "
+                  "checksum: stored={}, actual={}",
+                  type_str<Type>(),
+                  h._bytes_left_limit,
+                  h._checksum,
+                  crc.value()));
+            }
+        }
+
         if constexpr (has_serde_read<Type>) {
             t.serde_read(in, h);
         } else {
@@ -287,9 +380,26 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         }
     } else if constexpr (std::is_same_v<Type, bool>) {
         t = read_nested<int8_t>(in, bytes_left_limit) != 0;
-    } else if constexpr (std::is_scalar_v<Type> && !std::is_enum_v<Type>) {
+    } else if constexpr (serde_is_enum_v<Type>) {
+        auto const val = read_nested<serde_enum_serialized_t>(
+          in, bytes_left_limit);
+        if (unlikely(
+              val > std::numeric_limits<std::underlying_type_t<Type>>::max())) {
+            throw serde_exception(fmt_with_ctx(
+              ssx::sformat,
+              "enum value {} too large for {}",
+              val,
+              type_str<Type>()));
+        }
+        t = static_cast<Type>(val);
+    } else if constexpr (std::is_scalar_v<Type>) {
         if (unlikely(in.bytes_left() < sizeof(Type))) {
-            throw serde_exception{"message too short"};
+            throw serde_exception(fmt_with_ctx(
+              ssx::sformat,
+              "reading type {} of size {}: {} bytes left",
+              type_str<Type>(),
+              sizeof(Type),
+              in.bytes_left()));
         }
 
         if constexpr (sizeof(Type) == 1) {
@@ -402,27 +512,12 @@ ss::future<> write_async(iobuf& out, T const& t) {
     }
 }
 
-/**
- * Only use this method for enums specifying the underlying datatype explicitly.
- * Otherwise, the serialization format might change depending on the compiler.
- */
-template<
-  typename T,
-  std::enable_if_t<std::is_enum_v<std::decay_t<T>>, void*> = nullptr>
-void read_enum(iobuf_parser& in, T& el, size_t const bytes_left_limit) {
-    serde::read_nested(
-      in, *reinterpret_cast<std::underlying_type_t<T>*>(&el), bytes_left_limit);
-}
-
-/**
- * Only use this method for enums specifying the underlying datatype explicitly.
- * Otherwise, the serialization format might change depending on the compiler.
- */
-template<
-  typename T,
-  std::enable_if_t<std::is_enum_v<std::decay_t<T>>, void*> = nullptr>
-void write_enum(iobuf& out, T const el) {
-    serde::write(out, static_cast<std::underlying_type_t<T>>(el));
+inline version_t peek_version(iobuf_parser& in) {
+    if (unlikely(in.bytes_left() < sizeof(serde::version_t))) {
+        throw serde_exception{"cannot peek version"};
+    }
+    auto version_reader = iobuf_parser{in.peek(sizeof(serde::version_t))};
+    return serde::read_nested<serde::version_t>(version_reader, 0);
 }
 
 template<typename T>

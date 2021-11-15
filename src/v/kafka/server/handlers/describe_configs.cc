@@ -12,6 +12,7 @@
 #include "cluster/metadata_cache.h"
 #include "config/configuration.h"
 #include "config/data_directory_path.h"
+#include "config/node_config.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
 #include "kafka/server/handlers/topics/types.h"
@@ -190,12 +191,12 @@ report_broker_config(describe_configs_result& result, bool include_synonyms) {
           result.resource_name.data() + result.resource_name.size(), // NOLINT
           broker_id);
         if (res.ec == std::errc()) {
-            if (broker_id != config::shard_local_cfg().node_id()) {
+            if (broker_id != config::node().node_id()) {
                 result.error_code = error_code::invalid_request;
                 result.error_message = ssx::sformat(
                   "Unexpected broker id {} expected {}",
                   broker_id,
-                  config::shard_local_cfg().node_id());
+                  config::node().node_id());
                 return;
             }
         } else {
@@ -210,14 +211,14 @@ report_broker_config(describe_configs_result& result, bool include_synonyms) {
     add_broker_config(
       result,
       "listeners",
-      config::shard_local_cfg().kafka_api,
+      config::node().kafka_api,
       include_synonyms,
       &kafka_endpoint_format);
 
     add_broker_config(
       result,
       "advertised.listeners",
-      config::shard_local_cfg().advertised_kafka_api_property(),
+      config::node().advertised_kafka_api_property(),
       include_synonyms,
       &kafka_endpoint_format);
 
@@ -263,7 +264,7 @@ report_broker_config(describe_configs_result& result, bool include_synonyms) {
     add_broker_config(
       result,
       "log.dirs",
-      config::shard_local_cfg().data_directory,
+      config::node().data_directory,
       include_synonyms,
       [](const config::data_directory_path& path) {
           return path.as_sstring();

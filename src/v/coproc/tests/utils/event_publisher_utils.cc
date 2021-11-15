@@ -10,6 +10,7 @@
 
 #include "coproc/tests/utils/event_publisher_utils.h"
 
+#include "config/node_config.h"
 #include "coproc/logger.h"
 #include "coproc/reference_window_consumer.hpp"
 #include "coproc/tests/utils/kafka_publish_consumer.h"

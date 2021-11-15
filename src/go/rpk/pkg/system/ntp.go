@@ -11,19 +11,14 @@ package system
 
 import (
 	"errors"
-	"fmt"
 	"os/exec"
 	"regexp"
-	"strconv"
-	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
 )
-
-const reachMask int64 = 1
 
 type NtpQuery interface {
 	IsNtpSynced() (bool, error)
@@ -93,53 +88,4 @@ func (q *ntpQuery) checkWithNtpstat() (bool, error) {
 		return false, err
 	}
 	return true, nil
-}
-
-func (q *ntpQuery) checkWithNtpq() (bool, error) {
-	log.Debugf("Checking NTP sync with ntpq")
-	output, err := q.proc.RunWithSystemLdPath(q.timeout, "ntpq", "-p")
-	if err != nil {
-		log.Debugf("ntpq returned an error: '%s'", err.Error())
-		return false, err
-	}
-	return checkNtpqOutput(output)
-}
-
-func checkNtpqOutput(output []string) (bool, error) {
-	// Example output from ntpq -p:
-	//       remote           refid     st t when poll reach   delay   offset  jitter
-	// ==============================================================================
-	// *metadata.google 71.79.79.71      2 u  115  128  377    0.733  -16.588   2.339
-	// [more hosts...]
-	//
-	// This function checks every host's "reach" value, (which is an octal
-	// representing the last eight tries to sync the current node, with 1
-	// representing success and 0 representing failure),
-	// returning true if at least one of the last attempts to reach a peer
-	// was successful.
-
-	// The first 2 lines are headers, and the rest are info about
-	// the other hosts, so there have to be 3 lines minimum
-	if len(output) < 3 {
-		return false, fmt.Errorf(
-			"ntpq failed, output:\n'%v'", strings.Join(output, "\n"),
-		)
-	}
-	synced := false
-	for _, line := range output[2:] {
-		columns := strings.Fields(line)
-		if len(columns) != 10 {
-			continue
-		}
-		reach := columns[6]
-		val, err := strconv.ParseInt(reach, 8, 0)
-		if err != nil {
-			continue
-		}
-		if val&reachMask == 1 {
-			synced = synced || true
-		}
-
-	}
-	return synced, nil
 }

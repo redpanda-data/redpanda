@@ -3,7 +3,30 @@ package net
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
+
+func TestSplitHostPortDefault(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		inHost string
+		inDef  int
+
+		expHost string
+		expPort int
+	}{
+		{"valid split", "foo:80", 90, "foo", 80},
+		{"invalid host uses default", "foo::80", 90, "foo::80", 90},
+		{"invalid port uses default", "foo:asdf", 90, "foo:asdf", 90},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h, p := SplitHostPortDefault(test.inHost, test.inDef)
+			require.Equal(t, h, test.expHost)
+			require.Equal(t, p, test.expPort)
+		})
+	}
+}
 
 func TestParseHostMaybeScheme(t *testing.T) {
 	for _, test := range []struct {
@@ -59,9 +82,10 @@ func TestParseHostMaybeScheme(t *testing.T) {
 		},
 
 		{
-			name:   "invalid scheme",
-			input:  "scheme_bar://foo.com",
-			expErr: true,
+			name:      "relaxed restrictions allow underscore in scheme",
+			input:     "scheme_bar://foo.com",
+			expScheme: "scheme_bar",
+			expHost:   "foo.com",
 		},
 
 		{
@@ -120,8 +144,9 @@ func TestIsDomain(t *testing.T) {
 		{"underscores and dashes can be anywhere in middle of label", "a.0-_-0.foo.com", true},
 		{"labels can be just numbers", "0.com", true},
 
-		{"tld requires alphabet", "foo.a0", false},
-		{"cannot just be tld", "foo", false},
+		{"relaxed restrictions allows non-alphabet tld", "foo.a0", true},
+		{"relaxed restrictions allows just tld", "foo", true},
+		{"common docker naming test", "docker_n_1", true},
 		{"invalid duplicate dots", "foo..com", false},
 		{"label cannot start with dash", "a.-bar.foo.com", false},
 		{"label cannot end with dash", "a.bar-.foo.com", false},

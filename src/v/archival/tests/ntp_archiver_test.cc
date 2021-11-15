@@ -16,9 +16,11 @@
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
+#include "raft/offset_translator.h"
 #include "ssx/sformat.h"
 #include "storage/disk_log_impl.h"
 #include "storage/parser.h"
+#include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/fixture.h"
 #include "utils/retry_chain_node.h"
 #include "utils/unresolved_address.h"
@@ -37,17 +39,17 @@ inline ss::logger test_log("test"); // NOLINT
 
 static constexpr std::string_view manifest_payload = R"json({
     "version": 1,
-    "namespace": "test-ns",
+    "namespace": "kafka",
     "topic": "test-topic",
     "partition": 42,
     "revision": 0,
     "last_offset": 1004,
     "segments": {
-        "1-2-v1.log": {
+        "0-1-v1.log": {
             "is_compacted": false,
             "size_bytes": 100,
             "committed_offset": 2,
-            "base_offset": 1
+            "base_offset": 0
         },
         "1000-4-v1.log": {
             "is_compacted": false,
@@ -59,7 +61,7 @@ static constexpr std::string_view manifest_payload = R"json({
 })json";
 static constexpr std::string_view manifest_with_deleted_segment = R"json({
     "version": 1,
-    "namespace": "test-ns",
+    "namespace": "kafka",
     "topic": "test-topic",
     "partition": 42,
     "revision": 0,
@@ -74,7 +76,7 @@ static constexpr std::string_view manifest_with_deleted_segment = R"json({
     }
 })json";
 
-static const auto manifest_namespace = model::ns("test-ns");    // NOLINT
+static const auto manifest_namespace = model::ns("kafka");      // NOLINT
 static const auto manifest_topic = model::topic("test-topic");  // NOLINT
 static const auto manifest_partition = model::partition_id(42); // NOLINT
 static const auto manifest_ntp = model::ntp(                    // NOLINT
@@ -83,16 +85,16 @@ static const auto manifest_ntp = model::ntp(                    // NOLINT
   manifest_partition);
 static const auto manifest_revision = model::revision_id(0); // NOLINT
 static const ss::sstring manifest_url = ssx::sformat(        // NOLINT
-  "/20000000/meta/{}_{}/manifest.json",
+  "/10000000/meta/{}_{}/manifest.json",
   manifest_ntp.path(),
   manifest_revision());
 
 // NOLINTNEXTLINE
 static const ss::sstring segment1_url
-  = "/ce4fd1a3/test-ns/test-topic/42_0/1-2-v1.log";
+  = "/3ed95428/kafka/test-topic/42_0/0-1-v1.log";
 // NOLINTNEXTLINE
 static const ss::sstring segment2_url
-  = "/e622410d/test-ns/test-topic/42_0/1000-4-v1.log";
+  = "/0bbed744/kafka/test-topic/42_0/1000-4-v1.log";
 
 static const std::vector<s3_imposter_fixture::expectation>
   default_expectations({
@@ -189,11 +191,11 @@ FIXTURE_TEST(test_upload_manifest, s3_imposter_fixture) { // NOLINT
     auto pm = const_cast<cloud_storage::manifest*>( // NOLINT
       &archiver.get_remote_manifest());
     pm->add(
-      segment_name("1-2-v1.log"),
+      segment_name("0-1-v1.log"),
       {
         .is_compacted = false,
         .size_bytes = 100, // NOLINT
-        .base_offset = model::offset(1),
+        .base_offset = model::offset(0),
         .committed_offset = model::offset(2),
       });
     pm->add(
@@ -221,7 +223,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
       remote_conf.connection_limit, remote_conf.client_config);
 
     std::vector<segment_desc> segments = {
-      {manifest_ntp, model::offset(1), model::term_id(2)},
+      {manifest_ntp, model::offset(0), model::term_id(1)},
       {manifest_ntp, model::offset(1000), model::term_id(4)},
     };
     init_storage_api_local(segments);
@@ -278,6 +280,18 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
         verify_segment(manifest_ntp, archival::segment_name(name), req.content);
         BOOST_REQUIRE(req._method == "PUT"); // NOLINT
     }
+
+    BOOST_REQUIRE(part->archival_meta_stm());
+    const auto& stm_manifest = part->archival_meta_stm()->manifest();
+    BOOST_REQUIRE_EQUAL(stm_manifest.size(), segments.size());
+    for (size_t i = 0; i < segments.size(); ++i) {
+        const auto& segment = segments[i];
+        auto it = stm_manifest.begin();
+        std::advance(it, i);
+
+        BOOST_CHECK_EQUAL(segment.base_offset, it->second.base_offset);
+    }
+    BOOST_REQUIRE(stm_manifest == archiver.get_remote_manifest());
 }
 
 // NOLINTNEXTLINE
@@ -300,17 +314,25 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
     archival::archival_policy policy(manifest_ntp, svc_probe, ntp_probe);
 
     log_segment_set(lm);
+
+    auto log = lm.get(manifest_ntp);
+    BOOST_REQUIRE(log);
+
+    auto partition = app.partition_manager.local().get(manifest_ntp);
+    BOOST_REQUIRE(partition);
+    const raft::offset_translator& tr = *partition->get_offset_translator();
+
     // Starting offset is lower than offset1
-    auto upload1 = policy.get_next_candidate(model::offset(0), lso, lm).get();
+    auto upload1
+      = policy.get_next_candidate(model::offset(0), lso, *log, tr).get();
     log_upload_candidate(upload1);
     BOOST_REQUIRE(upload1.source.get() != nullptr);
     BOOST_REQUIRE(upload1.starting_offset == offset1);
 
-    auto upload2
-      = policy
-          .get_next_candidate(
-            upload1.source->offsets().dirty_offset + model::offset(1), lso, lm)
-          .get();
+    model::offset start_offset;
+
+    start_offset = upload1.source->offsets().dirty_offset + model::offset(1);
+    auto upload2 = policy.get_next_candidate(start_offset, lso, *log, tr).get();
     log_upload_candidate(upload2);
     BOOST_REQUIRE(upload2.source.get() != nullptr);
     BOOST_REQUIRE(upload2.starting_offset() == offset2);
@@ -318,11 +340,8 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
     BOOST_REQUIRE(upload2.source != upload1.source);
     BOOST_REQUIRE(upload2.source->offsets().base_offset == offset2);
 
-    auto upload3
-      = policy
-          .get_next_candidate(
-            upload2.source->offsets().dirty_offset + model::offset(1), lso, lm)
-          .get();
+    start_offset = upload2.source->offsets().dirty_offset + model::offset(1);
+    auto upload3 = policy.get_next_candidate(start_offset, lso, *log, tr).get();
     log_upload_candidate(upload3);
     BOOST_REQUIRE(upload3.source.get() != nullptr);
     BOOST_REQUIRE(upload3.starting_offset() == offset3);
@@ -330,16 +349,74 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
     BOOST_REQUIRE(upload3.source != upload2.source);
     BOOST_REQUIRE(upload3.source->offsets().base_offset == offset3);
 
-    auto upload4
-      = policy
-          .get_next_candidate(
-            upload3.source->offsets().dirty_offset + model::offset(1), lso, lm)
-          .get();
+    start_offset = upload3.source->offsets().dirty_offset + model::offset(1);
+    auto upload4 = policy.get_next_candidate(start_offset, lso, *log, tr).get();
     BOOST_REQUIRE(upload4.source.get() == nullptr);
 
-    auto upload5
-      = policy.get_next_candidate(lso + model::offset(1), lso, lm).get();
+    start_offset = lso + model::offset(1);
+    auto upload5 = policy.get_next_candidate(start_offset, lso, *log, tr).get();
     BOOST_REQUIRE(upload5.source.get() == nullptr);
+}
+
+// NOLINTNEXTLINE
+SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
+    storage::disk_log_builder b;
+    b | storage::start(manifest_ntp) | storage::add_segment(model::offset{0})
+      | storage::add_random_batch(
+        model::offset{0},
+        1,
+        storage::maybe_compress_batches::no,
+        model::record_batch_type::raft_configuration)
+      | storage::add_random_batch(model::offset{1}, 10)
+      | storage::add_random_batch(
+        model::offset{11},
+        3,
+        storage::maybe_compress_batches::no,
+        model::record_batch_type::archival_metadata);
+
+    ntp_level_probe ntp_probe(per_ntp_metrics_disabled::yes, manifest_ntp);
+    service_probe svc_probe(service_metrics_disabled::yes);
+    archival::archival_policy policy(
+      manifest_ntp, svc_probe, ntp_probe, segment_time_limit{0s});
+
+    auto log = b.get_log();
+
+    raft::offset_translator tr(
+      {model::record_batch_type::raft_configuration,
+       model::record_batch_type::archival_metadata},
+      raft::group_id{0},
+      manifest_ntp,
+      b.storage());
+    tr.start(raft::offset_translator::must_reset::yes, {}).get();
+    tr.sync_with_log(log, std::nullopt).get();
+
+    auto start_offset = model::offset{0};
+    auto last_stable_offset = log.offsets().dirty_offset + model::offset{1};
+    auto upload1
+      = policy.get_next_candidate(start_offset, last_stable_offset, log, tr)
+          .get();
+    BOOST_REQUIRE(upload1.source);
+    BOOST_REQUIRE_EQUAL(upload1.exposed_name, "0-0-v1.log");
+    BOOST_REQUIRE_EQUAL(upload1.starting_offset, start_offset);
+    BOOST_REQUIRE_EQUAL(upload1.final_offset, log.offsets().dirty_offset);
+
+    b
+      | storage::add_random_batch(
+        model::offset{14},
+        2,
+        storage::maybe_compress_batches::no,
+        model::record_batch_type::archival_metadata);
+
+    tr.sync_with_log(log, std::nullopt).get();
+
+    start_offset = upload1.final_offset + model::offset{1};
+    last_stable_offset = log.offsets().dirty_offset + model::offset{1};
+    auto upload2
+      = policy.get_next_candidate(start_offset, last_stable_offset, log, tr)
+          .get();
+    BOOST_REQUIRE(!upload2.source);
+
+    b.stop().get();
 }
 
 // NOLINTNEXTLINE
@@ -352,7 +429,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     // that clashes with the partial upload.
     model::offset lso = model::offset::max();
     std::vector<segment_desc> segments = {
-      {manifest_ntp, model::offset(1), model::term_id(2)},
+      {manifest_ntp, model::offset(0), model::term_id(1)},
       {manifest_ntp, model::offset(1000), model::term_id(4)},
     };
     init_storage_api_local(segments);
@@ -369,7 +446,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
       part->committed_offset(),
       *part);
 
-    auto s1name = archival::segment_name("1-2-v1.log");
+    auto s1name = archival::segment_name("0-1-v1.log");
     auto s2name = archival::segment_name("1000-4-v1.log");
     auto segment1 = get_segment(manifest_ntp, s1name);
     BOOST_REQUIRE(static_cast<bool>(segment1));
@@ -386,7 +463,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     old_manifest.add(oldname, old_meta);
     std::stringstream old_str;
     old_manifest.serialize(old_str);
-    ss::sstring segment3_url = "/dfee62b1/test-ns/test-topic/42_0/2-2-v1.log";
+    ss::sstring segment3_url = "/dfee62b1/kafka/test-topic/42_0/2-2-v1.log";
 
     std::vector<s3_imposter_fixture::expectation> expectations({
       s3_imposter_fixture::expectation{
@@ -443,6 +520,22 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
         BOOST_REQUIRE_EQUAL(len, 1);
         BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
     }
+
+    BOOST_REQUIRE(part->archival_meta_stm());
+    const auto& stm_manifest = part->archival_meta_stm()->manifest();
+    // including the segment from the old manifest
+    BOOST_REQUIRE_EQUAL(stm_manifest.size(), segments.size() + 1);
+
+    for (const auto& [name, base_offset] :
+         std::vector<std::pair<segment_name, model::offset>>{
+           {s1name, segments[0].base_offset},
+           {s2name, segments[1].base_offset},
+           {oldname, old_meta.base_offset}}) {
+        BOOST_CHECK(stm_manifest.get(s1name));
+        BOOST_CHECK_EQUAL(stm_manifest.get(name)->base_offset, base_offset);
+    }
+
+    BOOST_CHECK(stm_manifest == archiver.get_remote_manifest());
 }
 
 class counting_batch_consumer : public storage::batch_consumer {
@@ -693,6 +786,10 @@ static void test_partial_upload_impl(
         BOOST_REQUIRE_EQUAL(stats.min_offset, base_upl2);
         BOOST_REQUIRE_EQUAL(stats.max_offset, last_upl2);
     }
+
+    BOOST_REQUIRE(part->archival_meta_stm());
+    const auto& stm_manifest = part->archival_meta_stm()->manifest();
+    BOOST_REQUIRE(stm_manifest == archiver.get_remote_manifest());
 }
 
 // NOLINTNEXTLINE
@@ -751,18 +848,24 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     // Every segment should be returned once as we're calling the
     // policy to get next candidate.
     log_segment_set(lm);
+
+    auto log = lm.get(manifest_ntp);
+    BOOST_REQUIRE(log);
+
+    auto partition = app.partition_manager.local().get(manifest_ntp);
+    BOOST_REQUIRE(partition);
+    const raft::offset_translator& tr = *partition->get_offset_translator();
+
+    model::offset start_offset{0};
     model::offset lso{9999};
     // Starting offset is lower than offset1
-    auto upload1 = policy.get_next_candidate(model::offset(0), lso, lm).get();
+    auto upload1 = policy.get_next_candidate(start_offset, lso, *log, tr).get();
     log_upload_candidate(upload1);
     BOOST_REQUIRE(upload1.source.get() != nullptr);
     BOOST_REQUIRE(upload1.starting_offset == offset1);
 
-    auto upload2
-      = policy
-          .get_next_candidate(
-            upload1.source->offsets().dirty_offset + model::offset(1), lso, lm)
-          .get();
+    start_offset = upload1.source->offsets().dirty_offset + model::offset(1);
+    auto upload2 = policy.get_next_candidate(start_offset, lso, *log, tr).get();
     log_upload_candidate(upload2);
     BOOST_REQUIRE(upload2.source.get() != nullptr);
     BOOST_REQUIRE(upload2.starting_offset == offset2);
@@ -770,11 +873,8 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     BOOST_REQUIRE(upload2.source != upload1.source);
     BOOST_REQUIRE(upload2.source->offsets().base_offset == offset2);
 
-    auto upload3
-      = policy
-          .get_next_candidate(
-            upload2.source->offsets().dirty_offset + model::offset(1), lso, lm)
-          .get();
+    start_offset = upload2.source->offsets().dirty_offset + model::offset(1);
+    auto upload3 = policy.get_next_candidate(start_offset, lso, *log, tr).get();
     log_upload_candidate(upload3);
     BOOST_REQUIRE(upload3.source.get() != nullptr);
     BOOST_REQUIRE(upload3.starting_offset == offset3);
@@ -782,10 +882,7 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     BOOST_REQUIRE(upload3.source != upload2.source);
     BOOST_REQUIRE(upload3.source->offsets().base_offset == offset3);
 
-    auto upload4
-      = policy
-          .get_next_candidate(
-            upload3.source->offsets().dirty_offset + model::offset(1), lso, lm)
-          .get();
+    start_offset = upload3.source->offsets().dirty_offset + model::offset(1);
+    auto upload4 = policy.get_next_candidate(start_offset, lso, *log, tr).get();
     BOOST_REQUIRE(upload4.source.get() == nullptr);
 }

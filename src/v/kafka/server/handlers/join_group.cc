@@ -21,7 +21,8 @@
 namespace kafka {
 
 std::ostream& operator<<(std::ostream& o, const member_protocol& p) {
-    return ss::fmt_print(o, "{}:{}", p.name, p.metadata.size());
+    fmt::print(o, "{}:{}", p.name, p.metadata.size());
+    return o;
 }
 
 static void decode_request(request_context& ctx, join_group_request& req) {

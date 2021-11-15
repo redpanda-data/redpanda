@@ -17,12 +17,6 @@ import (
 )
 
 func Test_equalityChecker_Check(t *testing.T) {
-	type fields struct {
-		getCurrent func() (interface{}, error)
-		desc       string
-		severity   Severity
-		required   interface{}
-	}
 	tests := []struct {
 		name       string
 		getCurrent func() (interface{}, error)

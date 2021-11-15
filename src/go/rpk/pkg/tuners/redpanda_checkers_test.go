@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+//go:build linux
 // +build linux
 
 package tuners_test
@@ -44,51 +45,6 @@ func setUpCgroup(fs afero.Fs, file, val string, v2 bool) error {
 		fs,
 		"/proc/self/cgroup",
 		[]byte(contents),
-		0644,
-	)
-	if err != nil {
-		return err
-	}
-	if err = fs.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-	return afero.WriteFile(fs, fullPath, []byte(val), 0644)
-}
-
-func setUpCgroupsV1(fs afero.Fs, file, val string) error {
-	if err := fs.MkdirAll("/proc/self/", 0755); err != nil {
-		return err
-	}
-	err := afero.WriteFile(
-		fs,
-		"/proc/self/cgroup",
-		[]byte(`2:cpu,cpuacct:/user.slice
-1:name=systemd:/user.slice/user-1.slice/user@1.service
-`),
-		0644,
-	)
-	if err != nil {
-		return err
-	}
-	fullPath := "/sys/fs/cgroup" + file
-	dir := filepath.Dir(fullPath)
-	if err = fs.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-	return afero.WriteFile(fs, fullPath, []byte(val), 0644)
-}
-
-func setUpCgroupsV2(fs afero.Fs, file, val string) error {
-	cgroup := filepath.Dir(file)
-	fullPath := "/sys/fs/cgroup" + file
-	dir := filepath.Dir(fullPath)
-	if err := fs.MkdirAll("/proc/self/", 0755); err != nil {
-		return err
-	}
-	err := afero.WriteFile(
-		fs,
-		"/proc/self/cgroup",
-		[]byte("0::"+cgroup),
 		0644,
 	)
 	if err != nil {

@@ -11,6 +11,8 @@ import subprocess
 import time
 import json
 
+from ducktape.utils.util import wait_until
+
 
 class KafkaCat:
     """
@@ -59,12 +61,27 @@ class KafkaCat:
                         e.returncode, e.output))
                 time.sleep(2)
 
-    def get_partition_leader(self, topic, partition):
+    def get_partition_leader(self, topic, partition, timeout_sec=None):
         """
         :param topic: string, topic name
         :param partition: integer
+        :param timeout_sec: wait for leader (if falsey return immediately)
         :return: 2-tuple of (leader id or None, list of replica broker IDs)
         """
+        if not timeout_sec:
+            return self._get_partition_leader(topic, partition)
+
+        leader = [None]
+
+        def get_leader():
+            res = self._get_partition_leader(topic, partition)
+            leader[0] = res
+            return leader[0][0] is not None
+
+        wait_until(get_leader, timeout_sec=timeout_sec, backoff_sec=2)
+        return leader[0]
+
+    def _get_partition_leader(self, topic, partition):
         topic_meta = None
         all_metadata = self.metadata()
         for t in all_metadata['topics']:
@@ -84,3 +101,16 @@ class KafkaCat:
             return None, replicas
         else:
             return leader_id, replicas
+
+    def list_offsets(self, topic, partition):
+        def cmd(ts):
+            return ["-Q", "-t", f"{topic}:{partition}:{ts}"]
+
+        def offset(res):
+            # partition is a string in the output
+            return res[topic][f"{partition}"]["offset"]
+
+        oldest = offset(self._cmd(cmd(-2)))
+        newest = offset(self._cmd(cmd(-1)))
+
+        return (oldest, newest)

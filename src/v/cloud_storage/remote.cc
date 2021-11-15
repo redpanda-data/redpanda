@@ -69,12 +69,12 @@ static error_outcome categorize_error(
         std::rethrow_exception(err);
     } catch (const s3::rest_error_response& err) {
         if (err.code() == s3::s3_error_code::no_such_key) {
-            vlog(ctxlog.warn, "NoSuchKey response received {}", path);
+            vlog(ctxlog.info, "NoSuchKey response received {}", path);
             result = error_outcome::notfound;
         } else if (err.code() == s3::s3_error_code::slow_down) {
             // This can happen when we're dealing with high request rate to
             // the manifest's prefix. Backoff algorithm should be applied.
-            vlog(ctxlog.debug, "SlowDown response received {}", path);
+            vlog(ctxlog.warn, "SlowDown response received {}", path);
             result = error_outcome::retry_slowdown;
         } else {
             // Unexpected REST API error, we can't recover from this
@@ -108,7 +108,7 @@ static error_outcome categorize_error(
             result = error_outcome::fail;
         } else {
             vlog(
-              ctxlog.debug,
+              ctxlog.warn,
               "System error susceptible for retry {}",
               cerr.what());
         }
@@ -183,17 +183,10 @@ ss::future<download_result> remote::download_manifest(
         } catch (...) {
             eptr = std::current_exception();
         }
+        co_await client->shutdown();
         auto outcome = categorize_error(eptr, fib, bucket, path);
         switch (outcome) {
         case error_outcome::retry_slowdown:
-            // We have to close the connection upon receiving the 'SlowDown'
-            // response from S3. If we won't do this and just sleep the required
-            // number of milliseconds the next request that will use this
-            // connection will trigger a 'short read' error. The error means
-            // that the S3 forcibly closes the connection. This doesn't happen
-            // when we close and then reestablish the connection upon receiving
-            // the 'SlowDown' response (if long enough backoff period is used).
-            co_await client->shutdown();
             [[fallthrough]];
         case error_outcome::retry:
             vlog(
@@ -207,8 +200,10 @@ ss::future<download_result> remote::download_manifest(
             break;
         case error_outcome::fail:
             result = download_result::failed;
+            break;
         case error_outcome::notfound:
             result = download_result::notfound;
+            break;
         }
     }
     _probe.failed_manifest_download();
@@ -265,10 +260,10 @@ ss::future<upload_result> remote::upload_manifest(
         } catch (...) {
             eptr = std::current_exception();
         }
+        co_await client->shutdown();
         auto outcome = categorize_error(eptr, fib, bucket, path);
         switch (outcome) {
         case error_outcome::retry_slowdown:
-            co_await client->shutdown();
             [[fallthrough]];
         case error_outcome::retry:
             vlog(
@@ -285,6 +280,7 @@ ss::future<upload_result> remote::upload_manifest(
             // not expected during upload
         case error_outcome::fail:
             result = upload_result::failed;
+            break;
         }
     }
     _probe.failed_manifest_upload();
@@ -352,10 +348,10 @@ ss::future<upload_result> remote::upload_segment(
         } catch (...) {
             eptr = std::current_exception();
         }
+        co_await client->shutdown();
         auto outcome = categorize_error(eptr, fib, bucket, path);
         switch (outcome) {
         case error_outcome::retry_slowdown:
-            co_await client->shutdown();
             [[fallthrough]];
         case error_outcome::retry:
             vlog(
@@ -372,6 +368,7 @@ ss::future<upload_result> remote::upload_segment(
             // not expected during upload
         case error_outcome::fail:
             result = upload_result::failed;
+            break;
         }
     }
     _probe.failed_upload();
@@ -424,10 +421,10 @@ ss::future<download_result> remote::download_segment(
         } catch (...) {
             eptr = std::current_exception();
         }
+        co_await client->shutdown();
         auto outcome = categorize_error(eptr, fib, bucket, path);
         switch (outcome) {
         case error_outcome::retry_slowdown:
-            co_await client->shutdown();
             [[fallthrough]];
         case error_outcome::retry:
             vlog(
@@ -441,8 +438,10 @@ ss::future<download_result> remote::download_segment(
             break;
         case error_outcome::fail:
             result = download_result::failed;
+            break;
         case error_outcome::notfound:
             result = download_result::notfound;
+            break;
         }
     }
     _probe.failed_download();

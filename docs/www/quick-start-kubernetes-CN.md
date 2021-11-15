@@ -55,8 +55,7 @@ eksctl create cluster \
 --node-type m5.xlarge \
 --nodes 1 \
 --nodes-min 1 \
---nodes-max 4 \
---node-ami auto
+--nodes-max 4
 ```
 
 该过程大约需要10-15分钟。
@@ -87,7 +86,7 @@ helm install \
   --set installCRDs=true
 ```
 
-我们建议您使用cert-manager文档中的[验证过程](https://cert-manager.io/docs/installation/kubernetes/#verifying-the-installation)
+我们建议您使用cert-manager文档中的[验证过程](https://cert-manager.io/docs/installation/verify/#manual-verification)
 来验证cert-manager是否正常工作。
 
 ## 使用Helm安装Redpanda

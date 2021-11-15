@@ -34,6 +34,8 @@ import {
   wasmWithoutTopic,
   webpackScript,
 } from "./coprocString";
+import { IOBuf } from "../../modules/utilities/IOBuf";
+import { createConnection } from "net";
 
 const fs = require("fs");
 
@@ -41,6 +43,7 @@ let sinonInstance: SinonSandbox;
 let server: ProcessBatchServer;
 let client: SupervisorClient;
 let writeError: SinonStub;
+let portNumber: number;
 
 const createStubs = (sandbox: SinonSandbox) => {
   const watchMock = sandbox.stub(chokidar, "watch");
@@ -105,15 +108,18 @@ describe("Server", function () {
         // @ts-ignore
         error: writeError,
       });
+
       server = new ProcessBatchServer();
-      server.listen(43000);
-      return new Promise<void>((resolve, reject) => {
-        return SupervisorClient.create(43000)
-          .then((c) => {
-            client = c;
-            resolve();
-          })
-          .catch((e) => reject(e));
+      return server.listenRandomPort().then((port) => {
+        portNumber = port;
+        return new Promise<void>((resolve, reject) => {
+          return SupervisorClient.create(portNumber)
+            .then((c) => {
+              client = c;
+              resolve();
+            })
+            .catch((e) => reject(e));
+        });
       });
     });
 
@@ -121,6 +127,65 @@ describe("Server", function () {
       client.close();
       sinonInstance.restore();
       return server.closeConnection();
+    });
+
+    it("server should ignore incorrect RPC header and does not fail", function (done) {
+      const buffer = new IOBuf();
+      const rpcHeaderReserve = buffer.getReserve(26);
+      buffer.appendString("123");
+      const size = 3;
+      const correlationId = client.send(
+        buffer,
+        rpcHeaderReserve,
+        size,
+        123456789
+      );
+      client.close;
+
+      SupervisorClient.create(portNumber).then((c) => {
+        client = c;
+        const coprocessor = createHandle().coprocessor;
+        server.loadCoprocFromString = () => [coprocessor, undefined];
+        client
+          .enable_coprocessors({
+            coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
+          })
+          .then((response) => {
+            response.responses.forEach((responseItem) => {
+              assert.strictEqual(
+                responseItem.enableResponseCode,
+                EnableResponseCodes.success
+              );
+            });
+            done();
+          });
+      });
+    });
+
+    it("server should ignore random msgs and does not fail", function (done) {
+      const buffer = new IOBuf();
+      buffer.appendString("111111111111111");
+      client.rawSend(buffer);
+      client.close;
+
+      SupervisorClient.create(portNumber).then((c) => {
+        client = c;
+        const coprocessor = createHandle().coprocessor;
+        server.loadCoprocFromString = () => [coprocessor, undefined];
+        client
+          .enable_coprocessors({
+            coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
+          })
+          .then((response) => {
+            response.responses.forEach((responseItem) => {
+              assert.strictEqual(
+                responseItem.enableResponseCode,
+                EnableResponseCodes.success
+              );
+            });
+            done();
+          });
+      });
     });
 
     it(

@@ -11,7 +11,9 @@
 
 #pragma once
 #include "config/configuration.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "model/record_batch_reader.h"
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
@@ -41,10 +43,13 @@
 #include <seastar/net/socket_defs.hh>
 #include <seastar/util/noncopyable_function.hh>
 
+#include <absl/container/btree_map.h>
 #include <boost/range/iterator_range_core.hpp>
+#include <boost/test/tools/old/interface.hpp>
 #include <fmt/core.h>
 
 #include <chrono>
+#include <vector>
 
 inline ss::logger tstlog("raft_test");
 
@@ -309,7 +314,7 @@ struct raft_node {
 
 static model::ntp node_ntp(raft::group_id gr_id, model::node_id n_id) {
     return model::ntp(
-      model::ns("test"),
+      model::kafka_namespace,
       model::topic(ssx::sformat("group_{}", gr_id())),
       model::partition_id(n_id()));
 }
@@ -794,6 +799,46 @@ static ss::future<bool> replicate_compactible_batches(
               return true;
           });
     });
+}
+
+static void validate_offset_translation(raft_group& gr) {
+    // build reference map
+    if (gr.get_members().size() == 1) {
+        return;
+    }
+    absl::btree_map<model::offset, model::offset> reference;
+
+    auto start = gr.get_members().begin()->second.consensus->start_offset();
+    auto end = gr.get_members().begin()->second.consensus->last_visible_index();
+
+    for (auto o = start; o < end; o++) {
+        reference[o] = gr.get_members()
+                         .begin()
+                         ->second.consensus->get_offset_translator()
+                         ->from_log_offset(o);
+    }
+
+    for (auto it = std::next(gr.get_members().begin());
+         it != gr.get_members().end();
+         ++it) {
+        auto start = it->second.consensus->start_offset();
+        auto end = it->second.consensus->last_visible_index();
+
+        for (auto o = start; o < end; o++) {
+            // skip if we do not have this offset in reference map
+            if (!reference.contains(o)) {
+                continue;
+            }
+            auto translated = it->second.consensus->get_offset_translator()
+                                ->from_log_offset(o);
+            tstlog.info(
+              "translation for offset {}, validating {} == {}\n",
+              o,
+              reference[o],
+              translated);
+            BOOST_REQUIRE_EQUAL(reference[o], translated);
+        }
+    }
 }
 
 struct raft_test_fixture {

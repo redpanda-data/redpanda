@@ -153,6 +153,10 @@ persisted_stm::ensure_snapshot_exists(model::offset target_offset) {
     });
 }
 
+model::offset persisted_stm::max_collectible_offset() {
+    return model::offset::max();
+}
+
 ss::future<> persisted_stm::wait_offset_committed(
   model::timeout_clock::duration timeout,
   model::offset offset,
@@ -245,12 +249,13 @@ ss::future<bool> persisted_stm::wait_no_throw(
     auto deadline = model::timeout_clock::now() + timeout;
     return wait(offset, deadline)
       .then([] { return true; })
-      .handle_exception([offset](std::exception_ptr e) {
+      .handle_exception([offset, ntp = _c->ntp()](std::exception_ptr e) {
           vlog(
             clusterlog.error,
-            "An error {} happened during waiting for offset:{}",
+            "An error {} happened during waiting for offset: {}, ntp: {}",
             e,
-            offset);
+            offset,
+            ntp);
           return false;
       });
 }
@@ -273,14 +278,18 @@ ss::future<> persisted_stm::start() {
         auto next_offset = raft::details::next_offset(snapshot.header.offset);
         if (next_offset >= _c->start_offset()) {
             co_await apply_snapshot(snapshot.header, std::move(snapshot.data));
-            set_next(next_offset);
         } else {
+            // This can happen on an out-of-date replica that re-joins the group
+            // after other replicas have already evicted logs to some offset
+            // greater than snapshot.header.offset. We print a warning and
+            // continue. The stm will later detect this situation and deal with
+            // it in the apply fiber by calling handle_eviction.
             vlog(
               clusterlog.warn,
               "Skipping snapshot {} since it's out of sync with the log",
               _snapshot_mgr.snapshot_path());
-            set_next(_c->start_offset());
         }
+        set_next(next_offset);
 
         _resolved_when_snapshot_hydrated.set_value();
     } else {

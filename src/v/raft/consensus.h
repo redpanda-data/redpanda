@@ -154,7 +154,7 @@ public:
     const model::ntp& ntp() const { return _log.config().ntp(); }
     clock_type::time_point last_heartbeat() const { return _hbeat; };
 
-    clock_type::time_point last_append_timestamp(vnode);
+    clock_type::time_point last_sent_append_entries_req_timesptamp(vnode);
     /**
      * \brief Persist snapshot with given data and start offset
      *
@@ -283,6 +283,7 @@ public:
      */
     ss::future<transfer_leadership_reply>
       transfer_leadership(transfer_leadership_request);
+    ss::future<std::error_code> prepare_transfer_leadership(vnode);
     ss::future<std::error_code>
       do_transfer_leadership(std::optional<model::node_id>);
 
@@ -428,9 +429,6 @@ private:
 
     /// \brief _does not_ hold the lock.
     ss::future<> flush_log();
-    /// \brief called by the vote timer, to dispatch a write under
-    /// the ops semaphore
-    void dispatch_flush_with_lock();
 
     void maybe_step_down();
 
@@ -541,6 +539,7 @@ private:
     // consensus state
     model::offset _commit_index;
     model::term_id _term;
+    model::offset _flushed_offset{};
 
     // read at `ss::future<> start()`
     vnode _voted_for;

@@ -433,10 +433,6 @@ ss::future<> scheduler_service_impl::run_uploads() {
                   auto archiver = _queue.get_upload_candidate();
                   storage::api& api = _storage_api.local();
                   storage::log_manager& lm = api.log_mgr();
-                  vlog(
-                    _rtclog.debug,
-                    "Checking {} for S3 upload candidates",
-                    archiver->get_ntp());
                   return archiver->upload_next_candidates(lm, _rtcnode);
               });
 
@@ -464,7 +460,7 @@ ss::future<> scheduler_service_impl::run_uploads() {
             } else if (total.num_succeded != 0) {
                 vlog(
                   _rtclog.debug,
-                  "Successfuly upload {} segments",
+                  "Successfuly uploaded {} segments",
                   total.num_succeded);
             }
 
@@ -498,8 +494,12 @@ ss::future<> scheduler_service_impl::run_uploads() {
         vlog(_rtclog.debug, "Upload loop aborted (abort requested)");
     } catch (...) {
         vlog(_rtclog.error, "Upload loop error: {}", std::current_exception());
-        throw;
     }
+    // The loop can be stopped by gate or abort_source (if it was waiting inside
+    // sleep_abortable)
+    vassert(
+      _as.abort_requested() || _gate.is_closed(),
+      "Upload loop is not stopped properly");
 }
 
 } // namespace archival::internal
