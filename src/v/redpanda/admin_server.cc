@@ -217,6 +217,22 @@ apply_validator(json_validator& validator, rapidjson::Document const& doc) {
     }
 }
 
+/**
+ * Helper for requests with boolean URL query parameters that should
+ * be treated as false if absent, or true if "true" (case insensitive) or "1"
+ */
+static bool
+get_boolean_query_param(const ss::httpd::request& req, std::string_view name) {
+    auto key = ss::sstring(name);
+    if (!req.query_parameters.contains(key)) {
+        return false;
+    }
+
+    const ss::sstring& str_param = req.query_parameters.at(key);
+    return ss::httpd::request::case_insensitive_cmp()(str_param, "true")
+           || str_param == "1";
+}
+
 void admin_server::configure_dashboard() {
     if (_cfg.dashboard_dir) {
         auto handler = std::make_unique<dashboard_handler>(*_cfg.dashboard_dir);
@@ -674,6 +690,50 @@ void admin_server::register_cluster_config_routes() {
               i.value.Accept(w);
               auto s = ss::sstring{val_buf.GetString(), val_buf.GetSize()};
               update.upsert.push_back({i.name.GetString(), s});
+          }
+
+          // Config property validation happens further down the line
+          // at the point that properties are set on each node in
+          // response to the deltas that we write to the controller log,
+          // but we also do an early validation pass here to avoid writing
+          // clearly wrong things into the log & give better feedback
+          // to the API consumer.
+          if (!get_boolean_query_param(*req, "force")) {
+              // A scratch copy of configuration: we must not touch
+              // the real live configuration object, that will be updated
+              // by config_manager much after config is written to controller
+              // log.
+              config::configuration cfg;
+
+              std::map<ss::sstring, ss::sstring> errors;
+              for (const auto& i : update.upsert) {
+                  // Decode to a YAML object because that's what the property
+                  // interface expects.
+                  // Don't both catching ParserException: this was encoded
+                  // just a few lines above.
+                  const auto& yaml_value = i.second;
+                  auto val = YAML::Load(yaml_value);
+
+                  if (!cfg.contains(i.first)) {
+                      errors[i.first] = "Unknown property";
+                      continue;
+                  }
+                  auto& property = cfg.get(i.first);
+                  try {
+                      property.set_value(val);
+                  } catch (...) {
+                      errors[i.first] = fmt::format(
+                        "{}", std::current_exception());
+                      vlog(
+                        logger.warn, "Invalid {}: '{}'", i.first, yaml_value);
+                  }
+              }
+
+              if (!errors.empty()) {
+                  // TODO structured response
+                  throw ss::httpd::bad_request_exception(
+                    fmt::format("Invalid properties"));
+              }
           }
 
           vlog(
