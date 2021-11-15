@@ -122,7 +122,7 @@ static ss::future<> maybe_make_materialized_log(
   model::topic_namespace new_materialized,
   bool is_leader,
   output_write_args args) {
-    const auto& cache = args.rs.metadata_cache.local();
+    const auto& cache = args.metadata.local();
     if (cache.get_topic_cfg(new_materialized)) {
         if (cache.get_source_topic(new_materialized)) {
             /// Log already exists
@@ -153,7 +153,7 @@ static ss::future<> maybe_make_materialized_log(
     /// All requests are debounced, therefore if multiple entities attempt to
     /// create a materialzied topic, all requests will wait for the first to
     /// complete.
-    co_return co_await args.rs.mt_frontend.invoke_on(
+    co_return co_await args.frontend.invoke_on(
       cluster::non_replicable_topics_frontend_shard,
       [topics = std::move(topics)](
         cluster::non_replicable_topics_frontend& mtfe) mutable {
@@ -180,7 +180,7 @@ static ss::future<> write_materialized_partition(
           return maybe_make_materialized_log(
                    source, new_materialized, input->is_leader(), args)
             .then([args, ntp, reader = std::move(reader)]() mutable {
-                auto found = args.rs.storage.local().log_mgr().get(ntp);
+                auto found = args.storage.local().log_mgr().get(ntp);
                 if (found) {
                     return do_write_materialized_partition(
                       *found, std::move(reader));
