@@ -16,7 +16,25 @@
           "nickname": "patch_cluster_config",
           "produces": ["application/json"],
           "parameters": [
-          ]
+            {
+              "in": "query",
+              "name": "force",
+              "schema": {"type": "integer"},
+              "required": false,
+              "description": "If nonzero, skip validation of properties, and permit setting unknown properties"
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "OK"
+            },
+            "400": {
+              "description": "Invalid properties.  Response is a map of property name to error string",
+              "schema":{
+                "type": "object"
+              }
+            }
+          }
         }
       ]
     },
