@@ -71,9 +71,10 @@ public:
       ss::sharded<partition_manager>&,
       ss::sharded<raft::group_manager>&,
       ss::sharded<ss::abort_source>&,
-      std::chrono::milliseconds,
-      std::chrono::milliseconds,
-      std::chrono::milliseconds,
+      config::binding<bool>&&,
+      config::binding<std::chrono::milliseconds>&&,
+      config::binding<std::chrono::milliseconds>&&,
+      config::binding<std::chrono::milliseconds>&&,
       consensus_ptr);
 
     ss::future<> start();
@@ -92,8 +93,14 @@ private:
     ss::future<bool> do_transfer_local(reassignment) const;
     ss::future<bool> do_transfer_remote(reassignment);
 
+    void on_enable_changed();
+
     void trigger_balance();
     ss::future<ss::stop_iteration> balance();
+
+    // On/off switch: when off, leader balancer tick will run
+    // but do nothing
+    config::binding<bool> _enabled;
 
     /*
      * the balancer will go idle in different scenarios such as losing raft0
@@ -114,21 +121,21 @@ private:
      *   Once this item is complete it would also make sense to increase this
      *   timeout to something larger like 5 minutes.
      */
-    clock_type::duration _idle_timeout;
+    config::binding<std::chrono::milliseconds> _idle_timeout;
 
     /*
      * timeout used to mute groups. groups are muted in various scenarios such
      * as if they experience errors being moved, but also if they are moved
      * successfully so that we do not pertrub them too much on accident.
      */
-    clock_type::duration _mute_timeout;
+    config::binding<std::chrono::milliseconds> _mute_timeout;
 
     /*
      * threshold timeout of not having a raft0 heartbeat after which the node
      * will be muted. muting a node removes its capacity from consideration when
      * choosing new rebalancing targets for leadership.
      */
-    clock_type::duration _node_mute_timeout;
+    config::binding<std::chrono::milliseconds> _node_mute_timeout;
 
     struct last_known_leader {
         model::broker_shard shard;
