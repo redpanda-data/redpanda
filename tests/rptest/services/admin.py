@@ -125,14 +125,18 @@ class Admin:
     def get_cluster_config_schema(self, node=None):
         return self._request("GET", "cluster_config/schema", node=node).json()
 
-    def patch_cluster_config(self, upsert=None, remove=None):
+    def patch_cluster_config(self, upsert=None, remove=None, force=False):
         if upsert is None:
             upsert = {}
         if remove is None:
             remove = []
 
+        path = "cluster_config"
+        if force:
+            path = path + "?force=true"
+
         return self._request("PUT",
-                             "cluster_config",
+                             path,
                              json={
                                  'upsert': upsert,
                                  'remove': remove
