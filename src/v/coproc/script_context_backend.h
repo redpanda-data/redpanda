@@ -30,7 +30,7 @@ struct output_write_args {
     coproc::script_id id;
     ss::sharded<cluster::metadata_cache>& metadata;
     ss::sharded<cluster::non_replicable_topics_frontend>& frontend;
-    ss::sharded<storage::api>& storage;
+    ss::sharded<coproc::partition_manager>& pm;
     routes_t& inputs;
     absl::node_hash_map<model::ntp, mutex>& locks;
 };

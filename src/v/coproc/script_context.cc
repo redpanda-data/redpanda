@@ -120,7 +120,7 @@ ss::future<> script_context::send_request(
                 .id = _id,
                 .metadata = _resources.rs.metadata_cache,
                 .frontend = _resources.rs.mt_frontend,
-                .storage = _resources.rs.storage,
+                .pm = _resources.rs.cp_partition_manager,
                 .inputs = _routes,
                 .locks = _resources.log_mtx};
               return write_materialized(
