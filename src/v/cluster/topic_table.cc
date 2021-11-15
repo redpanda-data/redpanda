@@ -378,18 +378,31 @@ topic_table::apply(create_non_replicable_topic_cmd cmd, model::offset o) {
 }
 
 void topic_table::notify_waiters() {
-    if (_waiters.empty()) {
-        return;
-    }
+    /// If by invocation of this method there are no waiters, notify
+    /// function_ptrs stored in \ref notifications, without consuming all
+    /// pending_deltas for when a subsequent waiter does arrive
     std::vector<delta> changes;
-    changes.swap(_pending_deltas);
+    std::copy_if(
+      _pending_deltas.begin(),
+      _pending_deltas.end(),
+      std::back_inserter(changes),
+      [this](const delta& d) { return d.offset > _last_consumed_by_notifier; });
     for (auto& cb : _notifications) {
         cb.second(changes);
     }
-    std::vector<std::unique_ptr<waiter>> active_waiters;
-    active_waiters.swap(_waiters);
-    for (auto& w : active_waiters) {
-        w->promise.set_value(changes);
+    if (!changes.empty()) {
+        _last_consumed_by_notifier = changes.back().offset;
+    }
+
+    /// Consume all pending deltas
+    if (!_waiters.empty()) {
+        changes.clear();
+        changes.swap(_pending_deltas);
+        std::vector<std::unique_ptr<waiter>> active_waiters;
+        active_waiters.swap(_waiters);
+        for (auto& w : active_waiters) {
+            w->promise.set_value(changes);
+        }
     }
 }
 
