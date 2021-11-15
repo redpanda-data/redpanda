@@ -164,7 +164,7 @@ coproc::output_write_args fiber_mock_fixture::make_output_write_args(state& s) {
       .id = _id,
       .metadata = shared_res.rs.metadata_cache,
       .frontend = shared_res.rs.mt_frontend,
-      .storage = shared_res.rs.storage,
+      .pm = shared_res.rs.cp_partition_manager,
       .inputs = s.routes,
       .locks = shared_res.log_mtx};
 }

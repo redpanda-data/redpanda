@@ -15,6 +15,8 @@
 #include "cluster/non_replicable_topics_frontend.h"
 #include "coproc/exception.h"
 #include "coproc/logger.h"
+#include "coproc/partition.h"
+#include "coproc/partition_manager.h"
 #include "coproc/reference_window_consumer.hpp"
 #include "storage/api.h"
 #include "storage/log.h"
@@ -43,6 +45,10 @@ class bad_reply_exception final : public exception {
 };
 
 class retry_trigger_exception final : public exception {
+    using exception::exception;
+};
+
+class write_error_exception final : public exception {
     using exception::exception;
 };
 
@@ -81,7 +87,7 @@ private:
 };
 
 static ss::future<> do_write_materialized_partition(
-  storage::log log, model::record_batch_reader reader) {
+  ss::lw_shared_ptr<partition> p, model::record_batch_reader reader) {
     /// Re-write all batch term_ids to 1, otherwise they will carry the
     /// term ids of records coming from parent batches
     auto [crc_success, all_headers_valid, batch_w_correct_terms]
@@ -113,8 +119,22 @@ static ss::future<> do_write_materialized_partition(
       .timeout = model::no_timeout};
     /// Finally, write the batch
     co_await std::move(compressed)
-      .for_each_ref(log.make_appender(write_cfg), model::no_timeout)
+      .for_each_ref(p->make_appender(write_cfg), model::no_timeout)
       .discard_result();
+}
+
+static ss::future<ss::lw_shared_ptr<partition>>
+get_partition(partition_manager& pm, const model::ntp& ntp) {
+    auto found = pm.get(ntp);
+    if (found) {
+        /// Log exists, do nothing and return it
+        co_return found;
+    }
+    /// In the case the storage::log has not been created, but the topic has.
+    /// Retry again.
+    co_await ss::sleep(100ms);
+    throw log_not_yet_created_exception(fmt::format(
+      "Materialized topic created but underlying log doesn't yet exist", ntp));
 }
 
 static ss::future<> maybe_make_materialized_log(
@@ -179,19 +199,20 @@ static ss::future<> write_materialized_partition(
           model::topic_namespace new_materialized(ntp.ns, ntp.tp.topic);
           return maybe_make_materialized_log(
                    source, new_materialized, input->is_leader(), args)
-            .then([args, ntp, reader = std::move(reader)]() mutable {
-                auto found = args.storage.local().log_mgr().get(ntp);
-                if (found) {
-                    return do_write_materialized_partition(
-                      *found, std::move(reader));
-                }
-                /// In the case the storage::log has not been created, but the
-                /// topic has.
-                return ss::make_exception_future<>(
-                  log_not_yet_created_exception(ssx::sformat(
-                    "Materialized topic {} created but underlying log doesn't "
-                    "yet exist",
-                    ntp)));
+            .then([args, ntp] { return get_partition(args.pm.local(), ntp); })
+            .then([ntp, reader = std::move(reader)](
+                    ss::lw_shared_ptr<partition> p) mutable {
+                return do_write_materialized_partition(p, std::move(reader))
+                  .handle_exception([ntp](std::exception_ptr eptr) {
+                      try {
+                          std::rethrow_exception(eptr);
+                      } catch (const coproc::exception& ex) {
+                          return ss::make_exception_future<>(ex);
+                      } catch (const std::exception& ex) {
+                          return ss::make_exception_future<>(
+                            write_error_exception(ex.what()));
+                      }
+                  });
             });
       });
 }
@@ -209,9 +230,9 @@ static ss::future<> process_one_reply(
           e.id));
     }
     if (!e.reader) {
-        /// The wasm engine set the reader to std::nullopt meaning a fatal error
-        /// has occurred and redpanda should not send more data to this
-        /// coprocessor
+        /// The wasm engine set the reader to std::nullopt meaning a fatal
+        /// error has occurred and redpanda should not send more data to
+        /// this coprocessor
         throw script_failed_exception(
           e.id,
           ssx::sformat(
@@ -221,8 +242,8 @@ static ss::future<> process_one_reply(
     }
     /// Possible filter response
     if (e.ntp == e.source) {
-        /// If the reader is empty, then the wasm engine returned a nil response
-        /// indicating a filter is desired to be performed.
+        /// If the reader is empty, then the wasm engine returned a nil
+        /// response indicating a filter is desired to be performed.
         auto data = co_await model::consume_reader_to_memory(
           std::move(*e.reader), model::no_timeout);
         if (!data.empty()) {
@@ -254,7 +275,8 @@ static ss::future<> process_one_reply(
     } else {
         /// In this case a retry is in progress and a response is being
         /// processed for a materialized log that is already up to date.
-        /// Publishing here would re-write already written data, so do nothing
+        /// Publishing here would re-write already written data, so do
+        /// nothing
     }
 }
 
