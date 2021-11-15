@@ -170,7 +170,7 @@ to verify that cert-manager is working correcly.
       <tab id="apt">
 
     ```bash
-    sudo apt-get update \
+    sudo apt-get update && \
     sudo apt-get install jq
     ```
       </tab>
