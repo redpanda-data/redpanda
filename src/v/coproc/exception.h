@@ -45,6 +45,11 @@ private:
     script_id _id;
 };
 
+/// brief Thrown when the wasm engine returns a malformed response
+class engine_protocol_failure : public script_exception {
+    using script_exception::script_exception;
+};
+
 /// \brief Thrown when a coprocessor running within nodejs fails for whatever
 /// reason
 class script_failed_exception final : public script_exception {
