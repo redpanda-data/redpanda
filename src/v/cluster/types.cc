@@ -302,6 +302,22 @@ std::ostream& operator<<(
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const custom_assignable_topic_configuration& catc) {
+    fmt::print(
+      o,
+      "{{configuration: {}, custom_assignments: {}}}",
+      catc.cfg,
+      catc.custom_assignments);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const custom_partition_assignment& cas) {
+    fmt::print(o, "{{partition_id: {}, replicas: {}}}", cas.id, cas.replicas);
+    return o;
+}
+
 } // namespace cluster
 
 namespace reflection {
