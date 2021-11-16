@@ -62,6 +62,59 @@ struct list_offsets_ctx {
 static ss::future<list_offset_partition_response> list_offsets_partition(
   list_offsets_ctx& octx,
   model::timestamp timestamp,
+  model::ntp ntp,
+  model::isolation_level isolation_lvl,
+  cluster::partition_manager& mgr) {
+    auto kafka_partition = make_partition_proxy(
+      ntp, octx.rctx.metadata_cache(), mgr);
+    if (!kafka_partition) {
+        co_return list_offsets_response::make_partition(
+          ntp.tp.partition, error_code::unknown_topic_or_partition);
+    }
+
+    // using linearizable_barrier instead of is_leader to check that
+    // current node is/was a leader at the moment it received the request
+    // since the former uses cache and may return stale data
+    auto r = co_await kafka_partition->linearizable_barrier();
+    if (!r) {
+        co_return list_offsets_response::make_partition(
+          ntp.tp.partition, error_code::not_leader_for_partition);
+    }
+
+    /*
+     * the responses for earliest/latest timestamp queries do not require
+     * that the actual timestamp be returned. only the offset is required.
+     */
+    if (timestamp == list_offsets_request::earliest_timestamp) {
+        co_return list_offsets_response::make_partition(
+          ntp.tp.partition,
+          model::timestamp(-1),
+          kafka_partition->start_offset());
+
+    } else if (timestamp == list_offsets_request::latest_timestamp) {
+        const auto offset = isolation_lvl
+                                == model::isolation_level::read_committed
+                              ? kafka_partition->last_stable_offset()
+                              : kafka_partition->high_watermark();
+
+        co_return list_offsets_response::make_partition(
+          ntp.tp.partition, model::timestamp(-1), offset);
+    }
+
+    auto res = co_await kafka_partition->timequery(
+      timestamp, kafka_read_priority());
+    auto id = ntp.tp.partition;
+    if (res) {
+        co_return list_offsets_response::make_partition(
+          id, res->time, res->offset);
+    }
+    co_return list_offsets_response::make_partition(
+      id, model::timestamp(-1), kafka_partition->last_stable_offset());
+}
+
+static ss::future<list_offset_partition_response> list_offsets_partition(
+  list_offsets_ctx& octx,
+  model::timestamp timestamp,
   list_offset_topic& topic,
   list_offset_partition& part) {
     model::ntp ntp(model::kafka_namespace, topic.name, part.partition_index);
@@ -80,57 +133,10 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
        &octx,
        ntp = std::move(ntp),
        isolation_lvl = model::isolation_level(
-         octx.request.data.isolation_level)](cluster::partition_manager& mgr) {
-          auto kafka_partition = make_partition_proxy(
-            ntp, octx.rctx.metadata_cache(), mgr);
-          if (!kafka_partition) {
-              return ss::make_ready_future<list_offset_partition_response>(
-                list_offsets_response::make_partition(
-                  ntp.tp.partition, error_code::unknown_topic_or_partition));
-          }
-
-          if (!kafka_partition->is_leader()) {
-              return ss::make_ready_future<list_offset_partition_response>(
-                list_offsets_response::make_partition(
-                  ntp.tp.partition, error_code::not_leader_for_partition));
-          }
-
-          /*
-           * the responses for earliest/latest timestamp queries do not require
-           * that the actual timestamp be returned. only the offset is required.
-           */
-          if (timestamp == list_offsets_request::earliest_timestamp) {
-              return ss::make_ready_future<list_offset_partition_response>(
-                list_offsets_response::make_partition(
-                  ntp.tp.partition,
-                  model::timestamp(-1),
-                  kafka_partition->start_offset()));
-
-          } else if (timestamp == list_offsets_request::latest_timestamp) {
-              const auto offset = isolation_lvl
-                                      == model::isolation_level::read_committed
-                                    ? kafka_partition->last_stable_offset()
-                                    : kafka_partition->high_watermark();
-
-              return ss::make_ready_future<list_offset_partition_response>(
-                list_offsets_response::make_partition(
-                  ntp.tp.partition, model::timestamp(-1), offset));
-          }
-
-          return kafka_partition->timequery(timestamp, kafka_read_priority())
-            .then([partition = std::move(kafka_partition),
-                   id = ntp.tp.partition](
-                    std::optional<storage::timequery_result> res) {
-                if (res) {
-                    return ss::make_ready_future<
-                      list_offset_partition_response>(
-                      list_offsets_response::make_partition(
-                        id, res->time, res->offset));
-                }
-                return ss::make_ready_future<list_offset_partition_response>(
-                  list_offsets_response::make_partition(
-                    id, model::timestamp(-1), partition->last_stable_offset()));
-            });
+         octx.request.data.isolation_level)](
+        cluster::partition_manager& mgr) mutable {
+          return list_offsets_partition(
+            octx, timestamp, std::move(ntp), isolation_lvl, mgr);
       });
 }
 
