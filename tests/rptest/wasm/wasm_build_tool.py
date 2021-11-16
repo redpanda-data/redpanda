@@ -16,6 +16,7 @@ import jinja2
 
 class WasmTemplateRepository:
     IDENTITY_TRANSFORM = "identity_transform.j2"
+    FILTER_TRANSFORM = "filter_transform.j2"
 
     def __init__(self, template_dir):
         self.template_dir = template_dir
