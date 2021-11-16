@@ -95,7 +95,7 @@ resource names:
 	}
 	a.addDeleteFlags(cmd)
 	cmd.Flags().BoolVarP(&printAllFilters, "print-filters", "f", false, "print the filters that were requested (failed filters are always printed)")
-	cmd.Flags().BoolVarP(&dry, "dry", "d", false, "dry run: validate what would be deleted (alias for list)")
+	cmd.Flags().BoolVarP(&dry, "dry", "d", false, "dry run: validate what would be deleted")
 	cmd.Flags().BoolVar(&noConfirm, "no-confirm", false, "disable confirmation prompt")
 	return cmd
 }
