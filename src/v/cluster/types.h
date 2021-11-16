@@ -369,6 +369,14 @@ struct incremental_topic_updates {
       = default;
 };
 
+// This class contains updates for topic properties which are replicates not by
+// topic_frontend
+struct incremental_topic_custom_updates {
+    // Data-policy property is replicated by data_policy_frontend and handled by
+    // data_policy_manager.
+    property_update<std::optional<v8_engine::data_policy>> data_policy;
+};
+
 /**
  * Struct representing single topic properties update
  */
@@ -377,7 +385,14 @@ struct topic_properties_update {
       : tp_ns(std::move(tp_ns)) {}
 
     model::topic_namespace tp_ns;
+
+    // Tihs properties is serialized to update_topic_properties_cmd by
+    // topic_frontend
     incremental_topic_updates properties;
+
+    // This properties is not serialized to update_topic_properties_cmd, because
+    // they have custom services for replication.
+    incremental_topic_custom_updates custom_properties;
 };
 
 // Structure holding topic configuration, optionals will be replaced by broker
