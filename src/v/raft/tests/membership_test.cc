@@ -56,32 +56,43 @@ FIXTURE_TEST(add_two_nodes_to_the_cluster, raft_test_fixture) {
     BOOST_REQUIRE_EQUAL(leader.consensus->config().brokers().size(), 3);
 };
 
-void verify_node_is_behind(raft_group& gr, model::node_id removed) {
-    tests::cooperative_spin_wait_with_timeout(3s, [&gr, removed] {
-        return ss::async([&gr, removed] {
+/**
+ * After removing a node, check that the remaining nodes
+ * have all advanced past it, to the same offset.
+ *
+ * @param removed_offset The offset of the just-removed group.
+ */
+void verify_removed_node_is_behind(
+  raft_group& gr, model::offset removed_offset) {
+    tests::cooperative_spin_wait_with_timeout(3s, [&gr, removed_offset] {
+        return ss::async([&gr, removed_offset] {
             auto leader_id = gr.get_leader_id();
             if (!leader_id) {
                 return false;
             }
-            auto logs = gr.read_all_logs();
-            auto& leader_log = logs[*leader_id];
-            if (leader_log.empty()) {
-                return false;
-            }
-            auto leader_offset = leader_log.back().last_offset();
 
-            auto& removed_log = logs[removed];
+            auto leader_offset = gr.get_member(leader_id.value())
+                                   .consensus->last_visible_index();
 
-            // removed node is behind
-            if (
-              !removed_log.empty()
-              && leader_offset <= logs[removed].back().last_offset()) {
+            // Leader: the removed node must be behind this
+            if (removed_offset >= leader_offset) {
                 return false;
             }
 
-            // other nodes have all the data
-            logs.erase(removed);
-            return are_logs_the_same_length(logs);
+            for (const auto& i : gr.get_members()) {
+                if (i.first == leader_id) {
+                    continue;
+                } else {
+                    // Follower: must be caught up to leader
+                    if (
+                      i.second.consensus->last_visible_index()
+                      != leader_offset) {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
         });
     }).get0();
 }
@@ -90,6 +101,7 @@ FIXTURE_TEST(remove_non_leader, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();
     auto res = replicate_random_batches(gr, 2).get0();
+    BOOST_REQUIRE(res);
     auto& members = gr.get_members();
     auto non_leader_id = std::find_if(
                            members.begin(),
@@ -104,6 +116,7 @@ FIXTURE_TEST(remove_non_leader, raft_test_fixture) {
                 .then([](std::error_code ec) { return !ec; });
           }).get0();
     BOOST_REQUIRE(res);
+
     tests::cooperative_spin_wait_with_timeout(5s, [&gr] {
         auto leader_id = gr.get_leader_id();
         if (!leader_id) {
@@ -113,7 +126,16 @@ FIXTURE_TEST(remove_non_leader, raft_test_fixture) {
         return leader.consensus->config().brokers().size() == 2;
     }).get0();
 
-    verify_node_is_behind(gr, non_leader_id);
+    auto write_ok = replicate_random_batches(gr, 2).get0();
+    BOOST_REQUIRE(write_ok);
+    auto removed_offset
+      = gr.get_member(non_leader_id).consensus->last_visible_index();
+
+    // Emulate what the controller would do: tear down the removed
+    // consensus instance.
+    gr.disable_node(non_leader_id);
+
+    verify_removed_node_is_behind(gr, removed_offset);
 }
 
 FIXTURE_TEST(remove_current_leader, raft_test_fixture) {
@@ -139,11 +161,15 @@ FIXTURE_TEST(remove_current_leader, raft_test_fixture) {
 
     BOOST_REQUIRE_NE(gr.get_leader_id(), old_leader_id);
     res = replicate_random_batches(gr, 2).get0();
+    BOOST_REQUIRE(res);
+    auto removed_offset
+      = gr.get_member(old_leader_id).consensus->last_visible_index();
 
-    verify_node_is_behind(gr, old_leader_id);
+    gr.disable_node(old_leader_id);
+
+    verify_removed_node_is_behind(gr, removed_offset);
     validate_offset_translation(gr);
 }
-
 FIXTURE_TEST(remove_multiple_members, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();
