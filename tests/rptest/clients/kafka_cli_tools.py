@@ -92,6 +92,20 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
             args += ["--config", it]
         return self._run("kafka-topics.sh", args)
 
+    def create_topic_with_assignment(self, name, assignments):
+        self._redpanda.logger.debug(
+            f"Creating topic: {name}, custom assignment: {assignments}")
+
+        partitions = []
+        for assignment in assignments:
+            partitions.append(":".join(str(r) for r in assignment))
+
+        args = ["--create"]
+        args += ["--topic", name]
+        args += ["--replica-assignment", ",".join(partitions)]
+
+        return self._run("kafka-topics.sh", args)
+
     def delete_topic(self, topic):
         self._redpanda.logger.debug("Deleting topic: %s", topic)
         args = ["--delete"]
