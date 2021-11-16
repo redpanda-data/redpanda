@@ -51,7 +51,7 @@ You can find the MirrorMaker script and configuration files in the expanded Kafk
 ```
 .
 └── kafka_2.13-3.0.0
-    └── bin
+    └── config
         └── connect-mirror-maker.sh
         └── connect-mirror-maker.properties
 ```
@@ -60,7 +60,7 @@ The sample configuration is a great place to understand a number of the settings
 
 To create a basic configuration file, go to the `config` and run this command:
 
-    ```
+```
 cat << EOF > mm2.properties
 // Name the clusters
 clusters = redpanda1, redpanda2
@@ -73,10 +73,10 @@ redpanda2.bootstrap.server = <redpanda2_cluster_ip>:9092
 redpanda1->redpanda2.enabled = true
 redpanda1->redpanda2.topics = .*
 
-// Specify the number of clusters to replicate data to
+// Setting replication factor of newly created remote topics
 replication.factor = 1
 EOF
-    ```
+```
 
 ## Run MirrorMaker to start replication
 
@@ -91,6 +91,49 @@ MirrorMaker adds the prefix `redpanda1` to the names of replicated topics.
 
 > **_Note:_** MirrorMaker uses the `__consumer_offsets` to replicate consumer offsets between clusters. This is currently not supported in Redpanda, but you can follow the progress of this issue at: https://github.com/vectorizedio/redpanda/issues/1752
 
+## See migration in action
+
+Here are the basic commands to produce and consume streams:
+
+1. Create a topic in the source cluster. We'll call it "twitch_chat":
+
+    ```bash
+    rpk topic create twitch_chat --brokers <node IP>:<kafka API port>
+    ```
+
+1. Produce messages to the topic:
+
+    ```bash
+    rpk topic produce twitch_chat --brokers <node IP>:<kafka API port>
+    ```
+
+    Type text into the topic and press Ctrl + D to seperate between messages.
+
+    Press Ctrl + C to exit the produce command.
+
+1. Consume (or read) the messages from the destination cluster:
+
+    ```bash
+    rpk topic consume twitch_chat --brokers <node IP>:<kafka API port>
+    ```
+    
+    Each message is shown with its metadata, like this:
+    
+    ```bash
+    {
+    "message": "How do you stream with Redpanda?\n",
+    "partition": 0,
+    "offset": 1,
+    "timestamp": "2021-02-10T15:52:35.251+02:00"
+    }
+    ```
+
+Now you know the replication is working!
+
 ## Stop MirrorMaker
 
 To stop the MirrorMaker process, use `top` to find its process ID and then run: `kill <MirrorMaker pid>`
+
+## Troubleshooting
+
+If you run into any difficulty with data migration, contact us in our [Slack](https://vectorized.io/slack) community so we can help you succeed.
