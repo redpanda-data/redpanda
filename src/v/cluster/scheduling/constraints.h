@@ -20,6 +20,8 @@ hard_constraint_evaluator is_active();
 
 hard_constraint_evaluator on_node(model::node_id);
 
+hard_constraint_evaluator on_nodes(const std::vector<model::node_id>&);
+
 hard_constraint_evaluator
 distinct_from(const std::vector<model::broker_shard>&);
 
