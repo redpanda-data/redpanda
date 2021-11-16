@@ -18,14 +18,14 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors/commands"
 )
 
-const prefferedClkSource = "tsc"
+const preferredClkSource = "tsc"
 
 func NewClockSourceChecker(fs afero.Fs) Checker {
 	return NewEqualityChecker(
 		ClockSource,
 		"Clock Source",
 		Warning,
-		prefferedClkSource,
+		preferredClkSource,
 		func() (interface{}, error) {
 			content, err := afero.ReadFile(fs,
 				"/sys/devices/system/clocksource/clocksource0/current_clocksource")
@@ -43,7 +43,7 @@ func NewClockSourceTuner(fs afero.Fs, executor executors.Executor) Tunable {
 		func() TuneResult {
 			err := executor.Execute(commands.NewWriteFileCmd(fs,
 				"/sys/devices/system/clocksource/clocksource0/current_clocksource",
-				prefferedClkSource))
+				preferredClkSource))
 			if err != nil {
 				return NewTuneError(err)
 			}
@@ -58,12 +58,12 @@ func NewClockSourceTuner(fs afero.Fs, executor executors.Executor) Tunable {
 			availableSrcs := strings.Fields(string(content))
 
 			for _, src := range availableSrcs {
-				if src == prefferedClkSource {
+				if src == preferredClkSource {
 					return true, ""
 				}
 			}
 			return false, fmt.Sprintf(
-				"Preffered clocksource '%s' not avaialable", prefferedClkSource)
+				"Preferred clocksource '%s' not avaialable", preferredClkSource)
 		},
 		executor.IsLazy(),
 	)
