@@ -115,11 +115,11 @@ and the name. Within Redpanda, only one type is supported, "User". The reason
 for the prefix is that a potential future authorizer may add support for
 authorizing by Group or anything else.
 
-When you create user "bar", to add, list, or delete ACLs for the user, Redpanda
-expects you to add ACLs for "User:bar". The --allow-principal and
---deny-principal flags add this prefix for you if necessary. The special name
-'*' matches any name, meaning an ACL with principal "User:*" grants or denies
-the permission for any user.
+When you create a user, you need to add ACLs for it before it can be used. You
+can create / delete / list ACLs for that user with either "User:bar" or "bar"
+in the --allow-principal and --deny-principal flags. This command will add the
+"User:" prefix for you if it is missing. The wildcard '*' matches any user.
+Creating an ACL with user '*' grants or denies the permission for all users.
 
 HOSTS
 
