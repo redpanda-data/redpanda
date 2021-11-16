@@ -190,7 +190,7 @@ class ArchivalTest(RedpandaTest):
         # Deletes in S3 are eventually consistent so we might still
         # see previously removed objects for a while.
         validate(self._check_bucket_is_emtpy, self.logger, 300)
-        super().setUp()
+        super().setUp()  # topic is created here
 
     def tearDown(self):
         self.s3_client.empty_bucket(self.s3_bucket_name)
@@ -203,14 +203,25 @@ class ArchivalTest(RedpandaTest):
         self.kafka_tools.produce(self.topic, 10000, 1024)
         validate(self._quick_verify, self.logger, 90)
 
-    @ignore  # https://github.com/vectorizedio/redpanda/issues/1977
     @cluster(num_nodes=3)
     def test_isolate(self):
         """Verify that our isolate/rejoin facilities actually work"""
         with firewall_blocked(self.redpanda.nodes, self._get_s3_endpoint_ip()):
             self.kafka_tools.produce(self.topic, 10000, 1024)
             time.sleep(10)  # can't busy wait here
-            self._check_bucket_is_emtpy()
+
+            # Topic manifest can be present in the bucket because topic is created before
+            # firewall is blocked. No segments or partition manifest should be present.
+            topic_manifest_id = "d0000000/meta/kafka/panda-topic/topic_manifest.json"
+            objects = self.s3_client.list_objects(self.s3_bucket_name)
+            keys = [x.Key for x in objects]
+
+            assert len(keys) < 2, \
+                f"Bucket should be empty or contain only {topic_manifest_id}, but contains {keys}"
+
+            if len(keys) == 1:
+                assert topic_manifest_id == keys[0], \
+                    f"Bucket should be empty or contain only {topic_manifest_id}, but contains {keys[0]}"
 
     @cluster(num_nodes=3)
     def test_reconnect(self):
