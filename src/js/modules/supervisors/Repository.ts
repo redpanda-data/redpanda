@@ -149,6 +149,7 @@ class Repository {
         });
         value.header.sizeBytes = calculateRecordBatchSize(value.records);
         value.header.term = recordBatch.header.term;
+        value.header.recordCount = value.records.length;
         results.push({
           coprocessorId: BigInt(handle.coprocessor.globalId),
           source: requestItem.ntp,
