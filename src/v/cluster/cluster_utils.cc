@@ -185,6 +185,21 @@ std::vector<topic_result> create_topic_results(
     return results;
 }
 
+std::vector<topic_result> create_topic_results(
+  const std::vector<custom_assignable_topic_configuration>& requests,
+  errc error_code) {
+    std::vector<topic_result> results;
+    results.reserve(requests.size());
+    std::transform(
+      requests.cbegin(),
+      requests.cend(),
+      std::back_inserter(results),
+      [error_code](const custom_assignable_topic_configuration& r) {
+          return topic_result(r.cfg.tp_ns, error_code);
+      });
+    return results;
+}
+
 model::broker make_self_broker(const config::node_config& node_cfg) {
     auto kafka_addr = node_cfg.advertised_kafka_api();
     auto rpc_addr = node_cfg.advertised_rpc_api();
@@ -248,6 +263,20 @@ bool are_replica_sets_equal(
     std::sort(r_sorted.begin(), r_sorted.end(), cmp);
 
     return l_sorted == r_sorted;
+}
+
+std::vector<custom_assignable_topic_configuration>
+without_custom_assignments(std::vector<topic_configuration> topics) {
+    std::vector<custom_assignable_topic_configuration> assignable_topics;
+    assignable_topics.reserve(topics.size());
+    std::transform(
+      topics.begin(),
+      topics.end(),
+      std::back_inserter(assignable_topics),
+      [](topic_configuration cfg) {
+          return custom_assignable_topic_configuration(std::move(cfg));
+      });
+    return assignable_topics;
 }
 
 } // namespace cluster

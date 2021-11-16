@@ -51,7 +51,9 @@ FIXTURE_TEST(test_querying_ntp_status, cluster_test_fixture) {
 
     leader->controller->get_topics_frontend()
       .local()
-      .create_topics(topics, 1s + model::timeout_clock::now())
+      .create_topics(
+        cluster::without_custom_assignments(topics),
+        1s + model::timeout_clock::now())
       .get();
 
     // wait for reconciliation to be finished

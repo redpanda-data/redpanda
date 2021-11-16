@@ -16,6 +16,8 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <vector>
+
 using namespace kafka; // NOLINT
 
 BOOST_AUTO_TEST_CASE(test_no_additional_options) {
@@ -26,11 +28,49 @@ BOOST_AUTO_TEST_CASE(test_no_additional_options) {
 
     auto cluster_tp_config = to_cluster_type(no_options);
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.tp_ns.tp, ss::sstring(no_options.name()));
+      cluster_tp_config.cfg.tp_ns.tp, ss::sstring(no_options.name()));
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.partition_count, no_options.num_partitions);
+      cluster_tp_config.cfg.partition_count, no_options.num_partitions);
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.replication_factor, no_options.replication_factor);
+      cluster_tp_config.cfg.replication_factor, no_options.replication_factor);
+}
+
+BOOST_AUTO_TEST_CASE(test_with_custom_assignments) {
+    creatable_topic custom_assignments = {
+      .name = model::topic_view{"test_tp"},
+      .num_partitions = -1,
+      .replication_factor = -1};
+
+    custom_assignments.assignments.push_back(creatable_replica_assignment{
+      .partition_index = model::partition_id(0),
+      .broker_ids = {model::node_id(1), model::node_id(2), model::node_id(3)},
+    });
+
+    custom_assignments.assignments.push_back(creatable_replica_assignment{
+      .partition_index = model::partition_id(1),
+      .broker_ids
+      = {model::node_id(10), model::node_id(20), model::node_id(30)},
+    });
+
+    auto cluster_tp_config = to_cluster_type(custom_assignments);
+    BOOST_REQUIRE_EQUAL(
+      cluster_tp_config.cfg.tp_ns.tp, ss::sstring(custom_assignments.name()));
+    // derrived from custom assignments
+    BOOST_REQUIRE_EQUAL(cluster_tp_config.cfg.partition_count, 2);
+    BOOST_REQUIRE_EQUAL(cluster_tp_config.cfg.replication_factor, 3);
+
+    BOOST_REQUIRE_EQUAL(cluster_tp_config.custom_assignments.size(), 2);
+    BOOST_REQUIRE_EQUAL(
+      cluster_tp_config.custom_assignments[0].id, model::partition_id(0));
+    BOOST_REQUIRE_EQUAL(
+      cluster_tp_config.custom_assignments[1].id, model::partition_id(1));
+
+    BOOST_REQUIRE_EQUAL(
+      cluster_tp_config.custom_assignments[0].replicas,
+      custom_assignments.assignments[0].broker_ids);
+    BOOST_REQUIRE_EQUAL(
+      cluster_tp_config.custom_assignments[1].replicas,
+      custom_assignments.assignments[1].broker_ids);
 }
 
 BOOST_AUTO_TEST_CASE(test_all_additional_options) {
@@ -48,24 +88,24 @@ BOOST_AUTO_TEST_CASE(test_all_additional_options) {
 
     auto cluster_tp_config = to_cluster_type(all_options);
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.tp_ns.tp, ss::sstring(all_options.name()));
+      cluster_tp_config.cfg.tp_ns.tp, ss::sstring(all_options.name()));
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.partition_count, all_options.num_partitions);
+      cluster_tp_config.cfg.partition_count, all_options.num_partitions);
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.replication_factor, all_options.replication_factor);
+      cluster_tp_config.cfg.replication_factor, all_options.replication_factor);
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.properties.compression, model::compression::snappy);
+      cluster_tp_config.cfg.properties.compression, model::compression::snappy);
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.properties.compaction_strategy,
+      cluster_tp_config.cfg.properties.compaction_strategy,
       model::compaction_strategy::header);
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.properties.retention_bytes.is_disabled(), true);
+      cluster_tp_config.cfg.properties.retention_bytes.is_disabled(), true);
     using namespace std::chrono_literals;
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.properties.retention_duration.value().count(),
+      cluster_tp_config.cfg.properties.retention_duration.value().count(),
       (86400000ms).count());
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.properties.cleanup_policy_bitflags,
+      cluster_tp_config.cfg.properties.cleanup_policy_bitflags,
       model::cleanup_policy_bitflags::compaction
         | model::cleanup_policy_bitflags::deletion);
 }

@@ -9,6 +9,7 @@
 
 #include "kafka/server/handlers/create_topics.h"
 
+#include "cluster/cluster_utils.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/topics_frontend.h"
 #include "config/configuration.h"
@@ -161,7 +162,8 @@ ss::future<response_ptr> create_topics_handler::handle(
           // Create the topics with controller on core 0
           return ctx.topics_frontend()
             .create_topics(
-              std::move(to_create), to_timeout(request.data.timeout_ms))
+              cluster::without_custom_assignments(std::move(to_create)),
+              to_timeout(request.data.timeout_ms))
             .then([&ctx, tout = to_timeout(request.data.timeout_ms)](
                     std::vector<cluster::topic_result> c_res) mutable {
                 return wait_for_topics(c_res, ctx.controller_api(), tout)

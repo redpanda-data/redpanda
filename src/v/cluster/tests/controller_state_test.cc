@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/cluster_utils.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/shard_table.h"
 #include "cluster/simple_batch_builder.h"
@@ -52,11 +53,13 @@ FIXTURE_TEST(test_creating_same_topic_twice, cluster_test_fixture) {
 
     futures.push_back(
       node_0->controller->get_topics_frontend().local().create_topics(
-        {create_topic_cfg("test-1", 1, 3)}, model::timeout_clock::now() + 10s));
+        cluster::without_custom_assignments({create_topic_cfg("test-1", 1, 3)}),
+        model::timeout_clock::now() + 10s));
 
     futures.push_back(
       node_0->controller->get_topics_frontend().local().create_topics(
-        {create_topic_cfg("test-1", 2, 3)}, model::timeout_clock::now() + 10s));
+        cluster::without_custom_assignments({create_topic_cfg("test-1", 2, 3)}),
+        model::timeout_clock::now() + 10s));
 
     ss::when_all_succeed(futures.begin(), futures.end())
       .then([](std::vector<std::vector<cluster::topic_result>> results) {

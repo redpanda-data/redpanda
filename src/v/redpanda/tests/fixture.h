@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "cluster/cluster_utils.h"
 #include "cluster/controller.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
@@ -266,7 +267,9 @@ public:
           cluster::topic_configuration(tp_ns.ns, tp_ns.tp, partitions, 1)};
         return app.controller->get_topics_frontend()
           .local()
-          .create_topics(std::move(cfgs), model::no_timeout)
+          .create_topics(
+            cluster::without_custom_assignments(std::move(cfgs)),
+            model::no_timeout)
           .then([this](std::vector<cluster::topic_result> results) {
               return wait_for_topics(std::move(results));
           });

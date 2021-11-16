@@ -86,7 +86,9 @@ FIXTURE_TEST(
     topics.emplace_back(model::ns("default"), model::topic("test_1"), 3, 1);
     cntrl_0->controller->get_topics_frontend()
       .local()
-      .create_topics(std::move(topics), model::no_timeout)
+      .create_topics(
+        cluster::without_custom_assignments(std::move(topics)),
+        model::no_timeout)
       .get0();
 
     auto leaders_0 = wait_for_leaders_updates(0, cache_0);
@@ -119,7 +121,9 @@ FIXTURE_TEST(test_metadata_dissemination_joining_node, cluster_test_fixture) {
     topics.emplace_back(model::ns("default"), model::topic("test_1"), 3, 1);
     cntrl_0->controller->get_topics_frontend()
       .local()
-      .create_topics(std::move(topics), model::no_timeout)
+      .create_topics(
+        cluster::without_custom_assignments(std::move(topics)),
+        model::no_timeout)
       .get0();
 
     // Add new now to the cluster
