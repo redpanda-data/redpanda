@@ -37,7 +37,7 @@ require (
 	github.com/olekukonko/tablewriter v0.0.1
 	github.com/opencontainers/go-digest v1.0.0-rc1 // indirect
 	github.com/opencontainers/image-spec v1.0.1
-	github.com/pierrec/lz4/v4 v4.1.9 // indirect
+	github.com/pierrec/lz4/v4 v4.1.11 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.9.1
@@ -49,9 +49,9 @@ require (
 	github.com/spf13/viper v1.7.0
 	github.com/stretchr/testify v1.7.0
 	github.com/tklauser/go-sysconf v0.1.0
-	github.com/twmb/franz-go v1.2.3
-	github.com/twmb/franz-go/pkg/kadm v0.0.0-20211110004707-9a9ce6a8d31a
-	github.com/twmb/franz-go/pkg/kmsg v0.0.0-20211104051938-70808186d5f7
+	github.com/twmb/franz-go v1.2.4
+	github.com/twmb/franz-go/pkg/kadm v0.0.0-20211116225244-e97ad6b8ef3e
+	github.com/twmb/franz-go/pkg/kmsg v0.0.0-20211116073102-087920707afe
 	github.com/twmb/tlscfg v1.2.0
 	github.com/twmb/types v1.1.6
 	golang.org/x/crypto v0.0.0-20210817164053-32db794688a5
