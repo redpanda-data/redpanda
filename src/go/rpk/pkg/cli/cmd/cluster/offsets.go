@@ -132,7 +132,7 @@ func printDescribed(
 				topic:     l.End.Topic,
 				partition: l.End.Partition,
 
-				currentOffset: strconv.FormatInt(l.Commit.Offset, 10),
+				currentOffset: strconv.FormatInt(l.Commit.At, 10),
 				logEndOffset:  l.End.Offset,
 				lag:           strconv.FormatInt(l.Lag, 10),
 
@@ -146,7 +146,7 @@ func printDescribed(
 				row.host = l.Member.ClientHost
 			}
 
-			if l.Commit.Offset == -1 { // nothing committed
+			if l.Commit.At == -1 { // nothing committed
 				row.currentOffset = "-"
 			}
 			if l.End.Offset == 0 { // nothing produced yet
