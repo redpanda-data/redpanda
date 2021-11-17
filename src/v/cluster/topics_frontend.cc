@@ -203,10 +203,12 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
 // data-policy
 ss::future<std::error_code> topics_frontend::do_update_data_policy(
   topic_properties_update& update, model::timeout_clock::time_point timeout) {
-    switch (update.properties.data_policy.op) {
+    switch (update.custom_properties.data_policy.op) {
     case incremental_update_operation::set:
         co_return co_await _dp_frontend.local().create_data_policy(
-          update.tp_ns, update.properties.data_policy.value.value(), timeout);
+          update.tp_ns,
+          update.custom_properties.data_policy.value.value(),
+          timeout);
     case incremental_update_operation::remove: {
         co_return co_await _dp_frontend.local().clear_data_policy(
           update.tp_ns, timeout);

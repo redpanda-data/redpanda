@@ -95,7 +95,7 @@ create_topic_properties_update(alter_configs_resource& resource) {
       = cluster::incremental_update_operation::set;
     update.properties.retention_duration.op
       = cluster::incremental_update_operation::set;
-    update.properties.data_policy.op
+    update.custom_properties.data_policy.op
       = cluster::incremental_update_operation::none;
 
     for (auto& cfg : resource.configs) {

@@ -206,9 +206,9 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
           fmt::format("invalid topic property: {}", cfg.name));
     }
     try {
-        update.properties.data_policy.value = data_policy_from_parser(
+        update.custom_properties.data_policy.value = data_policy_from_parser(
           dp_parser);
-        update.properties.data_policy.op = dp_parser.op;
+        update.custom_properties.data_policy.op = dp_parser.op;
     } catch (const v8_engine::data_policy_exeption& e) {
         return make_error_alter_config_resource_response<
           incremental_alter_configs_resource_response>(
