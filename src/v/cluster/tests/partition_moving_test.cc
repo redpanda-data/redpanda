@@ -160,27 +160,35 @@ public:
           [this, ntp, &replica_set]() mutable {
               return std::all_of(
                 nodes.cbegin(),
-                nodes.cbegin(),
-                [this, ntp = std::move(ntp), &replica_set](
-                  model::node_id nid) mutable {
+                nodes.cend(),
+                [this, ntp, &replica_set](model::node_id nid) mutable {
                     auto app = get_node_application(nid);
                     auto md = app->controller->get_topics_state()
                                 .local()
                                 .get_partition_assignment(ntp);
 
                     if (!md) {
+                        vlog(logger.info, "No metadata for ntp {}", ntp);
                         return false;
                     }
+                    vlog(
+                      logger.info,
+                      "Comparing {} {} to {}",
+                      ntp,
+                      replica_set,
+                      md->replicas);
 
                     return cluster::are_replica_sets_equal(
                       replica_set, md->replicas);
                 });
           })
-          .handle_exception([&replica_set](const std::exception_ptr&) {
+          .handle_exception([ntp, &replica_set](const std::exception_ptr& e) {
               BOOST_FAIL(fmt::format(
                 "Timeout waiting for replica set metadata update, replica set "
-                "{}",
-                replica_set));
+                "{} {} ({})",
+                ntp,
+                replica_set,
+                e));
           })
           .get0();
         vlog(
@@ -366,10 +374,27 @@ public:
           replicas,
           [this, ntp, &reference_batches, max_offset](model::broker_shard bs) {
               return read_replica_batches(bs, ntp, max_offset)
-                .then(
-                  [this, &reference_batches, bs](foreign_batches_t batches) {
-                      return are_batches_the_same(reference_batches, batches);
-                  });
+                .then([this, ntp, &reference_batches, bs](
+                        foreign_batches_t batches) {
+                    vlog(
+                      logger.info,
+                      "Comparing {} {} batches {} {}",
+                      bs,
+                      ntp,
+                      reference_batches->size(),
+                      batches->size());
+                    bool same = are_batches_the_same(
+                      reference_batches, batches);
+                    if (!same) {
+                        for (const auto& i : *reference_batches) {
+                            vlog(logger.info, "reference batch {}", i);
+                        }
+                        for (const auto& i : *batches) {
+                            vlog(logger.info, "actual batch {}", i);
+                        }
+                    }
+                    return same;
+                });
           })
           .handle_exception([&replicas](const std::exception_ptr&) {
               BOOST_FAIL(fmt::format(
