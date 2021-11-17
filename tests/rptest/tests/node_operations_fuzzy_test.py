@@ -233,7 +233,8 @@ class NodeOperationFuzzyTest(EndToEndTest):
             self.logger.info(f"restarting node: {node_id}")
             self.redpanda.stop_node(self.redpanda.nodes[node_id - 1])
             if cleanup:
-                self.redpanda.clean_node(self.redpanda.nodes[node_id - 1])
+                self.redpanda.clean_node(self.redpanda.nodes[node_id - 1],
+                                         preserve_logs=True)
             self.redpanda.start_node(self.redpanda.nodes[node_id - 1])
 
             def has_new_replicas():
