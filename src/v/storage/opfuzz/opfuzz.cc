@@ -346,7 +346,18 @@ struct truncate_prefix_op final : opfuzz::op {
     }
 };
 
-struct simple_verify_consumer {
+class verifying_consumer {
+public:
+    verifying_consumer(
+      model::offset min_offset,
+      model::offset max_offset,
+      bool expect_empty,
+      storage::log log)
+      : _min_offset(min_offset)
+      , _max_offset(max_offset)
+      , _expect_empty(expect_empty)
+      , _log(std::move(log)) {}
+
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
         if (auto crc = model::crc_record_batch(b); b.header().crc != crc) {
             auto ptr = ss::make_backtraced_exception_ptr<std::runtime_error>(
@@ -357,10 +368,53 @@ struct simple_verify_consumer {
                 b));
             return ss::make_exception_future<ss::stop_iteration>(ptr);
         }
+
+        vassert(
+          b.base_offset() <= _max_offset,
+          "[{}] - Violated max offset limit in reader. Limit: {}, batch "
+          "base "
+          "offset: {}",
+          _log.config().ntp(),
+          _max_offset,
+          b.base_offset());
+
+        vassert(
+          b.last_offset() >= _min_offset,
+          "[{}] - Violated min offset limit in reader. Limit: {}, batch "
+          "base "
+          "offset: {}",
+          _log.config().ntp(),
+          _min_offset,
+          b.last_offset());
+
+        _read_batches++;
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
     }
-    void end_of_stream() {}
+    void end_of_stream() {
+        vlog(
+          fuzzlogger.info,
+          "[{}] - Read {} batches from: {}",
+          _log.config().ntp(),
+          _read_batches,
+          _log);
+
+        vassert(
+          _expect_empty || _read_batches > 0,
+          "[{}] - Reader is expected to consume some batches in range: "
+          "[{},{}] - {}",
+          _log.config().ntp(),
+          _min_offset,
+          _max_offset,
+          _log);
+    }
+
+private:
+    model::offset _min_offset;
+    model::offset _max_offset;
+    bool _expect_empty;
+    storage::log _log;
+    int64_t _read_batches{0};
 };
 
 struct read_op final : opfuzz::op {
@@ -370,15 +424,22 @@ struct read_op final : opfuzz::op {
         auto lstats = ctx.log->offsets();
         model::offset start = lstats.start_offset;
         model::offset end{0};
-        if (lstats.dirty_offset > start) {
+        bool empty_log = lstats.dirty_offset < lstats.start_offset
+                         || lstats.dirty_offset < model::offset(0);
+
+        if (!empty_log) {
+            // random start point
             start = model::offset(
               random_generators::get_int<model::offset::type>(
                 start(), lstats.dirty_offset()));
-        }
-        if (start > end) {
+            // random end point
             end = model::offset(random_generators::get_int<model::offset::type>(
               start(), lstats.dirty_offset));
+        } else {
+            start = lstats.start_offset;
+            end = lstats.start_offset;
         }
+
         storage::log_reader_config cfg(
           start, end, ss::default_priority_class());
         vlog(
@@ -389,9 +450,11 @@ struct read_op final : opfuzz::op {
           end,
           *ctx.log);
         return ctx.log->make_reader(cfg).then(
-          [](model::record_batch_reader reader) {
+          [start, end, log = ctx.log, empty_log](
+            model::record_batch_reader reader) {
               return std::move(reader).consume(
-                simple_verify_consumer{}, model::no_timeout);
+                verifying_consumer(start, end, empty_log, *log),
+                model::no_timeout);
           });
     }
 };
