@@ -21,6 +21,9 @@ namespace kafka::client {
 /// If the action returns an error, it is retried with a backoff.
 /// There is an attempt to mitigate the error after the backoff and prior
 /// to the retry.
+///
+/// \param func is copied for each iteration
+/// \param errFunc is copied, but held by reference for each iteration
 template<
   typename Func,
   typename ErrFunc,
@@ -37,13 +40,13 @@ auto retry_with_mitigation(
       std::move(errFunc),
       std::exception_ptr(),
       [retries, retry_base_backoff](
-        Func& func, ErrFunc& errFunc, std::exception_ptr& eptr) {
+        const Func& func, ErrFunc& errFunc, std::exception_ptr& eptr) {
           return retry_with_backoff(
             retries,
             [&func, &errFunc, &eptr]() {
                 auto fut = ss::now();
                 if (eptr) {
-                    auto fut = errFunc(eptr).handle_exception(
+                    fut = errFunc(eptr).handle_exception(
                       [](const std::exception_ptr&) {
                           // ignore failed mitigation
                       });
