@@ -40,7 +40,11 @@ struct test_config : public config::config_store {
         "An optional int value",
         config::required::no,
         100)
-      , required_string(*this, "required_string", "Required string value")
+      , required_string(
+          *this,
+          "required_string",
+          "Required string value",
+          config::base_property::metadata{})
       , an_int64_t(
           *this, "an_int64_t", "Some other int type", config::required::no, 200)
       , an_aggregate(
@@ -49,7 +53,11 @@ struct test_config : public config::config_store {
           "Aggregate type",
           config::required::no,
           custom_aggregate{"str", 10})
-      , strings(*this, "strings", "Required strings vector")
+      , strings(
+          *this,
+          "strings",
+          "Required strings vector",
+          config::base_property::metadata{})
       , nullable_int(
           *this,
           "nullable_int",

@@ -284,19 +284,19 @@ configuration::configuration()
       *this,
       "log_cleanup_policy",
       "Default topic cleanup policy",
-      required::no,
+      {required::no, needs_restart::no},
       model::cleanup_policy_bitflags::deletion)
   , log_message_timestamp_type(
       *this,
       "log_message_timestamp_type",
       "Default topic messages timestamp type",
-      required::no,
+      {required::no, needs_restart::no},
       model::timestamp_type::create_time)
   , log_compression_type(
       *this,
       "log_compression_type",
       "Default topic compression type",
-      required::no,
+      {required::no, needs_restart::no},
       model::compression::producer)
   , fetch_max_bytes(
       *this,

@@ -47,6 +47,9 @@ public:
     // Shadow indexing/S3 cache location
     property<std::optional<ss::sstring>> cloud_storage_cache_directory;
 
+    // Feature flag for central config
+    property<bool> enable_central_config;
+
     // build pidfile path: `<data_directory>/pid.lock`
     std::filesystem::path pidfile_path() const {
         return data_directory().path / "pid.lock";

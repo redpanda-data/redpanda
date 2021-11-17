@@ -332,12 +332,20 @@ void application::hydrate_config(const po::variables_map& cfg) {
     _redpanda_enabled = config["redpanda"];
     if (_redpanda_enabled) {
         ss::smp::invoke_on_all([&config] {
-            config::shard_local_cfg().load(config);
-        }).get0();
-
-        ss::smp::invoke_on_all([&config] {
             config::node().load(config);
         }).get0();
+
+        if (config::node().enable_central_config) {
+            _config_preload = cluster::config_manager::preload().get0();
+        }
+
+        if (_config_preload.version == cluster::config_version_unset) {
+            // This node has never seen a cluster configuration message.
+            // Bootstrap configuration from local yaml file.
+            ss::smp::invoke_on_all([&config] {
+                config::shard_local_cfg().load(config);
+            }).get0();
+        }
 
         config::shard_local_cfg().for_each(config_printer("redpanda"));
         config::node().for_each(config_printer("redpanda"));
@@ -612,6 +620,7 @@ void application::wire_up_redpanda_services() {
 
     construct_single_service(
       controller,
+      std::move(_config_preload),
       _raft_connection_cache,
       partition_manager,
       shard_table,
@@ -1008,7 +1017,8 @@ void application::start_redpanda() {
             std::ref(metadata_cache),
             std::ref(controller->get_security_frontend()),
             std::ref(controller->get_api()),
-            std::ref(controller->get_members_frontend()));
+            std::ref(controller->get_members_frontend()),
+            std::ref(controller->get_config_frontend()));
           proto->register_service<cluster::metadata_dissemination_handler>(
             _scheduling_groups.cluster_sg(),
             smp_service_groups.cluster_smp_sg(),

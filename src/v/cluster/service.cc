@@ -9,6 +9,7 @@
 
 #include "cluster/service.h"
 
+#include "cluster/config_frontend.h"
 #include "cluster/controller_api.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
@@ -34,14 +35,16 @@ service::service(
   ss::sharded<metadata_cache>& cache,
   ss::sharded<security_frontend>& sf,
   ss::sharded<controller_api>& api,
-  ss::sharded<members_frontend>& members_frontend)
+  ss::sharded<members_frontend>& members_frontend,
+  ss::sharded<config_frontend>& config_frontend)
   : controller_service(sg, ssg)
   , _topics_frontend(tf)
   , _members_manager(mm)
   , _md_cache(cache)
   , _security_frontend(sf)
   , _api(api)
-  , _members_frontend(members_frontend) {}
+  , _members_frontend(members_frontend)
+  , _config_frontend(config_frontend) {}
 
 ss::future<join_reply>
 service::join(join_request&& req, rpc::streaming_context&) {
@@ -242,6 +245,20 @@ ss::future<finish_reallocation_reply> service::finish_reallocation(
     return ss::with_scheduling_group(
       get_scheduling_group(),
       [this, req]() mutable { return do_finish_reallocation(req); });
+}
+
+ss::future<config_status_reply>
+service::config_status(config_status_request&& req, rpc::streaming_context&) {
+    auto ec = co_await _config_frontend.local().set_status(
+      req.status,
+      config::shard_local_cfg().replicate_append_timeout_ms()
+        + model::timeout_clock::now());
+
+    if (ec.category() == error_category()) {
+        co_return config_status_reply{.error = errc(ec.value())};
+    } else {
+        co_return config_status_reply{.error = errc::replication_error};
+    }
 }
 
 ss::future<finish_reallocation_reply>

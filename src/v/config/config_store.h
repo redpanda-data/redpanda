@@ -22,6 +22,8 @@
 namespace config {
 class config_store {
 public:
+    bool contains(std::string_view name) { return _properties.contains(name); }
+
     base_property& get(const std::string_view& name) {
         return *_properties.at(name);
     }
@@ -104,7 +106,6 @@ inline YAML::Node to_yaml(const config_store& cfg) {
     cfg.to_json(writer);
     return YAML::Load(buf.GetString());
 }
-
 }; // namespace config
 
 namespace std {

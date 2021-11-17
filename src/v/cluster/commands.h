@@ -77,6 +77,10 @@ static constexpr int8_t decommission_node_cmd_type = 0;
 static constexpr int8_t recommission_node_cmd_type = 1;
 static constexpr int8_t finish_reallocations_cmd_type = 2;
 
+// cluster config commands
+static constexpr int8_t cluster_config_delta_cmd_type = 0;
+static constexpr int8_t cluster_config_status_cmd_type = 1;
+
 using create_topic_cmd = controller_command<
   model::topic_namespace,
   topic_configuration_assignment,
@@ -176,6 +180,19 @@ using finish_reallocations_cmd = controller_command<
   int8_t, // unused
   finish_reallocations_cmd_type,
   model::record_batch_type::node_management_cmd>;
+
+// Cluster configuration deltas
+using cluster_config_delta_cmd = controller_command<
+  config_version,
+  cluster_config_delta_cmd_data,
+  cluster_config_delta_cmd_type,
+  model::record_batch_type::cluster_config_cmd>;
+
+using cluster_config_status_cmd = controller_command<
+  model::node_id,
+  cluster_config_status_cmd_data,
+  cluster_config_status_cmd_type,
+  model::record_batch_type::cluster_config_cmd>;
 
 // typelist utils
 // clang-format off

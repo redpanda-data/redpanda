@@ -6,6 +6,14 @@ seastar_generate_swagger(
 )
 
 seastar_generate_swagger(
+  TARGET  cluster_config_swagger
+  VAR cluster_config_swagger_file
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/admin/api-doc/cluster_config.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/admin/api-doc/cluster_config.json.h
+
+)
+
+seastar_generate_swagger(
   TARGET raft_swagger
   VAR raft_swagger_file
   IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/admin/api-doc/raft.json
@@ -68,7 +76,7 @@ add_executable(redpanda
   )
 target_link_libraries(redpanda PUBLIC v::application v::raft v::kafka)
 set_property(TARGET redpanda PROPERTY POSITION_INDEPENDENT_CODE ON)
-add_dependencies(v_application config_swagger raft_swagger
+add_dependencies(v_application config_swagger cluster_config_swagger raft_swagger
     security_swagger status_swagger broker_swagger partition_swagger hbadger_swagger)
 
 if(CMAKE_BUILD_TYPE MATCHES Release)

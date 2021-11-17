@@ -18,4 +18,8 @@
 struct custom_aggregate {
     ss::sstring string_value;
     int int_value;
+
+    bool operator==(const custom_aggregate& rhs) const {
+        return string_value == rhs.string_value && int_value == rhs.int_value;
+    }
 };

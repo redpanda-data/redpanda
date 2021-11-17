@@ -30,6 +30,7 @@
 #include "model/namespace.h"
 #include "raft/types.h"
 #include "redpanda/admin/api-doc/broker.json.h"
+#include "redpanda/admin/api-doc/cluster_config.json.h"
 #include "redpanda/admin/api-doc/config.json.h"
 #include "redpanda/admin/api-doc/hbadger.json.h"
 #include "redpanda/admin/api-doc/partition.json.h"
@@ -108,6 +109,8 @@ void admin_server::configure_admin_routes() {
     rb->register_api_file(_server._routes, "header");
     rb->register_api_file(_server._routes, "config");
     rb->register_function(_server._routes, insert_comma);
+    rb->register_api_file(_server._routes, "cluster_config");
+    rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "raft");
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "kafka");
@@ -123,6 +126,7 @@ void admin_server::configure_admin_routes() {
     rb->register_api_file(_server._routes, "broker");
 
     register_config_routes();
+    register_cluster_config_routes();
     register_raft_routes();
     register_kafka_routes();
     register_security_routes();
@@ -130,6 +134,87 @@ void admin_server::configure_admin_routes() {
     register_broker_routes();
     register_partition_routes();
     register_hbadger_routes();
+}
+
+struct json_validator {
+    explicit json_validator(const std::string& schema_text)
+      : schema(make_schema_document(schema_text))
+      , validator(schema) {}
+
+    static rapidjson::SchemaDocument
+    make_schema_document(const std::string& schema) {
+        rapidjson::Document doc;
+        if (doc.Parse(schema).HasParseError()) {
+            throw std::runtime_error(
+              fmt::format("Invalid schema document: {}", schema));
+        }
+        return rapidjson::SchemaDocument(doc);
+    }
+
+    const rapidjson::SchemaDocument schema;
+    rapidjson::SchemaValidator validator;
+};
+
+static json_validator make_set_replicas_validator() {
+    const std::string schema = R"(
+{
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "node_id": {
+                "type": "number"
+            },
+            "core": {
+                "type": "number"
+            }
+        },
+        "required": [
+            "node_id",
+            "core"
+        ],
+        "additionalProperties": false
+    }
+}
+)";
+    return json_validator(schema);
+}
+
+/**
+ * A helper around rapidjson's Parse that checks for errors & raises
+ * seastar HTTP exception.  Without that check, something as simple
+ * as an empty request body causes a redpanda crash via a rapidjson
+ * assertion when trying to GetObject on the resulting document.
+ */
+static rapidjson::Document parse_json_body(ss::httpd::request const& req) {
+    rapidjson::Document doc;
+    doc.Parse(req.content.data());
+    if (doc.Parse(req.content.data()).HasParseError()) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("JSON parse error: {}", doc.GetParseError()));
+    } else {
+        return doc;
+    }
+}
+
+/**
+ * A helper to apply a schema validator to a request and on error,
+ * string-ize any schema errors in the 400 response to help
+ * caller see what went wrong.
+ */
+static void
+apply_validator(json_validator& validator, rapidjson::Document const& doc) {
+    validator.validator.Reset();
+    validator.validator.ResetError();
+
+    if (!doc.Accept(validator.validator)) {
+        rapidjson::StringBuffer val_buf;
+        rapidjson::Writer<rapidjson::StringBuffer> w{val_buf};
+        validator.validator.GetError().Accept(w);
+        auto s = ss::sstring{val_buf.GetString(), val_buf.GetSize()};
+        throw ss::httpd::bad_request_exception(
+          fmt::format("JSON request body does not conform to schema: {}", s));
+    }
 }
 
 void admin_server::configure_dashboard() {
@@ -434,6 +519,124 @@ void admin_server::register_config_routes() {
       });
 }
 
+static json_validator make_cluster_config_validator() {
+    const std::string schema = R"(
+{
+    "type": "object",
+    "properties": {
+        "upsert": {
+            "type": "object"
+        },
+        "remove": {
+            "type": "array",
+            "items": "string"
+        }
+    },
+    "additionalProperties": false,
+    "required": ["upsert", "remove"]
+}
+)";
+    return json_validator(schema);
+}
+
+void admin_server::register_cluster_config_routes() {
+    static thread_local auto cluster_config_validator(
+      make_cluster_config_validator());
+
+    ss::httpd::cluster_config_json::get_cluster_config_status.set(
+      _server._routes,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          std::vector<ss::httpd::cluster_config_json::cluster_config_status>
+            res;
+
+          auto& cfg = _controller->get_config_manager();
+          auto statuses = co_await cfg.invoke_on(
+            cluster::controller_stm_shard,
+            [](cluster::config_manager& manager) {
+                // Intentional copy, do not want to pass reference to mutable
+                // status map back to originating core.
+                return cluster::config_manager::status_map(
+                  manager.get_status());
+            });
+
+          for (const auto& s : statuses) {
+              vlog(logger.trace, "status: {}", s.second);
+              auto& rs = res.emplace_back();
+              rs.node_id = s.first;
+              rs.restart = s.second.restart;
+              rs.version = s.second.version;
+
+              // Workaround: seastar json_list hides empty lists by
+              // default.  This complicates API clients, so always push
+              // in a dummy element to get _set=true on json_list (this
+              // is then cleared in the subsequent operator=).
+              rs.invalid.push(ss::sstring("hack"));
+              rs.unknown.push(ss::sstring("hack"));
+
+              rs.invalid = s.second.invalid;
+              rs.unknown = s.second.unknown;
+          }
+
+          co_return ss::json::json_return_type(std::move(res));
+      });
+
+    ss::httpd::cluster_config_json::patch_cluster_config.set(
+      _server._routes,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          if (!config::node().enable_central_config) {
+              throw ss::httpd::bad_request_exception(
+                "Requires enable_central_config=True in node configuration");
+          }
+
+          auto doc = parse_json_body(*req);
+          apply_validator(cluster_config_validator, doc);
+
+          cluster::config_update update;
+
+          // Deserialize removes
+          const auto& json_remove = doc["remove"];
+          for (const auto& v : json_remove.GetArray()) {
+              update.remove.push_back(v.GetString());
+          }
+
+          // Deserialize upserts
+          const auto& json_upsert = doc["upsert"];
+          for (const auto& i : json_upsert.GetObject()) {
+              // Re-serialize the individual value.  Our on-disk format
+              // for property values is a YAML value (JSON is a subset
+              // of YAML, so encoding with JSON is fine)
+              rapidjson::StringBuffer val_buf;
+              rapidjson::Writer<rapidjson::StringBuffer> w{val_buf};
+              i.value.Accept(w);
+              auto s = ss::sstring{val_buf.GetString(), val_buf.GetSize()};
+              update.upsert.push_back({i.name.GetString(), s});
+          }
+
+          vlog(
+            logger.trace,
+            "patch_cluster_config: {} upserts, {} removes",
+            update.upsert.size(),
+            update.remove.size());
+
+          auto err = co_await _controller->get_config_frontend().invoke_on(
+            cluster::config_frontend::version_shard,
+            [update](cluster::config_frontend& fe) mutable
+            -> ss::future<std::error_code> {
+                return fe.patch(update, model::timeout_clock::now() + 5s);
+            });
+
+          co_await throw_on_error(*req, err, model::controller_ntp);
+
+          ss::httpd::cluster_config_json::cluster_config_write_result result;
+          result.version = co_await _controller->get_config_manager().invoke_on(
+            cluster::controller_stm_shard,
+            [](cluster::config_manager& mgr) { return mgr.get_version(); });
+          co_return ss::json::json_return_type(std::move(result));
+      });
+}
+
 void admin_server::register_raft_routes() {
     ss::httpd::raft_json::raft_transfer_leadership.set(
       _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
@@ -541,8 +744,7 @@ void admin_server::register_security_routes() {
       _server._routes,
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
-          rapidjson::Document doc;
-          doc.Parse(req->content.data());
+          auto doc = parse_json_body(*req);
 
           auto credential = parse_scram_credential(doc);
 
@@ -582,8 +784,7 @@ void admin_server::register_security_routes() {
         -> ss::future<ss::json::json_return_type> {
           auto user = security::credential_user(req->param["user"]);
 
-          rapidjson::Document doc;
-          doc.Parse(req->content.data());
+          auto doc = parse_json_body(*req);
 
           auto credential = parse_scram_credential(doc);
 
@@ -759,50 +960,6 @@ void admin_server::register_broker_routes() {
       });
 }
 
-struct json_validator {
-    explicit json_validator(const std::string& schema_text)
-      : schema(make_schema_document(schema_text))
-      , validator(schema) {}
-
-    static rapidjson::SchemaDocument
-    make_schema_document(const std::string& schema) {
-        rapidjson::Document doc;
-        if (doc.Parse(schema).HasParseError()) {
-            throw std::runtime_error(
-              fmt::format("Invalid schema document: {}", schema));
-        }
-        return rapidjson::SchemaDocument(doc);
-    }
-
-    const rapidjson::SchemaDocument schema;
-    rapidjson::SchemaValidator validator;
-};
-
-static json_validator make_set_replicas_validator() {
-    const std::string schema = R"(
-{
-    "type": "array",
-    "items": {
-        "type": "object",
-        "properties": {
-            "node_id": {
-                "type": "number"
-            },
-            "core": {
-                "type": "number"
-            }
-        },
-        "required": [
-            "node_id",
-            "core"
-        ],
-        "additionalProperties": false
-    }
-}
-)";
-    return json_validator(schema);
-}
-
 void admin_server::register_partition_routes() {
     /*
      * Get a list of partition summaries.
@@ -969,17 +1126,8 @@ void admin_server::register_partition_routes() {
                 fmt::format("Unsupported namespace: {}", ns));
           }
 
-          rapidjson::Document doc;
-          if (doc.Parse(req->content.data()).HasParseError()) {
-              throw ss::httpd::bad_request_exception(
-                "Could not replica set json");
-          }
-
-          set_replicas_validator.validator.Reset();
-          if (!doc.Accept(set_replicas_validator.validator)) {
-              throw ss::httpd::bad_request_exception(
-                "Replica set json is invalid");
-          }
+          auto doc = parse_json_body(*req);
+          apply_validator(set_replicas_validator, doc);
 
           std::vector<model::broker_shard> replicas;
           if (!doc.IsArray()) {
