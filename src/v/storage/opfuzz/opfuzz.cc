@@ -115,7 +115,8 @@ struct append_op final : opfuzz::op {
         auto batches = storage::test::make_random_batches(model::offset(0), 10);
         vlog(
           fuzzlogger.info,
-          "Appending: {} batches. {}-{}",
+          "[{}] - Appending: {} batches. {}-{}",
+          ctx.log->config().ntp(),
           batches.size(),
           batches.front().base_offset(),
           batches.back().last_offset());
@@ -139,17 +140,18 @@ struct append_op_foreign final : opfuzz::op {
         auto source_core = random_generators::get_int(ss::smp::count - 1);
         return ss::smp::submit_to(
                  source_core,
-                 [term = *ctx.term] {
+                 [ctx] {
                      auto batches = storage::test::make_random_batches(
                        model::offset(0), 10);
                      vlog(
                        fuzzlogger.info,
-                       "Foreign appending: {} batches. {}-{}",
+                       "[{}] - Foreign appending: {} batches. {}-{}",
+                       ctx.log->config().ntp(),
                        batches.size(),
                        batches.front().base_offset(),
                        batches.back().last_offset());
                      for (auto& b : batches) {
-                         b.set_term(term);
+                         b.set_term(*ctx.term);
                      }
                      auto cnt = record_count(batches);
                      return std::pair<model::record_batch_reader, size_t>(
@@ -187,7 +189,8 @@ struct append_multi_term_op final : opfuzz::op {
         const size_t mid = batches.size() / 2;
         vlog(
           fuzzlogger.info,
-          "Appending multi-term: {} - middle:{} - batches. {}-{}",
+          "[{}] - Appending multi-term: {} - middle:{} - batches. {}-{}",
+          ctx.log->config().ntp(),
           batches.size(),
           mid,
           batches.front().base_offset(),
@@ -230,20 +233,33 @@ struct truncate_op final : opfuzz::op {
           lstats.start_offset,
           lstats.dirty_offset,
           ss::default_priority_class());
-        vlog(fuzzlogger.info, "collect base offsets {} - {}", cfg, *ctx.log);
+        vlog(
+          fuzzlogger.info,
+          "[{}] - collect base offsets {} - {}",
+          ctx.log->config().ntp(),
+          cfg,
+          *ctx.log);
         return ctx.log->make_reader(cfg)
           .then([](model::record_batch_reader reader) {
               return std::move(reader).consume(
                 collect_base_offsets{}, model::no_timeout);
           })
           .then([ctx](std::vector<model::offset> ofs) {
-              vlog(fuzzlogger.info, "base offsets collected: {}", ofs);
+              vlog(
+                fuzzlogger.info,
+                "[{}] - base offsets collected: {}",
+                ctx.log->config().ntp(),
+                ofs);
               model::offset to{0};
               if (!ofs.empty()) {
                   to = ofs[random_generators::get_int<size_t>(
                     0, ofs.size() - 1)];
               }
-              vlog(fuzzlogger.info, "Truncating log at suffix offset: {}", to);
+              vlog(
+                fuzzlogger.info,
+                "[{}] - Truncating log at suffix offset: {}",
+                ctx.log->config().ntp(),
+                to);
               return ctx.log
                 ->truncate(
                   storage::truncate_config(to, ss::default_priority_class()))
@@ -298,7 +314,8 @@ struct truncate_prefix_op final : opfuzz::op {
           ss::default_priority_class());
         vlog(
           fuzzlogger.info,
-          "collect header::max_offsets {} - {}",
+          "[{}] - collect header::max_offsets {} - {}",
+          ctx.log->config().ntp(),
           cfg,
           *ctx.log);
         return ctx.log->make_reader(cfg)
@@ -307,21 +324,40 @@ struct truncate_prefix_op final : opfuzz::op {
                 collect_max_offsets{}, model::no_timeout);
           })
           .then([ctx](std::vector<model::offset> ofs) {
-              vlog(fuzzlogger.info, "max offsets collected: {}", ofs);
+              vlog(
+                fuzzlogger.info,
+                "[{}] - max offsets collected: {}",
+                ctx.log->config().ntp(),
+                ofs);
               model::offset to{0};
               if (!ofs.empty()) {
                   to = ofs[random_generators::get_int<size_t>(
                     0, ofs.size() - 1)];
                   to++;
               }
-              vlog(fuzzlogger.info, "Truncating log at prefix offset: {}", to);
+              vlog(
+                fuzzlogger.info,
+                "[{}] - Truncating log at prefix offset: {}",
+                ctx.log->config().ntp(),
+                to);
               return ctx.log->truncate_prefix(storage::truncate_prefix_config(
                 to, ss::default_priority_class()));
           });
     }
 };
 
-struct simple_verify_consumer {
+class verifying_consumer {
+public:
+    verifying_consumer(
+      model::offset min_offset,
+      model::offset max_offset,
+      bool expect_empty,
+      storage::log log)
+      : _min_offset(min_offset)
+      , _max_offset(max_offset)
+      , _expect_empty(expect_empty)
+      , _log(std::move(log)) {}
+
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
         if (auto crc = model::crc_record_batch(b); b.header().crc != crc) {
             auto ptr = ss::make_backtraced_exception_ptr<std::runtime_error>(
@@ -332,10 +368,53 @@ struct simple_verify_consumer {
                 b));
             return ss::make_exception_future<ss::stop_iteration>(ptr);
         }
+
+        vassert(
+          b.base_offset() <= _max_offset,
+          "[{}] - Violated max offset limit in reader. Limit: {}, batch "
+          "base "
+          "offset: {}",
+          _log.config().ntp(),
+          _max_offset,
+          b.base_offset());
+
+        vassert(
+          b.last_offset() >= _min_offset,
+          "[{}] - Violated min offset limit in reader. Limit: {}, batch "
+          "base "
+          "offset: {}",
+          _log.config().ntp(),
+          _min_offset,
+          b.last_offset());
+
+        _read_batches++;
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
     }
-    void end_of_stream() {}
+    void end_of_stream() {
+        vlog(
+          fuzzlogger.info,
+          "[{}] - Read {} batches from: {}",
+          _log.config().ntp(),
+          _read_batches,
+          _log);
+
+        vassert(
+          _expect_empty || _read_batches > 0,
+          "[{}] - Reader is expected to consume some batches in range: "
+          "[{},{}] - {}",
+          _log.config().ntp(),
+          _min_offset,
+          _max_offset,
+          _log);
+    }
+
+private:
+    model::offset _min_offset;
+    model::offset _max_offset;
+    bool _expect_empty;
+    storage::log _log;
+    int64_t _read_batches{0};
 };
 
 struct read_op final : opfuzz::op {
@@ -345,22 +424,37 @@ struct read_op final : opfuzz::op {
         auto lstats = ctx.log->offsets();
         model::offset start = lstats.start_offset;
         model::offset end{0};
-        if (lstats.dirty_offset > start) {
+        bool empty_log = lstats.dirty_offset < lstats.start_offset
+                         || lstats.dirty_offset < model::offset(0);
+
+        if (!empty_log) {
+            // random start point
             start = model::offset(
               random_generators::get_int<model::offset::type>(
                 start(), lstats.dirty_offset()));
-        }
-        if (start > end) {
+            // random end point
             end = model::offset(random_generators::get_int<model::offset::type>(
               start(), lstats.dirty_offset));
+        } else {
+            start = lstats.start_offset;
+            end = lstats.start_offset;
         }
+
         storage::log_reader_config cfg(
           start, end, ss::default_priority_class());
-        vlog(fuzzlogger.info, "Read [{},{}] - {}", start, end, *ctx.log);
+        vlog(
+          fuzzlogger.info,
+          "[{}] - Read [{},{}] - {}",
+          ctx.log->config().ntp(),
+          start,
+          end,
+          *ctx.log);
         return ctx.log->make_reader(cfg).then(
-          [](model::record_batch_reader reader) {
+          [start, end, log = ctx.log, empty_log](
+            model::record_batch_reader reader) {
               return std::move(reader).consume(
-                simple_verify_consumer{}, model::no_timeout);
+                verifying_consumer(start, end, empty_log, *log),
+                model::no_timeout);
           });
     }
 };
@@ -386,11 +480,12 @@ struct remove_all_compacted_indices_op final : opfuzz::op {
     const char* name() const final { return "remove_all_compacted_indices_op"; }
     ss::future<> invoke(opfuzz::op_context ctx) final {
         ss::sstring dir = ctx.log->config().work_directory();
-        return directory_walker::walk(dir, [dir](ss::directory_entry de) {
+        return directory_walker::walk(dir, [ctx, dir](ss::directory_entry de) {
             if (boost::algorithm::ends_with(de.name, ".compaction_index")) {
                 vlog(
                   fuzzlogger.info,
-                  "[COMPACTION_INDEX] removing: {}/{}",
+                  "[{}] - [COMPACTION_INDEX] removing: {}/{}",
+                  ctx.log->config().ntp(),
                   dir,
                   de.name);
                 return ss::remove_file(fmt::format("{}/{}", dir, de.name));
@@ -416,7 +511,12 @@ struct compact_op final : opfuzz::op {
             cfg.eviction_time = model::timestamp::now();
             cfg.max_bytes = 10_MiB;
         }
-        vlog(fuzzlogger.info, "COMPACT: {} - {}", cfg, *ctx.log);
+        vlog(
+          fuzzlogger.info,
+          "[{}] - COMPACT: {} - {}",
+          ctx.log->config().ntp(),
+          cfg,
+          *ctx.log);
         return ctx.log->compact(cfg);
     }
 };
