@@ -18,6 +18,7 @@ from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
+from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
 BOOTSTRAP_CONFIG = {
@@ -222,13 +223,41 @@ class ClusterConfigTest(RedpandaTest):
                                               norestart_new_setting[1])
 
     @cluster(num_nodes=3)
-    def test_invalid_settings(self):
+    @parametrize(key='log_message_timestamp_type', value="rhubarb")
+    @parametrize(key='log_message_timestamp_type', value="31415")
+    @parametrize(key='log_message_timestamp_type', value="false")
+    @parametrize(key='kafka_qdc_enable', value="rhubarb")
+    @parametrize(key='kafka_qdc_enable', value="31415")
+    @parametrize(key='metadata_dissemination_retries', value="rhubarb")
+    @parametrize(key='metadata_dissemination_retries', value="false")
+    @parametrize(key='it_does_not_exist', value="123")
+    def test_invalid_settings(self, key, value):
+        """
+        Test that without force=true, attempts to set invalid property
+        values are rejected with a 400 status.
+        """
+        try:
+            patch_result = self.admin.patch_cluster_config(upsert={key: value})
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code != 400:
+                raise
+        else:
+            raise RuntimeError(
+                f"Expected 400 but got {patch_result} for {key}={value})")
+
+    @cluster(num_nodes=3)
+    def test_invalid_settings_forced(self):
+        """
+        Test that if a value makes it past the frontend API validation, it is caught
+        at the point of apply on each node, and fed back in the config_status.
+        """
         default_value = "CreateTime"
         invalid_setting = ('log_message_timestamp_type', "rhubarb")
         assert self.admin.get_cluster_config()[
             invalid_setting[0]] == default_value
-        patch_result = self.admin.patch_cluster_config(
-            upsert=dict([invalid_setting]))
+        patch_result = self.admin.patch_cluster_config(upsert=dict(
+            [invalid_setting]),
+                                                       force=True)
         new_version = patch_result['config_version']
         self._wait_for_version_sync(new_version)
 
@@ -256,7 +285,7 @@ class ClusterConfigTest(RedpandaTest):
 
         # Reset the properties, check that it disappears from the list of invalid settings
         patch_result = self.admin.patch_cluster_config(
-            remove=[invalid_setting[0]])
+            remove=[invalid_setting[0]], force=True)
         self._wait_for_version_sync(patch_result['config_version'])
         assert self.admin.get_cluster_config()[
             invalid_setting[0]] == default_value
@@ -265,12 +294,6 @@ class ClusterConfigTest(RedpandaTest):
         for n in status:
             assert n['restart'] is False
             assert n['invalid'] == []
-
-        # TODO once API frontend does validation, this test will need a force
-        # flag to the API to get the invalid value past the frontend and
-        # to the nodes where it will show up in status.  That force flag
-        # will also be important IRL if we want to enable e.g. pre-setting a config
-        # for a future redpanda version before installing the new version.
 
         # TODO as well as specific invalid examples, do a pass across the whole
         # schema to check that
@@ -303,12 +326,6 @@ class ClusterConfigTest(RedpandaTest):
             else:
                 # Should not succeed!
                 assert False
-
-    @cluster(num_nodes=3)
-    def test_valid_settings(self):
-        # TODO
-
-        pass
 
     @cluster(num_nodes=3)
     def test_valid_settings(self):
