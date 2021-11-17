@@ -36,7 +36,7 @@ void wait_for_even_replicas_distribution(
   const cluster::metadata_cache& cache) {
     static ss::logger logger("test-log");
     tests::cooperative_spin_wait_with_timeout(
-      30s,
+      60s,
       [&cache, added_node, min_expected, max_expected] {
           auto per_node = calculate_replicas_per_node(cache);
           for (auto& [id, count] : per_node) {
