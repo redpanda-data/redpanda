@@ -331,12 +331,16 @@ class RedpandaService(Service):
         if node in self._started:
             self._started.remove(node)
 
-    def clean_node(self, node):
+    def clean_node(self, node, preserve_logs=False):
         node.account.kill_process("redpanda", clean_shutdown=False)
         if node.account.exists(RedpandaService.PERSISTENT_ROOT):
             if node.account.sftp_client.listdir(
                     RedpandaService.PERSISTENT_ROOT):
-                node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/*")
+                if not preserve_logs:
+                    node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/*")
+                else:
+                    node.account.remove(
+                        f"{RedpandaService.PERSISTENT_ROOT}/data/*")
         if node.account.exists(RedpandaService.CONFIG_FILE):
             node.account.remove(f"{RedpandaService.CONFIG_FILE}")
 
