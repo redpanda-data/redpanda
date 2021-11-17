@@ -160,7 +160,7 @@ public:
           [this, ntp, &replica_set]() mutable {
               return std::all_of(
                 nodes.cbegin(),
-                nodes.cbegin(),
+                nodes.cend(),
                 [this, ntp = std::move(ntp), &replica_set](
                   model::node_id nid) mutable {
                     auto app = get_node_application(nid);
