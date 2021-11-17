@@ -25,7 +25,7 @@ With a 1-node cluster you can test out a simple implementation of Redpanda.
 
 **_Notes_**:
 
-- `--overprovisioned` is used to accommodate  docker resource limitations.
+- `--overprovisioned` is used to accommodate docker resource limitations.
 - `--pull=always` makes sure that you are always working with the latest version.
 
 ```bash
