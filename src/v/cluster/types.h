@@ -347,9 +347,11 @@ struct property_update<tristate<T>> {
 };
 
 struct incremental_topic_updates {
-    // negative version indicating new format (with included data_policy
-    // property)
-    static constexpr int8_t version = -1;
+    static constexpr int8_t version_with_data_policy = -1;
+    // negative version indicating different format:
+    // -1 - topic_updates with data_policy
+    // -2 - topic_updates without data_policy
+    static constexpr int8_t version = -2;
     property_update<std::optional<model::compression>> compression;
     property_update<std::optional<model::cleanup_policy_bitflags>>
       cleanup_policy_bitflags;
@@ -359,10 +361,6 @@ struct incremental_topic_updates {
     property_update<std::optional<size_t>> segment_size;
     property_update<tristate<size_t>> retention_bytes;
     property_update<tristate<std::chrono::milliseconds>> retention_duration;
-
-    // Data-policy property is replicated by data_policy_frontend and handled by
-    // data_policy_manager.
-    property_update<std::optional<v8_engine::data_policy>> data_policy;
 
     friend bool operator==(
       const incremental_topic_updates&, const incremental_topic_updates&)

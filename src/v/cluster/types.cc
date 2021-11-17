@@ -934,8 +934,7 @@ void adl<cluster::incremental_topic_updates>::to(
       t.timestamp_type,
       t.segment_size,
       t.retention_bytes,
-      t.retention_duration,
-      t.data_policy);
+      t.retention_duration);
 }
 
 cluster::incremental_topic_updates
@@ -954,7 +953,7 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
         // Consume version from stream
         in.skip(1);
         vassert(
-          version == cluster::incremental_topic_updates::version,
+          version >= cluster::incremental_topic_updates::version,
           "topic_configuration version {} is not supported",
           version);
     } else {
@@ -983,11 +982,13 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
       = adl<cluster::property_update<tristate<std::chrono::milliseconds>>>{}
           .from(in);
 
-    if (version < 0) {
-        updates.data_policy
-          = adl<
-              cluster::property_update<std::optional<v8_engine::data_policy>>>{}
-              .from(in);
+    if (
+      version == cluster::incremental_topic_updates::version_with_data_policy) {
+        // data_policy property from update_topic_properties_cmd is never used.
+        // data_policy_frontend replicates this property and store it to
+        // create_data_policy_cmd_data, data_policy_manager handles it
+        adl<cluster::property_update<std::optional<v8_engine::data_policy>>>{}
+          .from(in);
     }
     return updates;
 }
