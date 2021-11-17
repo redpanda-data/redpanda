@@ -49,7 +49,9 @@ namespace cluster {
 class topic_updates_dispatcher {
 public:
     topic_updates_dispatcher(
-      ss::sharded<partition_allocator>&, ss::sharded<topic_table>&);
+      ss::sharded<partition_allocator>&,
+      ss::sharded<topic_table>&,
+      ss::sharded<partition_leaders_table>&);
 
     ss::future<std::error_code> apply_update(model::record_batch);
 
@@ -71,6 +73,9 @@ private:
     template<typename Cmd>
     ss::future<std::error_code> dispatch_updates_to_cores(Cmd, model::offset);
 
+    using ntp_leader = std::pair<model::ntp, model::node_id>;
+
+    ss::future<> update_leaders_with_estimates(std::vector<ntp_leader> leaders);
     void update_allocations(const create_topic_cmd&);
     void update_allocations(const create_partition_cmd&);
     void deallocate_topic(const model::topic_metadata&);
@@ -80,6 +85,7 @@ private:
 
     ss::sharded<partition_allocator>& _partition_allocator;
     ss::sharded<topic_table>& _topic_table;
+    ss::sharded<partition_leaders_table>& _partition_leaders_table;
 };
 
 } // namespace cluster
