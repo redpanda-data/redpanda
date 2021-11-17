@@ -41,7 +41,7 @@ class BacktraceCapture(threading.Thread):
     """
 
     BACKTRACE_START = re.compile(
-        "(^Backtrace:|.+Sanitizer.*|.+Backtrace below:$|^Direct leak.+|^Indirect leak.+)"
+        "(^Backtrace:|.+Sanitizer.*|.+Backtrace below:$|^Direct leak.+|^Indirect leak.+|^READ of size.*|^0x.+ is located.+|^previously allocated by.+|^Thread.+created by.+)"
     )
     BACKTRACE_BODY = re.compile("^(  |==|0x)")
 
