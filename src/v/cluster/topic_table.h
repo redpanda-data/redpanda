@@ -14,6 +14,7 @@
 #include "cluster/commands.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
+#include "model/limits.h"
 #include "utils/expiring_promise.h"
 
 #include <absl/container/flat_hash_map.h>
@@ -109,7 +110,12 @@ public:
     ss::future<> stop();
 
     /// Delta API
-
+    /// NOTE: This API should only be consumed by a single entity, unless
+    /// careful consideration is taken. This is because once notifications are
+    /// fired, all events are consumed, and if both waiters aren't enqueued in
+    /// the \ref _waiters collection by the time the notify occurs, only one
+    /// waiter will recieve the updates, leaving the second one to observe
+    /// skipped events upon recieving its subsequent notification.
     ss::future<std::vector<delta>> wait_for_changes(ss::abort_source&);
 
     bool has_pending_changes() const { return !_pending_deltas.empty(); }
@@ -181,5 +187,7 @@ private:
     std::vector<std::pair<cluster::notification_id_type, delta_cb_t>>
       _notifications;
     uint64_t _waiter_id{0};
+    model::offset _last_consumed_by_notifier{
+      model::model_limits<model::offset>::min()};
 };
 } // namespace cluster
