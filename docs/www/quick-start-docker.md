@@ -25,7 +25,7 @@ With a 1-node cluster you can test out a simple implementation of Redpanda.
 
 **_Notes_**:
 
-- `--overprovisioned` is used to accomodate docker resource limitations.
+- `--overprovisioned` is used to accommodate docker resource limitations.
 - `--pull=always` makes sure that you are always working with the latest version.
 
 ```bash
@@ -209,7 +209,7 @@ Here are some sample commands to produce and consume streams:
     rpk topic produce twitch_chat --brokers=localhost:9092
     ```
 
-    Type text into the topic and press Ctrl + D to seperate between messages.
+    Type text into the topic and press Ctrl + D to separate between messages.
 
     Press Ctrl + C to exit the produce command.
 
@@ -235,7 +235,8 @@ You've just installed Redpanda and done streaming in a few easy steps.
 
 ## Clean Up
 
-When you are finished with the cluster, you can shutdown and delete the containers with:
+When you are finished with the cluster, you can shutdown and delete the containers.
+Change the commands below accordingly if you used the 1-cluster option, or the 3-cluster option.
 
 ```bash
 docker stop redpanda-1 redpanda-2 redpanda-3 && \

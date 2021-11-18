@@ -12,7 +12,7 @@ is not the same to run software on 4 VCPUs than it is to run on an EC2 i3.metal
 with 96 physical cores. Often,when trying to scale rapidly to meet demands,
 product teams will not have the time to measure IO throughput and latency before
 starting every new instance (via `rpk iotune`) and instead need resources right
-now. To meet this demand,, redpanda will attempt to predict the best known
+now. To meet this demand, redpanda will attempt to predict the best known
 settings for VM cloud types.
 
 We still encourage users to run `rpk iotune` for production workloads, but we’ll
