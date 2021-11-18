@@ -73,6 +73,9 @@ public:
     ss::future<std::vector<schema_version>>
     get_versions(const subject& sub, include_deleted inc_del);
 
+    ///\brief Return whether there are any references to a subject version.
+    ss::future<bool> is_referenced(const subject& sub, schema_version ver);
+
     ///\brief Delete a subject.
     ss::future<std::vector<schema_version>> delete_subject(
       seq_marker marker, const subject& sub, permanent_delete permanent);

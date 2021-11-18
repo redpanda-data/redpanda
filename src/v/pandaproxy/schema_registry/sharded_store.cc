@@ -28,6 +28,8 @@
 #include <seastar/core/smp.hh>
 #include <seastar/core/std-coroutine.hh>
 
+#include <functional>
+
 namespace pandaproxy::schema_registry {
 
 namespace {
@@ -274,6 +276,12 @@ sharded_store::get_versions(const subject& sub, include_deleted inc_del) {
     auto versions = co_await _store.invoke_on(
       shard_for(sub), _smp_opts, &store::get_versions, sub, inc_del);
     co_return std::move(versions).value();
+}
+
+ss::future<bool>
+sharded_store::is_referenced(const subject& sub, schema_version ver) {
+    auto map = [&sub, ver](store& s) { return s.is_referenced(sub, ver); };
+    co_return co_await _store.map_reduce0(map, false, std::logical_or<>{});
 }
 
 ss::future<std::vector<schema_version>> sharded_store::delete_subject(

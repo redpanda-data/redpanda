@@ -293,6 +293,23 @@ public:
         return sub_it->second.versions;
     }
 
+    bool is_referenced(const subject& sub, schema_version ver) {
+        return std::any_of(
+          _subjects.begin(), _subjects.end(), [&sub, ver](const auto& s) {
+              return std::any_of(
+                s.second.versions.begin(),
+                s.second.versions.end(),
+                [&sub, ver](const auto& v) {
+                    return std::any_of(
+                      v.refs.begin(),
+                      v.refs.end(),
+                      [&sub, ver](const auto& ref) {
+                          return ref.sub == sub && ref.version == ver;
+                      });
+                });
+          });
+    }
+
     ///\brief Delete a subject.
     result<std::vector<schema_version>> delete_subject(
       seq_marker marker, const subject& sub, permanent_delete permanent) {
