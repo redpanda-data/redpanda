@@ -3,14 +3,14 @@ title: RPK commands
 order: 7
 ---
 
-# What is RPK?
-RPK is a CLI tool that Vectorized created to help you better manage RedPanda.   
-You can interact directly with RedPanda like [tuning for performance](#redpanda-tune), or you can [create and read topics](#topic) from the CLI.   
-If you're on Docker, you can find additional info here: [RPK container](https://vectorized.io/docs/guide-rpk-container/)   
-Check what else you can do below.
-
-
 # RPK commands
+
+## What is RPK?
+`rpk` is a CLI utility that helps you manage Redpanda.   
+You can use `rpk` commands to manage Redpanda, for example to [tune for performance](#redpanda-tune), or to manage topics, for example to [create and read topics](#topic) from the CLI.
+`rpk` can even spin up a Docker container for you to get running with Redpanda easily with [`rpk container`](https://vectorized.io/docs/guide-rpk-container/).
+
+Here are all of the `rpk` commands.
 
 Commands marked with ![Linux][linux] are available on Linux operating systems.
 Commands marked with ![MacOS][mac] are available on Mac operating systems.
