@@ -58,6 +58,8 @@ struct reply_error_category final : std::error_category {
             return "Invalid schema version";
         case reply_error_code::compatibility_level_invalid:
             return "Invalid compatibility level";
+        case reply_error_code::subject_version_has_references:
+            return "One or more references exist to the schema";
         case reply_error_code::write_collision:
             return "write_collision";
         case reply_error_code::zookeeper_error:
