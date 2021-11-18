@@ -167,7 +167,7 @@ public:
         {{method.name}} = 1 << {{loop.index}}{{ "," if not loop.last }}
     {%- endfor %}
     };
-    type method_for_point(std::string_view point) const final {
+    type point_to_bit(std::string_view point) const final {
         return string_switch<type>(point)
         {%- for method in methods %}
           .match("{{method.name}}", static_cast<type>(methods::{{method.name}}))

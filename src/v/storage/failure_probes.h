@@ -36,7 +36,7 @@ public:
         truncate_prefix = 4
     };
 
-    type method_for_point(std::string_view point) const final {
+    type point_to_bit(std::string_view point) const final {
         return string_switch<type>(point)
           .match("append", static_cast<type>(methods::append))
           .match("roll", static_cast<type>(methods::roll))
@@ -110,7 +110,7 @@ public:
     parser_failure_probes(parser_failure_probes&&) = default;
     parser_failure_probes& operator=(parser_failure_probes&&) = default;
 
-    type method_for_point(std::string_view point) const final {
+    type point_to_bit(std::string_view point) const final {
         return point == "consume" ? static_cast<type>(methods::consume) : 0;
     }
 

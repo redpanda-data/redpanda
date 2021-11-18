@@ -17,19 +17,18 @@ namespace finjector {
 
 ss::logger log{"fault_injector"};
 
-void honey_badger::register_probe(std::string_view view, probe* p) {
+void honey_badger::register_probe(std::string_view module, probe* p) {
     if (p && p->is_enabled()) {
-        vlog(log.trace, "Probe registration: {}", view);
-        _probes.insert({std::string_view(view), p});
+        vlog(log.trace, "Probe registration: {}", module);
+        _probes.insert({std::string_view(module), p});
     } else {
-        vlog(log.debug, "Invalid probe: {}", view);
+        vlog(log.debug, "Invalid probe: {}", module);
     }
 }
-void honey_badger::deregister_probe(std::string_view view) {
-    std::string_view module(view);
+void honey_badger::deregister_probe(std::string_view module) {
     auto it = _probes.find(module);
     if (it != _probes.end()) {
-        log.trace("Probe deregistration: {}", view);
+        log.trace("Probe deregistration: {}", module);
         _probes.erase(it);
     }
 }
@@ -64,7 +63,7 @@ void honey_badger::unset(std::string_view module, std::string_view point) {
     }
 }
 absl::node_hash_map<std::string_view, std::vector<std::string_view>>
-honey_badger::points() const {
+honey_badger::modules() const {
     absl::node_hash_map<std::string_view, std::vector<std::string_view>> retval;
     for (auto& [module, probe] : _probes) {
         retval.insert({module, probe->points()});

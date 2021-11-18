@@ -1224,7 +1224,7 @@ void admin_server::register_hbadger_routes() {
     }
     ss::httpd::hbadger_json::get_failure_probes.set(
       _server._routes, [](std::unique_ptr<ss::httpd::request>) {
-          auto modules = finjector::shard_local_badger().points();
+          auto modules = finjector::shard_local_badger().modules();
           ss::httpd::hbadger_json::failure_injector_status status;
           status.enabled = true;
 
