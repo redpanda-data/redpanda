@@ -366,7 +366,7 @@ struct raft_group {
           make_broker(node_id),
           _id,
           raft::group_configuration(_initial_brokers, model::revision_id(0)),
-          raft::timeout_jitter(heartbeat_interval * 2),
+          raft::timeout_jitter(heartbeat_interval * 10),
           ssx::sformat("{}/{}", _storage_dir, node_id()),
           _storage_type,
           [this, node_id](raft::leadership_status st) {
@@ -387,7 +387,7 @@ struct raft_group {
           broker,
           _id,
           raft::group_configuration({}, model::revision_id(0)),
-          raft::timeout_jitter(heartbeat_interval * 2),
+          raft::timeout_jitter(heartbeat_interval * 10),
           ssx::sformat("{}/{}", _storage_dir, node_id()),
           _storage_type,
           [this, node_id](raft::leadership_status st) {
