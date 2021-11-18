@@ -20,7 +20,7 @@ If you want to customize the containers, you can also set up your own [Redpanda 
 
 ### Installing rpk
 
-You can install `rpk` on MacOS from either with [Homebrew](https://brew.sh/) or you can just download the binary.
+You can install `rpk` on MacOS either with [Homebrew](https://brew.sh/) or you can just download the binary.
 
 - To install `rpk` with Homebrew, run: `brew install vectorizedio/tap/redpanda`
 - To download the `rpk` binary:
@@ -39,6 +39,7 @@ The command output shows the addresses of the cluster nodes:
 
 ```
 $ rpk container start -n 3
+Downloading latest version of Redpanda
 Starting cluster
 Waiting for the cluster to be ready...
   NODE ID  ADDRESS          
