@@ -81,6 +81,23 @@ You can either create a Kubernetes cluster on your local machine or on a cloud p
   **_Note_** - You may need to add a `--region` or `--zone` to this command.
 
   </tab>
+
+  <tab id="Digital Ocean">
+
+  First, set up your [Digital Ocean account](https://docs.digitalocean.com/products/getting-started/) and install [`doctl`](https://docs.digitalocean.com/reference/doctl/how-to/install/).
+
+  Remember to setup your [personal access token](https://docs.digitalocean.com/reference/api/create-personal-access-token/).
+
+  
+  For additional information, check out the [Digital Ocean setup docs](https://github.com/digitalocean/Kubernetes-Starter-Kit-Developers/blob/main/01-setup-DOKS/README.md).
+
+  Then you can create a cluster for your Redpanda deployment:
+
+  ```
+  doctl kubernetes cluster create redpanda --wait --size s-4vcpu-8gb
+  ```
+
+  </tab>
 </tabs>
 
 ## Install cert-manager
