@@ -36,13 +36,16 @@ func NewTopicCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 
 	common.AddKafkaFlags(command, &configFile, &user, &password, &mechanism, &enableTLS, &certFile, &keyFile, &truststoreFile, &brokers)
 
-	command.AddCommand(topic.NewCreateCommand(fs))
-	command.AddCommand(topic.NewDeleteCommand(fs))
-	command.AddCommand(topic.NewAlterConfigCommand(fs))
-	command.AddCommand(topic.NewDescribeCommand(fs))
-	command.AddCommand(topic.NewListCommand(fs))
-	command.AddCommand(topic.NewConsumeCommand(fs))
-	command.AddCommand(topic.NewProduceCommand(fs))
+	command.AddCommand(
+		topic.NewAddPartitionsCommand(fs),
+		topic.NewAlterConfigCommand(fs),
+		topic.NewConsumeCommand(fs),
+		topic.NewCreateCommand(fs),
+		topic.NewDeleteCommand(fs),
+		topic.NewDescribeCommand(fs),
+		topic.NewListCommand(fs),
+		topic.NewProduceCommand(fs),
+	)
 
 	return command
 }
