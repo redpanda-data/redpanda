@@ -19,13 +19,19 @@ If you haven't checked them out, you can follow our [Getting Started guides](htt
 
 - TLS certificates.
 
-If you have your own certificates, either self-signed or issued by a trusted Certificate Authority, you can use them for this guide. Otherwise, feel free to generate them using [this script](https://gist.github.com/0x5d/56422a0c447e58d8ccbfa0ce1fd6bac6).
+If you have your own certificates, either self-signed or issued by a trusted Certificate Authority, you can use them for this guide. Otherwise, feel free to [use our prepared script](https://gist.github.com/0x5d/56422a0c447e58d8ccbfa0ce1fd6bac6) to generate certificates or simply run the command:
+
+```bash
+bash <(curl -s https://gist.githubusercontent.com/0x5d/56422a0c447e58d8ccbfa0ce1fd6bac6/raw/933ca97702f6b844f706b674133105a30bdad3ff/generate-certs.sh)
+```
 
 ## Authentication
 
 ### Mutual TLS (mTLS)
 
 Mutual TLS, or 2-way TLS, is an authentication method in which the server keeps a set of trusted certificates in the form of a "truststore" file, and all clients attempting to establish a connection must present their certificate.
+
+If you're on Kubernetes, make sure you set up [connectivity in the Kubernetes network](https://vectorized.io/docs/kubernetes-connectivity/).
 
 To enable it, set the `require_client_auth` field to `true` in the required listener's configuration. For example, to enable mTLS for the "external" API listener:
 
@@ -56,61 +62,202 @@ redpanda:
 
 On `rpk`'s side, you can use the `--tls-key`, `--tls-cert` and `--tls-truststore` flags to have it authenticate and establish a TLS connection:
 
-```cmd
-$ rpk topic create test-topic \
-  --tls-key <path to PEM-formatted key file> \
-  --tls-cert <path to PEM-formatted cert file> \
-  --tls-truststore <path to PEM-formatted truststore file>
+```bash
+ rpk topic create test-topic \
+--tls-key <path to PEM-formatted key file> \
+--tls-cert <path to PEM-formatted cert file> \
+--tls-truststore <path to PEM-formatted truststore file>
+```
+The result will be: 
 
+```bash
 Created topic 'test-topic'.
-You may check its config with
+```
 
+Check the configuration of the topic with:
+
+```bash
 rpk topic describe 'test-topic'
 ```
 
-> `rpk` defaults to connecting to `localhost:9092`. If you're connecting to a remote broker, you will need to pass `--brokers <node IP>:<kafka API port>`
+> **_Note_** - `rpk` defaults to connecting to `localhost:9092` for the Kafka API commands. If you're connecting to a remote broker, pass `--brokers <node IP>:<kafka API port>`
 
-> For an in-depth guide about enabling TLS and mutual TLS in redpanda check out [our guide on the subject](https://vectorized.io/blog/tls-config/).
+> You can also connect with [TLS and mutual TLS encryption](https://vectorized.io/blog/tls-config/).
 
 ### SASL/ SCRAM
 
-Redpanda also supports client authentication via SASL/SCRAM (that is, the Simple Authentication and Security Layer protocol, using the Salted Challenge Response Authentication Mechanism), which is based on usernames & passwords.
+Redpanda also supports client authentication with usernames and passwords using SASL/SCRAM ([Simple Authentication and Security Layer protocol](https://en.wikipedia.org/wiki/Simple_Authentication_and_Security_Layer) using [Salted Challenge Response Authentication Mechanism)](https://en.wikipedia.org/wiki/Salted_Challenge_Response_Authentication_Mechanism).
 
-To enable it, set `redpanda.enable_sasl` to `true` in the configuration file, as well as list at least one "superuser" which after created will have permissions for all operations on the clusters.
+#### Enabling SASL/ SCRAM
+
+To enable SASL/SCRAM, set `redpanda.enable_sasl` to `true` in the configuration file and specify at least one "superuser" to give permissions to for all operations on the clusters.
+
+Your config should look something like this:
 
 ```yaml
 redpanda
   
   enable_sasl: true
   superusers:
-  - admin
+    - username: admin
   # The rest of the config...
 ```
 
-Then, set a password for the user by running the following command. Replace `<password>` for a password of your choice. 
+<tabs>
+  <tab id="Local Redpanda ">
+  You can find the configuration file here
 
-```cmd
-$ rpk acl user create \
-  --new-username admin \
-  --new-password <password> \
-  --api-urls localhost:9644
+  ```bash
+  /etc/redpanda/redpanda.yaml
+  ```
 
+After you change the config, restart Redpanda service for changes to take effect. 
+
+  </tab>
+  <tab id="Docker Container">
+  To access the files inside the container, first you have to enter the container.
+
+  You can do that by running:
+
+```bash
+  docker exec -it <name-of-container> bash
+```
+
+Change `<name-of-container>` for your container and execute the command. 
+Then go to the same directory as a local redpanda config:
+
+```bash
+  /etc/redpanda/redpanda.yaml
+```
+
+After you finish it, restart the container for changes to take effect. 
+
+  </tab>
+  <tab id="Kubernetes ">
+  For Kubernetes, things are a little different. You can change your configuration file with the YAML for the cluster.
+
+  If you're using our [external-connectivity sample](https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/external_connectivity.yaml), specify the `redpanda.enable_sasl` and `superuser` values in the cluster spec YAML file.
+
+  For example: 
+
+```yaml
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: external-connectivity
+spec:
+  image: "vectorized/redpanda"
+  version: "latest"
+  replicas: 3
+  enableSasl: true
+  superUsers:
+    - username: admin
+  resources:
+    requests:
+      cpu: 1
+      memory: 2Gi
+    limits:
+      cpu: 1
+      memory: 2Gi
+  configuration:
+    rpcServer:
+      port: 33145
+    kafkaApi:
+     - port: 9092
+     - external:
+         enabled: true
+    pandaproxyApi:
+     - port: 8082
+     - external:
+         enabled: true
+    adminApi:
+    - port: 9644
+    developerMode: true
+```
+
+> **_Note_** - The attributes in K8s YAML are in camelCase instead of snake_case used in local redpanda.yaml
+
+Remember, that after you change the config file you **must** restart the pods for changes to take effect.
+
+You can check if your spec is correct by running: 
+
+```
+kubectl get clusters external-connectivity -o=jsonpath='{.spec}' 
+```
+
+  </tab>
+</tabs>
+
+#### Creating admin user
+
+Create a new user and set a password by running the following command. Replace `<password>` for a password of your choice. 
+
+<tabs>
+  <tab id="Local Redpanda" >
+
+```bash
+rpk acl user create \
+--new-username admin \
+--new-password <password> \
+--api-urls localhost:9644
+```
+
+  </tab>
+  <tab id="Kubernetes">
+
+```bash
+kubectl exec -c redpanda external-connectivity-0 -- rpk acl user create \
+--new-username admin \
+--new-password <password> \
+--api-urls localhost:9644 \ 
+--brokers external-connectivity-0.external-connectivity.default.svc.cluster.local:9644
+```
+
+  </tab>
+</tabs>
+
+
+The response should be:
+
+```
 Created user 'admin'
 ```
 
+> **_Note_** - `rpk acl` is an Admin API command so it defaults to connecting to `localhost:9644`. If you have a different IP address, URL, or port, pass `--api-urls <node IP>:<admin API port>`.
+
 Refer to the next section, _Managing users_, for more details on `rpk acl user`.
+
+#### Connect to Redpanda
 
 You're now able to use the created identity to interact with the Kafka API. For example:
 
-> **Note**: If you still have the TLS config from the previous section, you'll also need to pass the TLS flags.
+<tabs>
+  <tab id="Local Redpanda" >
 
-```cmd
-$ rpk topic describe test-topic \
-  --user admin \
-  --password <password> \
-  --sasl-mechanism SCRAM-SHA-256 \
-  --brokers localhost:9092
+```bash
+rpk topic describe test-topic \
+--user admin \
+--password <password> \
+--sasl-mechanism SCRAM-SHA-256 \
+--brokers localhost:9092
+```
 
+  </tab>
+  <tab id="Kubernetes">
+
+```bash
+kubectl exec -c redpanda external-connectivity-0 -- rpk topic describe test-topic \
+--user admin \
+--password <password> \
+--brokers external-connectivity-0.external-connectivity.default.svc.cluster.local:9092
+```
+
+  </tab>
+</tabs>
+
+The response should look something like this: 
+
+```bash
   Name                test-topic  
   Internal            false       
   Cleanup policy      delete      
@@ -124,47 +271,118 @@ $ rpk topic describe test-topic \
   0                   1               [1]        [1]               0               
 ```
 
+> **_Note_** - If you still have the TLS config from the previous section, you'll also need to pass the TLS flags.
+
+Notice that this command uses the Kafka API, so we're using the `--brokers <node IP>:<kafka API port>` pattern here, having the default value as `localhost:9092`.
+
 #### Managing users
 
 While having a superuser is a must to get started, it's not really a good idea to either share the superuser's credentials everywhere or to make everyone a superuser.
 
 You can create, delete and list users with `rpk acl user`.
 
+`rpk acl` is an Admin API command so it defaults to connecting to `localhost:9644`. If you have a different IP address, URL, or port, pass `--api-urls <node IP>:<admin API port>`.
+
+Replace `<password>` for a password of your choice. 
+
 **Creating a user**
 
-```cmd
-$ rpk acl user create \
-  --new-username Jack \
-  --new-password <password> \
-  --api-urls <comma-separated URLs of the nodes' admin APIs>
+<tabs>
 
+  <tab id="Local Redpanda">
+
+```bash
+rpk acl user create \
+--new-username Jack \
+--new-password <password> \
+--api-urls localhost:9644
+```
+
+```bash 
 Created user 'Jack'
 ```
 
 **Deleting a user**
 
-```cmd
-$ rpk acl user delete \
-  --delete-username Jack \
-  --api-urls <comma-separated URLs of the nodes' admin APIs>
+```bash
+rpk acl user delete \
+--delete-username Jack \
+--api-urls localhost:9644
+```
 
+```bash
 Deleted user 'Jack'
 ```
 
 **Listing users**
 
-```cmd
-$ rpk acl user list \
-  --api-urls <comma-separated URLs of the nodes' admin APIs>
-
-  USERNAME                        
-                                  
-  Michael                         
-  Jim                             
-  Pam                             
-  Dwight                          
-  Kelly  
+```bash
+rpk acl user list \
+--api-urls localhost:9644
 ```
+
+```bash
+USERNAME                        
+                                
+Michael                         
+Jim                             
+Pam                             
+Dwight                          
+Kelly
+```
+
+  </tab>
+
+  <tab id="Kubernetes">
+
+```bash
+kubectl exec -c redpanda external-connectivity-0 -- rpk acl user create \
+--new-username Jack \
+--new-password <password> \
+--api-urls localhost:9644 \ 
+--brokers external-connectivity-0.external-connectivity.default.svc.cluster.local:9644
+```
+
+```bash 
+Created user 'Jack'
+```
+
+**Deleting a user**
+
+```bash
+kubectl exec -c redpanda external-connectivity-0 -- rpk acl user delete \
+--delete-username Jack \
+--api-urls localhost:9644 \ 
+--brokers external-connectivity-0.external-connectivity.default.svc.cluster.local:9644
+```
+
+```bash
+Deleted user 'Jack'
+```
+
+**Listing users**
+
+```bash
+kubectl exec -c redpanda external-connectivity-0 -- rpk acl user list \
+--api-urls localhost:9644 \ 
+--brokers external-connectivity-0.external-connectivity.default.svc.cluster.local:9644
+```
+
+```bash
+USERNAME                        
+                                
+Michael                         
+Jim                             
+Pam                             
+Dwight                          
+Kelly
+```
+
+  </tab>
+
+</tabs>
+
+
 
 ## Authorization
 
@@ -198,14 +416,14 @@ Here's a reference of all the concepts and their supported values.
 
 #### **rpk acl quick reference**
 
-Please note that you may have to add the `--tls-key`, `--tls-cert` and `--tls-truststore` flags, as well as `--user`, `--password` & `--sasl-mechanism` if mTLS and SASL/ SCRAM are enabled (recommended). They are ommitted here for brevity.
+Please note that you may have to add the `--tls-key`, `--tls-cert` and `--tls-truststore` flags, as well as `--user`, `--password` & `--sasl-mechanism` if mTLS and SASL/ SCRAM are enabled (recommended). They are omitted here for brevity.
 
 **Creating ACLs**
 
 - Create an ACL allowing a user to perform all operations from all hosts to a topic named "pings":
 
-```cmd
-$ rpk acl create \
+```bash
+ rpk acl create \
   --allow-principal 'User:Charlie' \
   --allow-host '*' \
   --operation all \
@@ -217,8 +435,8 @@ Created ACL for principal 'User:Charlie' with host '*', operation 'All' and perm
 
 - Create an ACL to deny all users to alter the "cluster" resource from 2 hosts:
 
-```cmd
-$ rpk acl create \
+```bash
+ rpk acl create \
   --deny-principal 'User:*' \
   --deny-host 192.168.98.74,10.235.78.12 \
   --operation alter \
@@ -230,8 +448,8 @@ Created ACL for principal 'User:*' with host '192.168.98.74', operation 'Alter' 
 
 As you can see, a single command may result in multiple ACLs being created. You an also create ACLs denying and allowing principals access:
 
-```cmd
-$ rpk acl create \
+```bash
+ rpk acl create \
 --resource cluster \
 --allow-host 168.72.98.52 \
 --deny-host 169.78.31.9 \
@@ -250,8 +468,8 @@ Created ACL for principal 'User:Ben' with host '168.72.98.52', operation 'All' a
 
 - List all ACLs:
 
-```cmd
-$ rpk acl list
+```bash
+ rpk acl list
 
   PRINCIPAL     HOST           OPERATION  PERMISSION TYPE  RESOURCE TYPE  RESOURCE NAME  
                 
@@ -265,8 +483,8 @@ $ rpk acl list
 
 - List all ACLs for a specific principal:
 
-```cmd
-$ rpk acl list --principal 'User:Ben'
+```bash
+ rpk acl list --principal 'User:Ben'
 
   PRINCIPAL  HOST          OPERATION  PERMISSION TYPE  RESOURCE TYPE  RESOURCE NAME  
              
@@ -275,8 +493,8 @@ $ rpk acl list --principal 'User:Ben'
 
 - List all ACLs that deny principals to alter a resource:
 
-```cmd
-$ rpk acl list \
+```bash
+ rpk acl list \
   --permission deny \
   --operation alter
 
@@ -292,8 +510,8 @@ $ rpk acl list \
 
 - Delete all ACLs for a specific user targeting a specific resource:
 
-```cmd
-$ rpk acl delete --deny-principal 'User:david' --resource cluster
+```bash
+ rpk acl delete --deny-principal 'User:david' --resource cluster
 
   DELETED  PRINCIPAL   HOST         OPERATION  PERMISSION TYPE  RESOURCE TYPE  RESOURCE NAME  ERROR MESSAGE  
            
@@ -302,8 +520,8 @@ $ rpk acl delete --deny-principal 'User:david' --resource cluster
 
 - Delete all ACLs granting a principal permissions to all operations from a host:
 
-```cmd
-$ rpk acl delete \
+```bash
+ rpk acl delete \
   --allow-principal 'User:Ben' \
   --allow-host 168.72.98.52 \
   --operation all
