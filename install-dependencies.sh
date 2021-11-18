@@ -62,7 +62,7 @@ fedora_deps=(
 )
 
 case "$ID" in
-  ubuntu | debian)
+  ubuntu | debian | pop)
     apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y "${deb_deps[@]}"
     ;;
