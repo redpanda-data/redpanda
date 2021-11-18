@@ -159,6 +159,11 @@ public:
                + partitions.size() * sizeof(fetch_session_partition);
     }
 
+    void move_to_end(iterator it) {
+        it->second->_hook.unlink();
+        insertion_order.push_back(*it->second);
+    }
+
     iterator begin() { return partitions.begin(); }
     iterator end() { return partitions.end(); }
 

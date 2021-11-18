@@ -38,6 +38,16 @@ public:
 
     bool is_leader() const final { return _partition->is_leader(); }
 
+    ss::future<result<model::offset>> linearizable_barrier() {
+        return _partition->linearizable_barrier().then(
+          [this](result<model::offset> r) {
+              if (r) {
+                  return result<model::offset>(last_stable_offset());
+              }
+              return r;
+          });
+    }
+
     ss::future<model::record_batch_reader> make_reader(
       storage::log_reader_config cfg,
       std::optional<model::timeout_clock::time_point>) final {

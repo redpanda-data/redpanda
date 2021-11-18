@@ -133,6 +133,10 @@ public:
 
     bool is_leader() const { return _raft->is_leader(); }
 
+    ss::future<result<model::offset>> linearizable_barrier() {
+        return _raft->linearizable_barrier();
+    }
+
     ss::future<std::error_code>
     transfer_leadership(std::optional<model::node_id> target) {
         return _raft->do_transfer_leadership(target);

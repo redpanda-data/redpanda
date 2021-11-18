@@ -31,6 +31,7 @@ public:
         virtual model::offset high_watermark() const = 0;
         virtual model::offset last_stable_offset() const = 0;
         virtual bool is_leader() const = 0;
+        virtual ss::future<result<model::offset>> linearizable_barrier() = 0;
         virtual ss::future<model::record_batch_reader> make_reader(
           storage::log_reader_config,
           std::optional<model::timeout_clock::time_point>)
@@ -52,6 +53,10 @@ public:
 
     model::offset last_stable_offset() const {
         return _impl->last_stable_offset();
+    }
+
+    ss::future<result<model::offset>> linearizable_barrier() {
+        return _impl->linearizable_barrier();
     }
 
     bool is_leader() const { return _impl->is_leader(); }
