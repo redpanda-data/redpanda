@@ -20,7 +20,7 @@ Before you start you'll need to install [WSL2](https://docs.microsoft.com/en-us/
 Don’t forget that in order for Docker for Windows to work, you have to [enable your Hypervisor service](https://docs.microsoft.com/en-us/virtualization/hyper-v-on-windows/quick-start/enable-hyper-v) in the Windows Control Panel.
 
 
-## Executing directly from Docker Repository
+## Executing directly from Docker repository
 
 The [Docker image for Redpanda](https://hub.docker.com/r/vectorized/redpanda) is hosted in Docker Hub.
 
@@ -132,7 +132,7 @@ docker.vectorized.io/vectorized/redpanda redpanda start ^
 ```
 
 
-## Docker-Compose
+## Executing with a docker-compose file
 
 Another way to spin up a Redpanda cluster is with a docker-compose file.
 Copy the code here and save it as `docker-compose.yaml`:
@@ -241,7 +241,7 @@ docker volume rm redpanda1 redpanda2 redpanda3 && ^
 docker network rm redpandanet
 ```
 
-## What's Next?
+## What's next?
 
 - Our [FAQ](/docs/faq) page shows all of the clients that you can use to do streaming with Redpanda.
     (Spoiler: Any Kafka-compatible client!)
