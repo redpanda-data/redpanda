@@ -12,9 +12,11 @@
 #include "kafka/client/client_fetch_batch_reader.h"
 #include "pandaproxy/error.h"
 #include "pandaproxy/logger.h"
+#include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/storage.h"
 #include "random/simple_time_jitter.h"
+#include "ssx/future-util.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -237,6 +239,10 @@ seq_writer::delete_subject_version(subject sub, schema_version version) {
     auto do_write = [sub, version](
                       model::offset write_at,
                       seq_writer& seq) -> ss::future<std::optional<bool>> {
+        if (co_await seq._store.is_referenced(sub, version)) {
+            throw as_exception(has_references(sub, version));
+        }
+
         auto s_res = co_await seq._store.get_subject_schema(
           sub, version, include_deleted::yes);
         subject_schema ss = std::move(s_res);
@@ -280,6 +286,18 @@ seq_writer::delete_subject_impermanent(subject sub) {
         // Inspect the subject to see if its already deleted
         if (co_await seq._store.is_subject_deleted(sub)) {
             co_return std::make_optional(versions);
+        }
+
+        auto is_referenced = co_await ssx::parallel_transform(
+          versions.begin(),
+          versions.end(),
+          [&seq, &sub](auto const& ver) -> ss::future<bool> {
+              co_return co_await seq._store.is_referenced(sub, ver);
+          });
+        if (std::any_of(is_referenced.begin(), is_referenced.end(), [](auto v) {
+                return v;
+            })) {
+            throw as_exception(has_references(sub, versions.back()));
         }
 
         // Proceed to write

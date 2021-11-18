@@ -99,3 +99,20 @@ get_body_versions(const ss::sstring& body) {
 
     return found_versions;
 }
+
+inline int get_body_error_code(const ss::sstring& body) {
+    rapidjson::Document doc;
+    if (doc.Parse(body).HasParseError()) {
+        throw ppj::parse_error(doc.GetErrorOffset());
+    }
+    if (!doc.IsObject()) {
+        throw ppj::exception_base{
+          ppj::error_code::invalid_json, "Body is not an object"};
+    }
+    auto obj = doc.GetObject();
+    if (!obj["error_code"].IsInt()) {
+        throw ppj::exception_base{
+          ppj::error_code::invalid_json, "error_code not an int"};
+    }
+    return obj["error_code"].Get<int>();
+}
