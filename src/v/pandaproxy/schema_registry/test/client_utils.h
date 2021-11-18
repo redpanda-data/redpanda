@@ -41,3 +41,61 @@ inline auto post_schema(
       ppj::serialization_format::schema_registry_v1_json,
       ppj::serialization_format::schema_registry_v1_json);
 }
+
+inline auto delete_subject(
+  http::client& client,
+  const pps::subject& sub,
+  pps::permanent_delete del = {}) {
+    return http_request(
+      client,
+      fmt::format("/subjects/{}?permanent={}", sub(), del),
+      boost::beast::http::verb::delete_,
+      ppj::serialization_format::schema_registry_v1_json,
+      ppj::serialization_format::schema_registry_v1_json);
+}
+
+inline auto delete_subject_version(
+  http::client& client,
+  const pps::subject& sub,
+  pps::schema_version ver,
+  pps::permanent_delete del = {}) {
+    return http_request(
+      client,
+      fmt::format("/subjects/{}/versions/{}?permanent={}", sub(), ver(), del),
+      boost::beast::http::verb::delete_,
+      ppj::serialization_format::schema_registry_v1_json,
+      ppj::serialization_format::schema_registry_v1_json);
+}
+
+inline auto get_subject_versions(
+  http::client& client,
+  const pps::subject& sub,
+  pps::include_deleted del = {}) {
+    return http_request(
+      client,
+      fmt::format("/subjects/{}/versions?deleted={}", sub(), del),
+      boost::beast::http::verb::get,
+      ppj::serialization_format::schema_registry_v1_json,
+      ppj::serialization_format::schema_registry_v1_json);
+}
+
+inline std::vector<pps::schema_version>
+get_body_versions(const ss::sstring& body) {
+    rapidjson::Document doc;
+    if (doc.Parse(body).HasParseError()) {
+        throw ppj::parse_error(doc.GetErrorOffset());
+    }
+    if (!doc.IsArray()) {
+        throw ppj::exception_base{
+          ppj::error_code::invalid_json, "Body is not an array"};
+    }
+    const auto& arr = doc.GetArray();
+    std::vector<pps::schema_version> found_versions;
+    found_versions.reserve(arr.Size());
+    absl::c_transform(
+      arr, std::back_inserter(found_versions), [](const auto& v) {
+          return pps::schema_version{v.template Get<int>()};
+      });
+
+    return found_versions;
+}
