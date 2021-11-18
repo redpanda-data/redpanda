@@ -7,37 +7,15 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "http/client.h"
 #include "pandaproxy/schema_registry/test/avro_payloads.h"
+#include "pandaproxy/schema_registry/test/client_utils.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/test/pandaproxy_fixture.h"
 #include "pandaproxy/test/utils.h"
 
-#include <boost/beast/http/field.hpp>
-#include <boost/beast/http/status.hpp>
-#include <boost/beast/http/verb.hpp>
-#include <boost/test/tools/old/interface.hpp>
-
 namespace pp = pandaproxy;
 namespace ppj = pp::json;
 namespace pps = pp::schema_registry;
-
-iobuf make_body(const ss::sstring& body) {
-    iobuf buf;
-    buf.append(body.data(), body.size());
-    return buf;
-}
-
-auto post_schema(
-  http::client& client, const pps::subject& sub, const ss::sstring& payload) {
-    return http_request(
-      client,
-      fmt::format("/subjects/{}/versions", sub()),
-      make_body(payload),
-      boost::beast::http::verb::post,
-      ppj::serialization_format::schema_registry_v1_json,
-      ppj::serialization_format::schema_registry_v1_json);
-}
 
 FIXTURE_TEST(
   schema_registry_post_subjects_subject_version, pandaproxy_test_fixture) {
