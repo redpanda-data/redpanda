@@ -23,7 +23,9 @@
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/io_priority_class.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/core/weak_ptr.hh>
 
 #include <absl/container/node_hash_map.h>
@@ -123,7 +125,11 @@ public:
     /// \brief create scheduler service config
     /// This mehtod will use shard-local redpanda configuration
     /// to generate the configuration.
-    static ss::future<archival::configuration> get_archival_service_config();
+    /// \param sg is a scheduling group used to run all uploads
+    /// \param p is an io priority class used to throttle upload file reads
+    static ss::future<archival::configuration> get_archival_service_config(
+      ss::scheduling_group sg = ss::default_scheduling_group(),
+      ss::io_priority_class p = ss::default_priority_class());
 
     /// Start archiver
     ss::future<> start();
@@ -156,6 +162,9 @@ public:
     /// Get configured bucket
     s3::bucket_name get_bucket() const;
 
+    /// Total size of data that have to be uploaded
+    uint64_t estimate_backlog_size();
+
 private:
     /// Remove archivers from the workingset
     ss::future<> remove_archivers(std::vector<model::ntp> to_remove);
@@ -183,6 +192,7 @@ private:
     ss::sharded<cloud_storage::remote>& _remote;
     ss::lowres_clock::duration _topic_manifest_upload_timeout;
     ss::lowres_clock::duration _initial_backoff;
+    ss::scheduling_group _upload_sg;
 };
 
 } // namespace internal
@@ -218,6 +228,9 @@ public:
 
     /// Get configured bucket
     using internal::scheduler_service_impl::get_bucket;
+
+    /// Estimate total size of the upload backlog
+    using internal::scheduler_service_impl::estimate_backlog_size;
 };
 
 } // namespace archival

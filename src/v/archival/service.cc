@@ -33,13 +33,16 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/io_priority_class.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/when_all.hh>
+#include <seastar/core/with_scheduling_group.hh>
 
 #include <boost/iterator/counting_iterator.hpp>
 
@@ -47,6 +50,7 @@
 #include <exception>
 #include <optional>
 #include <stdexcept>
+#include <tuple>
 
 using namespace std::chrono_literals;
 
@@ -111,7 +115,8 @@ static ss::sstring get_value_or_throw(
 
 /// Use shard-local configuration to generate configuration
 ss::future<archival::configuration>
-scheduler_service_impl::get_archival_service_config() {
+scheduler_service_impl::get_archival_service_config(
+  ss::scheduling_group sg, ss::io_priority_class p) {
     vlog(archival_log.debug, "Generating archival configuration");
     auto disable_metrics = rpc::metrics_disabled(
       config::shard_local_cfg().disable_metrics());
@@ -147,7 +152,9 @@ scheduler_service_impl::get_archival_service_config() {
         static_cast<bool>(disable_metrics)),
       .ntp_metrics_disabled = per_ntp_metrics_disabled(
         static_cast<bool>(disable_metrics)),
-      .time_limit = time_limit_opt};
+      .time_limit = time_limit_opt,
+      .upload_scheduling_group = sg,
+      .upload_io_priority = p};
     vlog(archival_log.debug, "Archival configuration generated: {}", cfg);
     co_return cfg;
 }
@@ -169,7 +176,8 @@ scheduler_service_impl::scheduler_service_impl(
   , _probe(conf.svc_metrics_disabled)
   , _remote(remote)
   , _topic_manifest_upload_timeout(conf.manifest_upload_timeout)
-  , _initial_backoff(conf.initial_backoff) {}
+  , _initial_backoff(conf.initial_backoff)
+  , _upload_sg(conf.upload_scheduling_group) {}
 
 scheduler_service_impl::scheduler_service_impl(
   ss::sharded<cloud_storage::remote>& remote,
@@ -181,22 +189,25 @@ scheduler_service_impl::scheduler_service_impl(
 
 void scheduler_service_impl::rearm_timer() {
     (void)ss::with_gate(_gate, [this] {
-        return reconcile_archivers()
-          .finally([this] {
-              if (_gate.is_closed()) {
-                  return;
-              }
-              _timer.rearm(_jitter());
-          })
-          .handle_exception([this](std::exception_ptr e) {
-              vlog(_rtclog.info, "Error in timer callback: {}", e);
-          });
+        return ss::with_scheduling_group(_upload_sg, [this] {
+            return reconcile_archivers()
+              .finally([this] {
+                  if (_gate.is_closed()) {
+                      return;
+                  }
+                  _timer.rearm(_jitter());
+              })
+              .handle_exception([this](std::exception_ptr e) {
+                  vlog(_rtclog.info, "Error in timer callback: {}", e);
+              });
+        });
     });
 }
 ss::future<> scheduler_service_impl::start() {
     _timer.set_callback([this] { rearm_timer(); });
     _timer.rearm(_jitter());
-    (void)run_uploads();
+    (void)ss::with_scheduling_group(
+      _upload_sg, [this] { return run_uploads(); });
     return ss::now();
 }
 
@@ -413,6 +424,16 @@ cloud_storage::remote& scheduler_service_impl::get_remote() {
 
 s3::bucket_name scheduler_service_impl::get_bucket() const {
     return _conf.bucket_name;
+}
+
+uint64_t scheduler_service_impl::estimate_backlog_size() {
+    uint64_t size = 0;
+    for (const auto& [ntp, item] : _queue) {
+        std::ignore = ntp;
+        size += item.archiver->estimate_backlog_size(
+          _partition_manager.local());
+    }
+    return size;
 }
 
 ss::future<> scheduler_service_impl::run_uploads() {

@@ -30,6 +30,7 @@ public:
     ss::io_priority_class shadow_indexing_priority() {
         return _shadow_indexing_priority;
     }
+    ss::io_priority_class archival_priority() { return _archival_priority; }
 
     static priority_manager& local() {
         static thread_local priority_manager pm = priority_manager();
@@ -48,7 +49,9 @@ private:
       , _raft_learner_recovery_priority(
           ss::io_priority_class::register_one("raft-learner-recovery", 100))
       , _shadow_indexing_priority(
-          ss::io_priority_class::register_one("shadow-indexing", 1000)) {}
+          ss::io_priority_class::register_one("shadow-indexing", 1000))
+      , _archival_priority(
+          ss::io_priority_class::register_one("archival", 200)) {}
 
     ss::io_priority_class _raft_priority;
     ss::io_priority_class _controller_priority;
@@ -56,6 +59,7 @@ private:
     ss::io_priority_class _compaction_priority;
     ss::io_priority_class _raft_learner_recovery_priority;
     ss::io_priority_class _shadow_indexing_priority;
+    ss::io_priority_class _archival_priority;
 };
 
 inline ss::io_priority_class raft_priority() {
@@ -76,4 +80,12 @@ inline ss::io_priority_class compaction_priority() {
 
 inline ss::io_priority_class raft_learner_recovery_priority() {
     return priority_manager::local().raft_learner_recovery_priority();
+}
+
+inline ss::io_priority_class shadow_indexing_priority() {
+    return priority_manager::local().shadow_indexing_priority();
+}
+
+inline ss::io_priority_class archival_priority() {
+    return priority_manager::local().archival_priority();
 }

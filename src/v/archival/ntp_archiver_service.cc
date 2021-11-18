@@ -38,24 +38,10 @@
 #include <fmt/format.h>
 
 #include <exception>
+#include <numeric>
 #include <stdexcept>
 
 namespace archival {
-
-std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
-    fmt::print(
-      o,
-      "{{bucket_name: {}, interval: {}, initial_backoff: {}, "
-      "segment_upload_timeout: {}, "
-      "manifest_upload_timeout: {}, time_limit: {}}}",
-      cfg.bucket_name,
-      cfg.interval.count(),
-      cfg.initial_backoff.count(),
-      cfg.segment_upload_timeout.count(),
-      cfg.manifest_upload_timeout.count(),
-      cfg.time_limit);
-    return o;
-}
 
 ntp_archiver::ntp_archiver(
   const storage::ntp_config& ntp,
@@ -75,7 +61,8 @@ ntp_archiver::ntp_archiver(
   , _gate()
   , _initial_backoff(conf.initial_backoff)
   , _segment_upload_timeout(conf.segment_upload_timeout)
-  , _manifest_upload_timeout(conf.manifest_upload_timeout) {
+  , _manifest_upload_timeout(conf.manifest_upload_timeout)
+  , _io_priority(conf.upload_io_priority) {
     vlog(archival_log.trace, "Create ntp_archiver {}", _ntp.path());
 }
 
@@ -128,11 +115,9 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
     vlog(ctxlog.debug, "Uploading segment {}", candidate);
 
-    auto reset_func = [candidate] {
+    auto reset_func = [this, candidate] {
         auto stream = candidate.source->reader().data_stream(
-          candidate.file_offset,
-          candidate.final_file_offset,
-          ss::default_priority_class());
+          candidate.file_offset, candidate.final_file_offset, _io_priority);
         return stream;
     };
     co_return co_await _remote.upload_segment(
@@ -408,6 +393,31 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
       .handle_exception_type([](const ss::abort_requested_exception&) {
           return ss::make_ready_future<batch_result>(batch_result{});
       });
+}
+
+uint64_t ntp_archiver::estimate_backlog_size(cluster::partition_manager& pm) {
+    auto last_offset = _manifest.size() ? _manifest.get_last_offset()
+                                        : model::offset(0);
+    auto opt_log = pm.log(_manifest.get_ntp());
+    if (!opt_log) {
+        return 0U;
+    }
+    auto log = dynamic_cast<storage::disk_log_impl*>(opt_log->get_impl());
+    uint64_t total_size = std::accumulate(
+      std::begin(log->segments()),
+      std::end(log->segments()),
+      0UL,
+      [last_offset](
+        uint64_t acc, const ss::lw_shared_ptr<storage::segment>& s) {
+          if (s->offsets().dirty_offset > last_offset) {
+              return acc + s->size_bytes();
+          }
+          return acc;
+      });
+    // Note: we can safely ignore the fact that the last segment is not uploaded
+    // before it's sealed because the size of the individual segment is small
+    // compared to the capacity of the data volume.
+    return total_size;
 }
 
 } // namespace archival

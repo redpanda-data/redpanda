@@ -17,6 +17,9 @@
 #include "seastarx.h"
 #include "utils/named_type.h"
 
+#include <seastar/core/io_priority_class.hh>
+#include <seastar/core/scheduling.hh>
+
 #include <filesystem>
 
 namespace archival {
@@ -34,5 +37,33 @@ using per_ntp_metrics_disabled
 
 using segment_time_limit
   = named_type<ss::lowres_clock::duration, struct segment_time_limit_tag>;
+
+/// Archiver service configuration
+struct configuration {
+    /// Bucket used to store all archived data
+    s3::bucket_name bucket_name;
+    /// Time interval to run uploads & deletes
+    ss::lowres_clock::duration interval;
+    /// Initial backoff for uploads
+    ss::lowres_clock::duration initial_backoff;
+    /// Long upload timeout
+    ss::lowres_clock::duration segment_upload_timeout;
+    /// Shor upload timeout
+    ss::lowres_clock::duration manifest_upload_timeout;
+    /// Flag that indicates that service level metrics are disabled
+    service_metrics_disabled svc_metrics_disabled;
+    /// Flag that indicates that ntp-archiver level metrics are disabled
+    per_ntp_metrics_disabled ntp_metrics_disabled;
+    /// Upload time limit (if segment is not uploaded this amount of time the
+    /// upload is triggered)
+    std::optional<segment_time_limit> time_limit;
+    /// Scheduling group that throttles archival upload
+    ss::scheduling_group upload_scheduling_group{
+      ss::default_scheduling_group()};
+    /// I/o priority used to throttle file reads
+    ss::io_priority_class upload_io_priority{ss::default_priority_class()};
+
+    friend std::ostream& operator<<(std::ostream& o, const configuration& cfg);
+};
 
 } // namespace archival

@@ -144,6 +144,7 @@ private:
     ss::sharded<pandaproxy::rest::proxy> _proxy;
     std::unique_ptr<pandaproxy::schema_registry::api> _schema_registry;
     ss::sharded<storage::compaction_controller> _compaction_controller;
+    ss::sharded<archival::upload_controller> _archival_upload_controller;
 
     ss::metrics::metric_groups _metrics;
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
