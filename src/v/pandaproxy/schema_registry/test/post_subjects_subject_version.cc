@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "http/client.h"
+#include "pandaproxy/schema_registry/test/avro_payloads.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/test/pandaproxy_fixture.h"
 #include "pandaproxy/test/utils.h"
@@ -20,51 +21,6 @@
 namespace pp = pandaproxy;
 namespace ppj = pp::json;
 namespace pps = pp::schema_registry;
-
-const ss::sstring avro_string_payload{
-  R"(
-{
-  "schema": "\"string\"",
-  "schemaType": "AVRO",
-  "references": [
-    {
-       "name": "com.acme.Referenced",
-       "subject":  "childSubject",
-       "version": 1
-    }
-  ]
-})"};
-const ss::sstring expected_avro_string_def{R"({"string"})"};
-
-const ss::sstring avro_int_payload{
-  R"(
-{
-  "schema": "\"int\"",
-  "schemaType": "AVRO",
-  "references": [
-    {
-       "name": "com.acme.Referenced",
-       "subject":  "childSubject",
-       "version": 1
-    }
-  ]
-})"};
-const ss::sstring expected_avro_int_def{R"({"int"})"};
-
-const ss::sstring avro_long_payload{
-  R"(
-{
-  "schema": "\"long\"",
-  "schemaType": "AVRO",
-  "references": [
-    {
-       "name": "com.acme.Referenced",
-       "subject":  "childSubject",
-       "version": 1
-    }
-  ]
-})"};
-const ss::sstring expected_avro_long_def{R"({"long"})"};
 
 iobuf make_body(const ss::sstring& body) {
     iobuf buf;
