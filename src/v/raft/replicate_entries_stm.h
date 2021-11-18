@@ -119,6 +119,7 @@ private:
     ss::gate _req_bg;
     ctx_log _ctxlog;
     model::offset _dirty_offset;
+    model::offset _initial_committed_offset;
     ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> _units;
 };
 
