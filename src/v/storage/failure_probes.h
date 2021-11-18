@@ -32,8 +32,8 @@ public:
     enum class methods : type {
         append = 1,
         roll = 2,
-        truncate = 3,
-        truncate_prefix = 4
+        truncate = 4,
+        truncate_prefix = 8
     };
 
     type point_to_bit(std::string_view point) const final {
