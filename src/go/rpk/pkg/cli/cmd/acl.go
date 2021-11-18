@@ -221,6 +221,8 @@ PRODUCING/CONSUMING
                  CREATE on CLUSTER for kafka-cluster (if automatically creating topics)
                  CREATE on TOPIC for topics (if automatically creating topics)
 
+    InitProducerID  IDEMPOTENT_WRITE on CLUSTER
+
     OffsetForLeaderEpoch  DESCRIBE on TOPIC for topics
 
 GROUP CONSUMING
