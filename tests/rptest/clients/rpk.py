@@ -116,7 +116,7 @@ class RpkTool:
                 line)
             if m == None:
                 return None
-            replicas = map(lambda r: int(r), m.group('replicas').split())
+            replicas = list(map(lambda r: int(r), m.group('replicas').split()))
             return RpkPartition(id=int(m.group('id')),
                                 leader=int(m.group('leader')),
                                 replicas=replicas,
