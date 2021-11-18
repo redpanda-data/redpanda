@@ -53,6 +53,9 @@ topic_properties::get_ntp_cfg_overrides() const {
     ret.retention_bytes = retention_bytes;
     ret.retention_time = retention_duration;
     ret.segment_size = segment_size;
+    ret.shadow_indexing_mode = shadow_indexing
+                                 ? *shadow_indexing
+                                 : model::shadow_indexing_mode::disabled;
     return ret;
 }
 
@@ -81,7 +84,10 @@ storage::ntp_config topic_configuration::make_ntp_config(
             // during bootstrap.
             .cache_enabled = storage::with_cache(!is_internal()),
             .recovery_enabled = storage::topic_recovery_enabled(
-              properties.recovery ? *properties.recovery : false)});
+              properties.recovery ? *properties.recovery : false),
+            .shadow_indexing_mode = properties.shadow_indexing
+                                      ? *properties.shadow_indexing
+                                      : model::shadow_indexing_mode::disabled});
     }
     return storage::ntp_config(
       model::ntp(tp_ns.ns, tp_ns.tp, p_id),
