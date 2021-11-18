@@ -142,25 +142,6 @@ class KafkaStreamsProdConsBase(KafkaStreamsTest):
         example.stop()
 
 
-class KafkaStreamsWikipedia(KafkaStreamsDriverBase):
-    """
-    Test KafkaStreams wikipedia example which computes the number of new
-    users to a wikipedia page
-    """
-    topics = (
-        TopicSpec(name="WikipediaFeed"),
-        TopicSpec(name="WikipediaStats"),
-    )
-
-    Example = KafkaStreamExamples.KafkaStreamsWikipedia
-    Driver = KafkaStreamExamples.KafkaStreamsWikipedia
-
-    def __init__(self, test_context):
-        super(KafkaStreamsWikipedia, self).__init__(test_context=test_context,
-                                                    enable_pp=True,
-                                                    enable_sr=True)
-
-
 class KafkaStreamsTopArticles(KafkaStreamsDriverBase):
     """
     Test KafkaStreams TopArticles which counts the top N articles
