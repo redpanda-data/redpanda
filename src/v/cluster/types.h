@@ -381,6 +381,8 @@ struct incremental_topic_custom_updates {
  * Struct representing single topic properties update
  */
 struct topic_properties_update {
+    // We need version to indetify request with custom_properties
+    static constexpr int32_t version = -1;
     explicit topic_properties_update(model::topic_namespace tp_ns)
       : tp_ns(std::move(tp_ns)) {}
 
@@ -884,4 +886,9 @@ struct adl<cluster::cluster_config_status_cmd_data> {
     cluster::cluster_config_status_cmd_data from(iobuf_parser&);
 };
 
+template<>
+struct adl<cluster::incremental_topic_custom_updates> {
+    void to(iobuf& out, cluster::incremental_topic_custom_updates&&);
+    cluster::incremental_topic_custom_updates from(iobuf_parser&);
+};
 } // namespace reflection
