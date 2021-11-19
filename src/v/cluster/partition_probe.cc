@@ -53,32 +53,14 @@ void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
           [this] { return _partition.last_stable_offset(); },
           sm::description("Last stable offset"),
           labels),
-        sm::make_gauge(
-          "committed_offset",
-          [this] { return _partition.committed_offset(); },
-          sm::description("Partition commited offset. i.e. safely persisted on "
-                          "majority of replicas"),
-          labels),
-        sm::make_gauge(
-          "end_offset",
-          [this] { return _partition.dirty_offset(); },
-          sm::description(
-            "Last offset stored by current partition on this node"),
-          labels),
+
         sm::make_gauge(
           "high_watermark",
           [this] { return _partition.high_watermark(); },
           sm::description(
             "Partion high watermark i.e. highest consumable offset"),
           labels),
-        sm::make_gauge(
-          "leader_id",
-          [this] {
-              return _partition._raft->get_leader_id().value_or(
-                model::node_id(-1));
-          },
-          sm::description("Id of current partition leader"),
-          labels),
+
         sm::make_gauge(
           "under_replicated_replicas",
           [this] {
