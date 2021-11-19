@@ -21,7 +21,7 @@ have measured. It’s important to mention that this doesn’t need to be done e
 time redpanda is started. rpk iotune’s output parameters are written to a file
 which can be saved and reused in nodes running on the same type of hardware.
 
-Currently, we only have well-known-types for AWS (GCP and Azure VM types support
+Currently, we only have well-known-types for AWS and GCP (Azure VM types support
 is coming soon). Upon startup, rpk will try to detect the current cloud and
 instance type via the cloud’s metadata API, setting the correct iotune
 properties if the detected setup is known apriori.
@@ -32,7 +32,7 @@ cloud vendor, VM type and storage type surrounded by quotes and separated by
 colons:
 
 ```
-rpk start --well-known-io 'aws:l3.xlarge:default'
+rpk start --well-known-io 'aws:i3.xlarge:default'
 ```
 
 It can also be specified in the redpanda YAML configuration file, under the rpk
