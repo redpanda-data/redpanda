@@ -55,7 +55,8 @@ enum class errc : int16_t {
     data_policy_not_exists,
     source_topic_not_exists,
     source_topic_still_in_use,
-    wating_for_partition_shutdown
+    wating_for_partition_shutdown,
+    error_collecting_health_report,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -157,6 +158,8 @@ struct errc_category final : public std::error_category {
             return "Partition update on current core can not be finished since "
                    "backend is waiting for the partition to be shutdown on its "
                    "originating core";
+        case errc::error_collecting_health_report:
+            return "Error requesting health monitor update";
         }
         return "cluster::errc::unknown";
     }
