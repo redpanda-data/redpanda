@@ -42,8 +42,8 @@ class BytesSentTest(RedpandaTest):
 
             # Find the metric family that tracks bytes sent from kafka subsystem
             family_filter = filter(
-                lambda fam: fam.name == "vectorized_kafka_rpc_sent_bytes",
-                metrics)
+                lambda fam: fam.name ==
+                "vectorized_kafka_rpc_server_sent_bytes", metrics)
             family = next(family_filter)
 
             # Sum bytes sent

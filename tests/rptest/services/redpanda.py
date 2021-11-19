@@ -644,8 +644,8 @@ class RedpandaService(Service):
            will return an array containing MetricSample instances for each node and
            core/shard in the cluster. Each entry will correspond to a value from:
 
-              family = vectorized_cluster_partition_under_replicated_replicas
-              sample = vectorized_cluster_partition_under_replicated_replicas
+              family = vectorized_partition_under_replicated_replicas
+              sample = vectorized_partition_under_replicated_replicas
         """
         nodes = nodes or self.nodes
         found_sample = None
@@ -705,7 +705,7 @@ class RedpandaService(Service):
             idx = self.idx(node)
             for family in metrics:
                 for sample in family.samples:
-                    if sample.name == "vectorized_cluster_partition_under_replicated_replicas":
+                    if sample.name == "vectorized_partition_under_replicated_replicas":
                         if counts[idx] is None:
                             counts[idx] = 0
                         counts[idx] += int(sample.value)

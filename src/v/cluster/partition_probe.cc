@@ -40,7 +40,7 @@ void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
     };
 
     _metrics.add_group(
-      prometheus_sanitize::metrics_name("cluster:partition"),
+      prometheus_sanitize::metrics_name("partition"),
       {
         sm::make_gauge(
           "leader",

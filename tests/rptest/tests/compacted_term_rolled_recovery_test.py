@@ -113,7 +113,7 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
                 metrics = self.redpanda.metrics(node)
                 for family in metrics:
                     for sample in family.samples:
-                        if sample.name == "vectorized_cluster_partition_last_stable_offset" and \
+                        if sample.name == "vectorized_partition_last_stable_offset" and \
                                 sample.labels["namespace"] == "kafka" and \
                                 sample.labels["topic"] == topic and \
                                 int(sample.labels["partition"]) == partition:

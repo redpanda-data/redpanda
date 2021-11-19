@@ -14,21 +14,21 @@ vectorized_alien_total_sent_messages{shard="1"} 0
 # HELP vectorized_application_uptime Redpanda uptime in milliseconds
 # TYPE vectorized_application_uptime gauge
 vectorized_application_uptime{shard="0"} 12964954.000000
-# HELP vectorized_cluster_partition_committed_offset Committed offset
-# TYPE vectorized_cluster_partition_committed_offset gauge
-vectorized_cluster_partition_committed_offset{namespace="redpanda",partition="0",shard="0",topic="controller"} 4.000000
-# HELP vectorized_cluster_partition_last_stable_offset Last stable offset
-# TYPE vectorized_cluster_partition_last_stable_offset gauge
-vectorized_cluster_partition_last_stable_offset{namespace="redpanda",partition="0",shard="0",topic="controller"} 5.000000
-# HELP vectorized_cluster_partition_leader Flag indicating if this partition instance is a leader
-# TYPE vectorized_cluster_partition_leader gauge
-vectorized_cluster_partition_leader{namespace="redpanda",partition="0",shard="0",topic="controller"} 1.000000
-# HELP vectorized_cluster_partition_records_fetched Total number of records fetched
-# TYPE vectorized_cluster_partition_records_fetched counter
-vectorized_cluster_partition_records_fetched{namespace="redpanda",partition="0",shard="0",topic="controller"} 0
-# HELP vectorized_cluster_partition_records_produced Total number of records produced
-# TYPE vectorized_cluster_partition_records_produced counter
-vectorized_cluster_partition_records_produced{namespace="redpanda",partition="0",shard="0",topic="controller"} 0
+# HELP vectorized_partition_committed_offset Committed offset
+# TYPE vectorized_partition_committed_offset gauge
+vectorized_partition_committed_offset{namespace="redpanda",partition="0",shard="0",topic="controller"} 4.000000
+# HELP vectorized_partition_last_stable_offset Last stable offset
+# TYPE vectorized_partition_last_stable_offset gauge
+vectorized_partition_last_stable_offset{namespace="redpanda",partition="0",shard="0",topic="controller"} 5.000000
+# HELP vectorized_partition_leader Flag indicating if this partition instance is a leader
+# TYPE vectorized_partition_leader gauge
+vectorized_partition_leader{namespace="redpanda",partition="0",shard="0",topic="controller"} 1.000000
+# HELP vectorized_partition_records_fetched Total number of records fetched
+# TYPE vectorized_partition_records_fetched counter
+vectorized_partition_records_fetched{namespace="redpanda",partition="0",shard="0",topic="controller"} 0
+# HELP vectorized_partition_records_produced Total number of records produced
+# TYPE vectorized_partition_records_produced counter
+vectorized_partition_records_produced{namespace="redpanda",partition="0",shard="0",topic="controller"} 0
 # HELP vectorized_httpd_connections_current The current number of open  connections
 # TYPE vectorized_httpd_connections_current gauge
 vectorized_httpd_connections_current{service="admin",shard="0"} 2.000000
