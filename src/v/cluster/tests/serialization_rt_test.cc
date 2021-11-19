@@ -202,7 +202,7 @@ SEASTAR_THREAD_TEST_CASE(config_update_req_resp_test) {
 }
 
 namespace old {
-struct incremental_topic_updates {
+struct incremental_topic_updates_v1 {
     cluster::property_update<std::optional<model::compression>> compression;
     cluster::property_update<std::optional<model::cleanup_policy_bitflags>>
       cleanup_policy_bitflags;
@@ -214,6 +214,21 @@ struct incremental_topic_updates {
     cluster::property_update<tristate<size_t>> retention_bytes;
     cluster::property_update<tristate<std::chrono::milliseconds>>
       retention_duration;
+};
+
+struct incremental_topic_updates_v2 {
+    cluster::property_update<std::optional<model::compression>> compression;
+    cluster::property_update<std::optional<model::cleanup_policy_bitflags>>
+      cleanup_policy_bitflags;
+    cluster::property_update<std::optional<model::compaction_strategy>>
+      compaction_strategy;
+    cluster::property_update<std::optional<model::timestamp_type>>
+      timestamp_type;
+    cluster::property_update<std::optional<size_t>> segment_size;
+    cluster::property_update<tristate<size_t>> retention_bytes;
+    cluster::property_update<tristate<std::chrono::milliseconds>>
+      retention_duration;
+    cluster::property_update<std::optional<v8_engine::data_policy>> data_policy;
 };
 
 } // namespace old
@@ -274,12 +289,6 @@ cluster::incremental_topic_updates random_incremental_topic_updates() {
             ret.retention_duration.op = random_op();
         }
     }
-    if (rand_bool()) {
-        ret.data_policy.value = v8_engine::data_policy(
-          random_generators::gen_alphanum_string(6),
-          random_generators::gen_alphanum_string(6));
-        ret.data_policy.op = random_op();
-    }
 
     return ret;
 }
@@ -298,7 +307,7 @@ SEASTAR_THREAD_TEST_CASE(incremental_topic_updates_backward_compatibilty_test) {
     cluster::incremental_topic_updates updates
       = random_incremental_topic_updates();
 
-    old::incremental_topic_updates old_updates;
+    old::incremental_topic_updates_v1 old_updates;
     old_updates.cleanup_policy_bitflags = updates.cleanup_policy_bitflags;
     old_updates.compaction_strategy = updates.compaction_strategy;
     old_updates.compression = updates.compression;
@@ -322,7 +331,36 @@ SEASTAR_THREAD_TEST_CASE(incremental_topic_updates_backward_compatibilty_test) {
     BOOST_CHECK(old_updates.retention_bytes == result.retention_bytes);
     BOOST_CHECK(old_updates.retention_duration == result.retention_duration);
     BOOST_CHECK(old_updates.segment_size == result.segment_size);
+
+    old::incremental_topic_updates_v2 old_updates_with_dp;
+    old_updates_with_dp.cleanup_policy_bitflags
+      = updates.cleanup_policy_bitflags;
+    old_updates_with_dp.compaction_strategy = updates.compaction_strategy;
+    old_updates_with_dp.compression = updates.compression;
+    old_updates_with_dp.timestamp_type = updates.timestamp_type;
+    old_updates_with_dp.retention_bytes = updates.retention_bytes;
+    old_updates_with_dp.retention_duration = updates.retention_duration;
+    old_updates_with_dp.segment_size = updates.segment_size;
+    old_updates_with_dp.data_policy.op = random_op();
+    old_updates_with_dp.data_policy.value = v8_engine::data_policy(
+      random_generators::gen_alphanum_string(6),
+      random_generators::gen_alphanum_string(6));
+
+    // serialize old version
+    buf = reflection::to_iobuf(old_updates_with_dp);
+    iobuf_parser parser_with_dp(std::move(buf));
+    // deserialize with new type
+    result = reflection::adl<cluster::incremental_topic_updates>{}.from(
+      parser_with_dp);
+
     BOOST_CHECK(
-      cluster::property_update<std::optional<v8_engine::data_policy>>{}
-      == result.data_policy);
+      old_updates.cleanup_policy_bitflags == result.cleanup_policy_bitflags);
+    BOOST_CHECK(
+      old_updates_with_dp.compaction_strategy == result.compaction_strategy);
+    BOOST_CHECK(old_updates_with_dp.compression == result.compression);
+    BOOST_CHECK(old_updates_with_dp.timestamp_type == result.timestamp_type);
+    BOOST_CHECK(old_updates_with_dp.retention_bytes == result.retention_bytes);
+    BOOST_CHECK(
+      old_updates_with_dp.retention_duration == result.retention_duration);
+    BOOST_CHECK(old_updates_with_dp.segment_size == result.segment_size);
 }

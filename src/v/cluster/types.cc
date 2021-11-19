@@ -528,14 +528,40 @@ adl<cluster::configuration_invariants>::from(iobuf_parser& parser) {
 
 void adl<cluster::topic_properties_update>::to(
   iobuf& out, cluster::topic_properties_update&& r) {
-    reflection::serialize(out, r.tp_ns, r.properties);
+    reflection::serialize(
+      out, r.version, r.tp_ns, r.properties, r.custom_properties);
 }
 
 cluster::topic_properties_update
 adl<cluster::topic_properties_update>::from(iobuf_parser& parser) {
+    /**
+     * We use the same versioning trick as for `cluster::topic_configuration`.
+     *
+     * NOTE: The first field of the topic_properties_update is a
+     * model::topic_namespace. Serialized ss::string starts from either
+     * int32_t for string length. We use negative version to encode new format
+     * of incremental topic_properties_update
+     */
+
+    auto version = adl<int32_t>{}.from(parser.peek(4));
+    if (version < 0) {
+        // Consume version from stream
+        parser.skip(4);
+        vassert(
+          version == cluster::topic_properties_update::version,
+          "topic_properties_update version {} is not supported",
+          version);
+    } else {
+        version = 0;
+    }
+
     auto tp_ns = adl<model::topic_namespace>{}.from(parser);
     cluster::topic_properties_update ret(std::move(tp_ns));
     ret.properties = adl<cluster::incremental_topic_updates>{}.from(parser);
+    if (version < 0) {
+        ret.custom_properties
+          = adl<cluster::incremental_topic_custom_updates>{}.from(parser);
+    }
 
     return ret;
 }
@@ -908,8 +934,7 @@ void adl<cluster::incremental_topic_updates>::to(
       t.timestamp_type,
       t.segment_size,
       t.retention_bytes,
-      t.retention_duration,
-      t.data_policy);
+      t.retention_duration);
 }
 
 cluster::incremental_topic_updates
@@ -928,7 +953,7 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
         // Consume version from stream
         in.skip(1);
         vassert(
-          version == cluster::incremental_topic_updates::version,
+          version >= cluster::incremental_topic_updates::version,
           "topic_configuration version {} is not supported",
           version);
     } else {
@@ -957,11 +982,13 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
       = adl<cluster::property_update<tristate<std::chrono::milliseconds>>>{}
           .from(in);
 
-    if (version < 0) {
-        updates.data_policy
-          = adl<
-              cluster::property_update<std::optional<v8_engine::data_policy>>>{}
-              .from(in);
+    if (
+      version == cluster::incremental_topic_updates::version_with_data_policy) {
+        // data_policy property from update_topic_properties_cmd is never used.
+        // data_policy_frontend replicates this property and store it to
+        // create_data_policy_cmd_data, data_policy_manager handles it
+        adl<cluster::property_update<std::optional<v8_engine::data_policy>>>{}
+          .from(in);
     }
     return updates;
 }
@@ -1028,6 +1055,20 @@ adl<cluster::cluster_config_status_cmd_data>::from(iobuf_parser& in) {
     return cluster::cluster_config_status_cmd_data{
       .status = std::move(status),
     };
+}
+
+void adl<cluster::incremental_topic_custom_updates>::to(
+  iobuf& out, cluster::incremental_topic_custom_updates&& t) {
+    reflection::serialize(out, t.data_policy);
+}
+
+cluster::incremental_topic_custom_updates
+adl<cluster::incremental_topic_custom_updates>::from(iobuf_parser& in) {
+    cluster::incremental_topic_custom_updates updates;
+    updates.data_policy
+      = adl<cluster::property_update<std::optional<v8_engine::data_policy>>>{}
+          .from(in);
+    return updates;
 }
 
 } // namespace reflection

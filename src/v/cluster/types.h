@@ -347,9 +347,11 @@ struct property_update<tristate<T>> {
 };
 
 struct incremental_topic_updates {
-    // negative version indicating new format (with included data_policy
-    // property)
-    static constexpr int8_t version = -1;
+    static constexpr int8_t version_with_data_policy = -1;
+    // negative version indicating different format:
+    // -1 - topic_updates with data_policy
+    // -2 - topic_updates without data_policy
+    static constexpr int8_t version = -2;
     property_update<std::optional<model::compression>> compression;
     property_update<std::optional<model::cleanup_policy_bitflags>>
       cleanup_policy_bitflags;
@@ -360,24 +362,37 @@ struct incremental_topic_updates {
     property_update<tristate<size_t>> retention_bytes;
     property_update<tristate<std::chrono::milliseconds>> retention_duration;
 
-    // Data-policy property is replicated by data_policy_frontend and handled by
-    // data_policy_manager.
-    property_update<std::optional<v8_engine::data_policy>> data_policy;
-
     friend bool operator==(
       const incremental_topic_updates&, const incremental_topic_updates&)
       = default;
+};
+
+// This class contains updates for topic properties which are replicates not by
+// topic_frontend
+struct incremental_topic_custom_updates {
+    // Data-policy property is replicated by data_policy_frontend and handled by
+    // data_policy_manager.
+    property_update<std::optional<v8_engine::data_policy>> data_policy;
 };
 
 /**
  * Struct representing single topic properties update
  */
 struct topic_properties_update {
+    // We need version to indetify request with custom_properties
+    static constexpr int32_t version = -1;
     explicit topic_properties_update(model::topic_namespace tp_ns)
       : tp_ns(std::move(tp_ns)) {}
 
     model::topic_namespace tp_ns;
+
+    // Tihs properties is serialized to update_topic_properties_cmd by
+    // topic_frontend
     incremental_topic_updates properties;
+
+    // This properties is not serialized to update_topic_properties_cmd, because
+    // they have custom services for replication.
+    incremental_topic_custom_updates custom_properties;
 };
 
 // Structure holding topic configuration, optionals will be replaced by broker
@@ -869,4 +884,9 @@ struct adl<cluster::cluster_config_status_cmd_data> {
     cluster::cluster_config_status_cmd_data from(iobuf_parser&);
 };
 
+template<>
+struct adl<cluster::incremental_topic_custom_updates> {
+    void to(iobuf& out, cluster::incremental_topic_custom_updates&&);
+    cluster::incremental_topic_custom_updates from(iobuf_parser&);
+};
 } // namespace reflection
