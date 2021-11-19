@@ -31,7 +31,14 @@ public:
     const model::ntp& ntp() const final { return _partition->ntp(); }
 
     model::offset start_offset() const final {
-        return _translator->from_log_offset(_partition->start_offset());
+        auto local_kafka_start_offset = _translator->from_log_offset(
+          _partition->start_offset());
+        if (
+          _partition->cloud_data_available()
+          && (_partition->start_cloud_offset() < local_kafka_start_offset)) {
+            return _partition->start_cloud_offset();
+        }
+        return local_kafka_start_offset;
     }
 
     model::offset high_watermark() const final {
@@ -70,6 +77,15 @@ public:
 
     ss::future<std::vector<cluster::rm_stm::tx_range>>
     aborted_transactions(model::offset base, model::offset last) final {
+        model::offset local_kafka_start_offset = _translator->from_log_offset(
+          _partition->start_offset());
+        if (base < local_kafka_start_offset) {
+            // TODO: get offset translation information for the offsets range
+            // that we have read and use it to query
+            // _partition->aborted_transactions.
+            co_return std::vector<cluster::rm_stm::tx_range>{};
+        }
+
         auto source = co_await _partition->aborted_transactions(
           _translator->to_log_offset(base), _translator->to_log_offset(last));
 

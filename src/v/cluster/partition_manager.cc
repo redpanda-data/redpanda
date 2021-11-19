@@ -35,12 +35,14 @@ partition_manager::partition_manager(
   ss::sharded<raft::group_manager>& raft,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<cloud_storage::partition_recovery_manager>& recovery_mgr,
-  ss::sharded<cloud_storage::remote>& cloud_storage_api)
+  ss::sharded<cloud_storage::remote>& cloud_storage_api,
+  ss::sharded<cloud_storage::cache>& cloud_storage_cache)
   : _storage(storage.local())
   , _raft_manager(raft)
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _partition_recovery_mgr(recovery_mgr)
-  , _cloud_storage_api(cloud_storage_api) {}
+  , _cloud_storage_api(cloud_storage_api)
+  , _cloud_storage_cache(cloud_storage_cache) {}
 
 partition_manager::ntp_table_container
 partition_manager::get_topic_partition_table(
@@ -82,7 +84,7 @@ ss::future<consensus_ptr> partition_manager::manage(
         group, std::move(initial_nodes), log);
 
     auto p = ss::make_lw_shared<partition>(
-      c, _tx_gateway_frontend, _cloud_storage_api);
+      c, _tx_gateway_frontend, _cloud_storage_api, _cloud_storage_cache);
 
     _ntp_table.emplace(log.config().ntp(), p);
     _raft_table.emplace(group, p);

@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_recovery_manager.h"
 #include "cloud_storage/remote.h"
 #include "cluster/ntp_callbacks.h"
@@ -35,7 +36,8 @@ public:
       ss::sharded<raft::group_manager>&,
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<cloud_storage::partition_recovery_manager>&,
-      ss::sharded<cloud_storage::remote>&);
+      ss::sharded<cloud_storage::remote>&,
+      ss::sharded<cloud_storage::cache>&);
 
     using manage_cb_t
       = ss::noncopyable_function<void(ss::lw_shared_ptr<partition>)>;
@@ -164,6 +166,7 @@ private:
     ss::sharded<cloud_storage::partition_recovery_manager>&
       _partition_recovery_mgr;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
+    ss::sharded<cloud_storage::cache>& _cloud_storage_cache;
     ss::gate _gate;
 
     friend std::ostream& operator<<(std::ostream&, const partition_manager&);
