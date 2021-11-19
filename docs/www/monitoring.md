@@ -35,10 +35,10 @@ addresses.
 
 You can generate a comprehensive Grafana dashboard with
 ```
-rpk generate grafana-dashboard --datasource <name> --prometheus-url <url>
+rpk generate grafana-dashboard --datasource <name> --metrics-endpoint <url>
 ```
 
-`--prometheus-url` is the address to a redpanda node's metrics endpoint
+`--metrics-endpoint` is the address to a redpanda node's metrics endpoint
 (`<node ip>:9644/metrics`, by default).
 
 `<name>` is the name of the Prometheus datasource configured in your
@@ -52,7 +52,7 @@ Simply pipe the commmand's output to a file and import it in Grafana.
 ```
 rpk generate grafana-dashboard \
   --datasource prometheus \
-  --prometheus-url 172.32.89.236:9644/metrics > redpanda-dashboard.json
+  --metrics-endpoint 172.32.89.236:9644/metrics > redpanda-dashboard.json
 ```
 
 ## Stats Reporting
