@@ -75,7 +75,7 @@ void probe::setup_metrics(const model::ntp& ntp) {
           [this] { return _log_segments_removed; },
           sm::description("Number of removed log segments"),
           labels),
-        sm::make_derive(
+        sm::make_gauge(
           "log_segments_active",
           [this] { return _log_segments_active; },
           sm::description("Number of active log segments"),
