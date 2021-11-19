@@ -22,6 +22,7 @@
 #include "raft/types.h"
 #include "rpc/types.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/util/defer.hh>
 
 #include <chrono>
@@ -234,6 +235,8 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
                 append_result);
           }
           _dirty_offset = append_result.value().last_offset;
+          // store committed offset to check if it advanced
+          _initial_committed_offset = _ptr->committed_offset();
           // dispatch requests to followers & leader flush
           uint16_t requests_count = 0;
           cfg.for_each_broker_id([this, &requests_count](const vnode& rni) {
@@ -275,8 +278,11 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
            * have been either commited or truncated
            */
           auto stop_cond = [this, appended_offset, appended_term] {
-              return _ptr->committed_offset() >= appended_offset
-                     || _ptr->term() > appended_term;
+              const auto current_committed_offset = _ptr->committed_offset();
+              return current_committed_offset >= appended_offset
+                     // if term changed and committed offset was updated, we may
+                     // proceed
+                     || (_ptr->term() > appended_term && current_committed_offset > _initial_committed_offset);
           };
           return _ptr->_commit_index_updated.wait(stop_cond)
             .then([this, appended_offset, appended_term] {
@@ -309,6 +315,15 @@ result<replicate_result> replicate_entries_stm::process_result(
             return ret_t(errc::replicated_entry_truncated);
         }
     }
+
+    // better crash than allow for inconsistency
+    vassert(
+      appended_offset <= _ptr->_commit_index,
+      "Successfull replication means that committed offset passed last "
+      "appended offset. Current committed offset: {}, last appended offset: {}",
+      _ptr->committed_offset(),
+      appended_offset);
+
     vlog(
       _ctxlog.trace,
       "Replication success, last offset: {}, term: {}",
