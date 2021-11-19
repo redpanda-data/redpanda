@@ -396,13 +396,10 @@ describe("Server", function () {
           globalId: BigInt(id),
           apply: (recordBatch) => {
             const result = new Map();
-            const transformedRecord =
-              // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-              // @ts-ignore
-              recordBatch.map(({ header, records }) => ({
-                header,
-                records: records.map(uppercase),
-              }));
+            const transformedRecord = {
+              header: recordBatch.header,
+              records: recordBatch.records.map(uppercase),
+            };
             result.set("result", transformedRecord);
             return Promise.resolve(result);
           },
@@ -416,7 +413,7 @@ describe("Server", function () {
             header: {
               recordCount: 1,
             },
-            records: [{ value: Buffer.from("b") }],
+            records: [{ value: Buffer.from("b"), valueLen: 1 }],
           }),
         ],
         coprocessorIds: [BigInt(1)],
@@ -446,13 +443,10 @@ describe("Server", function () {
           globalId: BigInt(id),
           apply: (recordBatch) => {
             const result = new Map();
-            const transformedRecord =
-              // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-              // @ts-ignore
-              recordBatch.map(({ header, records }) => ({
-                header,
-                records: records.map(uppercase),
-              }));
+            const transformedRecord = {
+              header: recordBatch.header,
+              records: recordBatch.records.map(uppercase),
+            };
             result.set("result", transformedRecord);
             return Promise.resolve(result);
           },
@@ -466,7 +460,7 @@ describe("Server", function () {
               header: {
                 recordCount: 1,
               },
-              records: [{ value: Buffer.from("b") }],
+              records: [{ value: Buffer.from("b"), valueLen: 1 }],
             }),
           ],
           coprocessorIds: [BigInt(1)],
@@ -479,7 +473,7 @@ describe("Server", function () {
               header: {
                 recordCount: 1,
               },
-              records: [{ value: Buffer.from("b") }],
+              records: [{ value: Buffer.from("b"), valueLen: 1 }],
             }),
           ],
         }));

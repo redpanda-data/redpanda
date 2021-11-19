@@ -18,7 +18,7 @@ import { ProcessBatchServer } from "../rpc/server";
 import {
   calculateRecordBatchSize,
   calculateRecordLength,
-  createRecordBatch,
+  copyRecordBatch,
 } from "../public";
 import LogService from "../utilities/Logging";
 
@@ -192,7 +192,7 @@ class Repository {
           }
           try {
             return handle.coprocessor
-              .apply(createRecordBatch(recordBatch), this.wasmLogger)
+              .apply(copyRecordBatch(recordBatch), this.wasmLogger)
               .then((resultMap) =>
                 this.validateResultApply(
                   requestItem,
