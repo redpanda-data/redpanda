@@ -210,7 +210,7 @@ void server::setup_metrics() {
         return;
     }
     _metrics.add_group(
-      prometheus_sanitize::metrics_name(cfg.name),
+      prometheus_sanitize::metrics_name(fmt::format("{}:server", cfg.name)),
       {sm::make_total_bytes(
          "max_service_mem_bytes",
          [this] { return cfg.max_service_memory_per_core; },

@@ -83,7 +83,7 @@ public:
               service_label("{{service_name}}"),
               method_label("{{method.name}}")};
             _metrics.add_group(
-              prometheus_sanitize::metrics_name("internal_rpc"),
+              prometheus_sanitize::metrics_name("internal_rpc_server"),
               {sm::make_histogram(
                 "latency",
                 [this] { return _methods[{{loop.index-1}}].probes.latency_hist().seastar_histogram_logform(); },

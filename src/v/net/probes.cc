@@ -15,6 +15,8 @@
 #include <seastar/core/metrics.hh>
 #include <seastar/net/inet_address.hh>
 
+#include <fmt/core.h>
+
 #include <ostream>
 
 namespace net {
@@ -22,7 +24,7 @@ void server_probe::setup_metrics(
   ss::metrics::metric_groups& mgs, const char* proto) {
     namespace sm = ss::metrics;
     mgs.add_group(
-      prometheus_sanitize::metrics_name(proto),
+      prometheus_sanitize::metrics_name(fmt::format("{}:server", proto)),
       {
         sm::make_gauge(
           "active_connections",
