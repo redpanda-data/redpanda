@@ -24,7 +24,11 @@ struct probe {
     probe() = default;
     virtual ~probe() = default;
     virtual std::vector<std::string_view> points() = 0;
-    virtual uint32_t method_for_point(std::string_view point) const = 0;
+    // Returns bit(s) corresponding to an injection point.
+    // Bits must be distinct across points. Implementations may
+    // support a pattern or wildcard for 'point', which may return
+    // multiple bits set here.
+    virtual uint32_t point_to_bit(std::string_view point) const = 0;
 
     [[gnu::always_inline]] bool operator()() const {
 #ifndef NDEBUG
@@ -38,16 +42,16 @@ struct probe {
 
     bool is_enabled() const { return operator()(); }
     void set_exception(std::string_view point) {
-        _exception_methods |= method_for_point(point);
+        _exception_methods |= point_to_bit(point);
     }
     void set_delay(std::string_view point) {
-        _delay_methods |= method_for_point(point);
+        _delay_methods |= point_to_bit(point);
     }
     void set_termination(std::string_view point) {
-        _termination_methods |= method_for_point(point);
+        _termination_methods |= point_to_bit(point);
     }
     void unset(std::string_view point) {
-        const uint32_t m = method_for_point(point);
+        const uint32_t m = point_to_bit(point);
         _exception_methods &= ~m;
         _delay_methods &= ~m;
         _termination_methods &= ~m;
@@ -62,8 +66,8 @@ protected:
 class honey_badger {
 public:
     honey_badger() = default;
-    void register_probe(std::string_view, probe* p);
-    void deregister_probe(std::string_view);
+    void register_probe(std::string_view module, probe* p);
+    void deregister_probe(std::string_view module);
 
     static constexpr bool is_enabled() {
 #ifndef NDEBUG
@@ -80,7 +84,7 @@ public:
     void set_termination(std::string_view module, std::string_view point);
     void unset(std::string_view module, std::string_view point);
     absl::node_hash_map<std::string_view, std::vector<std::string_view>>
-    points() const;
+    modules() const;
 
 private:
     absl::node_hash_map<std::string_view, probe*> _probes;
