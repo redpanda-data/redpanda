@@ -902,6 +902,12 @@ template<typename Func>
 ss::future<std::error_code> consensus::change_configuration(Func&& f) {
     return _op_lock.get_units().then(
       [this, f = std::forward<Func>(f)](ss::semaphore_units<> u) mutable {
+          // prevent updating configuration if last configuration wasn't
+          // committed
+          if (_configuration_manager.get_latest_offset() > _commit_index) {
+              return ss::make_ready_future<std::error_code>(
+                errc::configuration_change_in_progress);
+          }
           auto latest_cfg = config();
           // latest configuration is of joint type
           if (latest_cfg.type() == configuration_type::joint) {
