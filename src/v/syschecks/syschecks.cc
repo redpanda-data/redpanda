@@ -37,7 +37,7 @@ ss::future<> disk(const ss::sstring& path) {
     });
 }
 
-void memory(bool ignore) {
+void memory() {
     static const uint64_t kMinMemory = 1 << 30;
     const auto shard_mem = ss::memory::stats().total_memory();
     if (shard_mem >= kMinMemory) {
@@ -46,9 +46,6 @@ void memory(bool ignore) {
     auto line = fmt::format(
       "Memory: '{}' below recommended: '{}'", shard_mem, kMinMemory);
     checklog.error(line.c_str());
-    if (!ignore) {
-        throw std::runtime_error(line);
-    }
 }
 
 ss::future<> systemd_notify_ready() {
