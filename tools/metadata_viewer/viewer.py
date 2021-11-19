@@ -6,6 +6,7 @@ from controller import ControllerLog
 
 from storage import Store
 from kvstore import KvStore
+from kafka import KafkaLog
 import logging
 import json
 
@@ -29,6 +30,18 @@ def print_controller(store):
             logger.info(json.dumps(ctrl.records, indent=2))
 
 
+def print_kafka(store, topic):
+    for ntp in store.ntps:
+        if ntp.nspace == "kafka":
+            if topic and ntp.topic != topic:
+                continue
+
+            log = KafkaLog(ntp)
+            logger.info(f'topic: {ntp.topic}, partition: {ntp.partition}')
+            for header in log.batch_headers():
+                print(json.dumps(header, indent=2))
+
+
 def main():
     import argparse
 
@@ -39,9 +52,14 @@ def main():
                             help='Path to the log desired to be analyzed')
         parser.add_argument('--type',
                             type=str,
-                            choices=['controller', 'kvstore'],
+                            choices=['controller', 'kvstore', 'kafka'],
                             required=True,
                             help='opertion to execute')
+        parser.add_argument(
+            '--topic',
+            type=str,
+            required=False,
+            help='for kafka type, if set, parse only this topic')
         parser.add_argument('-v', "--verbose", action="store_true")
         return parser
 
@@ -51,7 +69,7 @@ def main():
         logging.basicConfig(level="DEBUG")
     else:
         logging.basicConfig(level="INFO")
-    logger.info(f"starting metadata viewer with {options}")
+    logger.info(f"starting metadata viewer with options: {options}")
 
     if not os.path.exists(options.path):
         logger.error(f"Path doesn't exist {options.path}")
@@ -61,6 +79,8 @@ def main():
         print_kv_store(store)
     elif options.type == "controller":
         print_controller(store)
+    elif options.type == "kafka":
+        print_kafka(store, options.topic)
 
 
 if __name__ == '__main__':

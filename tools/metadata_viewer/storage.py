@@ -186,6 +186,8 @@ class Store:
     def __search(self):
         dirs = os.walk(self.base_dir)
         for ntpd in (p[0] for p in dirs if not p[1]):
+            if 'cloud_storage_cache' in ntpd:
+                continue
             head, part_ntp_id = os.path.split(ntpd)
             [part, ntp_id] = part_ntp_id.split("_")
             head, topic = os.path.split(head)
