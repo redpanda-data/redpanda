@@ -72,35 +72,35 @@ interface PartialRecordBatch {
 }
 
 interface RecordBatchFunctor extends RecordBatch {
-  map(fn: (record) => RecordBatch): RecordBatch;
+  map(fn: (recordBatch) => RecordBatch): RecordBatch;
 }
 
 export const createRecordBatch = (
   record?: PartialRecordBatch
 ): RecordBatchFunctor => {
   const map =
-    (record: RecordBatch) =>
-    (fn: (record) => RecordBatch): RecordBatch => {
-      return fn(record);
+    (recordBatch: RecordBatch) =>
+    (fn: (recordBatch) => RecordBatch): RecordBatch => {
+      return fn(recordBatch);
     };
   const records = record?.records || [];
-  const resultRecord = {
+  const resultBatch = {
     header: createHeader(record?.header || {}),
     records: records.map(createRecord),
   };
   return {
-    ...resultRecord,
-    map: map(resultRecord),
+    ...resultBatch,
+    map: map(resultBatch),
   };
 };
 
 export const createRecordBatchFunctor = (
-  record: RecordBatch
+  recordBatch: RecordBatch
 ): RecordBatchFunctor => {
-  const map = (fn: (record) => RecordBatch): RecordBatch => {
-    return fn(record);
+  const map = (fn: (recordBatch) => RecordBatch): RecordBatch => {
+    return fn(recordBatch);
   };
-  return { ...record, map };
+  return { ...recordBatch, map };
 };
 
 // receive int64 and return Uint64
