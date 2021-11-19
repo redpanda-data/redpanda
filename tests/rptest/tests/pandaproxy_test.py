@@ -747,7 +747,6 @@ class PandaProxyTest(RedpandaTest):
         rc_res = c0.remove()
         assert rc_res.status_code == requests.codes.no_content
 
-    @ignore  # https://github.com/vectorizedio/redpanda/issues/2501
     @cluster(num_nodes=3)
     def test_consumer_group_json_v2(self):
         """

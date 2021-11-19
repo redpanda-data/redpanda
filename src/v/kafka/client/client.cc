@@ -177,9 +177,9 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
         }
     } catch (const ss::gate_closed_exception&) {
         vlog(kclog.debug, "gate_closed_exception");
-    } catch (const std::exception_ptr& ex) {
+    } catch (const std::exception& ex) {
         // TODO(Ben): Probably vassert
-        vlog(kclog.error, "unknown exception");
+        vlog(kclog.error, "unknown exception: {}", ex);
     }
     return ss::make_exception_future(ex);
 }
@@ -332,7 +332,7 @@ client::create_consumer(const group_id& group_id, member_id name) {
     return gated_retry_with_mitigation(
              [this, group_id, name, func{std::move(build_request)}]() {
                  return _brokers.any()
-                   .then([func{std::move(func)}](shared_broker_t broker) {
+                   .then([func](shared_broker_t broker) {
                        return broker->dispatch(func());
                    })
                    .then([group_id, name](find_coordinator_response res) {

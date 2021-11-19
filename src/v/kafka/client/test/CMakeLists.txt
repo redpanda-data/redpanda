@@ -10,15 +10,15 @@ rp_test(
 
 rp_test(
   UNIT_TEST
-  BINARY_NAME test_kafka_client
+  BINARY_NAME test_kafka_client_single_thread
   SOURCES
     fetch_session.cc
-    partitioners.cc
     produce_batcher.cc
     produce_partition.cc
     retry_with_mitigation.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main v::kafka_client
+  ARGS "-- -c 1"
   LABELS kafka
 )
 
@@ -30,6 +30,7 @@ rp_test(
     fetch.cc
     produce.cc
     reconnect.cc
+    retry.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES
     v::seastar_testing_main
