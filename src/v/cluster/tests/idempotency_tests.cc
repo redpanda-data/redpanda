@@ -184,7 +184,7 @@ FIXTURE_TEST(test_rm_stm_prevents_duplicates, mux_state_machine_fixture) {
                   raft::replicate_options(raft::consistency_level::quorum_ack))
                 .get0();
     BOOST_REQUIRE(
-      r2 == failure_type<cluster::errc>(cluster::errc::sequence_out_of_order));
+      r2 == failure_type<cluster::errc>(cluster::errc::generic_tx_error));
 }
 
 FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
@@ -236,7 +236,7 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
                   raft::replicate_options(raft::consistency_level::quorum_ack))
                 .get0();
     BOOST_REQUIRE(
-      r2 == failure_type<cluster::errc>(cluster::errc::sequence_out_of_order));
+      r2 == failure_type<cluster::errc>(cluster::errc::generic_tx_error));
 }
 
 FIXTURE_TEST(
@@ -273,5 +273,5 @@ FIXTURE_TEST(
                  raft::replicate_options(raft::consistency_level::quorum_ack))
                .get0();
     BOOST_REQUIRE(
-      r == failure_type<cluster::errc>(cluster::errc::sequence_out_of_order));
+      r == failure_type<cluster::errc>(cluster::errc::generic_tx_error));
 }
