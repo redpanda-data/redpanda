@@ -13,7 +13,10 @@ from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.kafka_cli_tools import KafkaCliTools
+
+from kafka import KafkaProducer
+import sys
+import traceback
 
 
 class CompactionRecoveryTest(RedpandaTest):
@@ -79,10 +82,9 @@ class CompactionRecoveryTest(RedpandaTest):
 
     def produce_until_segments(self, count):
         partitions = []
-        kafka_tools = KafkaCliTools(self.redpanda)
 
         def check_partitions():
-            kafka_tools.produce(self.topic, 1024, 1024)
+            self._produce(self.topic, 1024, 1024, 10)
             storage = self.redpanda.storage()
             partitions[:] = storage.partitions("kafka", self.topic)
             return partitions and all(
@@ -95,3 +97,26 @@ class CompactionRecoveryTest(RedpandaTest):
                    err_msg="Segments not found")
 
         return partitions
+
+    def _produce(self, topic, num_records, record_size, timeout_s):
+        producer = None
+        try:
+            producer = KafkaProducer(bootstrap_servers=self.redpanda.brokers(),
+                                     acks="all")
+            value = ("x" * num_records).encode("utf-8")
+            key = "key1".encode("utf-8")
+            future = None
+            for i in range(0, num_records):
+                future = producer.send(topic, value=value, key=key)
+            if future != None:
+                future.get(timeout=timeout_s)
+        except:
+            e, v = sys.exc_info()[:2]
+            stacktrace = traceback.format_exc()
+            self.logger.debug(
+                f"Error on produce: {e}, stacktrace: {stacktrace}")
+        if producer != None:
+            try:
+                producer.close()
+            except:
+                pass
