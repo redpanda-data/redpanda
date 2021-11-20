@@ -201,6 +201,10 @@ static ss::future<read_result> do_read_from_ntp(
           ntp_config.cfg.isolation_level
           == model::isolation_level::read_committed) {
             ntp_config.cfg.max_offset = kafka_partition->last_stable_offset();
+            if (ntp_config.cfg.max_offset > model::offset{0}) {
+                ntp_config.cfg.max_offset = ntp_config.cfg.max_offset
+                                            - model::offset{1};
+            }
         }
     }
 
