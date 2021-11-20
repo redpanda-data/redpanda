@@ -92,38 +92,35 @@ sudo ./install-dependencies.sh && CC=clang CXX=clang++ ./build.sh
 
 For quicker dev setup, we provide a [docker image](tools/docker/README.md) with the toolchain installed.
 
-# Beta builds
+# Release candidate builds
 
-For those of us who like to live on the edge!
+We create a release candidate (RC) build when we get close to a new release and publish these to make new features available for testing. 
+RC builds are not recommended for production use.
 
-We can cut a release at any point from the `/dev` branch if you want to test a particular feature.
-Simply let us know you would like to test a feature from dev and we're happy to cut a beta release.
+## RC releases on Debian/Ubuntu
 
-
-## Beta releases on Debian/Ubuntu
-
-```
+```bash
 curl -1sLf \
-  'https://packages.vectorized.io/HxYRCzL4xbbaEtPi/redpanda-beta/setup.deb.sh' \
+  'https://packages.vectorized.io/E4xN1tVe3Xy60GTx/redpanda-unstable/setup.deb.sh' \
   | sudo -E bash
-  
+
 sudo apt-get install redpanda
 ```
 
-## Beta releases on Fedora/RedHat/Amazon Linux
+## RC releases on Fedora/RedHat/Amazon Linux
 
-```
+```bash
 curl -1sLf \
-  'https://packages.vectorized.io/HxYRCzL4xbbaEtPi/redpanda-beta/setup.rpm.sh' \
+  'https://packages.vectorized.io/E4xN1tVe3Xy60GTx/redpanda-unstable/setup.rpm.sh' \
   | sudo -E bash
-  
+
 sudo yum install redpanda
 ```
 
-## Beta releases on Docker
+## RC releases on Docker
 
-This is an example with the `v21.3.5-beta3` version prior to the 21.3.5 release.
+This is an example with the `v22.1.1-rc1` version prior to the 22.1.1 release.
 
-```
-docker.vectorized.io/vectorized/redpanda:v21.3.5-beta3
+```bash
+docker pull docker.vectorized.io/vectorized/redpanda-unstable:v22.1.1-rc1
 ```
