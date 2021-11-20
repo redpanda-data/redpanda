@@ -46,7 +46,8 @@ class Verifier {
           "read-uncommitted-seek-reads-ongoing-tx",
           Verifier::readUncommittedSeekDoesntRespectOngoingTx),
       entry("set-group-start-offset", Verifier::setGroupStartOffsetPasses),
-      entry("read-process-write", Verifier::readProcessWrite));
+      entry("read-process-write", Verifier::readProcessWrite),
+      entry("concurrent-reads-writes", Verifier::txReadsWritesPasses));
 
   public static void main(final String[] args) throws Exception {
     if (args.length != 2) {
@@ -96,6 +97,11 @@ class Verifier {
         throw e;
       }
     }
+  }
+
+  static void txReadsWritesPasses(String connection) throws Exception {
+    var test = new TxReadsWritesTest(connection, topic1);
+    test.run();
   }
 
   static void initPasses(String connection) throws Exception {
