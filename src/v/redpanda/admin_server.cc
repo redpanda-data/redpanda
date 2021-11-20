@@ -905,16 +905,60 @@ model::node_id parse_broker_id(const ss::httpd::request& req) {
 void admin_server::register_broker_routes() {
     ss::httpd::broker_json::get_brokers.set(
       _server._routes, [this](std::unique_ptr<ss::httpd::request>) {
-          std::vector<ss::httpd::broker_json::broker> res;
-          for (const auto& broker : _metadata_cache.local().all_brokers()) {
-              auto& b = res.emplace_back();
-              b.node_id = broker->id();
-              b.num_cores = broker->properties().cores;
-              b.membership_status = fmt::format(
-                "{}", broker->get_membership_state());
-          }
-          return ss::make_ready_future<ss::json::json_return_type>(
-            std::move(res));
+          cluster::node_report_filter filter;
+
+          return _controller->get_health_monitor()
+            .local()
+            .get_cluster_health(
+              cluster::cluster_report_filter{
+                .node_report_filter = std::move(filter),
+              },
+              cluster::force_refresh::no,
+              model::no_timeout)
+            .then([this](result<cluster::cluster_health_report> h_report) {
+                if (h_report.has_error()) {
+                    throw ss::httpd::base_exception(
+                      fmt::format(
+                        "Unable to get cluster health: {}",
+                        h_report.error().message()),
+                      ss::httpd::reply::status_type::service_unavailable);
+                }
+
+                std::vector<ss::httpd::broker_json::broker> res;
+
+                for (auto& ns : h_report.value().node_states) {
+                    auto broker = _metadata_cache.local().get_broker(ns.id);
+                    if (!broker) {
+                        continue;
+                    }
+                    auto& b = res.emplace_back();
+                    b.node_id = ns.id;
+                    b.num_cores = (*broker)->properties().cores;
+                    b.membership_status = fmt::format(
+                      "{}", ns.membership_state);
+                    b.is_alive = (bool)ns.is_alive;
+
+                    auto r_it = std::find_if(
+                      h_report.value().node_reports.begin(),
+                      h_report.value().node_reports.end(),
+                      [id = ns.id](const cluster::node_health_report& nhr) {
+                          return nhr.id == id;
+                      });
+                    if (r_it != h_report.value().node_reports.end()) {
+                        b.version = r_it->redpanda_version;
+                        for (auto& ds : r_it->disk_space) {
+                            ss::httpd::broker_json::disk_space_info dsi;
+                            dsi.path = ds.path;
+                            dsi.free = ds.free;
+                            dsi.total = ds.total;
+                            b.disk_space.push(dsi);
+                        }
+                    }
+                }
+
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  std::move(res));
+            });
       });
 
     ss::httpd::broker_json::get_broker.set(

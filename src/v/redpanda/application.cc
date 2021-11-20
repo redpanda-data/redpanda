@@ -671,7 +671,8 @@ void application::wire_up_redpanda_services() {
       metadata_cache,
       std::ref(controller->get_topics_state()),
       std::ref(controller->get_members_table()),
-      std::ref(controller->get_partition_leaders()))
+      std::ref(controller->get_partition_leaders()),
+      std::ref(controller->get_health_monitor()))
       .get();
     /**
      * Wait for all requests to finish before removing critical redpanda
@@ -1085,7 +1086,9 @@ void application::start_redpanda() {
             std::ref(controller->get_security_frontend()),
             std::ref(controller->get_api()),
             std::ref(controller->get_members_frontend()),
-            std::ref(controller->get_config_frontend()));
+            std::ref(controller->get_config_frontend()),
+            std::ref(controller->get_health_monitor()));
+
           proto->register_service<cluster::metadata_dissemination_handler>(
             _scheduling_groups.cluster_sg(),
             smp_service_groups.cluster_smp_sg(),

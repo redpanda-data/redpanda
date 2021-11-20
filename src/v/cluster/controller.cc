@@ -15,6 +15,8 @@
 #include "cluster/controller_service.h"
 #include "cluster/data_policy_frontend.h"
 #include "cluster/fwd.h"
+#include "cluster/health_monitor_backend.h"
+#include "cluster/health_monitor_frontend.h"
 #include "cluster/logger.h"
 #include "cluster/members_backend.h"
 #include "cluster/members_frontend.h"
@@ -252,7 +254,16 @@ ss::future<> controller::start() {
       .then([this] {
           return _health_manager.invoke_on(
             health_manager::shard, &health_manager::start);
-      });
+      })
+      .then([this] {
+          return _hm_backend.start_single(
+            _raft0,
+            std::ref(_members_table),
+            std::ref(_connections),
+            std::ref(_partition_manager),
+            std::ref(_as));
+      })
+      .then([this] { return _hm_frontend.start(std::ref(_hm_backend)); });
 }
 
 ss::future<> controller::shutdown_input() {
@@ -273,7 +284,8 @@ ss::future<> controller::stop() {
     return f.then([this] {
         auto stop_leader_balancer = _leader_balancer ? _leader_balancer->stop()
                                                      : ss::now();
-        return stop_leader_balancer
+        return stop_leader_balancer.then([this] { return _hm_frontend.stop(); })
+          .then([this] { return _hm_backend.stop(); })
           .then([this] { return _health_manager.stop(); })
           .then([this] { return _members_backend.stop(); })
           .then([this] { return _config_manager.stop(); })

@@ -243,6 +243,9 @@ struct topic_namespace {
         return tp == other.tp && ns == other.ns;
     }
 
+    friend bool operator==(const topic_namespace&, const topic_namespace&)
+      = default;
+
     template<typename H>
     friend H AbslHashValue(H h, const topic_namespace& tp_ns) {
         return H::combine(std::move(h), tp_ns.ns, tp_ns.tp);

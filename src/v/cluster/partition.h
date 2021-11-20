@@ -162,6 +162,10 @@ public:
         return _raft->config().revision_id();
     }
 
+    std::optional<model::node_id> get_leader_id() const {
+        return _raft->get_leader_id();
+    }
+
     model::offset get_latest_configuration_offset() const {
         return _raft->get_latest_configuration_offset();
     }

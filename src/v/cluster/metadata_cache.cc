@@ -9,6 +9,7 @@
 
 #include "cluster/metadata_cache.h"
 
+#include "cluster/health_monitor_frontend.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/topic_table.h"
@@ -19,6 +20,7 @@
 #include "model/namespace.h"
 #include "model/timestamp.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/sharded.hh>
 
 #include <fmt/format.h>
@@ -32,10 +34,12 @@ namespace cluster {
 metadata_cache::metadata_cache(
   ss::sharded<topic_table>& tp,
   ss::sharded<members_table>& m,
-  ss::sharded<partition_leaders_table>& leaders)
+  ss::sharded<partition_leaders_table>& leaders,
+  ss::sharded<health_monitor_frontend>& health_monitor)
   : _topics_state(tp)
   , _members_table(m)
-  , _leaders(leaders) {}
+  , _leaders(leaders)
+  , _health_monitor(health_monitor) {}
 
 std::vector<model::topic_namespace> metadata_cache::all_topics() const {
     return _topics_state.local().all_topics();
@@ -92,6 +96,29 @@ std::optional<broker_ptr> metadata_cache::get_broker(model::node_id nid) const {
 
 std::vector<broker_ptr> metadata_cache::all_brokers() const {
     return _members_table.local().all_brokers();
+}
+
+ss::future<std::vector<broker_ptr>> metadata_cache::all_alive_brokers() const {
+    std::vector<broker_ptr> brokers;
+    auto res = co_await _health_monitor.local().get_nodes_status(
+      config::shard_local_cfg().metadata_status_wait_timeout_ms()
+      + model::timeout_clock::now());
+    if (!res) {
+        // if we were not able to refresh the cache, return all brokers
+        // (controller may be unreachable)
+        co_return _members_table.local().all_brokers();
+    }
+
+    for (auto& st : res.value()) {
+        if (st.is_alive) {
+            auto broker = _members_table.local().get_broker(st.id);
+            if (broker) {
+                brokers.push_back(std::move(*broker));
+            }
+        }
+    }
+
+    co_return !brokers.empty() ? brokers : _members_table.local().all_brokers();
 }
 
 std::vector<model::node_id> metadata_cache::all_broker_ids() const {

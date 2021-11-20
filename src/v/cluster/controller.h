@@ -16,6 +16,7 @@
 #include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/health_manager.h"
+#include "cluster/health_monitor_frontend.h"
 #include "cluster/scheduling/leader_balancer.h"
 #include "cluster/topic_updates_dispatcher.h"
 #include "raft/group_manager.h"
@@ -81,6 +82,10 @@ public:
         return _members_frontend;
     }
 
+    ss::sharded<health_monitor_frontend>& get_health_monitor() {
+        return _hm_frontend;
+    }
+
     ss::future<> wire_up();
 
     ss::future<> start();
@@ -119,6 +124,8 @@ private:
     ss::sharded<data_policy_frontend> _data_policy_frontend;
     ss::sharded<security::authorizer> _authorizer;
     ss::sharded<raft::group_manager>& _raft_manager;
+    ss::sharded<health_monitor_frontend> _hm_frontend; // instance per core
+    ss::sharded<health_monitor_backend> _hm_backend;   // single instance
     ss::sharded<health_manager> _health_manager;
     std::unique_ptr<leader_balancer> _leader_balancer;
     consensus_ptr _raft0;

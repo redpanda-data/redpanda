@@ -267,9 +267,8 @@ template<>
 ss::future<response_ptr> metadata_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     metadata_response reply;
-    auto brokers = ctx.metadata_cache().all_brokers();
-
-    for (const auto& broker : brokers) {
+    auto alive_brokers = co_await ctx.metadata_cache().all_alive_brokers();
+    for (const auto& broker : alive_brokers) {
         for (const auto& listener : broker->kafka_advertised_listeners()) {
             // filter broker listeners by active connection
             if (listener.name == ctx.listener()) {

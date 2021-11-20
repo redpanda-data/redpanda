@@ -321,6 +321,7 @@ public:
     bool should_reconnect_follower(vnode);
 
     std::vector<follower_metrics> get_follower_metrics() const;
+    result<follower_metrics> get_follower_metrics(model::node_id) const;
 
     const configuration_manager& get_configuration_manager() const {
         return _configuration_manager;
