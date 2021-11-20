@@ -320,7 +320,7 @@ func buildSummary(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
 		Y: y,
 	}
 	partitionCount.Targets = []graf.Target{{
-		Expr:         `count(count by (topic,partition) (vectorized_storage_log_partition_size{namespace="kafka"}))`,
+		Expr:         `count(count by (topic,partition) (vectorized_storage_log_partition_size{}))`,
 		LegendFormat: "Partition count",
 	}}
 	partitionCount.Transparent = true
