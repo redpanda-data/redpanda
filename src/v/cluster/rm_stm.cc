@@ -726,7 +726,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
     }
 
     if (!check_seq(bid)) {
-        co_return errc::sequence_out_of_order;
+        co_return errc::generic_tx_error;
     }
 
     if (!_mem_state.tx_start.contains(bid.pid)) {
@@ -772,7 +772,7 @@ ss::future<result<raft::replicate_result>> rm_stm::replicate_seq(
         co_return errc::not_leader;
     }
     if (!check_seq(bid)) {
-        co_return errc::sequence_out_of_order;
+        co_return errc::generic_tx_error;
     }
     co_return co_await _c->replicate(_insync_term, std::move(br), opts);
 }
