@@ -41,5 +41,6 @@ class rm_group_proxy;
 class non_replicable_topics_frontend;
 class health_monitor_frontend;
 class health_monitor_backend;
+class metrics_reporter;
 
 } // namespace cluster
