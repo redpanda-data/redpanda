@@ -23,6 +23,7 @@
 #include "cluster/members_manager.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_dissemination_service.h"
+#include "cluster/metrics_reporter.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
 #include "cluster/raft0_utils.h"
@@ -263,7 +264,21 @@ ss::future<> controller::start() {
             std::ref(_partition_manager),
             std::ref(_as));
       })
-      .then([this] { return _hm_frontend.start(std::ref(_hm_backend)); });
+      .then([this] { return _hm_frontend.start(std::ref(_hm_backend)); })
+      .then([this] {
+          return _metrics_reporter.start_single(
+            _raft0,
+            std::ref(_members_table),
+            std::ref(_tp_state),
+            std::ref(_hm_frontend),
+            std::ref(_as));
+      })
+      .then([this] {
+          if (!config::shard_local_cfg().enable_metrics_reporter()) {
+              return ss::now();
+          }
+          return _metrics_reporter.invoke_on(0, &metrics_reporter::start);
+      });
 }
 
 ss::future<> controller::shutdown_input() {
@@ -284,7 +299,9 @@ ss::future<> controller::stop() {
     return f.then([this] {
         auto stop_leader_balancer = _leader_balancer ? _leader_balancer->stop()
                                                      : ss::now();
-        return stop_leader_balancer.then([this] { return _hm_frontend.stop(); })
+        return stop_leader_balancer
+          .then([this] { return _metrics_reporter.stop(); })
+          .then([this] { return _hm_frontend.stop(); })
           .then([this] { return _hm_backend.stop(); })
           .then([this] { return _health_manager.stop(); })
           .then([this] { return _members_backend.stop(); })

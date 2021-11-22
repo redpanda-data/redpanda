@@ -127,6 +127,7 @@ private:
     ss::sharded<health_monitor_frontend> _hm_frontend; // instance per core
     ss::sharded<health_monitor_backend> _hm_backend;   // single instance
     ss::sharded<health_manager> _health_manager;
+    ss::sharded<metrics_reporter> _metrics_reporter;
     std::unique_ptr<leader_balancer> _leader_balancer;
     consensus_ptr _raft0;
 };
