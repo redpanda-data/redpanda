@@ -354,7 +354,9 @@ result<node_health_report> health_monitor_backend::process_node_reply(
     if (!it->second.is_alive && clusterlog.is_enabled(ss::log_level::info)) {
         vlog(
           clusterlog.info,
-          "received node {} health report, marking node as up");
+          "received node {} health report, marking node as up",
+          id);
+        it->second.is_alive = alive::yes;
     }
 
     return res;
