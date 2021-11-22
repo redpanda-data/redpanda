@@ -12,8 +12,7 @@
 #pragma once
 
 #include "archival/fwd.h"
-#include "cloud_storage/cache_service.h"
-#include "cloud_storage/partition_recovery_manager.h"
+#include "cloud_storage/fwd.h"
 #include "cluster/config_manager.h"
 #include "cluster/fwd.h"
 #include "coproc/fwd.h"
