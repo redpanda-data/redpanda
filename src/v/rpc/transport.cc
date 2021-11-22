@@ -74,7 +74,7 @@ ss::future<ss::connected_socket> connect_with_timeout(
     auto f = socket->connect(address).finally([socket] {});
     return ss::with_timeout(timeout, std::move(f))
       .handle_exception([socket, address](const std::exception_ptr& e) {
-          rpclog.warn("error connecting to {} - {}", address, e);
+          rpclog.trace("error connecting to {} - {}", address, e);
           socket->shutdown();
           return ss::make_exception_future<ss::connected_socket>(e);
       });
