@@ -11,18 +11,10 @@
 
 #pragma once
 
-namespace coproc {
+namespace cloud_storage {
 
-class api;
-class pacemaker;
-class script_context;
+class cache;
+class partition_recovery_manager;
+class remote;
 
-namespace wasm {
-
-class script_dispatcher;
-class async_event_handler;
-class event_listener;
-
-} // namespace wasm
-
-} // namespace coproc
+} // namespace cloud_storage
