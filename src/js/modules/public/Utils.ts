@@ -72,35 +72,68 @@ interface PartialRecordBatch {
 }
 
 interface RecordBatchFunctor extends RecordBatch {
-  map(fn: (record) => RecordBatch): RecordBatch;
+  map(fn: (recordBatch) => RecordBatch): RecordBatch;
 }
 
 export const createRecordBatch = (
   record?: PartialRecordBatch
 ): RecordBatchFunctor => {
   const map =
-    (record: RecordBatch) =>
-    (fn: (record) => RecordBatch): RecordBatch => {
-      return fn(record);
+    (recordBatch: RecordBatch) =>
+    (fn: (recordBatch) => RecordBatch): RecordBatch => {
+      return fn(recordBatch);
     };
   const records = record?.records || [];
-  const resultRecord = {
+  const resultBatch = {
     header: createHeader(record?.header || {}),
     records: records.map(createRecord),
   };
   return {
-    ...resultRecord,
-    map: map(resultRecord),
+    ...resultBatch,
+    map: map(resultBatch),
   };
 };
 
 export const createRecordBatchFunctor = (
-  record: RecordBatch
+  recordBatch: RecordBatch
 ): RecordBatchFunctor => {
-  const map = (fn: (record) => RecordBatch): RecordBatch => {
-    return fn(record);
+  const map = (fn: (recordBatch) => RecordBatch): RecordBatch => {
+    return fn(recordBatch);
   };
-  return { ...record, map };
+  return { ...recordBatch, map };
+};
+
+export const copyRecordBatch = (
+  recordBatch: RecordBatch
+): RecordBatchFunctor => {
+  const deepCopiedRecords = recordBatch.records.map((record) => {
+    const deepCopiedRecordHeaders = record.headers.map((header) => {
+      const newKey = Buffer.alloc(header.headerKey.length);
+      const newVal = Buffer.alloc(header.value.length);
+      header.headerKey.copy(newKey);
+      header.value.copy(newVal);
+      return {
+        ...header,
+        headerKey: newKey,
+        value: newVal,
+      };
+    });
+    const newKey = Buffer.alloc(record.key.length);
+    const newVal = Buffer.alloc(record.value.length);
+    record.key.copy(newKey);
+    record.value.copy(newVal);
+    return {
+      ...record,
+      key: newKey,
+      value: newVal,
+      headers: deepCopiedRecordHeaders,
+    };
+  });
+  const newBatch = {
+    header: recordBatch.header,
+    records: deepCopiedRecords,
+  };
+  return createRecordBatchFunctor(newBatch);
 };
 
 // receive int64 and return Uint64

@@ -11,6 +11,7 @@
 import { SimpleTransform } from "./SimpleTransform";
 import { PolicyError, PolicyInjection } from "./Coprocessor";
 import {
+  copyRecordBatch,
   createRecordBatch,
   calculateRecordLength,
   calculateRecordBatchSize,
@@ -20,6 +21,7 @@ export {
   SimpleTransform,
   PolicyError,
   PolicyInjection,
+  copyRecordBatch,
   createRecordBatch,
   calculateRecordLength,
   calculateRecordBatchSize,

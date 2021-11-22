@@ -18,7 +18,7 @@ import { ProcessBatchServer } from "../rpc/server";
 import {
   calculateRecordBatchSize,
   calculateRecordLength,
-  createRecordBatch,
+  copyRecordBatch,
 } from "../public";
 import LogService from "../utilities/Logging";
 
@@ -149,6 +149,7 @@ class Repository {
         });
         value.header.sizeBytes = calculateRecordBatchSize(value.records);
         value.header.term = recordBatch.header.term;
+        value.header.recordCount = value.records.length;
         results.push({
           coprocessorId: BigInt(handle.coprocessor.globalId),
           source: requestItem.ntp,
@@ -191,7 +192,7 @@ class Repository {
           }
           try {
             return handle.coprocessor
-              .apply(createRecordBatch(recordBatch), this.wasmLogger)
+              .apply(copyRecordBatch(recordBatch), this.wasmLogger)
               .then((resultMap) =>
                 this.validateResultApply(
                   requestItem,
