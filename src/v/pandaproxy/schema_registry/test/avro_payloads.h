@@ -18,14 +18,7 @@ const ss::sstring avro_string_payload{
   R"(
 {
   "schema": "\"string\"",
-  "schemaType": "AVRO",
-  "references": [
-    {
-       "name": "com.acme.Referenced",
-       "subject":  "childSubject",
-       "version": 1
-    }
-  ]
+  "schemaType": "AVRO"
 })"};
 const ss::sstring expected_avro_string_def{R"({"string"})"};
 
@@ -33,14 +26,7 @@ const ss::sstring avro_int_payload{
   R"(
 {
   "schema": "\"int\"",
-  "schemaType": "AVRO",
-  "references": [
-    {
-       "name": "com.acme.Referenced",
-       "subject":  "childSubject",
-       "version": 1
-    }
-  ]
+  "schemaType": "AVRO"
 })"};
 const ss::sstring expected_avro_int_def{R"({"int"})"};
 
@@ -48,13 +34,6 @@ const ss::sstring avro_long_payload{
   R"(
 {
   "schema": "\"long\"",
-  "schemaType": "AVRO",
-  "references": [
-    {
-       "name": "com.acme.Referenced",
-       "subject":  "childSubject",
-       "version": 1
-    }
-  ]
+  "schemaType": "AVRO"
 })"};
 const ss::sstring expected_avro_long_def{R"({"long"})"};
