@@ -361,8 +361,9 @@ public:
                       "{} - {}",
                       _node("{}", _ctx.value()),
                       std::move(msg));
+                } else {
+                    logger.log(lvl, "{} - {}", _node(), std::move(msg));
                 }
-                logger.log(lvl, "{} - {}", _node(), std::move(msg));
             };
             do_log(lvl, std::move(lambda));
         }
