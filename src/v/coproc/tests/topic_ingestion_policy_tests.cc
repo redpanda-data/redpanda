@@ -11,6 +11,7 @@
 #include "coproc/api.h"
 #include "coproc/pacemaker.h"
 #include "coproc/tests/fixtures/coproc_test_fixture.h"
+#include "coproc/tests/utils/batch_utils.h"
 #include "coproc/tests/utils/coprocessor.h"
 #include "model/namespace.h"
 #include "storage/tests/utils/random_batch.h"
@@ -23,17 +24,17 @@
 
 class tip_fixture : public coproc_test_fixture {
 public:
-    std::size_t run(coproc::topic_ingestion_policy tip, std::size_t n) {
+    std::size_t run(
+      coproc::topic_ingestion_policy tip,
+      std::size_t records,
+      std::size_t expect) {
         model::topic infoo("infoo");
         model::ntp infoo_ntp(
           model::kafka_namespace, infoo, model::partition_id(0));
         setup({{infoo, 1}}).get();
 
-        push(
-          infoo_ntp,
-          storage::test::make_random_memory_record_batch_reader(
-            model::offset(0), n, 1, false))
-          .get();
+        produce(infoo_ntp, make_random_batch(records)).get();
+        consume(infoo_ntp, 400).get();
 
         enable_coprocessors(
           {{.id = 78,
@@ -42,42 +43,27 @@ public:
               .topics = {{infoo, tip}}}}})
           .get();
 
-        /// Wait for the coprocessor to startup before next batch
-        coproc::script_id id(78);
-        tests::cooperative_spin_wait_with_timeout(60s, [this, id]() {
-            return root_fixture()
-              ->app.coprocessing->get_pacemaker()
-              .map_reduce0(
-                [id](coproc::pacemaker& p) {
-                    return p.local_script_id_exists(id);
-                },
-                false,
-                std::logical_or<>());
-        }).get();
-
-        push(
-          infoo_ntp,
-          storage::test::make_random_memory_record_batch_reader(
-            model::offset{0}, n, 1, false))
-          .get();
+        produce(infoo_ntp, make_random_batch(records)).get();
+        consume(infoo_ntp, records).get();
 
         model::ntp output_ntp(
           model::kafka_namespace,
           to_materialized_topic(infoo, identity_coprocessor::identity_topic),
           model::partition_id(0));
-        return consume(output_ntp).get0().size();
+
+        auto rbs = consume(output_ntp, expect).get0();
+        return num_records(rbs);
     }
 };
 
-/// 'tip' stands for topic_ingestion_policy
 FIXTURE_TEST(test_copro_tip_latest, tip_fixture) {
-    auto result = run(tp_latest, 40);
-    BOOST_CHECK_EQUAL(result, 40);
+    auto results = run(tp_latest, 400, 400);
+    BOOST_CHECK_EQUAL(400, results);
 }
 
 FIXTURE_TEST(test_copro_tip_earliest, tip_fixture) {
-    auto result = run(tp_earliest, 40);
-    BOOST_CHECK_EQUAL(result, 80);
+    auto results = run(tp_earliest, 400, 800);
+    BOOST_CHECK_EQUAL(800, results);
 }
 
 FIXTURE_TEST(test_copro_tip_stored, coproc_test_fixture) {
@@ -96,25 +82,15 @@ FIXTURE_TEST(test_copro_tip_stored, coproc_test_fixture) {
           .topics = {{sttp, tp_stored}}}}})
       .get();
 
-    push(
-      sttp_ntp,
-      storage::test::make_random_memory_record_batch_reader(
-        model::offset{0}, 40, 1, false))
-      .get();
-
-    auto a_results = consume(output_ntp).get();
-    BOOST_CHECK(a_results.size() == 40);
+    produce(sttp_ntp, make_random_batch(200)).get();
+    auto a_results = consume(output_ntp, 200).get();
+    BOOST_CHECK_EQUAL(num_records(a_results), 200);
 
     ss::sleep(1s).get();
     info("Restarting....");
     restart().get();
 
-    push(
-      sttp_ntp,
-      storage::test::make_random_memory_record_batch_reader(
-        model::offset{0}, 40, 1, false))
-      .get();
-
-    auto results = consume(output_ntp).get();
-    BOOST_CHECK(results.size() >= 80);
+    produce(sttp_ntp, make_random_batch(200)).get();
+    auto results = consume(output_ntp, 400).get();
+    BOOST_CHECK_GE(num_records(results), 400);
 }

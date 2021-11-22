@@ -38,7 +38,8 @@ std::unique_ptr<kafka::client::client> make_client() {
     kafka::client::configuration cfg;
     cfg.brokers.set_value(
       std::vector<unresolved_address>{config::node().kafka_api()[0].address});
-    cfg.retries.set_value(size_t(1));
+    cfg.retries.set_value(size_t(5));
+    cfg.retry_base_backoff.set_value(10ms);
     cfg.produce_batch_delay.set_value(0ms);
     return std::make_unique<kafka::client::client>(to_yaml(cfg));
 }
@@ -105,7 +106,6 @@ ss::future<> coproc_test_fixture::setup(log_layout_map llm) {
         co_await _root_fixture->add_topic(
           model::topic_namespace(model::kafka_namespace, p.first), p.second);
     }
-    co_await _client->update_metadata();
 }
 
 ss::future<> coproc_test_fixture::restart() {
@@ -115,30 +115,6 @@ ss::future<> coproc_test_fixture::restart() {
     _root_fixture = std::make_unique<redpanda_thread_fixture>(
       std::move(data_dir));
     co_await _root_fixture->wait_for_controller_leadership();
-}
-
-template<typename T>
-static ss::future<T> do_kafka_request(
-  kafka::client::client* c,
-  model::timeout_clock::time_point timeout,
-  ss::noncopyable_function<ss::future<T>(kafka::client::client*)> fn) {
-    while (model::timeout_clock::now() < timeout) {
-        auto k_err = kafka::error_code::none;
-        try {
-            co_return co_await fn(c);
-        } catch (const kafka::exception_base& ex) {
-            /// Due to the fact that you can't co_await on a future within a
-            /// catch block, save the error code for use outside of the block
-            k_err = ex.error;
-        }
-        if (k_err == kafka::error_code::unknown_topic_or_partition) {
-            co_await c->update_metadata();
-        } else {
-            vlog(coproc::coproclog.error, "Kafka client error: {}", k_err);
-        }
-        co_await ss::sleep(100ms);
-    }
-    throw ss::timed_out_error();
 }
 
 static ss::future<model::offset>
@@ -155,40 +131,70 @@ list_topic_offset(kafka::client::client* c, model::topic_partition tp) {
     co_return partitions[0].offset;
 }
 
-ss::future<model::record_batch_reader::data_t> coproc_test_fixture::consume(
-  model::ntp ntp,
+class no_new_data_error final : public std::exception {};
+
+ss::future<model::record_batch_reader::data_t> coproc_test_fixture::do_consume(
+  model::topic_partition tp,
   model::offset start_offset,
-  model::offset last_offset,
+  std::size_t records_read,
   model::timeout_clock::time_point timeout) {
-    /// Waits for all coprocessors to enter an idle state, if they are currently
-    /// ingesting/pushing data and the consume occurs, then its highly likley
-    /// that less data then expected will be read
-    co_await wait_until_all_idle();
-    model::topic_partition tp{ntp.tp.topic, ntp.tp.partition};
-    if (last_offset == model::model_limits<model::offset>::max()) {
-        last_offset = co_await do_kafka_request<model::offset>(
-          _client.get(), timeout, [tp](kafka::client::client* c) {
-              return list_topic_offset(c, tp);
-          });
-        vlog(
-          coproc::coproclog.info,
-          "last_offset {} obtained from ntp: {}",
-          last_offset,
-          ntp);
+    if (model::timeout_clock::now() > timeout) {
+        throw ss::timed_out_error();
     }
-    vlog(coproc::coproclog.info, "Making request to fetch from ntp: {}", ntp);
-    co_return co_await do_kafka_request<model::record_batch_reader::data_t>(
-      _client.get(),
-      timeout,
-      [tp, start_offset, last_offset, timeout](kafka::client::client* c) {
-          auto rbr = kafka::client::make_client_fetch_batch_reader(
-            *c, tp, start_offset, last_offset);
-          return consume_reader_to_memory(std::move(rbr), timeout);
-      });
+    auto last_offset = co_await list_topic_offset(_client.get(), tp);
+    if (last_offset <= start_offset) {
+        throw no_new_data_error();
+    }
+    vlog(
+      coproc::coproclog.info,
+      "Making request to fetch from tp: {}, start_offset: {}, "
+      "last_offset: {}, records_read: {}",
+      tp,
+      start_offset,
+      last_offset,
+      records_read);
+    auto rbr = kafka::client::make_client_fetch_batch_reader(
+      *_client, tp, start_offset, last_offset);
+    co_return co_await consume_reader_to_memory(std::move(rbr), timeout);
 }
 
-ss::future<model::offset>
-coproc_test_fixture::push(model::ntp ntp, model::record_batch_reader rbr) {
+ss::future<model::record_batch_reader::data_t> coproc_test_fixture::consume(
+  model::ntp ntp,
+  std::size_t limit,
+  model::offset start_offset,
+  model::timeout_clock::time_point timeout) {
+    model::topic_partition tp{ntp.tp.topic, ntp.tp.partition};
+    model::record_batch_reader::data_t batches;
+    std::size_t records_read = 0;
+    while (records_read < limit) {
+        bool need_sleep = false;
+        try {
+            auto nbatches = co_await do_consume(
+              tp, start_offset, records_read, timeout);
+            start_offset = ++nbatches.back().last_offset();
+            for (auto& rb : nbatches) {
+                records_read += rb.record_count();
+                batches.push_back(std::move(rb));
+            }
+        } catch (kafka::exception_base& ex) {
+            vlog(
+              coproc::coproclog.error,
+              "Kafka client error: {} - code: {}",
+              ex,
+              ex.error);
+        } catch (const no_new_data_error&) {
+            need_sleep = true;
+        }
+        if (need_sleep) {
+            vlog(coproc::coproclog.info, "{}, sleeping 100ms", tp);
+            co_await ss::sleep(100ms);
+        }
+    }
+    co_return batches;
+}
+
+ss::future<>
+coproc_test_fixture::produce(model::ntp ntp, model::record_batch_reader rbr) {
     vlog(coproc::coproclog.info, "About to produce to ntp: {}", ntp);
     auto result = co_await std::move(rbr).for_each_ref(
       kafka_publish_consumer(
@@ -196,29 +202,10 @@ coproc_test_fixture::push(model::ntp ntp, model::record_batch_reader rbr) {
       model::no_timeout);
     for (const auto& r : result.responses) {
         vassert(
-          r.error_code != kafka::error_code::unknown_topic_or_partition,
-          "Input logs should already exist, use setup() before starting test");
+          r.error_code == kafka::error_code::none,
+          "Produce did not occur: {}",
+          r.error_code);
     }
-    co_return result.last_offset;
-}
-
-ss::future<> coproc_test_fixture::wait_until_all_idle() {
-    std::vector<ss::future<>> fs;
-    for (const coproc::script_id id : _active_ids) {
-        fs.push_back(wait_until_idle(id).then([id] {
-            vlog(coproc::coproclog.info, "Script {} entered idle state", id);
-        }));
-    }
-    co_return co_await ss::when_all_succeed(fs.begin(), fs.end());
-}
-
-ss::future<> coproc_test_fixture::wait_until_idle(coproc::script_id id) {
-    vlog(coproc::coproclog.info, "Waiting for script {} to be idle", id);
-    auto& p = _root_fixture->app.coprocessing->get_pacemaker();
-    return p.invoke_on_all([id](coproc::pacemaker& p) {
-        return p.wait_idle_state(id).handle_exception_type(
-          [](const coproc::exception&) { return ss::now(); });
-    });
 }
 
 ss::future<> coproc_test_fixture::wait_for_copro(coproc::script_id id) {

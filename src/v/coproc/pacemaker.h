@@ -16,9 +16,9 @@
 #include "cluster/topics_frontend.h"
 #include "config/configuration.h"
 #include "coproc/exception.h"
-#include "coproc/ntp_context.h"
 #include "coproc/offset_storage_utils.h"
 #include "coproc/script_context.h"
+#include "coproc/shared_script_resources.h"
 #include "coproc/sys_refs.h"
 #include "coproc/types.h"
 #include "rpc/reconnect_transport.h"
@@ -112,12 +112,6 @@ public:
     ss::future<errc> wait_for_script(script_id);
 
     /**
-     * Returns future which resolves when fiber for script_id on 'this' shard
-     * moves into an idle state
-     */
-    ss::future<> wait_idle_state(script_id);
-
-    /**
      * @returns true if a matching script id exists on 'this' shard
      */
     bool local_script_id_exists(script_id);
@@ -131,11 +125,13 @@ public:
 private:
     void do_add_source(
       script_id,
-      ntp_context_cache&,
+      routes_t&,
       std::vector<errc>& acks,
       const std::vector<topic_namespace_policy>&);
 
     void fire_updates(script_id, errc);
+
+    void save_routes();
 
     struct offset_flush_fiber_state {
         ss::timer<ss::lowres_clock> timer;
@@ -162,14 +158,14 @@ private:
     /// Alerting mechanism for script startup
     absl::node_hash_map<script_id, std::vector<ss::promise<errc>>> _updates;
 
+    /// Cached offsets read from disk on startup
+    absl::flat_hash_map<script_id, routes_t> _cached_routes;
+
     /// Data to be referenced by script_contexts on the current shard
     shared_script_resources _shared_res;
 
     /// Main datastructure containing all active script_contexts
     absl::node_hash_map<script_id, std::unique_ptr<script_context>> _scripts;
-
-    /// Referencable cache of active ntps
-    ntp_context_cache _ntps;
 
     /// Responsible for timed persistence of offsets to disk
     offset_flush_fiber_state _offs;

@@ -10,7 +10,6 @@
 
 #include "coproc/event_handler.h"
 
-#include "coproc/ntp_context.h"
 #include "utils/gate_guard.h"
 #include "vlog.h"
 

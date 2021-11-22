@@ -11,6 +11,7 @@
 #include "coproc/api.h"
 #include "coproc/pacemaker.h"
 #include "coproc/tests/fixtures/coproc_test_fixture.h"
+#include "coproc/tests/utils/batch_utils.h"
 #include "coproc/tests/utils/coprocessor.h"
 #include "coproc/types.h"
 #include "model/fundamental.h"
@@ -55,11 +56,7 @@ FIXTURE_TEST(test_coproc_router_no_results, coproc_test_fixture) {
     // Test -> Start pushing to registered topics and check that NO
     // materialized logs have been created
     model::ntp input_ntp(model::kafka_namespace, foo, model::partition_id(0));
-    push(
-      input_ntp,
-      storage::test::make_random_memory_record_batch_reader(
-        model::offset(0), 40, 1, false))
-      .get();
+    produce(input_ntp, make_random_batch(40)).get();
 
     // Wait for any side-effects, ...expecting that none occur
     ss::sleep(1s).get();
@@ -69,13 +66,6 @@ FIXTURE_TEST(test_coproc_router_no_results, coproc_test_fixture) {
     /// .. but total should be exactly 11 due to the introducion of the
     /// coprocessor_internal_topic
     BOOST_REQUIRE_EQUAL(final_n_logs, 11);
-}
-
-model::record_batch_reader single_record_record_batch_reader() {
-    model::record_batch_reader::data_t batches;
-    batches.push_back(
-      storage::test::make_random_batch(model::offset(0), 1, false));
-    return model::make_memory_record_batch_reader(std::move(batches));
 }
 
 /// Tests an off-by-one error where producing recordbatches of size 1 on the
@@ -98,9 +88,9 @@ FIXTURE_TEST(test_coproc_router_off_by_one, coproc_test_fixture) {
       .get();
     auto fn =
       [this, input_ntp, output_ntp](model::offset start) -> ss::future<size_t> {
-        co_await push(input_ntp, single_record_record_batch_reader());
-        auto r = co_await consume(output_ntp, start, start + model::offset{1});
-        co_return r.size();
+        co_await produce(input_ntp, make_random_batch(1));
+        auto r = co_await consume(output_ntp, 1, start);
+        co_return num_records(r);
     };
     // Perform push/consume twice
     size_t wr = fn(model::offset(0)).get();
@@ -133,16 +123,12 @@ FIXTURE_TEST(test_coproc_router_double, coproc_test_fixture) {
       to_materialized_topic(foo, identity_coprocessor::identity_topic),
       model::partition_id(0));
 
-    push(
-      input_ntp,
-      storage::test::make_random_memory_record_batch_reader(
-        model::offset(0), 50, 1, false))
-      .get();
-    auto read_batches = consume(output_ntp).get0();
+    produce(input_ntp, make_random_batch(50)).get();
+    auto read_batches = consume(output_ntp, 100).get0();
 
     /// The identity coprocessor should not have modified the number of
     /// record batches from the source log onto the output log
-    BOOST_CHECK_EQUAL(read_batches.size(), 100);
+    BOOST_CHECK_EQUAL(num_records(read_batches), 100);
 }
 
 FIXTURE_TEST(test_copro_auto_deregister_function, coproc_test_fixture) {
@@ -158,24 +144,22 @@ FIXTURE_TEST(test_copro_auto_deregister_function, coproc_test_fixture) {
       .get();
 
     // Push some data across input topic....
-    std::vector<ss::future<model::offset>> fs;
+    std::vector<ss::future<>> fs;
     for (auto i = 0; i < 24; ++i) {
-        fs.emplace_back(push(
+        fs.emplace_back(produce(
           model::ntp(model::kafka_namespace, foo, model::partition_id(i)),
-          storage::test::make_random_memory_record_batch_reader(
-            model::offset(0), 10, 1, false)));
+          make_random_batch(100)));
     }
     ss::when_all_succeed(fs.begin(), fs.end()).get();
 
-    /// Assert that the coproc does not exist in memory
-    auto n_registered = root_fixture()
-                          ->app.coprocessing->get_pacemaker()
-                          .map_reduce0(
-                            [id](coproc::pacemaker& p) {
-                                return p.local_script_id_exists(id);
-                            },
-                            false,
-                            std::logical_or<>())
-                          .get();
-    BOOST_CHECK_EQUAL(n_registered, false);
+    /// Wait a max of 5s to observe that copro with id 497563 has been
+    /// deregistered, throws ss::timed_on_error on failure
+    tests::cooperative_spin_wait_with_timeout(5s, [this, id] {
+        /// Assert that the coproc does not exist in memory
+        auto map = [id](coproc::pacemaker& p) {
+            return !p.local_script_id_exists(id);
+        };
+        return root_fixture()->app.coprocessing->get_pacemaker().map_reduce0(
+          std::move(map), true, std::logical_and<>());
+    }).get();
 }

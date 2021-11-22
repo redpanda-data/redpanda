@@ -9,6 +9,7 @@
  */
 
 #include "coproc/tests/fixtures/coproc_test_fixture.h"
+#include "coproc/tests/utils/batch_utils.h"
 #include "coproc/tests/utils/coprocessor.h"
 #include "coproc/types.h"
 #include "kafka/client/transport.h"
@@ -38,11 +39,8 @@ public:
               .tid = coproc::registry::type_identifier::identity_coprocessor,
               .topics = {
                 {input_topic, coproc::topic_ingestion_policy::stored}}}}});
-        co_await push(
-          input_ntp,
-          storage::test::make_random_memory_record_batch_reader(
-            model::offset(0), 4, 4, false));
-        co_return co_await consume(output_ntp);
+        co_await produce(input_ntp, make_random_batch(160));
+        co_return co_await consume(output_ntp, 160);
     }
 
     static const inline model::topic input_topic{"intpc1"};

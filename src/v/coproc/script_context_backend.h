@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "coproc/ntp_context.h"
+#include "coproc/script_context_router.h"
 #include "coproc/sys_refs.h"
 #include "coproc/types.h"
 #include "utils/mutex.h"
@@ -28,7 +28,7 @@ using output_write_inputs = std::vector<process_batch_reply::data>;
 struct output_write_args {
     coproc::script_id id;
     sys_refs& rs;
-    ntp_context_cache& inputs;
+    routes_t& inputs;
     absl::node_hash_map<model::ntp, mutex>& locks;
 };
 

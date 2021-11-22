@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "coproc/ntp_context.h"
+#include "coproc/script_context_router.h"
 #include "coproc/types.h"
 
 #include <seastar/core/abort_source.hh>
@@ -30,7 +30,7 @@ struct input_read_args {
     script_id id;
     ss::semaphore& read_sem;
     ss::abort_source& abort_src;
-    ntp_context_cache& inputs;
+    routes_t& inputs;
 };
 
 /**

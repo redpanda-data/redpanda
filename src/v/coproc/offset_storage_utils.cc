@@ -13,29 +13,19 @@
 
 #include "bytes/iobuf.h"
 #include "coproc/logger.h"
-#include "coproc/ntp_context.h"
-#include "model/fundamental.h"
-#include "reflection/absl/btree_map.h"
 #include "reflection/absl/flat_hash_map.h"
-#include "storage/log_manager.h"
+#include "reflection/absl/node_hash_map.h"
 #include "storage/snapshot.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
-#include <seastar/util/defer.hh>
-
-#include <bits/stdint-intn.h>
 
 #include <optional>
 
 namespace coproc {
 
-using iresults_map
-  = absl::flat_hash_map<model::ntp, ntp_context::offset_tracker>;
-
-ss::future<ntp_context_cache> recover_offsets(
-  storage::simple_snapshot_manager& snap, cluster::partition_manager& pm) {
-    ntp_context_cache recovered;
+ss::future<all_routes> recover_offsets(storage::simple_snapshot_manager& snap) {
+    all_routes recovered;
     auto optional_snap_reader = co_await snap.open_snapshot();
     if (!optional_snap_reader) {
         co_return recovered;
@@ -55,43 +45,15 @@ ss::future<ntp_context_cache> recover_offsets(
     iobuf_parser iobuf_p(std::move(data));
     co_await reader.close();
     /// Deserialize the data
-    iresults_map irm = co_await reflection::async_adl<iresults_map>{}.from(
-      iobuf_p);
-    vlog(coproclog.info, "Recovered {} coprocessor offsets....", irm.size());
-    /// Match the offsets map with the corresponding storage::log queried from
-    /// the log_manager, building the completed ntp_context_cache
-    for (auto& [key, offsets] : irm) {
-        auto partition = pm.get(key);
-        if (!partition) {
-            vlog(
-              coproclog.error,
-              "Coult not recover ntp {}, for some reason it does not exist in "
-              "the partition_manager",
-              key);
-        } else {
-            auto [itr, _] = recovered.emplace(
-              key, ss::make_lw_shared<ntp_context>(std::move(partition)));
-            itr->second->offsets = std::move(offsets);
-        }
-    }
-    co_return recovered;
+    co_return co_await reflection::async_adl<all_routes>{}.from(iobuf_p);
 }
 
-ss::future<> save_offsets(
-  storage::simple_snapshot_manager& snap, const ntp_context_cache& ntp_cache) {
+ss::future<>
+save_offsets(storage::simple_snapshot_manager& snap, all_routes routes) {
     /// Create the metadata, and data iobuffers
     iobuf metadata = reflection::to_iobuf(static_cast<int8_t>(1));
-    iresults_map irm_map;
-    irm_map.reserve(ntp_cache.size());
-    std::transform(
-      ntp_cache.cbegin(),
-      ntp_cache.end(),
-      std::inserter(irm_map, irm_map.end()),
-      [](const ntp_context_cache::value_type& p) {
-          return std::make_pair<>(p.first, p.second->offsets);
-      });
     iobuf data;
-    co_await reflection::async_adl<iresults_map>{}.to(data, std::move(irm_map));
+    co_await reflection::async_adl<all_routes>{}.to(data, std::move(routes));
 
     /// Serialize this to disk via the simple_snapshot_manager
     storage::snapshot_writer writer = co_await snap.start_snapshot();

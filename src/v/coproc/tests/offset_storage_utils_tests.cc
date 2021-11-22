@@ -9,14 +9,15 @@
  */
 
 #include "config/configuration.h"
-#include "coproc/ntp_context.h"
 #include "coproc/offset_storage_utils.h"
 #include "coproc/tests/fixtures/coproc_test_fixture.h"
+#include "coproc/tests/utils/batch_utils.h"
 #include "model/namespace.h"
 #include "storage/api.h"
 #include "storage/snapshot.h"
 #include "test_utils/fixture.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/defer.hh>
 
@@ -32,10 +33,6 @@ public:
 
     ~offset_keeper_fixture() override { _smk.stop().get(); }
 
-    cluster::partition_manager& get_pm() {
-        return root_fixture()->app.partition_manager.local();
-    }
-
     storage::simple_snapshot_manager& snapshot_mgr() {
         return _smk.local().snap;
     }
@@ -47,11 +44,10 @@ public:
         return ss::parallel_for_each(
           r, [this, topic, fn = std::forward<Func>(make_reader_fn)](int32_t i) {
               model::record_batch_reader rbr = fn();
-              return push(
-                       model::ntp(
-                         model::kafka_namespace, topic, model::partition_id(i)),
-                       std::move(rbr))
-                .discard_result();
+              return produce(
+                model::ntp(
+                  model::kafka_namespace, topic, model::partition_id(i)),
+                std::move(rbr));
           });
     };
 
@@ -61,8 +57,8 @@ public:
             return consume(
                      model::ntp(
                        model::kafka_namespace, topic, model::partition_id(i)),
-                     model::offset{0},
-                     model::offset{1})
+                     1,
+                     model::offset{0})
               .discard_result();
         });
     }
@@ -93,15 +89,8 @@ FIXTURE_TEST(offset_keeper_saved_offsets, offset_keeper_fixture) {
     model::topic foo("foo");
     model::topic bar("bar");
     setup({{foo, 50}, {bar, 50}}).get();
-    push_all(foo, 50, []() {
-        return storage::test::make_random_memory_record_batch_reader(
-          model::offset{0}, 5, 1, false);
-    }).get();
-    push_all(bar, 50, []() {
-        return storage::test::make_random_memory_record_batch_reader(
-          model::offset{0}, 10, 1, false);
-    }).get();
-
+    push_all(foo, 50, []() { return make_random_batch(40); }).get();
+    push_all(bar, 50, []() { return make_random_batch(40); }).get();
     using copro_typeid = coproc::registry::type_identifier;
     enable_coprocessors(
       {{.id = 4444,
@@ -122,40 +111,25 @@ FIXTURE_TEST(offset_keeper_saved_offsets, offset_keeper_fixture) {
       to_materialized_topic(bar, identity_coprocessor::identity_topic), 50)
       .get();
 
-    /// Attempt to retrieve the data that should have been written to disk
-    /// We can assume this because the coproc_offset_flush_interval is
-    /// within the sleep interval
-    ss::sleep(1s).get();
+    /// Wait until at-least one attempt to write offsets to disk was made
+    tests::cooperative_spin_wait_with_timeout(5s, [this]() {
+        return ss::file_exists(coproc::offsets_snapshot_path().string());
+    }).get();
 
-    using ntp_offset_cache
-      = absl::flat_hash_map<model::ntp, coproc::ntp_context::offset_tracker>;
     auto r = boost::irange<unsigned int>(0, ss::smp::count);
     auto mapper = [this](unsigned int c) {
-        return ss::smp::submit_to(c, [this] {
-            return coproc::recover_offsets(snapshot_mgr(), get_pm())
-              .then([](auto ofs) {
-                  ntp_offset_cache c;
-                  std::transform(
-                    ofs.begin(),
-                    ofs.end(),
-                    std::inserter(c, c.begin()),
-                    [](const auto& p) {
-                        return std::make_pair<>(p.first, p.second->offsets);
-                    });
-                  return c;
-              });
+        return ss::smp::submit_to(c, [this]() -> ss::future<size_t> {
+            auto r = co_await coproc::recover_offsets(snapshot_mgr());
+            size_t n = 0;
+            for (auto& [id, routes] : r) {
+                n += routes.size();
+            }
+            co_return n;
         });
     };
-    auto results = ss::map_reduce(
-                     r,
-                     std::move(mapper),
-                     ntp_offset_cache(),
-                     [](ntp_offset_cache ncca, ntp_offset_cache nccb) {
-                         ncca.merge(nccb);
-                         return std::move(ncca);
-                     })
-                     .get();
+    auto results
+      = ss::map_reduce(r, std::move(mapper), size_t{0}, std::plus<>()).get();
 
     /// Created test cache with 50 partitions across 2 topics...
-    BOOST_CHECK_EQUAL(results.size(), 100);
+    BOOST_CHECK_EQUAL(results, 100);
 }

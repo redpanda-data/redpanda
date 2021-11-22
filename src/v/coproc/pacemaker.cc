@@ -13,8 +13,6 @@
 
 #include "coproc/exception.h"
 #include "coproc/logger.h"
-#include "coproc/ntp_context.h"
-#include "coproc/offset_storage_utils.h"
 #include "coproc/types.h"
 #include "model/validation.h"
 #include "rpc/reconnect_transport.h"
@@ -50,26 +48,39 @@ rpc::backoff_policy wasm_transport_backoff() {
     return rpc::make_exponential_backoff_policy<rpc::clock_type>(1s, 10s);
 }
 
+void pacemaker::save_routes() {
+    (void)ss::with_gate(_gate, [this] {
+        all_routes routes;
+        routes.reserve(_scripts.size());
+        for (auto& [id, script] : _scripts) {
+            routes.emplace(id, script->get_routes());
+        }
+        return save_offsets(_offs.snap, std::move(routes)).then([this] {
+            if (!_offs.timer.armed()) {
+                _offs.timer.arm(_offs.duration);
+            }
+        });
+    });
+}
+
 pacemaker::pacemaker(unresolved_address addr, sys_refs& rs)
   : _shared_res(
     rpc::reconnect_transport(
       wasm_transport_cfg(addr), wasm_transport_backoff()),
     rs) {
     _offs.timer.set_callback([this] {
-        (void)ss::with_gate(_gate, [this] {
-            return save_offsets(_offs.snap, _ntps).then([this] {
-                if (!_offs.timer.armed()) {
-                    _offs.timer.arm(_offs.duration);
-                }
-            });
-        });
+        try {
+            save_routes();
+        } catch (const ss::gate_closed_exception&) {
+            vlog(
+              coproclog.debug, "Gate closed while attempting to write offsets");
+        }
     });
 }
 
 ss::future<> pacemaker::start() {
     co_await ss::recursive_touch_directory(offsets_snapshot_path().string());
-    _ntps = co_await recover_offsets(
-      _offs.snap, _shared_res.rs.partition_manager.local());
+    _cached_routes = co_await recover_offsets(_offs.snap);
     if (!_offs.timer.armed()) {
         _offs.timer.arm(_offs.duration);
     }
@@ -77,10 +88,14 @@ ss::future<> pacemaker::start() {
 
 ss::future<> pacemaker::reset() {
     _offs.timer.cancel();
-    ntp_context_cache ncc = std::exchange(_ntps, {});
+    all_routes routes;
+    routes.reserve(_scripts.size());
+    for (auto& [id, script] : _scripts) {
+        routes.emplace(id, script->get_routes());
+    }
     auto removed = co_await remove_all_sources();
+    _cached_routes = std::move(routes);
     vlog(coproclog.info, "Pacemaker reset {} scripts", removed.size());
-    std::swap(_ntps, ncc);
     if (!_offs.timer.armed()) {
         _offs.timer.arm(_offs.duration);
     }
@@ -121,21 +136,21 @@ ss::future<> pacemaker::stop() {
 
 std::vector<errc> pacemaker::add_source(
   script_id id, std::vector<topic_namespace_policy> topics) {
-    ntp_context_cache ctxs;
+    routes_t rs;
     std::vector<errc> acks;
     vassert(
       _scripts.find(id) == _scripts.end(),
       "add_source() detects already existing script_id: {}",
       id);
-    do_add_source(id, ctxs, acks, topics);
-    if (ctxs.empty()) {
+    do_add_source(id, rs, acks, topics);
+    if (rs.empty()) {
         /// Failure occurred or no matching topics/ntps found
         /// Reasons are returned in the 'acks' structure
         fire_updates(id, errc::topic_does_not_exist);
         return acks;
     }
     auto script_ctx = std::make_unique<script_context>(
-      id, _shared_res, std::move(ctxs));
+      id, _shared_res, std::move(rs));
     const auto [_, success] = _scripts.emplace(id, std::move(script_ctx));
     vassert(success, "Double coproc insert detected");
     vlog(coproclog.debug, "Adding source with id: {}", id);
@@ -166,30 +181,16 @@ std::vector<errc> pacemaker::add_source(
     return acks;
 }
 
-static void set_start_offset(
-  script_id id,
-  ss::lw_shared_ptr<ntp_context> ntp_ctx,
-  topic_ingestion_policy tip) {
-    if (tip == topic_ingestion_policy::earliest) {
-        ntp_ctx->offsets[id] = ntp_context::offset_pair{};
-    } else if (tip == topic_ingestion_policy::latest) {
-        model::offset last = ntp_ctx->partition->last_stable_offset();
-        ntp_ctx->offsets[id] = ntp_context::offset_pair{
-          .last_read = last, .last_acked = last};
-    } else if (tip == topic_ingestion_policy::stored) {
-        /// If this succeeds, there was no stored offset anyway, default option
-        /// is to start at the beginning of the log
-        ntp_ctx->offsets.emplace(id, ntp_context::offset_pair{});
-    } else {
-        __builtin_unreachable();
-    }
-}
-
 void pacemaker::do_add_source(
   script_id id,
-  ntp_context_cache& ctxs,
+  routes_t& rs,
   std::vector<errc>& acks,
   const std::vector<topic_namespace_policy>& topics) {
+    auto saved = _cached_routes.extract(id);
+    if (!saved.empty()) {
+        vlog(coproclog.info, "Recovering offsets for id: {}", id);
+        rs = std::move(saved.mapped());
+    }
     for (const topic_namespace_policy& tnp : topics) {
         auto partitions = _shared_res.rs.partition_manager.local()
                             .get_topic_partition_table(tnp.tn);
@@ -197,20 +198,35 @@ void pacemaker::do_add_source(
             acks.push_back(errc::topic_does_not_exist);
             continue;
         }
+
         for (auto& [ntp, partition] : partitions) {
-            auto found = _ntps.find(ntp);
-            ss::lw_shared_ptr<ntp_context> ntp_ctx;
-            if (found != _ntps.end()) {
-                ntp_ctx = found->second;
-            } else {
-                ntp_ctx = ss::make_lw_shared<ntp_context>(partition);
-                _ntps.emplace(ntp, ntp_ctx);
+            auto [itr, success] = rs.emplace(ntp, ss::make_lw_shared<source>());
+            itr->second->rctx.input = partition;
+            if (success || tnp.policy != topic_ingestion_policy::stored) {
+                if (tnp.policy == topic_ingestion_policy::latest) {
+                    itr->second->rctx.absolute_start
+                      = partition->last_stable_offset();
+                } else {
+                    /// Default mode is to start at offset 0, if stored is
+                    /// chosen but there is no stored offset found
+                    itr->second->rctx.absolute_start = model::offset{0};
+                }
             }
-            set_start_offset(id, ntp_ctx, tnp.policy);
-            ctxs.emplace(ntp, ntp_ctx);
         }
         acks.push_back(errc::success);
     }
+    /// Could be the case that input topics were delete before restart of
+    /// coprocessor, remove them from working set and log the event
+    absl::erase_if(rs, [](routes_t::value_type& p) {
+        if (!p.second->rctx.input) {
+            vlog(
+              coproclog.error,
+              "Missing input for ntp {} after recovery",
+              p.first);
+            return true;
+        }
+        return false;
+    });
 }
 
 ss::future<errc> pacemaker::remove_source(script_id id) {
@@ -221,13 +237,6 @@ ss::future<errc> pacemaker::remove_source(script_id id) {
     }
     std::unique_ptr<script_context> ctx = std::move(handle.mapped());
     co_await ctx->shutdown();
-    /// shutdown explicity clears out strong references to ntp
-    /// contexts. It is known to remove them from the pacemakers cache
-    /// when the use_count() == 1, as there are then known to be no
-    /// more subscribing scripts for the ntp
-    absl::erase_if(_ntps, [](const ntp_context_cache::value_type& p) {
-        return p.second.use_count() == 1;
-    });
     co_return errc::success;
 }
 
@@ -265,15 +274,6 @@ ss::future<errc> pacemaker::wait_for_script(script_id id) {
     auto [itr, _] = _updates.try_emplace(id);
     itr->second.emplace_back();
     return itr->second.back().get_future();
-}
-
-ss::future<> pacemaker::wait_idle_state(script_id id) {
-    auto found = _scripts.find(id);
-    if (found == _scripts.end()) {
-        return ss::make_exception_future<>(
-          script_not_found(fmt::format("script {} not found", id)));
-    }
-    return found->second->wait_idle_state();
 }
 
 bool pacemaker::local_script_id_exists(script_id id) {

@@ -63,16 +63,16 @@ public:
     ss::future<> restart();
 
     /// \brief Write records to storage::api
-    ss::future<model::offset> push(model::ntp, model::record_batch_reader);
+    ss::future<> produce(model::ntp, model::record_batch_reader);
 
     /// \brief Read records from storage::api up until 'limit' or 'time'
     /// starting at 'offset'
     ss::future<model::record_batch_reader::data_t> consume(
       model::ntp ntp,
+      std::size_t limit,
       model::offset start_offset = model::offset(0),
-      model::offset last_offset = model::model_limits<model::offset>::max(),
       model::timeout_clock::time_point timeout = model::timeout_clock::now()
-                                                 + std::chrono::seconds(5));
+                                                 + std::chrono::seconds(10));
 
     kafka::client::client& get_client() { return *_client; }
 
@@ -82,8 +82,12 @@ protected:
         return _root_fixture.get();
     }
 
-    ss::future<> wait_until_all_idle();
-    ss::future<> wait_until_idle(coproc::script_id id);
+    ss::future<model::record_batch_reader::data_t> do_consume(
+      model::topic_partition,
+      model::offset,
+      std::size_t,
+      model::timeout_clock::time_point);
+
     ss::future<> wait_for_copro(coproc::script_id);
 
     ss::future<> push_wasm_events(std::vector<coproc::wasm::event>);

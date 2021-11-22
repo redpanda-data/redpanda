@@ -2,8 +2,10 @@ set(fixture_srcs
     utils/event_publisher_utils.cc
     utils/supervisor.cc
     utils/wasm_event_generator.cc
+    utils/batch_utils.cc
     fixtures/coproc_test_fixture.cc
     fixtures/coproc_bench_fixture.cc
+    fixtures/fiber_mock_fixture.cc
 )
 
 set(fixture_deps
@@ -15,6 +17,7 @@ rp_test(
   BINARY_NAME coproc_fixture
   SOURCES
     ${fixture_srcs}
+    retry_logic_tests.cc
     topic_ingestion_policy_tests.cc
     failure_recovery_tests.cc
     pacemaker_tests.cc
@@ -26,5 +29,5 @@ rp_test(
     kafka_api_materialized_tests.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main ${fixture_deps}
-  LABELS coproc disable_on_ci  # https://github.com/vectorizedio/redpanda/issues/2613
+  LABELS coproc
 )

@@ -13,7 +13,6 @@
 
 #include "cluster/partition.h"
 #include "coproc/logger.h"
-#include "coproc/ntp_context.h"
 #include "coproc/reference_window_consumer.hpp"
 #include "model/fundamental.h"
 #include "storage/parser_utils.h"
@@ -45,30 +44,12 @@ private:
 };
 
 storage::log_reader_config get_reader(
-  script_id id,
-  ss::abort_source& abort_src,
-  const ss::lw_shared_ptr<ntp_context>& ntp_ctx) {
-    auto found = ntp_ctx->offsets.find(id);
-    vassert(
-      found != ntp_ctx->offsets.end(),
-      "script_id must exist: {} for ntp: {}",
-      id,
-      ntp_ctx->ntp());
-    const ntp_context::offset_pair& cp_offsets = found->second;
-    const model::offset next_read
-      = (unlikely(cp_offsets.last_acked == model::offset{}))
-          ? model::offset(0)
-          : cp_offsets.last_acked + model::offset(1);
-    if (next_read <= cp_offsets.last_acked) {
-        vlog(
-          coproclog.info,
-          "Replaying read on ntp: {} at offset: {}",
-          ntp_ctx->ntp(),
-          cp_offsets.last_read);
-    }
+  ss::abort_source& abort_src, read_context& rctx, const write_context& wctx) {
+    rctx.last_acked = wctx.offsets.empty() ? rctx.absolute_start
+                                           : wctx.min_offset();
     return storage::log_reader_config(
-      next_read,
-      ntp_ctx->partition->last_stable_offset(),
+      rctx.last_acked,
+      rctx.input->last_stable_offset(),
       1,
       max_batch_size(),
       ss::default_priority_class(),
@@ -78,10 +59,10 @@ storage::log_reader_config get_reader(
 }
 
 ss::future<std::optional<process_batch_request::data>>
-read_ntp(input_read_args args, ss::lw_shared_ptr<ntp_context> ntp_ctx) {
+read_ntp(input_read_args args, ss::lw_shared_ptr<source> ctx) {
     storage::log_reader_config cfg = get_reader(
-      args.id, args.abort_src, ntp_ctx);
-    auto rbr = co_await ntp_ctx->partition->make_reader(cfg);
+      args.abort_src, ctx->rctx, ctx->wctx);
+    auto rbr = co_await ctx->rctx.input->make_reader(cfg);
     auto read_result = co_await std::move(rbr).for_each_ref(
       coproc::reference_window_consumer(
         high_offset_tracker(), storage::internal::decompress_batch_consumer()),
@@ -90,10 +71,10 @@ read_ntp(input_read_args args, ss::lw_shared_ptr<ntp_context> ntp_ctx) {
     if (info.size == 0) {
         co_return std::nullopt;
     }
-    ntp_ctx->offsets[args.id].last_read = info.last;
+    ctx->rctx.last_read = info.last + model::offset{1};
     co_return process_batch_request::data{
       .ids = std::vector<script_id>{args.id},
-      .ntp = ntp_ctx->ntp(),
+      .ntp = ctx->rctx.input->ntp(),
       .reader = std::move(nrbr)};
 }
 
@@ -101,7 +82,7 @@ ss::future<std::vector<process_batch_request::data>>
 read_from_inputs(input_read_args args) {
     std::vector<process_batch_request::data> requests;
     requests.reserve(args.inputs.size());
-    auto read_all = [args, &requests](const ntp_context_cache::value_type& p) {
+    auto read_all = [args, &requests](const routes_t::value_type& p) {
         return ss::with_semaphore(
                  args.read_sem,
                  max_batch_size(),

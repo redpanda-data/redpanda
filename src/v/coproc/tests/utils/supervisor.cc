@@ -14,6 +14,7 @@
 #include "bytes/iobuf_parser.h"
 #include "coproc/errc.h"
 #include "coproc/logger.h"
+#include "coproc/tests/utils/batch_utils.h"
 #include "coproc/tests/utils/coprocessor.h"
 #include "coproc/types.h"
 #include "model/errc.h"
@@ -36,17 +37,6 @@ supervisor::supervisor(
   : supervisor_service(sc, ssg)
   , _coprocessors(coprocessors)
   , _delay_heartbeat(delay_heartbeat) {}
-
-model::record_batch_reader::data_t
-copy_batch(const model::record_batch_reader::data_t& data) {
-    model::record_batch_reader::data_t new_batch;
-    std::transform(
-      data.cbegin(),
-      data.cend(),
-      std::back_inserter(new_batch),
-      [](const model::record_batch& rb) { return rb.copy(); });
-    return new_batch;
-}
 
 ss::future<std::vector<process_batch_reply::data>> resultmap_to_vector(
   script_id id, const model::ntp& ntp, coprocessor::result rmap) {
