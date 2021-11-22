@@ -60,6 +60,24 @@ fedora_deps=(
   xz
   zip
 )
+arch_deps=(
+  ccache
+  clang
+  curl
+  git
+  zstd
+  llvm
+  lld
+  pkg-config
+  procps
+  python-jinja
+  python-virtualenv
+  rapidjson
+  snappy
+  xxhash
+  xz
+  zip
+)
 
 case "$ID" in
   ubuntu | debian)
@@ -68,6 +86,9 @@ case "$ID" in
     ;;
   fedora)
     dnf install -y "${fedora_deps[@]}"
+    ;;
+  arch)
+    pacman -Sy --needed --noconfirm "${arch_deps[@]}"
     ;;
   *)
     echo "Please help us make the script better by sending patches with your OS $ID"
