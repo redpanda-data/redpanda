@@ -10,6 +10,7 @@
 package disk
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -53,6 +54,19 @@ func Test_blockDevices_getDeviceControllerPath(t *testing.T) {
 	// then
 	require.Nil(t, err)
 	require.Equal(t, "/sys/devices/pci0000:00/0000:00:1f.2", controllerPath)
+
+	// given
+	var sb strings.Builder
+	sb.WriteString("/sys/devices/LNXSYSTM:00/LNXSYBUS:00/PNP0A03:00/device:07/VMBUS:01")
+	sb.WriteString("/129e938b-5639-4ac2-819d-5c2c778b0c49/pci5639:00/5639:00:00.0")
+	expected := sb.String()
+	sb.WriteString("/nvme/nvme0/nvme0n1")
+	devSystemPath = sb.String()
+	// when
+	controllerPath, err = blockDevices.getDeviceControllerPath(devSystemPath)
+	// then
+	require.Nil(t, err)
+	require.Equal(t, expected, controllerPath)
 }
 
 func Test_blockDevices_isIRQNvmeFastPathIRQ(t *testing.T) {

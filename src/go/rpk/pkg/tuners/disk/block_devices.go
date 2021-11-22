@@ -216,11 +216,10 @@ func (b *blockDevices) getDeviceControllerPath(
 	splitSystemPath := strings.Split(devSystemPath, "/")
 	controllerPathParts := append([]string{"/"}, splitSystemPath[0:4]...)
 	pattern, _ := regexp.Compile(
-		"^[0-9ABCDEFabcdef]{4}:[0-9ABCDEFabcdef]{2}:[0-9ABCDEFabcdef]{2}\\.[0-9ABCDEFabcdef]$")
+		`^[0-9ABCDEFabcdef]{4}:[0-9ABCDEFabcdef]{2}:[0-9ABCDEFabcdef]{2}\.[0-9ABCDEFabcdef]$`)
 	for _, systemPathPart := range splitSystemPath[4:] {
+		controllerPathParts = append(controllerPathParts, systemPathPart)
 		if pattern.MatchString(systemPathPart) {
-			controllerPathParts = append(controllerPathParts, systemPathPart)
-		} else {
 			break
 		}
 	}
