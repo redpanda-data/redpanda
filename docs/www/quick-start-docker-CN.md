@@ -41,7 +41,7 @@ redpanda start \
 --check=false
 ```
 
-您可以执行一些[简单的topic操作](#Do-some-streaming)来进行一些流式传输。
+您可以执行一些[简单的topic操作](#streaming)来进行一些流式传输。
 或者，您只需将[Kafka兼容客户端](/docs/faq/#What-clients-do-you-recommend-to-use-with-Redpanda)指向到 `127.0.0.1:9092` 就可以了。
 
 ### 设置3节点cluster
