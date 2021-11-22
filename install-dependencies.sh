@@ -114,7 +114,7 @@ git checkout ecdc362593cfee1ade115ead7be6c3e96b2e7384
 mkdir $DEPOT_TOOLS_DIR/installed-gn
 
 # Download gn (git_revision:e0c476ffc83dc10897cb90b45c03ae2539352c5c)
-case $(uname -i) in
+case $(uname -m) in
   x86_64)
     link_for_gn="https://chrome-infra-packages.appspot.com/dl/gn/gn/linux-amd64/+/COENCtFXQmybPdz3KQBjmuSaCK4qdzmzwuCJHQKxovEC"
     ;;
