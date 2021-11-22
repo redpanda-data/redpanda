@@ -12,7 +12,6 @@
 #pragma once
 
 #include "cluster/fwd.h"
-#include "coproc/event_handler.h"
 #include "coproc/fwd.h"
 #include "coproc/sys_refs.h"
 #include "utils/unresolved_address.h"

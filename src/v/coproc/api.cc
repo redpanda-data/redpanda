@@ -12,6 +12,7 @@
 #include "coproc/api.h"
 
 #include "cluster/non_replicable_topics_frontend.h"
+#include "coproc/event_handler.h"
 #include "coproc/event_listener.h"
 #include "coproc/pacemaker.h"
 
