@@ -1,6 +1,6 @@
 # Redpanda Operator
 
-[Official Redpanda Kubernetes operator](https://github.com/vectorizedio/redpanda/src/go/k8s)
+[Official Redpanda Kubernetes operator](https://github.com/vectorizedio/redpanda/tree/dev/src/go/k8s)
 automates tasks related to managing Redpanda clusters in Kubernetes. It is built using the
 [kubebuilder project](https://github.com/kubernetes-sigs/kubebuilder).
 
