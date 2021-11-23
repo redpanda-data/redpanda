@@ -131,6 +131,11 @@ ss::future<bool> prevote_stm::prevote(bool leadership_transfer) {
           }
 
           _config = _ptr->config();
+
+          // special case, it may happen that node requesting votes is not a
+          // voter, it may happen if it is a learner in previous configuration
+          _replies.emplace(_ptr->_self, vmeta{});
+
           _config->for_each_voter(
             [this](vnode id) { _replies.emplace(id, vmeta{}); });
 
