@@ -413,15 +413,16 @@ ss::future<offset_configuration> configuration_manager::wait_for_change(
 
 ss::future<> configuration_manager::remove_persistent_state() {
     return _storage.kvs()
-      .remove(storage::kvstore::key_space::consensus, configurations_map_key())
-      .then([this] {
-          return _storage.kvs().remove(
-            storage::kvstore::key_space::consensus, highest_known_offset_key());
-      })
+      .remove(
+        storage::kvstore::key_space::consensus, highest_known_offset_key())
       .then([this] {
           return _storage.kvs().remove(
             storage::kvstore::key_space::consensus,
             next_configuration_idx_key());
+      })
+      .then([this] {
+          return _storage.kvs().remove(
+            storage::kvstore::key_space::consensus, configurations_map_key());
       });
 }
 
