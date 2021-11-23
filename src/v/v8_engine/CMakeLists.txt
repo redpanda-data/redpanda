@@ -1,6 +1,7 @@
 v_cc_library(
   NAME v8_engine
   SRCS
+    api.cc
     environment.cc
     executor.cc
     script.cc
