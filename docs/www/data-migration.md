@@ -51,8 +51,9 @@ You can find the MirrorMaker script and configuration files in the expanded Kafk
 ```
 .
 └── kafka_2.13-3.0.0
-    └── config
+    └── bin
         └── connect-mirror-maker.sh
+    └── config
         └── connect-mirror-maker.properties
 ```
 
