@@ -27,6 +27,14 @@ spec:
         issuerRef:
           name: cluster-tls-root-issuer
           kind: ClusterIssuer
+    schemaRegistry:
+      port: 8081
+      tls:
+        enabled: true
+        requireClientAuth: true
+        issuerRef:
+          name: cluster-tls-root-issuer
+          kind: ClusterIssuer
     adminApi:
     - port: 9644
     developerMode: true
