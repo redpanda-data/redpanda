@@ -82,7 +82,7 @@ configuration::configuration()
       "TCP receive buffer size in bytes.",
       required::no,
       std::nullopt,
-      32_KiB)
+      64_KiB)
   , rpc_server_tcp_send_buf(
       *this,
       "rpc_server_tcp_send_buf",
@@ -826,7 +826,7 @@ configuration::configuration()
       "kafka_qdc_enable",
       "Enable kafka queue depth control.",
       required::no,
-      false)
+      true)
   , kafka_qdc_depth_alpha(
       *this,
       "kafka_qdc_depth_alpha",
@@ -838,13 +838,13 @@ configuration::configuration()
       "kafka_qdc_max_latency_ms",
       "Max latency threshold for kafka queue depth control depth tracking.",
       required::no,
-      80ms)
+      4ms)
   , kafka_qdc_idle_depth(
       *this,
       "kafka_qdc_idle_depth",
       "Queue depth when idleness is detected in kafka queue depth control.",
       required::no,
-      10)
+      8)
   , kafka_qdc_min_depth(
       *this,
       "kafka_qdc_min_depth",
@@ -856,7 +856,7 @@ configuration::configuration()
       "kafka_qdc_max_depth",
       "Maximum queue depth used in kafka queue depth control.",
       required::no,
-      100)
+      32)
   , kafka_qdc_depth_update_ms(
       *this,
       "kafka_qdc_depth_update_ms",
