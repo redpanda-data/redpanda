@@ -33,6 +33,7 @@ rp_test(
   SOURCES
     get_schema_types.cc
     post_subjects_subject_version.cc
+    delete_subject_endpoints.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main v::application
   # TODO(Ben): Make schema_registry properly sharded

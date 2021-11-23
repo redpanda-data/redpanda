@@ -43,6 +43,7 @@ enum class reply_error_code : uint16_t {
     schema_empty = 42201,
     schema_version_invalid = 42202,
     compatibility_level_invalid = 42203,
+    subject_version_has_references = 42206,
     write_collision = 50301,
     zookeeper_error = 50001,
     kafka_error = 50002,

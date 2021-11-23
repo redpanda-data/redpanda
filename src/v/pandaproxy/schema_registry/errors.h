@@ -140,4 +140,14 @@ inline error_info invalid_schema(const canonical_schema& schema) {
       error_code::schema_invalid, fmt::format("Invalid schema {}", schema)};
 }
 
+inline error_info has_references(const subject& sub, schema_version ver) {
+    return {
+      error_code::subject_version_has_references,
+      fmt::format(
+        "One or more references exist to the schema "
+        "{{magic=1,keytype=SCHEMA,subject={},version={}}}",
+        sub(),
+        ver())};
+}
+
 } // namespace pandaproxy::schema_registry

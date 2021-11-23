@@ -50,6 +50,8 @@ struct error_category final : std::error_category {
                    "permanently";
         case error_code::subject_version_not_deleted:
             return "Version not deleted before being permanently deleted";
+        case error_code::subject_version_has_references:
+            return "One or more references exist to the schema";
         case error_code::subject_schema_invalid:
             return "Error while looking up schema under subject";
         case error_code::write_collision:
@@ -92,6 +94,8 @@ struct error_category final : std::error_category {
             return reply_error_code::schema_empty; // 42201
         case error_code::schema_version_invalid:
             return reply_error_code::schema_version_invalid; // 42202
+        case error_code::subject_version_has_references:
+            return reply_error_code::subject_version_has_references; // 42206
         case error_code::schema_incompatible:
             return reply_error_code::conflict; // 409
         case error_code::topic_parse_error:
