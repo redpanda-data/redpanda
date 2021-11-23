@@ -1477,7 +1477,7 @@ class TopicRecoveryTest(RedpandaTest):
                     # We can use it to wait until the recovery is completed.
                     for partition in topic_state:
                         self.logger.info(f"partition: {partition}")
-                        if partition.leader:
+                        if partition.leader in partition.replicas:
                             num_leaders += 1
             except:
                 pass
