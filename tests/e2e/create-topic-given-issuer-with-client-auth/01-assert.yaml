@@ -40,3 +40,37 @@ status:
     - reason: Ready
       status: "True"
       type: Ready
+
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cluster-tls-schema-registry-client
+spec:
+  # Always issued by internal issuer for mTLS certs
+  issuerRef:
+    name: cluster-tls-schema-registry-root-issuer
+status:
+  conditions:
+    - reason: Ready
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cluster-tls-schema-registry-node
+spec:
+  # Issued by the issuer passed to the CR
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-tls-root-issuer
+status:
+  conditions:
+    - reason: Ready
+      status: "True"
+      type: Ready
