@@ -96,9 +96,14 @@ public:
     bool contains(vnode) const;
 
     /**
-     * Check if node with given id is allowed to request for votes
+     * Check if node is a voter
      */
     bool is_voter(vnode) const;
+
+    /**
+     * Check if node with given id is allowed to request for votes
+     */
+    bool is_allowed_to_request_votes(vnode) const;
 
     /**
      * Configuration manipulation API. Each operation cause the configuration to
@@ -119,6 +124,12 @@ public:
      * become simple
      */
     void discard_old_config();
+
+    /**
+     * demotes all voters if they were removed from current configuration,
+     * returns false if no voters were demoted
+     */
+    bool maybe_demote_removed_voters();
 
     const group_nodes& current_config() const { return _current; }
     const std::optional<group_nodes>& old_config() const { return _old; }
@@ -278,6 +289,14 @@ auto group_configuration::quorum_match(Func&& f) const {
      */
     if (_current.voters.empty()) {
         return details::quorum_match(f, _old->voters);
+    }
+
+    /**
+     * we must check if old voters are there, if not we do not include old
+     * quorum into decision about majority
+     */
+    if (_old->voters.empty()) {
+        return details::quorum_match(f, _current.voters);
     }
 
     return std::min(

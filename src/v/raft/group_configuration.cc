@@ -110,6 +110,32 @@ bool group_configuration::is_voter(vnode id) const {
     return old_it != std::cend(_old->voters);
 }
 
+bool group_configuration::is_allowed_to_request_votes(vnode id) const {
+    // either current voter
+    auto it = std::find(
+      std::cbegin(_current.voters), std::cend(_current.voters), id);
+
+    if (it != std::cend(_current.voters)) {
+        return true;
+    }
+    if (!_old) {
+        return false;
+    }
+    // or present in old configuration
+    auto old_it = std::find(
+      std::cbegin(_old->voters), std::cend(_old->voters), id);
+
+    // present in old voters
+    if (old_it != std::cend(_old->voters)) {
+        return true;
+    }
+    // look in learners
+    old_it = std::find(
+      std::cbegin(_old->learners), std::cend(_old->learners), id);
+
+    return old_it != std::cend(_old->learners);
+}
+
 bool group_configuration::contains_broker(model::node_id id) const {
     auto it = std::find_if(
       std::cbegin(_brokers),
@@ -296,6 +322,33 @@ void group_configuration::promote_to_voter(vnode id) {
     // add to voters
     _current.learners.erase(it);
     _current.voters.push_back(id);
+}
+
+bool group_configuration::maybe_demote_removed_voters() {
+    vassert(
+      _old,
+      "can not demote removed voters as configuration is of simple type - {}",
+      *this);
+
+    // no voters are present, do nothing
+    if (_old->voters.empty()) {
+        return false;
+    }
+    // if voter was removed, make it a learner
+    auto it = std::stable_partition(
+      _old->voters.begin(), _old->voters.end(), [this](const vnode& v) {
+          return _current.contains(v);
+      });
+
+    // nothing to remove
+    if (std::distance(it, _old->voters.end()) == 0) {
+        return false;
+    }
+
+    std::move(it, _old->voters.end(), std::back_inserter(_old->learners));
+    _old->voters.erase(it, _old->voters.end());
+
+    return true;
 }
 
 void group_configuration::discard_old_config() {

@@ -110,6 +110,10 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
           _ptr->_term += model::term_id(1);
           _ptr->_voted_for = {};
 
+          // special case, it may happen that node requesting votes is not a
+          // voter, it may happen if it is a learner in previous configuration
+          _replies.emplace(_ptr->_self, vmeta{});
+
           // vote is the only method under _op_sem
           _config->for_each_voter(
             [this](vnode id) { _replies.emplace(id, vmeta{}); });
