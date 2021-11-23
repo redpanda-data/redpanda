@@ -541,6 +541,21 @@ func (r *Cluster) IsSchemaRegistryExternallyAvailable() bool {
 		r.Spec.Configuration.SchemaRegistry.External.Enabled
 }
 
+// IsSchemaRegistryTLSEnabled returns true if schema registry
+// is enabled with TLS
+func (r *Cluster) IsSchemaRegistryTLSEnabled() bool {
+	return r.Spec.Configuration.SchemaRegistry != nil &&
+		r.Spec.Configuration.SchemaRegistry.TLS != nil &&
+		r.Spec.Configuration.SchemaRegistry.TLS.Enabled
+}
+
+// IsSchemaRegistryMutualTLSEnabled returns true if schema registry
+// is enabled with mutual TLS
+func (r *Cluster) IsSchemaRegistryMutualTLSEnabled() bool {
+	return r.IsSchemaRegistryTLSEnabled() &&
+		r.Spec.Configuration.SchemaRegistry.TLS.RequireClientAuth
+}
+
 // TLSConfig is a generic TLS configuration
 type TLSConfig struct {
 	Enabled           bool                    `json:"enabled,omitempty"`
