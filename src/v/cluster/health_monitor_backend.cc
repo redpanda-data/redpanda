@@ -25,6 +25,7 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/reactor.hh>
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/with_timeout.hh>
 #include <seastar/util/log.hh>
@@ -141,6 +142,7 @@ std::optional<node_health_report> health_monitor_backend::build_node_report(
 
     report.disk_space = it->second.disk_space;
     report.redpanda_version = it->second.redpanda_version;
+    report.uptime = it->second.uptime;
 
     if (f.include_partitions) {
         report.topics = filter_topic_status(it->second.topics, f.ntp_filters);
@@ -354,7 +356,9 @@ result<node_health_report> health_monitor_backend::process_node_reply(
     if (!it->second.is_alive && clusterlog.is_enabled(ss::log_level::info)) {
         vlog(
           clusterlog.info,
-          "received node {} health report, marking node as up");
+          "received node {} health report, marking node as up",
+          id);
+        it->second.is_alive = alive::yes;
     }
 
     return res;
@@ -398,6 +402,9 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
     ret.disk_space = get_disk_space();
     ret.redpanda_version = cluster::application_version(
       (std::string)redpanda_version());
+
+    ret.uptime = std::chrono::duration_cast<std::chrono::milliseconds>(
+      ss::engine().uptime());
 
     if (filter.include_partitions) {
         ret.topics = co_await collect_topic_status(

@@ -80,6 +80,7 @@ struct node_health_report {
 
     model::node_id id;
     application_version redpanda_version;
+    std::chrono::milliseconds uptime;
     // we store a vector to be ready to operate with multiple data
     // directories
     std::vector<node_disk_space> disk_space;

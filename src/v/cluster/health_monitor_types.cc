@@ -17,6 +17,8 @@
 
 #include <fmt/ostream.h>
 
+#include <chrono>
+
 namespace cluster {
 
 bool partitions_filter::matches(const model::ntp& ntp) const {
@@ -58,11 +60,13 @@ std::ostream& operator<<(std::ostream& o, const node_state& s) {
 std::ostream& operator<<(std::ostream& o, const node_health_report& r) {
     fmt::print(
       o,
-      "{{id: {}, disk_space: {}, topics: {}, redpanda_version: {}}}",
+      "{{id: {}, disk_space: {}, topics: {}, redpanda_version: {}, uptime: "
+      "{}}}",
       r.id,
       r.disk_space,
       r.topics,
-      r.redpanda_version);
+      r.redpanda_version,
+      r.uptime);
     return o;
 }
 
@@ -237,6 +241,7 @@ void adl<cluster::node_health_report>::to(
       r.current_version,
       r.id,
       std::move(r.redpanda_version),
+      r.uptime,
       std::move(r.disk_space),
       std::move(r.topics));
 }
@@ -248,12 +253,14 @@ adl<cluster::node_health_report>::from(iobuf_parser& p) {
 
     auto id = adl<model::node_id>{}.from(p);
     auto redpanda_version = adl<cluster::application_version>{}.from(p);
+    auto uptime = adl<std::chrono::milliseconds>{}.from(p);
     auto disk_space = adl<std::vector<cluster::node_disk_space>>{}.from(p);
     auto topics = adl<std::vector<cluster::topic_status>>{}.from(p);
 
     return cluster::node_health_report{
       .id = id,
       .redpanda_version = std::move(redpanda_version),
+      .uptime = uptime,
       .disk_space = std::move(disk_space),
       .topics = std::move(topics),
     };
