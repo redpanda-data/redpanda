@@ -57,7 +57,7 @@ You can find the MirrorMaker script and configuration files in the expanded Kafk
         └── connect-mirror-maker.properties
 ```
 
-The sample configuration is a great place to understand a number of the settings for MirroMaker.
+The sample configuration is a great place to understand a number of the settings for MirrorMaker.
 
 To create a basic configuration file, go to the `config` and run this command:
 
