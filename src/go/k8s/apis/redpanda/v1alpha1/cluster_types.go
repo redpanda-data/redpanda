@@ -533,6 +533,16 @@ func (r *Cluster) PandaproxyAPITLS() *PandaproxyAPI {
 	return nil
 }
 
+// SchemaRegistryAPITLS returns a SchemaRegistry listener that has TLS enabled.
+// It returns nil if no TLS is configured.
+func (r *Cluster) SchemaRegistryAPITLS() *SchemaRegistryAPI {
+	schemaRegistry := r.Spec.Configuration.SchemaRegistry
+	if schemaRegistry != nil && schemaRegistry.TLS != nil && schemaRegistry.TLS.Enabled {
+		return schemaRegistry
+	}
+	return nil
+}
+
 // IsSchemaRegistryExternallyAvailable returns true if schema registry
 // is enabled with external connectivity
 func (r *Cluster) IsSchemaRegistryExternallyAvailable() bool {
