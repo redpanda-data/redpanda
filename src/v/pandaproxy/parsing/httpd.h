@@ -17,6 +17,7 @@
 #include "reflection/type_traits.h"
 #include "vassert.h"
 
+#include <seastar/http/httpd.hh>
 #include <seastar/http/request.hh>
 
 #include <boost/algorithm/string/classification.hpp>
@@ -87,7 +88,14 @@ T header(const ss::httpd::request& req, const ss::sstring& name) {
 
 template<typename T>
 T request_param(const ss::httpd::request& req, const ss::sstring& name) {
-    return detail::parse_param<T>("parameter", name, req.param[name]);
+    const auto& param{req.param[name]};
+    ss::sstring value;
+    if (!ss::httpd::connection::url_decode(param, value)) {
+        throw error(
+          error_code::invalid_param,
+          fmt::format("Invalid parameter '{}' got '{}'", name, param));
+    }
+    return detail::parse_param<T>("parameter", name, value);
 }
 
 template<typename T>
