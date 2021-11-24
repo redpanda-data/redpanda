@@ -240,6 +240,14 @@ static ss::future<> process_one_reply(
             "error",
             e.id));
     }
+    if (args.denylist.contains(e.ntp)) {
+        /// The script attempted to write to a blacklisted ntp, meaning that
+        /// this ntp has been marked for deletion. Ignore this particular
+        /// portion of the request, until the ntp leaves the denlylist (after it
+        /// has been fully torn down). If the script later responds with this
+        /// ntp, it will be eventually re-created.
+        co_return;
+    }
     /// Possible filter response
     if (e.ntp == e.source) {
         /// If the reader is empty, then the wasm engine returned a nil
