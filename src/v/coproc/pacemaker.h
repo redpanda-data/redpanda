@@ -122,6 +122,30 @@ public:
     /// returns a handle to the reconnect transport
     shared_script_resources& resources() { return _shared_res; }
 
+    /// Calls the function while materialized topic is on the denylist
+    ///
+    /// Its not enough to add the topic to the denylist, it must also be
+    /// checked that all fibers are respecting this, i.e. don't have in-progress
+    /// writes to these topics. After the function has been invoked the topic
+    /// will be removed from the blacklist.
+    template<typename Fn>
+    ss::future<>
+    with_hold(const model::ntp& source, const model::ntp& materialized, Fn fn) {
+        _shared_res.in_progress_deletes.emplace(materialized);
+        std::vector<ss::future<>> fs;
+        for (auto& [_, script] : _scripts) {
+            fs.emplace_back(script->remove_output(source, materialized));
+        }
+        /// When this future completes, it can safely be assumed that all fibers
+        /// are respecting the new addition to the blacklist
+        co_await ss::when_all_succeed(fs.begin(), fs.end());
+        co_await fn();
+        _shared_res.log_mtx.erase(materialized);
+        /// Releases the barrier, if any fibers wish to recreate the topic its
+        /// safe to do so now
+        _shared_res.in_progress_deletes.erase(materialized);
+    }
+
 private:
     void do_add_source(
       script_id,
