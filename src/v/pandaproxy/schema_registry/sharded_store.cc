@@ -498,13 +498,15 @@ ss::future<bool> sharded_store::is_compatible(
         if (
           compat == compatibility_level::backward
           || compat == compatibility_level::backward_transitive
-          || compat == compatibility_level::full) {
+          || compat == compatibility_level::full
+          || compat == compatibility_level::full_transitive) {
             is_compat = is_compat && check_compatible(new_valid, old_valid);
         }
         if (
           compat == compatibility_level::forward
           || compat == compatibility_level::forward_transitive
-          || compat == compatibility_level::full) {
+          || compat == compatibility_level::full
+          || compat == compatibility_level::full_transitive) {
             is_compat = is_compat && check_compatible(old_valid, new_valid);
         }
     }
