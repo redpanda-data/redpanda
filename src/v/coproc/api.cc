@@ -49,7 +49,8 @@ ss::future<> api::start() {
       std::ref(_rs.topic_table),
       std::ref(_rs.shard_table),
       std::ref(_rs.partition_manager),
-      std::ref(_rs.cp_partition_manager));
+      std::ref(_rs.cp_partition_manager),
+      std::ref(_pacemaker));
 
     co_await _reconciliation_backend.invoke_on_all(
       &coproc::reconciliation_backend::start);
