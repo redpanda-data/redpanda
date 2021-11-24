@@ -27,17 +27,17 @@
 
 namespace raft {
 bool group_nodes::contains(vnode id) const {
-    auto v_it = std::find(std::cbegin(voters), std::cend(voters), id);
+    auto v_it = std::find(voters.cbegin(), voters.cend(), id);
     if (v_it != voters.cend()) {
         return true;
     }
-    auto l_it = std::find(std::cbegin(learners), std::cend(learners), id);
+    auto l_it = std::find(learners.cbegin(), learners.cend(), id);
     return l_it != learners.cend();
 }
 
 std::optional<vnode> group_nodes::find(model::node_id id) const {
     auto v_it = std::find_if(
-      std::cbegin(voters), std::cend(voters), [id](const vnode& rni) {
+      voters.cbegin(), voters.cend(), [id](const vnode& rni) {
           return rni.id() == id;
       });
 
@@ -45,7 +45,7 @@ std::optional<vnode> group_nodes::find(model::node_id id) const {
         return *v_it;
     }
     auto l_it = std::find_if(
-      std::cbegin(learners), std::cend(learners), [id](const vnode& rni) {
+      learners.cbegin(), learners.cend(), [id](const vnode& rni) {
           return rni.id() == id;
       });
 
@@ -58,8 +58,8 @@ group_configuration::group_configuration(
   , _revision(revision) {
     _current.voters.resize(brokers.size());
     std::transform(
-      std::cbegin(_brokers),
-      std::cend(_brokers),
+      _brokers.cbegin(),
+      _brokers.cend(),
       std::back_inserter(_current.voters),
       [revision](const model::broker& br) { return vnode(br.id(), revision); });
 }
@@ -80,11 +80,11 @@ group_configuration::group_configuration(
 std::optional<model::broker>
 group_configuration::find_broker(model::node_id id) const {
     auto it = std::find_if(
-      std::cbegin(_brokers),
-      std::cend(_brokers),
-      [id](const model::broker& broker) { return id == broker.id(); });
+      _brokers.cbegin(), _brokers.cend(), [id](const model::broker& broker) {
+          return id == broker.id();
+      });
 
-    if (it != std::cend(_brokers)) {
+    if (it != _brokers.cend()) {
         return *it;
     }
     return std::nullopt;
@@ -95,61 +95,56 @@ bool group_configuration::has_voters() {
 }
 
 bool group_configuration::is_voter(vnode id) const {
-    auto it = std::find(
-      std::cbegin(_current.voters), std::cend(_current.voters), id);
+    auto it = std::find(_current.voters.cbegin(), _current.voters.cend(), id);
 
-    if (it != std::cend(_current.voters)) {
+    if (it != _current.voters.cend()) {
         return true;
     }
     if (!_old) {
         return false;
     }
-    auto old_it = std::find(
-      std::cbegin(_old->voters), std::cend(_old->voters), id);
+    auto old_it = std::find(_old->voters.cbegin(), _old->voters.cend(), id);
 
-    return old_it != std::cend(_old->voters);
+    return old_it != _old->voters.cend();
 }
 
 bool group_configuration::is_allowed_to_request_votes(vnode id) const {
     // either current voter
-    auto it = std::find(
-      std::cbegin(_current.voters), std::cend(_current.voters), id);
+    auto it = std::find(_current.voters.cbegin(), _current.voters.cend(), id);
 
-    if (it != std::cend(_current.voters)) {
+    if (it != _current.voters.cend()) {
         return true;
     }
     if (!_old) {
         return false;
     }
     // or present in old configuration
-    auto old_it = std::find(
-      std::cbegin(_old->voters), std::cend(_old->voters), id);
+    auto old_it = std::find(_old->voters.cbegin(), _old->voters.cend(), id);
 
     // present in old voters
-    if (old_it != std::cend(_old->voters)) {
+    if (old_it != _old->voters.cend()) {
         return true;
     }
     // look in learners
-    old_it = std::find(
-      std::cbegin(_old->learners), std::cend(_old->learners), id);
+    old_it = std::find(_old->learners.cbegin(), _old->learners.cend(), id);
 
-    return old_it != std::cend(_old->learners);
+    return old_it != _old->learners.cend();
 }
 
 bool group_configuration::contains_broker(model::node_id id) const {
     auto it = std::find_if(
-      std::cbegin(_brokers),
-      std::cend(_brokers),
-      [id](const model::broker& broker) { return id == broker.id(); });
+      _brokers.cbegin(), _brokers.cend(), [id](const model::broker& broker) {
+          return id == broker.id();
+      });
 
-    return it != std::cend(_brokers);
+    return it != _brokers.cend();
 }
 
 bool group_configuration::contains_address(
   const unresolved_address& address) const {
     return std::any_of(
-      std::cbegin(_brokers),
-      std::cend(_brokers),
+      _brokers.cbegin(),
+      _brokers.cend(),
       [&address](const model::broker& broker) {
           return address == broker.rpc_address();
       });
@@ -194,10 +189,9 @@ std::vector<vnode> group_configuration::unique_learner_ids() const {
 
 void erase_id(std::vector<vnode>& v, model::node_id id) {
     auto it = std::find_if(
-      std::cbegin(v), std::cend(v), [id](const vnode& rni) {
-          return id == rni.id();
-      });
-    if (it != std::cend(v)) {
+      v.cbegin(), v.cend(), [id](const vnode& rni) { return id == rni.id(); });
+
+    if (it != v.cend()) {
         v.erase(it);
     }
 }
@@ -208,10 +202,10 @@ void group_configuration::add(
     _revision = rev;
     for (auto& b : brokers) {
         auto it = std::find_if(
-          std::cbegin(_brokers),
-          std::cend(_brokers),
+          _brokers.cbegin(),
+          _brokers.cend(),
           [id = b.id()](const model::broker& n) { return id == n.id(); });
-        if (unlikely(it != std::cend(_brokers))) {
+        if (unlikely(it != _brokers.cend())) {
             throw std::invalid_argument(fmt::format(
               "broker {} already present in current configuration {}",
               b.id(),
@@ -231,9 +225,9 @@ void group_configuration::remove(const std::vector<model::node_id>& ids) {
       !_old, "can not remove broker from joint configuration - {}", *this);
     for (auto& id : ids) {
         auto broker_it = std::find_if(
-          std::cbegin(_brokers),
-          std::cend(_brokers),
-          [id](const model::broker& n) { return id == n.id(); });
+          _brokers.cbegin(), _brokers.cend(), [id](const model::broker& n) {
+              return id == n.id();
+          });
         if (unlikely(broker_it == _brokers.cend())) {
             throw std::invalid_argument(fmt::format(
               "broker {} not found in current configuration {}", id, *this));
@@ -282,21 +276,21 @@ void group_configuration::replace(
     for (auto& br : brokers) {
         // brokers was a voter
         auto v_it = std::find_if(
-          std::cbegin(_old->voters),
-          std::cend(_old->voters),
-          [&br](const vnode& rni) { return rni.id() == br.id(); });
+          _old->voters.cbegin(), _old->voters.cend(), [&br](const vnode& rni) {
+              return rni.id() == br.id();
+          });
 
-        if (v_it != std::cend(_old->voters)) {
+        if (v_it != _old->voters.cend()) {
             _current.voters.push_back(*v_it);
             continue;
         }
         // brokers was a learner
         auto l_it = std::find_if(
-          std::cbegin(_old->learners),
-          std::cend(_old->learners),
+          _old->learners.cbegin(),
+          _old->learners.cend(),
           [&br](const vnode& rni) { return rni.id() == br.id(); });
 
-        if (l_it != std::cend(_old->learners)) {
+        if (l_it != _old->learners.cend()) {
             _current.learners.push_back(*l_it);
             continue;
         }
@@ -314,9 +308,9 @@ void group_configuration::replace(
 
 void group_configuration::promote_to_voter(vnode id) {
     auto it = std::find(
-      std::cbegin(_current.learners), std::cend(_current.learners), id);
+      _current.learners.cbegin(), _current.learners.cend(), id);
     // do nothing
-    if (it == _current.learners.end()) {
+    if (it == _current.learners.cend()) {
         return;
     }
     // add to voters
@@ -368,23 +362,23 @@ void group_configuration::discard_old_config() {
     }
     // remove unused brokers from brokers set
     auto it = std::stable_partition(
-      std::begin(_brokers),
-      std::end(_brokers),
+      _brokers.begin(),
+      _brokers.end(),
       [physical_node_ids](const model::broker& b) {
           return physical_node_ids.contains(b.id());
       });
     // we are only interested in current brokers
-    _brokers.erase(it, std::end(_brokers));
+    _brokers.erase(it, _brokers.end());
     _old.reset();
 }
 
 void group_configuration::update(model::broker broker) {
     auto it = std::find_if(
-      std::begin(_brokers),
-      std::end(_brokers),
-      [id = broker.id()](model::broker& b) { return id == b.id(); });
+      _brokers.begin(), _brokers.end(), [id = broker.id()](model::broker& b) {
+          return id == b.id();
+      });
 
-    if (it == std::cend(_brokers)) {
+    if (it == _brokers.end()) {
         throw std::invalid_argument(fmt::format(
           "broker {} does not exists in configuration {}", broker.id(), *this));
     }

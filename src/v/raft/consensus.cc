@@ -928,8 +928,8 @@ ss::future<std::error_code> consensus::add_group_members(
     return change_configuration([nodes = std::move(nodes), new_revision](
                                   group_configuration current) mutable {
         auto contains_already = std::any_of(
-          std::cbegin(nodes),
-          std::cend(nodes),
+          nodes.cbegin(),
+          nodes.cend(),
           [&current](const model::broker& broker) {
               return current.contains_broker(broker.id());
           });
@@ -950,7 +950,7 @@ ss::future<std::error_code> consensus::remove_members(
     return change_configuration(
       [ids = std::move(ids), new_revision](group_configuration current) {
           auto all_exists = std::all_of(
-            std::cbegin(ids), std::cend(ids), [&current](model::node_id id) {
+            ids.cbegin(), ids.cend(), [&current](model::node_id id) {
                 return current.contains_broker(id);
             });
           if (!all_exists) {
