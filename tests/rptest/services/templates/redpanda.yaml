@@ -31,6 +31,8 @@ redpanda:
   # for librdkafka
   auto_create_topics_enabled: true
   default_topic_partitions: 4
+  # disable metrics reporter
+  enable_metrics_reporter: false
 
   superusers:
     - {{superuser[0]}}
