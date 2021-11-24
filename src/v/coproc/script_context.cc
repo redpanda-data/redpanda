@@ -122,6 +122,7 @@ ss::future<> script_context::send_request(
                 .frontend = _resources.rs.mt_frontend,
                 .pm = _resources.rs.cp_partition_manager,
                 .inputs = _routes,
+                .denylist = _resources.in_progress_deletes,
                 .locks = _resources.log_mtx};
               return write_materialized(
                 std::move(reply.value().data.resps), args);

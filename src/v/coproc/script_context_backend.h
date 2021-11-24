@@ -20,6 +20,7 @@
 #include <seastar/core/future.hh>
 
 #include <absl/container/node_hash_map.h>
+#include <absl/container/node_hash_set.h>
 
 namespace coproc {
 /// The outputs from a 'process_batch' call to a wasm engine
@@ -32,6 +33,7 @@ struct output_write_args {
     ss::sharded<cluster::non_replicable_topics_frontend>& frontend;
     ss::sharded<coproc::partition_manager>& pm;
     routes_t& inputs;
+    absl::node_hash_set<model::ntp>& denylist;
     absl::node_hash_map<model::ntp, mutex>& locks;
 };
 
