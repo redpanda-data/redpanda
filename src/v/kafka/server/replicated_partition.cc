@@ -96,6 +96,33 @@ ss::future<model::record_batch_reader> replicated_partition::make_reader(
       std::move(rdr).release(), _translator);
 }
 
+ss::future<std::vector<cluster::rm_stm::tx_range>>
+replicated_partition::aborted_transactions(
+  model::offset base, model::offset last) {
+    model::offset local_kafka_start_offset = _translator->from_log_offset(
+      _partition->start_offset());
+    if (base < local_kafka_start_offset) {
+        // TODO: get offset translation information for the offsets range
+        // that we have read and use it to query
+        // _partition->aborted_transactions.
+        co_return std::vector<cluster::rm_stm::tx_range>{};
+    }
+
+    auto source = co_await _partition->aborted_transactions(
+      _translator->to_log_offset(base), _translator->to_log_offset(last));
+
+    std::vector<cluster::rm_stm::tx_range> target;
+    target.reserve(source.size());
+    for (const auto& range : source) {
+        target.push_back(cluster::rm_stm::tx_range{
+          .pid = range.pid,
+          .first = _translator->from_log_offset(range.first),
+          .last = _translator->from_log_offset(range.last)});
+    }
+
+    co_return target;
+}
+
 ss::future<std::optional<storage::timequery_result>>
 replicated_partition::timequery(
   model::timestamp ts, ss::io_priority_class io_pc) {
