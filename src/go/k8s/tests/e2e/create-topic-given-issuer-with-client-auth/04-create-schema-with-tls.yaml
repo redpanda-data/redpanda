@@ -26,12 +26,11 @@ spec:
         - /bin/bash
         - -c
         args:
-        # TODO: why the test pass using node certs as client certs?
         - >
           curl -vv --silent
           --cacert /etc/tls/certs/schema-registry/ca.crt
-          --cert /etc/tls/certs/schema-registry/tls.crt
-          --key /etc/tls/certs/schema-registry/tls.key
+          --cert /etc/tls/certs/schema-registry-client/tls.crt
+          --key /etc/tls/certs/schema-registry-client/tls.key
           -X POST -H "Content-Type: application/vnd.schemaregistry.v1+json"
           --data '{"schema": "{\"type\": \"string\"}" }'
           https://cluster-tls-cluster.$POD_NAMESPACE.svc.cluster.local.:8081/subjects/Kafka-value/versions
