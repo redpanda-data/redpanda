@@ -31,7 +31,8 @@ public:
       ss::sharded<cluster::topic_table>&,
       ss::sharded<cluster::shard_table>&,
       ss::sharded<cluster::partition_manager>&,
-      ss::sharded<partition_manager>&) noexcept;
+      ss::sharded<partition_manager>&,
+      ss::sharded<pacemaker>&) noexcept;
 
     /// Starts the reconciliation loop
     ///
@@ -77,6 +78,7 @@ private:
     ss::sharded<cluster::shard_table>& _shard_table;
     ss::sharded<cluster::partition_manager>& _cluster_pm;
     ss::sharded<partition_manager>& _coproc_pm;
+    ss::sharded<pacemaker>& _pacemaker;
 };
 
 } // namespace coproc

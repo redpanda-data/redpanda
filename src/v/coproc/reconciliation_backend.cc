@@ -28,13 +28,15 @@ reconciliation_backend::reconciliation_backend(
   ss::sharded<cluster::topic_table>& topics,
   ss::sharded<cluster::shard_table>& shard_table,
   ss::sharded<cluster::partition_manager>& cluster_pm,
-  ss::sharded<partition_manager>& coproc_pm) noexcept
+  ss::sharded<partition_manager>& coproc_pm,
+  ss::sharded<pacemaker>& pacemaker) noexcept
   : _self(model::node_id(config::node().node_id))
   , _data_directory(config::node().data_directory().as_sstring())
   , _topics(topics)
   , _shard_table(shard_table)
   , _cluster_pm(cluster_pm)
-  , _coproc_pm(coproc_pm) {
+  , _coproc_pm(coproc_pm)
+  , _pacemaker(pacemaker) {
     _retry_timer.set_callback([this] {
         (void)within_context([this]() { return fetch_and_reconcile(); });
     });
@@ -156,7 +158,10 @@ ss::future<> reconciliation_backend::delete_non_replicable_partition(
       [ntp, rev](cluster::shard_table& st) { st.erase(ntp, rev); });
     auto copro_partition = _coproc_pm.local().get(ntp);
     if (copro_partition && copro_partition->get_revision_id() < rev) {
-        co_await _coproc_pm.local().remove(ntp);
+        co_await _pacemaker.local().with_hold(
+          copro_partition->source(), ntp, [this, ntp]() {
+              return _coproc_pm.local().remove(ntp);
+          });
     }
 }
 
