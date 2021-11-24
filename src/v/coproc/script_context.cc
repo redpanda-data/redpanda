@@ -71,6 +71,7 @@ ss::future<> script_context::do_execute() {
             return ss::make_ready_future<ss::stop_iteration>(
               ss::stop_iteration::yes);
         }
+        notify_waiters();
         return _resources.transport.get_connected(model::no_timeout)
           .then([this](result<rpc::transport*> transport) {
               if (!transport) {
@@ -103,9 +104,40 @@ ss::future<> script_context::do_execute() {
     });
 }
 
+void script_context::notify_waiters() {
+    auto updates = std::exchange(_updates, {});
+    for (auto& [ntp, update] : updates) {
+        auto found = _routes.find(update.source);
+        if (found != _routes.end()) {
+            found->second->wctx.offsets.erase(ntp);
+        }
+        for (auto& p : update.ps) {
+            p.set_value();
+        }
+    }
+}
+
+ss::future<> script_context::remove_output(
+  const model::ntp& source, const model::ntp& materialized) {
+    auto found = _updates.find(materialized);
+    if (found == _updates.end()) {
+        found = _updates.emplace(materialized, update{.source = source}).first;
+    }
+    vassert(found->second.source == source, "Mismatched");
+    found->second.ps.emplace_back();
+    return found->second.ps.back().get_future();
+}
+
 ss::future<> script_context::shutdown() {
     _abort_source.request_abort();
-    return _gate.close();
+    co_await _gate.close();
+    auto updates = std::exchange(_updates, {});
+    for (auto& [ntp, update] : updates) {
+        for (auto& p : update.ps) {
+            p.set_exception(wait_future_stranded(
+              ssx::sformat("Failed to fufill event for partition: {}", ntp)));
+        }
+    }
 }
 
 ss::future<> script_context::send_request(

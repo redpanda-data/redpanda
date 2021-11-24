@@ -24,6 +24,13 @@
 #include <seastar/core/shared_ptr.hh>
 
 namespace coproc {
+
+/// Raised when futures enqueued by \ref remove_output were failed to be
+/// fufilled due to shutdown before the event occurring
+class wait_future_stranded final : public exception {
+    using exception::exception;
+};
+
 /**
  * The script_context is the smallest schedulable unit in the coprocessor
  * framework. One context is created per registered coprocessor script,
@@ -72,6 +79,12 @@ public:
     /// Returns copy of active routes
     routes_t get_routes() const { return _routes; }
 
+    /// Clean-up associated resources with removed output
+    ///
+    /// This is to be invoked after a materialized topic is deleted
+    ss::future<>
+    remove_output(const model::ntp& source, const model::ntp& materialized);
+
 private:
     ss::future<> do_execute();
 
@@ -79,6 +92,12 @@ private:
       send_request(supervisor_client_protocol, process_batch_request);
 
     ss::future<> process_reply(process_batch_reply);
+    void notify_waiters();
+
+    struct update {
+        model::ntp source;
+        std::vector<ss::promise<>> ps;
+    };
 
 private:
     /// Killswitch for in-process reads
@@ -86,6 +105,9 @@ private:
 
     /// Manages async fiber that begins when calling 'start()'
     ss::gate _gate;
+
+    /// Allows the ability to asynchronously remove items from the router map
+    absl::node_hash_map<model::ntp, update> _updates;
 
     // Reference to resources shared across all script_contexts on 'this'
     // shard
