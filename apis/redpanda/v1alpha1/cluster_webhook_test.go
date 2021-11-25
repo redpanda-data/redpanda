@@ -221,7 +221,7 @@ func TestValidateUpdate(t *testing.T) {
 	expectedFields := []string{
 		field.NewPath("spec").Child("replicas").String(),
 		field.NewPath("spec").Child("resources").Child("requests").Child("memory").String(),
-		field.NewPath("spec").Child("configuration").Child("kafkaApi").Index(0).Child("tls").Child("requireclientauth").String(),
+		field.NewPath("spec").Child("configuration").Child("kafkaApi").Index(0).Child("tls").Child("requireClientAuth").String(),
 		field.NewPath("spec").Child("configuration").Child("kafkaApi").Index(0).Child("tls").Child("nodeSecretRef").String(),
 	}
 
@@ -544,7 +544,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 	})
 }
 
-//nolint:funlen // this is ok for a test
+//nolint:funlen,dupl // this is ok for a test
 func TestCreation(t *testing.T) {
 	redpandaCluster := &v1alpha1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
@@ -798,6 +798,103 @@ func TestCreation(t *testing.T) {
 			v1alpha1.PandaproxyAPI{TLS: v1alpha1.PandaproxyAPITLS{Enabled: false, RequireClientAuth: true}})
 
 		err := tls.ValidateCreate()
+		assert.Error(t, err)
+	})
+}
+
+//nolint:dupl // this is ok for a test
+func TestSchemaRegistryValidations(t *testing.T) {
+	redpandaCluster := &v1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "",
+		},
+		Spec: v1alpha1.ClusterSpec{
+			Configuration: v1alpha1.RedpandaConfig{
+				KafkaAPI:       []v1alpha1.KafkaAPI{{Port: 124}},
+				AdminAPI:       []v1alpha1.AdminAPI{{Port: 126}},
+				RPCServer:      v1alpha1.SocketAddress{Port: 128},
+				SchemaRegistry: &v1alpha1.SchemaRegistryAPI{Port: 130},
+				PandaproxyAPI:  []v1alpha1.PandaproxyAPI{{Port: 132}},
+			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("2Gi"),
+					corev1.ResourceCPU:    resource.MustParse("1"),
+				},
+			},
+		},
+	}
+
+	t.Run("if schema registry externally available, kafka external listener is required", func(t *testing.T) {
+		schemaReg := redpandaCluster.DeepCopy()
+		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
+			External: &v1alpha1.ExternalConnectivityConfig{Enabled: true},
+		}
+		schemaReg.Spec.Configuration.KafkaAPI[0].External.Enabled = false
+
+		err := schemaReg.ValidateCreate()
+		assert.Error(t, err)
+	})
+
+	t.Run("schema registry externally available is valid when it has the same subdomain as kafka external listener", func(t *testing.T) {
+		schemaReg := redpandaCluster.DeepCopy()
+		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
+			External: &v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "test.com"},
+		}
+		schemaReg.Spec.Configuration.KafkaAPI = append(schemaReg.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "test.com"}})
+
+		err := schemaReg.ValidateCreate()
+		assert.NoError(t, err)
+	})
+
+	t.Run("if schema registry externally available, it should have same subdomain as kafka external listener", func(t *testing.T) {
+		schemaReg := redpandaCluster.DeepCopy()
+		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
+			External: &v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "test.com"},
+		}
+		schemaReg.Spec.Configuration.KafkaAPI = append(schemaReg.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "other.com"}})
+
+		err := schemaReg.ValidateCreate()
+		assert.Error(t, err)
+	})
+	t.Run("if schema registry externally available, kafka external listener should not be empty", func(t *testing.T) {
+		schemaReg := redpandaCluster.DeepCopy()
+		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
+			External: &v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "test.com"},
+		}
+		schemaReg.Spec.Configuration.KafkaAPI = append(schemaReg.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: ""}})
+
+		err := schemaReg.ValidateCreate()
+		assert.Error(t, err)
+	})
+
+	t.Run("schema registry mTLS enabled and TLS enabled is valid", func(t *testing.T) {
+		schemaReg := redpandaCluster.DeepCopy()
+		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
+			TLS: &v1alpha1.SchemaRegistryAPITLS{
+				Enabled:           true,
+				RequireClientAuth: true,
+			},
+		}
+
+		err := schemaReg.ValidateCreate()
+		assert.NoError(t, err)
+	})
+
+	t.Run("if schema registry mTLS enabled, TLS should also be enabled", func(t *testing.T) {
+		schemaReg := redpandaCluster.DeepCopy()
+		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
+			TLS: &v1alpha1.SchemaRegistryAPITLS{
+				Enabled:           false,
+				RequireClientAuth: true,
+			},
+		}
+
+		err := schemaReg.ValidateCreate()
 		assert.Error(t, err)
 	})
 }

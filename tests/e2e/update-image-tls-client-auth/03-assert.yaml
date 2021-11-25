@@ -20,6 +20,8 @@ spec:
       name: config-dir
     - mountPath: /etc/tls/certs/admin
       name: tlsadmincert
+    - mountPath: /etc/tls/certs/admin/ca
+      name: tlsadminca
     - mountPath: /var/lib/redpanda/data
       name: datadir
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
@@ -44,6 +46,8 @@ spec:
       name: config-dir
     - mountPath: /etc/tls/certs/admin
       name: tlsadmincert
+    - mountPath: /etc/tls/certs/admin/ca
+      name: tlsadminca
     - mountPath: /var/lib/redpanda/data
       name: datadir
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount

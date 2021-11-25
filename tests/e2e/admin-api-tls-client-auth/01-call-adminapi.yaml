@@ -10,6 +10,10 @@ spec:
           secret:
             defaultMode: 420
             secretName: cluster-tls-admin-api-client
+        - name: tlsadminca
+          secret:
+            defaultMode: 420
+            secretName: cluster-tls-admin-api-node
       containers:
         - name: curl
           image: curlimages/curl:latest
@@ -23,10 +27,17 @@ spec:
             - -c
             - -ex
           args:
-            - curl https://cluster-tls-0.cluster-tls.$POD_NAMESPACE.svc.cluster.local:9644/metrics -v --cacert /etc/tls/certs/admin/ca.crt  --cert /etc/tls/certs/admin/tls.crt --key /etc/tls/certs/admin/tls.key
+            - >
+              curl -vv --silent
+              --cacert /etc/tls/certs/admin/ca/ca.crt
+              --cert /etc/tls/certs/admin/tls.crt 
+              --key /etc/tls/certs/admin/tls.key
+              https://cluster-tls-0.cluster-tls.$POD_NAMESPACE.svc.cluster.local:9644/metrics
           volumeMounts:
             - mountPath: /etc/tls/certs/admin
               name: tlsadmin
+            - mountPath: /etc/tls/certs/admin/ca
+              name: tlsadminca
       restartPolicy: Never
   backoffLimit: 6
   parallelism: 1

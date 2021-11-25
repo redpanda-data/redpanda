@@ -52,6 +52,15 @@ const (
 	datadirName                  = "datadir"
 	archivalCacheIndexAnchorName = "shadow-index-cache"
 	defaultDatadirCapacity       = "100Gi"
+
+	redpandaCertVolName       = "tlscert"
+	redpandaCAVolName         = "tlsca"
+	adminAPICertVolName       = "tlsadmincert"
+	adminAPICAVolName         = "tlsadminca"
+	pandaProxyCertVolName     = "tlspandaproxycert"
+	pandaProxyCAVolName       = "tlspandaproxyca"
+	schemaRegistryCertVolName = "tlsschemaregistrycert"
+	schemaRegistryCAVolName   = "tlsschemaregistryca"
 )
 
 // ConfiguratorSettings holds settings related to configurator container and deployment
@@ -74,11 +83,13 @@ type StatefulSetResource struct {
 	nodePortSvc                        corev1.Service
 	redpandaCertSecretKey              types.NamespacedName
 	internalClientCertSecretKey        types.NamespacedName
-	adminCertSecretKey                 types.NamespacedName // TODO this is unused, can be removed
+	adminCertSecretKey                 types.NamespacedName
 	adminAPINodeCertSecretKey          types.NamespacedName
-	adminAPIClientCertSecretKey        types.NamespacedName // TODO this is unused, can be removed
+	adminAPIClientCertSecretKey        types.NamespacedName
 	pandaproxyAPINodeCertSecretKey     types.NamespacedName
+	pandaproxyClientCertSecretKey      types.NamespacedName
 	schemaRegistryAPINodeCertSecretKey types.NamespacedName
+	schemaRegistryClientCertSecretKey  types.NamespacedName
 	serviceAccountName                 string
 	configuratorSettings               ConfiguratorSettings
 	logger                             logr.Logger
@@ -100,7 +111,9 @@ func NewStatefulSet(
 	adminAPINodeCertSecretKey types.NamespacedName,
 	adminAPIClientCertSecretKey types.NamespacedName,
 	pandaproxyAPINodeCertSecretKey types.NamespacedName,
+	pandaproxyClientCertSecretKey types.NamespacedName,
 	schemaRegistryAPINodeCertSecretKey types.NamespacedName,
+	schemaRegistryClientCertSecretKey types.NamespacedName,
 	serviceAccountName string,
 	configuratorSettings ConfiguratorSettings,
 	logger logr.Logger,
@@ -119,7 +132,9 @@ func NewStatefulSet(
 		adminAPINodeCertSecretKey,
 		adminAPIClientCertSecretKey,
 		pandaproxyAPINodeCertSecretKey,
+		pandaproxyClientCertSecretKey,
 		schemaRegistryAPINodeCertSecretKey,
+		schemaRegistryClientCertSecretKey,
 		serviceAccountName,
 		configuratorSettings,
 		logger.WithValues("Kind", statefulSetKind()),
@@ -593,157 +608,105 @@ func (r *StatefulSetResource) pandaproxyEnvVars() []corev1.EnvVar {
 
 func (r *StatefulSetResource) secretVolumeMounts() []corev1.VolumeMount {
 	var mounts []corev1.VolumeMount
-	tlsListener := r.pandaCluster.KafkaTLSListener()
-	if tlsListener != nil {
-		mounts = append(mounts, corev1.VolumeMount{
-			Name:      "tlscert",
-			MountPath: tlsDir,
-		})
+	if kafkaListener := r.pandaCluster.KafkaTLSListener(); kafkaListener != nil {
+		mounts = append(mounts, r.secretVolumeMountForTLS(kafkaListener.GetTLS(), redpandaCertVolName, tlsKafkaAPIDir, redpandaCAVolName, tlsKafkaAPIDirCA)...)
 	}
-	if tlsListener != nil && tlsListener.TLS.RequireClientAuth {
-		mounts = append(mounts, corev1.VolumeMount{
-			Name:      "tlsca",
-			MountPath: tlsDirCA,
-		})
+	if adminAPI := r.pandaCluster.AdminAPITLS(); adminAPI != nil {
+		mounts = append(mounts, r.secretVolumeMountForTLS(adminAPI.GetTLS(), adminAPICertVolName, tlsAdminAPIDir, adminAPICAVolName, tlsAdminAPIDirCA)...)
 	}
-	if r.pandaCluster.AdminAPITLS() != nil {
-		mounts = append(mounts, corev1.VolumeMount{
-			Name:      "tlsadmincert",
-			MountPath: tlsAdminDir,
-		})
+	if pandaProxy := r.pandaCluster.PandaproxyAPITLS(); pandaProxy != nil {
+		mounts = append(mounts, r.secretVolumeMountForTLS(pandaProxy.GetTLS(), pandaProxyCertVolName, tlsPandaproxyAPIDir, pandaProxyCAVolName, tlsPandaproxyAPIDirCA)...)
 	}
-	if r.pandaCluster.PandaproxyAPITLS() != nil {
-		mounts = append(mounts, corev1.VolumeMount{
-			Name:      "tlspandaproxycert",
-			MountPath: tlsPandaproxyDir,
-		})
+	if schemaRegistry := r.pandaCluster.SchemaRegistryAPITLS(); schemaRegistry != nil {
+		mounts = append(mounts, r.secretVolumeMountForTLS(schemaRegistry.GetTLS(), schemaRegistryCertVolName, tlsSchemaRegistryDir, schemaRegistryCAVolName, tlsSchemaRegistryDirCA)...)
 	}
-	if r.pandaCluster.Spec.Configuration.SchemaRegistry != nil &&
-		r.pandaCluster.Spec.Configuration.SchemaRegistry.TLS != nil {
-		mounts = append(mounts, corev1.VolumeMount{
-			Name:      "tlsschemaregistrycert",
-			MountPath: tlsSchemaRegistryDir,
-		})
-	}
+
 	return mounts
 }
 
-// nolint:funlen // The controller should have more focused feature
+func (r *StatefulSetResource) secretVolumeMountForTLS(
+	tlsConfig *redpandav1alpha1.TLSConfig,
+	tlsVolName, tlsMoundDir, caVolName, caMountDir string,
+) []corev1.VolumeMount {
+	var mounts []corev1.VolumeMount
+	if tlsConfig == nil || !tlsConfig.Enabled {
+		return mounts
+	}
+	mounts = append(mounts, corev1.VolumeMount{
+		Name:      tlsVolName,
+		MountPath: tlsMoundDir,
+	})
+
+	if tlsConfig.RequireClientAuth {
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      caVolName,
+			MountPath: caMountDir,
+		})
+	}
+
+	return mounts
+}
+
+// The controller should have more focused feature
 // oriented functions. E.g. each TLS volume could be managed by
 // one function along side with root certificate, issuer, certificate and
 // volumesMount in statefulset.
 func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
 	var vols []corev1.Volume
+	if kafkaListener := r.pandaCluster.KafkaTLSListener(); kafkaListener != nil {
+		vols = append(vols, r.secretVolumesForTLS(kafkaListener.GetTLS(), redpandaCertVolName, r.redpandaCertSecretKey, redpandaCAVolName, r.internalClientCertSecretKey)...)
+	}
+	if adminAPI := r.pandaCluster.AdminAPITLS(); adminAPI != nil {
+		vols = append(vols, r.secretVolumesForTLS(adminAPI.GetTLS(), adminAPICertVolName, r.adminAPINodeCertSecretKey, adminAPICAVolName, r.adminAPIClientCertSecretKey)...)
+	}
+	if pandaProxy := r.pandaCluster.PandaproxyAPITLS(); pandaProxy != nil {
+		vols = append(vols, r.secretVolumesForTLS(pandaProxy.GetTLS(), pandaProxyCertVolName, r.pandaproxyAPINodeCertSecretKey, pandaProxyCAVolName, r.pandaproxyClientCertSecretKey)...)
+	}
+	if schemaRegistry := r.pandaCluster.SchemaRegistryAPITLS(); schemaRegistry != nil {
+		vols = append(vols, r.secretVolumesForTLS(schemaRegistry.GetTLS(), schemaRegistryCertVolName, r.schemaRegistryAPINodeCertSecretKey, schemaRegistryCAVolName, r.schemaRegistryClientCertSecretKey)...)
+	}
 
-	// When TLS is enabled, Redpanda needs a keypair certificate.
-	tlsListener := r.pandaCluster.KafkaTLSListener()
-	if tlsListener != nil {
-		vols = append(vols, corev1.Volume{
-			Name: "tlscert",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: r.redpandaCertSecretKey.Name,
-					Items: []corev1.KeyToPath{
-						{
-							Key:  corev1.TLSPrivateKeyKey,
-							Path: corev1.TLSPrivateKeyKey,
-						},
-						{
-							Key:  corev1.TLSCertKey,
-							Path: corev1.TLSCertKey,
-						},
+	return vols
+}
+
+func (r *StatefulSetResource) secretVolumesForTLS(
+	tlsConfig *redpandav1alpha1.TLSConfig,
+	tlsVolName string,
+	tlsSecretRef types.NamespacedName,
+	caVolName string,
+	mutualTLSSecretRef types.NamespacedName,
+) []corev1.Volume {
+	var vols []corev1.Volume
+	if tlsConfig == nil || !tlsConfig.Enabled {
+		return vols
+	}
+
+	vols = append(vols, corev1.Volume{
+		Name: tlsVolName,
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: tlsSecretRef.Name,
+				Items: []corev1.KeyToPath{
+					{
+						Key:  corev1.TLSPrivateKeyKey,
+						Path: corev1.TLSPrivateKeyKey,
+					},
+					{
+						Key:  corev1.TLSCertKey,
+						Path: corev1.TLSCertKey,
 					},
 				},
 			},
-		})
-	}
+		},
+	})
 
-	// When TLS client authentication is enabled, Redpanda needs the client's CA certificate.
-	if tlsListener != nil && tlsListener.TLS.RequireClientAuth {
+	if tlsConfig.RequireClientAuth {
 		vols = append(vols, corev1.Volume{
-			Name: "tlsca",
+			Name: caVolName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: r.internalClientCertSecretKey.Name,
+					SecretName: mutualTLSSecretRef.Name,
 					Items: []corev1.KeyToPath{
-						{
-							Key:  cmetav1.TLSCAKey,
-							Path: cmetav1.TLSCAKey,
-						},
-					},
-				},
-			},
-		})
-	}
-
-	// When Admin TLS is enabled, Redpanda needs a keypair certificate.
-	if r.pandaCluster.AdminAPITLS() != nil {
-		vols = append(vols, corev1.Volume{
-			Name: "tlsadmincert",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: r.adminAPINodeCertSecretKey.Name,
-					Items: []corev1.KeyToPath{
-						{
-							Key:  corev1.TLSPrivateKeyKey,
-							Path: corev1.TLSPrivateKeyKey,
-						},
-						{
-							Key:  corev1.TLSCertKey,
-							Path: corev1.TLSCertKey,
-						},
-						{
-							Key:  cmetav1.TLSCAKey,
-							Path: cmetav1.TLSCAKey,
-						},
-					},
-				},
-			},
-		})
-	}
-
-	// When Pandaproxy TLS is enabled, Redpanda needs a keypair certificate.
-	if r.pandaCluster.PandaproxyAPITLS() != nil {
-		vols = append(vols, corev1.Volume{
-			Name: "tlspandaproxycert",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: r.pandaproxyAPINodeCertSecretKey.Name,
-					Items: []corev1.KeyToPath{
-						{
-							Key:  corev1.TLSPrivateKeyKey,
-							Path: corev1.TLSPrivateKeyKey,
-						},
-						{
-							Key:  corev1.TLSCertKey,
-							Path: corev1.TLSCertKey,
-						},
-						{
-							Key:  cmetav1.TLSCAKey,
-							Path: cmetav1.TLSCAKey,
-						},
-					},
-				},
-			},
-		})
-	}
-
-	if r.pandaCluster.Spec.Configuration.SchemaRegistry != nil &&
-		r.pandaCluster.Spec.Configuration.SchemaRegistry.TLS != nil {
-		vols = append(vols, corev1.Volume{
-			Name: "tlsschemaregistrycert",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: r.schemaRegistryAPINodeCertSecretKey.Name,
-					Items: []corev1.KeyToPath{
-						{
-							Key:  corev1.TLSPrivateKeyKey,
-							Path: corev1.TLSPrivateKeyKey,
-						},
-						{
-							Key:  corev1.TLSCertKey,
-							Path: corev1.TLSCertKey,
-						},
 						{
 							Key:  cmetav1.TLSCAKey,
 							Path: cmetav1.TLSCAKey,

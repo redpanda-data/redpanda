@@ -9,6 +9,10 @@ spec:
         - name: tlscert
           secret:
             defaultMode: 420
+            secretName: cluster-proxy-proxy-api-client
+        - name: tlscertca
+          secret:
+            defaultMode: 420
             secretName: cluster-proxy-proxy-api-node
       containers:
         - name: rpk
@@ -27,12 +31,14 @@ spec:
               curl -s -v -X POST "https://cluster-proxy-0.cluster-proxy.$POD_NAMESPACE.svc.cluster.local:8082/topics/test" \
               -H "Content-Type: application/vnd.kafka.json.v2+json" \
               -d '{"records":[{"value":"Vectorized"},{"value":"Pandaproxy"},{"value":"JSON Demo"}]}' \
-              --cacert /etc/tls/certs/pandaproxy/ca.crt \
+              --cacert /etc/tls/certs/pandaproxy/ca/ca.crt \
               --cert /etc/tls/certs/pandaproxy/tls.crt \
               --key /etc/tls/certs/pandaproxy/tls.key
           volumeMounts:
             - mountPath: /etc/tls/certs/pandaproxy
               name: tlscert
+            - mountPath: /etc/tls/certs/pandaproxy/ca
+              name: tlscertca
       restartPolicy: Never
   backoffLimit: 6
   parallelism: 1
