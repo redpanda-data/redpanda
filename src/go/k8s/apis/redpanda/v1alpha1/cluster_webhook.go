@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strconv"
 
+	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -146,6 +147,8 @@ func (r *Cluster) ValidateCreate() error {
 
 	allErrs = append(allErrs, r.validatePandaproxyListeners()...)
 
+	allErrs = append(allErrs, r.validateSchemaRegistryListener()...)
+
 	allErrs = append(allErrs, r.checkCollidingPorts()...)
 
 	allErrs = append(allErrs, r.validateRedpandaMemory()...)
@@ -182,6 +185,8 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 	allErrs = append(allErrs, r.validateAdminListeners()...)
 
 	allErrs = append(allErrs, r.validatePandaproxyListeners()...)
+
+	allErrs = append(allErrs, r.validateSchemaRegistryListener()...)
 
 	allErrs = append(allErrs, r.checkCollidingPorts()...)
 
@@ -282,7 +287,13 @@ func (r *Cluster) validateKafkaListeners() field.ErrorList {
 			foundListenerWithTLS = true
 		}
 		// we need to run the validation on all listeners to also catch errors like !Enabled && RequireClientAuth
-		allErrs = append(allErrs, validateTLS(p.TLS, field.NewPath("spec").Child("configuration").Child("kafkaApi").Index(i).Child("tls"))...)
+		tlsErrs := validateTLS(
+			p.TLS.Enabled,
+			p.TLS.RequireClientAuth,
+			p.TLS.IssuerRef,
+			p.TLS.NodeSecretRef,
+			field.NewPath("spec").Child("configuration").Child("kafkaApi").Index(i).Child("tls"))
+		allErrs = append(allErrs, tlsErrs...)
 	}
 
 	if !((len(r.Spec.Configuration.KafkaAPI) == 2 && external != nil) || (external == nil && len(r.Spec.Configuration.KafkaAPI) == 1)) {
@@ -369,6 +380,47 @@ func (r *Cluster) validatePandaproxyListeners() field.ErrorList {
 	return allErrs
 }
 
+func (r *Cluster) validateSchemaRegistryListener() field.ErrorList {
+	var allErrs field.ErrorList
+	schemaRegistry := r.Spec.Configuration.SchemaRegistry
+	if schemaRegistry == nil {
+		return allErrs
+	}
+	if r.IsSchemaRegistryExternallyAvailable() {
+		kafkaExternal := r.ExternalListener()
+
+		if kafkaExternal == nil || !kafkaExternal.External.Enabled {
+			allErrs = append(allErrs,
+				field.Invalid(field.NewPath("spec").Child("configuration").Child("schemaRegistry"),
+					r.Spec.Configuration.SchemaRegistry,
+					"cannot have a schema registry external listener without a kafka external listener"))
+		}
+		if kafkaExternal == nil && schemaRegistry.External.Subdomain != "" {
+			allErrs = append(allErrs,
+				field.Invalid(field.NewPath("spec").Child("configuration").Child("schemaRegistry").Child("external").Child("subdomain"),
+					r.Spec.Configuration.SchemaRegistry.External.Subdomain,
+					"the external kafka listener can't be empty if the registry subdomain is set"))
+		}
+		if kafkaExternal != nil && kafkaExternal.External.Subdomain != schemaRegistry.External.Subdomain {
+			allErrs = append(allErrs,
+				field.Invalid(field.NewPath("spec").Child("configuration").Child("schemaRegistry").Child("external").Child("subdomain"),
+					r.Spec.Configuration.SchemaRegistry.External.Subdomain,
+					"sudomain of external schema registry must be the same as kafka's"))
+		}
+	}
+
+	if schemaRegistry.TLS != nil {
+		tlsErrs := validateTLS(
+			schemaRegistry.TLS.Enabled,
+			schemaRegistry.TLS.RequireClientAuth,
+			schemaRegistry.TLS.IssuerRef,
+			schemaRegistry.TLS.NodeSecretRef,
+			field.NewPath("spec").Child("configuration").Child("schemaRegistry").Child("tls"))
+		allErrs = append(allErrs, tlsErrs...)
+	}
+	return allErrs
+}
+
 func (r *Cluster) validateResources(rf resourceField) field.ErrorList {
 	if rf.resources == nil {
 		return nil
@@ -432,20 +484,26 @@ func validateAdminTLS(tlsConfig AdminAPITLS, path *field.Path) field.ErrorList {
 	}
 	return allErrs
 }
-func validateTLS(tlsConfig KafkaAPITLS, path *field.Path) field.ErrorList {
+
+func validateTLS(
+	tlsEnabled, requireClientAuth bool,
+	issuerRef *cmmeta.ObjectReference,
+	nodeSecretRef *corev1.ObjectReference,
+	path *field.Path,
+) field.ErrorList {
 	var allErrs field.ErrorList
-	if tlsConfig.RequireClientAuth && !tlsConfig.Enabled {
+	if requireClientAuth && !tlsEnabled {
 		allErrs = append(allErrs,
 			field.Invalid(
-				path.Child("requireclientauth"),
-				tlsConfig.RequireClientAuth,
+				path.Child("requireClientAuth"),
+				requireClientAuth,
 				"Enabled has to be set to true for RequireClientAuth to be allowed to be true"))
 	}
-	if tlsConfig.IssuerRef != nil && tlsConfig.NodeSecretRef != nil {
+	if issuerRef != nil && nodeSecretRef != nil {
 		allErrs = append(allErrs,
 			field.Invalid(
 				path.Child("nodeSecretRef"),
-				tlsConfig.NodeSecretRef,
+				nodeSecretRef,
 				"Cannot provide both IssuerRef and NodeSecretRef"))
 	}
 	return allErrs

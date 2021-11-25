@@ -4,6 +4,13 @@ import redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpan
 
 // Helper functions and types for Listeners
 
+var (
+	_ APIListener = redpandav1alpha1.KafkaAPI{}
+	_ APIListener = redpandav1alpha1.AdminAPI{}
+	_ APIListener = redpandav1alpha1.PandaproxyAPI{}
+	_ APIListener = redpandav1alpha1.SchemaRegistryAPI{}
+)
+
 // APIListener is a generic API Listener
 type APIListener interface {
 	// GetPort returns API port
