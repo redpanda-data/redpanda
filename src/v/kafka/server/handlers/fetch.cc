@@ -96,6 +96,7 @@ static ss::future<read_result> read_from_partition(
     auto data = std::make_unique<iobuf>(std::move(result.data));
     std::vector<cluster::rm_stm::tx_range> aborted_transactions;
     part.probe().add_records_fetched(result.record_count);
+    part.probe().add_bytes_fetched(result.data.size_bytes());
     if (result.record_count > 0) {
         aborted_transactions = co_await part.aborted_transactions(
           result.base_offset, result.last_offset, std::move(rdr.ot_state));
