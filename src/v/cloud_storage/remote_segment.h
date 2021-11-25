@@ -18,6 +18,7 @@
 #include "model/record.h"
 #include "s3/client.h"
 #include "storage/parser.h"
+#include "storage/translating_reader.h"
 #include "storage/types.h"
 #include "utils/retry_chain_node.h"
 
@@ -155,8 +156,8 @@ public:
       = delete;
     ~remote_segment_batch_reader() noexcept = default;
 
-    ss::future<result<ss::circular_buffer<model::record_batch>>>
-      read_some(model::timeout_clock::time_point);
+    ss::future<result<ss::circular_buffer<model::record_batch>>> read_some(
+      model::timeout_clock::time_point, storage::offset_translator_state&);
 
     ss::future<> stop();
 
@@ -185,12 +186,15 @@ private:
     storage::log_reader_config _config;
     std::unique_ptr<storage::continuous_batch_parser> _parser;
     ss::circular_buffer<model::record_batch> _ringbuf;
+    std::optional<std::reference_wrapper<storage::offset_translator_state>>
+      _cur_ot_state;
     size_t _total_size{0};
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
     model::term_id _term;
     model::offset _initial_delta;
     model::offset _cur_rp_offset;
+    model::offset _cur_delta;
 };
 
 } // namespace cloud_storage

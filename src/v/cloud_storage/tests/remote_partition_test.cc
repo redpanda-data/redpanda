@@ -316,7 +316,7 @@ static model::record_batch_header read_single_batch_from_remote_partition(
     auto partition = ss::make_lw_shared<remote_partition>(
       manifest, api, *fixture.cache, bucket);
 
-    auto reader = partition->make_reader(reader_config).get();
+    auto reader = partition->make_reader(reader_config).get().reader;
 
     auto headers_read
       = reader.consume(test_consumer(), model::no_timeout).get();
@@ -348,7 +348,7 @@ static std::vector<model::record_batch_header> scan_remote_partition(
     auto partition = ss::make_lw_shared<remote_partition>(
       manifest, api, *imposter.cache, bucket);
 
-    auto reader = partition->make_reader(reader_config).get();
+    auto reader = partition->make_reader(reader_config).get().reader;
 
     auto headers_read
       = reader.consume(test_consumer(), model::no_timeout).get();
@@ -568,7 +568,7 @@ FIXTURE_TEST(test_remote_partition_lifetime_issue, cloud_storage_fixture) {
 
     storage::log_reader_config reader_config(
       base, max, ss::default_priority_class());
-    auto reader = partition->make_reader(reader_config).get();
+    auto reader = partition->make_reader(reader_config).get().reader;
 
     partition->stop().get();
     partition = {};
@@ -876,7 +876,7 @@ scan_remote_partition_incrementally(
     int num_fetches = 0;
     while (next < max) {
         reader_config.start_offset = next;
-        auto reader = partition->make_reader(reader_config).get();
+        auto reader = partition->make_reader(reader_config).get().reader;
         auto headers_read
           = reader.consume(test_consumer(), model::no_timeout).get();
         if (headers_read.empty()) {

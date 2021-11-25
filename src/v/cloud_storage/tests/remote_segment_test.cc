@@ -139,8 +139,9 @@ FIXTURE_TEST(
     auto segment = ss::make_lw_shared<remote_segment>(
       remote, *cache, bucket, m, name, fib);
     remote_segment_batch_reader reader(segment, reader_config);
+    storage::offset_translator_state ot_state(m.get_ntp());
 
-    auto s = reader.read_some(model::no_timeout).get();
+    auto s = reader.read_some(model::no_timeout, ot_state).get();
     BOOST_REQUIRE(static_cast<bool>(s));
 
     std::vector<model::offset> offsets;
@@ -227,12 +228,13 @@ void test_remote_segment_batch_reader(
     auto segment = ss::make_lw_shared<remote_segment>(
       remote, *fixture.cache, bucket, m, name, fib);
     remote_segment_batch_reader reader(segment, reader_config);
+    storage::offset_translator_state ot_state(m.get_ntp());
 
     size_t batch_ix = 0;
     bool done = false;
     while (!done) {
         vlog(test_log.debug, "batch_ix {}", batch_ix);
-        auto s = reader.read_some(model::no_timeout).get();
+        auto s = reader.read_some(model::no_timeout, ot_state).get();
         BOOST_REQUIRE(static_cast<bool>(s));
         BOOST_REQUIRE(s.value().size() != 0);
         for (const auto& batch : s.value()) {
@@ -334,8 +336,9 @@ FIXTURE_TEST(
         headers.at(0).base_offset,
         headers.at(0).last_offset(),
         ss::default_priority_class()));
+    storage::offset_translator_state ot_state(m.get_ntp());
 
-    auto s = reader.read_some(model::no_timeout).get();
+    auto s = reader.read_some(model::no_timeout, ot_state).get();
     BOOST_REQUIRE(static_cast<bool>(s));
 
     std::vector<model::offset> offsets;
@@ -351,13 +354,13 @@ FIXTURE_TEST(
       == headers.at(0).last_offset() + model::offset{1});
 
     // Without config update we shouldn't be able to read anything
-    auto f = reader.read_some(model::no_timeout).get();
+    auto f = reader.read_some(model::no_timeout, ot_state).get();
     BOOST_REQUIRE(f.has_value() == true);
     BOOST_REQUIRE(f.value().size() == 0);
 
     // Update config and retry read
     reader.config().max_offset = headers.at(1).last_offset();
-    auto t = reader.read_some(model::no_timeout).get();
+    auto t = reader.read_some(model::no_timeout, ot_state).get();
     for (const auto& batch : t.value()) {
         // should only recv one batch
         offsets.push_back(batch.base_offset());

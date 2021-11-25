@@ -28,6 +28,7 @@
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/core/timed_out_error.hh>
+#include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 
 #include <exception>
@@ -271,13 +272,11 @@ public:
       storage::log_reader_config& conf,
       remote_segment_batch_reader& parent,
       model::term_id term,
-      model::offset initial_delta,
       const model::ntp& ntp,
       retry_chain_node& rtc)
       : _config(conf)
       , _parent(parent)
       , _term(term)
-      , _delta(initial_delta)
       , _rtc(&rtc)
       , _ctxlog(cst_log, _rtc, ntp.path()) {}
 
@@ -286,18 +285,18 @@ public:
     /// \note this can only be applied to current record batch
     model::offset rp_to_kafka(model::offset k) const noexcept {
         vassert(
-          k >= _delta,
+          k >= _parent._cur_delta,
           "Redpanda offset {} is smaller than the delta {}",
           k,
-          _delta);
-        return k - _delta;
+          _parent._cur_delta);
+        return k - _parent._cur_delta;
     }
 
     /// Translate kafka offset to redpanda offset
     ///
     /// \note this can only be applied to current record batch
     model::offset kafka_to_rp(model::offset k) const noexcept {
-        return k + _delta;
+        return k + _parent._cur_delta;
     }
 
     /// Point config.start_offset to the next record batch
@@ -322,7 +321,7 @@ public:
           _ctxlog.trace,
           "accept_batch_start {}, current delta: {}",
           header,
-          _delta);
+          _parent._cur_delta);
 
         if (rp_to_kafka(header.base_offset) > _config.max_offset) {
             vlog(
@@ -399,13 +398,30 @@ public:
       size_t /*physical_base_offset*/,
       size_t /*size_on_disk*/) override {
         // NOTE: that advance_config_start_offset should be called before
-        // changing the _delta. The _delta that is be used for current record
-        // batch can only account record batches in all previous batches.
+        // changing the _cur_delta. The _cur_delta that is be used for current
+        // record batch can only account record batches in all previous batches.
         vlog(
           _ctxlog.debug, "skip_batch_start called for {}", header.base_offset);
         advance_config_offsets(header);
-        if (header.type != model::record_batch_type::raft_data) {
-            _delta += header.last_offset_delta + model::offset{1};
+        if (
+          header.type == model::record_batch_type::raft_configuration
+          || header.type == model::record_batch_type::archival_metadata) {
+            vassert(
+              _parent._cur_ot_state,
+              "ntp {}: offset translator state for "
+              "remote_segment_batch_consumer not initialized",
+              _parent._seg->get_ntp());
+
+            _parent._cur_ot_state->get().add_gap(
+              header.base_offset, header.last_offset());
+            vlog(
+              _ctxlog.debug,
+              "added offset translation gap [{}-{}], current state: {}",
+              header.base_offset,
+              header.last_offset(),
+              _parent._cur_ot_state);
+
+            _parent._cur_delta += header.last_offset_delta + model::offset{1};
         }
     }
 
@@ -447,27 +463,42 @@ private:
     model::record_batch_header _header;
     iobuf _records;
     model::term_id _term;
-    model::offset _delta;
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
 };
 
 remote_segment_batch_reader::remote_segment_batch_reader(
-  ss::lw_shared_ptr<remote_segment> s, const storage::log_reader_config& config) noexcept
+  ss::lw_shared_ptr<remote_segment> s,
+  const storage::log_reader_config& config) noexcept
   : _seg(std::move(s))
   , _config(config)
   , _rtc(_seg->get_retry_chain_node())
   , _ctxlog(cst_log, _rtc, _seg->get_ntp().path())
   , _initial_delta(_seg->get_base_offset_delta())
-  , _cur_rp_offset(_seg->get_base_rp_offset()) {}
+  , _cur_rp_offset(_seg->get_base_rp_offset())
+  , _cur_delta(_initial_delta) {}
 
 ss::future<result<ss::circular_buffer<model::record_batch>>>
 remote_segment_batch_reader::read_some(
-  model::timeout_clock::time_point deadline) {
+  model::timeout_clock::time_point deadline,
+  storage::offset_translator_state& ot_state) {
     if (_ringbuf.empty()) {
         if (!_parser) {
             _parser = co_await init_parser();
         }
+
+        if (ot_state.add_absolute_delta(_cur_rp_offset, _cur_delta)) {
+            vlog(
+              _ctxlog.debug,
+              "offset translation: add_absolute_delta at offset {}, "
+              "delta {}, current state: {}",
+              _cur_rp_offset,
+              _cur_delta,
+              ot_state);
+        }
+
+        _cur_ot_state = ot_state;
+        auto deferred = ss::defer([this] { _cur_ot_state = std::nullopt; });
         auto bytes_consumed = co_await _parser->consume();
         if (!bytes_consumed) {
             co_return bytes_consumed.error();
@@ -487,7 +518,6 @@ remote_segment_batch_reader::init_parser() {
         _config,
         *this,
         _seg->get_term(),
-        _initial_delta,
         _seg->get_ntp(),
         *_seg->get_retry_chain_node()),
       std::move(stream));

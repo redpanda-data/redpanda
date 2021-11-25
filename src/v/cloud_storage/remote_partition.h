@@ -17,6 +17,7 @@
 #include "model/metadata.h"
 #include "s3/client.h"
 #include "storage/ntp_config.h"
+#include "storage/translating_reader.h"
 #include "storage/types.h"
 #include "utils/intrusive_list_helpers.h"
 #include "utils/retry_chain_node.h"
@@ -68,7 +69,7 @@ public:
     /// All offset translation is done internally. The returned record batch
     /// reader will produce batches with kafka offsets and the config will be
     /// updated using kafka offsets.
-    ss::future<model::record_batch_reader> make_reader(
+    ss::future<storage::translating_reader> make_reader(
       storage::log_reader_config config,
       std::optional<model::timeout_clock::time_point> deadline = std::nullopt);
 

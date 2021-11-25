@@ -71,6 +71,11 @@ public:
     /// Add a filtered batch to the end of the offset translation state.
     void add_gap(model::offset base_offset, model::offset last_offset);
 
+    /// Amend the offset translation state (by appending an artificial batch to
+    /// the map) so that delta at `offset` equals to `delta`. Returns true if
+    /// the map changed.
+    bool add_absolute_delta(model::offset offset, int64_t delta);
+
     /// Removes the offset translation state starting from the offset
     /// (inclusive). Returns true if the map changed.
     bool truncate(model::offset);

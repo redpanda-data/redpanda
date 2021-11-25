@@ -54,9 +54,11 @@ class partition_record_batch_reader_impl final
 public:
     explicit partition_record_batch_reader_impl(
       const storage::log_reader_config& config,
-      ss::lw_shared_ptr<remote_partition> part) noexcept
+      ss::lw_shared_ptr<remote_partition> part,
+      ss::lw_shared_ptr<storage::offset_translator_state> ot_state) noexcept
       : _ctxlog(cst_log, _rtc, part->get_ntp().path())
       , _partition(std::move(part))
+      , _ot_state(std::move(ot_state))
       , _it(_partition->_segments.begin())
       , _end(_partition->_segments.end()) {
         if (config.abort_source) {
@@ -118,7 +120,7 @@ public:
                   _ctxlog.debug,
                   "Invoking 'read_some' on current log reader {}",
                   _reader->config());
-                auto result = co_await _reader->read_some(deadline);
+                auto result = co_await _reader->read_some(deadline, *_ot_state);
                 if (
                   !result
                   && result.error() == storage::parser_errc::end_of_stream) {
@@ -279,6 +281,7 @@ private:
     retry_chain_logger _ctxlog;
 
     ss::lw_shared_ptr<remote_partition> _partition;
+    ss::lw_shared_ptr<storage::offset_translator_state> _ot_state;
     /// Currently accessed segment
     remote_partition::segment_map_t::iterator _it;
     remote_partition::segment_map_t::iterator _end;
@@ -507,7 +510,7 @@ void remote_partition::return_reader(
       visit_return_reader{.part = this, .reader = std::move(reader)}, st);
 }
 
-ss::future<model::record_batch_reader> remote_partition::make_reader(
+ss::future<storage::translating_reader> remote_partition::make_reader(
   storage::log_reader_config config,
   std::optional<model::timeout_clock::time_point> deadline) {
     std::ignore = deadline;
@@ -520,10 +523,12 @@ ss::future<model::record_batch_reader> remote_partition::make_reader(
     if (_segments.size() < _manifest.size()) {
         update_segments_incrementally();
     }
+    auto ot_state = ss::make_lw_shared<storage::offset_translator_state>(
+      get_ntp());
     auto impl = std::make_unique<partition_record_batch_reader_impl>(
-      config, shared_from_this());
-    model::record_batch_reader rdr(std::move(impl));
-    co_return rdr;
+      config, shared_from_this(), ot_state);
+    co_return storage::translating_reader{
+      model::record_batch_reader(std::move(impl)), std::move(ot_state)};
 }
 
 remote_partition::offloaded_segment_state::offloaded_segment_state(

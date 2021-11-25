@@ -158,6 +158,50 @@ void offset_translator_state::add_gap(
       batch_info{.base_offset = base_offset, .next_delta = next_delta});
 }
 
+bool offset_translator_state::add_absolute_delta(
+  model::offset offset, int64_t delta) {
+    auto prev = prev_offset(offset);
+
+    if (_last_offset2batch.empty()) {
+        vassert(
+          delta <= offset(),
+          "ntp {}: inconsistent add_absolute_delta: delta {} can't be > offset "
+          "{}",
+          _ntp,
+          delta,
+          offset);
+
+        model::offset base_offset = offset - model::offset{delta};
+        _last_offset2batch.emplace(
+          prev, batch_info{.base_offset = base_offset, .next_delta = delta});
+        return true;
+    } else {
+        int64_t last_delta = _last_offset2batch.rbegin()->second.next_delta;
+        int64_t gap_length = delta - last_delta;
+
+        if (gap_length != 0) {
+            model::offset last_offset = _last_offset2batch.rbegin()->first;
+            auto base_offset = offset - model::offset{gap_length};
+            vassert(
+              base_offset > last_offset && base_offset < offset,
+              "ntp {}: inconsistent add_absolute_delta (offset {}, delta {}), "
+              "but last_offset: {}, last_delta: {}",
+              _ntp,
+              offset,
+              delta,
+              last_offset,
+              last_delta);
+
+            _last_offset2batch.emplace(
+              prev,
+              batch_info{.base_offset = base_offset, .next_delta = delta});
+            return true;
+        } else {
+            return false;
+        }
+    }
+}
+
 bool offset_translator_state::truncate(model::offset offset) {
     vassert(
       !_last_offset2batch.empty(),

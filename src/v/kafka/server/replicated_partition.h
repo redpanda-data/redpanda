@@ -72,12 +72,14 @@ public:
       model::record_batch_reader&&,
       raft::replicate_options);
 
-    ss::future<model::record_batch_reader> make_reader(
+    ss::future<storage::translating_reader> make_reader(
       storage::log_reader_config cfg,
       std::optional<model::timeout_clock::time_point>) final;
 
-    ss::future<std::vector<cluster::rm_stm::tx_range>>
-    aborted_transactions(model::offset base, model::offset last) final;
+    ss::future<std::vector<cluster::rm_stm::tx_range>> aborted_transactions(
+      model::offset base,
+      model::offset last,
+      ss::lw_shared_ptr<const storage::offset_translator_state>) final;
 
     cluster::partition_probe& probe() final { return _partition->probe(); }
 

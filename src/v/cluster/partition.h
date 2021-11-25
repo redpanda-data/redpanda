@@ -27,6 +27,7 @@
 #include "raft/group_configuration.h"
 #include "raft/log_eviction_stm.h"
 #include "raft/types.h"
+#include "storage/translating_reader.h"
 #include "storage/types.h"
 
 #include <seastar/core/shared_ptr.hh>
@@ -226,7 +227,7 @@ public:
     }
 
     /// Create a reader that will fetch data from remote storage
-    ss::future<model::record_batch_reader> make_cloud_reader(
+    ss::future<storage::translating_reader> make_cloud_reader(
       storage::log_reader_config config,
       std::optional<model::timeout_clock::time_point> deadline = std::nullopt) {
         vassert(
