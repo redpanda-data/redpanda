@@ -979,8 +979,15 @@ class SchemaRegistryTest(RedpandaTest):
         result_raw = self._post_subjects_subject_versions(
             subject="imported",
             data=json.dumps({
-                "schema": imported_proto_def,
-                "schemaType": "PROTOBUF"
+                "schema":
+                imported_proto_def,
+                "schemaType":
+                "PROTOBUF",
+                "references": [{
+                    "name": "simple",
+                    "subject": "simple",
+                    "version": 1
+                }]
             }))
         self.logger.info(result_raw)
         self.logger.info(result_raw.content)
