@@ -10,6 +10,7 @@
 
 #include "v8_engine/executor.h"
 
+#include "hashing/xx.h"
 #include "seastarx.h"
 #include "utils/mutex.h"
 #include "vassert.h"
@@ -152,8 +153,55 @@ ss::future<>
 executor_service::start(ss::alien::instance& instance, int64_t size) {
     co_await _executor.start_single(
       std::ref(instance), _core_for_executor_thread, size);
+    co_await _code_database.start_single();
 }
 
-ss::future<> executor_service::stop() { return _executor.stop(); }
+ss::future<> executor_service::stop() {
+    co_await _code_database.stop();
+    co_await _executor.stop();
+}
+
+ss::future<>
+executor_service::insert_or_assign(coproc::script_id id, iobuf code) {
+    auto iobuf_ptr = std::make_unique<iobuf>(std::move(code));
+    auto code_ptr = ss::make_foreign<std::unique_ptr<iobuf>>(
+      std::move(iobuf_ptr));
+    return _code_database.invoke_on(
+      _home_core, [id, code_ptr = std::move(code_ptr)](code_database_t& db) {
+          db.insert_or_assign(id, code_ptr.get()->copy());
+      });
+}
+
+ss::future<> executor_service::erase(coproc::script_id id) {
+    return _code_database.invoke_on(
+      _home_core, [id](code_database_t& db) { db.erase(id); });
+}
+
+ss::future<std::optional<iobuf>>
+executor_service::get_code(std::string_view name) {
+    // rpk use xxhash_64 for create script_is from script name
+    size_t id(xxhash_64(name.data(), name.size()));
+    using return_type = std::unique_ptr<iobuf>;
+    auto result = co_await _code_database.invoke_on(
+      _home_core,
+      [id](
+        const code_database_t& db) -> ss::future<ss::foreign_ptr<return_type>> {
+          std::unique_ptr<iobuf> res;
+          auto code = db.find(coproc::script_id(id));
+          if (code == db.end()) {
+              res = std::unique_ptr<iobuf>(nullptr);
+          } else {
+              res = std::make_unique<iobuf>(code->second.copy());
+          }
+
+          co_return ss::make_foreign<return_type>(std::move(res));
+      });
+
+    if (result.get() == nullptr) {
+        co_return std::nullopt;
+    } else {
+        co_return result.get()->copy();
+    }
+}
 
 } // namespace v8_engine
