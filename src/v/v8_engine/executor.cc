@@ -148,4 +148,12 @@ void executor::loop() {
     }
 }
 
+ss::future<>
+executor_service::start(ss::alien::instance& instance, int64_t size) {
+    co_await _executor.start_single(
+      std::ref(instance), _core_for_executor_thread, size);
+}
+
+ss::future<> executor_service::stop() { return _executor.stop(); }
+
 } // namespace v8_engine
