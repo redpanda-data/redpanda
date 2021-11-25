@@ -84,6 +84,16 @@ void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
           [this] { return _records_fetched; },
           sm::description("Total number of records fetched"),
           labels),
+        sm::make_total_bytes(
+          "bytes_produced_total",
+          [this] { return _bytes_fetched; },
+          sm::description("Total number of bytes produced"),
+          labels),
+        sm::make_total_bytes(
+          "bytes_fetched_total",
+          [this] { return _records_fetched; },
+          sm::description("Total number of bytes fetched"),
+          labels),
       });
 }
 partition_probe make_materialized_partition_probe() {
@@ -92,6 +102,8 @@ partition_probe make_materialized_partition_probe() {
         void setup_metrics(const model::ntp&) final {}
         void add_records_fetched(uint64_t) final {}
         void add_records_produced(uint64_t) final {}
+        void add_bytes_fetched(uint64_t) final {}
+        void add_bytes_produced(uint64_t) final {}
     };
     return partition_probe(std::make_unique<impl>());
 }
