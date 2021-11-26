@@ -9,6 +9,7 @@
 
 from ducktape.mark.resource import cluster
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import RedpandaService
 from rptest.util import Scale
@@ -74,9 +75,13 @@ class EndToEndShadowIndexingTest(EndToEndTest):
         )
 
     def setUp(self):
+        rpk = RpkTool(self.redpanda)
         self.s3_client.empty_bucket(self.s3_bucket_name)
         self.s3_client.create_bucket(self.s3_bucket_name)
         self.redpanda.start()
+        for topic in self.topics:
+            rpk.alter_topic_config(topic.name, 'redpanda.remote.write', 'true')
+            rpk.alter_topic_config(topic.name, 'redpanda.remote.read', 'true')
 
     def tearDown(self):
         self.s3_client.empty_bucket(self.s3_bucket_name)
