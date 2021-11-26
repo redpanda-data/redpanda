@@ -17,8 +17,31 @@
 
 namespace serde {
 
+namespace detail {
+
+template<typename T, typename = void>
+struct has_serde_fields : std::false_type {};
+
 template<typename T>
-inline auto envelope_to_tuple(T& t) {
+struct has_serde_fields<
+  T,
+  std::void_t<decltype(std::declval<std::decay_t<T>>().serde_fields())>>
+  : std::true_type {};
+
+template<typename T>
+inline constexpr auto const has_serde_fields_v = has_serde_fields<T>::value;
+
+} // namespace detail
+
+template<
+  typename T,
+  std::enable_if_t<detail::has_serde_fields_v<T>, void*> = nullptr>
+constexpr inline auto envelope_to_tuple(T&& t) {
+    return t.serde_fields();
+}
+
+template<typename T>
+constexpr inline auto envelope_to_tuple(T& t) {
     constexpr auto const a = reflection::arity<T>() - 1;
     if constexpr (a == 0) {
         return std::tie();

@@ -645,3 +645,22 @@ SEASTAR_THREAD_TEST_CASE(serde_checksum_update_1) {
       serde::from_iobuf<std::vector<new_no_cs>>(serde::to_iobuf(old_vec))
       == new_vec);
 }
+
+struct serde_fields_test_struct
+  : serde::
+      envelope<test_msg1_new, serde::version<10>, serde::compat_version<5>> {
+    serde_fields_test_struct() = default;
+    explicit serde_fields_test_struct(int a)
+      : _a{a} {}
+    auto serde_fields() { return std::tie(_a, _m, _b, _c); }
+    int _a;
+    test_msg0 _m;
+    int _b, _c;
+};
+
+SEASTAR_THREAD_TEST_CASE(serde_fields_test_struct_test) {
+    BOOST_CHECK(
+      serde::from_iobuf<serde_fields_test_struct>(
+        serde::to_iobuf(serde_fields_test_struct{123}))
+      == serde_fields_test_struct{123});
+}

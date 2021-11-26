@@ -125,7 +125,7 @@ inline constexpr auto const is_serde_compatible_v
     || (std::is_scalar_v<T>  //
          && (!std::is_same_v<float, T> || std::numeric_limits<float>::is_iec559)
          && (!std::is_same_v<double, T> || std::numeric_limits<double>::is_iec559)
-         && (!serde_is_enum_v<T> || sizeof(T{}) <= sizeof(serde_enum_serialized_t)))
+         && (!serde_is_enum_v<T> || sizeof(std::decay_t<T>) <= sizeof(serde_enum_serialized_t)))
     || reflection::is_std_vector_v<T>
     || reflection::is_named_type_v<T>
     || reflection::is_ss_bool_v<T>
