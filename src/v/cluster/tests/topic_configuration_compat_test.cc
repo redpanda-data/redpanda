@@ -12,13 +12,17 @@
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/timestamp.h"
 #include "reflection/adl.h"
 #include "test_utils/randoms.h"
 #include "test_utils/rpc.h"
 #include "units.h"
+#include "v8_engine/data_policy.h"
 
 #include <seastar/core/loop.hh>
 #include <seastar/testing/thread_test_case.hh>
+
+#include <chrono>
 
 using namespace std::chrono_literals; // NOLINT
 
@@ -69,6 +73,59 @@ struct topic_configuration_assignment {
 
     topic_configuration cfg;
     std::vector<cluster::partition_assignment> assignments;
+};
+
+struct incremental_topic_updates_1 {
+    static constexpr int8_t version = -1;
+    cluster::property_update<std::optional<model::compression>> compression;
+    cluster::property_update<std::optional<model::cleanup_policy_bitflags>>
+      cleanup_policy_bitflags;
+    cluster::property_update<std::optional<model::compaction_strategy>>
+      compaction_strategy;
+    cluster::property_update<std::optional<model::timestamp_type>>
+      timestamp_type;
+    cluster::property_update<std::optional<size_t>> segment_size;
+    cluster::property_update<tristate<size_t>> retention_bytes;
+    cluster::property_update<tristate<std::chrono::milliseconds>>
+      retention_duration;
+    cluster::property_update<std::optional<v8_engine::data_policy>> data_policy;
+};
+
+struct incremental_topic_updates_2 {
+    static constexpr int8_t version = -2;
+    cluster::property_update<std::optional<model::compression>> compression;
+    cluster::property_update<std::optional<model::cleanup_policy_bitflags>>
+      cleanup_policy_bitflags;
+    cluster::property_update<std::optional<model::compaction_strategy>>
+      compaction_strategy;
+    cluster::property_update<std::optional<model::timestamp_type>>
+      timestamp_type;
+    cluster::property_update<std::optional<size_t>> segment_size;
+    cluster::property_update<tristate<size_t>> retention_bytes;
+    cluster::property_update<tristate<std::chrono::milliseconds>>
+      retention_duration;
+};
+
+/**
+ * Struct representing single topic properties update
+ */
+struct topic_properties_update_v1 {
+    explicit topic_properties_update_v1(model::topic_namespace tp_ns)
+      : tp_ns(std::move(tp_ns)) {}
+
+    model::topic_namespace tp_ns;
+    incremental_topic_updates_1 properties;
+};
+struct topic_properties_update_v2 {
+    explicit topic_properties_update_v2(model::topic_namespace tp_ns)
+      : tp_ns(std::move(tp_ns)) {}
+
+    model::topic_namespace tp_ns;
+    incremental_topic_updates_2 properties;
+};
+
+struct update_topic_properties_request {
+    std::vector<topic_properties_update_v2> updates;
 };
 
 } // namespace old
@@ -171,6 +228,145 @@ struct adl<old::topic_configuration_assignment> {
           = adl<std::vector<cluster::partition_assignment>>{}.from(in);
         return old::topic_configuration_assignment(
           std::move(cfg), std::move(assignments));
+    }
+};
+
+template<>
+struct adl<old::incremental_topic_updates_1> {
+    void to(iobuf& out, old::incremental_topic_updates_1&& t) {
+        reflection::serialize(
+          out,
+          old::incremental_topic_updates_1::version,
+          t.compression,
+          t.cleanup_policy_bitflags,
+          t.compaction_strategy,
+          t.timestamp_type,
+          t.segment_size,
+          t.retention_bytes,
+          t.retention_duration,
+          t.data_policy);
+    }
+
+    old::incremental_topic_updates_1 from(iobuf_parser& in) {
+        auto version = adl<int8_t>{}.from(in.peek(1));
+        if (version < 0) {
+            // Consume version from stream
+            in.skip(1);
+            vassert(
+              version >= old::incremental_topic_updates_1::version,
+              "topic_configuration version {} is not supported",
+              version);
+        } else {
+            version = 0;
+        }
+
+        old::incremental_topic_updates_1 updates;
+        updates.compression
+          = adl<cluster::property_update<std::optional<model::compression>>>{}
+              .from(in);
+        updates.cleanup_policy_bitflags = adl<cluster::property_update<
+          std::optional<model::cleanup_policy_bitflags>>>{}
+                                            .from(in);
+        updates.compaction_strategy = adl<cluster::property_update<
+          std::optional<model::compaction_strategy>>>{}
+                                        .from(in);
+        updates.timestamp_type
+          = adl<
+              cluster::property_update<std::optional<model::timestamp_type>>>{}
+              .from(in);
+        updates.segment_size
+          = adl<cluster::property_update<std::optional<size_t>>>{}.from(in);
+        updates.retention_bytes
+          = adl<cluster::property_update<tristate<size_t>>>{}.from(in);
+        updates.retention_duration
+          = adl<cluster::property_update<tristate<std::chrono::milliseconds>>>{}
+              .from(in);
+        if (version < 0) {
+            updates.data_policy = adl<cluster::property_update<
+              std::optional<v8_engine::data_policy>>>{}
+                                    .from(in);
+        }
+        return updates;
+    }
+};
+
+template<>
+struct adl<old::incremental_topic_updates_2> {
+    void to(iobuf& out, old::incremental_topic_updates_2&& t) {
+        reflection::serialize(
+          out,
+          old::incremental_topic_updates_2::version,
+          t.compression,
+          t.cleanup_policy_bitflags,
+          t.compaction_strategy,
+          t.timestamp_type,
+          t.segment_size,
+          t.retention_bytes,
+          t.retention_duration);
+    }
+    old::incremental_topic_updates_2 from(iobuf_parser& in) {
+        auto version = adl<int8_t>{}.from(in.peek(1));
+        if (version < 0) {
+            // Consume version from stream
+            in.skip(1);
+            vassert(
+              version >= old::incremental_topic_updates_2::version,
+              "topic_configuration version {} is not supported",
+              version);
+        } else {
+            version = 0;
+        }
+
+        old::incremental_topic_updates_2 updates;
+        updates.compression
+          = adl<cluster::property_update<std::optional<model::compression>>>{}
+              .from(in);
+        updates.cleanup_policy_bitflags = adl<cluster::property_update<
+          std::optional<model::cleanup_policy_bitflags>>>{}
+                                            .from(in);
+        updates.compaction_strategy = adl<cluster::property_update<
+          std::optional<model::compaction_strategy>>>{}
+                                        .from(in);
+        updates.timestamp_type
+          = adl<
+              cluster::property_update<std::optional<model::timestamp_type>>>{}
+              .from(in);
+        updates.segment_size
+          = adl<cluster::property_update<std::optional<size_t>>>{}.from(in);
+        updates.retention_bytes
+          = adl<cluster::property_update<tristate<size_t>>>{}.from(in);
+        updates.retention_duration
+          = adl<cluster::property_update<tristate<std::chrono::milliseconds>>>{}
+              .from(in);
+        return updates;
+    }
+};
+
+template<>
+struct adl<old::topic_properties_update_v1> {
+    void to(iobuf& out, old::topic_properties_update_v1&& r) {
+        reflection::serialize(out, r.tp_ns, r.properties);
+    }
+
+    old::topic_properties_update_v1 from(iobuf_parser& parser) {
+        auto tp_ns = adl<model::topic_namespace>{}.from(parser);
+        old::topic_properties_update_v1 ret(std::move(tp_ns));
+        ret.properties = adl<old::incremental_topic_updates_1>{}.from(parser);
+        return ret;
+    }
+};
+
+template<>
+struct adl<old::topic_properties_update_v2> {
+    void to(iobuf& out, old::topic_properties_update_v2&& r) {
+        reflection::serialize(out, r.tp_ns, r.properties);
+    }
+
+    old::topic_properties_update_v2 from(iobuf_parser& parser) {
+        auto tp_ns = adl<model::topic_namespace>{}.from(parser);
+        old::topic_properties_update_v2 ret(std::move(tp_ns));
+        ret.properties = adl<old::incremental_topic_updates_2>{}.from(parser);
+        return ret;
     }
 };
 
@@ -526,4 +722,115 @@ SEASTAR_THREAD_TEST_CASE(topics_configuration_assignment_uniform_rt_test) {
     topic_configuration_assignment_roundtrip<
       cluster::topic_configuration_assignment,
       cluster::topic_configuration_assignment>();
+}
+
+template<class T>
+T make_incremental_topic_properties() {
+    T upd;
+    upd.cleanup_policy_bitflags.op = cluster::incremental_update_operation::set;
+    upd.cleanup_policy_bitflags.value
+      = model::cleanup_policy_bitflags::deletion;
+    upd.compaction_strategy.op = cluster::incremental_update_operation::set;
+    upd.compaction_strategy.value = model::compaction_strategy::offset;
+    upd.compression.op = cluster::incremental_update_operation::set;
+    upd.compression.value = model::compression::zstd;
+    upd.retention_bytes.op = cluster::incremental_update_operation::set;
+    upd.retention_bytes.value = tristate<unsigned long>(12345);
+    upd.segment_size.op = cluster::incremental_update_operation::set;
+    upd.segment_size.value = 54321;
+    upd.retention_duration.op = cluster::incremental_update_operation::set;
+    upd.retention_duration.value = tristate<std::chrono::milliseconds>(10s);
+    upd.timestamp_type.op = cluster::incremental_update_operation::set;
+    upd.timestamp_type.value = model::timestamp_type::create_time;
+    if constexpr (std::is_same<T, cluster::incremental_topic_updates>::value) {
+        upd.shadow_indexing.op = cluster::incremental_update_operation::set;
+        upd.shadow_indexing.value = model::shadow_indexing_mode::archival;
+    }
+    if constexpr (std::is_same<T, old::incremental_topic_updates_1>::value) {
+        upd.data_policy.op = cluster::incremental_update_operation::set;
+        upd.data_policy.value = v8_engine::data_policy("fn", "sn");
+    }
+    return upd;
+}
+
+template<class UpdIn, class UpdOut>
+void compare_incremental_topic_updates(const UpdIn& upd, const UpdOut& res) {
+    BOOST_REQUIRE(
+      upd.cleanup_policy_bitflags.op == res.cleanup_policy_bitflags.op);
+    BOOST_REQUIRE(
+      upd.cleanup_policy_bitflags.value == res.cleanup_policy_bitflags.value);
+    BOOST_REQUIRE(upd.compaction_strategy.op == res.compaction_strategy.op);
+    BOOST_REQUIRE(
+      upd.compaction_strategy.value == res.compaction_strategy.value);
+    BOOST_REQUIRE(upd.compression.op == res.compression.op);
+    BOOST_REQUIRE(upd.compression.value == res.compression.value);
+    BOOST_REQUIRE(upd.retention_bytes.op == res.retention_bytes.op);
+    BOOST_REQUIRE(upd.retention_bytes.value == res.retention_bytes.value);
+    BOOST_REQUIRE(upd.segment_size.op == res.segment_size.op);
+    BOOST_REQUIRE(upd.segment_size.value == res.segment_size.value);
+    BOOST_REQUIRE(upd.retention_duration.op == res.retention_duration.op);
+    BOOST_REQUIRE(upd.retention_duration.value == res.retention_duration.value);
+    BOOST_REQUIRE(upd.timestamp_type.op == res.timestamp_type.op);
+    BOOST_REQUIRE(upd.timestamp_type.value == res.timestamp_type.value);
+    if constexpr (std::is_same<UpdIn, cluster::incremental_topic_updates>::
+                    value) {
+        BOOST_REQUIRE(upd.shadow_indexing.op == res.shadow_indexing.op);
+        BOOST_REQUIRE(upd.shadow_indexing.value == res.shadow_indexing.value);
+    }
+}
+
+template<class UpdIn, class UpdOut>
+void incremental_topic_updates_roundtrip() {
+    auto upd = make_incremental_topic_properties<UpdIn>();
+    auto tmp = upd;
+    auto res = serialize_upgrade_rpc<UpdIn, UpdOut>(std::move(tmp));
+    compare_incremental_topic_updates(upd, res);
+}
+
+SEASTAR_THREAD_TEST_CASE(incremental_topic_updates_upgrade_rt_test_v1) {
+    incremental_topic_updates_roundtrip<
+      old::incremental_topic_updates_1,
+      cluster::incremental_topic_updates>();
+}
+
+SEASTAR_THREAD_TEST_CASE(incremental_topic_updates_upgrade_rt_test_v2) {
+    incremental_topic_updates_roundtrip<
+      old::incremental_topic_updates_2,
+      cluster::incremental_topic_updates>();
+}
+
+SEASTAR_THREAD_TEST_CASE(incremental_topic_updates_uniform_rt_test) {
+    incremental_topic_updates_roundtrip<
+      cluster::incremental_topic_updates,
+      cluster::incremental_topic_updates>();
+}
+
+template<class UpdIn, class UpdOut>
+void topic_properties_updates_roundtrip() {
+    UpdIn upd(model::topic_namespace(model::ns("ns"), model::topic("topic")));
+    upd.properties
+      = make_incremental_topic_properties<decltype(upd.properties)>();
+
+    auto tmp = upd;
+    auto res = serialize_upgrade_rpc<UpdIn, UpdOut>(std::move(tmp));
+
+    compare_incremental_topic_updates(upd.properties, res.properties);
+}
+
+SEASTAR_THREAD_TEST_CASE(topic_properties_updates_upgrade_rt_test_v1) {
+    topic_properties_updates_roundtrip<
+      old::topic_properties_update_v1,
+      cluster::topic_properties_update>();
+}
+
+SEASTAR_THREAD_TEST_CASE(topic_properties_updates_upgrade_rt_test_v2) {
+    topic_properties_updates_roundtrip<
+      old::topic_properties_update_v2,
+      cluster::topic_properties_update>();
+}
+
+SEASTAR_THREAD_TEST_CASE(topic_properties_updates_uniform_rt_test) {
+    topic_properties_updates_roundtrip<
+      cluster::topic_properties_update,
+      cluster::topic_properties_update>();
 }
