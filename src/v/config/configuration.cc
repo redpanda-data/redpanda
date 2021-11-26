@@ -120,6 +120,18 @@ configuration::configuration()
       "Interval for which all coprocessor offsets are flushed to disk",
       {.visibility = visibility::tunable},
       300000ms) // five minutes
+  , enable_v8(
+      *this,
+      "enable_v8",
+      "Enable v8 engine for inline transformation or data-policy",
+      required::no,
+      false)
+  , executor_queue_size(
+      *this,
+      "executor_queue_size",
+      "Queue size for waiting tasks in executor",
+      required::no,
+      ss::smp::count)
   , seed_server_meta_topic_partitions(
       *this, "seed_server_meta_topic_partitions")
   , raft_heartbeat_interval_ms(
