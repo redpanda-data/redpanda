@@ -1,6 +1,7 @@
 v_cc_library(
   NAME v8_engine
   SRCS
+    api.cc
     environment.cc
     executor.cc
     script.cc
@@ -10,6 +11,8 @@ v_cc_library(
     Seastar::seastar
     v8_monolith
     absl::node_hash_map
-    v::rphashing)
+    v::rphashing
+    v::config
+    v::syschecks)
 
 add_subdirectory(tests)
