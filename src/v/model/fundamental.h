@@ -210,7 +210,12 @@ enum class shadow_indexing_mode : int8_t {
 };
 
 inline bool is_archival_enabled(shadow_indexing_mode m) {
-    return m == shadow_indexing_mode::archival;
+    return m == shadow_indexing_mode::archival
+           || m == shadow_indexing_mode::full;
+}
+
+inline bool is_fetch_enabled(shadow_indexing_mode m) {
+    return m == shadow_indexing_mode::fetch || m == shadow_indexing_mode::full;
 }
 
 std::ostream& operator<<(std::ostream&, const shadow_indexing_mode&);

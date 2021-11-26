@@ -71,6 +71,12 @@ get_shadow_indexing_mode(const config_map_t& config) {
     if (arch_enabled && *arch_enabled) {
         mode = model::shadow_indexing_mode::archival;
     }
+    auto si_enabled = get_bool_value(config, topic_property_remote_read);
+    if (si_enabled && *si_enabled) {
+        mode = mode == model::shadow_indexing_mode::archival
+                 ? model::shadow_indexing_mode::full
+                 : mode = model::shadow_indexing_mode::fetch;
+    }
     return mode;
 }
 

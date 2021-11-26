@@ -129,6 +129,11 @@ public:
                && model::is_archival_enabled(_overrides->shadow_indexing_mode);
     }
 
+    bool is_remote_fetch_enabled() const {
+        return _overrides != nullptr
+               && model::is_fetch_enabled(_overrides->shadow_indexing_mode);
+    }
+
 private:
     model::ntp _ntp;
     /// \brief currently this is the basedir. In the future
