@@ -209,6 +209,12 @@ public:
         return _archival_meta_stm;
     }
 
+    /// Return true if shadow indexing is enabled for the partition
+    bool is_remote_fetch_enabled() const {
+        const auto& cfg = _raft->log_config();
+        return cfg.is_remote_fetch_enabled();
+    }
+
     /// Check if cloud storage is connected to cluster partition
     ///
     /// The remaining 'cloud' methods can only be called if this
