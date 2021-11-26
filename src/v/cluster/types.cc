@@ -956,7 +956,8 @@ void adl<cluster::incremental_topic_updates>::to(
       t.timestamp_type,
       t.segment_size,
       t.retention_bytes,
-      t.retention_duration);
+      t.retention_duration,
+      t.shadow_indexing);
 }
 
 cluster::incremental_topic_updates
@@ -1011,6 +1012,13 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
         // create_data_policy_cmd_data, data_policy_manager handles it
         adl<cluster::property_update<std::optional<v8_engine::data_policy>>>{}
           .from(in);
+    }
+    if (
+      version
+      <= cluster::incremental_topic_updates::version_with_shadow_indexing) {
+        updates.shadow_indexing = adl<cluster::property_update<
+          std::optional<model::shadow_indexing_mode>>>{}
+                                    .from(in);
     }
     return updates;
 }

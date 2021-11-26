@@ -218,6 +218,22 @@ inline bool is_fetch_enabled(shadow_indexing_mode m) {
     return m == shadow_indexing_mode::fetch || m == shadow_indexing_mode::full;
 }
 
+/// Set 'rhs' flag in 'lhs'
+inline shadow_indexing_mode
+add_shadow_indexing_flag(shadow_indexing_mode lhs, shadow_indexing_mode rhs) {
+    auto combined = static_cast<uint8_t>(lhs) | static_cast<uint8_t>(rhs);
+    return static_cast<shadow_indexing_mode>(combined);
+}
+
+/// Drop 'rhs' flag in 'lhs'
+inline shadow_indexing_mode
+drop_shadow_indexing_flag(shadow_indexing_mode lhs, shadow_indexing_mode rhs) {
+    auto mask = static_cast<uint8_t>(rhs);
+    mask = ~mask;
+    auto combined = mask & static_cast<uint8_t>(lhs);
+    return static_cast<shadow_indexing_mode>(combined);
+}
+
 std::ostream& operator<<(std::ostream&, const shadow_indexing_mode&);
 
 } // namespace model
