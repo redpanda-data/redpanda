@@ -119,7 +119,9 @@ operator<<(std::ostream& o, const record_batch_attributes& attrs) {
     } else {
         o << "invalid compression";
     }
-    return o << ", type:" << attrs.timestamp_type() << "}";
+    return o << ", type:" << attrs.timestamp_type()
+             << ", transactional: " << attrs.is_transactional()
+             << ", control: " << attrs.is_control() << "}";
 }
 
 std::ostream& operator<<(std::ostream& o, const record_batch_header& h) {
