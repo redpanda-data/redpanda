@@ -779,7 +779,7 @@ configuration::configuration()
       0.0)
   , cloud_storage_upload_ctrl_min_shares(
       *this,
-      "compaction_ctrl_min_shares",
+      "cloud_storage_upload_ctrl_min_shares",
       "minimum number of IO and CPU shares that archival upload can use",
       required::no,
       100)
