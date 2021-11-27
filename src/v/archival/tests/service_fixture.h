@@ -184,6 +184,9 @@ public:
           model::topic_namespace(ntp.ns, ntp.tp.topic)));
     }
 
+    ss::future<> add_topic_with_archival_enabled(
+      model::topic_namespace_view tp_ns, int partitions = 1);
+
 private:
     void
     initialize_shard(storage::api& api, const std::vector<segment_desc>& segm);
