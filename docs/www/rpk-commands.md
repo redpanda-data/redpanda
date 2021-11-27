@@ -145,7 +145,7 @@ Usage:
 
 Flags:
       --config string   Redpanda config file, if not set the file will be searched for in the default location
-      --id int          This node's ID (required). (default: -1)
+      --id int          This node's ID (required)
       --ips strings     The list of known node addresses or hostnames
       --self string     Hint at this node's IP address from within the list passed in --ips
 ```
