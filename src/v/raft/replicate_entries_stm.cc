@@ -319,10 +319,13 @@ result<replicate_result> replicate_entries_stm::process_result(
     // better crash than allow for inconsistency
     vassert(
       appended_offset <= _ptr->_commit_index,
-      "Successfull replication means that committed offset passed last "
-      "appended offset. Current committed offset: {}, last appended offset: {}",
+      "{} - Successfull replication means that committed offset passed last "
+      "appended offset. Current committed offset: {}, last appended offset: "
+      "{}, initial_commited_offset: {}",
+      _ptr->ntp(),
       _ptr->committed_offset(),
-      appended_offset);
+      appended_offset,
+      _initial_committed_offset);
 
     vlog(
       _ctxlog.trace,
