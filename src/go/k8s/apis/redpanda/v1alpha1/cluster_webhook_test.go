@@ -19,6 +19,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/pointer"
 )
@@ -167,6 +168,20 @@ func TestDefault(t *testing.T) {
 
 		redpandaCluster.Default()
 		assert.Equal(t, 8081, redpandaCluster.Spec.Configuration.SchemaRegistry.Port)
+	})
+	t.Run("pod disruption budget", func(t *testing.T) {
+		redpandaCluster := &v1alpha1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "",
+			},
+			Spec: v1alpha1.ClusterSpec{
+				Replicas: pointer.Int32Ptr(1),
+			},
+		}
+		redpandaCluster.Default()
+		assert.True(t, redpandaCluster.Spec.PodDisruptionBudget.Enabled)
+		assert.Equal(t, intstr.FromInt(1), *redpandaCluster.Spec.PodDisruptionBudget.MaxUnavailable)
 	})
 }
 
