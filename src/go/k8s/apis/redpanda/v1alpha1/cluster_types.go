@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 // ClusterSpec defines the desired state of Cluster
@@ -32,6 +33,10 @@ type ClusterSpec struct {
 	// Replicas determine how big the cluster will be.
 	// +kubebuilder:validation:Minimum=0
 	Replicas *int32 `json:"replicas,omitempty"`
+	// PodDisruptionBudget specifies whether PDB resource should be created for
+	// the cluster and how should it be configured. By default this is enabled
+	// and defaults to MaxUnavailable=1
+	PodDisruptionBudget *PDBConfig `json:"podDisruptionBudget,omitempty"`
 	// Resources used by redpanda process running in container. Beware that
 	// there are multiple containers running in the redpanda pod and these can
 	// be enabled/disabled and configured from the `sidecars` field. These
@@ -78,6 +83,29 @@ type ClusterSpec struct {
 	// DNS name.
 	// http://www.dns-sd.org/trailingdotsindomainnames.html
 	DNSTrailingDotDisabled bool `json:"dnsTrailingDotDisabled,omitempty"`
+}
+
+// PDBConfig specifies how the PodDisruptionBudget should be created for the
+// redpanda cluster. PDB will be created for the deployed cluster if Enabled is
+// set to true.
+type PDBConfig struct {
+	// Enabled specifies whether PDB should be generated for the cluster. It defaults to true
+	Enabled bool `json:"enabled,omitempty"`
+	// An eviction is allowed if at least "minAvailable" pods selected by
+	// "selector" will still be available after the eviction, i.e. even in the
+	// absence of the evicted pod.  So for example you can prevent all voluntary
+	// evictions by specifying "100%". This is a mutually exclusive setting with "maxUnavailable".
+	// you can read more in https://kubernetes.io/docs/tasks/run-application/configure-pdb/
+	// +optional
+	MinAvailable *intstr.IntOrString `json:"minAvailable,omitempty"`
+	// An eviction is allowed if at most "maxUnavailable" pods selected by
+	// "selector" are unavailable after the eviction, i.e. even in absence of
+	// the evicted pod. For example, one can prevent all voluntary evictions
+	// by specifying 0. This is a mutually exclusive setting with "minAvailable".
+	// This property defaults to 1.
+	// you can read more in https://kubernetes.io/docs/tasks/run-application/configure-pdb/
+	// +optional
+	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
 }
 
 // Sidecars is definition of sidecars running alongside redpanda process
