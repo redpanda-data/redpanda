@@ -126,29 +126,6 @@ class DucktapeResults:
                                          current_results_summary['tests'])
 
 
-class CoverageResults:
-    def __init__(self, profraw_files, rp_binary, filter_target):
-        self.profraw_files = profraw_files
-        self.filter_target = filter_target
-        self.rp_binary = rp_binary
-
-    def get_code_coverage(self):
-        reports = {}
-
-        for test_func in self.profraw_files:
-            cov_agent = gen_coverage.CoverageAgent(
-                self.profraw_files[test_func], self.rp_binary,
-                self.filter_target)
-
-            # merge profraw files
-            cov_agent.merge_profraw_files()
-
-            # get coverage report
-            reports[test_func] = cov_agent.get_coverage_report()
-
-        return reports
-
-
 def report_ducktape(differences, enable_json=False):
     if not enable_json:
         print('# Differences between shared tests\n')
@@ -187,66 +164,17 @@ def report_ducktape(differences, enable_json=False):
         print(json.dumps(differences, indent=4, sort_keys=True))
 
 
-def report_coverage(coverage, enable_json=False):
-    if not enable_json:
-        print('# Client code coverage\n')
-        for line in coverage:
-            print(line)
-    else:
-        print(json.dumps(coverage, indent=4, sort_keys=True))
-
-
-def create_profraw_files_dict(files_list):
-    profraw_files = {}
-
-    for profraw in files_list:
-        sub_dirs = profraw.split("/")
-        test_func = sub_dirs[-5]
-
-        if test_func not in profraw_files:
-            profraw_files[test_func] = []
-
-        profraw_files[test_func].append(profraw)
-
-    return profraw_files
-
-
-def get_profraw_files(test_dir):
-    # need shell=True for wildcard use
-    find = f"find \"{test_dir}\" -name \"*.profraw\""
-    results = subprocess.run(find,
-                             shell=True,
-                             capture_output=True,
-                             encoding="utf-8")
-
-    results = results.stdout.strip().split("\n")
-    return create_profraw_files_dict(results)
-
-
 def main(args):
 
     base_results_dir = os.path.join(args.build_root, "ducktape/results",
                                     args.base_results_dir)
     current_results_dir = os.path.join(args.build_root, "ducktape/results",
                                        args.current_results_dir)
-    profraw_files = get_profraw_files(current_results_dir)
-
-    # cannot use dist/local/redpanda/bin/redpanda because
-    # llvm-cov says it's an invalid binary
-    rp_binary = os.path.join(args.build_root, "debug/clang/bin/redpanda")
 
     ducktape = DucktapeResults(base_results_dir=base_results_dir,
                                current_results_dir=current_results_dir)
     ducktape_differences = ducktape.calculate_diffs()
     report_ducktape(ducktape_differences, args.json)
-
-    print('\n')
-
-    coverage = CoverageResults(profraw_files=profraw_files,
-                               rp_binary=rp_binary,
-                               filter_target=args.target)
-    client_coverage = coverage.get_code_coverage()
-    report_coverage(client_coverage, args.json)
 
 
 if __name__ == '__main__':
