@@ -75,7 +75,9 @@ class FailureInjector:
     def _kill(self, node):
         self.redpanda.logger.info(
             f"killing redpanda on { self.redpanda.idx(node)}")
-        self.redpanda.signal_redpanda(node, signal=signal.SIGKILL)
+        self.redpanda.signal_redpanda(node,
+                                      signal=signal.SIGKILL,
+                                      idempotent=True)
         timeout_sec = 10
         wait_until(lambda: self.redpanda.redpanda_pid(node) == None,
                    timeout_sec=timeout_sec,

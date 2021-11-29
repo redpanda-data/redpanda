@@ -232,8 +232,21 @@ class RedpandaService(Service):
 
         node.account.ssh(cmd)
 
-    def signal_redpanda(self, node, signal=signal.SIGKILL):
-        node.account.signal(self.redpanda_pid(node), signal, allow_fail=False)
+    def signal_redpanda(self, node, signal=signal.SIGKILL, idempotent=False):
+        """
+        :param idempotent: if true, then kill-like signals are ignored if
+                           the process is already gone.
+        """
+        pid = self.redpanda_pid(node)
+        if pid is None:
+            if idempotent and signal in {signal.SIGKILL, signal.SIGTERM}:
+                return
+            else:
+                raise RuntimeError(
+                    f"Can't signal redpanda on node {node.name}, it isn't running"
+                )
+
+        node.account.signal(pid, signal, allow_fail=False)
 
     def start_node(self, node, override_cfg_params=None):
         """
