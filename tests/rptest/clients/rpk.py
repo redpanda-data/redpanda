@@ -162,11 +162,11 @@ class RpkTool:
             cmd += ["-o", f"{n}"]
         return self._run_topic(cmd)
 
-    def wasm_deploy(self, script, name, description):
+    def wasm_deploy(self, script, name, description, wasm_type="async"):
         cmd = [
             self._rpk_binary(), 'wasm', 'deploy', script, '--brokers',
             self._redpanda.brokers(), '--name', name, '--description',
-            description
+            description, '--type', wasm_type
         ]
         return self._execute(cmd)
 
