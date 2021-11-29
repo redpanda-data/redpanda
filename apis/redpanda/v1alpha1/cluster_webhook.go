@@ -18,6 +18,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -84,6 +85,13 @@ func (r *Cluster) Default() {
 	}
 
 	r.setDefaultAdditionalConfiguration()
+	if r.Spec.PodDisruptionBudget == nil {
+		defaultMaxUnavailable := intstr.FromInt(1)
+		r.Spec.PodDisruptionBudget = &PDBConfig{
+			Enabled:        true,
+			MaxUnavailable: &defaultMaxUnavailable,
+		}
+	}
 }
 
 var defaultAdditionalConfiguration = map[string]int{
