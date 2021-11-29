@@ -183,7 +183,7 @@ func setProduction(conf *Config) *Config {
 	conf.Rpk.TuneDiskScheduler = true
 	conf.Rpk.TuneNomerges = true
 	conf.Rpk.TuneDiskIrq = true
-	conf.Rpk.TuneFstrim = true
+	conf.Rpk.TuneFstrim = false
 	conf.Rpk.TuneCpu = true
 	conf.Rpk.TuneAioEvents = true
 	conf.Rpk.TuneClocksource = true

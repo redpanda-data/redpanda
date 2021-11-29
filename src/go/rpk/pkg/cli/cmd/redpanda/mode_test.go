@@ -36,7 +36,7 @@ func fillRpkConfig(path, mode string) *config.Config {
 		TuneDiskWriteCache: val,
 		TuneNomerges:       val,
 		TuneDiskIrq:        val,
-		TuneFstrim:         val,
+		TuneFstrim:         false,
 		TuneCpu:            val,
 		TuneAioEvents:      val,
 		TuneClocksource:    val,

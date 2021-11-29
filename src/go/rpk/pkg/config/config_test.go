@@ -1914,7 +1914,7 @@ func TestSetMode(t *testing.T) {
 				TuneNomerges:       val,
 				TuneDiskWriteCache: val,
 				TuneDiskIrq:        val,
-				TuneFstrim:         val,
+				TuneFstrim:         false,
 				TuneCpu:            val,
 				TuneAioEvents:      val,
 				TuneClocksource:    val,
