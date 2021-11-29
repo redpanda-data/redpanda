@@ -15,11 +15,13 @@
 #include "kafka/server/partition_proxy.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
+#include "raft/errc.h"
 #include "raft/types.h"
 
 #include <seastar/core/coroutine.hh>
 
 #include <memory>
+#include <system_error>
 
 namespace kafka {
 
@@ -51,13 +53,12 @@ public:
 
     bool is_leader() const final { return _partition->is_leader(); }
 
-    ss::future<result<model::offset>> linearizable_barrier() {
+    ss::future<std::error_code> linearizable_barrier() final {
         auto r = co_await _partition->linearizable_barrier();
         if (r) {
-            co_return result<model::offset>(
-              _translator->from_log_offset(r.value()));
+            co_return raft::errc::success;
         }
-        co_return r;
+        co_return r.error();
     }
 
     ss::future<std::optional<storage::timequery_result>>
