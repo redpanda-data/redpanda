@@ -9,3 +9,17 @@ metadata:
     app.kubernetes.io/part-of: redpanda
 status:
   readyReplicas: 1
+
+---
+
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: update-cluster
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "redpanda"
+      app.kubernetes.io/instance: "update-cluster"
+      app.kubernetes.io/component: redpanda
