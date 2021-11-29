@@ -320,7 +320,8 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
 
     auto partition = app.partition_manager.local().get(manifest_ntp);
     BOOST_REQUIRE(partition);
-    const raft::offset_translator& tr = *partition->get_offset_translator();
+    const storage::offset_translator_state& tr
+      = *partition->get_offset_translator_state();
 
     // Starting offset is lower than offset1
     auto upload1
@@ -389,12 +390,14 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
       b.storage());
     tr.start(raft::offset_translator::must_reset::yes, {}).get();
     tr.sync_with_log(log, std::nullopt).get();
+    const auto& tr_state = *tr.state();
 
     auto start_offset = model::offset{0};
     auto last_stable_offset = log.offsets().dirty_offset + model::offset{1};
-    auto upload1
-      = policy.get_next_candidate(start_offset, last_stable_offset, log, tr)
-          .get();
+    auto upload1 = policy
+                     .get_next_candidate(
+                       start_offset, last_stable_offset, log, tr_state)
+                     .get();
     BOOST_REQUIRE(upload1.source);
     BOOST_REQUIRE_EQUAL(upload1.exposed_name, "0-0-v1.log");
     BOOST_REQUIRE_EQUAL(upload1.starting_offset, start_offset);
@@ -411,9 +414,10 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
 
     start_offset = upload1.final_offset + model::offset{1};
     last_stable_offset = log.offsets().dirty_offset + model::offset{1};
-    auto upload2
-      = policy.get_next_candidate(start_offset, last_stable_offset, log, tr)
-          .get();
+    auto upload2 = policy
+                     .get_next_candidate(
+                       start_offset, last_stable_offset, log, tr_state)
+                     .get();
     BOOST_REQUIRE(!upload2.source);
 
     b.stop().get();
@@ -854,7 +858,8 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
 
     auto partition = app.partition_manager.local().get(manifest_ntp);
     BOOST_REQUIRE(partition);
-    const raft::offset_translator& tr = *partition->get_offset_translator();
+    const storage::offset_translator_state& tr
+      = *partition->get_offset_translator_state();
 
     model::offset start_offset{0};
     model::offset lso{9999};

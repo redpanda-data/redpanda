@@ -11,9 +11,9 @@
 #include "archival/archival_policy.h"
 
 #include "archival/logger.h"
-#include "raft/offset_translator.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
+#include "storage/offset_translator_state.h"
 #include "storage/parser.h"
 #include "storage/segment.h"
 #include "storage/segment_set.h"
@@ -81,7 +81,7 @@ archival_policy::lookup_result archival_policy::find_segment(
   model::offset start_offset,
   model::offset adjusted_lso,
   storage::log log,
-  const raft::offset_translator& offset_translator) {
+  const storage::offset_translator_state& ot_state) {
     vlog(
       archival_log.debug,
       "Upload policy for {} invoked, start offset: {}",
@@ -153,9 +153,8 @@ archival_policy::lookup_result archival_policy::find_segment(
     }
 
     if (!closed) {
-        auto kafka_start_offset = offset_translator.from_log_offset(
-          start_offset);
-        auto kafka_lso = offset_translator.from_log_offset(adjusted_lso);
+        auto kafka_start_offset = ot_state.from_log_offset(start_offset);
+        auto kafka_lso = ot_state.from_log_offset(adjusted_lso);
         if (kafka_start_offset >= kafka_lso) {
             // If timeboxed uploads are enabled and there is no producer
             // activity, we can get into a nasty loop where we upload a segment,
@@ -449,12 +448,12 @@ ss::future<upload_candidate> archival_policy::get_next_candidate(
   model::offset begin_inclusive,
   model::offset end_exclusive,
   storage::log log,
-  const raft::offset_translator& offset_translator) {
+  const storage::offset_translator_state& ot_state) {
     // NOTE: end_exclusive (which is initialized with LSO) points to the first
     // unstable recordbatch we need to look at the previous batch if needed.
     auto adjusted_lso = end_exclusive - model::offset(1);
     auto [segment, ntp_conf, forced] = find_segment(
-      begin_inclusive, adjusted_lso, std::move(log), offset_translator);
+      begin_inclusive, adjusted_lso, std::move(log), ot_state);
     if (segment.get() == nullptr || ntp_conf == nullptr) {
         co_return upload_candidate{};
     }

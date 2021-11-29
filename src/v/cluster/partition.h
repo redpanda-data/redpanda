@@ -178,9 +178,9 @@ public:
         return _raft->get_configuration_manager();
     }
 
-    const ss::lw_shared_ptr<raft::offset_translator>&
-    get_offset_translator() const {
-        return _raft->get_offset_translator();
+    ss::lw_shared_ptr<const storage::offset_translator_state>
+    get_offset_translator_state() const {
+        return _raft->get_offset_translator_state();
     }
 
     ss::shared_ptr<cluster::rm_stm> rm_stm();

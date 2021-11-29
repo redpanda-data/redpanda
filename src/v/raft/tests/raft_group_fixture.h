@@ -814,7 +814,7 @@ static void validate_offset_translation(raft_group& gr) {
     for (auto o = start; o < end; o++) {
         reference[o] = gr.get_members()
                          .begin()
-                         ->second.consensus->get_offset_translator()
+                         ->second.consensus->get_offset_translator_state()
                          ->from_log_offset(o);
     }
 
@@ -829,7 +829,8 @@ static void validate_offset_translation(raft_group& gr) {
             if (!reference.contains(o)) {
                 continue;
             }
-            auto translated = it->second.consensus->get_offset_translator()
+            auto translated = it->second.consensus
+                                ->get_offset_translator_state()
                                 ->from_log_offset(o);
             tstlog.info(
               "translation for offset {}, validating {} == {}\n",

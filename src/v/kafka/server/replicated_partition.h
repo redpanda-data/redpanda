@@ -106,7 +106,7 @@ public:
 
 private:
     ss::lw_shared_ptr<cluster::partition> _partition;
-    ss::lw_shared_ptr<raft::offset_translator> _translator;
+    ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
 };
 
 } // namespace kafka

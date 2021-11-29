@@ -300,8 +300,9 @@ public:
 
     storage::log& log() { return _log; }
 
-    const ss::lw_shared_ptr<offset_translator>& get_offset_translator() {
-        return _offset_translator;
+    ss::lw_shared_ptr<const storage::offset_translator_state>
+    get_offset_translator_state() {
+        return _offset_translator.state();
     }
 
     /**
@@ -531,7 +532,7 @@ private:
     raft::group_id _group;
     timeout_jitter _jit;
     storage::log _log;
-    ss::lw_shared_ptr<offset_translator> _offset_translator;
+    offset_translator _offset_translator;
     scheduling_config _scheduling;
     model::timeout_clock::duration _disk_timeout;
     consensus_client_protocol _client_protocol;

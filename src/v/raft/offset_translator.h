@@ -15,6 +15,7 @@
 #include "raft/types.h"
 #include "storage/fwd.h"
 #include "storage/log.h"
+#include "storage/offset_translator_state.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 
@@ -24,19 +25,14 @@
 
 namespace raft {
 
-/// Provides offset translation between raw log offsets and offsets counting
-/// only batches with type not in the `filtered_types` set (basically our
-/// internal batch types that we write into the data partitions). This is needed
-/// because even though our internal batch types are filtered out when sent to
-/// clients, kafka clients are not prepared for these batches to occupy offset
-/// space (see https://github.com/vectorizedio/redpanda/issues/1184 for
-/// details).
+/// See also comments for storage::offset_translator_state.
 ///
-/// It works by maintaining an in-memory map map of all filtered batch offsets.
-/// This map allows us to quickly find a delta between the raw log offset and
-/// corresponding translated offset. To avoid reading the whole log at startup,
-/// the map is periodically checkpointed to the kvstore. As log truncations/raft
-/// snapshots happen, the map is truncated/prefix-truncated along with the log.
+/// This class maintains offset translation state for the raft log.
+/// Filtered batches are those with type not in the `filtered_types` set.
+///
+/// To avoid reading the whole log at startup, the translation state is
+/// periodically checkpointed to the kvstore. As log truncations/raft snapshots
+/// happen, the map is truncated/prefix-truncated along with the log.
 ///
 /// Concurrency note: `start`, `sync_with_log` and `remove_persistent_state`
 /// methods can't be called concurrently with other non-const methods and
@@ -55,12 +51,9 @@ public:
 
     offset_translator(offset_translator&&) noexcept = default;
 
-    /// Translate log offset into kafka offset.
-    model::offset from_log_offset(model::offset) const;
-
-    /// Translate kafka offset into log offset.
-    model::offset to_log_offset(
-      model::offset data_offset, model::offset hint = model::offset{}) const;
+    ss::lw_shared_ptr<const storage::offset_translator_state> state() const {
+        return _state;
+    }
 
     using must_reset = ss::bool_class<struct must_reset_tag>;
 
@@ -103,42 +96,20 @@ public:
 
     ss::future<> remove_persistent_state();
 
-    int64_t delta(model::offset) const;
-
 private:
-    void do_add(const model::record_batch_header&);
-
     bytes offsets_map_key() const;
     bytes highest_known_offset_key() const;
-
-    struct batch_info {
-        model::offset base_offset;
-        int64_t next_delta;
-    };
-
-    // Map from the last offset of non-data batches to the corresponding batch
-    // info. next_delta in the batch info is active in the log offset interval
-    // (last offset; next last offset] (left end exclusive, right end
-    // inclusive). As prefix truncations happen, we maintain an invariant that
-    // there is always an element of the map with the key prev_offset(start of
-    // the log) - this way we can calculate delta for any offset in the log.
-    using batches_map_t = absl::btree_map<model::offset, batch_info>;
-
-    iobuf serialize_batches_map(const batches_map_t&);
-    batches_map_t deserialize_batches_map(iobuf buf);
 
     ss::future<> do_checkpoint();
 
 private:
     std::vector<model::record_batch_type> _filtered_types;
-    raft::group_id _group;
-    model::ntp _ntp;
+    ss::lw_shared_ptr<storage::offset_translator_state> _state;
 
+    raft::group_id _group;
     prefix_logger _logger;
 
-    batches_map_t _last_offset2batch;
-
-    // The last offset for which we have offset translation data (inclusive).
+    // The last offset for which we have offset translation state (inclusive).
     model::offset _highest_known_offset;
 
     size_t _bytes_processed = 0;

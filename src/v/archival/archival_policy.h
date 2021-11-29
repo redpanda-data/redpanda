@@ -13,7 +13,7 @@
 #include "archival/probe.h"
 #include "archival/types.h"
 #include "model/fundamental.h"
-#include "raft/fwd.h"
+#include "storage/fwd.h"
 #include "storage/log_manager.h"
 #include "storage/ntp_config.h"
 #include "storage/segment_set.h"
@@ -57,7 +57,7 @@ public:
       model::offset begin_inclusive,
       model::offset end_exclusive,
       storage::log,
-      const raft::offset_translator&);
+      const storage::offset_translator_state&);
 
 private:
     /// Check if the upload have to be forced due to timeout
@@ -77,7 +77,7 @@ private:
       model::offset last_offset,
       model::offset adjusted_lso,
       storage::log,
-      const raft::offset_translator&);
+      const storage::offset_translator_state&);
 
     model::ntp _ntp;
     service_probe& _svc_probe;

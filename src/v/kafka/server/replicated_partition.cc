@@ -23,7 +23,7 @@ namespace kafka {
 replicated_partition::replicated_partition(
   ss::lw_shared_ptr<cluster::partition> p) noexcept
   : _partition(p)
-  , _translator(_partition->get_offset_translator()) {
+  , _translator(_partition->get_offset_translator_state()) {
     vassert(
       _translator, "ntp {}: offset translator must be initialized", p->ntp());
 }
@@ -50,9 +50,9 @@ ss::future<model::record_batch_reader> replicated_partition::make_reader(
     public:
         reader(
           std::unique_ptr<model::record_batch_reader::impl> underlying,
-          const ss::lw_shared_ptr<raft::offset_translator>& tr)
+          ss::lw_shared_ptr<const storage::offset_translator_state> tr)
           : _underlying(std::move(underlying))
-          , _translator(tr) {}
+          , _translator(std::move(tr)) {}
 
         bool is_end_of_stream() const final {
             return _underlying->is_end_of_stream();
@@ -89,7 +89,7 @@ ss::future<model::record_batch_reader> replicated_partition::make_reader(
 
     private:
         std::unique_ptr<model::record_batch_reader::impl> _underlying;
-        ss::lw_shared_ptr<raft::offset_translator> _translator;
+        ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
     };
     auto rdr = co_await _partition->make_reader(cfg, deadline);
     co_return model::make_record_batch_reader<reader>(
