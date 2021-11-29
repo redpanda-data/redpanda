@@ -470,6 +470,38 @@ spec:
                 description: If specified, Redpanda Pod node selectors. For reference
                   please visit https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node
                 type: object
+              podDisruptionBudget:
+                description: PodDisruptionBudget specifies whether PDB resource should
+                  be created for the cluster and how should it be configured. By default
+                  this is enabled and defaults to MaxUnavailable=1
+                properties:
+                  enabled:
+                    description: Enabled specifies whether PDB should be generated
+                      for the cluster. It defaults to true
+                    type: boolean
+                  maxUnavailable:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: An eviction is allowed if at most "maxUnavailable"
+                      pods selected by "selector" are unavailable after the eviction,
+                      i.e. even in absence of the evicted pod. For example, one can
+                      prevent all voluntary evictions by specifying 0. This is a mutually
+                      exclusive setting with "minAvailable". This property defaults
+                      to 1. you can read more in https://kubernetes.io/docs/tasks/run-application/configure-pdb/
+                    x-kubernetes-int-or-string: true
+                  minAvailable:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: An eviction is allowed if at least "minAvailable"
+                      pods selected by "selector" will still be available after the
+                      eviction, i.e. even in the absence of the evicted pod.  So for
+                      example you can prevent all voluntary evictions by specifying
+                      "100%". This is a mutually exclusive setting with "maxUnavailable".
+                      you can read more in https://kubernetes.io/docs/tasks/run-application/configure-pdb/
+                    x-kubernetes-int-or-string: true
+                type: object
               replicas:
                 description: Replicas determine how big the cluster will be.
                 format: int32
