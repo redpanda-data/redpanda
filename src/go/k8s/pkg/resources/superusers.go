@@ -69,7 +69,9 @@ func NewSuperUsers(
 		username,
 		suffix,
 		logger.WithValues(
-			"Kind", ingressKind(),
+			"Kind", secretKind(),
+			"SecretType", "superuser",
+			"SuperuserSuffix", suffix,
 		),
 	}
 }
@@ -117,4 +119,9 @@ func (r *SuperUsersResource) obj() (k8sclient.Object, error) {
 // Key returns namespace/name object that is used to identify object.
 func (r *SuperUsersResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: resourceNameTrim(r.pandaCluster.Name, r.suffix), Namespace: r.pandaCluster.Namespace}
+}
+
+func secretKind() string {
+	var obj corev1.Secret
+	return obj.Kind
 }
