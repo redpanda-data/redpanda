@@ -279,10 +279,15 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
            */
           auto stop_cond = [this, appended_offset, appended_term] {
               const auto current_committed_offset = _ptr->committed_offset();
-              return current_committed_offset >= appended_offset
-                     // if term changed and committed offset was updated, we may
-                     // proceed
-                     || (_ptr->term() > appended_term && current_committed_offset > _initial_committed_offset);
+              const auto committed = current_committed_offset
+                                     >= appended_offset;
+              const auto truncated = _ptr->term() > appended_term
+                                     && current_committed_offset
+                                          > _initial_committed_offset
+                                     && _ptr->_log.get_term(appended_offset)
+                                          != appended_term;
+
+              return committed || truncated;
           };
           return _ptr->_commit_index_updated.wait(stop_cond)
             .then([this, appended_offset, appended_term] {
