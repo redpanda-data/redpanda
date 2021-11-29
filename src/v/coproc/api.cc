@@ -36,25 +36,19 @@ api::api(
 
 api::~api() = default;
 
-ss::future<> api::start() {
+ss::future<> api::start(wasm::event_listener& event_listener) {
     co_await _mt_frontend.start_single(std::ref(_rs.topics_frontend));
     co_await _pacemaker.start(_engine_addr, std::ref(_rs));
     co_await _pacemaker.invoke_on_all(&coproc::pacemaker::start);
-    _listener = std::make_unique<wasm::event_listener>();
 
     _wasm_async_handler = std::make_unique<coproc::wasm::async_event_handler>(
-      _listener->get_abort_source(), std::ref(_pacemaker));
-    _listener->register_handler(
+      event_listener.get_abort_source(), std::ref(_pacemaker));
+    event_listener.register_handler(
       coproc::wasm::event_type::async, _wasm_async_handler.get());
-
-    co_await _listener->start();
 }
 
 ss::future<> api::stop() {
     auto f = ss::now();
-    if (_listener) {
-        f = _listener->stop();
-    }
     return f.then([this] { return _pacemaker.stop(); }).then([this] {
         return _mt_frontend.stop();
     });

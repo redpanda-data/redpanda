@@ -148,6 +148,8 @@ private:
     ss::sharded<storage::compaction_controller> _compaction_controller;
     ss::sharded<archival::upload_controller> _archival_upload_controller;
 
+    std::unique_ptr<coproc::wasm::event_listener> _wasm_event_listener;
+
     ss::metrics::metric_groups _metrics;
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
     // run these first on destruction

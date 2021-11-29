@@ -28,7 +28,7 @@ public:
 
     ~api();
 
-    ss::future<> start();
+    ss::future<> start(wasm::event_listener& event_listener);
 
     ss::future<> stop();
 
@@ -38,8 +38,7 @@ private:
     unresolved_address _engine_addr;
     sys_refs _rs;
 
-    std::unique_ptr<wasm::event_listener> _listener; /// one instance
-    ss::sharded<pacemaker> _pacemaker;               /// one per core
+    ss::sharded<pacemaker> _pacemaker; /// one per core
     ss::sharded<cluster::non_replicable_topics_frontend>
       _mt_frontend; /// one instance
 
