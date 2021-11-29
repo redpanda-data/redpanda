@@ -13,6 +13,8 @@ import re
 
 DEFAULT_TIMEOUT = 30
 
+DEFAULT_PRODUCE_TIMEOUT = 5
+
 
 class RpkException(Exception):
     def __init__(self, msg):
@@ -88,17 +90,26 @@ class RpkTool:
                 headers=[],
                 partition=None,
                 timeout=None):
-        # For tests, we want fast failures rather than indefinite retries,
-        # so we use a 1s delivery timeout.
+
+        if timeout is None:
+            # For produce, we use a lower timeout than the general
+            # default, because tests generally call this when
+            # they expect a system to be ready.
+            timeout = DEFAULT_PRODUCE_TIMEOUT
+
         cmd = [
             'produce', '--key', key, '-z', 'none', '--delivery-timeout',
-            '4.5s', '-f', '%v', topic
+            f'{timeout}s', '-f', '%v', topic
         ]
         if headers:
             cmd += ['-H ' + h for h in headers]
         if partition is not None:
             cmd += ['-p', str(partition)]
-        out = self._run_topic(cmd, stdin=msg, timeout=timeout)
+
+        # Run remote process with a slightly higher timeout than the
+        # rpk delivery timeout, so that we get a clean-ish rpk timeout
+        # message rather than sigkilling the remote process.
+        out = self._run_topic(cmd, stdin=msg, timeout=timeout + 0.5)
 
         offset = re.search("at offset (\d+)", out).group(1)
         return int(offset)
