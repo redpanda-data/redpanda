@@ -82,9 +82,15 @@ class RecordIter:
         timestamp_delta = self.rdr.read_varint()
         offset_delta = self.rdr.read_varint()
         key_length = self.rdr.read_varint()
-        key = self.rdr.read_bytes(key_length)
+        if key_length > 0:
+            key = self.rdr.read_bytes(key_length)
+        else:
+            key = None
         value_length = self.rdr.read_varint()
-        value = self.rdr.read_bytes(value_length)
+        if value_length > 0:
+            value = self.rdr.read_bytes(value_length)
+        else:
+            value = None
         hdr_size = self.rdr.read_varint()
         headers = []
         for i in range(0, hdr_size):
