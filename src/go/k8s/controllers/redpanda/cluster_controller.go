@@ -199,6 +199,7 @@ func (r *ClusterReconciler) Reconcile(
 		sa,
 		resources.NewClusterRole(r.Client, &redpandaCluster, r.Scheme, log),
 		crb,
+		resources.NewPDB(r.Client, &redpandaCluster, r.Scheme, log),
 		sts,
 	}
 
