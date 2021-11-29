@@ -11,7 +11,10 @@
 #pragma once
 #include "cluster/partition_probe.h"
 #include "kafka/server/partition_proxy.h"
+#include "raft/errc.h"
 #include "storage/log.h"
+
+#include <system_error>
 
 namespace kafka {
 class materialized_partition final : public kafka::partition_proxy::impl {
@@ -38,13 +41,13 @@ public:
 
     bool is_leader() const final { return _partition->is_leader(); }
 
-    ss::future<result<model::offset>> linearizable_barrier() {
+    ss::future<std::error_code> linearizable_barrier() final {
         return _partition->linearizable_barrier().then(
-          [this](result<model::offset> r) {
+          [](result<model::offset> r) {
               if (r) {
-                  return result<model::offset>(last_stable_offset());
+                  return raft::make_error_code(raft::errc::success);
               }
-              return r;
+              return r.error();
           });
     }
 

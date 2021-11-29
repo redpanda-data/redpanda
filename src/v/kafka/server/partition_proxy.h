@@ -16,6 +16,7 @@
 #include "storage/types.h"
 
 #include <optional>
+#include <system_error>
 
 namespace kafka {
 
@@ -31,7 +32,7 @@ public:
         virtual model::offset high_watermark() const = 0;
         virtual model::offset last_stable_offset() const = 0;
         virtual bool is_leader() const = 0;
-        virtual ss::future<result<model::offset>> linearizable_barrier() = 0;
+        virtual ss::future<std::error_code> linearizable_barrier() = 0;
         virtual ss::future<model::record_batch_reader> make_reader(
           storage::log_reader_config,
           std::optional<model::timeout_clock::time_point>)
@@ -55,7 +56,7 @@ public:
         return _impl->last_stable_offset();
     }
 
-    ss::future<result<model::offset>> linearizable_barrier() {
+    ss::future<std::error_code> linearizable_barrier() {
         return _impl->linearizable_barrier();
     }
 
