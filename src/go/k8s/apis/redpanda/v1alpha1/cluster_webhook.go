@@ -41,20 +41,6 @@ const (
 	defaultSchemaRegistryPort = 8081
 )
 
-var (
-	// DefaultRpkStatusResources is default resources setting for rpk debug
-	DefaultRpkStatusResources = &corev1.ResourceRequirements{
-		Requests: corev1.ResourceList{
-			corev1.ResourceMemory: resource.MustParse("10M"),
-			corev1.ResourceCPU:    resource.MustParse("0.2"),
-		},
-		Limits: corev1.ResourceList{
-			corev1.ResourceMemory: resource.MustParse("30M"),
-			corev1.ResourceCPU:    resource.MustParse("0.2"),
-		},
-	}
-)
-
 type resourceField struct {
 	resources *corev1.ResourceRequirements
 	path      *field.Path
@@ -98,13 +84,6 @@ func (r *Cluster) Default() {
 	}
 
 	r.setDefaultAdditionalConfiguration()
-
-	if r.Spec.Sidecars.RpkStatus == nil {
-		r.Spec.Sidecars.RpkStatus = &Sidecar{
-			Enabled:   true,
-			Resources: DefaultRpkStatusResources,
-		}
-	}
 }
 
 var defaultAdditionalConfiguration = map[string]int{

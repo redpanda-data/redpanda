@@ -9,6 +9,5 @@ spec:
         - image: "vectorized/configurator:v21.6.6"
       containers:
         - image: "localhost/redpanda:dev"
-        - image: "localhost/redpanda:dev"
 status:
   readyReplicas: 2
