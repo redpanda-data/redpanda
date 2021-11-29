@@ -798,8 +798,10 @@ void consensus::dispatch_vote(bool leadership_transfer) {
     // lower our required priority for next time.
     _target_priority = next_target_priority();
 
-    // skip sending vote request if current node is not a voter
-    if (!_configuration_manager.get_latest().is_voter(_self)) {
+    // skip sending vote request if current node is not a voter in current
+    // configuration
+    if (!_configuration_manager.get_latest().is_allowed_to_request_votes(
+          _self)) {
         arm_vote_timeout();
         return;
     }
@@ -2219,22 +2221,45 @@ ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
     }
 
     auto latest_cfg = _configuration_manager.get_latest();
-    // as a leader replicate new simple configuration
-    if (
-      latest_cfg.type() == configuration_type::joint
-      && latest_cfg.current_config().learners.empty()) {
-        latest_cfg.discard_old_config();
-        vlog(
-          _ctxlog.trace,
-          "leaving joint consensus, new simple configuration {}",
-          latest_cfg);
+    /**
+     * simple configuration, there is nothing to do
+     */
+    if (latest_cfg.type() == configuration_type::simple) {
+        return ss::now();
+    }
+    /**
+     * at this point joint configuration is committed, and all added learners
+     * were promoted to voter
+     */
+    if (latest_cfg.current_config().learners.empty()) {
+        /*
+         * In the first step we demote all removed voters to learners
+         */
+
+        if (latest_cfg.maybe_demote_removed_voters()) {
+            vlog(
+              _ctxlog.info,
+              "demoting removed voters, new configuration {}",
+              latest_cfg);
+        } else {
+            /**
+             * When all old voters were demoted, as a leader, we replicate new
+             * configuration
+             */
+            latest_cfg.discard_old_config();
+            vlog(
+              _ctxlog.info,
+              "leaving joint consensus, new simple configuration {}",
+              latest_cfg);
+        }
+
         auto contains_current = latest_cfg.contains(_self);
         return replicate_configuration(std::move(u), std::move(latest_cfg))
           .then([this, contains_current](std::error_code ec) {
               if (ec) {
                   vlog(
                     _ctxlog.error,
-                    "unable to replicate simple configuration  - {}",
+                    "unable to replicate updated configuration - {}",
                     ec);
                   return;
               }
@@ -2247,7 +2272,6 @@ ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
               }
           });
     }
-
     return ss::now();
 }
 

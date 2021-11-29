@@ -75,8 +75,8 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
     // using linearizable_barrier instead of is_leader to check that
     // current node is/was a leader at the moment it received the request
     // since the former uses cache and may return stale data
-    auto r = co_await kafka_partition->linearizable_barrier();
-    if (!r) {
+    auto err = co_await kafka_partition->linearizable_barrier();
+    if (err) {
         co_return list_offsets_response::make_partition(
           ntp.tp.partition, error_code::not_leader_for_partition);
     }

@@ -7,8 +7,11 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "model/metadata.h"
 #include "raft/group_configuration.h"
 #include "utils/unresolved_address.h"
+
+#include <boost/test/tools/old/interface.hpp>
 #define BOOST_TEST_MODULE raft
 #include "raft/types.h"
 
@@ -45,4 +48,37 @@ BOOST_AUTO_TEST_CASE(should_return_false_as_it_does_not_contain_machine) {
 
     auto contains = test_grp.contains_broker(model::node_id(1));
     BOOST_REQUIRE_EQUAL(contains, false);
+}
+
+BOOST_AUTO_TEST_CASE(test_demoting_removed_voters) {
+    raft::group_configuration test_grp = raft::group_configuration(
+      {create_broker(3)}, model::revision_id(0));
+
+    // add brokers
+    test_grp.add({create_broker(1), create_broker(2)}, model::revision_id{0});
+    auto demoted = test_grp.maybe_demote_removed_voters();
+    BOOST_REQUIRE_EQUAL(demoted, false);
+
+    // promote added nodes to voteres
+    test_grp.promote_to_voter(
+      raft::vnode(model::node_id{1}, model::revision_id(0)));
+    test_grp.promote_to_voter(
+      raft::vnode(model::node_id{2}, model::revision_id(0)));
+    demoted = test_grp.maybe_demote_removed_voters();
+    BOOST_REQUIRE_EQUAL(demoted, false);
+
+    test_grp.discard_old_config();
+
+    // remove single broker
+    test_grp.remove({model::node_id(1)});
+    demoted = test_grp.maybe_demote_removed_voters();
+    BOOST_REQUIRE_EQUAL(demoted, true);
+    BOOST_REQUIRE_EQUAL(test_grp.old_config()->voters.size(), 2);
+    // node 0 was demoted since it was removed from the cluster
+    BOOST_REQUIRE_EQUAL(
+      test_grp.old_config()->learners[0],
+      raft::vnode(model::node_id{1}, model::revision_id(0)));
+    // assert that operation is idempotent
+    demoted = test_grp.maybe_demote_removed_voters();
+    BOOST_REQUIRE_EQUAL(demoted, false);
 }
