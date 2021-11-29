@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "coproc/event_handler.h"
+#include "coproc/event_listener.h"
 #include "model/metadata.h"
 #include "v8_engine/data_policy_table.h"
 #include "v8_engine/environment.h"
@@ -20,9 +22,11 @@ namespace v8_engine {
 
 class api {
 public:
-    api() = default;
+    api();
 
-    ss::future<> start(ss::alien::instance& instance);
+    ss::future<> start(
+      ss::alien::instance& instance,
+      coproc::wasm::event_listener* event_listener);
 
     ss::future<> stop();
 
@@ -35,14 +39,14 @@ public:
 
     std::optional<data_policy> get_dp(const model::topic_namespace& topic);
 
-private:
-    bool is_enabled();
+    static bool is_enabled();
 
 private:
     std::optional<enviroment> _env;
     executor_service _executor;
     ss::sharded<data_policy_table> _dp_table;
     ss::sharded<script_dispatcher<executor_service>> _script_dispatcher;
+    coproc::wasm::data_policy_event_handler _data_policy_event_handler;
 };
 
 } // namespace v8_engine

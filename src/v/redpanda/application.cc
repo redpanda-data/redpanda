@@ -651,12 +651,12 @@ void application::wire_up_redpanda_services() {
       .get();
     vlog(_log.info, "Partition manager started");
 
-    if (coproc_enabled()) {
+    if (coproc_enabled() || v8_engine::api::is_enabled()) {
         _wasm_event_listener = std::make_unique<coproc::wasm::event_listener>();
     }
-    
+
     construct_single_service(v8_api);
-    v8_api->start(ss::engine().alien()).get();
+    v8_api->start(ss::engine().alien(), _wasm_event_listener.get()).get();
 
     // controller
 

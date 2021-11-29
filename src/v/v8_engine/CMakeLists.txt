@@ -13,6 +13,7 @@ v_cc_library(
     absl::node_hash_map
     v::rphashing
     v::config
-    v::syschecks)
+    v::syschecks
+    v::kafka_request_schemata)
 
 add_subdirectory(tests)

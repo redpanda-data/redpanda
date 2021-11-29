@@ -125,37 +125,21 @@ async_event_handler::process(absl::btree_map<script_id, parsed_event> wsas) {
     }
 }
 
-ss::future<> data_policy_event_handler::start() { return _scripts.start(); }
+ss::future<> data_policy_event_handler::start() { co_return; }
 
-ss::future<> data_policy_event_handler::stop() { return _scripts.stop(); }
+ss::future<> data_policy_event_handler::stop() { co_return; }
 
 // event_listener run this method from 0-core
 ss::future<> data_policy_event_handler::process(
   absl::btree_map<script_id, parsed_event> wsas) {
     for (auto& [id, event] : wsas) {
-        co_await _scripts.invoke_on_all(
-          [id = id, &event = event](
-            absl::btree_map<script_id, iobuf>& _local_scripts) mutable {
-              if (event.header.action == event_action::deploy) {
-                  _local_scripts.insert_or_assign(id, event.data.copy());
-              } else {
-                  _local_scripts.erase(id);
-              }
-          });
+        if (event.header.action == event_action::deploy) {
+            co_await _executor_service.insert_or_assign(
+              id, std::move(event.data));
+        } else {
+            co_await _executor_service.erase(id);
+        }
     }
-    co_return;
-}
-
-std::optional<iobuf>
-data_policy_event_handler::get_code(std::string_view name) {
-    // rpk use xxhash_64 for create script_is from script name
-    script_id id(xxhash_64(name.data(), name.size()));
-    auto code = _scripts.local().find(id);
-    if (code == _scripts.local().end()) {
-        return std::nullopt;
-    }
-
-    return code->second.copy();
 }
 
 } // namespace coproc::wasm

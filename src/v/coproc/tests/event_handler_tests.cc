@@ -21,7 +21,10 @@
 #include <optional>
 
 SEASTAR_THREAD_TEST_CASE(data_policy_handler_test) {
-    coproc::wasm::data_policy_event_handler handler;
+    v8_engine::executor_service executor_service;
+    executor_service.start(ss::engine().alien(), 1).get();
+
+    coproc::wasm::data_policy_event_handler handler(executor_service);
     handler.start().get();
 
     ss::sstring name1 = "foo";
@@ -37,7 +40,7 @@ SEASTAR_THREAD_TEST_CASE(data_policy_handler_test) {
 
     handler.process(std::move(events1)).get();
 
-    auto code = handler.get_code(name1);
+    auto code = executor_service.get_code(name1).get();
     auto raw_value
       = iobuf_const_parser(code.value()).read_string(code->size_bytes());
     BOOST_CHECK_EQUAL(raw_value, name1);
@@ -51,9 +54,10 @@ SEASTAR_THREAD_TEST_CASE(data_policy_handler_test) {
 
     handler.process(std::move(events2)).get();
 
-    code = handler.get_code(name1);
+    code = executor_service.get_code(name1).get();
 
     BOOST_CHECK(code == std::nullopt);
 
     handler.stop().get();
+    executor_service.stop().get();
 }

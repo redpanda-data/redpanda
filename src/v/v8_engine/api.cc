@@ -16,13 +16,20 @@
 
 namespace v8_engine {
 
-ss::future<> api::start(ss::alien::instance& instance) {
+api::api()
+  : _data_policy_event_handler(_executor) {}
+
+ss::future<> api::start(
+  ss::alien::instance& instance, coproc::wasm::event_listener* event_listener) {
     if (is_enabled()) {
         co_await syschecks::systemd_message("Creating v8_engine::api");
         co_await _executor.start(
           instance, config::shard_local_cfg().executor_queue_size());
         co_await _dp_table.start();
         co_await _script_dispatcher.start(std::ref(_executor));
+
+        event_listener->register_handler(
+          coproc::wasm::event_type::data_policy, &_data_policy_event_handler);
     }
 }
 

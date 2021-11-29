@@ -14,6 +14,7 @@
 #include "coproc/script_dispatcher.h"
 #include "coproc/wasm_event.h"
 #include "seastarx.h"
+#include "v8_engine/executor.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -91,6 +92,10 @@ private:
 
 class data_policy_event_handler final : public event_handler {
 public:
+    explicit data_policy_event_handler(
+      v8_engine::executor_service& executor_service)
+      : _executor_service(executor_service) {}
+
     ss::future<> start() override;
     ss::future<> stop() override;
 
@@ -102,11 +107,8 @@ public:
     ss::future<>
     process(absl::btree_map<script_id, parsed_event> wsas) override;
 
-    std::optional<iobuf> get_code(std::string_view name);
-
 private:
-    /// Map of known script ids to their code
-    ss::sharded<absl::btree_map<script_id, iobuf>> _scripts;
+    v8_engine::executor_service& _executor_service;
 };
 
 } // namespace coproc::wasm
