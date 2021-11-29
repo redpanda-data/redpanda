@@ -290,6 +290,25 @@ public:
           });
     }
 
+    ss::future<> delete_topic(model::topic_namespace tp_ns) {
+        std::vector<model::topic_namespace> topics{std::move(tp_ns)};
+        return app.controller->get_topics_frontend()
+          .local()
+          .delete_topics(std::move(topics), model::no_timeout)
+          .then([this](std::vector<cluster::topic_result> results) {
+              return tests::cooperative_spin_wait_with_timeout(
+                2s, [this, results = std::move(results)] {
+                    return std::all_of(
+                      results.begin(),
+                      results.end(),
+                      [this](const cluster::topic_result& r) {
+                          return !app.metadata_cache.local().get_topic_metadata(
+                            r.tp_ns);
+                      });
+                });
+          });
+    }
+
     ss::future<> wait_for_partition_offset(
       model::ntp ntp,
       model::offset o,
