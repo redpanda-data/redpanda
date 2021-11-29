@@ -413,14 +413,58 @@ class RedpandaService(Service):
             self.start_node(node, override_cfg_params)
 
     def registered(self, node):
+        """
+        Check if a newly added node is fully registered with the cluster, such
+        that a kafka metadata request to any node in the cluster will include it.
+
+        We first check the admin API to do a kafka-independent check, and then verify
+        that kafka clients see the same thing.
+        """
         idx = self.idx(node)
         self.logger.debug(
-            f"Checking if broker {idx} ({node.name} is registered")
+            f"registered: checking if broker {idx} ({node.name} is registered..."
+        )
+
+        # Query all nodes' admin APIs, so that we don't advance during setup until
+        # the node is stored in raft0 AND has been replayed on all nodes.  Otherwise
+        # a kafka metadata request to the last node to join could return incomplete
+        # metadata and cause strange issues within a test.
+        admin = Admin(self)
+        for peer in self._started:
+            try:
+                admin_brokers = admin.get_brokers(node=peer)
+            except requests.exceptions.RequestException as e:
+                # We run during startup, when admin API may not even be listening yet: tolerate
+                # API errors but presume that if some APIs are not up yet, then node registration
+                # is also not complete.
+                self.logger.debug(
+                    f"registered: peer {peer.name} admin API not yet available ({e})"
+                )
+                return False
+
+            found = idx in [b['node_id'] for b in admin_brokers]
+            if not found:
+                self.logger.info(
+                    f"registered: node {node.name} not yet found in peer {peer.name}'s broker list ({admin_brokers})"
+                )
+                return False
+            else:
+                self.logger.debug(
+                    f"registered: node {node.name} now visible in peer {peer.name}'s broker list ({admin_brokers})"
+                )
+
         client = PythonLibrdkafka(self)
         brokers = client.brokers()
         broker = brokers.get(idx, None)
-        self.logger.debug(f"Found broker info: {broker}")
-        return broker is not None
+        if broker is None:
+            # This should never happen, because we already checked via the admin API
+            # that the node of interest had become visible to all peers.
+            self.logger.error(
+                f"registered: node {node.name} not found in kafka metadata!")
+            assert broker is not None
+
+        self.logger.debug(f"registered: found broker info: {broker}")
+        return True
 
     def controller(self):
         """
