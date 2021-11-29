@@ -351,59 +351,32 @@ ss::future<topic_result> topics_frontend::replicate_create_topic(
       tp_ns,
       topic_configuration_assignment(std::move(cfg), units.get_assignments()));
 
-    std::vector<ntp_leader> leaders;
-    leaders.reserve(cmd.value.assignments.size());
     for (auto& p_as : cmd.value.assignments) {
         std::shuffle(
           p_as.replicas.begin(),
           p_as.replicas.end(),
           random_generators::internal::gen);
-        // guesstimate leaders
-        leaders.emplace_back(
-          model::ntp(tp_ns.ns, tp_ns.tp, p_as.id),
-          p_as.replicas.begin()->node_id);
     }
 
     return replicate_and_wait(_stm, _as, std::move(cmd), timeout)
-      .then_wrapped(
-        [this,
-         tp_ns = std::move(tp_ns),
-         units = std::move(units),
-         leaders = std::move(leaders)](ss::future<std::error_code> f) mutable {
-            try {
-                auto error_code = f.get0();
-                auto ret_f = ss::now();
-                if (!error_code) {
-                    ret_f = update_leaders_with_estimates(std::move(leaders));
-                }
-
-                return ret_f.then([tp_ns = std::move(tp_ns),
-                                   error_code]() mutable {
+      .then_wrapped([tp_ns = std::move(tp_ns), units = std::move(units)](
+                      ss::future<std::error_code> f) mutable {
+          try {
+              auto error_code = f.get0();
+              auto ret_f = ss::now();
+              return ret_f.then(
+                [tp_ns = std::move(tp_ns), error_code]() mutable {
                     return topic_result(std::move(tp_ns), map_errc(error_code));
                 });
 
-            } catch (...) {
-                vlog(
-                  clusterlog.warn,
-                  "Unable to create topic - {}",
-                  std::current_exception());
-                return ss::make_ready_future<topic_result>(
-                  topic_result(std::move(tp_ns), errc::replication_error));
-            }
-        });
-}
-
-ss::future<> topics_frontend::update_leaders_with_estimates(
-  std::vector<ntp_leader> leaders) {
-    return ss::do_with(
-      std::move(leaders), [this](std::vector<ntp_leader>& leaders) {
-          return ss::parallel_for_each(leaders, [this](ntp_leader& leader) {
-              return _leaders.invoke_on_all(
-                [leader](partition_leaders_table& l) {
-                    return l.update_partition_leader(
-                      leader.first, model::term_id(1), leader.second);
-                });
-          });
+          } catch (...) {
+              vlog(
+                clusterlog.warn,
+                "Unable to create topic - {}",
+                std::current_exception());
+              return ss::make_ready_future<topic_result>(
+                topic_result(std::move(tp_ns), errc::replication_error));
+          }
       });
 }
 

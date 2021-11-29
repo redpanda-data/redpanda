@@ -10,6 +10,7 @@
 #include "cluster/topic_updates_dispatcher.h"
 
 #include "cluster/commands.h"
+#include "cluster/partition_leaders_table.h"
 #include "model/metadata.h"
 #include "raft/types.h"
 
@@ -20,9 +21,12 @@
 namespace cluster {
 
 topic_updates_dispatcher::topic_updates_dispatcher(
-  ss::sharded<partition_allocator>& pal, ss::sharded<topic_table>& table)
+  ss::sharded<partition_allocator>& pal,
+  ss::sharded<topic_table>& table,
+  ss::sharded<partition_leaders_table>& leaders)
   : _partition_allocator(pal)
-  , _topic_table(table) {}
+  , _topic_table(table)
+  , _partition_leaders_table(leaders) {}
 
 ss::future<std::error_code>
 topic_updates_dispatcher::apply_update(model::record_batch b) {
@@ -53,6 +57,24 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                           update_allocations(create_cmd);
                       }
                       return ec;
+                  })
+
+                  .then([this, create_cmd](std::error_code ec) {
+                      if (ec == errc::success) {
+                          std::vector<ntp_leader> leaders;
+                          const auto& tp_ns = create_cmd.value.cfg.tp_ns;
+                          for (auto& p_as : create_cmd.value.assignments) {
+                              leaders.emplace_back(
+                                model::ntp(tp_ns.ns, tp_ns.tp, p_as.id),
+                                p_as.replicas.begin()->node_id);
+                          }
+                          return update_leaders_with_estimates(leaders).then(
+                            [ec]() {
+                                return ss::make_ready_future<std::error_code>(
+                                  ec);
+                            });
+                      }
+                      return ss::make_ready_future<std::error_code>(ec);
                   });
             },
             [this, base_offset](move_partition_replicas_cmd cmd) {
@@ -99,6 +121,27 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
             [this, base_offset](create_non_replicable_topic_cmd cmd) {
                 return dispatch_updates_to_cores(std::move(cmd), base_offset);
             });
+      });
+}
+
+ss::future<> topic_updates_dispatcher::update_leaders_with_estimates(
+  std::vector<ntp_leader> leaders) {
+    for (const auto& i : leaders) {
+        vlog(
+          clusterlog.debug,
+          "update_leaders_with_estimates: new NTP {} leader {}",
+          i.first,
+          i.second);
+    }
+    return ss::do_with(
+      std::move(leaders), [this](std::vector<ntp_leader>& leaders) {
+          return ss::parallel_for_each(leaders, [this](ntp_leader& leader) {
+              return _partition_leaders_table.invoke_on_all(
+                [leader](partition_leaders_table& l) {
+                    return l.update_partition_leader(
+                      leader.first, model::term_id(1), leader.second);
+                });
+          });
       });
 }
 

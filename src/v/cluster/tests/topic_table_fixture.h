@@ -126,5 +126,6 @@ struct topic_table_fixture {
 
     ss::sharded<cluster::partition_allocator> allocator;
     ss::sharded<cluster::topic_table> table;
+    ss::sharded<cluster::partition_leaders_table> leaders;
     ss::abort_source as;
 };

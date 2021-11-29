@@ -57,7 +57,7 @@ controller::controller(
   , _partition_manager(pm)
   , _shard_table(st)
   , _storage(storage)
-  , _tp_updates_dispatcher(_partition_allocator, _tp_state)
+  , _tp_updates_dispatcher(_partition_allocator, _tp_state, _partition_leaders)
   , _security_manager(_credentials, _authorizer)
   , _data_policy_manager(data_policy_table)
   , _raft_manager(raft_manager) {}
