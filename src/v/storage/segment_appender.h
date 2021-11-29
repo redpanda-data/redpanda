@@ -36,6 +36,7 @@ public:
     using chunk = segment_appender_chunk;
 
     static constexpr const size_t write_behind_memory = 1_MiB;
+    static constexpr const size_t developer_mode_fallocation_step = 16_KiB;
     static constexpr const size_t fallocation_step = 32_MiB;
 
     struct options {

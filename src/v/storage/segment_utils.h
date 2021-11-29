@@ -106,6 +106,7 @@ ss::future<segment_appender_ptr> make_segment_appender(
   size_t number_of_chunks,
   ss::io_priority_class iopc);
 
+size_t fallocation_step_from_config();
 size_t number_of_chunks_from_config(const storage::ntp_config&);
 
 /*

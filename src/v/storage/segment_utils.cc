@@ -169,7 +169,9 @@ ss::future<segment_appender_ptr> make_segment_appender(
               // 1MB of memory aligned buffers
               return ss::make_ready_future<segment_appender_ptr>(
                 std::make_unique<segment_appender>(
-                  writer, segment_appender::options(iopc, number_of_chunks)));
+                  writer,
+                  segment_appender::options(
+                    iopc, number_of_chunks, fallocation_step_from_config())));
           } catch (...) {
               auto e = std::current_exception();
               vlog(stlog.error, "could not allocate appender: {}", e);
@@ -178,6 +180,13 @@ ss::future<segment_appender_ptr> make_segment_appender(
               });
           }
       });
+}
+
+size_t fallocation_step_from_config() {
+    if (config::shard_local_cfg().developer_mode()) {
+        return segment_appender::developer_mode_fallocation_step;
+    }
+    return segment_appender::fallocation_step;
 }
 
 size_t number_of_chunks_from_config(const ntp_config& ntpc) {
