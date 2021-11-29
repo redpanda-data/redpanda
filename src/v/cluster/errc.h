@@ -51,8 +51,10 @@ enum class errc : int16_t {
     partition_configuration_in_joint_mode,
     partition_configuration_leader_config_not_committed,
     partition_configuration_differs,
+    data_policy_not_enabled,
     data_policy_already_exists,
     data_policy_not_exists,
+    data_policy_js_code_not_exists,
     source_topic_not_exists,
     source_topic_still_in_use,
     wating_for_partition_shutdown,
@@ -143,10 +145,14 @@ struct errc_category final : public std::error_category {
             return "Partition configuration wasn't committed on the leader";
         case errc::partition_configuration_differs:
             return "Current and requested partition configuration differs";
+        case errc::data_policy_not_enabled:
+            return "Data-policy is not enabled";
         case errc::data_policy_already_exists:
             return "Data-policy already exists";
         case errc::data_policy_not_exists:
             return "Data-policy does not exist";
+        case errc::data_policy_js_code_not_exists:
+            return "Data-policy ja code does not exists";
         case errc::source_topic_not_exists:
             return "Attempted to create a non_replicable log for a source "
                    "topic "
