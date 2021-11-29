@@ -24,6 +24,7 @@
 #include "security/authorizer.h"
 #include "security/credential_store.h"
 #include "storage/fwd.h"
+#include "v8_engine/fwd.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
@@ -40,7 +41,7 @@ public:
       ss::sharded<shard_table>& st,
       ss::sharded<storage::api>& storage,
       ss::sharded<raft::group_manager>&,
-      ss::sharded<v8_engine::data_policy_table>&);
+      v8_engine::api&);
 
     model::node_id self() { return _raft0->self().id(); }
     ss::sharded<topics_frontend>& get_topics_frontend() { return _tp_frontend; }

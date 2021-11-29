@@ -12,9 +12,7 @@
 #pragma once
 
 #include "cluster/commands.h"
-#include "v8_engine/data_policy_table.h"
-
-#include <absl/container/flat_hash_map.h>
+#include "v8_engine/fwd.h"
 
 #include <system_error>
 
@@ -22,8 +20,8 @@ namespace cluster {
 
 class data_policy_manager {
 public:
-    explicit data_policy_manager(ss::sharded<v8_engine::data_policy_table>& dps)
-      : _dps(dps) {}
+    explicit data_policy_manager(v8_engine::api& v8_api)
+      : _v8_api(v8_api) {}
 
     static constexpr auto commands
       = make_commands_list<create_data_policy_cmd, delete_data_policy_cmd>();
@@ -36,7 +34,7 @@ public:
     }
 
 private:
-    ss::sharded<v8_engine::data_policy_table>& _dps;
+    v8_engine::api& _v8_api;
 };
 
 } // namespace cluster
