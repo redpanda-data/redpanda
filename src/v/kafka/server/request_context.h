@@ -174,9 +174,7 @@ public:
         return _conn->server().security_frontend();
     }
 
-    v8_engine::data_policy_table& data_policy_table() const {
-        return _conn->server().data_policy_table();
-    }
+    v8_engine::api& v8_api() const { return _conn->server().v8_api(); }
 
     security::authorizer& authorizer() { return _conn->server().authorizer(); }
 

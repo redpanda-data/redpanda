@@ -17,6 +17,7 @@
 #include "kafka/server/response.h"
 #include "security/scram_algorithm.h"
 #include "utils/utf8.h"
+#include "v8_engine/api.h"
 #include "vlog.h"
 
 #include <seastar/core/byteorder.hh>
@@ -50,7 +51,7 @@ protocol::protocol(
   ss::sharded<cluster::security_frontend>& sec_fe,
   ss::sharded<cluster::controller_api>& controller_api,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
-  ss::sharded<v8_engine::data_policy_table>& data_policy_table,
+  v8_engine::api& v8_api,
   std::optional<qdc_monitor::config> qdc_config) noexcept
   : _smp_group(smp)
   , _topics_frontend(tf)
@@ -71,7 +72,7 @@ protocol::protocol(
   , _security_frontend(sec_fe)
   , _controller_api(controller_api)
   , _tx_gateway_frontend(tx_gateway_frontend)
-  , _data_policy_table(data_policy_table) {
+  , _v8_api(v8_api) {
     if (qdc_config) {
         _qdc_mon.emplace(*qdc_config);
     }

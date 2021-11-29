@@ -660,8 +660,6 @@ void application::wire_up_redpanda_services() {
 
     // controller
 
-    construct_service(data_policies).get();
-
     syschecks::systemd_message("Creating cluster::controller").get();
 
     construct_single_service(
@@ -1173,7 +1171,7 @@ void application::start_redpanda() {
             controller->get_security_frontend(),
             controller->get_api(),
             tx_gateway_frontend,
-            data_policies,
+            *v8_api,
             qdc_config);
           s.set_protocol(std::move(proto));
       })

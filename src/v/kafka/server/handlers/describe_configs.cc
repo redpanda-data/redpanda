@@ -24,6 +24,7 @@
 #include "model/validation.h"
 #include "security/acl.h"
 #include "ssx/sformat.h"
+#include "v8_engine/api.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/smp.hh>
@@ -530,7 +531,7 @@ ss::future<response_ptr> describe_configs_handler::handle(
               property_name,
               v8_engine::data_policy("", ""),
               property_name,
-              ctx.data_policy_table().get_data_policy(topic),
+              ctx.v8_api().get_dp(topic),
               request.data.include_synonyms,
               &describe_as_string<v8_engine::data_policy>);
 
