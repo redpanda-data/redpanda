@@ -8,6 +8,8 @@
 # by the Apache License, Version 2.0
 
 import subprocess
+import os
+import pathlib
 
 
 class CompactedTopicVerifier:
@@ -51,6 +53,10 @@ class CompactedTopicVerifier:
         return self._cmd('consume')
 
     def _cmd(self, cmd_str):
+        # Ensure output directory exists
+        out_dir = os.path.dirname(self.state_path)
+        pathlib.Path(out_dir).mkdir(parents=True, exist_ok=True)
+
         self._redpanda.logger.debug("starting compacted topic verifier")
         try:
             cmd = ("{java} -jar {verifier_jar} --broker {brokers} "
@@ -69,3 +75,4 @@ class CompactedTopicVerifier:
         except subprocess.CalledProcessError as e:
             self._redpanda.logger.error("Error (%d) executing verifier:\n %s",
                                         e.returncode, e.output)
+            raise
