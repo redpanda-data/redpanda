@@ -35,7 +35,7 @@ class SaramaTest(RedpandaTest):
         # so 1200s should be OK for CI & release
         self._timeout = 30 if self.scale.local else 1200
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_sarama_interceptors(self):
         sarama_example = SaramaExamples.SaramaInterceptors(
             self.redpanda, self.topic)
@@ -48,7 +48,7 @@ class SaramaTest(RedpandaTest):
 
         example.wait()
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=4)
     def test_sarama_http_server(self):
         sarama_example = SaramaExamples.SaramaHttpServer(self.redpanda)
         example = ExampleRunner(self._ctx,
