@@ -2032,11 +2032,20 @@ ss::future<> consensus::flush_log() {
     _probe.log_flushed();
     auto flushed_up_to = _log.offsets().dirty_offset;
     return _log.flush().then([this, flushed_up_to] {
+        auto lstats = _log.offsets();
+        /**
+         * log flush may be interleaved with trucation, hence we need to check
+         * if log was truncated, if so we do nothing, flushed offset will be
+         * updated in the truncation path.
+         */
+        if (flushed_up_to > lstats.dirty_offset) {
+            return;
+        }
+
         _flushed_offset = std::max(flushed_up_to, _flushed_offset);
         vlog(_ctxlog.trace, "flushed offset updated: {}", _flushed_offset);
         // TODO: remove this assertion when we will remove committed_offset
         // from storage.
-        auto lstats = _log.offsets();
         vassert(
           lstats.committed_offset >= _flushed_offset,
           "Raft incorrectly tracking flushed log offset. Expected offset: {}, "
