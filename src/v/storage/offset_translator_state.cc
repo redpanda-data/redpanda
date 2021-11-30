@@ -263,6 +263,7 @@ bool offset_translator_state::prefix_truncate(model::offset offset) {
     }
 
     auto base_batch = prev_it->second;
+    base_batch.base_offset = offset;
     _last_offset2batch.erase(_last_offset2batch.begin(), it);
     _last_offset2batch.emplace(offset, base_batch);
     return true;
