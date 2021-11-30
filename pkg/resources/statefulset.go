@@ -516,14 +516,7 @@ func setCloudStorage(
 }
 
 func (r *StatefulSetResource) rpkStatusContainer() *corev1.Container {
-	if r.pandaCluster.Spec.Sidecars.RpkStatus == nil {
-		r.logger.Info("BUG! No resources found for rpk status - this should never happen with defaulting webhook enabled - please consider enabling the webhook")
-		r.pandaCluster.Spec.Sidecars.RpkStatus = &redpandav1alpha1.Sidecar{
-			Enabled:   true,
-			Resources: redpandav1alpha1.DefaultRpkStatusResources,
-		}
-	}
-	if !r.pandaCluster.Spec.Sidecars.RpkStatus.Enabled {
+	if r.pandaCluster.Spec.Sidecars.RpkStatus == nil || !r.pandaCluster.Spec.Sidecars.RpkStatus.Enabled {
 		return nil
 	}
 	return &corev1.Container{
