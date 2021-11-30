@@ -53,7 +53,7 @@ class partition_record_batch_reader_impl final
   : public model::record_batch_reader::impl {
 public:
     explicit partition_record_batch_reader_impl(
-      const log_reader_config& config,
+      const storage::log_reader_config& config,
       ss::lw_shared_ptr<remote_partition> part) noexcept
       : _ctxlog(cst_log, _rtc, part->get_ntp().path())
       , _partition(std::move(part))
@@ -123,8 +123,7 @@ public:
                   !result
                   && result.error() == storage::parser_errc::end_of_stream) {
                     vlog(_ctxlog.debug, "EOF error while reading from stream");
-                    _reader->config().next_offset_redpanda
-                      = _reader->max_rp_offset() + model::offset(1);
+                    _reader->set_eof();
                     // Next iteration will trigger transition in
                     // 'maybe_reset_reader'
                     continue;
@@ -157,7 +156,7 @@ public:
 
 private:
     // Initialize object using remote_partition as a source
-    void initialize_reader_state(const log_reader_config& config) {
+    void initialize_reader_state(const storage::log_reader_config& config) {
         vlog(
           _ctxlog.debug,
           "partition_record_batch_reader_impl initialize reader state");
@@ -183,7 +182,7 @@ private:
     };
 
     std::optional<cache_reader_lookup_result>
-    find_cached_reader(const log_reader_config& config) {
+    find_cached_reader(const storage::log_reader_config& config) {
         if (!_partition || _partition->_segments.empty()) {
             return std::nullopt;
         }
@@ -230,12 +229,10 @@ private:
         }
         vlog(
           _ctxlog.debug,
-          "maybe_reset_reader, config next_offset_redpanda: {}, start_offset: "
-          "{}, reader max_offset: {}",
-          _reader->config().next_offset_redpanda,
+          "maybe_reset_reader, config start_offset: {}, reader max_offset: {}",
           _reader->config().start_offset,
           _reader->max_rp_offset());
-        if (_reader->config().next_offset_redpanda > _reader->max_rp_offset()) {
+        if (_reader->is_eof()) {
             // move to the next segment
             vlog(_ctxlog.debug, "maybe_reset_stream condition triggered");
             _it++;
@@ -467,11 +464,11 @@ void remote_partition::update_segments_incrementally() {
 
 /// Materialize segment if needed and create a reader
 std::unique_ptr<remote_segment_batch_reader> remote_partition::borrow_reader(
-  log_reader_config config, model::offset key, segment_state& st) {
+  storage::log_reader_config config, model::offset key, segment_state& st) {
     struct visit_materialize_make_reader {
         segment_state& state;
         remote_partition* part;
-        const log_reader_config& config;
+        const storage::log_reader_config& config;
         const model::offset offset_key;
 
         std::unique_ptr<remote_segment_batch_reader>
@@ -524,7 +521,7 @@ ss::future<model::record_batch_reader> remote_partition::make_reader(
         update_segments_incrementally();
     }
     auto impl = std::make_unique<partition_record_batch_reader_impl>(
-      log_reader_config(config), shared_from_this());
+      config, shared_from_this());
     model::record_batch_reader rdr(std::move(impl));
     co_return rdr;
 }
@@ -571,7 +568,7 @@ void remote_partition::materialized_segment_state::return_reader(
 /// In either case return a reader.
 std::unique_ptr<remote_segment_batch_reader>
 remote_partition::materialized_segment_state::borrow_reader(
-  const log_reader_config& cfg, retry_chain_logger& ctxlog) {
+  const storage::log_reader_config& cfg, retry_chain_logger& ctxlog) {
     atime = ss::lowres_clock::now();
     for (auto it = readers.begin(); it != readers.end(); it++) {
         if ((*it)->config().start_offset == cfg.start_offset) {

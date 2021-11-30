@@ -134,7 +134,7 @@ FIXTURE_TEST(
       = remote.upload_segment(bucket, name, clen, reset_stream, m, fib).get();
     BOOST_REQUIRE(upl_res == upload_result::success);
 
-    log_reader_config reader_config(
+    storage::log_reader_config reader_config(
       model::offset(1), model::offset(1), ss::default_priority_class());
     auto segment = ss::make_lw_shared<remote_segment>(
       remote, *cache, bucket, m, name, fib);
@@ -209,7 +209,8 @@ void test_remote_segment_batch_reader(
     model::offset begin = headers.at(ix_begin).base_offset;
     model::offset end = headers.at(ix_end).last_offset();
 
-    log_reader_config reader_config(begin, end, ss::default_priority_class());
+    storage::log_reader_config reader_config(
+      begin, end, ss::default_priority_class());
     reader_config.max_bytes = std::numeric_limits<size_t>::max();
 
     m.add(
@@ -329,7 +330,7 @@ FIXTURE_TEST(
 
     remote_segment_batch_reader reader(
       segment,
-      log_reader_config(
+      storage::log_reader_config(
         headers.at(0).base_offset,
         headers.at(0).last_offset(),
         ss::default_priority_class()));

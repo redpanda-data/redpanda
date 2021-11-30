@@ -268,7 +268,7 @@ public:
     using stop_parser = storage::batch_consumer::stop_parser;
 
     remote_segment_batch_consumer(
-      log_reader_config& conf,
+      storage::log_reader_config& conf,
       remote_segment_batch_reader& parent,
       model::term_id term,
       model::offset initial_delta,
@@ -306,16 +306,13 @@ public:
     /// \note this can only be applied to current record batch
     void
     advance_config_offsets(const model::record_batch_header& header) noexcept {
+        _parent._cur_rp_offset = header.last_offset() + model::offset{1};
+
         if (header.type == model::record_batch_type::raft_data) {
             auto next = rp_to_kafka(header.last_offset()) + model::offset(1);
             if (next > _config.start_offset) {
                 _config.start_offset = next;
             }
-        }
-
-        auto next_rp = header.last_offset() + model::offset{1};
-        if (next_rp > _config.next_offset_redpanda) {
-            _config.next_offset_redpanda = next_rp;
         }
     }
 
@@ -445,7 +442,7 @@ public:
     }
 
 private:
-    log_reader_config& _config;
+    storage::log_reader_config& _config;
     remote_segment_batch_reader& _parent;
     model::record_batch_header _header;
     iobuf _records;
@@ -456,12 +453,13 @@ private:
 };
 
 remote_segment_batch_reader::remote_segment_batch_reader(
-  ss::lw_shared_ptr<remote_segment> s, const log_reader_config& config) noexcept
+  ss::lw_shared_ptr<remote_segment> s, const storage::log_reader_config& config) noexcept
   : _seg(std::move(s))
   , _config(config)
   , _rtc(_seg->get_retry_chain_node())
   , _ctxlog(cst_log, _rtc, _seg->get_ntp().path())
-  , _initial_delta(_seg->get_base_offset_delta()) {}
+  , _initial_delta(_seg->get_base_offset_delta())
+  , _cur_rp_offset(_seg->get_base_rp_offset()) {}
 
 ss::future<result<ss::circular_buffer<model::record_batch>>>
 remote_segment_batch_reader::read_some(

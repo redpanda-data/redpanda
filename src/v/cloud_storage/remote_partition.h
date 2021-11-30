@@ -121,8 +121,8 @@ private:
 
         /// Borrow reader or make a new one.
         /// In either case return a reader.
-        std::unique_ptr<remote_segment_batch_reader>
-        borrow_reader(const log_reader_config& cfg, retry_chain_logger& ctxlog);
+        std::unique_ptr<remote_segment_batch_reader> borrow_reader(
+          const storage::log_reader_config& cfg, retry_chain_logger& ctxlog);
 
         ss::future<> stop();
 
@@ -154,7 +154,9 @@ private:
     /// \param offset_key is an key of the segment state in the _segments
     /// \param st is a segment state referenced by offset_key
     std::unique_ptr<remote_segment_batch_reader> borrow_reader(
-      log_reader_config config, model::offset offset_key, segment_state& st);
+      storage::log_reader_config config,
+      model::offset offset_key,
+      segment_state& st);
 
     /// Return reader back to segment_state
     void return_reader(
