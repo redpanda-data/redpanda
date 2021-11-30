@@ -26,8 +26,6 @@ spec:
       name: datadir
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
       readOnly: true
-  - name: rpk-status
-    image: "localhost/redpanda:dev"
 status:
   phase: "Running"
 
@@ -52,7 +50,5 @@ spec:
       name: datadir
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
       readOnly: true
-  - name: rpk-status
-    image: "localhost/redpanda:dev"
 status:
   phase: "Running"

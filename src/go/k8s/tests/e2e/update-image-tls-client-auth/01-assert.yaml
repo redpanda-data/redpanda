@@ -28,8 +28,6 @@ spec:
       name: shadow-index-cache
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
       readOnly: true
-  - name: rpk-status
-    image: "vectorized/redpanda:v21.10.1-si-beta14"
 status:
   phase: "Running"
 
@@ -56,7 +54,5 @@ spec:
       name: shadow-index-cache
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
       readOnly: true
-  - name: rpk-status
-    image: "vectorized/redpanda:v21.10.1-si-beta14"
 status:
   phase: "Running"
