@@ -13,6 +13,7 @@
 #include "kafka/protocol/describe_configs.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/incremental_alter_configs.h"
+#include "kafka/protocol/metadata.h"
 #include "kafka/protocol/schemata/alter_configs_request.h"
 #include "kafka/protocol/schemata/describe_configs_request.h"
 #include "kafka/protocol/schemata/describe_configs_response.h"
@@ -111,13 +112,17 @@ public:
         };
     }
 
-    kafka::describe_configs_response
-    describe_configs(const model::topic& topic) {
+    kafka::describe_configs_response describe_configs(
+      const ss::sstring& resource_name,
+      std::optional<std::vector<ss::sstring>> configuration_keys = std::nullopt,
+      kafka::config_resource_type resource_type
+      = kafka::config_resource_type::topic) {
         kafka::describe_configs_request req;
 
         kafka::describe_configs_resource res{
-          .resource_type = kafka::config_resource_type::topic,
-          .resource_name = topic,
+          .resource_type = resource_type,
+          .resource_name = resource_name,
+          .configuration_keys = configuration_keys,
         };
         req.data.resources.push_back(std::move(res));
         return do_with_client([req = std::move(req)](
@@ -152,6 +157,46 @@ public:
           .get();
     }
 
+    void assert_property_presented(
+      const ss::sstring& resource_name,
+      const ss::sstring& key,
+      const kafka::describe_configs_response resp,
+      const bool presented) {
+        auto it = std::find_if(
+          resp.data.results.begin(),
+          resp.data.results.end(),
+          [&resource_name](const kafka::describe_configs_result& res) {
+              return res.resource_name == resource_name;
+          });
+        BOOST_REQUIRE(it != resp.data.results.end());
+
+        auto cfg_it = std::find_if(
+          it->configs.begin(),
+          it->configs.end(),
+          [&key](const kafka::describe_configs_resource_result& res) {
+              return res.name == key;
+          });
+        if (presented) {
+            BOOST_REQUIRE(cfg_it != it->configs.end());
+        } else {
+            BOOST_REQUIRE(cfg_it == it->configs.end());
+        }
+    }
+
+    void assert_properties_amount(
+      const ss::sstring& resource_name,
+      const kafka::describe_configs_response resp,
+      const size_t amount) {
+        auto it = std::find_if(
+          resp.data.results.begin(),
+          resp.data.results.end(),
+          [&resource_name](const kafka::describe_configs_result& res) {
+              return res.resource_name == resource_name;
+          });
+        BOOST_REQUIRE(it != resp.data.results.end());
+        BOOST_REQUIRE(it->configs.size() == amount);
+    }
+
     void assert_property_value(
       const model::topic& topic,
       const ss::sstring& key,
@@ -176,6 +221,189 @@ public:
         BOOST_REQUIRE_EQUAL(cfg_it->value, value);
     }
 };
+
+FIXTURE_TEST(
+  test_broker_describe_configs_requested_properties,
+  alter_config_test_fixture) {
+    wait_for_controller_leadership().get();
+    model::topic test_tp{"topic-1"};
+    create_topic(test_tp, 6);
+
+    kafka::metadata_request req;
+    req.data.topics = std::nullopt;
+    auto client = make_kafka_client().get0();
+    client.connect().get();
+    auto resp = client.dispatch(req, kafka::api_version(1)).get0();
+    client.stop().then([&client] { client.shutdown(); }).get();
+    auto broker_id = std::to_string(resp.data.brokers[0].node_id());
+
+    std::vector<ss::sstring> all_properties = {
+      "listeners",
+      "advertised.listeners",
+      "log.segment.bytes",
+      "log.retention.bytes",
+      "log.retention.ms",
+      "num.partitions",
+      "default.replication.factor",
+      "log.dirs",
+      "auto.create.topics.enable"};
+
+    // All properies_request
+    auto all_describe_resp = describe_configs(
+      broker_id, std::nullopt, kafka::config_resource_type::broker);
+    assert_properties_amount(
+      broker_id, all_describe_resp, all_properties.size());
+    for (const auto& property : all_properties) {
+        assert_property_presented(broker_id, property, all_describe_resp, true);
+    }
+
+    // Single properies_request
+    for (const auto& request_property : all_properties) {
+        std::vector<ss::sstring> request_properties = {request_property};
+        auto single_describe_resp = describe_configs(
+          broker_id,
+          std::make_optional(request_properties),
+          kafka::config_resource_type::broker);
+        assert_properties_amount(broker_id, single_describe_resp, 1);
+        for (const auto& property : all_properties) {
+            assert_property_presented(
+              broker_id,
+              property,
+              single_describe_resp,
+              property == request_property);
+        }
+    }
+
+    // Group properties_request
+    std::vector<ss::sstring> first_group_config_properties = {
+      "listeners",
+      "advertised.listeners",
+      "log.segment.bytes",
+      "log.retention.bytes",
+      "log.retention.ms"};
+
+    std::vector<ss::sstring> second_group_config_properties = {
+      "num.partitions",
+      "default.replication.factor",
+      "log.dirs",
+      "auto.create.topics.enable"};
+
+    auto first_group_describe_resp = describe_configs(
+      broker_id,
+      std::make_optional(first_group_config_properties),
+      kafka::config_resource_type::broker);
+    assert_properties_amount(
+      broker_id,
+      first_group_describe_resp,
+      first_group_config_properties.size());
+    for (const auto& property : first_group_config_properties) {
+        assert_property_presented(
+          broker_id, property, first_group_describe_resp, true);
+    }
+    for (const auto& property : second_group_config_properties) {
+        assert_property_presented(
+          broker_id, property, first_group_describe_resp, false);
+    }
+
+    auto second_group_describe_resp = describe_configs(
+      broker_id,
+      std::make_optional(second_group_config_properties),
+      kafka::config_resource_type::broker);
+    assert_properties_amount(
+      broker_id,
+      second_group_describe_resp,
+      second_group_config_properties.size());
+    for (const auto& property : first_group_config_properties) {
+        assert_property_presented(
+          broker_id, property, second_group_describe_resp, false);
+    }
+    for (const auto& property : second_group_config_properties) {
+        assert_property_presented(
+          broker_id, property, second_group_describe_resp, true);
+    }
+}
+
+FIXTURE_TEST(
+  test_topic_describe_configs_requested_properties, alter_config_test_fixture) {
+    wait_for_controller_leadership().get();
+    model::topic test_tp{"topic-1"};
+    create_topic(test_tp, 6);
+
+    std::vector<ss::sstring> all_properties = {
+      "retention.ms",
+      "retention.bytes",
+      "replication_factor",
+      "partition_count",
+      "segment.bytes",
+      "cleanup.policy",
+      "compression.type",
+      "message.timestamp.type",
+      "redpanda.datapolicy"};
+
+    // All properies_request
+    auto all_describe_resp = describe_configs(test_tp);
+    assert_properties_amount(test_tp, all_describe_resp, all_properties.size());
+    for (const auto& property : all_properties) {
+        assert_property_presented(test_tp, property, all_describe_resp, true);
+    }
+
+    // Single properies_request
+    for (const auto& request_property : all_properties) {
+        std::vector<ss::sstring> request_properties = {request_property};
+        auto single_describe_resp = describe_configs(
+          test_tp, std::make_optional(request_properties));
+        assert_properties_amount(test_tp, single_describe_resp, 1);
+        for (const auto& property : all_properties) {
+            assert_property_presented(
+              test_tp,
+              property,
+              single_describe_resp,
+              property == request_property);
+        }
+    }
+
+    // Group properties_request
+    std::vector<ss::sstring> first_group_config_properties = {
+      "retention.ms",
+      "retention.bytes",
+      "replication_factor",
+      "partition_count",
+      "segment.bytes"};
+
+    std::vector<ss::sstring> second_group_config_properties = {
+      "cleanup.policy",
+      "compression.type",
+      "message.timestamp.type",
+      "redpanda.datapolicy"};
+
+    auto first_group_describe_resp = describe_configs(
+      test_tp, std::make_optional(first_group_config_properties));
+    assert_properties_amount(
+      test_tp, first_group_describe_resp, first_group_config_properties.size());
+    for (const auto& property : first_group_config_properties) {
+        assert_property_presented(
+          test_tp, property, first_group_describe_resp, true);
+    }
+    for (const auto& property : second_group_config_properties) {
+        assert_property_presented(
+          test_tp, property, first_group_describe_resp, false);
+    }
+
+    auto second_group_describe_resp = describe_configs(
+      test_tp, std::make_optional(second_group_config_properties));
+    assert_properties_amount(
+      test_tp,
+      second_group_describe_resp,
+      second_group_config_properties.size());
+    for (const auto& property : first_group_config_properties) {
+        assert_property_presented(
+          test_tp, property, second_group_describe_resp, false);
+    }
+    for (const auto& property : second_group_config_properties) {
+        assert_property_presented(
+          test_tp, property, second_group_describe_resp, true);
+    }
+}
 
 FIXTURE_TEST(test_alter_single_topic_config, alter_config_test_fixture) {
     wait_for_controller_leadership().get();

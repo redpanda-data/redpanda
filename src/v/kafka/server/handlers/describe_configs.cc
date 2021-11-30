@@ -36,6 +36,17 @@
 
 namespace kafka {
 
+static bool config_property_requested(
+  const std::optional<std::vector<ss::sstring>>& configuration_keys,
+  const std::string_view property_name) {
+    return !configuration_keys.has_value()
+           || std::find(
+                configuration_keys->begin(),
+                configuration_keys->end(),
+                property_name)
+                != configuration_keys->end();
+}
+
 template<typename T>
 static void add_config(
   describe_configs_result& result,
@@ -47,6 +58,18 @@ static void add_config(
       .value = ssx::sformat("{}", value),
       .config_source = source,
     });
+}
+
+template<typename T>
+static void add_config_if_requested(
+  const describe_configs_resource& resource,
+  describe_configs_result& result,
+  std::string_view name,
+  T value,
+  describe_configs_source source) {
+    if (config_property_requested(resource.configuration_keys, name)) {
+        add_config(result, name, value, source);
+    }
 }
 
 template<typename T>
@@ -101,6 +124,24 @@ static void add_broker_config(
 }
 
 template<typename T, typename Func>
+static void add_broker_config_if_requested(
+  const describe_configs_resource& resource,
+  describe_configs_result& result,
+  std::string_view name,
+  const config::property<T>& property,
+  bool include_synonyms,
+  Func&& describe_f) {
+    if (config_property_requested(resource.configuration_keys, name)) {
+        add_broker_config(
+          result,
+          name,
+          property,
+          include_synonyms,
+          std::forward<Func>(describe_f));
+    }
+}
+
+template<typename T, typename Func>
 static void add_topic_config(
   describe_configs_result& result,
   std::string_view default_name,
@@ -139,6 +180,28 @@ static void add_topic_config(
     });
 }
 
+template<typename T, typename Func>
+static void add_topic_config_if_requested(
+  const describe_configs_resource& resource,
+  describe_configs_result& result,
+  std::string_view default_name,
+  const T& default_value,
+  std::string_view override_name,
+  const std::optional<T>& overrides,
+  bool include_synonyms,
+  Func&& describe_f) {
+    if (config_property_requested(resource.configuration_keys, override_name)) {
+        add_topic_config(
+          result,
+          default_name,
+          default_value,
+          override_name,
+          overrides,
+          include_synonyms,
+          std::forward<Func>(describe_f));
+    }
+}
+
 template<typename T>
 static void add_topic_config(
   describe_configs_result& result,
@@ -164,6 +227,26 @@ static void add_topic_config(
       [](const ss::sstring& s) { return s; });
 }
 
+template<typename T>
+static void add_topic_config_if_requested(
+  const describe_configs_resource& resource,
+  describe_configs_result& result,
+  std::string_view default_name,
+  const std::optional<T>& default_value,
+  std::string_view override_name,
+  const tristate<T>& overrides,
+  bool include_synonyms) {
+    if (config_property_requested(resource.configuration_keys, override_name)) {
+        add_topic_config(
+          result,
+          default_name,
+          default_value,
+          override_name,
+          overrides,
+          include_synonyms);
+    }
+}
+
 static ss::sstring
 kafka_endpoint_format(const std::vector<model::broker_endpoint>& endpoints) {
     std::vector<ss::sstring> uris;
@@ -182,8 +265,10 @@ kafka_endpoint_format(const std::vector<model::broker_endpoint>& endpoints) {
     return ssx::sformat("{}", fmt::join(uris, ","));
 }
 
-static void
-report_broker_config(describe_configs_result& result, bool include_synonyms) {
+static void report_broker_config(
+  const describe_configs_resource& resource,
+  describe_configs_result& result,
+  bool include_synonyms) {
     if (!result.resource_name.empty()) {
         int32_t broker_id = -1;
         auto res = std::from_chars(
@@ -208,28 +293,32 @@ report_broker_config(describe_configs_result& result, bool include_synonyms) {
         }
     }
 
-    add_broker_config(
+    add_broker_config_if_requested(
+      resource,
       result,
       "listeners",
       config::node().kafka_api,
       include_synonyms,
       &kafka_endpoint_format);
 
-    add_broker_config(
+    add_broker_config_if_requested(
+      resource,
       result,
       "advertised.listeners",
       config::node().advertised_kafka_api_property(),
       include_synonyms,
       &kafka_endpoint_format);
 
-    add_broker_config(
+    add_broker_config_if_requested(
+      resource,
       result,
       "log.segment.bytes",
       config::shard_local_cfg().log_segment_size,
       include_synonyms,
       &describe_as_string<size_t>);
 
-    add_broker_config(
+    add_broker_config_if_requested(
+      resource,
       result,
       "log.retention.bytes",
       config::shard_local_cfg().retention_bytes,
@@ -238,7 +327,8 @@ report_broker_config(describe_configs_result& result, bool include_synonyms) {
           return ssx::sformat("{}", sz ? sz.value() : -1);
       });
 
-    add_broker_config(
+    add_broker_config_if_requested(
+      resource,
       result,
       "log.retention.ms",
       config::shard_local_cfg().delete_retention_ms,
@@ -247,21 +337,24 @@ report_broker_config(describe_configs_result& result, bool include_synonyms) {
           return ssx::sformat("{}", ms.count());
       });
 
-    add_broker_config(
+    add_broker_config_if_requested(
+      resource,
       result,
       "num.partitions",
       config::shard_local_cfg().default_topic_partitions,
       include_synonyms,
       &describe_as_string<int32_t>);
 
-    add_broker_config(
+    add_broker_config_if_requested(
+      resource,
       result,
       "default.replication.factor",
       config::shard_local_cfg().default_topic_replication,
       include_synonyms,
       &describe_as_string<int16_t>);
 
-    add_broker_config(
+    add_broker_config_if_requested(
+      resource,
       result,
       "log.dirs",
       config::node().data_directory,
@@ -270,7 +363,8 @@ report_broker_config(describe_configs_result& result, bool include_synonyms) {
           return path.as_sstring();
       });
 
-    add_broker_config(
+    add_broker_config_if_requested(
+      resource,
       result,
       "auto.create.topics.enable",
       config::shard_local_cfg().auto_create_topics_enabled,
@@ -349,13 +443,15 @@ ss::future<response_ptr> describe_configs_handler::handle(
             /**
              * Redpanda extensions
              */
-            add_config(
+            add_config_if_requested(
+              resource,
               result,
               "partition_count",
               topic_config->partition_count,
               describe_configs_source::topic);
 
-            add_config(
+            add_config_if_requested(
+              resource,
               result,
               "replication_factor",
               topic_config->replication_factor,
@@ -363,7 +459,8 @@ ss::future<response_ptr> describe_configs_handler::handle(
             /**
              * Kafka properties
              */
-            add_topic_config(
+            add_topic_config_if_requested(
+              resource,
               result,
               config::shard_local_cfg().log_compression_type.name(),
               ctx.metadata_cache().get_default_compression(),
@@ -372,7 +469,8 @@ ss::future<response_ptr> describe_configs_handler::handle(
               request.data.include_synonyms,
               &describe_as_string<model::compression>);
 
-            add_topic_config(
+            add_topic_config_if_requested(
+              resource,
               result,
               config::shard_local_cfg().log_cleanup_policy.name(),
               ctx.metadata_cache().get_default_cleanup_policy_bitflags(),
@@ -381,7 +479,8 @@ ss::future<response_ptr> describe_configs_handler::handle(
               request.data.include_synonyms,
               &describe_as_string<model::cleanup_policy_bitflags>);
 
-            add_topic_config(
+            add_topic_config_if_requested(
+              resource,
               result,
               topic_config->properties.is_compacted()
                 ? config::shard_local_cfg().compacted_log_segment_size.name()
@@ -395,7 +494,8 @@ ss::future<response_ptr> describe_configs_handler::handle(
               request.data.include_synonyms,
               &describe_as_string<size_t>);
 
-            add_topic_config(
+            add_topic_config_if_requested(
+              resource,
               result,
               config::shard_local_cfg().delete_retention_ms.name(),
               ctx.metadata_cache().get_default_retention_duration(),
@@ -403,7 +503,8 @@ ss::future<response_ptr> describe_configs_handler::handle(
               topic_config->properties.retention_duration,
               request.data.include_synonyms);
 
-            add_topic_config(
+            add_topic_config_if_requested(
+              resource,
               result,
               config::shard_local_cfg().retention_bytes.name(),
               ctx.metadata_cache().get_default_retention_bytes(),
@@ -411,7 +512,8 @@ ss::future<response_ptr> describe_configs_handler::handle(
               topic_config->properties.retention_bytes,
               request.data.include_synonyms);
 
-            add_topic_config(
+            add_topic_config_if_requested(
+              resource,
               result,
               config::shard_local_cfg().log_message_timestamp_type.name(),
               ctx.metadata_cache().get_default_timestamp_type(),
@@ -422,7 +524,8 @@ ss::future<response_ptr> describe_configs_handler::handle(
 
             // Data-policy property
             ss::sstring property_name = "redpanda.datapolicy";
-            add_topic_config(
+            add_topic_config_if_requested(
+              resource,
               result,
               property_name,
               v8_engine::data_policy("", ""),
@@ -439,7 +542,8 @@ ss::future<response_ptr> describe_configs_handler::handle(
                 result.error_code = error_code::cluster_authorization_failed;
                 continue;
             }
-            report_broker_config(result, request.data.include_synonyms);
+            report_broker_config(
+              resource, result, request.data.include_synonyms);
             break;
 
         // resource types not yet handled
