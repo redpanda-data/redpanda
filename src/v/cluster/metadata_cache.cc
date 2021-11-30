@@ -109,12 +109,25 @@ ss::future<std::vector<broker_ptr>> metadata_cache::all_alive_brokers() const {
         co_return _members_table.local().all_brokers();
     }
 
+    std::set<model::node_id> brokers_with_health;
     for (auto& st : res.value()) {
         if (st.is_alive) {
             auto broker = _members_table.local().get_broker(st.id);
+            brokers_with_health.insert(st.id);
             if (broker) {
                 brokers.push_back(std::move(*broker));
             }
+        }
+    }
+
+    // Corner case during node joins:
+    // If a node appears in the members table but not in the health report,
+    // presume it is newly added and assume it is alive.  This avoids
+    // newly added nodes being inconsistently excluded from metadata
+    // responses until all nodes' health caches update.
+    for (const auto& broker : _members_table.local().all_brokers()) {
+        if (!brokers_with_health.contains(broker->id())) {
+            brokers.push_back(broker);
         }
     }
 
