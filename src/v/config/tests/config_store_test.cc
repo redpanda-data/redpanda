@@ -33,6 +33,9 @@ struct test_config : public config::config_store {
     config::property<std::optional<int16_t>> nullable_int;
     config::property<std::optional<ss::sstring>> nullable_string;
     config::property<bool> boolean;
+    config::property<std::chrono::seconds> seconds;
+    config::property<std::optional<std::chrono::seconds>> optional_seconds;
+    config::property<std::chrono::milliseconds> milliseconds;
 
     test_config()
       : optional_int(
@@ -76,7 +79,20 @@ struct test_config : public config::config_store {
           "boolean",
           "Plain boolean property",
           config::required::no,
-          false) {}
+          false)
+      , seconds(*this, "seconds", "Plain seconds", config::required::no, {})
+      , optional_seconds(
+          *this,
+          "optional_seconds",
+          "Optional seconds",
+          config::required::no,
+          {})
+      , milliseconds(
+          *this,
+          "milliseconds",
+          "Plain milliseconds",
+          config::required::no,
+          {}) {}
 };
 
 YAML::Node minimal_valid_configuration() {
@@ -318,4 +334,19 @@ SEASTAR_THREAD_TEST_CASE(property_metadata) {
     BOOST_TEST(cfg.boolean.type_name() == "boolean");
     BOOST_TEST(cfg.boolean.is_nullable() == false);
     BOOST_TEST(cfg.boolean.is_array() == false);
+
+    BOOST_TEST(cfg.seconds.type_name() == "integer");
+    BOOST_TEST(cfg.seconds.units_name() == "s");
+    BOOST_TEST(cfg.seconds.is_nullable() == false);
+    BOOST_TEST(cfg.seconds.is_array() == false);
+
+    BOOST_TEST(cfg.optional_seconds.type_name() == "integer");
+    BOOST_TEST(cfg.optional_seconds.units_name() == "s");
+    BOOST_TEST(cfg.optional_seconds.is_nullable() == true);
+    BOOST_TEST(cfg.optional_seconds.is_array() == false);
+
+    BOOST_TEST(cfg.milliseconds.type_name() == "integer");
+    BOOST_TEST(cfg.milliseconds.units_name() == "ms");
+    BOOST_TEST(cfg.milliseconds.is_nullable() == false);
+    BOOST_TEST(cfg.milliseconds.is_array() == false);
 };
