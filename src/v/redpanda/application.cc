@@ -59,6 +59,7 @@
 #include "test_utils/logs.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
+#include "v8_engine/api.h"
 #include "v8_engine/data_policy_table.h"
 #include "version.h"
 #include "vlog.h"
@@ -648,6 +649,9 @@ void application::wire_up_redpanda_services() {
       std::ref(shadow_index_cache))
       .get();
     vlog(_log.info, "Partition manager started");
+
+    construct_single_service(v8_api);
+    v8_api->start(ss::engine().alien()).get();
 
     // controller
 
