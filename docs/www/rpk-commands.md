@@ -442,11 +442,10 @@ Create users
 
 ```cmd
 Usage:
-  rpk acl user create [flags]
+  rpk acl user create [username] [flags]
 
 Flags:
-      --new-password string   The new user's password
-      --new-username string   The user to be created
+      --password string   The new user's password
 ```
 
 #### acl user delete 
