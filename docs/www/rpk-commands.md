@@ -137,7 +137,7 @@ Flags:
 
 OS support: ![Linux][linux]
 
-Initialize the configuration to bootstrap a cluster. --id is mandatory. `bootstrap` will expect the machine it's running on to have only one non-loopback IP address associated to it, and use it in the configuration as the node's address. If it has multiple IPs, --self must be specified. In that case, the given IP will be used without checking whether it's among the machine's addresses or not. The elements in --ips must be separated by a comma, no spaces. If omitted, the node will be configured as a root node, that otherones can join later.
+Initialize the configuration to bootstrap a cluster. `--id` is mandatory. `bootstrap` will expect the machine it's running on to have only one non-loopback IP address associated to it, and use it in the configuration as the node's address. If it has multiple IPs, `--self` must be specified. In that case, the given IP will be used without checking whether it's among the machine's addresses or not. The elements in `--ips` must be separated by a comma, no spaces. If omitted, the node will be configured as a root node, that other ones can join later.
 
 ```cmd
 Usage:
@@ -531,7 +531,7 @@ If `--seed-addr` is passed, it will be used to discover the rest of the cluster
 hosts via redpanda's Kafka API. If `--node-addrs` is passed, they will be used
 directly. Otherwise, `rpk generate prometheus-conf` will read the redpanda
 config file and use the node IP configured there. `--config` may be passed to
-especify an arbitrary config file.
+specify an arbitrary config file.
 
 ```cmd
 Usage:
