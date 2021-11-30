@@ -69,3 +69,4 @@ class CompactedTopicVerifier:
         except subprocess.CalledProcessError as e:
             self._redpanda.logger.error("Error (%d) executing verifier:\n %s",
                                         e.returncode, e.output)
+            raise
