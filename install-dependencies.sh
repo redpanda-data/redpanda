@@ -60,6 +60,24 @@ fedora_deps=(
   xz
   zip
 )
+arch_deps=(
+  ccache
+  clang
+  curl
+  git
+  zstd
+  llvm
+  lld
+  pkg-config
+  procps
+  python-jinja
+  python-virtualenv
+  rapidjson
+  snappy
+  xxhash
+  xz
+  zip
+)
 
 case "$ID" in
   ubuntu | debian)
@@ -68,6 +86,9 @@ case "$ID" in
     ;;
   fedora)
     dnf install -y "${fedora_deps[@]}"
+    ;;
+  arch)
+    pacman -Sy --needed --noconfirm "${arch_deps[@]}"
     ;;
   *)
     echo "Please help us make the script better by sending patches with your OS $ID"
@@ -93,7 +114,7 @@ git checkout ecdc362593cfee1ade115ead7be6c3e96b2e7384
 mkdir $DEPOT_TOOLS_DIR/installed-gn
 
 # Download gn (git_revision:e0c476ffc83dc10897cb90b45c03ae2539352c5c)
-case $(uname -i) in
+case $(uname -m) in
   x86_64)
     link_for_gn="https://chrome-infra-packages.appspot.com/dl/gn/gn/linux-amd64/+/COENCtFXQmybPdz3KQBjmuSaCK4qdzmzwuCJHQKxovEC"
     ;;
