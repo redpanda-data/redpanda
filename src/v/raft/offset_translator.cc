@@ -394,6 +394,14 @@ ss::future<> offset_translator::sync_with_log(
     co_await std::move(reader).for_each_ref(
       log_consumer{*this}, model::no_timeout);
 
+    if (_highest_known_offset < log_offsets.dirty_offset) {
+        throw std::runtime_error{_logger.format(
+          "couldn't sync offset translator up to the log tip, "
+          "highest_known_offset: {}, log dirty offset: {}",
+          _highest_known_offset,
+          log_offsets.dirty_offset)};
+    }
+
     vlog(
       _logger.info,
       "synced with log, base offset/delta: {}/{}, map size: {}, last delta: "
