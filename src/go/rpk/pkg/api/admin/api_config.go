@@ -121,3 +121,29 @@ func (a *AdminAPI) PatchClusterConfig(
 	}
 	return result, nil
 }
+
+type ConfigStatus struct {
+	NodeId        int64    `json:"node_id"`
+	Restart       bool     `json:"restart"`
+	ConfigVersion int64    `json:"config_version"`
+	Invalid       []string `json:"invalid"`
+	Unknown       []string `json:"unknown"`
+}
+
+type ConfigStatusResponse []ConfigStatus
+
+func (a *AdminAPI) ClusterConfigStatus() (ConfigStatusResponse, error) {
+	var rawResp []byte
+	err := a.sendOne(http.MethodGet, "/v1/cluster_config/status", nil, &rawResp)
+	if err != nil {
+		return nil, err
+	}
+
+	var result ConfigStatusResponse
+	err = json.Unmarshal(rawResp, &result)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}

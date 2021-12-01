@@ -15,6 +15,7 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/cluster/config/edit"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/cluster/config/export"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/cluster/config/importconfig"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/cluster/config/status"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 )
@@ -57,6 +58,7 @@ func NewConfigCommand(fs afero.Fs) *cobra.Command {
 	command.AddCommand(importconfig.NewCommand(fs, &all))
 	command.AddCommand(export.NewCommand(fs, &all))
 	command.AddCommand(edit.NewCommand(fs, &all))
+	command.AddCommand(status.NewCommand(fs))
 
 	return command
 }
