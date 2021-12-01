@@ -41,6 +41,19 @@ segment_appender make_segment_appender(ss::file file) {
       segment_appender::options(ss::default_priority_class(), 1));
 }
 
+iobuf make_random_data(size_t len) {
+    size_t random_len = std::min(1024UL, len); // NOLINT local constant
+    const auto rbuf = random_generators::gen_alphanum_string(random_len);
+    iobuf output;
+    size_t left = len;
+    while (left > 0) {
+        size_t copy_len = std::min(left, random_len);
+        output.append(rbuf.data(), copy_len);
+        left -= copy_len;
+    }
+    BOOST_CHECK_EQUAL(len, output.size_bytes());
+    return output;
+}
 } // namespace
 
 SEASTAR_THREAD_TEST_CASE(test_can_append_multiple_flushes) {
@@ -135,15 +148,8 @@ SEASTAR_THREAD_TEST_CASE(test_can_append_10MB) {
     auto appender = make_segment_appender(f);
 
     for (size_t i = 0; i < 10; ++i) {
-        iobuf original;
         constexpr size_t one_meg = 1024 * 1024;
-        {
-            const auto data = random_generators::gen_alphanum_string(1024);
-            for (size_t i = 0; i < 1024; ++i) {
-                original.append(data.data(), data.size());
-            }
-        }
-        BOOST_CHECK_EQUAL(one_meg, original.size_bytes());
+        iobuf original = make_random_data(one_meg);
         appender.append(original).get();
         appender.flush().get();
 
@@ -160,14 +166,8 @@ SEASTAR_THREAD_TEST_CASE(
     auto appender = make_segment_appender(f);
 
     // write sequential. then read all
-    iobuf original;
     constexpr size_t one_meg = 1024 * 1024;
-    {
-        const auto data = random_generators::gen_alphanum_string(1024);
-        for (size_t i = 0; i < 1024 * 10; ++i) {
-            original.append(data.data(), data.size());
-        }
-    }
+    iobuf original = make_random_data(one_meg);
     appender.append(original).get();
     appender.flush().get();
     for (size_t i = 0; i < 10; ++i) {
