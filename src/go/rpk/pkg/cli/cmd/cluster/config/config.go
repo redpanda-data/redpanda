@@ -15,6 +15,7 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/cluster/config/edit"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/cluster/config/export"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/cluster/config/importconfig"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/cluster/config/status"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 )
@@ -78,6 +79,7 @@ different redpanda version that does not recognize certain properties.`,
 		importconfig.NewCommand(fs, &all),
 		export.NewCommand(fs, &all),
 		edit.NewCommand(fs, &all),
+		status.NewCommand(fs),
 	)
 
 	return command

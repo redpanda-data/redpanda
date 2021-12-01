@@ -112,3 +112,23 @@ func (a *AdminAPI) PatchClusterConfig(
 
 	return result, nil
 }
+
+type ConfigStatus struct {
+	NodeId        int64    `json:"node_id"`
+	Restart       bool     `json:"restart"`
+	ConfigVersion int64    `json:"config_version"`
+	Invalid       []string `json:"invalid"`
+	Unknown       []string `json:"unknown"`
+}
+
+type ConfigStatusResponse []ConfigStatus
+
+func (a *AdminAPI) ClusterConfigStatus() (ConfigStatusResponse, error) {
+	var result ConfigStatusResponse
+	err := a.sendAny(http.MethodGet, "/v1/cluster_config/status", nil, &result)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
