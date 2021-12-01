@@ -33,7 +33,7 @@ type NodePortServiceResource struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
 	pandaCluster *redpandav1alpha1.Cluster
-	svcPorts     []NamedServicePort
+	svcPorts     []NamedServiceNodePort
 	logger       logr.Logger
 }
 
@@ -42,7 +42,7 @@ func NewNodePortService(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
-	svcPorts []NamedServicePort,
+	svcPorts []NamedServiceNodePort,
 	logger logr.Logger,
 ) *NodePortServiceResource {
 	return &NodePortServiceResource{
@@ -93,12 +93,16 @@ func copyPorts(newSvc, currentSvc *corev1.Service) {
 func (r *NodePortServiceResource) obj() (k8sclient.Object, error) {
 	ports := make([]corev1.ServicePort, 0, len(r.svcPorts))
 	for _, svcPort := range r.svcPorts {
-		ports = append(ports, corev1.ServicePort{
+		port := corev1.ServicePort{
 			Name:       svcPort.Name,
 			Protocol:   corev1.ProtocolTCP,
 			Port:       int32(svcPort.Port),
 			TargetPort: intstr.FromInt(svcPort.Port),
-		})
+		}
+		if !svcPort.GenerateNodePort {
+			port.NodePort = int32(svcPort.Port)
+		}
+		ports = append(ports, port)
 	}
 
 	objLabels := labels.ForCluster(r.pandaCluster)
