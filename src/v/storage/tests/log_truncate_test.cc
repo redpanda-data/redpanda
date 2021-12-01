@@ -413,7 +413,7 @@ FIXTURE_TEST(truncated_segment_recovery, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     cfg.stype = storage::log_config::storage_type::disk;
     auto ntp = model::ntp("default", "test", 0);
-    model::offset truncate_offset;
+    std::vector<model::offset> truncate_offsets;
 
     {
         storage::log_manager mgr = make_log_manager(cfg);
@@ -425,18 +425,32 @@ FIXTURE_TEST(truncated_segment_recovery, storage_test_fixture) {
         append_random_batches(log, 10, model::term_id(0));
         log.flush().get0();
 
-        auto all_batches = read_and_validate_all_batches(log);
-        truncate_offset = all_batches[4].base_offset();
-
         // truncate in the middle
-        info("Truncating at offset:{}", truncate_offset);
+        auto all_batches = read_and_validate_all_batches(log);
+        truncate_offsets.push_back(all_batches[4].base_offset());
+
+        info("Truncating at offset:{}", truncate_offsets.back());
         log
           .truncate(storage::truncate_config(
-            truncate_offset, ss::default_priority_class()))
-          .get0();
+            truncate_offsets.back(), ss::default_priority_class()))
+          .get();
 
         // force segment roll
-        append_random_batches(log, 3, model::term_id(1));
+        append_random_batches(log, 5, model::term_id(1));
+
+        // truncate near the end of the segment (past the last index mark)
+        all_batches = read_and_validate_all_batches(log);
+        truncate_offsets.push_back(all_batches.back().base_offset());
+
+        info("Truncating at offset:{}", truncate_offsets.back());
+        log
+          .truncate(storage::truncate_config(
+            truncate_offsets.back(), ss::default_priority_class()))
+          .get();
+
+        // force segment roll
+        append_random_batches(log, 3, model::term_id(2));
+
         log.flush().get();
     }
 
@@ -447,25 +461,32 @@ FIXTURE_TEST(truncated_segment_recovery, storage_test_fixture) {
       [&rec_mgr]() mutable { rec_mgr.stop().get0(); });
     auto rec_log
       = rec_mgr.manage(storage::ntp_config(ntp, cfg.base_dir)).get0();
-    auto& impl = *reinterpret_cast<disk_log_impl*>(rec_log.get_impl());
+    auto& impl = dynamic_cast<disk_log_impl&>(*rec_log.get_impl());
 
-    BOOST_REQUIRE_EQUAL(impl.segment_count(), 2);
-    auto seg_1 = impl.segments().begin();
-    auto offsets_1 = (*seg_1)->offsets();
-    auto seg_2 = std::next(impl.segments().begin());
-    auto offsets_2 = (*seg_2)->offsets();
+    BOOST_REQUIRE_EQUAL(impl.segment_count(), 3);
 
-    info("segment: {}", *seg_1);
-    BOOST_REQUIRE_EQUAL(offsets_1.base_offset, model::offset(0));
-    BOOST_REQUIRE_EQUAL(offsets_1.term, model::term_id(0));
+    size_t i_seg = 0;
+    for (auto seg_it = impl.segments().begin(); seg_it != impl.segments().end();
+         ++seg_it, ++i_seg) {
+        auto next = std::next(seg_it);
+        if (next == impl.segments().end()) {
+            // we are interested in all segments except the last.
+            break;
+        }
 
-    // first segment commited offset has to be lower than last segment base
-    // offset
-    BOOST_REQUIRE_EQUAL(offsets_2.base_offset, truncate_offset);
-    BOOST_REQUIRE_LT(offsets_1.committed_offset, offsets_2.base_offset);
+        info("segment: {}", *seg_it);
+        auto offsets = (*seg_it)->offsets();
+        auto truncate_offset = truncate_offsets[i_seg];
 
-    BOOST_REQUIRE_EQUAL(
-      offsets_1.dirty_offset, truncate_offset - model::offset(1));
+        BOOST_REQUIRE_EQUAL(
+          offsets.dirty_offset, truncate_offset - model::offset{1});
+
+        auto next_offsets = (*next)->offsets();
+        BOOST_REQUIRE_EQUAL(next_offsets.base_offset, truncate_offset);
+        // segment commited offset has to be lower than next segment base
+        // offset
+        BOOST_REQUIRE_LT(offsets.committed_offset, next_offsets.base_offset);
+    }
 }
 
 FIXTURE_TEST(test_concurrent_prefix_truncate_and_gc, storage_test_fixture) {
