@@ -297,9 +297,9 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
 // NOLINTNEXTLINE
 FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
     model::offset lso{9999};
-    const auto offset1 = model::offset(1000);
-    const auto offset2 = model::offset(2000);
-    const auto offset3 = model::offset(3000);
+    const auto offset1 = model::offset(0000);
+    const auto offset2 = model::offset(1000);
+    const auto offset3 = model::offset(2000);
     const auto offset4 = model::offset(10000);
     std::vector<segment_desc> segments = {
       {manifest_ntp, offset1, model::term_id(1)},
@@ -816,9 +816,9 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     // 100 and dirty offset 101, and B with base offset 100 and committed offset
     // 200, the archival_policy should return A and then B. Before the fix this
     // is not the case and it always retuns A.
-    const auto offset1 = model::offset(1000);
-    const auto offset2 = model::offset(2000);
-    const auto offset3 = model::offset(3000);
+    const auto offset1 = model::offset(0);
+    const auto offset2 = model::offset(1000);
+    const auto offset3 = model::offset(2000);
     std::vector<segment_desc> segments = {
       {manifest_ntp, offset1, model::term_id(1)},
       {manifest_ntp, offset2, model::term_id(1)},
@@ -835,12 +835,12 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     // actual data so having them a bit inconsistent for the sake of testing
     // is OK.
     auto segment1 = get_segment(
-      manifest_ntp, archival::segment_name("1000-1-v1.log"));
+      manifest_ntp, archival::segment_name("0-1-v1.log"));
     auto& tracker1 = const_cast<storage::segment::offset_tracker&>(
       segment1->offsets());
     tracker1.dirty_offset = offset2 - model::offset(1);
     auto segment2 = get_segment(
-      manifest_ntp, archival::segment_name("2000-1-v1.log"));
+      manifest_ntp, archival::segment_name("1000-1-v1.log"));
     auto& tracker2 = const_cast<storage::segment::offset_tracker&>(
       segment2->offsets());
     tracker2.dirty_offset = offset3 - model::offset(1);
