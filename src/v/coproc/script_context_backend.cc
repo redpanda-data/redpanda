@@ -200,17 +200,13 @@ static ss::future<> process_one_reply(
   process_batch_reply::data e,
   ss::lw_shared_ptr<source> src,
   output_write_args args) {
-    /// Ensure this 'script_context' instance is handling the correct reply
     if (e.id != args.id()) {
-        /// TODO: Maybe in the future errors of these type should mean redpanda
-        /// kill -9's the wasm engine.
-        vlog(
-          coproclog.error,
+        /// Engine got response mixed up with another request, protocol error
+        throw bad_reply_exception(ssx::sformat(
           "erranous reply from wasm engine, mismatched id observed, expected: "
           "{} and observed {}",
           args.id,
-          e.id);
-        co_return;
+          e.id));
     }
     if (!e.reader) {
         /// The wasm engine set the reader to std::nullopt meaning a fatal error
