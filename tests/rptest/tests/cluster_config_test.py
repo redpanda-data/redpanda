@@ -483,3 +483,33 @@ class ClusterConfigTest(RedpandaTest):
             "cloud_storage_access_key: \"foobaz\"")
         self._wait_for_version_sync(version_b)
         self._check_value_everywhere("cloud_storage_access_key", "foobaz")
+
+    @cluster(num_nodes=3)
+    def test_rpk_status(self):
+        """
+        This command is a thin wrapper over the status API
+        that is covered more comprehensively in other tests: this
+        case is just a superficial test that the command succeeds and
+        returns info for each node.
+        """
+        status_text = self.rpk.cluster_config_status()
+
+        # Split into lines, skip first one (header)
+        lines = status_text.strip().split("\n")[1:]
+
+        # Example:
+
+        # NODE  CONFIG_VERSION  NEEDS_RESTART  INVALID  UNKNOWN
+        # 0     17              false          []       []
+
+        assert len(lines) == len(self.redpanda.nodes)
+
+        for i, l in enumerate(lines):
+            m = re.match(
+                "^(\d+)\s+(\d+)\s+(true|false)\s+\[(.*)\]\s+\[(.*)\]$", l)
+            assert m is not None
+            node_id, config_version, needs_restart, invalid, unknown = m.groups(
+            )
+
+            node = self.redpanda.nodes[i]
+            assert int(node_id) == self.redpanda.idx(node)

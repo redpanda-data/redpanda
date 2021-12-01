@@ -248,6 +248,13 @@ class RpkTool:
             cmd.append("--all")
         return self._execute(cmd)
 
+    def cluster_config_status(self):
+        cmd = [
+            self._rpk_binary(), "--api-urls",
+            self._admin_host(), "cluster", "config", "status"
+        ]
+        return self._execute(cmd)
+
     def _execute(self, cmd, stdin=None, timeout=None):
         if timeout is None:
             timeout = DEFAULT_TIMEOUT
