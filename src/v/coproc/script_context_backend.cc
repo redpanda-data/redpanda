@@ -282,12 +282,7 @@ static ss::future<> process_reply_group(
     }
     auto src_ptr = found->second;
     for (auto& e : reply_group) {
-        try {
-            co_await process_one_reply(std::move(e), src_ptr, args);
-        } catch (const bad_reply_exception& ex) {
-            /// A bad reply shouldn't affect the outcome, just ignore
-            vlog(coproclog.error, "Erraneous response detected: {}", ex);
-        }
+        co_await process_one_reply(std::move(e), src_ptr, args);
     }
     /// If we've reached here without error, all materialized
     /// partitions (working under the input) can be promoted, rational is to
