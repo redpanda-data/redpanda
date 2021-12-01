@@ -45,11 +45,34 @@ private:
 
 storage::log_reader_config get_reader(
   ss::abort_source& abort_src, read_context& rctx, const write_context& wctx) {
-    rctx.last_acked = wctx.offsets.empty() ? rctx.absolute_start
-                                           : wctx.min_offset();
+    auto offsets = wctx.unique_offsets();
+    model::offset start, end;
+    if (offsets.empty()) {
+        start = rctx.absolute_start;
+        end = rctx.input->last_stable_offset();
+    } else if (offsets.size() == 1) {
+        start = *offsets.begin();
+        end = rctx.input->last_stable_offset();
+    } else {
+        /// The fact that this case was entered means a retry is to be performed
+        /// since there is a difference in where all output topics stand.
+        start = *offsets.begin();
+        /// Limit the read to process only up until the next output topic. This
+        /// way \ref last_read isn't ahead of any logs which would perform a
+        /// promotion after the response is processed in
+        /// script_context_backend.cc
+        end = *(++offsets.begin()) - model::offset{1};
+    }
+    /// The 'high watermark' of the current read. All output topics have
+    /// processed all inputs below this value. When the offsets map for all
+    /// outputs has values equivlent to this, it means all outputs are up to
+    /// date and a new 'high watermark' can be promoted due to read progressing
+    /// forward.
+    vassert(start <= end, "Offset logic error start: {} end: {}", start, end);
+    rctx.last_acked = start;
     return storage::log_reader_config(
-      rctx.last_acked,
-      rctx.input->last_stable_offset(),
+      start,
+      end,
       1,
       max_batch_size(),
       ss::default_priority_class(),
