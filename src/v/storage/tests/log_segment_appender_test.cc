@@ -44,6 +44,19 @@ segment_appender make_segment_appender(ss::file file, size_t fallocate_size) {
         config::mock_binding(std::move(fallocate_size))));
 }
 
+iobuf make_random_data(size_t len) {
+    size_t random_len = std::min(1024UL, len); // NOLINT local constant
+    const auto rbuf = random_generators::gen_alphanum_string(random_len);
+    iobuf output;
+    size_t left = len;
+    while (left > 0) {
+        size_t copy_len = std::min(left, random_len);
+        output.append(rbuf.data(), copy_len);
+        left -= copy_len;
+    }
+    BOOST_CHECK_EQUAL(len, output.size_bytes());
+    return output;
+}
 } // namespace
 
 static void run_test_can_append_multiple_flushes(size_t fallocate_size) {
@@ -148,15 +161,8 @@ static void run_test_can_append_10MB(size_t fallocate_size) {
     auto appender = make_segment_appender(f, fallocate_size);
 
     for (size_t i = 0; i < 10; ++i) {
-        iobuf original;
         constexpr size_t one_meg = 1024 * 1024;
-        {
-            const auto data = random_generators::gen_alphanum_string(1024);
-            for (size_t i = 0; i < 1024; ++i) {
-                original.append(data.data(), data.size());
-            }
-        }
-        BOOST_CHECK_EQUAL(one_meg, original.size_bytes());
+        iobuf original = make_random_data(one_meg);
         appender.append(original).get();
         appender.flush().get();
 
@@ -179,14 +185,10 @@ static void run_test_can_append_10MB_sequential_write_sequential_read(
     auto appender = make_segment_appender(f, fallocate_size);
 
     // write sequential. then read all
-    iobuf original;
     constexpr size_t one_meg = 1024 * 1024;
-    {
-        const auto data = random_generators::gen_alphanum_string(1024);
-        for (size_t i = 0; i < 1024 * 10; ++i) {
-            original.append(data.data(), data.size());
-        }
-    }
+    // issue #4077: why didn't this fail when I passed in one_meg?
+    // I'd expect making the input stream or read..exactly to fail.
+    iobuf original = make_random_data(10 * one_meg);
     appender.append(original).get();
     appender.flush().get();
     for (size_t i = 0; i < 10; ++i) {
