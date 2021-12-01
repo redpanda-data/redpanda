@@ -287,6 +287,12 @@ func (r *Cluster) validateKafkaListeners() field.ErrorList {
 				r.Spec.Configuration.KafkaAPI,
 				"one internal listener and up to to one external kafka api listener is required"))
 	}
+	if external != nil && external.Port != 0 && (external.Port < 30000 || external.Port > 32768) {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration").Child("kafkaApi"),
+				r.Spec.Configuration.KafkaAPI,
+				"external port must be in the following range: 30000-32768"))
+	}
 
 	return allErrs
 }
@@ -582,14 +588,57 @@ func (r *Cluster) ValidateDelete() error {
 	return nil
 }
 
+type listenersPorts struct {
+	name                 string
+	port                 int
+	externalConnectivity bool
+	externalPort         *int
+}
+
+// TODO move this to networking package
 func (r *Cluster) checkCollidingPorts() field.ErrorList {
 	var allErrs field.ErrorList
+	ports := r.getAllPorts()
 
-	type listenersPorts struct {
-		name                 string
-		port                 int
-		externalConnectivity bool
+	for i := range ports {
+		for j := len(ports) - 1; j > i; j-- {
+			if ports[i].port == ports[j].port {
+				allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("configuration", ports[i].name, "port"),
+					ports[i].port,
+					fmt.Sprintf("%s port collide with Spec.Configuration.%s Port", ports[i].name, ports[j].name)))
+			}
+			externalPortJ := ports[j].port + 1
+			if ports[j].externalPort != nil {
+				externalPortJ = *ports[j].externalPort
+			}
+			externalPortI := ports[i].port + 1
+			if ports[i].externalPort != nil {
+				externalPortI = *ports[i].externalPort
+			}
+			if ports[j].externalConnectivity && ports[i].port == externalPortJ {
+				allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("configuration", ports[i].name, "port"),
+					ports[i].port,
+					fmt.Sprintf("%s port collide with external %s port", ports[i].name, ports[j].name)))
+			}
+
+			if ports[i].externalConnectivity && externalPortI == ports[j].port {
+				allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("configuration", ports[i].name, "port"),
+					ports[i].port,
+					fmt.Sprintf("external %s port collide with Spec.Configuration.%s port", ports[i].name, ports[j].name)))
+			}
+
+			if ports[i].externalConnectivity && ports[j].externalConnectivity && externalPortI == externalPortJ {
+				allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("configuration", ports[i].name, "port"),
+					ports[i].port,
+					fmt.Sprintf("external %s port collide with external %s Port that is not defined in CR", ports[i].name, ports[j].name)))
+			}
+		}
 	}
+
+	return allErrs
+}
+
+func (r *Cluster) getAllPorts() []listenersPorts {
 	ports := []listenersPorts{
 		{
 			name:                 "RPCApi",
@@ -599,10 +648,16 @@ func (r *Cluster) checkCollidingPorts() field.ErrorList {
 	}
 
 	if internal := r.InternalListener(); internal != nil {
+		externalListener := r.ExternalListener()
+		var externalPort *int
+		if externalListener != nil && externalListener.Port != 0 {
+			externalPort = &externalListener.Port
+		}
 		ports = append(ports, listenersPorts{
 			name:                 "kafkaApi",
 			port:                 internal.Port,
-			externalConnectivity: r.ExternalListener() != nil,
+			externalConnectivity: externalListener != nil,
+			externalPort:         externalPort,
 		})
 	}
 
@@ -631,34 +686,5 @@ func (r *Cluster) checkCollidingPorts() field.ErrorList {
 			externalConnectivity: false,
 		})
 	}
-
-	for i := range ports {
-		for j := len(ports) - 1; j > i; j-- {
-			if ports[i].port == ports[j].port {
-				allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("configuration", ports[i].name, "port"),
-					ports[i].port,
-					fmt.Sprintf("%s port collide with Spec.Configuration.%s Port", ports[i].name, ports[j].name)))
-			}
-
-			if ports[j].externalConnectivity && ports[i].port == ports[j].port+1 {
-				allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("configuration", ports[i].name, "port"),
-					ports[i].port,
-					fmt.Sprintf("%s port collide with external %s Port that is not defined in CR", ports[i].name, ports[j].name)))
-			}
-
-			if ports[i].externalConnectivity && ports[i].port+1 == ports[j].port {
-				allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("configuration", ports[i].name, "port"),
-					ports[i].port,
-					fmt.Sprintf("external %s port collide with Spec.Configuration.%s Port", ports[i].name, ports[j].name)))
-			}
-
-			if ports[i].externalConnectivity && ports[j].externalConnectivity && ports[i].port+1 == ports[j].port+1 {
-				allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("configuration", ports[i].name, "port"),
-					ports[i].port,
-					fmt.Sprintf("external %s port collide with external %s Port that is not defined in CR", ports[i].name, ports[j].name)))
-			}
-		}
-	}
-
-	return allErrs
+	return ports
 }

@@ -950,3 +950,36 @@ func TestPodDisruptionBudget(t *testing.T) {
 		assert.NoError(t, err)
 	})
 }
+
+func TestExternalKafkaPortSpecified(t *testing.T) {
+	rpCluster := validRedpandaCluster()
+
+	t.Run("collision in the port when kafka api external port is defined", func(t *testing.T) {
+		updatePort := rpCluster.DeepCopy()
+		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPI{Port: 30001, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+		updatePort.Spec.Configuration.AdminAPI = []v1alpha1.AdminAPI{{Port: 30001}}
+
+		err := updatePort.ValidateUpdate(updatePort)
+		assert.Error(t, err)
+	})
+
+	t.Run("no collision in the port when kafka api external port is defined", func(t *testing.T) {
+		updatePort := rpCluster.DeepCopy()
+		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPI{Port: 30001, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+		updatePort.Spec.Configuration.AdminAPI = []v1alpha1.AdminAPI{{Port: 30002}}
+
+		err := updatePort.ValidateUpdate(updatePort)
+		assert.NoError(t, err)
+	})
+
+	t.Run("error when kafkaAPI external port is outside of supported range", func(t *testing.T) {
+		updatePort := rpCluster.DeepCopy()
+		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPI{Port: 29999, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+
+		err := updatePort.ValidateUpdate(updatePort)
+		assert.Error(t, err)
+	})
+}
