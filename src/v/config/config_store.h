@@ -77,6 +77,9 @@ public:
         w.StartObject();
 
         for (const auto& [name, property] : _properties) {
+            if (property->get_visibility() == visibility::deprecated) {
+                continue;
+            }
             w.Key(name.data(), name.size());
             property->to_json(w);
         }
