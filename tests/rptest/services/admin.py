@@ -122,6 +122,9 @@ class Admin:
     def get_cluster_config(self, node=None):
         return self._request("GET", "config", node=node).json()
 
+    def get_cluster_config_schema(self, node=None):
+        return self._request("GET", "cluster_config/schema", node=node).json()
+
     def patch_cluster_config(self, upsert=None, remove=None):
         if upsert is None:
             upsert = {}

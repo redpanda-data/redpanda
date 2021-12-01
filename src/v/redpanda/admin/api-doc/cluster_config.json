@@ -35,6 +35,25 @@
           ]
         }
       ]
+    },
+    {
+      "path": "/v1/cluster_config/schema",
+      "operations": [
+        {"method": "GET",
+          "summary": "Get schema describing all cluster configuration properties",
+          "type": "object",
+          "properties": {
+            "properties": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "nickname": "get_cluster_config_schema",
+          "produces": ["application/json"],
+          "parameters": [
+          ]
+        }
+      ]
     }
   ],
   "models": {
@@ -50,7 +69,7 @@
           "type": "boolean",
           "description": "Restart required to apply pending configuration"
         },
-        "version": {
+        "config_version": {
           "type": "long",
           "description": "Configuration version number, for cross referencing with PUT results"
         },
@@ -74,9 +93,60 @@
       "id": "cluster_config_write_result",
       "description": "Result of writing changes to cluster configuration",
       "properties": {
-        "version": {
+        "config_version": {
           "type": "long",
           "description": "Configuration version number, for cross referencing with node config status"
+        }
+      }
+    },
+    "cluster_config_property_metadata_items": {
+      "id": "cluster_config_property_metadata_items",
+      "description": "The type within 'items' for array properties",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "A scalar type name, like 'string'"
+        }
+      }
+    },
+    "cluster_config_property_metadata": {
+      "id": "cluster_config_property_metadata",
+      "description": "A single configuration property's metadata",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Human readable description of property's purpose"
+        },
+        "nullable": {
+          "type": "boolean",
+          "description": "Whether this setting may be set to null"
+        },
+        "needs_restart": {
+          "type": "boolean",
+          "description": "Whether changes to this property will require a restart of redpanda nodes"
+        },
+        "visibility": {
+          "type": "string",
+          "description": "One of user|tunable|deprecated"
+        },
+        "units": {
+          "type": "string",
+          "description": "If applicable, the units of the property (e.g. ms, bytes)",
+          "nullable": true
+        },
+        "example": {
+          "type": "string",
+          "description": "Example of correct syntax for this property",
+          "nullable": true
+        },
+        "type": {
+          "type": "string",
+          "description": "Expected syntax of the property value"
+        },
+        "items": {
+          "type": "cluster_config_property_metadata_items",
+          "description": "Type of items in an array",
+          "nullable": true
         }
       }
     }

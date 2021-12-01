@@ -12,6 +12,7 @@
 #pragma once
 #include "config/base_property.h"
 #include "config/rjson_serialization.h"
+#include "reflection/type_traits.h"
 #include "utils/to_string.h"
 
 #include <seastar/util/noncopyable_function.hh>
@@ -56,6 +57,14 @@ public:
     const T& value() const { return _value; }
 
     const T& default_value() const { return _default; }
+
+    std::string_view type_name() const override;
+
+    std::optional<std::string_view> units_name() const override;
+
+    bool is_nullable() const override;
+
+    bool is_array() const override;
 
     bool is_overriden() const { return is_required() || _value != _default; }
 
@@ -123,6 +132,128 @@ private:
     };
 };
 
+namespace detail {
+
+template<typename T>
+concept has_type_name = requires(T x) {
+    x.type_name();
+};
+
+template<typename T>
+concept is_collection = requires(T x) {
+    typename T::value_type;
+    !std::is_same_v<typename T::value_type, char>;
+    {x.size()};
+};
+
+template<typename T>
+struct dependent_false : std::false_type {};
+
+template<typename T>
+consteval std::string_view property_type_name() {
+    using type = std::decay_t<T>;
+    if constexpr (std::is_same_v<type, ss::sstring>) {
+        // String check must come before is_collection check
+        return "string";
+    } else if constexpr (std::is_same_v<type, bool>) {
+        // boolean check must come before is_integral check
+        return "boolean";
+    } else if constexpr (reflection::is_std_optional_v<type>) {
+        return property_type_name<typename type::value_type>();
+    } else if constexpr (is_collection<type>) {
+        return property_type_name<typename type::value_type>();
+    } else if constexpr (has_type_name<type>) {
+        return type::type_name();
+    } else if constexpr (std::is_same_v<type, model::compression>) {
+        return "string";
+    } else if constexpr (std::is_same_v<type, model::timestamp_type>) {
+        return "string";
+    } else if constexpr (std::is_same_v<type, model::cleanup_policy_bitflags>) {
+        return "string";
+    } else if constexpr (std::
+                           is_same_v<type, model::violation_recovery_policy>) {
+        return "string";
+    } else if constexpr (std::is_same_v<type, config::data_directory_path>) {
+        return "string";
+    } else if constexpr (std::is_same_v<type, model::node_id>) {
+        return "integer";
+    } else if constexpr (std::is_same_v<type, std::chrono::seconds>) {
+        return "integer";
+    } else if constexpr (std::is_same_v<type, std::chrono::milliseconds>) {
+        return "integer";
+    } else if constexpr (std::is_same_v<type, seed_server>) {
+        return "seed_server";
+    } else if constexpr (std::is_same_v<type, unresolved_address>) {
+        return "unresolved_address";
+    } else if constexpr (std::is_same_v<type, tls_config>) {
+        return "tls_config";
+    } else if constexpr (std::is_same_v<type, endpoint_tls_config>) {
+        return "endpoint_tls_config";
+    } else if constexpr (std::is_same_v<type, model::broker_endpoint>) {
+        return "broker_endpoint";
+    } else if constexpr (std::is_floating_point_v<type>) {
+        return "number";
+    } else if constexpr (std::is_integral_v<type>) {
+        return "integer";
+    } else {
+        static_assert(dependent_false<T>::value, "Type name not defined");
+    }
+}
+
+template<typename T>
+consteval std::string_view property_units_name() {
+    using type = std::decay_t<T>;
+    if constexpr (std::is_same_v<type, std::chrono::milliseconds>) {
+        return "ms";
+    } else if constexpr (std::is_same_v<type, std::chrono::seconds>) {
+        return "s";
+    } else if constexpr (reflection::is_std_optional_v<type>) {
+        return property_units_name<typename type::value_type>();
+    } else {
+        // This will be transformed to nullopt at runtime: returning
+        // std::optional from this function triggered a clang crash.
+        return "";
+    }
+}
+
+} // namespace detail
+
+template<typename T>
+std::string_view property<T>::type_name() const {
+    // Go via a non-member function so that specialized implementations
+    // can use concepts without all the same concepts having to apply
+    // to the type T in the class definition.
+    return detail::property_type_name<T>();
+}
+
+template<typename T>
+std::optional<std::string_view> property<T>::units_name() const {
+    auto u = detail::property_units_name<T>();
+    if (u == "") {
+        return std::nullopt;
+    } else {
+        return u;
+    }
+}
+
+template<typename T>
+bool property<T>::is_nullable() const {
+    if constexpr (reflection::is_std_optional_v<std::decay_t<T>>) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+template<typename T>
+bool property<T>::is_array() const {
+    if constexpr (detail::is_collection<std::decay_t<T>>) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
 /*
  * Same as property<std::vector<T>> but will also decode a single T. This can be
  * useful for dealing with backwards compatibility or creating easier yaml
@@ -158,11 +289,11 @@ public:
       config_store& conf,
       std::string_view name,
       std::string_view desc,
-      required req = required::yes,
+      base_property::metadata meta,
       T def = T{},
       std::optional<T> min = std::nullopt,
       std::optional<T> max = std::nullopt)
-      : property<T>(conf, name, desc, req, def)
+      : property<T>(conf, name, desc, meta, def)
       , _min(min)
       , _max(max) {}
 
@@ -186,4 +317,15 @@ private:
     std::optional<T> _max;
 };
 
+/**
+ * A deprecated property only exposes metadata and does not expose a usable
+ * value.
+ */
+class deprecated_property : public property<ss::sstring> {
+public:
+    deprecated_property(config_store& conf, std::string_view name)
+      : property(conf, name, "", {.visibility = visibility::deprecated}) {}
+
+    void set_value(std::any) override { return; }
+};
 }; // namespace config

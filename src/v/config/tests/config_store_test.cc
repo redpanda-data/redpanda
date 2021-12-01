@@ -15,7 +15,6 @@
 
 #include <rapidjson/document.h>
 
-#include <array>
 #include <cstdint>
 #include <iostream>
 #include <random>
@@ -32,19 +31,24 @@ struct test_config : public config::config_store {
     config::property<custom_aggregate> an_aggregate;
     config::property<std::vector<ss::sstring>> strings;
     config::property<std::optional<int16_t>> nullable_int;
+    config::property<std::optional<ss::sstring>> nullable_string;
+    config::property<bool> boolean;
+    config::property<std::chrono::seconds> seconds;
+    config::property<std::optional<std::chrono::seconds>> optional_seconds;
+    config::property<std::chrono::milliseconds> milliseconds;
 
     test_config()
       : optional_int(
         *this,
         "optional_int",
         "An optional int value",
-        config::required::no,
+        {.visibility = config::visibility::tunable},
         100)
       , required_string(
           *this,
           "required_string",
           "Required string value",
-          config::base_property::metadata{})
+          {.visibility = config::visibility::user})
       , an_int64_t(
           *this, "an_int64_t", "Some other int type", config::required::no, 200)
       , an_aggregate(
@@ -63,7 +67,32 @@ struct test_config : public config::config_store {
           "nullable_int",
           "A nullable (std::optional) int value",
           config::required::no,
-          std::nullopt) {}
+          std::nullopt)
+      , nullable_string(
+          *this,
+          "optional_string",
+          "An optional string value",
+          config::required::no,
+          std::nullopt)
+      , boolean(
+          *this,
+          "boolean",
+          "Plain boolean property",
+          config::required::no,
+          false)
+      , seconds(*this, "seconds", "Plain seconds", config::required::no, {})
+      , optional_seconds(
+          *this,
+          "optional_seconds",
+          "Optional seconds",
+          config::required::no,
+          {})
+      , milliseconds(
+          *this,
+          "milliseconds",
+          "Plain milliseconds",
+          config::required::no,
+          {}) {}
 };
 
 YAML::Node minimal_valid_configuration() {
@@ -265,3 +294,59 @@ SEASTAR_THREAD_TEST_CASE(deserialize_explicit_null) {
     BOOST_TEST(errors.size() == 0);
     BOOST_TEST(cfg.nullable_int() == std::nullopt);
 }
+
+SEASTAR_THREAD_TEST_CASE(property_metadata) {
+    auto cfg = test_config();
+    BOOST_TEST(cfg.optional_int.type_name() == "integer");
+    BOOST_TEST(
+      config::to_string_view(cfg.optional_int.get_visibility()) == "tunable");
+
+    BOOST_TEST(cfg.boolean.is_nullable() == false);
+    BOOST_TEST(cfg.nullable_string.is_array() == false);
+
+    BOOST_TEST(cfg.required_string.type_name() == "string");
+    BOOST_TEST(
+      config::to_string_view(cfg.required_string.get_visibility()) == "user");
+
+    BOOST_TEST(cfg.boolean.is_nullable() == false);
+    BOOST_TEST(cfg.nullable_string.is_array() == false);
+
+    BOOST_TEST(cfg.an_int64_t.type_name() == "integer");
+    BOOST_TEST(cfg.boolean.is_nullable() == false);
+    BOOST_TEST(cfg.nullable_string.is_array() == false);
+
+    BOOST_TEST(cfg.an_aggregate.type_name() == "custom_aggregate");
+    BOOST_TEST(cfg.boolean.is_nullable() == false);
+    BOOST_TEST(cfg.nullable_string.is_array() == false);
+
+    BOOST_TEST(cfg.strings.type_name() == "string");
+    BOOST_TEST(cfg.strings.is_array() == true);
+    BOOST_TEST(cfg.strings.is_nullable() == false);
+
+    BOOST_TEST(cfg.nullable_string.type_name() == "string");
+    BOOST_TEST(cfg.nullable_string.is_nullable() == true);
+    BOOST_TEST(cfg.nullable_string.is_array() == false);
+
+    BOOST_TEST(cfg.nullable_int.type_name() == "integer");
+    BOOST_TEST(cfg.nullable_int.is_nullable() == true);
+    BOOST_TEST(cfg.nullable_int.is_array() == false);
+
+    BOOST_TEST(cfg.boolean.type_name() == "boolean");
+    BOOST_TEST(cfg.boolean.is_nullable() == false);
+    BOOST_TEST(cfg.boolean.is_array() == false);
+
+    BOOST_TEST(cfg.seconds.type_name() == "integer");
+    BOOST_TEST(cfg.seconds.units_name() == "s");
+    BOOST_TEST(cfg.seconds.is_nullable() == false);
+    BOOST_TEST(cfg.seconds.is_array() == false);
+
+    BOOST_TEST(cfg.optional_seconds.type_name() == "integer");
+    BOOST_TEST(cfg.optional_seconds.units_name() == "s");
+    BOOST_TEST(cfg.optional_seconds.is_nullable() == true);
+    BOOST_TEST(cfg.optional_seconds.is_array() == false);
+
+    BOOST_TEST(cfg.milliseconds.type_name() == "integer");
+    BOOST_TEST(cfg.milliseconds.units_name() == "ms");
+    BOOST_TEST(cfg.milliseconds.is_nullable() == false);
+    BOOST_TEST(cfg.milliseconds.is_array() == false);
+};

@@ -22,4 +22,6 @@ struct custom_aggregate {
     bool operator==(const custom_aggregate& rhs) const {
         return string_value == rhs.string_value && int_value == rhs.int_value;
     }
+
+    static consteval std::string_view type_name() { return "custom_aggregate"; }
 };

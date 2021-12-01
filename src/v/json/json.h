@@ -74,6 +74,9 @@ void rjson_serialize(
   const std::chrono::milliseconds& v);
 
 void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w, const std::chrono::seconds& v);
+
+void rjson_serialize(
   rapidjson::Writer<rapidjson::StringBuffer>&, const model::broker_endpoint&);
 
 template<typename T, typename = std::enable_if_t<std::is_enum_v<T>>>

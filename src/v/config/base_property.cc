@@ -30,4 +30,17 @@ std::ostream& operator<<(std::ostream& o, const base_property& p) {
     return o;
 }
 
+std::string_view to_string_view(visibility v) {
+    switch (v) {
+    case config::visibility::tunable:
+        return "tunable";
+    case config::visibility::user:
+        return "user";
+    case config::visibility::deprecated:
+        return "deprecated";
+    }
+
+    return "{invalid}";
+}
+
 }; // namespace config
