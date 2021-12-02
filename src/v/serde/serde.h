@@ -18,6 +18,7 @@
 #include "serde/type_str.h"
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
+#include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
 #include "vlog.h"
 
@@ -120,6 +121,13 @@ using serde_size_t = uint32_t;
 #endif
 
 template<typename T>
+struct is_fragmented_vector : std::false_type {};
+template<typename T, size_t S>
+struct is_fragmented_vector<fragmented_vector<T, S>> : std::true_type {};
+template<typename T>
+inline constexpr bool is_fragmented_vector_v = is_fragmented_vector<T>::value;
+
+template<typename T>
 inline constexpr auto const is_serde_compatible_v
   = is_envelope_v<T>
     || (std::is_scalar_v<T>  //
@@ -132,7 +140,8 @@ inline constexpr auto const is_serde_compatible_v
     || reflection::is_std_optional_v<T>
     || std::is_same_v<T, std::chrono::milliseconds>
     || std::is_same_v<T, iobuf>
-    || std::is_same_v<T, ss::sstring>;
+    || std::is_same_v<T, ss::sstring>
+    || is_fragmented_vector_v<T>;
 
 template<typename T>
 void write(iobuf&, T);
@@ -245,6 +254,17 @@ void write(iobuf& out, T t) {
             write(out, std::move(t.value()));
         } else {
             write(out, false);
+        }
+    } else if constexpr (is_fragmented_vector_v<Type>) {
+        if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
+            throw serde_exception(fmt_with_ctx(
+              ssx::sformat,
+              "serde: fragmented vector size {} exceeds serde_size_t",
+              t.size()));
+        }
+        write(out, static_cast<serde_size_t>(t.size()));
+        for (auto& el : t) {
+            write(out, std::move(el));
         }
     }
 }
@@ -436,6 +456,13 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
               ? Type{read_nested<typename Type::value_type>(
                 in, bytes_left_limit)}
               : std::nullopt;
+    } else if constexpr (is_fragmented_vector_v<Type>) {
+        using value_type = typename Type::value_type;
+        const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
+        for (auto i = 0U; i < size; ++i) {
+            t.push_back(read_nested<value_type>(in, bytes_left_limit));
+        }
+        t.shrink_to_fit();
     }
 }
 
