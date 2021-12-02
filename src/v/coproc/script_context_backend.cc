@@ -200,17 +200,13 @@ static ss::future<> process_one_reply(
   process_batch_reply::data e,
   ss::lw_shared_ptr<source> src,
   output_write_args args) {
-    /// Ensure this 'script_context' instance is handling the correct reply
     if (e.id != args.id()) {
-        /// TODO: Maybe in the future errors of these type should mean redpanda
-        /// kill -9's the wasm engine.
-        vlog(
-          coproclog.error,
+        /// Engine got response mixed up with another request, protocol error
+        throw bad_reply_exception(ssx::sformat(
           "erranous reply from wasm engine, mismatched id observed, expected: "
           "{} and observed {}",
           args.id,
-          e.id);
-        co_return;
+          e.id));
     }
     if (!e.reader) {
         /// The wasm engine set the reader to std::nullopt meaning a fatal error
@@ -282,12 +278,7 @@ static ss::future<> process_reply_group(
     }
     auto src_ptr = found->second;
     for (auto& e : reply_group) {
-        try {
-            co_await process_one_reply(std::move(e), src_ptr, args);
-        } catch (const bad_reply_exception& ex) {
-            /// A bad reply shouldn't affect the outcome, just ignore
-            vlog(coproclog.error, "Erraneous response detected: {}", ex);
-        }
+        co_await process_one_reply(std::move(e), src_ptr, args);
     }
     /// If we've reached here without error, all materialized
     /// partitions (working under the input) can be promoted, rational is to
@@ -297,9 +288,11 @@ static ss::future<> process_reply_group(
     /// loop.
     for (auto& [_, o] : src_ptr->wctx.offsets) {
         if (o <= src_ptr->rctx.last_read) {
-            /// Omit increasing offets that are ahead of current read, only
-            /// possibility of this case would be a load of a stored offset that
-            /// is far ahead
+            /// Omit increasing offets that are ahead of current read, this
+            /// could occur upon load of a stored offset thats further ahead.
+            /// Also during retry avoids promoting offsets of materialized
+            /// topics that are ahead of the materialized topic that is the
+            /// intended target for the current read
             o = src_ptr->rctx.last_read;
         }
     }

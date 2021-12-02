@@ -44,13 +44,14 @@ struct write_context {
 
     offsets_t offsets;
 
-    /// Returns the min offset in the collection, O(n) runtime
-    model::offset min_offset() const {
-        model::offset min = model::model_limits<model::offset>::max();
-        for (auto& [_, o] : offsets) {
-            min = std::min(min, o);
-        }
-        return min;
+    absl::btree_set<model::offset> unique_offsets() const {
+        absl::btree_set<model::offset> ofs;
+        std::transform(
+          offsets.cbegin(),
+          offsets.cend(),
+          std::inserter(ofs, ofs.begin()),
+          [](const offsets_t::value_type& p) { return p.second; });
+        return ofs;
     }
 };
 

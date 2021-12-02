@@ -74,10 +74,19 @@ ss::future<> fiber_mock_fixture::do_run(
   fiber_mock_fixture::state& s, model::timeout_clock::time_point timeout) {
     auto finished = [&s]() {
         for (auto& [ntp, routes] : s.routes) {
-            auto& ofs = routes->wctx.offsets;
+            auto ofs = routes->wctx.unique_offsets();
             auto found = s.high_input.find(ntp);
             vassert(found != s.high_input.end(), "Misconfigured setup");
-            if (ofs.empty() || (routes->wctx.min_offset() < found->second)) {
+            if (ofs.empty()) {
+                /// Since all of our test copros produce data, assuming if 'no
+                /// data was ever published finished must be false' is OK
+                return false;
+            } else if (ofs.size() > 1) {
+                /// Some retry logic is going on, cannot be the case that its
+                /// finished
+                return false;
+            } else if (*(ofs.begin()) < found->second) {
+                /// Theres still data to consume and process
                 return false;
             }
         }
