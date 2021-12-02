@@ -74,6 +74,7 @@ public:
     ss::sharded<cluster::shard_table> shard_table;
     ss::sharded<storage::api> storage;
     std::unique_ptr<coproc::api> coprocessing;
+    ss::sharded<coproc::partition_manager> cp_partition_manager;
     ss::sharded<cluster::partition_manager> partition_manager;
     ss::sharded<raft::recovery_throttle> recovery_throttle;
     ss::sharded<raft::group_manager> raft_group_manager;

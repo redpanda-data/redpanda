@@ -29,7 +29,8 @@ api::api(
   ss::sharded<cluster::shard_table>& shard_table,
   ss::sharded<cluster::topics_frontend>& topics_frontend,
   ss::sharded<cluster::metadata_cache>& metadata_cache,
-  ss::sharded<cluster::partition_manager>& partition_manager) noexcept
+  ss::sharded<cluster::partition_manager>& partition_manager,
+  ss::sharded<coproc::partition_manager>& cp_partition_manager) noexcept
   : _engine_addr(std::move(addr))
   , _rs(sys_refs{
       .storage = storage,
@@ -38,20 +39,18 @@ api::api(
       .mt_frontend = _mt_frontend,
       .topics_frontend = topics_frontend,
       .metadata_cache = metadata_cache,
-      .partition_manager = partition_manager}) {}
+      .partition_manager = partition_manager,
+      .cp_partition_manager = cp_partition_manager}) {}
 
 api::~api() = default;
 
 ss::future<> api::start() {
-    co_await _partition_manager.start(std::ref(_rs.storage));
-    co_await _partition_manager.invoke_on_all(
-      &coproc::partition_manager::start);
-
     co_await _reconciliation_backend.start(
       std::ref(_rs.topic_table),
       std::ref(_rs.shard_table),
       std::ref(_rs.partition_manager),
-      std::ref(_partition_manager));
+      std::ref(_rs.cp_partition_manager));
+
     co_await _reconciliation_backend.invoke_on_all(
       &coproc::reconciliation_backend::start);
 
@@ -64,18 +63,14 @@ ss::future<> api::start() {
       _listener->get_abort_source(), std::ref(_pacemaker));
     _listener->register_handler(
       coproc::wasm::event_type::async, _wasm_async_handler.get());
-
     co_await _listener->start();
 }
 
 ss::future<> api::stop() {
-    if (_listener) {
-        co_await _listener->stop();
-    }
+    co_await _reconciliation_backend.stop();
+    co_await _listener->stop();
     co_await _pacemaker.stop();
     co_await _mt_frontend.stop();
-    co_await _reconciliation_backend.stop();
-    co_await _partition_manager.stop();
 }
 
 } // namespace coproc

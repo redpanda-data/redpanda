@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/fwd.h"
+#include "coproc/fwd.h"
 #include "seastarx.h"
 #include "storage/fwd.h"
 
@@ -29,6 +30,7 @@ struct sys_refs {
     ss::sharded<cluster::topics_frontend>& topics_frontend;
     ss::sharded<cluster::metadata_cache>& metadata_cache;
     ss::sharded<cluster::partition_manager>& partition_manager;
+    ss::sharded<coproc::partition_manager>& cp_partition_manager;
 };
 
 } // namespace coproc
