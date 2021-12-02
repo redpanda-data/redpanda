@@ -54,7 +54,7 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                 return dispatch_updates_to_cores(create_cmd, base_offset)
                   .then([this, create_cmd](std::error_code ec) {
                       if (ec == errc::success) {
-                          update_allocations(create_cmd);
+                          update_allocations(create_cmd.value.assignments);
                       }
                       return ec;
                   })
@@ -113,13 +113,24 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                 return dispatch_updates_to_cores(cmd, base_offset)
                   .then([this, cmd](std::error_code ec) {
                       if (ec == errc::success) {
-                          update_allocations(cmd);
+                          update_allocations(cmd.value.assignments);
                       }
                       return ec;
                   });
             },
             [this, base_offset](create_non_replicable_topic_cmd cmd) {
-                return dispatch_updates_to_cores(std::move(cmd), base_offset);
+                auto assignments = _topic_table.local().get_topic_assignments(
+                  cmd.key.source);
+                return dispatch_updates_to_cores(cmd, base_offset)
+                  .then([this, assignments = std::move(assignments)](
+                          std::error_code ec) {
+                      if (ec == errc::success) {
+                          vassert(
+                            assignments.has_value(), "null topic_metadata");
+                          update_allocations(*assignments);
+                      }
+                      return ec;
+                  });
             });
       });
 }
@@ -202,26 +213,12 @@ void topic_updates_dispatcher::reallocate_partition(
     _partition_allocator.local().update_allocation_state(current, previous);
 }
 
-void topic_updates_dispatcher::update_allocations(const create_topic_cmd& cmd) {
-    // for create topics we update allocation state
-    std::vector<model::broker_shard> shards;
-    raft::group_id max_group_id = raft::group_id(0);
-    for (auto& pas : cmd.value.assignments) {
-        max_group_id = std::max(max_group_id, pas.group);
-        std::move(
-          pas.replicas.begin(), pas.replicas.end(), std::back_inserter(shards));
-    }
-
-    _partition_allocator.local().update_allocation_state(
-      std::move(shards), max_group_id);
-}
-
 void topic_updates_dispatcher::update_allocations(
-  const create_partition_cmd& cmd) {
+  std::vector<partition_assignment> assignments) {
     // for create topics we update allocation state
     std::vector<model::broker_shard> shards;
     raft::group_id max_group_id = raft::group_id(0);
-    for (auto& pas : cmd.value.assignments) {
+    for (auto& pas : assignments) {
         max_group_id = std::max(max_group_id, pas.group);
         std::move(
           pas.replicas.begin(), pas.replicas.end(), std::back_inserter(shards));

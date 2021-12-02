@@ -62,9 +62,6 @@ const model::topic& topic_table::topic_metadata::get_source_topic() const {
 }
 const topic_configuration_assignment&
 topic_table::topic_metadata::get_configuration() const {
-    vassert(
-      is_topic_replicable(),
-      "Query for configuration on a non-replicable topic");
     return configuration;
 }
 
@@ -389,9 +386,6 @@ topic_table::apply(create_non_replicable_topic_cmd cmd, model::offset o) {
 
     auto ca = tp->second.configuration;
     ca.cfg.tp_ns = new_non_rep_topic;
-    for (auto& assignment : ca.assignments) {
-        assignment.group = raft::group_id(-1);
-    }
 
     auto [itr, success] = _topics_hierarchy.try_emplace(
       source,
@@ -489,6 +483,14 @@ std::optional<topic_configuration>
 topic_table::get_topic_cfg(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
         return it->second.configuration.cfg;
+    }
+    return {};
+}
+
+std::optional<std::vector<partition_assignment>>
+topic_table::get_topic_assignments(model::topic_namespace_view tp) const {
+    if (auto it = _topics.find(tp); it != _topics.end()) {
+        return it->second.configuration.assignments;
     }
     return {};
 }

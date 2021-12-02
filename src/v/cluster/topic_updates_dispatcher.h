@@ -76,8 +76,7 @@ private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 
     ss::future<> update_leaders_with_estimates(std::vector<ntp_leader> leaders);
-    void update_allocations(const create_topic_cmd&);
-    void update_allocations(const create_partition_cmd&);
+    void update_allocations(std::vector<partition_assignment>);
     void deallocate_topic(const model::topic_metadata&);
     void reallocate_partition(
       const std::vector<model::broker_shard>&,

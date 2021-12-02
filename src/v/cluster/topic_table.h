@@ -137,6 +137,12 @@ public:
     std::optional<topic_configuration>
       get_topic_cfg(model::topic_namespace_view) const;
 
+    ///\brief Returns partition assignments of single topic.
+    ///
+    /// If topic does not exists it returns an empty optional
+    std::optional<std::vector<partition_assignment>>
+      get_topic_assignments(model::topic_namespace_view) const;
+
     ///\brief Returns topics timestamp type
     ///
     /// If topic does not exists it returns an empty optional
