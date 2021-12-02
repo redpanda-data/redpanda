@@ -11,7 +11,6 @@ import random
 import time
 
 from ducktape.mark.resource import cluster
-from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
 import requests
@@ -28,7 +27,6 @@ class NodesDecommissioningTest(EndToEndTest):
     """
     Basic nodes decommissioning test.
     """
-    @ignore  # https://github.com/vectorizedio/redpanda/issues/2388
     @cluster(num_nodes=6)
     def test_decommissioning_working_node(self):
 
