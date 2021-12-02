@@ -28,8 +28,6 @@ from rptest.services.admin import Admin
 
 ELECTION_TIMEOUT = 10
 
-DEFAULT_PING_PONG_TIMEOUT = 5
-
 
 class MetricCheckFailed(Exception):
     def __init__(self, metric, old_value, new_value):
@@ -174,20 +172,13 @@ class RaftAvailabilityTest(RedpandaTest):
         assert result[0] is not None
         return result[0]
 
-    def _ping_pong(self, timeout=None):
-        """
-        :param timeout: for tests that expect things to take a little longer (e.g.
-                        right after a node failure) extend the default timeout.
-        """
-        if timeout is None:
-            timeout = DEFAULT_PING_PONG_TIMEOUT
-
+    def _ping_pong(self):
         kc = KafkaCat(self.redpanda)
         rpk = RpkTool(self.redpanda)
 
         payload = str(random.randint(0, 1000))
         start = time.time()
-        offset = rpk.produce(self.topic, "tkey", payload, timeout=timeout)
+        offset = rpk.produce(self.topic, "tkey", payload, timeout=5)
         consumed = kc.consume_one(self.topic, 0, offset)
         latency = time.time() - start
         self.logger.info(
@@ -511,11 +502,7 @@ class RaftAvailabilityTest(RedpandaTest):
 
             # expect messages to be produced and consumed without a timeout
             for i in range(0, 128):
-                # Use a generous timeout to avoid the test being flaky when the health monitor
-                # takes a long time to catch up with changes to controller leadership.
-                # Revert timeout to default when this issue is fixed:
-                # https://github.com/vectorizedio/redpanda/issues/3098
-                self._ping_pong(timeout=15)
+                self._ping_pong()
 
     @cluster(num_nodes=3)
     def test_initial_leader_stability(self):
