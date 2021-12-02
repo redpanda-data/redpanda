@@ -21,6 +21,7 @@
 #include <seastar/core/seastar.hh>
 #include <seastar/core/thread.hh>
 
+#include <absl/container/btree_set.h>
 #include <fmt/format.h>
 
 #include <exception>
@@ -159,27 +160,61 @@ unsafe_do_recover(segment_set&& segments, ss::abort_source& as) {
             return std::move(segments);
         }
         segment_set::underlying_t good = std::move(segments).release();
+        absl::btree_set<segment*> to_recover_set;
+        for (size_t i = 0; i < good.size(); ++i) {
+            auto& s = *good[i];
+            if (i > 0) {
+                auto& prev = *good[i - 1];
+
+                if (prev.offsets().dirty_offset >= s.offsets().base_offset) {
+                    vlog(
+                      stlog.warn,
+                      "looks like segment index for segment {} is corrupted: "
+                      "dirty offset {} is >= than the next base offset: {}, "
+                      "will recover it",
+                      prev,
+                      prev.offsets().dirty_offset,
+                      s.offsets().base_offset);
+                    to_recover_set.insert(&prev);
+                }
+            }
+
+            if (i + 1 < good.size()) {
+                try {
+                    // use the segment materialize instead of going through
+                    // the index directly to hydrate the max_offset state
+                    if (s.materialize_index().get()) {
+                        vassert(
+                          s.offsets().dirty_offset == s.index().max_offset(),
+                          "dirty_offset and index max_offset must be equal for "
+                          "segment {}",
+                          s);
+                    } else {
+                        to_recover_set.insert(&s);
+                    }
+                } catch (...) {
+                    vlog(
+                      stlog.info,
+                      "Error materializing index:{}. Recovering parent "
+                      "segment:{}. Details:{}",
+                      s.index().filename(),
+                      s.reader().filename(),
+                      std::current_exception());
+                    to_recover_set.insert(&s);
+                }
+            } else {
+                // always recover the last segment
+                to_recover_set.insert(&s);
+            }
+        }
+
         segment_set::underlying_t to_recover;
-        to_recover.push_back(std::move(good.back()));
-        good.pop_back(); // always recover last segment
         // keep segments sorted
         auto good_end = std::stable_partition(
-          good.begin(), good.end(), [](ss::lw_shared_ptr<segment>& ss) {
-              auto& s = *ss;
-              try {
-                  // use the segment materialize instead of going through
-                  // the index directly to hydrate the max_offset state
-                  return s.materialize_index().get0();
-              } catch (...) {
-                  vlog(
-                    stlog.info,
-                    "Error materializing index:{}. Recovering parent "
-                    "segment:{}. Details:{}",
-                    s.index().filename(),
-                    s.reader().filename(),
-                    std::current_exception());
-              }
-              return false;
+          good.begin(),
+          good.end(),
+          [&to_recover_set](ss::lw_shared_ptr<segment>& ss) {
+              return !to_recover_set.contains(ss.get());
           });
         std::move(
           std::move_iterator(good_end),

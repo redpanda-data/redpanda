@@ -39,24 +39,26 @@ public:
               ss::stop_iteration::yes);
         }
         if (_target_last_offset == batch.last_offset()) {
-            return ss::make_exception_future<ss::stop_iteration>(fmt::format(
-              "offset_to_filepos_consumer can only translate base_offsets. "
-              "Current batch's {}-{}. last_offset matches target offset:{}. "
-              "accumulated bytes:{}",
-              batch.base_offset(),
-              batch.last_offset(),
-              _target_last_offset,
-              _accumulator));
+            return ss::make_exception_future<ss::stop_iteration>(
+              std::runtime_error{fmt::format(
+                "offset_to_filepos_consumer can only translate base_offsets. "
+                "Current batch's {}-{}. last_offset matches target offset:{}. "
+                "accumulated bytes:{}",
+                batch.base_offset(),
+                batch.last_offset(),
+                _target_last_offset,
+                _accumulator)});
         }
         if (batch.base_offset() > _target_last_offset) {
-            return ss::make_exception_future<ss::stop_iteration>(fmt::format(
-              "offset_to_filepos_consumer can only translate base_offsets. "
-              "Current batch's {}-{}, exceeds target offset:{}. accumulated "
-              "bytes:{}",
-              batch.base_offset(),
-              batch.last_offset(),
-              _target_last_offset,
-              _accumulator));
+            return ss::make_exception_future<ss::stop_iteration>(
+              std::runtime_error{fmt::format(
+                "offset_to_filepos_consumer can only translate base_offsets. "
+                "Current batch's {}-{}, exceeds target offset:{}. accumulated "
+                "bytes:{}",
+                batch.base_offset(),
+                batch.last_offset(),
+                _target_last_offset,
+                _accumulator)});
         }
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
