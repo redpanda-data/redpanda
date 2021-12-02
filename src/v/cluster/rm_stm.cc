@@ -1235,9 +1235,13 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
       std::make_move_iterator(data.abort_indexes.begin()),
       std::make_move_iterator(data.abort_indexes.end()));
     for (auto& entry : data.seqs) {
-        auto [seq_it, _] = _log_state.seq_table.try_emplace(entry.pid, entry);
-        if (seq_it->second.seq < entry.seq) {
-            seq_it->second = entry;
+        auto [seq_it, inserted] = _log_state.seq_table.try_emplace(
+          entry.pid, std::move(entry));
+        // try_emplace does not move from r-value reference if the insertion
+        // didn't take place so the clang-tidy warning is a false positive
+        // NOLINTNEXTLINE(hicpp-invalid-access-moved)
+        if (!inserted && seq_it->second.seq < entry.seq) {
+            seq_it->second = std::move(entry);
         }
     }
 
@@ -1301,13 +1305,13 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
     for (auto& entry : _log_state.abort_indexes) {
         tx_ss.abort_indexes.push_back(entry);
     }
-    for (auto& entry : _log_state.seq_table) {
-        tx_ss.seqs.push_back(entry.second);
+    for (const auto& entry : _log_state.seq_table) {
+        tx_ss.seqs.push_back(entry.second.copy());
     }
     tx_ss.offset = _insync_offset;
 
     iobuf tx_ss_buf;
-    reflection::adl<tx_snapshot>{}.to(tx_ss_buf, tx_ss);
+    reflection::adl<tx_snapshot>{}.to(tx_ss_buf, std::move(tx_ss));
 
     co_return stm_snapshot::create(
       tx_snapshot_version, _insync_offset, std::move(tx_ss_buf));

@@ -74,6 +74,14 @@ public:
         model::producer_identity pid;
         int32_t seq;
         model::timestamp::type last_write_timestamp;
+
+        seq_entry copy() const {
+            seq_entry ret;
+            ret.pid = pid;
+            ret.seq = seq;
+            ret.last_write_timestamp = last_write_timestamp;
+            return ret;
+        }
     };
 
     struct tx_snapshot {
