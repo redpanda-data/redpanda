@@ -433,9 +433,10 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         }
     } else if constexpr (reflection::is_std_vector_v<Type>) {
         using value_type = typename Type::value_type;
-        t.resize(read_nested<serde_size_t>(in, bytes_left_limit));
-        for (auto i = 0U; i < t.size(); ++i) {
-            t[i] = read_nested<value_type>(in, bytes_left_limit);
+        const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
+        t.reserve(size);
+        for (auto i = 0U; i < size; ++i) {
+            t.push_back(read_nested<value_type>(in, bytes_left_limit));
         }
     } else if constexpr (reflection::is_named_type_v<Type>) {
         t = Type{read_nested<typename Type::type>(in, bytes_left_limit)};
