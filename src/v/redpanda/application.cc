@@ -56,7 +56,6 @@
 #include "storage/compaction_controller.h"
 #include "storage/directories.h"
 #include "syschecks/syschecks.h"
-#include "test_utils/logs.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
 #include "v8_engine/data_policy_table.h"
