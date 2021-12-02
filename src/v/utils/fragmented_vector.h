@@ -44,6 +44,8 @@ class fragmented_vector {
     static_assert(elems_per_frag >= 1);
 
 public:
+    using value_type = T;
+
     fragmented_vector() noexcept = default;
     fragmented_vector(const fragmented_vector&) noexcept = delete;
     fragmented_vector& operator=(const fragmented_vector&) noexcept = delete;
