@@ -18,6 +18,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -84,6 +85,13 @@ func (r *Cluster) Default() {
 	}
 
 	r.setDefaultAdditionalConfiguration()
+	if r.Spec.PodDisruptionBudget == nil {
+		defaultMaxUnavailable := intstr.FromInt(1)
+		r.Spec.PodDisruptionBudget = &PDBConfig{
+			Enabled:        true,
+			MaxUnavailable: &defaultMaxUnavailable,
+		}
+	}
 }
 
 var defaultAdditionalConfiguration = map[string]int{
@@ -138,6 +146,8 @@ func (r *Cluster) ValidateCreate() error {
 
 	allErrs = append(allErrs, r.validateArchivalStorage()...)
 
+	allErrs = append(allErrs, r.validatePodDisruptionBudget()...)
+
 	if len(allErrs) == 0 {
 		return nil
 	}
@@ -176,6 +186,8 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 	}
 
 	allErrs = append(allErrs, r.validateArchivalStorage()...)
+
+	allErrs = append(allErrs, r.validatePodDisruptionBudget()...)
 
 	if len(allErrs) == 0 {
 		return nil
@@ -541,6 +553,29 @@ func (r *Cluster) validateArchivalStorage() field.ErrorList {
 				field.NewPath("spec").Child("configuration").Child("cloudStorage").Child("secretKeyRef").Child("namespace"),
 				r.Spec.CloudStorage.SecretKeyRef.Namespace,
 				"SecretKeyRef namespace has to be provided for cloud storage to be enabled"))
+	}
+	return allErrs
+}
+
+func (r *Cluster) validatePodDisruptionBudget() field.ErrorList {
+	var allErrs field.ErrorList
+	if r.Spec.PodDisruptionBudget == nil {
+		return allErrs
+	}
+	if (r.Spec.PodDisruptionBudget.MaxUnavailable != nil || r.Spec.PodDisruptionBudget.MinAvailable != nil) &&
+		!r.Spec.PodDisruptionBudget.Enabled {
+		allErrs = append(allErrs,
+			field.Invalid(
+				field.NewPath("spec").Child("podDisruptionBudget"),
+				r.Spec.PodDisruptionBudget,
+				"MaxUnavailable or MinAvailable is set but the podDisruptionBudget is not enabled"))
+	}
+	if r.Spec.PodDisruptionBudget.Enabled && r.Spec.PodDisruptionBudget.MaxUnavailable != nil && r.Spec.PodDisruptionBudget.MinAvailable != nil {
+		allErrs = append(allErrs,
+			field.Invalid(
+				field.NewPath("spec").Child("podDisruptionBudget"),
+				r.Spec.PodDisruptionBudget,
+				"Cannot specify both MaxUnavailable and MinAvailable in PodDisruptionBudget"))
 	}
 	return allErrs
 }
