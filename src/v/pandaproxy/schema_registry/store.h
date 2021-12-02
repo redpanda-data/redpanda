@@ -52,8 +52,10 @@ make_non_const_iterator(T& container, typename T::const_iterator it) {
 template<typename T>
 result<typename T::iterator>
 make_non_const_iterator(T& container, result<typename T::const_iterator> it) {
-    auto res = BOOST_OUTCOME_TRYX(it);
-    return detail::make_non_const_iterator(container, res);
+    if (it.has_error()) {
+        return std::move(it).assume_error();
+    }
+    return detail::make_non_const_iterator(container, it.assume_value());
 }
 
 } // namespace detail
@@ -119,7 +121,11 @@ public:
       const subject& sub,
       std::optional<schema_version> version,
       include_deleted inc_del) const {
-        auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
+        auto sub_it_res = get_subject_iter(sub, inc_del);
+        if (sub_it_res.has_error()) {
+            return std::move(sub_it_res).assume_error();
+        }
+        auto sub_it = sub_it_res.assume_value();
 
         if (!version.has_value()) {
             auto const& versions = sub_it->second.versions;
@@ -129,9 +135,11 @@ public:
             return *std::prev(versions.end());
         }
 
-        auto v_it = BOOST_OUTCOME_TRYX(
-          get_version_iter(*sub_it, *version, inc_del));
-        return *v_it;
+        auto v_it_res = get_version_iter(*sub_it, *version, inc_del);
+        if (v_it_res.has_error()) {
+            return std::move(v_it_res).assume_error();
+        }
+        return *v_it_res.value();
     }
 
     ///\brief Return a schema by subject and version.
@@ -139,10 +147,16 @@ public:
       const subject& sub,
       std::optional<schema_version> version,
       include_deleted inc_del) const {
-        auto v_id = BOOST_OUTCOME_TRYX(
-          get_subject_version_id(sub, version, inc_del));
-
-        auto def = BOOST_OUTCOME_TRYX(get_schema_definition(v_id.id));
+        auto v_id_res = get_subject_version_id(sub, version, inc_del);
+        if (v_id_res.has_error()) {
+            return std::move(v_id_res).assume_error();
+        }
+        auto v_id = std::move(v_id_res).assume_value();
+        auto def_res = get_schema_definition(v_id.id);
+        if (def_res.has_error()) {
+            return std::move(def_res).assume_error();
+        }
+        auto def = std::move(def_res).value();
 
         return subject_schema{
           .schema = {sub, std::move(def), std::move(v_id.refs)},
@@ -166,8 +180,11 @@ public:
     ///\brief Return a list of versions and associated schema_id.
     result<std::vector<schema_version>>
     get_versions(const subject& sub, include_deleted inc_del) const {
-        auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
-        const auto& versions = sub_it->second.versions;
+        auto sub_it_res = get_subject_iter(sub, inc_del);
+        if (sub_it_res.has_error()) {
+            return std::move(sub_it_res).assume_error();
+        }
+        const auto& versions = sub_it_res.assume_value()->second.versions;
         if (versions.empty()) {
             return not_found(sub);
         }
@@ -183,19 +200,26 @@ public:
 
     ///\brief Return the value of the 'deleted' field on a subject
     result<is_deleted> is_subject_deleted(const subject& sub) const {
-        auto sub_it = BOOST_OUTCOME_TRYX(
-          get_subject_iter(sub, include_deleted::yes));
-        return sub_it->second.deleted;
+        auto sub_it_res = get_subject_iter(sub, include_deleted::yes);
+        if (sub_it_res.has_error()) {
+            return std::move(sub_it_res).assume_error();
+        }
+        return sub_it_res.assume_value()->second.deleted;
     }
 
     ///\brief Return the value of the 'deleted' field on a subject
     result<is_deleted> is_subject_version_deleted(
       const subject& sub, const schema_version version) const {
-        auto sub_it = BOOST_OUTCOME_TRYX(
-          get_subject_iter(sub, include_deleted::yes));
-        auto v_it = BOOST_OUTCOME_TRYX(
-          get_version_iter(*sub_it, version, include_deleted::yes));
-        return v_it->deleted;
+        auto sub_it_res = get_subject_iter(sub, include_deleted::yes);
+        if (sub_it_res.has_error()) {
+            return std::move(sub_it_res).assume_error();
+        }
+        auto v_it_res = get_version_iter(
+          *sub_it_res.assume_value(), version, include_deleted::yes);
+        if (v_it_res.has_error()) {
+            return std::move(v_it_res).assume_error();
+        }
+        return v_it_res.value()->deleted;
     }
 
     /// \brief Return the seq_marker write history of a subject
@@ -203,8 +227,11 @@ public:
     /// \return A vector with at least one element
     result<std::vector<seq_marker>>
     get_subject_written_at(const subject& sub) const {
-        auto sub_it = BOOST_OUTCOME_TRYX(
-          get_subject_iter(sub, include_deleted::yes));
+        auto sub_it_res = get_subject_iter(sub, include_deleted::yes);
+        if (sub_it_res.has_error()) {
+            return std::move(sub_it_res).assume_error();
+        }
+        auto sub_it = sub_it_res.assume_value();
 
         if (!sub_it->second.deleted) {
             // Refuse to yield sequence history for anything that
@@ -228,13 +255,19 @@ public:
     /// \return A vector with at least one element
     result<std::vector<seq_marker>> get_subject_version_written_at(
       const subject& sub, schema_version version) const {
-        auto sub_it = BOOST_OUTCOME_TRYX(
-          get_subject_iter(sub, include_deleted::yes));
+        auto sub_it_res = get_subject_iter(sub, include_deleted::yes);
+        if (sub_it_res.has_error()) {
+            return std::move(sub_it_res).assume_error();
+        }
+        auto sub_it = sub_it_res.assume_value();
 
-        auto v_it = BOOST_OUTCOME_TRYX(
-          get_version_iter(*sub_it, version, include_deleted::yes));
+        auto v_it_res = get_version_iter(
+          *sub_it, version, include_deleted::yes);
+        if (v_it_res.has_error()) {
+            return std::move(v_it_res).assume_error();
+        }
 
-        if (!v_it->deleted) {
+        if (!v_it_res.value()->deleted) {
             // Refuse to yield sequence history for anything that
             // hasn't been soft-deleted, to prevent a hard-delete
             // from generating tombstones without a preceding soft-delete
@@ -289,8 +322,11 @@ public:
     ///\brief Return a list of versions and associated schema_id.
     result<std::vector<subject_version_entry>>
     get_version_ids(const subject& sub, include_deleted inc_del) const {
-        auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
-        return sub_it->second.versions;
+        auto sub_it_res = get_subject_iter(sub, inc_del);
+        if (sub_it_res.has_error()) {
+            return std::move(sub_it_res).assume_error();
+        }
+        return sub_it_res.assume_value()->second.versions;
     }
 
     bool is_referenced(const subject& sub, schema_version ver) {
@@ -313,8 +349,11 @@ public:
     ///\brief Delete a subject.
     result<std::vector<schema_version>> delete_subject(
       seq_marker marker, const subject& sub, permanent_delete permanent) {
-        auto sub_it = BOOST_OUTCOME_TRYX(
-          get_subject_iter(sub, include_deleted::yes));
+        auto sub_it_res = get_subject_iter(sub, include_deleted::yes);
+        if (sub_it_res.has_error()) {
+            return std::move(sub_it_res).assume_error();
+        }
+        auto sub_it = sub_it_res.assume_value();
 
         if (permanent && !sub_it->second.deleted) {
             return not_deleted(sub);
@@ -353,11 +392,18 @@ public:
     ///\brief Delete a subject version.
     result<bool>
     delete_subject_version(const subject& sub, schema_version version) {
-        auto sub_it = BOOST_OUTCOME_TRYX(
-          get_subject_iter(sub, include_deleted::yes));
+        auto sub_it_res = get_subject_iter(sub, include_deleted::yes);
+        if (sub_it_res.has_error()) {
+            return std::move(sub_it_res).assume_error();
+        }
+        auto sub_it = sub_it_res.assume_value();
         auto& versions = sub_it->second.versions;
-        auto v_it = BOOST_OUTCOME_TRYX(
-          get_version_iter(*sub_it, version, include_deleted::yes));
+        auto v_it_res = get_version_iter(
+          *sub_it, version, include_deleted::yes);
+        if (v_it_res.has_error()) {
+            return std::move(v_it_res).assume_error();
+        }
+        auto v_it = v_it_res.assume_value();
 
         // A hard delete should always be preceded by a soft delete
         if (!(v_it->deleted || sub_it->second.deleted)) {
@@ -392,8 +438,11 @@ public:
     ///\brief Get the compatibility level for a subject, or fallback to global.
     result<compatibility_level>
     get_compatibility(const subject& sub, default_to_global fallback) const {
-        auto sub_it = BOOST_OUTCOME_TRYX(
-          get_subject_iter(sub, include_deleted::no));
+        auto sub_it_res = get_subject_iter(sub, include_deleted::no);
+        if (sub_it_res.has_error()) {
+            return std::move(sub_it_res).assume_error();
+        }
+        auto sub_it = sub_it_res.assume_value();
         if (fallback) {
             return sub_it->second.compatibility.value_or(_compatibility);
         } else if (sub_it->second.compatibility) {
@@ -420,8 +469,11 @@ public:
 
     ///\brief Clear the compatibility level for a subject.
     result<bool> clear_compatibility(const subject& sub) {
-        auto sub_it = BOOST_OUTCOME_TRYX(
-          get_subject_iter(sub, include_deleted::yes));
+        auto sub_it_res = get_subject_iter(sub, include_deleted::yes);
+        if (sub_it_res.has_error()) {
+            return std::move(sub_it_res).assume_error();
+        }
+        auto sub_it = sub_it_res.assume_value();
         return std::exchange(sub_it->second.compatibility, std::nullopt)
                != std::nullopt;
     }
