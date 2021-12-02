@@ -1,180 +1,227 @@
 import sys
+import csv
 import json
 import os
 import subprocess
 import io
 import argparse
 import tempfile
-import gen_coverage
+import gen_coverage as rpcov
+
+KCLIENTS = ["FranzGo", "KafkaStreams", "Sarama"]
 
 
-class DucktapeResults:
-    def __init__(self, base_results_dir, current_results_dir):
-        self.base_results_dir = base_results_dir
-        self.current_results_dir = current_results_dir
-        self.report = 'report.json'
-        self.differences = {
-            # The tests that did not run.
-            # These tests are within base_results_dir but
-            # are not within current_results_dir.
-            'removed': [],
+def create_profraw_files_dict(files_list):
+    profraw_files = {}
 
-            # The new tests.
-            # These tests are within current_results_dir
-            # but are not within base_results_dir.
-            'created': [],
+    for profraw in files_list:
+        sub_dirs = profraw.split("/")
+        # The path to the ducktape test will also serve
+        # as the key for the test's profraw files
+        duck_test = os.path.join("/", *sub_dirs[:-3])
 
-            # The tests shared between base_results_dir
-            # and current_results_dir. These tests
-            # may have differences between them.
-            'shared': []
-        }
+        if duck_test not in profraw_files:
+            profraw_files[duck_test] = []
 
-    def create_test_dict(self, test):
-        test_dict = {}
-        test_dict['module_name'] = test['module_name']
-        test_dict['cls_name'] = test['cls_name']
-        test_dict['function_name'] = test['function_name']
-        test_dict['test_status'] = test['test_status']
-        test_dict['run_time_seconds'] = test['run_time_seconds']
+        profraw_files[duck_test].append(profraw)
 
-        return test_dict
-
-    def sub_test_dicts(self, base_test, current_test):
-        test_dict = self.create_test_dict(base_test)
-
-        test_dict['test_status'] = {
-            'base': base_test['test_status'],
-            'curr': current_test['test_status']
-        }
-
-        test_dict['run_time_seconds'] = {
-            'base':
-            base_test['run_time_seconds'],
-            'curr':
-            current_test['run_time_seconds'],
-            'diff':
-            abs(base_test['run_time_seconds'] -
-                current_test['run_time_seconds'])
-        }
-
-        return test_dict
-
-    def summarize(self, report_file_path):
-        summary = {
-            'general': {
-                'total_tests': 0,
-                'status_distribution': [],
-                'total_run_time_seconds': 0.0
-            },
-            'tests': []
-        }
-
-        with open(report_file_path) as report_file:
-            report = json.load(report_file)
-
-            summary['general']['status_distribution'] = [
-                report['num_passed'], report['num_failed'],
-                report['num_ignored']
-            ]
-
-            summary['general']['total_tests'] = sum(
-                summary['general']['status_distribution'])
-
-            for test in report['results']:
-                test_dict = self.create_test_dict(test)
-                summary['general']['total_run_time_seconds'] += test[
-                    'run_time_seconds']
-
-                summary['tests'].append(test_dict)
-
-        return summary
-
-    def inside(self, test, test_list):
-        for test_ in test_list:
-            if test['cls_name'] == test_['cls_name'] and test[
-                    'function_name'] == test_['function_name']:
-                return test_
-
-        return None
-
-    def compare_and_contrast(self, base_tests, current_tests):
-        for base_test in base_tests:
-            curr_test = self.inside(base_test, current_tests)
-
-            if curr_test:
-                diff_test = self.sub_test_dicts(base_test, curr_test)
-                self.differences['shared'].append(diff_test)
-            else:
-                self.differences['removed'].append(base_test)
-
-        for curr_test in current_tests:
-            base_test = self.inside(curr_test, base_tests)
-
-            if not base_test:
-                self.differences['created'].append(curr_test)
-
-        return self.differences
-
-    def calculate_diffs(self):
-        base_results_summary = self.summarize(
-            os.path.join(self.base_results_dir, self.report))
-        current_results_summary = self.summarize(
-            os.path.join(self.current_results_dir, self.report))
-
-        return self.compare_and_contrast(base_results_summary['tests'],
-                                         current_results_summary['tests'])
+    return profraw_files
 
 
-def report_ducktape(differences, enable_json=False):
-    if not enable_json:
-        print('# Differences between shared tests\n')
-        for test in differences['shared']:
-            print(f'Module: {test["module_name"]}')
-            print(f'Class: {test["cls_name"]}')
-            print(f'Function: {test["function_name"]}')
-            success_run = test["test_status"]["base"]
-            current_run = test["test_status"]["curr"]
-            print(
-                f'Result: [ Success Run: {success_run}, Current Run: {current_run} ]'
-            )
-            success_run = test["run_time_seconds"]["base"]
-            current_run = test["run_time_seconds"]["curr"]
-            diff = test["run_time_seconds"]["diff"]
-            print(
-                'Runtime (seconds): [ Success Run: %.3f, Current Run: %.3f, Diff: %.3f ]\n'
-                % (success_run, current_run, diff))
+def get_profraw_files(test_dir):
+    # need shell=True for wildcard use
+    find = f'find "{test_dir}" -name "*.profraw"'
+    results = subprocess.run(find,
+                             shell=True,
+                             capture_output=True,
+                             encoding="utf-8")
 
-        print('\n# Removed tests\n')
-        for test in differences['removed']:
-            print(f'Module: {test["module_name"]}')
-            print(f'Class: {test["cls_name"]}')
-            print(f'Function: {test["function_name"]}')
-            print(f'Result: {test["test_status"]}')
-            print('Runtime (seconds): %.3f\n' % test["run_time_seconds"])
+    results = results.stdout.strip().split("\n")
+    return create_profraw_files_dict(results)
 
-        print('\n# Created tests\n')
-        for test in differences['created']:
-            print(f'Module: {test["module_name"]}')
-            print(f'Class: {test["cls_name"]}')
-            print(f'Function: {test["function_name"]}')
-            print(f'Result: {test["test_status"]}')
-            print('Runtime (seconds): %.3f\n' % test["run_time_seconds"])
-    else:
-        print(json.dumps(differences, indent=4, sort_keys=True))
+
+def gen_coverage(profraw_files, rp_binary, ignore_regex):
+    cov_totals = {}
+
+    for duck_test in profraw_files:
+        data_profile = tempfile.NamedTemporaryFile()
+
+        rpcov.merge_profraw_files(profraw_files=profraw_files[duck_test],
+                                  data_profile=data_profile)
+        rpcov.gen_coverage_html(rp_binary=rp_binary,
+                                data_profile=data_profile,
+                                ignore_regex=ignore_regex,
+                                out_dir=duck_test)
+        cov_json = rpcov.gen_coverage_json(rp_binary=rp_binary,
+                                           data_profile=data_profile,
+                                           ignore_regex=ignore_regex)
+
+        # Writes coverage.json for each test
+        cov_path = os.path.join(duck_test, "coverage.json")
+        with open(cov_path, "w") as out_file:
+            json.dump(cov_json, out_file, indent=4, sort_keys=True)
+
+        # The last index has the totals for the test case
+        cov_totals[duck_test] = cov_json[-1]
+
+        data_profile.close()
+
+    return cov_totals
+
+
+def check_compat_tests(test_dir):
+    report_json = None
+    report_path = os.path.join(test_dir, "report.json")
+    with open(report_path, "r") as json_file:
+        report_json = json.load(json_file)
+
+    compat_results = {}
+    for kclient in KCLIENTS:
+        kclient_tests = list(
+            filter(lambda test: kclient in test["test_id"],
+                   report_json["results"]))
+
+        num_pass = 0
+        total = len(kclient_tests)
+        for duck_test in kclient_tests:
+            num_pass += duck_test["test_status"] == "PASS"
+
+        compat_results[kclient] = [num_pass, total]
+
+    return compat_results
+
+
+def create_dashboard_page(duck_sess, dash_path, cov_totals, compat_results):
+    html_template = """
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+td, th {
+  border: 1px solid #dddddd;
+  text-align: left;
+  padding: 0.2%;
+}
+
+tr:nth-child(even) {
+  background-color: #dddddd;
+}
+</style>
+</head>
+<body>
+    """
+
+    # add dashboard header and coverage totals
+    html_template += f"""
+<h1>Coverage Dashboard</h1>
+<h2>Ducktape Session: {duck_sess}</h2>
+<h3>Coverage Totals</h3>
+<table>
+  <tr>
+    <th>File</th>
+    <th>Function</th>
+    <th>Line</th>
+    <th>Region</th>
+    <th>Branch</th>
+  </tr>
+    """
+
+    for duck_test in cov_totals:
+        f_covered = cov_totals[duck_test]["functions"]["covered"]
+        f_count = cov_totals[duck_test]["functions"]["count"]
+        f_percent = cov_totals[duck_test]["functions"]["percent"]
+        l_covered = cov_totals[duck_test]["lines"]["covered"]
+        l_count = cov_totals[duck_test]["lines"]["count"]
+        l_percent = cov_totals[duck_test]["lines"]["percent"]
+        r_covered = cov_totals[duck_test]["regions"]["covered"]
+        r_count = cov_totals[duck_test]["regions"]["count"]
+        r_percent = cov_totals[duck_test]["regions"]["percent"]
+        b_covered = cov_totals[duck_test]["branches"]["covered"]
+        b_count = cov_totals[duck_test]["branches"]["count"]
+        b_percent = cov_totals[duck_test]["branches"]["percent"]
+
+        f_cov = f"{f_percent:.2f}% ({f_covered}/{f_count})"
+        l_cov = f"{l_percent:.2f}% ({l_covered}/{l_count})"
+        r_cov = f"{r_percent:.2f}% ({r_covered}/{r_count})"
+        b_cov = f"{b_percent:.2f}% ({b_covered}/{b_count})"
+
+        sub_dirs = duck_test.split("/")
+        test_signature = f"{sub_dirs[-3]}.{sub_dirs[-2]}"
+
+        html_template += f"""
+  <tr>
+    <td><a href="{duck_test}/index.html">{test_signature}</a></td>
+    <td>{f_cov}</td>
+    <td>{l_cov}</td>
+    <td>{r_cov}</td>
+    <td>{b_cov}</td>
+  </tr>
+        """
+
+    html_template += f"""
+</table>
+<hr>
+<h3>Compatibility Results per Kafka Client</h3>
+<table>
+  <tr>
+    <th>Kafka Client</th>
+    <th>Passes/Total</th>
+  </tr>
+    """
+    for kclient in compat_results:
+        num_pass = compat_results[kclient][0]
+        total = compat_results[kclient][1]
+
+        html_template += f"""
+  <tr>
+    <td>{kclient}</td>
+    <td>{num_pass}/{total}</td>
+  </tr>
+        """
+
+    html_template += """
+</table>
+</body>
+</html>
+    """
+
+    with open(dash_path, "w") as dash_page:
+        dash_page.write(html_template)
 
 
 def main(args):
+    duck_sess = os.path.join(args.build_root, "ducktape/results",
+                             args.ducktape_session)
 
-    base_results_dir = os.path.join(args.build_root, "ducktape/results",
-                                    args.base_results_dir)
-    current_results_dir = os.path.join(args.build_root, "ducktape/results",
-                                       args.current_results_dir)
+    print("Getting profraw files ...")
+    profraw_files = get_profraw_files(test_dir=duck_sess)
+    rp_binary = os.path.join(args.build_root, "debug/clang/bin/redpanda")
 
-    ducktape = DucktapeResults(base_results_dir=base_results_dir,
-                               current_results_dir=current_results_dir)
-    ducktape_differences = ducktape.calculate_diffs()
-    report_ducktape(ducktape_differences, args.json)
+    # generate code coverage report for each ducktape test
+    # and capture the totals
+    print("Generating coverage reports ...")
+    cov_totals = gen_coverage(profraw_files=profraw_files,
+                              rp_binary=rp_binary,
+                              ignore_regex=args.coverage_ignore_regex)
+
+    # check test status for the Kafka Clients we do compat testing on
+    print("Checking status of compat tests ...")
+    compat_results = check_compat_tests(test_dir=duck_sess)
+
+    # write coverage dash html file
+    print("Writing coverage dashboard html ...")
+    dash_path = os.path.join(duck_sess, "coverage_dash.html")
+    create_dashboard_page(duck_sess=args.ducktape_session,
+                          dash_path=dash_path,
+                          cov_totals=cov_totals,
+                          compat_results=compat_results)
+
+    print("... Done.")
 
 
 if __name__ == '__main__':
@@ -182,23 +229,17 @@ if __name__ == '__main__':
         description="Summarize the last ducktape test")
     parser.add_argument("--build-root",
                         type=str,
-                        default="redpanda/vbuild",
+                        required=True,
                         help="the path to redpanda/vbuild")
-    parser.add_argument("--base-results-dir",
+    parser.add_argument("--ducktape-session",
                         type=str,
                         required=True,
-                        help="the dir of the last successful ducktape run")
-    parser.add_argument("--current-results-dir",
-                        type=str,
-                        required=True,
-                        help="the dir of the latest ducktape run")
-    parser.add_argument("--target",
-                        type=str,
-                        default="src/v",
-                        help="get coverage for files in this path")
-    parser.add_argument("--json",
-                        action="store_true",
-                        help="enables output in json format")
+                        help="the dir of the ducktape session")
+    parser.add_argument(
+        "--coverage-ignore-regex",
+        type=str,
+        help="When calculating code coverage, ignore files that match the regex"
+    )
 
     args = parser.parse_args()
 
