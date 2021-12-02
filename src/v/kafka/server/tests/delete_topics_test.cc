@@ -55,17 +55,6 @@ public:
           = client.dispatch(std::move(req), kafka::api_version(2)).get0();
     }
 
-    void create_non_replicable_topic(ss::sstring src, ss::sstring name) {
-        cluster::non_replicable_topic nrt{
-          .source = model::
-            topic_namespace{model::kafka_namespace, model::topic(std::move(src))},
-          .name = model::topic_namespace{
-            model::kafka_namespace, model::topic(std::move(name))}};
-        auto& topics_frontend = app.controller->get_topics_frontend();
-        const auto resp = topics_frontend.local().create_non_replicable_topics(
-          {std::move(nrt)}, model::no_timeout);
-    }
-
     kafka::delete_topics_response
     send_delete_topics_request(kafka::delete_topics_request req) {
         auto client = make_kafka_client().get0();
@@ -164,34 +153,6 @@ FIXTURE_TEST(delete_valid_topics, delete_topics_request_fixture) {
     // Multi topic
     validate_valid_delete_topics_request(make_delete_topics_request(
       {model::topic("topic-2"), model::topic("topic-3")}, 10s));
-}
-
-FIXTURE_TEST(delete_non_replicable_topics, delete_topics_request_fixture) {
-    wait_for_controller_leadership().get();
-
-    // Until subsequent changes, its illegal to delete a non_replicable topic
-    create_topic("topic-1", 1, 1);
-    create_non_replicable_topic("topic-1", "topic-5");
-    auto resp = send_delete_topics_request(
-      make_delete_topics_request({model::topic("topic-5")}, 10s));
-    for (const auto& r : resp.data.responses) {
-        BOOST_REQUIRE_EQUAL(r.error_code, kafka::error_code::none);
-    }
-}
-
-FIXTURE_TEST(
-  error_delete_non_replicable_topics, delete_topics_request_fixture) {
-    wait_for_controller_leadership().get();
-
-    // Until subsequent changes, its illegal to delete a non_replicable topic
-    create_topic("topic-1", 1, 1);
-    create_non_replicable_topic("topic-1", "topic-5");
-    auto resp = send_delete_topics_request(
-      make_delete_topics_request({model::topic("topic-1")}, 10s));
-    for (const auto& r : resp.data.responses) {
-        BOOST_REQUIRE_EQUAL(
-          r.error_code, kafka::error_code::cluster_authorization_failed);
-    }
 }
 
 #if 0
