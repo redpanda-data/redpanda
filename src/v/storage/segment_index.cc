@@ -135,6 +135,10 @@ ss::future<> segment_index::truncate(model::offset o) {
         while (remove_back_elems-- > 0) {
             _state.pop_back();
         }
+    }
+
+    if (o < _state.max_offset) {
+        _needs_persistence = true;
         if (_state.empty()) {
             _state.max_timestamp = _state.base_timestamp;
             _state.max_offset = _state.base_offset;
@@ -144,6 +148,7 @@ ss::future<> segment_index::truncate(model::offset o) {
             _state.max_offset = o;
         }
     }
+
     return flush();
 }
 
