@@ -11,6 +11,7 @@
 #include "model/fundamental.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/scheduling.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -663,4 +664,34 @@ SEASTAR_THREAD_TEST_CASE(serde_fields_test_struct_test) {
       serde::from_iobuf<serde_fields_test_struct>(
         serde::to_iobuf(serde_fields_test_struct{123}))
       == serde_fields_test_struct{123});
+}
+
+SEASTAR_THREAD_TEST_CASE(fragmented_vector_test) {
+    std::vector<int> sizes(100);
+    std::iota(sizes.begin(), sizes.end(), 0);
+    sizes.push_back(4095);
+    sizes.push_back(4096);
+    sizes.push_back(4097);
+
+    for (auto i : sizes) {
+        // build input
+        fragmented_vector<int> v_in;
+        fragmented_vector<int> v_in_copy;
+        for (int j = 0; j < i; ++j) {
+            v_in.push_back(j);
+            v_in_copy.push_back(j);
+        }
+        BOOST_REQUIRE_EQUAL(v_in.size(), v_in_copy.size());
+        BOOST_REQUIRE_EQUAL_COLLECTIONS(
+          v_in.begin(), v_in.end(), v_in_copy.begin(), v_in_copy.end());
+
+        iobuf b;
+        serde::write(b, std::move(v_in));
+        iobuf_parser parser{std::move(b)};
+        auto const v_out = serde::read<fragmented_vector<int>>(parser);
+
+        BOOST_REQUIRE_EQUAL(v_out.size(), v_in_copy.size());
+        BOOST_REQUIRE_EQUAL_COLLECTIONS(
+          v_out.begin(), v_out.end(), v_in_copy.begin(), v_in_copy.end());
+    }
 }
