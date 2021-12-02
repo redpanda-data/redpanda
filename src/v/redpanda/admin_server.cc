@@ -1200,6 +1200,122 @@ void admin_server::register_partition_routes() {
           }
       });
 
+    /*
+     * Get detailed information about transactions for partition.
+     */
+    ss::httpd::partition_json::get_transactions.set(
+      _server._routes,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          auto ns = model::ns(req->param["namespace"]);
+          auto topic = model::topic(req->param["topic"]);
+
+          model::partition_id partition;
+          try {
+              partition = model::partition_id(
+                std::stoi(req->param["partition"]));
+          } catch (...) {
+              throw ss::httpd::bad_param_exception(fmt_with_ctx(
+                fmt::format,
+                "Partition id must be an integer: {}",
+                req->param["partition"]));
+          }
+
+          if (partition() < 0) {
+              throw ss::httpd::bad_param_exception(fmt_with_ctx(
+                fmt::format, "Invalid partition id {}", partition));
+          }
+
+          const model::ntp ntp(std::move(ns), std::move(topic), partition);
+
+          auto leader_id_opt = _metadata_cache.local().get_leader_id(ntp);
+          if (!leader_id_opt.has_value()) {
+              throw ss::httpd::base_exception(
+                fmt_with_ctx(
+                  fmt::format,
+                  "Partition {} does not have a leader, cannot redirect",
+                  ntp),
+                ss::httpd::reply::status_type::service_unavailable);
+          }
+
+          // Resend request to leader for current partition
+          if (leader_id_opt.value() != config::node().node_id()) {
+              throw co_await redirect_to_leader(*req, ntp);
+          }
+
+          auto shard = _shard_table.local().shard_for(ntp);
+          // Strange situation, but need to check it
+          if (!shard) {
+              throw ss::httpd::server_error_exception(fmt_with_ctx(
+                fmt::format, "Can not find shard for partition {}", partition));
+          }
+
+          co_return co_await _partition_manager.invoke_on(
+            *shard,
+            [ntp = std::move(ntp), req = std::move(req), this](
+              cluster::partition_manager& pm) mutable
+            -> ss::future<ss::json::json_return_type> {
+                auto partition = pm.get(ntp);
+                if (!partition) {
+                    throw ss::httpd::server_error_exception(fmt_with_ctx(
+                      fmt::format, "Can not find partition {}", partition));
+                }
+
+                auto rm_stm_ptr = partition->rm_stm();
+
+                if (!rm_stm_ptr) {
+                    throw ss::httpd::server_error_exception(fmt_with_ctx(
+                      fmt::format,
+                      "Can not get rm_stm for partition {}",
+                      partition));
+                }
+
+                auto transactions = co_await rm_stm_ptr->get_transactions();
+
+                if (transactions.has_error()) {
+                    co_await throw_on_error(*req, transactions.error(), ntp);
+                }
+                ss::httpd::partition_json::transactions ans;
+
+                auto offset_translator
+                  = partition->get_offset_translator_state();
+
+                for (auto& [id, tx_info] : transactions.value()) {
+                    ss::httpd::partition_json::producer_identity pid;
+                    pid.id = id.get_id();
+                    pid.epoch = id.get_epoch();
+
+                    ss::httpd::partition_json::transaction new_tx;
+                    new_tx.producer_id = pid;
+                    new_tx.status = ss::sstring(tx_info.get_status());
+
+                    new_tx.lso_bound = offset_translator->from_log_offset(
+                      tx_info.lso_bound);
+
+                    auto staleness = tx_info.get_staleness();
+                    // -1 is returned for expired transaction, because how long
+                    // transaction do not do progress is useless for expired tx.
+                    new_tx.staleness_ms = staleness.has_value()
+                                            ? staleness.value().count()
+                                            : -1;
+                    auto timeout = tx_info.get_timeout();
+                    // -1 is returned for expired transaction, because timeout
+                    // is useless for expired tx.
+                    new_tx.timeout_ms = timeout.has_value()
+                                          ? timeout.value().count()
+                                          : -1;
+
+                    if (tx_info.is_expired()) {
+                        ans.expired_transactions.push(new_tx);
+                    } else {
+                        ans.active_transactions.push(new_tx);
+                    }
+                }
+
+                co_return ss::json::json_return_type(ans);
+            });
+      });
+
     // make sure to call reset() before each use
     static thread_local json_validator set_replicas_validator(
       make_set_replicas_validator());
