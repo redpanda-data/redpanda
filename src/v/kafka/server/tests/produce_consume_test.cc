@@ -46,14 +46,6 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
         }).get0();
     }
 
-    void start_non_replicable() {
-        start();
-        model::topic_namespace tp_ns_src(model::ns("kafka"), test_topic);
-        model::topic_namespace tp_ns(
-          model::ns("kafka"), model::topic("non_replicable_topic"));
-        add_non_replicable_topic(std::move(tp_ns_src), std::move(tp_ns)).get();
-    }
-
     std::vector<kafka::produce_request::partition> small_batches(size_t count) {
         storage::record_batch_builder builder(
           model::record_batch_type::raft_data, model::offset(0));
@@ -167,23 +159,3 @@ FIXTURE_TEST(test_produce_consume_small_batches, prod_consume_fixture) {
       resp_2.data.topics.begin()->partitions.begin()->records->last_offset(),
       offset_2);
 };
-
-FIXTURE_TEST(test_cannot_produce_onto_non_replicable, prod_consume_fixture) {
-    wait_for_controller_leadership().get0();
-    start_non_replicable();
-    std::vector<kafka::produce_request::topic> topics;
-    topics.push_back(kafka::produce_request::topic{
-      .name = model::topic("non_replicable_topic"),
-      .partitions = small_batches(1)});
-    kafka::produce_request req(std::nullopt, 1, std::move(topics));
-    req.data.timeout_ms = std::chrono::seconds(2);
-    req.has_idempotent = false;
-    req.has_transactional = false;
-    kafka::produce_response r = producer->dispatch(std::move(req)).get0();
-    BOOST_REQUIRE_EQUAL(r.data.responses.size(), 1);
-    BOOST_REQUIRE_EQUAL(r.data.responses[0].name(), "non_replicable_topic");
-    BOOST_REQUIRE_EQUAL(r.data.responses.size(), 1);
-    BOOST_REQUIRE_EQUAL(
-      r.data.responses[0].partitions[0].error_code,
-      kafka::error_code::unknown_topic_or_partition);
-}
