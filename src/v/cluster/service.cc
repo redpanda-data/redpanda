@@ -76,7 +76,7 @@ service::create_topics(create_topics_request&& r, rpc::streaming_context&) {
              get_scheduling_group(),
              [this, r = std::move(r)]() mutable {
                  return _topics_frontend.local().create_topics(
-                   std::move(r.topics),
+                   without_custom_assignments(std::move(r.topics)),
                    model::timeout_clock::now() + r.timeout);
              })
       .then([this](std::vector<topic_result> res) {

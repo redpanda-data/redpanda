@@ -13,6 +13,7 @@
 #include "cluster/scheduling/allocation_node.h"
 #include "model/metadata.h"
 
+#include <absl/container/flat_hash_set.h>
 #include <fmt/ostream.h>
 
 namespace cluster {
@@ -66,6 +67,42 @@ hard_constraint_evaluator on_node(model::node_id id) {
     };
 
     return hard_constraint_evaluator(std::make_unique<impl>(id));
+}
+
+hard_constraint_evaluator on_nodes(const std::vector<model::node_id>& ids) {
+    class impl : public hard_constraint_evaluator::impl {
+    public:
+        explicit impl(const std::vector<model::node_id>& ids)
+          : _ids() {
+            _ids.reserve(ids.size());
+            for (auto& id : ids) {
+                _ids.emplace(id);
+            }
+        }
+
+        bool evaluate(const allocation_node& node) const final {
+            return _ids.contains(node.id());
+        }
+
+        void print(std::ostream& o) const final {
+            if (_ids.empty()) {
+                fmt::print(o, "on nodes: []");
+            }
+            auto it = _ids.begin();
+            fmt::print(o, "on nodes: [{}", *it);
+            ++it;
+            for (; it != _ids.end(); ++it) {
+                fmt::print(o, ",{}", *it);
+            }
+
+            fmt::print(o, "]");
+        }
+
+    private:
+        absl::flat_hash_set<model::node_id> _ids;
+    };
+
+    return hard_constraint_evaluator(std::make_unique<impl>(ids));
 }
 hard_constraint_evaluator
 distinct_from(const std::vector<model::broker_shard>& current) {

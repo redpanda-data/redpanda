@@ -9,6 +9,7 @@
 
 #include "kafka/server/handlers/create_topics.h"
 
+#include "cluster/cluster_utils.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/topics_frontend.h"
 #include "config/configuration.h"
@@ -51,10 +52,11 @@ bool is_supported(std::string_view name) {
 
 using validators = make_validator_types<
   creatable_topic,
-  no_custom_partition_assignment,
+  custom_partition_assignment_negative_partition_count,
   partition_count_must_be_positive,
   replication_factor_must_be_positive,
-  replication_factor_must_be_odd>;
+  replication_factor_must_be_odd,
+  replicas_diversity>;
 
 template<>
 ss::future<response_ptr> create_topics_handler::handle(
@@ -98,6 +100,10 @@ ss::future<response_ptr> create_topics_handler::handle(
 
           // fill in defaults if necessary
           for (auto& r : boost::make_iterator_range(begin, valid_range_end)) {
+              // skip custom assigned topics
+              if (!r.assignments.empty()) {
+                  continue;
+              }
               if (r.num_partitions == -1) {
                   r.num_partitions
                     = config::shard_local_cfg().default_topic_partitions();
@@ -152,8 +158,8 @@ ss::future<response_ptr> create_topics_handler::handle(
            * creating a topic. The the same policy is applied in Kafka.
            */
           for (auto& tp : to_create) {
-              if (!tp.properties.cleanup_policy_bitflags.has_value()) {
-                  tp.properties.cleanup_policy_bitflags
+              if (!tp.cfg.properties.cleanup_policy_bitflags.has_value()) {
+                  tp.cfg.properties.cleanup_policy_bitflags
                     = ctx.metadata_cache()
                         .get_default_cleanup_policy_bitflags();
               }

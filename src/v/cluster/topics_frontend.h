@@ -13,6 +13,7 @@
 
 #include "cluster/controller_stm.h"
 #include "cluster/data_policy_frontend.h"
+#include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/scheduling/types.h"
 #include "cluster/topic_table.h"
@@ -43,7 +44,8 @@ public:
       ss::sharded<ss::abort_source>&);
 
     ss::future<std::vector<topic_result>> create_topics(
-      std::vector<topic_configuration>, model::timeout_clock::time_point);
+      std::vector<custom_assignable_topic_configuration>,
+      model::timeout_clock::time_point);
 
     ss::future<std::vector<topic_result>> delete_topics(
       std::vector<model::topic_namespace>, model::timeout_clock::time_point);
@@ -76,8 +78,8 @@ public:
 private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 
-    ss::future<topic_result>
-      do_create_topic(topic_configuration, model::timeout_clock::time_point);
+    ss::future<topic_result> do_create_topic(
+      custom_assignable_topic_configuration, model::timeout_clock::time_point);
 
     ss::future<topic_result> replicate_create_topic(
       topic_configuration, allocation_units, model::timeout_clock::time_point);
@@ -102,6 +104,9 @@ private:
 
     // returns true if the topic name is valid
     static bool validate_topic_name(const model::topic_namespace&);
+
+    errc
+    validate_topic_configuration(const custom_assignable_topic_configuration&);
 
     ss::future<topic_result> do_create_partition(
       create_partititions_configuration, model::timeout_clock::time_point);

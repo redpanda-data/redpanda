@@ -422,6 +422,30 @@ struct topic_configuration {
     friend std::ostream& operator<<(std::ostream&, const topic_configuration&);
 };
 
+struct custom_partition_assignment {
+    model::partition_id id;
+    std::vector<model::node_id> replicas;
+    friend std::ostream&
+    operator<<(std::ostream&, const custom_partition_assignment&);
+};
+/**
+ * custom_assignable_topic_configuration type represents topic configuration
+ * together with possible custom partition assignments. When assignments vector
+ * is empty all the partitions will be assigned automatically.
+ */
+struct custom_assignable_topic_configuration {
+    explicit custom_assignable_topic_configuration(topic_configuration cfg)
+      : cfg(std::move(cfg)){};
+
+    topic_configuration cfg;
+    std::vector<custom_partition_assignment> custom_assignments;
+
+    bool has_custom_assignment() const { return !custom_assignments.empty(); }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const custom_assignable_topic_configuration&);
+};
+
 struct create_partititions_configuration {
     using custom_assignment = std::vector<model::node_id>;
     create_partititions_configuration(model::topic_namespace, int32_t);

@@ -38,6 +38,8 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
         return error_code::request_timed_out;
     case cluster::errc::invalid_topic_name:
         return error_code::invalid_topic_exception;
+    case cluster::errc::no_eligible_allocation_nodes:
+        return error_code::broker_not_available;
     case cluster::errc::replication_error:
     case cluster::errc::shutting_down:
     case cluster::errc::join_request_dispatch_error:
@@ -58,7 +60,6 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::invalid_node_operation:
     case cluster::errc::invalid_configuration_update:
     case cluster::errc::topic_operation_error:
-    case cluster::errc::no_eligible_allocation_nodes:
     case cluster::errc::allocation_error:
     case cluster::errc::partition_configuration_revision_not_updated:
     case cluster::errc::partition_configuration_in_joint_mode:

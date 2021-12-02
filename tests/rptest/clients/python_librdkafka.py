@@ -50,6 +50,9 @@ class PythonLibrdkafka:
                     f"topic {topic} creation failed: {e}")
                 raise
 
+    def get_client(self):
+        return AdminClient(self._get_config())
+
     def _get_config(self):
         conf = {
             'bootstrap.servers': self._redpanda.brokers(),

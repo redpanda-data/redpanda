@@ -32,14 +32,59 @@ template<typename Request, typename... Validators>
 CONCEPT(requires(RequestValidator<Request, Validators>, ...))
 using make_validator_types = validator_type_list<Request, Validators...>;
 
-struct no_custom_partition_assignment {
-    static constexpr error_code ec = error_code::invalid_replica_assignment;
+struct custom_partition_assignment_negative_partition_count {
+    static constexpr error_code ec = error_code::invalid_request;
     static constexpr const char* error_message
-      = "Replica assignment is not supported";
+      = "For custom partition assignment, partition count and replication "
+        "factor must be equal to -1";
 
     static bool is_valid(const creatable_topic& c) {
-        return c.assignments.empty();
+        if (!c.assignments.empty()) {
+            return c.num_partitions == -1 && c.replication_factor == -1;
+        }
+
+        return true;
+    };
+};
+
+struct replicas_diversity {
+    static constexpr error_code ec = error_code::invalid_request;
+    static constexpr const char* error_message
+      = "Topic partition replica set must contain unique nodes";
+
+    static bool is_valid(const creatable_topic& c) {
+        if (c.assignments.empty()) {
+            return true;
+        }
+        return std::all_of(
+          c.assignments.begin(),
+          c.assignments.end(),
+          [](const creatable_replica_assignment& cra) {
+              auto ids = cra.broker_ids;
+              std::sort(ids.begin(), ids.end());
+              auto last = std::unique(ids.begin(), ids.end());
+              return ids.size() == (size_t)std::distance(ids.begin(), last);
+          });
     }
+};
+
+struct all_replication_factors_are_the_same {
+    static constexpr error_code ec = error_code::invalid_request;
+    static constexpr const char* error_message
+      = "All custom assigned partitions must have the same number of replicas";
+
+    static bool is_valid(const creatable_topic& c) {
+        if (c.assignments.empty()) {
+            return true;
+        }
+        auto replication_factor = c.assignments.front().broker_ids.size();
+        return std::all_of(
+          c.assignments.begin(),
+          c.assignments.end(),
+          [replication_factor](const creatable_replica_assignment& cra) {
+              return cra.broker_ids.size() == replication_factor;
+          });
+    };
 };
 
 struct partition_count_must_be_positive {
@@ -48,6 +93,10 @@ struct partition_count_must_be_positive {
       = "Partitions count must be greater than 0";
 
     static bool is_valid(const creatable_topic& c) {
+        if (!c.assignments.empty()) {
+            return true;
+        }
+
         return c.num_partitions > 0;
     }
 };
@@ -58,6 +107,10 @@ struct replication_factor_must_be_odd {
       = "Replication factor must be an odd number - 1,3,5,7,9,11...";
 
     static bool is_valid(const creatable_topic& c) {
+        if (!c.assignments.empty()) {
+            return true;
+        }
+
         return (c.replication_factor % 2) == 1;
     }
 };
@@ -68,6 +121,10 @@ struct replication_factor_must_be_positive {
       = "Replication factor must be greater than 0";
 
     static bool is_valid(const creatable_topic& c) {
+        if (!c.assignments.empty()) {
+            return true;
+        }
+
         return c.replication_factor > 0;
     }
 };

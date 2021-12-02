@@ -15,6 +15,7 @@
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/partition_leaders_table.h"
+#include "cluster/scheduling/constraints.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/types.h"
 #include "model/errc.h"
@@ -65,9 +66,9 @@ needs_linearizable_barrier(const std::vector<topic_result>& results) {
 }
 
 ss::future<std::vector<topic_result>> topics_frontend::create_topics(
-  std::vector<topic_configuration> topics,
+  std::vector<custom_assignable_topic_configuration> topics,
   model::timeout_clock::time_point timeout) {
-    vlog(clusterlog.trace, "Create topics {}", topics);
+    vlog(clusterlog.info, "Create topics {}", topics);
     // make sure that STM is up to date (i.e. we have the most recent state
     // available) before allocating topics
     return _stm
@@ -89,7 +90,7 @@ ss::future<std::vector<topic_result>> topics_frontend::create_topics(
             std::begin(topics),
             std::end(topics),
             std::back_inserter(futures),
-            [this, timeout](topic_configuration& t_cfg) {
+            [this, timeout](custom_assignable_topic_configuration& t_cfg) {
                 return do_create_topic(std::move(t_cfg), timeout);
             });
 
@@ -307,29 +308,75 @@ make_error_result(const model::topic_namespace& tp_ns, std::error_code ec) {
     return topic_result(tp_ns, errc::topic_operation_error);
 }
 
-allocation_request make_allocation_request(const topic_configuration& cfg) {
+allocation_request
+make_allocation_request(const custom_assignable_topic_configuration& ca_cfg) {
+    // no custom assignments, lets allocator decide based on partition count
     allocation_request req;
-    req.partitions.reserve(cfg.partition_count);
-    for (auto p = 0; p < cfg.partition_count; ++p) {
-        req.partitions.emplace_back(
-          model::partition_id(p), cfg.replication_factor);
+    if (!ca_cfg.has_custom_assignment()) {
+        req.partitions.reserve(ca_cfg.cfg.partition_count);
+        for (auto p = 0; p < ca_cfg.cfg.partition_count; ++p) {
+            req.partitions.emplace_back(
+              model::partition_id(p), ca_cfg.cfg.replication_factor);
+        }
+    } else {
+        req.partitions.reserve(ca_cfg.custom_assignments.size());
+        for (auto& cas : ca_cfg.custom_assignments) {
+            allocation_constraints constraints;
+            constraints.hard_constraints.push_back(
+              ss::make_lw_shared<hard_constraint_evaluator>(
+                on_nodes(cas.replicas)));
+
+            req.partitions.emplace_back(
+              cas.id, cas.replicas.size(), std::move(constraints));
+        }
     }
     return req;
 }
 
-ss::future<topic_result> topics_frontend::do_create_topic(
-  topic_configuration t_cfg, model::timeout_clock::time_point timeout) {
-    if (!validate_topic_name(t_cfg.tp_ns)) {
-        return ss::make_ready_future<topic_result>(
-          topic_result(t_cfg.tp_ns, errc::invalid_topic_name));
+errc topics_frontend::validate_topic_configuration(
+  const custom_assignable_topic_configuration& assignable_config) {
+    if (!validate_topic_name(assignable_config.cfg.tp_ns)) {
+        return errc::invalid_topic_name;
     }
+
+    if (assignable_config.cfg.partition_count < 1) {
+        return errc::topic_invalid_partitions;
+    }
+
+    if (assignable_config.cfg.replication_factor < 1) {
+        return errc::topic_invalid_replication_factor;
+    }
+
+    if (assignable_config.has_custom_assignment()) {
+        for (auto& custom : assignable_config.custom_assignments) {
+            if (
+              static_cast<int16_t>(custom.replicas.size())
+              != assignable_config.cfg.replication_factor) {
+                return errc::topic_invalid_replication_factor;
+            }
+        }
+    }
+
+    return errc::success;
+}
+
+ss::future<topic_result> topics_frontend::do_create_topic(
+  custom_assignable_topic_configuration assignable_config,
+  model::timeout_clock::time_point timeout) {
+    auto validation_err = validate_topic_configuration(assignable_config);
+
+    if (validation_err != errc::success) {
+        return ss::make_ready_future<topic_result>(
+          topic_result(assignable_config.cfg.tp_ns, validation_err));
+    }
+
     return _allocator
       .invoke_on(
         partition_allocator::shard,
-        [t_cfg](partition_allocator& al) {
-            return al.allocate(make_allocation_request(t_cfg));
+        [assignable_config](partition_allocator& al) {
+            return al.allocate(make_allocation_request(assignable_config));
         })
-      .then([this, t_cfg = std::move(t_cfg), timeout](
+      .then([this, t_cfg = std::move(assignable_config.cfg), timeout](
               result<allocation_units> units) mutable {
           // no assignments, error
           if (!units) {
@@ -445,7 +492,8 @@ ss::future<std::vector<topic_result>> topics_frontend::autocreate_topics(
     // current node is a leader controller
     if (leader == _self) {
         return create_topics(
-          std::move(topics), model::timeout_clock::now() + timeout);
+          without_custom_assignments(std::move(topics)),
+          model::timeout_clock::now() + timeout);
     }
     // dispatch to leader
     return dispatch_create_to_leader(

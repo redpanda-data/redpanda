@@ -58,6 +58,10 @@ std::vector<topic_result> create_topic_results(
 }
 
 std::vector<topic_result> create_topic_results(
+  const std::vector<custom_assignable_topic_configuration>& requests,
+  errc error_code);
+
+std::vector<topic_result> create_topic_results(
   const std::vector<model::topic_namespace>& topics, errc error_code);
 
 ss::future<> update_broker_client(
@@ -192,5 +196,8 @@ ss::future<std::error_code> replicate_and_wait(
             });
       });
 }
+
+std::vector<custom_assignable_topic_configuration>
+  without_custom_assignments(std::vector<topic_configuration>);
 
 } // namespace cluster
