@@ -13,6 +13,7 @@
 #include "coproc/event_handler.h"
 #include "coproc/event_listener.h"
 #include "model/metadata.h"
+#include "v8_engine/data_policy.h"
 #include "v8_engine/data_policy_table.h"
 #include "v8_engine/environment.h"
 #include "v8_engine/executor.h"
@@ -21,6 +22,9 @@
 namespace v8_engine {
 
 class api {
+    static constexpr size_t _max_heap_size_bytes = 10000;
+    static constexpr size_t _run_timeout_ms = 10000;
+
 public:
     api();
 
@@ -40,6 +44,11 @@ public:
     std::optional<data_policy> get_dp(const model::topic_namespace& topic);
 
     static bool is_enabled();
+
+    ss::future<ss::lw_shared_ptr<script>>
+    get_script(model::topic_namespace topic);
+
+    executor_service& get_executor() { return _executor; }
 
 private:
     std::optional<enviroment> _env;

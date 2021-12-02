@@ -14,6 +14,10 @@
 #include "config/configuration.h"
 #include "syschecks/syschecks.h"
 
+#include <seastar/core/shared_ptr.hh>
+
+#include <cstddef>
+
 namespace v8_engine {
 
 api::api()
@@ -70,15 +74,6 @@ api::insert(model::topic_namespace topic, data_policy dp) {
         co_return std::error_code(cluster::errc::data_policy_already_exists);
     }
 
-    auto code = co_await _executor.get_code(dp.script_name());
-    if (!code.has_value()) {
-        _dp_table.local().erase(topic);
-        co_return std::error_code(
-          cluster::errc::data_policy_js_code_not_exists);
-    }
-
-    _script_dispatcher.local().insert(
-      topic, dp.function_name(), std::move(code.value()));
     co_return std::error_code(cluster::errc::success);
 }
 
@@ -102,6 +97,70 @@ std::optional<data_policy> api::get_dp(const model::topic_namespace& topic) {
     }
 
     return _dp_table.local().get_data_policy(topic);
+}
+
+ss::future<ss::lw_shared_ptr<script>>
+api::get_script(model::topic_namespace topic) {
+    if (!is_enabled()) {
+        co_return nullptr;
+    }
+
+    // I need to check is script_dispatcher contains dp or not.
+    if (_script_dispatcher.local().contains(topic)) {
+        co_return co_await _script_dispatcher.local().get(topic);
+    }
+
+    // Find data_policy information
+    auto dp = get_dp(topic);
+    if (!dp.has_value()) {
+        co_return nullptr;
+    }
+
+    // Inserat inforamtion that compilation is starting to script_dispatcher
+    // After that all changes for data_policy will be visable. Because we put
+    // conditional variable to script_dispatcher. We can not do any async
+    // request between contains and insert.
+    auto new_script_wrapper = ss::make_lw_shared<script_wrpapper>();
+    vassert(
+      _script_dispatcher.local().insert(topic, new_script_wrapper),
+      "Can not insert new script wrapper to script_dispatcher for topoic({})",
+      topic);
+
+    auto code = co_await _executor.get_code(dp.value().script_name());
+    if (!code.has_value()) {
+        // TODO: add logging
+        // Need to remove information about compilation form script_dispatcher.
+        // User can recompile it again.
+        _script_dispatcher.local().remove(topic);
+        co_return nullptr;
+    }
+
+    auto script_ptr = ss::make_lw_shared<script>(
+      _max_heap_size_bytes, _run_timeout_ms);
+
+    try {
+        co_await script_ptr->init(
+          dp.value().function_name(), std::move(code.value()), _executor);
+    } catch (const v8_engine::script_exception& ex) {
+        // add log
+        if (!_script_dispatcher.local().script_is_deleted(
+              topic, new_script_wrapper)) {
+            // Delete information about compilation
+            _script_dispatcher.local().remove(topic);
+        }
+
+        co_return nullptr;
+    }
+
+    if (_script_dispatcher.local().script_is_deleted(
+          topic, new_script_wrapper)) {
+        co_return nullptr;
+    }
+
+    new_script_wrapper->function = script_ptr;
+    new_script_wrapper->cv.broadcast();
+
+    co_return script_ptr;
 }
 
 } // namespace v8_engine
