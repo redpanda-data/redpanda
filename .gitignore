@@ -236,3 +236,8 @@ vbuild/
 
 # helm chart dependencies
 *.tgz
+
+# VSCode java settings
+.classpath
+.factorypath
+.settings/
