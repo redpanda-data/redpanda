@@ -95,7 +95,6 @@ struct index_state {
     friend bool operator==(const index_state&, const index_state&) = default;
 
     static std::optional<index_state> hydrate_from_buffer(iobuf);
-    static uint64_t checksum_state(const index_state&);
     friend std::ostream& operator<<(std::ostream&, const index_state&);
 };
 
