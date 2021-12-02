@@ -23,6 +23,7 @@ spec:
     - external:
         enabled: true
         subdomain: "test.subdomain.com"
+      port: 30001
       tls:
         enabled: true
     adminApi:
