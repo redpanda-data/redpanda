@@ -542,3 +542,23 @@ class RaftAvailabilityTest(RedpandaTest):
         #  - Because the anticipated leader should always win the first election
         for n in range(0, 20):
             assert self._get_leader()[0] == leader_node_id
+
+    @cluster(num_nodes=3)
+    def test_controller_node_isolation(self):
+        """
+        Isolate controller node, expect cluster to be available
+        """
+        def controller_available():
+            return self.redpanda.controller() is not None
+
+        # wait for controller
+        wait_until(controller_available, timeout_sec=10, backoff_sec=1)
+
+        # isolate controller
+        with FailureInjector(self.redpanda) as fi:
+            fi.inject_failure(
+                FailureSpec(FailureSpec.FAILURE_ISOLATE,
+                            self.redpanda.controller()))
+
+        for i in range(0, 128):
+            self._ping_pong()
