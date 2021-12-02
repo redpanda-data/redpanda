@@ -14,6 +14,7 @@
 #include "seastarx.h"
 #include "utils/named_type.h"
 
+#include <seastar/core/circular_buffer.hh>
 #include <seastar/util/bool_class.hh>
 
 #include <optional>
@@ -28,6 +29,13 @@ template<typename... Args>
 struct is_std_vector<std::vector<Args...>> : std::true_type {};
 template<typename T>
 inline constexpr bool is_std_vector_v = is_std_vector<T>::value;
+
+template<typename T>
+struct is_ss_circular_buffer : std::false_type {};
+template<typename... Args>
+struct is_ss_circular_buffer<ss::circular_buffer<Args...>> : std::true_type {};
+template<typename T>
+inline constexpr bool is_ss_circular_buffer_v = is_ss_circular_buffer<T>::value;
 
 template<typename T>
 struct is_std_optional : std::false_type {};

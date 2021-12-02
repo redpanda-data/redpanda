@@ -133,9 +133,76 @@ FIXTURE_TEST(
                   raft::replicate_options(raft::consistency_level::quorum_ack))
                 .get0();
     BOOST_REQUIRE((bool)r2);
+
+    BOOST_REQUIRE(r1.value().last_offset < r2.value().last_offset);
 }
 
-FIXTURE_TEST(test_rm_stm_prevents_duplicates, mux_state_machine_fixture) {
+FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, mux_state_machine_fixture) {
+    start_raft();
+
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    cluster::rm_stm stm(logger, _raft.get(), tx_gateway_frontend);
+    stm.testing_only_disable_auto_abort();
+
+    stm.start().get0();
+    auto stop = ss::defer([&stm] { stm.stop().get0(); });
+
+    wait_for_leader();
+    wait_for_meta_initialized();
+
+    std::vector<model::offset> offsets;
+
+    auto count = 5;
+
+    for (int i = 0; i < 10; i++) {
+        auto rdr = random_batch_reader(storage::test::record_batch_spec{
+          .offset = model::offset(i * count),
+          .allow_compression = true,
+          .count = count,
+          .producer_id = 1,
+          .base_sequence = i * count});
+        auto bid = model::batch_identity{
+          .pid = model::producer_identity{.id = 1, .epoch = 0},
+          .first_seq = i * count,
+          .last_seq = i * count + (count - 1)};
+        auto r1 = stm
+                    .replicate(
+                      bid,
+                      std::move(rdr),
+                      raft::replicate_options(
+                        raft::consistency_level::quorum_ack))
+                    .get0();
+        BOOST_REQUIRE((bool)r1);
+        offsets.push_back(r1.value().last_offset);
+    }
+
+    // replicate caches only metadata so as long as batches have the same
+    // pid and seq numbers the duplicated request should yield the same
+    // offsets
+    for (int i = 5; i < 10; i++) {
+        auto rdr = random_batch_reader(storage::test::record_batch_spec{
+          .offset = model::offset(i * count),
+          .allow_compression = true,
+          .count = count,
+          .producer_id = 1,
+          .base_sequence = i * count});
+        auto bid = model::batch_identity{
+          .pid = model::producer_identity{.id = 1, .epoch = 0},
+          .first_seq = i * count,
+          .last_seq = i * count + (count - 1)};
+        auto r1 = stm
+                    .replicate(
+                      bid,
+                      std::move(rdr),
+                      raft::replicate_options(
+                        raft::consistency_level::quorum_ack))
+                    .get0();
+        BOOST_REQUIRE((bool)r1);
+        BOOST_REQUIRE(r1.value().last_offset == offsets[i]);
+    }
+}
+
+FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
@@ -149,42 +216,50 @@ FIXTURE_TEST(test_rm_stm_prevents_duplicates, mux_state_machine_fixture) {
     wait_for_meta_initialized();
 
     auto count = 5;
-    auto rdr1 = random_batch_reader(storage::test::record_batch_spec{
-      .offset = model::offset(0),
-      .allow_compression = true,
-      .count = count,
-      .producer_id = 1,
-      .base_sequence = 0});
-    auto bid1 = model::batch_identity{
-      .pid = model::producer_identity{.id = 1, .epoch = 0},
-      .first_seq = 0,
-      .last_seq = count - 1};
-    auto r1 = stm
-                .replicate(
-                  bid1,
-                  std::move(rdr1),
-                  raft::replicate_options(raft::consistency_level::quorum_ack))
-                .get0();
-    BOOST_REQUIRE((bool)r1);
 
-    auto rdr2 = random_batch_reader(storage::test::record_batch_spec{
-      .offset = model::offset(count),
-      .allow_compression = true,
-      .count = count,
-      .producer_id = 1,
-      .base_sequence = 0});
-    auto bid2 = model::batch_identity{
-      .pid = model::producer_identity{.id = 1, .epoch = 0},
-      .first_seq = 0,
-      .last_seq = count - 1};
-    auto r2 = stm
-                .replicate(
-                  bid2,
-                  std::move(rdr2),
-                  raft::replicate_options(raft::consistency_level::quorum_ack))
-                .get0();
-    BOOST_REQUIRE(
-      r2 == failure_type<cluster::errc>(cluster::errc::generic_tx_error));
+    for (int i = 0; i < 6; i++) {
+        auto rdr = random_batch_reader(storage::test::record_batch_spec{
+          .offset = model::offset(i * count),
+          .allow_compression = true,
+          .count = count,
+          .producer_id = 1,
+          .base_sequence = i * count});
+        auto bid = model::batch_identity{
+          .pid = model::producer_identity{.id = 1, .epoch = 0},
+          .first_seq = i * count,
+          .last_seq = i * count + (count - 1)};
+        auto r1 = stm
+                    .replicate(
+                      bid,
+                      std::move(rdr),
+                      raft::replicate_options(
+                        raft::consistency_level::quorum_ack))
+                    .get0();
+        BOOST_REQUIRE((bool)r1);
+    }
+
+    {
+        auto rdr = random_batch_reader(storage::test::record_batch_spec{
+          .offset = model::offset(0),
+          .allow_compression = true,
+          .count = count,
+          .producer_id = 1,
+          .base_sequence = 0});
+        auto bid = model::batch_identity{
+          .pid = model::producer_identity{.id = 1, .epoch = 0},
+          .first_seq = 0,
+          .last_seq = count - 1};
+        auto r1 = stm
+                    .replicate(
+                      bid,
+                      std::move(rdr),
+                      raft::replicate_options(
+                        raft::consistency_level::quorum_ack))
+                    .get0();
+        BOOST_REQUIRE(
+          r1
+          == failure_type<cluster::errc>(cluster::errc::sequence_out_of_order));
+    }
 }
 
 FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
@@ -236,7 +311,7 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
                   raft::replicate_options(raft::consistency_level::quorum_ack))
                 .get0();
     BOOST_REQUIRE(
-      r2 == failure_type<cluster::errc>(cluster::errc::generic_tx_error));
+      r2 == failure_type<cluster::errc>(cluster::errc::sequence_out_of_order));
 }
 
 FIXTURE_TEST(
@@ -273,5 +348,5 @@ FIXTURE_TEST(
                  raft::replicate_options(raft::consistency_level::quorum_ack))
                .get0();
     BOOST_REQUIRE(
-      r == failure_type<cluster::errc>(cluster::errc::generic_tx_error));
+      r == failure_type<cluster::errc>(cluster::errc::sequence_out_of_order));
 }

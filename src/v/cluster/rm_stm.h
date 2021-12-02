@@ -48,7 +48,6 @@ public:
     using time_point_type = clock_type::time_point;
     using duration_type = clock_type::duration;
 
-    static constexpr const int8_t tx_snapshot_version = 0;
     static constexpr const int8_t abort_snapshot_version = 0;
     struct tx_range {
         model::producer_identity pid;
@@ -70,13 +69,59 @@ public:
         model::producer_identity pid;
     };
 
+    struct seq_cache_entry {
+        int32_t seq{-1};
+        model::offset offset;
+    };
+
     struct seq_entry {
+        static const int seq_cache_size = 5;
         model::producer_identity pid;
-        int32_t seq;
+        int32_t seq{-1};
+        model::offset last_offset{-1};
+        ss::circular_buffer<seq_cache_entry> seq_cache;
         model::timestamp::type last_write_timestamp;
+
+        seq_entry copy() const {
+            seq_entry ret;
+            ret.pid = pid;
+            ret.seq = seq;
+            ret.last_offset = last_offset;
+            ret.seq_cache.reserve(seq_cache.size());
+            std::copy(
+              seq_cache.cbegin(),
+              seq_cache.cend(),
+              std::back_inserter(ret.seq_cache));
+            ret.last_write_timestamp = last_write_timestamp;
+            return ret;
+        }
+
+        void update(int32_t new_seq, model::offset new_offset) {
+            if (new_seq < seq) {
+                return;
+            }
+
+            if (seq == new_seq) {
+                last_offset = new_offset;
+                return;
+            }
+
+            if (seq >= 0 && last_offset >= model::offset{0}) {
+                auto entry = seq_cache_entry{.seq = seq, .offset = last_offset};
+                seq_cache.push_back(entry);
+                while (seq_cache.size() >= seq_entry::seq_cache_size) {
+                    seq_cache.pop_front();
+                }
+            }
+
+            seq = new_seq;
+            last_offset = new_offset;
+        }
     };
 
     struct tx_snapshot {
+        static constexpr uint8_t version = 1;
+
         std::vector<model::producer_identity> fenced;
         std::vector<tx_range> ongoing;
         std::vector<prepare_marker> prepared;
@@ -154,6 +199,8 @@ private:
     ss::future<> save_abort_snapshot(abort_snapshot);
 
     bool check_seq(model::batch_identity);
+    std::optional<model::offset> known_seq(model::batch_identity) const;
+    void set_seq(model::batch_identity, model::offset);
 
     ss::future<result<raft::replicate_result>>
       replicate_tx(model::batch_identity, model::record_batch_reader);

@@ -46,11 +46,13 @@ struct adl {
       = std::is_same_v<type, std::chrono::milliseconds>;
     static constexpr bool is_time_point
       = std::is_same_v<type, ss::lowres_system_clock::time_point>;
+    static constexpr bool is_circular_buffer = is_ss_circular_buffer_v<type>;
 
     static_assert(
       is_optional || is_sstring || is_vector || is_named_type || is_iobuf
         || is_standard_layout || is_trivially_copyable || is_not_floating_point
-        || is_enum || is_ss_bool || is_chrono_milliseconds || is_time_point,
+        || is_enum || is_ss_bool || is_chrono_milliseconds || is_time_point
+        || is_circular_buffer,
       "rpc: no adl registered");
 
     type from(iobuf io) {
@@ -81,6 +83,14 @@ struct adl {
             int32_t n = in.template consume_type<int32_t>();
             std::vector<value_type> ret;
             ret.reserve(n);
+            while (n-- > 0) {
+                ret.push_back(adl<value_type>{}.from(in));
+            }
+            return ret;
+        } else if constexpr (is_circular_buffer) {
+            using value_type = typename type::value_type;
+            int32_t n = in.template consume_type<int32_t>();
+            ss::circular_buffer<value_type> ret;
             while (n-- > 0) {
                 ret.push_back(adl<value_type>{}.from(in));
             }
@@ -133,6 +143,13 @@ struct adl {
             out.append(t.data(), t.size());
             return;
         } else if constexpr (is_vector) {
+            using value_type = typename type::value_type;
+            adl<int32_t>{}.to(out, t.size());
+            for (value_type& i : t) {
+                adl<value_type>{}.to(out, std::move(i));
+            }
+            return;
+        } else if constexpr (is_circular_buffer) {
             using value_type = typename type::value_type;
             adl<int32_t>{}.to(out, t.size());
             for (value_type& i : t) {

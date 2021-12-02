@@ -164,6 +164,24 @@ static model::control_record_type parse_control_batch(model::record_batch& b) {
     return model::control_record_type(key_reader.read_int16());
 }
 
+struct seq_entry_v0 {
+    model::producer_identity pid;
+    int32_t seq;
+    model::timestamp::type last_write_timestamp;
+};
+
+struct tx_snapshot_v0 {
+    static constexpr uint8_t version = 0;
+
+    std::vector<model::producer_identity> fenced;
+    std::vector<rm_stm::tx_range> ongoing;
+    std::vector<rm_stm::prepare_marker> prepared;
+    std::vector<rm_stm::tx_range> aborted;
+    std::vector<rm_stm::abort_index> abort_indexes;
+    model::offset offset;
+    std::vector<seq_entry_v0> seqs;
+};
+
 rm_stm::rm_stm(
   ss::logger& logger,
   raft::consensus* c,
@@ -654,30 +672,47 @@ ss::future<> rm_stm::stop() {
 }
 
 bool rm_stm::check_seq(model::batch_identity bid) {
-    auto pid_seq = _log_state.seq_table.find(bid.pid);
+    auto& seq = _log_state.seq_table[bid.pid];
     auto last_write_timestamp = model::timestamp::now().value();
-    if (pid_seq == _log_state.seq_table.end()) {
-        if (bid.first_seq != 0) {
-            return false;
-        }
-        seq_entry entry{
-          .pid = bid.pid,
-          .seq = bid.last_seq,
-          .last_write_timestamp = last_write_timestamp};
-        _oldest_session = std::min(
-          _oldest_session, model::timestamp(entry.last_write_timestamp));
-        _log_state.seq_table.emplace(entry.pid, entry);
-    } else {
-        if (!is_sequence(pid_seq->second.seq, bid.first_seq)) {
-            return false;
-        }
-        pid_seq->second.seq = bid.last_seq;
-        pid_seq->second.last_write_timestamp = last_write_timestamp;
-        _oldest_session = std::min(
-          _oldest_session,
-          model::timestamp(pid_seq->second.last_write_timestamp));
+
+    if (!is_sequence(seq.seq, bid.first_seq)) {
+        return false;
     }
+
+    seq.update(bid.last_seq, model::offset{-1});
+
+    seq.pid = bid.pid;
+    seq.last_write_timestamp = last_write_timestamp;
+    _oldest_session = std::min(
+      _oldest_session, model::timestamp(seq.last_write_timestamp));
+
     return true;
+}
+
+std::optional<model::offset>
+rm_stm::known_seq(model::batch_identity bid) const {
+    auto pid_seq = _log_state.seq_table.find(bid.pid);
+    if (pid_seq == _log_state.seq_table.end()) {
+        return std::nullopt;
+    }
+    if (pid_seq->second.seq == bid.last_seq) {
+        return pid_seq->second.last_offset;
+    }
+    for (auto& entry : pid_seq->second.seq_cache) {
+        if (entry.seq == bid.last_seq) {
+            return entry.offset;
+        }
+    }
+    return std::nullopt;
+}
+
+void rm_stm::set_seq(model::batch_identity bid, model::offset last_offset) {
+    auto pid_seq = _log_state.seq_table.find(bid.pid);
+    if (pid_seq != _log_state.seq_table.end()) {
+        if (pid_seq->second.seq == bid.last_seq) {
+            pid_seq->second.last_offset = last_offset;
+        }
+    }
 }
 
 ss::future<result<raft::replicate_result>>
@@ -725,8 +760,26 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         co_return errc::generic_tx_error;
     }
 
+    auto cached_offset = known_seq(bid);
+    if (cached_offset) {
+        if (cached_offset.value() < model::offset{0}) {
+            vlog(
+              clusterlog.warn,
+              "Status of the original attempt is unknown (still is in-flight "
+              "or failed). Failing a retried batch with the same pid:{} & "
+              "seq:{} to avoid duplicates",
+              bid.pid,
+              bid.last_seq);
+            // kafka clients don't automaticly handle fatal errors
+            // so when they encounter the error they will be forced
+            // to propagate it to the app layer
+            co_return errc::generic_tx_error;
+        }
+        co_return raft::replicate_result{.last_offset = cached_offset.value()};
+    }
+
     if (!check_seq(bid)) {
-        co_return errc::generic_tx_error;
+        co_return errc::sequence_out_of_order;
     }
 
     if (!_mem_state.tx_start.contains(bid.pid)) {
@@ -753,6 +806,8 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
 
     auto replicated = r.value();
 
+    set_seq(bid, replicated.last_offset);
+
     auto last_offset = model::offset(replicated.last_offset());
     if (!_mem_state.tx_start.contains(bid.pid)) {
         auto base_offset = model::offset(
@@ -771,10 +826,33 @@ ss::future<result<raft::replicate_result>> rm_stm::replicate_seq(
     if (!co_await sync(_sync_timeout)) {
         co_return errc::not_leader;
     }
-    if (!check_seq(bid)) {
-        co_return errc::generic_tx_error;
+
+    auto cached_offset = known_seq(bid);
+    if (cached_offset) {
+        if (cached_offset.value() < model::offset{0}) {
+            vlog(
+              clusterlog.warn,
+              "Status of the original attempt is unknown (still is in-flight "
+              "or failed). Failing a retried batch with the same pid:{} & "
+              "seq:{} to avoid duplicates",
+              bid.pid,
+              bid.last_seq);
+            // kafka clients don't automaticly handle fatal errors
+            // so when they encounter the error they will be forced
+            // to propagate it to the app layer
+            co_return errc::generic_tx_error;
+        }
+        co_return raft::replicate_result{.last_offset = cached_offset.value()};
     }
-    co_return co_await _c->replicate(_insync_term, std::move(br), opts);
+
+    if (!check_seq(bid)) {
+        co_return errc::sequence_out_of_order;
+    }
+    auto r = co_await _c->replicate(_insync_term, std::move(br), opts);
+    if (r) {
+        set_seq(bid, r.value().last_offset);
+    }
+    co_return r;
 }
 
 model::offset rm_stm::last_stable_offset() {
@@ -1156,20 +1234,16 @@ ss::future<> rm_stm::apply_control(
 
 void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
     if (bid.has_idempotent()) {
-        auto pid_seq = _log_state.seq_table.find(bid.pid);
-        if (pid_seq == _log_state.seq_table.end()) {
-            seq_entry entry{
-              .pid = bid.pid,
-              .seq = bid.last_seq,
-              .last_write_timestamp = bid.max_timestamp.value()};
-            _log_state.seq_table.emplace(bid.pid, entry);
-            _oldest_session = std::min(
-              _oldest_session, model::timestamp(entry.last_write_timestamp));
-        } else if (pid_seq->second.seq < bid.last_seq) {
-            pid_seq->second.seq = bid.last_seq;
-            pid_seq->second.last_write_timestamp = bid.max_timestamp.value();
-            _oldest_session = std::min(_oldest_session, bid.max_timestamp);
+        auto [seq_it, inserted] = _log_state.seq_table.try_emplace(bid.pid);
+        if (inserted) {
+            seq_it->second.pid = bid.pid;
+            seq_it->second.seq = bid.last_seq;
+            seq_it->second.last_offset = last_offset;
+        } else {
+            seq_it->second.update(bid.last_seq, last_offset);
         }
+        seq_it->second.last_write_timestamp = bid.max_timestamp.value();
+        _oldest_session = std::min(_oldest_session, bid.max_timestamp);
     }
 
     if (bid.is_transactional) {
@@ -1209,12 +1283,30 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
 
 ss::future<>
 rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
-    vassert(
-      hdr.version == tx_snapshot_version,
-      "unsupported seq_snapshot_header version {}",
-      hdr.version);
+    tx_snapshot data;
     iobuf_parser data_parser(std::move(tx_ss_buf));
-    auto data = reflection::adl<tx_snapshot>{}.from(data_parser);
+    if (hdr.version == tx_snapshot::version) {
+        data = reflection::adl<tx_snapshot>{}.from(data_parser);
+    } else if (hdr.version == tx_snapshot_v0::version) {
+        auto data_v0 = reflection::adl<tx_snapshot_v0>{}.from(data_parser);
+        data.fenced = data_v0.fenced;
+        data.ongoing = data_v0.ongoing;
+        data.prepared = data_v0.prepared;
+        data.aborted = data_v0.aborted;
+        data.abort_indexes = data_v0.abort_indexes;
+        data.offset = data_v0.offset;
+        for (auto seq_v0 : data_v0.seqs) {
+            auto seq = seq_entry{
+              .pid = seq_v0.pid,
+              .seq = seq_v0.seq,
+              .last_offset = model::offset{-1},
+              .last_write_timestamp = seq_v0.last_write_timestamp};
+            data.seqs.push_back(std::move(seq));
+        }
+    } else {
+        vassert(
+          false, "unsupported tx_snapshot_header version {}", hdr.version);
+    }
 
     for (auto& entry : data.fenced) {
         _log_state.fence_pid_epoch.emplace(entry.get_id(), entry.get_epoch());
@@ -1235,9 +1327,13 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
       std::make_move_iterator(data.abort_indexes.begin()),
       std::make_move_iterator(data.abort_indexes.end()));
     for (auto& entry : data.seqs) {
-        auto [seq_it, _] = _log_state.seq_table.try_emplace(entry.pid, entry);
-        if (seq_it->second.seq < entry.seq) {
-            seq_it->second = entry;
+        auto [seq_it, inserted] = _log_state.seq_table.try_emplace(
+          entry.pid, std::move(entry));
+        // try_emplace does not move from r-value reference if the insertion
+        // didn't take place so the clang-tidy warning is a false positive
+        // NOLINTNEXTLINE(hicpp-invalid-access-moved)
+        if (!inserted && seq_it->second.seq < entry.seq) {
+            seq_it->second = std::move(entry);
         }
     }
 
@@ -1301,16 +1397,16 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
     for (auto& entry : _log_state.abort_indexes) {
         tx_ss.abort_indexes.push_back(entry);
     }
-    for (auto& entry : _log_state.seq_table) {
-        tx_ss.seqs.push_back(entry.second);
+    for (const auto& entry : _log_state.seq_table) {
+        tx_ss.seqs.push_back(entry.second.copy());
     }
     tx_ss.offset = _insync_offset;
 
     iobuf tx_ss_buf;
-    reflection::adl<tx_snapshot>{}.to(tx_ss_buf, tx_ss);
+    reflection::adl<tx_snapshot>{}.to(tx_ss_buf, std::move(tx_ss));
 
     co_return stm_snapshot::create(
-      tx_snapshot_version, _insync_offset, std::move(tx_ss_buf));
+      tx_snapshot::version, _insync_offset, std::move(tx_ss_buf));
 }
 
 ss::future<> rm_stm::save_abort_snapshot(abort_snapshot snapshot) {
