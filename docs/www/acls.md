@@ -3,35 +3,33 @@ title: Authorization & authentication
 order: 1
 ---
 
-# Authorization & authentication
+# Encryption, authorization, and authentication
 
-Security should be at the heart of the design of any software project, and Redpanda is not an exception. Today, I wanna introduce the different built-in mechanisms by which you will be able to make your Redpanda cluster more secure. By following this guide, you will familiarize yourself with the available authorization and authentication methods that Redpanda support, both at a conceptual level and at a technical level through hands-on examples.
+By default, a Redpanda install starts with no security enabled. Any client can talk over plaintext to Redpanda and perform any operation. You can protect your Redpanda cluster externally through network ACLs, private networks, and so on; this guide does not cover external protection. To ensure defense in depth, it is recommended to always enable encryption and to always use authorization & authentication.
 
-**A note on scope:** Let's emphasize the word _built-in_ in the previous paragraph. Security is a goal achieved through many different aspects, such as network configuration, organization-wide roles management, among many others. However, they are external to Redpanda so this guide will not cover them.
-
-All the concepts described here are compatible with the current version of Kafka® and its client libraries and CLIs.  
+All concepts described here are compatible with Kafka® and its client libraries and CLIs.  
 
 ## Prerequisites
 
-- A running redpanda node.
+- A running Redpanda node.
 
-If you haven't checked them out, you can follow our [Getting Started guides](https://vectorized.io/docs/), where you'll find how to get started with Redpanda.
+You can follow our [Getting Started guides](https://vectorized.io/docs/) if needed to learn how to get started with Redpanda.
 
 - TLS certificates.
 
-If you have your own certificates, either self-signed or issued by a trusted Certificate Authority, you can use them for this guide. Otherwise, feel free to [use our prepared script](https://gist.github.com/0x5d/56422a0c447e58d8ccbfa0ce1fd6bac6) to generate certificates or simply run the command:
+TLS certificates are needed for encryption. You do not need TLS for testing, but some concepts below rely on TLS certificates. If you have your own certificates, either self-signed or issued by a trusted Certificate Authority, you can use them for this guide. Otherwise, feel free to [use our prepared script](https://gist.github.com/0x5d/56422a0c447e58d8ccbfa0ce1fd6bac6) to generate certificates:
 
 ```bash
 bash <(curl -s https://gist.githubusercontent.com/0x5d/56422a0c447e58d8ccbfa0ce1fd6bac6/raw/933ca97702f6b844f706b674133105a30bdad3ff/generate-certs.sh)
 ```
 
-## Authentication
+## Encryption: TLS & mTLS
 
-### Mutual TLS (mTLS)
+TLS encrypts network traffic between a client and a server, but does not protect against access to a server. With TLS alone (not mTLS), you need to use ACLs to gate access to your brokers.
 
-Mutual TLS, or 2-way TLS, is an authentication method in which the server keeps a set of trusted certificates in the form of a "truststore" file, and all clients attempting to establish a connection must present their certificate.
+Mutual TLS, or 2-way TLS, is an authentication method in which both the server and the client verify each other's private keys. A thorough description of mTLS can be read [here](https://www.cloudflare.com/learning/access-management/what-is-mutual-tls/).
 
-If you're on Kubernetes, make sure you set up the [connectivity in the Kubernetes network](https://vectorized.io/docs/kubernetes-connectivity/).
+If you're on Kubernetes, be sure to set up the [connectivity in the Kubernetes network](https://vectorized.io/docs/kubernetes-connectivity/).
 
 To enable TLS, set the `require_client_auth` field to `true` in the required listener's configuration. For example, to enable mTLS for the "external" API listener:
 
@@ -46,6 +44,7 @@ redpanda:
 
   advertised_kafka_api:
   # The advertised listeners. `name` should match the name of a declared listener.
+  # The address:port here is what clients will connect to.
   - name: internal
     address: localhost
     port: 9092
@@ -57,7 +56,7 @@ redpanda:
     require_client_auth: true # <- This needs to be enabled!
     cert_file: <path to PEM-formatted cert file>
     key_file: <path to PEM-formatted key file>
-    truststore_file: <path to PEM-formatted truststore file>
+    truststore_file: <path to PEM-formatted CA file>
 ```
 
 If you're using rpk to interact with the Kafka API (managing topics or messages), pass the `--tls-key`, `--tls-cert`, and `--tls-truststore` flags to authenticate.
@@ -68,37 +67,36 @@ If you're interacting with the Admin API (managing users for example), pass the 
  rpk topic create test-topic \
 --tls-key <path to PEM-formatted key file> \
 --tls-cert <path to PEM-formatted cert file> \
---tls-truststore <path to PEM-formatted truststore file>
+--tls-truststore <path to PEM-formatted CA file>
 ```
+
 The result will be: 
 
 ```bash
-Created topic 'test-topic'.
+TOPIC       STATUS
+test-topic  OK
 ```
 
-Check the configuration of the topic with:
+And now, check the configuration of the topic with:
 
 ```bash
-rpk topic describe 'test-topic'
+rpk topic describe test-topic <tls flags from above>
 ```
 
-> **_Note_** - `rpk` defaults to connecting to `localhost:9092` for the Kafka API commands. If you're connecting to a remote broker, pass `--brokers <node IP>:<kafka API port>`
+`rpk` defaults to connecting to `localhost:9092` for the Kafka protocol commands. If you are connecting to a remote broker or have configured your local broker differently, use the `--brokers <address:port>` flag. A further walkthrough of connecting with TLS and mTLS can be seen on [this page](https://vectorized.io/blog/tls-config/).
 
-> You can also connect with [TLS and mutual TLS encryption](https://vectorized.io/blog/tls-config/).
+## ACLs
 
-### SASL/ SCRAM
+Access control lists allow you to provision users and provide each user fine grained access to specific resources. Redpanda provides ACLs through [SASL](https://en.wikipedia.org/wiki/Simple_Authentication_and_Security_Layer)/[SCRAM](https://en.wikipedia.org/wiki/Salted_Challenge_Response_Authentication_Mechanism), a secure and well defined authentication flow.
 
-Redpanda also supports client authentication with usernames and passwords using SASL/SCRAM ([Simple Authentication and Security Layer protocol](https://en.wikipedia.org/wiki/Simple_Authentication_and_Security_Layer) with [Salted Challenge Response Authentication Mechanism)](https://en.wikipedia.org/wiki/Salted_Challenge_Response_Authentication_Mechanism).
+### Enabling SASL/SCRAM
 
-#### Enabling SASL/ SCRAM
-
-To enable SASL/SCRAM, set `redpanda.enable_sasl` to `true` in the configuration file and specify at least one "superuser" to give permissions to for all operations on the clusters.
+To enable SASL/SCRAM, set `redpanda.enable_sasl` to `true` in the Redpanda configuration file and specify at least one "superuser" that will be used to bootstrap permissions for other users in the cluster.
 
 Your config should look something like this:
 
 ```yaml
-redpanda
-  
+redpanda:
   enable_sasl: true
   superusers:
   - admin
@@ -107,40 +105,15 @@ redpanda
 
 <tabs>
   <tab id="Local Redpanda ">
-  You can find the configuration file here
-
-  ```bash
-  /etc/redpanda/redpanda.yaml
-  ```
-
-After you change the config, restart Redpanda service for changes to take effect. 
-
+You can modify the configuration file at `/etc/redpanda/redpanda.yaml`. After you modify the file, restart Redpanda for your changes to take effect.
   </tab>
+
   <tab id="Docker Container">
-  To access the files inside the container, first you have to enter the container.
-
-  You can do that by running:
-
-```bash
-  docker exec -it <name-of-container> bash
-```
-
-Change `<name-of-container>` for your container and execute the command. 
-Then go to the same directory as a local redpanda config:
-
-```bash
-  /etc/redpanda/redpanda.yaml
-```
-
-After you finish it, restart the container for changes to take effect. 
-
+Open a terminal into your container with `docker exec -it <container-id> bash` and then modify the configuration file at `/etc/redpanda/redpanda.yaml`. After you modify the file, restart Redpanda for your changes to take effect.
   </tab>
+
   <tab id="Kubernetes ">
-  For Kubernetes, things are a little different. You can change your configuration file with the YAML for the cluster.
-
-  If you're using our [external-connectivity sample](https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/external_connectivity.yaml), specify the `redpanda.enable_sasl` and `superuser` values in the cluster spec YAML file.
-
-  For example: 
+Change your configuration file in the YAML for the cluster. If you are using our [external-connectivity sample](https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/external_connectivity.yaml), specify the `redpanda.enable_sasl` and `superuser` values in the cluster spec YAML file. For example: 
 
 ```yaml
 apiVersion: redpanda.vectorized.io/v1alpha1
@@ -177,11 +150,9 @@ spec:
     developerMode: true
 ```
 
-> **_Note_** - The attributes in K8s YAML are in camelCase instead of snake_case used in local redpanda.yaml
+> **_Note_** The attributes in k8s YAML are `camelCase` instead of `snake_case` as is used in the redpanda.yaml configuration file.
 
-Remember, that after you change the config file you **must** restart the pods for changes to take effect.
-
-You can check if your spec is correct by running: 
+After you change the configuration file, you must restart the pods for changes to take effect. You can check if your spec is correct by running: 
 
 ```
 kubectl get clusters external-connectivity -o=jsonpath='{.spec}' 
@@ -190,9 +161,13 @@ kubectl get clusters external-connectivity -o=jsonpath='{.spec}'
   </tab>
 </tabs>
 
-#### Creating admin user
+#### Users
 
-Create a new user and set a password by running the following command. Replace `<password>` for a password of your choice. 
+The `superusers` section in your `redpanda.yaml` is the user that you will use to bootstrap other users and ACLs. For example, if you used super user `admin`, Redpanda _allows_ the `admin` user to do anything, but Redpanda does _not_ create the `admin` user. You must now create this super user. Creating users happens through the Redpanda admin API, which defaults to `localhost:9644`. In the `rpk` commands below, if you have configured the admin API to use a different address/port, use the `--api-urls <address:port>` flag.
+
+The reason you need a super user is because creating ACLs for users uses the Kafka protocol (default of `localhost:9092`, mentioned above). Since no ACLs exist at the start, you need a super user to bypass the requirement of needing ACLs to create ACLs. Once you provision an initial user and initial set of ACLs (described below), it is recommended to delete the super user.
+
+You can create users and set passwords by running the following command:
 
 <tabs>
   <tab id="Local Redpanda" >
@@ -216,18 +191,9 @@ kubectl exec -c redpanda external-connectivity-0 -- rpk acl user create admin \
   </tab>
 </tabs>
 
-
-The response should be:
-
-```
-Created user 'admin'
-```
-
-> **_Note_** - `rpk acl` is an Admin API command so it defaults to connecting to `localhost:9644`. If you have a different IP address, URL, or port, pass `--api-urls <node IP>:<admin API port>`.
-
 #### Connect to Redpanda
 
-You're now able to use the created identity to interact with the Kafka API. For example:
+You can use the newly created user to interact with Redpanda with the Kafka protocol:
 
 <tabs>
   <tab id="Local Redpanda" >
@@ -252,25 +218,21 @@ kubectl exec -c redpanda external-connectivity-0 -- rpk topic describe test-topi
   </tab>
 </tabs>
 
-The response should look something like this: 
-
 ```bash
-  Name                test-topic  
-  Internal            false       
-  Cleanup policy      delete      
-  Config:             
-  Name                Value       Read-only  Sensitive  
-  partition_count     1           false      false      
-  replication_factor  1           false      false      
-  cleanup.policy      delete      false      false      
-  Partitions          1 - 1 out of 1  
-  Partition           Leader          Replicas   In-Sync Replicas  High Watermark  
-  0                   1               [1]        [1]               0               
+SUMMARY
+=======
+NAME        test-topic
+PARTITIONS  1
+REPLICAS    1
+
+CONFIGS
+=======
+KEY                     VALUE       SOURCE
+cleanup.policy          delete      DYNAMIC_TOPIC_CONFIG
+compression.type        producer    DEFAULT_CONFIG
+message.timestamp.type  CreateTime  DEFAULT_CONFIG
+...
 ```
-
-> **_Note_** - If you still have the TLS config from the previous section, you'll also need to pass the TLS flags.
-
-Notice that this command uses the Kafka API, so we're using the `--brokers <node IP>:<kafka API port>` pattern here, having the default value as `localhost:9092`.
 
 ## Authorization
 
@@ -288,7 +250,7 @@ Once you activate SASL, by default, only the super users will have access to the
 
 #### ACL Terminology
 
-Entities accessing the **resources** are called **principals**. User and Group (as in UserGroup), for example, are 2 different types of principals.
+Entities accessing the **resources** are called **principals**. A User:foo is the principal for user "foo".
 
 You can decide whether to to `allow` or `deny` **permissions** to access to the resources.
  
@@ -326,7 +288,7 @@ The special name '\*' matches any name, meaning an ACL with principal "User:\*" 
 
 Hosts can be seen as an extension of the principal, and effectively gate where the principal can connect from. 
 
-When creating ACLs, unless otherwise specified, the default host is the wildcard '*' which allows or denies the principal from all hosts.
+When creating ACLs, unless otherwise specified, the default host is the wildcard `*` which allows or denies the principal from all hosts.
 
 If specifying hosts, you must pair the `--allow-host` flag with the `--allow-principal` flag
 
@@ -929,10 +891,7 @@ Here's the local flags:
 
 #### User delete
  
-This command deletes the specified SASL account from Redpanda. 
-
-This does not delete any ACLs that may exist for this user.
-
+This command deletes the specified SASL account from Redpanda. This does not delete any ACLs that may exist for this user. You may want to recreate the user later, as well, not all ACLs have users that they describe (instead they are for wildcard users).
 
 Here's the general usage:
  
