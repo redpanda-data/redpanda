@@ -53,6 +53,12 @@ type NamedServicePort struct {
 	Port int
 }
 
+// NamedServiceNodePort allows to specify which nodeports should be created
+type NamedServiceNodePort struct {
+	NamedServicePort
+	GenerateNodePort bool
+}
+
 // Resource decompose the reconciliation loop to specific kubernetes objects
 type Resource interface {
 	Reconciler

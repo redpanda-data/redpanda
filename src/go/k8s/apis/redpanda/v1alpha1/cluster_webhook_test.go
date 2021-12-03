@@ -440,14 +440,6 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("external admin listener cannot have port specified", func(t *testing.T) {
-		exPort := redpandaCluster.DeepCopy()
-		exPort.Spec.Configuration.AdminAPI[0].External.Enabled = true
-		err := exPort.ValidateUpdate(redpandaCluster)
-
-		assert.Error(t, err)
-	})
-
 	t.Run("multiple admin listeners with tls", func(t *testing.T) {
 		multiPort := redpandaCluster.DeepCopy()
 		multiPort.Spec.Configuration.AdminAPI[0].TLS.Enabled = true
@@ -640,14 +632,6 @@ func TestCreation(t *testing.T) {
 		multiPort.Spec.Configuration.AdminAPI = append(multiPort.Spec.Configuration.AdminAPI,
 			v1alpha1.AdminAPI{Port: 123})
 		err := multiPort.ValidateCreate()
-
-		assert.Error(t, err)
-	})
-
-	t.Run("external admin listener cannot have port specified", func(t *testing.T) {
-		exPort := redpandaCluster.DeepCopy()
-		exPort.Spec.Configuration.AdminAPI[0].External.Enabled = true
-		err := exPort.ValidateCreate()
 
 		assert.Error(t, err)
 	})
@@ -964,5 +948,38 @@ func TestPodDisruptionBudget(t *testing.T) {
 
 		err := rpc.ValidateCreate()
 		assert.NoError(t, err)
+	})
+}
+
+func TestExternalKafkaPortSpecified(t *testing.T) {
+	rpCluster := validRedpandaCluster()
+
+	t.Run("collision in the port when kafka api external port is defined", func(t *testing.T) {
+		updatePort := rpCluster.DeepCopy()
+		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPI{Port: 30001, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+		updatePort.Spec.Configuration.AdminAPI = []v1alpha1.AdminAPI{{Port: 30001}}
+
+		err := updatePort.ValidateUpdate(updatePort)
+		assert.Error(t, err)
+	})
+
+	t.Run("no collision in the port when kafka api external port is defined", func(t *testing.T) {
+		updatePort := rpCluster.DeepCopy()
+		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPI{Port: 30001, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+		updatePort.Spec.Configuration.AdminAPI = []v1alpha1.AdminAPI{{Port: 30002}}
+
+		err := updatePort.ValidateUpdate(updatePort)
+		assert.NoError(t, err)
+	})
+
+	t.Run("error when kafkaAPI external port is outside of supported range", func(t *testing.T) {
+		updatePort := rpCluster.DeepCopy()
+		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPI{Port: 29999, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+
+		err := updatePort.ValidateUpdate(updatePort)
+		assert.Error(t, err)
 	})
 }

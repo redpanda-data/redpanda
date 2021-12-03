@@ -29,9 +29,10 @@ metadata:
 spec:
   ports:
   - name: kafka-external
-    port: 9093
+    port: 30001
     protocol: TCP
-    targetPort: 9093
+    targetPort: 30001
+    nodePort: 30001
   type: NodePort
 ---
 apiVersion: cert-manager.io/v1

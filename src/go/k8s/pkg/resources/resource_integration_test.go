@@ -321,8 +321,8 @@ func TestEnsure_NodePortService(t *testing.T) {
 		c,
 		cluster,
 		scheme.Scheme,
-		[]res.NamedServicePort{
-			{Port: 123},
+		[]res.NamedServiceNodePort{
+			{NamedServicePort: res.NamedServicePort{Port: 123}, GenerateNodePort: true},
 		},
 		ctrl.Log.WithName("test"))
 
@@ -353,8 +353,8 @@ func TestEnsure_NodePortService(t *testing.T) {
 		c,
 		cluster,
 		scheme.Scheme,
-		[]res.NamedServicePort{
-			{Port: 1111},
+		[]res.NamedServiceNodePort{
+			{NamedServicePort: res.NamedServicePort{Port: 1111}, GenerateNodePort: true},
 		},
 		ctrl.Log.WithName("test"))
 
