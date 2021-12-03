@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package edit
+package config
 
 import (
 	"io/ioutil"
@@ -17,13 +17,11 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/api/admin"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/cluster/config/export"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/cluster/config/importconfig"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
 )
 
-func NewCommand(fs afero.Fs, all *bool) *cobra.Command {
+func newEditCommand(fs afero.Fs, all *bool) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "edit",
 		Short: "Edit cluster configuration properties.",
@@ -62,7 +60,7 @@ to edit all properties including these tunables.
 			// Generate a yaml template for editing
 			file, err := ioutil.TempFile("/tmp", "config_*.yaml")
 			out.MaybeDie(err, "unable to create temporary file %q: %v", file.Name(), err)
-			err = export.ExportConfig(file, schema, currentConfig, *all)
+			err = exportConfig(file, schema, currentConfig, *all)
 			out.MaybeDie(err, "failed to write out config file %q: %v", file.Name(), err)
 			err = file.Close()
 			filename := file.Name()
@@ -87,7 +85,7 @@ to edit all properties including these tunables.
 			out.MaybeDie(err, "Error running editor: %v", err)
 
 			// Read back template & parse
-			err = importconfig.ImportConfig(client, filename, currentConfig, schema, *all)
+			err = importConfig(client, filename, currentConfig, schema, *all)
 			out.MaybeDie(err, "Error updating config: %v", err)
 		},
 	}

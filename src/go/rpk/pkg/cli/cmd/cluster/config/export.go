@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package export
+package config
 
 import (
 	"fmt"
@@ -25,7 +25,7 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
-func ExportConfig(
+func exportConfig(
 	file *os.File, schema admin.ConfigSchema, config admin.Config, all bool,
 ) (err error) {
 	template := make(map[string]interface{})
@@ -154,7 +154,7 @@ func ExportConfig(
 	return nil
 }
 
-func NewCommand(fs afero.Fs, all *bool) *cobra.Command {
+func newExportCommand(fs afero.Fs, all *bool) *cobra.Command {
 	var filename string
 
 	cmd := &cobra.Command{
@@ -195,7 +195,7 @@ to include all properties including these low level tunables.
 			}
 
 			out.MaybeDie(err, "unable to create file %q: %v", file.Name(), err)
-			err = ExportConfig(file, schema, currentConfig, *all)
+			err = exportConfig(file, schema, currentConfig, *all)
 			out.MaybeDie(err, "failed to write out config %q: %v", file.Name(), err)
 			err = file.Close()
 			fmt.Printf("Wrote configuration to file %q.\n", file.Name())

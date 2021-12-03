@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package importconfig
+package config
 
 import (
 	"fmt"
@@ -22,7 +22,7 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
-func ImportConfig(
+func importConfig(
 	client *admin.AdminAPI,
 	filename string,
 	oldConfig admin.Config,
@@ -130,7 +130,7 @@ func ImportConfig(
 	return nil
 }
 
-func NewCommand(fs afero.Fs, all *bool) *cobra.Command {
+func newImportCommand(fs afero.Fs, all *bool) *cobra.Command {
 	var filename string
 	cmd := &cobra.Command{
 		Use:   "import",
@@ -159,7 +159,7 @@ from the YAML file, it is reset to its default value.  `,
 			out.MaybeDie(err, "unable to query config values: %v", err)
 
 			// Read back template & parse
-			err = ImportConfig(client, filename, currentConfig, schema, *all)
+			err = importConfig(client, filename, currentConfig, schema, *all)
 			out.MaybeDie(err, "error updating config: %v", err)
 		},
 	}

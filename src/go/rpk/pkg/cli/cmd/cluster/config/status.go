@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package status
+package config
 
 import (
 	"github.com/spf13/afero"
@@ -17,7 +17,7 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
 )
 
-func NewCommand(fs afero.Fs) *cobra.Command {
+func newStatusCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Get configuration status of redpanda nodes.",
