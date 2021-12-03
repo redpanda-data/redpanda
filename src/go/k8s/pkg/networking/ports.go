@@ -130,3 +130,58 @@ func (pd PortsDefinition) ExternalPort() *int {
 	}
 	return &pd.External.Port
 }
+
+// GetNodePorts returns all node ports and their configuration for this cluster
+func (rp *RedpandaPorts) GetNodePorts() []resources.NamedServiceNodePort {
+	nodeports := []resources.NamedServiceNodePort{}
+	kafkaAPINamedNodePort := rp.KafkaAPI.ToNamedServiceNodePort()
+	if kafkaAPINamedNodePort != nil {
+		nodeports = append(nodeports, *kafkaAPINamedNodePort)
+	}
+	adminAPINodePort := rp.AdminAPI.ToNamedServiceNodePort()
+	if adminAPINodePort != nil {
+		nodeports = append(nodeports, *adminAPINodePort)
+	}
+	pandaProxyNodePort := rp.PandaProxy.ToNamedServiceNodePort()
+	if pandaProxyNodePort != nil {
+		nodeports = append(nodeports, *pandaProxyNodePort)
+	}
+	schemaRegistryNodePort := rp.SchemaRegistry.ToNamedServiceNodePort()
+	if schemaRegistryNodePort != nil {
+		nodeports = append(nodeports, *schemaRegistryNodePort)
+	}
+	return nodeports
+}
+
+// GetHeadlessPorts returns all ports that are configured using headless service
+// for this cluster
+func (rp *RedpandaPorts) GetHeadlessPorts() []resources.NamedServicePort {
+	headlessPorts := []resources.NamedServicePort{}
+	if rp.AdminAPI.Internal != nil {
+		headlessPorts = append(headlessPorts, resources.NamedServicePort{Name: rp.AdminAPI.Internal.Name, Port: *rp.AdminAPI.InternalPort()})
+	}
+	if rp.KafkaAPI.Internal != nil {
+		headlessPorts = append(headlessPorts, resources.NamedServicePort{Name: rp.KafkaAPI.Internal.Name, Port: *rp.KafkaAPI.InternalPort()})
+	}
+	if rp.PandaProxy.Internal != nil {
+		headlessPorts = append(headlessPorts, resources.NamedServicePort{Name: rp.PandaProxy.Internal.Name, Port: *rp.PandaProxy.InternalPort()})
+	}
+	return headlessPorts
+}
+
+// GetClusterIPPorts returns all ports that should be configured using service of type ClusterIP
+func (rp *RedpandaPorts) GetClusterIPPorts() []resources.NamedServicePort {
+	clusterPorts := []resources.NamedServicePort{}
+	if rp.PandaProxy.External != nil {
+		clusterPorts = append(clusterPorts, resources.NamedServicePort{Name: rp.PandaProxy.External.Name, Port: *rp.PandaProxy.ExternalPort()})
+	}
+	// for schema registry we can have only external OR internal listener right
+	// now but not both and both are configured using clusterIP right now
+	if rp.SchemaRegistry.External != nil {
+		clusterPorts = append(clusterPorts, resources.NamedServicePort{Name: rp.SchemaRegistry.External.Name, Port: *rp.SchemaRegistry.ExternalPort()})
+	}
+	if rp.SchemaRegistry.Internal != nil {
+		clusterPorts = append(clusterPorts, resources.NamedServicePort{Name: rp.SchemaRegistry.Internal.Name, Port: *rp.SchemaRegistry.InternalPort()})
+	}
+	return clusterPorts
+}

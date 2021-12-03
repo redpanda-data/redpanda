@@ -104,45 +104,13 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, nil
 	}
 	redpandaPorts := networking.NewRedpandaPorts(&redpandaCluster)
-	nodeports := []resources.NamedServiceNodePort{}
-	kafkaAPINamedNodePort := redpandaPorts.KafkaAPI.ToNamedServiceNodePort()
-	if kafkaAPINamedNodePort != nil {
-		nodeports = append(nodeports, *kafkaAPINamedNodePort)
-	}
-	adminAPINodePort := redpandaPorts.AdminAPI.ToNamedServiceNodePort()
-	if adminAPINodePort != nil {
-		nodeports = append(nodeports, *adminAPINodePort)
-	}
-	pandaProxyNodePort := redpandaPorts.PandaProxy.ToNamedServiceNodePort()
-	if pandaProxyNodePort != nil {
-		nodeports = append(nodeports, *pandaProxyNodePort)
-	}
-	schemaRegistryNodePort := redpandaPorts.SchemaRegistry.ToNamedServiceNodePort()
-	if schemaRegistryNodePort != nil {
-		nodeports = append(nodeports, *schemaRegistryNodePort)
-	}
-	headlessPorts := []resources.NamedServicePort{}
-	if redpandaPorts.AdminAPI.Internal != nil {
-		headlessPorts = append(headlessPorts, resources.NamedServicePort{Name: resources.AdminPortName, Port: *redpandaPorts.AdminAPI.InternalPort()})
-	}
-	if redpandaPorts.KafkaAPI.Internal != nil {
-		headlessPorts = append(headlessPorts, resources.NamedServicePort{Name: resources.InternalListenerName, Port: *redpandaPorts.KafkaAPI.InternalPort()})
-	}
-	if redpandaPorts.PandaProxy.Internal != nil {
-		headlessPorts = append(headlessPorts, resources.NamedServicePort{Name: resources.PandaproxyPortInternalName, Port: *redpandaPorts.PandaProxy.InternalPort()})
-	}
+	nodeports := redpandaPorts.GetNodePorts()
+	headlessPorts := redpandaPorts.GetHeadlessPorts()
 
 	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, headlessPorts, log)
 	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, nodeports, log)
 
-	clusterPorts := []resources.NamedServicePort{}
-	if redpandaPorts.PandaProxy.External != nil {
-		clusterPorts = append(clusterPorts, resources.NamedServicePort{Name: resources.PandaproxyPortExternalName, Port: *redpandaPorts.PandaProxy.ExternalPort()})
-	}
-	if redpandaCluster.Spec.Configuration.SchemaRegistry != nil {
-		port := redpandaCluster.Spec.Configuration.SchemaRegistry.Port
-		clusterPorts = append(clusterPorts, resources.NamedServicePort{Name: resources.SchemaRegistryPortName, Port: port})
-	}
+	clusterPorts := redpandaPorts.GetClusterIPPorts()
 	clusterSvc := resources.NewClusterService(r.Client, &redpandaCluster, r.Scheme, clusterPorts, log)
 	subdomain := ""
 	proxyAPIExternal := redpandaCluster.PandaproxyAPIExternal()
