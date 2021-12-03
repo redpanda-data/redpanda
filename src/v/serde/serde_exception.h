@@ -8,6 +8,10 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "seastarx.h"
+
+#include <seastar/core/sstring.hh>
+
 #include <exception>
 
 namespace serde {
