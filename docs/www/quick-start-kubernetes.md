@@ -209,10 +209,11 @@ noglob kubectl apply \
 
     ```
     helm install \
+    redpanda-operator \
+    redpanda/redpanda-operator \
     --namespace redpanda-system \
-    --create-namespace redpanda-system \
-    --version $VERSION \
-    redpanda/redpanda-operator
+    --create-namespace \
+    --version $VERSION
     ```
 
 ## Install and connect to a Redpanda cluster

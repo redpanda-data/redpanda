@@ -117,10 +117,11 @@ helm install \
 
     ```
     helm install \
+    redpanda-operator \
+    redpanda/redpanda-operator \
     --namespace redpanda-system \
-    --create-namespace redpanda-operator \
-    --version $VERSION \
-    redpanda/redpanda-operator
+    --create-namespace \
+    --version $VERSION
     ```
 
 ## 连接到Redpanda cluster
