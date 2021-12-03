@@ -97,47 +97,4 @@ private:
     fast_prng _prng;
 };
 
-class parser_failure_probes final : public finjector::probe {
-public:
-    using type = uint32_t;
-    static constexpr std::string_view name() {
-        return "storage::parser::failure_probes";
-    }
-
-    enum class methods : type { consume = 1 };
-
-    parser_failure_probes() = default;
-    parser_failure_probes(parser_failure_probes&&) = default;
-    parser_failure_probes& operator=(parser_failure_probes&&) = default;
-
-    type point_to_bit(std::string_view point) const final {
-        return point == "consume" ? static_cast<type>(methods::consume) : 0;
-    }
-
-    std::vector<std::string_view> points() final { return {"consume"}; }
-
-    ss::future<> consume() {
-        if (is_enabled()) {
-            return do_consume();
-        }
-        return ss::make_ready_future<>();
-    }
-
-private:
-    [[gnu::noinline]] ss::future<> do_consume() {
-        if (_exception_methods & type(methods::consume)) {
-            return ss::make_exception_future<>(
-              std::runtime_error("FailureInjector: "
-                                 "storage::parser::consume"));
-        }
-        if (_delay_methods & type(methods::consume)) {
-            return ss::sleep(std::chrono::milliseconds(_prng() % 50));
-        }
-        if (_termination_methods & type(methods::consume)) {
-            std::terminate();
-        }
-        return ss::make_ready_future<>();
-    }
-    fast_prng _prng;
-};
 }; // namespace storage
