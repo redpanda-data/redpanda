@@ -41,7 +41,7 @@ static constexpr std::array<std::string_view, 10> supported_configs{
    "compaction.strategy",
    "retention.bytes",
    "retention.ms",
-   "x-redpanda-recovery",
+   "redpanda.remote.recovery",
    "redpanda.remote.write",
    "redpanda.remote.read"}};
 

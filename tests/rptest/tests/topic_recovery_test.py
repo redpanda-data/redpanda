@@ -465,7 +465,7 @@ class BaseCase:
             val = manifest.get(mname)
             if val:
                 conf[cname] = val
-        conf['x-redpanda-recovery'] = 'true'
+        conf['redpanda.remote.recovery'] = 'true'
         conf.update(overrides)
         self.logger.info(f"Confg: {conf}")
         self._rpk.create_topic(topic, npart, nrepl, conf)
