@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from collections import defaultdict
 import sys
 import time
 import re
@@ -61,7 +62,7 @@ class FetchTest(RedpandaTest):
             return [TopicSpec(partition_count=count, replication_factor=1)]
 
         number_of_partitions = 32
-        records_per_partition = 10
+        records_per_partition = 100
         topics = []
 
         if type == 'multiple-topics':
@@ -89,15 +90,26 @@ class FetchTest(RedpandaTest):
         # configure kcl to fetch at most 1 byte in single fetch request,
         # this way we should receive exactly one record per each partition
 
+        consumed_frequency = defaultdict(lambda: 0)
         kcl = KCL(self.redpanda)
+
+        expected_frequency = records_per_partition / 2
+        # issue single kcl command that will generate multiple fetch requests
+        # in single fetch session, it should include single partition in each
+        # fetch response.
+        to_consume = int(number_of_partitions * expected_frequency)
         consumed = kcl.consume(topic="topic-.*",
-                               n=number_of_partitions,
+                               n=to_consume,
                                regex=True,
                                fetch_max_bytes=1,
                                group="test-gr-1")
-        consumed_partitions = set()
+
         for c in consumed.split():
             parts = c.split('.')
-            consumed_partitions.add((parts[1], parts[2]))
+            consumed_frequency[(parts[1], parts[2])] += 1
 
-        assert len(consumed_partitions) == number_of_partitions
+        for p, freq in consumed_frequency.items():
+            self.redpanda.logger.info(f"consumed {freq} messages from: {p}")
+            # assert that frequency is in expected range
+            assert freq <= expected_frequency + 0.1 * expected_frequency
+            assert freq >= expected_frequency - 0.1 * expected_frequency
