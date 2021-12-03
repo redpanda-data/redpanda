@@ -276,7 +276,7 @@ class SchemaRegistryTest(RedpandaTest):
         result_raw = self._get_schemas_types()
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
-        assert result == ["AVRO"]
+        assert set(result) == {"PROTOBUF", "AVRO"}
 
     @cluster(num_nodes=3)
     def test_get_schema_id_versions(self):
@@ -979,8 +979,15 @@ class SchemaRegistryTest(RedpandaTest):
         result_raw = self._post_subjects_subject_versions(
             subject="imported",
             data=json.dumps({
-                "schema": imported_proto_def,
-                "schemaType": "PROTOBUF"
+                "schema":
+                imported_proto_def,
+                "schemaType":
+                "PROTOBUF",
+                "references": [{
+                    "name": "simple",
+                    "subject": "simple",
+                    "version": 1
+                }]
             }))
         self.logger.info(result_raw)
         self.logger.info(result_raw.content)

@@ -13,6 +13,7 @@
 #include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/protobuf.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
+#include "pandaproxy/schema_registry/types.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
@@ -53,6 +54,28 @@ struct simple_sharded_store {
     pps::sharded_store store;
 };
 
+bool check_compatible(
+  pps::compatibility_level lvl,
+  std::string_view reader,
+  std::string_view writer) {
+    simple_sharded_store store;
+    store.store.set_compatibility(lvl).get();
+    auto sch1 = store.insert(
+      pandaproxy::schema_registry::canonical_schema{
+        pps::subject{"sub"},
+        pps::canonical_schema_definition{writer, pps::schema_type::protobuf},
+        {}},
+      pps::schema_version{1});
+    return store.store
+      .is_compatible(
+        pps::schema_version{1},
+        pps::canonical_schema{
+          pps::subject{"sub"},
+          pps::canonical_schema_definition{reader, pps::schema_type::protobuf},
+          {}})
+      .get();
+}
+
 SEASTAR_THREAD_TEST_CASE(test_protobuf_simple) {
     simple_sharded_store store;
 
@@ -76,24 +99,22 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_imported_failure) {
       });
 }
 
-SEASTAR_THREAD_TEST_CASE(test_protobuf_imported) {
+SEASTAR_THREAD_TEST_CASE(test_protobuf_imported_not_referenced) {
     simple_sharded_store store;
 
     auto schema1 = pps::canonical_schema{pps::subject{"simple"}, simple};
     auto schema2 = pps::canonical_schema{pps::subject{"imported"}, imported};
-    auto schema3 = pps::canonical_schema{
-      pps::subject{"imported-again"}, imported_again};
 
     auto sch1 = store.insert(schema1, pps::schema_version{1});
-    auto sch2 = store.insert(schema2, pps::schema_version{1});
-    auto sch3 = store.insert(schema3, pps::schema_version{1});
 
     auto valid_simple
       = pps::make_protobuf_schema_definition(store.store, schema1).get();
-    auto valid_imported
-      = pps::make_protobuf_schema_definition(store.store, schema2).get();
-    auto valid_imported_again
-      = pps::make_protobuf_schema_definition(store.store, schema3).get();
+    BOOST_REQUIRE_EXCEPTION(
+      pps::make_protobuf_schema_definition(store.store, schema2).get(),
+      pps::exception,
+      [](const pps::exception& ex) {
+          return ex.code() == pps::error_code::schema_invalid;
+      });
 }
 
 SEASTAR_THREAD_TEST_CASE(test_protobuf_referenced) {
@@ -119,4 +140,140 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_referenced) {
       = pps::make_protobuf_schema_definition(store.store, schema2).get();
     auto valid_imported_again
       = pps::make_protobuf_schema_definition(store.store, schema3).get();
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_empty) {
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::full,
+      R"(syntax = "proto3";)",
+      R"(syntax = "proto3";)"));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_encoding) {
+    BOOST_REQUIRE(check_compatible(
+      // varint
+      pps::compatibility_level::full_transitive,
+      R"(syntax = "proto3"; message Test { int32 id = 1; })",
+      R"(syntax = "proto3"; message Test { int32 id = 1; })"));
+
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::full_transitive,
+      R"(syntax = "proto3"; message Test { int32 id = 1; })",
+      R"(syntax = "proto3"; message Test { uint32 id = 1; })"));
+
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::full_transitive,
+      R"(syntax = "proto3"; message Test { int32 id = 1; })",
+      R"(syntax = "proto3"; message Test { uint64 id = 1; })"));
+
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::full_transitive,
+      R"(syntax = "proto3"; message Test { int32 id = 1; })",
+      R"(syntax = "proto3"; message Test { bool id = 1; })"));
+
+    // zigzag
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::full_transitive,
+      R"(syntax = "proto3"; message Test { sint32 id = 1; })",
+      R"(syntax = "proto3"; message Test { sint64 id = 1; })"));
+
+    // bytes
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::full_transitive,
+      R"(syntax = "proto3"; message Test { string id = 1; })",
+      R"(syntax = "proto3"; message Test { bytes id = 1; })"));
+
+    // int32
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::full_transitive,
+      R"(syntax = "proto3"; message Test { fixed32 id = 1; })",
+      R"(syntax = "proto3"; message Test { sfixed32 id = 1; })"));
+
+    // int64
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::full_transitive,
+      R"(syntax = "proto3"; message Test { fixed64 id = 1; })",
+      R"(syntax = "proto3"; message Test { sfixed64 id = 1; })"));
+
+    // A subset of incompatible types
+    BOOST_REQUIRE(!check_compatible(
+      pps::compatibility_level::forward,
+      R"(syntax = "proto3"; message Test { int32 id = 1; })",
+      R"(syntax = "proto3"; message Test { string id = 1; })"));
+
+    BOOST_REQUIRE(!check_compatible(
+      pps::compatibility_level::backward,
+      R"(syntax = "proto3"; message Test { int32 id = 1; })",
+      R"(syntax = "proto3"; message Test { string id = 1; })"));
+
+    BOOST_REQUIRE(!check_compatible(
+      pps::compatibility_level::backward_transitive,
+      R"(syntax = "proto3"; message Test { int32 id = 1; })",
+      R"(syntax = "proto3"; message Test { fixed32 id = 1; })"));
+
+    BOOST_REQUIRE(!check_compatible(
+      pps::compatibility_level::forward_transitive,
+      R"(syntax = "proto3"; message Test { fixed32 id = 1; })",
+      R"(syntax = "proto3"; message Test { fixed64 id = 1; })"));
+
+    BOOST_REQUIRE(!check_compatible(
+      pps::compatibility_level::full,
+      R"(syntax = "proto3"; message Test { float id = 1; })",
+      R"(syntax = "proto3"; message Test { double id = 1; })"));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_rename_field) {
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::full,
+      R"(syntax = "proto3"; message Simple { string id = 1; })",
+      R"(syntax = "proto3"; message Simple { string identifier = 1; })"));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_add_field) {
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::full,
+      R"(
+syntax = "proto3"; message Simple { string id = 1; })",
+      R"(
+syntax = "proto3"; message Simple { string id = 1; string name = 2; })"));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_add_message_after) {
+    auto reader = R"(syntax = "proto3";
+message Simple { string id = 1; }
+message Simple2 { int64 id = 1; })";
+    auto writer = R"(syntax = "proto3";
+message Simple { string id = 1; })";
+    BOOST_REQUIRE(
+      check_compatible(pps::compatibility_level::backward, reader, writer));
+    BOOST_REQUIRE(
+      !check_compatible(pps::compatibility_level::forward, reader, writer));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_add_message_before) {
+    auto reader = R"(
+syntax = "proto3";
+message Simple2 { int64 id = 1; }
+message Simple { string id = 1; })";
+    auto writer = R"(
+syntax = "proto3";
+message Simple { string id = 1; })";
+    BOOST_REQUIRE(
+      check_compatible(pps::compatibility_level::backward, reader, writer));
+    BOOST_REQUIRE(
+      !check_compatible(pps::compatibility_level::forward, reader, writer));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_reserved_field) {
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::full_transitive,
+      R"(syntax = "proto3"; message Simple { reserved 1; int32 id = 2; })",
+      R"(syntax = "proto3"; message Simple { int64 res = 1; int32 id = 2; })"));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_missing_field) {
+    BOOST_REQUIRE(check_compatible(
+      pps::compatibility_level::full_transitive,
+      R"(syntax = "proto3"; message Simple { int32 id = 2; })",
+      R"(syntax = "proto3"; message Simple { string res = 1; int32 id = 2; })"));
 }

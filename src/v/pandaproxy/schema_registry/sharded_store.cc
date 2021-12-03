@@ -154,9 +154,9 @@ sharded_store::project_ids(const canonical_schema& schema) {
     auto v_id = co_await _store.invoke_on(
       shard_for(schema.sub()),
       _smp_opts,
-      &store::project_version,
-      schema.sub(),
-      s_id.value());
+      [sub{schema.sub()}, id{s_id.value()}](store& s) {
+          return s.project_version(sub, id);
+      });
 
     co_return insert_result{
       v_id.value_or(invalid_schema_version), s_id.value(), v_id.has_value()};
@@ -214,9 +214,10 @@ sharded_store::has_schema(const canonical_schema& schema) {
 
 ss::future<canonical_schema_definition>
 sharded_store::get_schema_definition(const schema_id& id) {
-    auto schema = co_await _store.invoke_on(
-      shard_for(id), _smp_opts, &store::get_schema_definition, id);
-    co_return std::move(schema).value();
+    co_return co_await _store.invoke_on(
+      shard_for(id), _smp_opts, [id](store& s) {
+          return s.get_schema_definition(id).value();
+      });
 }
 
 ss::future<std::vector<subject_version>>
@@ -235,21 +236,15 @@ ss::future<subject_schema> sharded_store::get_subject_schema(
   const subject& sub,
   std::optional<schema_version> version,
   include_deleted inc_del) {
-    auto v_id = (co_await _store.invoke_on(
-                   shard_for(sub),
-                   _smp_opts,
-                   &store::get_subject_version_id,
-                   sub,
-                   version,
-                   inc_del))
-                  .value();
+    auto v_id = co_await _store.invoke_on(
+      shard_for(sub), _smp_opts, [sub, version, inc_del](store& s) {
+          return s.get_subject_version_id(sub, version, inc_del).value();
+      });
 
-    auto def = (co_await _store.invoke_on(
-                  shard_for(v_id.id),
-                  _smp_opts,
-                  &store::get_schema_definition,
-                  v_id.id))
-                 .value();
+    auto def = co_await _store.invoke_on(
+      shard_for(v_id.id), _smp_opts, [id{v_id.id}](store& s) {
+          return s.get_schema_definition(id).value();
+      });
 
     co_return subject_schema{
       .schema = {sub, std::move(def), std::move(v_id.refs)},
@@ -273,9 +268,10 @@ sharded_store::get_subjects(include_deleted inc_del) {
 
 ss::future<std::vector<schema_version>>
 sharded_store::get_versions(const subject& sub, include_deleted inc_del) {
-    auto versions = co_await _store.invoke_on(
-      shard_for(sub), _smp_opts, &store::get_versions, sub, inc_del);
-    co_return std::move(versions).value();
+    co_return co_await _store.invoke_on(
+      shard_for(sub), _smp_opts, [sub, inc_del](store& s) {
+          return s.get_versions(sub, inc_del).value();
+      });
 }
 
 ss::future<bool>
@@ -286,61 +282,50 @@ sharded_store::is_referenced(const subject& sub, schema_version ver) {
 
 ss::future<std::vector<schema_version>> sharded_store::delete_subject(
   seq_marker marker, const subject& sub, permanent_delete permanent) {
-    auto versions = co_await _store.invoke_on(
-      shard_for(sub),
-      _smp_opts,
-      &store::delete_subject,
-      marker,
-      sub,
-      permanent);
-    co_return std::move(versions).value();
+    co_return co_await _store.invoke_on(
+      shard_for(sub), _smp_opts, [marker, sub, permanent](store& s) {
+          return s.delete_subject(marker, sub, permanent).value();
+      });
 }
 
 ss::future<is_deleted> sharded_store::is_subject_deleted(const subject& sub) {
-    auto deleted = co_await _store.invoke_on(
-      shard_for(sub), _smp_opts, &store::is_subject_deleted, sub);
-
-    co_return std::move(deleted).value();
+    co_return co_await _store.invoke_on(
+      shard_for(sub), _smp_opts, [sub](store& s) {
+          return s.is_subject_deleted(sub).value();
+      });
 }
 
 ss::future<is_deleted> sharded_store::is_subject_version_deleted(
-  const subject& sub, const schema_version version) {
-    auto deleted = co_await _store.invoke_on(
-      shard_for(sub),
-      _smp_opts,
-      &store::is_subject_version_deleted,
-      sub,
-      version);
-
-    co_return std::move(deleted).value();
+  const subject& sub, const schema_version ver) {
+    co_return co_await _store.invoke_on(
+      shard_for(sub), _smp_opts, [sub, ver](store& s) {
+          return s.is_subject_version_deleted(sub, ver).value();
+      });
 }
 
 ss::future<std::vector<seq_marker>>
 sharded_store::get_subject_written_at(const subject& sub) {
-    auto history = co_await _store.invoke_on(
-      shard_for(sub), _smp_opts, &store::get_subject_written_at, sub);
-
-    co_return std::move(history).value();
+    co_return co_await _store.invoke_on(
+      shard_for(sub), _smp_opts, [sub](store& s) {
+          return s.store::get_subject_written_at(sub).value();
+      });
 }
 
 ss::future<std::vector<seq_marker>>
 sharded_store::get_subject_version_written_at(
-  const subject& sub, schema_version version) {
-    auto history = co_await _store.invoke_on(
-      shard_for(sub),
-      _smp_opts,
-      &store::get_subject_version_written_at,
-      sub,
-      version);
-
-    co_return std::move(history).value();
+  const subject& sub, schema_version ver) {
+    co_return co_await _store.invoke_on(
+      shard_for(sub), _smp_opts, [sub, ver](store& s) {
+          return s.get_subject_version_written_at(sub, ver).value();
+      });
 }
 
-ss::future<bool> sharded_store::delete_subject_version(
-  const subject& sub, schema_version version) {
-    auto deleted = co_await _store.invoke_on(
-      shard_for(sub), _smp_opts, &store::delete_subject_version, sub, version);
-    co_return deleted.value();
+ss::future<bool>
+sharded_store::delete_subject_version(const subject& sub, schema_version ver) {
+    co_return co_await _store.invoke_on(
+      shard_for(sub), _smp_opts, [sub, ver](store& s) {
+          return s.delete_subject_version(sub, ver).value();
+      });
 }
 
 ss::future<compatibility_level> sharded_store::get_compatibility() {
@@ -349,11 +334,10 @@ ss::future<compatibility_level> sharded_store::get_compatibility() {
 
 ss::future<compatibility_level> sharded_store::get_compatibility(
   const subject& sub, default_to_global fallback) {
-    auto get = [sub, fallback](store& s) {
-        return s.get_compatibility(sub, fallback);
-    };
-    auto level = co_await _store.invoke_on(shard_for(sub), get);
-    co_return level.value();
+    co_return co_await _store.invoke_on(
+      shard_for(sub), [sub, fallback](store& s) {
+          return s.get_compatibility(sub, fallback).value();
+      });
 }
 
 ss::future<bool>
@@ -367,29 +351,26 @@ sharded_store::set_compatibility(compatibility_level compatibility) {
 
 ss::future<bool> sharded_store::set_compatibility(
   seq_marker marker, const subject& sub, compatibility_level compatibility) {
-    using overload_t = result<bool> (store::*)(
-      seq_marker, const subject&, compatibility_level);
-    auto set = co_await _store.invoke_on(
-      shard_for(sub),
-      _smp_opts,
-      static_cast<overload_t>(&store::set_compatibility),
-      marker,
-      sub,
-      compatibility);
-    co_return set.value();
+    co_return co_await _store.invoke_on(
+      shard_for(sub), _smp_opts, [marker, sub, compatibility](store& s) {
+          return s.set_compatibility(marker, sub, compatibility).value();
+      });
 }
 
 ss::future<bool> sharded_store::clear_compatibility(const subject& sub) {
-    auto cleared = co_await _store.invoke_on(
-      shard_for(sub), _smp_opts, &store::clear_compatibility, sub);
-    co_return cleared.value();
+    co_return co_await _store.invoke_on(
+      shard_for(sub), _smp_opts, [sub](store& s) {
+          return s.clear_compatibility(sub).value();
+      });
 }
 
 ss::future<bool>
 sharded_store::upsert_schema(schema_id id, canonical_schema_definition def) {
     co_await maybe_update_max_schema_id(id);
     co_return co_await _store.invoke_on(
-      shard_for(id), _smp_opts, &store::upsert_schema, id, std::move(def));
+      shard_for(id), _smp_opts, [id, def{std::move(def)}](store& s) mutable {
+          return s.upsert_schema(id, std::move(def));
+      });
 }
 
 ss::future<sharded_store::insert_subject_result> sharded_store::insert_subject(
@@ -397,10 +378,9 @@ ss::future<sharded_store::insert_subject_result> sharded_store::insert_subject(
     auto [version, inserted] = co_await _store.invoke_on(
       shard_for(sub),
       _smp_opts,
-      &store::insert_subject,
-      sub,
-      std::move(refs),
-      id);
+      [sub, refs{std::move(refs)}, id](store& s) mutable {
+          return s.insert_subject(sub, std::move(refs), id);
+      });
     co_return insert_subject_result{version, inserted};
 }
 
@@ -414,13 +394,15 @@ ss::future<bool> sharded_store::upsert_subject(
     co_return co_await _store.invoke_on(
       shard_for(sub),
       _smp_opts,
-      &store::upsert_subject,
-      marker,
-      sub,
-      std::move(refs),
-      version,
-      id,
-      deleted);
+      [marker,
+       sub{std::move(sub)},
+       refs{std::move(refs)},
+       version,
+       id,
+       deleted](store& s) mutable {
+          return s.upsert_subject(
+            marker, std::move(sub), std::move(refs), version, id, deleted);
+      });
 }
 
 /// \brief Get the schema ID to be used for next insert
@@ -488,8 +470,10 @@ ss::future<bool> sharded_store::is_compatible(
         co_return true;
     }
 
-    // Currently only support AVRO
-    if (new_schema.type() != schema_type::avro) {
+    // Currently support PROTOBUF, AVRO
+    if (
+      new_schema.type() != schema_type::avro
+      && new_schema.type() != schema_type::protobuf) {
         throw as_exception(invalid_schema_type(new_schema.type()));
     }
 
@@ -516,13 +500,15 @@ ss::future<bool> sharded_store::is_compatible(
         if (
           compat == compatibility_level::backward
           || compat == compatibility_level::backward_transitive
-          || compat == compatibility_level::full) {
+          || compat == compatibility_level::full
+          || compat == compatibility_level::full_transitive) {
             is_compat = is_compat && check_compatible(new_valid, old_valid);
         }
         if (
           compat == compatibility_level::forward
           || compat == compatibility_level::forward_transitive
-          || compat == compatibility_level::full) {
+          || compat == compatibility_level::full
+          || compat == compatibility_level::full_transitive) {
             is_compat = is_compat && check_compatible(old_valid, new_valid);
         }
     }
