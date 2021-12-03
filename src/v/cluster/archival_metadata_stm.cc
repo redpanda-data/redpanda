@@ -192,7 +192,12 @@ ss::future<> archival_metadata_stm::handle_eviction() {
       manifest,
       rc_node);
 
-    if (res != cloud_storage::download_result::success) {
+    if (res == cloud_storage::download_result::notfound) {
+        _insync_offset = raft::details::prev_offset(_raft->start_offset());
+        set_next(_raft->start_offset());
+        vlog(_logger.info, "handled log eviction, the manifest is absent");
+        co_return;
+    } else if (res != cloud_storage::download_result::success) {
         // sleep to the end of timeout to avoid calling handle_eviction in a
         // busy loop.
         co_await ss::sleep_abortable(rc_node.get_timeout(), _download_as);
