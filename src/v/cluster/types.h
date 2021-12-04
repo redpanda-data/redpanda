@@ -32,6 +32,12 @@ namespace cluster {
 using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
 using broker_ptr = ss::lw_shared_ptr<model::broker>;
 
+struct non_replicable_topic {
+    static constexpr int8_t current_version = 1;
+    model::topic_namespace source;
+    model::topic_namespace name;
+};
+
 struct allocate_id_request {
     model::timeout_clock::duration timeout;
 };
@@ -507,6 +513,11 @@ struct create_topics_request {
     model::timeout_clock::duration timeout;
 };
 
+struct create_non_replicable_topics_request {
+    std::vector<non_replicable_topic> topics;
+    model::timeout_clock::duration timeout;
+};
+
 struct create_topics_reply {
     std::vector<topic_result> results;
     std::vector<model::topic_metadata> metadata;
@@ -654,11 +665,6 @@ struct create_data_policy_cmd_data {
     v8_engine::data_policy dp;
 };
 
-struct non_replicable_topic {
-    static constexpr int8_t current_version = 1;
-    model::topic_namespace source;
-    model::topic_namespace name;
-};
 std::ostream& operator<<(std::ostream&, const non_replicable_topic&);
 
 using config_version = named_type<int64_t, struct config_version_type>;
