@@ -255,7 +255,6 @@ docker network rm redpandanet
 - Our [FAQ](/docs/faq) page shows all of the clients that you can use to do streaming with Redpanda.
     (Spoiler: Any Kafka-compatible client!)
 - Get a multi-node cluster up and running using [`rpk container`](/docs/guide-rpk-container).
-- Use the [Quick Start Docker Guide](/docs/quick-start-docker) to try out Redpanda using Docker.
 - Want to setup a production cluster? Check out our [Production Deployment Guide](/docs/production-deployment).
 
 <img src="https://static.scarf.sh/a.png?x-pxid=3c187215-e862-4b67-8057-45aa9a779055" />
