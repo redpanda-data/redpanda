@@ -27,6 +27,7 @@
 #include "raft/group_configuration.h"
 #include "raft/log_eviction_stm.h"
 #include "raft/types.h"
+#include "storage/translating_reader.h"
 #include "storage/types.h"
 
 #include <seastar/core/shared_ptr.hh>
@@ -178,9 +179,9 @@ public:
         return _raft->get_configuration_manager();
     }
 
-    const ss::lw_shared_ptr<raft::offset_translator>&
-    get_offset_translator() const {
-        return _raft->get_offset_translator();
+    ss::lw_shared_ptr<const storage::offset_translator_state>
+    get_offset_translator_state() const {
+        return _raft->get_offset_translator_state();
     }
 
     ss::shared_ptr<cluster::rm_stm> rm_stm();
@@ -226,7 +227,7 @@ public:
     }
 
     /// Create a reader that will fetch data from remote storage
-    ss::future<model::record_batch_reader> make_cloud_reader(
+    ss::future<storage::translating_reader> make_cloud_reader(
       storage::log_reader_config config,
       std::optional<model::timeout_clock::time_point> deadline = std::nullopt) {
         vassert(

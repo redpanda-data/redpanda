@@ -10,6 +10,7 @@ v_cc_library(
     parser.cc
     log_reader.cc
     log_replayer.cc
+    offset_translator_state.cc
     probe.cc
     record_batch_builder.cc
     logger.cc

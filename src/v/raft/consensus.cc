@@ -68,11 +68,11 @@ consensus::consensus(
   , _group(group)
   , _jit(std::move(jit))
   , _log(l)
-  , _offset_translator(ss::make_lw_shared<offset_translator>(
+  , _offset_translator(
       offset_translator_batch_types(_log.config().ntp()),
       group,
       _log.config().ntp(),
-      storage))
+      storage)
   , _scheduling(scheduling_config)
   , _disk_timeout(disk_timeout)
   , _client_protocol(client)
@@ -1040,8 +1040,7 @@ ss::future<> consensus::do_start() {
                 = _configuration_manager.get_highest_known_offset(),
               };
 
-              return _offset_translator->start(
-                must_reset, std::move(bootstrap));
+              return _offset_translator.start(must_reset, std::move(bootstrap));
           })
           .then([this] { return hydrate_snapshot(); })
           .then([this] {
@@ -1103,7 +1102,7 @@ ss::future<> consensus::do_start() {
                   update_follower_stats(_configuration_manager.get_latest());
               });
           })
-          .then([this] { return _offset_translator->sync_with_log(_log, _as); })
+          .then([this] { return _offset_translator.sync_with_log(_log, _as); })
           .then([this] {
               /**
                * fix for incorrectly persisted configuration index. In previous
@@ -1638,7 +1637,7 @@ consensus::do_append_entries(append_entries_request&& r) {
         // eventually log and offset translator will become consistent. OTOH if
         // log truncation were first and saving offset translator state failed,
         // we wouldn't retry and log and offset translator could diverge.
-        return _offset_translator->truncate(truncate_at)
+        return _offset_translator.truncate(truncate_at)
           .then([this, truncate_at] {
               return _log.truncate(storage::truncate_config(
                 truncate_at, _scheduling.default_iopc));
@@ -1740,7 +1739,7 @@ ss::future<> consensus::truncate_to_latest_snapshot() {
     // metadata
     return _configuration_manager.prefix_truncate(_last_snapshot_index)
       .then([this] {
-          return _offset_translator->prefix_truncate(_last_snapshot_index);
+          return _offset_translator.prefix_truncate(_last_snapshot_index);
       })
       .then([this] {
           return _log.truncate_prefix(storage::truncate_prefix_config(
@@ -1776,7 +1775,7 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
         return _configuration_manager
           .add(_last_snapshot_index, std::move(metadata.latest_configuration))
           .then([this, delta = metadata.log_start_delta] {
-              return _offset_translator->prefix_truncate_reset(
+              return _offset_translator.prefix_truncate_reset(
                 _last_snapshot_index, delta);
           })
           .then([this] {
@@ -1947,7 +1946,8 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
       .latest_configuration = *config,
       .cluster_time = clock_type::time_point::min(),
       .log_start_delta = offset_translator_delta(
-        _offset_translator->delta(details::next_offset(last_included_index))),
+        _offset_translator.state()->delta(
+          details::next_offset(last_included_index))),
     };
 
     return details::persist_snapshot(
@@ -1959,8 +1959,7 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
           // update configuration manager
           return _configuration_manager.prefix_truncate(_last_snapshot_index)
             .then([this] {
-                return _offset_translator->prefix_truncate(
-                  _last_snapshot_index);
+                return _offset_translator.prefix_truncate(_last_snapshot_index);
             });
       });
 }
@@ -2104,7 +2103,7 @@ ss::future<storage::append_result> consensus::disk_append(
     return details::for_each_ref_extract_configuration(
              _log.offsets().dirty_offset,
              std::move(reader),
-             consumer(*_offset_translator, _log.make_appender(cfg)),
+             consumer(_offset_translator, _log.make_appender(cfg)),
              cfg.timeout)
       .then([this, should_update_last_quorum_idx](
               std::tuple<ret_t, std::vector<offset_configuration>> t) {
@@ -2145,7 +2144,7 @@ ss::future<storage::append_result> consensus::disk_append(
               // the write path caused by KVStore flush debouncing.
 
               (void)ss::with_gate(
-                _bg, [this] { return _offset_translator->maybe_checkpoint(); });
+                _bg, [this] { return _offset_translator.maybe_checkpoint(); });
 
               (void)ss::with_gate(
                 _bg, [this, last_offset = ret.last_offset, sz = ret.byte_size] {
@@ -2801,7 +2800,7 @@ ss::future<> consensus::remove_persistent_state() {
     // configuration manager
     co_await _configuration_manager.remove_persistent_state();
     // offset translator
-    co_await _offset_translator->remove_persistent_state();
+    co_await _offset_translator.remove_persistent_state();
     // snapshot
     co_await _snapshot_mgr.remove_snapshot();
     co_await _snapshot_mgr.remove_partial_snapshots();

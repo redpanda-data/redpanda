@@ -13,6 +13,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/partition.h"
 #include "model/fundamental.h"
+#include "storage/translating_reader.h"
 #include "storage/types.h"
 
 #include <optional>
@@ -33,14 +34,18 @@ public:
         virtual model::offset last_stable_offset() const = 0;
         virtual bool is_leader() const = 0;
         virtual ss::future<std::error_code> linearizable_barrier() = 0;
-        virtual ss::future<model::record_batch_reader> make_reader(
+        virtual ss::future<storage::translating_reader> make_reader(
           storage::log_reader_config,
           std::optional<model::timeout_clock::time_point>)
           = 0;
         virtual ss::future<std::optional<storage::timequery_result>>
           timequery(model::timestamp, ss::io_priority_class) = 0;
         virtual ss::future<std::vector<cluster::rm_stm::tx_range>>
-          aborted_transactions(model::offset, model::offset) = 0;
+          aborted_transactions(
+            model::offset,
+            model::offset,
+            ss::lw_shared_ptr<const storage::offset_translator_state>)
+          = 0;
         virtual cluster::partition_probe& probe() = 0;
         virtual ~impl() noexcept = default;
     };
@@ -64,12 +69,14 @@ public:
 
     const model::ntp& ntp() const { return _impl->ntp(); }
 
-    ss::future<std::vector<cluster::rm_stm::tx_range>>
-    aborted_transactions(model::offset base, model::offset last) {
-        return _impl->aborted_transactions(base, last);
+    ss::future<std::vector<cluster::rm_stm::tx_range>> aborted_transactions(
+      model::offset base,
+      model::offset last,
+      ss::lw_shared_ptr<const storage::offset_translator_state> ot_state) {
+        return _impl->aborted_transactions(base, last, std::move(ot_state));
     }
 
-    ss::future<model::record_batch_reader> make_reader(
+    ss::future<storage::translating_reader> make_reader(
       storage::log_reader_config cfg,
       std::optional<model::timeout_clock::time_point> deadline = std::nullopt) {
         return _impl->make_reader(cfg, deadline);

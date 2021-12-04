@@ -23,13 +23,13 @@ namespace kafka {
 replicated_partition::replicated_partition(
   ss::lw_shared_ptr<cluster::partition> p) noexcept
   : _partition(p)
-  , _translator(_partition->get_offset_translator()) {
+  , _translator(_partition->get_offset_translator_state()) {
     vassert(
       _translator, "ntp {}: offset translator must be initialized", p->ntp());
 }
 
 // TODO: use previous translation speed up lookup
-ss::future<model::record_batch_reader> replicated_partition::make_reader(
+ss::future<storage::translating_reader> replicated_partition::make_reader(
   storage::log_reader_config cfg,
   std::optional<model::timeout_clock::time_point> deadline) {
     auto local_kafka_start_offset = _translator->from_log_offset(
@@ -50,9 +50,9 @@ ss::future<model::record_batch_reader> replicated_partition::make_reader(
     public:
         reader(
           std::unique_ptr<model::record_batch_reader::impl> underlying,
-          const ss::lw_shared_ptr<raft::offset_translator>& tr)
+          ss::lw_shared_ptr<const storage::offset_translator_state> tr)
           : _underlying(std::move(underlying))
-          , _translator(tr) {}
+          , _translator(std::move(tr)) {}
 
         bool is_end_of_stream() const final {
             return _underlying->is_end_of_stream();
@@ -89,11 +89,57 @@ ss::future<model::record_batch_reader> replicated_partition::make_reader(
 
     private:
         std::unique_ptr<model::record_batch_reader::impl> _underlying;
-        ss::lw_shared_ptr<raft::offset_translator> _translator;
+        ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
     };
     auto rdr = co_await _partition->make_reader(cfg, deadline);
-    co_return model::make_record_batch_reader<reader>(
-      std::move(rdr).release(), _translator);
+    co_return storage::translating_reader(
+      model::make_record_batch_reader<reader>(
+        std::move(rdr).release(), _translator),
+      _translator);
+}
+
+ss::future<std::vector<cluster::rm_stm::tx_range>>
+replicated_partition::aborted_transactions(
+  model::offset base,
+  model::offset last,
+  ss::lw_shared_ptr<const storage::offset_translator_state> ot_state) {
+    vassert(ot_state, "ntp {}: offset translator state must be present", ntp());
+
+    // Note: here we expect that local _partition contains aborted transaction
+    // ids for both local and remote offset ranges. This is true as long as
+    // rm_stm state has not been reset (for example when there is a partition
+    // transfer or when a stale replica recovers its log from beyond the log
+    // eviction point). See https://github.com/vectorizedio/redpanda/issues/3001
+
+    auto base_rp = ot_state->to_log_offset(base);
+    auto last_rp = ot_state->to_log_offset(last);
+    auto source = co_await _partition->aborted_transactions(base_rp, last_rp);
+
+    // We trim beginning of aborted ranges to `trim_at` because we don't have
+    // offset translation info for earlier offsets.
+    model::offset trim_at;
+    if (base_rp >= _partition->start_offset()) {
+        // Local fetch. Trim to start of the log - it is safe because clients
+        // can't read earlier offsets.
+        trim_at = _partition->start_offset();
+    } else {
+        // Fetch from cloud data. Trim to start of the read range - this is
+        // incorrect because clients can still see earlier offsets but will work
+        // if they won't use aborted ranges from this request to filter batches
+        // belonging to earlier offsets.
+        trim_at = base_rp;
+    }
+
+    std::vector<cluster::rm_stm::tx_range> target;
+    target.reserve(source.size());
+    for (const auto& range : source) {
+        target.push_back(cluster::rm_stm::tx_range{
+          .pid = range.pid,
+          .first = ot_state->from_log_offset(std::max(trim_at, range.first)),
+          .last = ot_state->from_log_offset(range.last)});
+    }
+
+    co_return target;
 }
 
 ss::future<std::optional<storage::timequery_result>>

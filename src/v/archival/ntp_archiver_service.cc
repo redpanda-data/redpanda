@@ -15,7 +15,6 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
 #include "model/metadata.h"
-#include "raft/configuration_manager.h"
 #include "s3/client.h"
 #include "s3/error.h"
 #include "storage/disk_log_impl.h"
@@ -146,7 +145,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
       start_upload_offset,
       last_stable_offset,
       *log,
-      *_partition->get_offset_translator());
+      *_partition->get_offset_translator_state());
 
     if (upload.source.get() == nullptr) {
         vlog(
@@ -220,8 +219,8 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
     auto offset = upload.final_offset;
     auto base = upload.starting_offset;
     start_upload_offset = offset + model::offset(1);
-    auto delta = base
-                 - _partition->get_offset_translator()->from_log_offset(base);
+    auto delta
+      = base - _partition->get_offset_translator_state()->from_log_offset(base);
     co_return scheduled_upload{
       .result = upload_segment(upload, parent),
       .inclusive_last_offset = offset,

@@ -82,9 +82,15 @@ class RecordIter:
         timestamp_delta = self.rdr.read_varint()
         offset_delta = self.rdr.read_varint()
         key_length = self.rdr.read_varint()
-        key = self.rdr.read_bytes(key_length)
+        if key_length > 0:
+            key = self.rdr.read_bytes(key_length)
+        else:
+            key = None
         value_length = self.rdr.read_varint()
-        value = self.rdr.read_bytes(value_length)
+        if value_length > 0:
+            value = self.rdr.read_bytes(value_length)
+        else:
+            value = None
         hdr_size = self.rdr.read_varint()
         headers = []
         for i in range(0, hdr_size):
@@ -186,6 +192,8 @@ class Store:
     def __search(self):
         dirs = os.walk(self.base_dir)
         for ntpd in (p[0] for p in dirs if not p[1]):
+            if 'cloud_storage_cache' in ntpd:
+                continue
             head, part_ntp_id = os.path.split(ntpd)
             [part, ntp_id] = part_ntp_id.split("_")
             head, topic = os.path.split(head)

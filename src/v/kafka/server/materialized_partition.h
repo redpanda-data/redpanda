@@ -51,10 +51,10 @@ public:
           });
     }
 
-    ss::future<model::record_batch_reader> make_reader(
+    ss::future<storage::translating_reader> make_reader(
       storage::log_reader_config cfg,
       std::optional<model::timeout_clock::time_point>) final {
-        return _log.make_reader(cfg);
+        co_return storage::translating_reader(co_await _log.make_reader(cfg));
     }
 
     ss::future<std::optional<storage::timequery_result>>
@@ -63,8 +63,10 @@ public:
         return _log.timequery(cfg);
     };
 
-    ss::future<std::vector<cluster::rm_stm::tx_range>>
-    aborted_transactions(model::offset, model::offset) final {
+    ss::future<std::vector<cluster::rm_stm::tx_range>> aborted_transactions(
+      model::offset,
+      model::offset,
+      ss::lw_shared_ptr<const storage::offset_translator_state>) final {
         return ss::make_ready_future<std::vector<cluster::rm_stm::tx_range>>(
           std::vector<cluster::rm_stm::tx_range>());
     }

@@ -18,6 +18,7 @@
 #include "model/record.h"
 #include "s3/client.h"
 #include "storage/parser.h"
+#include "storage/translating_reader.h"
 #include "storage/types.h"
 #include "utils/retry_chain_node.h"
 
@@ -119,46 +120,23 @@ private:
       _wait_list;
 };
 
-/// Log reader config for shadow-indexing
-///
-/// The difference between storage::log_reader_config and this
-/// object is that storage::log_reader_config stores redpanda
-/// offsets in start_offset and max_offset fields. The
-/// cloud_storage::log_reader_config stores kafka offsets in these
-/// fields. It also adds extra field 'start_offset_redpanda' which
-/// always contain the same offset as 'start_offset' but translated
-/// from kafka to redpanda.
-///
-/// The problem here is that shadow-indexing operates on sparse data.
-/// It can't translate every offset. Only the base offsets of uploaded
-/// segment. But it can also translate offsets as it scans the segment.
-/// But this is all done internally, so caller have to proviede kafka
-/// offsets. Mechanisms which require redpanda offset can use
-/// 'start_offset_redpanda' field. It's guaranteed to point to the same
-/// record batch but the offset is not translated back to kafka. This is
-/// useful since we can, for instance, compare it to committed_offset of
-/// the uploaded segment to know that we scanned the whole segment.
-struct log_reader_config : public storage::log_reader_config {
-    explicit log_reader_config(const storage::log_reader_config& cfg)
-      : storage::log_reader_config(cfg)
-      , next_offset_redpanda(model::offset::min()) {}
-
-    log_reader_config(
-      model::offset start_offset,
-      model::offset max_offset,
-      ss::io_priority_class prio)
-      : storage::log_reader_config(start_offset, max_offset, prio) {}
-
-    /// Next redpanda offset that we're going to look at
-    model::offset next_offset_redpanda;
-};
-
 class remote_segment_batch_consumer;
 
 /// The segment reader that can be used to fetch data from cloud storage
 ///
 /// The reader invokes 'data_stream' method of the 'remote_segment'
 /// which returns hydrated segment from disk.
+///
+/// The problem here is that shadow-indexing operates on sparse data.
+/// It can't translate every offset. Only the base offsets of uploaded
+/// segment. But it can also translate offsets as it scans the segment.
+/// But this is all done internally, so caller have to proviede kafka
+/// offsets. Mechanisms which require redpanda offset can use
+/// '_cur_rp_offset' field. It's guaranteed to point to the same
+/// record batch but the offset is not translated back to kafka. This is
+/// useful since we can, for instance, compare it to committed_offset of
+/// the uploaded segment to know that we scanned the whole segment.
+///
 /// The batches returned from the reader have offsets which are already
 /// translated.
 class remote_segment_batch_reader final {
@@ -167,7 +145,7 @@ class remote_segment_batch_reader final {
 public:
     remote_segment_batch_reader(
       ss::lw_shared_ptr<remote_segment>,
-      const log_reader_config& config) noexcept;
+      const storage::log_reader_config& config) noexcept;
 
     remote_segment_batch_reader(
       remote_segment_batch_reader&&) noexcept = delete;
@@ -178,19 +156,25 @@ public:
       = delete;
     ~remote_segment_batch_reader() noexcept = default;
 
-    ss::future<result<ss::circular_buffer<model::record_batch>>>
-      read_some(model::timeout_clock::time_point);
+    ss::future<result<ss::circular_buffer<model::record_batch>>> read_some(
+      model::timeout_clock::time_point, storage::offset_translator_state&);
 
     ss::future<> stop();
 
-    const log_reader_config& config() const { return _config; }
-    log_reader_config& config() { return _config; }
+    const storage::log_reader_config& config() const { return _config; }
+    storage::log_reader_config& config() { return _config; }
 
     /// Get max offset (redpanda offset)
     model::offset max_rp_offset() const { return _seg->get_max_rp_offset(); }
 
     /// Get base offset (redpanda offset)
     model::offset base_rp_offset() const { return _seg->get_base_rp_offset(); }
+
+    bool is_eof() const { return _cur_rp_offset > _seg->get_max_rp_offset(); }
+
+    void set_eof() {
+        _cur_rp_offset = _seg->get_max_rp_offset() + model::offset{1};
+    }
 
 private:
     friend class single_record_consumer;
@@ -199,14 +183,18 @@ private:
     size_t produce(model::record_batch batch);
 
     ss::lw_shared_ptr<remote_segment> _seg;
-    log_reader_config _config;
+    storage::log_reader_config _config;
     std::unique_ptr<storage::continuous_batch_parser> _parser;
     ss::circular_buffer<model::record_batch> _ringbuf;
+    std::optional<std::reference_wrapper<storage::offset_translator_state>>
+      _cur_ot_state;
     size_t _total_size{0};
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
     model::term_id _term;
     model::offset _initial_delta;
+    model::offset _cur_rp_offset;
+    model::offset _cur_delta;
 };
 
 } // namespace cloud_storage

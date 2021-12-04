@@ -76,8 +76,10 @@ struct offset_translator_fixture : base_fixture {
 
     void validate_offset_translation(
       model::offset log_offset, model::offset kafka_offset) {
-        BOOST_REQUIRE_EQUAL(tr.from_log_offset(log_offset), kafka_offset);
-        BOOST_REQUIRE_EQUAL(tr.to_log_offset(kafka_offset), log_offset);
+        BOOST_REQUIRE_EQUAL(
+          tr.state()->from_log_offset(log_offset), kafka_offset);
+        BOOST_REQUIRE_EQUAL(
+          tr.state()->to_log_offset(kafka_offset), log_offset);
     }
 
     raft::offset_translator tr;
@@ -157,8 +159,8 @@ FIXTURE_TEST(random_translation_test, offset_translator_fixture) {
         if (batch_offsets.contains(log_offset)) {
             continue;
         }
-        auto kafka_offset = tr.from_log_offset(log_offset);
-        auto reverse_log_offset = tr.to_log_offset(kafka_offset);
+        auto kafka_offset = tr.state()->from_log_offset(log_offset);
+        auto reverse_log_offset = tr.state()->to_log_offset(kafka_offset);
         BOOST_REQUIRE_EQUAL(log_offset, reverse_log_offset);
     }
 }
@@ -186,8 +188,8 @@ FIXTURE_TEST(random_translation_test_with_hint, offset_translator_fixture) {
         if (batch_offsets.contains(log_offset)) {
             continue;
         }
-        auto kafka_offset = tr.from_log_offset(log_offset);
-        auto reverse_log_offset = tr.to_log_offset(
+        auto kafka_offset = tr.state()->from_log_offset(log_offset);
+        auto reverse_log_offset = tr.state()->to_log_offset(
           kafka_offset, prev_log_offset);
         prev_log_offset = reverse_log_offset;
         BOOST_REQUIRE_EQUAL(log_offset, reverse_log_offset);
@@ -223,8 +225,8 @@ FIXTURE_TEST(immutability_test, offset_translator_fixture) {
         if (batch_offsets.contains(log_offset)) {
             continue;
         }
-        auto kafka_offset = tr.from_log_offset(log_offset);
-        auto reverse_log_offset = tr.to_log_offset(kafka_offset);
+        auto kafka_offset = tr.state()->from_log_offset(log_offset);
+        auto reverse_log_offset = tr.state()->to_log_offset(kafka_offset);
 
         BOOST_REQUIRE_EQUAL(log_offset, reverse_log_offset);
         offsets_mapping.emplace(log_offset, kafka_offset);
@@ -236,7 +238,7 @@ FIXTURE_TEST(immutability_test, offset_translator_fixture) {
             if (batch_offsets.contains(log_offset)) {
                 continue;
             }
-            model::offset k_offset = tr.from_log_offset(log_offset);
+            model::offset k_offset = tr.state()->from_log_offset(log_offset);
             // validate that offset havent changed
             BOOST_REQUIRE_EQUAL(offsets_mapping[log_offset], k_offset);
         }
@@ -464,10 +466,10 @@ struct fuzz_checker {
         model::offset hwm_lo{_kafka_offsets.size()};
         model::offset hwm_ko{_log_offsets.size()};
         BOOST_TEST_CONTEXT("With log offset: " << hwm_lo) {
-            BOOST_REQUIRE_EQUAL(hwm_ko, _tr->from_log_offset(hwm_lo));
+            BOOST_REQUIRE_EQUAL(hwm_ko, _tr->state()->from_log_offset(hwm_lo));
         }
         BOOST_TEST_CONTEXT("With kafka offset: " << hwm_ko) {
-            BOOST_REQUIRE_EQUAL(hwm_lo, _tr->to_log_offset(hwm_ko));
+            BOOST_REQUIRE_EQUAL(hwm_lo, _tr->state()->to_log_offset(hwm_ko));
         }
 
         int64_t start_log_offset = next_offset(_snapshot_offset)();
@@ -479,7 +481,8 @@ struct fuzz_checker {
         for (int64_t lo = start_log_offset; lo < _kafka_offsets.size(); ++lo) {
             BOOST_TEST_CONTEXT("With log offset: " << lo) {
                 BOOST_REQUIRE_EQUAL(
-                  _kafka_offsets[lo], _tr->from_log_offset(model::offset{lo}));
+                  _kafka_offsets[lo],
+                  _tr->state()->from_log_offset(model::offset{lo}));
             }
         }
 
@@ -487,7 +490,8 @@ struct fuzz_checker {
         for (int64_t ko = start_kafka_offset; ko < _log_offsets.size(); ++ko) {
             BOOST_TEST_CONTEXT("With kafka offset: " << ko) {
                 BOOST_REQUIRE_EQUAL(
-                  _log_offsets[ko], _tr->to_log_offset(model::offset{ko}));
+                  _log_offsets[ko],
+                  _tr->state()->to_log_offset(model::offset{ko}));
             }
         }
     }

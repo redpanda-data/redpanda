@@ -17,6 +17,7 @@
 #include "model/metadata.h"
 #include "s3/client.h"
 #include "storage/ntp_config.h"
+#include "storage/translating_reader.h"
 #include "storage/types.h"
 #include "utils/intrusive_list_helpers.h"
 #include "utils/retry_chain_node.h"
@@ -68,7 +69,7 @@ public:
     /// All offset translation is done internally. The returned record batch
     /// reader will produce batches with kafka offsets and the config will be
     /// updated using kafka offsets.
-    ss::future<model::record_batch_reader> make_reader(
+    ss::future<storage::translating_reader> make_reader(
       storage::log_reader_config config,
       std::optional<model::timeout_clock::time_point> deadline = std::nullopt);
 
@@ -121,8 +122,8 @@ private:
 
         /// Borrow reader or make a new one.
         /// In either case return a reader.
-        std::unique_ptr<remote_segment_batch_reader>
-        borrow_reader(const log_reader_config& cfg, retry_chain_logger& ctxlog);
+        std::unique_ptr<remote_segment_batch_reader> borrow_reader(
+          const storage::log_reader_config& cfg, retry_chain_logger& ctxlog);
 
         ss::future<> stop();
 
@@ -154,7 +155,9 @@ private:
     /// \param offset_key is an key of the segment state in the _segments
     /// \param st is a segment state referenced by offset_key
     std::unique_ptr<remote_segment_batch_reader> borrow_reader(
-      log_reader_config config, model::offset offset_key, segment_state& st);
+      storage::log_reader_config config,
+      model::offset offset_key,
+      segment_state& st);
 
     /// Return reader back to segment_state
     void return_reader(
