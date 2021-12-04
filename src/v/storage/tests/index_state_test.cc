@@ -1,6 +1,7 @@
 #define BOOST_TEST_MODULE storage
 #include "bytes/bytes.h"
 #include "storage/index_state.h"
+#include "storage/index_state_serde_compat.h"
 
 #include <boost/test/unit_test.hpp>
 
@@ -91,7 +92,8 @@ BOOST_AUTO_TEST_CASE(encode_decode_v2) {
 BOOST_AUTO_TEST_CASE(encode_decode_future_version) {
     auto src = make_random_index_state();
     auto src_buf = src.checksum_and_serialize();
-    set_version(src_buf, storage::index_state::ondisk_version + 1);
+    set_version(
+      src_buf, storage::serde_compat::index_state_serde::ondisk_version + 1);
 
     // cannot decode future version
     auto dst = storage::index_state::hydrate_from_buffer(src_buf.copy());

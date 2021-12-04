@@ -18,6 +18,8 @@
 namespace storage::serde_compat {
 
 struct index_state_serde {
+    static constexpr int8_t ondisk_version = 3;
+
     static std::optional<index_state> decode(iobuf_parser& parser) {
         index_state retval;
 
@@ -101,7 +103,7 @@ struct index_state_serde {
         st.checksum = storage::index_state::checksum_state(st);
         reflection::serialize(
           out,
-          index_state::ondisk_version,
+          ondisk_version,
           st.size,
           st.checksum,
           st.bitflags,
