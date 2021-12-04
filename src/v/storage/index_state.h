@@ -41,9 +41,10 @@ struct index_state
     index_state() = default;
     index_state(index_state&&) noexcept = default;
     index_state& operator=(index_state&&) noexcept = default;
-    index_state(const index_state&) = delete;
     index_state& operator=(const index_state&) = delete;
     ~index_state() noexcept = default;
+
+    index_state copy() const { return *this; }
 
     /// \brief sizeof the index in bytes
     uint32_t size{0};
@@ -101,6 +102,19 @@ struct index_state
 
     void serde_write(iobuf&) const;
     friend void read_nested(iobuf_parser&, index_state&, const size_t);
+
+private:
+    index_state(const index_state& o) noexcept
+      : size(o.size)
+      , checksum(o.checksum)
+      , bitflags(o.bitflags)
+      , base_offset(o.base_offset)
+      , max_offset(o.max_offset)
+      , base_timestamp(o.base_timestamp)
+      , max_timestamp(o.max_timestamp)
+      , relative_offset_index(o.relative_offset_index.copy())
+      , relative_time_index(o.relative_time_index.copy())
+      , position_index(o.position_index.copy()) {}
 };
 
 } // namespace storage
