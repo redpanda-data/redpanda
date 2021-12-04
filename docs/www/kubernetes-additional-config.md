@@ -8,7 +8,7 @@ You can use the Redpanda operator to create clusters based on custom resource (C
 After you install the Redpanda operator, you can apply the cluster CR that contains the basic specifications of the Redpanda cluster,
 including the cluster name and namespace, and the configuration for the APIs like the Admin, Kafka, and Pandaproxy API.
 
-The [Kubernetes Quick Start Guide](/docs/kubernetes-deployment) walks you through the steps to set up the Redpanda operator and a Redpanda cluster.
+The [Kubernetes Quick Start Guide](/docs/quick-start-kubernetes) walks you through the steps to set up the Redpanda operator and a Redpanda cluster.
 
 In addition to the basic cluster specifications, you can add other parameters that are typically defined in the Redpanda [configuration file](/docs/configuration).
 The custom parameters are added to the `additionalConfiguration` section of the CR.
