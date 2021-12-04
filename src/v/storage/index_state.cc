@@ -12,7 +12,10 @@
 #include "bytes/iobuf_parser.h"
 #include "hashing/xx.h"
 #include "likely.h"
+#include "model/timestamp.h"
 #include "reflection/adl.h"
+#include "serde/serde.h"
+#include "serde/serde_exception.h"
 #include "storage/index_state_serde_compat.h"
 #include "storage/logger.h"
 #include "vassert.h"
@@ -145,6 +148,59 @@ std::optional<index_state> index_state::hydrate_from_buffer(iobuf b) {
 
 iobuf index_state::checksum_and_serialize() {
     return serde_compat::index_state_serde::encode(*this);
+}
+
+void read_nested(
+  iobuf_parser& in, index_state& st, const size_t bytes_left_limit) {
+    if (
+      serde::peek_version(in)
+      > serde_compat::index_state_serde::ondisk_version) {
+        const auto h = serde::read_header<index_state>(in, bytes_left_limit);
+
+        using serde::read_nested;
+        read_nested(in, st.size, h._bytes_left_limit);
+        read_nested(in, st.checksum, h._bytes_left_limit);
+        read_nested(in, st.bitflags, h._bytes_left_limit);
+        read_nested(in, st.base_offset, h._bytes_left_limit);
+        read_nested(in, st.max_offset, h._bytes_left_limit);
+        read_nested(in, st.base_timestamp, h._bytes_left_limit);
+        read_nested(in, st.max_timestamp, h._bytes_left_limit);
+        read_nested(in, st.relative_offset_index, h._bytes_left_limit);
+        read_nested(in, st.relative_time_index, h._bytes_left_limit);
+        read_nested(in, st.position_index, h._bytes_left_limit);
+
+        return;
+    }
+
+    /*
+     * supported old version to avoid rebuilding all indices.
+     */
+    const auto version = reflection::adl<int8_t>{}.from(in);
+    if (version == serde_compat::index_state_serde::ondisk_version) {
+        st = serde_compat::index_state_serde::decode(in);
+        return;
+    }
+
+    /*
+     * unsupported old version. the call will rebuild the index.
+     */
+    vlog(stlog.debug, "Rebuilding index for version {}", version);
+    throw serde::serde_exception(
+      fmt_with_ctx(fmt::format, "Unsupported version: {}", version));
+}
+
+void index_state::serde_write(iobuf& out) const {
+    using serde::write;
+    write(out, size);
+    write(out, checksum);
+    write(out, bitflags);
+    write(out, base_offset);
+    write(out, max_offset);
+    write(out, base_timestamp);
+    write(out, max_timestamp);
+    write(out, relative_offset_index.copy());
+    write(out, relative_time_index.copy());
+    write(out, position_index.copy());
 }
 
 } // namespace storage
