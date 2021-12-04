@@ -1,4 +1,4 @@
-from io import BytesIO
+from io import BufferedReader, BytesIO
 from model import *
 from reader import Reader
 from storage import Segment
@@ -6,12 +6,18 @@ import datetime
 
 
 def decode_topic_command(record):
-    rdr = Reader(BytesIO(record.value))
+    rdr = Reader(BufferedReader(BytesIO(record.value)))
     k_rdr = Reader(BytesIO(record.key))
     cmd = {}
     cmd['type'] = rdr.read_int8()
     if cmd['type'] == 0:
         cmd['type_string'] = 'create_topic'
+        version = Reader(BytesIO(rdr.peek(4))).read_int32()
+        if version < 0:
+            assert version == -1
+            rdr.skip(4)
+        else:
+            version = 0
         cmd['namespace'] = rdr.read_string()
         cmd['topic'] = rdr.read_string()
         cmd['partitions'] = rdr.read_int32()
@@ -24,6 +30,9 @@ def decode_topic_command(record):
         cmd['segment_size'] = rdr.read_optional(lambda r: r.read_int64())
         cmd['retention_bytes'] = rdr.read_tristate(lambda r: r.read_int64())
         cmd['retention_duration'] = rdr.read_tristate(lambda r: r.read_int64())
+        if version == -1:
+            cmd["recovery"] = rdr.read_optional(lambda r: r.read_bool())
+            cmd["shadow_indexing"] = rdr.read_optional(lambda r: r.read_int8())
         cmd['assignments'] = rdr.read_vector(read_partition_assignment)
     elif cmd['type'] == 1:
         cmd['type_string'] = 'delete_topic'
