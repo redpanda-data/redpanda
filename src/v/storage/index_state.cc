@@ -85,7 +85,7 @@ std::optional<index_state> index_state::hydrate_from_buffer(iobuf b) {
 
     auto version = reflection::adl<int8_t>{}.from(parser);
     switch (version) {
-    case index_state::ondisk_version:
+    case serde_compat::index_state_serde::ondisk_version:
         break;
 
     default:
