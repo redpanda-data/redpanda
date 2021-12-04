@@ -134,7 +134,9 @@ static ss::future<read_result> read_from_partition(
     auto lso = part.last_stable_offset();
     auto start_o = part.start_offset();
     // if we have no data read, return fast
-    if (hw < config.start_offset || config.skip_read) {
+    if (
+      hw < config.start_offset || config.skip_read
+      || config.start_offset > config.max_offset) {
         co_return read_result(start_o, hw, lso);
     }
 
