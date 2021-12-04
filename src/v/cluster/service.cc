@@ -87,6 +87,23 @@ service::create_topics(create_topics_request&& r, rpc::streaming_context&) {
       });
 }
 
+ss::future<create_topics_reply> service::create_non_replicable_topics(
+  create_non_replicable_topics_request&& r, rpc::streaming_context&) {
+    return ss::with_scheduling_group(
+             get_scheduling_group(),
+             [this, r = std::move(r)]() mutable {
+                 return _topics_frontend.local().create_non_replicable_topics(
+                   std::move(r.topics),
+                   model::timeout_clock::now() + r.timeout);
+             })
+      .then([this](std::vector<topic_result> res) {
+          // Fetch metadata for successfully created topics
+          auto [md, cfg] = fetch_metadata_and_cfg(res);
+          return create_topics_reply{
+            std::move(res), std::move(md), std::move(cfg)};
+      });
+}
+
 std::pair<std::vector<model::topic_metadata>, std::vector<topic_configuration>>
 service::fetch_metadata_and_cfg(const std::vector<topic_result>& res) {
     std::vector<model::topic_metadata> md;
