@@ -60,7 +60,7 @@ public:
     /// command completes.
     ss::future<> create_non_replicable_topics(
       std::vector<cluster::non_replicable_topic>,
-      model::timeout_clock::time_point timeout);
+      model::timeout_clock::duration timeout);
 
 private:
     void topic_creation_resolved(const std::vector<cluster::topic_result>&);

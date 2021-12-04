@@ -71,7 +71,11 @@ public:
       model::timeout_clock::time_point);
 
     ss::future<std::vector<topic_result>> create_non_replicable_topics(
-      std::vector<non_replicable_topic>, model::timeout_clock::time_point);
+      std::vector<non_replicable_topic> topics,
+      model::timeout_clock::time_point timeout);
+
+    ss::future<std::vector<topic_result>> autocreate_non_replicable_topics(
+      std::vector<non_replicable_topic>, model::timeout_clock::duration);
 
     ss::future<bool> validate_shard(model::node_id node, uint32_t shard) const;
 
@@ -94,6 +98,13 @@ private:
       model::node_id,
       std::vector<topic_configuration>,
       model::timeout_clock::duration);
+
+    ss::future<std::vector<topic_result>>
+    dispatch_create_non_replicable_to_leader(
+      model::node_id leader,
+      std::vector<non_replicable_topic> topics,
+      model::timeout_clock::duration timeout);
+
     ss::future<std::error_code> do_update_data_policy(
       topic_properties_update&, model::timeout_clock::time_point);
     ss::future<topic_result> do_update_topic_properties(

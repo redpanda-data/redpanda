@@ -284,7 +284,8 @@ public:
           .source = std::move(tp_ns_src), .name = std::move(tp_ns)};
         return app.controller->get_topics_frontend()
           .local()
-          .create_non_replicable_topics({std::move(nrt)}, model::no_timeout)
+          .autocreate_non_replicable_topics(
+            {std::move(nrt)}, model::max_duration)
           .then([this](std::vector<cluster::topic_result> results) {
               return wait_for_topics(std::move(results));
           });

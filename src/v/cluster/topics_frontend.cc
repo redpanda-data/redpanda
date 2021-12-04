@@ -299,6 +299,56 @@ topics_frontend::create_non_replicable_topics(
       });
 }
 
+ss::future<std::vector<topic_result>>
+topics_frontend::dispatch_create_non_replicable_to_leader(
+  model::node_id leader,
+  std::vector<non_replicable_topic> topics,
+  model::timeout_clock::duration timeout) {
+    vlog(clusterlog.trace, "Dispatching create topics to {}", leader);
+    return _connections.local()
+      .with_node_client<cluster::controller_client_protocol>(
+        _self,
+        ss::this_shard_id(),
+        leader,
+        timeout,
+        [topics, timeout](controller_client_protocol cp) mutable {
+            return cp.create_non_replicable_topics(
+              create_non_replicable_topics_request{std::move(topics), timeout},
+              rpc::client_opts(timeout));
+        })
+      .then(&rpc::get_ctx_data<create_non_replicable_topics_reply>)
+      .then([topics = std::move(topics)](
+              result<create_non_replicable_topics_reply> r) {
+          if (r.has_error()) {
+              return create_topic_results(topics, map_errc(r.error()));
+          }
+          return std::move(r.value().results);
+      });
+}
+
+ss::future<std::vector<topic_result>>
+topics_frontend::autocreate_non_replicable_topics(
+  std::vector<non_replicable_topic> topics,
+  model::timeout_clock::duration timeout) {
+    vlog(clusterlog.trace, "Create non_replicable topics {}", topics);
+
+    auto leader = _leaders.local().get_leader(model::controller_ntp);
+
+    // no leader available
+    if (!leader) {
+        return ss::make_ready_future<std::vector<topic_result>>(
+          create_topic_results(topics, errc::no_leader_controller));
+    }
+    // current node is a leader controller
+    if (leader == _self) {
+        return create_non_replicable_topics(
+          std::move(topics), model::time_from_now(timeout));
+    }
+    // dispatch to leader
+    return dispatch_create_non_replicable_to_leader(
+      leader.value(), std::move(topics), timeout);
+}
+
 topic_result
 make_error_result(const model::topic_namespace& tp_ns, std::error_code ec) {
     if (ec.category() == cluster::error_category()) {
