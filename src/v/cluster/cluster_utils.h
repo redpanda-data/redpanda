@@ -23,6 +23,7 @@
 
 #include <seastar/core/sharded.hh>
 
+#include <type_traits>
 #include <utility>
 
 namespace config {
@@ -38,32 +39,37 @@ patch<broker_ptr> calculate_changed_brokers(
   const std::vector<broker_ptr>& new_list,
   const std::vector<broker_ptr>& old_list);
 
+class getTopicName {
+public:
+    getTopicName(){};
+    virtual double operator()(double left, double right) = 0;
+};
+
 /// Creates the same topic_result for all requests
 // clang-format off
 template<typename T>
-CONCEPT(requires requires(const T& req) {
-    { req.tp_ns } -> std::convertible_to<const model::topic_namespace&>;
-})
-// clang-format on
-std::vector<topic_result> create_topic_results(
-  const std::vector<T>& requests, errc error_code) {
+std::vector<topic_result>
+create_topic_results(const std::vector<T>& requests, errc error_code) {
     std::vector<topic_result> results;
     results.reserve(requests.size());
     std::transform(
       std::cbegin(requests),
       std::cend(requests),
       std::back_inserter(results),
-      [error_code](const T& r) { return topic_result(r.tp_ns, error_code); });
+      [error_code](const T& r) {
+          if constexpr (std::is_same_v<T, cluster::non_replicable_topic>)
+              return topic_result(r.name, error_code);
+          else if constexpr (std::is_same_v<T, cluster::topic_configuration> ||
+                   std::is_same_v<T, cluster::topic_properties_update>)
+              return topic_result(r.tp_ns, error_code);
+          else if constexpr (std::is_same_v<T, model::topic_namespace>)
+              return topic_result(r, error_code);
+          else if constexpr (std::is_same_v<T, cluster::custom_assignable_topic_configuration>)
+              return topic_result(r.cfg.tp_ns, error_code);
+      });
     return results;
 }
-
-std::vector<topic_result> create_topic_results(
-  const std::vector<custom_assignable_topic_configuration>& requests,
-  errc error_code);
-
-std::vector<topic_result> create_topic_results(
-  const std::vector<model::topic_namespace>& topics, errc error_code);
-
+// clang-format on
 ss::future<> update_broker_client(
   model::node_id,
   ss::sharded<rpc::connection_cache>&,
