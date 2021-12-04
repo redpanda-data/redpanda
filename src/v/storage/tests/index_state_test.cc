@@ -1,5 +1,6 @@
 #define BOOST_TEST_MODULE storage
 #include "bytes/bytes.h"
+#include "random/generators.h"
 #include "storage/index_state.h"
 #include "storage/index_state_serde_compat.h"
 
@@ -7,14 +8,23 @@
 
 static storage::index_state make_random_index_state() {
     storage::index_state st;
-    st.size = 33;
-    st.checksum = 22;
-    st.bitflags = 1;
-    st.base_offset = model::offset(10);
-    st.max_offset = model::offset(100);
-    st.base_timestamp = model::timestamp(2000);
-    st.max_timestamp = model::timestamp(101);
-    st.add_entry(1, 2, 3);
+    st.size = random_generators::get_int<uint32_t>();
+    st.checksum = random_generators::get_int<uint64_t>();
+    st.bitflags = random_generators::get_int<uint32_t>();
+    st.base_offset = model::offset(random_generators::get_int<int64_t>());
+    st.max_offset = model::offset(random_generators::get_int<int64_t>());
+    st.base_timestamp = model::timestamp(random_generators::get_int<int64_t>());
+    st.max_timestamp = model::timestamp(random_generators::get_int<int64_t>());
+
+    const auto n = random_generators::get_int(1, 10000);
+    for (auto i = 0; i < n; ++i) {
+        st.add_entry(
+          random_generators::get_int<uint32_t>(),
+          random_generators::get_int<uint32_t>(),
+          random_generators::get_int<uint64_t>());
+        return st;
+    }
+
     return st;
 }
 
