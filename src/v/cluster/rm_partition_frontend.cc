@@ -59,6 +59,14 @@ bool rm_partition_frontend::is_leader_of(const model::ntp& ntp) const {
     return leader == _self;
 }
 
+// Workaround for arm64 coroutine crash. See
+// https://groups.google.com/g/seastar-dev/c/Nt6LizrwE9U for details.
+template<typename S, typename... Args>
+static __attribute__((noinline)) std::string
+format(const S& format_str, Args&&... args) {
+    return fmt::format(format_str, std::forward<Args>(args)...);
+}
+
 ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
   model::ntp ntp,
   model::producer_identity pid,
@@ -106,7 +114,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
     std::optional<std::string> error;
     while (!aborted && 0 < retries--) {
         if (!leader_opt) {
-            error = fmt::format("can't find {} in the leaders cache", ntp);
+            error = format("can't find {} in the leaders cache", ntp);
             vlog(
               txlog.trace,
               "can't find {} in the leaders cache, retries left: {}",
@@ -125,7 +133,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
             result = co_await begin_tx_locally(
               ntp, pid, tx_seq, transaction_timeout_ms);
             if (result.ec == tx_errc::leader_not_found) {
-                error = fmt::format(
+                error = format(
                   "local execution of begin_tx({},...) failed with 'not a "
                   "leader'",
                   ntp);
@@ -169,7 +177,7 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
           result.ec,
           result.etag);
         if (result.ec == tx_errc::leader_not_found) {
-            error = fmt::format(
+            error = format(
               "remote execution of begin_tx({},...) on {} failed with 'not a "
               "leader'",
               ntp,
