@@ -24,7 +24,7 @@
         {
             "name": "create_non_replicable_topics",
             "input_type": "create_non_replicable_topics_request",
-            "output_type": "create_topics_reply"
+            "output_type": "create_non_replicable_topics_reply"
         },
         {
             "name": "finish_partition_update",

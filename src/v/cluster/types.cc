@@ -478,6 +478,20 @@ adl<cluster::create_topics_request>::from(iobuf_parser& in) {
     return cluster::create_topics_request{std::move(configs), timeout};
 }
 
+void adl<cluster::create_non_replicable_topics_request>::to(
+  iobuf& out, cluster::create_non_replicable_topics_request&& r) {
+    reflection::serialize(out, std::move(r.topics), r.timeout);
+}
+
+cluster::create_non_replicable_topics_request
+adl<cluster::create_non_replicable_topics_request>::from(iobuf_parser& in) {
+    using underlying_t = std::vector<cluster::non_replicable_topic>;
+    auto topics = adl<underlying_t>().from(in);
+    auto timeout = adl<model::timeout_clock::duration>().from(in);
+    return cluster::create_non_replicable_topics_request{
+      std::move(topics), timeout};
+}
+
 void adl<cluster::create_topics_reply>::to(
   iobuf& out, cluster::create_topics_reply&& r) {
     reflection::serialize(

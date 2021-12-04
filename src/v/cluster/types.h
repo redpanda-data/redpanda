@@ -524,6 +524,10 @@ struct create_topics_reply {
     std::vector<topic_configuration> configs;
 };
 
+struct create_non_replicable_topics_reply {
+    std::vector<topic_result> results;
+};
+
 struct finish_partition_update_request {
     model::ntp ntp;
     std::vector<model::broker_shard> new_replica_set;
@@ -797,6 +801,12 @@ struct adl<cluster::topic_configuration> {
 };
 
 template<>
+struct adl<cluster::non_replicable_topic> {
+    void to(iobuf&, cluster::non_replicable_topic&&);
+    cluster::non_replicable_topic from(iobuf_parser&);
+};
+
+template<>
 struct adl<cluster::join_request> {
     void to(iobuf&, cluster::join_request&&);
     cluster::join_request from(iobuf);
@@ -820,6 +830,13 @@ struct adl<cluster::create_topics_request> {
     void to(iobuf&, cluster::create_topics_request&&);
     cluster::create_topics_request from(iobuf);
     cluster::create_topics_request from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::create_non_replicable_topics_request> {
+    void to(iobuf&, cluster::create_non_replicable_topics_request&&);
+    cluster::create_non_replicable_topics_request from(iobuf);
+    cluster::create_non_replicable_topics_request from(iobuf_parser&);
 };
 
 template<>
@@ -885,12 +902,6 @@ template<>
 struct adl<cluster::create_data_policy_cmd_data> {
     void to(iobuf&, cluster::create_data_policy_cmd_data&&);
     cluster::create_data_policy_cmd_data from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::non_replicable_topic> {
-    void to(iobuf& out, cluster::non_replicable_topic&&);
-    cluster::non_replicable_topic from(iobuf_parser&);
 };
 
 template<>
