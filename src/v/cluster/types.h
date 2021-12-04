@@ -767,6 +767,17 @@ struct config_status_reply {
     errc error;
 };
 
+struct create_non_replicable_topics_request {
+    static constexpr int8_t current_version = 1;
+    std::vector<non_replicable_topic> topics;
+    model::timeout_clock::duration timeout;
+};
+
+struct create_non_replicable_topics_reply {
+    static constexpr int8_t current_version = 1;
+    std::vector<topic_result> results;
+};
+
 } // namespace cluster
 namespace std {
 template<>
@@ -814,6 +825,18 @@ struct adl<cluster::create_topics_request> {
     void to(iobuf&, cluster::create_topics_request&&);
     cluster::create_topics_request from(iobuf);
     cluster::create_topics_request from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::create_non_replicable_topics_request> {
+    void to(iobuf&, cluster::create_non_replicable_topics_request&&);
+    cluster::create_non_replicable_topics_request from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::create_non_replicable_topics_reply> {
+    void to(iobuf&, cluster::create_non_replicable_topics_reply&&);
+    cluster::create_non_replicable_topics_reply from(iobuf_parser&);
 };
 
 template<>

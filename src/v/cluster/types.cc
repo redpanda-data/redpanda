@@ -478,6 +478,50 @@ adl<cluster::create_topics_request>::from(iobuf_parser& in) {
     return cluster::create_topics_request{std::move(configs), timeout};
 }
 
+void adl<cluster::create_non_replicable_topics_request>::to(
+  iobuf& out, cluster::create_non_replicable_topics_request&& r) {
+    reflection::serialize(
+      out,
+      cluster::create_non_replicable_topics_request::current_version,
+      std::move(r.topics),
+      r.timeout);
+}
+
+cluster::create_non_replicable_topics_request
+adl<cluster::create_non_replicable_topics_request>::from(iobuf_parser& in) {
+    auto version = adl<int8_t>{}.from(in);
+    vassert(
+      version == cluster::create_non_replicable_topics_request::current_version,
+      "Unexpected version: {} (expected: {})",
+      version,
+      cluster::create_non_replicable_topics_request::current_version);
+    auto topics = adl<std::vector<cluster::non_replicable_topic>>().from(in);
+    auto timeout = adl<model::timeout_clock::duration>().from(in);
+    return cluster::create_non_replicable_topics_request{
+      std::move(topics), timeout};
+}
+
+void adl<cluster::create_non_replicable_topics_reply>::to(
+  iobuf& out, cluster::create_non_replicable_topics_reply&& r) {
+    reflection::serialize(
+      out,
+      cluster::create_non_replicable_topics_reply::current_version,
+      std::move(r.results));
+}
+
+cluster::create_non_replicable_topics_reply
+adl<cluster::create_non_replicable_topics_reply>::from(iobuf_parser& in) {
+    auto version = adl<int8_t>{}.from(in);
+    vassert(
+      version == cluster::create_non_replicable_topics_reply::current_version,
+      "Unexpected version: {} (expected: {})",
+      version,
+      cluster::create_non_replicable_topics_reply::current_version);
+    auto results = adl<std::vector<cluster::topic_result>>().from(in);
+    return cluster::create_non_replicable_topics_reply{
+      .results = std::move(results)};
+}
+
 void adl<cluster::create_topics_reply>::to(
   iobuf& out, cluster::create_topics_reply&& r) {
     reflection::serialize(
