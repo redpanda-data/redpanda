@@ -135,7 +135,12 @@ std::optional<index_state> index_state::hydrate_from_buffer(iobuf b) {
         return std::nullopt;
     }
 
-    return serde_compat::index_state_serde::decode(parser);
+    try {
+        return serde_compat::index_state_serde::decode(parser);
+    } catch (const serde::serde_exception& ex) {
+        vlog(stlog.debug, "Decoding index state: {}", ex.what());
+        return std::nullopt;
+    }
 }
 
 iobuf index_state::checksum_and_serialize() {

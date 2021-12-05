@@ -11,6 +11,7 @@
 #pragma once
 
 #include "reflection/adl.h"
+#include "serde/serde_exception.h"
 #include "storage/index_state.h"
 #include "storage/logger.h"
 #include "vlog.h"
@@ -20,17 +21,16 @@ namespace storage::serde_compat {
 struct index_state_serde {
     static constexpr int8_t ondisk_version = 3;
 
-    static std::optional<index_state> decode(iobuf_parser& parser) {
+    static index_state decode(iobuf_parser& parser) {
         index_state retval;
 
         retval.size = reflection::adl<uint32_t>{}.from(parser);
         if (unlikely(parser.bytes_left() != retval.size)) {
-            vlog(
-              stlog.debug,
+            throw serde::serde_exception(fmt_with_ctx(
+              fmt::format,
               "Index size does not match header size. Got:{}, expected:{}",
               parser.bytes_left(),
-              retval.size);
-            return std::nullopt;
+              retval.size));
         }
 
         retval.checksum = reflection::adl<uint64_t>{}.from(parser);
@@ -69,12 +69,11 @@ struct index_state_serde {
         const auto computed_checksum = storage::index_state::checksum_state(
           retval);
         if (unlikely(retval.checksum != computed_checksum)) {
-            vlog(
-              stlog.debug,
+            throw serde::serde_exception(fmt_with_ctx(
+              fmt::format,
               "Invalid checksum for index. Got:{}, expected:{}",
               computed_checksum,
-              retval.checksum);
-            return std::nullopt;
+              retval.checksum));
         }
 
         return retval;
