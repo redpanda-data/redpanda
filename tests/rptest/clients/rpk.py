@@ -25,15 +25,17 @@ class RpkException(Exception):
 
 
 class RpkPartition:
-    def __init__(self, id, leader, replicas, hw):
+    def __init__(self, id, leader, replicas, hw, start_offset):
         self.id = id
         self.leader = leader
         self.replicas = replicas
         self.high_watermark = hw
+        self.start_offset = start_offset
 
     def __str__(self):
-        return "id: {}, leader: {}, replicas: {}, hw: {}".format(
-            self.id, self.leader, self.replicas, self.high_watermark)
+        return "id: {}, leader: {}, replicas: {}, hw: {}, start_offset: {}".format(
+            self.id, self.leader, self.replicas, self.high_watermark,
+            self.start_offset)
 
 
 class RpkClusterInfoNode:
@@ -131,7 +133,8 @@ class RpkTool:
             return RpkPartition(id=int(m.group('id')),
                                 leader=int(m.group('leader')),
                                 replicas=replicas,
-                                hw=int(m.group('hw')))
+                                hw=int(m.group('hw')),
+                                start_offset=int(m.group("logstart")))
 
         return filter(lambda p: p != None, map(partition_line, lines))
 
