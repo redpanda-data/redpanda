@@ -142,6 +142,26 @@ class RpkTool:
         cmd = ['alter-config', topic, "--set", f"{set_key}={set_value}"]
         self._run_topic(cmd)
 
+    def consume(self,
+                topic,
+                n=None,
+                group=None,
+                regex=False,
+                offset=None,
+                fetch_max_bytes=None):
+        cmd = ["consume", topic]
+        if group is not None:
+            cmd += ["-g", group]
+        if n is not None:
+            cmd.append(f"-n{n}")
+        if regex:
+            cmd.append("-r")
+        if fetch_max_bytes is not None:
+            cmd += ["--fetch-max-bytes", str(fetch_max_bytes)]
+        if offset is not None:
+            cmd += ["-o", f"{n}"]
+        return self._run_topic(cmd)
+
     def wasm_deploy(self, script, name, description):
         cmd = [
             self._rpk_binary(), 'wasm', 'deploy', script, '--brokers',
