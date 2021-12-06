@@ -47,11 +47,12 @@ public:
     using value_type = T;
 
     fragmented_vector() noexcept = default;
-    fragmented_vector(const fragmented_vector&) noexcept = delete;
     fragmented_vector& operator=(const fragmented_vector&) noexcept = delete;
     fragmented_vector(fragmented_vector&&) noexcept = default;
     fragmented_vector& operator=(fragmented_vector&&) noexcept = default;
     ~fragmented_vector() noexcept = default;
+
+    fragmented_vector copy() const { return *this; }
 
     void push_back(T elem) {
         if (_size == _capacity) {
@@ -142,6 +143,8 @@ public:
     const_iterator end() const { return const_iterator(this, _size); }
 
 private:
+    fragmented_vector(const fragmented_vector&) noexcept = default;
+
     size_t _size{0};
     size_t _capacity{0};
     std::vector<std::vector<T>> _frags;
