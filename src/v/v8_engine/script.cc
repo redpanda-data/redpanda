@@ -34,6 +34,9 @@ script::script(size_t max_heap_size_in_bytes, size_t timeout_ms)
         v8::ArrayBuffer::Allocator::NewDefaultAllocator());
     isolate_params.constraints.ConfigureDefaultsFromHeapSize(
       0, max_heap_size_in_bytes);
+    // https://github.com/vectorizedio/redpanda/issues/3166
+    isolate_params.constraints.set_max_old_generation_size_in_bytes(
+      _max_old_gen_size);
     _isolate = std::unique_ptr<v8::Isolate, isolate_deleter>(
       v8::Isolate::New(isolate_params), isolate_deleter());
 }
