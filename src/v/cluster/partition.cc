@@ -11,6 +11,7 @@
 
 #include "cluster/logger.h"
 #include "config/configuration.h"
+#include "model/fundamental.h"
 #include "model/namespace.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/types.h"
@@ -360,9 +361,9 @@ ss::future<> partition::stop() {
     return f;
 }
 
-ss::future<std::optional<storage::timequery_result>>
-partition::timequery(model::timestamp t, ss::io_priority_class p) {
-    storage::timequery_config cfg(t, _raft->committed_offset(), p);
+ss::future<std::optional<storage::timequery_result>> partition::timequery(
+  model::timestamp t, model::offset offset_limit, ss::io_priority_class p) {
+    storage::timequery_config cfg(t, offset_limit, p);
     return _raft->timequery(cfg);
 }
 
