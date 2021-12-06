@@ -9,14 +9,14 @@
 
 from ducktape.mark.resource import cluster
 from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
+from rptest.clients.kafka_cat import KafkaCat
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.util import (
-    produce_until_segments,
-    wait_for_segments_removal,
-)
+from rptest.util import (produce_until_segments, wait_for_segments_removal,
+                         segments_count)
 
 
 class RetentionPolicyTest(RedpandaTest):
@@ -120,3 +120,54 @@ class RetentionPolicyTest(RedpandaTest):
                                   topic=self.topic,
                                   partition_idx=0,
                                   count=5)
+
+    @cluster(num_nodes=3)
+    def test_timequery_after_segments_eviction(self):
+        """
+        Test checking if the offset returned by time based index is 
+        valid during applying log cleanup policy
+        """
+        segment_size = 1048576
+
+        # produce until segments have been compacted
+        produce_until_segments(
+            self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            count=10,
+            acks=-1,
+        )
+
+        # restart all nodes to force replicating raft configuration
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        kafka_tools = KafkaCliTools(self.redpanda)
+        # Wait for controller, alter configs doesn't have a retry loop
+        kafka_tools.describe_topic(self.topic)
+
+        # change retention bytes to preserve 15 segments
+        kafka_tools.alter_topic_config(
+            self.topic, {
+                TopicSpec.PROPERTY_RETENTION_BYTES: 2 * segment_size,
+            })
+
+        def validate_time_query_until_deleted():
+            def done():
+                kcat = KafkaCat(self.redpanda)
+                ts = 1638748800  # 12.6.2021 - old timestamp, query first offset
+                offset = kcat.query_offset(self.topic, 0, ts)
+                # assert that offset is valid
+                assert offset >= 0
+
+                topic_partitions = segments_count(self.redpanda, self.topic, 0)
+                partitions = []
+                for p in topic_partitions:
+                    partitions.append(p <= 5)
+                return all([p <= 5 for p in topic_partitions])
+
+            wait_until(done,
+                       timeout_sec=30,
+                       backoff_sec=5,
+                       err_msg="Segments were not removed")
+
+        validate_time_query_until_deleted()
