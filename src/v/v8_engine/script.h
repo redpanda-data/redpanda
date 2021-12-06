@@ -11,6 +11,7 @@
 #pragma once
 
 #include "seastarx.h"
+#include "units.h"
 #include "v8_engine/environment.h"
 
 #include <seastar/core/future.hh>
@@ -44,6 +45,7 @@ private:
 class script {
     // Timeout for run script in first time for initialization
     static constexpr std::chrono::milliseconds _first_run_timeout_ms{500};
+    static constexpr uint64_t _max_old_gen_size{10_MiB};
 
 public:
     // Init new instance.
