@@ -3,6 +3,7 @@ import os
 import sys
 
 from controller import ControllerLog
+from consumer_groups import GroupsLog
 
 from storage import Store
 from kvstore import KvStore
@@ -38,8 +39,15 @@ def print_kafka(store, topic):
 
             log = KafkaLog(ntp)
             logger.info(f'topic: {ntp.topic}, partition: {ntp.partition}')
-            for header in log.batch_headers():
-                print(json.dumps(header, indent=2))
+
+
+def print_groups(store):
+    for ntp in store.ntps:
+        if ntp.nspace == "kafka_internal" and ntp.topic == "group":
+            l = GroupsLog(ntp)
+            l.decode()
+            logger.info(json.dumps(l.records, indent=2))
+    print()
 
 
 def main():
@@ -50,11 +58,12 @@ def main():
         parser.add_argument('--path',
                             type=str,
                             help='Path to the log desired to be analyzed')
-        parser.add_argument('--type',
-                            type=str,
-                            choices=['controller', 'kvstore', 'kafka'],
-                            required=True,
-                            help='opertion to execute')
+        parser.add_argument(
+            '--type',
+            type=str,
+            choices=['controller', 'kvstore', 'kafka', 'group'],
+            required=True,
+            help='opertion to execute')
         parser.add_argument(
             '--topic',
             type=str,
@@ -81,6 +90,8 @@ def main():
         print_controller(store)
     elif options.type == "kafka":
         print_kafka(store, options.topic)
+    elif options.type == "group":
+        print_groups(store)
 
 
 if __name__ == '__main__':
