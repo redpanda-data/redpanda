@@ -129,7 +129,7 @@ public:
     const model::ntp& ntp() const { return _raft->ntp(); }
 
     ss::future<std::optional<storage::timequery_result>>
-      timequery(model::timestamp, ss::io_priority_class);
+      timequery(model::timestamp, model::offset, ss::io_priority_class);
 
     bool is_leader() const { return _raft->is_leader(); }
 

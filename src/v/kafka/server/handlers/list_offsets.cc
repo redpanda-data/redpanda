@@ -100,9 +100,13 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
         co_return list_offsets_response::make_partition(
           ntp.tp.partition, model::timestamp(-1), offset);
     }
+    const auto offset_limit = isolation_lvl
+                                  == model::isolation_level::read_committed
+                                ? kafka_partition->last_stable_offset()
+                                : kafka_partition->high_watermark();
 
     auto res = co_await kafka_partition->timequery(
-      timestamp, kafka_read_priority());
+      timestamp, offset_limit, kafka_read_priority());
     auto id = ntp.tp.partition;
     if (res) {
         co_return list_offsets_response::make_partition(
