@@ -255,9 +255,7 @@ public:
     }
 
     ss::future<std::optional<storage::timequery_result>>
-    timequery(storage::timequery_config cfg) {
-        return _log.timequery(cfg);
-    }
+    timequery(storage::timequery_config cfg);
 
     model::offset start_offset() const {
         return details::next_offset(_last_snapshot_index);
