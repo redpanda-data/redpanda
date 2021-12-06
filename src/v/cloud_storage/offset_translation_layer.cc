@@ -37,9 +37,11 @@ ss::future<uint64_t> offset_translator::copy_stream(
       removed != model::offset::min(),
       "Can't copy segment which isn't in the manifest");
     auto pred = [&removed, &ctxlog](model::record_batch_header& hdr) {
-        if (hdr.type == model::record_batch_type::raft_configuration) {
+        if (
+          hdr.type == model::record_batch_type::raft_configuration
+          || hdr.type == model::record_batch_type::archival_metadata) {
             vlog(ctxlog.debug, "skipping batch {}", hdr);
-            removed++;
+            removed += hdr.last_offset_delta + 1;
             return storage::batch_consumer::consume_result::skip_batch;
         }
         auto old_offset = hdr.base_offset;

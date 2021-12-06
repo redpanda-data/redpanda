@@ -328,6 +328,8 @@ class RedpandaService(Service):
                    timeout_sec=timeout_sec,
                    err_msg="Redpanda node failed to stop in %d seconds" %
                    timeout_sec)
+        if node in self._started:
+            self._started.remove(node)
 
     def clean_node(self, node):
         node.account.kill_process("redpanda", clean_shutdown=False)
