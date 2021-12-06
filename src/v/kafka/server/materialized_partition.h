@@ -57,9 +57,11 @@ public:
         co_return storage::translating_reader(co_await _log.make_reader(cfg));
     }
 
-    ss::future<std::optional<storage::timequery_result>>
-    timequery(model::timestamp ts, ss::io_priority_class io_pc) final {
-        storage::timequery_config cfg(ts, _log.offsets().dirty_offset, io_pc);
+    ss::future<std::optional<storage::timequery_result>> timequery(
+      model::timestamp ts,
+      model::offset offset_limit,
+      ss::io_priority_class io_pc) final {
+        storage::timequery_config cfg(ts, offset_limit, io_pc);
         return _log.timequery(cfg);
     };
 
