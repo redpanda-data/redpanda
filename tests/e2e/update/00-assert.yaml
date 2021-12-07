@@ -23,3 +23,12 @@ spec:
       app.kubernetes.io/name: "redpanda"
       app.kubernetes.io/instance: "update-cluster"
       app.kubernetes.io/component: redpanda
+
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+- type: pod 
+  selector: app.kubernetes.io/name=redpanda
+  tail: -1
