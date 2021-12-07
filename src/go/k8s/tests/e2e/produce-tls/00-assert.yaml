@@ -51,3 +51,12 @@ status:
     - reason: Ready
       status: "True"
       type: Ready
+
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+- type: pod
+  selector: app.kubernetes.io/name=redpanda
+  tail: -1
