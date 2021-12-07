@@ -372,11 +372,14 @@ std::ostream& operator<<(std::ostream& o, const shadow_indexing_mode& si) {
     case shadow_indexing_mode::disabled:
         o << "disabled";
         break;
-    case shadow_indexing_mode::archival_storage:
-        o << "archival_storage";
+    case shadow_indexing_mode::archival:
+        o << "archival";
         break;
-    case shadow_indexing_mode::shadow_indexing:
-        o << "shadow_indexing";
+    case shadow_indexing_mode::fetch:
+        o << "fetch";
+        break;
+    case shadow_indexing_mode::full:
+        o << "full";
         break;
     }
     return o;

@@ -273,6 +273,41 @@ void incremental_update(
     }
 }
 
+template<>
+void incremental_update(
+  std::optional<model::shadow_indexing_mode>& property,
+  property_update<std::optional<model::shadow_indexing_mode>> override) {
+    switch (override.op) {
+    case incremental_update_operation::remove:
+        // remove override, fallback to default
+        if (property) {
+            property = override.value ? model::drop_shadow_indexing_flag(
+                         *property, *override.value)
+                                      : model::shadow_indexing_mode::disabled;
+            if (property.value() == model::shadow_indexing_mode::disabled) {
+                property = std::nullopt;
+            }
+        } else {
+            property = std::nullopt;
+        }
+        return;
+    case incremental_update_operation::set:
+        // set new value
+        if (property) {
+            property = override.value ? model::add_shadow_indexing_flag(
+                         *property, *override.value)
+                                      : model::shadow_indexing_mode::disabled;
+        } else {
+            property = override.value ? *override.value
+                                      : model::shadow_indexing_mode::disabled;
+        }
+        return;
+    case incremental_update_operation::none:
+        // do nothing
+        return;
+    }
+}
+
 template<typename T>
 void incremental_update(
   tristate<T>& property, property_update<tristate<T>> override) {
@@ -312,6 +347,8 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
       properties.retention_duration, overrides.retention_duration);
     incremental_update(properties.segment_size, overrides.segment_size);
     incremental_update(properties.timestamp_type, overrides.timestamp_type);
+
+    incremental_update(properties.shadow_indexing, overrides.shadow_indexing);
 
     // generate deltas for controller backend
     std::vector<topic_table_delta> deltas;

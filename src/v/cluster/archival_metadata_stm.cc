@@ -272,6 +272,11 @@ ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
 }
 
 model::offset archival_metadata_stm::max_collectible_offset() {
+    if (!_raft->log_config().is_archival_enabled()) {
+        // The archival is disabled but the state machine still exists so we
+        // shouldn't stop eviction from happening.
+        return model::offset::max();
+    }
     return _last_offset;
 }
 

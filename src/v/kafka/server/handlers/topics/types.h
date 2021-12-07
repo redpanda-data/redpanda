@@ -46,7 +46,11 @@ static constexpr std::string_view topic_property_retention_bytes
 static constexpr std::string_view topic_property_retention_duration
   = "retention.ms";
 static constexpr std::string_view topic_property_recovery
-  = "x-redpanda-recovery";
+  = "redpanda.remote.recovery";
+static constexpr std::string_view topic_property_remote_write
+  = "redpanda.remote.write";
+static constexpr std::string_view topic_property_remote_read
+  = "redpanda.remote.read";
 
 // Data-policy property
 static constexpr std::string_view topic_property_data_policy_function_name

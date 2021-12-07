@@ -280,7 +280,20 @@ void archiver_fixture::add_topic_with_random_data(
       .get();
     builder->stop().get();
     builder.reset();
-    add_topic(model::topic_namespace_view(ntp)).get();
+    add_topic_with_archival_enabled(model::topic_namespace_view(ntp)).get();
+}
+ss::future<> archiver_fixture::add_topic_with_archival_enabled(
+  model::topic_namespace_view tp_ns, int partitions) {
+    cluster::topic_configuration cfg(tp_ns.ns, tp_ns.tp, partitions, 1);
+    cfg.properties.shadow_indexing = model::shadow_indexing_mode::archival;
+    std::vector<cluster::custom_assignable_topic_configuration> cfgs = {
+      cluster::custom_assignable_topic_configuration(std::move(cfg))};
+    return app.controller->get_topics_frontend()
+      .local()
+      .create_topics(std::move(cfgs), model::no_timeout)
+      .then([this](std::vector<cluster::topic_result> results) {
+          return wait_for_topics(std::move(results));
+      });
 }
 storage::api& archiver_fixture::get_local_storage_api() {
     return app.storage.local();
@@ -321,6 +334,9 @@ void archiver_fixture::initialize_shard(
           "manage {}, data-dir {}",
           ntp.first,
           data_dir.string());
+        auto defaults
+          = std::make_unique<storage::ntp_config::default_overrides>();
+        defaults->shadow_indexing_mode = model::shadow_indexing_mode::archival;
         app.partition_manager.local()
           .manage(
             storage::ntp_config(ntp.first, data_dir.string()),

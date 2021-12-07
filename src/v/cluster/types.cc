@@ -53,6 +53,9 @@ topic_properties::get_ntp_cfg_overrides() const {
     ret.retention_bytes = retention_bytes;
     ret.retention_time = retention_duration;
     ret.segment_size = segment_size;
+    ret.shadow_indexing_mode = shadow_indexing
+                                 ? *shadow_indexing
+                                 : model::shadow_indexing_mode::disabled;
     return ret;
 }
 
@@ -81,7 +84,10 @@ storage::ntp_config topic_configuration::make_ntp_config(
             // during bootstrap.
             .cache_enabled = storage::with_cache(!is_internal()),
             .recovery_enabled = storage::topic_recovery_enabled(
-              properties.recovery ? *properties.recovery : false)});
+              properties.recovery ? *properties.recovery : false),
+            .shadow_indexing_mode = properties.shadow_indexing
+                                      ? *properties.shadow_indexing
+                                      : model::shadow_indexing_mode::disabled});
     }
     return storage::ntp_config(
       model::ntp(tp_ns.ns, tp_ns.tp, p_id),
@@ -950,7 +956,8 @@ void adl<cluster::incremental_topic_updates>::to(
       t.timestamp_type,
       t.segment_size,
       t.retention_bytes,
-      t.retention_duration);
+      t.retention_duration,
+      t.shadow_indexing);
 }
 
 cluster::incremental_topic_updates
@@ -1005,6 +1012,13 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
         // create_data_policy_cmd_data, data_policy_manager handles it
         adl<cluster::property_update<std::optional<v8_engine::data_policy>>>{}
           .from(in);
+    }
+    if (
+      version
+      <= cluster::incremental_topic_updates::version_with_shadow_indexing) {
+        updates.shadow_indexing = adl<cluster::property_update<
+          std::optional<model::shadow_indexing_mode>>>{}
+                                    .from(in);
     }
     return updates;
 }

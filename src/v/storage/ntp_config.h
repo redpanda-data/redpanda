@@ -42,6 +42,10 @@ public:
         with_cache cache_enabled = with_cache::yes;
         // if set the value will be used during parititon recovery
         topic_recovery_enabled recovery_enabled = topic_recovery_enabled::yes;
+        // if set the value will control how data is uploaded and retrieved
+        // to/from S3
+        model::shadow_indexing_mode shadow_indexing_mode
+          = model::shadow_indexing_mode::disabled;
 
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
@@ -118,6 +122,16 @@ public:
 
     void set_overrides(default_overrides o) {
         _overrides = std::make_unique<default_overrides>(o);
+    }
+
+    bool is_archival_enabled() const {
+        return _overrides != nullptr
+               && model::is_archival_enabled(_overrides->shadow_indexing_mode);
+    }
+
+    bool is_remote_fetch_enabled() const {
+        return _overrides != nullptr
+               && model::is_fetch_enabled(_overrides->shadow_indexing_mode);
     }
 
 private:

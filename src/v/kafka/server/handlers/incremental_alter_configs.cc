@@ -8,16 +8,20 @@
 // by the Apache License, Version 2.0
 #include "kafka/server/handlers/incremental_alter_configs.h"
 
+#include "cluster/types.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/incremental_alter_configs.h"
 #include "kafka/protocol/schemata/incremental_alter_configs_request.h"
 #include "kafka/protocol/schemata/incremental_alter_configs_response.h"
 #include "kafka/server//handlers/configs/config_utils.h"
 #include "kafka/server/handlers/details/data_policy.h"
+#include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "kafka/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
+#include "utils/string_switch.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/smp.hh>
@@ -75,6 +79,32 @@ void parse_and_set_tristate(
 
         property.op = cluster::incremental_update_operation::set;
         return;
+    }
+}
+
+static void parse_and_set_shadow_indexing_mode(
+  cluster::property_update<std::optional<model::shadow_indexing_mode>>& simode,
+  const std::optional<ss::sstring>& value,
+  config_resource_operation op,
+  model::shadow_indexing_mode enabled_value) {
+    switch (op) {
+    case config_resource_operation::remove:
+        simode.value = std::nullopt;
+        simode.op = cluster::incremental_update_operation::remove;
+        break;
+    case config_resource_operation::set:
+        simode.value
+          = string_switch<std::optional<model::shadow_indexing_mode>>(*value)
+              .match("no", std::nullopt)
+              .match("false", std::nullopt)
+              .match("yes", enabled_value)
+              .match("true", enabled_value)
+              .default_match(std::nullopt);
+        simode.op = cluster::incremental_update_operation::set;
+        break;
+    case config_resource_operation::append:
+    case config_resource_operation::subtract:
+        break;
     }
 }
 
@@ -175,6 +205,22 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
             if (cfg.name == topic_property_retention_duration) {
                 parse_and_set_tristate(
                   update.properties.retention_duration, cfg.value, op);
+                continue;
+            }
+            if (cfg.name == topic_property_remote_write) {
+                parse_and_set_shadow_indexing_mode(
+                  update.properties.shadow_indexing,
+                  cfg.value,
+                  op,
+                  model::shadow_indexing_mode::archival);
+                continue;
+            }
+            if (cfg.name == topic_property_remote_read) {
+                parse_and_set_shadow_indexing_mode(
+                  update.properties.shadow_indexing,
+                  cfg.value,
+                  op,
+                  model::shadow_indexing_mode::fetch);
                 continue;
             }
             if (update_data_policy_parser(dp_parser, cfg.name, cfg.value, op)) {

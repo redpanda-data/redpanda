@@ -16,6 +16,7 @@ from rptest.archival.s3_client import S3Client
 from rptest.services.redpanda import RedpandaService
 
 from rptest.clients.types import TopicSpec
+from rptest.clients.rpk import RpkTool
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.util import (
     segments_count,
@@ -186,6 +187,7 @@ class ArchivalTest(RedpandaTest):
                                            extra_rp_conf=self._extra_rp_conf)
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
+        self.rpk = RpkTool(self.redpanda)
         self.s3_client = S3Client(
             region='panda-region',
             access_key=u"panda-user",
@@ -200,6 +202,10 @@ class ArchivalTest(RedpandaTest):
         # see previously removed objects for a while.
         validate(self._check_bucket_is_emtpy, self.logger, 300)
         super().setUp()  # topic is created here
+        # enable archival for topic
+        for topic in self.topics:
+            self.rpk.alter_topic_config(topic.name, 'redpanda.remote.write',
+                                        'true')
 
     def tearDown(self):
         self.s3_client.empty_bucket(self.s3_bucket_name)

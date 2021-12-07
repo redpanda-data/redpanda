@@ -36,7 +36,8 @@ public:
         auto local_kafka_start_offset = _translator->from_log_offset(
           _partition->start_offset());
         if (
-          _partition->cloud_data_available()
+          _partition->is_remote_fetch_enabled()
+          && _partition->cloud_data_available()
           && (_partition->start_cloud_offset() < local_kafka_start_offset)) {
             return _partition->start_cloud_offset();
         }
