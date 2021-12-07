@@ -107,7 +107,7 @@ ss::future<> non_replicable_topics_frontend::create_non_replicable_topics(
     }
     if (!todos.empty()) {
         auto f = _topics_frontend.local()
-                   .create_non_replicable_topics(todos, timeout)
+                   .autocreate_non_replicable_topics(todos, timeout)
                    .then(
                      [this](const std::vector<cluster::topic_result>& result) {
                          topic_creation_resolved(result);
