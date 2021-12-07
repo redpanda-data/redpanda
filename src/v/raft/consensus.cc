@@ -1763,7 +1763,17 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
         update_follower_stats(metadata.latest_configuration);
         return _configuration_manager
           .add(_last_snapshot_index, std::move(metadata.latest_configuration))
-          .then([this, delta = metadata.log_start_delta] {
+          .then([this, delta = metadata.log_start_delta]() mutable {
+              if (delta < offset_translator_delta(0)) {
+                  delta = offset_translator_delta(
+                    _configuration_manager.offset_delta(_last_snapshot_index));
+                  vlog(
+                    _ctxlog.warn,
+                    "received snapshot without delta field in metadata, "
+                    "falling back to delta obtained from configuration "
+                    "manager: {}",
+                    delta);
+              }
               return _offset_translator->prefix_truncate_reset(
                 _last_snapshot_index, delta);
           })
