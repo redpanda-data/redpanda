@@ -42,10 +42,6 @@ struct index_state {
     index_state& operator=(const index_state&) = delete;
     ~index_state() noexcept = default;
 
-    /// \brief sizeof the index in bytes
-    uint32_t size{0};
-    /// \brief currently xxhash64
-    uint64_t checksum{0};
     /// \brief unused
     uint32_t bitflags{0};
     // the batch's base_offset of the first batch

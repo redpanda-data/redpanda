@@ -7,8 +7,6 @@
 
 static storage::index_state make_random_index_state() {
     storage::index_state st;
-    st.size = 33;
-    st.checksum = 22;
     st.bitflags = 1;
     st.base_offset = model::offset(10);
     st.max_offset = model::offset(100);
@@ -23,15 +21,6 @@ static void set_version(iobuf& buf, int8_t version) {
     buf.clear();
     buf.append((const char*)&version, sizeof(version));
     buf.append(bytes_to_iobuf(tmp.substr(1)));
-}
-
-static void set_size(iobuf& buf, uint32_t size) {
-    auto tmp = iobuf_to_bytes(buf);
-    buf.clear();
-    buf.append((const char*)tmp.c_str(), 1); // version
-    uint32_t size_le = ss::cpu_to_le(size);
-    buf.append((const char*)&size_le, sizeof(size_le));
-    buf.append(bytes_to_iobuf(tmp.substr(5)));
 }
 
 BOOST_AUTO_TEST_CASE(encode_decode) {
@@ -72,7 +61,6 @@ BOOST_AUTO_TEST_CASE(encode_decode_v1) {
     auto src = make_random_index_state();
     auto src_buf = src.checksum_and_serialize();
     set_version(src_buf, 1);
-    set_size(src_buf, src.size - 4);
 
     // version 1 is fully deprecated
     auto dst = storage::index_state::hydrate_from_buffer(src_buf.copy());

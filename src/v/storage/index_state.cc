@@ -69,8 +69,7 @@ bool index_state::maybe_index(
 }
 
 std::ostream& operator<<(std::ostream& o, const index_state& s) {
-    return o << "{header_size:" << s.size << ", header_checksum:" << s.checksum
-             << ", header_bitflags:" << s.bitflags
+    return o << "{header_bitflags:" << s.bitflags
              << ", base_offset:" << s.base_offset
              << ", max_offset:" << s.max_offset
              << ", base_timestamp:" << s.base_timestamp

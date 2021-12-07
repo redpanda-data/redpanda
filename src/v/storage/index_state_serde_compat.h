@@ -46,16 +46,16 @@ struct index_state_serde {
     static index_state decode(iobuf_parser& parser) {
         index_state retval;
 
-        retval.size = reflection::adl<uint32_t>{}.from(parser);
-        if (unlikely(parser.bytes_left() != retval.size)) {
+        const auto size = reflection::adl<uint32_t>{}.from(parser);
+        if (unlikely(parser.bytes_left() != size)) {
             throw serde::serde_exception(fmt_with_ctx(
               fmt::format,
               "Index size does not match header size. Got:{}, expected:{}",
               parser.bytes_left(),
-              retval.size));
+              size));
         }
 
-        retval.checksum = reflection::adl<uint64_t>{}.from(parser);
+        const auto expected_checksum = reflection::adl<uint64_t>{}.from(parser);
         retval.bitflags = reflection::adl<uint32_t>{}.from(parser);
         retval.base_offset = model::offset(
           reflection::adl<model::offset::type>{}.from(parser));
@@ -89,21 +89,18 @@ struct index_state_serde {
         retval.position_index.shrink_to_fit();
 
         const auto computed_checksum = checksum(retval);
-        if (unlikely(retval.checksum != computed_checksum)) {
+        if (unlikely(expected_checksum != computed_checksum)) {
             throw serde::serde_exception(fmt_with_ctx(
               fmt::format,
               "Invalid checksum for index. Got:{}, expected:{}",
               computed_checksum,
-              retval.checksum));
+              expected_checksum));
         }
 
         return retval;
     }
 
-    /*
-     * NOTE: taken by non-const because the size and checksum are updated.
-     */
-    static iobuf encode(index_state& st) {
+    static iobuf encode(const index_state& st) {
         iobuf out;
         vassert(
           st.relative_offset_index.size() == st.relative_time_index.size()
@@ -111,7 +108,7 @@ struct index_state_serde {
           "ALL indexes must match in size. {}",
           st);
         const uint32_t final_size
-          = sizeof(storage::index_state::checksum)
+          = sizeof(uint64_t) // checksum
             + sizeof(storage::index_state::bitflags)
             + sizeof(storage::index_state::base_offset)
             + sizeof(storage::index_state::max_offset)
@@ -119,13 +116,12 @@ struct index_state_serde {
             + sizeof(storage::index_state::max_timestamp)
             + sizeof(uint32_t) // index size
             + (st.relative_offset_index.size() * (sizeof(uint32_t) * 2 + sizeof(uint64_t)));
-        st.size = final_size;
-        st.checksum = checksum(st);
+        const uint64_t computed_checksum = checksum(st);
         reflection::serialize(
           out,
           ondisk_version,
-          st.size,
-          st.checksum,
+          final_size,
+          computed_checksum,
           st.bitflags,
           st.base_offset(),
           st.max_offset(),
@@ -143,7 +139,8 @@ struct index_state_serde {
             reflection::adl<uint64_t>{}.to(out, st.position_index[i]);
         }
         // add back the version and size field
-        const auto expected_size = st.size + sizeof(int8_t) + sizeof(uint32_t);
+        const auto expected_size = final_size + sizeof(int8_t)
+                                   + sizeof(uint32_t);
         vassert(
           out.size_bytes() == expected_size,
           "Unexpected serialization size {} != expected {}",
