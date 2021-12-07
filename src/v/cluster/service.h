@@ -37,6 +37,9 @@ public:
     virtual ss::future<join_reply>
     join(join_request&&, rpc::streaming_context&) override;
 
+    virtual ss::future<join_node_reply>
+    join_node(join_node_request&&, rpc::streaming_context&) override;
+
     virtual ss::future<create_topics_reply>
     create_topics(create_topics_request&&, rpc::streaming_context&) override;
 

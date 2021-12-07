@@ -278,15 +278,51 @@ struct abort_group_tx_reply {
     tx_errc ec;
 };
 
-/// Join request sent by node to join raft-0
+/// Old-style request sent by node to join raft-0
+/// - Does not specify logical version
+/// - Always specifies node_id
+/// (remove this RPC two versions after join_node_request was
+///  added to replace it)
 struct join_request {
     explicit join_request(model::broker b)
       : node(std::move(b)) {}
+
     model::broker node;
 };
 
 struct join_reply {
     bool success;
+};
+
+/// Successor to join_request:
+/// - Include version metadata for joining node
+/// - Has fields for implementing auto-selection of
+///   node_id (https://github.com/vectorizedio/redpanda/issues/2793)
+///   in future.
+struct join_node_request {
+    explicit join_node_request(
+      cluster_version lv, std::vector<uint8_t> nuuid, model::broker b)
+      : logical_version(lv)
+      , node_uuid(nuuid)
+      , node(std::move(b)) {}
+
+    explicit join_node_request(cluster_version lv, model::broker b)
+      : logical_version(lv)
+      , node(std::move(b)) {}
+
+    static constexpr int8_t current_version = 1;
+    cluster_version logical_version;
+
+    // node_uuid may be empty: this is for future use implementing auto
+    // selection of node_id.  Convert to a more convenient type later:
+    // the vector is just to reserve the on-disk layout.
+    std::vector<uint8_t> node_uuid;
+    model::broker node;
+};
+
+struct join_node_reply {
+    bool success{false};
+    model::node_id id{-1};
 };
 
 struct configuration_update_request {
@@ -844,6 +880,13 @@ struct adl<cluster::join_request> {
     void to(iobuf&, cluster::join_request&&);
     cluster::join_request from(iobuf);
     cluster::join_request from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::join_node_request> {
+    void to(iobuf&, cluster::join_node_request&&);
+    cluster::join_node_request from(iobuf);
+    cluster::join_node_request from(iobuf_parser&);
 };
 
 template<>
