@@ -84,3 +84,9 @@ class Reader:
 
     def read_bytes(self, length):
         return self.stream.read(length)
+
+    def peek(self, length):
+        return self.stream.peek(length)
+
+    def skip(self, length):
+        self.stream.read(length)
