@@ -522,6 +522,35 @@ ss::future<response_ptr> describe_configs_handler::handle(
               request.data.include_synonyms,
               &describe_as_string<model::timestamp_type>);
 
+            // Shadow indexing properties
+            add_topic_config_if_requested(
+              resource,
+              result,
+              topic_property_remote_read,
+              false,
+              topic_property_remote_read,
+              (topic_config->properties.shadow_indexing
+               == model::shadow_indexing_mode::full)
+                  || (topic_config->properties.shadow_indexing == model::shadow_indexing_mode::fetch)
+                ? std::make_optional(true)
+                : std::make_optional(false),
+              request.data.include_synonyms,
+              &describe_as_string<bool>);
+
+            add_topic_config_if_requested(
+              resource,
+              result,
+              topic_property_remote_write,
+              false,
+              topic_property_remote_write,
+              (topic_config->properties.shadow_indexing
+               == model::shadow_indexing_mode::full)
+                  || (topic_config->properties.shadow_indexing == model::shadow_indexing_mode::archival)
+                ? std::make_optional(true)
+                : std::make_optional(false),
+              request.data.include_synonyms,
+              &describe_as_string<bool>);
+
             // Data-policy property
             ss::sstring property_name = "redpanda.datapolicy";
             add_topic_config_if_requested(
