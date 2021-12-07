@@ -192,3 +192,13 @@ any of the remaining nodes will automatically assume the cluster leadership.
 
 Make sure that the installed certificates haven't expired. If they have,
 generate new ones and restart the node.
+
+### Replication factor issues
+
+If you are setting up a [Setup a 3-node cluster](https://vectorized.io/docs/quick-start-docker#Set-up-a-3-node-cluster) and create a topic with 2 replicas like so:
+```bash
+rpk topic create test -r 2 -p 1
+TOPIC  STATUS
+test   INVALID_REPLICATION_FACTOR: Replication factor is below 1 or larger than the number of available brokers.
+```
+this command will fail as `redpanda` is using `Raft for concensus`. With 3 nodes the number of replicas must be equal to 3.
