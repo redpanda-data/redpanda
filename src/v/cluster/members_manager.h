@@ -66,7 +66,8 @@ public:
     ss::future<> start();
     ss::future<> stop();
     ss::future<> validate_configuration_invariants();
-    ss::future<result<join_reply>> handle_join_request(model::broker);
+    ss::future<result<join_node_reply>>
+    handle_join_request(join_node_request const r);
     ss::future<std::error_code> apply_update(model::record_batch);
 
     ss::future<result<configuration_update_reply>>
@@ -91,12 +92,12 @@ private:
     void join_raft0();
     bool is_already_member() const;
 
-    ss::future<result<join_reply>>
-    dispatch_join_to_seed_server(seed_iterator it);
-    ss::future<result<join_reply>>
-    dispatch_join_to_remote(const config::seed_server&, model::broker);
+    ss::future<result<join_node_reply>> dispatch_join_to_seed_server(
+      seed_iterator it, join_node_request const& req);
+    ss::future<result<join_node_reply>> dispatch_join_to_remote(
+      const config::seed_server&, join_node_request&& req);
 
-    ss::future<join_reply> dispatch_join_request();
+    ss::future<join_node_reply> dispatch_join_request();
     template<typename Func>
     auto dispatch_rpc_to_leader(rpc::clock_type::duration, Func&& f);
 

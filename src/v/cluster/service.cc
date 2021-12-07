@@ -51,48 +51,41 @@ service::service(
   , _hm_frontend(hm_frontend) {}
 
 ss::future<join_reply>
-service::join(join_request&& req, rpc::streaming_context&) {
-    if (latest_version > cluster_version{1}) {
-        // A pre-1 join is only accepted if our version is
-        // still 1.  Once we move beyond that point old
-        // style joins are rejected.
-        return ss::make_ready_future<join_reply>(join_reply{false});
-    }
-
-    return ss::with_scheduling_group(
-      get_scheduling_group(), [this, broker = std::move(req.node)]() mutable {
-          return _members_manager
-            .invoke_on(
-              members_manager::shard,
-              get_smp_service_group(),
-              [broker = std::move(broker)](members_manager& mm) mutable {
-                  return mm.handle_join_request(std::move(broker));
-              })
-            .then([](result<join_reply> r) {
-                if (!r) {
-                    return join_reply{false};
-                }
-                return r.value();
-            });
-      });
+service::join(join_request&& req, rpc::streaming_context& context) {
+    auto jnr = join_node_request(invalid_version, req.node);
+    return join_node(std::move(jnr), context).then([](join_node_reply r) {
+        return join_reply{r.success};
+    });
 }
 
 ss::future<join_node_reply>
-service::join_node(join_node_request&& req, rpc::streaming_context& context) {
+service::join_node(join_node_request&& req, rpc::streaming_context&) {
     // For now, the new-style join_node_request only differs from join_request
     // in that it has a logical version to validate, so do the validation and
     // then pass it through to the code that handles old-style join requests.
-
     if (req.logical_version < latest_version) {
+        // TODO: validate based on official cluster version
+        // rather than this node's local version
         return ss::make_ready_future<join_node_reply>(
           join_node_reply{false, model::node_id{-1}});
     }
 
-    auto node_id = req.node.id();
-    auto jr = join_request(req.node);
-    return join(std::move(jr), context).then([node_id](join_reply r) {
-        return join_node_reply{r.success, node_id};
-    });
+    return ss::with_scheduling_group(
+      get_scheduling_group(), [this, req]() mutable {
+          return _members_manager
+            .invoke_on(
+              members_manager::shard,
+              get_smp_service_group(),
+              [req](members_manager& mm) mutable {
+                  return mm.handle_join_request(req);
+              })
+            .then([](result<join_node_reply> r) {
+                if (!r) {
+                    return join_node_reply{false, model::node_id{-1}};
+                }
+                return r.value();
+            });
+      });
 }
 
 ss::future<create_topics_reply>
