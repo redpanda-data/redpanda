@@ -83,51 +83,6 @@ std::ostream& operator<<(std::ostream& o, const index_state& s) {
              << ")}";
 }
 
-std::optional<index_state> index_state::hydrate_from_buffer(iobuf b) {
-    iobuf_parser parser(std::move(b));
-
-    auto version = reflection::adl<int8_t>{}.from(parser);
-    switch (version) {
-    case serde_compat::index_state_serde::ondisk_version:
-        break;
-
-    default:
-        /*
-         * v3: changed the on-disk format to use 64-bit values for physical
-         * offsets to avoid overflow for segments larger than 4gb. backwards
-         * compat would require converting the overflowed values. instead, we
-         * fully deprecate old versions and rebuild the offset indexes.
-         *
-         * v2: fully deprecated
-         *
-         * v1: fully deprecated
-         *
-         *     version 1 code stored an on disk size that was calculated as 4
-         *     bytes too small, and the decoder did not check the size. instead
-         *     of rebuilding indexes for version 1 we'll adjust the size because
-         *     the checksums are still verified.
-         *
-         * v0: fully deprecated
-         */
-        vlog(
-          stlog.debug,
-          "Forcing index rebuild for unknown or unsupported version {}",
-          version);
-        return std::nullopt;
-    }
-
-    try {
-        return serde_compat::index_state_serde::decode(parser);
-    } catch (const serde::serde_exception& ex) {
-        vlog(stlog.debug, "Decoding index state: {}", ex.what());
-        return std::nullopt;
-    }
-}
-
-iobuf index_state::checksum_and_serialize() {
-    return serde_compat::index_state_serde::encode(*this);
-}
-
 void index_state::serde_write(iobuf& out) const {
     using serde::write;
 

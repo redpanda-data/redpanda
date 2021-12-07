@@ -78,7 +78,6 @@ struct index_state
         return {
           relative_offset_index[i], relative_time_index[i], position_index[i]};
     }
-    iobuf checksum_and_serialize();
 
     bool maybe_index(
       size_t accumulator,
@@ -91,7 +90,6 @@ struct index_state
 
     friend bool operator==(const index_state&, const index_state&) = default;
 
-    static std::optional<index_state> hydrate_from_buffer(iobuf);
     friend std::ostream& operator<<(std::ostream&, const index_state&);
 
     void serde_write(iobuf&) const;

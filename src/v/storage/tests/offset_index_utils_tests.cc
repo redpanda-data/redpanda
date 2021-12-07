@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 #include "random/generators.h"
+#include "serde/serde.h"
 #include "storage/segment_index.h"
 #include "test_utils/fixture.h"
 #include "utils/file_io.h"
@@ -60,12 +61,11 @@ FIXTURE_TEST(index_round_trip, context) {
     _idx->flush().get0();
     auto data = _data.share_iobuf();
     info("{} - serializing from bytes into mem: buffer{}", _idx, data);
-    auto raw_idx = storage::index_state::hydrate_from_buffer(
+    auto raw_idx = serde::from_iobuf<storage::index_state>(
       data.share(0, data.size_bytes()));
-    BOOST_REQUIRE(raw_idx != std::nullopt);
-    info("verifying tracking info: {}", *raw_idx);
-    BOOST_REQUIRE_EQUAL(raw_idx->max_offset(), 1023);
-    BOOST_REQUIRE_EQUAL(raw_idx->relative_offset_index.size(), 1024);
+    info("verifying tracking info: {}", raw_idx);
+    BOOST_REQUIRE_EQUAL(raw_idx.max_offset(), 1023);
+    BOOST_REQUIRE_EQUAL(raw_idx.relative_offset_index.size(), 1024);
 }
 
 FIXTURE_TEST(bucket_bug1, context) {
