@@ -66,6 +66,7 @@ class WasmTest(RedpandaTest):
             )
 
         wasm_opts = enable_wasm_options()
+        wasm_opts["auto_create_topics_enabled"] = False
         wasm_opts.update(extra_rp_conf)
         super(WasmTest, self).__init__(test_context,
                                        extra_rp_conf=wasm_opts,
@@ -230,4 +231,4 @@ class WasmTest(RedpandaTest):
         """
         2-tuple representing timeout(0) and backoff interval(1)
         """
-        return (300, 1)
+        return (600, 1)
