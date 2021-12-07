@@ -299,6 +299,13 @@ void group_configuration::replace(
         _current.learners.emplace_back(br.id(), rev);
     }
 
+    // if both current and previous configurations are exactly the same, we do
+    // not need to enter joint consensus
+    if (
+      _current.voters == _old->voters && _current.learners == _old->learners) {
+        _old.reset();
+    }
+
     for (auto& b : brokers) {
         if (!contains_broker(b.id())) {
             _brokers.push_back(std::move(b));

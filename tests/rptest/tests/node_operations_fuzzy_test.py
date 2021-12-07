@@ -7,16 +7,19 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from os import error
 import random
 import threading
 import time
+import requests
+import urllib3
 
 from ducktape.mark import parametrize
 from ducktape.mark.resource import cluster
-from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.kcl import KCL
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.failure_injector import FailureInjector, FailureSpec
@@ -81,7 +84,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
             if op == ADD_TOPIC:
                 operations.append((
                     ADD_TOPIC,
-                    f"test-topic-{random.randint(0,2000)}-{time.time()*1000.0}",
+                    f"test-topic-{random.randint(0,2000)}-{round(time.time()*1000000)}",
                     random.choice(ALLOWED_REPLICATION), 3))
             else:
                 operations.append((DELETE_TOPIC, random.choice(topics)))
@@ -111,7 +114,6 @@ class NodeOperationFuzzyTest(EndToEndTest):
     nodes
     """
 
-    @ignore  # https://github.com/vectorizedio/redpanda/issues/2246
     @cluster(num_nodes=7)
     @parametrize(enable_failures=True)
     @parametrize(enable_failures=False)
@@ -170,13 +172,34 @@ class NodeOperationFuzzyTest(EndToEndTest):
 
         def decommission(node_id):
             self.logger.info(f"decommissioning node: {node_id}")
-            admin = Admin(self.redpanda)
-            r = admin.decommission_broker(id=node_id)
+
+            def decommissioned():
+                try:
+                    admin = Admin(self.redpanda)
+                    # if broker is already draining, it is suceess
+                    brokers = admin.get_brokers()
+                    for b in brokers:
+                        if b['node_id'] == node_id and b[
+                                'membership_status'] == 'draining':
+                            return True
+
+                    r = admin.decommission_broker(id=node_id)
+                    return r.status_code == 200
+                except requests.exceptions.RetryError:
+                    return False
+                except requests.exceptions.ConnectionError:
+                    return False
+                except requests.exceptions.HTTPError:
+                    return False
+
+            wait_until(decommissioned,
+                       timeout_sec=NODE_OP_TIMEOUT,
+                       backoff_sec=2)
 
             def node_removed():
                 admin = Admin(self.redpanda)
                 try:
-                    brokers = admin.get_brokers()
+                    brokers = admin.get_brokers(node=self.redpanda.nodes[0])
                     for b in brokers:
                         if b['node_id'] == node_id:
                             return False
@@ -208,7 +231,8 @@ class NodeOperationFuzzyTest(EndToEndTest):
             self.logger.info(f"restarting node: {node_id}")
             self.redpanda.stop_node(self.redpanda.nodes[node_id - 1])
             if cleanup:
-                self.redpanda.clean_node(self.redpanda.nodes[node_id - 1])
+                self.redpanda.clean_node(self.redpanda.nodes[node_id - 1],
+                                         preserve_logs=True)
             self.redpanda.start_node(self.redpanda.nodes[node_id - 1])
 
             def has_new_replicas():
@@ -219,6 +243,39 @@ class NodeOperationFuzzyTest(EndToEndTest):
             wait_until(has_new_replicas,
                        timeout_sec=NODE_OP_TIMEOUT,
                        backoff_sec=2)
+
+        def is_topic_present(name):
+            kcl = KCL(self.redpanda)
+            lines = kcl.list_topics().splitlines()
+            self.redpanda.logger.debug(
+                f"checking if topic {name} is present in {lines}")
+            for l in lines:
+                if l.startswith(name):
+                    return True
+            return False
+
+        def create_topic(spec):
+            try:
+                self.redpanda.create_topic(spec)
+            except Exception as e:
+                self.redpanda.logger.warn(
+                    f"error creating topic {spec.name} - {e}")
+            try:
+                return is_topic_present(spec.name)
+            except Exception as e:
+                self.redpanda.logger.warn(f"error while listing topics - {e}")
+                return False
+
+        def delete_topic(name):
+            try:
+                self.redpanda.delete_topic(name)
+            except Exception as e:
+                self.redpanda.logger.warn(f"error deleting topic {name} - {e}")
+            try:
+                return not is_topic_present(name)
+            except Exception as e:
+                self.redpanda.logger.warn(f"error while listing topics - {e}")
+                return False
 
         work = self.generate_random_workload(10, skip_nodes=set())
         self.redpanda.logger.info(f"node operations to execute: {work}")
@@ -238,10 +295,15 @@ class NodeOperationFuzzyTest(EndToEndTest):
                 spec = TopicSpec(name=op[1],
                                  replication_factor=op[2],
                                  partition_count=op[3])
-
-                self.redpanda.create_topic(spec)
+                wait_until(lambda: create_topic(spec) == True,
+                           timeout_sec=180,
+                           backoff_sec=2)
             elif op_type == DELETE_TOPIC:
-                self.redpanda.delete_topic(op[1])
+                wait_until(lambda: delete_topic(op[1]) == True,
+                           timeout_sec=180,
+                           backoff_sec=2)
 
         enable_failures = False
-        self.run_validation(enable_idempotence=False, consumer_timeout_sec=180)
+        self.run_validation(enable_idempotence=False,
+                            producer_timeout_sec=60,
+                            consumer_timeout_sec=180)
