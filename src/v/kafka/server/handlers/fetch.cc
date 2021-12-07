@@ -134,7 +134,9 @@ static ss::future<read_result> read_from_partition(
     auto lso = part.last_stable_offset();
     auto start_o = part.start_offset();
     // if we have no data read, return fast
-    if (hw < config.start_offset || config.skip_read) {
+    if (
+      hw < config.start_offset || config.skip_read
+      || config.start_offset > config.max_offset) {
         co_return read_result(start_o, hw, lso);
     }
 
@@ -544,6 +546,7 @@ template<>
 ss::future<response_ptr>
 fetch_handler::handle(request_context rctx, ss::smp_service_group ssg) {
     return ss::do_with(op_context(std::move(rctx), ssg), [](op_context& octx) {
+        vlog(klog.trace, "handling fetch request: {}", octx.request);
         // top-level error is used for session-level errors
         if (octx.session_ctx.has_error()) {
             octx.response.data.error_code = octx.session_ctx.error();

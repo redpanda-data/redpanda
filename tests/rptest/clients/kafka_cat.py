@@ -114,3 +114,8 @@ class KafkaCat:
         newest = offset(self._cmd(cmd(-1)))
 
         return (oldest, newest)
+
+    def query_offset(self, topic, partition, ts):
+        res = self._cmd(["-Q", "-t", f"{topic}:{partition}:{ts}"])
+
+        return res[topic][f"{partition}"]["offset"]
