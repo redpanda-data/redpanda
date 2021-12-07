@@ -84,3 +84,8 @@ class KafkaCat:
             return None, replicas
         else:
             return leader_id, replicas
+
+    def query_offset(self, topic, partition, ts):
+        res = self._cmd(["-Q", "-t", f"{topic}:{partition}:{ts}"])
+
+        return res[topic][f"{partition}"]["offset"]

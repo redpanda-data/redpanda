@@ -38,7 +38,7 @@ public:
           std::optional<model::timeout_clock::time_point>)
           = 0;
         virtual ss::future<std::optional<storage::timequery_result>>
-          timequery(model::timestamp, ss::io_priority_class) = 0;
+          timequery(model::timestamp, model::offset, ss::io_priority_class) = 0;
         virtual ss::future<std::vector<cluster::rm_stm::tx_range>>
           aborted_transactions(model::offset, model::offset) = 0;
         virtual cluster::partition_probe& probe() = 0;
@@ -75,9 +75,11 @@ public:
         return _impl->make_reader(cfg, deadline);
     }
 
-    ss::future<std::optional<storage::timequery_result>>
-    timequery(model::timestamp ts, ss::io_priority_class io_pc) {
-        return _impl->timequery(ts, io_pc);
+    ss::future<std::optional<storage::timequery_result>> timequery(
+      model::timestamp ts,
+      model::offset offset_limit,
+      ss::io_priority_class io_pc) {
+        return _impl->timequery(ts, offset_limit, io_pc);
     }
 
     cluster::partition_probe& probe() { return _impl->probe(); }
