@@ -318,6 +318,11 @@ write_materialized(output_write_inputs replies, output_write_args args) {
               throw ex;
           } catch (const malformed_batch_exception& ex) {
               throw engine_protocol_failure(args.id, ex.what());
+          } catch (const cluster::non_replicable_topic_creation_exception& ex) {
+              vlog(
+                coproclog.warn,
+                "Failed to create non_replicable topic: {}",
+                ex);
           } catch (const coproc::exception& ex) {
               /// For any type of failure the offset will not be touched,
               /// the read phase will always read from the global min of all
