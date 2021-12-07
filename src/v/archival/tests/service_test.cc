@@ -165,7 +165,7 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
       builder->bytes_written(),
       ntp.path());
     builder.reset();
-    add_topic(model::topic_namespace_view(ntp)).get();
+    add_topic_with_archival_enabled(model::topic_namespace_view(ntp)).get();
 
     wait_for_partition_leadership(ntp);
 

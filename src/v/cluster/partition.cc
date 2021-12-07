@@ -74,7 +74,6 @@ partition::partition(
             stm_manager->add_stm(_rm_stm);
         }
 
-        // TODO: check topic config if archival is enabled for this topic
         if (
           config::shard_local_cfg().cloud_storage_enabled()
           && cloud_storage_api.local_is_initialized()

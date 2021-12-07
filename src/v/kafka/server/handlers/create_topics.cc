@@ -33,7 +33,7 @@
 
 namespace kafka {
 
-static constexpr std::array<std::string_view, 8> supported_configs{
+static constexpr std::array<std::string_view, 10> supported_configs{
   {"compression.type",
    "cleanup.policy",
    "message.timestamp.type",
@@ -41,7 +41,9 @@ static constexpr std::array<std::string_view, 8> supported_configs{
    "compaction.strategy",
    "retention.bytes",
    "retention.ms",
-   "x-redpanda-recovery"}};
+   "redpanda.remote.recovery",
+   "redpanda.remote.write",
+   "redpanda.remote.read"}};
 
 bool is_supported(std::string_view name) {
     return std::any_of(

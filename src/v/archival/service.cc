@@ -20,6 +20,7 @@
 #include "config/property.h"
 #include "http/client.h"
 #include "likely.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "s3/client.h"
@@ -28,6 +29,7 @@
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
 #include "storage/log.h"
+#include "storage/ntp_config.h"
 #include "utils/gate_guard.h"
 
 #include <seastar/core/abort_source.hh>
@@ -336,7 +338,9 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
                       storage::log_manager& lm = api.log_mgr();
                       auto log = lm.get(ntp);
                       auto part = _partition_manager.local().get(ntp);
-                      if (!log.has_value() || !part) {
+                      if (
+                        !log.has_value() || !part
+                        || !part->get_ntp_config().is_archival_enabled()) {
                           return ss::now();
                       }
                       auto svc = ss::make_lw_shared<ntp_archiver>(

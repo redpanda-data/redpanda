@@ -10,6 +10,7 @@
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 from rptest.archival.s3_client import S3Client
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -67,6 +68,13 @@ class ShadowIndexingTxTest(RedpandaTest):
             logger=self.logger,
         )
         s3client.create_bucket(self.s3_bucket_name)
+
+    def setUp(self):
+        rpk = RpkTool(self.redpanda)
+        super(ShadowIndexingTxTest, self).setUp()
+        for topic in self.topics:
+            rpk.alter_topic_config(topic.name, 'redpanda.remote.write', 'true')
+            rpk.alter_topic_config(topic.name, 'redpanda.remote.read', 'true')
 
     @cluster(num_nodes=3)
     def test_shadow_indexing_aborted_txs(self):
