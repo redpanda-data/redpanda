@@ -9,3 +9,12 @@ spec:
         - resources:
             requests:
               memory: 99M
+
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+- type: pod
+  selector: app.kubernetes.io/name=redpanda
+  tail: -1

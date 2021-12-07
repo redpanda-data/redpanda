@@ -4,3 +4,12 @@ metadata:
   name: update-cluster
 status:
   readyReplicas: 2
+
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+- type: pod
+  selector: app.kubernetes.io/name=redpanda
+  tail: -1

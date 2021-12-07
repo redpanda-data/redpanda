@@ -5,3 +5,12 @@ metadata:
   namespace: given-cert-secret
 status:
   readyReplicas: 1
+
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+- type: pod
+  selector: app.kubernetes.io/name=redpanda
+  tail: -1
