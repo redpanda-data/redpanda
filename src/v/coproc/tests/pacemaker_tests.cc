@@ -232,17 +232,50 @@ FIXTURE_TEST(test_copro_delete_topic, coproc_test_fixture) {
     info("All produced onto: {}", tbd);
     f.get();
 
-    /// Wait until all data is recieved on output topic, which should have been
-    /// recreated and fully processed from the earliest offset
-    for (auto i = 0; i < 4; ++i) {
-        auto results = consume(
-                         model::ntp(
-                           tbd.ns,
-                           to_materialized_topic(
-                             tbd.tp, identity_coprocessor::identity_topic),
-                           model::partition_id(i)),
-                         total_records)
-                         .get();
-        BOOST_CHECK_EQUAL(num_records(results), total_records);
+    /// Wait until all processing has completed for all fibers, choosing a large
+    /// timeout in the event a delete occurs between writes, it may take some
+    /// additional time for the system to establish barriers, complete work,
+    /// bring them down, then continue processing
+    tests::cooperative_spin_wait_with_timeout(30s, [this]() {
+        return root_fixture()->app.coprocessing->get_pacemaker().map_reduce0(
+          [this](coproc::pacemaker& p) { return p.is_up_to_date(); },
+          true,
+          std::logical_and<>());
+    }).get();
+
+    auto in_storage = root_fixture()->app.storage.invoke_on(
+      *shard,
+      [target](storage::api& api) { return (bool)api.log_mgr().get(target); });
+    if (!in_storage.get()) {
+        /// In the event the delete occurred after all writes completed, it
+        /// should be asserted that no evidence of the partition has been left
+        /// behind
+        info("Materialized topic {} was never re-created", target);
+        auto in_pm = root_fixture()->app.cp_partition_manager.invoke_on(
+          *shard, [target](coproc::partition_manager& pm) {
+              return (bool)pm.get(target);
+          });
+        bool in_stble = root_fixture()
+                          ->app.shard_table.local()
+                          .shard_for(target)
+                          .has_value();
+        BOOST_CHECK(!in_pm.get());
+        BOOST_CHECK(!in_stble);
+    } else {
+        /// Otherwise assert that all data exists since the input topic was
+        /// marked with the 'earliest' offset, all records should exist since
+        /// re-processing should have began at offset 0.
+        info("Materialized topic {} was re-created", target);
+        for (auto i = 0; i < 4; ++i) {
+            auto results = consume(
+                             model::ntp(
+                               tbd.ns,
+                               to_materialized_topic(
+                                 tbd.tp, identity_coprocessor::identity_topic),
+                               model::partition_id(i)),
+                             total_records)
+                             .get();
+            BOOST_CHECK_EQUAL(num_records(results), total_records);
+        }
     }
 }
