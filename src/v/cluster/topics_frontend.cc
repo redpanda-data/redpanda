@@ -317,7 +317,7 @@ topics_frontend::dispatch_create_non_replicable_to_leader(
         [topics, timeout](controller_client_protocol cp) mutable {
             return cp.create_non_replicable_topics(
               create_non_replicable_topics_request{std::move(topics), timeout},
-              rpc::client_opts(model::timeout_clock::now() + timeout));
+              rpc::client_opts(model::no_timeout));
         })
       .then(&rpc::get_ctx_data<create_topics_reply>)
       .then([topics = std::move(topics)](result<create_topics_reply> r) {
