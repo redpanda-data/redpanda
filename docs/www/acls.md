@@ -99,7 +99,7 @@ redpanda
   
   enable_sasl: true
   superusers:
-    - username: admin
+  - admin
   # The rest of the config...
 ```
 
@@ -150,8 +150,8 @@ spec:
   version: "latest"
   replicas: 3
   enableSasl: true
-  superUsers:
-    - username: admin
+  superusers:
+  - admin
   resources:
     requests:
       cpu: 1

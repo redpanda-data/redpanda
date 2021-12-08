@@ -20,7 +20,7 @@ rpk config init
 
 ## Sample configuration
 
-Here’s a sample of the config. The [configuration reference](#config-parameter-reference) shows a more complete list of the configuration options.
+Here’s a sample of the config. The [configuration reference](#Config-parameter-reference) shows a more complete list of the configuration options.
 
 This is not a valid Redpanda configuration file, but it shows the parameters that you can configure in the config file.
 Only include the sections that you want to customize.
