@@ -57,6 +57,7 @@ enum class errc : int16_t {
     source_topic_still_in_use,
     wating_for_partition_shutdown,
     error_collecting_health_report,
+    leadership_changed,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -160,6 +161,9 @@ struct errc_category final : public std::error_category {
                    "originating core";
         case errc::error_collecting_health_report:
             return "Error requesting health monitor update";
+        case errc::leadership_changed:
+            return "Raft group leadership has changed while waiting for action "
+                   "to finish";
         }
         return "cluster::errc::unknown";
     }
