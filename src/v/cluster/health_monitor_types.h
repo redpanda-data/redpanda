@@ -30,6 +30,10 @@ namespace cluster {
  */
 
 using alive = ss::bool_class<struct node_alive_tag>;
+
+// An application version is a software release, like v1.2.3_gfa0d09f8a
+using application_version = named_type<ss::sstring, struct version_number_tag>;
+
 /**
  * node state is determined from controller, and it doesn't require contacting
  * with the node directly

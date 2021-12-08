@@ -61,12 +61,13 @@ std::ostream& operator<<(std::ostream& o, const node_health_report& r) {
     fmt::print(
       o,
       "{{id: {}, disks: {}, topics: {}, redpanda_version: {}, uptime: "
-      "{}}}",
+      "{}, logical_version: {}}}",
       r.id,
       r.local_state.disks,
       r.topics,
       r.local_state.redpanda_version,
-      r.local_state.uptime);
+      r.local_state.uptime,
+      r.local_state.logical_version);
     return o;
 }
 
@@ -233,7 +234,8 @@ void adl<cluster::node_health_report>::to(
       std::move(r.local_state.redpanda_version),
       r.local_state.uptime,
       std::move(r.local_state.disks),
-      std::move(r.topics));
+      std::move(r.topics),
+      std::move(r.local_state.logical_version));
 }
 
 cluster::node_health_report
@@ -246,12 +248,12 @@ adl<cluster::node_health_report>::from(iobuf_parser& p) {
     auto uptime = adl<std::chrono::milliseconds>{}.from(p);
     auto disks = adl<std::vector<cluster::node::disk>>{}.from(p);
     auto topics = adl<std::vector<cluster::topic_status>>{}.from(p);
+    auto logical_version = adl<cluster::cluster_version>{}.from(p);
 
     return cluster::node_health_report{
       .id = id,
-      .local_state = { .redpanda_version = std::move(redpanda_version),
-      .uptime = uptime,
-      .disks = std::move(disks),},
+      .local_state
+      = {.redpanda_version = std::move(redpanda_version), .logical_version = std::move(logical_version), .uptime = uptime, .disks = std::move(disks)},
       .topics = std::move(topics),
     };
 }
