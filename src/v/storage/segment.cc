@@ -563,11 +563,10 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
     // sealed segments are supposed to be very rare events. The hotpath of
     // truncating the appender, is optimized.
     auto f = co_await internal::make_reader_handle(path, sanitize_fileops);
+    auto st = co_await f.stat();
 
-    co_return co_await f.stat().then([f](struct stat s) {
-              return ss::make_ready_future<std::tuple<uint64_t, ss::file>>(
-                std::make_tuple(s.st_size, f));
-      })
+              co_return co_await ss::make_ready_future<std::tuple<uint64_t, ss::file>>(
+                std::make_tuple(st.st_size, f))
       .then([buf_size, path](std::tuple<uint64_t, ss::file> t) {
           auto& [size, fd] = t;
           return std::make_unique<segment_reader>(
