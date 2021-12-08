@@ -588,19 +588,20 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
             return ss::make_exception_future<ss::lw_shared_ptr<segment>>(e);
         });
     }
+
     auto idx = segment_index(
       index_name,
-      fd,
+      std::move(fd),
       meta->base_offset,
       segment_index::default_data_buffer_step);
-    co_return co_await ss::make_ready_future<ss::lw_shared_ptr<segment>>(
-      ss::make_lw_shared<segment>(
-        segment::offset_tracker(meta->term, meta->base_offset),
-        std::move(*rdr),
-        std::move(idx),
-        nullptr,
-        std::nullopt,
-        std::move(batch_cache)));
+
+    co_return ss::make_lw_shared<segment>(
+      segment::offset_tracker(meta->term, meta->base_offset),
+      std::move(*rdr),
+      std::move(idx),
+      nullptr,
+      std::nullopt,
+      std::move(batch_cache));
 }
 
 ss::future<ss::lw_shared_ptr<segment>> make_segment(
