@@ -572,22 +572,20 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
                               .replace_extension("base_index")
                               .string();
 
-          co_return co_await internal::make_handle(
+          std::exception_ptr e;
+          ss::file fd;
+                try {
+          fd = co_await internal::make_handle(
                    index_name,
                    ss::open_flags::create | ss::open_flags::rw,
                    {},
-                   sanitize_fileops)
-            .then_wrapped([batch_cache = std::move(batch_cache),
-                           ptr,
-                           rdr = std::move(rdr),
-                           index_name,
-                           meta](ss::future<ss::file> f) mutable {
-                ss::file fd;
-                try {
-                    fd = f.get0();
+                   sanitize_fileops);
                 } catch (...) {
-                    return ptr->close().then(
-                      [rdr = std::move(rdr), e = std::current_exception()] {
+                    e = std::current_exception();
+                }
+                if (e) {
+                    co_return co_await ptr->close().then(
+                      [rdr = std::move(rdr), e] {
                           return ss::make_exception_future<
                             ss::lw_shared_ptr<segment>>(e);
                       });
@@ -597,7 +595,7 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
                   fd,
                   meta->base_offset,
                   segment_index::default_data_buffer_step);
-                return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
+                co_return co_await ss::make_ready_future<ss::lw_shared_ptr<segment>>(
                   ss::make_lw_shared<segment>(
                     segment::offset_tracker(meta->term, meta->base_offset),
                     std::move(*rdr),
@@ -605,7 +603,6 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
                     nullptr,
                     std::nullopt,
                     std::move(batch_cache)));
-            });
 }
 
 ss::future<ss::lw_shared_ptr<segment>> make_segment(
