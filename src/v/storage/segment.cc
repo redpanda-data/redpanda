@@ -546,11 +546,11 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
     auto const meta = segment_path::parse_segment_filename(
       path.filename().string());
     if (!meta || meta->version != record_version_type::v1) {
-          throw std::runtime_error(fmt::format(
-            "Segment has invalid version {} != {} path {}",
-            meta->version,
-            record_version_type::v1,
-            path));
+        throw std::runtime_error(fmt::format(
+          "Segment has invalid version {} != {} path {}",
+          meta->version,
+          record_version_type::v1,
+          path));
     }
     // note: this file _must_ be open in `ro` mode only. Seastar uses dma
     // files with no shared buffer cache around them. When we use a writer
@@ -565,44 +565,42 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
     auto f = co_await internal::make_reader_handle(path, sanitize_fileops);
     auto st = co_await f.stat();
     auto rdr = std::make_unique<segment_reader>(
-            path.string(), std::move(f), st.st_size, buf_size);
+      path.string(), std::move(f), st.st_size, buf_size);
 
-          auto ptr = rdr.get();
-          auto index_name = std::filesystem::path(ptr->filename().c_str())
-                              .replace_extension("base_index")
-                              .string();
+    auto ptr = rdr.get();
+    auto index_name = std::filesystem::path(ptr->filename().c_str())
+                        .replace_extension("base_index")
+                        .string();
 
-          std::exception_ptr e;
-          ss::file fd;
-                try {
-          fd = co_await internal::make_handle(
-                   index_name,
-                   ss::open_flags::create | ss::open_flags::rw,
-                   {},
-                   sanitize_fileops);
-                } catch (...) {
-                    e = std::current_exception();
-                }
-                if (e) {
-                    co_return co_await ptr->close().then(
-                      [rdr = std::move(rdr), e] {
-                          return ss::make_exception_future<
-                            ss::lw_shared_ptr<segment>>(e);
-                      });
-                }
-                auto idx = segment_index(
-                  index_name,
-                  fd,
-                  meta->base_offset,
-                  segment_index::default_data_buffer_step);
-                co_return co_await ss::make_ready_future<ss::lw_shared_ptr<segment>>(
-                  ss::make_lw_shared<segment>(
-                    segment::offset_tracker(meta->term, meta->base_offset),
-                    std::move(*rdr),
-                    std::move(idx),
-                    nullptr,
-                    std::nullopt,
-                    std::move(batch_cache)));
+    std::exception_ptr e;
+    ss::file fd;
+    try {
+        fd = co_await internal::make_handle(
+          index_name,
+          ss::open_flags::create | ss::open_flags::rw,
+          {},
+          sanitize_fileops);
+    } catch (...) {
+        e = std::current_exception();
+    }
+    if (e) {
+        co_return co_await ptr->close().then([rdr = std::move(rdr), e] {
+            return ss::make_exception_future<ss::lw_shared_ptr<segment>>(e);
+        });
+    }
+    auto idx = segment_index(
+      index_name,
+      fd,
+      meta->base_offset,
+      segment_index::default_data_buffer_step);
+    co_return co_await ss::make_ready_future<ss::lw_shared_ptr<segment>>(
+      ss::make_lw_shared<segment>(
+        segment::offset_tracker(meta->term, meta->base_offset),
+        std::move(*rdr),
+        std::move(idx),
+        nullptr,
+        std::nullopt,
+        std::move(batch_cache)));
 }
 
 ss::future<ss::lw_shared_ptr<segment>> make_segment(
