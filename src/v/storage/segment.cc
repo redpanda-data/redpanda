@@ -564,22 +564,15 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
     // truncating the appender, is optimized.
     auto f = co_await internal::make_reader_handle(path, sanitize_fileops);
     auto st = co_await f.stat();
+    auto rdr = std::make_unique<segment_reader>(
+            path.string(), std::move(f), st.st_size, buf_size);
 
-              co_return co_await ss::make_ready_future<std::tuple<uint64_t, ss::file>>(
-                std::make_tuple(st.st_size, f))
-      .then([buf_size, path](std::tuple<uint64_t, ss::file> t) {
-          auto& [size, fd] = t;
-          return std::make_unique<segment_reader>(
-            path.string(), std::move(fd), size, buf_size);
-      })
-      .then([batch_cache = std::move(batch_cache), meta, sanitize_fileops](
-              std::unique_ptr<segment_reader> rdr) mutable {
           auto ptr = rdr.get();
           auto index_name = std::filesystem::path(ptr->filename().c_str())
                               .replace_extension("base_index")
                               .string();
 
-          return internal::make_handle(
+          co_return co_await internal::make_handle(
                    index_name,
                    ss::open_flags::create | ss::open_flags::rw,
                    {},
@@ -613,7 +606,6 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
                     std::nullopt,
                     std::move(batch_cache)));
             });
-      });
 }
 
 ss::future<ss::lw_shared_ptr<segment>> make_segment(
