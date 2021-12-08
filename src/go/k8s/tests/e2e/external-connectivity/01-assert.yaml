@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: external-connectivity-external
+spec:
+  ports:
+  - name: kafka-external
+    port: 30002
+    protocol: TCP
+    targetPort: 30002
+    nodePort: 30002
+  type: NodePort

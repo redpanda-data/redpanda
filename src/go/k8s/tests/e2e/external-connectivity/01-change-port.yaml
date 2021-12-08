@@ -1,0 +1,15 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: external-connectivity
+spec:
+    kafkaApi:
+    - port: 9092
+      tls:
+        enabled: false
+    - external:
+        enabled: true
+        subdomain: "test.subdomain.com"
+      port: 30002
+      tls:
+        enabled: true
