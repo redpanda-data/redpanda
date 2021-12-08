@@ -227,3 +227,80 @@ largely not depend on or refer to other commits in a series (e.g. "in the
 previous commit..." or "and in a later commit this will be implemented"), nor
 should it refer to out-of-band conversations (e.g. "in last week's meeting").
 Refer to high-level context in the pull request description.
+
+## Pull request body
+
+Creating a new pull request (PR) will start with default content in the
+body. Fill out the sections in the body with information to help guide
+the PR reviewers in understanding the code changes. The body will also
+be parsed by scripts to generation release notes, so be sure to leave
+the section headers unmodified.
+
+### Cover letter section
+
+Describe in plain language the motivation (bug, feature, etc.) behind
+the change in this PR and how the included commits address it. Suitable
+content for this section would be additional information that is not
+included in the git commit messages. For example:
+
+```
+## Cover letter
+
+Users complain the `abort` button is hard to find. Talked with design
+team and they suggested increasing the size of the button as oppposed
+to changing the color or moving its position. So, increased width of
+button to match width of other buttons on the page.
+```
+
+### Link to issues regarding bugs
+
+If any of the git commits in the PR address a bug, link the issue that
+the PR will address using the `Fixes`
+[keyword](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue#linking-a-pull-request-to-an-issue-using-a-keyword):
+
+```
+Fixes #123
+```
+
+### Release notes section
+
+Fill out this section with bullet points that would be suitable to publish on the
+[releases](https://github.com/vectorizedio/redpanda/releases)
+page.
+
+If the PR introduces new functionality, include it under a **Features** sub-section. Be sure to explain how to configure the feature if applicable. For example:
+```
+## Release notes
+### Features
+* Added option to configure strength of coffee. Set in `config.json` file with `strength` key. Valid values: `light`, `medium` (default), `strong`.
+```
+
+If the PR improves on existing functionality that requires no user intervention, add a bullet point under an **Improvements** sub-section.
+For example:
+
+```
+## Release notes
+### Improvements
+* Increased width of `abort` button to make it easier to find.
+```
+
+Several sections can be added and several bullet points may be used if the PR includes several changes. For example:
+```
+## Release notes
+### Features
+* Processor honors `Accept:` header. Recognized values are `text/plain`, `application/json`, `image/png`.
+### Improvements
+* Reduce the max size required for index table by 50%.
+* Process incoming requests faster by 15%.
+```
+
+If the PR should not have anything mentioned in the release notes,
+have a single bullet point with the word `none`. This is suitible for
+changes that the end user of redpanda should not need to account for,
+such as fixing typos in code comments. For example:
+
+```
+## Release notes
+* none
+```
+
