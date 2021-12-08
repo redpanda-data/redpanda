@@ -539,19 +539,18 @@ auto with_segment(ss::lw_shared_ptr<segment> s, Func&& f) {
 }
 
 ss::future<ss::lw_shared_ptr<segment>> open_segment(
-  const std::filesystem::path& path,
+  std::filesystem::path path,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size) {
     auto const meta = segment_path::parse_segment_filename(
       path.filename().string());
     if (!meta || meta->version != record_version_type::v1) {
-        return ss::make_exception_future<ss::lw_shared_ptr<segment>>(
-          std::runtime_error(fmt::format(
+          throw std::runtime_error(fmt::format(
             "Segment has invalid version {} != {} path {}",
             meta->version,
             record_version_type::v1,
-            path)));
+            path));
     }
     // note: this file _must_ be open in `ro` mode only. Seastar uses dma
     // files with no shared buffer cache around them. When we use a writer
@@ -563,7 +562,7 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
     // preventing x-file synchronization This is fine, because truncation to
     // sealed segments are supposed to be very rare events. The hotpath of
     // truncating the appender, is optimized.
-    return internal::make_reader_handle(path, sanitize_fileops)
+    co_return co_await internal::make_reader_handle(path, sanitize_fileops)
       .then([](ss::file f) {
           return f.stat().then([f](struct stat s) {
               return ss::make_ready_future<std::tuple<uint64_t, ss::file>>(
