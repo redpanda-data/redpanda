@@ -70,6 +70,7 @@ void disk_log_appender::release_lock() {
 
 ss::future<ss::stop_iteration>
 disk_log_appender::operator()(model::record_batch& batch) {
+    // TODO push up disk failures to this level, at least
     batch.header().base_offset = _idx;
     batch.header().header_crc = model::internal_header_only_crc(batch.header());
     if (_last_term != batch.term()) {

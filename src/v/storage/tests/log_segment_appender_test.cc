@@ -8,11 +8,16 @@
 // by the Apache License, Version 2.0
 
 #include "bytes/iobuf.h"
+#include "config/fixed.h"
+#include "finjector/hbadger.h"
 #include "random/generators.h"
 #include "seastarx.h"
+#include "storage/failure_probes.h"
+#include "storage/fs_finject.h"
 #include "storage/segment_appender.h"
 
 #include <seastar/core/reactor.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
 
@@ -21,7 +26,9 @@
 
 #include <fmt/format.h>
 
+#include <exception>
 #include <string_view>
+#include <system_error>
 
 using namespace storage; // NOLINT
 
@@ -211,4 +218,28 @@ SEASTAR_THREAD_TEST_CASE(test_can_append_little_data) {
     }
     BOOST_REQUIRE_EQUAL(appender.file_byte_offset(), data.size());
     appender.close().get();
+}
+
+SEASTAR_THREAD_TEST_CASE(test_full_disk_append_failure) {
+    if constexpr(config::fixed::file_fail_injection) {
+        auto f = ss::file(
+          ss::make_shared(fs_finject(open_file("test_segment_appender.log"))));
+        auto appender = make_segment_appender(f);
+        auto badger = finjector::shard_local_badger();
+        badger.register_probe(fs_failure_probe::name(), &fs_finject::get_probe());
+        badger.set_exception(fs_failure_probe::name(), "allocate");
+        badger.set_exception(fs_failure_probe::name(), "write_dma");
+
+        constexpr size_t one_meg = 1024 * 1024;
+        iobuf original = make_random_data(one_meg);
+        BOOST_REQUIRE_THROW(
+          appender.append(original).get(),
+          std::system_error); // wraps an ENOSPC errno
+
+        badger.unset(fs_failure_probe::name(), "allocate");
+        badger.unset(fs_failure_probe::name(), "write_dma");
+        appender.flush().get();
+        appender.close().get();
+        finjector::shard_local_badger().deregister_probe(fs_failure_probe::name());
+    }
 }

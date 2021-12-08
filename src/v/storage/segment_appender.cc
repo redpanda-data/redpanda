@@ -23,6 +23,8 @@
 
 #include <fmt/format.h>
 
+#include <cstdlib>
+#include <exception>
 #include <ostream>
 
 namespace storage {
@@ -337,6 +339,34 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
                    .then([this, step] { _fallocation_offset += step; });
              })
       .handle_exception([this](std::exception_ptr e) {
+          try {
+              std::rethrow_exception(e);
+          } catch (const std::system_error& cerr) {
+              int errnum = cerr.code().value();
+              if (errnum == ENOSPC) {
+                  vlog(
+                    stlog.error,
+                    "Failed to fallocate file: No space left on device. "
+                    "Please check your data partition and "
+                    "ensure you have enough space. Error: {} - {}",
+                    cerr,
+                    *this);
+              } else {
+                  vlog(
+                    stlog.error,
+                    "Failed to fallocate file. Check your data partition for "
+                    "I/O errors. Error: {} - {}",
+                    cerr,
+                    *this);
+              }
+          } catch (const std::exception& ex) {
+              vlog(
+                stlog.error,
+                "Failed to fallocate file. Error: {} - {}",
+                ex,
+                *this);
+          }
+          // TODO propagate error upward when safe
           vassert(
             false,
             "We failed to fallocate file. This usually means we have ran out "
