@@ -562,12 +562,11 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
     // preventing x-file synchronization This is fine, because truncation to
     // sealed segments are supposed to be very rare events. The hotpath of
     // truncating the appender, is optimized.
-    co_return co_await internal::make_reader_handle(path, sanitize_fileops)
-      .then([](ss::file f) {
-          return f.stat().then([f](struct stat s) {
+    auto f = co_await internal::make_reader_handle(path, sanitize_fileops);
+
+    co_return co_await f.stat().then([f](struct stat s) {
               return ss::make_ready_future<std::tuple<uint64_t, ss::file>>(
                 std::make_tuple(s.st_size, f));
-          });
       })
       .then([buf_size, path](std::tuple<uint64_t, ss::file> t) {
           auto& [size, fd] = t;
