@@ -85,6 +85,12 @@ public:
     ss::future<>
     remove_output(const model::ntp& source, const model::ntp& materialized);
 
+    /// Returns true if fiber is up to date with all of its inputs
+    ///
+    /// This is when the stored offsets currently match the input logs dirty
+    /// offsets for respective tracked partitions
+    bool is_up_to_date() const;
+
 private:
     ss::future<> do_execute();
 

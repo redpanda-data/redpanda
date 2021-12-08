@@ -167,4 +167,16 @@ ss::future<> script_context::send_request(
       });
 }
 
+bool script_context::is_up_to_date() const {
+    for (const auto& [_, src] : _routes) {
+        const auto highest = src->rctx.input->last_stable_offset();
+        for (const auto& [_, o] : src->wctx.offsets) {
+            if (o < highest) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 } // namespace coproc
