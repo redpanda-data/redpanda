@@ -93,8 +93,7 @@ ss::future<create_topics_reply> service::create_non_replicable_topics(
              get_scheduling_group(),
              [this, r = std::move(r)]() mutable {
                  return _topics_frontend.local().create_non_replicable_topics(
-                   std::move(r.topics),
-                   model::no_timeout);
+                   std::move(r.topics), model::no_timeout);
              })
       .then([this](std::vector<topic_result> res) {
           // Fetch metadata for successfully created topics
