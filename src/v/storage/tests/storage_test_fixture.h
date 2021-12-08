@@ -50,7 +50,10 @@ public:
     storage_test_fixture()
       : test_dir("test.data." + random_generators::gen_alphanum_string(10))
       , kvstore(storage::kvstore_config(
-          1_MiB, 10ms, test_dir, storage::debug_sanitize_files::yes)) {
+          1_MiB,
+          config::mock_binding(10ms),
+          test_dir,
+          storage::debug_sanitize_files::yes)) {
         configure_unit_test_logging();
         // avoid double metric registrations
         ss::smp::invoke_on_all([] {

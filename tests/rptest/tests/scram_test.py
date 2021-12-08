@@ -15,6 +15,7 @@ from ducktape.mark.resource import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.python_librdkafka import PythonLibrdkafka
+from rptest.services.admin import Admin
 
 
 class ScramTest(RedpandaTest):
@@ -227,3 +228,43 @@ class ScramTest(RedpandaTest):
 
         users = self.list_users()
         assert username in users
+
+
+class ScramLiveUpdateTest(RedpandaTest):
+    def __init__(self, test_context):
+        super(ScramLiveUpdateTest,
+              self).__init__(test_context,
+                             num_brokers=1,
+                             extra_rp_conf={'enable_central_config': True})
+
+    @cluster(num_nodes=1)
+    def test_enable_sasl_live(self):
+        """
+        Verify that when enable_sasl is set to true at runtime, subsequent
+        unauthenticated kafka clients are rejected.
+        """
+
+        unauthenticated_client = PythonLibrdkafka(self.redpanda)
+        topic = TopicSpec(replication_factor=1)
+        unauthenticated_client.create_topic(topic)
+        assert len(unauthenticated_client.topics()) == 1
+
+        # Switch on authentication
+        admin = Admin(self.redpanda)
+        admin.patch_cluster_config(upsert={'enable_sasl': True})
+
+        # An unauthenticated client should be rejected
+        try:
+            unauthenticated_client.topics()
+        except Exception as e:
+            self.logger.exception(f"Unauthenticated: {e}")
+        else:
+            self.logger.error(
+                "Unauthenticated client should have been rejected")
+            assert False
+
+        # Switch off authentication
+        admin.patch_cluster_config(upsert={'enable_sasl': False})
+
+        # An unauthenticated client should be accepted again
+        assert len(unauthenticated_client.topics()) == 1

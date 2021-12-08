@@ -48,7 +48,8 @@ struct test_config : public config::config_store {
           *this,
           "required_string",
           "Required string value",
-          {.visibility = config::visibility::user})
+          {.needs_restart = config::needs_restart::no,
+           .visibility = config::visibility::user})
       , an_int64_t(
           *this, "an_int64_t", "Some other int type", config::required::no, 200)
       , an_aggregate(
@@ -78,7 +79,8 @@ struct test_config : public config::config_store {
           *this,
           "boolean",
           "Plain boolean property",
-          config::required::no,
+          config::base_property::metadata{
+            .needs_restart = config::needs_restart::no},
           false)
       , seconds(*this, "seconds", "Plain seconds", config::required::no, {})
       , optional_seconds(
@@ -350,3 +352,38 @@ SEASTAR_THREAD_TEST_CASE(property_metadata) {
     BOOST_TEST(cfg.milliseconds.is_nullable() == false);
     BOOST_TEST(cfg.milliseconds.is_array() == false);
 };
+
+SEASTAR_THREAD_TEST_CASE(property_bind) {
+    auto cfg = test_config();
+    BOOST_TEST(cfg.boolean() == false);
+    auto binding = cfg.boolean.bind();
+    BOOST_TEST(binding() == false);
+    cfg.boolean.set_value(true);
+    BOOST_TEST(cfg.boolean() == true);
+    BOOST_TEST(binding() == true);
+
+    int watch_count = 0;
+
+    BOOST_TEST(cfg.required_string() == cfg.required_string.default_value());
+    auto str_binding = cfg.required_string.bind();
+    BOOST_TEST(str_binding() == cfg.required_string.default_value());
+    str_binding.watch([&watch_count]() { ++watch_count; });
+
+    cfg.required_string.set_value(ss::sstring("newvalue"));
+    BOOST_TEST(cfg.required_string() == "newvalue");
+    BOOST_TEST(str_binding() == "newvalue");
+    BOOST_TEST(watch_count == 1);
+
+    // Check that bindings are safe to use after move
+    config::binding<ss::sstring> bind2 = std::move(str_binding);
+    cfg.required_string.set_value(ss::sstring("newvalue2"));
+    BOOST_TEST(bind2() == "newvalue2");
+    BOOST_TEST(watch_count == 2);
+
+    // Check that bindings are safe to use after copy
+    config::binding<ss::sstring> bind3 = bind2;
+    cfg.required_string.set_value(ss::sstring("newvalue3"));
+    BOOST_TEST(bind2() == "newvalue3");
+    BOOST_TEST(bind3() == "newvalue3");
+    BOOST_TEST(watch_count == 4);
+}

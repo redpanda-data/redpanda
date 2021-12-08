@@ -31,7 +31,7 @@ static ss::logger lg("kvstore");
 namespace storage {
 
 kvstore::kvstore(kvstore_config kv_conf)
-  : _conf(std::move(kv_conf))
+  : _conf(kv_conf)
   , _ntpc(model::kvstore_ntp(ss::this_shard_id()), _conf.base_dir)
   , _snap(
       std::filesystem::path(_ntpc.work_directory()),
@@ -174,7 +174,7 @@ ss::future<> kvstore::put(key_space ks, bytes key, std::optional<iobuf> value) {
       _gate, [this, key = std::move(key), value = std::move(value)]() mutable {
           auto& w = _ops.emplace_back(std::move(key), std::move(value));
           if (!_timer.armed()) {
-              _timer.arm(_conf.commit_interval);
+              _timer.arm(_conf.commit_interval());
           }
           return w.done.get_future();
       });

@@ -34,13 +34,16 @@ struct base_fixture {
     base_fixture()
       : _test_dir(
         fmt::format("test_{}", random_generators::gen_alphanum_string(6)))
-      , _api(make_kv_cfg(), make_log_cfg()) {
+      , _api([this]() { return make_kv_cfg(); }, make_log_cfg()) {
         _api.start().get();
     }
 
     storage::kvstore_config make_kv_cfg() const {
         return storage::kvstore_config(
-          1_MiB, 10ms, _test_dir, storage::debug_sanitize_files::yes);
+          1_MiB,
+          config::mock_binding(10ms),
+          _test_dir,
+          storage::debug_sanitize_files::yes);
     }
 
     storage::log_config make_log_cfg() const {

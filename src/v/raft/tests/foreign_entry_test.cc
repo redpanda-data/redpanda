@@ -46,8 +46,13 @@ struct foreign_entry_fixture {
 
     foreign_entry_fixture()
       : _storage(
-        storage::kvstore_config(
-          1_MiB, 10ms, test_dir, storage::debug_sanitize_files::yes),
+        [this]() {
+            return storage::kvstore_config(
+              1_MiB,
+              config::mock_binding(10ms),
+              test_dir,
+              storage::debug_sanitize_files::yes);
+        },
         storage::log_config(
           storage::log_config::storage_type::disk,
           test_dir,

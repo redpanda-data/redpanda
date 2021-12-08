@@ -43,13 +43,15 @@ leader_balancer::leader_balancer(
   ss::sharded<partition_manager>& partition_manager,
   ss::sharded<raft::group_manager>& group_manager,
   ss::sharded<ss::abort_source>& as,
-  std::chrono::milliseconds idle_timeout,
-  std::chrono::milliseconds mute_timeout,
-  std::chrono::milliseconds node_mute_timeout,
+  config::binding<bool>&& enabled,
+  config::binding<std::chrono::milliseconds>&& idle_timeout,
+  config::binding<std::chrono::milliseconds>&& mute_timeout,
+  config::binding<std::chrono::milliseconds>&& node_mute_timeout,
   consensus_ptr raft0)
-  : _idle_timeout(idle_timeout)
-  , _mute_timeout(mute_timeout)
-  , _node_mute_timeout(node_mute_timeout)
+  : _enabled(std::move(enabled))
+  , _idle_timeout(std::move(idle_timeout))
+  , _mute_timeout(std::move(mute_timeout))
+  , _node_mute_timeout(std::move(node_mute_timeout))
   , _topics(topics)
   , _leaders(leaders)
   , _client(std::move(client))
@@ -77,22 +79,27 @@ ss::future<> leader_balancer::start() {
                 return;
             }
             if (_raft0->is_leader()) {
-                vlog(
-                  clusterlog.info,
-                  "Leader balancer: controller leadership detected. Starting "
-                  "rebalancer in {} seconds",
-                  std::chrono::duration_cast<std::chrono::seconds>(
-                    leader_activation_delay)
-                    .count());
+                if (_enabled()) {
+                    vlog(
+                      clusterlog.info,
+                      "Leader balancer: controller leadership detected. "
+                      "Starting "
+                      "rebalancer in {} seconds",
+                      std::chrono::duration_cast<std::chrono::seconds>(
+                        leader_activation_delay)
+                        .count());
+                }
                 _timer.cancel();
                 _timer.arm(leader_activation_delay);
             } else {
-                vlog(
-                  clusterlog.info,
-                  "Leader balancer: controller leadership lost");
+                if (_enabled()) {
+                    vlog(
+                      clusterlog.info,
+                      "Leader balancer: controller leadership lost");
+                }
                 _need_controller_refresh = true;
                 _timer.cancel();
-                _timer.arm(_idle_timeout);
+                _timer.arm(_idle_timeout());
             }
         });
 
@@ -101,8 +108,10 @@ ss::future<> leader_balancer::start() {
      * during registration, so make sure the timer is unarmed before arming.
      */
     if (!_timer.armed()) {
-        _timer.arm(_idle_timeout);
+        _timer.arm(_idle_timeout());
     }
+
+    _enabled.watch([this]() { on_enable_changed(); });
 
     co_return;
 }
@@ -112,6 +121,25 @@ ss::future<> leader_balancer::stop() {
       _leader_notify_handle);
     _timer.cancel();
     return _gate.close();
+}
+
+/**
+ * Hook for changes to enable_leader_balancer config property
+ */
+void leader_balancer::on_enable_changed() {
+    if (_gate.is_closed()) {
+        return;
+    }
+
+    if (_enabled()) {
+        vlog(clusterlog.info, "Leader balancer enabled");
+        if (!_timer.armed()) {
+            _timer.arm(_idle_timeout());
+        }
+    } else {
+        vlog(clusterlog.info, "Leader balancer disabled");
+        _timer.cancel();
+    }
 }
 
 void leader_balancer::trigger_balance() {
@@ -127,7 +155,11 @@ void leader_balancer::trigger_balance() {
     if (_gate.get_count()) {
         vlog(
           clusterlog.info, "Cannot start rebalance until previous fiber exits");
-        _timer.arm(_idle_timeout);
+        _timer.arm(_idle_timeout());
+    }
+
+    if (!_enabled()) {
+        return;
     }
 
     (void)ss::try_with_gate(_gate, [this] {
@@ -145,10 +177,11 @@ void leader_balancer::trigger_balance() {
                 "Leadership rebalance experienced an unhandled error: {}. "
                 "Retrying in {} seconds",
                 e,
-                std::chrono::duration_cast<std::chrono::seconds>(_idle_timeout)
+                std::chrono::duration_cast<std::chrono::seconds>(
+                  _idle_timeout())
                   .count());
               _timer.cancel();
-              _timer.arm(_idle_timeout);
+              _timer.arm(_idle_timeout());
           });
     }).handle_exception_type([](const ss::gate_closed_exception&) {});
 }
@@ -167,11 +200,11 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
     if (!_raft0->is_leader()) {
         vlog(clusterlog.debug, "Leadership balancer tick: not leader");
         if (!_timer.armed()) {
-            _timer.arm(_idle_timeout);
+            _timer.arm(_idle_timeout());
         }
         _need_controller_refresh = true;
         co_return ss::stop_iteration::yes;
-    } else if (_raft0->config().brokers().size() == 0) {
+    } else if (_raft0->config().brokers().size() == 1) {
         vlog(clusterlog.trace, "Leadership balancer tick: single node cluster");
         co_return ss::stop_iteration::yes;
     }
@@ -236,7 +269,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
           error,
           _muted.size());
         if (!_timer.armed()) {
-            _timer.arm(_idle_timeout);
+            _timer.arm(_idle_timeout());
         }
         _probe.leader_transfer_no_improvement();
         co_return ss::stop_iteration::yes;
@@ -260,7 +293,8 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
          */
         _probe.leader_transfer_error();
         co_await ss::sleep_abortable(5s, _as.local());
-        _muted.try_emplace(transfer->group, clock_type::now() + _mute_timeout);
+        _muted.try_emplace(
+          transfer->group, clock_type::now() + _mute_timeout());
         co_return ss::stop_iteration::no;
     }
 
@@ -299,7 +333,8 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
           "Leadership balancer muting group {} not found in topics table",
           transfer->group);
         co_await ss::sleep_abortable(5s, _as.local());
-        _muted.try_emplace(transfer->group, clock_type::now() + _mute_timeout);
+        _muted.try_emplace(
+          transfer->group, clock_type::now() + _mute_timeout());
         co_return ss::stop_iteration::no;
     }
 
@@ -352,7 +387,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
      * thrashing (we'll still mute the group), but also because we may have
      * simply been racing with organic leadership movement.
      */
-    _muted.try_emplace(transfer->group, clock_type::now() + _mute_timeout);
+    _muted.try_emplace(transfer->group, clock_type::now() + _mute_timeout());
     co_return ss::stop_iteration::no;
 }
 
@@ -361,7 +396,7 @@ absl::flat_hash_set<model::node_id> leader_balancer::muted_nodes() const {
     const auto now = raft::clock_type::now();
     for (const auto& follower : _raft0->get_follower_metrics()) {
         auto last_hbeat_age = now - follower.last_heartbeat;
-        if (last_hbeat_age > _node_mute_timeout) {
+        if (last_hbeat_age > _node_mute_timeout()) {
             nodes.insert(follower.id);
             vlog(
               clusterlog.info,
@@ -481,7 +516,7 @@ leader_balancer::index_type leader_balancer::build_index() {
                     _last_leader.insert_or_assign(
                       partition.group,
                       last_known_leader{
-                        *leader_core, clock_type::now() + _mute_timeout});
+                        *leader_core, clock_type::now() + _mute_timeout()});
                 } else {
                     vlog(
                       clusterlog.info,

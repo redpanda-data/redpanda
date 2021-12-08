@@ -43,7 +43,7 @@ static ss::future<storage::kvstore_config> prepare_store(ss::sstring dir) {
 
     co_return storage::kvstore_config(
       8192,
-      std::chrono::milliseconds(10),
+      config::mock_binding(std::chrono::milliseconds(10)),
       dir,
       storage::debug_sanitize_files::yes);
 }

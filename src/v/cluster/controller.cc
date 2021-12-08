@@ -222,9 +222,6 @@ ss::future<> controller::start() {
           }
       })
       .then([this] {
-          if (!config::shard_local_cfg().enable_leader_balancer()) {
-              return ss::now();
-          }
           _leader_balancer = std::make_unique<leader_balancer>(
             _tp_state.local(),
             _partition_leaders.local(),
@@ -233,9 +230,10 @@ ss::future<> controller::start() {
             std::ref(_partition_manager),
             std::ref(_raft_manager),
             std::ref(_as),
-            config::shard_local_cfg().leader_balancer_idle_timeout(),
-            config::shard_local_cfg().leader_balancer_mute_timeout(),
-            config::shard_local_cfg().leader_balancer_node_mute_timeout(),
+            config::shard_local_cfg().enable_leader_balancer.bind(),
+            config::shard_local_cfg().leader_balancer_idle_timeout.bind(),
+            config::shard_local_cfg().leader_balancer_mute_timeout.bind(),
+            config::shard_local_cfg().leader_balancer_node_mute_timeout.bind(),
             _raft0);
           return _leader_balancer->start();
       })

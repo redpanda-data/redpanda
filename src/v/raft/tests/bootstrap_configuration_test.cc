@@ -34,8 +34,13 @@ struct bootstrap_fixture : raft::simple_record_fixture {
     using raft::simple_record_fixture::active_nodes;
     bootstrap_fixture()
       : _storage(
-        storage::kvstore_config(
-          1_MiB, 10ms, "test.dir", storage::debug_sanitize_files::yes),
+        []() {
+            return storage::kvstore_config(
+              1_MiB,
+              config::mock_binding(10ms),
+              "test.dir",
+              storage::debug_sanitize_files::yes);
+        },
         storage::log_config(
           storage::log_config::storage_type::disk,
           "test.dir",

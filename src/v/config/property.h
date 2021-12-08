@@ -13,14 +13,19 @@
 #include "config/base_property.h"
 #include "config/rjson_serialization.h"
 #include "reflection/type_traits.h"
+#include "utils/intrusive_list_helpers.h"
 #include "utils/to_string.h"
 
 #include <seastar/util/noncopyable_function.hh>
 
+#include <boost/intrusive/list.hpp>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
 namespace config {
+
+template<class T>
+class binding;
 
 template<class T>
 class property : public base_property {
@@ -51,6 +56,28 @@ public:
       , _value(def)
       , _default(std::move(def))
       , _validator(std::move(validator)) {}
+
+    /**
+     * Properties aren't moved in normal used on the per-shard
+     * cluster configuration objects.  This method exists for
+     * use in unit tests of things like kafka client that carry
+     * around a config_store as a member.
+     */
+    property(property<T>&& rhs)
+      : base_property(rhs)
+      , _value(std::move(rhs._value))
+      , _default(std::move(rhs._default))
+      , _validator(std::move(rhs._validator)) {
+        for (auto binding_ptr : _bindings) {
+            binding_ptr._parent = this;
+        }
+    }
+
+    ~property() {
+        for (auto& binding : _bindings) {
+            binding.detach();
+        }
+    }
 
     const T& value() { return _value; }
 
@@ -93,7 +120,7 @@ public:
     }
 
     void set_value(std::any v) override {
-        _value = std::any_cast<T>(std::move(v));
+        update_value(std::any_cast<T>(std::move(v)));
     }
 
     bool set_value(YAML::Node n) override {
@@ -112,10 +139,20 @@ public:
         return *this;
     }
 
+    binding<T> bind() {
+        assert_live_settable();
+        return {*this};
+    }
+
 protected:
     bool update_value(T&& new_value) {
         if (new_value != _value) {
+            for (auto& binding : _bindings) {
+                binding.update(new_value);
+            }
+
             _value = std::move(new_value);
+
             return true;
         } else {
             return false;
@@ -130,7 +167,109 @@ private:
     constexpr static auto noop_validator = [](const auto&) {
         return std::nullopt;
     };
+
+    friend class binding<T>;
+    intrusive_list<binding<T>, &binding<T>::_hook> _bindings;
 };
+
+/**
+ * A property binding contains a copy of the property's value, which
+ * will be updated in-place whenever the property is updated in the
+ * cluster configuration.
+ *
+ * This is useful for classes that want a copy of a property without
+ * having to write their own logic for subscribing to value changes.
+ */
+template<class T>
+class binding {
+private:
+    T _value;
+    property<T>* _parent{nullptr};
+
+    std::optional<std::function<void()>> _on_change;
+
+    void update(const T& v) {
+        auto changed = _value != v;
+        _value = v;
+        if (changed && _on_change.has_value()) {
+            _on_change.value()();
+        }
+    }
+    void detach() { _parent = nullptr; }
+
+protected:
+    intrusive_list_hook _hook;
+
+    /**
+     * This constructor is only for tests: construct a binding
+     * with an arbitrary fixed value, that is not connected to any underlying
+     * property.
+     */
+    explicit binding(T&& value)
+      : _value(std::move(value))
+      , _parent(nullptr) {}
+
+public:
+    binding(property<T>& parent)
+      : _value(parent())
+      , _parent(&parent) {
+        _parent->_bindings.push_back(*this);
+    }
+
+    binding(const binding<T>& rhs)
+      : _value(rhs._value)
+      , _parent(rhs._parent)
+      , _on_change(rhs._on_change) {
+        if (_parent) {
+            // Both self and rhs now in property's binding list
+            _parent->_bindings.push_back(*this);
+        }
+    }
+
+    /**
+     * This needs to be noexcept for objects with bindings to
+     * be usable in seastar futures.  This is not strictly
+     * noexcept, because in principle the parent binding list insert
+     * could be an allocation, but this is only used in practice
+     * in unit tests: in normal usage we do not move around bindings
+     * after startup time.
+     */
+    binding(binding<T>&& rhs) noexcept {
+        _value = std::move(rhs._value);
+        _on_change = std::move(rhs._on_change);
+        _parent = rhs._parent;
+
+        // Steal moved-from binding's place in the property's binding list
+        _hook.swap_nodes(rhs._hook);
+    }
+
+    /**
+     * Ensure that the callback remains valid for as long as this binding:
+     * the simplest way to  accomplish this is to make both the callback
+     * and the binding attributes of the same object
+     */
+    void watch(std::function<void()>&& f) { _on_change = std::move(f); }
+
+    const T& operator()() const { return _value; }
+
+    friend class property<T>;
+    template<typename U>
+    friend inline binding<U> mock_binding(U&&);
+};
+
+/**
+ * Test helper.  Construct a property binding with no underlying
+ * property object, which just contains a static value which remains
+ * unchanged through its lifetime.
+ *
+ * This exists to make it more obvious at the call site that we
+ * are constructing something static, rather than just calling
+ * a binding constructor directly.
+ */
+template<typename T>
+inline binding<T> mock_binding(T&& value) {
+    return binding<T>(std::forward<T>(value));
+}
 
 namespace detail {
 

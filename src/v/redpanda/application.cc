@@ -56,7 +56,6 @@
 #include "storage/compaction_controller.h"
 #include "storage/directories.h"
 #include "syschecks/syschecks.h"
-#include "test_utils/logs.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
 #include "v8_engine/data_policy_table.h"
@@ -429,7 +428,7 @@ static storage::kvstore_config kvstore_config_from_global_config() {
      */
     return storage::kvstore_config(
       config::shard_local_cfg().kvstore_max_segment_size(),
-      config::shard_local_cfg().kvstore_flush_interval(),
+      config::shard_local_cfg().kvstore_flush_interval.bind(),
       config::node().data_directory().as_sstring(),
       storage::debug_sanitize_files::no);
 }
@@ -583,7 +582,8 @@ void application::wire_up_redpanda_services() {
     log_cfg.reclaim_opts.background_reclaimer_sg
       = _scheduling_groups.cache_background_reclaim_sg();
 
-    construct_service(storage, kvstore_config_from_global_config(), log_cfg)
+    construct_service(
+      storage, []() { return kvstore_config_from_global_config(); }, log_cfg)
       .get();
 
     syschecks::systemd_message("Intializing raft recovery throttle").get();
