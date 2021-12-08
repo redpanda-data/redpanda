@@ -20,6 +20,7 @@
 #include "config/node_config.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "raft/fwd.h"
 #include "random/generators.h"
 #include "rpc/connection_cache.h"
 #include "version.h"
@@ -40,17 +41,30 @@ health_monitor_backend::health_monitor_backend(
   ss::sharded<members_table>& mt,
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<partition_manager>& partition_manager,
+  ss::sharded<raft::group_manager>& raft_manager,
   ss::sharded<ss::abort_source>& as)
   : _raft0(std::move(raft0))
   , _members(mt)
   , _connections(connections)
   , _partition_manager(partition_manager)
+  , _raft_manager(raft_manager)
   , _as(as) {
     _tick_timer.set_callback([this] { tick(); });
     _tick_timer.arm(tick_interval());
+    _leadership_notification_handle
+      = _raft_manager.local().register_leadership_notification(
+        [this](
+          raft::group_id group,
+          model::term_id term,
+          std::optional<model::node_id> leader_id) {
+            on_leadership_changed(group, term, leader_id);
+        });
 }
 
 ss::future<> health_monitor_backend::stop() {
+    _raft_manager.local().unregister_leadership_notification(
+      _leadership_notification_handle);
+
     auto f = _gate.close();
     abort_current_refresh();
     _tick_timer.cancel();
@@ -310,6 +324,18 @@ void health_monitor_backend::abort_current_refresh() {
           _refresh_request->leader_id);
         _refresh_request->abort();
     }
+}
+
+void health_monitor_backend::on_leadership_changed(
+  raft::group_id group, model::term_id, std::optional<model::node_id>) {
+    // we are only interested in raft0 leadership notifications
+    if (_raft0->group() != group) {
+        return;
+    }
+    // controller leadership changed, abort refresh request to current leader,
+    // as it may be not available,  and allow subsequent calls to be dispatched
+    // to new leader
+    abort_current_refresh();
 }
 
 ss::future<result<cluster_health_report>>

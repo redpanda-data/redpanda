@@ -45,6 +45,7 @@ public:
       ss::sharded<members_table>&,
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_manager>&,
+      ss::sharded<raft::group_manager>&,
       ss::sharded<ss::abort_source>&);
 
     ss::future<> stop();
@@ -119,14 +120,19 @@ private:
     std::chrono::milliseconds max_metadata_age();
     void abort_current_refresh();
 
+    void on_leadership_changed(
+      raft::group_id, model::term_id, std::optional<model::node_id>);
+
     ss::lw_shared_ptr<raft::consensus> _raft0;
     ss::sharded<members_table>& _members;
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_manager>& _partition_manager;
+    ss::sharded<raft::group_manager>& _raft_manager;
     ss::sharded<ss::abort_source>& _as;
 
     ss::lowres_clock::time_point _last_refresh;
     ss::lw_shared_ptr<abortable_refresh_request> _refresh_request;
+    cluster::notification_id_type _leadership_notification_handle;
 
     status_cache_t _status;
     report_cache_t _reports;
