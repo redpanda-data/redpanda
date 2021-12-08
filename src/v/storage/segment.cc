@@ -567,8 +567,7 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
     auto rdr = std::make_unique<segment_reader>(
       path.string(), std::move(f), st.st_size, buf_size);
 
-    auto ptr = rdr.get();
-    auto index_name = std::filesystem::path(ptr->filename().c_str())
+    auto index_name = std::filesystem::path(rdr->filename().c_str())
                         .replace_extension("base_index")
                         .string();
 
@@ -583,10 +582,10 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
     } catch (...) {
         e = std::current_exception();
     }
+
     if (e) {
-        co_return co_await ptr->close().then([rdr = std::move(rdr), e] {
-            return ss::make_exception_future<ss::lw_shared_ptr<segment>>(e);
-        });
+        co_await rdr->close();
+        std::rethrow_exception(e);
     }
 
     auto idx = segment_index(
