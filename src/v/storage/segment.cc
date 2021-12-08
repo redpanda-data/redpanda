@@ -571,6 +571,12 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
                         .replace_extension("base_index")
                         .string();
 
+    /*
+     * NOTE for the next round of clean-up here: it is safe to let a file handle
+     * be destroyed without closing as long as there isn't any queued work on
+     * the file. thus in this case we don't need to close the reader before
+     * returning if we happen to also hit an error opening the index.
+     */
     std::exception_ptr e;
     try {
         f = co_await internal::make_handle(
