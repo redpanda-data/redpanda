@@ -16,6 +16,7 @@
 #include "cluster/topics_frontend.h"
 #include "config/configuration.h"
 #include "coproc/exception.h"
+#include "coproc/logger.h"
 #include "coproc/offset_storage_utils.h"
 #include "coproc/script_context.h"
 #include "coproc/shared_script_resources.h"
@@ -134,7 +135,14 @@ public:
         _shared_res.in_progress_deletes.emplace(materialized);
         std::vector<ss::future<>> fs;
         for (auto& [_, script] : _scripts) {
-            fs.emplace_back(script->remove_output(source, materialized));
+            fs.emplace_back(
+              script->remove_output(source, materialized)
+                .handle_exception_type([](const wait_future_stranded& ex) {
+                    vlog(
+                      coproclog.info,
+                      "Script shutdown during barriers emplacement: {}",
+                      ex);
+                }));
         }
         /// When this future completes, it can safely be assumed that all fibers
         /// are respecting the new addition to the blacklist
