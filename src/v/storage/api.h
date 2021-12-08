@@ -11,7 +11,10 @@
 
 #pragma once
 
+#include "config/fixed.h"
+#include "finjector/hbadger.h"
 #include "seastarx.h"
+#include "storage/fs_finject.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
 
@@ -26,6 +29,10 @@ public:
 
     ss::future<> start() {
         _kvstore = std::make_unique<kvstore>(_kv_conf_cb());
+        if constexpr(config::fixed::file_fail_injection) {
+            finjector::shard_local_badger().register_probe(
+              fs_failure_probe::name(), &fs_finject::get_probe());
+        }
         return _kvstore->start().then([this] {
             _log_mgr = std::make_unique<log_manager>(_log_conf, kvs());
         });
@@ -38,6 +45,10 @@ public:
         }
         if (_kvstore) {
             return f.then([this] { return _kvstore->stop(); });
+        }
+        if constexpr(config::fixed::file_fail_injection) {
+            finjector::shard_local_badger().deregister_probe(
+              fs_failure_probe::name());
         }
         return f;
     }

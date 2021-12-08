@@ -33,6 +33,7 @@ v_cc_library(
     readers_cache.cc
     backlog_controller.cc
     compaction_controller.cc
+    fs_finject.cc
   DEPS
     Seastar::seastar
     v::bytes

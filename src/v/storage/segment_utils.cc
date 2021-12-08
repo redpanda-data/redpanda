@@ -11,6 +11,7 @@
 
 #include "bytes/iobuf_parser.h"
 #include "config/configuration.h"
+#include "config/fixed.h"
 #include "likely.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
@@ -21,6 +22,7 @@
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compaction_reducers.h"
+#include "storage/fs_finject.h"
 #include "storage/fwd.h"
 #include "storage/index_state.h"
 #include "storage/lock_manager.h"
@@ -87,8 +89,11 @@ maybe_disable_cow(const std::filesystem::path& path, ss::file& file) {
 static inline ss::file wrap_handle(ss::file f, debug_sanitize_files debug) {
     if (debug) {
         return ss::file(ss::make_shared(file_io_sanitizer(std::move(f))));
+    } else if constexpr(config::fixed::file_fail_injection) {
+        return ss::file(ss::make_shared(fs_finject(std::move(f))));
+    } else {
+      return f;
     }
-    return f;
 }
 
 ss::future<ss::file> make_handle(

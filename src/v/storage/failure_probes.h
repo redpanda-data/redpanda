@@ -13,7 +13,9 @@
 #include "finjector/hbadger.h"
 #include "random/fast_prng.h"
 #include "seastarx.h"
+#include "storage/logger.h"
 #include "utils/string_switch.h"
+#include "vlog.h"
 
 #include <seastar/core/sleep.hh>
 
@@ -97,4 +99,44 @@ private:
     fast_prng _prng;
 };
 
-}; // namespace storage
+class fs_failure_probe final : public finjector::probe {
+public:
+    using type = uint32_t;
+
+    static constexpr std::string_view name() {
+        return "storage::file::failure_probes";
+    }
+
+    enum class methods : type {
+        write_dma = 1,
+        truncate = 2,
+        allocate = 4,
+    };
+
+    type point_to_bit(std::string_view point) const final {
+        return string_switch<type>(point)
+          .match("write_dma", static_cast<type>(methods::write_dma))
+          .match("truncate", static_cast<type>(methods::truncate))
+          .match("allocate", static_cast<type>(methods::allocate))
+          .default_match(0);
+    }
+
+    std::vector<std::string_view> points() final {
+        return {"write_dma", "truncate", "allocate"};
+    }
+
+    [[gnu::noinline]] ss::future<>
+    maybe_inject_failure(methods method, std::string_view name) {
+        if (_exception_methods & type(method)) {
+            // TODO ability to specify error code for a probe?
+            auto ec = std::make_error_code(std::errc::no_space_on_device);
+            vlog(stlog.info, "injecting ENOSPC error in {}", name);
+            return ss::make_exception_future(std::system_error(ec));
+        }
+        return ss::make_ready_future();
+    }
+
+private:
+};
+
+} // namespace storage
