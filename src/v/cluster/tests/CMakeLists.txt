@@ -74,3 +74,12 @@ rp_test(
   LIBRARIES Boost::unit_test_framework v::cluster
   LABELS cluster
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME metrics_reporter_test
+  SOURCES metrics_reporter_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Boost::unit_test_framework v::cluster
+  LABELS cluster
+)
