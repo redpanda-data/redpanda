@@ -280,4 +280,10 @@ bool pacemaker::local_script_id_exists(script_id id) {
     return _scripts.find(id) != _scripts.end();
 }
 
+bool pacemaker::is_up_to_date() const {
+    return std::all_of(_scripts.cbegin(), _scripts.cend(), [](const auto& p) {
+        return p.second->is_up_to_date();
+    });
+}
+
 } // namespace coproc

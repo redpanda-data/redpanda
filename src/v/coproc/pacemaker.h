@@ -154,6 +154,12 @@ public:
         _shared_res.in_progress_deletes.erase(materialized);
     }
 
+    /// True if all fibers on this shard have no more data to consume
+    ///
+    /// Only useful for testing in the case where all input has been produced to
+    /// all input topics up front
+    bool is_up_to_date() const;
+
 private:
     void do_add_source(
       script_id,
