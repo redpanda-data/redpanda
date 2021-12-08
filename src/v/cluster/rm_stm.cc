@@ -79,9 +79,14 @@ static model::record_batch make_prepare_batch(rm_stm::prepare_marker record) {
 static model::record_batch make_tx_control_batch(
   model::producer_identity pid, model::control_record_type crt) {
     iobuf key;
-    kafka::response_writer w(key);
-    w.write(model::current_control_record_version());
-    w.write(static_cast<int16_t>(crt));
+    kafka::response_writer kw(key);
+    kw.write(model::current_control_record_version());
+    kw.write(static_cast<int16_t>(crt));
+
+    iobuf value;
+    kafka::response_writer vw(value);
+    vw.write(static_cast<int16_t>(0));
+    vw.write(static_cast<int32_t>(0));
 
     storage::record_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
@@ -89,7 +94,7 @@ static model::record_batch make_tx_control_batch(
     builder.set_control_type();
     builder.set_transactional_type();
     builder.add_raw_kw(
-      std::move(key), std::nullopt, std::vector<model::record_header>());
+      std::move(key), std::move(value), std::vector<model::record_header>());
 
     return std::move(builder).build();
 }
