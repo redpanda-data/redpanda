@@ -572,9 +572,8 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
                         .string();
 
     std::exception_ptr e;
-    ss::file fd;
     try {
-        fd = co_await internal::make_handle(
+        f = co_await internal::make_handle(
           index_name,
           ss::open_flags::create | ss::open_flags::rw,
           {},
@@ -590,7 +589,7 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
 
     auto idx = segment_index(
       index_name,
-      std::move(fd),
+      std::move(f),
       meta->base_offset,
       segment_index::default_data_buffer_step);
 
