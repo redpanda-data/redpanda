@@ -12,6 +12,7 @@
 
 #include "cluster/metadata_cache.h"
 #include "cluster/partition.h"
+#include "coproc/fwd.h"
 #include "model/fundamental.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
@@ -101,6 +102,6 @@ partition_proxy make_partition_proxy(Args&&... args) {
 }
 
 std::optional<partition_proxy> make_partition_proxy(
-  const model::ntp&, cluster::metadata_cache&, cluster::partition_manager&);
+  const model::ntp&, cluster::partition_manager&, coproc::partition_manager&);
 
 } // namespace kafka

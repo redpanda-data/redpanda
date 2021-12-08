@@ -13,6 +13,7 @@
 
 #include "cluster/fwd.h"
 #include "config/configuration.h"
+#include "coproc/fwd.h"
 #include "kafka/latency_probe.h"
 #include "kafka/server/fetch_metadata_cache.hh"
 #include "kafka/server/fwd.h"
@@ -47,6 +48,7 @@ public:
       ss::sharded<cluster::security_frontend>&,
       ss::sharded<cluster::controller_api>&,
       ss::sharded<cluster::tx_gateway_frontend>&,
+      ss::sharded<coproc::partition_manager>&,
       ss::sharded<v8_engine::data_policy_table>&,
       std::optional<qdc_monitor::config>) noexcept;
 
@@ -76,6 +78,9 @@ public:
     }
     kafka::group_router& group_router() { return _group_router.local(); }
     cluster::shard_table& shard_table() { return _shard_table.local(); }
+    ss::sharded<coproc::partition_manager>& coproc_partition_manager() {
+        return _coproc_partition_manager;
+    }
     ss::sharded<cluster::partition_manager>& partition_manager() {
         return _partition_manager;
     }
@@ -143,6 +148,7 @@ private:
     ss::sharded<cluster::security_frontend>& _security_frontend;
     ss::sharded<cluster::controller_api>& _controller_api;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
+    ss::sharded<coproc::partition_manager>& _coproc_partition_manager;
     ss::sharded<v8_engine::data_policy_table>& _data_policy_table;
     std::optional<qdc_monitor> _qdc_mon;
     kafka::fetch_metadata_cache _fetch_metadata_cache;

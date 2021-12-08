@@ -20,9 +20,11 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/node_config.h"
+#include "coproc/api.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
+#include "kafka/server/protocol.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
@@ -99,6 +101,7 @@ public:
           app.controller->get_security_frontend(),
           app.controller->get_api(),
           app.tx_gateway_frontend,
+          app.cp_partition_manager,
           app.data_policies,
           std::nullopt);
     }
@@ -284,6 +287,25 @@ public:
           .create_non_replicable_topics({std::move(nrt)}, model::no_timeout)
           .then([this](std::vector<cluster::topic_result> results) {
               return wait_for_topics(std::move(results));
+          });
+    }
+
+    ss::future<> delete_topic(model::topic_namespace tp_ns) {
+        std::vector<model::topic_namespace> topics{std::move(tp_ns)};
+        return app.controller->get_topics_frontend()
+          .local()
+          .delete_topics(std::move(topics), model::no_timeout)
+          .then([this](std::vector<cluster::topic_result> results) {
+              return tests::cooperative_spin_wait_with_timeout(
+                2s, [this, results = std::move(results)] {
+                    return std::all_of(
+                      results.begin(),
+                      results.end(),
+                      [this](const cluster::topic_result& r) {
+                          return !app.metadata_cache.local().get_topic_metadata(
+                            r.tp_ns);
+                      });
+                });
           });
     }
 

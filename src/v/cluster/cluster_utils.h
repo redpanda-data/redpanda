@@ -200,4 +200,20 @@ ss::future<std::error_code> replicate_and_wait(
 std::vector<custom_assignable_topic_configuration>
   without_custom_assignments(std::vector<topic_configuration>);
 
+inline bool has_non_replicable_op_type(const topic_table_delta& d) {
+    using op_t = topic_table_delta::op_type;
+    switch (d.type) {
+    case op_t::add_non_replicable:
+    case op_t::del_non_replicable:
+        return true;
+    case op_t::add:
+    case op_t::del:
+    case op_t::update:
+    case op_t::update_finished:
+    case op_t::update_properties:
+        return false;
+    }
+    __builtin_unreachable();
+}
+
 } // namespace cluster

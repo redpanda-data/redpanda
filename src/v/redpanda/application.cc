@@ -31,6 +31,7 @@
 #include "config/node_config.h"
 #include "config/seed_server.h"
 #include "coproc/api.h"
+#include "coproc/partition_manager.h"
 #include "kafka/client/configuration.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
@@ -649,6 +650,8 @@ void application::wire_up_redpanda_services() {
       .get();
     vlog(_log.info, "Partition manager started");
 
+    construct_service(cp_partition_manager, std::ref(storage)).get();
+
     // controller
 
     construct_service(data_policies).get();
@@ -694,6 +697,11 @@ void application::wire_up_redpanda_services() {
     _deferred.emplace_back([this] {
         partition_manager
           .invoke_on_all(&cluster::partition_manager::stop_partitions)
+          .get();
+    });
+    _deferred.emplace_back([this] {
+        cp_partition_manager
+          .invoke_on_all(&coproc::partition_manager::stop_partitions)
           .get();
     });
     syschecks::systemd_message("Creating metadata dissemination service").get();
@@ -785,9 +793,12 @@ void application::wire_up_redpanda_services() {
           coprocessing,
           config::node().coproc_supervisor_server(),
           std::ref(storage),
+          std::ref(controller->get_topics_state()),
+          std::ref(shard_table),
           std::ref(controller->get_topics_frontend()),
           std::ref(metadata_cache),
-          std::ref(partition_manager));
+          std::ref(partition_manager),
+          std::ref(cp_partition_manager));
         coprocessing->start().get();
     }
 
@@ -1029,6 +1040,9 @@ void application::start_redpanda() {
     syschecks::systemd_message("Starting the partition manager").get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();
 
+    syschecks::systemd_message("Starting the coproc partition manager").get();
+    cp_partition_manager.invoke_on_all(&coproc::partition_manager::start).get();
+
     syschecks::systemd_message("Starting Raft group manager").get();
     raft_group_manager.invoke_on_all(&raft::group_manager::start).get();
 
@@ -1153,6 +1167,7 @@ void application::start_redpanda() {
             controller->get_security_frontend(),
             controller->get_api(),
             tx_gateway_frontend,
+            cp_partition_manager,
             data_policies,
             qdc_config);
           s.set_protocol(std::move(proto));

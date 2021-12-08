@@ -162,8 +162,11 @@ coproc::output_write_args fiber_mock_fixture::make_output_write_args(state& s) {
     auto& shared_res = app.coprocessing->get_pacemaker().local().resources();
     return coproc::output_write_args{
       .id = _id,
-      .rs = shared_res.rs,
+      .metadata = shared_res.rs.metadata_cache,
+      .frontend = shared_res.rs.mt_frontend,
+      .pm = shared_res.rs.cp_partition_manager,
       .inputs = s.routes,
+      .denylist = shared_res.in_progress_deletes,
       .locks = shared_res.log_mtx};
 }
 
