@@ -839,9 +839,20 @@ void admin_server::register_cluster_config_routes() {
               }
 
               if (!errors.empty()) {
-                  // TODO structured response
-                  throw ss::httpd::bad_request_exception(
-                    fmt::format("Invalid properties"));
+                  rapidjson::StringBuffer buf;
+                  rapidjson::Writer<rapidjson::StringBuffer> w(buf);
+
+                  w.StartObject();
+                  for (const auto& e : errors) {
+                      w.Key(e.first.data(), e.first.size());
+                      w.String(e.second.data(), e.second.size());
+                  }
+                  w.EndObject();
+
+                  throw ss::httpd::base_exception(
+                    buf.GetString(),
+                    ss::httpd::reply::status_type::bad_request,
+                    "json");
               }
           }
 

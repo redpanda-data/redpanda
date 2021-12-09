@@ -242,6 +242,9 @@ class ClusterConfigTest(RedpandaTest):
         except requests.exceptions.HTTPError as e:
             if e.response.status_code != 400:
                 raise
+
+            errors = e.response.json()
+            assert set(errors.keys()) == {key}
         else:
             raise RuntimeError(
                 f"Expected 400 but got {patch_result} for {key}={value})")
