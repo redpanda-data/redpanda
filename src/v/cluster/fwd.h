@@ -42,5 +42,8 @@ class non_replicable_topics_frontend;
 class health_monitor_frontend;
 class health_monitor_backend;
 class metrics_reporter;
+class feature_frontend;
+class feature_manager;
+class feature_table;
 
 } // namespace cluster
