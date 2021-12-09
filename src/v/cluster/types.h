@@ -560,6 +560,7 @@ struct patch {
 
 // generic type used for various registration handles such as in ntp_callbacks.h
 using notification_id_type = named_type<int32_t, struct notification_id>;
+constexpr notification_id_type notification_id_type_invalid{-1};
 
 struct configuration_invariants {
     static constexpr uint8_t current_version = 0;

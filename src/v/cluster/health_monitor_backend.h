@@ -28,6 +28,11 @@
 #include <memory>
 #include <vector>
 namespace cluster {
+
+using health_node_cb_t = ss::noncopyable_function<void(
+  node_health_report const&,
+  std::optional<std::reference_wrapper<const node_health_report>>)>;
+
 /**
  * Health monitor backend is responsible for collecting cluster health status
  * and caching cluster health information.
@@ -61,6 +66,9 @@ public:
 
     ss::future<result<node_health_report>>
       collect_current_node_health(node_report_filter);
+
+    cluster::notification_id_type register_node_callback(health_node_cb_t cb);
+    void unregister_node_callback(cluster::notification_id_type id);
 
 private:
     /**
@@ -144,5 +152,9 @@ private:
     ss::gate _gate;
     mutex _refresh_mutex;
     node::local_monitor _local_monitor;
+
+    std::vector<std::pair<cluster::notification_id_type, health_node_cb_t>>
+      _node_callbacks;
+    cluster::notification_id_type _next_callback_id{0};
 };
 } // namespace cluster
