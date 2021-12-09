@@ -163,9 +163,7 @@ build_file(pb::DescriptorPool& dp, const pb::FileDescriptorProto& fdp) {
 /// Recursively import references into the DescriptorPool, building the files
 /// on stack unwind.
 ss::future<const pb::FileDescriptor*> build_file_with_refs(
-  pb::DescriptorPool& dp,
-  sharded_store& store,
-  const canonical_schema& schema) {
+  pb::DescriptorPool& dp, sharded_store& store, canonical_schema schema) {
     for (const auto& ref : schema.refs()) {
         auto dep = co_await store.get_subject_schema(
           ref.sub, ref.version, include_deleted::no);
@@ -184,11 +182,9 @@ ss::future<const pb::FileDescriptor*> build_file_with_refs(
 
 ///\brief Import a schema in the DescriptorPool and return the FileDescriptor.
 ss::future<const pb::FileDescriptor*> import_schema(
-  pb::DescriptorPool& dp,
-  sharded_store& store,
-  const canonical_schema& schema) {
+  pb::DescriptorPool& dp, sharded_store& store, canonical_schema schema) {
     try {
-        co_return co_await build_file_with_refs(dp, store, schema);
+        co_return co_await build_file_with_refs(dp, store, std::move(schema));
     } catch (const exception& e) {
         throw as_exception(invalid_schema(schema));
     }
@@ -217,16 +213,17 @@ operator<<(std::ostream& os, const protobuf_schema_definition& def) {
     return os;
 }
 
-ss::future<protobuf_schema_definition> make_protobuf_schema_definition(
-  sharded_store& store, const canonical_schema& schema) {
+ss::future<protobuf_schema_definition>
+make_protobuf_schema_definition(sharded_store& store, canonical_schema schema) {
     auto impl = ss::make_shared<protobuf_schema_definition::impl>();
-    impl->fd = co_await import_schema(impl->_dp, store, schema);
+    impl->fd = co_await import_schema(impl->_dp, store, std::move(schema));
     co_return protobuf_schema_definition{std::move(impl)};
 }
 
 ss::future<canonical_schema_definition>
-validate_protobuf_schema(sharded_store& store, const canonical_schema& schema) {
-    auto res = co_await make_protobuf_schema_definition(store, schema);
+validate_protobuf_schema(sharded_store& store, canonical_schema schema) {
+    auto res = co_await make_protobuf_schema_definition(
+      store, std::move(schema));
     co_return canonical_schema_definition{std::move(res)};
 }
 
