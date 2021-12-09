@@ -22,14 +22,11 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
-	yaml "gopkg.in/yaml.v3"
 )
 
 func exportConfig(
 	file *os.File, schema admin.ConfigSchema, config admin.Config, all bool,
 ) (err error) {
-	template := make(map[string]interface{})
-
 	// Present properties in alphabetical order, providing some pseudo-grouping based on common prefixes
 	keys := make([]string, 0, len(schema))
 	for k := range schema {
@@ -37,24 +34,21 @@ func exportConfig(
 	}
 	sort.Strings(keys)
 
-	yamlNode := yaml.Node{
-		Kind: yaml.MappingNode,
-	}
-
 	for _, name := range keys {
 		meta := schema[name]
 		curValue := config[name]
-		template[name] = curValue
 
-		visibility := meta.Visibility
-
-		if visibility == "deprecated" {
+		// Deprecated settings are never shown to the user for editing
+		if meta.Visibility == "deprecated" {
 			continue
 		}
 
+		// Only show tunables if the user passed --all
 		if meta.Visibility == "tunable" && !all {
 			continue
 		}
+
+		var sb strings.Builder
 
 		// Preface each property with a descriptive comment
 		var commentTokens []string
@@ -75,80 +69,57 @@ func exportConfig(
 		if len(commentTokens) > 0 {
 			commentDetails = fmt.Sprintf(" (%s)", strings.Join(commentTokens, ", "))
 		}
+		sb.WriteString(fmt.Sprintf("\n# %s%s\n", meta.Description, commentDetails))
 
-		propertyNode := yaml.Node{
-			Kind:  yaml.ScalarNode,
-			Value: name,
-		}
-		propertyNode.HeadComment = fmt.Sprintf("%s%s", meta.Description, commentDetails)
-
-		var valueNode yaml.Node
-		switch x := curValue.(type) {
-		case int:
-			valueNode = yaml.Node{
-				Kind:  yaml.ScalarNode,
-				Value: strconv.Itoa(x),
-			}
-		case float64:
-			if x == float64(int64(x)) {
-				valueNode = yaml.Node{
-					Kind:  yaml.ScalarNode,
-					Value: strconv.FormatInt(int64(x), 10),
+		// Compose a YAML representation of the property: this is
+		// done with simple prints rather than the yaml module, because
+		// in either case we have to carefully format values.
+		if meta.Type == "array" {
+			switch x := curValue.(type) {
+			case nil:
+				fmt.Fprintf(&sb, "%s: []", name)
+			case []interface{}:
+				if len(x) > 0 {
+					fmt.Fprintf(&sb, "%s:\n", name)
+					for _, v := range x {
+						fmt.Fprintf(&sb, "    - %v\n", v)
+					}
+				} else {
+					fmt.Fprintf(&sb, "%s: []", name)
 				}
+			default:
+				out.Die("Unexpected property value type: %s: %T", name, curValue)
+			}
+
+		} else {
+			scalarVal := ""
+			switch x := curValue.(type) {
+			case int:
+				scalarVal = strconv.Itoa(x)
+			case float64:
+				scalarVal = strconv.FormatFloat(x, 'f', -1, 64)
+			case string:
+				scalarVal = x
+			case bool:
+				scalarVal = strconv.FormatBool(x)
+			case nil:
+				// Leave scalarVal empty
+			default:
+				out.Die("Unexpected property value type: %s: %T", name, curValue)
+			}
+
+			if len(scalarVal) > 0 {
+				fmt.Fprintf(&sb, "%s: %s\n", name, scalarVal)
 			} else {
-				valueNode = yaml.Node{
-					Kind:  yaml.ScalarNode,
-					Value: strconv.FormatFloat(x, 'f', -1, 64),
-				}
+				fmt.Fprintf(&sb, "%s:\n", name)
 			}
-		case string:
-			valueNode = yaml.Node{
-				Kind:  yaml.ScalarNode,
-				Value: x,
-			}
-		case bool:
-			valueNode = yaml.Node{
-				Kind:  yaml.ScalarNode,
-				Value: strconv.FormatBool(x),
-			}
-		case []interface{}:
-			valueNode = yaml.Node{
-				Kind:  yaml.SequenceNode,
-				Value: "",
-			}
-			// TODO generalize for other types of array
-			for _, v := range x {
-				seqNode := yaml.Node{
-					Kind:  yaml.ScalarNode,
-					Value: v.(string),
-				}
-				valueNode.Content = append(valueNode.Content, &seqNode)
-			}
-		case nil:
-			valueNode = yaml.Node{
-				Kind:  yaml.ScalarNode,
-				Value: "",
-			}
-		default:
-			out.Die("Unexpected property value type: %s: %T", name, curValue)
-			continue
+
 		}
 
-		// Blank line between each property for readability
-		propertyNode.FootComment = "\n"
-
-		yamlNode.Content = append(yamlNode.Content, &propertyNode)
-		yamlNode.Content = append(yamlNode.Content, &valueNode)
-	}
-
-	serialized, err := yaml.Marshal(&yamlNode)
-	if err != nil {
-		return err
-	}
-
-	_, err = file.Write(serialized)
-	if err != nil {
-		return err
+		_, err := file.Write([]byte(sb.String()))
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
