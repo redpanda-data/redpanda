@@ -539,19 +539,18 @@ auto with_segment(ss::lw_shared_ptr<segment> s, Func&& f) {
 }
 
 ss::future<ss::lw_shared_ptr<segment>> open_segment(
-  const std::filesystem::path& path,
+  std::filesystem::path path,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size) {
     auto const meta = segment_path::parse_segment_filename(
       path.filename().string());
     if (!meta || meta->version != record_version_type::v1) {
-        return ss::make_exception_future<ss::lw_shared_ptr<segment>>(
-          std::runtime_error(fmt::format(
-            "Segment has invalid version {} != {} path {}",
-            meta->version,
-            record_version_type::v1,
-            path)));
+        throw std::runtime_error(fmt::format(
+          "Segment has invalid version {} != {} path {}",
+          meta->version,
+          record_version_type::v1,
+          path));
     }
     // note: this file _must_ be open in `ro` mode only. Seastar uses dma
     // files with no shared buffer cache around them. When we use a writer
@@ -563,60 +562,50 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
     // preventing x-file synchronization This is fine, because truncation to
     // sealed segments are supposed to be very rare events. The hotpath of
     // truncating the appender, is optimized.
-    return internal::make_reader_handle(path, sanitize_fileops)
-      .then([](ss::file f) {
-          return f.stat().then([f](struct stat s) {
-              return ss::make_ready_future<std::tuple<uint64_t, ss::file>>(
-                std::make_tuple(s.st_size, f));
-          });
-      })
-      .then([buf_size, path](std::tuple<uint64_t, ss::file> t) {
-          auto& [size, fd] = t;
-          return std::make_unique<segment_reader>(
-            path.string(), std::move(fd), size, buf_size);
-      })
-      .then([batch_cache = std::move(batch_cache), meta, sanitize_fileops](
-              std::unique_ptr<segment_reader> rdr) mutable {
-          auto ptr = rdr.get();
-          auto index_name = std::filesystem::path(ptr->filename().c_str())
-                              .replace_extension("base_index")
-                              .string();
+    auto f = co_await internal::make_reader_handle(path, sanitize_fileops);
+    auto st = co_await f.stat();
+    auto rdr = std::make_unique<segment_reader>(
+      path.string(), std::move(f), st.st_size, buf_size);
 
-          return internal::make_handle(
-                   index_name,
-                   ss::open_flags::create | ss::open_flags::rw,
-                   {},
-                   sanitize_fileops)
-            .then_wrapped([batch_cache = std::move(batch_cache),
-                           ptr,
-                           rdr = std::move(rdr),
-                           index_name,
-                           meta](ss::future<ss::file> f) mutable {
-                ss::file fd;
-                try {
-                    fd = f.get0();
-                } catch (...) {
-                    return ptr->close().then(
-                      [rdr = std::move(rdr), e = std::current_exception()] {
-                          return ss::make_exception_future<
-                            ss::lw_shared_ptr<segment>>(e);
-                      });
-                }
-                auto idx = segment_index(
-                  index_name,
-                  fd,
-                  meta->base_offset,
-                  segment_index::default_data_buffer_step);
-                return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
-                  ss::make_lw_shared<segment>(
-                    segment::offset_tracker(meta->term, meta->base_offset),
-                    std::move(*rdr),
-                    std::move(idx),
-                    nullptr,
-                    std::nullopt,
-                    std::move(batch_cache)));
-            });
-      });
+    auto index_name = std::filesystem::path(rdr->filename().c_str())
+                        .replace_extension("base_index")
+                        .string();
+
+    /*
+     * NOTE for the next round of clean-up here: it is safe to let a file handle
+     * be destroyed without closing as long as there isn't any queued work on
+     * the file. thus in this case we don't need to close the reader before
+     * returning if we happen to also hit an error opening the index.
+     */
+    std::exception_ptr e;
+    try {
+        f = co_await internal::make_handle(
+          index_name,
+          ss::open_flags::create | ss::open_flags::rw,
+          {},
+          sanitize_fileops);
+    } catch (...) {
+        e = std::current_exception();
+    }
+
+    if (e) {
+        co_await rdr->close();
+        std::rethrow_exception(e);
+    }
+
+    auto idx = segment_index(
+      index_name,
+      std::move(f),
+      meta->base_offset,
+      segment_index::default_data_buffer_step);
+
+    co_return ss::make_lw_shared<segment>(
+      segment::offset_tracker(meta->term, meta->base_offset),
+      std::move(*rdr),
+      std::move(idx),
+      nullptr,
+      std::nullopt,
+      std::move(batch_cache));
 }
 
 ss::future<ss::lw_shared_ptr<segment>> make_segment(

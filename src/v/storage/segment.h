@@ -209,7 +209,7 @@ private:
  * exist
  */
 ss::future<ss::lw_shared_ptr<segment>> open_segment(
-  const std::filesystem::path& path,
+  std::filesystem::path path,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size = default_segment_readahead_size);
