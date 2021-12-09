@@ -68,10 +68,13 @@ class MetricsReporterTest(Test):
             f"created {total_topics} topics with {total_partitions} partitions"
         )
 
-        def _has_request():
-            return len(http.requests) > 5
+        def _state_up_to_date():
+            if http.requests:
+                r = json.loads(http.requests[-1]['body'])
+                return r['topic_count'] == total_topics
+            return False
 
-        wait_until(_has_request, 20, backoff_sec=1)
+        wait_until(_state_up_to_date, 20, backoff_sec=1)
         http.stop()
         metadata = [json.loads(r['body']) for r in http.requests]
         for m in metadata:
