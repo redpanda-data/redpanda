@@ -23,6 +23,7 @@
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
 #include "model/timestamp.h"
+#include "raft/errc.h"
 #include "raft/types.h"
 #include "storage/shard_assignment.h"
 #include "utils/remote.h"
@@ -127,6 +128,10 @@ static error_code map_produce_error_code(std::error_code ec) {
         case raft::errc::not_leader:
         case raft::errc::replicated_entry_truncated:
             return error_code::not_leader_for_partition;
+        // map shutting down error code to timeout since replication result may
+        // be not determined, it may succeed or be aborted earlier and abandoned
+        case raft::errc::shutting_down:
+            return error_code::request_timed_out;
         default:
             return error_code::unknown_server_error;
         }
