@@ -15,8 +15,8 @@ Official Kubernetes quick start documentation can be found at
 
 ### Requirements
 
-* Kubernetes 1.16 or newer
-* kubectl 1.16 or newer
+* Kubernetes 1.19 or newer
+* kubectl 1.19 or newer
 * kustomize v3.8.7 or newer
 * cert-manager v1.0.0 or newer
 
