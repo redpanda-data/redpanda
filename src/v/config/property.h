@@ -103,7 +103,15 @@ public:
 
     operator T() const { return value(); } // NOLINT
 
-    void print(std::ostream& o) const override { o << name() << ":" << _value; }
+    void print(std::ostream& o) const override {
+        o << name() << ":";
+
+        if (is_secret() && !is_default()) {
+            o << secret_placeholder;
+        } else {
+            o << _value;
+        }
+    }
 
     // serialize the value. the key is taken from the property name at the
     // serialization point in config_store::to_json to avoid users from being
