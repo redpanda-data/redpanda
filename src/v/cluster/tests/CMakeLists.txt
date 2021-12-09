@@ -24,6 +24,7 @@ set(srcs
     metadata_dissemination_test.cc
     notification_latch_test.cc
     autocreate_test.cc
+    autocreate_non_replicable_test.cc
     controller_state_test.cc
     commands_serialization_test.cc
     topic_table_test.cc
