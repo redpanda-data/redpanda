@@ -30,10 +30,10 @@ public:
     ss::future<canonical_schema> make_canonical_schema(unparsed_schema schema);
 
     ///\brief Check the schema parses with the native format
-    ss::future<void> validate_schema(const canonical_schema& schema);
+    ss::future<void> validate_schema(canonical_schema schema);
 
     ///\brief Construct a schema in the native format
-    ss::future<valid_schema> make_valid_schema(const canonical_schema& schema);
+    ss::future<valid_schema> make_valid_schema(canonical_schema schema);
 
     struct insert_result {
         schema_version version;
@@ -41,7 +41,7 @@ public:
         bool inserted;
     };
 
-    ss::future<insert_result> project_ids(const canonical_schema& schema);
+    ss::future<insert_result> project_ids(canonical_schema schema);
 
     ss::future<bool> upsert(
       seq_marker marker,
