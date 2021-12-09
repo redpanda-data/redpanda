@@ -134,7 +134,7 @@ std::ostream& operator<<(std::ostream& o, const partitions_filter& filter) {
         }
         fmt::print(o, "]}},");
     }
-    fmt::print(o, "]}}");
+    fmt::print(o, "}}");
 
     return o;
 }

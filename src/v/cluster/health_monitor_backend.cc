@@ -20,12 +20,16 @@
 #include "config/node_config.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "raft/fwd.h"
+#include "random/generators.h"
 #include "rpc/connection_cache.h"
 #include "version.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/shared_ptr.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/with_timeout.hh>
 #include <seastar/util/log.hh>
@@ -37,19 +41,38 @@ health_monitor_backend::health_monitor_backend(
   ss::sharded<members_table>& mt,
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<partition_manager>& partition_manager,
+  ss::sharded<raft::group_manager>& raft_manager,
   ss::sharded<ss::abort_source>& as)
   : _raft0(std::move(raft0))
   , _members(mt)
   , _connections(connections)
   , _partition_manager(partition_manager)
+  , _raft_manager(raft_manager)
   , _as(as) {
     _tick_timer.set_callback([this] { tick(); });
     _tick_timer.arm(tick_interval());
+    _leadership_notification_handle
+      = _raft_manager.local().register_leadership_notification(
+        [this](
+          raft::group_id group,
+          model::term_id term,
+          std::optional<model::node_id> leader_id) {
+            on_leadership_changed(group, term, leader_id);
+        });
 }
 
 ss::future<> health_monitor_backend::stop() {
+    _raft_manager.local().unregister_leadership_notification(
+      _leadership_notification_handle);
+
+    auto f = _gate.close();
+    abort_current_refresh();
     _tick_timer.cancel();
-    co_await _gate.close();
+
+    if (_refresh_request) {
+        _refresh_request.release();
+    }
+    co_await std::move(f);
 }
 
 cluster_health_report health_monitor_backend::build_cluster_report(
@@ -151,8 +174,47 @@ std::optional<node_health_report> health_monitor_backend::build_node_report(
     return report;
 }
 
+void health_monitor_backend::abortable_refresh_request::abort() {
+    if (finished) {
+        return;
+    }
+    finished = true;
+    done.set_value(errc::leadership_changed);
+}
+
+health_monitor_backend::abortable_refresh_request::abortable_refresh_request(
+  model::node_id leader_id, ss::gate::holder holder, ss::semaphore_units<> u)
+  : leader_id(leader_id)
+  , holder(std::move(holder))
+  , units(std::move(u)) {}
+
+ss::future<std::error_code>
+health_monitor_backend::abortable_refresh_request::abortable_await(
+  ss::future<std::error_code> f) {
+    (void)std::move(f).then_wrapped(
+      [self = shared_from_this()](ss::future<std::error_code> f) {
+          if (self->finished) {
+              return;
+          }
+          self->finished = true;
+          if (f.failed()) {
+              self->done.set_exception(f.get_exception());
+          } else {
+              self->done.set_value(f.get());
+          }
+      });
+    return done.get_future().finally([self = shared_from_this()] {
+        /**
+         * return units but keep the gate holder until we finish
+         * background request
+         */
+        self->units.return_all();
+    });
+}
+
 ss::future<std::error_code>
 health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
+    auto holder = _gate.hold();
     auto leader_id = _raft0->get_leader_id();
 
     // if we are a leader, do nothing
@@ -160,7 +222,11 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
         co_return errc::success;
     }
 
-    auto units = co_await _refresh_mutex.get_units();
+    // leadership change, abort old refresh request
+    if (_refresh_request && leader_id != _refresh_request->leader_id) {
+        abort_current_refresh();
+    }
+
     // no leader controller
     if (!leader_id) {
         vlog(
@@ -169,6 +235,15 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
         // TODO: maybe we should try to ping other members in this case ?
         co_return errc::no_leader_controller;
     }
+
+    auto units = co_await _refresh_mutex.get_units();
+    // refresh leader_id after acquiring mutex
+    leader_id = _raft0->get_leader_id();
+
+    if (leader_id == _raft0->self().id()) {
+        co_return errc::success;
+    }
+
     // check under semaphore if we need to force refresh, otherwise we will just
     // skip refresh request since current state is 'fresh enough' i.e. not older
     // than max metadata age
@@ -182,12 +257,23 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
     }
 
     vlog(clusterlog.debug, "refreshing health cache, leader id: {}", leader_id);
-    const auto timeout = now + max_metadata_age();
+
+    _refresh_request = ss::make_lw_shared<abortable_refresh_request>(
+      *leader_id, std::move(holder), std ::move(units));
+
+    co_return co_await _refresh_request->abortable_await(
+      dispatch_refresh_cluster_health_request(*leader_id));
+}
+
+ss::future<std::error_code>
+health_monitor_backend::dispatch_refresh_cluster_health_request(
+  model::node_id node_id) {
+    const auto timeout = model::timeout_clock::now() + max_metadata_age();
     auto reply = co_await _connections.local()
                    .with_node_client<controller_client_protocol>(
                      _raft0->self().id(),
                      ss::this_shard_id(),
-                     *leader_id,
+                     node_id,
                      max_metadata_age(),
                      [timeout](controller_client_protocol client) mutable {
                          get_cluster_health_request req{
@@ -196,11 +282,12 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
                            std::move(req), rpc::client_opts(timeout));
                      })
                    .then(&rpc::get_ctx_data<get_cluster_health_reply>);
+
     if (!reply) {
         vlog(
           clusterlog.warn,
           "unable to get cluster health metadata from {} - {}",
-          leader_id,
+          node_id,
           reply.error().message());
         co_return reply.error();
     }
@@ -209,9 +296,9 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
         vlog(
           clusterlog.warn,
           "unable to get cluster health metadata from {} - {}",
-          leader_id,
+          node_id,
           reply.value().error);
-        co_return reply.value().error;
+        co_return make_error_code(reply.value().error);
     }
 
     _status.clear();
@@ -226,7 +313,29 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
     }
 
     _last_refresh = ss::lowres_clock::now();
-    co_return errc::success;
+    co_return make_error_code(errc::success);
+}
+
+void health_monitor_backend::abort_current_refresh() {
+    if (_refresh_request) {
+        vlog(
+          clusterlog.debug,
+          "aborting current refresh request to {}",
+          _refresh_request->leader_id);
+        _refresh_request->abort();
+    }
+}
+
+void health_monitor_backend::on_leadership_changed(
+  raft::group_id group, model::term_id, std::optional<model::node_id>) {
+    // we are only interested in raft0 leadership notifications
+    if (_raft0->group() != group) {
+        return;
+    }
+    // controller leadership changed, abort refresh request to current leader,
+    // as it may be not available,  and allow subsequent calls to be dispatched
+    // to new leader
+    abort_current_refresh();
 }
 
 ss::future<result<cluster_health_report>>

@@ -19,10 +19,12 @@
 
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/shared_ptr.hh>
 
 #include <absl/container/node_hash_map.h>
 
 #include <chrono>
+#include <memory>
 #include <vector>
 namespace cluster {
 /**
@@ -43,6 +45,7 @@ public:
       ss::sharded<members_table>&,
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_manager>&,
+      ss::sharded<raft::group_manager>&,
       ss::sharded<ss::abort_source>&);
 
     ss::future<> stop();
@@ -57,6 +60,25 @@ public:
       collect_current_node_health(node_report_filter);
 
 private:
+    /**
+     * Struct used to track pending refresh request, it gives ability
+     */
+    struct abortable_refresh_request
+      : ss::enable_lw_shared_from_this<abortable_refresh_request> {
+        abortable_refresh_request(
+          model::node_id, ss::gate::holder, ss::semaphore_units<>);
+
+        ss::future<std::error_code>
+          abortable_await(ss::future<std::error_code>);
+        void abort();
+
+        bool finished = false;
+        model::node_id leader_id;
+        ss::gate::holder holder;
+        ss::semaphore_units<> units;
+        ss::promise<std::error_code> done;
+    };
+
     struct reply_status {
         ss::lowres_clock::time_point last_reply_timestamp
           = ss::lowres_clock::time_point::min();
@@ -76,6 +98,8 @@ private:
       collect_remote_node_health(model::node_id);
 
     ss::future<std::error_code> refresh_cluster_health_cache(force_refresh);
+    ss::future<std::error_code>
+      dispatch_refresh_cluster_health_request(model::node_id);
 
     cluster_health_report build_cluster_report(const cluster_report_filter&);
 
@@ -94,14 +118,21 @@ private:
 
     std::chrono::milliseconds tick_interval();
     std::chrono::milliseconds max_metadata_age();
+    void abort_current_refresh();
+
+    void on_leadership_changed(
+      raft::group_id, model::term_id, std::optional<model::node_id>);
 
     ss::lw_shared_ptr<raft::consensus> _raft0;
     ss::sharded<members_table>& _members;
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_manager>& _partition_manager;
+    ss::sharded<raft::group_manager>& _raft_manager;
     ss::sharded<ss::abort_source>& _as;
 
     ss::lowres_clock::time_point _last_refresh;
+    ss::lw_shared_ptr<abortable_refresh_request> _refresh_request;
+    cluster::notification_id_type _leadership_notification_handle;
 
     status_cache_t _status;
     report_cache_t _reports;

@@ -260,6 +260,7 @@ ss::future<> controller::start() {
             std::ref(_members_table),
             std::ref(_connections),
             std::ref(_partition_manager),
+            std::ref(_raft_manager),
             std::ref(_as));
       })
       .then([this] { return _hm_frontend.start(std::ref(_hm_backend)); })
