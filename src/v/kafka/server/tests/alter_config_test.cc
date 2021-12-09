@@ -36,6 +36,8 @@
 
 using namespace std::chrono_literals; // NOLINT
 
+inline ss::logger test_log("test"); // NOLINT
+
 class alter_config_test_fixture : public redpanda_thread_fixture {
 public:
     void create_topic(model::topic name, int partitions) {
@@ -194,6 +196,9 @@ public:
               return res.resource_name == resource_name;
           });
         BOOST_REQUIRE(it != resp.data.results.end());
+        vlog(test_log.trace, "amount: {}", amount);
+        vlog(test_log.trace, "it->configs.size(): {}", it->configs.size());
+        vlog(test_log.trace, "it->configs: {}", it->configs);
         BOOST_REQUIRE(it->configs.size() == amount);
     }
 
@@ -338,7 +343,9 @@ FIXTURE_TEST(
       "cleanup.policy",
       "compression.type",
       "message.timestamp.type",
-      "redpanda.datapolicy"};
+      "redpanda.datapolicy",
+      "redpanda.remote.read",
+      "redpanda.remote.write"};
 
     // All properies_request
     auto all_describe_resp = describe_configs(test_tp);
@@ -368,7 +375,9 @@ FIXTURE_TEST(
       "retention.bytes",
       "replication_factor",
       "partition_count",
-      "segment.bytes"};
+      "segment.bytes",
+      "redpanda.remote.read",
+      "redpanda.remote.write"};
 
     std::vector<ss::sstring> second_group_config_properties = {
       "cleanup.policy",
@@ -378,6 +387,10 @@ FIXTURE_TEST(
 
     auto first_group_describe_resp = describe_configs(
       test_tp, std::make_optional(first_group_config_properties));
+    vlog(
+      test_log.debug,
+      "first_group_describe_resp: {}",
+      first_group_describe_resp);
     assert_properties_amount(
       test_tp, first_group_describe_resp, first_group_config_properties.size());
     for (const auto& property : first_group_config_properties) {
@@ -391,6 +404,10 @@ FIXTURE_TEST(
 
     auto second_group_describe_resp = describe_configs(
       test_tp, std::make_optional(second_group_config_properties));
+    vlog(
+      test_log.debug,
+      "second_group_describe_resp: {}",
+      second_group_describe_resp);
     assert_properties_amount(
       test_tp,
       second_group_describe_resp,
@@ -413,6 +430,7 @@ FIXTURE_TEST(test_alter_single_topic_config, alter_config_test_fixture) {
     absl::flat_hash_map<ss::sstring, ss::sstring> properties;
     properties.emplace("retention.ms", "1234");
     properties.emplace("cleanup.policy", "compact");
+    properties.emplace("redpanda.remote.read", "true");
 
     auto resp = alter_configs(
       {make_alter_topic_config_resource(test_tp, properties)});
@@ -425,6 +443,8 @@ FIXTURE_TEST(test_alter_single_topic_config, alter_config_test_fixture) {
     auto describe_resp = describe_configs(test_tp);
     assert_property_value(test_tp, "retention.ms", "1234", describe_resp);
     assert_property_value(test_tp, "cleanup.policy", "compact", describe_resp);
+    assert_property_value(
+      test_tp, "redpanda.remote.read", "true", describe_resp);
 }
 
 FIXTURE_TEST(test_alter_multiple_topics_config, alter_config_test_fixture) {
