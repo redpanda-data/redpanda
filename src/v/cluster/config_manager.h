@@ -45,6 +45,7 @@ public:
       ss::sharded<config_frontend>&,
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_leaders_table>&,
+      ss::sharded<feature_table>&,
       ss::sharded<ss::abort_source>&);
 
     static ss::future<preload_result> preload();
@@ -96,6 +97,7 @@ private:
     ss::sharded<config_frontend>& _frontend;
     ss::sharded<rpc::connection_cache>& _connection_cache;
     ss::sharded<partition_leaders_table>& _leaders;
+    ss::sharded<feature_table>& _feature_table;
 
     ss::condition_variable _reconcile_wait;
     ss::sharded<ss::abort_source>& _as;
