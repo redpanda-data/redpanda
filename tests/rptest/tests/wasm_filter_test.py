@@ -30,7 +30,7 @@ class WasmFilterTest(WasmTest):
         self._output_topic = "default_output"
         self._script = WasmScript(
             inputs=[x.name for x in self.topics],
-            outputs=[(self._output_topic, self._expected_record_cnt)],
+            outputs=[self._output_topic],
             script=WasmTemplateRepository.FILTER_TRANSFORM,
         )
 
