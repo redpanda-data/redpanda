@@ -345,10 +345,10 @@ void application::hydrate_config(const po::variables_map& cfg) {
             throw std::invalid_argument("Validation errors in node config");
         }
 
-        if (config::node().enable_central_config) {
-            _config_preload = cluster::config_manager::preload().get0();
-        }
-
+        // This initial load is independent of whether the central
+        // config feature is active, since its fallback is just
+        // to read redpanda.yaml anyway
+        _config_preload = cluster::config_manager::preload().get0();
         if (_config_preload.version == cluster::config_version_unset) {
             ss::smp::invoke_on_all([&config] {
                 config::shard_local_cfg().load(config);
