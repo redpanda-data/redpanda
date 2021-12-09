@@ -736,7 +736,7 @@ configuration::configuration()
       *this,
       "cloud_storage_secret_key",
       "AWS secret key",
-      {.visibility = visibility::user},
+      {.visibility = visibility::user, .secret = is_secret::yes},
       std::nullopt)
   , cloud_storage_region(
       *this,
