@@ -902,6 +902,12 @@ template<typename Func>
 ss::future<std::error_code> consensus::change_configuration(Func&& f) {
     return _op_lock.get_units().then(
       [this, f = std::forward<Func>(f)](ss::semaphore_units<> u) mutable {
+          // prevent updating configuration if last configuration wasn't
+          // committed
+          if (_configuration_manager.get_latest_offset() > _commit_index) {
+              return ss::make_ready_future<std::error_code>(
+                errc::configuration_change_in_progress);
+          }
           auto latest_cfg = config();
           // latest configuration is of joint type
           if (latest_cfg.type() == configuration_type::joint) {
@@ -1774,7 +1780,17 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
         update_follower_stats(metadata.latest_configuration);
         return _configuration_manager
           .add(_last_snapshot_index, std::move(metadata.latest_configuration))
-          .then([this, delta = metadata.log_start_delta] {
+          .then([this, delta = metadata.log_start_delta]() mutable {
+              if (delta < offset_translator_delta(0)) {
+                  delta = offset_translator_delta(
+                    _configuration_manager.offset_delta(_last_snapshot_index));
+                  vlog(
+                    _ctxlog.warn,
+                    "received snapshot without delta field in metadata, "
+                    "falling back to delta obtained from configuration "
+                    "manager: {}",
+                    delta);
+              }
               return _offset_translator.prefix_truncate_reset(
                 _last_snapshot_index, delta);
           })

@@ -15,6 +15,8 @@
 
 #include <boost/test/tools/old/interface.hpp>
 
+#include <system_error>
+
 FIXTURE_TEST(add_one_node_to_single_node_cluster, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 1);
     gr.enable_all();
@@ -215,14 +217,28 @@ FIXTURE_TEST(try_remove_all_voters, raft_test_fixture) {
     gr.enable_all();
     auto leader_id = wait_for_group_leader(gr);
     auto leader_raft = gr.get_member(leader_id).consensus;
-    // remove all members
-    auto result = leader_raft
-                    ->remove_members(
-                      {model::node_id(0), model::node_id(1), model::node_id(2)},
-                      model::revision_id(0))
-                    .get0();
+    tests::cooperative_spin_wait_with_timeout(
+      std::chrono::seconds(10),
+      [&leader_raft] {
+          return leader_raft->committed_offset()
+                   >= leader_raft->get_latest_configuration_offset()
+                 && leader_raft->config().current_config().voters.size() == 3;
+      })
+      .get0();
+    tests::cooperative_spin_wait_with_timeout(
+      std::chrono::seconds(10),
+      [&leader_raft] {
+          // try removing all voters
+          return leader_raft
+            ->remove_members(
+              {model::node_id(0), model::node_id(1), model::node_id(2)},
+              model::revision_id(0))
+            .then([](std::error_code result) {
+                return result == raft::errc::invalid_configuration_update;
+            });
+      })
+      .get0();
 
-    BOOST_REQUIRE_EQUAL(result, raft::errc::invalid_configuration_update);
     validate_offset_translation(gr);
 }
 
