@@ -282,6 +282,7 @@ func (r *ConfigMapResource) createConfiguration(
 	cr.Other["auto_create_topics_enabled"] = r.pandaCluster.Spec.Configuration.AutoCreateTopics
 	cr.Other["enable_idempotence"] = true
 	cr.Other["enable_transactions"] = true
+	cr.Other["cloud_storage_segment_max_upload_interval_sec"] = 1800 // 60s * 30 = 30 minutes
 
 	segmentSize := logSegmentSize
 	cr.LogSegmentSize = &segmentSize
