@@ -21,6 +21,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/internal/pollable_fd.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/util/later.hh>
 
@@ -223,6 +224,35 @@ private:
     ss::timer<ss::lowres_clock> _watchdog;
 
     ss::shard_id _watchdog_shard;
+};
+
+// This class implements wrapper for executor.
+// In current design executor exist on one core
+// And for submit tasks you need to run invoke_on
+// So this class wrap this logic for v8_engine::script, because we want to
+// change executor easy and use only one method = submit
+class executor_service {
+    static constexpr size_t _home_core = 0;
+    static constexpr size_t _core_for_executor_thread = 0;
+
+public:
+    ss::future<> start(ss::alien::instance& instance, int64_t size);
+    ss::future<> stop();
+
+    template<typename WrapperFuncForExecutor>
+    ss::future<> submit(
+      WrapperFuncForExecutor func_for_executor,
+      std::chrono::milliseconds timeout) {
+        return _executor.invoke_on(
+          _home_core,
+          [func_for_executor = std::move(func_for_executor),
+           timeout](executor& exec) mutable {
+              return exec.submit(std::move(func_for_executor), timeout);
+          });
+    }
+
+private:
+    ss::sharded<executor> _executor;
 };
 
 } // namespace v8_engine
