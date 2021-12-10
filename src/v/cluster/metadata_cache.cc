@@ -200,4 +200,17 @@ std::optional<std::chrono::milliseconds>
 metadata_cache::get_default_retention_duration() const {
     return config::shard_local_cfg().delete_retention_ms();
 }
+
+model::shadow_indexing_mode
+metadata_cache::get_default_shadow_indexing_mode() const {
+    model::shadow_indexing_mode m = model::shadow_indexing_mode::disabled;
+    if (config::shard_local_cfg().cloud_storage_enable_remote_write()) {
+        m = model::shadow_indexing_mode::archival;
+    }
+    if (config::shard_local_cfg().cloud_storage_enable_remote_read()) {
+        m = model::add_shadow_indexing_flag(
+          m, model::shadow_indexing_mode::fetch);
+    }
+    return m;
+}
 } // namespace cluster
