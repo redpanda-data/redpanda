@@ -134,9 +134,16 @@ simple_protocol::dispatch_method_once(header h, net::server::resources rs) {
                   return ss::now();
               } catch (const ss::timed_out_error& e) {
                   reply_buf.set_status(rpc::status::request_timeout);
+              } catch (const ss::gate_closed_exception& e) {
+                  // gate_closed is typical during shutdown.  Treat
+                  // it like a timeout: request was not erroneous
+                  // but we will not give a rseponse.
+                  rpclog.debug("Timing out request on gate_closed_exception "
+                               "(shutting down)");
+                  reply_buf.set_status(rpc::status::request_timeout);
               } catch (...) {
                   rpclog.error(
-                    "Service handler thrown an exception - {}",
+                    "Service handler threw an exception: {}",
                     std::current_exception());
                   rs.probe().service_error();
                   reply_buf.set_status(rpc::status::server_error);
