@@ -381,6 +381,15 @@ std::ostream& operator<<(std::ostream& o, const shadow_indexing_mode& si) {
     case shadow_indexing_mode::full:
         o << "full";
         break;
+    case shadow_indexing_mode::drop_archival:
+        o << "drop_archival";
+        break;
+    case shadow_indexing_mode::drop_fetch:
+        o << "drop_fetch";
+        break;
+    case shadow_indexing_mode::drop_full:
+        o << "drop_full";
+        break;
     }
     return o;
 }
