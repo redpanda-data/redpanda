@@ -689,6 +689,18 @@ configuration::configuration()
       "Enable archival storage",
       {.visibility = visibility::user},
       false)
+  , cloud_storage_enable_remote_read(
+      *this,
+      "cloud_storage_enable_remote_read",
+      "Enable remote read for all topics",
+      {.visibility = visibility::tunable},
+      false)
+  , cloud_storage_enable_remote_write(
+      *this,
+      "cloud_storage_enable_remote_write",
+      "Enable remote write for all topics",
+      {.visibility = visibility::tunable},
+      false)
   , cloud_storage_access_key(
       *this,
       "cloud_storage_access_key",
