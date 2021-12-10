@@ -192,7 +192,9 @@ private:
     ss::future<tx_errc> do_commit_tx(
       model::producer_identity, model::tx_seq, model::timeout_clock::duration);
     ss::future<tx_errc> do_abort_tx(
-      model::producer_identity, model::tx_seq, model::timeout_clock::duration);
+      model::producer_identity,
+      std::optional<model::tx_seq>,
+      model::timeout_clock::duration);
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_snapshot() override;
     ss::future<std::optional<abort_snapshot>> load_abort_snapshot(abort_index);
