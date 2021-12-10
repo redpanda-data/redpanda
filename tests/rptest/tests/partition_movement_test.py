@@ -14,7 +14,6 @@ import requests
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
-import requests
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
@@ -24,6 +23,12 @@ from rptest.services.honey_badger import HoneyBadger
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.kaf_producer import KafProducer
 from rptest.services.rpk_consumer import RpkConsumer
+
+# Errors we should tolerate when moving partitions around
+PARTITION_MOVEMENT_LOG_ERRORS = [
+    # e.g.  raft - [follower: {id: {1}, revision: {10}}] [group_id:3, {kafka/topic/2}] - recovery_stm.cc:422 - recovery append entries error: raft group does not exists on target broker
+    "raft - .*raft group does not exist on target broker"
+]
 
 
 class PartitionMovementTest(EndToEndTest):
@@ -245,7 +250,7 @@ class PartitionMovementTest(EndToEndTest):
         for _ in range(25):
             self._move_and_verify()
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=4, log_allow_list=PARTITION_MOVEMENT_LOG_ERRORS)
     def test_static(self):
         """
         Move partitions with data, but no active producers or consumers.
@@ -324,7 +329,7 @@ class PartitionMovementTest(EndToEndTest):
 
             self.logger.info(f"Finished verifying records in {spec}")
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=5, log_allow_list=PARTITION_MOVEMENT_LOG_ERRORS)
     def test_dynamic(self):
         """
         Move partitions with active consumer / producer
