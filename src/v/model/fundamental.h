@@ -14,6 +14,7 @@
 #include "seastarx.h"
 #include "ssx/sformat.h"
 #include "utils/named_type.h"
+#include "vassert.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>
@@ -24,6 +25,7 @@
 #include <limits>
 #include <ostream>
 #include <string_view>
+#include <type_traits>
 
 namespace model {
 
@@ -198,7 +200,7 @@ using control_record_version
 
 static constexpr control_record_version current_control_record_version{0};
 
-enum class shadow_indexing_mode : int8_t {
+enum class shadow_indexing_mode : uint8_t {
     // Upload is disabled
     disabled = 0,
     // Only upload data to the object storage
@@ -207,6 +209,12 @@ enum class shadow_indexing_mode : int8_t {
     fetch = 2,
     // Enable both upload and download
     full = 3,
+    // Remove archival flag (used for incremental updates)
+    drop_archival = 0xfe,
+    // Remove fetch flag (used for incremental updates)
+    drop_fetch = 0xfd,
+    // Remove both fetch and archival falgs
+    drop_full = 0xfc,
 };
 
 inline bool is_archival_enabled(shadow_indexing_mode m) {
@@ -219,20 +227,55 @@ inline bool is_fetch_enabled(shadow_indexing_mode m) {
 }
 
 /// Set 'rhs' flag in 'lhs'
-inline shadow_indexing_mode
+constexpr shadow_indexing_mode
 add_shadow_indexing_flag(shadow_indexing_mode lhs, shadow_indexing_mode rhs) {
-    auto combined = static_cast<uint8_t>(lhs) | static_cast<uint8_t>(rhs);
-    return static_cast<shadow_indexing_mode>(combined);
+    using underlying = std::underlying_type_t<shadow_indexing_mode>;
+    if (
+      rhs == shadow_indexing_mode::drop_archival
+      || rhs == shadow_indexing_mode::drop_fetch
+      || rhs == shadow_indexing_mode::drop_full) {
+        auto combined = underlying(lhs) & underlying(rhs);
+        return shadow_indexing_mode(combined);
+    }
+    auto combined = underlying(lhs) | underlying(rhs);
+    return shadow_indexing_mode(combined);
 }
 
-/// Drop 'rhs' flag in 'lhs'
-inline shadow_indexing_mode
-drop_shadow_indexing_flag(shadow_indexing_mode lhs, shadow_indexing_mode rhs) {
-    auto mask = static_cast<uint8_t>(rhs);
-    mask = ~mask;
-    auto combined = mask & static_cast<uint8_t>(lhs);
-    return static_cast<shadow_indexing_mode>(combined);
+/// Turn normal shadow indexing flag into a 'drop_' flag. This flag
+/// can be used with 'add_shadow_indexing_flag' function to remove the flag.
+constexpr shadow_indexing_mode
+negate_shadow_indexing_flag(shadow_indexing_mode m) {
+    using underlying = std::underlying_type_t<shadow_indexing_mode>;
+    return shadow_indexing_mode(~underlying(m));
 }
+
+static_assert(
+  add_shadow_indexing_flag(
+    shadow_indexing_mode::fetch,
+    negate_shadow_indexing_flag(shadow_indexing_mode::fetch))
+  == shadow_indexing_mode::disabled);
+static_assert(
+  add_shadow_indexing_flag(
+    shadow_indexing_mode::fetch, shadow_indexing_mode::drop_fetch)
+  == shadow_indexing_mode::disabled);
+static_assert(
+  add_shadow_indexing_flag(
+    shadow_indexing_mode::archival,
+    negate_shadow_indexing_flag(shadow_indexing_mode::archival))
+  == shadow_indexing_mode::disabled);
+static_assert(
+  add_shadow_indexing_flag(
+    shadow_indexing_mode::archival, shadow_indexing_mode::drop_archival)
+  == shadow_indexing_mode::disabled);
+static_assert(
+  add_shadow_indexing_flag(
+    shadow_indexing_mode::full,
+    negate_shadow_indexing_flag(shadow_indexing_mode::full))
+  == shadow_indexing_mode::disabled);
+static_assert(
+  add_shadow_indexing_flag(
+    shadow_indexing_mode::full, shadow_indexing_mode::drop_full)
+  == shadow_indexing_mode::disabled);
 
 std::ostream& operator<<(std::ostream&, const shadow_indexing_mode&);
 

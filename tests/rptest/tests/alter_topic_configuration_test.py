@@ -13,6 +13,7 @@ import string
 from ducktape.mark.resource import cluster
 from ducktape.mark import parametrize
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkTool
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
@@ -88,3 +89,55 @@ class AlterTopicConfiguration(RedpandaTest):
         new_spec = kafka_tools.describe_topic(topic)
         # topic spec shouldn't change
         assert new_spec == spec
+
+    @cluster(num_nodes=3)
+    def test_shadow_indexing_config(self):
+        topic = self.topics[0].name
+        rpk = RpkTool(self.redpanda)
+        original_output = rpk.describe_topic_configs(topic)
+        self.logger.info(f"original_output={original_output}")
+        assert original_output["redpanda.remote.read"][0] == "false"
+        assert original_output["redpanda.remote.write"][0] == "false"
+
+        rpk.alter_topic_config(topic, "redpanda.remote.read", "true")
+        altered_output = rpk.describe_topic_configs(topic)
+        self.logger.info(f"altered_output={altered_output}")
+        assert altered_output["redpanda.remote.read"][0] == "true"
+        assert altered_output["redpanda.remote.write"][0] == "false"
+
+        rpk.alter_topic_config(topic, "redpanda.remote.read", "false")
+        altered_output = rpk.describe_topic_configs(topic)
+        self.logger.info(f"altered_output={altered_output}")
+        assert altered_output["redpanda.remote.read"][0] == "false"
+        assert altered_output["redpanda.remote.write"][0] == "false"
+
+        rpk.alter_topic_config(topic, "redpanda.remote.read", "true")
+        rpk.alter_topic_config(topic, "redpanda.remote.write", "true")
+        altered_output = rpk.describe_topic_configs(topic)
+        self.logger.info(f"altered_output={altered_output}")
+        assert altered_output["redpanda.remote.read"][0] == "true"
+        assert altered_output["redpanda.remote.write"][0] == "true"
+
+        rpk.alter_topic_config(topic, "redpanda.remote.read", "false")
+        altered_output = rpk.describe_topic_configs(topic)
+        self.logger.info(f"altered_output={altered_output}")
+        assert altered_output["redpanda.remote.read"][0] == "false"
+        assert altered_output["redpanda.remote.write"][0] == "true"
+
+        rpk.alter_topic_config(topic, "redpanda.remote.read", "true")
+        altered_output = rpk.describe_topic_configs(topic)
+        self.logger.info(f"altered_output={altered_output}")
+        assert altered_output["redpanda.remote.read"][0] == "true"
+        assert altered_output["redpanda.remote.write"][0] == "true"
+
+        rpk.alter_topic_config(topic, "redpanda.remote.write", "false")
+        altered_output = rpk.describe_topic_configs(topic)
+        self.logger.info(f"altered_output={altered_output}")
+        assert altered_output["redpanda.remote.read"][0] == "true"
+        assert altered_output["redpanda.remote.write"][0] == "false"
+
+        rpk.alter_topic_config(topic, "redpanda.remote.read", "false")
+        altered_output = rpk.describe_topic_configs(topic)
+        self.logger.info(f"altered_output={altered_output}")
+        assert altered_output["redpanda.remote.read"][0] == "false"
+        assert altered_output["redpanda.remote.write"][0] == "false"

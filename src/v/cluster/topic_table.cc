@@ -279,28 +279,24 @@ void incremental_update(
   property_update<std::optional<model::shadow_indexing_mode>> override) {
     switch (override.op) {
     case incremental_update_operation::remove:
-        // remove override, fallback to default
-        if (property) {
-            property = override.value ? model::drop_shadow_indexing_flag(
-                         *property, *override.value)
-                                      : model::shadow_indexing_mode::disabled;
-            if (property.value() == model::shadow_indexing_mode::disabled) {
-                property = std::nullopt;
-            }
-        } else {
+        if (!override.value || !property) {
+            break;
+        }
+        // It's guaranteed that the remove operation will only be
+        // used with one of the 'drop_' flags.
+        property = model::add_shadow_indexing_flag(*property, *override.value);
+        if (*property == model::shadow_indexing_mode::disabled) {
             property = std::nullopt;
         }
         return;
     case incremental_update_operation::set:
         // set new value
-        if (property) {
-            property = override.value ? model::add_shadow_indexing_flag(
-                         *property, *override.value)
-                                      : model::shadow_indexing_mode::disabled;
-        } else {
-            property = override.value ? *override.value
-                                      : model::shadow_indexing_mode::disabled;
+        if (!override.value) {
+            break;
         }
+        property = model::add_shadow_indexing_flag(
+          property ? *property : model::shadow_indexing_mode::disabled,
+          *override.value);
         return;
     case incremental_update_operation::none:
         // do nothing
