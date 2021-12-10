@@ -9,8 +9,8 @@
 
 import random
 
-from ducktape.mark.resource import cluster
 from rptest.clients.default import DefaultClient
+from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.services.failure_injector import FailureSpec
 from rptest.services.redpanda import RedpandaService

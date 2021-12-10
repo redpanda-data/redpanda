@@ -7,7 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from ducktape.mark import ignore
 from rptest.clients.types import TopicSpec
 from rptest.wasm.topic import construct_materialized_topic, get_source_topic

@@ -11,7 +11,7 @@ import collections
 import random
 import time
 
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
 

@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 from ducktape.mark import matrix
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec

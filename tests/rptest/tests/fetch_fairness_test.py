@@ -9,7 +9,7 @@
 
 from collections import defaultdict
 
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from ducktape.mark import parametrize
 
 from rptest.clients.kcl import KCL

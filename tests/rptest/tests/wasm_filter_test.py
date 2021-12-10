@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 from kafka import TopicPartition
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from ducktape.mark import ignore
 from rptest.clients.types import TopicSpec
 from rptest.wasm.wasm_build_tool import WasmTemplateRepository

@@ -12,7 +12,6 @@ import time
 import re
 import random
 
-from ducktape.mark.resource import cluster
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
@@ -24,6 +23,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.kaf_producer import KafProducer
 from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 
 ELECTION_TIMEOUT = 10
 
