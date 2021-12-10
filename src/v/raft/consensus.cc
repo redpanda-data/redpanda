@@ -2294,10 +2294,12 @@ ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
         return replicate_configuration(std::move(u), std::move(latest_cfg))
           .then([this, contains_current](std::error_code ec) {
               if (ec) {
-                  vlog(
-                    _ctxlog.error,
-                    "unable to replicate updated configuration - {}",
-                    ec);
+                  if (ec != errc::shutting_down) {
+                      vlog(
+                        _ctxlog.error,
+                        "unable to replicate updated configuration: {}",
+                        ec.message());
+                  }
                   return;
               }
               // leader was removed, step down.
