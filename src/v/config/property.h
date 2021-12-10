@@ -147,8 +147,23 @@ public:
 protected:
     bool update_value(T&& new_value) {
         if (new_value != _value) {
+            std::exception_ptr ex;
             for (auto& binding : _bindings) {
-                binding.update(new_value);
+                try {
+                    binding.update(new_value);
+                } catch (...) {
+                    // In case there are multiple bindings:
+                    // if one of them throws an exception from an on_change
+                    // callback, proceed to update all bindings' values before
+                    // re-raising the last exception we saw.  This avoids
+                    // a situation where bindings could disagree about
+                    // the property's value.
+                    ex = std::current_exception();
+                }
+            }
+
+            if (ex) {
+                rethrow_exception(ex);
             }
 
             _value = std::move(new_value);
