@@ -12,6 +12,7 @@ import random
 import time
 
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
 
@@ -133,7 +134,7 @@ class AutomaticLeadershipBalancingTest(RedpandaTest):
         leaders = (p["leader"] for p in topic["partitions"])
         return collections.Counter(leaders)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_automatic_rebalance(self):
         def all_partitions_present(num_nodes, per_node=None):
             leaders = self._get_leaders_by_node()

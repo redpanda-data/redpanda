@@ -15,6 +15,13 @@ from rptest.clients.rpk import RpkTool
 
 import subprocess
 
+# Expected log errors in tests that test misbehaving
+# transactional clients.
+TX_ERROR_LOGS = [
+    # e.g. cluster - rm_stm.cc:370 - Can't prepare pid:{producer_identity: id=1, epoch=27} - unknown session
+    "cluster - rm_stm.*unknown session"
+]
+
 
 class TxVerifierTest(RedpandaTest):
     """
@@ -69,7 +76,7 @@ class TxVerifierTest(RedpandaTest):
         if len(errors) > 0:
             raise DucktapeError(errors)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=TX_ERROR_LOGS)
     def test_all_tx_tests(self):
         self.verify([
             "init", "tx", "txes", "abort", "commuting-txes", "conflicting-tx",
