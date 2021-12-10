@@ -149,6 +149,16 @@ ExternalProject_Add(boost
     hardcode-dll-paths=true
     dll-path=@REDPANDA_DEPS_INSTALL_DIR@/lib)
 
+ExternalProject_Add(cryptopp
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/CRYPTOPP_8_5_0.tar.gz
+  URL_MD5 6d0d360b0c90e53789e626e192a49d34
+  INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  DEPENDS ${default_depends}
+  CMAKE_ARGS
+     ${common_cmake_args}
+    -DBUILD_TESTING=OFF)
+
 ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/vectorizedio/seastar.git
   GIT_TAG a65207afcbaae84d4bc720a7d22995f21f5ff7b2
@@ -171,7 +181,7 @@ ExternalProject_Add(seastar
     -DSeastar_CXX_DIALECT=c++20
     -DSeastar_UNUSED_RESULT_ERROR=ON
   INSTALL_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
-  DEPENDS ${default_depends} boost)
+  DEPENDS ${default_depends} boost cryptopp)
 
 ExternalProject_Add(HdrHistogram
   URL https://storage.googleapis.com/vectorizedio-public/dependencies/HdrHistogram_c-0.11.2.tar.gz
