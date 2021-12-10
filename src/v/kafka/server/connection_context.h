@@ -29,6 +29,11 @@
 
 namespace kafka {
 
+/*
+ * authz failures should be quiet or logged at a reduced severity level.
+ */
+using authz_quiet = ss::bool_class<struct authz_quiet_tag>;
+
 struct request_header;
 class request_context;
 
@@ -59,7 +64,8 @@ public:
     security::sasl_server& sasl() { return _sasl; }
 
     template<typename T>
-    bool authorized(security::acl_operation operation, const T& name) {
+    bool authorized(
+      security::acl_operation operation, const T& name, authz_quiet quiet) {
         if (!_enable_authorizer) {
             return true;
         }
@@ -74,13 +80,23 @@ public:
           security::acl_host(_client_addr));
 
         if (!authorized) {
-            vlog(
-              _authlog.info,
-              "proto: {}, sasl state: {}, acl op: {}, resource: {}",
-              _proto.name(),
-              security::sasl_state_to_str(_sasl.state()),
-              operation,
-              name);
+            if (quiet) {
+                vlog(
+                  _authlog.debug,
+                  "proto: {}, sasl state: {}, acl op: {}, resource: {}",
+                  _proto.name(),
+                  security::sasl_state_to_str(_sasl.state()),
+                  operation,
+                  name);
+            } else {
+                vlog(
+                  _authlog.info,
+                  "proto: {}, sasl state: {}, acl op: {}, resource: {}",
+                  _proto.name(),
+                  security::sasl_state_to_str(_sasl.state()),
+                  operation,
+                  name);
+            }
         }
 
         return authorized;
