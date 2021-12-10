@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 from ducktape.utils.util import wait_until
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk_remote import RpkRemoteTool

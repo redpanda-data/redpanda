@@ -11,7 +11,7 @@ from collections import defaultdict
 import json
 import random
 
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cli_tools import KafkaCliTools

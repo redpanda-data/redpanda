@@ -12,7 +12,7 @@ import json
 import logging
 import uuid
 import requests
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
 

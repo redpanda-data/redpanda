@@ -6,7 +6,7 @@
 #
 # https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
 
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from ducktape.mark import ignore
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.archival.s3_client import S3Client

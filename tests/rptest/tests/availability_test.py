@@ -11,7 +11,7 @@ from datetime import datetime
 import random
 import time
 
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
 from rptest.services.failure_injector import FailureInjector, FailureSpec

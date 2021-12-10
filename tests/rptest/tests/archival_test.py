@@ -7,7 +7,7 @@
 # https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
 
 from rptest.clients.kafka_cat import KafkaCat
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from ducktape.mark import matrix, ignore
 from ducktape.utils.util import wait_until
 from ducktape.errors import DucktapeError
