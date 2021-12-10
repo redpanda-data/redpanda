@@ -113,7 +113,7 @@ configuration::configuration()
       *this,
       "scram_password",
       "Password to use for SCRAM authentication mechanisms",
-      config::required::no,
+      {.secret = config::is_secret::yes},
       "") {}
 
 } // namespace kafka::client
