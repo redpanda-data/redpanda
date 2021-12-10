@@ -44,6 +44,8 @@ class EndToEndShadowIndexingTest(EndToEndTest):
         self.topic = EndToEndShadowIndexingTest.s3_topic_name
         self._extra_rp_conf = dict(
             cloud_storage_enabled=True,
+            cloud_storage_enable_remote_read=True,
+            cloud_storage_enable_remote_write=True,
             cloud_storage_access_key=EndToEndShadowIndexingTest.s3_access_key,
             cloud_storage_secret_key=EndToEndShadowIndexingTest.s3_secret_key,
             cloud_storage_region=EndToEndShadowIndexingTest.s3_region,
@@ -79,9 +81,6 @@ class EndToEndShadowIndexingTest(EndToEndTest):
         self.s3_client.empty_bucket(self.s3_bucket_name)
         self.s3_client.create_bucket(self.s3_bucket_name)
         self.redpanda.start()
-        for topic in self.topics:
-            rpk.alter_topic_config(topic.name, 'redpanda.remote.write', 'true')
-            rpk.alter_topic_config(topic.name, 'redpanda.remote.read', 'true')
 
     def tearDown(self):
         self.s3_client.empty_bucket(self.s3_bucket_name)

@@ -141,3 +141,31 @@ class AlterTopicConfiguration(RedpandaTest):
         self.logger.info(f"altered_output={altered_output}")
         assert altered_output["redpanda.remote.read"][0] == "false"
         assert altered_output["redpanda.remote.write"][0] == "false"
+
+
+class ShadowIndexingGlobalConfig(RedpandaTest):
+    topics = (TopicSpec(partition_count=1, replication_factor=3), )
+
+    def __init__(self, test_context):
+        self._extra_rp_conf = dict(cloud_storage_enable_remote_read=True,
+                                   cloud_storage_enable_remote_write=True)
+        super(ShadowIndexingGlobalConfig,
+              self).__init__(test_context=test_context,
+                             num_brokers=3,
+                             extra_rp_conf=self._extra_rp_conf)
+
+    @cluster(num_nodes=3)
+    def test_shadow_indexing_config(self):
+        topic = self.topics[0].name
+        rpk = RpkTool(self.redpanda)
+        original_output = rpk.describe_topic_configs(topic)
+        self.logger.info(f"original_output={original_output}")
+        assert original_output["redpanda.remote.read"][0] == "true"
+        assert original_output["redpanda.remote.write"][0] == "true"
+
+        rpk.alter_topic_config(topic, "redpanda.remote.read", "false")
+        rpk.alter_topic_config(topic, "redpanda.remote.write", "false")
+        altered_output = rpk.describe_topic_configs(topic)
+        self.logger.info(f"altered_output={altered_output}")
+        assert altered_output["redpanda.remote.read"][0] == "false"
+        assert altered_output["redpanda.remote.write"][0] == "false"
