@@ -434,6 +434,13 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
     if (!co_await sync(timeout)) {
         co_return tx_errc::stale;
     }
+    // catching up with all previous end_tx operations (commit | abort)
+    // to avoid writing the same commit | abort marker twice
+    if (_mem_state.last_end_tx >= model::offset{0}) {
+        if (!co_await wait_no_throw(_mem_state.last_end_tx, timeout)) {
+            co_return tx_errc::stale;
+        }
+    }
 
     auto preparing_it = _mem_state.preparing.find(pid);
     auto prepare_it = _log_state.prepared.find(pid);
@@ -520,8 +527,10 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
           pid);
         co_return tx_errc::unknown_server_error;
     }
-    if (!co_await wait_no_throw(
-          model::offset(r.value().last_offset()), timeout)) {
+    if (_mem_state.last_end_tx < r.value().last_offset) {
+        _mem_state.last_end_tx = r.value().last_offset;
+    }
+    if (!co_await wait_no_throw(r.value().last_offset, timeout)) {
         co_return tx_errc::unknown_server_error;
     }
 
@@ -586,9 +595,15 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
   model::timeout_clock::duration timeout) {
     // doesn't make sense to fence off an abort because transaction
     // manager has already decided to abort and acked to a client
-
     if (!co_await sync(timeout)) {
         co_return tx_errc::stale;
+    }
+    // catching up with all previous end_tx operations (commit | abort)
+    // to avoid writing the same commit | abort marker twice
+    if (_mem_state.last_end_tx >= model::offset{0}) {
+        if (!co_await wait_no_throw(_mem_state.last_end_tx, timeout)) {
+            co_return tx_errc::stale;
+        }
     }
 
     if (!is_known_session(pid)) {
@@ -633,6 +648,9 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
           r.error(),
           pid);
         co_return tx_errc::unknown_server_error;
+    }
+    if (_mem_state.last_end_tx < r.value().last_offset) {
+        _mem_state.last_end_tx = r.value().last_offset;
     }
 
     // don't need to wait for apply because tx is already aborted on the
