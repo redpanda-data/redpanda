@@ -16,6 +16,7 @@ import requests
 import random
 import threading
 import collections
+import re
 
 import yaml
 from ducktape.services.service import Service
@@ -34,6 +35,61 @@ Partition = collections.namedtuple('Partition',
 
 MetricSample = collections.namedtuple(
     'MetricSample', ['family', 'sample', 'node', 'value', 'labels'])
+
+DEFAULT_LOG_ALLOW_LIST = [
+    # Tests currently don't run on XFS, although in future they should.
+    # https://github.com/vectorizedio/redpanda/issues/2376
+    re.compile("not on XFS. This is a non-supported setup."),
+
+    # This is expected when tests are intentionally run on low memory configurations
+    re.compile(r"Memory: '\d+' below recommended"),
+    # A client disconnecting is not bad behaviour on redpanda's part
+    re.compile(r"kafka rpc protocol.*(Connection reset by peer|Broken pipe)")
+]
+
+# Log errors that are expected in tests that restart nodes mid-test
+RESTART_LOG_ALLOW_LIST = [
+    re.compile("(raft|rpc) - .*(disconnected_endpoint)"),
+    re.compile(
+        "raft - .*recovery append entries error.*client_request_timeout"),
+]
+
+# Log errors that are expected in chaos-style tests that e.g.
+# stop redpanda nodes uncleanly
+CHAOS_LOG_ALLOW_LIST = [
+    # Unclean connection shutdown
+    re.compile(
+        "(raft|rpc) - .*(client_request_timeout|disconnected_endpoint|Broken pipe|Connection reset by peer)"
+    ),
+
+    # Torn disk writes
+    re.compile("storage - Could not parse header"),
+    re.compile("storage - Cannot continue parsing"),
+
+    # e.g. raft - [group_id:59, {kafka/test-topic-319-1639161306093460/0}] consensus.cc:2301 - unable to replicate updated configuration: raft::errc::replicated_entry_truncated
+    re.compile("raft - .*replicated_entry_truncated"),
+
+    # e.g. cluster - controller_backend.cc:466 - exception while executing partition operation: {type: update_finished, ntp: {kafka/test-topic-1944-1639161306808363/1}, offset: 413, new_assignment: { id: 1, group_id: 65, replicas: {{node_id: 3, shard: 2}, {node_id: 4, shard: 2}, {node_id: 1, shard: 0}} }, previous_assignment: {nullopt}} - std::__1::__fs::filesystem::filesystem_error (error system:39, filesystem error: remove failed: Directory not empty [/var/lib/redpanda/data/kafka/test-topic-1944-1639161306808363])
+    re.compile("cluster - .*Directory not empty"),
+    re.compile("r/heartbeat - .*cannot find consensus group"),
+
+    # raft - [follower: {id: {1}, revision: {9}}] [group_id:1, {kafka/topic-xyeyqcbyxi/0}] - recovery_stm.cc:422 - recovery append entries error: rpc::errc::exponential_backoff
+    re.compile("raft - .*recovery append entries error"),
+
+    # rpc - Service handler threw an exception: std::exception (std::exception)
+    re.compile("rpc - Service handler threw an exception: std"),
+]
+
+
+class BadLogLines(Exception):
+    def __init__(self, nodes):
+        self.nodes = nodes
+
+    def __str__(self):
+        return f"<BadLogLines nodes={','.join([n.account.hostname for n in self.nodes])}>"
+
+    def __repr__(self):
+        return self.__str__()
 
 
 class MetricSamples:
@@ -288,6 +344,54 @@ class RedpandaService(Service):
     def monitor_log(self, node):
         assert node in self._started
         return node.account.monitor_log(RedpandaService.STDOUT_STDERR_CAPTURE)
+
+    def raise_on_bad_logs(self, allow_list=None):
+        """
+        Raise a BadLogLines exception if any nodes' logs contain errors
+        not permitted by `allow_list`
+
+        :param logger: the test's logger, so that reports of bad lines are
+                       prefixed with test name.
+        :param allow_list: list of compiled regexes, or None for default
+        :return: None
+        """
+
+        if allow_list is None:
+            allow_list = DEFAULT_LOG_ALLOW_LIST
+        else:
+            combined_allow_list = DEFAULT_LOG_ALLOW_LIST
+            # Accept either compiled or string regexes
+            for a in allow_list:
+                if not isinstance(a, re.Pattern):
+                    a = re.compile(a)
+                combined_allow_list.append(a)
+            allow_list = combined_allow_list
+
+        test_name = self._context.function_name
+
+        bad_lines = collections.defaultdict(list)
+        for node in self.nodes:
+            self.logger.info(
+                f"Scanning node {node.account.hostname} log for errors...")
+
+            for line in node.account.ssh_capture(
+                    f"grep ERROR {RedpandaService.STDOUT_STDERR_CAPTURE}"):
+                line = line.strip()
+
+                allowed = False
+                for a in allow_list:
+                    if a.search(line) is not None:
+                        allowed = True
+                        break
+
+                if not allowed:
+                    bad_lines[node].append(line)
+                    self.logger.warn(
+                        f"[{test_name}] Unexpected log line on {node.account.hostname}: {line}"
+                    )
+
+        if bad_lines:
+            raise BadLogLines(bad_lines.keys())
 
     def find_wasm_root(self):
         rp_install_path_root = self._context.globals.get(
