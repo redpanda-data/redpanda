@@ -306,6 +306,7 @@ private:
         absl::flat_hash_map<model::producer_identity, prepare_marker> preparing;
         absl::flat_hash_map<model::producer_identity, expiration_info>
           expiration;
+        model::offset last_end_tx{-1};
 
         void forget(model::producer_identity pid) {
             expected.erase(pid);
