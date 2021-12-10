@@ -74,27 +74,28 @@ public:
           security::principal_type::user, std::move(user));
 
         bool authorized = _proto.authorizer().authorized(
-          name,
-          operation,
-          std::move(principal),
-          security::acl_host(_client_addr));
+          name, operation, principal, security::acl_host(_client_addr));
 
         if (!authorized) {
             if (quiet) {
                 vlog(
                   _authlog.debug,
-                  "proto: {}, sasl state: {}, acl op: {}, resource: {}",
+                  "proto: {}, sasl state: {}, acl op: {}, principal: {}, "
+                  "resource: {}",
                   _proto.name(),
                   security::sasl_state_to_str(_sasl.state()),
                   operation,
+                  principal,
                   name);
             } else {
                 vlog(
                   _authlog.info,
-                  "proto: {}, sasl state: {}, acl op: {}, resource: {}",
+                  "proto: {}, sasl state: {}, acl op: {}, principal: {}, "
+                  "resource: {}",
                   _proto.name(),
                   security::sasl_state_to_str(_sasl.state()),
                   operation,
+                  principal,
                   name);
             }
         }
