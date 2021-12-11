@@ -114,6 +114,8 @@ func TestEnsure(t *testing.T) {
 					ConfiguratorTag:       "latest",
 					ImagePullPolicy:       "Always",
 				},
+				map[string]bool{},
+				&[]string{},
 				ctrl.Log.WithName("test"))
 
 			_, err = sts.Ensure(context.Background())

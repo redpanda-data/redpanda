@@ -59,33 +59,35 @@ var errRedpandaNotReady = errors.New("redpanda not ready")
 // extended.
 func (r *StatefulSetResource) runUpdate(
 	ctx context.Context, current, modified *appsv1.StatefulSet,
-) error {
+) (bool, error) {
 	update, err := r.shouldUpdate(current, modified)
 	if err != nil {
-		return fmt.Errorf("unable to determine the update procedure: %w", err)
+		return false, fmt.Errorf("unable to determine the update procedure: %w", err)
 	}
 
 	if !update {
-		return nil
+		return false, nil
 	}
 
 	if err = r.updateUpgradingStatus(ctx, true); err != nil {
-		return fmt.Errorf("unable to turn on upgrading status in cluster custom resource: %w", err)
+		return false, fmt.Errorf("unable to turn on upgrading status in cluster custom resource: %w", err)
 	}
-	if _, err = r.updateStatefulSet(ctx, current, modified); err != nil {
-		return err
+
+	updated, err := r.updateStatefulSet(ctx, current, modified)
+	if err != nil {
+		return false, err
 	}
 
 	if err = r.rollingUpdate(ctx, &modified.Spec.Template.Spec); err != nil {
-		return err
+		return false, err
 	}
 
 	// Update is complete for all pods (and all are ready). Set upgrading status to false.
 	if err = r.updateUpgradingStatus(ctx, false); err != nil {
-		return fmt.Errorf("unable to turn off upgrading status in cluster custom resource: %w", err)
+		return false, fmt.Errorf("unable to turn off upgrading status in cluster custom resource: %w", err)
 	}
 
-	return nil
+	return updated, nil
 }
 
 func (r *StatefulSetResource) rollingUpdate(
@@ -202,7 +204,14 @@ func (r *StatefulSetResource) shouldUpdate(
 		return false, err
 	}
 
-	return !patchResult.IsEmpty() || upgrading, nil
+	anyDepsUpdated := false
+	for _, t := range r.updateTriggers {
+		anyDepsUpdated = anyDepsUpdated && r.updatedResources[t]
+	}
+
+	update := !patchResult.IsEmpty() || upgrading || anyDepsUpdated
+
+	return update, nil
 }
 
 func (r *StatefulSetResource) updateUpgradingStatus(

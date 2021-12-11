@@ -171,6 +171,9 @@ func (r *ClusterReconciler) Reconcile(
 	}
 	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
 	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
+	cfgMap := resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log)
+	stsUpdateTriggers := []string{cfgMap.Key().String()}
+	updated := map[string]bool{}
 	sts := resources.NewStatefulSet(
 		r.Client,
 		&redpandaCluster,
@@ -189,6 +192,8 @@ func (r *ClusterReconciler) Reconcile(
 		pki.SchemaRegistryAPIClientCert(),
 		sa.Key().Name,
 		r.configuratorSettings,
+		updated,
+		&stsUpdateTriggers,
 		log)
 
 	toApply := []resources.Reconciler{
@@ -198,7 +203,7 @@ func (r *ClusterReconciler) Reconcile(
 		ingress,
 		proxySu,
 		schemaRegistrySu,
-		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log),
+		cfgMap,
 		pki,
 		sa,
 		resources.NewClusterRole(r.Client, &redpandaCluster, r.Scheme, log),
@@ -208,12 +213,17 @@ func (r *ClusterReconciler) Reconcile(
 	}
 
 	for _, res := range toApply {
-		_, err := res.Ensure(ctx)
+		applied, err := res.Ensure(ctx)
 
 		var e *resources.RequeueAfterError
 		if errors.As(err, &e) {
 			log.Error(e, e.Msg)
 			return ctrl.Result{RequeueAfter: e.RequeueAfter}, nil
+		}
+
+		res, ok := res.(resources.Resource)
+		if ok {
+			updated[res.Key().String()] = applied
 		}
 
 		if err != nil {

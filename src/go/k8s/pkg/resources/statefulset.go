@@ -92,7 +92,14 @@ type StatefulSetResource struct {
 	schemaRegistryClientCertSecretKey  types.NamespacedName
 	serviceAccountName                 string
 	configuratorSettings               ConfiguratorSettings
-	logger                             logr.Logger
+	// updatedResources is a (map[namespaced name]updated) which holds the info for which resources
+	// were updated. It is used to check if a resource in updatedResources was updated, so that the
+	// statefulset is updated regardles if it itself changed.
+	updatedResources map[string]bool
+	// updateTriggers is the list of namespaced resource names (<namespace>/<name>) which if
+	// changed will trigger a statefulset update.
+	updateTriggers []string
+	logger         logr.Logger
 
 	LastObservedState *appsv1.StatefulSet
 }
@@ -116,6 +123,8 @@ func NewStatefulSet(
 	schemaRegistryClientCertSecretKey types.NamespacedName,
 	serviceAccountName string,
 	configuratorSettings ConfiguratorSettings,
+	updatedResources map[string]bool,
+	updateTriggers *[]string,
 	logger logr.Logger,
 ) *StatefulSetResource {
 	return &StatefulSetResource{
@@ -137,6 +146,8 @@ func NewStatefulSet(
 		schemaRegistryClientCertSecretKey,
 		serviceAccountName,
 		configuratorSettings,
+		updatedResources,
+		*updateTriggers,
 		logger.WithValues("Kind", statefulSetKind()),
 		nil,
 	}
@@ -180,7 +191,7 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) (bool, error) {
 
 	r.logger.Info("Running update", "resource name", r.Key().Name)
 
-	err = r.runUpdate(ctx, &sts, obj.(*appsv1.StatefulSet))
+	_, err = r.runUpdate(ctx, &sts, obj.(*appsv1.StatefulSet))
 	return err == nil, err
 }
 
