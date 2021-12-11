@@ -12,6 +12,7 @@
 
 #include "config/node_config.h"
 #include "coproc/logger.h"
+#include "coproc/pacemaker.h"
 #include "coproc/reference_window_consumer.hpp"
 #include "coproc/tests/utils/kafka_publish_consumer.h"
 #include "coproc/wasm_event.h"
@@ -85,6 +86,23 @@ ss::future<std::vector<kafka::produce_response::partition>> publish_events(
                 return std::move(std::get<1>(tuple)).responses;
             });
       });
+}
+
+ss::future<>
+wait_for_copro(ss::sharded<coproc::pacemaker>& p, coproc::script_id id) {
+    vlog(coproc::coproclog.info, "Waiting for script {}", id);
+    auto r = co_await p.map_reduce0(
+      [id](coproc::pacemaker& p) { return p.wait_for_script(id); },
+      std::vector<coproc::errc>(),
+      reduce::push_back());
+    bool failed = std::all_of(r.begin(), r.end(), [](coproc::errc e) {
+        return e == coproc::errc::topic_does_not_exist;
+    });
+    if (failed) {
+        throw std::runtime_error(
+          fmt_with_ctx(ssx::sformat, "Failed to deploy script: {}", id));
+    }
+    vlog(coproc::coproclog.info, "Script {} successfully deployed!", id);
 }
 
 } // namespace coproc::wasm
