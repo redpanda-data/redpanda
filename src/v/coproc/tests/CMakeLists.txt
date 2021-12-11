@@ -3,6 +3,7 @@ set(fixture_srcs
     utils/supervisor.cc
     utils/wasm_event_generator.cc
     utils/batch_utils.cc
+    fixtures/coproc_cluster_fixture.cc
     fixtures/coproc_test_fixture.cc
     fixtures/coproc_bench_fixture.cc
     fixtures/fiber_mock_fixture.cc
