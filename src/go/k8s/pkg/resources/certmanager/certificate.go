@@ -133,14 +133,14 @@ func NewCertificate(
 }
 
 // Ensure will manage cert-manager v1.Certificate for redpanda.vectorized.io custom resource
-func (r *CertificateResource) Ensure(ctx context.Context) error {
+func (r *CertificateResource) Ensure(ctx context.Context) (bool, error) {
 	obj, err := r.obj()
 	if err != nil {
-		return fmt.Errorf("unable to construct object: %w", err)
+		return false, fmt.Errorf("unable to construct object: %w", err)
 	}
 
 	_, err = resources.CreateIfNotExists(ctx, r, obj, r.logger)
-	return err
+	return err == nil, err
 }
 
 // obj returns resource managed client.Object

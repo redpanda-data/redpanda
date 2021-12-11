@@ -72,7 +72,7 @@ func TestEnsure_PDB(t *testing.T) {
 				scheme.Scheme,
 				ctrl.Log.WithName("test"))
 
-			err = pdb.Ensure(context.Background())
+			_, err = pdb.Ensure(context.Background())
 			assert.NoError(t, err, tt.name)
 
 			actual := &policyv1beta1.PodDisruptionBudget{}

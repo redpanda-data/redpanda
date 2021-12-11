@@ -143,43 +143,45 @@ func NewStatefulSet(
 }
 
 // Ensure will manage kubernetes v1.StatefulSet for redpanda.vectorized.io custom resource
-func (r *StatefulSetResource) Ensure(ctx context.Context) error {
+func (r *StatefulSetResource) Ensure(ctx context.Context) (bool, error) {
 	var sts appsv1.StatefulSet
 
 	if r.pandaCluster.ExternalListener() != nil {
 		err := r.Get(ctx, r.nodePortName, &r.nodePortSvc)
 		if err != nil {
-			return fmt.Errorf("failed to retrieve node port service %s: %w", r.nodePortName, err)
+			return false, fmt.Errorf("failed to retrieve node port service %s: %w", r.nodePortName, err)
 		}
 
 		for _, port := range r.nodePortSvc.Spec.Ports {
 			if port.NodePort == 0 {
-				return fmt.Errorf("node port service %s, port %s is 0: %w", r.nodePortName, port.Name, errNodePortMissing)
+				return false, fmt.Errorf("node port service %s, port %s is 0: %w", r.nodePortName, port.Name, errNodePortMissing)
 			}
 		}
 	}
 
 	obj, err := r.obj()
 	if err != nil {
-		return fmt.Errorf("unable to construct StatefulSet object: %w", err)
+		return false, fmt.Errorf("unable to construct StatefulSet object: %w", err)
 	}
 	created, err := CreateIfNotExists(ctx, r, obj, r.logger)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if created {
 		r.LastObservedState = obj.(*appsv1.StatefulSet)
-		return nil
+		return true, nil
 	}
 
 	err = r.Get(ctx, r.Key(), &sts)
 	if err != nil {
-		return fmt.Errorf("error while fetching StatefulSet resource: %w", err)
+		return false, fmt.Errorf("error while fetching StatefulSet resource: %w", err)
 	}
 	r.LastObservedState = &sts
 
 	r.logger.Info("Running update", "resource name", r.Key().Name)
-	return r.runUpdate(ctx, &sts, obj.(*appsv1.StatefulSet))
+
+	err = r.runUpdate(ctx, &sts, obj.(*appsv1.StatefulSet))
+	return err == nil, err
 }
 
 func preparePVCResource(

@@ -94,7 +94,7 @@ func (r *PkiReconciler) prepareRoot(
 }
 
 // Ensure will manage PKI for redpanda.vectorized.io custom resource
-func (r *PkiReconciler) Ensure(ctx context.Context) error {
+func (r *PkiReconciler) Ensure(ctx context.Context) (bool, error) {
 	toApply := []resources.Resource{}
 
 	keystoreKey := types.NamespacedName{Name: keystoreName(r.pandaCluster.Name), Namespace: r.pandaCluster.Namespace}
@@ -105,7 +105,7 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 	if kafkaListeners := kafkaAPIListeners(r.pandaCluster); len(kafkaListeners) > 0 {
 		toApplyAPI, err := r.prepareAPI(ctx, kafkaAPI, RedpandaNodeCert, []string{OperatorClientCert, UserClientCert, AdminClientCert}, kafkaListeners, &keystoreKey)
 		if err != nil {
-			return err
+			return false, err
 		}
 		toApply = append(toApply, toApplyAPI...)
 	}
@@ -113,7 +113,7 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 	if adminListeners := adminAPIListeners(r.pandaCluster); len(adminListeners) > 0 {
 		toApplyAPI, err := r.prepareAPI(ctx, adminAPI, adminAPINodeCert, []string{adminAPIClientCert}, adminListeners, &keystoreKey)
 		if err != nil {
-			return err
+			return false, err
 		}
 		toApply = append(toApply, toApplyAPI...)
 	}
@@ -121,7 +121,7 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 	if pandaProxyListeners := pandaProxyAPIListeners(r.pandaCluster); len(pandaProxyListeners) > 0 {
 		toApplyAPI, err := r.prepareAPI(ctx, pandaproxyAPI, pandaproxyAPINodeCert, []string{pandaproxyAPIClientCert}, pandaProxyListeners, &keystoreKey)
 		if err != nil {
-			return err
+			return false, err
 		}
 		toApply = append(toApply, toApplyAPI...)
 	}
@@ -129,19 +129,22 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 	if schemaRegistryListeners := schemaRegistryAPIListeners(r.pandaCluster); len(schemaRegistryListeners) > 0 {
 		toApplyAPI, err := r.prepareAPI(ctx, schemaRegistryAPI, schemaRegistryAPINodeCert, []string{schemaRegistryAPIClientCert}, schemaRegistryListeners, &keystoreKey)
 		if err != nil {
-			return err
+			return false, err
 		}
 		toApply = append(toApply, toApplyAPI...)
 	}
+	allApplied := true
 
 	for _, res := range toApply {
-		err := res.Ensure(ctx)
+		applied, err := res.Ensure(ctx)
 		if err != nil {
 			r.logger.Error(err, "Failed to reconcile pki")
+			return false, err
 		}
+		allApplied = allApplied && applied
 	}
 
-	return nil
+	return allApplied, nil
 }
 
 func (r *PkiReconciler) issuerNamespacedName(name string) types.NamespacedName {

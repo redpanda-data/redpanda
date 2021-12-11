@@ -116,7 +116,7 @@ func TestEnsure(t *testing.T) {
 				},
 				ctrl.Log.WithName("test"))
 
-			err = sts.Ensure(context.Background())
+			_, err = sts.Ensure(context.Background())
 			assert.NoError(t, err, tt.name)
 
 			actual := &v1.StatefulSet{}

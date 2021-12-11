@@ -55,23 +55,23 @@ func NewPDB(
 // Ensure will create/update PDB resource based on configuration inside our CR.
 // For now we're creating v1beta1 version of PDB because v1 is available only
 // from k8s version 1.21+
-func (r *PDBResource) Ensure(ctx context.Context) error {
+func (r *PDBResource) Ensure(ctx context.Context) (bool, error) {
 	if r.pandaCluster.Spec.PodDisruptionBudget == nil || !r.pandaCluster.Spec.PodDisruptionBudget.Enabled {
-		return nil
+		return false, nil
 	}
 
 	obj, err := r.obj()
 	if err != nil {
-		return fmt.Errorf("unable to construct object: %w", err)
+		return false, fmt.Errorf("unable to construct object: %w", err)
 	}
 	created, err := CreateIfNotExists(ctx, r, obj, r.logger)
 	if err != nil || created {
-		return err
+		return false, err
 	}
 	var pdb policyv1beta1.PodDisruptionBudget
 	err = r.Get(ctx, r.Key(), &pdb)
 	if err != nil {
-		return fmt.Errorf("error while fetching Service resource: %w", err)
+		return false, fmt.Errorf("error while fetching Service resource: %w", err)
 	}
 	return Update(ctx, &pdb, obj, r.Client, r.logger)
 }

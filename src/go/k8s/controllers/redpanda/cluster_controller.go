@@ -208,7 +208,7 @@ func (r *ClusterReconciler) Reconcile(
 	}
 
 	for _, res := range toApply {
-		err := res.Ensure(ctx)
+		_, err := res.Ensure(ctx)
 
 		var e *resources.RequeueAfterError
 		if errors.As(err, &e) {

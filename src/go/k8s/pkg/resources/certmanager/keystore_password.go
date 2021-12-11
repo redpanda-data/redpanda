@@ -52,14 +52,14 @@ func NewKeystoreSecretResource(
 }
 
 // Ensure will manage pkcs#12 and jks password for KafkaAPI certificate
-func (r *KeystoreSecretResource) Ensure(ctx context.Context) error {
+func (r *KeystoreSecretResource) Ensure(ctx context.Context) (bool, error) {
 	obj, err := r.obj()
 	if err != nil {
-		return fmt.Errorf("unable to construct object: %w", err)
+		return false, fmt.Errorf("unable to construct object: %w", err)
 	}
 
 	_, err = resources.CreateIfNotExists(ctx, r, obj, r.logger)
-	return err
+	return err == nil, err
 }
 
 // obj returns secret that consist password for jks and pkcs#12 keystores

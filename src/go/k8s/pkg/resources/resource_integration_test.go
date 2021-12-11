@@ -89,7 +89,7 @@ func TestEnsure_StatefulSet(t *testing.T) {
 		},
 		ctrl.Log.WithName("test"))
 
-	err := sts.Ensure(context.Background())
+	_, err := sts.Ensure(context.Background())
 	assert.NoError(t, err)
 
 	actual := &v1.StatefulSet{}
@@ -98,7 +98,7 @@ func TestEnsure_StatefulSet(t *testing.T) {
 	originalResourceVersion := actual.ResourceVersion
 
 	// calling ensure for second time to see the resource does not get updated
-	err = sts.Ensure(context.Background())
+	_, err = sts.Ensure(context.Background())
 	assert.NoError(t, err)
 
 	err = c.Get(context.Background(), sts.Key(), actual)
@@ -133,7 +133,7 @@ func TestEnsure_ConfigMap(t *testing.T) {
 		types.NamespacedName{},
 		ctrl.Log.WithName("test"))
 
-	err := cm.Ensure(context.Background())
+	_, err := cm.Ensure(context.Background())
 	assert.NoError(t, err)
 
 	actual := &corev1.ConfigMap{}
@@ -153,7 +153,7 @@ func TestEnsure_ConfigMap(t *testing.T) {
 	}
 
 	// calling ensure for second time to see the resource does not get updated
-	err = cm.Ensure(context.Background())
+	_, err = cm.Ensure(context.Background())
 	assert.NoError(t, err)
 
 	err = c.Get(context.Background(), cm.Key(), actual)
@@ -166,7 +166,7 @@ func TestEnsure_ConfigMap(t *testing.T) {
 	cluster.Spec.Configuration.KafkaAPI[0].Port = 1111
 	cluster.Spec.Configuration.KafkaAPI[0].TLS.Enabled = true
 
-	err = cm.Ensure(context.Background())
+	_, err = cm.Ensure(context.Background())
 	assert.NoError(t, err)
 
 	err = c.Get(context.Background(), cm.Key(), actual)
@@ -195,7 +195,7 @@ func TestEnsure_HeadlessService(t *testing.T) {
 			},
 			ctrl.Log.WithName("test"))
 
-		err := hsvc.Ensure(context.Background())
+		_, err := hsvc.Ensure(context.Background())
 		assert.NoError(t, err)
 
 		actual := &corev1.Service{}
@@ -217,7 +217,7 @@ func TestEnsure_HeadlessService(t *testing.T) {
 			},
 			ctrl.Log.WithName("test"))
 
-		err := hsvc.Ensure(context.Background())
+		_, err := hsvc.Ensure(context.Background())
 		assert.NoError(t, err)
 
 		actual := &corev1.Service{}
@@ -225,7 +225,7 @@ func TestEnsure_HeadlessService(t *testing.T) {
 		assert.NoError(t, err)
 		originalResourceVersion := actual.ResourceVersion
 
-		err = hsvc.Ensure(context.Background())
+		_, err = hsvc.Ensure(context.Background())
 		assert.NoError(t, err)
 
 		err = c.Get(context.Background(), hsvc.Key(), actual)
@@ -246,7 +246,7 @@ func TestEnsure_HeadlessService(t *testing.T) {
 			},
 			ctrl.Log.WithName("test"))
 
-		err := hsvc.Ensure(context.Background())
+		_, err := hsvc.Ensure(context.Background())
 		assert.NoError(t, err)
 
 		actual := &corev1.Service{}
@@ -263,7 +263,7 @@ func TestEnsure_HeadlessService(t *testing.T) {
 			},
 			ctrl.Log.WithName("test"))
 
-		err = hsvc.Ensure(context.Background())
+		_, err = hsvc.Ensure(context.Background())
 		assert.NoError(t, err)
 
 		err = c.Get(context.Background(), hsvc.Key(), actual)
@@ -326,7 +326,7 @@ func TestEnsure_NodePortService(t *testing.T) {
 		},
 		ctrl.Log.WithName("test"))
 
-	err := npsvc.Ensure(context.Background())
+	_, err := npsvc.Ensure(context.Background())
 	assert.NoError(t, err)
 
 	actual := &corev1.Service{}
@@ -335,7 +335,7 @@ func TestEnsure_NodePortService(t *testing.T) {
 	originalResourceVersion := actual.ResourceVersion
 
 	// calling ensure for second time to see the resource does not get updated
-	err = npsvc.Ensure(context.Background())
+	_, err = npsvc.Ensure(context.Background())
 	assert.NoError(t, err)
 
 	err = c.Get(context.Background(), npsvc.Key(), actual)
@@ -358,7 +358,7 @@ func TestEnsure_NodePortService(t *testing.T) {
 		},
 		ctrl.Log.WithName("test"))
 
-	err = npsvc.Ensure(context.Background())
+	_, err = npsvc.Ensure(context.Background())
 	assert.NoError(t, err)
 
 	err = c.Get(context.Background(), npsvc.Key(), actual)

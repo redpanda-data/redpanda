@@ -75,17 +75,17 @@ func NewSuperUsers(
 }
 
 // Ensure will manage Super users for redpanda.vectorized.io custom resource
-func (r *SuperUsersResource) Ensure(ctx context.Context) error {
+func (r *SuperUsersResource) Ensure(ctx context.Context) (bool, error) {
 	if r == nil {
-		return nil
+		return false, nil
 	}
 
 	obj, err := r.obj()
 	if err != nil {
-		return fmt.Errorf("unable to construct object: %w", err)
+		return false, fmt.Errorf("unable to construct object: %w", err)
 	}
 	_, err = CreateIfNotExists(ctx, r, obj, r.logger)
-	return err
+	return err == nil, err
 }
 
 func (r *SuperUsersResource) obj() (k8sclient.Object, error) {

@@ -68,10 +68,11 @@ func TestEnsureConfigMap(t *testing.T) {
 				types.NamespacedName{Name: "test", Namespace: "test"},
 				types.NamespacedName{Name: "test", Namespace: "test"},
 				ctrl.Log.WithName("test"))
-			require.NoError(t, cfgRes.Ensure(context.TODO()))
+			_, err := cfgRes.Ensure(context.TODO())
+			require.NoError(t, err)
 
 			actual := &v1.ConfigMap{}
-			err := c.Get(context.Background(), cfgRes.Key(), actual)
+			err = c.Get(context.Background(), cfgRes.Key(), actual)
 			require.NoError(t, err)
 			data := actual.Data["redpanda.yaml"]
 			require.True(t, strings.Contains(data, tc.expectedString), fmt.Sprintf("expecting %s but got %v", tc.expectedString, data))

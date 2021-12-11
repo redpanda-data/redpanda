@@ -71,7 +71,7 @@ type Resource interface {
 // Reconciler implements reconciliation logic
 type Reconciler interface {
 	// Ensure captures reconciliation logic that can end with error
-	Ensure(ctx context.Context) error
+	Ensure(ctx context.Context) (applied bool, err error)
 }
 
 // CreateIfNotExists tries to get a kubernetes resource and creates it if does not exist
@@ -104,7 +104,7 @@ func Update(
 	modified client.Object,
 	c client.Client,
 	logger logr.Logger,
-) error {
+) (updated bool, err error) {
 	prepareResourceForPatch(current, modified)
 	opts := []patch.CalculateOption{
 		patch.IgnoreStatusFields(),
@@ -112,31 +112,32 @@ func Update(
 	}
 	patchResult, err := patch.DefaultPatchMaker.Calculate(current, modified, opts...)
 	if err != nil {
-		return err
+		return false, err
 	}
-	if !patchResult.IsEmpty() {
+	changesExist := !patchResult.IsEmpty()
+	if changesExist {
 		// need to set current version first otherwise the request would get rejected
 		logger.Info(fmt.Sprintf("Resource %s (%s) changed, updating. Diff: %v",
 			modified.GetName(), modified.GetObjectKind().GroupVersionKind().Kind, string(patchResult.Patch)))
 		if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(modified); err != nil {
-			return err
+			return false, err
 		}
 
 		metaAccessor := meta.NewAccessor()
 		currentVersion, err := metaAccessor.ResourceVersion(current)
 		if err != nil {
-			return err
+			return false, err
 		}
 		err = metaAccessor.SetResourceVersion(modified, currentVersion)
 		if err != nil {
-			return err
+			return false, err
 		}
 		prepareResourceForUpdate(current, modified)
 		if err := c.Update(ctx, modified); err != nil {
-			return fmt.Errorf("failed to update resource: %w", err)
+			return false, fmt.Errorf("failed to update resource: %w", err)
 		}
 	}
-	return nil
+	return changesExist, nil
 }
 
 // normalization to be done on resource before the patch is computed

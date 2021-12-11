@@ -72,7 +72,7 @@ func (r *StatefulSetResource) runUpdate(
 	if err = r.updateUpgradingStatus(ctx, true); err != nil {
 		return fmt.Errorf("unable to turn on upgrading status in cluster custom resource: %w", err)
 	}
-	if err = r.updateStatefulSet(ctx, current, modified); err != nil {
+	if _, err = r.updateStatefulSet(ctx, current, modified); err != nil {
 		return err
 	}
 
@@ -165,8 +165,8 @@ func (r *StatefulSetResource) updateStatefulSet(
 	ctx context.Context,
 	current *appsv1.StatefulSet,
 	modified *appsv1.StatefulSet,
-) error {
-	err := Update(ctx, current, modified, r.Client, r.logger)
+) (bool, error) {
+	applied, err := Update(ctx, current, modified, r.Client, r.logger)
 	if err != nil && strings.Contains(err.Error(), "spec: Forbidden: updates to statefulset spec for fields other than") {
 		// REF: https://github.com/kubernetes/kubernetes/issues/69041#issuecomment-723757166
 		// https://www.giffgaff.io/tech/resizing-statefulset-persistent-volumes-with-zero-downtime
@@ -176,14 +176,14 @@ func (r *StatefulSetResource) updateStatefulSet(
 			PropagationPolicy: &orphan,
 		})
 		if err != nil {
-			return fmt.Errorf("unable to delete statefulset using orphan propagation policy: %w", err)
+			return applied, fmt.Errorf("unable to delete statefulset using orphan propagation policy: %w", err)
 		}
-		return &RequeueAfterError{RequeueAfter: RequeueDuration, Msg: "wait for sts to be deleted"}
+		return applied, &RequeueAfterError{RequeueAfter: RequeueDuration, Msg: "wait for sts to be deleted"}
 	}
 	if err != nil {
-		return fmt.Errorf("unable to update statefulset: %w", err)
+		return applied, fmt.Errorf("unable to update statefulset: %w", err)
 	}
-	return nil
+	return applied, nil
 }
 
 // shouldUpdate returns true if changes on the CR require update

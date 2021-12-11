@@ -50,16 +50,16 @@ func NewClusterRoleBinding(
 }
 
 // Ensure manages v1.ClusterRoleBinding that is assigned to v1.ServiceAccount used in initContainer
-func (r *ClusterRoleBindingResource) Ensure(ctx context.Context) error {
+func (r *ClusterRoleBindingResource) Ensure(ctx context.Context) (bool, error) {
 	if r.pandaCluster.ExternalListener() == nil {
-		return nil
+		return false, nil
 	}
 
 	var crb v1.ClusterRoleBinding
 
 	err := r.Get(ctx, r.Key(), &crb)
 	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("error while fetching ClusterRoleBinding resource: %w", err)
+		return false, fmt.Errorf("error while fetching ClusterRoleBinding resource: %w", err)
 	}
 
 	if errors.IsNotFound(err) {
@@ -67,14 +67,14 @@ func (r *ClusterRoleBindingResource) Ensure(ctx context.Context) error {
 
 		obj, err := r.Obj()
 		if err != nil {
-			return fmt.Errorf("unable to construct ClusterRoleBinding object: %w", err)
+			return false, fmt.Errorf("unable to construct ClusterRoleBinding object: %w", err)
 		}
 
 		if err := r.Create(ctx, obj); err != nil {
-			return fmt.Errorf("unable to create ClusterRoleBinding resource: %w", err)
+			return false, fmt.Errorf("unable to create ClusterRoleBinding resource: %w", err)
 		}
 
-		return nil
+		return true, nil
 	}
 
 	sa := &ServiceAccountResource{pandaCluster: r.pandaCluster}
@@ -94,10 +94,10 @@ func (r *ClusterRoleBindingResource) Ensure(ctx context.Context) error {
 			Namespace: sa.Key().Namespace,
 		})
 		if err := r.Update(ctx, &crb); err != nil {
-			return fmt.Errorf("unable to update ClusterRoleBinding: %w", err)
+			return false, fmt.Errorf("unable to update ClusterRoleBinding: %w", err)
 		}
 	}
-	return nil
+	return false, nil
 }
 
 // Obj returns resource managed client.Object

@@ -68,23 +68,23 @@ func NewIngress(
 }
 
 // Ensure will manage kubernetes Ingress for redpanda.vectorized.io custom resource
-func (r *IngressResource) Ensure(ctx context.Context) error {
+func (r *IngressResource) Ensure(ctx context.Context) (bool, error) {
 	if r.host == "" {
-		return nil
+		return false, nil
 	}
 
 	obj, err := r.obj()
 	if err != nil {
-		return fmt.Errorf("unable to construct object: %w", err)
+		return false, fmt.Errorf("unable to construct object: %w", err)
 	}
 	created, err := CreateIfNotExists(ctx, r, obj, r.logger)
 	if err != nil || created {
-		return err
+		return false, err
 	}
 	var ingress netv1.Ingress
 	err = r.Get(ctx, r.Key(), &ingress)
 	if err != nil {
-		return fmt.Errorf("error while fetching Ingress resource: %w", err)
+		return false, fmt.Errorf("error while fetching Ingress resource: %w", err)
 	}
 	return Update(ctx, &ingress, obj, r.Client, r.logger)
 }

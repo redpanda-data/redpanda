@@ -64,19 +64,19 @@ func NewHeadlessService(
 }
 
 // Ensure will manage kubernetes v1.Service for redpanda.vectorized.io custom resource
-func (r *HeadlessServiceResource) Ensure(ctx context.Context) error {
+func (r *HeadlessServiceResource) Ensure(ctx context.Context) (bool, error) {
 	obj, err := r.obj()
 	if err != nil {
-		return fmt.Errorf("unable to construct object: %w", err)
+		return false, fmt.Errorf("unable to construct object: %w", err)
 	}
 	created, err := CreateIfNotExists(ctx, r, obj, r.logger)
 	if err != nil || created {
-		return err
+		return false, err
 	}
 	var svc corev1.Service
 	err = r.Get(ctx, r.Key(), &svc)
 	if err != nil {
-		return fmt.Errorf("error while fetching Service resource: %w", err)
+		return false, fmt.Errorf("error while fetching Service resource: %w", err)
 	}
 	return Update(ctx, &svc, obj, r.Client, r.logger)
 }

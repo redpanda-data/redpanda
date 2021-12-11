@@ -102,19 +102,22 @@ func NewConfigMap(
 }
 
 // Ensure will manage kubernetes v1.ConfigMap for redpanda.vectorized.io CR
-func (r *ConfigMapResource) Ensure(ctx context.Context) error {
+func (r *ConfigMapResource) Ensure(ctx context.Context) (bool, error) {
 	obj, err := r.obj(ctx)
 	if err != nil {
-		return fmt.Errorf("unable to construct object: %w", err)
+		return false, fmt.Errorf("unable to construct object: %w", err)
 	}
 	created, err := CreateIfNotExists(ctx, r, obj, r.logger)
 	if err != nil || created {
-		return err
+		return false, err
+	}
+	if created {
+		return true, nil
 	}
 	var cm corev1.ConfigMap
 	err = r.Get(ctx, r.Key(), &cm)
 	if err != nil {
-		return fmt.Errorf("error while fetching ConfigMap resource: %w", err)
+		return false, fmt.Errorf("error while fetching ConfigMap resource: %w", err)
 	}
 	return Update(ctx, &cm, obj, r.Client, r.logger)
 }
