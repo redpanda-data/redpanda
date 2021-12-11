@@ -9,6 +9,7 @@
  */
 
 #pragma once
+#include "coproc/types.h"
 #include "kafka/client/client.h"
 #include "model/record_batch_reader.h"
 
@@ -28,5 +29,8 @@ publish_events(kafka::client::client&, model::record_batch_reader);
 /// Performs additional validation ensuring that the topic is created with the
 /// expected parameters, if validation fails, this will assert
 ss::future<> create_coproc_internal_topic(kafka::client::client&);
+
+/// Resolves when \ref id is fully registered within the fixtures pacemaker
+ss::future<> wait_for_copro(ss::sharded<coproc::pacemaker>&, coproc::script_id);
 
 } // namespace coproc::wasm

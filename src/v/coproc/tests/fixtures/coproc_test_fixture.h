@@ -18,7 +18,7 @@
 
 using log_layout_map = absl::btree_map<model::topic, size_t>;
 
-class coproc_test_fixture : public supervisor_test_fixture {
+class coproc_api_fixture {
 public:
     static const auto inline tp_stored = coproc::topic_ingestion_policy::stored;
     static const auto inline tp_earliest
@@ -30,14 +30,8 @@ public:
         coproc::wasm::cpp_enable_payload data;
     };
 
-    /// Class constructor
-    ///
-    /// Initializes the '_root_fixture' member variable
-    /// Using encapsulation over inheritance so that the root fixture can be
-    /// destroyed and re-initialized in the middle of a test
-    coproc_test_fixture();
-
-    ~coproc_test_fixture() override;
+    coproc_api_fixture();
+    ~coproc_api_fixture();
 
     /// Higher level abstraction of 'publish_events'
     ///
@@ -48,19 +42,6 @@ public:
     ///
     /// Maps the list of ids to the proper type and calls 'publish_events'
     ss::future<> disable_coprocessors(std::vector<uint64_t>);
-
-    /// Call to define the state-of-the-world
-    ///
-    /// This is the current ntps registered within the log manger. Since
-    /// theres no shard_table, a trivial hashing scheme is internally used to
-    /// map ntps to shards.
-    ss::future<> setup(log_layout_map);
-
-    /// Simulates a redpanda restart from failure
-    ///
-    /// All internal state is wiped and setup() is called again. Application is
-    /// forced to read from the existing _data_dir to bootstrap
-    ss::future<> restart();
 
     /// \brief Write records to storage::api
     ss::future<> produce(model::ntp, model::record_batch_reader);
@@ -77,24 +58,48 @@ public:
     kafka::client::client& get_client() { return *_client; }
 
 protected:
-    redpanda_thread_fixture* root_fixture() {
-        vassert(_root_fixture != nullptr, "Access root_fixture when null");
-        return _root_fixture.get();
-    }
-
     ss::future<model::record_batch_reader::data_t> do_consume(
       model::topic_partition,
       model::offset,
       std::size_t,
       model::timeout_clock::time_point);
 
-    ss::future<> wait_for_copro(coproc::script_id);
-
     ss::future<> push_wasm_events(std::vector<coproc::wasm::event>);
 
 private:
     absl::flat_hash_set<coproc::script_id> _active_ids;
     std::unique_ptr<kafka::client::client> _client;
+};
 
-    std::unique_ptr<redpanda_thread_fixture> _root_fixture;
+class coproc_test_fixture
+  : public coproc_api_fixture
+  , public supervisor_test_fixture {
+public:
+    /// Calls the superclass method with the same name
+    ///
+    /// But additionally waits until the copros are registered with rp
+    ss::future<> enable_coprocessors(std::vector<deploy>);
+
+    /// Call to define the state-of-the-world
+    ///
+    /// This is the current ntps registered within the log manger. Since
+    /// theres no shard_table, a trivial hashing scheme is internally used to
+    /// map ntps to shards.
+    ss::future<> setup(log_layout_map);
+
+    /// Simulates a redpanda restart from failure
+    ///
+    /// All internal state is wiped and setup() is called again. Application is
+    /// forced to read from the existing _data_dir to bootstrap
+    ss::future<> restart();
+
+protected:
+    redpanda_thread_fixture* root_fixture() {
+        vassert(_root_fixture != nullptr, "Access root_fixture when null");
+        return _root_fixture.get();
+    }
+
+private:
+    std::unique_ptr<redpanda_thread_fixture> _root_fixture{
+      std::make_unique<redpanda_thread_fixture>()};
 };
