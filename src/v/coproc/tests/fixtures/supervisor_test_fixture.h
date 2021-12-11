@@ -19,8 +19,8 @@
 /// provided methods
 class supervisor_test_fixture : public rpc_sharded_integration_fixture {
 public:
-    supervisor_test_fixture()
-      : rpc_sharded_integration_fixture(43189) {
+    explicit supervisor_test_fixture(uint32_t port = 43189)
+      : rpc_sharded_integration_fixture(port) {
         configure_server();
         _delay_heartbeat.start().get();
         _delay_heartbeat
