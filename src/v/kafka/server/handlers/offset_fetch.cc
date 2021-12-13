@@ -64,8 +64,14 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
           resp.data.topics.begin(),
           resp.data.topics.end(),
           [&ctx](const offset_fetch_response_topic& topic) {
+              /*
+               * quiet authz failures. this is checking for visibility across
+               * all topics not specifically requested topics.
+               */
               return ctx.authorized(
-                security::acl_operation::describe, topic.name);
+                security::acl_operation::describe,
+                topic.name,
+                authz_quiet{true});
           });
         resp.data.topics.erase(unauthorized, resp.data.topics.end());
 

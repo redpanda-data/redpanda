@@ -201,8 +201,14 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
           topics.begin(),
           topics.end(),
           [&ctx](const model::topic_metadata& t_md) {
+              /*
+               * quiet authz failures. this isn't checking for a specifically
+               * requested topic, but rather checking visibility of all topics.
+               */
               return ctx.authorized(
-                security::acl_operation::describe, t_md.tp_ns.tp);
+                security::acl_operation::describe,
+                t_md.tp_ns.tp,
+                authz_quiet{true});
           });
         std::transform(
           topics.begin(),
