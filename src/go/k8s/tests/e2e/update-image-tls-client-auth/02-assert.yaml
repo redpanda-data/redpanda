@@ -30,3 +30,12 @@ spec:
     image: "localhost/redpanda:dev"
 status:
   phase: "Running"
+
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+- type: pod
+  selector: app.kubernetes.io/name=redpanda
+  tail: -1

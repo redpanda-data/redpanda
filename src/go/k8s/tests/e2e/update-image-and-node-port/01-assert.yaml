@@ -14,7 +14,7 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v21.10.1-si-beta14"
+    image: "vectorized/redpanda:v21.11.2"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
@@ -36,7 +36,7 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v21.10.1-si-beta14"
+    image: "vectorized/redpanda:v21.11.2"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
@@ -69,3 +69,12 @@ spec:
       protocol: TCP
       targetPort: 9645
   type: NodePort
+
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+- type: pod
+  selector: app.kubernetes.io/name=redpanda
+  tail: -1
