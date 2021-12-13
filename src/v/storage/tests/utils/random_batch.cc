@@ -47,8 +47,14 @@ std::vector<model::record_header> make_headers(int n = 2) {
     return ret;
 }
 
-model::record make_random_record(int index) {
-    auto k = make_iobuf();
+model::record
+make_random_record(int index, std::optional<size_t> rec_size = std::nullopt) {
+    iobuf k;
+    if (rec_size) {
+        k = make_iobuf(*rec_size);
+    } else {
+        k = make_iobuf();
+    }
     auto k_z = k.size_bytes();
     auto v = make_iobuf();
     auto v_z = v.size_bytes();
@@ -81,18 +87,24 @@ model::record_batch make_random_batch(
   model::offset o,
   int num_records,
   bool allow_compression,
-  model::record_batch_type bt) {
+  model::record_batch_type bt,
+  std::optional<std::vector<size_t>> record_sizes) {
     return make_random_batch(record_batch_spec{
       .offset = o,
       .allow_compression = allow_compression,
       .count = num_records,
-      .bt = bt});
+      .bt = bt,
+      .record_sizes = std::move(record_sizes)});
 }
 
 model::record_batch
 make_random_batch(model::offset o, int num_records, bool allow_compression) {
     return make_random_batch(
-      o, num_records, allow_compression, model::record_batch_type::raft_data);
+      o,
+      num_records,
+      allow_compression,
+      model::record_batch_type::raft_data,
+      std::nullopt);
 }
 
 model::record_batch make_random_batch(record_batch_spec spec) {
@@ -125,7 +137,11 @@ model::record_batch make_random_batch(record_batch_spec spec) {
     auto rs = model::record_batch::uncompressed_records();
     rs.reserve(spec.count);
     for (int i = 0; i < spec.count; ++i) {
-        rs.emplace_back(make_random_record(i));
+        std::optional<size_t> sz = std::nullopt;
+        if (spec.record_sizes) {
+            sz = spec.record_sizes->at(i);
+        }
+        rs.emplace_back(make_random_record(i, sz));
     }
     if (header.attrs.compression() != model::compression::none) {
         iobuf body;

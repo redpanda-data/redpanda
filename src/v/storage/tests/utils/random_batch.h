@@ -29,6 +29,7 @@ struct record_batch_spec {
     int16_t producer_epoch{0};
     int32_t base_sequence{0};
     bool is_transactional{false};
+    std::optional<std::vector<size_t>> record_sizes;
 };
 
 /**
@@ -40,7 +41,8 @@ model::record_batch make_random_batch(
   model::offset o,
   int num_records,
   bool allow_compression,
-  model::record_batch_type bt);
+  model::record_batch_type bt,
+  std::optional<std::vector<size_t>> record_sizes = std::nullopt);
 
 model::record_batch
 make_random_batch(model::offset o, int num_records, bool allow_compression);

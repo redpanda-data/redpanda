@@ -73,6 +73,7 @@ inline iobuf generate_segment(model::offset base_offset, int count) {
 struct batch_t {
     int num_records;
     model::record_batch_type type;
+    std::vector<size_t> record_sizes;
 };
 
 inline ss::circular_buffer<model::record_batch>
@@ -81,7 +82,13 @@ make_random_batches(model::offset o, const std::vector<batch_t>& batches) {
     ret.reserve(batches.size());
     for (auto batch : batches) {
         auto b = storage::test::make_random_batch(
-          o, batch.num_records, false, batch.type);
+          o,
+          batch.num_records,
+          false,
+          batch.type,
+          batch.record_sizes.size() != batch.num_records
+            ? std::nullopt
+            : std::make_optional(batch.record_sizes));
         o = b.last_offset() + model::offset(1);
         b.set_term(model::term_id(0));
         ret.push_back(std::move(b));

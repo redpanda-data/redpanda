@@ -624,9 +624,9 @@ FIXTURE_TEST(
     constexpr int batches_per_segment = 10;
     constexpr int num_segments = 3;
     constexpr int total_batches = batches_per_segment * num_segments;
-    constexpr batch_t data = {
+    batch_t data = {
       .num_records = 10, .type = model::record_batch_type::raft_data};
-    constexpr batch_t conf = {
+    batch_t conf = {
       .num_records = 1, .type = model::record_batch_type::raft_configuration};
     const std::vector<std::vector<batch_t>> batch_types = {
       {conf, data, data, data, data, data, data, data, data, data},
@@ -663,9 +663,9 @@ FIXTURE_TEST(
     constexpr int batches_per_segment = 10;
     constexpr int num_segments = 3;
     constexpr int total_batches = batches_per_segment * num_segments;
-    constexpr batch_t data = {
+    batch_t data = {
       .num_records = 10, .type = model::record_batch_type::raft_data};
-    constexpr batch_t conf = {
+    batch_t conf = {
       .num_records = 1, .type = model::record_batch_type::raft_configuration};
     const std::vector<std::vector<batch_t>> batch_types = {
       {conf, conf, conf, conf, conf, data, data, data, data, data},
@@ -702,9 +702,9 @@ FIXTURE_TEST(
     constexpr int batches_per_segment = 10;
     constexpr int num_segments = 3;
     constexpr int total_batches = batches_per_segment * num_segments;
-    constexpr batch_t data = {
+    batch_t data = {
       .num_records = 10, .type = model::record_batch_type::raft_data};
-    constexpr batch_t conf = {
+    batch_t conf = {
       .num_records = 1, .type = model::record_batch_type::raft_configuration};
     const std::vector<std::vector<batch_t>> batch_types = {
       {conf, data, data, data, data, data, data, data, data, data},
@@ -741,9 +741,9 @@ FIXTURE_TEST(
     constexpr int batches_per_segment = 10;
     constexpr int num_segments = 3;
     constexpr int total_batches = batches_per_segment * num_segments;
-    constexpr batch_t data = {
+    batch_t data = {
       .num_records = 10, .type = model::record_batch_type::raft_data};
-    constexpr batch_t conf = {
+    batch_t conf = {
       .num_records = 1, .type = model::record_batch_type::raft_configuration};
     const std::vector<std::vector<batch_t>> batch_types = {
       {conf, conf, conf, conf, conf, conf, conf, conf, conf, conf},
@@ -778,9 +778,9 @@ FIXTURE_TEST(
 FIXTURE_TEST(
   test_remote_partition_scan_translate_full_5, cloud_storage_fixture) {
     constexpr int num_segments = 3;
-    constexpr batch_t data = {
+    batch_t data = {
       .num_records = 10, .type = model::record_batch_type::raft_data};
-    constexpr batch_t conf = {
+    batch_t conf = {
       .num_records = 1, .type = model::record_batch_type::raft_configuration};
     const std::vector<std::vector<batch_t>> batch_types = {
       {conf, conf, conf, conf, conf, conf, conf, conf, conf, data},
@@ -804,9 +804,9 @@ FIXTURE_TEST(
 FIXTURE_TEST(
   test_remote_partition_scan_translate_full_6, cloud_storage_fixture) {
     constexpr int num_segments = 3;
-    constexpr batch_t data = {
+    batch_t data = {
       .num_records = 10, .type = model::record_batch_type::raft_data};
-    constexpr batch_t conf = {
+    batch_t conf = {
       .num_records = 1, .type = model::record_batch_type::raft_configuration};
     const std::vector<std::vector<batch_t>> batch_types = {
       {conf, conf, conf, conf, conf, conf, conf, conf, conf, conf},
@@ -833,22 +833,38 @@ struct segment_layout {
 
 static segment_layout generate_segment_layout(int num_segments, int seed) {
     static constexpr size_t max_segment_size = 20;
-    static constexpr size_t max_batch_size = 100;
-    std::seed_seq seq{seed};
-    std::mt19937 re(seq);
-    std::uniform_int_distribution<unsigned> dist;
+    static constexpr size_t max_batch_size = 10;
+    static constexpr size_t max_record_bytes = 2048;
     size_t num_data_batches = 0;
-    auto gen_segment = [&re, &dist, &num_data_batches]() {
-        size_t sz = 1 + dist(re) % max_segment_size;
+    auto gen_segment = [&num_data_batches]() {
+        size_t sz = random_generators::get_int((size_t)1, max_segment_size - 1);
         std::vector<batch_t> res;
         res.reserve(sz);
+        model::record_batch_type types[] = {
+          model::record_batch_type::raft_data,
+          model::record_batch_type::raft_configuration,
+          model::record_batch_type::archival_metadata,
+        };
+        constexpr auto num_types
+          = (sizeof(types) / sizeof(model::record_batch_type));
         for (size_t i = 0; i < sz; i++) {
-            size_t batch_size = 1 + dist(re) % max_batch_size;
-            size_t type = dist(re) % 2;
+            auto type = types[random_generators::get_int(num_types - 1)];
+            size_t batch_size = random_generators::get_int(
+              (size_t)1, max_batch_size - 1);
+            if (type == model::record_batch_type::raft_configuration) {
+                // raft_configuration can only have one record
+                // archival_metadata can have more than one records
+                batch_size = 1;
+            }
+            std::vector<size_t> sizes;
+            for (int j = 0; j < batch_size; j++) {
+                sizes.push_back(
+                  random_generators::get_int(max_record_bytes - 1));
+            }
             batch_t b{
               .num_records = static_cast<int>(batch_size),
-              .type = type == 0 ? model::record_batch_type::raft_data
-                                : model::record_batch_type::raft_configuration,
+              .type = type,
+              .record_sizes = sizes,
             };
             if (b.type == model::record_batch_type::raft_data) {
                 num_data_batches++;
@@ -878,11 +894,6 @@ FIXTURE_TEST(
     auto headers_read = scan_remote_partition(*this, base, max);
     model::offset expected_offset{0};
     for (const auto& header : headers_read) {
-        vlog(
-          test_log.debug,
-          "Expected offset {}, actual header {}",
-          expected_offset,
-          header);
         BOOST_REQUIRE_EQUAL(expected_offset, header.base_offset);
         expected_offset = header.last_offset() + model::offset(1);
     }
@@ -902,7 +913,6 @@ scan_remote_partition_incrementally(
       manifest_ntp, manifest_revision);
 
     auto manifest = hydrate_manifest(api, bucket);
-
     auto partition = ss::make_lw_shared<remote_partition>(
       manifest, api, *imposter.cache, bucket);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
@@ -913,18 +923,27 @@ scan_remote_partition_incrementally(
 
     storage::log_reader_config reader_config(
       base, max, ss::default_priority_class());
-    reader_config.max_bytes = 4_KiB;
+
+    // starting max_bytes
+    constexpr size_t max_bytes_limit = 4_KiB;
+    reader_config.max_bytes = max_bytes_limit;
 
     auto next = base;
 
     int num_fetches = 0;
     while (next < max) {
         reader_config.start_offset = next;
+        reader_config.max_bytes = random_generators::get_int(
+          max_bytes_limit - 1);
+        vlog(test_log.info, "reader_config {}", reader_config);
         auto reader = partition->make_reader(reader_config).get().reader;
         auto headers_read
           = reader.consume(test_consumer(), model::no_timeout).get();
         if (headers_read.empty()) {
             break;
+        }
+        for (const auto& header : headers_read) {
+            vlog(test_log.info, "header {}", header);
         }
         next = headers_read.back().last_offset() + model::offset(1);
         std::copy(
@@ -933,7 +952,7 @@ scan_remote_partition_incrementally(
           std::back_inserter(headers));
         num_fetches++;
     }
-    BOOST_REQUIRE(num_fetches != 1);
+    BOOST_REQUIRE(num_fetches > 0);
     vlog(test_log.info, "{} fetch operations performed", num_fetches);
     return headers;
 }
@@ -950,11 +969,6 @@ FIXTURE_TEST(
     auto headers_read = scan_remote_partition_incrementally(*this, base, max);
     model::offset expected_offset{0};
     for (const auto& header : headers_read) {
-        vlog(
-          test_log.debug,
-          "Expected offset {}, actual header {}",
-          expected_offset,
-          header);
         BOOST_REQUIRE_EQUAL(expected_offset, header.base_offset);
         expected_offset = header.last_offset() + model::offset(1);
     }
