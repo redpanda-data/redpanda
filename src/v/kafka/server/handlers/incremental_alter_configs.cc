@@ -89,18 +89,18 @@ static void parse_and_set_shadow_indexing_mode(
   model::shadow_indexing_mode enabled_value) {
     switch (op) {
     case config_resource_operation::remove:
-        simode.value = std::nullopt;
         simode.op = cluster::incremental_update_operation::remove;
+        simode.value = model::negate_shadow_indexing_flag(enabled_value);
         break;
     case config_resource_operation::set:
+        simode.op = cluster::incremental_update_operation::set;
         simode.value
-          = string_switch<std::optional<model::shadow_indexing_mode>>(*value)
-              .match("no", std::nullopt)
-              .match("false", std::nullopt)
+          = string_switch<model::shadow_indexing_mode>(*value)
+              .match("no", model::negate_shadow_indexing_flag(enabled_value))
+              .match("false", model::negate_shadow_indexing_flag(enabled_value))
               .match("yes", enabled_value)
               .match("true", enabled_value)
-              .default_match(std::nullopt);
-        simode.op = cluster::incremental_update_operation::set;
+              .default_match(model::shadow_indexing_mode::disabled);
         break;
     case config_resource_operation::append:
     case config_resource_operation::subtract:

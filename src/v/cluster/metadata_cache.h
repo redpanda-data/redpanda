@@ -14,6 +14,7 @@
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "seastarx.h"
@@ -137,6 +138,7 @@ public:
     std::optional<size_t> get_default_retention_bytes() const;
     std::optional<std::chrono::milliseconds>
     get_default_retention_duration() const;
+    model::shadow_indexing_mode get_default_shadow_indexing_mode() const;
 
 private:
     ss::sharded<topic_table>& _topics_state;

@@ -138,8 +138,29 @@ class RpkTool:
 
         return filter(lambda p: p != None, map(partition_line, lines))
 
+    def describe_topic_configs(self, topic):
+        cmd = ['describe', topic, '-c']
+        output = self._run_topic(cmd)
+        if "not found" in output:
+            return None
+        lines = output.splitlines()
+        res = {}
+        for line in lines:
+            try:
+                key, value, source = line.split()
+                if key == "KEY":
+                    continue
+                res[key] = value, source
+            except:
+                pass
+        return res
+
     def alter_topic_config(self, topic, set_key, set_value):
         cmd = ['alter-config', topic, "--set", f"{set_key}={set_value}"]
+        self._run_topic(cmd)
+
+    def delete_topic_config(self, topic, key):
+        cmd = ['alter-config', topic, "--delete", key]
         self._run_topic(cmd)
 
     def consume(self,

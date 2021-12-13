@@ -9,6 +9,7 @@
 
 #include "cluster/archival_metadata_stm.h"
 
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
@@ -272,7 +273,9 @@ ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
 }
 
 model::offset archival_metadata_stm::max_collectible_offset() {
-    if (!_raft->log_config().is_archival_enabled()) {
+    if (
+      !_raft->log_config().is_archival_enabled()
+      && !config::shard_local_cfg().cloud_storage_enable_remote_write.value()) {
         // The archival is disabled but the state machine still exists so we
         // shouldn't stop eviction from happening.
         return model::offset::max();

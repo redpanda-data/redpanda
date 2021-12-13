@@ -64,9 +64,9 @@ get_bool_value(const config_map_t& config, std::string_view key) {
     return std::nullopt;
 }
 
-static model::shadow_indexing_mode
+static std::optional<model::shadow_indexing_mode>
 get_shadow_indexing_mode(const config_map_t& config) {
-    model::shadow_indexing_mode mode = model::shadow_indexing_mode::disabled;
+    std::optional<model::shadow_indexing_mode> mode;
     auto arch_enabled = get_bool_value(config, topic_property_remote_write);
     if (arch_enabled && *arch_enabled) {
         mode = model::shadow_indexing_mode::archival;
