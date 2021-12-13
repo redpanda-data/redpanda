@@ -213,6 +213,9 @@ func (r *ClusterReconciler) Reconcile(
 	}
 
 	for _, res := range toApply {
+		if res == nil { // currently superusers can be nil if feature disabled
+			continue
+		}
 		applied, err := res.Ensure(ctx)
 
 		var e *resources.RequeueAfterError
@@ -221,10 +224,7 @@ func (r *ClusterReconciler) Reconcile(
 			return ctrl.Result{RequeueAfter: e.RequeueAfter}, nil
 		}
 
-		res, ok := res.(resources.Resource)
-		if ok {
-			updated[res.Key().String()] = applied
-		}
+		insertToUpdated(updated, res, applied)
 
 		if err != nil {
 			log.Error(err, "Failed to reconcile resource")
@@ -271,6 +271,15 @@ func (r *ClusterReconciler) Reconcile(
 	}
 
 	return ctrl.Result{}, err
+}
+
+func insertToUpdated(
+	updated map[string]bool, rec resources.Reconciler, applied bool,
+) {
+	res, ok := rec.(resources.Resource)
+	if ok {
+		updated[res.Key().String()] = applied
+	}
 }
 
 // SetupWithManager sets up the controller with the Manager.
