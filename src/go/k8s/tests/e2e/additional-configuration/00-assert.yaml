@@ -14,3 +14,4 @@ collectors:
 - type: pod
   selector: app.kubernetes.io/name=redpanda
   tail: -1
+  namespace: default
