@@ -272,9 +272,13 @@ bool is_cross_core_update(model::node_id self, const topic_table_delta& delta) {
 }
 ss::future<>
 controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
-    vlog(clusterlog.trace, "bootstrapping {}", ntp);
     // find last delta that has to be applied
     auto bootstrap_deltas = calculate_bootstrap_deltas(_self, deltas);
+    vlog(
+      clusterlog.trace,
+      "bootstrapping {} with deltas {}",
+      ntp,
+      bootstrap_deltas);
 
     // if empty do nothing
     if (bootstrap_deltas.empty()) {
@@ -282,10 +286,16 @@ controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
     }
 
     auto& first_delta = bootstrap_deltas.front();
+    vlog(clusterlog.trace, "first bootstrap delta of {}: {}", ntp, first_delta);
     // if first operation is a cross core update, find initial revision on
     // current node and store it in bootstrap map
     using op_t = topic_table::delta::op_type;
     if (is_cross_core_update(_self, first_delta)) {
+        vlog(
+          clusterlog.trace,
+          "first bootstrap delta of {}, is a x-core update, looking for "
+          "initial revision",
+          ntp);
         // find opeartion that created current partition on this node
         auto it = std::find_if(
           deltas.rbegin(),
@@ -305,6 +315,11 @@ controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
           ntp);
         // if we found update finished operation it is preceeding operation that
         // created partition on current node
+        vlog(
+          clusterlog.trace,
+          "first {} operation that doesn't contain current node - {}",
+          ntp,
+          *it);
         /**
          * At this point we may have two situations
          * 1. replica was created on current node shard when partition was
@@ -327,6 +342,11 @@ controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
               *it);
             it = std::prev(it);
         }
+        vlog(
+          clusterlog.trace,
+          "initial revision source delta - {} - {}",
+          ntp,
+          *it);
         // persist revision in order to create partition with correct revision
         _bootstrap_revisions[ntp] = model::revision_id(it->offset());
     }
