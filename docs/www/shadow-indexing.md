@@ -161,7 +161,7 @@ When the Kafka client fetches an offset range that isn’t available locally in 
 
 If you don’t specify a cache location in the `redpanda.yaml` file, the cache directory will be created here: 
 
-`&lt;redpanda-data-directory>/cloud_storage_cache`. 
+`&lt;redpanda-data-directory>/cloud_storage_cache`
 
 Use the `cloud_storage_cache_directory` parameter in the `redpanda.yaml` file to specify a different location for the cache directory. You must specify the full path. 
 
