@@ -305,10 +305,25 @@ controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
           ntp);
         // if we found update finished operation it is preceeding operation that
         // created partition on current node
-        if (it->type == op_t::update_finished) {
+        /**
+         * At this point we may have two situations
+         * 1. replica was created on current node shard when partition was
+         *    created, with addition delta, in this case `it` contains this
+         *    addition delta.
+         *
+         * 2. replica was moved to this node with `update` delta type, in this
+         *    case `it` contains either `update_finished` delta from previous
+         *    operation or `add` delta from previous operation. In this case
+         *    operation does not contain current node and we need to execute
+         *    operation that is following the found one as this is the first
+         *    operation that created replica on current node
+         *
+         */
+        if (!contains_node(_self, it->new_assignment.replicas)) {
             vassert(
               it != deltas.rbegin(),
-              "update finished delta {} must have preceeding operation",
+              "operation {} must have following operation that created a "
+              "replica on current node",
               *it);
             it = std::prev(it);
         }
