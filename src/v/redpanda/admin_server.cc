@@ -1226,9 +1226,11 @@ void admin_server::register_partition_routes() {
                 fmt::format("Invalid partition id {}", partition));
           }
 
-          if (ns != model::kafka_namespace) {
+          const model::ntp ntp(std::move(ns), std::move(topic), partition);
+
+          if (ntp == model::controller_ntp) {
               throw ss::httpd::bad_request_exception(
-                fmt::format("Unsupported namespace: {}", ns));
+                fmt::format("Can't reconfigure a controller"));
           }
 
           auto doc = parse_json_body(*req);
@@ -1264,8 +1266,6 @@ void admin_server::register_partition_routes() {
               replicas.push_back(
                 model::broker_shard{.node_id = node_id, .shard = shard});
           }
-
-          const model::ntp ntp(std::move(ns), std::move(topic), partition);
 
           auto current_assignment
             = _controller->get_topics_state().local().get_partition_assignment(
