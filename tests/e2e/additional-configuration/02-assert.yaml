@@ -6,13 +6,3 @@ metadata:
 status:
   replicas: 1
   upgrading: false
-
----
-
-apiVersion: kuttl.dev/v1beta1
-kind: TestAssert
-collectors:
-- type: pod
-  selector: app.kubernetes.io/name=redpanda
-  tail: -1
-  namespace: default
