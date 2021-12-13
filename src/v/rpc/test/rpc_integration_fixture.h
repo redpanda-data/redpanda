@@ -96,13 +96,11 @@ class rpc_base_integration_fixture {
 public:
     explicit rpc_base_integration_fixture(uint16_t port)
       : _listen_address("127.0.0.1", port)
-      , _ssg(ss::create_smp_service_group({5000}).get0()) {
-        _sg = ss::create_scheduling_group("rpc scheduling group", 200).get0();
-    }
+      , _ssg(ss::create_smp_service_group({5000}).get0())
+      , _sg(ss::default_scheduling_group()) {}
 
     virtual ~rpc_base_integration_fixture() {
         destroy_smp_service_group(_ssg).get0();
-        destroy_scheduling_group(_sg).get0();
     }
 
     virtual void start_server() = 0;
@@ -156,6 +154,7 @@ public:
       std::optional<ss::tls::credentials_builder> credentials = std::nullopt,
       ss::tls::reload_callback&& cb = {}) override {
         rpc::server_configuration scfg("unit_test_rpc");
+        scfg.disable_metrics = rpc::metrics_disabled::yes;
         auto resolved = rpc::resolve_dns(_listen_address).get();
         scfg.addrs.emplace_back(
           resolved,
@@ -203,6 +202,7 @@ public:
       std::optional<ss::tls::credentials_builder> credentials = std::nullopt,
       ss::tls::reload_callback&& cb = {}) override {
         rpc::server_configuration scfg("unit_test_rpc_sharded");
+        scfg.disable_metrics = rpc::metrics_disabled::yes;
         auto resolved = rpc::resolve_dns(_listen_address).get();
         scfg.addrs.emplace_back(
           resolved,
