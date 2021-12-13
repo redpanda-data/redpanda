@@ -323,6 +323,9 @@ ss::future<> recovery_stm::handle_install_snapshot_reply(
   result<install_snapshot_reply> reply) {
     // snapshot delivery failed
     if (reply.has_error() || !reply.value().success) {
+        // if snapshot delivery failed, stop recovery to update follower state
+        // and retry
+        _stop_requested = true;
         return close_snapshot_reader();
     }
     if (reply.value().term > _ptr->_term) {
