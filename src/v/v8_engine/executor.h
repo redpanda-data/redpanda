@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "coproc/types.h"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
 #include "utils/gate_guard.h"
@@ -25,6 +26,7 @@
 #include <seastar/core/smp.hh>
 #include <seastar/util/later.hh>
 
+#include <absl/container/node_hash_map.h>
 #include <boost/lockfree/spsc_queue.hpp>
 
 #include <atomic>
@@ -251,8 +253,17 @@ public:
           });
     }
 
+    ss::future<> insert_or_assign(coproc::script_id id, iobuf code);
+
+    ss::future<> erase(coproc::script_id id);
+
+    ss::future<std::optional<iobuf>> get_code(std::string_view name);
+
 private:
     ss::sharded<executor> _executor;
+
+    using code_database_t = absl::node_hash_map<coproc::script_id, iobuf>;
+    ss::sharded<code_database_t> _code_database;
 };
 
 } // namespace v8_engine
