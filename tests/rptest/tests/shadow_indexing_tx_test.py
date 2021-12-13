@@ -76,7 +76,7 @@ class ShadowIndexingTxTest(RedpandaTest):
             rpk.alter_topic_config(topic.name, 'redpanda.remote.write', 'true')
             rpk.alter_topic_config(topic.name, 'redpanda.remote.read', 'true')
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, empty_topics=True)
     def test_shadow_indexing_aborted_txs(self):
         """Check that messages belonging to aborted transaction are not seen by clients
         when fetching from remote segments."""

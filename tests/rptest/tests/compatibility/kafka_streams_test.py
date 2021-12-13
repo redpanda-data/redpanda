@@ -65,7 +65,7 @@ class KafkaStreamsDriverBase(KafkaStreamsTest):
                                                      enable_pp=enable_pp,
                                                      enable_sr=enable_sr)
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=5, empty_topics=True)
     def test_kafka_streams(self):
         example = self.create_example()
 
@@ -105,7 +105,7 @@ class KafkaStreamsProdConsBase(KafkaStreamsTest):
     def is_valid_msg(self, msg):
         raise NotImplementedError("is_valid_msg() undefined.")
 
-    @cluster(num_nodes=6)
+    @cluster(num_nodes=6, empty_topics=True)
     def test_kafka_streams(self):
         example = self.create_example()
 

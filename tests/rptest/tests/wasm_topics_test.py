@@ -25,7 +25,7 @@ class WasmCreateTopicsTest(WasmIdentityTest):
     def wasm_test_outputs(self):
         return [["output_1", "output_2", "output_3"]]
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, empty_topics=True)
     def verify_materialized_topics_test(self):
         def rpk_partition_sort(p):
             return p.id

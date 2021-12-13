@@ -114,7 +114,9 @@ class NodeOperationFuzzyTest(EndToEndTest):
     nodes
     """
 
-    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @cluster(num_nodes=7,
+             log_allow_list=CHAOS_LOG_ALLOW_LIST,
+             empty_topics=True)
     @parametrize(enable_failures=True)
     @parametrize(enable_failures=False)
     def test_node_opeartions(self, enable_failures):

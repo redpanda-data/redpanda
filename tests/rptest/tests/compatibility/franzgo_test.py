@@ -60,7 +60,7 @@ class FranzGoBase(RedpandaTest):
                                        franzgo_consumer,
                                        timeout_sec=self._timeout)
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=5, empty_topics=True)
     def test_franzgo_bench(self):
         # Start the produce bench
         self._producer.start()

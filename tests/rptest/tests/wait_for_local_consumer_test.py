@@ -32,7 +32,7 @@ class WaitForLocalConsumerTest(RedpandaTest):
         self._producer = KafProducer(ctx, self.redpanda, self.topic)
         self._consumer = KafConsumer(ctx, self.redpanda, self.topic)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, empty_topics=True)
     def test_wait_for_local_consumer(self):
         self._consumer.start()
         self._producer.start()
