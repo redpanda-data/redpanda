@@ -1,7 +1,7 @@
 ---
 name: 🚀 Feature request
 about: Suggest an enhancement to Redpanda
-labels: "kind/enhancement"
+labels: "kind/enhance"
 ---
 
 ### Who is this for and what problem do they have today?
