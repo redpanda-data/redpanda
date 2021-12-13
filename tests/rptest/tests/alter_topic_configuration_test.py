@@ -155,7 +155,7 @@ class ShadowIndexingGlobalConfig(RedpandaTest):
                              extra_rp_conf=self._extra_rp_conf)
 
     @cluster(num_nodes=3)
-    def test_shadow_indexing_config(self):
+    def test_overrides_set(self):
         topic = self.topics[0].name
         rpk = RpkTool(self.redpanda)
         original_output = rpk.describe_topic_configs(topic)
@@ -164,8 +164,33 @@ class ShadowIndexingGlobalConfig(RedpandaTest):
         assert original_output["redpanda.remote.write"][0] == "true"
 
         rpk.alter_topic_config(topic, "redpanda.remote.read", "false")
+        rpk.alter_topic_config(topic, "redpanda.remote.read", "false")
+        altered_output = rpk.describe_topic_configs(topic)
+        self.logger.info(f"altered_output={altered_output}")
+        assert altered_output["redpanda.remote.read"][0] == "false"
+        assert altered_output["redpanda.remote.write"][0] == "false"
+
+    @cluster(num_nodes=3)
+    def test_overrides_remove(self):
+        topic = self.topics[0].name
+        rpk = RpkTool(self.redpanda)
+        original_output = rpk.describe_topic_configs(topic)
+        self.logger.info(f"original_output={original_output}")
+        assert original_output["redpanda.remote.read"][0] == "true"
+        assert original_output["redpanda.remote.write"][0] == "true"
+
+        # disable shadow indexing for topic
+        rpk.alter_topic_config(topic, "redpanda.remote.read", "false")
         rpk.alter_topic_config(topic, "redpanda.remote.write", "false")
         altered_output = rpk.describe_topic_configs(topic)
         self.logger.info(f"altered_output={altered_output}")
         assert altered_output["redpanda.remote.read"][0] == "false"
         assert altered_output["redpanda.remote.write"][0] == "false"
+
+        # delete topic configs (value from configuration should be used)
+        rpk.delete_topic_config(topic, "redpanda.remote.read")
+        rpk.delete_topic_config(topic, "redpanda.remote.write")
+        altered_output = rpk.describe_topic_configs(topic)
+        self.logger.info(f"altered_output={altered_output}")
+        assert altered_output["redpanda.remote.read"][0] == "true"
+        assert altered_output["redpanda.remote.write"][0] == "true"
