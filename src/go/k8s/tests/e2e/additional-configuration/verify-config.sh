@@ -1,4 +1,9 @@
 #!/bin/bash
+PANDAPROXY_RETRIES=$1
+if [[ -z $PANDAPROXY_RETRIES ]]; then
+  echo "requires one argument, pandaproxy retries count"
+  exit 1
+fi
 actual=$(kubectl exec additional-configuration-0 -- cat /etc/redpanda/redpanda.yaml)
 expected=$(
   cat <<EOF
@@ -16,7 +21,7 @@ pandaproxy_client:
   brokers:
   - address: additional-configuration-0.additional-configuration.default.svc.cluster.local.
     port: 9092
-  retries: 10
+  retries: ${PANDAPROXY_RETRIES}
 redpanda:
   admin:
   - address: 0.0.0.0
