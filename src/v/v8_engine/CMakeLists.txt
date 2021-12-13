@@ -11,6 +11,7 @@ v_cc_library(
     v8_monolith
     absl::node_hash_map
     v::rphashing
-    v::bytes)
+    v::bytes
+    v::model)
 
 add_subdirectory(tests)
