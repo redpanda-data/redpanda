@@ -44,15 +44,10 @@ private:
 
 ss::future<> create_coproc_internal_topic(kafka::client::client& client) {
     return client
-      .dispatch([]() {
-          return kafka::create_topics_request{.data{
-            .topics = {kafka::creatable_topic{
-              .name = model::coprocessor_internal_topic,
-              .num_partitions = 1,
-              .replication_factor = 1}},
-            .timeout_ms = std::chrono::seconds(2),
-            .validate_only = false}};
-      })
+      .create_topic(kafka::creatable_topic{
+        .name = model::coprocessor_internal_topic,
+        .num_partitions = 1,
+        .replication_factor = 1})
       .then([](kafka::create_topics_response response) {
           /// Asserting here is better then letting a test timeout, it would be
           /// more difficult to debug the failure in the latter case
@@ -60,9 +55,11 @@ ss::future<> create_coproc_internal_topic(kafka::client::client& client) {
           vassert(
             response.data.topics[0].name == model::coprocessor_internal_topic,
             "Expected topic wasn't created");
+          auto ec = response.data.topics[0].error_code;
           vassert(
-            response.data.topics[0].error_code == kafka::error_code::none,
-            "Error when attempting to create topic");
+            ec == kafka::error_code::none,
+            "Error when attempting to create topic: {}",
+            ec);
       });
 }
 
