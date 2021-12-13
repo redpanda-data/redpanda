@@ -62,8 +62,10 @@ const (
 	saslMechanism = "SCRAM-SHA-256"
 )
 
-var errKeyDoesNotExistInSecretData = errors.New("cannot find key in secret data")
-var errCloudStorageSecretKeyCannotBeEmpty = errors.New("cloud storage SecretKey string cannot be empty")
+var (
+	errKeyDoesNotExistInSecretData        = errors.New("cannot find key in secret data")
+	errCloudStorageSecretKeyCannotBeEmpty = errors.New("cloud storage SecretKey string cannot be empty")
+)
 
 var _ Resource = &ConfigMapResource{}
 
@@ -282,7 +284,9 @@ func (r *ConfigMapResource) createConfiguration(
 	cr.Other["auto_create_topics_enabled"] = r.pandaCluster.Spec.Configuration.AutoCreateTopics
 	cr.Other["enable_idempotence"] = true
 	cr.Other["enable_transactions"] = true
-	cr.Other["cloud_storage_segment_max_upload_interval_sec"] = 1800 // 60s * 30 = 30 minutes
+	if featuregates.ShadowIndex(r.pandaCluster.Spec.Version) {
+		cr.Other["cloud_storage_segment_max_upload_interval_sec"] = 60 * 30 // 60s * 30 = 30 minutes
+	}
 
 	segmentSize := logSegmentSize
 	cr.LogSegmentSize = &segmentSize
@@ -313,7 +317,8 @@ func (r *ConfigMapResource) createConfiguration(
 					Port:    sr.Port,
 				},
 				Name: SchemaRegistryPortName,
-			}}
+			},
+		}
 	}
 	r.prepareSchemaRegistryTLS(cfgRpk)
 	err = r.prepareSchemaRegistryClient(ctx, cfgRpk)
@@ -423,7 +428,8 @@ func (r *ConfigMapResource) preparePandaproxy(cfgRpk *config.Config) {
 				Port:    internal.Port,
 			},
 			Name: PandaproxyPortInternalName,
-		}}
+		},
+	}
 
 	if r.pandaCluster.PandaproxyAPIExternal() != nil {
 		cfgRpk.Pandaproxy.PandaproxyAPI = append(cfgRpk.Pandaproxy.PandaproxyAPI,
