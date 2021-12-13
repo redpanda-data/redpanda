@@ -71,4 +71,5 @@ schema_registry:
     port: 8081
 EOF
 )
+echo "$actual"
 diff <(echo "$actual") <(echo "$expected")
