@@ -1,0 +1,62 @@
+// Copyright 2021 Vectorized, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
+package config
+
+import (
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/out"
+)
+
+func newStatusCommand(fs afero.Fs) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "status",
+		Short: "Get configuration status of redpanda nodes.",
+		Long: `Get configuration status of redpanda nodes.
+
+For each node, indicate whether a restart is required for settings to
+take effect, and any settings that the node has identified as invalid
+or unknown properties.
+
+Additionally show the version of cluster configuration that each node
+has applied: under normal circumstances these should all be equal,
+a lower number shows that a node is out of sync, perhaps because it
+is offline.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			p := config.ParamsFromCommand(cmd)
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			client, err := admin.NewClient(fs, cfg)
+			out.MaybeDie(err, "unable to initialize admin client: %v", err)
+
+			// GET the status endpoint
+			resp, err := client.ClusterConfigStatus()
+			out.MaybeDie(err, "error fetching status: %v", err)
+
+			tw := out.NewTable("NODE", "CONFIG-VERSION", "NEEDS-RESTART", "INVALID", "UNKNOWN")
+			defer tw.Flush()
+
+			for _, node := range resp {
+				tw.PrintStructFields(struct {
+					Id      int64
+					Version int64
+					Restart bool
+					Invalid []string
+					Unknown []string
+				}{node.NodeId, node.ConfigVersion, node.Restart, node.Invalid, node.Unknown})
+			}
+		},
+	}
+
+	return cmd
+}

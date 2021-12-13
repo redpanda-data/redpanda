@@ -10,7 +10,6 @@
 package admin
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -19,9 +18,8 @@ import (
 )
 
 // Config represents a Redpanda configuration. There are many keys returned, so
-// the raw response is just unmarshaled into an interface. The expectation is
-// that the client will just dump the response out as json.
-type Config interface{}
+// the raw response is just unmarshaled into an interface.
+type Config map[string]interface{}
 
 // Config returns a single admin endpoint's configuration. This errors if
 // multiple URLs are configured.
@@ -31,10 +29,6 @@ func (a *AdminAPI) Config() (Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The current config endpoint returns a json object wrapped in quotes.
-	// We trim the quotes here, then unmarshal the object into an
-	// interface{}. We do not expect to hit an unmarshal error here.
-	rawResp = bytes.Trim(rawResp, `"`)
 	var unmarshaled Config
 	if err := json.Unmarshal(rawResp, &unmarshaled); err != nil {
 		return nil, fmt.Errorf("unable to decode response body: %w", err)
@@ -64,4 +58,77 @@ func (a *AdminAPI) SetLogLevel(name, level string, expirySeconds int) error {
 
 	path := fmt.Sprintf("/v1/config/log_level/%s?level=%s&expires=%d", url.PathEscape(name), level, expirySeconds)
 	return a.sendOne(http.MethodPut, path, nil, nil)
+}
+
+type ConfigPropertyItems struct {
+	Type string `json:"type"` // A swagger scalar type, like 'string', 'integer'
+}
+
+type ConfigPropertyMetadata struct {
+	Type         string              `json:"type"`              // Swagger type like 'string', 'integer', 'array'
+	Description  string              `json:"description"`       // One liner human readable string
+	Nullable     bool                `json:"nullable"`          // If true, may be null
+	NeedsRestart bool                `json:"needs_restart"`     // If true, won't take effect until restart
+	Visibility   string              `json:"visibility"`        // One of 'user', 'deprecated', 'tunable'
+	Units        string              `json:"units,omitempty"`   // A unit like 'ms', or empty.
+	Example      string              `json:"example,omitempty"` // A non-default value for use in docs or tests
+	Items        ConfigPropertyItems `json:"items,omitempty"`   // If this is an array, the contained value type
+}
+
+type ConfigSchema map[string]ConfigPropertyMetadata
+
+type ConfigSchemaResponse struct {
+	Properties ConfigSchema `json:"properties"`
+}
+
+func (a *AdminAPI) ClusterConfigSchema() (ConfigSchema, error) {
+	var response ConfigSchemaResponse
+	err := a.sendAny(http.MethodGet, "/v1/cluster_config/schema", nil, &response)
+	if err != nil {
+		return nil, err
+	}
+
+	return response.Properties, nil
+}
+
+type ClusterConfigWriteResult struct {
+	ConfigVersion int `json:"config_version"`
+}
+
+func (a *AdminAPI) PatchClusterConfig(
+	upsert map[string]interface{}, remove []string,
+) (ClusterConfigWriteResult, error) {
+
+	body := map[string]interface{}{
+		"upsert": upsert,
+		"remove": remove,
+	}
+
+	var result ClusterConfigWriteResult
+	err := a.sendAny(http.MethodPut, "/v1/cluster_config", body, &result)
+	if err != nil {
+		return result, err
+	}
+
+	return result, nil
+}
+
+type ConfigStatus struct {
+	NodeId        int64    `json:"node_id"`
+	Restart       bool     `json:"restart"`
+	ConfigVersion int64    `json:"config_version"`
+	Invalid       []string `json:"invalid"`
+	Unknown       []string `json:"unknown"`
+}
+
+type ConfigStatusResponse []ConfigStatus
+
+func (a *AdminAPI) ClusterConfigStatus() (ConfigStatusResponse, error) {
+	var result ConfigStatusResponse
+	err := a.sendAny(http.MethodGet, "/v1/cluster_config/status", nil, &result)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }

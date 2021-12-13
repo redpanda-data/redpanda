@@ -10,9 +10,13 @@
 import time
 import requests
 import json
+import re
+import yaml
+import tempfile
 
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.clients.rpk import RpkTool
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
@@ -34,6 +38,7 @@ class ClusterConfigTest(RedpandaTest):
                                                 **kwargs)
 
         self.admin = Admin(self.redpanda)
+        self.rpk = RpkTool(self.redpanda)
 
     @cluster(num_nodes=3)
     def test_get_config(self):
@@ -140,23 +145,23 @@ class ClusterConfigTest(RedpandaTest):
             new_setting[0]] != new_setting[1]
         self._check_restart_clears()
 
+    def _check_value_everywhere(self, key, expect_value):
+        for node in self.redpanda.nodes:
+            actual_value = self.admin.get_cluster_config(node)[key]
+            if actual_value != expect_value:
+                self.logger.error(
+                    f"Wrong value on node {node.account.hostname}: {key}={actual_value} (!={expect_value})"
+                )
+            assert self.admin.get_cluster_config(node)[key] == expect_value
+
     def _check_propagated_and_persistent(self, key, expect_value):
         """
         Verify that a configuration value has successfully propagated to all
         nodes, and that it persists after a restart.
         """
-        def check_all():
-            for node in self.redpanda.nodes:
-                actual_value = self.admin.get_cluster_config(node)[key]
-                if actual_value != expect_value:
-                    self.logger.error(
-                        f"Wrong value on node {node.account.hostname}: {key}={actual_value} (!={expect_value})"
-                    )
-                assert self.admin.get_cluster_config(node)[key] == expect_value
-
-        check_all()
+        self._check_value_everywhere(key, expect_value)
         self.redpanda.restart_nodes(self.redpanda.nodes)
-        check_all()
+        self._check_value_everywhere(key, expect_value)
 
     @cluster(num_nodes=3)
     def test_simple_live_change(self):
@@ -363,3 +368,148 @@ class ClusterConfigTest(RedpandaTest):
         # Check after restart that confuration persisted and status shows valid
         check_status(False)
         check_values()
+
+    def _export(self, all):
+        with tempfile.NamedTemporaryFile('r') as file:
+            self.rpk.cluster_config_export(file.name, all)
+            return file.read()
+
+    def _import(self, text, all, allow_noop=False):
+        with tempfile.NamedTemporaryFile('w') as file:
+            file.write(text)
+            file.flush()
+            import_stdout = self.rpk.cluster_config_import(file.name, all)
+
+        last_line = import_stdout.strip().split("\n")[-1]
+        m = re.match("^.+new config version (\d+).*$", last_line)
+
+        self.logger.debug(f"_import status: {last_line}")
+
+        if m is None and allow_noop:
+            return None
+        elif m is None:
+            assert m is not None
+
+        version = int(m.group(1))
+        return version
+
+    def _export_import_modify(self, before, after, all=False):
+        text = self._export(all)
+
+        # Validate that RPK gives us valid yaml
+        _ = yaml.load(text)
+
+        self.logger.debug(f"Replacing \"{before}\" with \"{after}\"")
+        self.logger.debug(f"Exported config before modification: {text}")
+
+        # Intentionally not passing this through a YAML deserialize/serialize
+        # step during edit, to more realistically emulate someone hand editing
+        text = text.replace(before, after)
+
+        self.logger.debug(f"Exported config after modification: {text}")
+
+        # Edit a setting, import the resulting document
+        version = self._import(text, all)
+
+        return version, text
+
+    @cluster(num_nodes=3)
+    def test_rpk_export_import(self):
+        """
+        Test `rpk cluster config [export|import]` and implicitly
+        also `edit` (which is just an export/import cycle with
+        a text editor run in the middle)
+        """
+        # An arbitrary tunable for checking --all
+        tunable_property = 'kafka_qdc_depth_alpha'
+
+        # RPK should give us a valid yaml document
+        version_a, text = self._export_import_modify("kafka_qdc_enable: false",
+                                                     "kafka_qdc_enable: true")
+        self._wait_for_version_sync(version_a)
+
+        # Default should not have included tunables
+        assert tunable_property not in text
+
+        # The setting we edited should be updated
+        self._check_value_everywhere("kafka_qdc_enable", True)
+
+        # Clear a setting, it should revert to its default
+        version_b, text = self._export_import_modify("kafka_qdc_enable: true",
+                                                     "")
+        assert version_b > version_a
+        self._wait_for_version_sync(version_b)
+        self._check_value_everywhere("kafka_qdc_enable", False)
+
+        # Check that an --all export includes tunables
+        text_all = self._export(all=True)
+        assert tunable_property in text_all
+
+        # Check that editing a tunable with --all works
+        version_c, text = self._export_import_modify(
+            "kafka_qdc_depth_alpha: 0.8",
+            "kafka_qdc_depth_alpha: 1.5",
+            all=True)
+        assert version_c > version_b
+        self._wait_for_version_sync(version_c)
+        self._check_value_everywhere("kafka_qdc_depth_alpha", 1.5)
+
+        # Check that clearing a tunable with --all works
+        version_d, text = self._export_import_modify(
+            "kafka_qdc_depth_alpha: 1.5", "", all=True)
+        assert version_d > version_c
+        self._wait_for_version_sync(version_d)
+        self._check_value_everywhere("kafka_qdc_depth_alpha", 0.8)
+
+        # Check that an import/export with no edits does nothing.
+        text = self._export(all=True)
+        noop_version = self._import(text, allow_noop=True, all=True)
+        assert noop_version is None
+
+    @cluster(num_nodes=3)
+    def test_rpk_edit_string(self):
+        """
+        Test import/export of string fields, make sure they don't end
+        up with extraneous quotes
+        """
+        version_a, text = self._export_import_modify(
+            "cloud_storage_access_key:\n",
+            "cloud_storage_access_key: foobar\n")
+        self._wait_for_version_sync(version_a)
+        self._check_value_everywhere("cloud_storage_access_key", "foobar")
+
+        version_b, text = self._export_import_modify(
+            "cloud_storage_access_key: foobar\n",
+            "cloud_storage_access_key: \"foobaz\"")
+        self._wait_for_version_sync(version_b)
+        self._check_value_everywhere("cloud_storage_access_key", "foobaz")
+
+    @cluster(num_nodes=3)
+    def test_rpk_status(self):
+        """
+        This command is a thin wrapper over the status API
+        that is covered more comprehensively in other tests: this
+        case is just a superficial test that the command succeeds and
+        returns info for each node.
+        """
+        status_text = self.rpk.cluster_config_status()
+
+        # Split into lines, skip first one (header)
+        lines = status_text.strip().split("\n")[1:]
+
+        # Example:
+
+        # NODE  CONFIG_VERSION  NEEDS_RESTART  INVALID  UNKNOWN
+        # 0     17              false          []       []
+
+        assert len(lines) == len(self.redpanda.nodes)
+
+        for i, l in enumerate(lines):
+            m = re.match(
+                "^(\d+)\s+(\d+)\s+(true|false)\s+\[(.*)\]\s+\[(.*)\]$", l)
+            assert m is not None
+            node_id, config_version, needs_restart, invalid, unknown = m.groups(
+            )
+
+            node = self.redpanda.nodes[i]
+            assert int(node_id) == self.redpanda.idx(node)

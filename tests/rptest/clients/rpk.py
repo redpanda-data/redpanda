@@ -236,11 +236,45 @@ class RpkTool:
         parsed = map(_parse_out, output.splitlines())
         return [p for p in parsed if p is not None]
 
+    def _admin_host(self, node=None):
+        if node is None:
+            node = self._redpanda.nodes[0]
+        return f"{node.account.hostname}:9644"
+
     def admin_config_print(self, node):
         return self._execute([
             self._rpk_binary(), "redpanda", "admin", "config", "print",
-            "--host", f"{node.account.hostname}:9644"
+            "--host",
+            self._admin_host(node)
         ])
+
+    def cluster_config_export(self, file, all):
+        node = self._redpanda.nodes[0]
+        cmd = [
+            self._rpk_binary(), '--api-urls',
+            self._admin_host(), "cluster", "config", "export", "--filename",
+            file
+        ]
+        if all:
+            cmd.append("--all")
+        return self._execute(cmd)
+
+    def cluster_config_import(self, file, all):
+        cmd = [
+            self._rpk_binary(), "--api-urls",
+            self._admin_host(), "cluster", "config", "import", "--filename",
+            file
+        ]
+        if all:
+            cmd.append("--all")
+        return self._execute(cmd)
+
+    def cluster_config_status(self):
+        cmd = [
+            self._rpk_binary(), "--api-urls",
+            self._admin_host(), "cluster", "config", "status"
+        ]
+        return self._execute(cmd)
 
     def _execute(self, cmd, stdin=None, timeout=None):
         if timeout is None:
