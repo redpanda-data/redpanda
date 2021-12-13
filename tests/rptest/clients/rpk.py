@@ -159,6 +159,10 @@ class RpkTool:
         cmd = ['alter-config', topic, "--set", f"{set_key}={set_value}"]
         self._run_topic(cmd)
 
+    def delete_topic_config(self, topic, key):
+        cmd = ['alter-config', topic, "--delete", key]
+        self._run_topic(cmd)
+
     def consume(self,
                 topic,
                 n=None,
