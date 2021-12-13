@@ -67,8 +67,12 @@ func importConfig(
 					v = float64(x)
 				}
 			} else if meta.Type == "array" && meta.Items.Type == "string" {
-				if v != nil {
-					v = loadStringArray(v.([]interface{}))
+				switch vArray := v.(type) {
+				case []interface{}:
+					// Normal case: user input is a yaml array
+					v = loadStringArray(vArray)
+				default:
+					// Pass, let the server attempt validation
 				}
 				if oldVal != nil {
 					oldVal = loadStringArray(oldVal.([]interface{}))
