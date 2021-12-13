@@ -12,7 +12,7 @@ kind: Cluster
 metadata:
   name: update-image-cluster-and-node-port
 spec:
-  version: "v21.10.1-si-beta14"
+  version: "v21.11.2"
   cloudStorage:
     enabled: true
     accessKey: XXX

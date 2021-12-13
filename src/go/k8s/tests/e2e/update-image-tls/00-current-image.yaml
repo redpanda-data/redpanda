@@ -4,7 +4,7 @@ metadata:
   name: up-img
 spec:
   image: "vectorized/redpanda"
-  version: "v21.6.6"
+  version: "v21.11.1"
   replicas: 2
   resources:
     requests:
