@@ -19,6 +19,7 @@
 #include "cluster/rm_stm.h"
 #include "cluster/tm_stm.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record_batch_reader.h"
@@ -212,7 +213,9 @@ public:
     /// Return true if shadow indexing is enabled for the partition
     bool is_remote_fetch_enabled() const {
         const auto& cfg = _raft->log_config();
-        return cfg.is_remote_fetch_enabled();
+        return cfg.is_remote_fetch_enabled()
+               || config::shard_local_cfg()
+                    .cloud_storage_enable_remote_read.value();
     }
 
     /// Check if cloud storage is connected to cluster partition
