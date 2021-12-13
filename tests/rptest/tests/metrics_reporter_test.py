@@ -76,6 +76,11 @@ class MetricsReporterTest(RedpandaTest):
             self.redpanda.logger.info(m)
 
         def assert_fields_are_the_same(metadata, field):
+            for m in metadata:
+                lhs = m[field]
+                rhs = metadata[0][field]
+                if lhs != rhs:
+                    self.logger.error(f"metadata {field} {lhs}!={rhs}")
             assert all(m[field] == metadata[0][field] for m in metadata)
 
         # cluster uuid and create timestamp should stay the same across requests
