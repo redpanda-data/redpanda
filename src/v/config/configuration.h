@@ -54,6 +54,9 @@ struct configuration final : public config_store {
     property<std::size_t> coproc_max_ingest_bytes;
     property<std::size_t> coproc_max_batch_size;
     property<std::chrono::milliseconds> coproc_offset_flush_interval_ms;
+    // V8 stuff
+    property<bool> enable_v8;
+    property<std::size_t> executor_queue_size;
 
     // Raft
     deprecated_property seed_server_meta_topic_partitions;
