@@ -27,6 +27,7 @@ from prometheus_client.parser import text_string_to_metric_families
 
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.storage import ClusterStorage, NodeStorage
+from rptest.services.rpk_producer import RpkProducer
 from rptest.services.admin import Admin
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.types import TopicSpec
@@ -822,6 +823,42 @@ class RedpandaService(Service):
         for spec in specs:
             self.logger.info(f"Creating topic {spec}")
             client.create_topic(spec)
+
+    def populate_topics(self, specs):
+        # Tests shouldn't run with empty topics, it doesn't reflect real life.  Always
+        # play some data into a topic on creation unless the test specifies that we
+        # shouldn't.
+        producers = []
+        t1 = time.time()
+        for i, spec in enumerate(specs):
+            # Round-robin run traffic generators on redpanda nodes
+            node = self.nodes[i % len(self.nodes)]
+
+            if self.sasl_enabled():
+                username, password, _ = self.SUPERUSER_CREDENTIALS
+                auth_args = {'user': username, 'password': password}
+            else:
+                auth_args = {}
+
+            producer = RpkProducer(self._context,
+                                   self,
+                                   spec.name,
+                                   16 * 1024,
+                                   1000,
+                                   acks=1,
+                                   nodes=[node],
+                                   quiet=True,
+                                   **auth_args)
+            producers.append(producer)
+            self.logger.info(f"Started producer...")
+            producer.start()
+
+        for producer in producers:
+            self.logger.info(f"Awaiting producer...")
+            producer.wait()
+
+        self.logger.info(
+            f"Pre-populated {len(producers)} topics in {time.time() - t1}s")
 
     def delete_topic(self, name):
         client = self._client_type(self)

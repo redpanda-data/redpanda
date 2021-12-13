@@ -13,7 +13,7 @@ from ducktape.mark.resource import ClusterUseMetadata
 from ducktape.mark._mark import Mark
 
 
-def cluster(log_allow_list=None, **kwargs):
+def cluster(log_allow_list=None, empty_topics=False, **kwargs):
     """
     Drop-in replacement for Ducktape `cluster` that imposes additional
     redpanda-specific checks and defaults.
@@ -30,6 +30,9 @@ def cluster(log_allow_list=None, **kwargs):
             # This decorator will only work on test classes that have a RedpandaService,
             # such as RedpandaTest subclasses
             assert hasattr(self, 'redpanda')
+
+            if not empty_topics and self.redpanda is not None and self.redpanda._started:
+                self.redpanda.populate_topics(self.topics)
 
             try:
                 r = f(self, *args, **kwargs)
