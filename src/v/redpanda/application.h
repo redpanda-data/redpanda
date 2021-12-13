@@ -32,6 +32,7 @@
 #include "rpc/fwd.h"
 #include "seastarx.h"
 #include "storage/fwd.h"
+#include "v8_engine/environment.h"
 #include "v8_engine/fwd.h"
 
 #include <seastar/core/app-template.hh>
@@ -74,6 +75,7 @@ public:
     ss::sharded<kafka::group_router> group_router;
     ss::sharded<cluster::shard_table> shard_table;
     ss::sharded<storage::api> storage;
+    ss::sharded<v8_engine::api> v8_api;
     std::unique_ptr<coproc::api> coprocessing;
     ss::sharded<coproc::partition_manager> cp_partition_manager;
     ss::sharded<cluster::partition_manager> partition_manager;
@@ -112,6 +114,11 @@ private:
         return cfg.developer_mode() && cfg.enable_coproc();
     }
 
+    bool v8_enabled() {
+        const auto& cfg = config::shard_local_cfg();
+        return cfg.developer_mode() && cfg.enable_v8();
+    }
+
     bool archival_storage_enabled();
 
     template<typename Service, typename... Args>
@@ -148,6 +155,13 @@ private:
     std::unique_ptr<pandaproxy::schema_registry::api> _schema_registry;
     ss::sharded<storage::compaction_controller> _compaction_controller;
     ss::sharded<archival::upload_controller> _archival_upload_controller;
+
+    // Internal v8 stuff
+    // V8 allows have only one v8 platform in one process. In some unit tests we
+    // create several application, so we need to understand: Did someone create
+    // platforme or not?
+    inline static std::optional<v8_engine::enviroment> _v8_env;
+    std::unique_ptr<v8_engine::executor_service> _v8_executor;
 
     ss::metrics::metric_groups _metrics;
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;

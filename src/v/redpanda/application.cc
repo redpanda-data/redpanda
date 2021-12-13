@@ -59,7 +59,9 @@
 #include "syschecks/syschecks.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
-#include "v8_engine/data_policy_table.h"
+#include "v8_engine/api.h"
+#include "v8_engine/environment.h"
+#include "v8_engine/executor.h"
 #include "version.h"
 #include "vlog.h"
 
@@ -655,6 +657,21 @@ void application::wire_up_redpanda_services() {
     vlog(_log.info, "Partition manager started");
 
     construct_service(cp_partition_manager, std::ref(storage)).get();
+
+    // Construct v8 stuff
+    if (v8_enabled()) {
+        syschecks::systemd_message("Creating v8_engine::api").get();
+
+        if (!_v8_env.has_value()) {
+            _v8_env.emplace();
+        }
+        construct_single_service(_v8_executor);
+        _v8_executor
+          ->start(
+            ss::engine().alien(), config::shard_local_cfg().executor_queue_size)
+          .get();
+        construct_service(v8_api, std::ref(*_v8_executor)).get();
+    }
 
     // controller
 
