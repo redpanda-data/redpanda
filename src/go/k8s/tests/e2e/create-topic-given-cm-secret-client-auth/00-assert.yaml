@@ -3,12 +3,3 @@ kind: Secret
 metadata:
   name: cluster-tls-secret-node-certificate
   namespace: cert-manager
-
----
-
-apiVersion: kuttl.dev/v1beta1
-kind: TestAssert
-collectors:
-- type: pod
-  selector: app.kubernetes.io/name=redpanda
-  tail: -1

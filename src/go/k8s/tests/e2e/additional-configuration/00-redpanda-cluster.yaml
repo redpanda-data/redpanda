@@ -4,8 +4,8 @@ metadata:
   name: additional-configuration
   namespace: default
 spec:
-  image: "localhost/redpanda"
-  version: "dev"
+  image: "vectorized/redpanda"
+  version: "v21.11.2"
   replicas: 1
   resources:
     requests:

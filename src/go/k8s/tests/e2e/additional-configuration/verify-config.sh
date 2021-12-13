@@ -30,6 +30,7 @@ redpanda:
     address: additional-configuration-0.additional-configuration.default.svc.cluster.local.
     port: 33145
   auto_create_topics_enabled: false
+  cloud_storage_segment_max_upload_interval_sec: 1800
   data_directory: /var/lib/redpanda/data
   default_topic_partitions: 3
   developer_mode: true
@@ -70,4 +71,5 @@ schema_registry:
     port: 8081
 EOF
 )
+echo "$actual"
 diff <(echo "$actual") <(echo "$expected")
