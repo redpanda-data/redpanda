@@ -171,35 +171,6 @@ ss::future<> update_broker_client(
       });
 }
 
-std::vector<topic_result> create_topic_results(
-  const std::vector<model::topic_namespace>& topics, errc error_code) {
-    std::vector<topic_result> results;
-    results.reserve(topics.size());
-    std::transform(
-      std::cbegin(topics),
-      std::cend(topics),
-      std::back_inserter(results),
-      [error_code](const model::topic_namespace& t) {
-          return topic_result(t, error_code);
-      });
-    return results;
-}
-
-std::vector<topic_result> create_topic_results(
-  const std::vector<custom_assignable_topic_configuration>& requests,
-  errc error_code) {
-    std::vector<topic_result> results;
-    results.reserve(requests.size());
-    std::transform(
-      requests.cbegin(),
-      requests.cend(),
-      std::back_inserter(results),
-      [error_code](const custom_assignable_topic_configuration& r) {
-          return topic_result(r.cfg.tp_ns, error_code);
-      });
-    return results;
-}
-
 model::broker make_self_broker(const config::node_config& node_cfg) {
     auto kafka_addr = node_cfg.advertised_kafka_api();
     auto rpc_addr = node_cfg.advertised_rpc_api();
