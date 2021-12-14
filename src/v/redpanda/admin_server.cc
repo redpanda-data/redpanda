@@ -745,9 +745,10 @@ void admin_server::register_cluster_config_routes() {
 
           auto err = co_await _controller->get_config_frontend().invoke_on(
             cluster::config_frontend::version_shard,
-            [update](cluster::config_frontend& fe) mutable
+            [update = std::move(update)](cluster::config_frontend& fe) mutable
             -> ss::future<std::error_code> {
-                return fe.patch(update, model::timeout_clock::now() + 5s);
+                return fe.patch(
+                  std::move(update), model::timeout_clock::now() + 5s);
             });
 
           co_await throw_on_error(*req, err, model::controller_ntp);

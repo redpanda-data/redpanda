@@ -99,7 +99,11 @@ ss::future<> controller::start() {
           return _members_manager.local().validate_configuration_invariants();
       })
       .then([this] {
-          return _config_frontend.start(std::ref(_stm), std::ref(_as));
+          return _config_frontend.start(
+            std::ref(_stm),
+            std::ref(_connections),
+            std::ref(_partition_leaders),
+            std::ref(_as));
       })
       .then([this] {
           return _config_manager.start(

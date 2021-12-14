@@ -283,9 +283,9 @@ ss::future<config_update_reply>
 service::config_update(config_update_request&& req, rpc::streaming_context&) {
     auto ec = co_await _config_frontend.invoke_on(
       config_frontend::version_shard,
-      [req = std::move(req)](config_frontend& fe) {
+      [req = std::move(req)](config_frontend& fe) mutable {
           return fe.patch(
-            req,
+            std::move(req),
             config::shard_local_cfg().replicate_append_timeout_ms()
               + model::timeout_clock::now());
       });

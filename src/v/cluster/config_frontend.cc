@@ -12,17 +12,55 @@
 #include "config_frontend.h"
 
 #include "cluster/cluster_utils.h"
+#include "cluster/partition_leaders_table.h"
 
 namespace cluster {
 
 config_frontend::config_frontend(
-  ss::sharded<controller_stm>& stm, ss::sharded<ss::abort_source>& as)
+  ss::sharded<controller_stm>& stm,
+  ss::sharded<rpc::connection_cache>& connections,
+  ss::sharded<partition_leaders_table>& leaders,
+  ss::sharded<ss::abort_source>& as)
   : _stm(stm)
+  , _connections(connections)
+  , _leaders(leaders)
   , _as(as) {}
 
 ss::future<> config_frontend::start() { return ss::now(); }
 ss::future<> config_frontend::stop() { return ss::now(); }
 
+/**
+ * RPC wrapper on do_patch, to dispatch to the controller leader
+ * if we aren't it.
+ */
+ss::future<std::error_code> config_frontend::patch(
+  config_update_request&& update, model::timeout_clock::time_point timeout) {
+    auto leader = _leaders.local().get_leader(model::controller_ntp);
+    if (!leader) {
+        co_return errc::no_leader_controller;
+    }
+    auto self = config::node().node_id();
+    if (leader == self) {
+        co_return co_await do_patch(std::move(update), timeout);
+    } else {
+        auto res = co_await _connections.local()
+                     .with_node_client<cluster::controller_client_protocol>(
+                       self,
+                       ss::this_shard_id(),
+                       *leader,
+                       timeout,
+                       [update = std::move(update),
+                        timeout](controller_client_protocol cp) mutable {
+                           return cp.config_update(
+                             std::move(update), rpc::client_opts(timeout));
+                       });
+        if (res.has_error()) {
+            co_return res.error();
+        } else {
+            co_return res.value().data.error;
+        }
+    }
+}
 /**
  * Issue a write of new configuration to the raft0 log.  Any pre-write
  * validation of the content should have been done already (e.g. in admin API
@@ -33,9 +71,8 @@ ss::future<> config_frontend::stop() { return ss::now(); }
  * Must be called on `version_shard` to enable serialized generation of
  * version numbers.
  */
-ss::future<std::error_code> config_frontend::patch(
-  config_update_request const& update,
-  model::timeout_clock::time_point timeout) {
+ss::future<std::error_code> config_frontend::do_patch(
+  config_update_request&& update, model::timeout_clock::time_point timeout) {
     vassert(
       ss::this_shard_id() == version_shard, "Must be called on version_shard");
 

@@ -155,7 +155,8 @@ ss::future<> config_manager::do_bootstrap() {
 
     try {
         co_await _frontend.local().patch(
-          update, model::timeout_clock::now() + bootstrap_write_timeout);
+          std::move(update),
+          model::timeout_clock::now() + bootstrap_write_timeout);
     } catch (...) {
         // On errors, just drop out: start_bootstrap will go around
         // its loop again.

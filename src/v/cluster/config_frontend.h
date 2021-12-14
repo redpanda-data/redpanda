@@ -25,10 +25,16 @@ public:
     static constexpr ss::shard_id version_shard = cluster::controller_stm_shard;
 
     config_frontend(
-      ss::sharded<controller_stm>&, ss::sharded<ss::abort_source>&);
+      ss::sharded<controller_stm>&,
+      ss::sharded<rpc::connection_cache>&,
+      ss::sharded<partition_leaders_table>&,
+      ss::sharded<ss::abort_source>&);
 
     ss::future<std::error_code>
-    patch(config_update_request const&, model::timeout_clock::time_point);
+    patch(config_update_request&&, model::timeout_clock::time_point);
+
+    ss::future<std::error_code>
+    do_patch(config_update_request&&, model::timeout_clock::time_point);
 
     ss::future<std::error_code>
     set_status(config_status&, model::timeout_clock::time_point);
@@ -40,6 +46,8 @@ public:
 
 private:
     ss::sharded<controller_stm>& _stm;
+    ss::sharded<rpc::connection_cache>& _connections;
+    ss::sharded<partition_leaders_table>& _leaders;
     ss::sharded<ss::abort_source>& _as;
 
     // Initially unset, frontend is not writeable until backend finishes
