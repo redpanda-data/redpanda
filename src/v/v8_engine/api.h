@@ -26,6 +26,12 @@ public:
     ss::future<> insert_code(coproc::script_id id, iobuf code);
     ss::future<> erase_code(coproc::script_id id);
 
+    std::error_code insert_data_policy(
+      const model::topic_namespace& topic, const data_policy& dp);
+    std::error_code remove_data_policy(const model::topic_namespace& topic);
+    std::optional<data_policy>
+    get_data_policy(const model::topic_namespace& topic);
+
 private:
     executor_service& _executor;
     data_policy_table _dp_table;
