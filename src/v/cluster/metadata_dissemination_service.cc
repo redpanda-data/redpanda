@@ -146,12 +146,16 @@ ss::future<> metadata_dissemination_service::start() {
 void metadata_dissemination_service::handle_leadership_notification(
   model::ntp ntp, model::term_id term, std::optional<model::node_id> lid) {
     (void)ss::with_gate(_bg, [this, ntp = std::move(ntp), lid, term]() mutable {
-        return container().invoke_on(
-          0,
-          [ntp = std::move(ntp), lid, term](
-            metadata_dissemination_service& s) mutable {
-              return s.apply_leadership_notification(std::move(ntp), term, lid);
-          });
+        // the lock sequences the updates from raft
+        return _lock.with([this, ntp = std::move(ntp), lid, term]() mutable {
+            return container().invoke_on(
+              0,
+              [ntp = std::move(ntp), lid, term](
+                metadata_dissemination_service& s) mutable {
+                  return s.apply_leadership_notification(
+                    std::move(ntp), term, lid);
+              });
+        });
     });
 }
 
@@ -160,21 +164,18 @@ ss::future<> metadata_dissemination_service::apply_leadership_notification(
     // the gate also needs to be taken on the destination core.
     return ss::with_gate(
       _bg, [this, ntp = std::move(ntp), lid, term]() mutable {
-          // the lock sequences the updates from raft
-          return _lock.with([this, ntp = std::move(ntp), lid, term]() mutable {
-              // update partition leaders
-              auto f = _leaders.invoke_on_all(
-                [ntp, lid, term](partition_leaders_table& leaders) {
-                    leaders.update_partition_leader(ntp, term, lid);
-                });
-              if (lid == _self.id()) {
-                  // only disseminate from current leader
-                  f = f.then([this, ntp = std::move(ntp), term, lid]() mutable {
-                      return disseminate_leadership(std::move(ntp), term, lid);
-                  });
-              }
-              return f;
-          });
+          // update partition leaders
+          auto f = _leaders.invoke_on_all(
+            [ntp, lid, term](partition_leaders_table& leaders) {
+                leaders.update_partition_leader(ntp, term, lid);
+            });
+          if (lid == _self.id()) {
+              // only disseminate from current leader
+              f = f.then([this, ntp = std::move(ntp), term, lid]() mutable {
+                  return disseminate_leadership(std::move(ntp), term, lid);
+              });
+          }
+          return f;
       });
 }
 
