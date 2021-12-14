@@ -147,8 +147,23 @@ public:
 protected:
     bool update_value(T&& new_value) {
         if (new_value != _value) {
+            std::exception_ptr ex;
             for (auto& binding : _bindings) {
-                binding.update(new_value);
+                try {
+                    binding.update(new_value);
+                } catch (...) {
+                    // In case there are multiple bindings:
+                    // if one of them throws an exception from an on_change
+                    // callback, proceed to update all bindings' values before
+                    // re-raising the last exception we saw.  This avoids
+                    // a situation where bindings could disagree about
+                    // the property's value.
+                    ex = std::current_exception();
+                }
+            }
+
+            if (ex) {
+                rethrow_exception(ex);
             }
 
             _value = std::move(new_value);
@@ -244,6 +259,14 @@ public:
     }
 
     /**
+     * Register a callback on changes to the property value.  Note that you
+     * do not need to call this for the binding's value to remain up to date,
+     * only if you need to do some extra action when it changes.
+     *
+     * Callbacks should endeavor not to throw, but if they do then
+     * the configuration value will be marked 'invalid' in the node's
+     * configuration status, but the new value will still be set.
+     *
      * Ensure that the callback remains valid for as long as this binding:
      * the simplest way to  accomplish this is to make both the callback
      * and the binding attributes of the same object
