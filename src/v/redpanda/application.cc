@@ -320,11 +320,6 @@ void application::hydrate_config(const po::variables_map& cfg) {
     auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
     in.consume_to(buf.size_bytes(), workaround.begin());
     const YAML::Node config = YAML::Load(workaround);
-    vlog(_log.info, "Configuration:\n\n{}\n\n", config);
-    vlog(
-      _log.info,
-      "Use `rpk config set <cfg> <value>` to change values "
-      "below:");
     auto config_printer = [this](std::string_view service) {
         return [this, service](const config::base_property& item) {
             std::stringstream val;
@@ -350,7 +345,16 @@ void application::hydrate_config(const po::variables_map& cfg) {
             }).get0();
         }
 
+        vlog(_log.info, "Cluster configuration properties:");
+        if (config::node().enable_central_config) {
+            vlog(_log.info, "(use `rpk cluster config edit` to change)");
+        } else {
+            vlog(_log.info, "(use `rpk config set <cfg> <value>` to change)");
+        }
         config::shard_local_cfg().for_each(config_printer("redpanda"));
+
+        vlog(_log.info, "Node configuration properties:");
+        vlog(_log.info, "(use `rpk config set <cfg> <value>` to change)");
         config::node().for_each(config_printer("redpanda"));
     }
     if (config["pandaproxy"]) {
