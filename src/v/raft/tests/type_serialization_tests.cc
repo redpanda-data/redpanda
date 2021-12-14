@@ -210,8 +210,10 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_roundtrip) {
     reply.meta.reserve(group_count);
 
     for (size_t i = 0; i < group_count; ++i) {
+        // Negative offsets are special, so pick range starting at 0 here
+        // (heartbeat_response_negative below covers the negative case)
         auto commited_idx = model::offset(
-          random_generators::get_int(-1, 1000000000));
+          random_generators::get_int(0, 1000000000));
         auto dirty_idx = commited_idx
                          + model::offset(random_generators::get_int(10000));
 
@@ -220,7 +222,7 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_roundtrip) {
             model::node_id(2), model::revision_id(i)),
           .node_id = raft::vnode(model::node_id(1), model::revision_id(i)),
           .group = raft::group_id(i),
-          .term = model::term_id(random_generators::get_int(-1, 1000)),
+          .term = model::term_id(random_generators::get_int(0, 1000)),
           .last_flushed_log_index = commited_idx,
           .last_dirty_log_index = dirty_idx,
           .result = raft::append_entries_reply::status::success});
@@ -257,6 +259,42 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_roundtrip) {
           result.meta[i].last_dirty_log_index);
         BOOST_REQUIRE_EQUAL(expected[gr].result, result.meta[i].result);
     }
+}
+
+/**
+ * Verify that negative values get transformed to ::min values
+ * during an encode/decode cycle.  These are encoded to -1 to
+ * save space in varint encoding, then all negative values decode
+ * to T{}
+ */
+SEASTAR_THREAD_TEST_CASE(heartbeat_response_negatives) {
+    raft::heartbeat_reply reply;
+
+    reply.meta.push_back(raft::append_entries_reply{
+      .target_node_id = raft::vnode(model::node_id(2), model::revision_id(-1)),
+      .node_id = raft::vnode(model::node_id(1), model::revision_id(-1)),
+      .group = raft::group_id(1),
+      .term = model::term_id(random_generators::get_int(0, 1000)),
+      .last_flushed_log_index = model::offset(-1),
+      .last_dirty_log_index = model::offset(-1),
+      .last_term_base_offset = model::offset(-1),
+      .result = raft::append_entries_reply::status::success});
+
+    iobuf buf;
+    reflection::async_adl<raft::heartbeat_reply>{}
+      .to(buf, std::move(reply))
+      .get();
+
+    auto parser = iobuf_parser(std::move(buf));
+    auto result
+      = reflection::async_adl<raft::heartbeat_reply>{}.from(parser).get0();
+    BOOST_REQUIRE_EQUAL(result.meta[0].last_flushed_log_index, model::offset{});
+    BOOST_REQUIRE_EQUAL(result.meta[0].last_dirty_log_index, model::offset{});
+    BOOST_REQUIRE_EQUAL(result.meta[0].last_term_base_offset, model::offset{});
+    BOOST_REQUIRE_EQUAL(
+      result.meta[0].node_id.revision(), model::revision_id{});
+    BOOST_REQUIRE_EQUAL(
+      result.meta[0].target_node_id.revision(), model::revision_id{});
 }
 
 SEASTAR_THREAD_TEST_CASE(snapshot_metadata_roundtrip) {
