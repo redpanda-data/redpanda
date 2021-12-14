@@ -90,6 +90,17 @@ public:
       flat_set<consensus_ptr, details::consensus_ptr_by_group_id>;
 
     struct follower_request_meta {
+        follower_request_meta(
+          consensus_ptr, follower_req_seq, model::offset, vnode);
+        ~follower_request_meta() noexcept;
+
+        follower_request_meta(const follower_request_meta&) = delete;
+        follower_request_meta(follower_request_meta&&) noexcept = default;
+        follower_request_meta& operator=(const follower_request_meta&) = delete;
+        follower_request_meta&
+        operator=(follower_request_meta&&) noexcept = default;
+
+        consensus_ptr c;
         follower_req_seq seq;
         model::offset dirty_offset;
         vnode follower_vnode;
