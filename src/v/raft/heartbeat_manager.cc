@@ -27,7 +27,6 @@
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/with_timeout.hh>
 
-#include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 #include <bits/stdint-uintn.h>
 #include <boost/range/iterator_range.hpp>
@@ -48,7 +47,7 @@ struct heartbeat_requests {
 
 static heartbeat_requests requests_for_range(
   const consensus_set& c, clock_type::duration heartbeat_interval) {
-    absl::flat_hash_map<
+    absl::btree_map<
       model::node_id,
       std::vector<std::pair<heartbeat_metadata, follower_req_seq>>>
       pending_beats;
@@ -120,12 +119,10 @@ static heartbeat_requests requests_for_range(
     reqs.reserve(pending_beats.size());
     for (auto& p : pending_beats) {
         std::vector<heartbeat_metadata> requests;
-        absl::flat_hash_map<
-          raft::group_id,
-          heartbeat_manager::follower_request_meta>
-          meta_map;
+        absl::
+          btree_map<raft::group_id, heartbeat_manager::follower_request_meta>
+            meta_map;
         requests.reserve(p.second.size());
-        meta_map.reserve(p.second.size());
         for (auto& [hb, seq] : p.second) {
             meta_map.emplace(
               hb.meta.group,
@@ -233,7 +230,7 @@ ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
 
 void heartbeat_manager::process_reply(
   model::node_id n,
-  absl::flat_hash_map<raft::group_id, follower_request_meta> groups,
+  absl::btree_map<raft::group_id, follower_request_meta> groups,
   result<heartbeat_reply> r) {
     if (!r) {
         vlog(
