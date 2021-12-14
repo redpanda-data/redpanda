@@ -72,6 +72,9 @@ public:
     ss::future<config_status_reply>
     config_status(config_status_request&&, rpc::streaming_context&) final;
 
+    ss::future<config_update_reply>
+    config_update(config_update_request&&, rpc::streaming_context&) final;
+
     ss::future<get_node_health_reply> collect_node_health_report(
       get_node_health_request&&, rpc::streaming_context&) final;
 

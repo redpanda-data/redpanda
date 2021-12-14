@@ -15,11 +15,6 @@
 
 namespace cluster {
 
-struct config_update final {
-    std::vector<std::pair<ss::sstring, ss::sstring>> upsert;
-    std::vector<ss::sstring> remove;
-};
-
 class config_frontend final {
 public:
     // Shard ID that will track the next available version and serialize
@@ -33,7 +28,7 @@ public:
       ss::sharded<controller_stm>&, ss::sharded<ss::abort_source>&);
 
     ss::future<std::error_code>
-    patch(config_update&, model::timeout_clock::time_point);
+    patch(config_update_request const&, model::timeout_clock::time_point);
 
     ss::future<std::error_code>
     set_status(config_status&, model::timeout_clock::time_point);

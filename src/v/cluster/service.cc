@@ -279,6 +279,24 @@ service::config_status(config_status_request&& req, rpc::streaming_context&) {
     }
 }
 
+ss::future<config_update_reply>
+service::config_update(config_update_request&& req, rpc::streaming_context&) {
+    auto ec = co_await _config_frontend.invoke_on(
+      config_frontend::version_shard,
+      [req = std::move(req)](config_frontend& fe) {
+          return fe.patch(
+            req,
+            config::shard_local_cfg().replicate_append_timeout_ms()
+              + model::timeout_clock::now());
+      });
+
+    if (ec.category() == error_category()) {
+        co_return config_update_reply{.error = errc(ec.value())};
+    } else {
+        co_return config_update_reply{.error = errc::replication_error};
+    }
+}
+
 ss::future<finish_reallocation_reply>
 service::do_finish_reallocation(finish_reallocation_request req) {
     auto ec = co_await _members_frontend.local().finish_node_reallocations(

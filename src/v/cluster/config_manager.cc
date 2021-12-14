@@ -135,7 +135,7 @@ void config_manager::start_bootstrap() {
  * since upgrading to a redpanda version with central config)
  */
 ss::future<> config_manager::do_bootstrap() {
-    config_update update;
+    config_update_request update;
 
     config::shard_local_cfg().for_each([&update](
                                          const config::base_property& p) {

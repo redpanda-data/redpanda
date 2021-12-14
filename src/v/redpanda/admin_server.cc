@@ -672,7 +672,7 @@ void admin_server::register_cluster_config_routes() {
           auto doc = parse_json_body(*req);
           apply_validator(cluster_config_validator, doc);
 
-          cluster::config_update update;
+          cluster::config_update_request update;
 
           // Deserialize removes
           const auto& json_remove = doc["remove"];

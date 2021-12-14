@@ -34,7 +34,8 @@ ss::future<> config_frontend::stop() { return ss::now(); }
  * version numbers.
  */
 ss::future<std::error_code> config_frontend::patch(
-  config_update& update, model::timeout_clock::time_point timeout) {
+  config_update_request const& update,
+  model::timeout_clock::time_point timeout) {
     vassert(
       ss::this_shard_id() == version_shard, "Must be called on version_shard");
 
