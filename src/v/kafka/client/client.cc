@@ -308,7 +308,6 @@ ss::future<fetch_response> client::fetch_partition(
       std::move(build_request),
       std::move(tp),
       [this](auto& build_request, model::topic_partition& tp) {
-          vlog(kclog.debug, "fetching: {}", tp);
           return gated_retry_with_mitigation([this, &tp, &build_request]() {
                      return _topic_cache.leader(tp)
                        .then([this](model::node_id leader) {
@@ -450,6 +449,7 @@ ss::future<kafka::fetch_response> client::consumer_fetch(
     const auto end = model::timeout_clock::now()
                      + std::min(config_timout, timeout.value_or(config_timout));
     return gated_retry_with_mitigation([this, g_id, name, end, max_bytes]() {
+        vlog(kclog.debug, "consumer_fetch: group_id: {}, name: {}", g_id, name);
         return get_consumer(g_id, name)
           .then([end, max_bytes](shared_consumer_t c) {
               auto timeout = std::max(
