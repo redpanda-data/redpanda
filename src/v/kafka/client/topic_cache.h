@@ -14,6 +14,7 @@
 #include "kafka/client/partitioners.h"
 #include "kafka/client/types.h"
 #include "kafka/protocol/metadata.h"
+#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "seastarx.h"
@@ -26,8 +27,10 @@
 namespace kafka::client {
 
 class topic_cache {
+public:
     struct partition_data {
         model::node_id leader;
+        kafka::leader_epoch leader_epoch{kafka::invalid_leader_epoch};
     };
 
     struct topic_data {
@@ -35,9 +38,6 @@ class topic_cache {
         absl::flat_hash_map<model::partition_id, partition_data> partitions;
     };
 
-    using topics_t = absl::node_hash_map<model::topic, topic_data>;
-
-public:
     topic_cache() = default;
     topic_cache(const topic_cache&) = delete;
     topic_cache(topic_cache&&) = default;
@@ -49,13 +49,15 @@ public:
     ss::future<> apply(std::vector<metadata_response::topic>&& topics);
 
     /// \brief Obtain the leader for the given topic-partition
-    ss::future<model::node_id> leader(model::topic_partition tp) const;
+    ss::future<partition_data> leader(model::topic_partition tp) const;
 
     /// \brief Obtain the partition_id for the given record
     ss::future<model::partition_id>
     partition_for(model::topic_view tv, const record_essence& rec);
 
 private:
+    using topics_t = absl::node_hash_map<model::topic, topic_data>;
+
     /// \brief Cache of topic information.
     topics_t _topics;
 };

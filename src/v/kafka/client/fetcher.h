@@ -17,6 +17,7 @@ namespace kafka::client {
 
 fetch_request make_fetch_request(
   const model::topic_partition& tp,
+  kafka::leader_epoch epoch,
   model::offset offset,
   int32_t max_bytes,
   std::chrono::milliseconds timeout);

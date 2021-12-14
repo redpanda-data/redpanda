@@ -34,7 +34,9 @@ topic_cache::apply(std::vector<metadata_response::topic>&& topics) {
         cache_t.partitions.reserve(t.partitions.size());
         for (auto const& p : t.partitions) {
             cache_t.partitions.emplace(
-              p.partition_index, partition_data{.leader = p.leader_id});
+              p.partition_index,
+              partition_data{
+                .leader = p.leader_id, .leader_epoch = p.leader_epoch});
         }
         cache_t.partitions.rehash(0);
     }
@@ -43,20 +45,20 @@ topic_cache::apply(std::vector<metadata_response::topic>&& topics) {
     return ss::now();
 }
 
-ss::future<model::node_id>
+ss::future<topic_cache::partition_data>
 topic_cache::leader(model::topic_partition tp) const {
     if (auto topic_it = _topics.find(tp.topic); topic_it != _topics.end()) {
         const auto& parts = topic_it->second.partitions;
         if (auto part_it = parts.find(tp.partition); part_it != parts.end()) {
             const auto& part = part_it->second;
             if (part.leader == unknown_node_id) {
-                return ss::make_exception_future<model::node_id>(
+                return ss::make_exception_future<partition_data>(
                   partition_error(tp, error_code::leader_not_available));
             }
-            return ss::make_ready_future<model::node_id>(part.leader);
+            return ss::make_ready_future<partition_data>(part);
         }
     }
-    return ss::make_exception_future<model::node_id>(
+    return ss::make_exception_future<partition_data>(
       partition_error(std::move(tp), error_code::unknown_topic_or_partition));
 }
 
