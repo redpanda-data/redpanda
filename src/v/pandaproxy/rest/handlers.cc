@@ -36,6 +36,7 @@
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
 #include "storage/record_batch_builder.h"
+#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -73,6 +74,8 @@ get_brokers(server::request_t rq, server::reply_t rp) {
       *rq.req,
       {json::serialization_format::v2, json::serialization_format::none});
     rq.req.reset();
+    vlog(plog.debug, "get_brokers");
+
     auto make_metadata_req = []() {
         return kafka::metadata_request{.list_all_topics = false};
     };
@@ -110,6 +113,8 @@ get_topics_names(server::request_t rq, server::reply_t rp) {
       *rq.req,
       {json::serialization_format::v2, json::serialization_format::none});
     rq.req.reset();
+    vlog(plog.debug, "get_topics_names");
+
     auto make_list_topics_req = []() {
         return kafka::metadata_request{.list_all_topics = true};
     };
@@ -156,6 +161,14 @@ get_topics_records(server::request_t rq, server::reply_t rp) {
     int32_t max_bytes{parse::query_param<int32_t>(*rq.req, "max_bytes")};
 
     rq.req.reset();
+    vlog(
+      plog.debug,
+      "get_topics_records: tp: {}, offset: {}, timeout: {}, max_bytes: {}",
+      tp,
+      offset,
+      timeout,
+      max_bytes);
+
     return rq.service()
       .client()
       .local()
@@ -185,6 +198,8 @@ post_topics_name(server::request_t rq, server::reply_t rp) {
       {json::serialization_format::v2, json::serialization_format::none});
 
     auto topic = parse::request_param<model::topic>(*rq.req, "topic_name");
+
+    vlog(plog.debug, "get_topics_name: topic: {}", topic);
 
     auto records = ppj::rjson_parse(
       rq.req->content.data(), ppj::produce_request_handler(req_fmt));
@@ -246,6 +261,17 @@ create_consumer(server::request_t rq, server::reply_t rp) {
        rq{std::move(rq)},
        rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+        vlog(
+          plog.debug,
+          "create_consumer: group_id: {}, name: {}, min_bytes: {}, timeout: "
+          "{}, auto_offset_reset: {}, auto_commit_enable: {}",
+          group_id,
+          req_data.name,
+          req_data.fetch_min_bytes,
+          req_data.consumer_request_timeout_ms,
+          req_data.auto_offset_reset,
+          req_data.auto_commit_enable);
+
         auto name = co_await client.create_consumer(group_id, req_data.name);
         json::create_consumer_response res{
           .instance_id = name,
@@ -275,6 +301,12 @@ remove_consumer(server::request_t rq, server::reply_t rp) {
     auto handler =
       [group_id, member_id, rq{std::move(rq)}, rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+        vlog(
+          plog.debug,
+          "remove_consumer: group_id: {}, member_id: {}",
+          group_id,
+          member_id);
+
         co_await client.remove_consumer(group_id, member_id);
         rp.rep->set_status(ss::httpd::reply::status_type::no_content);
         co_return std::move(rp);
@@ -307,6 +339,13 @@ subscribe_consumer(server::request_t rq, server::reply_t rp) {
        rq{std::move(rq)},
        rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+        vlog(
+          plog.debug,
+          "subscribe_consumer: group_id: {}, member_id: {}, topics: {}",
+          group_id,
+          member_id,
+          req_data.topics);
+
         co_await client.subscribe_consumer(
           group_id, member_id, std::move(req_data.topics));
         rp.mime_type = res_fmt;
@@ -344,6 +383,14 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
        rq{std::move(rq)},
        rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+        vlog(
+          plog.debug,
+          "consumer_fetch: group_id: {}, name: {}, timeout: {}, max_bytes: {}",
+          group_id,
+          name,
+          timeout,
+          max_bytes);
+
         auto res = co_await client.consumer_fetch(
           group_id, name, timeout, max_bytes);
         rapidjson::StringBuffer str_buf;
@@ -383,6 +430,13 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp) {
        rq{std::move(rq)},
        rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+        vlog(
+          plog.debug,
+          "get_consumer_offsets: group_id: {}, member_id: {}, offsets: {}",
+          group_id,
+          member_id,
+          req_data);
+
         auto res = co_await client.consumer_offset_fetch(
           group_id, member_id, std::move(req_data));
         rapidjson::StringBuffer str_buf;
@@ -423,6 +477,13 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
        rq{std::move(rq)},
        rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+        vlog(
+          plog.debug,
+          "post_consumer_offsets: group_id: {}, member_id: {}, offsets: {}",
+          group_id,
+          member_id,
+          req_data);
+
         auto res = co_await client.consumer_offset_commit(
           group_id, member_id, std::move(req_data));
         rp.rep->set_status(ss::httpd::reply::status_type::no_content);
