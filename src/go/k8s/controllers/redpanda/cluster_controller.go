@@ -171,6 +171,7 @@ func (r *ClusterReconciler) Reconcile(
 	}
 	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
 	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
+	configMapResource := resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log)
 	sts := resources.NewStatefulSet(
 		r.Client,
 		&redpandaCluster,
@@ -189,6 +190,7 @@ func (r *ClusterReconciler) Reconcile(
 		pki.SchemaRegistryAPIClientCert(),
 		sa.Key().Name,
 		r.configuratorSettings,
+		configMapResource.GetConfigHash,
 		log)
 
 	toApply := []resources.Reconciler{
@@ -198,7 +200,7 @@ func (r *ClusterReconciler) Reconcile(
 		ingress,
 		proxySu,
 		schemaRegistrySu,
-		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log),
+		configMapResource,
 		pki,
 		sa,
 		resources.NewClusterRole(r.Client, &redpandaCluster, r.Scheme, log),

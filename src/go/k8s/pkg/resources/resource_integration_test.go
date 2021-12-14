@@ -23,6 +23,8 @@ import (
 
 var c client.Client
 
+const hash = "hash"
+
 func TestMain(m *testing.M) {
 	var err error
 
@@ -87,6 +89,7 @@ func TestEnsure_StatefulSet(t *testing.T) {
 			ConfiguratorTag:       "latest",
 			ImagePullPolicy:       "Always",
 		},
+		func(ctx context.Context) (string, error) { return hash, nil },
 		ctrl.Log.WithName("test"))
 
 	err := sts.Ensure(context.Background())
