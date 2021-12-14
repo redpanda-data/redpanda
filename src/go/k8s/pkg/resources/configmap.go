@@ -11,6 +11,7 @@ package resources
 
 import (
 	"context"
+	"crypto/md5" // nolint:gosec // this is not encrypting secure info
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -60,6 +61,8 @@ const (
 	logSegmentSize = 512 * oneMB
 
 	saslMechanism = "SCRAM-SHA-256"
+
+	configKey = "redpanda.yaml"
 )
 
 var (
@@ -145,7 +148,7 @@ func (r *ConfigMapResource) obj(ctx context.Context) (k8sclient.Object, error) {
 			APIVersion: "v1",
 		},
 		Data: map[string]string{
-			"redpanda.yaml": string(cfgBytes),
+			configKey: string(cfgBytes),
 		},
 	}
 
@@ -623,4 +626,17 @@ func generatePassword(length int) (string, error) {
 	}
 
 	return string(bytes), nil
+}
+
+// GetConfigHash returns md5 hash of configmap contents so two configmaps can be
+// compared
+func (r *ConfigMapResource) GetConfigHash(ctx context.Context) (string, error) {
+	obj, err := r.obj(ctx)
+	if err != nil {
+		return "", err
+	}
+	configMap := obj.(*corev1.ConfigMap)
+	configString := configMap.Data[configKey]
+	md5Hash := md5.Sum([]byte(configString)) // nolint:gosec // this is not encrypting secure info
+	return fmt.Sprintf("%x", md5Hash), nil
 }
