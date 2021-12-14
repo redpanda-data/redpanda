@@ -31,7 +31,7 @@ public:
       ss::sharded<ss::abort_source>&);
 
     ss::future<std::error_code>
-    patch(config_update_request&&, model::timeout_clock::time_point);
+      patch(config_update_request, model::timeout_clock::time_point);
 
     ss::future<std::error_code>
     do_patch(config_update_request&&, model::timeout_clock::time_point);

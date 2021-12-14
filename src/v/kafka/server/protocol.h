@@ -68,8 +68,8 @@ public:
     cluster::topics_frontend& topics_frontend() {
         return _topics_frontend.local();
     }
-    cluster::config_frontend& config_frontend() {
-        return _config_frontend.local();
+    ss::sharded<cluster::config_frontend>& config_frontend() {
+        return _config_frontend;
     }
     cluster::metadata_cache& metadata_cache() {
         return _metadata_cache.local();

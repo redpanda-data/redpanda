@@ -8,7 +8,9 @@
 // by the Apache License, Version 2.0
 #include "kafka/server/handlers/incremental_alter_configs.h"
 
+#include "cluster/config_frontend.h"
 #include "cluster/types.h"
+#include "config/node_config.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/incremental_alter_configs.h"
 #include "kafka/protocol/schemata/incremental_alter_configs_request.h"
@@ -153,6 +155,16 @@ std::optional<resp_resource_t> validate_single_value_config_resource(
     return std::nullopt;
 }
 
+/**
+ * Check that the deserialized integer is within bounds
+ * for the config_resource_operation enum.  If this
+ * returns false, reject the input.
+ */
+bool valid_config_resource_operation(uint8_t v) {
+    return (v >= uint8_t(config_resource_operation::set))
+           && (v <= uint8_t(config_resource_operation::subtract));
+}
+
 checked<cluster::topic_properties_update, resp_resource_t>
 create_topic_properties_update(incremental_alter_configs_resource& resource) {
     model::topic_namespace tp_ns(
@@ -162,6 +174,15 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
     data_policy_parser dp_parser;
 
     for (auto& cfg : resource.configs) {
+        // Validate int8_t is within range of config_resource_operation
+        // before casting (otherwise casting is undefined behaviour)
+        if (!valid_config_resource_operation(cfg.config_operation)) {
+            return make_error_alter_config_resource_response<resp_resource_t>(
+              resource,
+              error_code::invalid_config,
+              fmt::format("invalid operation code {}", cfg.config_operation));
+        }
+
         auto op = static_cast<config_resource_operation>(cfg.config_operation);
 
         auto err = validate_single_value_config_resource(
@@ -278,10 +299,164 @@ static ss::future<std::vector<resp_resource_t>> alter_topic_configuration(
       });
 }
 
-static ss::future<std::vector<resp_resource_t>>
-alter_broker_configuartion(std::vector<req_resource_t> resources) {
-    return unsupported_broker_configuration<req_resource_t, resp_resource_t>(
-      std::move(resources));
+/**
+ * For configuration properties that might reasonably be set via
+ * the kafka API (i.e. those in common with other kafka implementations),
+ * map their traditional kafka name to the redpanda config property name.
+ */
+inline std::string_view map_config_name(std::string_view input) {
+    return string_switch<std::string_view>(input)
+      .match("log.cleanup.policy", "log_cleanup_policy")
+      .match("log.message.timestamp.type", "log_message_timestamp_type")
+      .match("log.compression.type", "log_compression_type")
+      .default_match(input);
+}
+
+static ss::future<std::vector<resp_resource_t>> alter_broker_configuartion(
+  request_context& ctx, std::vector<req_resource_t> resources) {
+    std::vector<resp_resource_t> responses;
+    responses.reserve(resources.size());
+
+    // If central config is disabled, we cannot set broker properties
+    if (!config::node().enable_central_config()) {
+        std::transform(
+          resources.begin(),
+          resources.end(),
+          std::back_inserter(responses),
+          [](req_resource_t& resource) {
+              return make_error_alter_config_resource_response<resp_resource_t>(
+                resource,
+                error_code::invalid_config,
+                fmt::format(
+                  "changing '{}' broker property isn't currently supported",
+                  resource.resource_name));
+          });
+
+        co_return responses;
+    }
+
+    for (const auto& resource : resources) {
+        cluster::config_update_request req;
+
+        if (!resource.resource_name.empty()) {
+            responses.push_back(
+              make_error_alter_config_resource_response<resp_resource_t>(
+                resource,
+                error_code::invalid_config,
+                "Setting broker properties on named brokers is unsupported"));
+            continue;
+        }
+
+        bool errored = false;
+        for (const auto& c : resource.configs) {
+            auto mapped_name = map_config_name(c.name);
+
+            // Validate int8_t is within range of config_resource_operation
+            // before casting (otherwise casting is undefined behaviour)
+            if (!valid_config_resource_operation(c.config_operation)) {
+                responses.push_back(
+                  make_error_alter_config_resource_response<resp_resource_t>(
+                    resource,
+                    error_code::invalid_config,
+                    fmt::format(
+                      "invalid operation code {}", c.config_operation)));
+                errored = true;
+                continue;
+            }
+
+            auto op = static_cast<config_resource_operation>(
+              c.config_operation);
+            if (op == config_resource_operation::set) {
+                req.upsert.push_back(
+                  {ss::sstring(mapped_name), c.value.value()});
+            } else if (op == config_resource_operation::remove) {
+                req.remove.push_back(ss::sstring(mapped_name));
+            } else {
+                responses.push_back(
+                  make_error_alter_config_resource_response<resp_resource_t>(
+                    resource,
+                    error_code::invalid_config,
+                    fmt::format(
+                      "operation {} on broker properties isn't currently "
+                      "supported",
+                      op)));
+                errored = true;
+            }
+        }
+        if (errored) {
+            continue;
+        }
+
+        // Validate contents of the request
+        config::configuration cfg;
+        for (const auto& i : req.upsert) {
+            // Decode to a YAML object because that's what the property
+            // interface expects.
+            // Don't both catching ParserException: this was encoded
+            // just a few lines above.
+            const auto& yaml_value = i.second;
+            auto val = YAML::Load(yaml_value);
+
+            if (!cfg.contains(i.first)) {
+                responses.push_back(
+                  make_error_alter_config_resource_response<resp_resource_t>(
+                    resource,
+                    error_code::invalid_config,
+                    fmt::format("Unknown property '{}'", i.first)));
+                errored = true;
+                continue;
+            }
+            auto& property = cfg.get(i.first);
+            try {
+                property.set_value(val);
+            } catch (...) {
+                responses.push_back(
+                  make_error_alter_config_resource_response<resp_resource_t>(
+                    resource,
+                    error_code::invalid_config,
+                    fmt::format(
+                      "bad property value for '{}': '{}'", i.first, i.second)));
+                errored = true;
+                continue;
+            }
+        }
+
+        if (errored) {
+            continue;
+        }
+
+        auto resp
+          = co_await ctx.config_frontend()
+              .invoke_on(
+                cluster::config_frontend::version_shard,
+                [req = std::move(req)](cluster::config_frontend& fe) mutable {
+                    return fe.patch(
+                      std::move(req),
+                      model::timeout_clock::now()
+                        + config::shard_local_cfg()
+                            .alter_topic_cfg_timeout_ms());
+                })
+              .then([resource](std::error_code ec) {
+                  error_code kec = error_code::none;
+
+                  std::string err_str;
+                  if (ec) {
+                      err_str = ec.message();
+                      if (ec.category() == cluster::error_category()) {
+                          kec = map_topic_error_code(cluster::errc(ec.value()));
+                      } else {
+                          // Generic config error
+                          kec = error_code::invalid_config;
+                      }
+                  }
+                  return make_error_alter_config_resource_response<
+                    resp_resource_t>(resource, kec, err_str);
+              });
+
+        responses.push_back(resp);
+    }
+
+    co_return responses;
 }
 
 template<>
@@ -303,7 +478,7 @@ ss::future<response_ptr> incremental_alter_configs_handler::handle(
     futures.push_back(alter_topic_configuration(
       ctx, std::move(groupped.topic_changes), request.data.validate_only));
     futures.push_back(
-      alter_broker_configuartion(std::move(groupped.broker_changes)));
+      alter_broker_configuartion(ctx, std::move(groupped.broker_changes)));
 
     auto ret = co_await ss::when_all_succeed(futures.begin(), futures.end());
     // include authorization errors

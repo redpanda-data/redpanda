@@ -34,7 +34,7 @@ ss::future<> config_frontend::stop() { return ss::now(); }
  * if we aren't it.
  */
 ss::future<std::error_code> config_frontend::patch(
-  config_update_request&& update, model::timeout_clock::time_point timeout) {
+  config_update_request update, model::timeout_clock::time_point timeout) {
     auto leader = _leaders.local().get_leader(model::controller_ntp);
     if (!leader) {
         co_return errc::no_leader_controller;
