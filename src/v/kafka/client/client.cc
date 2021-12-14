@@ -121,13 +121,16 @@ ss::future<> client::update_metadata(wait_or_start::tag) {
           .then([this](shared_broker_t broker) {
               return broker->dispatch(metadata_request{.list_all_topics = true})
                 .then([this](metadata_response res) {
-                    // Create new seeds from the returned set of brokers
-                    std::vector<unresolved_address> seeds;
-                    seeds.reserve(res.data.brokers.size());
-                    for (const auto& b : res.data.brokers) {
-                        seeds.emplace_back(b.host, b.port);
+                    // Create new seeds from the returned set of brokers if
+                    // they're not empty
+                    if (!res.data.brokers.empty()) {
+                        std::vector<unresolved_address> seeds;
+                        seeds.reserve(res.data.brokers.size());
+                        for (const auto& b : res.data.brokers) {
+                            seeds.emplace_back(b.host, b.port);
+                        }
+                        std::swap(_seeds, seeds);
                     }
-                    std::swap(_seeds, seeds);
 
                     return apply(std::move(res));
                 })
