@@ -36,6 +36,7 @@ public:
       ss::smp_service_group,
       ss::sharded<cluster::metadata_cache>&,
       ss::sharded<cluster::topics_frontend>&,
+      ss::sharded<cluster::config_frontend>&,
       ss::sharded<quota_manager>&,
       ss::sharded<kafka::group_router>&,
       ss::sharded<cluster::shard_table>&,
@@ -66,6 +67,9 @@ public:
     ss::smp_service_group smp_group() const { return _smp_group; }
     cluster::topics_frontend& topics_frontend() {
         return _topics_frontend.local();
+    }
+    cluster::config_frontend& config_frontend() {
+        return _config_frontend.local();
     }
     cluster::metadata_cache& metadata_cache() {
         return _metadata_cache.local();
@@ -133,6 +137,7 @@ public:
 private:
     ss::smp_service_group _smp_group;
     ss::sharded<cluster::topics_frontend>& _topics_frontend;
+    ss::sharded<cluster::config_frontend>& _config_frontend;
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
     ss::sharded<quota_manager>& _quota_mgr;
     ss::sharded<kafka::group_router>& _group_router;

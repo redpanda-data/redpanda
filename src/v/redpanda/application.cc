@@ -1162,6 +1162,7 @@ void application::start_redpanda() {
             smp_service_groups.kafka_smp_sg(),
             metadata_cache,
             controller->get_topics_frontend(),
+            controller->get_config_frontend(),
             quota_mgr,
             group_router,
             shard_table,

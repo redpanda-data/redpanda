@@ -38,6 +38,7 @@ protocol::protocol(
   ss::smp_service_group smp,
   ss::sharded<cluster::metadata_cache>& meta,
   ss::sharded<cluster::topics_frontend>& tf,
+  ss::sharded<cluster::config_frontend>& cf,
   ss::sharded<quota_manager>& quota,
   ss::sharded<kafka::group_router>& router,
   ss::sharded<cluster::shard_table>& tbl,
@@ -55,6 +56,7 @@ protocol::protocol(
   std::optional<qdc_monitor::config> qdc_config) noexcept
   : _smp_group(smp)
   , _topics_frontend(tf)
+  , _config_frontend(cf)
   , _metadata_cache(meta)
   , _quota_mgr(quota)
   , _group_router(router)
