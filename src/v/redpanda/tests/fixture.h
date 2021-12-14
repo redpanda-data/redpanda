@@ -160,6 +160,7 @@ public:
 
             config.get("enable_pid_file").set_value(false);
             config.get("developer_mode").set_value(true);
+            config.get("enable_v8").set_value(true);
             config.get("enable_admin_api").set_value(false);
             config.get("join_retry_timeout_ms").set_value(100ms);
             config.get("members_backend_retry_ms").set_value(1000ms);
