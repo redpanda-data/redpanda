@@ -85,15 +85,19 @@ reduce_fetch_response(fetch_response result, fetch_response val) {
 } // namespace detail
 
 void consumer::start() {
-    kclog.info("Consumer: {}: start", *this);
+    vlog(kclog.info, "Consumer: {}: start", *this);
     _timer.set_callback([me{shared_from_this()}]() {
-        kclog.trace("Consumer: {}: timer cb", *me);
+        vlog(kclog.trace, "Consumer: {}: timer cb", *me);
         (void)me->heartbeat()
           .handle_exception_type([me](const consumer_error& e) {
-              kclog.error("Consumer: {}: heartbeat failed: {}", *me, e.error);
+              vlog(
+                kclog.error,
+                "Consumer: {}: heartbeat failed: {}",
+                *me,
+                e.error);
           })
           .handle_exception_type([me](const ss::gate_closed_exception& e) {
-              kclog.trace("Consumer: {}: heartbeat failed: {}", *me, e);
+              vlog(kclog.trace, "Consumer: {}: heartbeat failed: {}", *me, e);
           });
     });
     _timer.rearm_periodic(std::chrono::duration_cast<ss::timer<>::duration>(
@@ -192,7 +196,8 @@ void consumer::on_leader_join(const join_group_response& res) {
       std::unique(_subscribed_topics.begin(), _subscribed_topics.end()),
       _subscribed_topics.end());
 
-    kclog.info(
+    vlog(
+      kclog.info,
       "Consumer: {}: join: members: {}, topics: {}",
       *this,
       _members,
@@ -359,9 +364,9 @@ consumer::offset_commit(std::vector<offset_commit_request_topic> topics) {
 ss::future<fetch_response>
 consumer::dispatch_fetch(broker_reqs_t::value_type br) {
     auto& [broker, req] = br;
-    kclog.trace("Consumer: {}, fetch_req: {}", *this, req);
+    vlog(kclog.trace, "Consumer: {}, fetch_req: {}", *this, req);
     auto res = co_await broker->dispatch(std::move(req));
-    kclog.trace("Consumer: {}, fetch_res: {}", *this, res);
+    vlog(kclog.trace, "Consumer: {}, fetch_res: {}", *this, res);
 
     if (res.data.error_code != error_code::none) {
         throw broker_error(broker->id(), res.data.error_code);
