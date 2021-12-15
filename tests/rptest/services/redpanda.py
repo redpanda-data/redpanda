@@ -553,12 +553,29 @@ class RedpandaService(Service):
         """Run command that computes MD5 hash of every file in redpanda data 
         directory. The results of the command are turned into a map from path
         to hash-size tuples."""
-        cmd = f"find {RedpandaService.DATA_DIR} -type f -exec md5sum '{{}}' \; -exec stat -c %s '{{}}' \;"
+        cmd = f"find {RedpandaService.DATA_DIR} -type f -exec md5sum -z '{{}}' \; -exec stat -c ' %s' '{{}}' \;"
         lines = node.account.ssh_output(cmd)
-        tokens = lines.split()
+        lines = lines.decode().split("\n")
+
+        # there is a race between `find` iterating over file names and passing
+        # those to an invocation of `md5sum` in which the file may be deleted.
+        # here we log these instances for debugging, but otherwise ignore them.
+        found = []
+        for line in lines:
+            if "No such file or directory" in line:
+                self.logger.debug(f"Skipping file that disappeared: {line}")
+                continue
+            found.append(line)
+        lines = found
+
+        # the `find` command will stick a newline at the end of the results
+        # which gets parsed as an empty line by `split` above
+        if lines[-1] == "":
+            lines.pop()
+
         return {
-            tokens[ix + 1].decode(): (tokens[ix].decode(), int(tokens[ix + 2]))
-            for ix in range(0, len(tokens), 3)
+            tokens[1].rstrip("\x00"): (tokens[0], int(tokens[2]))
+            for tokens in map(lambda l: l.split(), lines)
         }
 
     def broker_address(self, node):
