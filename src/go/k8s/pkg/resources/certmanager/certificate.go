@@ -152,6 +152,10 @@ func (r *CertificateResource) obj() (k8sclient.Object, error) {
 			Namespace: r.Key().Namespace,
 			Labels:    objLabels,
 		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Certificate",
+			APIVersion: "cert-manager.io/v1",
+		},
 		Spec: cmapiv1.CertificateSpec{
 			SecretName:  r.Key().Name,
 			IssuerRef:   *r.issuerRef,
