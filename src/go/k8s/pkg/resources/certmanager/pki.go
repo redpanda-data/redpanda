@@ -238,6 +238,10 @@ func (r *PkiReconciler) copyNodeSecretToLocalNamespace(
 			Namespace: r.pandaCluster.Namespace,
 			Labels:    secret.Labels,
 		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: "v1",
+		},
 		Type: secret.Type,
 		Data: map[string][]byte{
 			cmmetav1.TLSCAKey:       caCrt,
