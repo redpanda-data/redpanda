@@ -187,12 +187,12 @@ ss::future<> segment_index::flush() {
     _needs_persistence = false;
     co_await _out.truncate(0);
     auto out = co_await ss::make_file_output_stream(ss::file(_out.dup()));
-          auto b = serde::to_iobuf(_state.copy());
-          for (const auto& f : b) {
-              co_await out.write(f.get(), f.size());
-          }
-          co_await out.flush();
-          co_await out.close();
+    auto b = serde::to_iobuf(_state.copy());
+    for (const auto& f : b) {
+        co_await out.write(f.get(), f.size());
+    }
+    co_await out.flush();
+    co_await out.close();
 }
 ss::future<> segment_index::close() {
     return flush().then([this] { return _out.close(); });
