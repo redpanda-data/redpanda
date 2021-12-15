@@ -25,6 +25,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "redpanda/tests/fixture.h"
+#include "v8_engine/api.h"
 
 #include <seastar/core/loop.hh>
 #include <seastar/core/sstring.hh>
@@ -52,6 +53,14 @@ public:
                 model::ntp(tp_ns.ns, tp_ns.tp, model::partition_id(i)),
                 model::offset(0));
           })
+          .get();
+    }
+
+    void add_script_code(const ss::sstring& script_name) {
+        size_t id(xxhash_64(script_name.data(), script_name.size()));
+        iobuf code;
+        app.v8_api.local()
+          .insert_code(coproc::script_id(id), std::move(code))
           .get();
     }
 
@@ -642,6 +651,7 @@ FIXTURE_TEST(test_single_data_policy_alter_config, alter_config_test_fixture) {
     create_topic(test_tp, 3);
 
     v8_engine::data_policy dp1("1", "2");
+    add_script_code(dp1.script_name());
 
     absl::flat_hash_map<ss::sstring, ss::sstring> properties1;
     properties1.emplace(
@@ -684,6 +694,7 @@ FIXTURE_TEST(
     create_topic(test_tp, 3);
 
     v8_engine::data_policy dp1("1", "1");
+    add_script_code(dp1.script_name());
 
     absl::flat_hash_map<
       ss::sstring,
@@ -744,6 +755,7 @@ FIXTURE_TEST(
     create_topic(test_tp, 3);
 
     v8_engine::data_policy dp1("1", "1");
+    add_script_code(dp1.script_name());
 
     // set data-policy
     absl::flat_hash_map<
@@ -802,6 +814,7 @@ FIXTURE_TEST(
 
     // create new data-policy
     v8_engine::data_policy dp2("2", "2");
+    add_script_code(dp2.script_name());
     properties.insert_or_assign(
       "redpanda.datapolicy.function.name",
       std::make_pair(
