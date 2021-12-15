@@ -12,14 +12,15 @@
 #pragma once
 #include "coproc/tests/utils/supervisor.h"
 #include "rpc/test/rpc_integration_fixture.h"
+#include "vassert.h"
 
 /// Use this test fixture when you want to start a coproc::supervisor up.
 /// Optionally query the internal state of the c++ 'wasm' engine with the
 /// provided methods
 class supervisor_test_fixture : public rpc_sharded_integration_fixture {
 public:
-    supervisor_test_fixture()
-      : rpc_sharded_integration_fixture(43189) {
+    explicit supervisor_test_fixture(uint32_t port = 43189)
+      : rpc_sharded_integration_fixture(port) {
         configure_server();
         _delay_heartbeat.start().get();
         _delay_heartbeat
@@ -28,9 +29,16 @@ public:
           })
           .get();
         _coprocessors.start().get();
-        register_service<coproc::supervisor>(
-          std::ref(_coprocessors), std::ref(_delay_heartbeat));
-        start_server();
+        try {
+            register_service<coproc::supervisor>(
+              std::ref(_coprocessors), std::ref(_delay_heartbeat));
+            start_server();
+        } catch (const std::exception& ex) {
+            vassert(
+              false,
+              "Exception in supervisor_test_fixture constructor: {}",
+              ex);
+        }
     }
 
     ~supervisor_test_fixture() override {

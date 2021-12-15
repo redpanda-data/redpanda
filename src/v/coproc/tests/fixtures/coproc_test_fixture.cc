@@ -46,23 +46,23 @@ std::unique_ptr<kafka::client::client> make_client() {
 
 } // namespace
 
-coproc_test_fixture::coproc_test_fixture() {
+coproc_api_fixture::coproc_api_fixture() {
     ss::smp::invoke_on_all([]() {
         auto& config = config::shard_local_cfg();
         config.get("coproc_offset_flush_interval_ms").set_value(500ms);
         config.get("enable_coproc").set_value(true);
     }).get0();
-    _root_fixture = std::make_unique<redpanda_thread_fixture>();
+    _client = make_client();
 }
 
-coproc_test_fixture::~coproc_test_fixture() {
+coproc_api_fixture::~coproc_api_fixture() {
     if (_client) {
         _client->stop().get();
     }
 }
 
 ss::future<>
-coproc_test_fixture::push_wasm_events(std::vector<coproc::wasm::event> events) {
+coproc_api_fixture::push_wasm_events(std::vector<coproc::wasm::event> events) {
     auto result = co_await coproc::wasm::publish_events(
       *_client,
       coproc::wasm::make_event_record_batch_reader({std::move(events)}));
@@ -73,21 +73,20 @@ coproc_test_fixture::push_wasm_events(std::vector<coproc::wasm::event> events) {
 }
 
 ss::future<>
-coproc_test_fixture::enable_coprocessors(std::vector<deploy> copros) {
+coproc_api_fixture::enable_coprocessors(std::vector<deploy> copros) {
     std::vector<coproc::wasm::event> events;
     std::vector<ss::future<>> wait;
     events.reserve(copros.size());
     for (auto& e : copros) {
         events.emplace_back(e.id, std::move(e.data));
         _active_ids.emplace(coproc::script_id(e.id));
-        wait.push_back(wait_for_copro(coproc::script_id(e.id)));
     }
     co_await push_wasm_events(std::move(events));
     co_await ss::when_all_succeed(wait.begin(), wait.end());
 }
 
 ss::future<>
-coproc_test_fixture::disable_coprocessors(std::vector<uint64_t> ids) {
+coproc_api_fixture::disable_coprocessors(std::vector<uint64_t> ids) {
     std::vector<coproc::wasm::event> events;
     events.reserve(ids.size());
     for (auto id : ids) {
@@ -99,9 +98,8 @@ coproc_test_fixture::disable_coprocessors(std::vector<uint64_t> ids) {
 
 ss::future<> coproc_test_fixture::setup(log_layout_map llm) {
     co_await _root_fixture->wait_for_controller_leadership();
-    _client = make_client();
-    co_await _client->connect();
-    co_await coproc::wasm::create_coproc_internal_topic(*_client);
+    co_await get_client().connect();
+    co_await coproc::wasm::create_coproc_internal_topic(get_client());
     for (auto& p : llm) {
         co_await _root_fixture->add_topic(
           model::topic_namespace(model::kafka_namespace, p.first), p.second);
@@ -118,9 +116,9 @@ ss::future<> coproc_test_fixture::restart() {
 }
 
 static ss::future<model::offset>
-list_topic_offset(kafka::client::client* c, model::topic_partition tp) {
+list_topic_offset(kafka::client::client& c, model::topic_partition tp) {
     vlog(coproc::coproclog.info, "Making request to fetch offset: {}", tp);
-    auto r = co_await c->list_offsets(tp);
+    auto r = co_await c.list_offsets(tp);
     vassert(r.data.topics.size() == 1, "Expected one response");
     auto& topics = r.data.topics;
     vassert(topics[0].name == tp.topic, "Unexpected response");
@@ -133,7 +131,7 @@ list_topic_offset(kafka::client::client* c, model::topic_partition tp) {
 
 class no_new_data_error final : public std::exception {};
 
-ss::future<model::record_batch_reader::data_t> coproc_test_fixture::do_consume(
+ss::future<model::record_batch_reader::data_t> coproc_api_fixture::do_consume(
   model::topic_partition tp,
   model::offset start_offset,
   std::size_t records_read,
@@ -141,7 +139,7 @@ ss::future<model::record_batch_reader::data_t> coproc_test_fixture::do_consume(
     if (model::timeout_clock::now() > timeout) {
         throw ss::timed_out_error();
     }
-    auto last_offset = co_await list_topic_offset(_client.get(), tp);
+    auto last_offset = co_await list_topic_offset(get_client(), tp);
     if (last_offset <= start_offset) {
         throw no_new_data_error();
     }
@@ -158,7 +156,7 @@ ss::future<model::record_batch_reader::data_t> coproc_test_fixture::do_consume(
     co_return co_await consume_reader_to_memory(std::move(rbr), timeout);
 }
 
-ss::future<model::record_batch_reader::data_t> coproc_test_fixture::consume(
+ss::future<model::record_batch_reader::data_t> coproc_api_fixture::consume(
   model::ntp ntp,
   std::size_t limit,
   model::offset start_offset,
@@ -194,7 +192,7 @@ ss::future<model::record_batch_reader::data_t> coproc_test_fixture::consume(
 }
 
 ss::future<>
-coproc_test_fixture::produce(model::ntp ntp, model::record_batch_reader rbr) {
+coproc_api_fixture::produce(model::ntp ntp, model::record_batch_reader rbr) {
     vlog(coproc::coproclog.info, "About to produce to ntp: {}", ntp);
     auto result = co_await std::move(rbr).for_each_ref(
       kafka_publish_consumer(
@@ -208,19 +206,17 @@ coproc_test_fixture::produce(model::ntp ntp, model::record_batch_reader rbr) {
     }
 }
 
-ss::future<> coproc_test_fixture::wait_for_copro(coproc::script_id id) {
-    vlog(coproc::coproclog.info, "Waiting for script {}", id);
-    auto& p = _root_fixture->app.coprocessing->get_pacemaker();
-    auto r = co_await p.map_reduce0(
-      [id](coproc::pacemaker& p) { return p.wait_for_script(id); },
-      std::vector<coproc::errc>(),
-      reduce::push_back());
-    bool failed = std::all_of(r.begin(), r.end(), [](coproc::errc e) {
-        return e == coproc::errc::topic_does_not_exist;
+ss::future<>
+coproc_test_fixture::enable_coprocessors(std::vector<deploy> copros) {
+    std::vector<coproc::script_id> ids;
+    std::transform(
+      copros.cbegin(),
+      copros.cend(),
+      std::back_inserter(ids),
+      [](const deploy& d) { return coproc::script_id(d.id); });
+    co_await coproc_api_fixture::enable_coprocessors(std::move(copros));
+    co_await ss::parallel_for_each(ids, [this](coproc::script_id id) {
+        auto& p = _root_fixture->app.coprocessing->get_pacemaker();
+        return coproc::wasm::wait_for_copro(p, id);
     });
-    if (failed) {
-        throw coproc::exception(
-          fmt_with_ctx(ssx::sformat, "Failed to deploy script: {}", id));
-    }
-    vlog(coproc::coproclog.info, "Script {} successfully deployed!", id);
 }

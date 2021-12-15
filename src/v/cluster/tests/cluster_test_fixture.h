@@ -68,7 +68,7 @@ public:
         set_configuration("disable_metrics", true);
     }
 
-    ~cluster_test_fixture() {
+    virtual ~cluster_test_fixture() {
         std::filesystem::remove_all(std::filesystem::path(_base_dir));
     }
 
