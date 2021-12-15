@@ -263,7 +263,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
     auto transfer = strategy.find_movement(muted_groups());
     if (!transfer) {
         vlog(
-          clusterlog.info,
+          clusterlog.debug,
           "No leadership balance improvements found with total delta {}, "
           "number of muted groups {}",
           error,
