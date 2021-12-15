@@ -15,6 +15,7 @@
 #include "storage/logger.h"
 #include "vassert.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/iostream.hh>
 
@@ -121,7 +122,7 @@ segment_index::find_nearest(model::offset o) {
 
 ss::future<> segment_index::truncate(model::offset o) {
     if (o < _state.base_offset) {
-        return ss::now();
+        co_return;
     }
     const uint32_t i = o() - _state.base_offset();
     auto it = std::lower_bound(
@@ -151,7 +152,7 @@ ss::future<> segment_index::truncate(model::offset o) {
         }
     }
 
-    return flush();
+    co_return co_await flush();
 }
 
 ss::future<bool> segment_index::materialize_index() {
