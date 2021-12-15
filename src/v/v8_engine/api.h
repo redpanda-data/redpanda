@@ -14,6 +14,8 @@
 #include "v8_engine/executor.h"
 #include "v8_engine/script_dispatcher.h"
 
+#include <seastar/core/shared_ptr.hh>
+
 namespace v8_engine {
 
 // Unit for work with v8_engine stuff
@@ -31,6 +33,11 @@ public:
     std::error_code remove_data_policy(const model::topic_namespace& topic);
     std::optional<data_policy>
     get_data_policy(const model::topic_namespace& topic);
+
+    ss::future<ss::lw_shared_ptr<script>>
+    get_script(const model::topic_namespace& topic) {
+        return _script_dispatcher.get(topic);
+    }
 
 private:
     executor_service& _executor;
