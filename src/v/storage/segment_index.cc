@@ -195,7 +195,8 @@ ss::future<> segment_index::flush() {
     co_await out.close();
 }
 ss::future<> segment_index::close() {
-    return flush().then([this] { return _out.close(); });
+    co_await flush();
+    co_await _out.close();
 }
 std::ostream& operator<<(std::ostream& o, const segment_index& i) {
     return o << "{file:" << i.filename() << ", offsets:" << i.base_offset()
