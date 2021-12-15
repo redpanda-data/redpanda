@@ -15,6 +15,7 @@
 #include "storage/logger.h"
 #include "vassert.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/iostream.hh>
 
@@ -121,7 +122,7 @@ segment_index::find_nearest(model::offset o) {
 
 ss::future<> segment_index::truncate(model::offset o) {
     if (o < _state.base_offset) {
-        return ss::now();
+        co_return;
     }
     const uint32_t i = o() - _state.base_offset();
     auto it = std::lower_bound(
@@ -151,31 +152,27 @@ ss::future<> segment_index::truncate(model::offset o) {
         }
     }
 
-    return flush();
+    co_return co_await flush();
 }
 
 ss::future<bool> segment_index::materialize_index() {
-    return _out.size()
-      .then([this](uint64_t size) mutable {
-          return _out.dma_read_bulk<char>(0, size);
-      })
-      .then([this](ss::temporary_buffer<char> buf) {
-          if (buf.empty()) {
-              return false;
-          }
-          iobuf b;
-          b.append(std::move(buf));
-          try {
-              _state = serde::from_iobuf<index_state>(std::move(b));
-              return true;
-          } catch (const serde::serde_exception& ex) {
-              vlog(
-                stlog.info,
-                "Rebuilding index_state after decoding failure: {}",
-                ex.what());
-              return false;
-          }
-      });
+    auto size = co_await _out.size();
+    auto buf = co_await _out.dma_read_bulk<char>(0, size);
+    if (buf.empty()) {
+        co_return false;
+    }
+    iobuf b;
+    b.append(std::move(buf));
+    try {
+        _state = serde::from_iobuf<index_state>(std::move(b));
+        co_return true;
+    } catch (const serde::serde_exception& ex) {
+        vlog(
+          stlog.info,
+          "Rebuilding index_state after decoding failure: {}",
+          ex.what());
+        co_return false;
+    }
 }
 
 ss::future<> segment_index::drop_all_data() {
@@ -185,30 +182,21 @@ ss::future<> segment_index::drop_all_data() {
 
 ss::future<> segment_index::flush() {
     if (!_needs_persistence) {
-        return ss::make_ready_future<>();
+        co_return;
     }
     _needs_persistence = false;
-    return _out.truncate(0)
-      .then(
-        [this] { return ss::make_file_output_stream(ss::file(_out.dup())); })
-      .then([this](ss::output_stream<char> out) {
-          auto b = serde::to_iobuf(_state.copy());
-          return do_with(
-            std::move(b),
-            std::move(out),
-            [](iobuf& buff, ss::output_stream<char>& out) {
-                return ss::do_for_each(
-                         buff,
-                         [&out](const iobuf::fragment& f) {
-                             return out.write(f.get(), f.size());
-                         })
-                  .then([&out] { return out.flush(); })
-                  .then([&out] { return out.close(); });
-            });
-      });
+    co_await _out.truncate(0);
+    auto out = co_await ss::make_file_output_stream(ss::file(_out.dup()));
+    auto b = serde::to_iobuf(_state.copy());
+    for (const auto& f : b) {
+        co_await out.write(f.get(), f.size());
+    }
+    co_await out.flush();
+    co_await out.close();
 }
 ss::future<> segment_index::close() {
-    return flush().then([this] { return _out.close(); });
+    co_await flush();
+    co_await _out.close();
 }
 std::ostream& operator<<(std::ostream& o, const segment_index& i) {
     return o << "{file:" << i.filename() << ", offsets:" << i.base_offset()
