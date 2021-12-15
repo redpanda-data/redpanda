@@ -102,7 +102,7 @@ public:
           app.controller->get_api(),
           app.tx_gateway_frontend,
           app.cp_partition_manager,
-          app.data_policies,
+          app.v8_api,
           std::nullopt);
     }
 

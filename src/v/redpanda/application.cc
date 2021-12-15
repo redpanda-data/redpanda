@@ -1189,7 +1189,7 @@ void application::start_redpanda() {
             controller->get_api(),
             tx_gateway_frontend,
             cp_partition_manager,
-            data_policies,
+            v8_api,
             qdc_config);
           s.set_protocol(std::move(proto));
       })

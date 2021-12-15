@@ -24,6 +24,7 @@
 #include "model/validation.h"
 #include "security/acl.h"
 #include "ssx/sformat.h"
+#include "v8_engine/api.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/smp.hh>
@@ -553,13 +554,19 @@ ss::future<response_ptr> describe_configs_handler::handle(
 
             // Data-policy property
             ss::sstring property_name = "redpanda.datapolicy";
+            auto& v8_api = ctx.v8_api();
+            std::optional<v8_engine::data_policy> dp;
+            if (v8_api.local_is_initialized()) {
+                dp = v8_api.local().get_data_policy(topic);
+            }
+
             add_topic_config_if_requested(
               resource,
               result,
               property_name,
               v8_engine::data_policy("", ""),
               property_name,
-              ctx.data_policy_table().get_data_policy(topic),
+              dp,
               request.data.include_synonyms,
               &describe_as_string<v8_engine::data_policy>);
 
