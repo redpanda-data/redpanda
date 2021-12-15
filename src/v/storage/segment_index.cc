@@ -158,21 +158,21 @@ ss::future<> segment_index::truncate(model::offset o) {
 ss::future<bool> segment_index::materialize_index() {
     auto size = co_await _out.size();
     auto buf = co_await _out.dma_read_bulk<char>(0, size);
-          if (buf.empty()) {
-              co_return false;
-          }
-          iobuf b;
-          b.append(std::move(buf));
-          try {
-              _state = serde::from_iobuf<index_state>(std::move(b));
-              co_return true;
-          } catch (const serde::serde_exception& ex) {
-              vlog(
-                stlog.info,
-                "Rebuilding index_state after decoding failure: {}",
-                ex.what());
-              co_return false;
-          }
+    if (buf.empty()) {
+        co_return false;
+    }
+    iobuf b;
+    b.append(std::move(buf));
+    try {
+        _state = serde::from_iobuf<index_state>(std::move(b));
+        co_return true;
+    } catch (const serde::serde_exception& ex) {
+        vlog(
+          stlog.info,
+          "Rebuilding index_state after decoding failure: {}",
+          ex.what());
+        co_return false;
+    }
 }
 
 ss::future<> segment_index::drop_all_data() {
