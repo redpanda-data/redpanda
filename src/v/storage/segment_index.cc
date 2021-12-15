@@ -182,15 +182,13 @@ ss::future<> segment_index::drop_all_data() {
 
 ss::future<> segment_index::flush() {
     if (!_needs_persistence) {
-        return ss::make_ready_future<>();
+        co_return;
     }
     _needs_persistence = false;
-    return _out.truncate(0)
-      .then(
-        [this] { return ss::make_file_output_stream(ss::file(_out.dup())); })
-      .then([this](ss::output_stream<char> out) {
+    co_await _out.truncate(0);
+    auto out = co_await ss::make_file_output_stream(ss::file(_out.dup()));
           auto b = serde::to_iobuf(_state.copy());
-          return do_with(
+          co_await ss::do_with(
             std::move(b),
             std::move(out),
             [](iobuf& buff, ss::output_stream<char>& out) {
@@ -202,7 +200,6 @@ ss::future<> segment_index::flush() {
                   .then([&out] { return out.flush(); })
                   .then([&out] { return out.close(); });
             });
-      });
 }
 ss::future<> segment_index::close() {
     return flush().then([this] { return _out.close(); });
