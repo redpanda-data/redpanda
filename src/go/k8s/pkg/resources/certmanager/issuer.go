@@ -92,7 +92,11 @@ func (r *IssuerResource) obj() (k8sclient.Object, error) {
 
 	issuer := &cmapiv1.Issuer{
 		ObjectMeta: objectMeta,
-		Spec:       spec,
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Issuer",
+			APIVersion: "cert-manager.io/v1",
+		},
+		Spec: spec,
 	}
 
 	err := controllerutil.SetControllerReference(r.pandaCluster, issuer, r.scheme)

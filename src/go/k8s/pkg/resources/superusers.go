@@ -99,6 +99,10 @@ func (r *SuperUsersResource) obj() (k8sclient.Object, error) {
 			Name:      r.Key().Name,
 			Namespace: r.Key().Namespace,
 		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: "v1",
+		},
 		Type: corev1.SecretTypeBasicAuth,
 		Data: map[string][]byte{
 			corev1.BasicAuthUsernameKey: []byte(r.username),
