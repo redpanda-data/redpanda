@@ -10,6 +10,8 @@
 #include "storage/segment_index.h"
 
 #include "model/timestamp.h"
+#include "serde/serde.h"
+#include "storage/index_state.h"
 #include "storage/logger.h"
 #include "vassert.h"
 
@@ -163,12 +165,16 @@ ss::future<bool> segment_index::materialize_index() {
           }
           iobuf b;
           b.append(std::move(buf));
-          auto hydrated = index_state::hydrate_from_buffer(std::move(b));
-          if (!hydrated) {
+          try {
+              _state = serde::from_iobuf<index_state>(std::move(b));
+              return true;
+          } catch (const serde::serde_exception& ex) {
+              vlog(
+                stlog.info,
+                "Rebuilding index_state after decoding failure: {}",
+                ex.what());
               return false;
           }
-          _state = std::move(hydrated.value());
-          return true;
       });
 }
 
@@ -186,7 +192,7 @@ ss::future<> segment_index::flush() {
       .then(
         [this] { return ss::make_file_output_stream(ss::file(_out.dup())); })
       .then([this](ss::output_stream<char> out) {
-          auto b = _state.checksum_and_serialize();
+          auto b = serde::to_iobuf(_state.copy());
           return do_with(
             std::move(b),
             std::move(out),

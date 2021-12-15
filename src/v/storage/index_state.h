@@ -14,6 +14,7 @@
 #include "bytes/iobuf.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
+#include "serde/envelope.h"
 #include "utils/fragmented_vector.h"
 
 #include <cstdint>
@@ -34,20 +35,16 @@ namespace storage {
    [] relative_time_index
    [] position_index
  */
-struct index_state {
-    static constexpr int8_t ondisk_version = 3;
-
+struct index_state
+  : serde::envelope<index_state, serde::version<4>, serde::compat_version<4>> {
     index_state() = default;
     index_state(index_state&&) noexcept = default;
     index_state& operator=(index_state&&) noexcept = default;
-    index_state(const index_state&) = delete;
     index_state& operator=(const index_state&) = delete;
     ~index_state() noexcept = default;
 
-    /// \brief sizeof the index in bytes
-    uint32_t size{0};
-    /// \brief currently xxhash64
-    uint64_t checksum{0};
+    index_state copy() const { return *this; }
+
     /// \brief unused
     uint32_t bitflags{0};
     // the batch's base_offset of the first batch
@@ -81,7 +78,6 @@ struct index_state {
         return {
           relative_offset_index[i], relative_time_index[i], position_index[i]};
     }
-    iobuf checksum_and_serialize();
 
     bool maybe_index(
       size_t accumulator,
@@ -94,9 +90,21 @@ struct index_state {
 
     friend bool operator==(const index_state&, const index_state&) = default;
 
-    static std::optional<index_state> hydrate_from_buffer(iobuf);
-    static uint64_t checksum_state(const index_state&);
     friend std::ostream& operator<<(std::ostream&, const index_state&);
+
+    void serde_write(iobuf&) const;
+    friend void read_nested(iobuf_parser&, index_state&, const size_t);
+
+private:
+    index_state(const index_state& o) noexcept
+      : bitflags(o.bitflags)
+      , base_offset(o.base_offset)
+      , max_offset(o.max_offset)
+      , base_timestamp(o.base_timestamp)
+      , max_timestamp(o.max_timestamp)
+      , relative_offset_index(o.relative_offset_index.copy())
+      , relative_time_index(o.relative_time_index.copy())
+      , position_index(o.position_index.copy()) {}
 };
 
 } // namespace storage

@@ -10,9 +10,13 @@
 #include "storage/index_state.h"
 
 #include "bytes/iobuf_parser.h"
-#include "hashing/xx.h"
+#include "bytes/utils.h"
 #include "likely.h"
+#include "model/timestamp.h"
 #include "reflection/adl.h"
+#include "serde/serde.h"
+#include "serde/serde_exception.h"
+#include "storage/index_state_serde_compat.h"
 #include "storage/logger.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -24,27 +28,6 @@
 
 namespace storage {
 
-uint64_t index_state::checksum_state(const index_state& r) {
-    auto xx = incremental_xxhash64{};
-    xx.update_all(
-      r.bitflags,
-      r.base_offset(),
-      r.max_offset(),
-      r.base_timestamp(),
-      r.max_timestamp(),
-      uint32_t(r.relative_offset_index.size()));
-    const uint32_t vsize = r.relative_offset_index.size();
-    for (auto i = 0U; i < vsize; ++i) {
-        xx.update(r.relative_offset_index[i]);
-    }
-    for (auto i = 0U; i < vsize; ++i) {
-        xx.update(r.relative_time_index[i]);
-    }
-    for (auto i = 0U; i < vsize; ++i) {
-        xx.update(r.position_index[i]);
-    }
-    return xx.digest();
-}
 bool index_state::maybe_index(
   size_t accumulator,
   size_t step,
@@ -90,8 +73,7 @@ bool index_state::maybe_index(
 }
 
 std::ostream& operator<<(std::ostream& o, const index_state& s) {
-    return o << "{header_size:" << s.size << ", header_checksum:" << s.checksum
-             << ", header_bitflags:" << s.bitflags
+    return o << "{header_bitflags:" << s.bitflags
              << ", base_offset:" << s.base_offset
              << ", max_offset:" << s.max_offset
              << ", base_timestamp:" << s.base_timestamp
@@ -101,136 +83,89 @@ std::ostream& operator<<(std::ostream& o, const index_state& s) {
              << ")}";
 }
 
-std::optional<index_state> index_state::hydrate_from_buffer(iobuf b) {
-    iobuf_parser parser(std::move(b));
-    index_state retval;
+void index_state::serde_write(iobuf& out) const {
+    using serde::write;
 
-    auto version = reflection::adl<int8_t>{}.from(parser);
-    switch (version) {
-    case index_state::ondisk_version:
-        break;
+    iobuf tmp;
+    write(tmp, bitflags);
+    write(tmp, base_offset);
+    write(tmp, max_offset);
+    write(tmp, base_timestamp);
+    write(tmp, max_timestamp);
+    write(tmp, relative_offset_index.copy());
+    write(tmp, relative_time_index.copy());
+    write(tmp, position_index.copy());
 
-    default:
-        /*
-         * v3: changed the on-disk format to use 64-bit values for physical
-         * offsets to avoid overflow for segments larger than 4gb. backwards
-         * compat would require converting the overflowed values. instead, we
-         * fully deprecate old versions and rebuild the offset indexes.
-         *
-         * v2: fully deprecated
-         *
-         * v1: fully deprecated
-         *
-         *     version 1 code stored an on disk size that was calculated as 4
-         *     bytes too small, and the decoder did not check the size. instead
-         *     of rebuilding indexes for version 1 we'll adjust the size because
-         *     the checksums are still verified.
-         *
-         * v0: fully deprecated
-         */
-        vlog(
-          stlog.debug,
-          "Forcing index rebuild for unknown or unsupported version {}",
-          version);
-        return std::nullopt;
-    }
+    crc::crc32c crc;
+    crc_extend_iobuf(crc, tmp);
+    const uint32_t tmp_crc = crc.value();
 
-    retval.size = reflection::adl<uint32_t>{}.from(parser);
-    if (unlikely(parser.bytes_left() != retval.size)) {
-        vlog(
-          stlog.debug,
-          "Index size does not match header size. Got:{}, expected:{}",
-          parser.bytes_left(),
-          retval.size);
-        return std::nullopt;
-    }
-
-    retval.checksum = reflection::adl<uint64_t>{}.from(parser);
-    retval.bitflags = reflection::adl<uint32_t>{}.from(parser);
-    retval.base_offset = model::offset(
-      reflection::adl<model::offset::type>{}.from(parser));
-    retval.max_offset = model::offset(
-      reflection::adl<model::offset::type>{}.from(parser));
-    retval.base_timestamp = model::timestamp(
-      reflection::adl<model::timestamp::type>{}.from(parser));
-    retval.max_timestamp = model::timestamp(
-      reflection::adl<model::timestamp::type>{}.from(parser));
-
-    const uint32_t vsize = ss::le_to_cpu(
-      reflection::adl<uint32_t>{}.from(parser));
-    for (auto i = 0U; i < vsize; ++i) {
-        retval.relative_offset_index.push_back(
-          reflection::adl<uint32_t>{}.from(parser));
-    }
-    for (auto i = 0U; i < vsize; ++i) {
-        retval.relative_time_index.push_back(
-          reflection::adl<uint32_t>{}.from(parser));
-    }
-    for (auto i = 0U; i < vsize; ++i) {
-        retval.position_index.push_back(
-          reflection::adl<uint64_t>{}.from(parser));
-    }
-    retval.relative_offset_index.shrink_to_fit();
-    retval.relative_time_index.shrink_to_fit();
-    retval.position_index.shrink_to_fit();
-    const auto computed_checksum = storage::index_state::checksum_state(retval);
-    if (unlikely(retval.checksum != computed_checksum)) {
-        vlog(
-          stlog.debug,
-          "Invalid checksum for index. Got:{}, expected:{}",
-          computed_checksum,
-          retval.checksum);
-        return std::nullopt;
-    }
-    return retval;
+    // data blob + crc
+    write(out, std::move(tmp));
+    write(out, tmp_crc);
 }
 
-iobuf index_state::checksum_and_serialize() {
-    iobuf out;
-    vassert(
-      relative_offset_index.size() == relative_time_index.size()
-        && relative_offset_index.size() == position_index.size(),
-      "ALL indexes must match in size. {}",
-      *this);
-    const uint32_t final_size
-      = sizeof(storage::index_state::checksum)
-        + sizeof(storage::index_state::bitflags)
-        + sizeof(storage::index_state::base_offset)
-        + sizeof(storage::index_state::max_offset)
-        + sizeof(storage::index_state::base_timestamp)
-        + sizeof(storage::index_state::max_timestamp)
-        + sizeof(uint32_t) // index size
-        + (relative_offset_index.size() * (sizeof(uint32_t) * 2 + sizeof(uint64_t)));
-    size = final_size;
-    checksum = storage::index_state::checksum_state(*this);
-    reflection::serialize(
-      out,
-      index_state::ondisk_version,
-      size,
-      checksum,
-      bitflags,
-      base_offset(),
-      max_offset(),
-      base_timestamp(),
-      max_timestamp(),
-      uint32_t(relative_offset_index.size()));
-    const uint32_t vsize = relative_offset_index.size();
-    for (auto i = 0U; i < vsize; ++i) {
-        reflection::adl<uint32_t>{}.to(out, relative_offset_index[i]);
+void read_nested(
+  iobuf_parser& in, index_state& st, const size_t bytes_left_limit) {
+    /*
+     * peek at the 1-byte version prefix. this will either correspond to a
+     * version from the deprecated format, or a version in the range supported
+     * by the serde format.
+     */
+    const auto compat_version = serde::peek_version(in);
+
+    /*
+     * supported old version to avoid rebuilding all indices.
+     */
+    if (compat_version == serde_compat::index_state_serde::ondisk_version) {
+        in.skip(sizeof(int8_t));
+        st = serde_compat::index_state_serde::decode(in);
+        return;
     }
-    for (auto i = 0U; i < vsize; ++i) {
-        reflection::adl<uint32_t>{}.to(out, relative_time_index[i]);
+
+    /*
+     * unsupported old version.
+     */
+    if (compat_version < serde_compat::index_state_serde::ondisk_version) {
+        throw serde::serde_exception(
+          fmt_with_ctx(fmt::format, "Unsupported version: {}", compat_version));
     }
-    for (auto i = 0U; i < vsize; ++i) {
-        reflection::adl<uint64_t>{}.to(out, position_index[i]);
+
+    /*
+     * support for new serde format.
+     */
+    const auto hdr = serde::read_header<index_state>(in, bytes_left_limit);
+
+    using serde::read_nested;
+
+    // data blog + crc
+    iobuf tmp;
+    uint32_t tmp_crc = 0;
+    read_nested(in, tmp, hdr._bytes_left_limit);
+    read_nested(in, tmp_crc, hdr._bytes_left_limit);
+
+    crc::crc32c crc;
+    crc_extend_iobuf(crc, tmp);
+    const uint32_t expected_tmp_crc = crc.value();
+
+    if (tmp_crc != expected_tmp_crc) {
+        throw serde::serde_exception(fmt_with_ctx(
+          fmt::format,
+          "Mismatched checksum {} expected {}",
+          tmp_crc,
+          expected_tmp_crc));
     }
-    // add back the version and size field
-    const auto expected_size = size + sizeof(int8_t) + sizeof(uint32_t);
-    vassert(
-      out.size_bytes() == expected_size,
-      "Unexpected serialization size {} != expected {}",
-      out.size_bytes(),
-      expected_size);
-    return out;
+
+    // unwrap actual fields
+    iobuf_parser p(std::move(tmp));
+    read_nested(p, st.bitflags, 0U);
+    read_nested(p, st.base_offset, 0U);
+    read_nested(p, st.max_offset, 0U);
+    read_nested(p, st.base_timestamp, 0U);
+    read_nested(p, st.max_timestamp, 0U);
+    read_nested(p, st.relative_offset_index, 0U);
+    read_nested(p, st.relative_time_index, 0U);
+    read_nested(p, st.position_index, 0U);
 }
+
 } // namespace storage

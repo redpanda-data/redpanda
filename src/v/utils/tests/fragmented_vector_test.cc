@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #include "random/generators.h"
+#include "serde/serde.h"
 #include "utils/fragmented_vector.h"
 
 #include <boost/test/unit_test.hpp>
@@ -34,11 +35,19 @@ BOOST_AUTO_TEST_CASE(fragmented_vector_test) {
         truth.push_back(i);
         other.push_back(i);
         test_equal(truth, other);
+
+        other = serde::from_iobuf<decltype(other)>(
+          serde::to_iobuf(std::move(other)));
+        test_equal(truth, other);
     }
 
     for (int64_t i = 0; i < 1234; i++) {
         truth.pop_back();
         other.pop_back();
+        test_equal(truth, other);
+
+        other = serde::from_iobuf<decltype(other)>(
+          serde::to_iobuf(std::move(other)));
         test_equal(truth, other);
     }
 
@@ -46,12 +55,19 @@ BOOST_AUTO_TEST_CASE(fragmented_vector_test) {
         truth.push_back(i);
         other.push_back(i);
         test_equal(truth, other);
+
+        other = serde::from_iobuf<decltype(other)>(
+          serde::to_iobuf(std::move(other)));
+        test_equal(truth, other);
     }
 
     for (int64_t i = 0; i < 1389; i++) {
         test_equal(truth, other);
         truth.pop_back();
         other.pop_back();
+
+        other = serde::from_iobuf<decltype(other)>(
+          serde::to_iobuf(std::move(other)));
     }
 
     BOOST_REQUIRE_EQUAL(truth.size(), other.size());
@@ -60,6 +76,10 @@ BOOST_AUTO_TEST_CASE(fragmented_vector_test) {
     for (int i = 0; i < 2000; i++) {
         truth.push_back(random_generators::get_int<int64_t>(1000, 3000));
         other.push_back(truth.back());
+
+        other = serde::from_iobuf<decltype(other)>(
+          serde::to_iobuf(std::move(other)));
+        test_equal(truth, other);
     }
     BOOST_REQUIRE_EQUAL(truth.size(), 2000);
     test_equal(truth, other);
