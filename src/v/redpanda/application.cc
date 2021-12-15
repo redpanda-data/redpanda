@@ -659,7 +659,7 @@ void application::wire_up_redpanda_services() {
 
     construct_service(cp_partition_manager, std::ref(storage)).get();
 
-    if (coproc_enabled()) {
+    if (coproc_enabled() || v8_enabled()) {
         _wasm_event_listener = std::make_unique<coproc::wasm::event_listener>();
     }
 
@@ -676,6 +676,9 @@ void application::wire_up_redpanda_services() {
             ss::engine().alien(), config::shard_local_cfg().executor_queue_size)
           .get();
         construct_service(v8_api, std::ref(*_v8_executor)).get();
+        _data_policy_handler.emplace(v8_api);
+        _wasm_event_listener->register_handler(
+          coproc::wasm::event_type::data_policy, &_data_policy_handler.value());
     }
 
     // controller

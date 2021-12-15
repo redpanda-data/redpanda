@@ -15,6 +15,7 @@
 #include "cloud_storage/fwd.h"
 #include "cluster/config_manager.h"
 #include "cluster/fwd.h"
+#include "coproc/event_handler.h"
 #include "coproc/fwd.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/fwd.h"
@@ -162,6 +163,7 @@ private:
     // platforme or not?
     inline static std::optional<v8_engine::enviroment> _v8_env;
     std::unique_ptr<v8_engine::executor_service> _v8_executor;
+    std::optional<coproc::wasm::data_policy_event_handler> _data_policy_handler;
 
     std::unique_ptr<coproc::wasm::event_listener> _wasm_event_listener;
 

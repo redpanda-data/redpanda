@@ -12,6 +12,8 @@
 #include "coproc/wasm_event.h"
 #include "hashing/xx.h"
 #include "seastarx.h"
+#include "v8_engine/api.h"
+#include "v8_engine/executor.h"
 
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -21,7 +23,12 @@
 #include <optional>
 
 SEASTAR_THREAD_TEST_CASE(data_policy_handler_test) {
-    coproc::wasm::data_policy_event_handler handler;
+    v8_engine::executor_service service;
+    service.start(ss::engine().alien(), ss::smp::count).get();
+    ss::sharded<v8_engine::api> v8_api;
+    v8_api.start(std::ref(service)).get();
+
+    coproc::wasm::data_policy_event_handler handler(v8_api);
     handler.start().get();
 
     ss::sstring name1 = "foo";
@@ -37,7 +44,7 @@ SEASTAR_THREAD_TEST_CASE(data_policy_handler_test) {
 
     handler.process(std::move(events1)).get();
 
-    auto code = handler.get_code(name1);
+    auto code = service.get_code(name1).get();
     auto raw_value
       = iobuf_const_parser(code.value()).read_string(code->size_bytes());
     BOOST_CHECK_EQUAL(raw_value, name1);
@@ -51,9 +58,11 @@ SEASTAR_THREAD_TEST_CASE(data_policy_handler_test) {
 
     handler.process(std::move(events2)).get();
 
-    code = handler.get_code(name1);
+    code = service.get_code(name1).get();
 
     BOOST_CHECK(code == std::nullopt);
 
     handler.stop().get();
+    v8_api.stop().get();
+    service.stop().get();
 }
