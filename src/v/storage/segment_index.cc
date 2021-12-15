@@ -188,13 +188,11 @@ ss::future<> segment_index::flush() {
     co_await _out.truncate(0);
     auto out = co_await ss::make_file_output_stream(ss::file(_out.dup()));
           auto b = serde::to_iobuf(_state.copy());
-                co_await ss::do_for_each(
-                         b,
-                         [&out](const iobuf::fragment& f) {
-                             return out.write(f.get(), f.size());
-                         })
-                  .then([&out] { return out.flush(); })
-                  .then([&out] { return out.close(); });
+          for (const auto& f : b) {
+              co_await out.write(f.get(), f.size());
+          }
+          co_await out.flush();
+          co_await out.close();
 }
 ss::future<> segment_index::close() {
     return flush().then([this] { return _out.close(); });
