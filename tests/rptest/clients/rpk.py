@@ -10,6 +10,7 @@
 import subprocess
 import socket
 import re
+from enum import Enum
 
 DEFAULT_TIMEOUT = 30
 
@@ -42,6 +43,11 @@ class RpkClusterInfoNode:
     def __init__(self, id, address):
         self.id = id
         self.address = address
+
+
+class CoprocType(Enum):
+    Async = 1,
+    DataPolicy = 2
 
 
 class RpkTool:
@@ -191,11 +197,20 @@ class RpkTool:
         cmd = ["seek", group, "--to-group", to_group]
         self._run_group(cmd)
 
-    def wasm_deploy(self, script, name, description):
+    def wasm_deploy(self,
+                    script,
+                    name,
+                    description,
+                    coproc_type=CoprocType.Async):
+        if coproc_type == CoprocType.Async:
+            type_str = "async"
+        else:
+            type_str = "data-policy"
+
         cmd = [
             self._rpk_binary(), 'wasm', 'deploy', script, '--brokers',
             self._redpanda.brokers(), '--name', name, '--description',
-            description
+            description, '--type', type_str
         ]
         return self._execute(cmd)
 

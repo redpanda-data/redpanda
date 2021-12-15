@@ -14,16 +14,31 @@ from rptest.clients.types import TopicSpec
 import subprocess
 
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import CoprocType
+
+import os
 
 
 class DataPolicyTest(RedpandaTest):
     topics = (TopicSpec(partition_count=1, replication_factor=3), )
 
     def __init__(self, test_context):
+        extra_rp_conf = dict(
+            developer_mode=True,
+            enable_v8=True,
+        )
         super(DataPolicyTest, self).__init__(test_context=test_context,
-                                             num_brokers=3)
+                                             num_brokers=3,
+                                             extra_rp_conf=extra_rp_conf)
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
+        self.rpk = RpkTool(self.redpanda)
+
+    def _deploy_script(self, script_name, path):
+        current_dir = os.path.dirname(os.path.realpath(__file__))
+        file_path = os.path.join(current_dir, "data_policy_scripts", path)
+        self.rpk.wasm_deploy(file_path, script_name, "", CoprocType.DataPolicy)
 
     def _get_data_policy(self, function_name, script_name):
         return "function_name: {} script_name: {}".format(
@@ -38,6 +53,7 @@ class DataPolicyTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_set_data_policy(self):
+        self._deploy_script("2", "simple.js")
         topic = self.topics[0].name
         kafka_tools = KafkaCliTools(self.redpanda)
         res = kafka_tools.alter_topic_config(
@@ -50,6 +66,7 @@ class DataPolicyTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_incremental_config(self):
+        self._deploy_script("2", "simple.js")
         topic = self.topics[0].name
         kafka_tools = KafkaCliTools(self.redpanda)
         kafka_tools.alter_topic_config(
