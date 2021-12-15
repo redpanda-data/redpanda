@@ -33,6 +33,9 @@ public:
     coproc_api_fixture();
     ~coproc_api_fixture();
 
+    /// Starts the client and creates the internal copro topic
+    ss::future<> start();
+
     /// Higher level abstraction of 'publish_events'
     ///
     /// Maps tuple to proper encoded wasm record and calls 'publish_events'
