@@ -31,6 +31,7 @@
 #include "config/node_config.h"
 #include "config/seed_server.h"
 #include "coproc/api.h"
+#include "coproc/event_listener.h"
 #include "coproc/partition_manager.h"
 #include "kafka/client/configuration.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
@@ -658,6 +659,10 @@ void application::wire_up_redpanda_services() {
 
     construct_service(cp_partition_manager, std::ref(storage)).get();
 
+    if (coproc_enabled()) {
+        _wasm_event_listener = std::make_unique<coproc::wasm::event_listener>();
+    }
+
     // Construct v8 stuff
     if (v8_enabled()) {
         syschecks::systemd_message("Creating v8_engine::api").get();
@@ -820,8 +825,19 @@ void application::wire_up_redpanda_services() {
           std::ref(metadata_cache),
           std::ref(partition_manager),
           std::ref(cp_partition_manager));
-        coprocessing->start().get();
+        coprocessing->start(*_wasm_event_listener).get();
     }
+
+    if (_wasm_event_listener.get() != nullptr) {
+        _wasm_event_listener->start().get();
+    }
+
+    // We need to stop event_listener before coproc.
+    _deferred.emplace_back([this] {
+        if (_wasm_event_listener.get() != nullptr) {
+            _wasm_event_listener->stop().get();
+        }
+    });
 
     // metrics and quota management
     syschecks::systemd_message("Adding kafka quota manager").get();

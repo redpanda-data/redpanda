@@ -163,6 +163,8 @@ private:
     inline static std::optional<v8_engine::enviroment> _v8_env;
     std::unique_ptr<v8_engine::executor_service> _v8_executor;
 
+    std::unique_ptr<coproc::wasm::event_listener> _wasm_event_listener;
+
     ss::metrics::metric_groups _metrics;
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
     // run these first on destruction
