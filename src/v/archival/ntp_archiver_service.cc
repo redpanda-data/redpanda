@@ -54,7 +54,12 @@ ntp_archiver::ntp_archiver(
   , _rev(ntp.get_revision())
   , _remote(remote)
   , _partition(std::move(part))
-  , _policy(_ntp, _svc_probe, std::ref(_probe), conf.time_limit)
+  , _policy(
+      _ntp,
+      _svc_probe,
+      std::ref(_probe),
+      conf.time_limit,
+      conf.upload_io_priority)
   , _bucket(conf.bucket_name)
   , _manifest(_ntp, _rev)
   , _gate()
