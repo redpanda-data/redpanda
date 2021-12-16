@@ -14,6 +14,7 @@
 #include "cluster/logger.h"
 #include "cluster/partition.h"
 #include "cluster/tx_utils.h"
+#include "kafka/group_probe.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/server/logger.h"
@@ -137,6 +138,20 @@ public:
         ss::sstring metadata;
         // BUG: support leader_epoch (KIP-320)
         // https://github.com/vectorizedio/redpanda/issues/1181
+    };
+
+    struct offset_metadata_with_probe {
+        offset_metadata metadata;
+        group_offset_probe probe;
+
+        offset_metadata_with_probe(
+          offset_metadata _metadata,
+          const kafka::group_id& group_id,
+          const model::topic_partition& tp)
+          : metadata(std::move(_metadata))
+          , probe(metadata.offset) {
+            probe.setup_metrics(group_id, tp);
+        }
     };
 
     struct prepared_tx {
@@ -419,7 +434,7 @@ public:
     std::optional<offset_metadata>
     offset(const model::topic_partition& tp) const {
         if (auto it = _offsets.find(tp); it != _offsets.end()) {
-            return it->second;
+            return it->second->metadata;
         }
         return std::nullopt;
     }
@@ -470,16 +485,30 @@ public:
     handle_offset_fetch(offset_fetch_request&& r);
 
     void insert_offset(model::topic_partition tp, offset_metadata md) {
-        _offsets[std::move(tp)] = std::move(md);
+        if (auto o_it = _offsets.find(tp); o_it != _offsets.end()) {
+            o_it->second->metadata = std::move(md);
+        } else {
+            _offsets.emplace(
+              std::move(tp),
+              std::make_unique<offset_metadata_with_probe>(
+                std::move(md), _id, tp));
+        }
     }
 
     bool try_upsert_offset(model::topic_partition tp, offset_metadata md) {
-        auto [o_it, inserted] = _offsets.try_emplace(tp, std::move(md));
-        if (!inserted && o_it->second.log_offset < md.log_offset) {
-            o_it->second = std::move(md);
-            inserted = true;
+        if (auto o_it = _offsets.find(tp); o_it != _offsets.end()) {
+            if (o_it->second->metadata.log_offset < md.log_offset) {
+                o_it->second->metadata = std::move(md);
+                return true;
+            }
+            return false;
+        } else {
+            _offsets.emplace(
+              std::move(tp),
+              std::make_unique<offset_metadata_with_probe>(
+                std::move(md), _id, tp));
+            return true;
         }
-        return inserted;
     }
 
     void insert_prepared(prepared_tx);
@@ -577,7 +606,10 @@ private:
     bool _new_member_added;
     config::configuration& _conf;
     ss::lw_shared_ptr<cluster::partition> _partition;
-    absl::node_hash_map<model::topic_partition, offset_metadata> _offsets;
+    absl::node_hash_map<
+      model::topic_partition,
+      std::unique_ptr<offset_metadata_with_probe>>
+      _offsets;
     model::violation_recovery_policy _recovery_policy;
     ctx_log _ctxlog;
     ctx_log _ctx_txlog;
