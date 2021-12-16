@@ -4,6 +4,7 @@ import os
 import struct
 import crc32c
 import glob
+import re
 import logging
 from io import BytesIO
 from reader import Reader
@@ -34,6 +35,9 @@ Header = collections.namedtuple(
     'Header', ('header_crc', 'batch_size', 'base_offset', 'type', 'crc',
                'attrs', 'delta', 'first_ts', 'max_ts', 'producer_id',
                'producer_epoch', 'base_seq', 'record_count'))
+
+SEGMENT_NAME_PATTERN = re.compile(
+    "(?P<base_offset>\d+)-(?P<term>\d+)-v(?P<version>\d)\.log")
 
 
 class CorruptBatchError(Exception):
@@ -178,6 +182,12 @@ class Ntp:
                                  f"{self.partition}_{self.ntp_id}")
         pattern = os.path.join(self.path, "*.log")
         self.segments = glob.iglob(pattern)
+
+        def _base_offset(segment_path):
+            m = SEGMENT_NAME_PATTERN.match(os.path.basename(segment_path))
+            return int(m['base_offset'])
+
+        self.segments = sorted(self.segments, key=_base_offset)
 
     def __str__(self):
         return "{0.nspace}/{0.topic}/{0.partition}_{0.ntp_id}".format(self)
