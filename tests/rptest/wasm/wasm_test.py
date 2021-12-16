@@ -7,16 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import os
-import uuid
-import random
-import string
-
 from kafka import TopicPartition
 
 from rptest.wasm.topic import get_source_topic
 from rptest.wasm.native_kafka_consumer import NativeKafkaConsumer
 from rptest.wasm.cli_kafka_producer import CliKafkaProducer
+from rptest.wasm.wasm_script import WasmScript
 
 from rptest.wasm.topic import construct_materialized_topic
 from rptest.wasm.wasm_build_tool import WasmBuildTool
@@ -33,28 +29,6 @@ from functools import reduce
 
 def flat_map(fn, ll):
     return reduce(lambda acc, x: acc + fn(x), ll, [])
-
-
-def random_string(N):
-    return ''.join(
-        random.choice(string.ascii_uppercase + string.digits)
-        for _ in range(N))
-
-
-class WasmScript:
-    def __init__(self, inputs=[], outputs=[], script=None):
-        self.name = random_string(10)
-        self.inputs = inputs
-        self.outputs = outputs
-        self.script = script
-        self.dir_name = str(uuid.uuid4())
-
-    def get_artifact(self, build_dir):
-        artifact = os.path.join(build_dir, self.dir_name, "dist",
-                                f"{self.dir_name}.js")
-        if not os.path.exists(artifact):
-            raise Exception(f"Artifact {artifact} was not built")
-        return artifact
 
 
 class WasmTest(RedpandaTest):
