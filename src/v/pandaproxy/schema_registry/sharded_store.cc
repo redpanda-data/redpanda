@@ -281,6 +281,29 @@ sharded_store::is_referenced(const subject& sub, schema_version ver) {
     co_return co_await _store.map_reduce0(map, false, std::logical_or<>{});
 }
 
+ss::future<std::vector<schema_id>> sharded_store::referenced_by(
+  const subject& sub, std::optional<schema_version> opt_ver) {
+    schema_version ver;
+    if (opt_ver.has_value()) {
+        ver = *opt_ver;
+    } else {
+        auto versions = co_await get_versions(sub, include_deleted::no);
+        vassert(
+          !versions.empty(), "get_versions should not return empty versions");
+        ver = versions.back();
+    }
+
+    auto map = [&sub, ver](store& s) { return s.referenced_by(sub, ver); };
+    auto reduce = [](std::vector<schema_id> acc, std::vector<schema_id> refs) {
+        acc.insert(acc.end(), refs.begin(), refs.end());
+        return acc;
+    };
+    auto references = co_await _store.map_reduce0(
+      map, std::vector<schema_id>{}, reduce);
+    std::sort(references.begin(), references.end());
+    co_return references;
+}
+
 ss::future<std::vector<schema_version>> sharded_store::delete_subject(
   seq_marker marker, const subject& sub, permanent_delete permanent) {
     co_return co_await _store.invoke_on(
