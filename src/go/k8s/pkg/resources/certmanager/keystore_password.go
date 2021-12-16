@@ -71,6 +71,10 @@ func (r *KeystoreSecretResource) obj() (k8sclient.Object, error) {
 			Namespace: r.Key().Namespace,
 			Labels:    objLabels,
 		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: "v1",
+		},
 		StringData: map[string]string{
 			passwordKey: r.pandaCluster.Name,
 		},

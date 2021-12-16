@@ -395,6 +395,78 @@ var _ = Describe("RedPandaCluster controller", func() {
 					len(cluster.Status.Nodes.Internal) > 0
 			}, timeout, interval).Should(BeTrue())
 		})
+		It("creates redpanda cluster with fixed nodeport", func() {
+			resources := corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			}
+
+			key := types.NamespacedName{
+				Name:      "external-fixed-redpanda",
+				Namespace: "default",
+			}
+			redpandaCluster := &v1alpha1.Cluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      key.Name,
+					Namespace: key.Namespace,
+				},
+				Spec: v1alpha1.ClusterSpec{
+					Image:    redpandaContainerImage,
+					Version:  redpandaContainerTag,
+					Replicas: pointer.Int32Ptr(replicas),
+					Configuration: v1alpha1.RedpandaConfig{
+						KafkaAPI: []v1alpha1.KafkaAPI{
+							{
+								Port: kafkaPort,
+							},
+							{
+								Port: 31111,
+								External: v1alpha1.ExternalConnectivityConfig{
+									Enabled:   true,
+									Subdomain: "vectorized.io",
+								},
+							},
+						},
+						AdminAPI: []v1alpha1.AdminAPI{{Port: adminPort}},
+					},
+					Resources: corev1.ResourceRequirements{
+						Limits:   resources,
+						Requests: resources,
+					},
+				},
+			}
+			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
+
+			redpandaPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      key.Name,
+					Namespace: key.Namespace,
+					Labels: map[string]string{
+						"app.kubernetes.io/component": "redpanda",
+						"app.kubernetes.io/instance":  "internal-redpanda",
+						"app.kubernetes.io/name":      "redpanda",
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Containers: []corev1.Container{{
+						Name:  "test",
+						Image: "test",
+					}},
+				},
+				Status: corev1.PodStatus{},
+			}
+			Expect(k8sClient.Create(context.Background(), redpandaPod)).Should(Succeed())
+
+			By("Creating StatefulSet")
+			var sts appsv1.StatefulSet
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), key, &sts)
+				return err == nil &&
+					*sts.Spec.Replicas == replicas
+			}, timeout, interval).Should(BeTrue())
+
+		})
 	})
 
 	Context("Calling reconcile", func() {
