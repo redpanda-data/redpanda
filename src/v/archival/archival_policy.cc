@@ -304,7 +304,6 @@ static ss::future<> get_file_range(
         // Adjust content lenght and offsets at the begining of the file
         upl.starting_offset = sto;
         upl.file_offset = bytes_to_skip;
-        upl.content_length -= bytes_to_skip;
         upl.base_timestamp = ts;
     }
     if (end_inclusive) {
@@ -319,7 +318,6 @@ static ss::future<> get_file_range(
         // Subsequent call to segment_reader::data_stream will fail in this
         // case. In order to avoid this we need to make another index lookup
         // to find a lower offset which is committed.
-        auto fsize = segment->reader().file_size();
         while (ix_end && ix_end->filepos > fsize) {
             vlog(archival_log.debug, "The position is not flushed {}", *ix_end);
             auto lookup_offset = ix_end->offset - model::offset(1);
@@ -376,9 +374,19 @@ static ss::future<> get_file_range(
         }
         upl.final_offset = fo;
         upl.final_file_offset = stop_at;
-        upl.content_length -= std::min(upl.content_length, (fsize - stop_at));
         upl.max_timestamp = ts;
     }
+    // Recompute content_length based on file offsets
+    vassert(
+      upl.file_offset <= upl.final_file_offset,
+      "Invalid upload candidate {}",
+      upl);
+    upl.content_length = upl.final_file_offset - upl.file_offset;
+    vassert(
+      upl.content_length <= fsize,
+      "Incorrect content length in {}, file size {}",
+      upl,
+      fsize);
     vlog(
       archival_log.debug,
       "Partial segment upload {}, original file size: {}",
