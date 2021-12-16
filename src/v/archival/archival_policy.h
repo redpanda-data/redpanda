@@ -18,6 +18,8 @@
 #include "storage/ntp_config.h"
 #include "storage/segment_set.h"
 
+#include <seastar/core/io_priority_class.hh>
+
 namespace archival {
 
 struct upload_candidate {
@@ -45,7 +47,8 @@ public:
       model::ntp ntp,
       service_probe& svc_probe,
       ntp_level_probe& ntp_probe,
-      std::optional<segment_time_limit> limit = std::nullopt);
+      std::optional<segment_time_limit> limit = std::nullopt,
+      ss::io_priority_class io_priority = ss::default_priority_class());
 
     /// \brief regurn next upload candidate
     ///
@@ -84,6 +87,7 @@ private:
     ntp_level_probe& _ntp_probe;
     std::optional<segment_time_limit> _upload_limit;
     std::optional<ss::lowres_clock::time_point> _upload_deadline;
+    ss::io_priority_class _io_priority;
 };
 
 } // namespace archival
