@@ -83,128 +83,26 @@ The table below gives the outcomes for the possible combinations of cluster-leve
 
 Table 1: Remote write configuration
 
+| Cluster-level configuration (<code>cloud_storage_remote_write</code>) | Topic-level configuration (<code>redpanda.remote.write</code>) | Outcome (whether remote write is enabled or disabled on the topic) |
+| <code>true</code> | Not set | Enabled |
+| <code>true</code> | <code>false</code> | Disabled |
+| <code>true</code> | <code>true</code> | Enabled |
+| <code>false</code> | Not set | Disabled |
+| <code>false</code> | <code>false</code> | Disabled |
+| <code>false</code> | <code>true</code> | Enabled |
 
-<table>
-  <tr>
-   <td>Cluster-level configuration (<code>cloud_storage_remote_write</code>)
-   </td>
-   <td>Topic-level configuration (<code>redpanda.remote.write</code>)
-   </td>
-   <td>Outcome (whether remote write is enabled or disabled on the topic)
-   </td>
-  </tr>
-  <tr>
-   <td><code>true</code>
-   </td>
-   <td>Not set
-   </td>
-   <td>Enabled
-   </td>
-  </tr>
-  <tr>
-   <td><code>true</code>
-   </td>
-   <td><code>false</code>
-   </td>
-   <td>Disabled
-   </td>
-  </tr>
-  <tr>
-   <td><code>true</code>
-   </td>
-   <td><code>true</code>
-   </td>
-   <td>Enabled
-   </td>
-  </tr>
-  <tr>
-   <td><code>false</code>
-   </td>
-   <td>Not set
-   </td>
-   <td>Disabled
-   </td>
-  </tr>
-  <tr>
-   <td><code>false</code>
-   </td>
-   <td><code>false</code>
-   </td>
-   <td>Disabled
-   </td>
-  </tr>
-  <tr>
-   <td><code>false</code>
-   </td>
-   <td><code>true</code>
-   </td>
-   <td>Enabled
-   </td>
-  </tr>
-</table>
 
 
 Table 2: Remote read configuration
 
+| Cluster-level configuration (<code>cloud_storage_remote_read</code>) | Topic-level configuration (<code>redpanda.remote.read</code>) | Outcome (whether remote read is enabled or disabled on the topic) |
+| <code>true</code> | Not set | Enabled |
+| <code>true</code> | <code>false</code> | Disabled |
+| <code>true</code> | <code>true</code> | Enabled |
+| <code>false</code> | Not set | Disabled |
+| <code>false</code> | <code>false</code> | Disabled |
+| <code>false</code> | <code>true</code> | Enabled |
 
-<table>
-  <tr>
-   <td>Cluster-level configuration (<code>cloud_storage_remote_read</code>)
-   </td>
-   <td>Topic-level configuration (<code>redpanda.remote.read</code>)
-   </td>
-   <td>Outcome (whether remote read is enabled or disabled on the topic)
-   </td>
-  </tr>
-  <tr>
-   <td><code>true</code>
-   </td>
-   <td>not set
-   </td>
-   <td>Enabled
-   </td>
-  </tr>
-  <tr>
-   <td><code>true</code>
-   </td>
-   <td><code>false</code>
-   </td>
-   <td>Disabled
-   </td>
-  </tr>
-  <tr>
-   <td><code>true</code>
-   </td>
-   <td><code>true</code>
-   </td>
-   <td>Enabled
-   </td>
-  </tr>
-  <tr>
-   <td><code>false</code>
-   </td>
-   <td>not set
-   </td>
-   <td>Disabled
-   </td>
-  </tr>
-  <tr>
-   <td><code>false</code>
-   </td>
-   <td><code>false</code>
-   </td>
-   <td>Disabled
-   </td>
-  </tr>
-  <tr>
-   <td><code>false</code>
-   </td>
-   <td><code>true</code>
-   </td>
-   <td>Enabled
-   </td>
-  </tr>
-</table>
 
 
 Note that the cluster-level `cloud_storage_enabled` parameter must be set to `true` to enable Shadow Indexing at the cluster level or the topic level. If you want to have Shadow Indexing turned off at the cluster level and enable it on specific topics, you must enable the `cloud_storage_enabled` parameter. If this parameter is set to `false`, nothing will be added to cloud storage, whether or not the other Shadow Indexing parameters are enabled. If this parameter is set to `true` and the other Shadow Indexing parameters are disabled, the Shadow Indexing subsystem will be initialized, but will not be used until you enable Shadow Indexing for a topic or at the cluster level. 
