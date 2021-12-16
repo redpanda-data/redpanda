@@ -1,3 +1,14 @@
+
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: additional-configuration
+  namespace: default
+status:
+  replicas: 1
+  upgrading: false
+
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
