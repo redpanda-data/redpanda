@@ -73,7 +73,7 @@ ss::future<> recovery_stm::do_recover(ss::io_priority_class iopc) {
 
     auto lstats = _ptr->_log.offsets();
     // follower last index was already evicted at the leader, use snapshot
-    if (meta.value()->next_index < lstats.start_offset) {
+    if (meta.value()->next_index <= _ptr->_last_snapshot_index) {
         co_return co_await install_snapshot();
     }
 
@@ -323,6 +323,9 @@ ss::future<> recovery_stm::handle_install_snapshot_reply(
   result<install_snapshot_reply> reply) {
     // snapshot delivery failed
     if (reply.has_error() || !reply.value().success) {
+        // if snapshot delivery failed, stop recovery to update follower state
+        // and retry
+        _stop_requested = true;
         return close_snapshot_reader();
     }
     if (reply.value().term > _ptr->_term) {
@@ -373,10 +376,9 @@ ss::future<> recovery_stm::replicate(
     // reader
     auto prev_log_idx = details::prev_offset(_base_batch_offset);
     model::term_id prev_log_term;
-    auto lstats = _ptr->_log.offsets();
 
     // get term for prev_log_idx batch
-    if (prev_log_idx >= lstats.start_offset) {
+    if (prev_log_idx > _ptr->_last_snapshot_index) {
         prev_log_term = *_ptr->_log.get_term(prev_log_idx);
     } else if (prev_log_idx < model::offset(0)) {
         prev_log_term = model::term_id{};
@@ -409,6 +411,7 @@ ss::future<> recovery_stm::replicate(
 
     auto seq = _ptr->next_follower_sequence(_node_id);
     _ptr->update_suppress_heartbeats(_node_id, seq, heartbeats_suppressed::yes);
+    auto lstats = _ptr->_log.offsets();
     return dispatch_append_entries(std::move(r))
       .finally([this, seq] {
           _ptr->update_suppress_heartbeats(

@@ -180,7 +180,8 @@ replicate_entries_stm::append_to_self() {
           return _ptr->disk_append(
             std::move(req.batches), consensus::update_last_quorum_index::yes);
       })
-      .then([](storage::append_result res) {
+      .then([this](storage::append_result res) {
+          vlog(_ctxlog.trace, "Leader append result: {}", res);
           return result<storage::append_result>(std::move(res));
       })
       .handle_exception([this](const std::exception_ptr& e) {
@@ -293,10 +294,16 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
             .then([this, appended_offset, appended_term] {
                 return process_result(appended_offset, appended_term);
             })
-            .handle_exception_type([](const ss::broken_condition_variable&) {
-                return result<replicate_result>(
-                  make_error_code(errc::shutting_down));
-            });
+            .handle_exception_type(
+              [this](const ss::broken_condition_variable&) {
+                  vlog(
+                    _ctxlog.debug,
+                    "Replication of entries with last offset: {} aborted - "
+                    "shutting down",
+                    _dirty_offset);
+                  return result<replicate_result>(
+                    make_error_code(errc::shutting_down));
+              });
       });
 }
 
@@ -316,7 +323,15 @@ result<replicate_result> replicate_entries_stm::process_result(
     // if term has changed we have to check if entry was
     // replicated
     if (unlikely(appended_term != _ptr->term())) {
-        if (_ptr->_log.get_term(appended_offset) != appended_term) {
+        const auto current_term = _ptr->_log.get_term(appended_offset);
+        if (current_term != appended_term) {
+            vlog(
+              _ctxlog.debug,
+              "Replication failure: appended term of entry {} is different "
+              "than expected, expected term: {}, current term: {}",
+              appended_offset,
+              appended_term,
+              current_term);
             return ret_t(errc::replicated_entry_truncated);
         }
     }
