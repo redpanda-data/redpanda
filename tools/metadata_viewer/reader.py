@@ -1,4 +1,11 @@
 import struct
+import collections
+
+SERDE_ENVELOPE_FORMAT = "<BBI"
+SERDE_ENVELOPE_SIZE = struct.calcsize(SERDE_ENVELOPE_FORMAT)
+
+SerdeEnvelope = collections.namedtuple('SerdeEnvelope',
+                                       ('version', 'compat_version', 'size'))
 
 
 class Reader:
@@ -66,6 +73,17 @@ class Reader:
 
     def read_vector(self, type_read):
         sz = self.read_int32()
+        ret = []
+        for i in range(0, sz):
+            ret.append(type_read(self))
+        return ret
+
+    def read_envelope(self):
+        data = self.read_bytes(SERDE_ENVELOPE_SIZE)
+        return SerdeEnvelope(*struct.unpack(SERDE_ENVELOPE_FORMAT, data))
+
+    def read_serde_vector(self, type_read):
+        sz = self.read_uint32()
         ret = []
         for i in range(0, sz):
             ret.append(type_read(self))

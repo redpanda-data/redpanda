@@ -78,6 +78,8 @@ class KvStoreRecordDecoder:
             return "storage"
         elif ks == 3:
             return "cluster"
+        elif ks == 4:
+            return "offset_translator"
         return "unknown"
 
     def decode(self):
@@ -196,6 +198,19 @@ def decode_raft_key(k):
     return ret
 
 
+def decode_offset_translator_key(k):
+    rdr = Reader(BytesIO(k))
+    ret = {}
+    ret['type'] = rdr.read_int8()
+    if ret['type'] == 0:
+        ret['name'] = "offset_map"
+    else:
+        ret['name'] = 'highest_known_offset'
+
+    ret['group'] = rdr.read_int64()
+    return ret
+
+
 def decode_storage_key_name(key_type):
     if key_type == 0:
         return "start offset"
@@ -218,6 +233,8 @@ def decode_key(ks, key):
         data = decode_raft_key(key)
     elif ks == "storage":
         data = decode_storage_key(key)
+    elif ks == "offset_translator":
+        data = decode_offset_translator_key(key)
     else:
         data = key.hex()
     return {'keyspace': ks, 'data': data}
@@ -247,11 +264,32 @@ def decode_storage_value(type, v):
     return ret
 
 
+def decode_offset_translator_value(type, v):
+    rdr = Reader(BytesIO(v))
+    ret = {}
+
+    def read_peristed_batch(rdr):
+        ret = {}
+        ret['base_offset'] = rdr.read_int64()
+        ret['length'] = rdr.read_int32()
+        return ret
+
+    if type == 1:
+        ret['offset'] = rdr.read_int64()
+    else:
+        rdr.read_envelope()
+        ret['start_delta'] = rdr.read_int64()
+        ret['persisted_batches'] = rdr.read_serde_vector(read_peristed_batch)
+    return ret
+
+
 def decode_value(dk, v):
     if dk['keyspace'] == 'consensus':
         return decode_raft_value(dk['data']['type'], v)
     elif dk['keyspace'] == 'storage':
         return decode_storage_value(dk['data']['type'], v)
+    elif dk['keyspace'] == 'offset_translator':
+        return decode_offset_translator_value(dk['data']['type'], v)
     return v.hex()
 
 
