@@ -592,7 +592,8 @@ class RedpandaService(Service):
         that exactly one (family, sample) match the query. All values for the
         sample across the requested set of nodes are returned in a flat array.
 
-        An exception will be raised unless exactly one (family, sample) matches.
+        None will be returned if less than one (family, sample) matches.
+        An exception will be raised if more than one (family, sample) matches.
 
         Example:
 
@@ -625,8 +626,7 @@ class RedpandaService(Service):
                         MetricSample(family.name, sample.name, node,
                                      sample.value, sample.labels))
         if not sample_values:
-            raise Exception(
-                f"No metric sample matching '{sample_pattern}' found")
+            return None
         return MetricSamples(sample_values)
 
     def read_configuration(self, node):
