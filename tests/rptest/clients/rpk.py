@@ -183,6 +183,14 @@ class RpkTool:
             cmd += ["-o", f"{n}"]
         return self._run_topic(cmd)
 
+    def group_seek_to(self, group, to):
+        cmd = ["seek", group, "--to", to]
+        self._run_group(cmd)
+
+    def group_seek_to_group(self, group, to_group):
+        cmd = ["seek", group, "--to-group", to_group]
+        self._run_group(cmd)
+
     def wasm_deploy(self, script, name, description):
         cmd = [
             self._rpk_binary(), 'wasm', 'deploy', script, '--brokers',
@@ -202,6 +210,13 @@ class RpkTool:
     def _run_topic(self, cmd, stdin=None, timeout=None):
         cmd = [
             self._rpk_binary(), "topic", "--brokers",
+            self._redpanda.brokers()
+        ] + cmd
+        return self._execute(cmd, stdin=stdin, timeout=timeout)
+
+    def _run_group(self, cmd, stdin=None, timeout=None):
+        cmd = [
+            self._rpk_binary(), "group", "--brokers",
             self._redpanda.brokers()
         ] + cmd
         return self._execute(cmd, stdin=stdin, timeout=timeout)
