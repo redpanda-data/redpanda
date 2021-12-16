@@ -60,13 +60,14 @@ class SnapshotBatch:
 
 
 class KvStoreRecordDecoder:
-    def __init__(self, record, header):
+    def __init__(self, record, header, value_is_optional_type):
         self.record = record
         self.header = header
         self.batch_type = header.type
         self.offset_delta = record.offset_delta
         self.v_stream = BytesIO(self.record.value)
         self.k_stream = BytesIO(self.record.key)
+        self.value_is_optional_type = value_is_optional_type
 
     def _decode_ks(self, ks):
         if ks == 0:
@@ -96,8 +97,11 @@ class KvStoreRecordDecoder:
 
         ret['key_space'] = self._decode_ks(keyspace)
         ret['key_buf'] = key_buf
-        data_rdr = Reader(self.v_stream)
-        data = data_rdr.read_optional(lambda r: r.read_iobuf())
+        if self.value_is_optional_type:
+            data_rdr = Reader(self.v_stream)
+            data = data_rdr.read_optional(lambda r: r.read_iobuf())
+        else:
+            data = self.record.value
         if data:
             ret['data'] = data
         else:
@@ -292,13 +296,17 @@ class KvStore:
         logger.debug(f"snapshot last offset: {snap.last_offset}")
 
         for r in snap.data_batch:
-            d = KvStoreRecordDecoder(r, snap.data_batch.header)
+            d = KvStoreRecordDecoder(r,
+                                     snap.data_batch.header,
+                                     value_is_optional_type=False)
             self._apply(d.decode())
         for path in self.ntp.segments:
             s = Segment(path)
             for batch in s:
                 for r in batch:
-                    d = KvStoreRecordDecoder(r, batch.header)
+                    d = KvStoreRecordDecoder(r,
+                                             batch.header,
+                                             value_is_optional_type=True)
                     self._apply(d.decode())
 
     def items(self):
