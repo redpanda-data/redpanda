@@ -159,11 +159,6 @@ ss::future<> remote_segment::run_hydrate_bg() {
         while (!_gate.is_closed()) {
             co_await _bg_cvar.wait(
               [this] { return !_wait_list.empty() || _gate.is_closed(); });
-            vlog(
-              _ctxlog.info,
-              "Start hydrating segment {}, {} consumers are awaiting",
-              full_path,
-              _wait_list.size());
             auto status = co_await _cache.is_cached(full_path);
             std::exception_ptr err;
             switch (status) {
@@ -219,7 +214,7 @@ ss::future<> remote_segment::run_hydrate_bg() {
             }
         }
     } catch (const ss::broken_condition_variable&) {
-        vlog(_ctxlog.info, "Hydraton loop is stopped");
+        vlog(_ctxlog.debug, "Hydraton loop is stopped");
     } catch (...) {
         vlog(
           _ctxlog.error,
