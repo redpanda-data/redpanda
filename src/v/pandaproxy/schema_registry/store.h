@@ -310,6 +310,21 @@ public:
           });
     }
 
+    std::vector<schema_id>
+    referenced_by(const subject& sub, schema_version ver) {
+        std::vector<schema_id> references;
+        for (const auto& s : _subjects) {
+            for (const auto& v : s.second.versions) {
+                for (const auto& r : v.refs) {
+                    if (r.sub == sub && r.version == ver) {
+                        references.emplace_back(v.id);
+                    }
+                }
+            }
+        }
+        return references;
+    }
+
     ///\brief Delete a subject.
     result<std::vector<schema_version>> delete_subject(
       seq_marker marker, const subject& sub, permanent_delete permanent) {
