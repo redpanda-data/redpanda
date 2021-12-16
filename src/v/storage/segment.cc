@@ -638,7 +638,9 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                          path,
                          sanitize_fileops,
                          internal::number_of_chunks_from_config(ntpc),
-                         pc)
+                         pc,
+                         config::shard_local_cfg()
+                           .segment_fallocation_step.bind())
                   .then([seg](segment_appender_ptr a) {
                       return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
                         ss::make_lw_shared<segment>(

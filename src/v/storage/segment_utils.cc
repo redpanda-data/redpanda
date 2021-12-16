@@ -160,16 +160,19 @@ ss::future<segment_appender_ptr> make_segment_appender(
   const std::filesystem::path& path,
   debug_sanitize_files debug,
   size_t number_of_chunks,
-  ss::io_priority_class iopc) {
+  ss::io_priority_class iopc,
+  config::binding<size_t> fallocate_size) {
     return internal::make_writer_handle(path, debug)
-      .then([number_of_chunks, iopc, path](ss::file writer) {
+      .then([number_of_chunks, iopc, path, fallocate_size](ss::file writer) {
           try {
               // NOTE: This try-catch is needed to not uncover the real
               // exception during an OOM condition, since the appender allocates
               // 1MB of memory aligned buffers
               return ss::make_ready_future<segment_appender_ptr>(
                 std::make_unique<segment_appender>(
-                  writer, segment_appender::options(iopc, number_of_chunks)));
+                  writer,
+                  segment_appender::options(
+                    iopc, number_of_chunks, fallocate_size)));
           } catch (...) {
               auto e = std::current_exception();
               vlog(stlog.error, "could not allocate appender: {}", e);
@@ -346,7 +349,8 @@ ss::future<storage::index_state> do_copy_segment_data(
                    cfg.sanitize,
                    segment_appender::write_behind_memory
                      / config::shard_local_cfg().append_chunk_size(),
-                   cfg.iopc)
+                   cfg.iopc,
+                   config::shard_local_cfg().segment_fallocation_step.bind())
             .then([l = std::move(list), &pb, h = std::move(h), cfg, s, tmpname](
                     segment_appender_ptr w) mutable {
                 auto raw = w.get();

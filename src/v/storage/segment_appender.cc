@@ -319,13 +319,14 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
                    _prev_head_write->available_units() == 1,
                    "Unexpected pending head write {}",
                    *this);
-                 // step - compute step rounded to 4096; this is needed because
-                 // during a truncation the follow up fallocation might not be
-                 // page aligned
-                 auto step = _opts.falloc_step;
-                 if (_fallocation_offset % 4096 != 0) {
+                 // step - compute step rounded to alignment(4096); this is
+                 // needed because during a truncation the follow up fallocation
+                 // might not be page aligned
+                 auto step = _opts.falloc_step();
+                 if (_fallocation_offset % fallocation_alignment != 0) {
                      // add left over bytes to a full page
-                     step += 4096 - (_fallocation_offset % 4096);
+                     step += fallocation_alignment
+                             - (_fallocation_offset % fallocation_alignment);
                  }
                  vassert(
                    _fallocation_offset >= _committed_offset,
