@@ -373,6 +373,26 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version_schema(
     co_return rp;
 }
 
+ss::future<ctx_server<service>::reply_t>
+get_subject_versions_version_referenced_by(
+  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp) {
+    parse_accept_header(rq, rp);
+    auto sub = parse::request_param<subject>(*rq.req, "subject");
+    auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
+    rq.req.reset();
+
+    co_await rq.service().writer().read_sync();
+
+    auto version = parse_schema_version(ver).value();
+
+    auto references = co_await rq.service().schema_store().referenced_by(
+      sub, version);
+
+    auto json_rslt{json::rjson_serialize(references)};
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
 ss::future<server::reply_t>
 delete_subject(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
