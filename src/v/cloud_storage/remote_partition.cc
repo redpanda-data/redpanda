@@ -263,7 +263,8 @@ private:
         }
         vlog(
           _ctxlog.debug,
-          "maybe_reset_stream completed {} {}",
+          "maybe_reset_reader completed, reader is present: {}, is end of "
+          "stream: {}",
           static_cast<bool>(_reader),
           is_end_of_stream());
         co_return static_cast<bool>(_reader);
