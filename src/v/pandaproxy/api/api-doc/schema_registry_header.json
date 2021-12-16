@@ -2,7 +2,7 @@
   "swagger": "2.0",
   "info": {
     "title": "Pandaproxy Schema Registry",
-    "version": "0.0.5"
+    "version": "v21.12.1"
   },
   "host": "{{Host}}",
   "basePath": "/",
