@@ -39,6 +39,8 @@ def print_kafka(store, topic):
 
             log = KafkaLog(ntp)
             logger.info(f'topic: {ntp.topic}, partition: {ntp.partition}')
+            for header in log.batch_headers():
+                print(json.dumps(header, indent=2))
 
 
 def print_groups(store):
