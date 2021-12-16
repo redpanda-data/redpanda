@@ -76,6 +76,10 @@ public:
     ///\brief Return whether there are any references to a subject version.
     ss::future<bool> is_referenced(const subject& sub, schema_version ver);
 
+    ///\brief Return the schema_ids that reference a subject version.
+    ss::future<std::vector<schema_id>>
+    referenced_by(const subject& sub, std::optional<schema_version> ver);
+
     ///\brief Delete a subject.
     ss::future<std::vector<schema_version>> delete_subject(
       seq_marker marker, const subject& sub, permanent_delete permanent);
