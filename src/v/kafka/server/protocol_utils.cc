@@ -18,7 +18,7 @@
 #include <vector>
 
 namespace kafka {
-// TODO: move to iobuf_parser
+
 ss::future<std::optional<request_header>>
 parse_header(ss::input_stream<char>& src) {
     constexpr int16_t no_client_id = -1;
@@ -27,31 +27,35 @@ parse_header(ss::input_stream<char>& src) {
           if (src.eof()) {
               return ss::make_ready_future<std::optional<request_header>>();
           }
-          auto client_id_size = be_to_cpu(
-            reinterpret_cast<const raw_request_header*>(buf.get())
-              ->client_id_size);
-          auto* raw_header = reinterpret_cast<const raw_request_header*>(
-            buf.get());
-          auto header = request_header{
-            .key = api_key(ss::net::ntoh(raw_header->api_key)),
-            .version = api_version(ss::net::ntoh(raw_header->api_version)),
-            .correlation = correlation_id(
-              ss::net::ntoh(raw_header->correlation))};
+
+          iobuf data;
+          data.append(std::move(buf));
+          request_reader reader(std::move(data));
+
+          request_header header;
+          header.key = api_key(reader.read_int16());
+          header.version = api_version(reader.read_int16());
+          header.correlation = correlation_id(reader.read_int32());
+          auto client_id_size = reader.read_int16();
 
           if (client_id_size == 0) {
               header.client_id = std::string_view();
               return ss::make_ready_future<std::optional<request_header>>(
                 std::move(header));
           }
+
           if (client_id_size == no_client_id) {
+              // header.client_id is left as a std::nullopt
               return ss::make_ready_future<std::optional<request_header>>(
                 std::move(header));
           }
+
           if (unlikely(client_id_size < 0)) {
               // header parsing error, force connection shutdown
               throw std::runtime_error(
                 fmt::format("Invalid client_id size {}", client_id_size));
           }
+
           return src.read_exactly(client_id_size)
             .then([&src, header = std::move(header)](
                     ss::temporary_buffer<char> buf) mutable {
