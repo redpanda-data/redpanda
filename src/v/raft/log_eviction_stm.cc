@@ -42,6 +42,13 @@ void log_eviction_stm::monitor_log_eviction() {
                 .then([this](model::offset last_evicted) {
                     return handle_deletion_notification(last_evicted);
                 })
+                .handle_exception_type(
+                  [](const ss::abort_requested_exception&) {
+                      // ignore abort requested exception, shutting down
+                  })
+                .handle_exception_type([](const ss::gate_closed_exception&) {
+                    // ignore gate closed exception, shutting down
+                })
                 .handle_exception([this](std::exception_ptr e) {
                     vlog(_logger.trace, "Error handling log eviction - {}", e);
                 });
