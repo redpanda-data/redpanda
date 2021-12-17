@@ -22,10 +22,11 @@ namespace kafka {
 ss::future<std::optional<request_header>>
 parse_header(ss::input_stream<char>& src) {
     constexpr int16_t no_client_id = -1;
-    return src.read_exactly(sizeof(raw_request_header))
-      .then([&src](ss::temporary_buffer<char> buf) {
+
+    auto buf = co_await src.read_exactly(sizeof(raw_request_header));
+
           if (src.eof()) {
-              return ss::make_ready_future<std::optional<request_header>>();
+              co_return std::nullopt;
           }
 
           iobuf data;
@@ -40,14 +41,12 @@ parse_header(ss::input_stream<char>& src) {
 
           if (client_id_size == 0) {
               header.client_id = std::string_view();
-              return ss::make_ready_future<std::optional<request_header>>(
-                std::move(header));
+              co_return header;
           }
 
           if (client_id_size == no_client_id) {
               // header.client_id is left as a std::nullopt
-              return ss::make_ready_future<std::optional<request_header>>(
-                std::move(header));
+              co_return header;
           }
 
           if (unlikely(client_id_size < 0)) {
@@ -56,9 +55,8 @@ parse_header(ss::input_stream<char>& src) {
                 fmt::format("Invalid client_id size {}", client_id_size));
           }
 
-          return src.read_exactly(client_id_size)
-            .then([&src, header = std::move(header)](
-                    ss::temporary_buffer<char> buf) mutable {
+          buf = co_await src.read_exactly(client_id_size);
+
                 if (src.eof()) {
                     throw std::runtime_error(
                       fmt::format("Unexpected EOF for client ID"));
@@ -68,10 +66,7 @@ parse_header(ss::input_stream<char>& src) {
                   header.client_id_buffer.get(),
                   header.client_id_buffer.size());
                 validate_utf8(*header.client_id);
-                return ss::make_ready_future<std::optional<request_header>>(
-                  std::move(header));
-            });
-      });
+                co_return header;
 }
 
 size_t parse_size_buffer(ss::temporary_buffer<char> buf) {
