@@ -114,13 +114,14 @@ func CreateIfNotExists(
 
 // Update ensures resource is updated if necessary. The method calculates patch
 // and applies it if something changed
+// returns true if resource was updated
 func Update(
 	ctx context.Context,
 	current client.Object,
 	modified client.Object,
 	c client.Client,
 	logger logr.Logger,
-) error {
+) (bool, error) {
 	prepareResourceForPatch(current, modified)
 	opts := []patch.CalculateOption{
 		patch.IgnoreStatusFields(),
@@ -128,31 +129,32 @@ func Update(
 	}
 	patchResult, err := patch.DefaultPatchMaker.Calculate(current, modified, opts...)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !patchResult.IsEmpty() {
 		// need to set current version first otherwise the request would get rejected
 		logger.Info(fmt.Sprintf("Resource %s (%s) changed, updating. Diff: %v",
 			modified.GetName(), modified.GetObjectKind().GroupVersionKind().Kind, string(patchResult.Patch)))
 		if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(modified); err != nil {
-			return err
+			return false, err
 		}
 
 		metaAccessor := meta.NewAccessor()
 		currentVersion, err := metaAccessor.ResourceVersion(current)
 		if err != nil {
-			return err
+			return false, err
 		}
 		err = metaAccessor.SetResourceVersion(modified, currentVersion)
 		if err != nil {
-			return err
+			return false, err
 		}
 		prepareResourceForUpdate(current, modified)
 		if err := c.Update(ctx, modified); err != nil {
-			return fmt.Errorf("failed to update resource: %w", err)
+			return false, fmt.Errorf("failed to update resource: %w", err)
 		}
+		return true, nil
 	}
-	return nil
+	return false, nil
 }
 
 // normalization to be done on resource before the patch is computed

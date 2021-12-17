@@ -86,7 +86,8 @@ func (r *IngressResource) Ensure(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error while fetching Ingress resource: %w", err)
 	}
-	return Update(ctx, &ingress, obj, r.Client, r.logger)
+	_, err = Update(ctx, &ingress, obj, r.Client, r.logger)
+	return err
 }
 
 func (r *IngressResource) obj() (k8sclient.Object, error) {

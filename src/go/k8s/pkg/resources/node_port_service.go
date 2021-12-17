@@ -75,7 +75,8 @@ func (r *NodePortServiceResource) Ensure(ctx context.Context) error {
 	}
 
 	copyPorts(obj.(*corev1.Service), &svc)
-	return Update(ctx, &svc, obj, r.Client, r.logger)
+	_, err = Update(ctx, &svc, obj, r.Client, r.logger)
+	return err
 }
 
 func copyPorts(newSvc, currentSvc *corev1.Service) {
