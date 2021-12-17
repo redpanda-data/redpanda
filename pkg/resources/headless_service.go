@@ -78,7 +78,8 @@ func (r *HeadlessServiceResource) Ensure(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error while fetching Service resource: %w", err)
 	}
-	return Update(ctx, &svc, obj, r.Client, r.logger)
+	_, err = Update(ctx, &svc, obj, r.Client, r.logger)
+	return err
 }
 
 // obj returns resource managed client.Object

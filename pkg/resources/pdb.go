@@ -73,7 +73,8 @@ func (r *PDBResource) Ensure(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error while fetching Service resource: %w", err)
 	}
-	return Update(ctx, &pdb, obj, r.Client, r.logger)
+	_, err = Update(ctx, &pdb, obj, r.Client, r.logger)
+	return err
 }
 
 func (r *PDBResource) obj() (k8sclient.Object, error) {

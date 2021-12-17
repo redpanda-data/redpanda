@@ -118,7 +118,8 @@ func (r *ConfigMapResource) Ensure(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error while fetching ConfigMap resource: %w", err)
 	}
-	return Update(ctx, &cm, obj, r.Client, r.logger)
+	_, err = Update(ctx, &cm, obj, r.Client, r.logger)
+	return err
 }
 
 // obj returns resource managed client.Object

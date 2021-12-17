@@ -166,7 +166,7 @@ func (r *StatefulSetResource) updateStatefulSet(
 	current *appsv1.StatefulSet,
 	modified *appsv1.StatefulSet,
 ) error {
-	err := Update(ctx, current, modified, r.Client, r.logger)
+	_, err := Update(ctx, current, modified, r.Client, r.logger)
 	if err != nil && strings.Contains(err.Error(), "spec: Forbidden: updates to statefulset spec for fields other than") {
 		// REF: https://github.com/kubernetes/kubernetes/issues/69041#issuecomment-723757166
 		// https://www.giffgaff.io/tech/resizing-statefulset-persistent-volumes-with-zero-downtime
