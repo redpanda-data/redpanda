@@ -25,48 +25,46 @@ parse_header(ss::input_stream<char>& src) {
 
     auto buf = co_await src.read_exactly(sizeof(raw_request_header));
 
-          if (src.eof()) {
-              co_return std::nullopt;
-          }
+    if (src.eof()) {
+        co_return std::nullopt;
+    }
 
-          iobuf data;
-          data.append(std::move(buf));
-          request_reader reader(std::move(data));
+    iobuf data;
+    data.append(std::move(buf));
+    request_reader reader(std::move(data));
 
-          request_header header;
-          header.key = api_key(reader.read_int16());
-          header.version = api_version(reader.read_int16());
-          header.correlation = correlation_id(reader.read_int32());
-          auto client_id_size = reader.read_int16();
+    request_header header;
+    header.key = api_key(reader.read_int16());
+    header.version = api_version(reader.read_int16());
+    header.correlation = correlation_id(reader.read_int32());
+    auto client_id_size = reader.read_int16();
 
-          if (client_id_size == 0) {
-              header.client_id = std::string_view();
-              co_return header;
-          }
+    if (client_id_size == 0) {
+        header.client_id = std::string_view();
+        co_return header;
+    }
 
-          if (client_id_size == no_client_id) {
-              // header.client_id is left as a std::nullopt
-              co_return header;
-          }
+    if (client_id_size == no_client_id) {
+        // header.client_id is left as a std::nullopt
+        co_return header;
+    }
 
-          if (unlikely(client_id_size < 0)) {
-              // header parsing error, force connection shutdown
-              throw std::runtime_error(
-                fmt::format("Invalid client_id size {}", client_id_size));
-          }
+    if (unlikely(client_id_size < 0)) {
+        // header parsing error, force connection shutdown
+        throw std::runtime_error(
+          fmt::format("Invalid client_id size {}", client_id_size));
+    }
 
-          buf = co_await src.read_exactly(client_id_size);
+    buf = co_await src.read_exactly(client_id_size);
 
-                if (src.eof()) {
-                    throw std::runtime_error(
-                      fmt::format("Unexpected EOF for client ID"));
-                }
-                header.client_id_buffer = std::move(buf);
-                header.client_id = std::string_view(
-                  header.client_id_buffer.get(),
-                  header.client_id_buffer.size());
-                validate_utf8(*header.client_id);
-                co_return header;
+    if (src.eof()) {
+        throw std::runtime_error(fmt::format("Unexpected EOF for client ID"));
+    }
+    header.client_id_buffer = std::move(buf);
+    header.client_id = std::string_view(
+      header.client_id_buffer.get(), header.client_id_buffer.size());
+    validate_utf8(*header.client_id);
+    co_return header;
 }
 
 size_t parse_size_buffer(ss::temporary_buffer<char> buf) {
