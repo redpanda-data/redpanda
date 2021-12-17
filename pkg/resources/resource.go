@@ -126,6 +126,7 @@ func Update(
 	opts := []patch.CalculateOption{
 		patch.IgnoreStatusFields(),
 		patch.IgnoreVolumeClaimTemplateTypeMetaAndStatus(),
+		patch.IgnorePDBSelector(),
 	}
 	patchResult, err := patch.DefaultPatchMaker.Calculate(current, modified, opts...)
 	if err != nil {

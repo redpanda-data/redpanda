@@ -79,6 +79,12 @@ func TestEnsure_PDB(t *testing.T) {
 			err = c.Get(context.Background(), pdb.Key(), actual)
 			assert.NoError(t, err, tt.name)
 			assert.Equal(t, tt.expectedObject.Spec, actual.Spec)
+
+			// retrieved object and new object should produce no diff and thus
+			// not be updated
+			updated, err := res.Update(context.TODO(), actual, actual, c, ctrl.Log.WithName("test"))
+			assert.NoError(t, err)
+			assert.False(t, updated)
 		})
 	}
 }
