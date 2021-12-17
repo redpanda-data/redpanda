@@ -4,7 +4,7 @@ go 1.16
 
 require (
 	github.com/Masterminds/semver/v3 v3.1.1
-	github.com/banzaicloud/k8s-objectmatcher v1.5.1
+	github.com/banzaicloud/k8s-objectmatcher v1.7.0
 	github.com/go-logr/logr v0.4.0
 	github.com/hashicorp/go-multierror v1.1.0
 	github.com/jetstack/cert-manager v1.2.0
