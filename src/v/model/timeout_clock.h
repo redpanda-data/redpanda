@@ -27,4 +27,12 @@ static constexpr timeout_clock::time_point no_timeout
 static constexpr timeout_clock::duration max_duration
   = timeout_clock::duration::max();
 
+inline model::timeout_clock::time_point
+time_from_now(model::timeout_clock::duration d) {
+    /// Saturate now() + duration at no_timeout, avoid overflow
+    const auto now = model::timeout_clock::now();
+    const auto remaining = model::no_timeout - now;
+    return d < remaining ? now + d : model::no_timeout;
+}
+
 } // namespace model
