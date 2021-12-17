@@ -361,9 +361,6 @@ consensus::success_reply consensus::update_follower_index(
         return success_reply::no;
     }
     return success_reply::no;
-    // TODO(agallego) - add target_replication_factor,
-    // current_replication_factor to group_configuration so we can promote
-    // learners to nodes and perform data movement to added replicas
 }
 
 void consensus::maybe_promote_to_voter(vnode id) {
