@@ -75,8 +75,10 @@ parse_header(ss::input_stream<char>& src) {
 }
 
 size_t parse_size_buffer(ss::temporary_buffer<char> buf) {
-    auto* raw = reinterpret_cast<const int32_t*>(buf.get());
-    int32_t size = ss::be_to_cpu(*raw);
+    iobuf data;
+    data.append(std::move(buf));
+    request_reader reader(std::move(data));
+    auto size = reader.read_int32();
     if (size < 0) {
         throw std::runtime_error("kafka::parse_size_buffer is negative");
     }
