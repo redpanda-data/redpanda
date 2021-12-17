@@ -2589,7 +2589,7 @@ consensus::prepare_transfer_leadership(vnode target_rni) {
             co_return make_error_code(errc::timeout);
         }
         vlog(
-          _ctxlog.warn,
+          _ctxlog.info,
           "transfer leadership: finished waiting on node {} "
           "recovery",
           target_rni);
