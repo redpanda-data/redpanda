@@ -55,11 +55,13 @@ archival_policy::archival_policy(
   model::ntp ntp,
   service_probe& svc_probe,
   ntp_level_probe& ntp_probe,
-  std::optional<segment_time_limit> limit)
+  std::optional<segment_time_limit> limit,
+  ss::io_priority_class io_priority)
   : _ntp(std::move(ntp))
   , _svc_probe(svc_probe)
   , _ntp_probe(ntp_probe)
-  , _upload_limit(limit) {}
+  , _upload_limit(limit)
+  , _io_priority(io_priority) {}
 
 bool archival_policy::upload_deadline_reached() {
     if (!_upload_limit.has_value()) {
@@ -223,7 +225,8 @@ static ss::future<> get_file_range(
   model::offset begin_inclusive,
   std::optional<model::offset> end_inclusive,
   const ss::lw_shared_ptr<storage::segment>& segment,
-  upload_candidate& upl) {
+  upload_candidate& upl,
+  ss::io_priority_class io_priority) {
     size_t fsize = segment->reader().file_size();
     // These are default values for full segment upload.
     // We start with these values and refine them further
@@ -261,8 +264,7 @@ static ss::future<> get_file_range(
         size_t scan_from = ix_begin ? ix_begin->filepos : 0;
         model::offset sto = ix_begin ? ix_begin->offset
                                      : segment->offsets().base_offset;
-        auto istr = segment->reader().data_stream(
-          scan_from, ss::default_priority_class());
+        auto istr = segment->reader().data_stream(scan_from, io_priority);
         auto ostr = make_null_output_stream();
 
         size_t bytes_to_skip = 0;
@@ -290,6 +292,7 @@ static ss::future<> get_file_range(
               archival_log.error,
               "Can't read segment file, error: {}",
               res.error());
+            throw std::system_error(res.error());
         } else {
             bytes_to_skip = scan_from + res.value();
             vlog(
@@ -304,7 +307,6 @@ static ss::future<> get_file_range(
         // Adjust content lenght and offsets at the begining of the file
         upl.starting_offset = sto;
         upl.file_offset = bytes_to_skip;
-        upl.content_length -= bytes_to_skip;
         upl.base_timestamp = ts;
     }
     if (end_inclusive) {
@@ -319,7 +321,6 @@ static ss::future<> get_file_range(
         // Subsequent call to segment_reader::data_stream will fail in this
         // case. In order to avoid this we need to make another index lookup
         // to find a lower offset which is committed.
-        auto fsize = segment->reader().file_size();
         while (ix_end && ix_end->filepos > fsize) {
             vlog(archival_log.debug, "The position is not flushed {}", *ix_end);
             auto lookup_offset = ix_end->offset - model::offset(1);
@@ -337,8 +338,7 @@ static ss::future<> get_file_range(
           scan_from,
           fo);
 
-        auto istr = segment->reader().data_stream(
-          scan_from, ss::default_priority_class());
+        auto istr = segment->reader().data_stream(scan_from, io_priority);
         auto ostr = make_null_output_stream();
         model::timestamp ts = upl.max_timestamp;
         size_t stop_at = 0;
@@ -363,6 +363,7 @@ static ss::future<> get_file_range(
               archival_log.error,
               "Can't read segment file, error: {}",
               res.error());
+            throw std::system_error(res.error());
         } else {
             stop_at = scan_from + res.value();
             vlog(
@@ -376,9 +377,19 @@ static ss::future<> get_file_range(
         }
         upl.final_offset = fo;
         upl.final_file_offset = stop_at;
-        upl.content_length -= std::min(upl.content_length, (fsize - stop_at));
         upl.max_timestamp = ts;
     }
+    // Recompute content_length based on file offsets
+    vassert(
+      upl.file_offset <= upl.final_file_offset,
+      "Invalid upload candidate {}",
+      upl);
+    upl.content_length = upl.final_file_offset - upl.file_offset;
+    vassert(
+      upl.content_length <= fsize,
+      "Incorrect content length in {}, file size {}",
+      upl,
+      fsize);
     vlog(
       archival_log.debug,
       "Partial segment upload {}, original file size: {}",
@@ -413,7 +424,8 @@ static ss::future<upload_candidate> create_upload_candidate(
   model::offset begin_inclusive,
   std::optional<model::offset> end_inclusive,
   const ss::lw_shared_ptr<storage::segment>& segment,
-  const storage::ntp_config* ntp_conf) {
+  const storage::ntp_config* ntp_conf,
+  ss::io_priority_class io_priority) {
     auto term = segment->offsets().term;
     auto version = storage::record_version_type::v1;
     auto meta = storage::segment_path::parse_segment_filename(
@@ -423,7 +435,8 @@ static ss::future<upload_candidate> create_upload_candidate(
     }
 
     upload_candidate result{.source = segment};
-    co_await get_file_range(begin_inclusive, end_inclusive, segment, result);
+    co_await get_file_range(
+      begin_inclusive, end_inclusive, segment, result, io_priority);
     if (result.starting_offset != segment->offsets().base_offset) {
         // We need to generate new name for the segment
         auto path = storage::segment_path::make_segment_path(
@@ -469,7 +482,7 @@ ss::future<upload_candidate> archival_policy::get_next_candidate(
       segment->offsets(),
       adjusted_lso);
     auto upload = co_await create_upload_candidate(
-      begin_inclusive, last, segment, ntp_conf);
+      begin_inclusive, last, segment, ntp_conf, _io_priority);
     if (upload.content_length == 0) {
         co_return upload_candidate{};
     }
