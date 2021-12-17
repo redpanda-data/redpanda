@@ -5,16 +5,18 @@ order: 0
 
 ## Shadow Indexing
 
+
+Shadow Indexing is a multi-tiered remote storage solution that provides the ability to archive log segments to a cloud object store in real time as the topic is being produced. You can recover a topic that no longer exists in the cluster, and replay and read log data as a stream directly from cloud storage even if it doesn’t exist in the cluster. Shadow Indexing provides a disaster recovery plan that takes advantage of infinitely scalable storage systems, is easy to configure, and works in real time.
+
 ---
-**_Note_** 
+**_Note:_** 
 * This feature is in technical preview; a cluster with this feature enabled is not yet supported for production.
 * Shadow Indexing is available for Redpanda 21.11.3 and later.
 ---
 
-Shadow Indexing is a multi-tiered remote storage solution that provides the ability to archive log segments to a cloud object store in real time as the topic is being produced. You can recover a topic that no longer exists in the cluster, and replay and read log data as a stream directly from cloud storage even if it doesn’t exist in the cluster. Shadow Indexing provides a disaster recovery plan that takes advantage of infinitely scalable storage systems, is easy to configure, and works in real time.
-
 The image below illustrates the Shadow Indexing architecture. Remote write uploads data from Redpanda to cloud storage. Remote read fetches data from cloud storage to Redpanda. 
 
+![The Redpanda node accesses the S3 bucket through the remote write and remote read operations](/images/shadow_indexing_arch.png)
 
 ## Setting up
 
@@ -84,7 +86,7 @@ When you use the topic configuration flags, they override whatever cluster-level
 
 The table below gives the outcomes for the possible combinations of cluster-level and topic-level configurations: 
 
-Table 1: Remote write configuration
+**Table 1: Remote write configuration**
 
 | Cluster-level configuration <br />(<code>cloud_storage_remote_write</code>) | Topic-level configuration <br />(<code>redpanda.remote.write</code>) | Outcome <br />(whether remote write is enabled <br />or disabled on the topic) |
 | --------           | ------             | ----     |
@@ -97,7 +99,7 @@ Table 1: Remote write configuration
 
 
 
-Table 2: Remote read configuration
+**Table 2: Remote read configuration**
 
 | Cluster-level configuration <br />(<code>cloud_storage_remote_read</code>) | Topic-level configuration <br />(<code>redpanda.remote.read</code>) | Outcome <br />(whether remote read is enabled <br />or disabled on the topic) |
 | --------           | ------             | ----     |
@@ -169,7 +171,7 @@ Reconciliation is a Redpanda process that runs periodically on every node. It mo
 
 When leadership rebalancing occurs, the reconciliation process might stop uploads on one node and start them on another node. 
 
-The reconciliation process is configured with the following parameters in the `redpanda.yaml` file: 
+The reconciliation process is configured with the following parameter in the `redpanda.yaml` file: 
 
 
 
@@ -214,7 +216,7 @@ When the Kafka client fetches an offset range that isn’t available locally in 
 
 If you don’t specify a cache location in the `redpanda.yaml` file, the cache directory will be created here: 
 
-`&lt;redpanda-data-directory>/cloud_storage_cache`. 
+`<redpanda-data-directory>/cloud_storage_cache`. 
 
 Use the `cloud_storage_cache_directory` parameter in the `redpanda.yaml` file to specify a different location for the cache directory. You must specify the full path. 
 
