@@ -16,7 +16,7 @@ Shadow Indexing is a multi-tiered remote storage solution that provides the abil
 
 The image below illustrates the Shadow Indexing architecture. Remote write uploads data from Redpanda to cloud storage. Remote read fetches data from cloud storage to Redpanda. 
 
-![Shadow Indexing architecture](../images/shadow_indexing_arch.png)
+![Shadow Indexing architecture](./images/shadow_indexing_arch.png)
 
 ## Setting up
 
