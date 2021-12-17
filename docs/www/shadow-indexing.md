@@ -16,7 +16,7 @@ Shadow Indexing is a multi-tiered remote storage solution that provides the abil
 
 The image below illustrates the Shadow Indexing architecture. Remote write uploads data from Redpanda to cloud storage. Remote read fetches data from cloud storage to Redpanda. 
 
-![The Redpanda node accesses the S3 bucket through the remote write and remote read operations](/images/shadow_indexing_arch.png)
+![The Redpanda node accesses the S3 bucket through the remote write and remote read operations](redpanda/docs/images/shadow_indexing_arch.png)
 
 ## Setting up
 
@@ -25,35 +25,44 @@ Shadow Indexing is supported for Amazon S3 and Google Cloud Storage. Before you 
 After cloud storage is enabled and configured, you can either enable Shadow Indexing on a cluster, or simply enable Shadow Indexing on a topic with a single command. 
 
 
-### Configuring cloud storage
+### Configuring Amazon S3
 
-The sections below give detailed information on all of the cloud storage configuration options, but the parameters listed here are the minimum required parameters to use Shadow Indexing: 
+Complete the following tasks to create a cloud storage bucket and configure Redpanda before you enable Shadow Indexing for Amazon S3: 
 
-For Amazon S3, you must configure these parameters: 
+1. Specify the expiration rules for the files that are based on the `rp-type` file tags. 
+2. Use the IAM service to create a user that you will use to access S3. 
+3. Grant the user permission to read and create objects in cloud storage.
+4. Copy the access key and secret key for the `cloud_storage_access_key` and `cloud_storage_secret_key` parameters in the `redpanda.yaml` file. 
+5. The sections below give detailed information on all of the cloud storage configuration options, but the parameters listed here are the minimum required parameters that you must configure in the `redpanda.yaml` file to use Shadow Indexing for Amazon S3: 
 
+        ```
+        cloud_storage_enabled: true
+        cloud_storage_access_key: ***
+        cloud_storage_secret_key: ***
+        cloud_storage_region: eu-north-1
+        cloud_storage_bucket: pandabucket
 
-```
-    cloud_storage_access_key: ***
-    cloud_storage_api_endpoint: storage.googleapis.com
-    cloud_storage_bucket: pandabucket
-    cloud_storage_enabled: true
-    cloud_storage_region: eu-north-1
-    cloud_storage_secret_key: ***
-```
+        ```
 
+### Configuring Google Cloud Storage
 
-For Google Cloud Storage, you must configure these parameters: 
+Complete the following tasks to create a cloud storage bucket and configure Redpanda before you enable Shadow Indexing for Google Cloud Storage:
 
+1. Choose a uniform access control when you create the bucket. 
+2. Use a Google managed encryption key. 
+3. Set a [default project](https://cloud.google.com/storage/docs/migrating#defaultproj). 
+4. Create a service user with [HMAC keys](https://cloud.google.com/storage/docs/authentication/managing-hmackeys) and copy the access key and secret key for the `cloud_storage_access_key` and `cloud_storage_secret_key` parameters in the `redpanda.yaml` file.
+5. The sections below give detailed information on all of the cloud storage configuration options, but the parameters listed here are the minimum required parameters to use Shadow Indexing for Google Cloud Storage:
 
-```
-    cloud_storage_enabled: true
-    cloud_storage_access_key: ***
-    cloud_storage_secret_key: ***
-    cloud_storage_region: eu-north-1
-    cloud_storage_bucket: pandabucket
-```
+        ```
+        cloud_storage_access_key: ***
+        cloud_storage_api_endpoint: storage.googleapis.com
+        cloud_storage_bucket: pandabucket
+        cloud_storage_enabled: true
+        cloud_storage_region: eu-north-1
+        cloud_storage_secret_key: ***
 
-
+        ```
 
 ### Enabling Shadow Indexing for a cluster
 
