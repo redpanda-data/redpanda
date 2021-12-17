@@ -743,6 +743,39 @@ FIXTURE_TEST(corner_cases_3, partition_assignment_test_fixture) {
     validate_replicas_recovery(60s, ntp, history.back(), reference_batches);
 }
 
+/**
+ * Create partition with update command in the second partition move, testing
+ */
+FIXTURE_TEST(corner_cases_4, partition_assignment_test_fixture) {
+    model::ntp ntp(test_ns, model::topic("t_1"), model::partition_id(0));
+    create_topic(test_topics_configuration(
+      model::topic_namespace(ntp.ns, ntp.tp.topic), 3));
+    auto current = get_replicas(0, ntp);
+    auto history = custom_history({
+      {2, 0, 1},
+      {3, 0, 1},
+      {3, 0, 4},
+      {3, 0, 2},
+      {3, 0, 1},
+    });
+
+    auto reference_batches = execute_and_validate_history_updates(ntp, history);
+
+    // check after all changes were applied
+    wait_for_metadata_update(ntp, history.back());
+    // here we have to wait for a long time as the cluster must reach all
+    // intermediate states before reaching this point
+    wait_for_replica_set_partitions(60s, ntp, history.back());
+    validate_replicas_recovery(60s, ntp, history.back(), reference_batches);
+    restart_cluster();
+    // check after all changes were applied
+    wait_for_metadata_update(ntp, history.back());
+    // here we have to wait for a long time as the cluster must reach all
+    // intermediate states before reaching this point
+    wait_for_replica_set_partitions(60s, ntp, history.back());
+    validate_replicas_recovery(60s, ntp, history.back(), reference_batches);
+}
+
 FIXTURE_TEST(disjoint_qorums, partition_assignment_test_fixture) {
     model::ntp ntp(test_ns, model::topic("t_1"), model::partition_id(0));
     create_topic(test_topics_configuration(
