@@ -83,28 +83,27 @@ The table below gives the outcomes for the possible combinations of cluster-leve
 
 Table 1: Remote write configuration
 
-| Cluster-level configuration (<code>cloud_storage_remote_write</code>) | Topic-level configuration (<code>redpanda.remote.write</code>) | Outcome (whether remote write is enabled 
-or disabled on the topic) |
-| -------- | ------ | ---- |
-| <code>true</code> | Not set | Enabled |
-| <code>true</code> | <code>false</code> | Disabled |
-| <code>true</code> | <code>true</code> | Enabled |
-| <code>false</code> | Not set | Disabled |
+| Cluster-level configuration <br />(<code>cloud_storage_remote_write</code>) | Topic-level configuration <br />(<code>redpanda.remote.write</code>) | Outcome <br />(whether remote write is enabled <br />or disabled on the topic) |
+| --------           | ------             | ----     |
+| <code>true</code>  | Not set            | Enabled  |
+| <code>true</code>  | <code>false</code> | Disabled |
+| <code>true</code>  | <code>true</code>  | Enabled  |
+| <code>false</code> | Not set            | Disabled |
 | <code>false</code> | <code>false</code> | Disabled |
-| <code>false</code> | <code>true</code> | Enabled |
+| <code>false</code> | <code>true</code>  | Enabled  |
 
 
 
 Table 2: Remote read configuration
 
 | Cluster-level configuration (<code>cloud_storage_remote_read</code>) | Topic-level configuration (<code>redpanda.remote.read</code>) | Outcome (whether remote read is enabled or disabled on the topic) |
-| -------- | ------ | ---- |
-| <code>true</code> | Not set | Enabled |
-| <code>true</code> | <code>false</code> | Disabled |
-| <code>true</code> | <code>true</code> | Enabled |
-| <code>false</code> | Not set | Disabled |
+| --------           | ------             | ----     |
+| <code>true</code>  | Not set            | Enabled  |
+| <code>true</code>  | <code>false</code> | Disabled |
+| <code>true</code>  | <code>true</code>  | Enabled  |
+| <code>false</code> | Not set            | Disabled |
 | <code>false</code> | <code>false</code> | Disabled |
-| <code>false</code> | <code>true</code> | Enabled |
+| <code>false</code> | <code>true</code>  | Enabled  |
 
 
 
