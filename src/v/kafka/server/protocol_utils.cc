@@ -96,14 +96,19 @@ ss::future<std::optional<size_t>> parse_size(ss::input_stream<char>& src) {
 }
 
 ss::scattered_message<char> response_as_scattered(response_ptr response) {
-    auto correlation = response->correlation();
-    auto header = ss::temporary_buffer<char>(sizeof(raw_response_header));
-    // NOLINTNEXTLINE
-    auto* raw_header = reinterpret_cast<raw_response_header*>(
-      header.get_write());
-    auto size = int32_t(sizeof(correlation) + response->buf().size_bytes());
-    raw_header->size = ss::cpu_to_be(size);
-    raw_header->correlation = ss::cpu_to_be(correlation());
+    /*
+     * response header:
+     *   - int32_t: size (correlation + response size)
+     *   - int32_t: correlation
+     */
+    ss::temporary_buffer<char> b;
+    const auto size = static_cast<int32_t>(
+      sizeof(response->correlation()) + response->buf().size_bytes());
+    iobuf header;
+    response_writer writer(header);
+    writer.write(size);
+    writer.write(response->correlation());
+
     auto& buf = response->buf();
     buf.prepend(std::move(header));
     ss::scattered_message<char> msg;
