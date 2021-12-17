@@ -292,6 +292,7 @@ static ss::future<> get_file_range(
               archival_log.error,
               "Can't read segment file, error: {}",
               res.error());
+            throw std::system_error(res.error());
         } else {
             bytes_to_skip = scan_from + res.value();
             vlog(
@@ -362,6 +363,7 @@ static ss::future<> get_file_range(
               archival_log.error,
               "Can't read segment file, error: {}",
               res.error());
+            throw std::system_error(res.error());
         } else {
             stop_at = scan_from + res.value();
             vlog(
