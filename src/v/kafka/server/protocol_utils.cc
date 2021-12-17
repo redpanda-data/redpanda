@@ -79,13 +79,11 @@ size_t parse_size_buffer(ss::temporary_buffer<char> buf) {
 }
 
 ss::future<std::optional<size_t>> parse_size(ss::input_stream<char>& src) {
-    return src.read_exactly(sizeof(int32_t))
-      .then([](ss::temporary_buffer<char> buf) -> std::optional<size_t> {
-          if (!buf) {
-              return std::nullopt;
-          }
-          return parse_size_buffer(std::move(buf));
-      });
+    auto buf = co_await src.read_exactly(sizeof(int32_t));
+    if (!buf) {
+        co_return std::nullopt;
+    }
+    co_return parse_size_buffer(std::move(buf));
 }
 
 ss::scattered_message<char> response_as_scattered(response_ptr response) {
