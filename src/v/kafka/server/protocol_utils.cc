@@ -23,7 +23,7 @@ ss::future<std::optional<request_header>>
 parse_header(ss::input_stream<char>& src) {
     constexpr int16_t no_client_id = -1;
 
-    auto buf = co_await src.read_exactly(sizeof(raw_request_header));
+    auto buf = co_await src.read_exactly(request_header_size);
 
     if (src.eof()) {
         co_return std::nullopt;
