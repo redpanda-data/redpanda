@@ -31,7 +31,7 @@ static ss::future<iobuf> get_request(ss::input_stream<char>& input) {
           if (!buf) { // eof?
               return ss::make_ready_future<iobuf>(iobuf());
           }
-          auto size = kafka::parse_size_buffer(buf);
+          auto size = kafka::parse_size_buffer(buf.clone());
           vlog(rlog.info, "read: {}, size of kafka is:{}", buf.size(), size);
           return input.read_exactly(size).then(
             [size_buf = std::move(buf)](
@@ -55,7 +55,7 @@ get_request_context(kafka::protocol& proto, ss::input_stream<char>&& input) {
          */
         return input.read_exactly(sizeof(int32_t))
           .then([&proto, &input](ss::temporary_buffer<char> buf) {
-              auto size = kafka::parse_size_buffer(buf);
+              auto size = kafka::parse_size_buffer(std::move(buf));
               /*
                * ready the request header
                */

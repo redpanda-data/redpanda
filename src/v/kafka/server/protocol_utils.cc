@@ -74,7 +74,7 @@ parse_header(ss::input_stream<char>& src) {
       });
 }
 
-size_t parse_size_buffer(ss::temporary_buffer<char>& buf) {
+size_t parse_size_buffer(ss::temporary_buffer<char> buf) {
     auto* raw = reinterpret_cast<const int32_t*>(buf.get());
     int32_t size = ss::be_to_cpu(*raw);
     if (size < 0) {
@@ -89,7 +89,7 @@ ss::future<std::optional<size_t>> parse_size(ss::input_stream<char>& src) {
           if (!buf) {
               return std::nullopt;
           }
-          return parse_size_buffer(buf);
+          return parse_size_buffer(std::move(buf));
       });
 }
 
