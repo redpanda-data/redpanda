@@ -298,6 +298,9 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
             _ctxlog.trace,
             "Sending install snapshot request, last included index: {}",
             req.last_included_index);
+          auto seq = _ptr->next_follower_sequence(_node_id);
+          _ptr->update_suppress_heartbeats(
+            _node_id, seq, heartbeats_suppressed::yes);
           return _ptr->_client_protocol
             .install_snapshot(
               _node_id.id(),
@@ -307,6 +310,10 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
                 return handle_install_snapshot_reply(
                   _ptr->validate_reply_target_node(
                     "install_snapshot", std::move(reply)));
+            })
+            .finally([this, seq] {
+                _ptr->update_suppress_heartbeats(
+                  _node_id, seq, heartbeats_suppressed::no);
             });
       });
 }
