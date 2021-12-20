@@ -12,6 +12,7 @@
 #pragma once
 #include "cluster/fwd.h"
 #include "config/endpoint_tls_config.h"
+#include "coproc/partition_manager.h"
 #include "model/metadata.h"
 #include "seastarx.h"
 
@@ -38,6 +39,7 @@ public:
     explicit admin_server(
       admin_server_cfg,
       ss::sharded<cluster::partition_manager>&,
+      ss::sharded<coproc::partition_manager>&,
       cluster::controller*,
       ss::sharded<cluster::shard_table>&,
       ss::sharded<cluster::metadata_cache>&);
@@ -110,6 +112,7 @@ private:
     ss::http_server _server;
     admin_server_cfg _cfg;
     ss::sharded<cluster::partition_manager>& _partition_manager;
+    ss::sharded<coproc::partition_manager>& _cp_partition_manager;
     cluster::controller* _controller;
     ss::sharded<cluster::shard_table>& _shard_table;
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
