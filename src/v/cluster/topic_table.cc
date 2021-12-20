@@ -585,7 +585,7 @@ bool topic_table::contains(
 std::optional<cluster::partition_assignment>
 topic_table::get_partition_assignment(const model::ntp& ntp) const {
     auto it = _topics.find(model::topic_namespace_view(ntp));
-    if (it == _topics.end() || !it->second.is_topic_replicable()) {
+    if (it == _topics.end()) {
         return {};
     }
 
