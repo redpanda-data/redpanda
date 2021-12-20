@@ -28,7 +28,7 @@ class FailureSpec:
         self.node = node
 
     def __str__(self):
-        return f"type: {self.type}, length: {self.length} seconds, node: {self.node}"
+        return f"type: {self.type}, length: {self.length} seconds, node: {self.node.account.hostname}"
 
 
 class FailureInjector:
