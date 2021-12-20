@@ -25,4 +25,6 @@ spec:
           requireClientAuth: true
     adminApi:
     - port: 9644
+    pandaproxyApi:
+    - port: 8082
     developerMode: true
