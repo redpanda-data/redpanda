@@ -72,6 +72,7 @@ static ss::logger logger{"admin_api_server"};
 admin_server::admin_server(
   admin_server_cfg cfg,
   ss::sharded<cluster::partition_manager>& pm,
+  ss::sharded<coproc::partition_manager>& cpm,
   cluster::controller* controller,
   ss::sharded<cluster::shard_table>& st,
   ss::sharded<cluster::metadata_cache>& metadata_cache)
@@ -79,6 +80,7 @@ admin_server::admin_server(
   , _server("admin")
   , _cfg(std::move(cfg))
   , _partition_manager(pm)
+  , _cp_partition_manager(cpm)
   , _controller(controller)
   , _shard_table(st)
   , _metadata_cache(metadata_cache) {}
@@ -1072,27 +1074,36 @@ void admin_server::register_partition_routes() {
     ss::httpd::partition_json::get_partitions.set(
       _server._routes, [this](std::unique_ptr<ss::httpd::request>) {
           using summary = ss::httpd::partition_json::partition_summary;
-          return _partition_manager
-            .map_reduce0(
-              [](cluster::partition_manager& pm) {
-                  std::vector<summary> partitions;
-                  partitions.reserve(pm.partitions().size());
-                  for (const auto& it : pm.partitions()) {
-                      summary p;
-                      p.ns = it.first.ns;
-                      p.topic = it.first.tp.topic;
-                      p.partition_id = it.first.tp.partition;
-                      p.core = ss::this_shard_id();
-                      partitions.push_back(std::move(p));
-                  }
-                  return partitions;
-              },
-              std::vector<summary>{},
-              [](std::vector<summary> acc, std::vector<summary> update) {
-                  acc.insert(acc.end(), update.begin(), update.end());
-                  return acc;
-              })
-            .then([](std::vector<summary> partitions) {
+          auto get_summaries = [](auto& partition_manager, bool materialized) {
+              return partition_manager.map_reduce0(
+                [materialized](auto& pm) {
+                    std::vector<summary> partitions;
+                    partitions.reserve(pm.partitions().size());
+                    for (const auto& it : pm.partitions()) {
+                        summary p;
+                        p.ns = it.first.ns;
+                        p.topic = it.first.tp.topic;
+                        p.partition_id = it.first.tp.partition;
+                        p.core = ss::this_shard_id();
+                        p.materialized = materialized;
+                        partitions.push_back(std::move(p));
+                    }
+                    return partitions;
+                },
+                std::vector<summary>{},
+                [](std::vector<summary> acc, std::vector<summary> update) {
+                    acc.insert(acc.end(), update.begin(), update.end());
+                    return acc;
+                });
+          };
+          auto f1 = get_summaries(_partition_manager, false);
+          auto f2 = get_summaries(_cp_partition_manager, true);
+          return ss::when_all_succeed(std::move(f1), std::move(f2))
+            .then([](auto summaries) {
+                auto& [partitions, s2] = summaries;
+                for (auto& s : s2) {
+                    partitions.push_back(std::move(s));
+                }
                 return ss::make_ready_future<ss::json::json_return_type>(
                   std::move(partitions));
             });

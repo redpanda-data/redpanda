@@ -157,6 +157,10 @@
                 "core": {
                     "type": "long",
                     "description": "core"
+                },
+                "materialized": {
+                    "type": "boolean",
+                    "description": "materialized"
                 }
             }
         },
