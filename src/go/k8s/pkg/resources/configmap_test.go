@@ -24,11 +24,13 @@ func TestEnsureConfigMap(t *testing.T) {
 		name                    string
 		additionalConfiguration map[string]string
 		expectedString          string
+		expectedHash            string
 	}{
 		{
 			name:                    "Primitive object in additional configuration",
 			additionalConfiguration: map[string]string{"redpanda.transactional_id_expiration_ms": "25920000000"},
 			expectedString:          "transactional_id_expiration_ms: 25920000000",
+			expectedHash:            "18d411a2fb4b60021ce9b749e083ca39",
 		},
 		{
 			name:                    "Complex struct in additional configuration",
@@ -38,11 +40,13 @@ func TestEnsureConfigMap(t *testing.T) {
         - address: 0.0.0.0
           port: 8081
           name: external`,
+			expectedHash: "6ada3aa3ed70ae1013f0ca95003d4a45",
 		},
 		{
 			name: "shadow index cache directory",
 			expectedString: `cloud_storage_cache_directory: /var/lib/shadow-index-cache
     cloud_storage_cache_size: "10737418240"`,
+			expectedHash: "8ecc6ffc3ff19a93b99ac14c36f78c7e",
 		},
 	}
 	for _, tc := range testcases {
@@ -75,6 +79,9 @@ func TestEnsureConfigMap(t *testing.T) {
 			require.NoError(t, err)
 			data := actual.Data["redpanda.yaml"]
 			require.True(t, strings.Contains(data, tc.expectedString), fmt.Sprintf("expecting %s but got %v", tc.expectedString, data))
+			hash, err := cfgRes.GetConfigHash(context.TODO())
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedHash, hash)
 		})
 	}
 }

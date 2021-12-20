@@ -60,7 +60,7 @@ var errRedpandaNotReady = errors.New("redpanda not ready")
 func (r *StatefulSetResource) runUpdate(
 	ctx context.Context, current, modified *appsv1.StatefulSet,
 ) error {
-	update, err := r.shouldUpdate(current, modified)
+	update, err := shouldUpdate(r.pandaCluster.Status.Upgrading, current, modified)
 	if err != nil {
 		return fmt.Errorf("unable to determine the update procedure: %w", err)
 	}
@@ -76,7 +76,7 @@ func (r *StatefulSetResource) runUpdate(
 		return err
 	}
 
-	if err = r.rollingUpdate(ctx, &modified.Spec.Template.Spec); err != nil {
+	if err = r.rollingUpdate(ctx, &modified.Spec.Template); err != nil {
 		return err
 	}
 
@@ -89,7 +89,7 @@ func (r *StatefulSetResource) runUpdate(
 }
 
 func (r *StatefulSetResource) rollingUpdate(
-	ctx context.Context, spec *corev1.PodSpec,
+	ctx context.Context, template *corev1.PodTemplateSpec,
 ) error {
 	var podList corev1.PodList
 	err := r.List(ctx, &podList, &k8sclient.ListOptions{
@@ -105,11 +105,12 @@ func (r *StatefulSetResource) rollingUpdate(
 	})
 
 	var artificialPod corev1.Pod
-	artificialPod.Spec = *spec
+	artificialPod.Annotations = template.Annotations
+	artificialPod.Spec = template.Spec
 
 	volumes := make(map[string]interface{})
-	for i := range spec.Volumes {
-		vol := spec.Volumes[i]
+	for i := range template.Spec.Volumes {
+		vol := template.Spec.Volumes[i]
 		volumes[vol.Name] = new(interface{})
 	}
 
@@ -187,11 +188,9 @@ func (r *StatefulSetResource) updateStatefulSet(
 }
 
 // shouldUpdate returns true if changes on the CR require update
-func (r *StatefulSetResource) shouldUpdate(
-	current, modified *appsv1.StatefulSet,
+func shouldUpdate(
+	isUpgrading bool, current, modified *appsv1.StatefulSet,
 ) (bool, error) {
-	upgrading := r.pandaCluster.Status.Upgrading
-
 	prepareResourceForPatch(current, modified)
 	opts := []patch.CalculateOption{
 		patch.IgnoreStatusFields(),
@@ -202,7 +201,7 @@ func (r *StatefulSetResource) shouldUpdate(
 		return false, err
 	}
 
-	return !patchResult.IsEmpty() || upgrading, nil
+	return !patchResult.IsEmpty() || isUpgrading, nil
 }
 
 func (r *StatefulSetResource) updateUpgradingStatus(

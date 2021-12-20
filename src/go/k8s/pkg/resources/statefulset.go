@@ -63,6 +63,10 @@ const (
 	schemaRegistryCAVolName   = "tlsschemaregistryca"
 )
 
+var (
+	configMapHashAnnotationKey = redpandav1alpha1.GroupVersion.Group + "/configmap-hash"
+)
+
 // ConfiguratorSettings holds settings related to configurator container and deployment
 // strategy
 type ConfiguratorSettings struct {
@@ -92,7 +96,12 @@ type StatefulSetResource struct {
 	schemaRegistryClientCertSecretKey  types.NamespacedName
 	serviceAccountName                 string
 	configuratorSettings               ConfiguratorSettings
-	logger                             logr.Logger
+	// hash of configmap containing configuration for redpanda, it's injected to
+	// annotation to ensure the pods get restarted when configuration changes
+	// this has to be retrieved lazily to achieve the correct order of resources
+	// being applied
+	configMapHashGetter func(context.Context) (string, error)
+	logger              logr.Logger
 
 	LastObservedState *appsv1.StatefulSet
 }
@@ -116,6 +125,7 @@ func NewStatefulSet(
 	schemaRegistryClientCertSecretKey types.NamespacedName,
 	serviceAccountName string,
 	configuratorSettings ConfiguratorSettings,
+	configMapHashGetter func(context.Context) (string, error),
 	logger logr.Logger,
 ) *StatefulSetResource {
 	return &StatefulSetResource{
@@ -137,6 +147,7 @@ func NewStatefulSet(
 		schemaRegistryClientCertSecretKey,
 		serviceAccountName,
 		configuratorSettings,
+		configMapHashGetter,
 		logger.WithValues("Kind", statefulSetKind()),
 		nil,
 	}
@@ -159,7 +170,7 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 		}
 	}
 
-	obj, err := r.obj()
+	obj, err := r.obj(ctx)
 	if err != nil {
 		return fmt.Errorf("unable to construct StatefulSet object: %w", err)
 	}
@@ -218,10 +229,20 @@ func preparePVCResource(
 
 // obj returns resource managed client.Object
 // nolint:funlen // The complexity of obj function will be address in the next version TODO
-func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
+func (r *StatefulSetResource) obj(
+	ctx context.Context,
+) (k8sclient.Object, error) {
 	var clusterLabels = labels.ForCluster(r.pandaCluster)
 
 	annotations := r.pandaCluster.Spec.Annotations
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	configMapHash, err := r.configMapHashGetter(ctx)
+	if err != nil {
+		return nil, err
+	}
+	annotations[configMapHashAnnotationKey] = configMapHash
 	tolerations := r.pandaCluster.Spec.Tolerations
 	nodeSelector := r.pandaCluster.Spec.NodeSelector
 
@@ -454,7 +475,7 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 		ss.Spec.Template.Spec.Containers = append(ss.Spec.Template.Spec.Containers, *rpkStatusContainer)
 	}
 
-	err := controllerutil.SetControllerReference(r.pandaCluster, ss, r.scheme)
+	err = controllerutil.SetControllerReference(r.pandaCluster, ss, r.scheme)
 	if err != nil {
 		return nil, err
 	}
