@@ -25,8 +25,8 @@ Before you start installing Redpanda you need to setup your Kubernetes environme
 
 You'll need to install:
 
-- [Kubernetes](https://kubernetes.io/docs/setup/) v1.16 or above
-- [kubectl](https://kubernetes.io/docs/tasks/tools/) v1.16 or above
+- [Kubernetes](https://kubernetes.io/docs/setup/) v1.19 or above
+- [kubectl](https://kubernetes.io/docs/tasks/tools/) v1.19 or above
 - [helm](https://github.com/helm/helm/releases) v3.0.0 or above
 - [cert-manager](https://cert-manager.io/docs/installation/kubernetes/) v1.2.0 or above
 
