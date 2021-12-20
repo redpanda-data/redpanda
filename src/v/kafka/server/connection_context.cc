@@ -219,7 +219,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
             // protect against shutdown behavior
             return ss::make_ready_future<>();
         }
-        auto remaining = size - sizeof(raw_request_header)
+        auto remaining = size - request_header_size
                          - hdr.client_id_buffer.size();
         return read_iobuf_exactly(_rs.conn->input(), remaining)
           .then([this, hdr = std::move(hdr), sres = std::move(sres)](

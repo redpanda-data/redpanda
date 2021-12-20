@@ -34,19 +34,9 @@
 
 namespace kafka {
 
-// Fields may not be byte-aligned since we work
-// with the underlying network buffer.
-struct [[gnu::packed]] raw_request_header {
-    ss::unaligned<int16_t> api_key;
-    ss::unaligned<int16_t> api_version;
-    ss::unaligned<correlation_id::type> correlation;
-    ss::unaligned<int16_t> client_id_size;
-};
-
-struct [[gnu::packed]] raw_response_header {
-    ss::unaligned<int32_t> size;
-    ss::unaligned<correlation_id::type> correlation;
-};
+constexpr auto request_header_size = sizeof(int16_t) + sizeof(int16_t)
+                                     + sizeof(correlation_id::type)
+                                     + sizeof(int16_t);
 
 struct request_header {
     api_key key;

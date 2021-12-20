@@ -18,61 +18,60 @@
 #include <vector>
 
 namespace kafka {
-// TODO: move to iobuf_parser
+
 ss::future<std::optional<request_header>>
 parse_header(ss::input_stream<char>& src) {
     constexpr int16_t no_client_id = -1;
-    return src.read_exactly(sizeof(raw_request_header))
-      .then([&src](ss::temporary_buffer<char> buf) {
-          if (src.eof()) {
-              return ss::make_ready_future<std::optional<request_header>>();
-          }
-          auto client_id_size = be_to_cpu(
-            reinterpret_cast<const raw_request_header*>(buf.get())
-              ->client_id_size);
-          auto* raw_header = reinterpret_cast<const raw_request_header*>(
-            buf.get());
-          auto header = request_header{
-            .key = api_key(ss::net::ntoh(raw_header->api_key)),
-            .version = api_version(ss::net::ntoh(raw_header->api_version)),
-            .correlation = correlation_id(
-              ss::net::ntoh(raw_header->correlation))};
 
-          if (client_id_size == 0) {
-              header.client_id = std::string_view();
-              return ss::make_ready_future<std::optional<request_header>>(
-                std::move(header));
-          }
-          if (client_id_size == no_client_id) {
-              return ss::make_ready_future<std::optional<request_header>>(
-                std::move(header));
-          }
-          if (unlikely(client_id_size < 0)) {
-              // header parsing error, force connection shutdown
-              throw std::runtime_error(
-                fmt::format("Invalid client_id size {}", client_id_size));
-          }
-          return src.read_exactly(client_id_size)
-            .then([&src, header = std::move(header)](
-                    ss::temporary_buffer<char> buf) mutable {
-                if (src.eof()) {
-                    throw std::runtime_error(
-                      fmt::format("Unexpected EOF for client ID"));
-                }
-                header.client_id_buffer = std::move(buf);
-                header.client_id = std::string_view(
-                  header.client_id_buffer.get(),
-                  header.client_id_buffer.size());
-                validate_utf8(*header.client_id);
-                return ss::make_ready_future<std::optional<request_header>>(
-                  std::move(header));
-            });
-      });
+    auto buf = co_await src.read_exactly(request_header_size);
+
+    if (src.eof()) {
+        co_return std::nullopt;
+    }
+
+    iobuf data;
+    data.append(std::move(buf));
+    request_reader reader(std::move(data));
+
+    request_header header;
+    header.key = api_key(reader.read_int16());
+    header.version = api_version(reader.read_int16());
+    header.correlation = correlation_id(reader.read_int32());
+    auto client_id_size = reader.read_int16();
+
+    if (client_id_size == 0) {
+        header.client_id = std::string_view();
+        co_return header;
+    }
+
+    if (client_id_size == no_client_id) {
+        // header.client_id is left as a std::nullopt
+        co_return header;
+    }
+
+    if (unlikely(client_id_size < 0)) {
+        // header parsing error, force connection shutdown
+        throw std::runtime_error(
+          fmt::format("Invalid client_id size {}", client_id_size));
+    }
+
+    buf = co_await src.read_exactly(client_id_size);
+
+    if (src.eof()) {
+        throw std::runtime_error(fmt::format("Unexpected EOF for client ID"));
+    }
+    header.client_id_buffer = std::move(buf);
+    header.client_id = std::string_view(
+      header.client_id_buffer.get(), header.client_id_buffer.size());
+    validate_utf8(*header.client_id);
+    co_return header;
 }
 
-size_t parse_size_buffer(ss::temporary_buffer<char>& buf) {
-    auto* raw = reinterpret_cast<const int32_t*>(buf.get());
-    int32_t size = ss::be_to_cpu(*raw);
+size_t parse_size_buffer(ss::temporary_buffer<char> buf) {
+    iobuf data;
+    data.append(std::move(buf));
+    request_reader reader(std::move(data));
+    auto size = reader.read_int32();
     if (size < 0) {
         throw std::runtime_error("kafka::parse_size_buffer is negative");
     }
@@ -80,24 +79,27 @@ size_t parse_size_buffer(ss::temporary_buffer<char>& buf) {
 }
 
 ss::future<std::optional<size_t>> parse_size(ss::input_stream<char>& src) {
-    return src.read_exactly(sizeof(int32_t))
-      .then([](ss::temporary_buffer<char> buf) -> std::optional<size_t> {
-          if (!buf) {
-              return std::nullopt;
-          }
-          return parse_size_buffer(buf);
-      });
+    auto buf = co_await src.read_exactly(sizeof(int32_t));
+    if (!buf) {
+        co_return std::nullopt;
+    }
+    co_return parse_size_buffer(std::move(buf));
 }
 
 ss::scattered_message<char> response_as_scattered(response_ptr response) {
-    auto correlation = response->correlation();
-    auto header = ss::temporary_buffer<char>(sizeof(raw_response_header));
-    // NOLINTNEXTLINE
-    auto* raw_header = reinterpret_cast<raw_response_header*>(
-      header.get_write());
-    auto size = int32_t(sizeof(correlation) + response->buf().size_bytes());
-    raw_header->size = ss::cpu_to_be(size);
-    raw_header->correlation = ss::cpu_to_be(correlation());
+    /*
+     * response header:
+     *   - int32_t: size (correlation + response size)
+     *   - int32_t: correlation
+     */
+    ss::temporary_buffer<char> b;
+    const auto size = static_cast<int32_t>(
+      sizeof(response->correlation()) + response->buf().size_bytes());
+    iobuf header;
+    response_writer writer(header);
+    writer.write(size);
+    writer.write(response->correlation());
+
     auto& buf = response->buf();
     buf.prepend(std::move(header));
     ss::scattered_message<char> msg;
