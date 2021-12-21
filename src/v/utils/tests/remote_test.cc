@@ -24,11 +24,11 @@ SEASTAR_THREAD_TEST_CASE(test_free_on_right_cpu) {
 
 struct obj_with_foreign_ptr {
     int x;
-    ss::foreign_ptr<const char*> ptr;
+    ss::foreign_ptr<std::unique_ptr<int>> ptr;
 
     obj_with_foreign_ptr() = default;
 
-    obj_with_foreign_ptr(int x, ss::foreign_ptr<const char*> ptr)
+    obj_with_foreign_ptr(int x, ss::foreign_ptr<std::unique_ptr<int>> ptr)
       : x(x)
       , ptr(std::move(ptr)) {}
 
@@ -47,7 +47,8 @@ struct obj_with_foreign_ptr {
 
 SEASTAR_THREAD_TEST_CASE(test_free_on_right_cpu_with_foreign_ptr) {
     auto p = ss::smp::submit_to(1, [] {
-                 return remote<obj_with_foreign_ptr>(0, ss::make_foreign("la"));
+                 return remote<obj_with_foreign_ptr>(
+                   0, ss::make_foreign(std::make_unique<int>(42)));
              }).get0();
     p.get().x += 1;
     ss::smp::submit_to(1, [p = std::move(p)]() mutable {
