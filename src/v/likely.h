@@ -22,5 +22,7 @@
 // branch in a codebase is likely counterproductive; however, annotating
 // specific branches that are both hot and consistently mispredicted is likely
 // to yield performance improvements.
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define likely(cond) __builtin_expect(!!(cond), true)
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define unlikely(cond) __builtin_expect(!!(cond), false)
