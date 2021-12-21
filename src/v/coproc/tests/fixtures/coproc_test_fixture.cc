@@ -52,13 +52,23 @@ coproc_api_fixture::coproc_api_fixture() {
         config.get("coproc_offset_flush_interval_ms").set_value(500ms);
         config.get("enable_coproc").set_value(true);
     }).get0();
-    _client = make_client();
 }
 
 coproc_api_fixture::~coproc_api_fixture() {
     if (_client) {
         _client->stop().get();
     }
+}
+
+ss::future<> coproc_api_fixture::start() {
+    try {
+        _client = make_client();
+        co_await _client->connect();
+    } catch (const kafka::client::broker_error& ex) {
+        throw std::runtime_error(
+          ssx::sformat("Coproc fixture failed to connect to broker: {}", ex));
+    }
+    co_await coproc::wasm::create_coproc_internal_topic(*_client);
 }
 
 ss::future<>
@@ -69,7 +79,8 @@ coproc_api_fixture::push_wasm_events(std::vector<coproc::wasm::event> events) {
     vassert(result.size() == 1, "Multiple responses not expected");
     vassert(
       result[0].error_code == kafka::error_code::none,
-      "Error when pushing coproc event");
+      "Error when pushing coproc event: {}",
+      result[0].error_code);
 }
 
 ss::future<>
@@ -98,8 +109,7 @@ coproc_api_fixture::disable_coprocessors(std::vector<uint64_t> ids) {
 
 ss::future<> coproc_test_fixture::setup(log_layout_map llm) {
     co_await _root_fixture->wait_for_controller_leadership();
-    co_await get_client().connect();
-    co_await coproc::wasm::create_coproc_internal_topic(get_client());
+    co_await coproc_api_fixture::start();
     for (auto& p : llm) {
         co_await _root_fixture->add_topic(
           model::topic_namespace(model::kafka_namespace, p.first), p.second);

@@ -92,7 +92,7 @@ void non_replicable_topics_frontend::topic_creation_exception(
 
 ss::future<> non_replicable_topics_frontend::create_non_replicable_topics(
   std::vector<cluster::non_replicable_topic> topics,
-  model::timeout_clock::time_point timeout) {
+  model::timeout_clock::duration timeout) {
     std::vector<ss::future<>> all;
     std::vector<cluster::non_replicable_topic> todos;
     for (auto& topic : topics) {
@@ -107,7 +107,7 @@ ss::future<> non_replicable_topics_frontend::create_non_replicable_topics(
     }
     if (!todos.empty()) {
         auto f = _topics_frontend.local()
-                   .create_non_replicable_topics(todos, timeout)
+                   .autocreate_non_replicable_topics(todos, timeout)
                    .then(
                      [this](const std::vector<cluster::topic_result>& result) {
                          topic_creation_resolved(result);

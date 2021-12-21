@@ -25,6 +25,23 @@
 
 #include <utility>
 
+namespace detail {
+
+template<typename T, typename Fn>
+std::vector<cluster::topic_result>
+create_topic_results(const std::vector<T>& topics, Fn fn) {
+    std::vector<cluster::topic_result> results;
+    results.reserve(topics.size());
+    std::transform(
+      topics.cbegin(),
+      topics.cend(),
+      std::back_inserter(results),
+      [&fn](const T& t) { return fn(t); });
+    return results;
+}
+
+} // namespace detail
+
 namespace config {
 struct configuration;
 }
@@ -47,22 +64,35 @@ CONCEPT(requires requires(const T& req) {
 // clang-format on
 std::vector<topic_result> create_topic_results(
   const std::vector<T>& requests, errc error_code) {
-    std::vector<topic_result> results;
-    results.reserve(requests.size());
-    std::transform(
-      std::cbegin(requests),
-      std::cend(requests),
-      std::back_inserter(results),
-      [error_code](const T& r) { return topic_result(r.tp_ns, error_code); });
-    return results;
+    return detail::create_topic_results(requests, [error_code](const T& r) {
+        return topic_result(r.tp_ns, error_code);
+    });
 }
 
-std::vector<topic_result> create_topic_results(
-  const std::vector<custom_assignable_topic_configuration>& requests,
-  errc error_code);
+inline std::vector<topic_result> create_topic_results(
+  const std::vector<model::topic_namespace>& topics, errc error_code) {
+    return detail::create_topic_results(
+      topics, [error_code](const model::topic_namespace& t) {
+          return topic_result(t, error_code);
+      });
+}
 
-std::vector<topic_result> create_topic_results(
-  const std::vector<model::topic_namespace>& topics, errc error_code);
+inline std::vector<topic_result> create_topic_results(
+  const std::vector<custom_assignable_topic_configuration>& requests,
+  errc error_code) {
+    return detail::create_topic_results(
+      requests, [error_code](const custom_assignable_topic_configuration& r) {
+          return topic_result(r.cfg.tp_ns, error_code);
+      });
+}
+
+inline std::vector<topic_result> create_topic_results(
+  const std::vector<non_replicable_topic>& requests, errc error_code) {
+    return detail::create_topic_results(
+      requests, [error_code](const non_replicable_topic& nrt) {
+          return topic_result(nrt.name, error_code);
+      });
+}
 
 ss::future<> update_broker_client(
   model::node_id,

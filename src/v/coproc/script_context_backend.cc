@@ -178,7 +178,7 @@ static ss::future<> maybe_make_materialized_log(
       [topics = std::move(topics)](
         cluster::non_replicable_topics_frontend& mtfe) mutable {
           return mtfe.create_non_replicable_topics(
-            std::move(topics), model::no_timeout);
+            std::move(topics), model::max_duration);
       });
 }
 

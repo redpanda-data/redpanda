@@ -22,6 +22,7 @@ rp_test(
     topic_ingestion_policy_tests.cc
     failure_recovery_tests.cc
     pacemaker_tests.cc
+    autocreate_topic_tests.cc
     coproc_bench_tests.cc
     offset_storage_utils_tests.cc
     wasm_event_tests.cc
