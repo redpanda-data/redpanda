@@ -109,6 +109,12 @@ static heartbeat_requests requests_for_range(
             }
 
             if (ptr->are_heartbeats_suppressed(rni)) {
+                vlog(
+                  hbeatlog.trace,
+                  "Heartbeat suppressed - target: {}, ntp: {}, group_id: {}",
+                  rni,
+                  ptr->ntp(),
+                  ptr->group());
                 return;
             }
             auto last_sent_append_entries_req_timesptamp
@@ -117,15 +123,10 @@ static heartbeat_requests requests_for_range(
             if (last_sent_append_entries_req_timesptamp > last_heartbeat) {
                 vlog(
                   hbeatlog.trace,
-                  "Skipping sending beat to {} gr: {} last hb {}, last append "
-                  "{}",
+                  "Heartbeat skipped - target: {}, ntp: {}, group_id: {}",
                   rni,
-                  ptr->group(),
-                  std::chrono::milliseconds(last_heartbeat.time_since_epoch())
-                    .count(),
-                  std::chrono::milliseconds(
-                    last_sent_append_entries_req_timesptamp.time_since_epoch())
-                    .count());
+                  ptr->ntp(),
+                  ptr->group());
                 // we already sent heartbeat, skip it
                 return;
             }
@@ -231,6 +232,12 @@ ss::future<> heartbeat_manager::do_self_heartbeat(node_heartbeat&& r) {
 
 ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
     auto gate = _bghbeats.hold();
+    vlog(
+      hbeatlog.trace,
+      "Dispatching hearbeats for {} groups to node: {}",
+      r.meta_map.size(),
+      r.target);
+
     auto f = _client_protocol
                .heartbeat(
                  r.target,
@@ -250,11 +257,15 @@ ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
     // fail fast to make sure that not lagging nodes will be able to receive
     // hearteats
     return ss::with_timeout(next_heartbeat_timeout(), std::move(f))
-      .handle_exception_type([](const ss::timed_out_error&) {
+      .handle_exception_type([n = r.target](const ss::timed_out_error&) {
+          vlog(hbeatlog.trace, "Heartbeat timeout, node: {}", n);
           // we just ignore this exception since it is the timeout so we do not
           // have to update consensus instances with results
       })
-      .handle_exception_type([](const ss::gate_closed_exception&) {});
+      .handle_exception_type([](const ss::gate_closed_exception&) {})
+      .handle_exception([n = r.target](const std::exception_ptr& e) {
+          vlog(hbeatlog.trace, "Heartbeat exception, node: {} - {}", n, e);
+      });
 }
 
 void heartbeat_manager::process_reply(
@@ -263,10 +274,9 @@ void heartbeat_manager::process_reply(
   result<heartbeat_reply> r) {
     if (!r) {
         vlog(
-          hbeatlog.trace,
-          "Could not send heartbeats to node:{}, reason:{}, message:{}",
+          hbeatlog.debug,
+          "Received error when sending heartbeats to node {} - {}",
           n,
-          r,
           r.error().message());
         for (auto& [g, req_meta] : groups) {
             auto it = _consensus_groups.find(g);
@@ -294,6 +304,7 @@ void heartbeat_manager::process_reply(
               hbeatlog.error, "Could not find consensus for group:{}", m.group);
             continue;
         }
+        vlog(hbeatlog.trace, "Heartbeat reply from node: {} - {}", n, m);
         auto meta = std::move(groups.find(m.group)->second);
         (*it)->update_heartbeat_status(meta.follower_vnode, true);
 
