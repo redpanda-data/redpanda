@@ -353,11 +353,6 @@ FIXTURE_TEST(
       reader.config().start_offset
       == headers.at(0).last_offset() + model::offset{1});
 
-    // Without config update we shouldn't be able to read anything
-    auto f = reader.read_some(model::no_timeout, ot_state).get();
-    BOOST_REQUIRE(f.has_value() == true);
-    BOOST_REQUIRE(f.value().size() == 0);
-
     // Update config and retry read
     reader.config().max_offset = headers.at(1).last_offset();
     auto t = reader.read_some(model::no_timeout, ot_state).get();

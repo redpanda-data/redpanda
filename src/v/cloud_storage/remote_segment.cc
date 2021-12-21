@@ -31,6 +31,8 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 
+#include <fmt/core.h>
+
 #include <exception>
 
 namespace cloud_storage {
@@ -494,10 +496,23 @@ remote_segment_batch_reader::read_some(
 
         _cur_ot_state = ot_state;
         auto deferred = ss::defer([this] { _cur_ot_state = std::nullopt; });
-        auto bytes_consumed = co_await _parser->consume();
-        if (!bytes_consumed) {
-            co_return bytes_consumed.error();
+        auto new_bytes_consumed = co_await _parser->consume();
+        if (!new_bytes_consumed) {
+            co_return new_bytes_consumed.error();
         }
+        if (
+          _bytes_consumed != 0 && _bytes_consumed == new_bytes_consumed.value()
+          && !_config.over_budget) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "segment_reader is stuck, segment ntp: {}, _cur_rp_offset: {}, "
+              "_bytes_consumed: "
+              "{}",
+              _seg->get_ntp(),
+              _cur_rp_offset,
+              _bytes_consumed));
+        }
+        _bytes_consumed = new_bytes_consumed.value();
     }
     _total_size = 0;
     co_return std::move(_ringbuf);
