@@ -223,11 +223,11 @@ ss::future<result<size_t>> continuous_batch_parser::consume() {
     }
     return ss::repeat([this] {
                return consume_one().then([this](result<stop_parser> s) {
-                   if (_input.eof()) {
-                       return ss::stop_iteration::yes;
-                   }
                    if (!s) {
                        _err = parser_errc(s.error().value());
+                       return ss::stop_iteration::yes;
+                   }
+                   if (_input.eof()) {
                        return ss::stop_iteration::yes;
                    }
                    if (s.value() == stop_parser::yes) {
