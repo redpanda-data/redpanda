@@ -118,22 +118,17 @@ public:
             while (co_await maybe_reset_reader()) {
                 vlog(
                   _ctxlog.debug,
-                  "Invoking 'read_some' on current log reader {}",
+                  "Invoking 'read_some' on current log reader with config: {}",
                   _reader->config());
                 auto result = co_await _reader->read_some(deadline, *_ot_state);
-                if (
-                  !result
-                  && result.error() == storage::parser_errc::end_of_stream) {
-                    vlog(_ctxlog.debug, "EOF error while reading from stream");
-                    _reader->set_eof();
-                    // Next iteration will trigger transition in
-                    // 'maybe_reset_reader'
-                    continue;
-                } else if (!result) {
-                    vlog(_ctxlog.debug, "Unexpected error");
+                if (!result) {
+                    vlog(
+                      _ctxlog.debug,
+                      "Error while reading from stream '{}'",
+                      result.error());
+                    co_await set_end_of_stream();
                     throw std::system_error(result.error());
                 }
-                // empty result will also be propagated here
                 data_t d = std::move(result.value());
                 co_return storage_t{std::move(d)};
             }
