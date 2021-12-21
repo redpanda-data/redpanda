@@ -666,7 +666,8 @@ static void test_partial_upload_impl(
       .is_compacted = false,
       .size_bytes = 1, // doesn't matter
       .base_offset = model::offset(0),
-      .committed_offset = last_uploaded_offset};
+      .committed_offset = last_uploaded_offset,
+      .ntp_revision = manifest.get_revision_id()};
 
     manifest.add(s1name, segment_meta);
 
@@ -675,13 +676,17 @@ static void test_partial_upload_impl(
 
     // Generate segment urls
     auto url1 = "/"
-                + manifest
-                    .get_remote_segment_path(segment_name(ssx::sformat(
+                + cloud_storage::manifest::generate_remote_segment_path(
+                    manifest.get_ntp(),
+                    segment_meta.ntp_revision,
+                    segment_name(ssx::sformat(
                       "{}-1-v1.log", last_uploaded_offset() + 1)))()
                     .string();
     auto url2 = "/"
-                + manifest
-                    .get_remote_segment_path(segment_name(ssx::sformat(
+                + cloud_storage::manifest::generate_remote_segment_path(
+                    manifest.get_ntp(),
+                    segment_meta.ntp_revision,
+                    segment_name(ssx::sformat(
                       "{}-1-v1.log", next_uploaded_offset() + 1)))()
                     .string();
     vlog(

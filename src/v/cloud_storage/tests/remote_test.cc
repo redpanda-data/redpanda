@@ -91,8 +91,9 @@ FIXTURE_TEST(test_upload_segment, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen(default_expectations);
     auto conf = get_configuration();
     remote remote(s3_connection_limit(10), conf);
-    manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("1-2-v1.log");
+    auto path = manifest::generate_remote_segment_path(
+      manifest_ntp, manifest_revision, name);
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
     auto reset_stream = [] {
@@ -103,7 +104,7 @@ FIXTURE_TEST(test_upload_segment, s3_imposter_fixture) { // NOLINT
     retry_chain_node fib(100ms, 20ms);
     auto res = remote
                  .upload_segment(
-                   s3::bucket_name("bucket"), name, clen, reset_stream, m, fib)
+                   s3::bucket_name("bucket"), path, clen, reset_stream, fib)
                  .get();
     BOOST_REQUIRE(res == upload_result::success);
     const auto& req = get_requests().front();
@@ -116,6 +117,8 @@ FIXTURE_TEST(test_upload_segment_timeout, s3_imposter_fixture) { // NOLINT
     remote remote(s3_connection_limit(10), conf);
     manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("1-2-v1.log");
+    auto path = manifest::generate_remote_segment_path(
+      manifest_ntp, manifest_revision, name);
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
     auto reset_stream = [] {
@@ -126,7 +129,7 @@ FIXTURE_TEST(test_upload_segment_timeout, s3_imposter_fixture) { // NOLINT
     retry_chain_node fib(100ms, 20ms);
     auto res = remote
                  .upload_segment(
-                   s3::bucket_name("bucket"), name, clen, reset_stream, m, fib)
+                   s3::bucket_name("bucket"), path, clen, reset_stream, fib)
                  .get();
     BOOST_REQUIRE(res == upload_result::timedout);
 }
@@ -138,6 +141,8 @@ FIXTURE_TEST(test_download_segment, s3_imposter_fixture) { // NOLINT
     remote remote(s3_connection_limit(10), conf);
     manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("1-2-v1.log");
+    auto path = manifest::generate_remote_segment_path(
+      manifest_ntp, manifest_revision, name);
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
     auto reset_stream = [] {
@@ -147,7 +152,7 @@ FIXTURE_TEST(test_download_segment, s3_imposter_fixture) { // NOLINT
     };
     retry_chain_node fib(100ms, 20ms);
     auto upl_res
-      = remote.upload_segment(bucket, name, clen, reset_stream, m, fib).get();
+      = remote.upload_segment(bucket, path, clen, reset_stream, fib).get();
     BOOST_REQUIRE(upl_res == upload_result::success);
 
     iobuf downloaded;
@@ -160,7 +165,7 @@ FIXTURE_TEST(test_download_segment, s3_imposter_fixture) { // NOLINT
         co_return downloaded.size_bytes();
     };
     auto dnl_res
-      = remote.download_segment(bucket, name, m, try_consume, fib).get();
+      = remote.download_segment(bucket, path, try_consume, fib).get();
 
     BOOST_REQUIRE(dnl_res == download_result::success);
     iobuf_parser p(std::move(downloaded));
@@ -172,8 +177,9 @@ FIXTURE_TEST(test_download_segment_timeout, s3_imposter_fixture) { // NOLINT
     auto conf = get_configuration();
     auto bucket = s3::bucket_name("bucket");
     remote remote(s3_connection_limit(10), conf);
-    manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("1-2-v1.log");
+    auto path = manifest::generate_remote_segment_path(
+      manifest_ntp, manifest_revision, name);
 
     iobuf downloaded;
     auto try_consume = [&downloaded](uint64_t, ss::input_stream<char>) {
@@ -182,6 +188,6 @@ FIXTURE_TEST(test_download_segment_timeout, s3_imposter_fixture) { // NOLINT
 
     retry_chain_node fib(100ms, 20ms);
     auto dnl_res
-      = remote.download_segment(bucket, name, m, try_consume, fib).get();
+      = remote.download_segment(bucket, path, try_consume, fib).get();
     BOOST_REQUIRE(dnl_res == download_result::timedout);
 }
