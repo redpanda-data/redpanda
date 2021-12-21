@@ -315,13 +315,12 @@ static model::record_batch_header read_single_batch_from_remote_partition(
 
     auto partition = ss::make_lw_shared<remote_partition>(
       manifest, api, *fixture.cache, bucket);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     auto reader = partition->make_reader(reader_config).get().reader;
 
     auto headers_read
       = reader.consume(test_consumer(), model::no_timeout).get();
-
-    partition->stop().get();
 
     vlog(test_log.debug, "num headers: {}", headers_read.size());
     BOOST_REQUIRE(headers_read.size() == 1);
@@ -347,13 +346,13 @@ static std::vector<model::record_batch_header> scan_remote_partition(
 
     auto partition = ss::make_lw_shared<remote_partition>(
       manifest, api, *imposter.cache, bucket);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     auto reader = partition->make_reader(reader_config).get().reader;
 
     auto headers_read
       = reader.consume(test_consumer(), model::no_timeout).get();
 
-    partition->stop().get();
     return headers_read;
 }
 
@@ -864,6 +863,7 @@ scan_remote_partition_incrementally(
 
     auto partition = ss::make_lw_shared<remote_partition>(
       manifest, api, *imposter.cache, bucket);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     std::vector<model::record_batch_header> headers;
 
@@ -890,7 +890,6 @@ scan_remote_partition_incrementally(
         num_fetches++;
     }
     BOOST_REQUIRE(num_fetches != 1);
-    partition->stop().get();
     vlog(test_log.info, "{} fetch operations performed", num_fetches);
     return headers;
 }
