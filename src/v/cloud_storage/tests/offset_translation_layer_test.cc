@@ -80,18 +80,19 @@ SEASTAR_THREAD_TEST_CASE(test_name_translation) {
     manifest m;
     m.update(make_manifest_stream(serialized_manifest)).get0();
     BOOST_REQUIRE_EQUAL(m.size(), 3);
-    offset_translator otl;
-    otl.update(m);
-    // 0-1-v1.log
-    auto sname0 = otl.get_adjusted_segment_name(
-      segment_name("0-1-v1.log"), fib);
-    BOOST_REQUIRE_EQUAL(sname0(), "0-1-v1.log");
-    // 101-1-v1.log
-    auto sname100 = otl.get_adjusted_segment_name(
-      segment_name("101-1-v1.log"), fib);
-    BOOST_REQUIRE_EQUAL(sname100(), "100-1-v1.log");
-    // 201-1-v1.log
-    auto sname198 = otl.get_adjusted_segment_name(
-      segment_name("201-1-v1.log"), fib);
-    BOOST_REQUIRE_EQUAL(sname198(), "198-1-v1.log");
+
+    std::vector<std::pair<std::string, std::string>> orig2expected{
+      {"0-1-v1.log", "0-1-v1.log"},
+      {"101-1-v1.log", "100-1-v1.log"},
+      {"201-1-v1.log", "198-1-v1.log"},
+    };
+
+    for (const auto& [orig, expected] : orig2expected) {
+        segment_name orig_name{orig};
+        auto meta = m.get(orig_name);
+        BOOST_REQUIRE(meta);
+        offset_translator otl(meta->delta_offset);
+        BOOST_REQUIRE_EQUAL(
+          otl.get_adjusted_segment_name(orig_name, fib), expected);
+    }
 }

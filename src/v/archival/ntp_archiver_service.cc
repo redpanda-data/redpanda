@@ -117,7 +117,9 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
     gate_guard guard{_gate};
     retry_chain_node fib(_segment_upload_timeout, _initial_backoff, &parent);
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
-    vlog(ctxlog.debug, "Uploading segment {}", candidate);
+    auto path = cloud_storage::manifest::generate_remote_segment_path(
+      _ntp, _rev, candidate.exposed_name);
+    vlog(ctxlog.debug, "Uploading segment {} to {}", candidate, path);
 
     auto reset_func = [this, candidate] {
         auto stream = candidate.source->reader().data_stream(
@@ -125,12 +127,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
         return stream;
     };
     co_return co_await _remote.upload_segment(
-      _bucket,
-      candidate.exposed_name,
-      candidate.content_length,
-      reset_func,
-      _manifest,
-      fib);
+      _bucket, path, candidate.content_length, reset_func, fib);
 }
 
 ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
@@ -237,6 +234,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
         .base_timestamp = upload.base_timestamp,
         .max_timestamp = upload.max_timestamp,
         .delta_offset = delta,
+        .ntp_revision = _partition->get_revision_id(),
       },
       .name = upload.exposed_name, .delta = offset - base,
       .stop = ss::stop_iteration::no,

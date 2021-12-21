@@ -76,6 +76,8 @@ private:
 
     ss::socket_address _server_addr;
     ss::shared_ptr<ss::httpd::http_server_control> _server;
+
+    std::unique_ptr<ss::httpd::handler_base> _handler;
     /// Contains saved requests
     std::vector<ss::httpd::request> _requests;
     /// Contains all accessed target urls
