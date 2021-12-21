@@ -168,6 +168,13 @@ ss::future<> script_context::send_request(
 }
 
 bool script_context::is_up_to_date() const {
+    if (_routes.empty()) {
+        /// Since this method is only used for unit tests, its never desired to
+        /// return true in the case the script is technically "up to date"
+        /// because it contains no work. It is likely due to recieve data to
+        /// process shortly.
+        return false;
+    }
     for (const auto& [_, src] : _routes) {
         const auto highest = src->rctx.input->last_stable_offset();
         for (const auto& [_, o] : src->wctx.offsets) {
