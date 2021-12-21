@@ -106,7 +106,7 @@ public:
         friend std::ostream& operator<<(std::ostream& o, const measurement&);
     };
 
-    hdr_hist(
+    explicit hdr_hist(
       int64_t max_value = us_per_hour,
       int64_t min = 1,
       int32_t significant_figures = 1)
