@@ -237,7 +237,7 @@ ss::future<upload_result> remote::upload_manifest(
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto key = manifest.get_manifest_path();
-    auto path = s3::object_key(key().string());
+    auto path = s3::object_key(key());
     std::vector<s3::object_tag> tags = {{"rp-type", "partition-manifest"}};
     auto [client, deleter] = co_await _pool.acquire();
     auto permit = fib.retry();
@@ -308,33 +308,26 @@ ss::future<upload_result> remote::upload_manifest(
 
 ss::future<upload_result> remote::upload_segment(
   const s3::bucket_name& bucket,
-  const segment_name& exposed_name,
+  const remote_segment_path& segment_path,
   uint64_t content_length,
   const reset_input_stream& reset_str,
-  manifest& manifest,
   retry_chain_node& parent) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
-    auto s3path = manifest.get_remote_segment_path(exposed_name);
     std::vector<s3::object_tag> tags = {{"rp-type", "segment"}};
     auto permit = fib.retry();
     vlog(
       ctxlog.debug,
-      "Uploading segment for {}, exposed name {}, length {}",
-      manifest.get_ntp(),
-      exposed_name,
+      "Uploading segment to path {}, length {}",
+      segment_path,
       content_length);
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto [client, deleter] = co_await _pool.acquire();
         auto stream = reset_str();
-        auto path = s3::object_key(s3path().string());
-        vlog(
-          ctxlog.debug,
-          "Uploading segment for {}, path {}",
-          manifest.get_ntp(),
-          s3path);
+        auto path = s3::object_key(segment_path());
+        vlog(ctxlog.debug, "Uploading segment to path {}", segment_path);
         std::exception_ptr eptr = nullptr;
         try {
             // Segment upload attempt
@@ -380,30 +373,28 @@ ss::future<upload_result> remote::upload_segment(
           ctxlog.warn,
           "Uploading segment {} to {}, backoff quota exceded, segment not "
           "uploaded",
-          s3path,
+          segment_path,
           bucket);
     } else {
         vlog(
           ctxlog.warn,
           "Uploading segment {} to {}, {}, segment not uploaded",
-          s3path,
-          *result,
-          bucket);
+          segment_path,
+          bucket,
+          *result);
     }
     co_return upload_result::timedout;
 }
 
 ss::future<download_result> remote::download_segment(
   const s3::bucket_name& bucket,
-  const manifest::key& name,
-  const manifest& manifest,
+  const remote_segment_path& segment_path,
   const try_consume_stream& cons_str,
   retry_chain_node& parent) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
-    auto s3path = manifest.get_remote_segment_path(name);
-    auto path = s3::object_key(s3path().string());
+    auto path = s3::object_key(segment_path());
     auto [client, deleter] = co_await _pool.acquire();
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Download segment {}", path);

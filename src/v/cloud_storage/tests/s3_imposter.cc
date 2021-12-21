@@ -135,18 +135,8 @@ void s3_imposter_fixture::set_routes(
         s3_imposter_fixture& fixture;
     };
     auto hd = ss::make_shared<content_handler>(expectations, *this);
-    for (const auto& [path, _] : expectations) {
-        auto get_handler = new function_handler(
-          [hd](const_req req, reply& repl) { return hd->handle(req, repl); },
-          "txt");
-        auto put_handler = new function_handler(
-          [hd](const_req req, reply& repl) { return hd->handle(req, repl); },
-          "txt");
-        auto del_handler = new function_handler(
-          [hd](const_req req, reply& repl) { return hd->handle(req, repl); },
-          "txt");
-        r.add(operation_type::GET, url(path), get_handler);
-        r.add(operation_type::PUT, url(path), put_handler);
-        r.add(operation_type::DELETE, url(path), del_handler);
-    }
+    _handler = std::make_unique<function_handler>(
+      [hd](const_req req, reply& repl) { return hd->handle(req, repl); },
+      "txt");
+    r.add_default_handler(_handler.get());
 }

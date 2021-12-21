@@ -26,13 +26,8 @@ namespace cloud_storage {
 /// It consumes information stored in the manifest.
 class offset_translator final {
 public:
-    offset_translator() = default;
-    offset_translator(const offset_translator&) = delete;
-    offset_translator(offset_translator&&) = delete;
-    offset_translator& operator=(const offset_translator&) = delete;
-    offset_translator& operator=(offset_translator&&) = delete;
-
-    void update(const manifest& m);
+    offset_translator(model::offset initial_delta)
+      : _initial_delta(initial_delta) {}
 
     /// Copy source stream into the destination stream
     ///
@@ -41,7 +36,6 @@ public:
     /// The caller is responsible for patching the segement file name and
     /// passing correct base_offset of the original segment.
     ss::future<uint64_t> copy_stream(
-      remote_segment_path path,
       ss::input_stream<char> src,
       ss::output_stream<char> dst,
       retry_chain_node& fib) const;
@@ -49,16 +43,9 @@ public:
     /// Get segment name adjusted for all removed offsets
     segment_name get_adjusted_segment_name(
       const segment_name& s, retry_chain_node& fib) const;
-    remote_segment_path get_adjusted_segment_name(
-      const remote_segment_path& s, retry_chain_node& fib) const;
 
 private:
-    std::filesystem::path get_adjusted_segment_name(
-      std::filesystem::path s,
-      const manifest::segment_meta& m,
-      retry_chain_node& fib) const;
-
-    std::optional<std::reference_wrapper<const manifest>> _manifest;
+    model::offset _initial_delta;
 };
 
 } // namespace cloud_storage

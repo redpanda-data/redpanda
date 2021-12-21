@@ -62,6 +62,7 @@ FIXTURE_TEST(
     remote remote(s3_connection_limit(10), conf);
     manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("1-2-v1.log");
+    model::revision_id segment_ntp_revision{777};
     iobuf segment_bytes = generate_segment(model::offset(1), 20);
     uint64_t clen = segment_bytes.size_bytes();
     auto action = ss::defer([&remote] { remote.stop().get(); });
@@ -70,9 +71,20 @@ FIXTURE_TEST(
         return make_iobuf_input_stream(std::move(out));
     };
     retry_chain_node fib(1000ms, 200ms);
+    manifest::segment_meta meta{
+      .is_compacted = false,
+      .size_bytes = segment_bytes.size_bytes(),
+      .base_offset = model::offset(1),
+      .committed_offset = model::offset(20),
+      .base_timestamp = {},
+      .max_timestamp = {},
+      .delta_offset = model::offset(0),
+      .ntp_revision = segment_ntp_revision};
+    auto path = m.generate_segment_path(name, meta);
     auto upl_res
-      = remote.upload_segment(bucket, name, clen, reset_stream, m, fib).get();
+      = remote.upload_segment(bucket, path, clen, reset_stream, fib).get();
     BOOST_REQUIRE(upl_res == upload_result::success);
+    m.add(name, meta);
 
     remote_segment segment(remote, *cache, bucket, m, name, fib);
     auto stream = segment.data_stream(0, ss::default_priority_class()).get();
@@ -94,8 +106,19 @@ FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT
     remote remote(s3_connection_limit(10), conf);
     manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("7-8-v1.log");
-    retry_chain_node fib(100ms, 20ms);
+    m.add(
+      name,
+      manifest::segment_meta{
+        .is_compacted = false,
+        .size_bytes = 123,
+        .base_offset = model::offset(7),
+        .committed_offset = model::offset(123),
+        .base_timestamp = {},
+        .max_timestamp = {},
+        .delta_offset = model::offset(0),
+        .ntp_revision = manifest_revision});
 
+    retry_chain_node fib(100ms, 20ms);
     remote_segment segment(remote, *cache, bucket, m, name, fib);
     BOOST_REQUIRE_THROW(
       segment.data_stream(0, ss::default_priority_class()).get(),
@@ -113,16 +136,16 @@ FIXTURE_TEST(
     manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("1-2-v1.log");
     iobuf segment_bytes = generate_segment(model::offset(1), 100);
-    m.add(
-      name,
-      manifest::segment_meta{
-        .is_compacted = false,
-        .size_bytes = segment_bytes.size_bytes(),
-        .base_offset = model::offset(1),
-        .committed_offset = model::offset(100),
-        .base_timestamp = {},
-        .max_timestamp = {},
-        .delta_offset = model::offset(0)});
+    manifest::segment_meta meta{
+      .is_compacted = false,
+      .size_bytes = segment_bytes.size_bytes(),
+      .base_offset = model::offset(1),
+      .committed_offset = model::offset(100),
+      .base_timestamp = {},
+      .max_timestamp = {},
+      .delta_offset = model::offset(0),
+      .ntp_revision = manifest_revision};
+    auto path = m.generate_segment_path(name, meta);
     uint64_t clen = segment_bytes.size_bytes();
     auto action = ss::defer([&remote] { remote.stop().get(); });
     auto reset_stream = [&segment_bytes] {
@@ -131,8 +154,9 @@ FIXTURE_TEST(
     };
     retry_chain_node fib(1000ms, 200ms);
     auto upl_res
-      = remote.upload_segment(bucket, name, clen, reset_stream, m, fib).get();
+      = remote.upload_segment(bucket, path, clen, reset_stream, fib).get();
     BOOST_REQUIRE(upl_res == upload_result::success);
+    m.add(name, meta);
 
     storage::log_reader_config reader_config(
       model::offset(1), model::offset(1), ss::default_priority_class());
@@ -175,27 +199,11 @@ void test_remote_segment_batch_reader(
   int num_batches,
   int ix_begin,
   int ix_end) { // NOLINT
+    iobuf segment_bytes = generate_segment(model::offset(1), num_batches);
+
     std::vector<model::record_batch_header> headers;
     std::vector<iobuf> records;
     std::vector<uint64_t> file_offsets;
-    fixture.set_expectations_and_listen(default_expectations);
-    auto conf = fixture.get_configuration();
-    auto bucket = s3::bucket_name("bucket");
-    remote remote(s3_connection_limit(10), conf);
-    manifest m(manifest_ntp, manifest_revision);
-    auto name = segment_name("1-2-v1.log");
-    iobuf segment_bytes = generate_segment(model::offset(1), num_batches);
-    uint64_t clen = segment_bytes.size_bytes();
-    auto action = ss::defer([&remote] { remote.stop().get(); });
-    auto reset_stream = [&segment_bytes] {
-        auto out = iobuf_deep_copy(segment_bytes);
-        return make_iobuf_input_stream(std::move(out));
-    };
-    retry_chain_node fib(1000ms, 200ms);
-    auto upl_res
-      = remote.upload_segment(bucket, name, clen, reset_stream, m, fib).get();
-    BOOST_REQUIRE(upl_res == upload_result::success);
-
     // account all batches
     auto parser = make_recording_batch_parser(
       iobuf_deep_copy(segment_bytes), headers, records, file_offsets);
@@ -206,6 +214,35 @@ void test_remote_segment_batch_reader(
         vlog(test_log.debug, "expected header {}", hdr);
     }
 
+    fixture.set_expectations_and_listen({});
+    auto conf = fixture.get_configuration();
+    auto bucket = s3::bucket_name("bucket");
+    remote remote(s3_connection_limit(10), conf);
+    auto action = ss::defer([&remote] { remote.stop().get(); });
+
+    manifest m(manifest_ntp, manifest_revision);
+    auto name = segment_name("1-2-v1.log");
+    uint64_t clen = segment_bytes.size_bytes();
+    manifest::segment_meta meta{
+      .is_compacted = false,
+      .size_bytes = segment_bytes.size_bytes(),
+      .base_offset = headers.front().base_offset,
+      .committed_offset = headers.back().last_offset(),
+      .base_timestamp = {},
+      .max_timestamp = {},
+      .delta_offset = model::offset(0),
+      .ntp_revision = manifest_revision};
+    auto path = m.generate_segment_path(name, meta);
+    auto reset_stream = [&segment_bytes] {
+        auto out = iobuf_deep_copy(segment_bytes);
+        return make_iobuf_input_stream(std::move(out));
+    };
+    retry_chain_node fib(1000ms, 200ms);
+    auto upl_res
+      = remote.upload_segment(bucket, path, clen, reset_stream, fib).get();
+    BOOST_REQUIRE(upl_res == upload_result::success);
+    m.add(name, meta);
+
     // pick offsets for fetch request
     model::offset begin = headers.at(ix_begin).base_offset;
     model::offset end = headers.at(ix_end).last_offset();
@@ -213,18 +250,6 @@ void test_remote_segment_batch_reader(
     storage::log_reader_config reader_config(
       begin, end, ss::default_priority_class());
     reader_config.max_bytes = std::numeric_limits<size_t>::max();
-
-    m.add(
-      name,
-      manifest::segment_meta{
-        .is_compacted = false,
-        .size_bytes = segment_bytes.size_bytes(),
-        .base_offset = headers.front().base_offset,
-        .committed_offset = headers.back().last_offset(),
-        .base_timestamp = {},
-        .max_timestamp = {},
-        .delta_offset = model::offset(0)});
-
     auto segment = ss::make_lw_shared<remote_segment>(
       remote, *fixture.cache, bucket, m, name, fib);
     remote_segment_batch_reader reader(segment, reader_config);
@@ -285,27 +310,11 @@ FIXTURE_TEST(
 FIXTURE_TEST(
   test_remote_segment_batch_reader_repeatable_read,
   cloud_storage_fixture) { // NOLINT
+    iobuf segment_bytes = generate_segment(model::offset(1), 100);
+
     std::vector<model::record_batch_header> headers;
     std::vector<iobuf> records;
     std::vector<uint64_t> file_offsets;
-    set_expectations_and_listen(default_expectations);
-    auto conf = get_configuration();
-    auto bucket = s3::bucket_name("bucket");
-    remote remote(s3_connection_limit(10), conf);
-    manifest m(manifest_ntp, manifest_revision);
-    auto name = segment_name("1-2-v1.log");
-    iobuf segment_bytes = generate_segment(model::offset(1), 100);
-    uint64_t clen = segment_bytes.size_bytes();
-    auto action = ss::defer([&remote] { remote.stop().get(); });
-    auto reset_stream = [&segment_bytes] {
-        auto out = iobuf_deep_copy(segment_bytes);
-        return make_iobuf_input_stream(std::move(out));
-    };
-    retry_chain_node fib(1000ms, 200ms);
-    auto upl_res
-      = remote.upload_segment(bucket, name, clen, reset_stream, m, fib).get();
-    BOOST_REQUIRE(upl_res == upload_result::success);
-
     // account all batches
     auto parser = make_recording_batch_parser(
       iobuf_deep_copy(segment_bytes), headers, records, file_offsets);
@@ -316,16 +325,34 @@ FIXTURE_TEST(
         vlog(test_log.debug, "expected header {}", hdr);
     }
 
-    m.add(
-      name,
-      manifest::segment_meta{
-        .is_compacted = false,
-        .size_bytes = segment_bytes.size_bytes(),
-        .base_offset = headers.front().base_offset,
-        .committed_offset = headers.back().last_offset(),
-        .base_timestamp = {},
-        .max_timestamp = {},
-        .delta_offset = model::offset(0)});
+    set_expectations_and_listen({});
+    auto conf = get_configuration();
+    auto bucket = s3::bucket_name("bucket");
+    remote remote(s3_connection_limit(10), conf);
+    auto action = ss::defer([&remote] { remote.stop().get(); });
+
+    manifest m(manifest_ntp, manifest_revision);
+    auto name = segment_name("1-2-v1.log");
+    uint64_t clen = segment_bytes.size_bytes();
+    manifest::segment_meta meta{
+      .is_compacted = false,
+      .size_bytes = segment_bytes.size_bytes(),
+      .base_offset = headers.front().base_offset,
+      .committed_offset = headers.back().last_offset(),
+      .base_timestamp = {},
+      .max_timestamp = {},
+      .delta_offset = model::offset(0),
+      .ntp_revision = manifest_revision};
+    auto path = m.generate_segment_path(name, meta);
+    auto reset_stream = [&segment_bytes] {
+        auto out = iobuf_deep_copy(segment_bytes);
+        return make_iobuf_input_stream(std::move(out));
+    };
+    retry_chain_node fib(1000ms, 200ms);
+    auto upl_res
+      = remote.upload_segment(bucket, path, clen, reset_stream, fib).get();
+    BOOST_REQUIRE(upl_res == upload_result::success);
+    m.add(name, meta);
 
     auto segment = ss::make_lw_shared<remote_segment>(
       remote, *cache, bucket, m, name, fib);
