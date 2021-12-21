@@ -33,6 +33,7 @@ static dummyassert g_assert_log;
  * }
  *
  */
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define vassert(x, msg, args...)                                               \
     do {                                                                       \
         /*The !(x) is not an error. see description above*/                    \
