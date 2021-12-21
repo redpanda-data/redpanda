@@ -195,6 +195,7 @@ private:
     model::offset _initial_delta;
     model::offset _cur_rp_offset;
     model::offset _cur_delta;
+    size_t _bytes_consumed{0};
 };
 
 } // namespace cloud_storage
