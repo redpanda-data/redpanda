@@ -578,11 +578,7 @@ remote_segment_batch_reader::init_parser() {
       0, priority_manager::local().shadow_indexing_priority());
     auto parser = std::make_unique<storage::continuous_batch_parser>(
       std::make_unique<remote_segment_batch_consumer>(
-        _config,
-        *this,
-        _seg->get_term(),
-        _seg->get_ntp(),
-        *_seg->get_retry_chain_node()),
+        _config, *this, _seg->get_term(), _seg->get_ntp(), _rtc),
       std::move(stream));
     co_return parser;
 }
