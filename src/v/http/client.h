@@ -17,7 +17,6 @@
 #include "http/iobuf_body.h"
 #include "http/logger.h"
 #include "http/probe.h"
-#include "rpc/backoff_policy.h"
 #include "net/transport.h"
 #include "rpc/types.h"
 #include "seastarx.h"
