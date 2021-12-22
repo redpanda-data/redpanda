@@ -56,7 +56,7 @@ inline ss::logger test_log("test"); // NOLINT
 
 FIXTURE_TEST(
   test_remote_segment_successful_download, cloud_storage_fixture) { // NOLINT
-    set_expectations_and_listen(default_expectations);
+    set_expectations_and_listen({});
     auto conf = get_configuration();
     auto bucket = s3::bucket_name("bucket");
     remote remote(s3_connection_limit(10), conf);
@@ -129,7 +129,7 @@ FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT
 FIXTURE_TEST(
   test_remote_segment_batch_reader_single_batch,
   cloud_storage_fixture) { // NOLINT
-    set_expectations_and_listen(default_expectations);
+    set_expectations_and_listen({});
     auto conf = get_configuration();
     auto bucket = s3::bucket_name("bucket");
     remote remote(s3_connection_limit(10), conf);

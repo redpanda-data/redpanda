@@ -87,10 +87,14 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_path) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_segment_path) {
-    auto path = manifest::generate_remote_segment_path(
-      manifest_ntp, model::revision_id(0), segment_name("22-11-v1.log"));
+    auto path = generate_remote_segment_path(
+      manifest_ntp,
+      model::revision_id(0),
+      segment_name("22-11-v1.log"),
+      model::term_id{123});
     // use pre-calculated murmur hash value from full ntp path + file name
-    BOOST_REQUIRE_EQUAL(path, "2bea9275/test-ns/test-topic/42_0/22-11-v1.log");
+    BOOST_REQUIRE_EQUAL(
+      path, "2bea9275/test-ns/test-topic/42_0/22-11-v1.log.123");
 }
 
 SEASTAR_THREAD_TEST_CASE(test_empty_manifest_update) {

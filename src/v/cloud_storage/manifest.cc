@@ -191,18 +191,6 @@ remote_manifest_path manifest::get_manifest_path() const {
     return generate_partition_manifest_path(_ntp, _rev);
 }
 
-remote_segment_path manifest::generate_remote_segment_path(
-  const model::ntp ntp, model::revision_id rev_id, const segment_name& name) {
-    vassert(
-      rev_id != model::revision_id(),
-      "ntp {}: ntp revision must be known for segment {}",
-      ntp,
-      name);
-    auto path = ssx::sformat("{}_{}/{}", ntp.path(), rev_id(), name());
-    uint32_t hash = xxhash_32(path.data(), path.size());
-    return remote_segment_path(fmt::format("{:08x}/{}", hash, path));
-}
-
 const model::ntp& manifest::get_ntp() const { return _ntp; }
 
 const model::offset manifest::get_last_offset() const { return _last_offset; }
@@ -211,7 +199,8 @@ model::revision_id manifest::get_revision_id() const { return _rev; }
 
 remote_segment_path manifest::generate_segment_path(
   const segment_name& name, const segment_meta& meta) const {
-    return generate_remote_segment_path(_ntp, meta.ntp_revision, name);
+    return generate_remote_segment_path(
+      _ntp, meta.ntp_revision, name, meta.archiver_term);
 }
 
 manifest::const_iterator manifest::begin() const { return _segments.begin(); }
@@ -325,6 +314,11 @@ void manifest::update(const rapidjson::Document& m) {
                 ntp_revision = model::revision_id(
                   it->value["ntp_revision"].GetInt64());
             }
+            model::term_id archiver_term;
+            if (it->value.HasMember("archiver_term")) {
+                archiver_term = model::term_id(
+                  it->value["archiver_term"].GetInt64());
+            }
             segment_meta meta{
               .is_compacted = it->value["is_compacted"].GetBool(),
               .size_bytes = static_cast<size_t>(size_bytes),
@@ -333,7 +327,9 @@ void manifest::update(const rapidjson::Document& m) {
               .base_timestamp = base_timestamp,
               .max_timestamp = max_timestamp,
               .delta_offset = delta_offset,
-              .ntp_revision = ntp_revision};
+              .ntp_revision = ntp_revision,
+              .archiver_term = archiver_term,
+            };
             tmp.insert(std::make_pair(name, meta));
         }
     }
@@ -402,6 +398,10 @@ void manifest::serialize(std::ostream& out) const {
                   sn);
                 w.Key("ntp_revision");
                 w.Int64(meta.ntp_revision());
+            }
+            if (meta.archiver_term != model::term_id::min()) {
+                w.Key("archiver_term");
+                w.Int64(meta.archiver_term());
             }
             w.EndObject();
         }

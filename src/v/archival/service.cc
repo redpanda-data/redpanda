@@ -325,34 +325,25 @@ ss::future<ss::stop_iteration> scheduler_service_impl::add_ntp_archiver(
 
 ss::future<>
 scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
-    return ss::with_gate(
-      _gate, [this, to_create = std::move(to_create)]() mutable {
-          return ss::do_with(
-            std::move(to_create), [this](std::vector<model::ntp>& to_create) {
-                // add_ntp_archiver can potentially use two connections
-                auto concurrency = std::max(
-                  1UL, _remote.local().concurrency() / 2);
-                return ss::max_concurrent_for_each(
-                  to_create, concurrency, [this](const model::ntp& ntp) {
-                      storage::api& api = _storage_api.local();
-                      storage::log_manager& lm = api.log_mgr();
-                      auto log = lm.get(ntp);
-                      auto part = _partition_manager.local().get(ntp);
-                      if (
-                        !log.has_value() || !part
-                        || !(
-                          part->get_ntp_config().is_archival_enabled()
-                          || config::shard_local_cfg()
-                               .cloud_storage_enable_remote_read())) {
-                          return ss::now();
-                      }
-                      auto svc = ss::make_lw_shared<ntp_archiver>(
-                        log->config(), _conf, _remote.local(), part, _probe);
-                      return ss::repeat([this, svc = std::move(svc)] {
-                          return add_ntp_archiver(svc);
-                      });
-                  });
-            });
+    gate_guard g(_gate);
+    // add_ntp_archiver can potentially use two connections
+    auto concurrency = std::max(1UL, _remote.local().concurrency() / 2);
+    co_await ss::max_concurrent_for_each(
+      std::move(to_create), concurrency, [this](const model::ntp& ntp) {
+          storage::api& api = _storage_api.local();
+          storage::log_manager& lm = api.log_mgr();
+          auto log = lm.get(ntp);
+          auto part = _partition_manager.local().get(ntp);
+          if (log.has_value() && part && part->is_leader()
+              && (part->get_ntp_config().is_archival_enabled()
+                  || config::shard_local_cfg().cloud_storage_enable_remote_read())) {
+              auto svc = ss::make_lw_shared<ntp_archiver>(
+                log->config(), _conf, _remote.local(), part, _probe);
+              return ss::repeat(
+                [this, svc = std::move(svc)] { return add_ntp_archiver(svc); });
+          } else {
+              return ss::now();
+          }
       });
 }
 
