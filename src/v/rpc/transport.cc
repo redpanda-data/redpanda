@@ -10,7 +10,7 @@
 #include "rpc/transport.h"
 
 #include "likely.h"
-#include "rpc/dns.h"
+#include "net/dns.h"
 #include "rpc/logger.h"
 #include "rpc/parse_utils.h"
 #include "rpc/response_handler.h"
@@ -89,7 +89,7 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
           server_address()));
     }
     try {
-        auto resolved_address = co_await resolve_dns(server_address());
+        auto resolved_address = co_await net::resolve_dns(server_address());
         ss::connected_socket fd = co_await connect_with_timeout(
           resolved_address, timeout);
 

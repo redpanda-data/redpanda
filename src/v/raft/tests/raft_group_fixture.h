@@ -24,7 +24,7 @@
 #include "random/generators.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/connection_cache.h"
-#include "rpc/dns.h"
+#include "net/dns.h"
 #include "rpc/server.h"
 #include "rpc/simple_protocol.h"
 #include "rpc/types.h"
@@ -167,7 +167,7 @@ struct raft_node {
         tstlog.info("Starting node {} stack ", id());
         // start rpc
         rpc::server_configuration scfg("raft_test_rpc");
-        scfg.addrs.emplace_back(rpc::resolve_dns(broker.rpc_address()).get());
+        scfg.addrs.emplace_back(net::resolve_dns(broker.rpc_address()).get());
         scfg.max_service_memory_per_core = 1024 * 1024 * 1024;
         scfg.disable_metrics = rpc::metrics_disabled::yes;
         server.start(std::move(scfg)).get0();

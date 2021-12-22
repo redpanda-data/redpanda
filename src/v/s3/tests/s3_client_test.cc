@@ -10,7 +10,7 @@
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
-#include "rpc/dns.h"
+#include "net/dns.h"
 #include "rpc/transport.h"
 #include "rpc/types.h"
 #include "s3/client.h"
@@ -180,7 +180,7 @@ configured_test_pair started_client_and_server(const s3::configuration& conf) {
     auto server = ss::make_shared<ss::httpd::http_server_control>();
     server->start().get();
     server->set_routes(set_routes).get();
-    auto resolved = rpc::resolve_dns(conf.server_addr).get();
+    auto resolved = net::resolve_dns(conf.server_addr).get();
     server->listen(resolved).get();
     return {
       .server = server,
@@ -394,7 +394,7 @@ configured_server_and_client_pool started_pool_and_server(
     auto server = ss::make_shared<ss::httpd::http_server_control>();
     server->start().get();
     server->set_routes(set_routes).get();
-    auto resolved = rpc::resolve_dns(conf.server_addr).get0();
+    auto resolved = net::resolve_dns(conf.server_addr).get0();
     server->listen(resolved).get();
     return {
       .server = server,

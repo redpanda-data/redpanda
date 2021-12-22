@@ -18,7 +18,7 @@
 #include "config/tls_config.h"
 #include "outcome_future_utils.h"
 #include "rpc/connection_cache.h"
-#include "rpc/dns.h"
+#include "net/dns.h"
 #include "rpc/types.h"
 
 #include <seastar/core/sharded.hh>

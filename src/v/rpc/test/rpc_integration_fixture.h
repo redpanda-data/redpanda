@@ -11,7 +11,7 @@
 
 #pragma once
 #include "config/tls_config.h"
-#include "rpc/dns.h"
+#include "net/dns.h"
 #include "rpc/server.h"
 #include "rpc/service.h"
 #include "rpc/simple_protocol.h"
@@ -155,7 +155,7 @@ public:
       ss::tls::reload_callback&& cb = {}) override {
         rpc::server_configuration scfg("unit_test_rpc");
         scfg.disable_metrics = rpc::metrics_disabled::yes;
-        auto resolved = rpc::resolve_dns(_listen_address).get();
+        auto resolved = net::resolve_dns(_listen_address).get();
         scfg.addrs.emplace_back(
           resolved,
           credentials
@@ -203,7 +203,7 @@ public:
       ss::tls::reload_callback&& cb = {}) override {
         rpc::server_configuration scfg("unit_test_rpc_sharded");
         scfg.disable_metrics = rpc::metrics_disabled::yes;
-        auto resolved = rpc::resolve_dns(_listen_address).get();
+        auto resolved = net::resolve_dns(_listen_address).get();
         scfg.addrs.emplace_back(
           resolved,
           credentials

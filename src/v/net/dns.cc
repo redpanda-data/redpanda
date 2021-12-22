@@ -8,7 +8,7 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "rpc/dns.h"
+#include "net/dns.h"
 
 #include "utils/mutex.h"
 #include "utils/unresolved_address.h"
@@ -16,7 +16,8 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/net/dns.hh>
 
-namespace rpc {
+namespace net {
+
 ss::future<ss::socket_address> resolve_dns(unresolved_address address) {
     static thread_local ss::net::dns_resolver resolver;
     static thread_local mutex m;
@@ -27,4 +28,5 @@ ss::future<ss::socket_address> resolve_dns(unresolved_address address) {
 
     co_return ss::socket_address(i_a, address.port());
 };
-} // namespace rpc
+
+} // namespace net

@@ -32,7 +32,7 @@
 #include "pandaproxy/schema_registry/configuration.h"
 #include "redpanda/application.h"
 #include "resource_mgmt/cpu_scheduling.h"
-#include "rpc/dns.h"
+#include "net/dns.h"
 #include "storage/directories.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "storage/tests/utils/random_batch.h"

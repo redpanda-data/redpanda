@@ -816,7 +816,7 @@ void application::wire_up_redpanda_services() {
       .invoke_on_all([this](rpc::server_configuration& c) {
           return ss::async([this, &c] {
               auto rpc_server_addr
-                = rpc::resolve_dns(config::node().rpc_server()).get0();
+                = net::resolve_dns(config::node().rpc_server()).get0();
               c.load_balancing_algo
                 = ss::server_socket::load_balancing_algorithm::port;
               c.max_service_memory_per_core = memory_groups::rpc_total_memory();
@@ -965,7 +965,7 @@ void application::wire_up_redpanda_services() {
                   }
 
                   c.addrs.emplace_back(
-                    ep.name, rpc::resolve_dns(ep.address).get0(), credentails);
+                    ep.name, net::resolve_dns(ep.address).get0(), credentails);
               }
 
               c.disable_metrics = rpc::metrics_disabled(

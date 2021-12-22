@@ -11,7 +11,7 @@
 #include "bytes/iobuf_parser.h"
 #include "http/chunk_encoding.h"
 #include "http/client.h"
-#include "rpc/dns.h"
+#include "net/dns.h"
 #include "rpc/transport.h"
 #include "seastarx.h"
 
@@ -112,7 +112,7 @@ started_client_and_server(const rpc::base_transport::configuration& conf) {
     auto server = ss::make_shared<ss::httpd::http_server_control>();
     server->start().get();
     server->set_routes(set_routes).get();
-    auto resolved = rpc::resolve_dns(conf.server_addr).get();
+    auto resolved = net::resolve_dns(conf.server_addr).get();
     server->listen(resolved).get();
     return {
       .server = server,
@@ -491,7 +491,7 @@ impostor_test_pair started_client_and_impostor(
     auto client = ss::make_shared<http::client>(conf);
     auto server = ss::make_shared<http_server_impostor>(
       request_data, response_data);
-    auto resolved = rpc::resolve_dns(conf.server_addr).get();
+    auto resolved = net::resolve_dns(conf.server_addr).get();
     server->listen(resolved);
     return {
       .server = server,
