@@ -86,6 +86,8 @@ class RpkClusterTest(RedpandaTest):
                 # dmidecode doesn't work in ducktape containers, ignore
                 # errors about it.
                 continue
+            if re.match('.* error querying .*\.ntp\..* i\/o timeout', l):
+                self.logger.error(f"Non-fatal transitory NTP error: {l}")
             else:
                 self.logger.error(f"Bad output line: {l}")
                 filtered_errors.append(l)
