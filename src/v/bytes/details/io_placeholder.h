@@ -24,7 +24,7 @@ public:
     io_placeholder() noexcept = default;
 
     io_placeholder(
-      iterator iter, size_t initial_index, size_t max_size_to_write)
+      iterator const& iter, size_t initial_index, size_t max_size_to_write)
       : _iter(iter)
       , _byte_index(initial_index)
       , _remaining_size(max_size_to_write) {}

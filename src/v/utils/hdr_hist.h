@@ -45,6 +45,8 @@ inline hdr_histogram_ptr make_unique_hdr_histogram(
 // Potentially VERY expensive object. At default granularity is about 4k bytes
 class hdr_hist {
 public:
+    static constexpr int64_t us_per_hour = 3600000000;
+
     using clock_type = std::chrono::high_resolution_clock;
     /// \brief move-only type to tracking durations
     /// if hdr_hist ptr goes out of scope, it will detach itself
@@ -104,8 +106,8 @@ public:
         friend std::ostream& operator<<(std::ostream& o, const measurement&);
     };
 
-    hdr_hist(
-      int64_t max_value = 3600000000,
+    explicit hdr_hist(
+      int64_t max_value = us_per_hour,
       int64_t min = 1,
       int32_t significant_figures = 1)
       : _hist(hist_internal::make_unique_hdr_histogram(

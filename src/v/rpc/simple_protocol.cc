@@ -17,6 +17,12 @@
 #include <exception>
 
 namespace rpc {
+
+/*
+ * the size threshold above which a reply message will use compression.
+ */
+static constexpr size_t reply_min_compression_bytes = 1024;
+
 struct server_context_impl final : streaming_context {
     server_context_impl(server::resources s, header h)
       : res(std::move(s))
@@ -63,7 +69,7 @@ ss::future<> simple_protocol::apply(server::resources rs) {
 
 ss::future<>
 send_reply(ss::lw_shared_ptr<server_context_impl> ctx, netbuf buf) {
-    buf.set_min_compression_bytes(1024);
+    buf.set_min_compression_bytes(reply_min_compression_bytes);
     buf.set_compression(rpc::compression_type::zstd);
     buf.set_correlation_id(ctx->get_header().correlation_id);
 
@@ -75,7 +81,7 @@ send_reply(ss::lw_shared_ptr<server_context_impl> ctx, netbuf buf) {
         return ss::make_ready_future<>();
     }
     return ctx->res.conn->write(std::move(view))
-      .handle_exception([ctx](std::exception_ptr e) {
+      .handle_exception([ctx = std::move(ctx)](std::exception_ptr e) {
           vlog(rpclog.info, "Error dispatching method: {}", e);
           ctx->res.conn->shutdown_input();
       });

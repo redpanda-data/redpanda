@@ -180,6 +180,12 @@ protected:
     type _value;
 };
 
+template<typename T, typename Tag, typename IsConstexpr>
+inline std::ostream&
+operator<<(std::ostream& o, const base_named_type<T, Tag, IsConstexpr>& t) {
+    return o << "{" << t() << "}";
+};
+
 } // namespace detail
 
 template<typename T, typename Tag>
@@ -196,10 +202,4 @@ struct hash<named_type<T, Tag>> {
         return std::hash<T>()(x);
     }
 };
-
-template<typename T, typename Tag>
-inline ostream& operator<<(ostream& o, const ::named_type<T, Tag>& t) {
-    return o << "{" << t() << "}";
-};
-
 } // namespace std

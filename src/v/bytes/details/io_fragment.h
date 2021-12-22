@@ -109,6 +109,7 @@ public:
     char* get_current() { return _buf.get_write() + _used_bytes; }
     char* get_write() { return _buf.get_write(); }
 
+    // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
     safe_intrusive_list_hook hook;
 
 private:

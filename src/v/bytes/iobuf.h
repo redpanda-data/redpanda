@@ -79,7 +79,7 @@ public:
       : _frags(std::move(x._frags))
       , _size(x._size)
 #ifndef NDEBUG
-      , _verify_shard(std::move(x._verify_shard))
+      , _verify_shard(x._verify_shard)
 #endif
     {
         x._frags = container{};
