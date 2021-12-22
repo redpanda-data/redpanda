@@ -18,7 +18,7 @@
 
 namespace rpc {
 struct server_context_impl final : streaming_context {
-    server_context_impl(server::resources s, header h)
+    server_context_impl(net::server::resources s, header h)
       : res(std::move(s))
       , hdr(h) {
         res.probe().request_received();
@@ -36,12 +36,12 @@ struct server_context_impl final : streaming_context {
     void body_parse_exception(std::exception_ptr e) final {
         pr.set_exception(std::move(e));
     }
-    server::resources res;
+    net::server::resources res;
     header hdr;
     ss::promise<> pr;
 };
 
-ss::future<> simple_protocol::apply(server::resources rs) {
+ss::future<> simple_protocol::apply(net::server::resources rs) {
     return ss::do_until(
       [rs] { return rs.conn->input().eof() || rs.abort_requested(); },
       [this, rs]() mutable {
@@ -82,7 +82,7 @@ send_reply(ss::lw_shared_ptr<server_context_impl> ctx, netbuf buf) {
 }
 
 ss::future<>
-simple_protocol::dispatch_method_once(header h, server::resources rs) {
+simple_protocol::dispatch_method_once(header h, net::server::resources rs) {
     const auto method_id = h.meta;
     auto ctx = ss::make_lw_shared<server_context_impl>(rs, h);
     rs.probe().add_bytes_received(size_of_rpc_header + h.payload_size);

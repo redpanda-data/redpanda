@@ -25,7 +25,7 @@
 #include "rpc/backoff_policy.h"
 #include "rpc/connection_cache.h"
 #include "net/dns.h"
-#include "rpc/server.h"
+#include "net/server.h"
 #include "rpc/simple_protocol.h"
 #include "rpc/types.h"
 #include "storage/api.h"
@@ -176,7 +176,7 @@ struct raft_node {
           .invoke_on(0, [this](test_raft_manager& mgr) { mgr.c = consensus; })
           .get0();
         server
-          .invoke_on_all([this](rpc::server& s) {
+          .invoke_on_all([this](net::server& s) {
               auto proto = std::make_unique<rpc::simple_protocol>();
               proto
                 ->register_service<raft::service<test_raft_manager, raft_node>>(
@@ -188,7 +188,7 @@ struct raft_node {
               s.set_protocol(std::move(proto));
           })
           .get0();
-        server.invoke_on_all(&rpc::server::start).get0();
+        server.invoke_on_all(&net::server::start).get0();
         hbeats = std::make_unique<raft::heartbeat_manager>(
           heartbeat_interval,
           raft::make_rpc_client_protocol(broker.id(), cache),
@@ -308,7 +308,7 @@ struct raft_node {
     ss::sharded<raft::recovery_throttle> recovery_throttle;
     std::unique_ptr<storage::log> log;
     ss::sharded<rpc::connection_cache> cache;
-    ss::sharded<rpc::server> server;
+    ss::sharded<net::server> server;
     ss::sharded<test_raft_manager> raft_manager;
     std::unique_ptr<raft::heartbeat_manager> hbeats;
     consensus_ptr consensus;

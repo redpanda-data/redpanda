@@ -14,6 +14,5 @@
 namespace rpc {
 
 class connection_cache;
-class server;
 
 } // namespace rpc

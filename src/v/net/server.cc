@@ -7,13 +7,12 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "rpc/server.h"
+#include "net/server.h"
 
 #include "config/configuration.h"
 #include "likely.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "rpc/logger.h"
-#include "rpc/parse_utils.h"
 #include "rpc/types.h"
 #include "ssx/sformat.h"
 #include "vassert.h"
@@ -24,13 +23,13 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/net/api.hh>
 
-namespace rpc {
+namespace net {
 
-server::server(server_configuration c)
+server::server(rpc::server_configuration c)
   : cfg(std::move(c))
   , _memory(cfg.max_service_memory_per_core) {}
 
-server::server(ss::sharded<server_configuration>* s)
+server::server(ss::sharded<rpc::server_configuration>* s)
   : server(s->local()) {}
 
 server::~server() = default;
@@ -83,7 +82,7 @@ static inline void print_exceptional_future(
     }
 
     vlog(
-      rpclog.error,
+      rpc::rpclog.error,
       "{} - Error[{}] remote address: {} - {}",
       proto->name(),
       ctx,
@@ -140,7 +139,7 @@ ss::future<> server::accept(listener& s) {
                 ar.remote_address,
                 _probe);
               vlog(
-                rpclog.trace,
+                rpc::rpclog.trace,
                 "{} - Incoming connection from {} on \"{}\"",
                 _proto->name(),
                 ar.remote_address,
@@ -163,13 +162,13 @@ ss::future<> server::accept(listener& s) {
 void server::shutdown_input() {
     ss::sstring proto_name = _proto ? _proto->name() : "protocol not set";
     vlog(
-      rpclog.info, "{} - Stopping {} listeners", proto_name, _listeners.size());
+      rpc::rpclog.info, "{} - Stopping {} listeners", proto_name, _listeners.size());
     for (auto& l : _listeners) {
         l->socket.abort_accept();
     }
-    vlog(rpclog.debug, "{} - Service probes {}", proto_name, _probe);
+    vlog(rpc::rpclog.debug, "{} - Service probes {}", proto_name, _probe);
     vlog(
-      rpclog.info,
+      rpc::rpclog.info,
       "{} - Shutting down {} connections",
       proto_name,
       _connections.size());

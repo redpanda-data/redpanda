@@ -3,7 +3,6 @@ v_cc_library(
   SRCS
     types.cc
     netbuf.cc
-    server.cc
     transport.cc
     probes.cc
     reconnect_transport.cc

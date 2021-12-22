@@ -5,6 +5,7 @@ v_cc_library(
     dns.cc
     transport.cc
     connection.cc
+    server.cc
   DEPS
     Seastar::seastar
   )

@@ -26,7 +26,7 @@
 #include <type_traits>
 #include <vector>
 
-namespace rpc {
+namespace net {
 
 class server {
 public:
@@ -40,7 +40,7 @@ public:
         // NOLINTNEXTLINE
         ss::lw_shared_ptr<net::connection> conn;
 
-        server_probe& probe() { return _s->_probe; }
+        rpc::server_probe& probe() { return _s->_probe; }
         ss::semaphore& memory() { return _s->_memory; }
         hdr_hist& hist() { return _s->_hist; }
         ss::gate& conn_gate() { return _s->_conn_gate; }
@@ -64,8 +64,8 @@ public:
         virtual ss::future<> apply(server::resources) = 0;
     };
 
-    explicit server(server_configuration);
-    explicit server(ss::sharded<server_configuration>* s);
+    explicit server(rpc::server_configuration);
+    explicit server(ss::sharded<rpc::server_configuration>* s);
     server(server&&) noexcept = default;
     server& operator=(server&&) noexcept = delete;
     server(const server&) = delete;
@@ -93,7 +93,7 @@ public:
      */
     ss::future<> stop();
 
-    const server_configuration cfg; // NOLINT
+    const rpc::server_configuration cfg; // NOLINT
     const hdr_hist& histogram() const { return _hist; }
 
 private:
@@ -117,8 +117,8 @@ private:
     ss::abort_source _as;
     ss::gate _conn_gate;
     hdr_hist _hist;
-    server_probe _probe;
+    rpc::server_probe _probe;
     ss::metrics::metric_groups _metrics;
 };
 
-} // namespace rpc
+} // namespace net

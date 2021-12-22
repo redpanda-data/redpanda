@@ -13,7 +13,7 @@
 #include "coproc/script_manager.h"
 #include "coproc/types.h"
 #include "model/validation.h"
-#include "rpc/server.h"
+#include "net/server.h"
 #include "rpc/types.h"
 #include "storage/log.h"
 

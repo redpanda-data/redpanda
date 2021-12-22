@@ -50,7 +50,7 @@
 #include "raft/service.h"
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/io_priority.h"
-#include "rpc/server.h"
+#include "net/server.h"
 #include "rpc/simple_protocol.h"
 #include "storage/backlog_controller.h"
 #include "storage/chunk_cache.h"
@@ -687,13 +687,13 @@ void application::wire_up_redpanda_services() {
      */
     _deferred.emplace_back([this] {
         if (_rpc.local_is_initialized()) {
-            _rpc.invoke_on_all(&rpc::server::wait_for_shutdown).get();
+            _rpc.invoke_on_all(&net::server::wait_for_shutdown).get();
             _rpc.stop().get();
         }
     });
     _deferred.emplace_back([this] {
         if (_kafka_server.local_is_initialized()) {
-            _kafka_server.invoke_on_all(&rpc::server::wait_for_shutdown).get();
+            _kafka_server.invoke_on_all(&net::server::wait_for_shutdown).get();
             _kafka_server.stop().get();
         }
     });
@@ -1074,7 +1074,7 @@ void application::start_redpanda() {
 
     syschecks::systemd_message("Starting RPC").get();
     _rpc
-      .invoke_on_all([this](rpc::server& s) {
+      .invoke_on_all([this](net::server& s) {
           auto proto = std::make_unique<rpc::simple_protocol>();
           proto->register_service<cluster::id_allocator>(
             _scheduling_groups.raft_sg(),
@@ -1117,10 +1117,10 @@ void application::start_redpanda() {
           s.set_protocol(std::move(proto));
       })
       .get();
-    _rpc.invoke_on_all(&rpc::server::start).get();
+    _rpc.invoke_on_all(&net::server::start).get();
     // shutdown input on RPC server
     _deferred.emplace_back(
-      [this] { _rpc.invoke_on_all(&rpc::server::shutdown_input).get(); });
+      [this] { _rpc.invoke_on_all(&net::server::shutdown_input).get(); });
     vlog(
       _log.info,
       "Started RPC server listening at {}",
@@ -1154,7 +1154,7 @@ void application::start_redpanda() {
 
     // Kafka API
     _kafka_server
-      .invoke_on_all([this, qdc_config](rpc::server& s) {
+      .invoke_on_all([this, qdc_config](net::server& s) {
           auto proto = std::make_unique<kafka::protocol>(
             smp_service_groups.kafka_smp_sg(),
             metadata_cache,
@@ -1177,10 +1177,10 @@ void application::start_redpanda() {
           s.set_protocol(std::move(proto));
       })
       .get();
-    _kafka_server.invoke_on_all(&rpc::server::start).get();
+    _kafka_server.invoke_on_all(&net::server::start).get();
     // shutdown Kafka server input
     _deferred.emplace_back([this] {
-        _kafka_server.invoke_on_all(&rpc::server::shutdown_input).get();
+        _kafka_server.invoke_on_all(&net::server::shutdown_input).get();
     });
     vlog(
       _log.info,

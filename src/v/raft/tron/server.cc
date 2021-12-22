@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "rpc/server.h"
+#include "net/server.h"
 
 #include "config/configuration.h"
 #include "platform/stop_signal.h"
@@ -254,7 +254,7 @@ group_cfg_from_args(const po::variables_map& opts) {
 int main(int args, char** argv, char** env) {
     syschecks::initialize_intrinsics();
     std::setvbuf(stdout, nullptr, _IOLBF, 1024);
-    ss::sharded<rpc::server> serv;
+    ss::sharded<net::server> serv;
     ss::sharded<rpc::connection_cache> connection_cache;
     ss::sharded<simple_group_manager> group_manager;
     ss::app_template app;
@@ -321,7 +321,7 @@ int main(int args, char** argv, char** env) {
             simple_shard_lookup shard_table;
             serv
               .invoke_on_all(
-                [&shard_table, &group_manager, hbeat_interval](rpc::server& s) {
+                [&shard_table, &group_manager, hbeat_interval](net::server& s) {
                     auto proto = std::make_unique<rpc::simple_protocol>();
                     proto->register_service<raft::tron::service<
                       simple_group_manager,
@@ -341,7 +341,7 @@ int main(int args, char** argv, char** env) {
                 })
               .get();
             vlog(tronlog.info, "Invoking rpc start on all cores");
-            serv.invoke_on_all(&rpc::server::start).get();
+            serv.invoke_on_all(&net::server::start).get();
             vlog(tronlog.info, "Starting group manager");
             group_manager
               .invoke_on_all([&cfg](simple_group_manager& m) {

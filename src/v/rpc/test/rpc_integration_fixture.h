@@ -12,7 +12,7 @@
 #pragma once
 #include "config/tls_config.h"
 #include "net/dns.h"
-#include "rpc/server.h"
+#include "net/server.h"
 #include "rpc/service.h"
 #include "rpc/simple_protocol.h"
 #include "rpc/test/cycling_service.h"
@@ -164,7 +164,7 @@ public:
             : nullptr);
         scfg.max_service_memory_per_core = static_cast<int64_t>(
           ss::memory::stats().total_memory() / 10);
-        _server = std::make_unique<rpc::server>(std::move(scfg));
+        _server = std::make_unique<net::server>(std::move(scfg));
         _proto = std::make_unique<rpc::simple_protocol>();
     }
 
@@ -183,7 +183,7 @@ private:
     }
 
     std::unique_ptr<rpc::simple_protocol> _proto;
-    std::unique_ptr<rpc::server> _server;
+    std::unique_ptr<net::server> _server;
 };
 
 class rpc_sharded_integration_fixture : public rpc_base_integration_fixture {
@@ -193,7 +193,7 @@ public:
 
     void start_server() override {
         check_server();
-        _server.invoke_on_all(&rpc::server::start).get();
+        _server.invoke_on_all(&net::server::start).get();
     }
 
     void stop_server() override { _server.stop().get(); }
@@ -221,7 +221,7 @@ public:
         _server
           .invoke_on_all(
             [this, args = std::make_tuple(std::forward<Args>(args)...)](
-              rpc::server& s) mutable {
+              net::server& s) mutable {
                 std::apply(
                   [this, &s](Args&&... args) mutable {
                       auto proto = std::make_unique<rpc::simple_protocol>();
@@ -251,7 +251,7 @@ private:
         }
     }
 
-    ss::sharded<rpc::server> _server;
+    ss::sharded<net::server> _server;
 };
 
 class rpc_integration_fixture : public rpc_simple_integration_fixture {
