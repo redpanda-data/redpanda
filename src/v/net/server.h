@@ -26,7 +26,57 @@
 #include <type_traits>
 #include <vector>
 
+/*
+ * TODO:
+ *  - server_config has some simple_protocol bits
+ */
 namespace net {
+
+struct server_endpoint {
+    ss::sstring name;
+    ss::socket_address addr;
+    ss::shared_ptr<ss::tls::server_credentials> credentials;
+
+    server_endpoint(ss::sstring name, ss::socket_address addr)
+      : name(std::move(name))
+      , addr(addr) {}
+
+    server_endpoint(
+      ss::sstring name,
+      ss::socket_address addr,
+      ss::shared_ptr<ss::tls::server_credentials> creds)
+      : name(std::move(name))
+      , addr(addr)
+      , credentials(std::move(creds)) {}
+
+    server_endpoint(
+      ss::socket_address addr,
+      ss::shared_ptr<ss::tls::server_credentials> creds)
+      : server_endpoint("", addr, std::move(creds)) {}
+
+    explicit server_endpoint(ss::socket_address addr)
+      : server_endpoint("", addr) {}
+};
+
+std::ostream& operator<<(std::ostream&, const server_endpoint&);
+
+struct server_configuration {
+    std::vector<server_endpoint> addrs;
+    int64_t max_service_memory_per_core;
+    std::optional<int> listen_backlog;
+    std::optional<int> tcp_recv_buf;
+    std::optional<int> tcp_send_buf;
+    rpc::metrics_disabled disable_metrics = rpc::metrics_disabled::no;
+    ss::sstring name;
+    // we use the same default as seastar for load balancing algorithm
+    ss::server_socket::load_balancing_algorithm load_balancing_algo
+      = ss::server_socket::load_balancing_algorithm::connection_distribution;
+
+    explicit server_configuration(ss::sstring n)
+      : name(std::move(n)) {}
+};
+
+std::ostream& operator<<(std::ostream&, const server_configuration&);
 
 class server {
 public:
@@ -64,8 +114,8 @@ public:
         virtual ss::future<> apply(server::resources) = 0;
     };
 
-    explicit server(rpc::server_configuration);
-    explicit server(ss::sharded<rpc::server_configuration>* s);
+    explicit server(server_configuration);
+    explicit server(ss::sharded<server_configuration>* s);
     server(server&&) noexcept = default;
     server& operator=(server&&) noexcept = delete;
     server(const server&) = delete;
@@ -93,7 +143,7 @@ public:
      */
     ss::future<> stop();
 
-    const rpc::server_configuration cfg; // NOLINT
+    const server_configuration cfg; // NOLINT
     const hdr_hist& histogram() const { return _hist; }
 
 private:

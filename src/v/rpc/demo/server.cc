@@ -79,7 +79,7 @@ int main(int args, char** argv, char** env) {
         });
         auto& cfg = app.configuration();
         return ss::async([&] {
-            rpc::server_configuration scfg("demo_rpc");
+            net::server_configuration scfg("demo_rpc");
             auto key = cfg["key"].as<std::string>();
             auto cert = cfg["cert"].as<std::string>();
             ss::shared_ptr<ss::tls::server_credentials> creds;

@@ -252,47 +252,6 @@ inline result<T> get_ctx_data(result<client_context<T>>&& ctx) {
 
 using metrics_disabled = ss::bool_class<struct metrics_disabled_tag>;
 
-struct server_endpoint {
-    ss::sstring name;
-    ss::socket_address addr;
-    ss::shared_ptr<ss::tls::server_credentials> credentials;
-
-    server_endpoint(ss::sstring name, ss::socket_address addr)
-      : name(std::move(name))
-      , addr(addr) {}
-
-    server_endpoint(
-      ss::sstring name,
-      ss::socket_address addr,
-      ss::shared_ptr<ss::tls::server_credentials> creds)
-      : name(std::move(name))
-      , addr(addr)
-      , credentials(std::move(creds)) {}
-
-    server_endpoint(
-      ss::socket_address addr,
-      ss::shared_ptr<ss::tls::server_credentials> creds)
-      : server_endpoint("", addr, std::move(creds)) {}
-
-    explicit server_endpoint(ss::socket_address addr)
-      : server_endpoint("", addr) {}
-};
-
-struct server_configuration {
-    std::vector<server_endpoint> addrs;
-    int64_t max_service_memory_per_core;
-    std::optional<int> listen_backlog;
-    std::optional<int> tcp_recv_buf;
-    std::optional<int> tcp_send_buf;
-    metrics_disabled disable_metrics = metrics_disabled::no;
-    ss::sstring name;
-    // we use the same default as seastar for load balancing algorithm
-    ss::server_socket::load_balancing_algorithm load_balancing_algo
-      = ss::server_socket::load_balancing_algorithm::connection_distribution;
-
-    explicit server_configuration(ss::sstring n)
-      : name(std::move(n)) {}
-};
 struct transport_configuration {
     net::unresolved_address server_addr;
     /// \ brief The default timeout PER connection body. After we
@@ -306,7 +265,5 @@ struct transport_configuration {
 };
 
 std::ostream& operator<<(std::ostream&, const header&);
-std::ostream& operator<<(std::ostream&, const server_endpoint&);
-std::ostream& operator<<(std::ostream&, const server_configuration&);
 std::ostream& operator<<(std::ostream&, const status&);
 } // namespace rpc

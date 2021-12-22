@@ -25,11 +25,11 @@
 
 namespace net {
 
-server::server(rpc::server_configuration c)
+server::server(server_configuration c)
   : cfg(std::move(c))
   , _memory(cfg.max_service_memory_per_core) {}
 
-server::server(ss::sharded<rpc::server_configuration>* s)
+server::server(ss::sharded<server_configuration>* s)
   : server(s->local()) {}
 
 server::~server() = default;
@@ -223,4 +223,30 @@ void server::setup_metrics() {
          [this] { return _hist.seastar_histogram_logform(); },
          sm::description(ssx::sformat("{}: Latency ", cfg.name)))});
 }
+
+std::ostream& operator<<(std::ostream& o, const server_configuration& c) {
+    o << "{";
+    for (auto& a : c.addrs) {
+        o << a;
+    }
+    o << ", max_service_memory_per_core: " << c.max_service_memory_per_core
+      << ", metrics_enabled:" << !c.disable_metrics;
+    return o << "}";
+}
+
+std::ostream& operator<<(std::ostream& os, const server_endpoint& ep) {
+    /**
+     * We use simmillar syntax to kafka to indicate if endpoint is secured f.e.:
+     *
+     * SECURED://127.0.0.1:9092
+     */
+    fmt::print(
+      os,
+      "{{{}://{}:{}}}",
+      ep.name,
+      ep.addr,
+      ep.credentials ? "SECURED" : "PLAINTEXT");
+    return os;
+}
+
 } // namespace rpc

@@ -810,10 +810,10 @@ void application::wire_up_redpanda_services() {
     syschecks::systemd_message("Adding kafka quota manager").get();
     construct_service(quota_mgr).get();
     // rpc
-    ss::sharded<rpc::server_configuration> rpc_cfg;
+    ss::sharded<net::server_configuration> rpc_cfg;
     rpc_cfg.start(ss::sstring("internal_rpc")).get();
     rpc_cfg
-      .invoke_on_all([this](rpc::server_configuration& c) {
+      .invoke_on_all([this](net::server_configuration& c) {
           return ss::async([this, &c] {
               auto rpc_server_addr
                 = net::resolve_dns(config::node().rpc_server()).get0();
@@ -918,10 +918,10 @@ void application::wire_up_redpanda_services() {
       std::ref(rm_partition_frontend))
       .get();
 
-    ss::sharded<rpc::server_configuration> kafka_cfg;
+    ss::sharded<net::server_configuration> kafka_cfg;
     kafka_cfg.start(ss::sstring("kafka_rpc")).get();
     kafka_cfg
-      .invoke_on_all([this](rpc::server_configuration& c) {
+      .invoke_on_all([this](net::server_configuration& c) {
           return ss::async([this, &c] {
               c.max_service_memory_per_core
                 = memory_groups::kafka_total_memory();

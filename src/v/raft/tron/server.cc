@@ -271,7 +271,7 @@ int main(int args, char** argv, char** env) {
             connection_cache.start().get();
             auto ccd = ss::defer(
               [&connection_cache] { connection_cache.stop().get(); });
-            rpc::server_configuration scfg("tron_rpc");
+            net::server_configuration scfg("tron_rpc");
 
             scfg.max_service_memory_per_core
               = ss::memory::stats().total_memory() * .7;
