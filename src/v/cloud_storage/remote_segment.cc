@@ -531,6 +531,7 @@ ss::future<result<ss::circular_buffer<model::record_batch>>>
 remote_segment_batch_reader::read_some(
   model::timeout_clock::time_point deadline,
   storage::offset_translator_state& ot_state) {
+    ss::gate::holder h(_gate);
     if (_ringbuf.empty()) {
         if (!_parser) {
             // remote_segment_batch_reader shouldn't be used concurrently
@@ -592,6 +593,7 @@ size_t remote_segment_batch_reader::produce(model::record_batch batch) {
 
 ss::future<> remote_segment_batch_reader::stop() {
     vlog(_ctxlog.debug, "remote_segment_batch_reader::close");
+    co_await _gate.close();
     if (_parser) {
         vlog(
           _ctxlog.debug, "remote_segment_batch_reader::close - parser-close");
