@@ -51,6 +51,7 @@
 #include <exception>
 #include <numeric>
 #include <random>
+#include <system_error>
 
 using namespace std::chrono_literals;
 using namespace cloud_storage;
@@ -186,14 +187,20 @@ static void print_segments(const std::vector<in_memory_segment>& segments) {
 
 static std::vector<cloud_storage_fixture::expectation>
 make_imposter_expectations(
-  cloud_storage::manifest& m, const std::vector<in_memory_segment>& segments) {
+  cloud_storage::manifest& m,
+  const std::vector<in_memory_segment>& segments,
+  bool truncate_segments = false) {
     std::vector<cloud_storage_fixture::expectation> results;
     model::offset delta{0};
     for (const auto& s : segments) {
         // assume all segments has term=1
         auto url = m.get_remote_segment_path(s.sname);
+        auto body = s.bytes;
+        if (truncate_segments) {
+            body = s.bytes.substr(0, s.bytes.size() / 2);
+        }
         results.push_back(cloud_storage_fixture::expectation{
-          .url = "/" + url().string(), .body = s.bytes});
+          .url = "/" + url().string(), .body = body});
         cloud_storage::manifest::segment_meta meta{
           .is_compacted = false,
           .size_bytes = s.bytes.size(),
@@ -270,11 +277,13 @@ public:
 static auto setup_s3_imposter(
   cloud_storage_fixture& fixture,
   int num_segments,
-  int num_batches_per_segment) {
+  int num_batches_per_segment,
+  bool truncate_segments = false) {
     // Create test data
     auto segments = make_segments(num_segments, num_batches_per_segment);
     cloud_storage::manifest manifest(manifest_ntp, manifest_revision);
-    auto expectations = make_imposter_expectations(manifest, segments);
+    auto expectations = make_imposter_expectations(
+      manifest, segments, truncate_segments);
     fixture.set_expectations_and_listen(expectations);
     return segments;
 }
@@ -315,13 +324,12 @@ static model::record_batch_header read_single_batch_from_remote_partition(
 
     auto partition = ss::make_lw_shared<remote_partition>(
       manifest, api, *fixture.cache, bucket);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     auto reader = partition->make_reader(reader_config).get().reader;
 
     auto headers_read
       = reader.consume(test_consumer(), model::no_timeout).get();
-
-    partition->stop().get();
 
     vlog(test_log.debug, "num headers: {}", headers_read.size());
     BOOST_REQUIRE(headers_read.size() == 1);
@@ -347,13 +355,13 @@ static std::vector<model::record_batch_header> scan_remote_partition(
 
     auto partition = ss::make_lw_shared<remote_partition>(
       manifest, api, *imposter.cache, bucket);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     auto reader = partition->make_reader(reader_config).get().reader;
 
     auto headers_read
       = reader.consume(test_consumer(), model::no_timeout).get();
 
-    partition->stop().get();
     return headers_read;
 }
 
@@ -413,6 +421,18 @@ FIXTURE_TEST(test_remote_partition_single_batch_5, cloud_storage_fixture) {
     BOOST_REQUIRE(hdr.last_offset() == target);
 }
 
+FIXTURE_TEST(
+  test_remote_partition_single_batch_truncated_segments,
+  cloud_storage_fixture) {
+    auto segments = setup_s3_imposter(*this, 3, 10, /*truncate_segments=*/true);
+    auto target = segments[2].max_offset;
+    vlog(test_log.debug, "target offset: {}", target);
+    print_segments(segments);
+    BOOST_REQUIRE_THROW(
+      read_single_batch_from_remote_partition(*this, target),
+      std::system_error);
+}
+
 /// This test scans the entire range of offsets
 FIXTURE_TEST(test_remote_partition_scan_full, cloud_storage_fixture) {
     constexpr int batches_per_segment = 10;
@@ -432,6 +452,24 @@ FIXTURE_TEST(test_remote_partition_scan_full, cloud_storage_fixture) {
     auto coverage = get_coverage(headers_read, segments, batches_per_segment);
     auto nmatches = std::count(coverage.begin(), coverage.end(), true);
     BOOST_REQUIRE_EQUAL(nmatches, coverage.size());
+}
+
+/// This test scans the entire range of offsets
+FIXTURE_TEST(
+  test_remote_partition_scan_full_truncated_segments, cloud_storage_fixture) {
+    constexpr int batches_per_segment = 10;
+    constexpr int num_segments = 3;
+    constexpr int total_batches = batches_per_segment * num_segments;
+
+    auto segments = setup_s3_imposter(*this, 3, 10, /*truncate_segments=*/true);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments - 1].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+    print_segments(segments);
+
+    BOOST_REQUIRE_THROW(
+      scan_remote_partition(*this, base, max), std::system_error);
 }
 
 /// This test scans first half of batches
@@ -864,6 +902,7 @@ scan_remote_partition_incrementally(
 
     auto partition = ss::make_lw_shared<remote_partition>(
       manifest, api, *imposter.cache, bucket);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     std::vector<model::record_batch_header> headers;
 
@@ -890,7 +929,6 @@ scan_remote_partition_incrementally(
         num_fetches++;
     }
     BOOST_REQUIRE(num_fetches != 1);
-    partition->stop().get();
     vlog(test_log.info, "{} fetch operations performed", num_fetches);
     return headers;
 }

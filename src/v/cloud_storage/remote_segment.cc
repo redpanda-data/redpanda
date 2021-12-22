@@ -31,6 +31,8 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 
+#include <fmt/core.h>
+
 #include <exception>
 
 namespace cloud_storage {
@@ -159,11 +161,6 @@ ss::future<> remote_segment::run_hydrate_bg() {
         while (!_gate.is_closed()) {
             co_await _bg_cvar.wait(
               [this] { return !_wait_list.empty() || _gate.is_closed(); });
-            vlog(
-              _ctxlog.info,
-              "Start hydrating segment {}, {} consumers are awaiting",
-              full_path,
-              _wait_list.size());
             auto status = co_await _cache.is_cached(full_path);
             std::exception_ptr err;
             switch (status) {
@@ -219,7 +216,7 @@ ss::future<> remote_segment::run_hydrate_bg() {
             }
         }
     } catch (const ss::broken_condition_variable&) {
-        vlog(_ctxlog.info, "Hydraton loop is stopped");
+        vlog(_ctxlog.debug, "Hydraton loop is stopped");
     } catch (...) {
         vlog(
           _ctxlog.error,
@@ -499,10 +496,23 @@ remote_segment_batch_reader::read_some(
 
         _cur_ot_state = ot_state;
         auto deferred = ss::defer([this] { _cur_ot_state = std::nullopt; });
-        auto bytes_consumed = co_await _parser->consume();
-        if (!bytes_consumed) {
-            co_return bytes_consumed.error();
+        auto new_bytes_consumed = co_await _parser->consume();
+        if (!new_bytes_consumed) {
+            co_return new_bytes_consumed.error();
         }
+        if (
+          _bytes_consumed != 0 && _bytes_consumed == new_bytes_consumed.value()
+          && !_config.over_budget) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "segment_reader is stuck, segment ntp: {}, _cur_rp_offset: {}, "
+              "_bytes_consumed: "
+              "{}",
+              _seg->get_ntp(),
+              _cur_rp_offset,
+              _bytes_consumed));
+        }
+        _bytes_consumed = new_bytes_consumed.value();
     }
     _total_size = 0;
     co_return std::move(_ringbuf);
