@@ -10,6 +10,7 @@
 #include "storage/segment_appender.h"
 
 #include "config/configuration.h"
+#include "config/fixed.h"
 #include "likely.h"
 #include "storage/chunk_cache.h"
 #include "storage/logger.h"
@@ -367,13 +368,17 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
                 *this);
           }
           // TODO propagate error upward when safe
-          vassert(
-            false,
-            "We failed to fallocate file. This usually means we have ran out "
-            "of disk space. Please check your data partition and ensure you "
-            "have enough space. Error: {} - {}",
-            e,
-            *this);
+          if constexpr(config::fixed::file_fail_injection) {
+            std::rethrow_exception(e);
+          } else {
+              vassert(
+                false,
+                "We failed to fallocate file. This usually means we have ran "
+                "out of disk space. Please check your data partition and "
+                "ensure you have enough space. Error: {} - {}",
+                e,
+                *this);
+          }
       });
 }
 
