@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "rpc/connection.h"
+#include "net/connection.h"
 #include "rpc/types.h"
 #include "utils/hdr_hist.h"
 
@@ -33,12 +33,12 @@ public:
     // always guaranteed non-null
     class resources final {
     public:
-        resources(server* s, ss::lw_shared_ptr<connection> c)
+        resources(server* s, ss::lw_shared_ptr<net::connection> c)
           : conn(std::move(c))
           , _s(s) {}
 
         // NOLINTNEXTLINE
-        ss::lw_shared_ptr<connection> conn;
+        ss::lw_shared_ptr<net::connection> conn;
 
         server_probe& probe() { return _s->_probe; }
         ss::semaphore& memory() { return _s->_memory; }
@@ -113,7 +113,7 @@ private:
     std::unique_ptr<protocol> _proto;
     ss::semaphore _memory;
     std::vector<std::unique_ptr<listener>> _listeners;
-    boost::intrusive::list<connection> _connections;
+    boost::intrusive::list<net::connection> _connections;
     ss::abort_source _as;
     ss::gate _conn_gate;
     hdr_hist _hist;

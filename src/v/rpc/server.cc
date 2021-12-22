@@ -133,7 +133,7 @@ ss::future<> server::accept(listener& s) {
                     SOL_SOCKET, SO_SNDBUF, &send_buf, sizeof(send_buf));
               }
 
-              auto conn = ss::make_lw_shared<connection>(
+              auto conn = ss::make_lw_shared<net::connection>(
                 _connections,
                 s.name,
                 std::move(ar.connection),
@@ -187,7 +187,7 @@ ss::future<> server::wait_for_shutdown() {
 
     return _conn_gate.close().then([this] {
         return seastar::do_for_each(
-          _connections, [](connection& c) { return c.shutdown(); });
+          _connections, [](net::connection& c) { return c.shutdown(); });
     });
 }
 

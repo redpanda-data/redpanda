@@ -4,6 +4,7 @@ v_cc_library(
     batched_output_stream.cc
     dns.cc
     transport.cc
+    connection.cc
   DEPS
     Seastar::seastar
   )

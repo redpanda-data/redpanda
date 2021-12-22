@@ -5,7 +5,6 @@ v_cc_library(
     netbuf.cc
     server.cc
     transport.cc
-    connection.cc
     probes.cc
     reconnect_transport.cc
     connection_cache.cc

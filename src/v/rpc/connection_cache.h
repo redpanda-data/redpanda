@@ -15,7 +15,7 @@
 #include "outcome.h"
 #include "outcome_future_utils.h"
 #include "rpc/backoff_policy.h"
-#include "rpc/connection.h"
+#include "net/connection.h"
 #include "rpc/errc.h"
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"

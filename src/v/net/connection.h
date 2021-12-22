@@ -21,7 +21,11 @@
 
 #include <boost/intrusive/list.hpp>
 
-namespace rpc {
+/*
+ * FIXME:
+ *  - server_probe contains bits from simple_protocol
+ */
+namespace net {
 
 class connection : public boost::intrusive::list_base_hook<> {
 public:
@@ -30,7 +34,7 @@ public:
       ss::sstring name,
       ss::connected_socket f,
       ss::socket_address a,
-      server_probe& p);
+      rpc::server_probe& p);
     ~connection() noexcept;
     connection(const connection&) = delete;
     connection& operator=(const connection&) = delete;
@@ -52,6 +56,7 @@ private:
     ss::connected_socket _fd;
     ss::input_stream<char> _in;
     net::batched_output_stream _out;
-    server_probe& _probe;
+    rpc::server_probe& _probe;
 };
-} // namespace rpc
+
+} // namespace net
