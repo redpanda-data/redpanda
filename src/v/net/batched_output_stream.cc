@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "rpc/batched_output_stream.h"
+#include "net/batched_output_stream.h"
 
 #include "likely.h"
 #include "vassert.h"
@@ -17,7 +17,8 @@
 
 #include <fmt/format.h>
 
-namespace rpc {
+namespace net {
+
 batched_output_stream::batched_output_stream(
   ss::output_stream<char> o, size_t cache)
   : _out(std::move(o))
@@ -84,4 +85,4 @@ ss::future<> batched_output_stream::stop() {
     });
 }
 
-} // namespace rpc
+} // namespace net

@@ -6,7 +6,6 @@ v_cc_library(
     server.cc
     transport.cc
     connection.cc
-    batched_output_stream.cc
     probes.cc
     logger.cc
     reconnect_transport.cc
@@ -21,6 +20,7 @@ v_cc_library(
     v::reflection
     absl::flat_hash_map
     v::compression
+    v::net
   )
 add_subdirectory(test)
 add_subdirectory(demo)

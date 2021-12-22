@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "net/batched_output_stream.h"
 #include "outcome.h"
 #include "reflection/async_adl.h"
-#include "rpc/batched_output_stream.h"
 #include "rpc/client_probe.h"
 #include "rpc/errc.h"
 #include "rpc/parse_utils.h"
@@ -71,7 +71,7 @@ protected:
     virtual void fail_outstanding_futures() {}
 
     ss::input_stream<char> _in;
-    batched_output_stream _out;
+    net::batched_output_stream _out;
     ss::gate _dispatch_gate;
     client_probe _probe;
 

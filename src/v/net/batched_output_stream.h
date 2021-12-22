@@ -16,9 +16,10 @@
 #include <seastar/core/iostream.hh>
 #include <seastar/core/semaphore.hh>
 
-#include <cstdint>
+#include <cstddef>
+#include <memory>
 
-namespace rpc {
+namespace net {
 
 /// \brief batch operations for zero copy interface of an output_stream<char>
 class batched_output_stream {
@@ -64,4 +65,4 @@ private:
     size_t _unflushed_bytes{0};
     bool _closed = false;
 };
-} // namespace rpc
+} // namespace net

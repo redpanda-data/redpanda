@@ -106,7 +106,7 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
         // Never implicitly destroy a live output stream here: output streams
         // are only safe to destroy after/during stop()
         vassert(!_out.is_valid(), "destroyed output_stream without stopping");
-        _out = batched_output_stream(_fd->output());
+        _out = net::batched_output_stream(_fd->output());
     } catch (...) {
         auto e = std::current_exception();
         _probe.connection_error(e);
