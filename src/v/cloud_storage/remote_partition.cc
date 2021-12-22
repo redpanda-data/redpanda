@@ -330,6 +330,9 @@ ss::future<> remote_partition::run_eviction_loop() {
         }
     } catch (const ss::broken_condition_variable&) {
     }
+    for (auto& rs : _eviction_list) {
+        co_await std::visit([](auto&& rs) { return rs->stop(); }, rs);
+    }
     vlog(_ctxlog.debug, "remote partition eviction loop stopped");
 }
 
