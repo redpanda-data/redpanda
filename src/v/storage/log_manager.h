@@ -225,7 +225,6 @@ private:
      *        runs inside a seastar thread
      */
     void trigger_housekeeping();
-    void arm_housekeeping();
     ss::future<> housekeeping();
 
     std::optional<batch_cache_index> create_cache(with_cache);
