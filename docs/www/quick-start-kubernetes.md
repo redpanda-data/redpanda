@@ -146,7 +146,7 @@ helm install \
 ```
 
 We recommend that you use [the verification procedure](https://cert-manager.io/docs/installation/verify/#manual-verification) in the cert-manager docs
-to verify that cert-manager is working correcly.
+to verify that cert-manager is working correctly.
 
 ## Use Helm to install Redpanda operator
 
