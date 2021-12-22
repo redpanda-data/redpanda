@@ -496,8 +496,8 @@ open_output_file_stream(const std::filesystem::path& path) {
 
 ss::future<> partition_downloader::download_segment_file(
   const segment& segm, const download_part& part) {
-    auto remote_path = manifest::generate_remote_segment_path(
-      _ntpc.ntp(), segm.meta.ntp_revision, segm.name);
+    auto remote_path = generate_remote_segment_path(
+      _ntpc.ntp(), segm.meta.ntp_revision, segm.name, segm.meta.archiver_term);
 
     vlog(
       _ctxlog.info,

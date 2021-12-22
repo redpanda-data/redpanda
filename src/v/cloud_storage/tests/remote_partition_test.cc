@@ -193,15 +193,11 @@ make_imposter_expectations(
     std::vector<cloud_storage_fixture::expectation> results;
     model::offset delta{0};
     for (const auto& s : segments) {
-        // assume all segments has term=1
         auto body = s.bytes;
         if (truncate_segments) {
             body = s.bytes.substr(0, s.bytes.size() / 2);
         }
-        auto url = manifest::generate_remote_segment_path(
-          m.get_ntp(), m.get_revision_id(), s.sname);
-        results.push_back(cloud_storage_fixture::expectation{
-          .url = "/" + url().string(), .body = body});
+
         cloud_storage::manifest::segment_meta meta{
           .is_compacted = false,
           .size_bytes = s.bytes.size(),
@@ -213,7 +209,12 @@ make_imposter_expectations(
           .ntp_revision = m.get_revision_id(),
         };
         m.add(s.sname, meta);
+
         delta = delta + model::offset(s.num_config_records);
+
+        auto url = m.generate_segment_path(s.sname, meta);
+        results.push_back(cloud_storage_fixture::expectation{
+          .url = "/" + url().string(), .body = body});
     }
     std::stringstream ostr;
     m.serialize(ostr);
