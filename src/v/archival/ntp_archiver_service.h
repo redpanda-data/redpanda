@@ -166,6 +166,7 @@ private:
     model::revision_id _rev;
     cloud_storage::remote& _remote;
     ss::lw_shared_ptr<cluster::partition> _partition;
+    model::term_id _start_term;
     archival_policy _policy;
     s3::bucket_name _bucket;
     /// Remote manifest contains representation of the data stored in S3 (it

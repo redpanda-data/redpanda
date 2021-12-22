@@ -67,7 +67,13 @@ ntp_archiver::ntp_archiver(
   , _segment_upload_timeout(conf.segment_upload_timeout)
   , _manifest_upload_timeout(conf.manifest_upload_timeout)
   , _io_priority(conf.upload_io_priority) {
-    vlog(archival_log.trace, "Create ntp_archiver {}", _ntp.path());
+    vassert(
+      _partition && _partition->is_leader(),
+      "must be the leader to launch ntp_archiver {}",
+      _ntp);
+    _start_term = _partition->term();
+    vlog(
+      archival_log.debug, "created ntp_archiver {} in term", _ntp, _start_term);
 }
 
 ss::future<> ntp_archiver::stop() {
@@ -117,8 +123,10 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
     gate_guard guard{_gate};
     retry_chain_node fib(_segment_upload_timeout, _initial_backoff, &parent);
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
-    auto path = cloud_storage::manifest::generate_remote_segment_path(
-      _ntp, _rev, candidate.exposed_name);
+
+    auto path = cloud_storage::generate_remote_segment_path(
+      _ntp, _rev, candidate.exposed_name, _start_term);
+
     vlog(ctxlog.debug, "Uploading segment {} to {}", candidate, path);
 
     auto reset_func = [this, candidate] {
@@ -235,6 +243,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
         .max_timestamp = upload.max_timestamp,
         .delta_offset = delta,
         .ntp_revision = _partition->get_revision_id(),
+        .archiver_term = _start_term,
       },
       .name = upload.exposed_name, .delta = offset - base,
       .stop = ss::stop_iteration::no,

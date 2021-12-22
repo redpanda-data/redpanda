@@ -43,6 +43,23 @@ using namespace cloud_storage;
 
 inline ss::logger test_log("test"); // NOLINT
 
+static constexpr std::string_view manifest_payload = R"json({
+    "version": 1,
+    "namespace": "test-ns",
+    "topic": "test-topic",
+    "partition": 42,
+    "revision": 0,
+    "last_offset": 1004,
+    "segments": {
+        "1-2-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 100,
+            "committed_offset": 2,
+            "base_offset": 1
+        }
+    }
+})json";
+
 static manifest load_manifest_from_str(std::string_view v) {
     manifest m;
     iobuf i;
@@ -53,7 +70,8 @@ static manifest load_manifest_from_str(std::string_view v) {
 }
 
 FIXTURE_TEST(test_download_manifest, s3_imposter_fixture) { // NOLINT
-    set_expectations_and_listen(default_expectations);
+    set_expectations_and_listen({expectation{
+      .url = "/" + manifest_url, .body = ss::sstring(manifest_payload)}});
     auto conf = get_configuration();
     remote remote(s3_connection_limit(10), conf);
     manifest actual(manifest_ntp, manifest_revision);
@@ -88,12 +106,12 @@ FIXTURE_TEST(test_download_manifest_timeout, s3_imposter_fixture) { // NOLINT
 }
 
 FIXTURE_TEST(test_upload_segment, s3_imposter_fixture) { // NOLINT
-    set_expectations_and_listen(default_expectations);
+    set_expectations_and_listen({});
     auto conf = get_configuration();
     remote remote(s3_connection_limit(10), conf);
     auto name = segment_name("1-2-v1.log");
-    auto path = manifest::generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name);
+    auto path = generate_remote_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123});
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
     auto reset_stream = [] {
@@ -115,10 +133,9 @@ FIXTURE_TEST(test_upload_segment, s3_imposter_fixture) { // NOLINT
 FIXTURE_TEST(test_upload_segment_timeout, s3_imposter_fixture) { // NOLINT
     auto conf = get_configuration();
     remote remote(s3_connection_limit(10), conf);
-    manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("1-2-v1.log");
-    auto path = manifest::generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name);
+    auto path = generate_remote_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123});
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
     auto reset_stream = [] {
@@ -135,14 +152,13 @@ FIXTURE_TEST(test_upload_segment_timeout, s3_imposter_fixture) { // NOLINT
 }
 
 FIXTURE_TEST(test_download_segment, s3_imposter_fixture) { // NOLINT
-    set_expectations_and_listen(default_expectations);
+    set_expectations_and_listen({});
     auto conf = get_configuration();
     auto bucket = s3::bucket_name("bucket");
     remote remote(s3_connection_limit(10), conf);
-    manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("1-2-v1.log");
-    auto path = manifest::generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name);
+    auto path = generate_remote_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123});
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
     auto reset_stream = [] {
@@ -178,8 +194,8 @@ FIXTURE_TEST(test_download_segment_timeout, s3_imposter_fixture) { // NOLINT
     auto bucket = s3::bucket_name("bucket");
     remote remote(s3_connection_limit(10), conf);
     auto name = segment_name("1-2-v1.log");
-    auto path = manifest::generate_remote_segment_path(
-      manifest_ntp, manifest_revision, name);
+    auto path = generate_remote_segment_path(
+      manifest_ntp, manifest_revision, name, model::term_id{123});
 
     iobuf downloaded;
     auto try_consume = [&downloaded](uint64_t, ss::input_stream<char>) {
