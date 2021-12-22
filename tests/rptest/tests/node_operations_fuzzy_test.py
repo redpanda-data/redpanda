@@ -209,17 +209,29 @@ class NodeOperationFuzzyTest(EndToEndTest):
             wait_until(decommissioned,
                        timeout_sec=NODE_OP_TIMEOUT,
                        backoff_sec=2)
+            admin = Admin(self.redpanda)
 
-            def node_removed():
-                admin = Admin(self.redpanda)
+            def is_node_removed(idx_to_query, node_id):
                 try:
-                    brokers = admin.get_brokers()
-                    for b in brokers:
-                        if b['node_id'] == node_id:
-                            return False
-                    return True
+                    brokers = admin.get_brokers(
+                        self.redpanda.get_node(idx_to_query))
+                    ids = map(lambda broker: broker['node_id'], brokers)
+                    return not node_id in ids
                 except:
                     return False
+
+            def node_removed():
+                node_removed_cnt = 0
+                for idx in self.active_nodes:
+                    if is_node_removed(idx, node_id):
+                        node_removed_cnt += 1
+
+                node_count = len(self.redpanda.nodes)
+                majority = int(node_count / 2) + 1
+                self.redpanda.logger.debug(
+                    f"node {node_id} removed on {node_removed_cnt} nodes, majority: {majority}"
+                )
+                return node_removed_cnt >= majority
 
             wait_until(node_removed,
                        timeout_sec=NODE_OP_TIMEOUT,
