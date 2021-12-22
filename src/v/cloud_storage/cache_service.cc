@@ -160,12 +160,7 @@ ss::future<> cache::stop() {
     co_await _gate.close();
 }
 
-ss::future<std::optional<cache_item>> cache::get(
-  std::filesystem::path key,
-  size_t file_pos,
-  ss::io_priority_class io_priority,
-  size_t read_buffer_size,
-  unsigned int readahead) {
+ss::future<std::optional<cache_item>> cache::get(std::filesystem::path key) {
     gate_guard guard{_gate};
     vlog(cst_log.debug, "Trying to get {} from archival cache.", key.native());
     ss::file cache_file;
@@ -187,14 +182,8 @@ ss::future<std::optional<cache_item>> cache::get(
         }
     }
 
-    ss::file_input_stream_options options{};
-    options.buffer_size = read_buffer_size;
-    options.read_ahead = readahead;
-    options.io_priority_class = io_priority;
     auto data_size = co_await cache_file.size();
-    auto data_stream = ss::make_file_input_stream(
-      cache_file, file_pos, std::move(options));
-    co_return std::optional(cache_item{std::move(data_stream), data_size});
+    co_return std::optional(cache_item{std::move(cache_file), data_size});
 }
 
 ss::future<> cache::put(

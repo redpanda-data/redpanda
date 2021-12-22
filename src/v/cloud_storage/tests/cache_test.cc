@@ -14,6 +14,7 @@
 #include "test_utils/fixture.h"
 #include "units.h"
 
+#include <seastar/core/fstream.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/sleep.hh>
 
@@ -41,12 +42,13 @@ FIXTURE_TEST(get_after_put, cache_test_fixture) {
     BOOST_REQUIRE(returned_item);
     BOOST_CHECK_EQUAL(returned_item->size, data_string.length());
 
-    auto read_buf
-      = returned_item->body.read_exactly(data_string.length()).get();
+    auto stream = ss::make_file_input_stream(returned_item->body);
+
+    auto read_buf = stream.read_exactly(data_string.length()).get();
     BOOST_CHECK_EQUAL(
       std::string_view(read_buf.get(), read_buf.size()), data_string);
-    BOOST_CHECK(!returned_item->body.read().get().get());
-    returned_item->body.close().get();
+    BOOST_CHECK(!stream.read().get().get());
+    stream.close().get();
 }
 
 FIXTURE_TEST(put_rewrites_file, cache_test_fixture) {
@@ -61,12 +63,13 @@ FIXTURE_TEST(put_rewrites_file, cache_test_fixture) {
     BOOST_REQUIRE(returned_item);
     BOOST_CHECK_EQUAL(returned_item->size, data_string2.length());
 
-    auto read_buf
-      = returned_item->body.read_exactly(data_string2.length()).get();
+    auto body = ss::make_file_input_stream(returned_item->body);
+
+    auto read_buf = body.read_exactly(data_string2.length()).get();
     BOOST_CHECK_EQUAL(
       std::string_view(read_buf.get(), read_buf.size()), data_string2);
-    BOOST_CHECK(!returned_item->body.read().get().get());
-    returned_item->body.close().get();
+    BOOST_CHECK(!body.read().get().get());
+    body.close().get();
 }
 
 FIXTURE_TEST(get_missing_file, cache_test_fixture) {

@@ -21,6 +21,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/core/fstream.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -65,7 +66,7 @@ const char* download_exception::what() const noexcept {
     __builtin_unreachable();
 }
 
-inline void expiry_handler_impl(ss::promise<std::filesystem::path>& pr) {
+inline void expiry_handler_impl(ss::promise<ss::file>& pr) {
     pr.set_exception(ss::timed_out_error());
 }
 
@@ -136,22 +137,28 @@ const model::term_id remote_segment::get_term() const {
 ss::future<> remote_segment::stop() {
     vlog(_ctxlog.debug, "remote segment stop");
     _bg_cvar.broken();
-    return _gate.close();
+    co_await _gate.close();
+    if (_data_file) {
+        co_await _data_file.close().handle_exception(
+          [this](std::exception_ptr err) {
+              vlog(
+                _ctxlog.error, "Error '{}' while closing the '{}'", err, _path);
+          });
+    }
 }
 
 ss::future<ss::input_stream<char>>
-remote_segment::data_stream(size_t pos, ss::io_priority_class) {
+remote_segment::data_stream(size_t pos, ss::io_priority_class io_priority) {
     vlog(_ctxlog.debug, "remote segment file input stream at {}", pos);
     ss::gate::holder g(_gate);
-    // Hydrate segment on disk
-    auto full_path = co_await hydrate();
-    // Create a file stream
-    auto opt = co_await _cache.get(full_path, pos);
-    if (opt) {
-        co_return std::move(opt->body);
-    }
-    throw remote_segment_exception(
-      fmt::format("Segment {} already evicted", full_path));
+    co_await hydrate();
+    ss::file_input_stream_options options{};
+    options.buffer_size = default_read_buffer_size;
+    options.read_ahead = default_readahead;
+    options.io_priority_class = io_priority;
+    auto data_stream = ss::make_file_input_stream(
+      _data_file, pos, std::move(options));
+    co_return data_stream;
 }
 
 ss::future<> remote_segment::run_hydrate_bg() {
@@ -161,56 +168,101 @@ ss::future<> remote_segment::run_hydrate_bg() {
         while (!_gate.is_closed()) {
             co_await _bg_cvar.wait(
               [this] { return !_wait_list.empty() || _gate.is_closed(); });
-            auto status = co_await _cache.is_cached(full_path);
+            vlog(
+              _ctxlog.debug,
+              "Segment {} requested, {} consumers are awaiting, data file is "
+              "{}",
+              full_path,
+              _wait_list.size(),
+              _data_file ? "available" : "not available");
             std::exception_ptr err;
-            switch (status) {
-            case cache_element_status::in_progress:
-                vassert(
-                  false,
-                  "Hydration of segment {} is already in progress, {} waiters",
-                  full_path,
-                  _wait_list.size());
-            case cache_element_status::available:
-                vlog(
-                  _ctxlog.debug,
-                  "Hydrated segment {} is already available, {} waiters will "
-                  "be invoked",
-                  full_path,
-                  _wait_list.size());
-                break;
-            case cache_element_status::not_available: {
-                vlog(_ctxlog.info, "Hydrating segment {}", full_path);
-                auto callback =
-                  [this, full_path](
-                    uint64_t size_bytes,
-                    ss::input_stream<char> s) -> ss::future<uint64_t> {
-                    co_await _cache.put(full_path, s).finally([&s] {
-                        return s.close();
-                    });
-                    co_return size_bytes;
-                };
-                retry_chain_node local_rtc(
-                  cache_hydration_timeout, cache_hydration_backoff, &_rtc);
-                auto res = co_await _api.download_segment(
-                  _bucket, _path, _manifest, callback, local_rtc);
-                if (res != download_result::success) {
-                    vlog(
-                      _ctxlog.debug,
-                      "Failed to hydrating a segment {}, {} waiter will be "
-                      "invoked",
+            if (!_data_file) {
+                // We don't have a _data_file set so we have to check cache
+                // and retrieve the file out of it or hydrate.
+                // If _data_file is initialized we can use it safely since the
+                // cache can't delete it until we close it.
+                auto status = co_await _cache.is_cached(full_path);
+                switch (status) {
+                case cache_element_status::in_progress:
+                    vassert(
+                      false,
+                      "Hydration of segment {} is already in progress, {} "
+                      "waiters",
                       full_path,
                       _wait_list.size());
-                    err = std::make_exception_ptr(
-                      download_exception(res, full_path));
+                case cache_element_status::available:
+                    vlog(
+                      _ctxlog.debug,
+                      "Hydrated segment {} is already available, {} waiters "
+                      "will "
+                      "be invoked",
+                      full_path,
+                      _wait_list.size());
+                    break;
+                case cache_element_status::not_available: {
+                    vlog(_ctxlog.info, "Hydrating segment {}", full_path);
+                    auto callback =
+                      [this, full_path](
+                        uint64_t size_bytes,
+                        ss::input_stream<char> s) -> ss::future<uint64_t> {
+                        co_await _cache.put(full_path, s).finally([&s] {
+                            return s.close();
+                        });
+                        co_return size_bytes;
+                    };
+                    retry_chain_node local_rtc(
+                      cache_hydration_timeout, cache_hydration_backoff, &_rtc);
+                    auto res = co_await _api.download_segment(
+                      _bucket, _path, _manifest, callback, local_rtc);
+                    if (res != download_result::success) {
+                        vlog(
+                          _ctxlog.debug,
+                          "Failed to hydrating a segment {}, {} waiter will be "
+                          "invoked",
+                          full_path,
+                          _wait_list.size());
+                        err = std::make_exception_ptr(
+                          download_exception(res, full_path));
+                    }
+                } break;
                 }
-            } break;
+                if (!err) {
+                    auto maybe_file = co_await _cache.get(full_path);
+                    if (!maybe_file) {
+                        // We could got here because the cache check returned
+                        // 'cache_element_status::available' but right after
+                        // that the file was evicted from cache. It's also
+                        // possible (but very unlikely) that we got here after
+                        // successful hydration which was immediately followed
+                        // by eviction. In any case we should just re-hydrate
+                        // the segment. The 'wait' on cond-variable won't block
+                        // because the
+                        // '_wait_list' is not empty.
+                        vlog(
+                          _ctxlog.info,
+                          "Segment {} was deleted from cache and need to be "
+                          "re-hydrated, {} waiter are pending",
+                          full_path,
+                          _wait_list.size());
+                        continue;
+                    }
+                    _data_file = maybe_file->body;
+                }
             }
+            // Invariant: here we should have a data file or error to be set.
+            // If the hydration failed we will have 'err' set to some value. The
+            // error needs to be propagated further. Otherwise we will always
+            // have _data_file set because if we don't we will retry the
+            // hydration earlier.
+            vassert(
+              _data_file || err,
+              "Segment hydration succeded but file isn't available");
             while (!_wait_list.empty()) {
                 auto& p = _wait_list.front();
                 if (err) {
                     p.set_exception(err);
                 } else {
-                    p.set_value(full_path);
+                    p.set_value(_data_file);
                 }
                 _wait_list.pop_front();
             }
@@ -225,15 +277,15 @@ ss::future<> remote_segment::run_hydrate_bg() {
     }
 }
 
-ss::future<std::filesystem::path> remote_segment::hydrate() {
+ss::future<> remote_segment::hydrate() {
     return ss::with_gate(_gate, [this] {
         auto full_path = _manifest.get_remote_segment_path(_path);
         vlog(_ctxlog.debug, "segment {} hydration requested", full_path);
-        ss::promise<std::filesystem::path> p;
+        ss::promise<ss::file> p;
         auto fut = p.get_future();
         _wait_list.push_back(std::move(p), ss::lowres_clock::time_point::max());
         _bg_cvar.signal();
-        return fut;
+        return fut.discard_result();
     });
 }
 
@@ -481,6 +533,7 @@ remote_segment_batch_reader::read_some(
   storage::offset_translator_state& ot_state) {
     if (_ringbuf.empty()) {
         if (!_parser) {
+            // remote_segment_batch_reader shouldn't be used concurrently
             _parser = co_await init_parser();
         }
 
@@ -546,9 +599,9 @@ ss::future<> remote_segment_batch_reader::stop() {
     if (_parser) {
         vlog(
           _ctxlog.debug, "remote_segment_batch_reader::close - parser-close");
-        return _parser->close();
+        co_await _parser->close();
+        _parser.reset();
     }
-    return ss::now();
 }
 
 } // namespace cloud_storage
