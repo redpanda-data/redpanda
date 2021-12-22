@@ -7,24 +7,33 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import defaultdict
 import json
 import random
 
-from ducktape.mark.resource import cluster
-from ducktape.tests.test import Test
+from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
 
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.http_server import HttpServer
 from rptest.services.redpanda import RedpandaService
 
 
-class MetricsReporterTest(Test):
+class MetricsReporterTest(RedpandaTest):
     def __init__(self, test_ctx, *args, **kwargs):
         self._ctx = test_ctx
-        super(MetricsReporterTest, self).__init__(test_context=test_ctx)
+        self.http = HttpServer(self._ctx)
+        super(MetricsReporterTest, self).__init__(
+            test_context=test_ctx,
+            extra_rp_conf={
+                "health_monitor_tick_interval": 1000,
+                # report every two seconds
+                "metrics_reporter_tick_interval": 2000,
+                "metrics_reporter_report_interval": 1000,
+                "enable_metrics_reporter": True,
+                "metrics_reporter_url": f"{self.http.url}/metrics",
+            })
 
     """
     Validates key availability properties of the system using a single
@@ -38,21 +47,7 @@ class MetricsReporterTest(Test):
         returned in round robin fashion
         """
         # setup http server
-        http = HttpServer(self._ctx)
-        http.start()
-        # report every two seconds
-        extra_conf = {
-            "health_monitor_tick_interval": 1000,
-            "metrics_reporter_tick_interval": 2000,
-            "metrics_reporter_report_interval": 1000,
-            "enable_metrics_reporter": True,
-            "metrics_reporter_url": f"{http.url}/metrics",
-        }
-        self.redpanda = RedpandaService(self.test_context,
-                                        3,
-                                        KafkaCliTools,
-                                        extra_rp_conf=extra_conf)
-
+        self.http.start()
         self.redpanda.start()
 
         total_topics = 5
@@ -69,14 +64,14 @@ class MetricsReporterTest(Test):
         )
 
         def _state_up_to_date():
-            if http.requests:
-                r = json.loads(http.requests[-1]['body'])
+            if self.http.requests:
+                r = json.loads(self.http.requests[-1]['body'])
                 return r['topic_count'] == total_topics
             return False
 
         wait_until(_state_up_to_date, 20, backoff_sec=1)
-        http.stop()
-        metadata = [json.loads(r['body']) for r in http.requests]
+        self.http.stop()
+        metadata = [json.loads(r['body']) for r in self.http.requests]
         for m in metadata:
             self.redpanda.logger.info(m)
 

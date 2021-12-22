@@ -11,7 +11,7 @@ import subprocess
 import os
 import time
 
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from ducktape.mark import matrix, ignore
 from ducktape.utils.util import wait_until
 

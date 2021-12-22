@@ -1,18 +1,13 @@
-import random
-import time
-
-from ducktape.mark.resource import cluster
-from ducktape.utils.util import wait_until
-import requests
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.clients.kafka_cat import KafkaCat
-from rptest.clients.kcl import KCL
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
 
 
 class TxFeatureFlagTest(EndToEndTest):
-    @cluster(num_nodes=6)
+    @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_disabling_transactions_after_they_being_used(self):
         '''
         Validate that transactions can be safely disabled after 

@@ -7,18 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from datetime import datetime
 import random
-import time
 
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
 from rptest.services.failure_injector import FailureInjector, FailureSpec
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
 from rptest.tests.e2e_finjector import EndToEndFinjectorTest
-from rptest.tests.end_to_end import EndToEndTest
-from rptest.util import Scale
 
 
 class AvailabilityTests(EndToEndFinjectorTest):
@@ -37,7 +33,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
                             producer_timeout_sec=producer_timeout_sec,
                             consumer_timeout_sec=consumer_timeout_sec)
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_availability_when_one_node_failed(self):
         self.redpanda = RedpandaService(
             self.test_context,
@@ -65,7 +61,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
 
         self.validate_records()
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_recovery_after_catastrophic_failure(self):
 
         self.redpanda = RedpandaService(

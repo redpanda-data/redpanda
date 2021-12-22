@@ -17,7 +17,7 @@ import tempfile
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 
 BOOTSTRAP_CONFIG = {
