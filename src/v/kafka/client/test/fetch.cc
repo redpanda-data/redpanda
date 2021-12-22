@@ -22,7 +22,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "redpanda/tests/fixture.h"
-#include "utils/unresolved_address.h"
+#include "net/unresolved_address.h"
 
 #include <boost/test/tools/old/interface.hpp>
 

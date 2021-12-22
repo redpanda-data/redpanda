@@ -21,7 +21,7 @@ namespace kafka::client {
 
 ss::future<shared_broker_t> make_broker(
   model::node_id node_id,
-  unresolved_address addr,
+  net::unresolved_address addr,
   const configuration& config) {
     return cluster::maybe_build_reloadable_certificate_credentials(
              config.broker_tls())

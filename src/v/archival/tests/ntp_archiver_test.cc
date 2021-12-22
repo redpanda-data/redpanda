@@ -23,7 +23,7 @@
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/fixture.h"
 #include "utils/retry_chain_node.h"
-#include "utils/unresolved_address.h"
+#include "net/unresolved_address.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/smp.hh>

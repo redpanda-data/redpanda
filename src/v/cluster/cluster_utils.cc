@@ -99,7 +99,7 @@ ss::future<> remove_broker_client(
 ss::future<> maybe_create_tcp_client(
   rpc::connection_cache& cache,
   model::node_id node,
-  unresolved_address rpc_address,
+  net::unresolved_address rpc_address,
   config::tls_config tls_config) {
     auto f = ss::now();
     if (cache.contains(node)) {
@@ -138,7 +138,7 @@ ss::future<> add_one_tcp_client(
   ss::shard_id owner,
   ss::sharded<rpc::connection_cache>& clients,
   model::node_id node,
-  unresolved_address addr,
+  net::unresolved_address addr,
   config::tls_config tls_config) {
     return clients.invoke_on(
       owner,
@@ -153,7 +153,7 @@ ss::future<> update_broker_client(
   model::node_id self,
   ss::sharded<rpc::connection_cache>& clients,
   model::node_id node,
-  unresolved_address addr,
+  net::unresolved_address addr,
   config::tls_config tls_config) {
     auto shards = virtual_nodes(self, node);
     vlog(clusterlog.debug, "Adding {} TCP client on shards:{}", node, shards);

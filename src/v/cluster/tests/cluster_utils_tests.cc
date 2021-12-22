@@ -19,8 +19,8 @@
 cluster::broker_ptr test_broker(int32_t id) {
     return ss::make_lw_shared<model::broker>(
       model::node_id{id},
-      unresolved_address("127.0.0.1", 9092),
-      unresolved_address("127.0.0.1", 1234),
+      net::unresolved_address("127.0.0.1", 9092),
+      net::unresolved_address("127.0.0.1", 1234),
       std::nullopt,
       model::broker_properties{.cores = 32});
 }
@@ -34,15 +34,15 @@ SEASTAR_THREAD_TEST_CASE(test_group_cfg_difference) {
 
     cluster::broker_ptr broker_2_additions = ss::make_lw_shared<model::broker>(
       model::node_id{2},
-      unresolved_address("127.0.0.1", 9092),
-      unresolved_address("172.168.1.1", 1234),
+      net::unresolved_address("127.0.0.1", 9092),
+      net::unresolved_address("172.168.1.1", 1234),
       std::nullopt,
       model::broker_properties{.cores = 32});
 
     cluster::broker_ptr broker_5_additions = ss::make_lw_shared<model::broker>(
       model::node_id{5},
-      unresolved_address("127.0.0.1", 9092),
-      unresolved_address("127.0.0.1", 6060),
+      net::unresolved_address("127.0.0.1", 9092),
+      net::unresolved_address("127.0.0.1", 6060),
       std::nullopt,
       model::broker_properties{.cores = 32});
 

@@ -354,8 +354,8 @@ struct raft_group {
     model::broker make_broker(model::node_id id) {
         return model::broker(
           model::node_id(id),
-          unresolved_address("localhost", 9092),
-          unresolved_address("localhost", base_port + id),
+          net::unresolved_address("localhost", 9092),
+          net::unresolved_address("localhost", base_port + id),
           std::nullopt,
           model::broker_properties{
             .cores = 1,

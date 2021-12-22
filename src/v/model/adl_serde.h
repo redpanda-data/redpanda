@@ -49,9 +49,9 @@ struct adl<model::ntp> {
 };
 
 template<>
-struct adl<unresolved_address> {
-    void to(iobuf& out, const unresolved_address& address);
-    unresolved_address from(iobuf_parser& in);
+struct adl<net::unresolved_address> {
+    void to(iobuf& out, const net::unresolved_address& address);
+    net::unresolved_address from(iobuf_parser& in);
 };
 
 template<>

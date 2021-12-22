@@ -9,7 +9,7 @@
 
 #include "config/node_config.h"
 #include "config/seed_server.h"
-#include "utils/unresolved_address.h"
+#include "net/unresolved_address.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
@@ -99,10 +99,10 @@ SEASTAR_THREAD_TEST_CASE(test_seed_servers_yaml_parsing) {
 
     BOOST_REQUIRE_EQUAL(
       new_seed.seed_servers()[0],
-      config::seed_server{unresolved_address("1.2.3.4", 1234)});
+      config::seed_server{net::unresolved_address("1.2.3.4", 1234)});
     BOOST_REQUIRE_EQUAL(
       new_seed.seed_servers()[1],
-      config::seed_server{unresolved_address("4.3.2.1", 4321)});
+      config::seed_server{net::unresolved_address("4.3.2.1", 4321)});
     BOOST_REQUIRE_EQUAL(old_seed.seed_servers(), new_seed.seed_servers());
     BOOST_REQUIRE_EQUAL(old_seed_no_id.seed_servers(), new_seed.seed_servers());
 };

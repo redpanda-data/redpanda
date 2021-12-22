@@ -22,7 +22,7 @@ configuration::configuration()
     "schema_registry_api",
     "Schema Registry API listen address and port",
     config::required::no,
-    {model::broker_endpoint(unresolved_address("0.0.0.0", 8081))})
+    {model::broker_endpoint(net::unresolved_address("0.0.0.0", 8081))})
   , schema_registry_api_tls(
       *this,
       "schema_registry_api_tls",

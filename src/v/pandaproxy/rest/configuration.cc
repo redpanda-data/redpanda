@@ -28,7 +28,7 @@ configuration::configuration()
     "pandaproxy_api",
     "Rest API listen address and port",
     config::required::no,
-    {model::broker_endpoint(unresolved_address("0.0.0.0", 8082))})
+    {model::broker_endpoint(net::unresolved_address("0.0.0.0", 8082))})
   , pandaproxy_api_tls(
       *this,
       "pandaproxy_api_tls",

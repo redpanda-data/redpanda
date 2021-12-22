@@ -98,7 +98,7 @@ ss::future<> update_broker_client(
   model::node_id,
   ss::sharded<rpc::connection_cache>&,
   model::node_id node,
-  unresolved_address addr,
+  net::unresolved_address addr,
   config::tls_config);
 
 ss::future<> remove_broker_client(
@@ -114,7 +114,7 @@ auto with_client(
   model::node_id self,
   ss::sharded<rpc::connection_cache>& cache,
   model::node_id id,
-  unresolved_address addr,
+  net::unresolved_address addr,
   config::tls_config tls_config,
   rpc::clock_type::duration connection_timeout,
   Func&& f) {
@@ -173,7 +173,7 @@ maybe_build_reloadable_certificate_credentials(config::tls_config tls_config) {
 template<typename Proto, typename Func>
 CONCEPT(requires requires(Func&& f, Proto c) { f(c); })
 auto do_with_client_one_shot(
-  unresolved_address addr,
+  net::unresolved_address addr,
   config::tls_config tls_config,
   rpc::clock_type::duration connection_timeout,
   Func&& f) {

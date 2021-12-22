@@ -11,7 +11,7 @@
 
 #pragma once
 #include "rpc/logger.h"
-#include "utils/unresolved_address.h"
+#include "net/unresolved_address.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -72,7 +72,7 @@ public:
     void setup_metrics(
       ss::metrics::metric_groups& mgs,
       const std::optional<ss::sstring>& service_name,
-      const unresolved_address& target_addr);
+      const net::unresolved_address& target_addr);
 
 private:
     uint64_t _requests = 0;

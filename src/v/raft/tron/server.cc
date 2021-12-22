@@ -26,7 +26,7 @@
 #include "storage/logger.h"
 #include "syschecks/syschecks.h"
 #include "utils/hdr_hist.h"
-#include "utils/unresolved_address.h"
+#include "net/unresolved_address.h"
 #include "vlog.h"
 
 #include <seastar/core/app-template.hh>
@@ -181,7 +181,7 @@ extract_peer(ss::sstring peer) {
     rpc::transport_configuration cfg;
     std::vector<ss::sstring> address_parts;
     boost::split(parts, parts[1], boost::is_any_of(":"));
-    cfg.server_addr = unresolved_address(
+    cfg.server_addr = net::unresolved_address(
       address_parts[0], boost::lexical_cast<int16_t>(address_parts[1]));
     return {model::node_id(n), cfg};
 }
@@ -222,8 +222,8 @@ static model::broker broker_from_arg(ss::sstring peer) {
     auto port = boost::lexical_cast<int32_t>(parts[0]);
     return model::broker(
       model::node_id(id),
-      unresolved_address(host_port[0], port),
-      unresolved_address(host_port[0], port),
+      net::unresolved_address(host_port[0], port),
+      net::unresolved_address(host_port[0], port),
       std::nullopt,
       model::broker_properties{.cores = ss::smp::count});
 }
@@ -240,9 +240,9 @@ group_cfg_from_args(const po::variables_map& opts) {
     // add self
     brokers.push_back(model::broker(
       model::node_id(opts["node-id"].as<int32_t>()),
-      unresolved_address(
+      net::unresolved_address(
         opts["ip"].as<ss::sstring>(), opts["port"].as<uint16_t>()),
-      unresolved_address(
+      net::unresolved_address(
         opts["ip"].as<ss::sstring>(), opts["port"].as<uint16_t>()),
       std::optional<ss::sstring>(),
       model::broker_properties{

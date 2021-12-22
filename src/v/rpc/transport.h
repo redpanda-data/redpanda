@@ -206,7 +206,7 @@ public:
         return _transport.is_valid();
     }
 
-    const unresolved_address& server_address() const {
+    const net::unresolved_address& server_address() const {
         return _transport.server_address();
     }
 

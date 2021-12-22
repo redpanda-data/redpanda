@@ -99,7 +99,7 @@ struct configured_test_pair {
 };
 
 net::base_transport::configuration transport_configuration() {
-    unresolved_address server_addr(httpd_host_name, httpd_port_number);
+    net::unresolved_address server_addr(httpd_host_name, httpd_port_number);
     net::base_transport::configuration conf{.server_addr = server_addr};
     return conf;
 }

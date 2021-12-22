@@ -92,7 +92,7 @@ private:
 using shared_broker_t = ss::lw_shared_ptr<broker>;
 
 ss::future<shared_broker_t> make_broker(
-  model::node_id node_id, unresolved_address addr, const configuration& config);
+  model::node_id node_id, net::unresolved_address addr, const configuration& config);
 
 struct broker_hash {
     using is_transparent = void;

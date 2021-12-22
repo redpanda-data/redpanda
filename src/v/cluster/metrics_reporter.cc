@@ -28,7 +28,7 @@
 #include "reflection/adl.h"
 #include "rpc/types.h"
 #include "ssx/sformat.h"
-#include "utils/unresolved_address.h"
+#include "net/unresolved_address.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
@@ -285,7 +285,7 @@ iobuf serialize_metrics_snapshot(
 }
 ss::future<http::client> metrics_reporter::make_http_client() {
     net::base_transport::configuration client_configuration;
-    client_configuration.server_addr = unresolved_address(
+    client_configuration.server_addr = net::unresolved_address(
       ss::sstring(_address.host), _address.port);
 
     client_configuration.disable_metrics = rpc::metrics_disabled::yes;

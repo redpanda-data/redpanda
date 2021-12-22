@@ -141,7 +141,7 @@ bool group_configuration::contains_broker(model::node_id id) const {
 }
 
 bool group_configuration::contains_address(
-  const unresolved_address& address) const {
+  const net::unresolved_address& address) const {
     return std::any_of(
       _brokers.cbegin(),
       _brokers.cend(),

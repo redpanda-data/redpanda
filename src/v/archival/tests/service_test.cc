@@ -14,7 +14,7 @@
 #include "cluster/commands.h"
 #include "storage/types.h"
 #include "test_utils/async.h"
-#include "utils/unresolved_address.h"
+#include "net/unresolved_address.h"
 
 #include <seastar/core/deleter.hh>
 #include <seastar/core/file.hh>

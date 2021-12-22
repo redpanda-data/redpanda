@@ -38,7 +38,7 @@ node_config::node_config() noexcept
       "rpc_server",
       "IpAddress and port for RPC server",
       required::no,
-      unresolved_address("127.0.0.1", 33145))
+      net::unresolved_address("127.0.0.1", 33145))
   , rpc_server_tls(
       *this,
       "rpc_server_tls",
@@ -51,7 +51,7 @@ node_config::node_config() noexcept
       "kafka_api",
       "Address and port of an interface to listen for Kafka API requests",
       required::no,
-      {model::broker_endpoint(unresolved_address("127.0.0.1", 9092))})
+      {model::broker_endpoint(net::unresolved_address("127.0.0.1", 9092))})
   , kafka_api_tls(
       *this,
       "kafka_api_tls",
@@ -64,7 +64,7 @@ node_config::node_config() noexcept
       "admin",
       "Address and port of admin server",
       required::no,
-      {model::broker_endpoint(unresolved_address("127.0.0.1", 9644))})
+      {model::broker_endpoint(net::unresolved_address("127.0.0.1", 9644))})
   , admin_api_tls(
       *this,
       "admin_api_tls",
@@ -77,7 +77,7 @@ node_config::node_config() noexcept
       "coproc_supervisor_server",
       "IpAddress and port for supervisor service",
       required::no,
-      unresolved_address("127.0.0.1", 43189))
+      net::unresolved_address("127.0.0.1", 43189))
   , admin_api_doc_dir(
       *this,
       "admin_api_doc_dir",

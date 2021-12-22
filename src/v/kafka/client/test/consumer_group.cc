@@ -38,7 +38,7 @@
 #include "model/metadata.h"
 #include "redpanda/tests/fixture.h"
 #include "ssx/future-util.h"
-#include "utils/unresolved_address.h"
+#include "net/unresolved_address.h"
 #include "vassert.h"
 
 #include <seastar/core/loop.hh>

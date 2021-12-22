@@ -40,7 +40,7 @@ public:
     ss::future<result<transport*>> get_connected(clock_type::time_point);
     ss::future<result<transport*>> get_connected(clock_type::duration);
 
-    const unresolved_address& server_address() const {
+    const net::unresolved_address& server_address() const {
         return _transport.server_address();
     }
 

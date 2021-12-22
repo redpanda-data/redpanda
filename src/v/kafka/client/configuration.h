@@ -26,7 +26,7 @@ namespace kafka::client {
 /// All application modules depend on configuration. The configuration module
 /// can not depend on any other module to prevent cyclic dependencies.
 struct configuration final : public config::config_store {
-    config::property<std::vector<unresolved_address>> brokers;
+    config::property<std::vector<net::unresolved_address>> brokers;
     config::property<config::tls_config> broker_tls;
     config::property<size_t> retries;
     config::property<std::chrono::milliseconds> retry_base_backoff;

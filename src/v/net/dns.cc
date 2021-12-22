@@ -11,7 +11,7 @@
 #include "net/dns.h"
 
 #include "utils/mutex.h"
-#include "utils/unresolved_address.h"
+#include "net/unresolved_address.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/net/dns.hh>

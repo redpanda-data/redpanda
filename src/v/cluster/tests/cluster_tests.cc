@@ -13,7 +13,7 @@
 #include "cluster/tests/cluster_test_fixture.h"
 #include "config/configuration.h"
 #include "test_utils/fixture.h"
-#include "utils/unresolved_address.h"
+#include "net/unresolved_address.h"
 
 using namespace std::chrono_literals; // NOLINT
 

@@ -123,7 +123,7 @@ public:
     }
 
 protected:
-    unresolved_address _listen_address;
+    net::unresolved_address _listen_address;
     ss::smp_service_group _ssg;
     ss::scheduling_group _sg;
 

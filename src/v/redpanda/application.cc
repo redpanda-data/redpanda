@@ -87,7 +87,7 @@ static void set_local_kafka_client_config(
     const auto& kafka_api = config.kafka_api.value();
     vassert(!kafka_api.empty(), "There are no kafka_api listeners");
     client_config->brokers.set_value(
-      std::vector<unresolved_address>{kafka_api[0].address});
+      std::vector<net::unresolved_address>{kafka_api[0].address});
     const auto& kafka_api_tls = config::node().kafka_api_tls.value();
     auto tls_it = std::find_if(
       kafka_api_tls.begin(),

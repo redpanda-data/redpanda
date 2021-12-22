@@ -64,7 +64,7 @@ public:
      * @param address of coprocessor engine
      * @param reference to the storage layer
      */
-    pacemaker(unresolved_address, sys_refs&);
+    pacemaker(net::unresolved_address, sys_refs&);
 
     /**
      * Begins the offset tracking fiber

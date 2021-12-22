@@ -9,7 +9,7 @@
 
 #include "model/metadata.h"
 #include "raft/group_configuration.h"
-#include "utils/unresolved_address.h"
+#include "net/unresolved_address.h"
 
 #include <boost/test/tools/old/interface.hpp>
 #define BOOST_TEST_MODULE raft
@@ -20,8 +20,8 @@
 model::broker create_broker(int32_t id) {
     return model::broker(
       model::node_id{id},
-      unresolved_address("127.0.0.1", 9002),
-      unresolved_address("127.0.0.1", 1234),
+      net::unresolved_address("127.0.0.1", 9002),
+      net::unresolved_address("127.0.0.1", 1234),
       std::nullopt,
       model::broker_properties{});
 }

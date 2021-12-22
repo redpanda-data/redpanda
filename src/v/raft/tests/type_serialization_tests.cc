@@ -106,10 +106,10 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
 model::broker create_test_broker() {
     return model::broker(
       model::node_id(random_generators::get_int(1000)), // id
-      unresolved_address(
+      net::unresolved_address(
         "127.0.0.1",
         random_generators::get_int(10000, 20000)), // kafka api address
-      unresolved_address(
+      net::unresolved_address(
         "127.0.0.1", random_generators::get_int(10000, 20000)), // rpc address
       "some_rack",
       model::broker_properties{

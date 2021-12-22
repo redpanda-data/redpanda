@@ -99,7 +99,7 @@ std::ostream& operator<<(std::ostream& o, const server_probe& p) {
 void client_probe::setup_metrics(
   ss::metrics::metric_groups& mgs,
   const std::optional<ss::sstring>& service_name,
-  const unresolved_address& target_addr) {
+  const net::unresolved_address& target_addr) {
     namespace sm = ss::metrics;
     auto target = sm::label("target");
     std::vector<sm::label_instance> labels = {

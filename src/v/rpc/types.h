@@ -16,7 +16,7 @@
 #include "outcome.h"
 #include "seastarx.h"
 #include "utils/hdr_hist.h"
-#include "utils/unresolved_address.h"
+#include "net/unresolved_address.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
@@ -294,7 +294,7 @@ struct server_configuration {
       : name(std::move(n)) {}
 };
 struct transport_configuration {
-    unresolved_address server_addr;
+    net::unresolved_address server_addr;
     /// \ brief The default timeout PER connection body. After we
     /// parse the header of the connection we need to
     /// make sure that we at some point receive some
