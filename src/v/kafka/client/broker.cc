@@ -27,7 +27,7 @@ ss::future<shared_broker_t> make_broker(
              config.broker_tls())
       .then([addr](ss::shared_ptr<ss::tls::certificate_credentials> creds) {
           return ss::make_lw_shared<transport>(
-            rpc::base_transport::configuration{
+            net::base_transport::configuration{
               .server_addr = addr, .credentials = std::move(creds)});
       })
       .then([node_id, addr](ss::lw_shared_ptr<transport> client) {

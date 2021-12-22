@@ -25,7 +25,7 @@
 #include <boost/test/unit_test_log.hpp>
 
 static kafka::client::transport make_kafka_client() {
-    return kafka::client::transport(rpc::base_transport::configuration{
+    return kafka::client::transport(net::base_transport::configuration{
       .server_addr = config::node().kafka_api()[0].address,
     });
 }

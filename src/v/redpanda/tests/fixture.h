@@ -225,7 +225,7 @@ public:
 
     ss::future<kafka::client::transport> make_kafka_client() {
         return ss::make_ready_future<kafka::client::transport>(
-          rpc::base_transport::configuration{
+          net::base_transport::configuration{
             .server_addr = config::node().kafka_api()[0].address,
           });
     }

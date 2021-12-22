@@ -3,6 +3,7 @@ v_cc_library(
   SRCS
     batched_output_stream.cc
     dns.cc
+    transport.cc
   DEPS
     Seastar::seastar
   )

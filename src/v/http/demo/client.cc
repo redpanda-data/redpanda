@@ -9,7 +9,7 @@
 
 #include "http/client.h"
 
-#include "rpc/transport.h"
+#include "net/transport.h"
 #include "rpc/types.h"
 #include "seastarx.h"
 #include "syschecks/syschecks.h"
@@ -133,7 +133,7 @@ int main(int args, char** argv, char** env) {
         auto& cfg = app.configuration();
         return ss::async([&] {
             const test_conf lcfg = cfg_from(cfg);
-            rpc::base_transport::configuration transport_cfg;
+            net::base_transport::configuration transport_cfg;
             transport_cfg.server_addr = lcfg.client_cfg.server_addr;
             transport_cfg.credentials = lcfg.client_cfg.credentials;
             vlog(test_log.info, "config:{}", lcfg);

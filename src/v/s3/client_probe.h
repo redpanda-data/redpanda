@@ -25,7 +25,7 @@ namespace s3 {
 ///
 /// \note The goal of this is to measure billable traffic
 ///       and performance related metrics. Since S3 client
-///       reuses the rpc::base_transport it can potentially
+///       reuses the net::base_transport it can potentially
 ///       use its probe. But this doesn't make much sence
 ///       since S3 requires different approach in measuring.
 ///       For instance, all connectoins are made to the same

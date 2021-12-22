@@ -284,7 +284,7 @@ iobuf serialize_metrics_snapshot(
     return out;
 }
 ss::future<http::client> metrics_reporter::make_http_client() {
-    rpc::base_transport::configuration client_configuration;
+    net::base_transport::configuration client_configuration;
     client_configuration.server_addr = unresolved_address(
       ss::sstring(_address.host), _address.port);
 

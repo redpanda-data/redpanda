@@ -11,7 +11,7 @@
 #pragma once
 
 #include "http/client.h"
-#include "rpc/transport.h"
+#include "net/transport.h"
 #include "rpc/types.h"
 #include "s3/client_probe.h"
 #include "s3/signature.h"
@@ -56,7 +56,7 @@ struct default_overrides {
 };
 
 /// S3 client configuration
-struct configuration : rpc::base_transport::configuration {
+struct configuration : net::base_transport::configuration {
     /// URI of the S3 access point
     access_point_uri uri;
     /// AWS access key

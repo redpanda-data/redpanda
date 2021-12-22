@@ -12,7 +12,7 @@
 #include "http/chunk_encoding.h"
 #include "http/client.h"
 #include "net/dns.h"
-#include "rpc/transport.h"
+#include "net/transport.h"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
@@ -98,16 +98,16 @@ struct configured_test_pair {
     ss::shared_ptr<http::client> client;
 };
 
-rpc::base_transport::configuration transport_configuration() {
+net::base_transport::configuration transport_configuration() {
     unresolved_address server_addr(httpd_host_name, httpd_port_number);
-    rpc::base_transport::configuration conf{.server_addr = server_addr};
+    net::base_transport::configuration conf{.server_addr = server_addr};
     return conf;
 }
 
 /// Create server and client, server is initialized with default
 /// testing paths and listening.
 configured_test_pair
-started_client_and_server(const rpc::base_transport::configuration& conf) {
+started_client_and_server(const net::base_transport::configuration& conf) {
     auto client = ss::make_shared<http::client>(conf);
     auto server = ss::make_shared<ss::httpd::http_server_control>();
     server->start().get();
@@ -129,7 +129,7 @@ static void header_set_host(Header& header, Host& h) {
 /// Test success path (should run in ss::async)
 template<class Func>
 void test_http_request(
-  const rpc::base_transport::configuration& conf,
+  const net::base_transport::configuration& conf,
   http::client::request_header&& header,
   std::optional<ss::sstring> request_data,
   const Func& check_reply) {
@@ -161,7 +161,7 @@ void test_http_request(
 /// Test success path (should run in ss::async)
 template<class Func>
 void test_http_request(
-  const rpc::base_transport::configuration& conf,
+  const net::base_transport::configuration& conf,
   http::client::request_header&& header,
   ss::input_stream<char> request_data,
   const Func& check_reply) {
@@ -208,7 +208,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_POST_roundtrip) {
 /// Test http streaming requests e2e in ss::async
 template<class Func>
 void test_http_streaming_request(
-  const rpc::base_transport::configuration& conf,
+  const net::base_transport::configuration& conf,
   http::client::request_header&& header,
   std::optional<ss::sstring> request_data,
   size_t skip,
@@ -485,7 +485,7 @@ struct impostor_test_pair {
 /// Create server and client, server is initialized with default
 /// testing paths and listening.
 impostor_test_pair started_client_and_impostor(
-  const rpc::base_transport::configuration& conf,
+  const net::base_transport::configuration& conf,
   ss::sstring request_data,
   std::vector<ss::sstring> response_data) {
     auto client = ss::make_shared<http::client>(conf);
@@ -507,7 +507,7 @@ ss::sstring get_response_header(const http::client::response_header& resp_hdr) {
 
 template<class OKFunc, class ErrFunc = std::function<void(std::exception_ptr)>>
 void test_impostor_request(
-  const rpc::base_transport::configuration& conf,
+  const net::base_transport::configuration& conf,
   http::client::request_header header,
   const ss::sstring& request_data,
   std::vector<ss::sstring> response_data,
