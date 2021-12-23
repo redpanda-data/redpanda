@@ -126,7 +126,7 @@ ss::future<> maybe_create_tcp_client(
                   rpc::transport_configuration{
                     .server_addr = std::move(rpc_address),
                     .credentials = cert,
-                    .disable_metrics = rpc::metrics_disabled(
+                    .disable_metrics = net::metrics_disabled(
                       config::shard_local_cfg().disable_metrics)},
                   rpc::make_exponential_backoff_policy<rpc::clock_type>(
                     std::chrono::seconds(1), std::chrono::seconds(15)));

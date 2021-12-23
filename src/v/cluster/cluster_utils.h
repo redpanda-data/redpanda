@@ -185,7 +185,7 @@ auto do_with_client_one_shot(
               rpc::transport_configuration{
                 .server_addr = std::move(addr),
                 .credentials = std::move(cert),
-                .disable_metrics = rpc::metrics_disabled(true)});
+                .disable_metrics = net::metrics_disabled(true)});
 
             return transport->connect(connection_timeout)
               .then([transport, f = std::forward<Func>(f)]() mutable {

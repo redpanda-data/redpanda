@@ -42,7 +42,7 @@ public:
     /// \param region is a cloud provider region
     /// \param endpoint is a cloud provider endpoint
     client_probe(
-      rpc::metrics_disabled disable, ss::sstring region, ss::sstring endpoint);
+      net::metrics_disabled disable, ss::sstring region, ss::sstring endpoint);
 
     /// Register S3 rpc error
     void register_failure(s3_error_code err);

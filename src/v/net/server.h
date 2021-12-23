@@ -66,7 +66,7 @@ struct server_configuration {
     std::optional<int> listen_backlog;
     std::optional<int> tcp_recv_buf;
     std::optional<int> tcp_send_buf;
-    rpc::metrics_disabled disable_metrics = rpc::metrics_disabled::no;
+    net::metrics_disabled disable_metrics = net::metrics_disabled::no;
     ss::sstring name;
     // we use the same default as seastar for load balancing algorithm
     ss::server_socket::load_balancing_algorithm load_balancing_algo

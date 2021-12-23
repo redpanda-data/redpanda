@@ -288,7 +288,7 @@ ss::future<http::client> metrics_reporter::make_http_client() {
     client_configuration.server_addr = net::unresolved_address(
       ss::sstring(_address.host), _address.port);
 
-    client_configuration.disable_metrics = rpc::metrics_disabled::yes;
+    client_configuration.disable_metrics = net::metrics_disabled::yes;
 
     if (_address.protocol == "https") {
         client_configuration.credentials

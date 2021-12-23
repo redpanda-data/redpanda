@@ -113,7 +113,7 @@ ss::future<configuration> configuration::make_configuration(
   const private_key_str& skey,
   const aws_region_name& region,
   const default_overrides& overrides,
-  rpc::metrics_disabled disable_metrics) {
+  net::metrics_disabled disable_metrics) {
     configuration client_cfg;
     const auto endpoint_uri = make_endpoint_url(region, overrides.endpoint);
     client_cfg.tls_sni_hostname = endpoint_uri;

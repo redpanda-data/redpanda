@@ -13,6 +13,7 @@
 
 #include "bytes/iobuf.h"
 #include "likely.h"
+#include "net/types.h"
 #include "net/unresolved_address.h"
 #include "outcome.h"
 #include "seastarx.h"
@@ -250,8 +251,6 @@ inline result<T> get_ctx_data(result<client_context<T>>&& ctx) {
     return result<T>(std::move(ctx.value().data));
 }
 
-using metrics_disabled = ss::bool_class<struct metrics_disabled_tag>;
-
 struct transport_configuration {
     net::unresolved_address server_addr;
     /// \ brief The default timeout PER connection body. After we
@@ -261,7 +260,7 @@ struct transport_configuration {
     duration_type recv_timeout = std::chrono::minutes(1);
     uint32_t max_queued_bytes = std::numeric_limits<uint32_t>::max();
     ss::shared_ptr<ss::tls::certificate_credentials> credentials;
-    metrics_disabled disable_metrics = metrics_disabled::no;
+    net::metrics_disabled disable_metrics = net::metrics_disabled::no;
 };
 
 std::ostream& operator<<(std::ostream&, const header&);

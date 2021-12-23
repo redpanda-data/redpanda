@@ -86,7 +86,7 @@ struct configuration : net::base_transport::configuration {
       const private_key_str& skey,
       const aws_region_name& region,
       const default_overrides& overrides = {},
-      rpc::metrics_disabled disable_metrics = rpc::metrics_disabled::yes);
+      net::metrics_disabled disable_metrics = net::metrics_disabled::yes);
 };
 
 std::ostream& operator<<(std::ostream& o, const configuration& c);

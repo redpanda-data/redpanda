@@ -39,7 +39,7 @@ wasm_transport_cfg(const net::unresolved_address& addr) {
       .max_queued_bytes = static_cast<uint32_t>(
         config::shard_local_cfg().coproc_max_inflight_bytes.value()),
       .credentials = nullptr,
-      .disable_metrics = rpc::metrics_disabled(
+      .disable_metrics = net::metrics_disabled(
         config::shard_local_cfg().disable_metrics())};
 }
 

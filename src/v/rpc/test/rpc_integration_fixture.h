@@ -154,7 +154,7 @@ public:
       std::optional<ss::tls::credentials_builder> credentials = std::nullopt,
       ss::tls::reload_callback&& cb = {}) override {
         net::server_configuration scfg("unit_test_rpc");
-        scfg.disable_metrics = rpc::metrics_disabled::yes;
+        scfg.disable_metrics = net::metrics_disabled::yes;
         auto resolved = net::resolve_dns(_listen_address).get();
         scfg.addrs.emplace_back(
           resolved,
@@ -202,7 +202,7 @@ public:
       std::optional<ss::tls::credentials_builder> credentials = std::nullopt,
       ss::tls::reload_callback&& cb = {}) override {
         net::server_configuration scfg("unit_test_rpc_sharded");
-        scfg.disable_metrics = rpc::metrics_disabled::yes;
+        scfg.disable_metrics = net::metrics_disabled::yes;
         auto resolved = net::resolve_dns(_listen_address).get();
         scfg.addrs.emplace_back(
           resolved,

@@ -20,7 +20,7 @@
 namespace s3 {
 
 client_probe::client_probe(
-  rpc::metrics_disabled disable, ss::sstring region, ss::sstring endpoint)
+  net::metrics_disabled disable, ss::sstring region, ss::sstring endpoint)
   : http::client_probe()
   , _total_rpc_errors(0)
   , _total_slowdowns(0)

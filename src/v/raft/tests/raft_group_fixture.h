@@ -169,7 +169,7 @@ struct raft_node {
         net::server_configuration scfg("raft_test_rpc");
         scfg.addrs.emplace_back(net::resolve_dns(broker.rpc_address()).get());
         scfg.max_service_memory_per_core = 1024 * 1024 * 1024;
-        scfg.disable_metrics = rpc::metrics_disabled::yes;
+        scfg.disable_metrics = net::metrics_disabled::yes;
         server.start(std::move(scfg)).get0();
         raft_manager.start().get0();
         raft_manager
@@ -293,7 +293,7 @@ struct raft_node {
                     return c.emplace(
                       broker.id(),
                       {.server_addr = broker.rpc_address(),
-                       .disable_metrics = rpc::metrics_disabled::yes},
+                       .disable_metrics = net::metrics_disabled::yes},
                       rpc::make_exponential_backoff_policy<rpc::clock_type>(
                         std::chrono::milliseconds(1),
                         std::chrono::milliseconds(1)));

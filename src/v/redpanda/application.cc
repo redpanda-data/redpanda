@@ -820,7 +820,7 @@ void application::wire_up_redpanda_services() {
               c.load_balancing_algo
                 = ss::server_socket::load_balancing_algorithm::port;
               c.max_service_memory_per_core = memory_groups::rpc_total_memory();
-              c.disable_metrics = rpc::metrics_disabled(
+              c.disable_metrics = net::metrics_disabled(
                 config::shard_local_cfg().disable_metrics());
               c.listen_backlog
                 = config::shard_local_cfg().rpc_server_listen_backlog;
@@ -968,7 +968,7 @@ void application::wire_up_redpanda_services() {
                     ep.name, net::resolve_dns(ep.address).get0(), credentails);
               }
 
-              c.disable_metrics = rpc::metrics_disabled(
+              c.disable_metrics = net::metrics_disabled(
                 config::shard_local_cfg().disable_metrics());
           });
       })

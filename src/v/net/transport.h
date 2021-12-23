@@ -40,7 +40,7 @@ public:
     struct configuration {
         unresolved_address server_addr;
         ss::shared_ptr<ss::tls::certificate_credentials> credentials;
-        rpc::metrics_disabled disable_metrics = rpc::metrics_disabled::no;
+        net::metrics_disabled disable_metrics = net::metrics_disabled::no;
         /// Optional server name indication (SNI) for TLS connection
         std::optional<ss::sstring> tls_sni_hostname;
     };
