@@ -42,7 +42,7 @@ using namespace std::chrono_literals;
 
 namespace rpc {
 
-using clock_type = ss::lowres_clock;
+using clock_type = net::clock_type;
 using duration_type = typename clock_type::duration;
 using timer_type = ss::timer<clock_type>;
 static constexpr clock_type::time_point no_timeout

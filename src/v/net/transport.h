@@ -11,8 +11,8 @@
 #pragma once
 #include "net/batched_output_stream.h"
 #include "net/client_probe.h"
+#include "net/types.h"
 #include "net/unresolved_address.h"
-#include "rpc/types.h"
 #include "seastarx.h"
 
 #include <seastar/core/gate.hh>
@@ -29,12 +29,9 @@ namespace net {
 
 /*
  * TODO:
- *  - clock_type should migrate to net::
  *  - client_probe needs to be split apart from simple_protocol
  *  - allow subclasses to provide logger
  */
-using clock_type = rpc::clock_type;
-
 class base_transport {
 public:
     struct configuration {
