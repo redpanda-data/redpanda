@@ -28,7 +28,11 @@
 #include <seastar/core/weak_ptr.hh>
 #include <seastar/util/noncopyable_function.hh>
 
+#include <chrono>
+
 namespace cloud_storage {
+
+using namespace std::chrono_literals;
 
 class partition_record_batch_reader_impl;
 

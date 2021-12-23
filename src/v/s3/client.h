@@ -12,7 +12,7 @@
 
 #include "http/client.h"
 #include "net/transport.h"
-#include "rpc/types.h"
+#include "net/types.h"
 #include "s3/client_probe.h"
 #include "s3/signature.h"
 #include "utils/gate_guard.h"

@@ -13,7 +13,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_istreambuf.h"
 #include "hashing/secure.h"
-#include "rpc/types.h"
+#include "net/types.h"
 #include "s3/error.h"
 #include "s3/logger.h"
 #include "s3/signature.h"

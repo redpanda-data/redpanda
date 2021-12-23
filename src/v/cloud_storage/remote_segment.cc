@@ -35,6 +35,8 @@
 
 namespace cloud_storage {
 
+using namespace std::chrono_literals;
+
 static constexpr size_t max_consume_size = 128_KiB;
 
 static ss::lowres_clock::duration cache_hydration_timeout = 60s;

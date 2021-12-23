@@ -12,7 +12,7 @@
 
 #include "http/probe.h"
 #include "model/fundamental.h"
-#include "rpc/types.h"
+#include "net/types.h"
 #include "s3/error.h"
 
 #include <seastar/core/metrics_registration.hh>
