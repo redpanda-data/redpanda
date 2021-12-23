@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-FROM ubuntu:groovy-20210325
+FROM ubuntu:impish-20211102
 
 ENV TZ="UTC" \
     DEBIAN_FRONTEND=noninteractive
