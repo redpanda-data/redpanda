@@ -9,7 +9,7 @@ Redpanda is a modern [streaming platform](/blog/intelligent-data-api/) for missi
 With Redpanda you can get up and running with streaming quickly
 and be fully compatible with the [Kafka ecosystem](https://cwiki.apache.org/confluence/display/KAFKA/Ecosystem).
 
-This tutorial shows in 15 minutes or less how you can build a Scala Kafka Streams Application and run it in Red Panda.   
+This tutorial shows in 15 minutes or less how you can build a Scala Kafka Application and run it in Red Panda.   
 
 ## Get your cluster ready
 
@@ -103,8 +103,7 @@ scalaVersion := "2.13.7"
 libraryDependencies ++= List(
    "com.github.javafaker" % "javafaker" % "1.0.2",
    "com.fasterxml.jackson.core" % "jackson-databind" % "2.13.0",
-   "org.apache.kafka" % "kafka-clients" % "3.0.0",
-   "org.apache.kafka" % "kafka-streams" % "3.0.0"
+   "org.apache.kafka" % "kafka-clients" % "3.0.0"
 )
 ```
 In our example, we use javafaker to generate fictional information and jackson to parse JSON messages. 
@@ -241,7 +240,7 @@ This method receives a parameter that indicates how many times per second our ap
 
 For each record found, the Json message is transformed to a Person class and then is calculated the age of the person.
 
-Replace the `// 4. main() method` comment with the following code:
+Replace the comment `// 4. main() method` with the following code:
 ```scala
   def main(args: Array[String]): Unit = process(1)
 ```
@@ -262,7 +261,7 @@ Replace the comment `// 2. Producer properties` with the following code:
 It is important to mention that here the age could be considered an Integer, but for demonstration purposes we consider it a String.
 As we can see, here both the `Key` and the `Value` are Strings, so we use String Serializers.
 
-Replace the comment  `// Here we write the events to the 'ages' topic` with the following code:  
+Replace the comment `// Here we write the events to the 'ages' topic` with the following code:  
 
 ```scala
    val future = producer.send(
@@ -271,7 +270,7 @@ Replace the comment  `// Here we write the events to the 'ages' topic` with the 
    future.get
 ```
 The Key of our 'Age' message is the "firstName lastName" string, the value is the age. 
-As we can see, once the age has been calculated, we write it in the topic `Ages`.
+As we can see, once the age has been calculated, we write it in the `ages` topic.
 We use Scala futures, to avoid locks and guarantee thread safety.
 
 ##The Producer code
