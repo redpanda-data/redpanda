@@ -368,11 +368,15 @@ ss::future<> members_backend::reconcile() {
           [](const partition_reallocation& r) {
               return r.state == reallocation_state::finished;
           });
+        const bool updates_in_progress
+          = _topics.local().has_updates_in_progress();
 
         const auto allocator_empty = _allocator.local().is_empty(
           meta.update.id);
 
-        if (is_draining && all_reallocations_finished && allocator_empty) {
+        if (
+          is_draining && all_reallocations_finished && allocator_empty
+          && !updates_in_progress) {
             // we can safely discard the result since action is going to be
             // retried if it fails
             vlog(
@@ -389,11 +393,13 @@ ss::future<> members_backend::reconcile() {
             vlog(
               clusterlog.debug,
               "decommissioning status: node {} is_draining={} "
-              "all_reallocations_finished={} allocator_empty={}",
+              "all_reallocations_finished={} allocator_empty={} "
+              "updates_in_progress={}",
               meta.update.id,
               is_draining,
               all_reallocations_finished,
-              allocator_empty);
+              allocator_empty,
+              updates_in_progress);
         }
     }
 }
