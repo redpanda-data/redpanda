@@ -365,7 +365,7 @@ class RedpandaService(Service):
 
         node.account.signal(pid, signal, allow_fail=False)
 
-    def start_node(self, node, override_cfg_params=None):
+    def start_node(self, node, override_cfg_params=None, timeout=None):
         """
         Start a single instance of redpanda. This function will not return until
         redpanda appears to have started successfully. If redpanda does not
@@ -382,9 +382,12 @@ class RedpandaService(Service):
 
         self.start_redpanda(node)
 
+        if timeout is None:
+            timeout = self.READY_TIMEOUT_SEC
+
         wait_until(
             lambda: Admin.ready(node).get("status") == "ready",
-            timeout_sec=RedpandaService.READY_TIMEOUT_SEC,
+            timeout_sec=timeout,
             err_msg=f"Redpanda service {node.account.hostname} failed to start",
             retry_on_exc=True)
         self._started.append(node)
@@ -499,17 +502,19 @@ class RedpandaService(Service):
             "rp_install_path_root", None)
         return f"{rp_install_path_root}/libexec/{name}"
 
-    def stop_node(self, node):
+    def stop_node(self, node, timeout=None):
         pids = self.pids(node)
 
         for pid in pids:
             node.account.signal(pid, signal.SIGTERM, allow_fail=False)
 
-        timeout_sec = 30
-        wait_until(lambda: len(self.pids(node)) == 0,
-                   timeout_sec=timeout_sec,
-                   err_msg="Redpanda node failed to stop in %d seconds" %
-                   timeout_sec)
+        if timeout is None:
+            timeout = 30
+
+        wait_until(
+            lambda: len(self.pids(node)) == 0,
+            timeout_sec=timeout,
+            err_msg=f"Redpanda node failed to stop in {timeout} seconds")
         if node in self._started:
             self._started.remove(node)
 
@@ -603,12 +608,16 @@ class RedpandaService(Service):
         self.logger.debug(conf)
         node.account.create_file(RedpandaService.CONFIG_FILE, conf)
 
-    def restart_nodes(self, nodes, override_cfg_params=None):
+    def restart_nodes(self,
+                      nodes,
+                      override_cfg_params=None,
+                      start_timeout=None,
+                      stop_timeout=None):
         nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
         for node in nodes:
-            self.stop_node(node)
+            self.stop_node(node, timeout=stop_timeout)
         for node in nodes:
-            self.start_node(node, override_cfg_params)
+            self.start_node(node, override_cfg_params, timeout=start_timeout)
 
     def registered(self, node):
         """
