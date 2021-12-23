@@ -16,6 +16,7 @@
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
 #include "hashing/xx.h"
+#include "logger.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
@@ -381,6 +382,14 @@ std::insert_iterator<manifest::segment_map> manifest::get_insert_iterator() {
 }
 
 manifest manifest::difference(const manifest& remote_set) const {
+    vlog(
+      cst_log.info,
+      "manifest::difference called, remote_set rev {}",
+      remote_set.get_revision_id());
+    vlog(
+      cst_log.info,
+      "manifest::difference called, local_set rev {}",
+      get_revision_id());
     vassert(
       _ntp == remote_set._ntp && _rev == remote_set._rev,
       "Local manifest {}-{} and remote {}-{} doesn't match",
@@ -423,6 +432,7 @@ static manifest::key string_to_key(const char* s) {
 
 void manifest::update(const rapidjson::Document& m) {
     using namespace rapidjson;
+    vlog(cst_log.debug, "manifest update, rev: {}", m["revision"].GetInt());
     auto ver = model::partition_id(m["version"].GetInt());
     if (ver != static_cast<int>(manifest_version::v1)) {
         throw std::runtime_error("manifest version not supported");

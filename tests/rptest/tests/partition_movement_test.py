@@ -10,6 +10,7 @@
 import random
 import time
 import requests
+import uuid
 
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
@@ -18,6 +19,7 @@ import requests
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
+from rptest.archival.s3_client import S3Client
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
 from rptest.services.honey_badger import HoneyBadger
@@ -38,16 +40,57 @@ class PartitionMovementTest(EndToEndTest):
     - Add tests guarnateeing multiple segments
     """
     def __init__(self, ctx, *args, **kwargs):
+        self.s3_host_name = "minio-s3"
+        self.s3_bucket_name = f"panda-bucket-{uuid.uuid1()}"
+        self.s3_access_key = "panda-user"
+        self.s3_secret_key = "panda-secret"
+        self.s3_region = "panda-region"
+        self.s3_topic_name = "panda-topic"
+        self.log_segment_size = 1024*10
+        self.log_compaction_interval_ms = 10000
         super(PartitionMovementTest, self).__init__(
             ctx,
             *args,
-            extra_rp_conf={
+            extra_rp_conf=dict(
                 # Disable leader balancer, as this test is doing its own
                 # partition movement and the balancer would interfere
-                'enable_leader_balancer': False
-            },
+                enable_leader_balancer= False,
+                #
+                cloud_storage_enabled=True,
+                cloud_storage_access_key=self.s3_access_key,
+                cloud_storage_secret_key=self.s3_secret_key,
+                cloud_storage_region=self.s3_region,
+                cloud_storage_bucket=self.s3_bucket_name,
+                cloud_storage_disable_tls=True,
+                cloud_storage_api_endpoint=self.s3_host_name,
+                cloud_storage_api_endpoint_port=9000,
+                cloud_storage_reconciliation_interval_ms=500,
+                cloud_storage_max_connections=5,
+                cloud_storage_enable_remote_read=True,
+                cloud_storage_enable_remote_write=True,
+                log_compaction_interval_ms=self.log_compaction_interval_ms,
+                log_segment_size=self.log_segment_size,
+                delete_retention_ms=1000,
+            ),
             **kwargs)
         self._ctx = ctx
+        self.s3_client = S3Client(
+            region='panda-region',
+            access_key=u"panda-user",
+            secret_key=u"panda-secret",
+            endpoint=f'http://{self.s3_host_name}:9000',
+            logger=self.logger)
+
+    def setUp(self):
+        self.s3_client.empty_bucket(self.s3_bucket_name)
+        self.s3_client.create_bucket(self.s3_bucket_name)
+        # Deletes in S3 are eventually consistent so we might still
+        # see previously removed objects for a while.
+        super().setUp()
+
+    def tearDown(self):
+        self.s3_client.empty_bucket(self.s3_bucket_name)
+        super().tearDown()
 
     @staticmethod
     def _random_partition(metadata):
@@ -258,6 +301,7 @@ class PartitionMovementTest(EndToEndTest):
             for replication_factor in (1, 3):
                 name = f"topic{len(topics)}"
                 spec = TopicSpec(name=name,
+                                 retention_ms=100,
                                  partition_count=partition_count,
                                  replication_factor=replication_factor)
                 topics.append(spec)
@@ -266,7 +310,7 @@ class PartitionMovementTest(EndToEndTest):
         for spec in topics:
             self.redpanda.create_topic(spec)
 
-        num_records = 1000
+        num_records = 100000
         produced = set(
             ((f"key-{i:08d}", f"record-{i:08d}") for i in range(num_records)))
 
@@ -330,7 +374,7 @@ class PartitionMovementTest(EndToEndTest):
         Move partitions with active consumer / producer
         """
         self.start_redpanda(num_nodes=3)
-        spec = TopicSpec(name="topic", partition_count=3, replication_factor=3)
+        spec = TopicSpec(name="topic", partition_count=1, replication_factor=3)
         self.redpanda.create_topic(spec)
         self.topic = spec.name
         self.start_producer(1)

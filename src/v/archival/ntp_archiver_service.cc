@@ -356,6 +356,10 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
         if (_partition->archival_meta_stm()) {
             retry_chain_node rc_node(
               _manifest_upload_timeout, _initial_backoff, &parent);
+            vlog(
+              ctxlog.info,
+              "calling archival_meta_stm()->add_segments(manifest-rev:{})",
+              _manifest.get_revision_id());
             if (!co_await _partition->archival_meta_stm()->add_segments(
                   _manifest, rc_node)) {
                 vlog(ctxlog.warn, "archival metadata STM update failed");

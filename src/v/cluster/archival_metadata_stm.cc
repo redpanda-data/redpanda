@@ -92,7 +92,12 @@ archival_metadata_stm::archival_metadata_stm(
   : cluster::persisted_stm("archival_metadata.snapshot", logger, raft)
   , _logger(logger, ssx::sformat("ntp: {}", raft->ntp()))
   , _manifest(raft->ntp(), raft->config().revision_id())
-  , _cloud_storage_api(remote) {}
+  , _cloud_storage_api(remote) {
+    vlog(
+      _logger.info,
+      "created archival metadata stm, revision: {}",
+      _manifest.get_revision_id());
+}
 
 ss::future<bool> archival_metadata_stm::add_segments(
   const cloud_storage::manifest& manifest, retry_chain_node& rc_node) {
@@ -103,6 +108,11 @@ ss::future<bool> archival_metadata_stm::add_segments(
 
 ss::future<bool> archival_metadata_stm::do_add_segments(
   const cloud_storage::manifest& new_manifest, retry_chain_node& rc_node) {
+    vlog(
+      _logger.info,
+      "do_add_segments manifest-rev: {}, remote manifest rev: {}",
+      _manifest.get_revision_id(),
+      new_manifest.get_revision_id());
     if (!co_await sync(rc_node.get_timeout())) {
         co_return false;
     }
@@ -177,6 +187,10 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
 }
 
 ss::future<> archival_metadata_stm::handle_eviction() {
+    vlog(
+      _logger.info,
+      "handle_eviction called, rev: {}",
+      _manifest.get_revision_id());
     cloud_storage::manifest manifest;
 
     auto bucket = config::shard_local_cfg().cloud_storage_bucket.value();
@@ -208,6 +222,10 @@ ss::future<> archival_metadata_stm::handle_eviction() {
           res)};
     }
 
+    vlog(
+      _logger.info,
+      "handle_eviction new manifest rev: {}",
+      manifest.get_revision_id());
     _manifest = std::move(manifest);
     for (const auto& segment : _manifest) {
         if (
@@ -236,6 +254,10 @@ ss::future<> archival_metadata_stm::handle_eviction() {
 
 ss::future<> archival_metadata_stm::apply_snapshot(
   stm_snapshot_header header, iobuf&& data) {
+    vlog(
+      _logger.info,
+      "apply_snapshot called, rev: {}",
+      _manifest.get_revision_id());
     auto snap = serde::from_iobuf<snapshot>(std::move(data));
 
     _manifest = cloud_storage::manifest(
@@ -243,6 +265,10 @@ ss::future<> archival_metadata_stm::apply_snapshot(
     for (const auto& segment : snap.segments) {
         apply_add_segment(segment);
     }
+    vlog(
+      _logger.info,
+      "apply_snapshot manifest updated, rev: {}",
+      _manifest.get_revision_id());
 
     vlog(
       _logger.info,
