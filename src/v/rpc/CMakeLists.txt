@@ -7,7 +7,6 @@ v_cc_library(
     transport.cc
     connection.cc
     probes.cc
-    logger.cc
     reconnect_transport.cc
     connection_cache.cc
     simple_protocol.cc

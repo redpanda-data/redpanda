@@ -17,5 +17,5 @@
 #include <seastar/util/log.hh>
 
 namespace rpc {
-extern ss::logger rpclog;
+inline ss::logger rpclog{"rpc"};
 } // namespace rpc
