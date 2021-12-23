@@ -16,12 +16,12 @@
 #include "config/tls_config.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "net/unresolved_address.h"
 #include "raft/group_manager.h"
 #include "raft/types.h"
 #include "rpc/connection_cache.h"
 #include "utils/mutex.h"
 #include "utils/retry.h"
-#include "net/unresolved_address.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
@@ -124,7 +124,8 @@ private:
     ss::future<>
     process_get_update_reply(result<get_leadership_reply>, request_retry_meta&);
 
-    ss::future<> update_metadata_with_retries(std::vector<net::unresolved_address>);
+    ss::future<>
+      update_metadata_with_retries(std::vector<net::unresolved_address>);
 
     ss::sharded<raft::group_manager>& _raft_manager;
     ss::sharded<cluster::partition_manager>& _partition_manager;

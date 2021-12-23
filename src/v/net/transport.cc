@@ -120,5 +120,4 @@ void base_transport::shutdown() noexcept {
     }
 }
 
-
 } // namespace net

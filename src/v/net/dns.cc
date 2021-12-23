@@ -10,8 +10,8 @@
  */
 #include "net/dns.h"
 
-#include "utils/mutex.h"
 #include "net/unresolved_address.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/net/dns.hh>

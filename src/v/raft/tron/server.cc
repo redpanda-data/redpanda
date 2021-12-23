@@ -10,6 +10,7 @@
 #include "net/server.h"
 
 #include "config/configuration.h"
+#include "net/unresolved_address.h"
 #include "platform/stop_signal.h"
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
@@ -26,7 +27,6 @@
 #include "storage/logger.h"
 #include "syschecks/syschecks.h"
 #include "utils/hdr_hist.h"
-#include "net/unresolved_address.h"
 #include "vlog.h"
 
 #include <seastar/core/app-template.hh>

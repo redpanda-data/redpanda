@@ -28,18 +28,18 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
+#include "net/dns.h"
+#include "net/unresolved_address.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "redpanda/application.h"
 #include "resource_mgmt/cpu_scheduling.h"
-#include "net/dns.h"
 #include "storage/directories.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "storage/tests/utils/random_batch.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
 #include "test_utils/logs.h"
-#include "net/unresolved_address.h"
 
 #include <seastar/util/log.hh>
 
@@ -197,7 +197,8 @@ public:
         kafka::client::configuration cfg;
         net::unresolved_address kafka_api{
           config::node().kafka_api()[0].address.host(), kafka_api_port};
-        cfg.brokers.set_value(std::vector<net::unresolved_address>({kafka_api}));
+        cfg.brokers.set_value(
+          std::vector<net::unresolved_address>({kafka_api}));
         return to_yaml(cfg);
     }
 

@@ -25,10 +25,10 @@
 #include "model/namespace.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
+#include "net/unresolved_address.h"
 #include "reflection/adl.h"
 #include "rpc/types.h"
 #include "ssx/sformat.h"
-#include "net/unresolved_address.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>

@@ -13,10 +13,10 @@
 
 #include "bytes/iobuf.h"
 #include "likely.h"
+#include "net/unresolved_address.h"
 #include "outcome.h"
 #include "seastarx.h"
 #include "utils/hdr_hist.h"
-#include "net/unresolved_address.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>

@@ -10,8 +10,8 @@
  */
 
 #pragma once
-#include "rpc/logger.h"
 #include "net/unresolved_address.h"
+#include "rpc/logger.h"
 
 #include <seastar/core/metrics_registration.hh>
 

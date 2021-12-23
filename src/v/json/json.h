@@ -13,8 +13,8 @@
 
 #include "likely.h"
 #include "model/metadata.h"
-#include "utils/named_type.h"
 #include "net/unresolved_address.h"
+#include "utils/named_type.h"
 
 #include <fmt/core.h>
 
@@ -67,7 +67,8 @@ void rjson_serialize(
   rapidjson::Writer<rapidjson::StringBuffer>& w, const ss::socket_address& v);
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, const net::unresolved_address& v);
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const net::unresolved_address& v);
 
 void rjson_serialize(
   rapidjson::Writer<rapidjson::StringBuffer>& w,

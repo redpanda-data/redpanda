@@ -12,8 +12,8 @@
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tests/cluster_test_fixture.h"
 #include "config/configuration.h"
-#include "test_utils/fixture.h"
 #include "net/unresolved_address.h"
+#include "test_utils/fixture.h"
 
 using namespace std::chrono_literals; // NOLINT
 

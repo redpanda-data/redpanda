@@ -10,10 +10,10 @@
  */
 #pragma once
 #include "net/batched_output_stream.h"
+#include "net/unresolved_address.h"
 #include "rpc/client_probe.h"
 #include "rpc/types.h"
 #include "seastarx.h"
-#include "net/unresolved_address.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>

@@ -21,8 +21,8 @@
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "redpanda/tests/fixture.h"
 #include "net/unresolved_address.h"
+#include "redpanda/tests/fixture.h"
 
 #include <boost/test/tools/old/interface.hpp>
 

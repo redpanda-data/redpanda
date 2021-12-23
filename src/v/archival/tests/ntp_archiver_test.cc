@@ -16,6 +16,7 @@
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
+#include "net/unresolved_address.h"
 #include "raft/offset_translator.h"
 #include "ssx/sformat.h"
 #include "storage/disk_log_impl.h"
@@ -23,7 +24,6 @@
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/fixture.h"
 #include "utils/retry_chain_node.h"
-#include "net/unresolved_address.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/smp.hh>

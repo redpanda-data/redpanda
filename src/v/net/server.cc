@@ -162,7 +162,10 @@ ss::future<> server::accept(listener& s) {
 void server::shutdown_input() {
     ss::sstring proto_name = _proto ? _proto->name() : "protocol not set";
     vlog(
-      rpc::rpclog.info, "{} - Stopping {} listeners", proto_name, _listeners.size());
+      rpc::rpclog.info,
+      "{} - Stopping {} listeners",
+      proto_name,
+      _listeners.size());
     for (auto& l : _listeners) {
         l->socket.abort_accept();
     }
@@ -249,4 +252,4 @@ std::ostream& operator<<(std::ostream& os, const server_endpoint& ep) {
     return os;
 }
 
-} // namespace rpc
+} // namespace net

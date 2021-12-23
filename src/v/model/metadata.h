@@ -12,9 +12,9 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "net/unresolved_address.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
-#include "net/unresolved_address.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -350,7 +350,8 @@ struct hash<model::broker_endpoint> {
     size_t operator()(const model::broker_endpoint& ep) const {
         size_t h = 0;
         boost::hash_combine(h, std::hash<ss::sstring>()(ep.name));
-        boost::hash_combine(h, std::hash<net::unresolved_address>()(ep.address));
+        boost::hash_combine(
+          h, std::hash<net::unresolved_address>()(ep.address));
         return h;
     }
 };

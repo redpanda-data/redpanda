@@ -16,9 +16,9 @@
 #include "cluster/logger.h"
 #include "config/node_config.h"
 #include "config/tls_config.h"
+#include "net/dns.h"
 #include "outcome_future_utils.h"
 #include "rpc/connection_cache.h"
-#include "net/dns.h"
 #include "rpc/types.h"
 
 #include <seastar/core/sharded.hh>
