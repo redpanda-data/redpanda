@@ -12,13 +12,15 @@
 #pragma once
 
 #include "net/connection.h"
-#include "rpc/types.h"
+#include "net/types.h"
 #include "utils/hdr_hist.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/core/semaphore.hh>
+#include <seastar/core/sharded.hh>
+#include <seastar/net/tls.hh>
 
 #include <boost/intrusive/list.hpp>
 
