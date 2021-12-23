@@ -15,6 +15,7 @@
 #include "s3/error.h"
 #include "s3/logger.h"
 #include "ssx/sformat.h"
+#include "vlog.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sstring.hh>

@@ -18,6 +18,7 @@
 #include "s3/logger.h"
 #include "s3/signature.h"
 #include "ssx/sformat.h"
+#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>

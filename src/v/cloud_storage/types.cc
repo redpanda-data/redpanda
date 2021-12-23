@@ -2,6 +2,7 @@
 
 #include "cloud_storage/logger.h"
 #include "config/configuration.h"
+#include "vlog.h"
 
 namespace cloud_storage {
 
