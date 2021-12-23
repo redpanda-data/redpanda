@@ -2,15 +2,17 @@
 
 #include "net/dns.h"
 #include "rpc/logger.h"
+#include "vassert.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/with_timeout.hh>
 
 namespace {
 
 ss::future<ss::connected_socket> connect_with_timeout(
-  const seastar::socket_address& address, rpc::clock_type::time_point timeout) {
+  const seastar::socket_address& address, net::clock_type::time_point timeout) {
     auto socket = ss::make_lw_shared<ss::socket>(ss::engine().net().socket());
     auto f = socket->connect(address).finally([socket] {});
     return ss::with_timeout(timeout, std::move(f))

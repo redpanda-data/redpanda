@@ -13,7 +13,6 @@
 #include "likely.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "rpc/logger.h"
-#include "rpc/types.h"
 #include "ssx/sformat.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -22,6 +21,7 @@
 #include <seastar/core/metrics.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/net/api.hh>
+#include <seastar/util/later.hh>
 
 namespace net {
 
@@ -157,7 +157,7 @@ ss::future<> server::accept(listener& s) {
                 ss::stop_iteration::no);
           });
     });
-} // namespace rpc
+}
 
 void server::shutdown_input() {
     ss::sstring proto_name = _proto ? _proto->name() : "protocol not set";
