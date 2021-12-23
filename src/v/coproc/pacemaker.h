@@ -22,7 +22,6 @@
 #include "coproc/shared_script_resources.h"
 #include "coproc/sys_refs.h"
 #include "coproc/types.h"
-#include "rpc/reconnect_transport.h"
 #include "storage/fwd.h"
 #include "storage/snapshot.h"
 

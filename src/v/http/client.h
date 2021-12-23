@@ -18,7 +18,6 @@
 #include "http/logger.h"
 #include "http/probe.h"
 #include "net/transport.h"
-#include "rpc/types.h"
 #include "seastarx.h"
 #include "utils/prefix_logger.h"
 

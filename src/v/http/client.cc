@@ -12,7 +12,6 @@
 #include "bytes/details/io_iterator_consumer.h"
 #include "bytes/iobuf.h"
 #include "http/logger.h"
-#include "rpc/types.h"
 #include "ssx/sformat.h"
 #include "vlog.h"
 

@@ -12,7 +12,6 @@
 #include "bytes/iobuf_parser.h"
 #include "net/dns.h"
 #include "net/unresolved_address.h"
-#include "rpc/transport.h"
 #include "rpc/types.h"
 #include "s3/client.h"
 #include "s3/error.h"
