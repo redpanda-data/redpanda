@@ -6,6 +6,7 @@ v_cc_library(
     transport.cc
     connection.cc
     server.cc
+    probes.cc
   DEPS
     Seastar::seastar
   )

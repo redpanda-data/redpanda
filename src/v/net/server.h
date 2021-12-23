@@ -90,7 +90,7 @@ public:
         // NOLINTNEXTLINE
         ss::lw_shared_ptr<net::connection> conn;
 
-        rpc::server_probe& probe() { return _s->_probe; }
+        server_probe& probe() { return _s->_probe; }
         ss::semaphore& memory() { return _s->_memory; }
         hdr_hist& hist() { return _s->_hist; }
         ss::gate& conn_gate() { return _s->_conn_gate; }
@@ -167,7 +167,7 @@ private:
     ss::abort_source _as;
     ss::gate _conn_gate;
     hdr_hist _hist;
-    rpc::server_probe _probe;
+    server_probe _probe;
     ss::metrics::metric_groups _metrics;
 };
 

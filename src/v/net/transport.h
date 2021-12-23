@@ -10,8 +10,8 @@
  */
 #pragma once
 #include "net/batched_output_stream.h"
+#include "net/client_probe.h"
 #include "net/unresolved_address.h"
-#include "rpc/client_probe.h"
 #include "rpc/types.h"
 #include "seastarx.h"
 
@@ -67,7 +67,7 @@ protected:
     ss::input_stream<char> _in;
     net::batched_output_stream _out;
     ss::gate _dispatch_gate;
-    rpc::client_probe _probe;
+    client_probe _probe;
 
 private:
     ss::future<> do_connect(clock_type::time_point);

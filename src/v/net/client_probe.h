@@ -17,7 +17,7 @@
 
 #include <iosfwd>
 
-namespace rpc {
+namespace net {
 class client_probe {
 public:
     void request() {
@@ -52,12 +52,12 @@ public:
     void connection_closed() { --_connections; }
 
     void connection_error(const std::exception_ptr& e) {
-        rpclog.trace("Connection error: {}", e);
+        rpc::rpclog.trace("Connection error: {}", e);
         ++_connection_errors;
     }
 
     void read_dispatch_error(const std::exception_ptr& e) {
-        rpclog.error("Error dispatching client reads: {}", e);
+        rpc::rpclog.error("Error dispatching client reads: {}", e);
         ++_read_dispatch_errors;
     }
 
@@ -94,4 +94,4 @@ private:
 
     friend std::ostream& operator<<(std::ostream& o, const client_probe& p);
 };
-}; // namespace rpc
+}; // namespace net

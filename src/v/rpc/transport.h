@@ -12,10 +12,10 @@
 #pragma once
 
 #include "net/batched_output_stream.h"
+#include "net/client_probe.h"
 #include "net/transport.h"
 #include "outcome.h"
 #include "reflection/async_adl.h"
-#include "rpc/client_probe.h"
 #include "rpc/errc.h"
 #include "rpc/parse_utils.h"
 #include "rpc/response_handler.h"

@@ -18,7 +18,7 @@ connection::connection(
   ss::sstring name,
   ss::connected_socket f,
   ss::socket_address a,
-  rpc::server_probe& p)
+  server_probe& p)
   : addr(std::move(a))
   , _hook(hook)
   , _name(std::move(name))

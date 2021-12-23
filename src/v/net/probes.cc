@@ -7,9 +7,9 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "net/client_probe.h"
+#include "net/server_probe.h"
 #include "prometheus/prometheus_sanitize.h"
-#include "rpc/client_probe.h"
-#include "rpc/server_probe.h"
 #include "ssx/sformat.h"
 
 #include <seastar/core/metrics.hh>
@@ -17,7 +17,7 @@
 
 #include <ostream>
 
-namespace rpc {
+namespace net {
 void server_probe::setup_metrics(
   ss::metrics::metric_groups& mgs, const char* proto) {
     namespace sm = ss::metrics;
@@ -184,7 +184,7 @@ void client_probe::setup_metrics(
       });
 }
 
-std::ostream& operator<<(std::ostream& o, const rpc::client_probe& p) {
+std::ostream& operator<<(std::ostream& o, const client_probe& p) {
     o << "{"
       << " requests_sent: " << p._requests
       << ", requests_pending: " << p._requests_pending
@@ -201,4 +201,4 @@ std::ostream& operator<<(std::ostream& o, const rpc::client_probe& p) {
       << ", requests_blocked_memory: " << p._requests_blocked_memory << " }";
     return o;
 }
-} // namespace rpc
+} // namespace net

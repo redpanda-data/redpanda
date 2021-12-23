@@ -4,7 +4,6 @@ v_cc_library(
     types.cc
     netbuf.cc
     transport.cc
-    probes.cc
     reconnect_transport.cc
     connection_cache.cc
     simple_protocol.cc

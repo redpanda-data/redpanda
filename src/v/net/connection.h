@@ -12,7 +12,7 @@
 #pragma once
 
 #include "net/batched_output_stream.h"
-#include "rpc/server_probe.h"
+#include "net/server_probe.h"
 #include "seastarx.h"
 
 #include <seastar/core/iostream.hh>
@@ -34,7 +34,7 @@ public:
       ss::sstring name,
       ss::connected_socket f,
       ss::socket_address a,
-      rpc::server_probe& p);
+      server_probe& p);
     ~connection() noexcept;
     connection(const connection&) = delete;
     connection& operator=(const connection&) = delete;
@@ -56,7 +56,7 @@ private:
     ss::connected_socket _fd;
     ss::input_stream<char> _in;
     net::batched_output_stream _out;
-    rpc::server_probe& _probe;
+    server_probe& _probe;
 };
 
 } // namespace net
