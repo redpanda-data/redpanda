@@ -124,7 +124,10 @@ static error_outcome categorize_error(
             // This is a short read error that can be caused by the abrupt TLS
             // shutdown. The content of the received buffer is discarded in this
             // case and http client receives an empty buffer.
-            vlog(ctxlog.warn, "Short Read detected, retrying {}", err.what());
+            vlog(
+              ctxlog.info,
+              "Server disconnected: '{}', retrying HTTP request",
+              err.what());
         }
     } catch (...) {
         vlog(ctxlog.error, "Unexpected error {}", std::current_exception());
