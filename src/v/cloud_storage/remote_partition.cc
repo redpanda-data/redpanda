@@ -116,6 +116,10 @@ public:
                 co_return storage_t{};
             }
             while (co_await maybe_reset_reader()) {
+                if (_partition->_as.abort_requested()) {
+                    co_await set_end_of_stream();
+                    co_return storage_t{};
+                }
                 vlog(
                   _ctxlog.debug,
                   "Invoking 'read_some' on current log reader with config: {}",
