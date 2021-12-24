@@ -168,7 +168,7 @@ In a new console window, run a Red Panda console-consumer for the `ages` topic:
 rpk topic consume ages --brokers 127.0.0.1:58383,127.0.0.1:58388,127.0.0.1:58389
 ```
 
-Finally, run first the main method of the `JsonStreamsProcessor` and then run the main method of the `JsonConsumer`.
+Finally, run first the main method of the `JsonStreamsProcessor` and then run the main method of the `JsonProducer`.
 
 The output for the command-line topic-consumer for the topic `persons` should be like this:
 
