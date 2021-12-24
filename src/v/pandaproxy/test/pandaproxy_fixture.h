@@ -31,14 +31,15 @@ public:
     ~pandaproxy_test_fixture() = default;
 
     http::client make_proxy_client() {
-        rpc::base_transport::configuration transport_cfg;
-        transport_cfg.server_addr = unresolved_address{"localhost", proxy_port};
+        net::base_transport::configuration transport_cfg;
+        transport_cfg.server_addr = net::unresolved_address{
+          "localhost", proxy_port};
         return http::client(transport_cfg);
     }
 
     http::client make_schema_reg_client() {
-        rpc::base_transport::configuration transport_cfg;
-        transport_cfg.server_addr = unresolved_address{
+        net::base_transport::configuration transport_cfg;
+        transport_cfg.server_addr = net::unresolved_address{
           "localhost", schema_reg_port};
         return http::client(transport_cfg);
     }

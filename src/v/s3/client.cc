@@ -13,11 +13,12 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_istreambuf.h"
 #include "hashing/secure.h"
-#include "rpc/types.h"
+#include "net/types.h"
 #include "s3/error.h"
 #include "s3/logger.h"
 #include "s3/signature.h"
 #include "ssx/sformat.h"
+#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
@@ -112,7 +113,7 @@ ss::future<configuration> configuration::make_configuration(
   const private_key_str& skey,
   const aws_region_name& region,
   const default_overrides& overrides,
-  rpc::metrics_disabled disable_metrics) {
+  net::metrics_disabled disable_metrics) {
     configuration client_cfg;
     const auto endpoint_uri = make_endpoint_url(region, overrides.endpoint);
     client_cfg.tls_sni_hostname = endpoint_uri;
@@ -157,7 +158,7 @@ ss::future<configuration> configuration::make_configuration(
 
     constexpr uint16_t default_port = 443;
 
-    client_cfg.server_addr = unresolved_address(
+    client_cfg.server_addr = net::unresolved_address(
       client_cfg.uri(),
       overrides.port ? *overrides.port : default_port,
       ss::net::inet_address::family::INET);

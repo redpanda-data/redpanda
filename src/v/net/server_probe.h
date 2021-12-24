@@ -17,7 +17,7 @@
 
 #include <iosfwd>
 
-namespace rpc {
+namespace net {
 
 class server_probe {
 public:
@@ -64,4 +64,4 @@ private:
 };
 
 std::ostream& operator<<(std::ostream& o, const server_probe& p);
-}; // namespace rpc
+}; // namespace net

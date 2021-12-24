@@ -11,8 +11,8 @@
 #pragma once
 
 #include "http/client.h"
-#include "rpc/transport.h"
-#include "rpc/types.h"
+#include "net/transport.h"
+#include "net/types.h"
 #include "s3/client_probe.h"
 #include "s3/signature.h"
 #include "utils/gate_guard.h"
@@ -56,7 +56,7 @@ struct default_overrides {
 };
 
 /// S3 client configuration
-struct configuration : rpc::base_transport::configuration {
+struct configuration : net::base_transport::configuration {
     /// URI of the S3 access point
     access_point_uri uri;
     /// AWS access key
@@ -86,7 +86,7 @@ struct configuration : rpc::base_transport::configuration {
       const private_key_str& skey,
       const aws_region_name& region,
       const default_overrides& overrides = {},
-      rpc::metrics_disabled disable_metrics = rpc::metrics_disabled::yes);
+      net::metrics_disabled disable_metrics = net::metrics_disabled::yes);
 };
 
 std::ostream& operator<<(std::ostream& o, const configuration& c);

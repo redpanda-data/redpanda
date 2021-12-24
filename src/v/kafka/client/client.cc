@@ -26,10 +26,10 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
+#include "net/unresolved_address.h"
 #include "random/generators.h"
 #include "seastarx.h"
 #include "ssx/future-util.h"
-#include "utils/unresolved_address.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -56,7 +56,7 @@ client::client(const YAML::Node& cfg)
                   return mitigate_error(std::move(ex));
               }} {}
 
-ss::future<> client::do_connect(unresolved_address addr) {
+ss::future<> client::do_connect(net::unresolved_address addr) {
     return ss::try_with_gate(_gate, [this, addr]() {
         return make_broker(unknown_node_id, addr, _config)
           .then([this](shared_broker_t broker) {
@@ -119,7 +119,7 @@ ss::future<> client::update_metadata(wait_or_start::tag) {
                     // Create new seeds from the returned set of brokers if
                     // they're not empty
                     if (!res.data.brokers.empty()) {
-                        std::vector<unresolved_address> seeds;
+                        std::vector<net::unresolved_address> seeds;
                         seeds.reserve(res.data.brokers.size());
                         for (const auto& b : res.data.brokers) {
                             seeds.emplace_back(b.host, b.port);
@@ -350,7 +350,7 @@ client::create_consumer(const group_id& group_id, member_id name) {
       .then([this](find_coordinator_response res) {
           return make_broker(
             res.data.node_id,
-            unresolved_address(res.data.host, res.data.port),
+            net::unresolved_address(res.data.host, res.data.port),
             _config);
       })
       .then([this, group_id, name](shared_broker_t coordinator) mutable {

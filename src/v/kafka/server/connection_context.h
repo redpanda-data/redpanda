@@ -11,7 +11,7 @@
 #pragma once
 #include "kafka/server/protocol.h"
 #include "kafka/server/response.h"
-#include "rpc/server.h"
+#include "net/server.h"
 #include "seastarx.h"
 #include "security/acl.h"
 #include "security/sasl_authentication.h"
@@ -42,7 +42,7 @@ class connection_context final
 public:
     connection_context(
       protocol& p,
-      rpc::server::resources&& r,
+      net::server::resources&& r,
       security::sasl_server sasl,
       bool enable_authorizer) noexcept
       : _proto(p)
@@ -114,7 +114,7 @@ private:
     // used to track number of pending requests
     class request_tracker {
     public:
-        explicit request_tracker(rpc::server_probe& probe) noexcept
+        explicit request_tracker(net::server_probe& probe) noexcept
           : _probe(probe) {
             _probe.request_received();
         }
@@ -126,7 +126,7 @@ private:
         ~request_tracker() noexcept { _probe.request_completed(); }
 
     private:
-        rpc::server_probe& _probe;
+        net::server_probe& _probe;
     };
     // used to pass around some internal state
     struct session_resources {
@@ -205,7 +205,7 @@ private:
     };
 
     protocol& _proto;
-    rpc::server::resources _rs;
+    net::server::resources _rs;
     sequence_id _next_response;
     sequence_id _seq_idx;
     map_t _responses;

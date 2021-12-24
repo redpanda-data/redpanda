@@ -10,8 +10,6 @@
 
 #include "bytes/iobuf.h"
 #include "http/client.h"
-#include "rpc/transport.h"
-#include "rpc/types.h"
 #include "s3/client.h"
 #include "s3/error.h"
 #include "s3/signature.h"

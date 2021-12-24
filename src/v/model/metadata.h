@@ -12,9 +12,9 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "net/unresolved_address.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
-#include "utils/unresolved_address.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -54,16 +54,16 @@ struct broker_properties {
 
 struct broker_endpoint final {
     ss::sstring name;
-    unresolved_address address;
+    net::unresolved_address address;
 
     // required for yaml serde
     broker_endpoint() = default;
 
-    broker_endpoint(ss::sstring name, unresolved_address address) noexcept
+    broker_endpoint(ss::sstring name, net::unresolved_address address) noexcept
       : name(std::move(name))
       , address(std::move(address)) {}
 
-    explicit broker_endpoint(unresolved_address address) noexcept
+    explicit broker_endpoint(net::unresolved_address address) noexcept
       : address(std::move(address)) {}
 
     bool operator==(const broker_endpoint&) const = default;
@@ -118,7 +118,7 @@ public:
     broker(
       node_id id,
       std::vector<broker_endpoint> kafka_advertised_listeners,
-      unresolved_address rpc_address,
+      net::unresolved_address rpc_address,
       std::optional<ss::sstring> rack,
       broker_properties props) noexcept
       : _id(id)
@@ -129,8 +129,8 @@ public:
 
     broker(
       node_id id,
-      unresolved_address kafka_advertised_listener,
-      unresolved_address rpc_address,
+      net::unresolved_address kafka_advertised_listener,
+      net::unresolved_address rpc_address,
       std::optional<ss::sstring> rack,
       broker_properties props) noexcept
       : broker(
@@ -149,7 +149,7 @@ public:
     const std::vector<broker_endpoint>& kafka_advertised_listeners() const {
         return _kafka_advertised_listeners;
     }
-    const unresolved_address& rpc_address() const { return _rpc_address; }
+    const net::unresolved_address& rpc_address() const { return _rpc_address; }
     const std::optional<ss::sstring>& rack() const { return _rack; }
 
     membership_state get_membership_state() const { return _membership_state; }
@@ -161,7 +161,7 @@ public:
 private:
     node_id _id;
     std::vector<broker_endpoint> _kafka_advertised_listeners;
-    unresolved_address _rpc_address;
+    net::unresolved_address _rpc_address;
     std::optional<ss::sstring> _rack;
     broker_properties _properties;
     // in memory state, not serialized
@@ -321,8 +321,8 @@ namespace internal {
  */
 struct broker_v0 {
     model::node_id id;
-    unresolved_address kafka_address;
-    unresolved_address rpc_address;
+    net::unresolved_address kafka_address;
+    net::unresolved_address rpc_address;
     std::optional<ss::sstring> rack;
     model::broker_properties properties;
 
@@ -350,7 +350,8 @@ struct hash<model::broker_endpoint> {
     size_t operator()(const model::broker_endpoint& ep) const {
         size_t h = 0;
         boost::hash_combine(h, std::hash<ss::sstring>()(ep.name));
-        boost::hash_combine(h, std::hash<unresolved_address>()(ep.address));
+        boost::hash_combine(
+          h, std::hash<net::unresolved_address>()(ep.address));
         return h;
     }
 };
@@ -382,7 +383,7 @@ struct hash<model::broker> {
             boost::hash_combine(h, std::hash<model::broker_endpoint>()(ep));
         }
         boost::hash_combine(
-          h, std::hash<unresolved_address>()(b.rpc_address()));
+          h, std::hash<net::unresolved_address>()(b.rpc_address()));
         boost::hash_combine(
           h, std::hash<model::broker_properties>()(b.properties()));
         boost::hash_combine(

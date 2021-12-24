@@ -7,11 +7,12 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "rpc/connection.h"
+#include "net/connection.h"
 
 #include "rpc/logger.h"
 
-namespace rpc {
+namespace net {
+
 connection::connection(
   boost::intrusive::list<connection>& hook,
   ss::sstring name,
@@ -28,6 +29,7 @@ connection::connection(
     _hook.push_back(*this);
     _probe.connection_established();
 }
+
 connection::~connection() noexcept { _hook.erase(_hook.iterator_to(*this)); }
 
 void connection::shutdown_input() {
@@ -35,7 +37,7 @@ void connection::shutdown_input() {
         _fd.shutdown_input();
     } catch (...) {
         _probe.connection_close_error();
-        rpclog.debug(
+        rpc::rpclog.debug(
           "Failed to shutdown connection: {}", std::current_exception());
     }
 }
@@ -44,9 +46,10 @@ ss::future<> connection::shutdown() {
     _probe.connection_closed();
     return _out.stop();
 }
+
 ss::future<> connection::write(ss::scattered_message<char> msg) {
     _probe.add_bytes_sent(msg.size());
     return _out.write(std::move(msg));
 }
 
-} // namespace rpc
+} // namespace net

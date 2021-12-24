@@ -63,7 +63,9 @@ ss::future<> brokers::apply(std::vector<metadata_response::broker>&& res) {
                  new_brokers.end(),
                  [this](const metadata_response::broker& b) {
                      return make_broker(
-                       b.node_id, unresolved_address(b.host, b.port), _config);
+                       b.node_id,
+                       net::unresolved_address(b.host, b.port),
+                       _config);
                  })
           .then([this, &new_brokers, new_brokers_begin](
                   std::vector<shared_broker_t> broker_endpoints) mutable {

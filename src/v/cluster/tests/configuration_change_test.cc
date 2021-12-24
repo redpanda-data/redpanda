@@ -15,8 +15,8 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
+#include "net/unresolved_address.h"
 #include "test_utils/fixture.h"
-#include "utils/unresolved_address.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/sstring.hh>
@@ -64,7 +64,7 @@ FIXTURE_TEST(test_updating_node_rpc_ip_address, cluster_test_fixture) {
           }
 
           return updated_broker.value()->rpc_address()
-                 == unresolved_address("127.0.0.1", 13002);
+                 == net::unresolved_address("127.0.0.1", 13002);
       })
       .get0();
 }
@@ -88,6 +88,6 @@ FIXTURE_TEST(test_single_node_update, cluster_test_fixture) {
         }
 
         return updated_broker.value()->kafka_advertised_listeners()[0].address
-               == unresolved_address("127.0.0.1", 15000);
+               == net::unresolved_address("127.0.0.1", 15000);
     }).get0();
 }

@@ -25,10 +25,10 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
+#include "net/unresolved_address.h"
 #include "rpc/connection_cache.h"
 #include "rpc/types.h"
 #include "utils/retry.h"
-#include "utils/unresolved_address.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -107,7 +107,7 @@ ss::future<> metadata_dissemination_service::start() {
     // poll either seed servers or configuration
     auto all_brokers = _members_table.local().all_brokers();
     // use hash set to deduplicate ids
-    absl::flat_hash_set<unresolved_address> all_broker_addresses;
+    absl::flat_hash_set<net::unresolved_address> all_broker_addresses;
     all_broker_addresses.reserve(all_brokers.size() + _seed_servers.size());
     // collect ids
     for (auto& b : all_brokers) {
@@ -124,7 +124,7 @@ ss::future<> metadata_dissemination_service::start() {
     if (all_broker_addresses.empty()) {
         return ss::make_ready_future<>();
     }
-    std::vector<unresolved_address> addresses;
+    std::vector<net::unresolved_address> addresses;
     addresses.reserve(all_broker_addresses.size());
     addresses.insert(
       addresses.begin(),
@@ -184,7 +184,7 @@ wait_for_next_retry(std::chrono::seconds sleep_for, ss::abort_source& as) {
 }
 
 ss::future<> metadata_dissemination_service::update_metadata_with_retries(
-  std::vector<unresolved_address> addresses) {
+  std::vector<net::unresolved_address> addresses) {
     return ss::do_with(
       request_retry_meta{.addresses = std::move(addresses)},
       [this](request_retry_meta& meta) {
@@ -245,7 +245,7 @@ ss::future<> metadata_dissemination_service::process_get_update_reply(
 
 ss::future<result<get_leadership_reply>>
 metadata_dissemination_service::dispatch_get_metadata_update(
-  unresolved_address address) {
+  net::unresolved_address address) {
     vlog(clusterlog.debug, "Requesting metadata update from node {}", address);
     return do_with_client_one_shot<metadata_dissemination_rpc_client_protocol>(
       address,

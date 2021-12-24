@@ -40,7 +40,7 @@ namespace pandaproxy {
 class server {
 public:
     struct context_t {
-        std::vector<unresolved_address> advertised_listeners;
+        std::vector<net::unresolved_address> advertised_listeners;
         ss::semaphore& mem_sem;
         ss::abort_source as;
         ss::smp_service_group smp_sg;

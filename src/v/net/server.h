@@ -11,14 +11,16 @@
 
 #pragma once
 
-#include "rpc/connection.h"
-#include "rpc/types.h"
+#include "net/connection.h"
+#include "net/types.h"
 #include "utils/hdr_hist.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/core/semaphore.hh>
+#include <seastar/core/sharded.hh>
+#include <seastar/net/tls.hh>
 
 #include <boost/intrusive/list.hpp>
 
@@ -26,19 +28,69 @@
 #include <type_traits>
 #include <vector>
 
-namespace rpc {
+/*
+ * TODO:
+ *  - server_config has some simple_protocol bits
+ */
+namespace net {
+
+struct server_endpoint {
+    ss::sstring name;
+    ss::socket_address addr;
+    ss::shared_ptr<ss::tls::server_credentials> credentials;
+
+    server_endpoint(ss::sstring name, ss::socket_address addr)
+      : name(std::move(name))
+      , addr(addr) {}
+
+    server_endpoint(
+      ss::sstring name,
+      ss::socket_address addr,
+      ss::shared_ptr<ss::tls::server_credentials> creds)
+      : name(std::move(name))
+      , addr(addr)
+      , credentials(std::move(creds)) {}
+
+    server_endpoint(
+      ss::socket_address addr,
+      ss::shared_ptr<ss::tls::server_credentials> creds)
+      : server_endpoint("", addr, std::move(creds)) {}
+
+    explicit server_endpoint(ss::socket_address addr)
+      : server_endpoint("", addr) {}
+};
+
+std::ostream& operator<<(std::ostream&, const server_endpoint&);
+
+struct server_configuration {
+    std::vector<server_endpoint> addrs;
+    int64_t max_service_memory_per_core;
+    std::optional<int> listen_backlog;
+    std::optional<int> tcp_recv_buf;
+    std::optional<int> tcp_send_buf;
+    net::metrics_disabled disable_metrics = net::metrics_disabled::no;
+    ss::sstring name;
+    // we use the same default as seastar for load balancing algorithm
+    ss::server_socket::load_balancing_algorithm load_balancing_algo
+      = ss::server_socket::load_balancing_algorithm::connection_distribution;
+
+    explicit server_configuration(ss::sstring n)
+      : name(std::move(n)) {}
+};
+
+std::ostream& operator<<(std::ostream&, const server_configuration&);
 
 class server {
 public:
     // always guaranteed non-null
     class resources final {
     public:
-        resources(server* s, ss::lw_shared_ptr<connection> c)
+        resources(server* s, ss::lw_shared_ptr<net::connection> c)
           : conn(std::move(c))
           , _s(s) {}
 
         // NOLINTNEXTLINE
-        ss::lw_shared_ptr<connection> conn;
+        ss::lw_shared_ptr<net::connection> conn;
 
         server_probe& probe() { return _s->_probe; }
         ss::semaphore& memory() { return _s->_memory; }
@@ -113,7 +165,7 @@ private:
     std::unique_ptr<protocol> _proto;
     ss::semaphore _memory;
     std::vector<std::unique_ptr<listener>> _listeners;
-    boost::intrusive::list<connection> _connections;
+    boost::intrusive::list<net::connection> _connections;
     ss::abort_source _as;
     ss::gate _conn_gate;
     hdr_hist _hist;
@@ -121,4 +173,4 @@ private:
     ss::metrics::metric_groups _metrics;
 };
 
-} // namespace rpc
+} // namespace net

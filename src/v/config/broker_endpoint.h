@@ -39,7 +39,7 @@ struct convert<model::broker_endpoint> {
         }
         auto address = node["address"].as<ss::sstring>();
         auto port = node["port"].as<uint16_t>();
-        auto addr = unresolved_address(std::move(address), port);
+        auto addr = net::unresolved_address(std::move(address), port);
         rhs = model::broker_endpoint(std::move(name), std::move(addr));
         return true;
     }

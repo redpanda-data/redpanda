@@ -28,6 +28,7 @@
 #include "finjector/hbadger.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "net/dns.h"
 #include "raft/types.h"
 #include "redpanda/admin/api-doc/broker.json.h"
 #include "redpanda/admin/api-doc/cluster_config.json.h"
@@ -37,7 +38,6 @@
 #include "redpanda/admin/api-doc/raft.json.h"
 #include "redpanda/admin/api-doc/security.json.h"
 #include "redpanda/admin/api-doc/status.json.h"
-#include "rpc/dns.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "vlog.h"
@@ -257,7 +257,7 @@ ss::future<> admin_server::configure_listeners() {
                   });
             }
         }
-        auto resolved = co_await rpc::resolve_dns(ep.address);
+        auto resolved = co_await net::resolve_dns(ep.address);
         co_await ss::with_scheduling_group(_cfg.sg, [this, cred, resolved] {
             return _server.listen(resolved, cred);
         });

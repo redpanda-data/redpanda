@@ -9,7 +9,7 @@
 
 #include "http/client.h"
 
-#include "rpc/transport.h"
+#include "net/transport.h"
 #include "rpc/types.h"
 #include "seastarx.h"
 #include "syschecks/syschecks.h"
@@ -83,7 +83,7 @@ inline std::ostream& operator<<(std::ostream& out, const test_conf& cfg) {
 
 test_conf cfg_from(boost::program_options::variables_map& m) {
     rpc::transport_configuration client_cfg;
-    client_cfg.server_addr = unresolved_address(
+    client_cfg.server_addr = net::unresolved_address(
       m["ip"].as<std::string>(), m["port"].as<uint16_t>());
     return test_conf{
       .chunk_size = m["chunk-size"].as<std::size_t>(),
@@ -133,7 +133,7 @@ int main(int args, char** argv, char** env) {
         auto& cfg = app.configuration();
         return ss::async([&] {
             const test_conf lcfg = cfg_from(cfg);
-            rpc::base_transport::configuration transport_cfg;
+            net::base_transport::configuration transport_cfg;
             transport_cfg.server_addr = lcfg.client_cfg.server_addr;
             transport_cfg.credentials = lcfg.client_cfg.credentials;
             vlog(test_log.info, "config:{}", lcfg);

@@ -17,9 +17,7 @@
 #include "http/iobuf_body.h"
 #include "http/logger.h"
 #include "http/probe.h"
-#include "rpc/backoff_policy.h"
-#include "rpc/transport.h"
-#include "rpc/types.h"
+#include "net/transport.h"
 #include "seastarx.h"
 #include "utils/prefix_logger.h"
 
@@ -69,7 +67,7 @@ enum class reconnect_result_t {
 };
 
 /// Http client
-class client : protected rpc::base_transport {
+class client : protected net::base_transport {
     enum {
         protocol_version = 11,
     };
@@ -81,18 +79,18 @@ public:
     using field = boost::beast::http::field;
     using verb = boost::beast::http::verb;
 
-    explicit client(const rpc::base_transport::configuration& cfg);
+    explicit client(const net::base_transport::configuration& cfg);
     client(
-      const rpc::base_transport::configuration& cfg,
+      const net::base_transport::configuration& cfg,
       const ss::abort_source& as);
     client(
-      const rpc::base_transport::configuration& cfg,
+      const net::base_transport::configuration& cfg,
       const ss::abort_source* as,
       ss::shared_ptr<client_probe> probe,
       ss::lowres_clock::duration max_idle_time = {});
 
     ss::future<> stop();
-    using rpc::base_transport::shutdown;
+    using net::base_transport::shutdown;
 
     /// Return immediately if connected or make connection attempts
     /// until success, timeout or error

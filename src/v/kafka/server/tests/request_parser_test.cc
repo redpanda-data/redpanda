@@ -79,7 +79,7 @@ get_request_context(kafka::protocol& proto, ss::input_stream<char>&& input) {
                           auto conn
                             = ss::make_lw_shared<kafka::connection_context>(
                               proto,
-                              rpc::server::resources(nullptr, nullptr),
+                              net::server::resources(nullptr, nullptr),
                               std::move(sasl),
                               false);
 

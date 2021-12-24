@@ -47,8 +47,8 @@ FIXTURE_TEST(register_node, partition_allocator_fixture) {
 model::broker create_broker(int node_id, uint32_t core_count) {
     return model::broker(
       model::node_id(node_id),
-      unresolved_address("localhost", 1024),
-      unresolved_address("localhost", 1024),
+      net::unresolved_address("localhost", 1024),
+      net::unresolved_address("localhost", 1024),
       std::nullopt,
       model::broker_properties{.cores = core_count});
 }

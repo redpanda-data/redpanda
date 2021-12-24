@@ -28,18 +28,18 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
+#include "net/dns.h"
+#include "net/unresolved_address.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "redpanda/application.h"
 #include "resource_mgmt/cpu_scheduling.h"
-#include "rpc/dns.h"
 #include "storage/directories.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "storage/tests/utils/random_batch.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
 #include "test_utils/logs.h"
-#include "utils/unresolved_address.h"
 
 #include <seastar/util/log.hh>
 
@@ -171,16 +171,16 @@ public:
               std::optional<ss::sstring>(rack_name));
             node_config.get("seed_servers").set_value(seed_servers);
             node_config.get("rpc_server")
-              .set_value(unresolved_address("127.0.0.1", rpc_port));
+              .set_value(net::unresolved_address("127.0.0.1", rpc_port));
             node_config.get("kafka_api")
               .set_value(
                 std::vector<model::broker_endpoint>{model::broker_endpoint(
-                  unresolved_address("127.0.0.1", kafka_port))});
+                  net::unresolved_address("127.0.0.1", kafka_port))});
             node_config.get("data_directory")
               .set_value(config::data_directory_path{.path = base_path});
             node_config.get("coproc_supervisor_server")
               .set_value(
-                unresolved_address("127.0.0.1", coproc_supervisor_port));
+                net::unresolved_address("127.0.0.1", coproc_supervisor_port));
         }).get0();
     }
 
@@ -188,16 +188,17 @@ public:
         pandaproxy::rest::configuration cfg;
         cfg.get("pandaproxy_api")
           .set_value(std::vector<model::broker_endpoint>{model::broker_endpoint(
-            unresolved_address("127.0.0.1", proxy_port))});
+            net::unresolved_address("127.0.0.1", proxy_port))});
         return to_yaml(cfg);
     }
 
     YAML::Node proxy_client_config(
       uint16_t kafka_api_port = config::node().kafka_api()[0].address.port()) {
         kafka::client::configuration cfg;
-        unresolved_address kafka_api{
+        net::unresolved_address kafka_api{
           config::node().kafka_api()[0].address.host(), kafka_api_port};
-        cfg.brokers.set_value(std::vector<unresolved_address>({kafka_api}));
+        cfg.brokers.set_value(
+          std::vector<net::unresolved_address>({kafka_api}));
         return to_yaml(cfg);
     }
 
@@ -205,7 +206,7 @@ public:
         pandaproxy::schema_registry::configuration cfg;
         cfg.get("schema_registry_api")
           .set_value(std::vector<model::broker_endpoint>{model::broker_endpoint(
-            unresolved_address("127.0.0.1", listen_port))});
+            net::unresolved_address("127.0.0.1", listen_port))});
         cfg.get("schema_registry_replication_factor")
           .set_value(std::make_optional<int16_t>(1));
         return to_yaml(cfg);
@@ -225,7 +226,7 @@ public:
 
     ss::future<kafka::client::transport> make_kafka_client() {
         return ss::make_ready_future<kafka::client::transport>(
-          rpc::base_transport::configuration{
+          net::base_transport::configuration{
             .server_addr = config::node().kafka_api()[0].address,
           });
     }
@@ -354,7 +355,7 @@ public:
         security::sasl_server sasl(security::sasl_server::sasl_state::complete);
         auto conn = ss::make_lw_shared<kafka::connection_context>(
           *proto,
-          rpc::server::resources(nullptr, nullptr),
+          net::server::resources(nullptr, nullptr),
           std::move(sasl),
           false);
 

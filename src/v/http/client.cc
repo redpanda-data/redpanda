@@ -12,9 +12,8 @@
 #include "bytes/details/io_iterator_consumer.h"
 #include "bytes/iobuf.h"
 #include "http/logger.h"
-#include "rpc/backoff_policy.h"
-#include "rpc/types.h"
 #include "ssx/sformat.h"
+#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
@@ -45,19 +44,19 @@ namespace http {
 // client implementation //
 static constexpr ss::lowres_clock::duration default_max_idle_time = 1s;
 
-client::client(const rpc::base_transport::configuration& cfg)
+client::client(const net::base_transport::configuration& cfg)
   : client(cfg, nullptr, nullptr, default_max_idle_time) {}
 
 client::client(
-  const rpc::base_transport::configuration& cfg, const ss::abort_source& as)
+  const net::base_transport::configuration& cfg, const ss::abort_source& as)
   : client(cfg, &as, nullptr, default_max_idle_time) {}
 
 client::client(
-  const rpc::base_transport::configuration& cfg,
+  const net::base_transport::configuration& cfg,
   const ss::abort_source* as,
   ss::shared_ptr<client_probe> probe,
   ss::lowres_clock::duration max_idle_time)
-  : rpc::base_transport(cfg)
+  : net::base_transport(cfg)
   , _connect_gate()
   , _as(as)
   , _probe(std::move(probe))

@@ -36,7 +36,7 @@ static constexpr uint16_t httpd_port_number = 4430;
 static constexpr const char* httpd_host_name = "127.0.0.1";
 
 s3::configuration s3_imposter_fixture::get_configuration() {
-    unresolved_address server_addr(httpd_host_name, httpd_port_number);
+    net::unresolved_address server_addr(httpd_host_name, httpd_port_number);
     s3::configuration conf{
       .uri = s3::access_point_uri(httpd_host_name),
       .access_key = s3::public_key_str("acess-key"),

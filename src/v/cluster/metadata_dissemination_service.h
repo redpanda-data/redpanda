@@ -16,12 +16,12 @@
 #include "config/tls_config.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "net/unresolved_address.h"
 #include "raft/group_manager.h"
 #include "raft/types.h"
 #include "rpc/connection_cache.h"
 #include "utils/mutex.h"
 #include "utils/retry.h"
-#include "utils/unresolved_address.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
@@ -98,7 +98,7 @@ private:
     // Used to track the process of requesting update when redpanda starts
     // when update using a node from ids will fail we will try the next one
     struct request_retry_meta {
-        using container_t = std::vector<unresolved_address>;
+        using container_t = std::vector<net::unresolved_address>;
         using const_iterator = container_t::const_iterator;
         container_t addresses;
         bool success = false;
@@ -119,12 +119,13 @@ private:
     ss::future<> dispatch_disseminate_leadership();
     ss::future<> dispatch_one_update(model::node_id, update_retry_meta&);
     ss::future<result<get_leadership_reply>>
-      dispatch_get_metadata_update(unresolved_address);
+      dispatch_get_metadata_update(net::unresolved_address);
     ss::future<> do_request_metadata_update(request_retry_meta&);
     ss::future<>
     process_get_update_reply(result<get_leadership_reply>, request_retry_meta&);
 
-    ss::future<> update_metadata_with_retries(std::vector<unresolved_address>);
+    ss::future<>
+      update_metadata_with_retries(std::vector<net::unresolved_address>);
 
     ss::sharded<raft::group_manager>& _raft_manager;
     ss::sharded<cluster::partition_manager>& _partition_manager;
@@ -136,7 +137,7 @@ private:
     std::chrono::milliseconds _dissemination_interval;
     config::tls_config _rpc_tls_config;
     std::vector<ntp_leader> _requests;
-    std::vector<unresolved_address> _seed_servers;
+    std::vector<net::unresolved_address> _seed_servers;
     broker_updates_t _pending_updates;
     mutex _lock;
     ss::timer<> _dispatch_timer;

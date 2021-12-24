@@ -64,8 +64,8 @@ SEASTAR_THREAD_TEST_CASE(topic_config_rt_test) {
 SEASTAR_THREAD_TEST_CASE(broker_metadata_rt_test) {
     model::broker b(
       model::node_id(0),
-      unresolved_address("127.0.0.1", 9092),
-      unresolved_address("172.0.1.2", 9999),
+      net::unresolved_address("127.0.0.1", 9092),
+      net::unresolved_address("172.0.1.2", 9999),
       "test",
       model::broker_properties{
         .cores = 8,

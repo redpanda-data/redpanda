@@ -7,14 +7,12 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "rpc/server.h"
+#include "net/server.h"
 
 #include "config/configuration.h"
 #include "likely.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "rpc/logger.h"
-#include "rpc/parse_utils.h"
-#include "rpc/types.h"
 #include "ssx/sformat.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -23,8 +21,9 @@
 #include <seastar/core/metrics.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/net/api.hh>
+#include <seastar/util/later.hh>
 
-namespace rpc {
+namespace net {
 
 server::server(server_configuration c)
   : cfg(std::move(c))
@@ -83,7 +82,7 @@ static inline void print_exceptional_future(
     }
 
     vlog(
-      rpclog.error,
+      rpc::rpclog.error,
       "{} - Error[{}] remote address: {} - {}",
       proto->name(),
       ctx,
@@ -133,14 +132,14 @@ ss::future<> server::accept(listener& s) {
                     SOL_SOCKET, SO_SNDBUF, &send_buf, sizeof(send_buf));
               }
 
-              auto conn = ss::make_lw_shared<connection>(
+              auto conn = ss::make_lw_shared<net::connection>(
                 _connections,
                 s.name,
                 std::move(ar.connection),
                 ar.remote_address,
                 _probe);
               vlog(
-                rpclog.trace,
+                rpc::rpclog.trace,
                 "{} - Incoming connection from {} on \"{}\"",
                 _proto->name(),
                 ar.remote_address,
@@ -158,18 +157,21 @@ ss::future<> server::accept(listener& s) {
                 ss::stop_iteration::no);
           });
     });
-} // namespace rpc
+}
 
 void server::shutdown_input() {
     ss::sstring proto_name = _proto ? _proto->name() : "protocol not set";
     vlog(
-      rpclog.info, "{} - Stopping {} listeners", proto_name, _listeners.size());
+      rpc::rpclog.info,
+      "{} - Stopping {} listeners",
+      proto_name,
+      _listeners.size());
     for (auto& l : _listeners) {
         l->socket.abort_accept();
     }
-    vlog(rpclog.debug, "{} - Service probes {}", proto_name, _probe);
+    vlog(rpc::rpclog.debug, "{} - Service probes {}", proto_name, _probe);
     vlog(
-      rpclog.info,
+      rpc::rpclog.info,
       "{} - Shutting down {} connections",
       proto_name,
       _connections.size());
@@ -187,7 +189,7 @@ ss::future<> server::wait_for_shutdown() {
 
     return _conn_gate.close().then([this] {
         return seastar::do_for_each(
-          _connections, [](connection& c) { return c.shutdown(); });
+          _connections, [](net::connection& c) { return c.shutdown(); });
     });
 }
 
@@ -224,4 +226,30 @@ void server::setup_metrics() {
          [this] { return _hist.seastar_histogram_logform(); },
          sm::description(ssx::sformat("{}: Latency ", cfg.name)))});
 }
-} // namespace rpc
+
+std::ostream& operator<<(std::ostream& o, const server_configuration& c) {
+    o << "{";
+    for (auto& a : c.addrs) {
+        o << a;
+    }
+    o << ", max_service_memory_per_core: " << c.max_service_memory_per_core
+      << ", metrics_enabled:" << !c.disable_metrics;
+    return o << "}";
+}
+
+std::ostream& operator<<(std::ostream& os, const server_endpoint& ep) {
+    /**
+     * We use simmillar syntax to kafka to indicate if endpoint is secured f.e.:
+     *
+     * SECURED://127.0.0.1:9092
+     */
+    fmt::print(
+      os,
+      "{{{}://{}:{}}}",
+      ep.name,
+      ep.addr,
+      ep.credentials ? "SECURED" : "PLAINTEXT");
+    return os;
+}
+
+} // namespace net

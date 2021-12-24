@@ -11,10 +11,9 @@
 
 #pragma once
 
+#include "net/transport.h"
 #include "outcome.h"
 #include "reflection/async_adl.h"
-#include "rpc/batched_output_stream.h"
-#include "rpc/client_probe.h"
 #include "rpc/errc.h"
 #include "rpc/parse_utils.h"
 #include "rpc/response_handler.h"
@@ -41,50 +40,7 @@
 namespace rpc {
 struct client_context_impl;
 
-class base_transport {
-public:
-    struct configuration {
-        unresolved_address server_addr;
-        ss::shared_ptr<ss::tls::certificate_credentials> credentials;
-        rpc::metrics_disabled disable_metrics = rpc::metrics_disabled::no;
-        /// Optional server name indication (SNI) for TLS connection
-        std::optional<ss::sstring> tls_sni_hostname;
-    };
-
-    explicit base_transport(configuration c);
-    virtual ~base_transport() noexcept = default;
-    base_transport(base_transport&&) noexcept = default;
-    base_transport& operator=(base_transport&&) noexcept = default;
-    base_transport(const base_transport&) = delete;
-    base_transport& operator=(const base_transport&) = delete;
-
-    virtual ss::future<>
-      connect(clock_type::time_point = clock_type::time_point::max());
-    ss::future<> stop();
-    void shutdown() noexcept;
-
-    [[gnu::always_inline]] bool is_valid() const { return _fd && !_in.eof(); }
-
-    const unresolved_address& server_address() const { return _server_addr; }
-
-protected:
-    virtual void fail_outstanding_futures() {}
-
-    ss::input_stream<char> _in;
-    batched_output_stream _out;
-    ss::gate _dispatch_gate;
-    client_probe _probe;
-
-private:
-    ss::future<> do_connect(clock_type::time_point);
-
-    std::unique_ptr<ss::connected_socket> _fd;
-    unresolved_address _server_addr;
-    ss::shared_ptr<ss::tls::certificate_credentials> _creds;
-    std::optional<ss::sstring> _tls_sni_hostname;
-};
-
-class transport final : public base_transport {
+class transport final : public net::base_transport {
 public:
     explicit transport(
       transport_configuration c,
@@ -248,7 +204,7 @@ public:
         return _transport.is_valid();
     }
 
-    const unresolved_address& server_address() const {
+    const net::unresolved_address& server_address() const {
         return _transport.server_address();
     }
 

@@ -15,6 +15,8 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
+#include "net/dns.h"
+#include "net/server.h"
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/heartbeat_manager.h"
@@ -24,8 +26,6 @@
 #include "random/generators.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/connection_cache.h"
-#include "rpc/dns.h"
-#include "rpc/server.h"
 #include "rpc/simple_protocol.h"
 #include "rpc/types.h"
 #include "storage/api.h"
@@ -166,17 +166,17 @@ struct raft_node {
     void start() {
         tstlog.info("Starting node {} stack ", id());
         // start rpc
-        rpc::server_configuration scfg("raft_test_rpc");
-        scfg.addrs.emplace_back(rpc::resolve_dns(broker.rpc_address()).get());
+        net::server_configuration scfg("raft_test_rpc");
+        scfg.addrs.emplace_back(net::resolve_dns(broker.rpc_address()).get());
         scfg.max_service_memory_per_core = 1024 * 1024 * 1024;
-        scfg.disable_metrics = rpc::metrics_disabled::yes;
+        scfg.disable_metrics = net::metrics_disabled::yes;
         server.start(std::move(scfg)).get0();
         raft_manager.start().get0();
         raft_manager
           .invoke_on(0, [this](test_raft_manager& mgr) { mgr.c = consensus; })
           .get0();
         server
-          .invoke_on_all([this](rpc::server& s) {
+          .invoke_on_all([this](net::server& s) {
               auto proto = std::make_unique<rpc::simple_protocol>();
               proto
                 ->register_service<raft::service<test_raft_manager, raft_node>>(
@@ -188,7 +188,7 @@ struct raft_node {
               s.set_protocol(std::move(proto));
           })
           .get0();
-        server.invoke_on_all(&rpc::server::start).get0();
+        server.invoke_on_all(&net::server::start).get0();
         hbeats = std::make_unique<raft::heartbeat_manager>(
           heartbeat_interval,
           raft::make_rpc_client_protocol(broker.id(), cache),
@@ -293,7 +293,7 @@ struct raft_node {
                     return c.emplace(
                       broker.id(),
                       {.server_addr = broker.rpc_address(),
-                       .disable_metrics = rpc::metrics_disabled::yes},
+                       .disable_metrics = net::metrics_disabled::yes},
                       rpc::make_exponential_backoff_policy<rpc::clock_type>(
                         std::chrono::milliseconds(1),
                         std::chrono::milliseconds(1)));
@@ -308,7 +308,7 @@ struct raft_node {
     ss::sharded<raft::recovery_throttle> recovery_throttle;
     std::unique_ptr<storage::log> log;
     ss::sharded<rpc::connection_cache> cache;
-    ss::sharded<rpc::server> server;
+    ss::sharded<net::server> server;
     ss::sharded<test_raft_manager> raft_manager;
     std::unique_ptr<raft::heartbeat_manager> hbeats;
     consensus_ptr consensus;
@@ -354,8 +354,8 @@ struct raft_group {
     model::broker make_broker(model::node_id id) {
         return model::broker(
           model::node_id(id),
-          unresolved_address("localhost", 9092),
-          unresolved_address("localhost", base_port + id),
+          net::unresolved_address("localhost", 9092),
+          net::unresolved_address("localhost", base_port + id),
           std::nullopt,
           model::broker_properties{
             .cores = 1,

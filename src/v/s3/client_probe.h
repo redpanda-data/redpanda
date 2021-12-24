@@ -12,7 +12,7 @@
 
 #include "http/probe.h"
 #include "model/fundamental.h"
-#include "rpc/types.h"
+#include "net/types.h"
 #include "s3/error.h"
 
 #include <seastar/core/metrics_registration.hh>
@@ -25,7 +25,7 @@ namespace s3 {
 ///
 /// \note The goal of this is to measure billable traffic
 ///       and performance related metrics. Since S3 client
-///       reuses the rpc::base_transport it can potentially
+///       reuses the net::base_transport it can potentially
 ///       use its probe. But this doesn't make much sence
 ///       since S3 requires different approach in measuring.
 ///       For instance, all connectoins are made to the same
@@ -42,7 +42,7 @@ public:
     /// \param region is a cloud provider region
     /// \param endpoint is a cloud provider endpoint
     client_probe(
-      rpc::metrics_disabled disable, ss::sstring region, ss::sstring endpoint);
+      net::metrics_disabled disable, ss::sstring region, ss::sstring endpoint);
 
     /// Register S3 rpc error
     void register_failure(s3_error_code err);

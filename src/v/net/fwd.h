@@ -11,8 +11,8 @@
 
 #pragma once
 
-namespace rpc {
+namespace net {
 
-class connection_cache;
+class server;
 
-} // namespace rpc
+} // namespace net

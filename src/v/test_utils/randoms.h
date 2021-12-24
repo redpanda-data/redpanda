@@ -11,8 +11,8 @@
 
 #pragma once
 #include "model/metadata.h"
+#include "net/unresolved_address.h"
 #include "random/generators.h"
-#include "utils/unresolved_address.h"
 
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>
@@ -21,8 +21,8 @@
 
 namespace tests {
 
-inline unresolved_address random_net_address() {
-    return unresolved_address(
+inline net::unresolved_address random_net_address() {
+    return net::unresolved_address(
       random_generators::gen_alphanum_string(8),
       random_generators::get_int(1025, 65535));
 }

@@ -91,7 +91,7 @@ static segment_layout write_random_batches(
 
 std::tuple<archival::configuration, cloud_storage::configuration>
 get_configurations() {
-    unresolved_address server_addr(httpd_host_name, httpd_port_number);
+    net::unresolved_address server_addr(httpd_host_name, httpd_port_number);
     s3::configuration s3conf{
       .uri = s3::access_point_uri(httpd_host_name),
       .access_key = s3::public_key_str("acess-key"),

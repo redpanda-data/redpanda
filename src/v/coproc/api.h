@@ -14,13 +14,13 @@
 #include "cluster/fwd.h"
 #include "coproc/fwd.h"
 #include "coproc/sys_refs.h"
-#include "utils/unresolved_address.h"
+#include "net/unresolved_address.h"
 namespace coproc {
 
 class api {
 public:
     api(
-      unresolved_address,
+      net::unresolved_address,
       ss::sharded<storage::api>&,
       ss::sharded<cluster::topic_table>&,
       ss::sharded<cluster::shard_table>&,
@@ -38,7 +38,7 @@ public:
     ss::sharded<pacemaker>& get_pacemaker() { return _pacemaker; }
 
 private:
-    unresolved_address _engine_addr;
+    net::unresolved_address _engine_addr;
 
     std::unique_ptr<wasm::event_listener> _listener; /// one instance
     ss::sharded<pacemaker> _pacemaker;               /// one per core

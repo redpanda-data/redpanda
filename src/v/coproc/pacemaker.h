@@ -22,7 +22,6 @@
 #include "coproc/shared_script_resources.h"
 #include "coproc/sys_refs.h"
 #include "coproc/types.h"
-#include "rpc/reconnect_transport.h"
 #include "storage/fwd.h"
 #include "storage/snapshot.h"
 
@@ -64,7 +63,7 @@ public:
      * @param address of coprocessor engine
      * @param reference to the storage layer
      */
-    pacemaker(unresolved_address, sys_refs&);
+    pacemaker(net::unresolved_address, sys_refs&);
 
     /**
      * Begins the offset tracking fiber

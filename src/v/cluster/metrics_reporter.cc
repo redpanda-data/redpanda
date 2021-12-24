@@ -25,10 +25,10 @@
 #include "model/namespace.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
+#include "net/unresolved_address.h"
 #include "reflection/adl.h"
 #include "rpc/types.h"
 #include "ssx/sformat.h"
-#include "utils/unresolved_address.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
@@ -284,11 +284,11 @@ iobuf serialize_metrics_snapshot(
     return out;
 }
 ss::future<http::client> metrics_reporter::make_http_client() {
-    rpc::base_transport::configuration client_configuration;
-    client_configuration.server_addr = unresolved_address(
+    net::base_transport::configuration client_configuration;
+    client_configuration.server_addr = net::unresolved_address(
       ss::sstring(_address.host), _address.port);
 
-    client_configuration.disable_metrics = rpc::metrics_disabled::yes;
+    client_configuration.disable_metrics = net::metrics_disabled::yes;
 
     if (_address.protocol == "https") {
         client_configuration.credentials

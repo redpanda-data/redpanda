@@ -9,7 +9,7 @@ v_cc_library(
   DEPS
     Seastar::seastar
     v::bytes
-    v::http
+    v::net
 )
 add_subdirectory(tests)
 add_subdirectory(test_client)

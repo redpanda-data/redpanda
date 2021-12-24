@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "rpc/server.h"
+#include "net/server.h"
 
 #include "rpc/demo/demo_utils.h"
 #include "rpc/demo/simple_service.h"
@@ -60,7 +60,7 @@ void cli_opts(boost::program_options::options_description_easy_init o) {
 int main(int args, char** argv, char** env) {
     syschecks::initialize_intrinsics();
     std::setvbuf(stdout, nullptr, _IOLBF, 1024);
-    ss::sharded<rpc::server> serv;
+    ss::sharded<net::server> serv;
     ss::app_template app;
     cli_opts(app.add_options());
     return app.run_deprecated(args, argv, [&] {
@@ -70,7 +70,7 @@ int main(int args, char** argv, char** env) {
                   auto begin = boost::make_counting_iterator(uint32_t(0));
                   auto end = boost::make_counting_iterator(uint32_t(ss::smp::count));
                   return ss::do_for_each(begin, end, [&h, &serv](uint32_t i) {
-                              return serv.invoke_on(i, [&h](const rpc::server& s) {
+                              return serv.invoke_on(i, [&h](const net::server& s) {
                                     h += s.histogram();
                               });
                      }) .then([&h] { return write_histogram("server.hdr", h); });
@@ -79,7 +79,7 @@ int main(int args, char** argv, char** env) {
         });
         auto& cfg = app.configuration();
         return ss::async([&] {
-            rpc::server_configuration scfg("demo_rpc");
+            net::server_configuration scfg("demo_rpc");
             auto key = cfg["key"].as<std::string>();
             auto cert = cfg["cert"].as<std::string>();
             ss::shared_ptr<ss::tls::server_credentials> creds;
@@ -101,7 +101,7 @@ int main(int args, char** argv, char** env) {
             serv.start(scfg).get();
             vlog(lgr.info, "registering service on all cores");
             serv
-              .invoke_on_all([](rpc::server& s) {
+              .invoke_on_all([](net::server& s) {
                   auto proto = std::make_unique<rpc::simple_protocol>();
                   proto->register_service<service>(
                     ss::default_scheduling_group(),
@@ -110,7 +110,7 @@ int main(int args, char** argv, char** env) {
               })
               .get();
             vlog(lgr.info, "Invoking rpc start on all cores");
-            serv.invoke_on_all(&rpc::server::start).get();
+            serv.invoke_on_all(&net::server::start).get();
         });
     });
 }

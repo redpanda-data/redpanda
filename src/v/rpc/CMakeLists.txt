@@ -3,16 +3,10 @@ v_cc_library(
   SRCS
     types.cc
     netbuf.cc
-    server.cc
     transport.cc
-    connection.cc
-    batched_output_stream.cc
-    probes.cc
-    logger.cc
     reconnect_transport.cc
     connection_cache.cc
     simple_protocol.cc
-    dns.cc
   DEPS
     Seastar::seastar
     v::bytes
@@ -21,6 +15,7 @@ v_cc_library(
     v::reflection
     absl::flat_hash_map
     v::compression
+    v::net
   )
 add_subdirectory(test)
 add_subdirectory(demo)

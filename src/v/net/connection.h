@@ -11,8 +11,8 @@
 
 #pragma once
 
-#include "rpc/batched_output_stream.h"
-#include "rpc/server_probe.h"
+#include "net/batched_output_stream.h"
+#include "net/server_probe.h"
 #include "seastarx.h"
 
 #include <seastar/core/iostream.hh>
@@ -21,7 +21,11 @@
 
 #include <boost/intrusive/list.hpp>
 
-namespace rpc {
+/*
+ * FIXME:
+ *  - server_probe contains bits from simple_protocol
+ */
+namespace net {
 
 class connection : public boost::intrusive::list_base_hook<> {
 public:
@@ -51,7 +55,8 @@ private:
     ss::sstring _name;
     ss::connected_socket _fd;
     ss::input_stream<char> _in;
-    batched_output_stream _out;
+    net::batched_output_stream _out;
     server_probe& _probe;
 };
-} // namespace rpc
+
+} // namespace net

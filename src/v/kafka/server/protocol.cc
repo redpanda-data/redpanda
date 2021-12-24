@@ -80,7 +80,7 @@ protocol::protocol(
     _probe.setup_metrics();
 }
 
-ss::future<> protocol::apply(rpc::server::resources rs) {
+ss::future<> protocol::apply(net::server::resources rs) {
     /*
      * if sasl authentication is not enabled then initialize the sasl state to
      * complete. this will cause auth to be skipped during request processing.

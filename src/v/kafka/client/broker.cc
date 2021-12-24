@@ -12,7 +12,7 @@
 #include "cluster/cluster_utils.h"
 #include "kafka/client/logger.h"
 #include "kafka/client/sasl_client.h"
-#include "rpc/dns.h"
+#include "net/dns.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/std-coroutine.hh>
@@ -21,13 +21,13 @@ namespace kafka::client {
 
 ss::future<shared_broker_t> make_broker(
   model::node_id node_id,
-  unresolved_address addr,
+  net::unresolved_address addr,
   const configuration& config) {
     return cluster::maybe_build_reloadable_certificate_credentials(
              config.broker_tls())
       .then([addr](ss::shared_ptr<ss::tls::certificate_credentials> creds) {
           return ss::make_lw_shared<transport>(
-            rpc::base_transport::configuration{
+            net::base_transport::configuration{
               .server_addr = addr, .credentials = std::move(creds)});
       })
       .then([node_id, addr](ss::lw_shared_ptr<transport> client) {

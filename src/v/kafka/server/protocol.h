@@ -18,7 +18,7 @@
 #include "kafka/server/fetch_metadata_cache.hh"
 #include "kafka/server/fwd.h"
 #include "kafka/server/queue_depth_monitor.h"
-#include "rpc/server.h"
+#include "net/server.h"
 #include "security/authorizer.h"
 #include "security/credential_store.h"
 #include "utils/ema.h"
@@ -30,7 +30,7 @@
 
 namespace kafka {
 
-class protocol final : public rpc::server::protocol {
+class protocol final : public net::server::protocol {
 public:
     protocol(
       ss::smp_service_group,
@@ -61,7 +61,7 @@ public:
     const char* name() const final { return "kafka rpc protocol"; }
     // the lifetime of all references here are guaranteed to live
     // until the end of the server (container/parent)
-    ss::future<> apply(rpc::server::resources) final;
+    ss::future<> apply(net::server::resources) final;
 
     ss::smp_service_group smp_group() const { return _smp_group; }
     cluster::topics_frontend& topics_frontend() {

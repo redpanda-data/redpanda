@@ -12,9 +12,9 @@
 #include "archival/service.h"
 #include "archival/tests/service_fixture.h"
 #include "cluster/commands.h"
+#include "net/unresolved_address.h"
 #include "storage/types.h"
 #include "test_utils/async.h"
-#include "utils/unresolved_address.h"
 
 #include <seastar/core/deleter.hh>
 #include <seastar/core/file.hh>

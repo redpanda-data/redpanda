@@ -49,31 +49,6 @@ std::ostream& operator<<(std::ostream& o, const header& h) {
              << ", payload_checksum:" << h.payload_checksum << "}";
 }
 
-std::ostream& operator<<(std::ostream& o, const server_configuration& c) {
-    o << "{";
-    for (auto& a : c.addrs) {
-        o << a;
-    }
-    o << ", max_service_memory_per_core: " << c.max_service_memory_per_core
-      << ", metrics_enabled:" << !c.disable_metrics;
-    return o << "}";
-}
-
-std::ostream& operator<<(std::ostream& os, const server_endpoint& ep) {
-    /**
-     * We use simmillar syntax to kafka to indicate if endpoint is secured f.e.:
-     *
-     * SECURED://127.0.0.1:9092
-     */
-    fmt::print(
-      os,
-      "{{{}://{}:{}}}",
-      ep.name,
-      ep.addr,
-      ep.credentials ? "SECURED" : "PLAINTEXT");
-    return os;
-}
-
 std::ostream& operator<<(std::ostream& o, const status& s) {
     switch (s) {
     case status::success:

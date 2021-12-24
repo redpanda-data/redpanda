@@ -23,7 +23,7 @@
 namespace coproc {
 
 api::api(
-  unresolved_address addr,
+  net::unresolved_address addr,
   ss::sharded<storage::api>& storage,
   ss::sharded<cluster::topic_table>& topic_table,
   ss::sharded<cluster::shard_table>& shard_table,

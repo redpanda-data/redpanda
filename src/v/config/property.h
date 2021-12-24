@@ -345,8 +345,8 @@ consteval std::string_view property_type_name() {
         return "integer";
     } else if constexpr (std::is_same_v<type, seed_server>) {
         return "seed_server";
-    } else if constexpr (std::is_same_v<type, unresolved_address>) {
-        return "unresolved_address";
+    } else if constexpr (std::is_same_v<type, net::unresolved_address>) {
+        return "net::unresolved_address";
     } else if constexpr (std::is_same_v<type, tls_config>) {
         return "tls_config";
     } else if constexpr (std::is_same_v<type, endpoint_tls_config>) {

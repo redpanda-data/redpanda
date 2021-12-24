@@ -16,9 +16,9 @@
 #include "coproc/types.h"
 #include "coproc/wasm_event.h"
 #include "model/namespace.h"
+#include "net/unresolved_address.h"
 #include "ssx/future-util.h"
 #include "storage/parser_utils.h"
-#include "utils/unresolved_address.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -37,8 +37,8 @@ namespace {
 
 kafka::client::client make_client() {
     kafka::client::configuration cfg;
-    cfg.brokers.set_value(
-      std::vector<unresolved_address>{config::node().kafka_api()[0].address});
+    cfg.brokers.set_value(std::vector<net::unresolved_address>{
+      config::node().kafka_api()[0].address});
     cfg.retries.set_value(size_t(1));
     return kafka::client::client{to_yaml(cfg)};
 }

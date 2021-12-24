@@ -14,7 +14,7 @@
 #include "kafka/protocol/fwd.h"
 #include "kafka/server/protocol_utils.h"
 #include "kafka/types.h"
-#include "rpc/transport.h"
+#include "net/transport.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -31,7 +31,7 @@ namespace kafka::client {
  * Restrictions:
  *  - don't dispatch concurrent requests.
  */
-class transport : public rpc::base_transport {
+class transport : public net::base_transport {
 private:
     /*
      * send a request message and process the reply. note that the kafka
@@ -71,7 +71,7 @@ private:
     }
 
 public:
-    using rpc::base_transport::base_transport;
+    using net::base_transport::base_transport;
 
     /*
      * TODO: the concept here can be improved once we convert all of the request

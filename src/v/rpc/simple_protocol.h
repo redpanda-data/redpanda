@@ -10,10 +10,10 @@
  */
 
 #pragma once
-#include "rpc/server.h"
+#include "net/server.h"
 #include "rpc/service.h"
 namespace rpc {
-class simple_protocol final : public server::protocol {
+class simple_protocol final : public net::server::protocol {
 public:
     template<typename T, typename... Args>
     void register_service(Args&&... args) {
@@ -24,7 +24,7 @@ public:
     const char* name() const final {
         return "vectorized internal rpc protocol";
     };
-    ss::future<> apply(server::resources) final;
+    ss::future<> apply(net::server::resources) final;
 
     void setup_metrics() {
         for (auto& s : _services) {
@@ -33,7 +33,7 @@ public:
     }
 
 private:
-    ss::future<> dispatch_method_once(header, server::resources);
+    ss::future<> dispatch_method_once(header, net::server::resources);
 
     std::vector<std::unique_ptr<service>> _services;
 };

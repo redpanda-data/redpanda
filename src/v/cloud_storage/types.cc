@@ -2,6 +2,7 @@
 
 #include "cloud_storage/logger.h"
 #include "config/configuration.h"
+#include "vlog.h"
 
 namespace cloud_storage {
 
@@ -74,7 +75,7 @@ ss::future<configuration> configuration::get_config() {
       "cloud_storage_access_key"));
     auto region = s3::aws_region_name(get_value_or_throw(
       config::shard_local_cfg().cloud_storage_region, "cloud_storage_region"));
-    auto disable_metrics = rpc::metrics_disabled(
+    auto disable_metrics = net::metrics_disabled(
       config::shard_local_cfg().disable_metrics());
 
     // Set default overrides

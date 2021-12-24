@@ -91,7 +91,7 @@ public:
 
     std::optional<model::broker> find_broker(model::node_id id) const;
     bool contains_broker(model::node_id id) const;
-    bool contains_address(const unresolved_address& address) const;
+    bool contains_address(const net::unresolved_address& address) const;
 
     bool contains(vnode) const;
 

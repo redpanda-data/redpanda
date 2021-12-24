@@ -19,6 +19,7 @@
 #include "kafka/client/configuration.h"
 #include "kafka/client/fwd.h"
 #include "kafka/server/fwd.h"
+#include "net/fwd.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/fwd.h"
 #include "pandaproxy/schema_registry/configuration.h"
@@ -139,9 +140,9 @@ private:
 
     ss::sharded<rpc::connection_cache> _raft_connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
-    ss::sharded<rpc::server> _rpc;
+    ss::sharded<net::server> _rpc;
     ss::sharded<admin_server> _admin;
-    ss::sharded<rpc::server> _kafka_server;
+    ss::sharded<net::server> _kafka_server;
     ss::sharded<kafka::client::client> _proxy_client;
     ss::sharded<pandaproxy::rest::proxy> _proxy;
     std::unique_ptr<pandaproxy::schema_registry::api> _schema_registry;

@@ -12,8 +12,8 @@
 #pragma once
 
 #include "config/convert.h"
+#include "net/unresolved_address.h"
 #include "seastarx.h"
-#include "utils/unresolved_address.h"
 
 #include <model/metadata.h>
 #include <yaml-cpp/yaml.h>
@@ -22,7 +22,7 @@
 
 namespace config {
 struct seed_server {
-    unresolved_address addr;
+    net::unresolved_address addr;
 
     bool operator==(const seed_server&) const = default;
 };
@@ -72,10 +72,10 @@ struct convert<config::seed_server> {
         }
 
         if (node["host"]) {
-            rhs.addr = node["host"].as<unresolved_address>();
+            rhs.addr = node["host"].as<net::unresolved_address>();
             return true;
         } else {
-            rhs.addr = node.as<unresolved_address>();
+            rhs.addr = node.as<net::unresolved_address>();
         }
 
         return true;

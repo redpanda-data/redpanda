@@ -166,7 +166,7 @@ ss::future<> server::start(
       exception_replier{ss::sstring{name(exceptional_mime_type)}});
     _ctx.advertised_listeners.reserve(endpoints.size());
     for (auto& server_endpoint : endpoints) {
-        auto addr = co_await rpc::resolve_dns(server_endpoint.address);
+        auto addr = co_await net::resolve_dns(server_endpoint.address);
         auto it = find_if(
           endpoints_tls.begin(),
           endpoints_tls.end(),

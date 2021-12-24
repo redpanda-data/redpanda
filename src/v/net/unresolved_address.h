@@ -8,7 +8,6 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-
 #pragma once
 
 #include "seastarx.h"
@@ -19,6 +18,8 @@
 
 #include <boost/functional/hash.hpp>
 #include <fmt/ostream.h>
+
+namespace net {
 
 /// Class representing unresolved network address in form of <host name, port>
 /// tuple
@@ -54,10 +55,12 @@ inline std::ostream& operator<<(std::ostream& o, const unresolved_address& s) {
     return o;
 }
 
+} // namespace net
+
 namespace std {
 template<>
-struct hash<unresolved_address> {
-    size_t operator()(const unresolved_address& a) const {
+struct hash<net::unresolved_address> {
+    size_t operator()(const net::unresolved_address& a) const {
         size_t h = 0;
         boost::hash_combine(h, hash<ss::sstring>()(a.host()));
         boost::hash_combine(h, hash<uint16_t>()(a.port()));

@@ -26,7 +26,7 @@ public:
     property<std::vector<seed_server>> seed_servers;
 
     // Internal RPC listener
-    property<unresolved_address> rpc_server;
+    property<net::unresolved_address> rpc_server;
     property<tls_config> rpc_server_tls;
 
     // Kafka RPC listener
@@ -38,7 +38,7 @@ public:
     one_or_many_property<endpoint_tls_config> admin_api_tls;
 
     // Coproc/wasm
-    property<unresolved_address> coproc_supervisor_server;
+    property<net::unresolved_address> coproc_supervisor_server;
 
     // HTTP server content dirs
     property<ss::sstring> admin_api_doc_dir;
@@ -67,7 +67,7 @@ public:
         return _advertised_kafka_api;
     }
 
-    unresolved_address advertised_rpc_api() const {
+    net::unresolved_address advertised_rpc_api() const {
         return _advertised_rpc_api().value_or(rpc_server());
     }
 
@@ -75,7 +75,7 @@ public:
     void load(const YAML::Node& root_node);
 
 private:
-    property<std::optional<unresolved_address>> _advertised_rpc_api;
+    property<std::optional<net::unresolved_address>> _advertised_rpc_api;
     one_or_many_property<model::broker_endpoint> _advertised_kafka_api;
 };
 

@@ -8,11 +8,14 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-
 #pragma once
 
-namespace rpc {
+#include <seastar/core/lowres_clock.hh>
+#include <seastar/util/bool_class.hh>
 
-class connection_cache;
+namespace net {
 
-} // namespace rpc
+using metrics_disabled = seastar::bool_class<struct metrics_disabled_tag>;
+using clock_type = seastar::lowres_clock;
+
+} // namespace net

@@ -111,8 +111,8 @@ struct convert<ss::socket_address> {
 };
 
 template<>
-struct convert<unresolved_address> {
-    using type = unresolved_address;
+struct convert<net::unresolved_address> {
+    using type = net::unresolved_address;
     static Node encode(const type& rhs) {
         Node node;
         node["address"] = rhs.host();
@@ -127,7 +127,7 @@ struct convert<unresolved_address> {
         }
         auto addr_str = node["address"].as<ss::sstring>();
         auto port = node["port"].as<uint16_t>();
-        rhs = unresolved_address(addr_str, port);
+        rhs = net::unresolved_address(addr_str, port);
         return true;
     }
 };

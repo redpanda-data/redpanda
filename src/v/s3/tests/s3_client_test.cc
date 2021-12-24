@@ -10,14 +10,13 @@
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
-#include "rpc/dns.h"
-#include "rpc/transport.h"
-#include "rpc/types.h"
+#include "net/dns.h"
+#include "net/types.h"
+#include "net/unresolved_address.h"
 #include "s3/client.h"
 #include "s3/error.h"
 #include "s3/signature.h"
 #include "seastarx.h"
-#include "utils/unresolved_address.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
@@ -160,7 +159,7 @@ struct configured_test_pair {
 };
 
 s3::configuration transport_configuration() {
-    unresolved_address server_addr(httpd_host_name, httpd_port_number);
+    net::unresolved_address server_addr(httpd_host_name, httpd_port_number);
     s3::configuration conf{
       .uri = s3::access_point_uri(httpd_host_name),
       .access_key = s3::public_key_str("acess-key"),
@@ -169,7 +168,7 @@ s3::configuration transport_configuration() {
     };
     conf.server_addr = server_addr;
     conf._probe = ss::make_shared<s3::client_probe>(
-      rpc::metrics_disabled::yes, "region", "endpoint");
+      net::metrics_disabled::yes, "region", "endpoint");
     return conf;
 }
 
@@ -180,7 +179,7 @@ configured_test_pair started_client_and_server(const s3::configuration& conf) {
     auto server = ss::make_shared<ss::httpd::http_server_control>();
     server->start().get();
     server->set_routes(set_routes).get();
-    auto resolved = rpc::resolve_dns(conf.server_addr).get();
+    auto resolved = net::resolve_dns(conf.server_addr).get();
     server->listen(resolved).get();
     return {
       .server = server,
@@ -394,7 +393,7 @@ configured_server_and_client_pool started_pool_and_server(
     auto server = ss::make_shared<ss::httpd::http_server_control>();
     server->start().get();
     server->set_routes(set_routes).get();
-    auto resolved = rpc::resolve_dns(conf.server_addr).get0();
+    auto resolved = net::resolve_dns(conf.server_addr).get0();
     server->listen(resolved).get();
     return {
       .server = server,

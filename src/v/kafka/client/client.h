@@ -26,8 +26,8 @@
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/list_offsets.h"
 #include "kafka/types.h"
+#include "net/unresolved_address.h"
 #include "utils/retry.h"
-#include "utils/unresolved_address.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/semaphore.hh>
@@ -160,7 +160,7 @@ public:
 
 private:
     /// \brief Connect and update metdata.
-    ss::future<> do_connect(unresolved_address addr);
+    ss::future<> do_connect(net::unresolved_address addr);
 
     /// \brief Update metadata
     ///
@@ -183,7 +183,7 @@ private:
     /// \brief Client holds a copy of its configuration
     configuration _config;
     /// \brief Seeds are used when no brokers are connected.
-    std::vector<unresolved_address> _seeds;
+    std::vector<net::unresolved_address> _seeds;
     /// \brief Cache of topic information.
     topic_cache _topic_cache;
     /// \brief Broker lookup from topic_partition.

@@ -9,6 +9,8 @@
 
 #include "config/configuration.h"
 #include "model/metadata.h"
+#include "net/server.h"
+#include "net/unresolved_address.h"
 #include "platform/stop_signal.h"
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
@@ -21,13 +23,11 @@
 #include "raft/service.h"
 #include "raft/types.h"
 #include "rpc/connection_cache.h"
-#include "rpc/server.h"
 #include "rpc/simple_protocol.h"
 #include "storage/api.h"
 #include "storage/logger.h"
 #include "syschecks/syschecks.h"
 #include "utils/hdr_hist.h"
-#include "utils/unresolved_address.h"
 #include "vlog.h"
 
 #include <seastar/core/app-template.hh>
@@ -192,7 +192,7 @@ extract_peer(ss::sstring peer) {
     std::vector<ss::sstring> address_parts;
     boost::split(parts, parts[1], boost::is_any_of(":"));
     rpc::transport_configuration cfg;
-    cfg.server_addr = unresolved_address(
+    cfg.server_addr = net::unresolved_address(
       address_parts[0], boost::lexical_cast<int16_t>(address_parts[1]));
     return {model::node_id(n), cfg};
 }
@@ -233,8 +233,8 @@ static model::broker broker_from_arg(ss::sstring peer) {
     auto port = boost::lexical_cast<int32_t>(parts[0]);
     return model::broker(
       model::node_id(id),
-      unresolved_address(host_port[0], port),
-      unresolved_address(host_port[0], port),
+      net::unresolved_address(host_port[0], port),
+      net::unresolved_address(host_port[0], port),
       std::nullopt,
       model::broker_properties{.cores = ss::smp::count});
 }
@@ -251,9 +251,9 @@ group_cfg_from_args(const po::variables_map& opts) {
     // add self
     brokers.push_back(model::broker(
       model::node_id(opts["node-id"].as<int32_t>()),
-      unresolved_address(
+      net::unresolved_address(
         opts["ip"].as<ss::sstring>(), opts["port"].as<uint16_t>()),
-      unresolved_address(
+      net::unresolved_address(
         opts["ip"].as<ss::sstring>(), opts["port"].as<uint16_t>()),
       std::optional<ss::sstring>(),
       model::broker_properties{
@@ -265,7 +265,7 @@ group_cfg_from_args(const po::variables_map& opts) {
 int main(int args, char** argv, char** env) {
     syschecks::initialize_intrinsics();
     std::setvbuf(stdout, nullptr, _IOLBF, 1024);
-    ss::sharded<rpc::server> serv;
+    ss::sharded<net::server> serv;
     ss::sharded<rpc::connection_cache> connection_cache;
     ss::sharded<simple_group_manager> group_manager;
     ss::app_template app;
@@ -282,7 +282,7 @@ int main(int args, char** argv, char** env) {
             connection_cache.start().get();
             auto ccd = ss::defer(
               [&connection_cache] { connection_cache.stop().get(); });
-            rpc::server_configuration scfg("kvelldb_rpc");
+            net::server_configuration scfg("kvelldb_rpc");
             scfg.max_service_memory_per_core
               = ss::memory::stats().total_memory() * .7;
             auto key = cfg["key"].as<ss::sstring>();
@@ -328,7 +328,7 @@ int main(int args, char** argv, char** env) {
             simple_shard_lookup shard_table;
             serv
               .invoke_on_all(
-                [&shard_table, &group_manager, hbeat_interval](rpc::server& s) {
+                [&shard_table, &group_manager, hbeat_interval](net::server& s) {
                     auto proto = std::make_unique<rpc::simple_protocol>();
                     proto->register_service<
                       raft::service<simple_group_manager, simple_shard_lookup>>(
@@ -341,7 +341,7 @@ int main(int args, char** argv, char** env) {
                 })
               .get();
             vlog(kvelldblog.info, "Invoking rpc start on all cores");
-            serv.invoke_on_all(&rpc::server::start).get();
+            serv.invoke_on_all(&net::server::start).get();
             vlog(kvelldblog.info, "Starting group manager");
 
             auto core = shard_table.shard_for(raft::group_id(66));

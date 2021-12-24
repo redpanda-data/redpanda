@@ -41,6 +41,7 @@
 #include "kafka/server/quota_manager.h"
 #include "kafka/server/rm_group_frontend.h"
 #include "model/metadata.h"
+#include "net/server.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/proxy.h"
 #include "pandaproxy/schema_registry/api.h"
@@ -50,7 +51,6 @@
 #include "raft/service.h"
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/io_priority.h"
-#include "rpc/server.h"
 #include "rpc/simple_protocol.h"
 #include "storage/backlog_controller.h"
 #include "storage/chunk_cache.h"
@@ -87,7 +87,7 @@ static void set_local_kafka_client_config(
     const auto& kafka_api = config.kafka_api.value();
     vassert(!kafka_api.empty(), "There are no kafka_api listeners");
     client_config->brokers.set_value(
-      std::vector<unresolved_address>{kafka_api[0].address});
+      std::vector<net::unresolved_address>{kafka_api[0].address});
     const auto& kafka_api_tls = config::node().kafka_api_tls.value();
     auto tls_it = std::find_if(
       kafka_api_tls.begin(),
@@ -687,13 +687,13 @@ void application::wire_up_redpanda_services() {
      */
     _deferred.emplace_back([this] {
         if (_rpc.local_is_initialized()) {
-            _rpc.invoke_on_all(&rpc::server::wait_for_shutdown).get();
+            _rpc.invoke_on_all(&net::server::wait_for_shutdown).get();
             _rpc.stop().get();
         }
     });
     _deferred.emplace_back([this] {
         if (_kafka_server.local_is_initialized()) {
-            _kafka_server.invoke_on_all(&rpc::server::wait_for_shutdown).get();
+            _kafka_server.invoke_on_all(&net::server::wait_for_shutdown).get();
             _kafka_server.stop().get();
         }
     });
@@ -810,17 +810,17 @@ void application::wire_up_redpanda_services() {
     syschecks::systemd_message("Adding kafka quota manager").get();
     construct_service(quota_mgr).get();
     // rpc
-    ss::sharded<rpc::server_configuration> rpc_cfg;
+    ss::sharded<net::server_configuration> rpc_cfg;
     rpc_cfg.start(ss::sstring("internal_rpc")).get();
     rpc_cfg
-      .invoke_on_all([this](rpc::server_configuration& c) {
+      .invoke_on_all([this](net::server_configuration& c) {
           return ss::async([this, &c] {
               auto rpc_server_addr
-                = rpc::resolve_dns(config::node().rpc_server()).get0();
+                = net::resolve_dns(config::node().rpc_server()).get0();
               c.load_balancing_algo
                 = ss::server_socket::load_balancing_algorithm::port;
               c.max_service_memory_per_core = memory_groups::rpc_total_memory();
-              c.disable_metrics = rpc::metrics_disabled(
+              c.disable_metrics = net::metrics_disabled(
                 config::shard_local_cfg().disable_metrics());
               c.listen_backlog
                 = config::shard_local_cfg().rpc_server_listen_backlog;
@@ -918,10 +918,10 @@ void application::wire_up_redpanda_services() {
       std::ref(rm_partition_frontend))
       .get();
 
-    ss::sharded<rpc::server_configuration> kafka_cfg;
+    ss::sharded<net::server_configuration> kafka_cfg;
     kafka_cfg.start(ss::sstring("kafka_rpc")).get();
     kafka_cfg
-      .invoke_on_all([this](rpc::server_configuration& c) {
+      .invoke_on_all([this](net::server_configuration& c) {
           return ss::async([this, &c] {
               c.max_service_memory_per_core
                 = memory_groups::kafka_total_memory();
@@ -965,10 +965,10 @@ void application::wire_up_redpanda_services() {
                   }
 
                   c.addrs.emplace_back(
-                    ep.name, rpc::resolve_dns(ep.address).get0(), credentails);
+                    ep.name, net::resolve_dns(ep.address).get0(), credentails);
               }
 
-              c.disable_metrics = rpc::metrics_disabled(
+              c.disable_metrics = net::metrics_disabled(
                 config::shard_local_cfg().disable_metrics());
           });
       })
@@ -1074,7 +1074,7 @@ void application::start_redpanda() {
 
     syschecks::systemd_message("Starting RPC").get();
     _rpc
-      .invoke_on_all([this](rpc::server& s) {
+      .invoke_on_all([this](net::server& s) {
           auto proto = std::make_unique<rpc::simple_protocol>();
           proto->register_service<cluster::id_allocator>(
             _scheduling_groups.raft_sg(),
@@ -1117,10 +1117,10 @@ void application::start_redpanda() {
           s.set_protocol(std::move(proto));
       })
       .get();
-    _rpc.invoke_on_all(&rpc::server::start).get();
+    _rpc.invoke_on_all(&net::server::start).get();
     // shutdown input on RPC server
     _deferred.emplace_back(
-      [this] { _rpc.invoke_on_all(&rpc::server::shutdown_input).get(); });
+      [this] { _rpc.invoke_on_all(&net::server::shutdown_input).get(); });
     vlog(
       _log.info,
       "Started RPC server listening at {}",
@@ -1154,7 +1154,7 @@ void application::start_redpanda() {
 
     // Kafka API
     _kafka_server
-      .invoke_on_all([this, qdc_config](rpc::server& s) {
+      .invoke_on_all([this, qdc_config](net::server& s) {
           auto proto = std::make_unique<kafka::protocol>(
             smp_service_groups.kafka_smp_sg(),
             metadata_cache,
@@ -1177,10 +1177,10 @@ void application::start_redpanda() {
           s.set_protocol(std::move(proto));
       })
       .get();
-    _kafka_server.invoke_on_all(&rpc::server::start).get();
+    _kafka_server.invoke_on_all(&net::server::start).get();
     // shutdown Kafka server input
     _deferred.emplace_back([this] {
-        _kafka_server.invoke_on_all(&rpc::server::shutdown_input).get();
+        _kafka_server.invoke_on_all(&net::server::shutdown_input).get();
     });
     vlog(
       _log.info,

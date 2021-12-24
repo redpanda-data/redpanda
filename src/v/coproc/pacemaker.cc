@@ -33,13 +33,13 @@
 namespace coproc {
 
 rpc::transport_configuration
-wasm_transport_cfg(const unresolved_address& addr) {
+wasm_transport_cfg(const net::unresolved_address& addr) {
     return rpc::transport_configuration{
       .server_addr = addr,
       .max_queued_bytes = static_cast<uint32_t>(
         config::shard_local_cfg().coproc_max_inflight_bytes.value()),
       .credentials = nullptr,
-      .disable_metrics = rpc::metrics_disabled(
+      .disable_metrics = net::metrics_disabled(
         config::shard_local_cfg().disable_metrics())};
 }
 
@@ -63,7 +63,7 @@ void pacemaker::save_routes() {
     });
 }
 
-pacemaker::pacemaker(unresolved_address addr, sys_refs& rs)
+pacemaker::pacemaker(net::unresolved_address addr, sys_refs& rs)
   : _shared_res(
     rpc::reconnect_transport(
       wasm_transport_cfg(addr), wasm_transport_backoff()),

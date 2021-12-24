@@ -120,7 +120,7 @@ ss::future<archival::configuration>
 scheduler_service_impl::get_archival_service_config(
   ss::scheduling_group sg, ss::io_priority_class p) {
     vlog(archival_log.debug, "Generating archival configuration");
-    auto disable_metrics = rpc::metrics_disabled(
+    auto disable_metrics = net::metrics_disabled(
       config::shard_local_cfg().disable_metrics());
 
     auto time_limit = config::shard_local_cfg()

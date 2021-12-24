@@ -73,7 +73,8 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, const unresolved_address& v) {
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const net::unresolved_address& v) {
     w.StartObject();
 
     w.Key("address");

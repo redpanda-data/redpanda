@@ -13,6 +13,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
+#include "net/unresolved_address.h"
 #include "raft/group_manager.h"
 #include "raft/mux_state_machine.h"
 #include "random/generators.h"
@@ -22,7 +23,6 @@
 #include "storage/log_manager.h"
 #include "storage/types.h"
 #include "test_utils/async.h"
-#include "utils/unresolved_address.h"
 
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
@@ -103,8 +103,8 @@ struct mux_state_machine_fixture {
     model::broker self_broker() {
         return model::broker(
           _self,
-          unresolved_address("localhost", 9092),
-          unresolved_address("localhost", 35543),
+          net::unresolved_address("localhost", 9092),
+          net::unresolved_address("localhost", 35543),
           std::nullopt,
           model::broker_properties{});
     }
