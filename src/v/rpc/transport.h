@@ -11,8 +11,6 @@
 
 #pragma once
 
-#include "net/batched_output_stream.h"
-#include "net/client_probe.h"
 #include "net/transport.h"
 #include "outcome.h"
 #include "reflection/async_adl.h"

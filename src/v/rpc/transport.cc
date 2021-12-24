@@ -10,7 +10,6 @@
 #include "rpc/transport.h"
 
 #include "likely.h"
-#include "net/dns.h"
 #include "rpc/logger.h"
 #include "rpc/parse_utils.h"
 #include "rpc/response_handler.h"
