@@ -247,10 +247,10 @@ ss::future<> client::response_stream::shutdown() { return _client->stop(); }
 /// Return failed future if ec is set, otherwise return future in ready state
 static ss::future<iobuf>
 fail_on_error(prefix_logger& ctxlog, const boost::beast::error_code& ec) {
-    if (!ec) {
+    if (!ec.failed()) {
         return ss::make_ready_future<iobuf>(iobuf());
     }
-    vlog(ctxlog.error, "'{}' error triggered", ec);
+    vlog(ctxlog.debug, "'{}' error triggered", ec);
     boost::system::system_error except(ec);
     return ss::make_exception_future<iobuf>(except);
 }
