@@ -15,13 +15,17 @@
 #include "model/timestamp.h"
 #include "raft/group_configuration.h"
 #include "raft/logger.h"
+#include "raft/offset_translator.h"
 #include "raft/types.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
+#include "storage/ntp_config.h"
+#include "storage/offset_translator_state.h"
 #include "storage/record_batch_builder.h"
+#include "storage/segment_utils.h"
 #include "vassert.h"
 
 #include <seastar/core/abort_source.hh>
@@ -449,6 +453,94 @@ ss::future<> move_persistent_state(
         return ss::when_all_succeed(
           remove_futures.begin(), remove_futures.end());
     });
+}
+
+ss::future<> create_offset_translator_state_for_pre_existing_partition(
+  storage::api& api,
+  const storage::ntp_config& ntp_cfg,
+  raft::group_id group,
+  model::offset min_rp_offset,
+  model::offset max_rp_offset) {
+    // Prepare offset_translator state in kvstore
+    storage::offset_translator_state ot_state(
+      ntp_cfg.ntp(), raft::details::prev_offset(min_rp_offset), 0);
+    co_await api.kvs().put(
+      storage::kvstore::key_space::offset_translator,
+      raft::offset_translator::kvstore_offsetmap_key(group),
+      ot_state.serialize_map());
+    co_await api.kvs().put(
+      storage::kvstore::key_space::offset_translator,
+      raft::offset_translator::kvstore_highest_known_offset_key(group),
+      reflection::to_iobuf(raft::details::prev_offset(max_rp_offset)));
+}
+
+ss::future<> create_raft_state_for_pre_existing_partition(
+  storage::api& api,
+  const storage::ntp_config& ntp_cfg,
+  raft::group_id group,
+  model::offset min_rp_offset,
+  model::offset max_rp_offset,
+  model::term_id last_included_term,
+  std::vector<model::broker> initial_nodes) {
+    // Prepare Raft state in kvstore
+    auto key = raft::details::serialize_group_key(
+      group, raft::metadata_key::config_latest_known_offset);
+    co_await api.kvs().put(
+      storage::kvstore::key_space::consensus,
+      key,
+      reflection::to_iobuf(max_rp_offset));
+
+    // Prepare Raft snapshot
+    raft::group_configuration group_config(
+      initial_nodes, ntp_cfg.get_revision());
+    raft::snapshot_metadata meta = {
+      .last_included_index = prev_offset(min_rp_offset),
+      .last_included_term = last_included_term,
+      .version = raft::snapshot_metadata::current_version,
+      .latest_configuration = std::move(group_config),
+      .cluster_time = ss::lowres_clock::now(),
+      .log_start_delta = raft::offset_translator_delta{0},
+    };
+
+    storage::simple_snapshot_manager tmp_snapshot_mgr(
+      std::filesystem::path(ntp_cfg.work_directory()),
+      storage::simple_snapshot_manager::default_snapshot_filename,
+      raft_priority());
+
+    co_await raft::details::persist_snapshot(
+      tmp_snapshot_mgr, std::move(meta), iobuf());
+}
+
+ss::future<> create_storage_state_for_pre_existing_partition(
+  storage::api& api,
+  const storage::ntp_config& ntp_cfg,
+  model::offset min_rp_offset) {
+    co_await api.kvs().put(
+      storage::kvstore::key_space::storage,
+      storage::internal::start_offset_key(ntp_cfg.ntp()),
+      reflection::to_iobuf(min_rp_offset));
+}
+
+ss::future<> bootstrap_pre_existing_partition(
+  storage::api& api,
+  const storage::ntp_config& ntp_cfg,
+  raft::group_id group,
+  model::offset min_rp_offset,
+  model::offset max_rp_offset,
+  model::term_id last_included_term,
+  std::vector<model::broker> initial_nodes) {
+    co_await create_offset_translator_state_for_pre_existing_partition(
+      api, ntp_cfg, group, min_rp_offset, max_rp_offset);
+    co_await create_storage_state_for_pre_existing_partition(
+      api, ntp_cfg, min_rp_offset);
+    co_await create_raft_state_for_pre_existing_partition(
+      api,
+      ntp_cfg,
+      group,
+      min_rp_offset,
+      max_rp_offset,
+      last_included_term,
+      initial_nodes);
 }
 
 } // namespace raft::details
