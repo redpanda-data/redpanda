@@ -187,6 +187,13 @@ class Admin:
             path = f"{path}/{namespace}/{topic}/{partition}"
         return self._request('get', path, node=node).json()
 
+    def get_transactions(self, topic, partition, namespace, node=None):
+        """
+        Get transaction for current partition
+        """
+        path = f"partitions/{namespace}/{topic}/{partition}/transactions"
+        return self._request('get', path, node=node).json()
+
     def set_partition_replicas(self,
                                topic,
                                partition,
