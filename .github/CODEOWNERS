@@ -39,7 +39,7 @@ licenses           @senior7515 @dswang
 /src/js                @andresaristizabal
 /src/v/archival        @lazin               @lenaan         @ztlpn
 /src/v/bytes           @dotnwat
-/src/v/cloud_storage   @lazin               @lenaan
+/src/v/cloud_storage   @lazin               @lenaan         @ztlpn
 /src/v/cluster         @mmaslankaprv        @ztlpn          @vadimplh
 /src/v/compression     @dotnwat
 /src/v/config          @mmaslankaprv
