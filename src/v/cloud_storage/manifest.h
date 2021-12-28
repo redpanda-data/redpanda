@@ -118,7 +118,7 @@ class manifest final : public base_manifest {
 public:
     struct segment_meta {
         using value_t = segment_meta;
-        static constexpr serde::version_t redpanda_serde_version = 0;
+        static constexpr serde::version_t redpanda_serde_version = 1;
         static constexpr serde::version_t redpanda_serde_compat_version = 0;
 
         bool is_compacted;
