@@ -110,8 +110,9 @@ ss::future<consensus_ptr> partition_manager::manage(
 ss::future<bool>
 partition_manager::maybe_download_log(storage::ntp_config& ntp_cfg) {
     if (_partition_recovery_mgr.local_is_initialized()) {
-        co_return co_await _partition_recovery_mgr.local().download_log(
+        auto res = co_await _partition_recovery_mgr.local().download_log(
           ntp_cfg);
+        co_return res.completed;
     }
     vlog(
       clusterlog.debug,
