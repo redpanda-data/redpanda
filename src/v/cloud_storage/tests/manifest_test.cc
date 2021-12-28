@@ -262,3 +262,107 @@ SEASTAR_THREAD_TEST_CASE(test_segment_name_parsing_failure_2) {
     auto res = parse_segment_name(name);
     BOOST_REQUIRE(res.has_value() == false);
 }
+
+// modeled after cluster::archival_metadata_stm::segment
+struct metadata_stm_segment
+  : public serde::envelope<
+      metadata_stm_segment,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    cloud_storage::segment_name name;
+    cloud_storage::manifest::segment_meta meta;
+
+    bool operator==(const metadata_stm_segment&) const = default;
+};
+
+namespace old {
+struct segment_meta_v0 {
+    using value_t = segment_meta_v0;
+    static constexpr serde::version_t redpanda_serde_version = 0;
+    static constexpr serde::version_t redpanda_serde_compat_version = 0;
+
+    bool is_compacted;
+    size_t size_bytes;
+    model::offset base_offset;
+    model::offset committed_offset;
+    model::timestamp base_timestamp;
+    model::timestamp max_timestamp;
+    model::offset delta_offset;
+
+    auto operator<=>(const segment_meta_v0&) const = default;
+};
+
+struct metadata_stm_segment
+  : public serde::envelope<
+      metadata_stm_segment,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    cloud_storage::segment_name name;
+    segment_meta_v0 meta;
+
+    bool operator==(const old::metadata_stm_segment&) const = default;
+};
+
+} // namespace old
+
+SEASTAR_THREAD_TEST_CASE(test_segment_meta_serde_compat) {
+    auto timestamp = model::timestamp::now();
+
+    cloud_storage::manifest::segment_meta meta_new{
+      .is_compacted = false,
+      .size_bytes = 1234,
+      .base_offset = model::offset{12},
+      .committed_offset = model::offset{34},
+      .base_timestamp = timestamp,
+      .max_timestamp = timestamp,
+      .delta_offset = model::offset{7},
+      .ntp_revision = model::revision_id{42},
+      .archiver_term = model::term_id{123},
+    };
+
+    cloud_storage::manifest::segment_meta meta_wo_new_fields = meta_new;
+    meta_wo_new_fields.ntp_revision = model::revision_id{};
+    meta_wo_new_fields.archiver_term = model::term_id{};
+
+    old::segment_meta_v0 meta_old{
+      .is_compacted = meta_new.is_compacted,
+      .size_bytes = meta_new.size_bytes,
+      .base_offset = meta_new.base_offset,
+      .committed_offset = meta_new.committed_offset,
+      .base_timestamp = meta_new.base_timestamp,
+      .max_timestamp = meta_new.max_timestamp,
+      .delta_offset = meta_new.delta_offset,
+    };
+
+    BOOST_CHECK(
+      serde::from_iobuf<cloud_storage::manifest::segment_meta>(
+        serde::to_iobuf(meta_old))
+      == meta_wo_new_fields);
+
+    BOOST_CHECK(
+      serde::from_iobuf<old::segment_meta_v0>(serde::to_iobuf(meta_new))
+      == meta_old);
+
+    auto name = segment_name{"12-11-v1.log"};
+
+    metadata_stm_segment segment_new{
+      .name = name,
+      .meta = meta_new,
+    };
+    metadata_stm_segment segment_wo_new_fields{
+      .name = name,
+      .meta = meta_wo_new_fields,
+    };
+    old::metadata_stm_segment segment_old{
+      .name = name,
+      .meta = meta_old,
+    };
+
+    BOOST_CHECK(
+      serde::from_iobuf<metadata_stm_segment>(serde::to_iobuf(segment_old))
+      == segment_wo_new_fields);
+
+    BOOST_CHECK(
+      serde::from_iobuf<old::metadata_stm_segment>(serde::to_iobuf(segment_new))
+      == segment_old);
+}
