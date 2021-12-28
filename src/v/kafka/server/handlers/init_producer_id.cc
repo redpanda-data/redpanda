@@ -76,12 +76,25 @@ ss::future<response_ptr> init_producer_id_handler::handle(
               });
         }
 
-        if (!ctx.authorized(
-              security::acl_operation::idempotent_write,
-              security::default_cluster_name)) {
-            init_producer_id_response reply;
-            reply.data.error_code = error_code::cluster_authorization_failed;
-            return ctx.respond(reply);
+        bool permitted = false;
+        auto topics = ctx.metadata_cache().all_topics();
+        for (auto& tp_ns : topics) {
+            permitted = ctx.authorized(
+              security::acl_operation::write, tp_ns.tp, authz_quiet{true});
+            if (permitted) {
+                break;
+            }
+        }
+
+        if (!permitted) {
+            if (!ctx.authorized(
+                  security::acl_operation::idempotent_write,
+                  security::default_cluster_name)) {
+                init_producer_id_response reply;
+                reply.data.error_code
+                  = error_code::cluster_authorization_failed;
+                return ctx.respond(reply);
+            }
         }
 
         return ctx.id_allocator_frontend()
