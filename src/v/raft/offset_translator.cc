@@ -76,6 +76,15 @@ bytes serialize_kvstore_key(raft::group_id group, kvstore_key_type key_type) {
 
 } // namespace
 
+bytes offset_translator::kvstore_offsetmap_key(raft::group_id group) {
+    return serialize_kvstore_key(group, kvstore_key_type::offsets_map);
+}
+
+bytes offset_translator::kvstore_highest_known_offset_key(
+  raft::group_id group) {
+    return serialize_kvstore_key(group, kvstore_key_type::highest_known_offset);
+}
+
 ss::future<>
 offset_translator::start(must_reset reset, bootstrap_state&& bootstrap) {
     vassert(
@@ -297,12 +306,11 @@ ss::future<> offset_translator::remove_persistent_state() {
 }
 
 bytes offset_translator::offsets_map_key() const {
-    return serialize_kvstore_key(_group, kvstore_key_type::offsets_map);
+    return kvstore_offsetmap_key(_group);
 }
 
 bytes offset_translator::highest_known_offset_key() const {
-    return serialize_kvstore_key(
-      _group, kvstore_key_type::highest_known_offset);
+    return kvstore_highest_known_offset_key(_group);
 }
 
 ss::future<> offset_translator::maybe_checkpoint() {
