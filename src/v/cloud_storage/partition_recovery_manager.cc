@@ -547,14 +547,14 @@ ss::future<> partition_downloader::download_segment_file(
           localpath.string());
         co_await ss::recursive_touch_directory(part.part_prefix.string());
         auto fs = co_await open_output_file_stream(localpath);
-        auto actual_len = co_await otl.copy_stream(
+        auto stream_stats = co_await otl.copy_stream(
           std::move(in), std::move(fs), _rtcnode);
         vlog(
           _ctxlog.debug,
           "Log segment downloaded. {} bytes expected, {} bytes after "
           "pre-processing.",
           len,
-          actual_len);
+          stream_stats.size_bytes);
         co_return len;
     };
 
