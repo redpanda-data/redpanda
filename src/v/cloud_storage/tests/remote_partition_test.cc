@@ -357,10 +357,13 @@ static std::vector<model::record_batch_header> scan_remote_partition(
       manifest, api, *imposter.cache, bucket);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
+    partition->start().get();
+
     auto reader = partition->make_reader(reader_config).get().reader;
 
     auto headers_read
       = reader.consume(test_consumer(), model::no_timeout).get();
+    std::move(reader).release();
 
     return headers_read;
 }
@@ -903,6 +906,8 @@ scan_remote_partition_incrementally(
     auto partition = ss::make_lw_shared<remote_partition>(
       manifest, api, *imposter.cache, bucket);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+
+    partition->start().get();
 
     std::vector<model::record_batch_header> headers;
 

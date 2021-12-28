@@ -89,9 +89,7 @@ public:
     data_stream(size_t pos, ss::io_priority_class);
 
     /// Hydrate the segment
-    ///
-    /// Method returns key of the segment in cache.
-    ss::future<std::filesystem::path> hydrate();
+    ss::future<> hydrate();
 
     retry_chain_node* get_retry_chain_node() { return &_rtc; }
 
@@ -112,12 +110,12 @@ private:
     /// Notifies the background hydration fiber
     ss::condition_variable _bg_cvar;
 
-    using expiry_handler
-      = std::function<void(ss::promise<std::filesystem::path>&)>;
+    using expiry_handler = std::function<void(ss::promise<ss::file>&)>;
 
     /// List of fibers that wait for the segment to be hydrated
-    ss::expiring_fifo<ss::promise<std::filesystem::path>, expiry_handler>
-      _wait_list;
+    ss::expiring_fifo<ss::promise<ss::file>, expiry_handler> _wait_list;
+
+    ss::file _data_file;
 };
 
 class remote_segment_batch_consumer;
@@ -196,6 +194,7 @@ private:
     model::offset _cur_rp_offset;
     model::offset _cur_delta;
     size_t _bytes_consumed{0};
+    ss::gate _gate;
 };
 
 } // namespace cloud_storage
