@@ -39,7 +39,7 @@ libraryDependencies ++= List(
 ```
 For this example, we are adding the `kafka-streams-avro-serde` library to the project. 
 
-## Reading from Kafka
+## Reading from Red Panda
 
 Now that we have our project skeleton, remember that our event processor **reads** the events from a topic.
 
@@ -130,7 +130,7 @@ Replace the comment `// 3. main() method` with the following code:
   def main(args: Array[String]): Unit = process()
 ```
 
-## Writting to Kafka
+## Writting to Red Panda
 
 Replace the comment `// 1. The writter code goes here` with the following code:
 
