@@ -54,7 +54,7 @@ FIXTURE_TEST(test_reconciliation_manifest_download, archiver_fixture) {
         "revision": 1,
         "last_offset": 2,
         "segments": {
-            "1-1-v1.log": { 
+            "1-1-v1.log": {
                 "is_compacted": false,
                 "size_bytes": 10,
                 "base_offset": 1,
@@ -143,14 +143,9 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
       = "/c0000000/meta/test-namespace/topic_3/0_2/manifest.json";
     const char* topic_url
       = "/00000000/meta/test-namespace/topic_3/topic_manifest.json";
-    const char* seg000 = "/e34f82da/test-namespace/topic_3/0_2/0-0-v1.log";
-    const char* seg100 = "/dd2813e1/test-namespace/topic_3/0_2/100-0-v1.log";
-    set_expectations_and_listen({
-      {.url = manifest_url, .body = std::nullopt},
-      {.url = topic_url, .body = std::nullopt},
-      {.url = seg000, .body = std::nullopt},
-      {.url = seg100, .body = std::nullopt},
-    });
+    archival::segment_name seg000{"0-0-v1.log"};
+    archival::segment_name seg100{"100-0-v1.log"};
+    set_expectations_and_listen({});
 
     auto builder = get_started_log_builder(ntp, model::revision_id(2));
     using namespace storage; // NOLINT
@@ -192,28 +187,36 @@ FIXTURE_TEST(test_segment_upload, archiver_fixture) {
     }).get();
     BOOST_REQUIRE(get_requests().size() == num_requests_expected);
 
+    cloud_storage::manifest manifest;
     auto manifest_req = get_targets().equal_range(manifest_url);
     BOOST_REQUIRE(manifest_req.first != manifest_req.second);
     for (auto it = manifest_req.first; it != manifest_req.second; it++) {
         if (it->second._method == "PUT") {
             BOOST_REQUIRE(it->second._method == "PUT");
             verify_manifest_content(it->second.content);
+            manifest = load_manifest(it->second.content);
         } else {
             BOOST_REQUIRE(it->second._method == "GET");
         }
     }
 
-    BOOST_REQUIRE(get_targets().count(seg000) == 1);
-    auto put_seg000 = get_targets().find(seg000);
+    auto seg000_meta = manifest.get(seg000);
+    BOOST_REQUIRE(seg000_meta);
+    ss::sstring seg000_url = "/"
+                             + get_segment_path(manifest, seg000)().string();
+    BOOST_REQUIRE(get_targets().count(seg000_url) == 1);
+    auto put_seg000 = get_targets().find(seg000_url);
     BOOST_REQUIRE(put_seg000->second._method == "PUT");
-    verify_segment(
-      ntp, archival::segment_name("0-0-v1.log"), put_seg000->second.content);
+    verify_segment(ntp, seg000, put_seg000->second.content);
 
-    BOOST_REQUIRE(get_targets().count(seg100) == 1);
-    auto put_seg100 = get_targets().find(seg100);
+    auto seg100_meta = manifest.get(seg100);
+    BOOST_REQUIRE(seg100_meta);
+    ss::sstring seg100_url = "/"
+                             + get_segment_path(manifest, seg100)().string();
+    BOOST_REQUIRE(get_targets().count(seg100_url) == 1);
+    auto put_seg100 = get_targets().find(seg100_url);
     BOOST_REQUIRE(put_seg100->second._method == "PUT");
-    verify_segment(
-      ntp, archival::segment_name("100-0-v1.log"), put_seg100->second.content);
+    verify_segment(ntp, seg100, put_seg100->second.content);
     service.stop().get();
     remote.stop().get();
 }

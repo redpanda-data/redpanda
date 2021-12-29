@@ -81,6 +81,8 @@ private:
 
     ss::socket_address _server_addr;
     ss::shared_ptr<ss::httpd::http_server_control> _server;
+
+    std::unique_ptr<ss::httpd::handler_base> _handler;
     /// Contains saved requests
     std::vector<ss::httpd::request> _requests;
     /// Contains all accessed target urls
@@ -172,7 +174,7 @@ public:
     storage::api& get_local_storage_api();
     /// \brief Init storage api for tests that require only storage
     /// The method doesn't add topics, only creates segments in data_dir
-    void init_storage_api_local(std::vector<segment_desc>& segm);
+    void init_storage_api_local(const std::vector<segment_desc>& segm);
 
     std::vector<segment_layout> get_layouts(const model::ntp& ntp) const {
         return layouts.find(ntp)->second;
@@ -196,3 +198,8 @@ private:
 
 std::tuple<archival::configuration, cloud_storage::configuration>
 get_configurations();
+
+cloud_storage::manifest load_manifest(std::string_view v);
+
+archival::remote_segment_path
+get_segment_path(const cloud_storage::manifest&, const archival::segment_name&);

@@ -48,7 +48,7 @@ static constexpr std::string_view complete_manifest_json = R"json({
     "revision": 1,
     "last_offset": 39,
     "segments": {
-        "10-1-v1.log": { 
+        "10-1-v1.log": {
             "is_compacted": false,
             "size_bytes": 1024,
             "base_offset": 10,
@@ -61,7 +61,7 @@ static constexpr std::string_view complete_manifest_json = R"json({
             "committed_offset": 29,
             "max_timestamp": 1234567890
         },
-        "01234567/test-ns/test-topic/42_1/30-1-v1.log": {
+        "30-1-v1.log": {
             "is_compacted": false,
             "size_bytes": 4096,
             "base_offset": 30,
@@ -87,10 +87,14 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_path) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_segment_path) {
-    manifest m(manifest_ntp, model::revision_id(0));
-    auto path = m.get_remote_segment_path(segment_name("22-11-v1.log"));
+    auto path = generate_remote_segment_path(
+      manifest_ntp,
+      model::revision_id(0),
+      segment_name("22-11-v1.log"),
+      model::term_id{123});
     // use pre-calculated murmur hash value from full ntp path + file name
-    BOOST_REQUIRE_EQUAL(path, "2bea9275/test-ns/test-topic/42_0/22-11-v1.log");
+    BOOST_REQUIRE_EQUAL(
+      path, "2bea9275/test-ns/test-topic/42_0/22-11-v1.log.123");
 }
 
 SEASTAR_THREAD_TEST_CASE(test_empty_manifest_update) {
@@ -99,13 +103,6 @@ SEASTAR_THREAD_TEST_CASE(test_empty_manifest_update) {
     auto path = m.get_manifest_path();
     BOOST_REQUIRE_EQUAL(
       path, "20000000/meta/test-ns/test-topic/42_0/manifest.json");
-}
-
-static ss::sstring key_to_string(const manifest::key& key) {
-    if (std::holds_alternative<segment_name>(key)) {
-        return std::get<segment_name>(key)();
-    }
-    return std::get<remote_segment_path>(key)().string();
 }
 
 SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
@@ -127,7 +124,7 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
          model::offset(29),
          model::timestamp(1234567890),
          model::timestamp(1234567890)}},
-      {"01234567/test-ns/test-topic/42_1/30-1-v1.log",
+      {"30-1-v1.log",
        manifest::segment_meta{
          false,
          4096,
@@ -137,7 +134,7 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
          model::timestamp(1234567890)}},
     };
     for (const auto& actual : m) {
-        auto it = expected.find(key_to_string(actual.first));
+        auto it = expected.find(actual.first());
         BOOST_REQUIRE(it != expected.end());
         BOOST_REQUIRE_EQUAL(it->second.base_offset, actual.second.base_offset);
         BOOST_REQUIRE_EQUAL(
@@ -160,6 +157,7 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_serialization) {
         .base_offset = model::offset(10),
         .committed_offset = model::offset(19),
         .max_timestamp = model::timestamp::missing(),
+        .ntp_revision = model::revision_id(0),
       });
     m.add(
       segment_name("20-1-v1.log"),
@@ -169,6 +167,7 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_serialization) {
         .base_offset = model::offset(20),
         .committed_offset = model::offset(29),
         .max_timestamp = model::timestamp::missing(),
+        .ntp_revision = model::revision_id(3),
       });
     auto [is, size] = m.serialize();
     iobuf buf;
@@ -194,8 +193,7 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_difference) {
         auto c = a.difference(b);
         BOOST_REQUIRE(c.size() == 1);
         auto res = *c.begin();
-        BOOST_REQUIRE(
-          std::get<segment_name>(res.first) == segment_name("3-3-v1.log"));
+        BOOST_REQUIRE(res.first == segment_name("3-3-v1.log"));
     }
     // check that set difference is not symmetrical
     b.add(segment_name("3-3-v1.log"), {});
@@ -246,71 +244,125 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_name_parsing_failure_4) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_segment_name_parsing) {
-    std::filesystem::path path = "3587-1-v1.log";
-    auto res = cloud_storage::get_segment_path_components(path);
-    BOOST_REQUIRE_EQUAL(res->_origin, path);
-    BOOST_REQUIRE_EQUAL(res->_is_full, false);
-    BOOST_REQUIRE_EQUAL(res->_name, path.string());
-    BOOST_REQUIRE_EQUAL(res->_base_offset(), 3587);
-    BOOST_REQUIRE_EQUAL(res->_term(), 1);
+    segment_name name{"3587-1-v1.log"};
+    auto res = parse_segment_name(name);
+    BOOST_REQUIRE(res);
+    BOOST_REQUIRE_EQUAL(res->base_offset(), 3587);
+    BOOST_REQUIRE_EQUAL(res->term(), 1);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_segment_name_parsing_failure_1) {
-    std::filesystem::path path = "-1-v1.log";
-    auto res = cloud_storage::get_segment_path_components(path);
+    segment_name name{"-1-v1.log"};
+    auto res = parse_segment_name(name);
     BOOST_REQUIRE(res.has_value() == false);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_segment_name_parsing_failure_2) {
-    std::filesystem::path path = "abc-1-v1.log";
-    auto res = cloud_storage::get_segment_path_components(path);
+    segment_name name{"abc-1-v1.log"};
+    auto res = parse_segment_name(name);
     BOOST_REQUIRE(res.has_value() == false);
 }
 
-SEASTAR_THREAD_TEST_CASE(test_segment_path_parsing) {
-    std::filesystem::path path
-      = "034b2193/kafka/redpanda-test/3_2/3587-1-v1.log";
-    auto res = cloud_storage::get_segment_path_components(path);
-    BOOST_REQUIRE(res.has_value());
-    BOOST_REQUIRE_EQUAL(res->_origin, path);
-    BOOST_REQUIRE_EQUAL(res->_ns(), "kafka");
-    BOOST_REQUIRE_EQUAL(res->_topic(), "redpanda-test");
-    BOOST_REQUIRE_EQUAL(res->_part(), 3);
-    BOOST_REQUIRE_EQUAL(res->_rev(), 2);
-    BOOST_REQUIRE_EQUAL(res->_is_full, true);
-    BOOST_REQUIRE_EQUAL(res->_name, path.filename().string());
-    BOOST_REQUIRE_EQUAL(res->_base_offset(), 3587);
-    BOOST_REQUIRE_EQUAL(res->_term(), 1);
-}
+// modeled after cluster::archival_metadata_stm::segment
+struct metadata_stm_segment
+  : public serde::envelope<
+      metadata_stm_segment,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    cloud_storage::segment_name name;
+    cloud_storage::manifest::segment_meta meta;
 
-SEASTAR_THREAD_TEST_CASE(test_segment_path_parsing_failure_1) {
-    std::filesystem::path path = "034b2193/kafka/redpanda-test/_/3587-1-v1.log";
-    auto res = cloud_storage::get_segment_path_components(path);
-    BOOST_REQUIRE(!res.has_value());
-}
+    bool operator==(const metadata_stm_segment&) const = default;
+};
 
-SEASTAR_THREAD_TEST_CASE(test_segment_path_parsing_failure_2) {
-    std::filesystem::path path
-      = "034b2193/kafka/redpanda-test/3_2/foo-bar-v1.log";
-    auto res = cloud_storage::get_segment_path_components(path);
-    BOOST_REQUIRE(!res.has_value());
-}
+namespace old {
+struct segment_meta_v0 {
+    using value_t = segment_meta_v0;
+    static constexpr serde::version_t redpanda_serde_version = 0;
+    static constexpr serde::version_t redpanda_serde_compat_version = 0;
 
-SEASTAR_THREAD_TEST_CASE(test_segment_path_parsing_failure_3) {
-    std::filesystem::path path = "034b2193/kafka/redpanda-test/3_2";
-    auto res = cloud_storage::get_segment_path_components(path);
-    BOOST_REQUIRE(!res.has_value());
-}
+    bool is_compacted;
+    size_t size_bytes;
+    model::offset base_offset;
+    model::offset committed_offset;
+    model::timestamp base_timestamp;
+    model::timestamp max_timestamp;
+    model::offset delta_offset;
 
-SEASTAR_THREAD_TEST_CASE(test_segment_path_parsing_failure_4) {
-    std::filesystem::path path = "034b2193/redpanda-test/3_2/3587-1-v1.log";
-    auto res = cloud_storage::get_segment_path_components(path);
-    BOOST_REQUIRE(!res.has_value());
-}
+    auto operator<=>(const segment_meta_v0&) const = default;
+};
 
-SEASTAR_THREAD_TEST_CASE(test_segment_path_parsing_failure_5) {
-    std::filesystem::path path
-      = "00000000/meta/kafka/redpanda-test/3_2/manifest.log";
-    auto res = cloud_storage::get_segment_path_components(path);
-    BOOST_REQUIRE(!res.has_value());
+struct metadata_stm_segment
+  : public serde::envelope<
+      metadata_stm_segment,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    cloud_storage::segment_name name;
+    segment_meta_v0 meta;
+
+    bool operator==(const old::metadata_stm_segment&) const = default;
+};
+
+} // namespace old
+
+SEASTAR_THREAD_TEST_CASE(test_segment_meta_serde_compat) {
+    auto timestamp = model::timestamp::now();
+
+    cloud_storage::manifest::segment_meta meta_new{
+      .is_compacted = false,
+      .size_bytes = 1234,
+      .base_offset = model::offset{12},
+      .committed_offset = model::offset{34},
+      .base_timestamp = timestamp,
+      .max_timestamp = timestamp,
+      .delta_offset = model::offset{7},
+      .ntp_revision = model::revision_id{42},
+      .archiver_term = model::term_id{123},
+    };
+
+    cloud_storage::manifest::segment_meta meta_wo_new_fields = meta_new;
+    meta_wo_new_fields.ntp_revision = model::revision_id{};
+    meta_wo_new_fields.archiver_term = model::term_id{};
+
+    old::segment_meta_v0 meta_old{
+      .is_compacted = meta_new.is_compacted,
+      .size_bytes = meta_new.size_bytes,
+      .base_offset = meta_new.base_offset,
+      .committed_offset = meta_new.committed_offset,
+      .base_timestamp = meta_new.base_timestamp,
+      .max_timestamp = meta_new.max_timestamp,
+      .delta_offset = meta_new.delta_offset,
+    };
+
+    BOOST_CHECK(
+      serde::from_iobuf<cloud_storage::manifest::segment_meta>(
+        serde::to_iobuf(meta_old))
+      == meta_wo_new_fields);
+
+    BOOST_CHECK(
+      serde::from_iobuf<old::segment_meta_v0>(serde::to_iobuf(meta_new))
+      == meta_old);
+
+    auto name = segment_name{"12-11-v1.log"};
+
+    metadata_stm_segment segment_new{
+      .name = name,
+      .meta = meta_new,
+    };
+    metadata_stm_segment segment_wo_new_fields{
+      .name = name,
+      .meta = meta_wo_new_fields,
+    };
+    old::metadata_stm_segment segment_old{
+      .name = name,
+      .meta = meta_old,
+    };
+
+    BOOST_CHECK(
+      serde::from_iobuf<metadata_stm_segment>(serde::to_iobuf(segment_old))
+      == segment_wo_new_fields);
+
+    BOOST_CHECK(
+      serde::from_iobuf<old::metadata_stm_segment>(serde::to_iobuf(segment_new))
+      == segment_old);
 }

@@ -107,10 +107,9 @@ public:
     /// \param manifest is a manifest that should have the segment metadata
     ss::future<upload_result> upload_segment(
       const s3::bucket_name& bucket,
-      const segment_name& exposed_name,
+      const remote_segment_path& segment_path,
       uint64_t content_length,
       const reset_input_stream& reset_str,
-      manifest& manifest,
       retry_chain_node& parent);
 
     /// \brief Download segment from S3
@@ -123,8 +122,7 @@ public:
     /// \param manifest is a manifest that should have the segment metadata
     ss::future<download_result> download_segment(
       const s3::bucket_name& bucket,
-      const manifest::key& name,
-      const manifest& manifest,
+      const remote_segment_path& path,
       const try_consume_stream& cons_str,
       retry_chain_node& parent);
 
