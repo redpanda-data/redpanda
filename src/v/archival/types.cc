@@ -10,6 +10,7 @@
 
 #include "archival/types.h"
 
+#include <fmt/chrono.h>
 #include <fmt/format.h>
 
 namespace archival {
@@ -17,7 +18,7 @@ namespace archival {
 std::ostream&
 operator<<(std::ostream& o, const std::optional<segment_time_limit>& tl) {
     if (tl) {
-        fmt::print(o, "{}", tl.value()().count());
+        fmt::print(o, "{}", std::chrono::milliseconds(tl.value()));
     } else {
         fmt::print(o, "N/A");
     }
@@ -31,10 +32,10 @@ std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
       "segment_upload_timeout: {}, "
       "manifest_upload_timeout: {}, time_limit: {}}}",
       cfg.bucket_name,
-      cfg.interval.count(),
-      cfg.initial_backoff.count(),
-      cfg.segment_upload_timeout.count(),
-      cfg.manifest_upload_timeout.count(),
+      std::chrono::milliseconds(cfg.interval),
+      std::chrono::milliseconds(cfg.initial_backoff),
+      std::chrono::milliseconds(cfg.segment_upload_timeout),
+      std::chrono::milliseconds(cfg.manifest_upload_timeout),
       cfg.time_limit);
     return o;
 }
