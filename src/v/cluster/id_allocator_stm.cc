@@ -167,10 +167,8 @@ ss::future<> id_allocator_stm::apply(model::record_batch b) {
         _processed++;
         if (_processed > _log_capacity) {
             return _c
-              ->write_snapshot(raft::write_snapshot_cfg(
-                _next_snapshot,
-                iobuf(),
-                raft::write_snapshot_cfg::should_prefix_truncate::no))
+              ->write_snapshot(
+                raft::write_snapshot_cfg(_next_snapshot, iobuf()))
               .then([this] {
                   _next_snapshot = _insync_offset;
                   _processed = 0;
