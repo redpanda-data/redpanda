@@ -73,7 +73,7 @@ libraryDependencies ++= List(
 ```
 For this example, we are adding the `avro-serializer` library to the project. 
 
-## Reading from Kafka
+## Reading from Red Panda
 
 Now that we have our project skeleton, remember that our event processor **reads** the events from a topic.
 
@@ -176,7 +176,7 @@ Replace the comment `// 4. main() method` with the following code:
 ```
 Here we are saying to pool the topic `avro-persons` every second looking for new messages.
 
-## Writting to Kafka
+## Writting to Red Panda
 
 Replace the comment `// 2. Producer properties` with the following code:
 
