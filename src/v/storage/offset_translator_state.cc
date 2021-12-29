@@ -79,13 +79,14 @@ model::offset offset_translator_state::to_log_offset(
     model::offset min_data_offset
       = min_log_offset
         - model::offset(_last_offset2batch.begin()->second.next_delta);
-    vassert(
-      data_offset >= min_data_offset,
-      "ntp {}: data offset {} must be inside translation range (starting at "
-      "{})",
-      _ntp,
-      data_offset,
-      min_data_offset);
+    if (data_offset < min_data_offset) {
+        throw std::runtime_error{fmt::format(
+          "ntp {}: data offset {} is outside the translation range (starting "
+          "at {})",
+          _ntp,
+          data_offset,
+          min_data_offset)};
+    }
 
     model::offset search_start = std::max(
       std::max(hint, data_offset), min_log_offset);
