@@ -154,7 +154,7 @@ object Person {
 
 This is a simple Person class (also known as POJO or Bean) that contains our Customer's data to model.
 
-## Reading from Kafka
+## Reading from Red Panda
 
 Now that we have our project skeleton, remember that our event processor **reads** the events from a topic.
 
@@ -215,7 +215,7 @@ Replace the comment `// 1. Consumer properties` with the following code:
   private final val consumer = new KafkaConsumer[String, String](consumerProps)
 ```
 
-Here we have the Propertis for our Consumer, the brokers is a comma-separated String with the members of our cluster.
+Here we have the Properties for our Consumer, the brokers is a comma-separated String with the members of our cluster.
 
 As the `Key` and the `Value` are both Strings, we use String Deserializers, we consider a JSON message as a String.
 
@@ -247,7 +247,7 @@ Replace the comment `// 4. main() method` with the following code:
 
 Here we are saying to pool the topic `persons` every second looking for new messages.
 
-## Writting to Kafka
+## Writting to Red Panda
 
 Replace the comment `// 2. Producer properties` with the following code:
 
