@@ -87,10 +87,8 @@ log_eviction_stm::handle_deletion_notification(model::offset last_evicted) {
           }
 
           return f.then([this, last_evicted]() {
-              return _raft->write_snapshot(write_snapshot_cfg(
-                last_evicted,
-                iobuf(),
-                write_snapshot_cfg::should_prefix_truncate::no));
+              return _raft->write_snapshot(
+                write_snapshot_cfg(last_evicted, iobuf()));
           });
       });
 }
