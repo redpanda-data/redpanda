@@ -1742,15 +1742,19 @@ ss::future<> consensus::truncate_to_latest_snapshot() {
     }
     // we have to prefix truncate config manage at exactly last offset included
     // in snapshot as this is the offset of configuration included in snapshot
-    // metadata
-    return _configuration_manager.prefix_truncate(_last_snapshot_index)
+    // metadata.
+    //
+    // We truncate the log before truncating offset translator to wait for
+    // readers that started reading from the start of the log before we advanced
+    // _last_snapshot_index and thus can still need offset translation info.
+    return _log
+      .truncate_prefix(storage::truncate_prefix_config(
+        details::next_offset(_last_snapshot_index), _scheduling.default_iopc))
       .then([this] {
-          return _offset_translator.prefix_truncate(_last_snapshot_index);
+          return _configuration_manager.prefix_truncate(_last_snapshot_index);
       })
       .then([this] {
-          return _log.truncate_prefix(storage::truncate_prefix_config(
-            details::next_offset(_last_snapshot_index),
-            _scheduling.default_iopc));
+          return _offset_translator.prefix_truncate(_last_snapshot_index);
       })
       .then([this] {
           // when log was prefix truncate flushed offset should be equal to at
@@ -1907,31 +1911,49 @@ ss::future<install_snapshot_reply> consensus::finish_snapshot(
 }
 
 ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
-    return _op_lock.with([this, cfg = std::move(cfg)]() mutable {
-        // do nothing, we already have snapshot for this offset
-        // MUST be checked under the _op_lock
-        if (cfg.last_included_index <= _last_snapshot_index) {
-            return ss::now();
-        }
-        auto max_offset = cfg.should_truncate ? _commit_index
-                                              : last_visible_index();
+    return _op_lock
+      .with([this, cfg = std::move(cfg)]() mutable {
+          // do nothing, we already have snapshot for this offset
+          // MUST be checked under the _op_lock
+          if (cfg.last_included_index <= _last_snapshot_index) {
+              return ss::now();
+          }
 
-        vassert(
-          cfg.last_included_index <= max_offset,
-          "Can not take snapshot, requested offset: {} is greater than max "
-          "snapshot offset: {}",
-          cfg.last_included_index,
-          _commit_index);
+          auto max_offset = last_visible_index();
+          vassert(
+            cfg.last_included_index <= max_offset,
+            "Can not take snapshot, requested offset: {} is greater than max "
+            "snapshot offset: {}",
+            cfg.last_included_index,
+            max_offset);
 
-        return do_write_snapshot(cfg.last_included_index, std::move(cfg.data))
-          .then([this, should_truncate = cfg.should_truncate] {
-              if (!should_truncate) {
-                  return ss::now();
-              }
-              return truncate_to_latest_snapshot();
-          })
-          .then([this] { _log.set_collectible_offset(_last_snapshot_index); });
-    });
+          return do_write_snapshot(
+            cfg.last_included_index, std::move(cfg.data));
+      })
+      .then([this] {
+          // Release the lock when truncating the log because it can take some
+          // time while we wait for readers to be evicted.
+          return _log.truncate_prefix(storage::truncate_prefix_config(
+            details::next_offset(_last_snapshot_index),
+            _scheduling.default_iopc));
+      })
+      .then([this] {
+          return _op_lock.with([this] {
+              return _configuration_manager
+                .prefix_truncate(_last_snapshot_index)
+                .then([this] {
+                    return _offset_translator.prefix_truncate(
+                      _last_snapshot_index);
+                })
+                .then([this] {
+                    // when log was prefix truncate flushed offset should be
+                    // equal to at least last snapshot index
+                    _flushed_offset = std::max(
+                      _last_snapshot_index, _flushed_offset);
+                });
+          });
+      })
+      .then([this] { _log.set_collectible_offset(_last_snapshot_index); });
 }
 
 ss::future<>
@@ -1972,11 +1994,6 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
           // update consensus state
           _last_snapshot_index = last_included_index;
           _last_snapshot_term = term;
-          // update configuration manager
-          return _configuration_manager.prefix_truncate(_last_snapshot_index)
-            .then([this] {
-                return _offset_translator.prefix_truncate(_last_snapshot_index);
-            });
       });
 }
 
