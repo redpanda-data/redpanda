@@ -30,9 +30,9 @@ std::ostream& operator<<(std::ostream& os, const std::optional<T>& opt) {
     return os << "{nullopt}";
 }
 
-static inline std::ostream&
+inline std::ostream&
 operator<<(std::ostream& o, const ss::lowres_clock::duration& d) {
-    fmt::print(o, "{}", d.count());
+    fmt::print(o, "{}", std::chrono::milliseconds(d).count());
     return o;
 }
 
