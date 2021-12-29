@@ -24,6 +24,8 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sleep.hh>
 
+#include <boost/system/detail/errc.hpp>
+
 namespace cluster {
 
 namespace {
@@ -86,22 +88,24 @@ archival_metadata_stm::archival_metadata_stm(
   , _manifest(raft->ntp(), raft->config().revision_id())
   , _cloud_storage_api(remote) {}
 
-ss::future<bool> archival_metadata_stm::add_segments(
+// todo: return result
+ss::future<std::error_code> archival_metadata_stm::add_segments(
   const cloud_storage::manifest& manifest, retry_chain_node& rc_node) {
     return _lock.with(rc_node.get_timeout(), [this, &manifest, &rc_node] {
         return do_add_segments(manifest, rc_node);
     });
 }
 
-ss::future<bool> archival_metadata_stm::do_add_segments(
+// todo: return result
+ss::future<std::error_code> archival_metadata_stm::do_add_segments(
   const cloud_storage::manifest& new_manifest, retry_chain_node& rc_node) {
     if (!co_await sync(rc_node.get_timeout())) {
-        co_return false;
+        co_return errc::timeout;
     }
 
     auto segments = segments_from_manifest(new_manifest.difference(_manifest));
     if (segments.empty()) {
-        co_return true;
+        co_return errc::success;
     }
 
     storage::record_batch_builder b(
@@ -124,14 +128,14 @@ ss::future<bool> archival_metadata_stm::do_add_segments(
           _logger.warn,
           "error on replicating remote segment metadata: {}",
           result.error());
-        co_return false;
+        co_return result.error();
     }
 
     auto applied = co_await wait_no_throw(
       result.value().last_offset, rc_node.get_timeout());
 
     if (!applied) {
-        co_return false;
+        co_return errc::applying_offset_in_stm_error;
     }
 
     for (const auto& segment : segments) {
@@ -147,7 +151,7 @@ ss::future<bool> archival_metadata_stm::do_add_segments(
           _last_offset);
     }
 
-    co_return result;
+    co_return result ? errc::success : errc::replication_error;
 }
 
 ss::future<> archival_metadata_stm::apply(model::record_batch b) {
