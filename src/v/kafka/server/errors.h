@@ -69,6 +69,8 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::data_policy_not_exists:
     case cluster::errc::wating_for_partition_shutdown:
     case cluster::errc::error_collecting_health_report:
+    case cluster::errc::leadership_changed:
+    case cluster::errc::applying_offset_in_stm_error:
         break;
     }
     return error_code::unknown_server_error;
