@@ -58,6 +58,7 @@ enum class errc : int16_t {
     wating_for_partition_shutdown,
     error_collecting_health_report,
     leadership_changed,
+    applying_offset_in_stm_error,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -164,6 +165,8 @@ struct errc_category final : public std::error_category {
         case errc::leadership_changed:
             return "Raft group leadership has changed while waiting for action "
                    "to finish";
+        case errc::applying_offset_in_stm_error:
+            return "Timeout while applying offset to persisted stm";
         }
         return "cluster::errc::unknown";
     }
