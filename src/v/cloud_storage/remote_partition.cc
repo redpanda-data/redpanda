@@ -332,7 +332,7 @@ ss::future<> remote_partition::start() {
     (void)run_eviction_loop();
 
     _stm_timer.set_callback([this] {
-        gc_stale_materialized_segments();
+        gc_stale_materialized_segments(false);
         if (!_as.abort_requested()) {
             _stm_timer.rearm(_stm_jitter());
         }
@@ -362,14 +362,22 @@ ss::future<> remote_partition::run_eviction_loop() {
     vlog(_ctxlog.debug, "remote partition eviction loop stopped");
 }
 
-void remote_partition::gc_stale_materialized_segments() {
+void remote_partition::gc_stale_materialized_segments(bool force_collection) {
+    // The remote_segment instances are materialized on demand. They are
+    // collected after some period of inactivity.
+    // To prevent high memory consumption in some corner cases the
+    // materialization of the new remote_segment triggers GC. The idea is
+    // that remote_partition should have only one remote_segment in materialized
+    // state when it's constantly in use and zero if not in use.
     vlog(
       _ctxlog.debug,
       "collecting stale materialized segments, {} segments materialized, {} "
       "segments total",
       _materialized.size(),
       _segments.size());
-    auto now = ss::lowres_clock::now();
+
+    auto now = ss::lowres_clock::now()
+               + (force_collection ? stm_max_idle_time : 0ms);
     std::vector<model::offset> offsets;
     for (auto& st : _materialized) {
         if (
@@ -534,6 +542,9 @@ std::unique_ptr<remote_segment_batch_reader> remote_partition::borrow_reader(
             return st->borrow_reader(config, part->_ctxlog);
         }
     };
+    if (std::holds_alternative<offloaded_segment_ptr>(st)) {
+        gc_stale_materialized_segments(true);
+    }
     return std::visit(
       visit_materialize_make_reader{
         .state = st, .part = this, .config = config, .offset_key = key},
