@@ -89,7 +89,7 @@ private:
 
     ss::future<> run_eviction_loop();
 
-    void gc_stale_materialized_segments();
+    void gc_stale_materialized_segments(bool force_collection);
 
     friend struct offloaded_segment_state;
 
