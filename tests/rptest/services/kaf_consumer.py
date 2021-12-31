@@ -26,7 +26,7 @@ class KafConsumer(BackgroundThreadService):
         self._stopping.clear()
         try:
             partition = None
-            cmd = "kaf consume -b %s --offset newest %s" % (
+            cmd = "kaf consume -b %s -f --offset newest %s" % (
                 self._redpanda.brokers(), self._topic)
             for line in node.account.ssh_capture(cmd):
                 if self._stopping.is_set():
