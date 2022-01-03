@@ -19,6 +19,56 @@ import (
 
 func TestEnsureConfigMap(t *testing.T) {
 	require.NoError(t, redpandav1alpha1.AddToScheme(scheme.Scheme))
+	clusterWithExternal := pandaCluster().DeepCopy()
+	clusterWithExternal.Spec.Configuration.KafkaAPI = append(clusterWithExternal.Spec.Configuration.KafkaAPI, redpandav1alpha1.KafkaAPI{Port: 30001, External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}})
+
+	testcases := []struct {
+		name           string
+		cluster        redpandav1alpha1.Cluster
+		expectedString string
+	}{
+		{
+			name:    "External port specified",
+			cluster: *clusterWithExternal,
+			expectedString: `- address: 0.0.0.0
+          port: 30001
+          name: kafka-external`,
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := fake.NewClientBuilder().Build()
+			secret := v1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "archival",
+					Namespace: "default",
+				},
+				Data: map[string][]byte{
+					"archival": []byte("XXX"),
+				},
+			}
+			require.NoError(t, c.Create(context.TODO(), &secret))
+			cfgRes := resources.NewConfigMap(
+				c,
+				&tc.cluster,
+				scheme.Scheme,
+				"cluster.local",
+				types.NamespacedName{Name: "test", Namespace: "test"},
+				types.NamespacedName{Name: "test", Namespace: "test"},
+				ctrl.Log.WithName("test"))
+			require.NoError(t, cfgRes.Ensure(context.TODO()))
+
+			actual := &v1.ConfigMap{}
+			err := c.Get(context.Background(), cfgRes.Key(), actual)
+			require.NoError(t, err)
+			data := actual.Data["redpanda.yaml"]
+			require.True(t, strings.Contains(data, tc.expectedString), fmt.Sprintf("expecting %s but got %v", tc.expectedString, data))
+		})
+	}
+}
+
+func TestEnsureConfigMap_AdditionalConfig(t *testing.T) {
+	require.NoError(t, redpandav1alpha1.AddToScheme(scheme.Scheme))
 
 	testcases := []struct {
 		name                    string
