@@ -328,16 +328,16 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
         ss::this_shard_id(),
         target_id,
         _dissemination_interval,
-        [this, &meta, target_id](
+        [this, updates = meta.updates, target_id](
           metadata_dissemination_rpc_client_protocol proto) mutable {
             vlog(
               clusterlog.trace,
               "Sending {} metadata updates to {}",
-              meta.updates.size(),
+              updates,
               target_id);
             return proto
               .update_leadership(
-                update_leadership_request{meta.updates},
+                update_leadership_request{std::move(updates)},
                 rpc::client_opts(
                   _dissemination_interval + rpc::clock_type::now()))
               .then(&rpc::get_ctx_data<update_leadership_reply>);
