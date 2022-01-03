@@ -1733,7 +1733,7 @@ group::store_txn_offsets(txn_offset_commit_request r) {
 }
 
 kafka::error_code map_store_offset_error_code(std::error_code ec) {
-    if (ec.category() == raft::errc_category()) {
+    if (ec.category() == raft::error_category()) {
         switch (raft::errc(ec.value())) {
         case raft::errc::success:
             return error_code::none;
