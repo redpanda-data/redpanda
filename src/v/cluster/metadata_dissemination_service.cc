@@ -287,6 +287,11 @@ void metadata_dissemination_service::collect_pending_updates() {
             if (!_pending_updates.contains(id)) {
                 _pending_updates.emplace(id, update_retry_meta{ntp_leaders{}});
             }
+            vlog(
+              clusterlog.trace,
+              "new metadata update {} for {}",
+              ntp_leader,
+              id);
             _pending_updates[id].updates.push_back(ntp_leader);
         }
     }
@@ -304,6 +309,7 @@ void metadata_dissemination_service::cleanup_finished_updates() {
         }
     }
     for (auto id : _to_remove) {
+        vlog(clusterlog.trace, "node {} update finished", id);
         _pending_updates.erase(id);
     }
 }
