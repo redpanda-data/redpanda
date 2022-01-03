@@ -1869,9 +1869,11 @@ group::handle_commit_tx(cluster::commit_group_tx_request r) {
     } else if (
       in_state(group_state::empty) || in_state(group_state::stable)
       || in_state(group_state::preparing_rebalance)) {
-        co_return co_await _tx_mutex.with([this, r = std::move(r)]() mutable {
-            return commit_tx(std::move(r));
-        });
+        auto id = r.pid.get_id();
+        co_return co_await with_pid_lock(
+          id, [this, r = std::move(r)]() mutable {
+              return commit_tx(std::move(r));
+          });
     } else if (in_state(group_state::completing_rebalance)) {
         co_return make_commit_tx_reply(cluster::tx_errc::rebalance_in_progress);
     } else {
@@ -1888,9 +1890,11 @@ group::handle_txn_offset_commit(txn_offset_commit_request r) {
     } else if (
       in_state(group_state::empty) || in_state(group_state::stable)
       || in_state(group_state::preparing_rebalance)) {
-        co_return co_await _tx_mutex.with([this, r = std::move(r)]() mutable {
-            return store_txn_offsets(std::move(r));
-        });
+        auto id = model::producer_id(r.data.producer_id());
+        co_return co_await with_pid_lock(
+          id, [this, r = std::move(r)]() mutable {
+              return store_txn_offsets(std::move(r));
+          });
     } else if (in_state(group_state::completing_rebalance)) {
         co_return txn_offset_commit_response(
           r, error_code::rebalance_in_progress);
@@ -1910,9 +1914,11 @@ group::handle_begin_tx(cluster::begin_group_tx_request r) {
     } else if (
       in_state(group_state::empty) || in_state(group_state::stable)
       || in_state(group_state::preparing_rebalance)) {
-        co_return co_await _tx_mutex.with([this, r = std::move(r)]() mutable {
-            return begin_tx(std::move(r));
-        });
+        auto id = r.pid.get_id();
+        co_return co_await with_pid_lock(
+          id, [this, r = std::move(r)]() mutable {
+              return begin_tx(std::move(r));
+          });
     } else if (in_state(group_state::completing_rebalance)) {
         cluster::begin_group_tx_reply reply;
         reply.ec = cluster::tx_errc::rebalance_in_progress;
@@ -1934,9 +1940,11 @@ group::handle_prepare_tx(cluster::prepare_group_tx_request r) {
     } else if (
       in_state(group_state::stable) || in_state(group_state::empty)
       || in_state(group_state::preparing_rebalance)) {
-        co_return co_await _tx_mutex.with([this, r = std::move(r)]() mutable {
-            return prepare_tx(std::move(r));
-        });
+        auto id = r.pid.get_id();
+        co_return co_await with_pid_lock(
+          id, [this, r = std::move(r)]() mutable {
+              return prepare_tx(std::move(r));
+          });
     } else if (in_state(group_state::completing_rebalance)) {
         cluster::prepare_group_tx_reply reply;
         reply.ec = cluster::tx_errc::rebalance_in_progress;
@@ -1958,9 +1966,11 @@ group::handle_abort_tx(cluster::abort_group_tx_request r) {
     } else if (
       in_state(group_state::stable) || in_state(group_state::empty)
       || in_state(group_state::preparing_rebalance)) {
-        co_return co_await _tx_mutex.with([this, r = std::move(r)]() mutable {
-            return abort_tx(std::move(r));
-        });
+        auto id = r.pid.get_id();
+        co_return co_await with_pid_lock(
+          id, [this, r = std::move(r)]() mutable {
+              return abort_tx(std::move(r));
+          });
     } else if (in_state(group_state::completing_rebalance)) {
         cluster::abort_group_tx_reply reply;
         reply.ec = cluster::tx_errc::rebalance_in_progress;

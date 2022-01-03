@@ -587,6 +587,34 @@ private:
         const group& _group;
     };
 
+    ss::lw_shared_ptr<mutex> get_tx_lock(model::producer_id pid) {
+        auto lock_it = _tx_locks.find(pid);
+        if (lock_it == _tx_locks.end()) {
+            auto [new_it, _] = _tx_locks.try_emplace(
+              pid, ss::make_lw_shared<mutex>());
+            lock_it = new_it;
+        }
+        return lock_it->second;
+    }
+
+    void gc_tx_lock(model::producer_id pid) {
+        if (auto it = _tx_locks.find(pid); it != _tx_locks.end()) {
+            if (it->second->ready()) {
+                _tx_locks.erase(it);
+            }
+        }
+    }
+
+    template<typename Func>
+    auto with_pid_lock(model::producer_id pid, Func&& func) {
+        return get_tx_lock(pid)
+          ->with(std::forward<Func>(func))
+          .then([this, pid](auto reply) {
+              gc_tx_lock(pid);
+              return reply;
+          });
+    }
+
     model::record_batch checkpoint(const assignments_type& assignments);
 
     cluster::abort_origin
@@ -615,7 +643,7 @@ private:
     ctx_log _ctxlog;
     ctx_log _ctx_txlog;
 
-    mutex _tx_mutex;
+    absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
     model::term_id _term;
     absl::node_hash_map<model::producer_id, model::producer_epoch>
       _fence_pid_epoch;
