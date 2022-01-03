@@ -308,6 +308,31 @@ ss::future<> members_backend::reconcile() {
     if (!_raft0->is_leader() || _updates.empty()) {
         co_return;
     }
+
+    // use linearizable barrier to make sure leader is up to date and all
+    // changes are applied
+    auto barrier_result = co_await _raft0->linearizable_barrier();
+    if (
+      barrier_result.has_error()
+      || barrier_result.value() < _raft0->dirty_offset()) {
+        if (!barrier_result) {
+            vlog(
+              clusterlog.debug,
+              "error waiting for all raft0 updates to be applied - {}",
+              barrier_result.error().message());
+
+        } else {
+            vlog(
+              clusterlog.trace,
+              "waiting for all raft0 updates to be applied - barrier offset: "
+              "{}, "
+              "raft0 dirty offset: {}",
+              barrier_result.value(),
+              _raft0->dirty_offset());
+        }
+        co_return;
+    }
+
     // process one update at a time
     auto& meta = _updates.front();
     co_await try_to_finish_update(meta);
