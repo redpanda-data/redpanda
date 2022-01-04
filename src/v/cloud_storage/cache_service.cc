@@ -118,6 +118,10 @@ ss::future<> cache::clean_up_cache() {
             if (!std::string_view(filename_to_remove)
                    .ends_with(tmp_extension)) {
                 try {
+                    vlog(
+                      cst_log.debug,
+                      "clean_up_cache: unlinking {}",
+                      filename_to_remove);
                     co_await ss::remove_file(filename_to_remove);
                     deleted_size += candidates_for_deletion[i_to_delete].size;
                 } catch (std::exception& e) {
