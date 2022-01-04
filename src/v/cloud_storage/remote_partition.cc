@@ -336,6 +336,11 @@ ss::future<> remote_partition::run_eviction_loop() {
     vlog(_ctxlog.debug, "remote partition eviction loop stopped");
 }
 
+/**
+ *
+ * @param force_collection: if true, skip waiting for stm_max_idle_time, and
+ * gc all stale segments irrespective of their atime.
+ */
 void remote_partition::gc_stale_materialized_segments(bool force_collection) {
     // The remote_segment instances are materialized on demand. They are
     // collected after some period of inactivity.
@@ -356,14 +361,33 @@ void remote_partition::gc_stale_materialized_segments(bool force_collection) {
     for (auto& st : _materialized) {
         if (
           now - st.atime > stm_max_idle_time
-          && !st.segment->download_in_progress() && st.segment.owned()) {
-            vlog(
-              _ctxlog.debug,
-              "reader for segment with base offset {} is stale",
-              st.offset_key);
-            // this will delete and unlink the object from
-            // _materialized collection
-            offsets.push_back(st.offset_key);
+          && !st.segment->download_in_progress()) {
+            if (st.segment.owned()) {
+                vlog(
+                  _ctxlog.debug,
+                  "reader for segment with base offset {} is stale",
+                  st.offset_key);
+                // this will delete and unlink the object from
+                // _materialized collection
+                offsets.push_back(st.offset_key);
+            } else {
+                vlog(
+                  _ctxlog.debug,
+                  "Materialized segment {} not stale: {} {} {} {} readers={}",
+                  st.manifest_key,
+                  now - st.atime > stm_max_idle_time,
+                  st.segment->download_in_progress(),
+                  st.segment.owned(),
+                  st.segment.use_count(),
+                  st.readers.size());
+
+                // Readers hold a reference to the segment, so for the
+                // segment.owned() check to pass, we need to clear them out.
+                while (!st.readers.empty()) {
+                    evict_reader(std::move(st.readers.front()));
+                    st.readers.pop_front();
+                }
+            }
         }
     }
     vlog(_ctxlog.debug, "found {} eviction candidates ", offsets.size());
@@ -602,7 +626,11 @@ remote_partition::materialized_segment_state::borrow_reader(
             return tmp;
         }
     }
-    vlog(ctxlog.debug, "creating new reader, config: {}", cfg);
+    vlog(
+      ctxlog.debug,
+      "creating new reader for {}, config: {}",
+      segment->get_path(),
+      cfg);
     return std::make_unique<remote_segment_batch_reader>(segment, cfg);
 }
 
