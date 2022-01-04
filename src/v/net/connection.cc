@@ -10,7 +10,7 @@
 #include "net/connection.h"
 
 #include "net/logger.h"
-
+#include "vlog.h"
 namespace net {
 
 connection::connection(
@@ -37,15 +37,22 @@ void connection::shutdown_input() {
         _fd.shutdown_input();
     } catch (...) {
         _probe.connection_close_error();
-        logger.debug(
-          "Failed to shutdown connection: {}", std::current_exception());
+        vlog(
+          logger.debug,
+          "[{}] Failed to shutdown connection - {}",
+          addr,
+          std::current_exception());
     }
 }
 
 ss::future<> connection::shutdown() {
+    vlog(logger.debug, "[{}] Shutting connection down", addr);
     _probe.connection_closed();
     // wait for all pending requests to finish
-    return _connection_gate.close().then([this] { return _out.stop(); });
+    return _connection_gate.close().then([this] {
+        vlog(logger.trace, "[{}] closing connection output stream", addr);
+        return _out.stop();
+    });
 }
 
 ss::future<> connection::write(ss::scattered_message<char> msg) {
