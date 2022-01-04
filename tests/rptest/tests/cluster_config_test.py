@@ -145,6 +145,41 @@ class ClusterConfigTest(RedpandaTest):
             new_setting[0]] != new_setting[1]
         self._check_restart_clears()
 
+    @cluster(num_nodes=3)
+    def test_multistring_restart(self):
+        """
+        Reproduce an issue where the key we edit is saved correctly,
+        but other cached keys are getting extra-quoted.
+        """
+
+        # Initially set both values together
+        patch_result = self.admin.patch_cluster_config(
+            upsert={
+                "cloud_storage_access_key": "user",
+                "cloud_storage_secret_key": "pass"
+            })
+        self._wait_for_version_sync(patch_result['config_version'])
+        self._check_value_everywhere("cloud_storage_access_key", "user")
+        self._check_value_everywhere("cloud_storage_secret_key", "pass")
+
+        # Check initially set values survive a restart
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self._check_value_everywhere("cloud_storage_access_key", "user")
+        self._check_value_everywhere("cloud_storage_secret_key", "pass")
+
+        # Set just one of the values
+        patch_result = self.admin.patch_cluster_config(
+            upsert={"cloud_storage_access_key": "user2"})
+        self._wait_for_version_sync(patch_result['config_version'])
+        self._check_value_everywhere("cloud_storage_access_key", "user2")
+        self._check_value_everywhere("cloud_storage_secret_key", "pass")
+
+        # Check that the recently set value persists, AND the originally
+        # set value of another property is not corrupted.
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self._check_value_everywhere("cloud_storage_access_key", "user2")
+        self._check_value_everywhere("cloud_storage_secret_key", "pass")
+
     def _check_value_everywhere(self, key, expect_value):
         for node in self.redpanda.nodes:
             actual_value = self.admin.get_cluster_config(node)[key]
