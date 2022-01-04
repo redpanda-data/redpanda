@@ -9,7 +9,7 @@
 
 #include "net/connection.h"
 
-#include "rpc/logger.h"
+#include "net/logger.h"
 
 namespace net {
 
@@ -37,7 +37,7 @@ void connection::shutdown_input() {
         _fd.shutdown_input();
     } catch (...) {
         _probe.connection_close_error();
-        rpc::rpclog.debug(
+        logger.debug(
           "Failed to shutdown connection: {}", std::current_exception());
     }
 }

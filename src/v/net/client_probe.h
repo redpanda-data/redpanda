@@ -10,8 +10,8 @@
  */
 
 #pragma once
+#include "net/logger.h"
 #include "net/unresolved_address.h"
-#include "rpc/logger.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -52,12 +52,12 @@ public:
     void connection_closed() { --_connections; }
 
     void connection_error(const std::exception_ptr& e) {
-        rpc::rpclog.trace("Connection error: {}", e);
+        logger.trace("Connection error: {}", e);
         ++_connection_errors;
     }
 
     void read_dispatch_error(const std::exception_ptr& e) {
-        rpc::rpclog.error("Error dispatching client reads: {}", e);
+        logger.error("Error dispatching client reads: {}", e);
         ++_read_dispatch_errors;
     }
 

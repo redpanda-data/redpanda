@@ -11,8 +11,8 @@
 
 #include "config/configuration.h"
 #include "likely.h"
+#include "net/logger.h"
 #include "prometheus/prometheus_sanitize.h"
-#include "rpc/logger.h"
 #include "ssx/sformat.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -82,7 +82,7 @@ static inline void print_exceptional_future(
     }
 
     vlog(
-      rpc::rpclog.error,
+      logger.error,
       "{} - Error[{}] remote address: {} - {}",
       proto->name(),
       ctx,
@@ -139,7 +139,7 @@ ss::future<> server::accept(listener& s) {
                 ar.remote_address,
                 _probe);
               vlog(
-                rpc::rpclog.trace,
+                logger.trace,
                 "{} - Incoming connection from {} on \"{}\"",
                 _proto->name(),
                 ar.remote_address,
@@ -162,16 +162,13 @@ ss::future<> server::accept(listener& s) {
 void server::shutdown_input() {
     ss::sstring proto_name = _proto ? _proto->name() : "protocol not set";
     vlog(
-      rpc::rpclog.info,
-      "{} - Stopping {} listeners",
-      proto_name,
-      _listeners.size());
+      logger.info, "{} - Stopping {} listeners", proto_name, _listeners.size());
     for (auto& l : _listeners) {
         l->socket.abort_accept();
     }
-    vlog(rpc::rpclog.debug, "{} - Service probes {}", proto_name, _probe);
+    vlog(logger.debug, "{} - Service probes {}", proto_name, _probe);
     vlog(
-      rpc::rpclog.info,
+      logger.info,
       "{} - Shutting down {} connections",
       proto_name,
       _connections.size());

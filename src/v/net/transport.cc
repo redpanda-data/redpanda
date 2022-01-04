@@ -1,7 +1,7 @@
 #include "net/transport.h"
 
 #include "net/dns.h"
-#include "rpc/logger.h"
+#include "net/logger.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -17,7 +17,7 @@ ss::future<ss::connected_socket> connect_with_timeout(
     auto f = socket->connect(address).finally([socket] {});
     return ss::with_timeout(timeout, std::move(f))
       .handle_exception([socket, address](const std::exception_ptr& e) {
-          rpc::rpclog.trace("error connecting to {} - {}", address, e);
+          net::logger.trace("error connecting to {} - {}", address, e);
           socket->shutdown();
           return ss::make_exception_future<ss::connected_socket>(e);
       });
@@ -98,7 +98,7 @@ ss::future<> base_transport::stop() {
                 // Closing the output stream can throw bad pipe if
                 // it had unflushed bytes, as we already closed FD.
                 vlog(
-                  rpc::rpclog.debug,
+                  logger.debug,
                   "Exception while stopping transport: {}",
                   std::current_exception());
             }
@@ -116,7 +116,7 @@ void base_transport::shutdown() noexcept {
         }
     } catch (...) {
         vlog(
-          rpc::rpclog.debug,
+          logger.debug,
           "Failed to shutdown transport: {}",
           std::current_exception());
     }
