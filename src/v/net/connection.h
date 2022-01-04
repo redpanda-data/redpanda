@@ -15,6 +15,7 @@
 #include "net/server_probe.h"
 #include "seastarx.h"
 
+#include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/net/api.hh>
 #include <seastar/net/socket_defs.hh>
@@ -46,6 +47,7 @@ public:
     ss::future<> write(ss::scattered_message<char> msg);
     ss::future<> shutdown();
     void shutdown_input();
+    ss::gate& gate() { return _connection_gate; }
 
     // NOLINTNEXTLINE
     const ss::socket_address addr;
@@ -56,6 +58,12 @@ private:
     ss::connected_socket _fd;
     ss::input_stream<char> _in;
     net::batched_output_stream _out;
+    /**
+     * connection gate have to be hold until all the connection related writes
+     * are finished, after the gate is released and closed connection output
+     * will be closed
+     */
+    ss::gate _connection_gate;
     server_probe& _probe;
 };
 

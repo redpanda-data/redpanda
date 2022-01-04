@@ -44,7 +44,8 @@ void connection::shutdown_input() {
 
 ss::future<> connection::shutdown() {
     _probe.connection_closed();
-    return _out.stop();
+    // wait for all pending requests to finish
+    return _connection_gate.close().then([this] { return _out.stop(); });
 }
 
 ss::future<> connection::write(ss::scattered_message<char> msg) {
