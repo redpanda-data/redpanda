@@ -16,6 +16,7 @@
 #include "cluster/scheduling/allocation_state.h"
 #include "cluster/scheduling/allocation_strategy.h"
 #include "cluster/scheduling/types.h"
+#include "config/property.h"
 #include "vlog.h"
 
 namespace cluster {
@@ -23,7 +24,11 @@ namespace cluster {
 class partition_allocator {
 public:
     static constexpr ss::shard_id shard = 0;
-    partition_allocator();
+    partition_allocator(
+      ss::sharded<members_table>&,
+      config::binding<std::optional<size_t>>,
+      config::binding<std::optional<int32_t>>,
+      config::binding<size_t>);
 
     void register_node(allocation_state::node_ptr n) {
         _state->register_node(std::move(n));
@@ -96,6 +101,9 @@ private:
         allocation_state& _state;
     };
 
+    std::error_code
+    check_cluster_limits(allocation_request const& request) const;
+
     result<std::vector<model::broker_shard>>
       allocate_partition(partition_constraints);
 
@@ -104,5 +112,10 @@ private:
 
     std::unique_ptr<allocation_state> _state;
     allocation_strategy _allocation_strategy;
+    ss::sharded<members_table>& _members;
+
+    config::binding<std::optional<size_t>> _memory_per_partition;
+    config::binding<std::optional<int32_t>> _fds_per_partition;
+    config::binding<size_t> _fallocation_step;
 };
 } // namespace cluster
