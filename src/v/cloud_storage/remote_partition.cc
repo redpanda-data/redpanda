@@ -348,14 +348,33 @@ void remote_partition::gc_stale_materialized_segments() {
     for (auto& st : _materialized) {
         if (
           now - st.atime > stm_max_idle_time
-          && !st.segment->download_in_progress() && st.segment.owned()) {
-            vlog(
-              _ctxlog.debug,
-              "reader for segment with base offset {} is stale",
-              st.offset_key);
-            // this will delete and unlink the object from
-            // _materialized collection
-            offsets.push_back(st.offset_key);
+          && !st.segment->download_in_progress()) {
+            if (st.segment.owned()) {
+                vlog(
+                  _ctxlog.debug,
+                  "reader for segment with base offset {} is stale",
+                  st.offset_key);
+                // this will delete and unlink the object from
+                // _materialized collection
+                offsets.push_back(st.offset_key);
+            } else {
+                vlog(
+                  _ctxlog.debug,
+                  "Materialized segment {} not stale: {} {} {} {} readers={}",
+                  st.manifest_key,
+                  now - st.atime > stm_max_idle_time,
+                  st.segment->download_in_progress(),
+                  st.segment.owned(),
+                  st.segment.use_count(),
+                  st.readers.size());
+
+                // Readers hold a reference to the segment, so for the
+                // segment.owned() check to pass, we need to clear them out.
+                while (!st.readers.empty()) {
+                    evict_reader(std::move(st.readers.front()));
+                    st.readers.pop_front();
+                }
+            }
         }
     }
     vlog(_ctxlog.debug, "found {} eviction candidates ", offsets.size());
