@@ -123,21 +123,33 @@ const model::offset remote_segment::get_base_kafka_offset() const {
 const model::term_id remote_segment::get_term() const { return _term; }
 
 ss::future<> remote_segment::stop() {
-    vlog(_ctxlog.debug, "remote segment stop");
+    vlog(_ctxlog.debug, "remote_segment::stop {}", _path);
+
     _bg_cvar.broken();
     co_await _gate.close();
-    if (_data_file) {
-        co_await _data_file.close().handle_exception(
+
+    if (_data_file.has_value()) {
+        co_await _data_file.value().close().handle_exception(
           [this](std::exception_ptr err) {
               vlog(
                 _ctxlog.error, "Error '{}' while closing the '{}'", err, _path);
           });
+
+        // We clear this even if there was an exception while closing the file:
+        // otherwise the destructor would assert out when it saw that the
+        // file member wasn't null.
+        _data_file = std::nullopt;
     }
+}
+
+remote_segment::~remote_segment() {
+    vassert(!_data_file.has_value(), "Destroyed without calling stop");
 }
 
 ss::future<ss::input_stream<char>>
 remote_segment::data_stream(size_t pos, ss::io_priority_class io_priority) {
-    vlog(_ctxlog.debug, "remote segment file input stream at {}", pos);
+    vlog(
+      _ctxlog.debug, "remote segment {} file input stream at {}", _path, pos);
     ss::gate::holder g(_gate);
     co_await hydrate();
     ss::file_input_stream_options options{};
@@ -145,7 +157,7 @@ remote_segment::data_stream(size_t pos, ss::io_priority_class io_priority) {
     options.read_ahead = default_readahead;
     options.io_priority_class = io_priority;
     auto data_stream = ss::make_file_input_stream(
-      _data_file, pos, std::move(options));
+      _data_file.value(), pos, std::move(options));
     co_return data_stream;
 }
 
@@ -232,6 +244,10 @@ ss::future<> remote_segment::run_hydrate_bg() {
                           _wait_list.size());
                         continue;
                     }
+
+                    vassert(
+                      !_data_file.has_value(),
+                      "Over-wrote data file handle without closing!");
                     _data_file = maybe_file->body;
                 }
             }
@@ -241,14 +257,14 @@ ss::future<> remote_segment::run_hydrate_bg() {
             // have _data_file set because if we don't we will retry the
             // hydration earlier.
             vassert(
-              _data_file || err,
+              _data_file.has_value() || err,
               "Segment hydration succeded but file isn't available");
             while (!_wait_list.empty()) {
                 auto& p = _wait_list.front();
                 if (err) {
                     p.set_exception(err);
                 } else {
-                    p.set_value(_data_file);
+                    p.set_value(_data_file.value());
                 }
                 _wait_list.pop_front();
             }
@@ -509,7 +525,12 @@ remote_segment_batch_reader::remote_segment_batch_reader(
   , _rtc(_seg->get_retry_chain_node())
   , _ctxlog(cst_log, _rtc, _seg->get_ntp().path())
   , _cur_rp_offset(_seg->get_base_rp_offset())
-  , _cur_delta(_seg->get_base_offset_delta()) {}
+  , _cur_delta(_seg->get_base_offset_delta()) {
+    vlog(
+      _ctxlog.debug,
+      "remote_segment_batch_reader::remote_segment_batch_reader {}",
+      _seg->get_path());
+}
 
 ss::future<result<ss::circular_buffer<model::record_batch>>>
 remote_segment_batch_reader::read_some(
@@ -558,7 +579,10 @@ remote_segment_batch_reader::read_some(
 
 ss::future<std::unique_ptr<storage::continuous_batch_parser>>
 remote_segment_batch_reader::init_parser() {
-    vlog(_ctxlog.debug, "remote_segment_batch_reader::init_parser");
+    vlog(
+      _ctxlog.debug,
+      "remote_segment_batch_reader::init_parser for {}",
+      _seg->get_path());
     auto stream = co_await _seg->data_stream(
       0, priority_manager::local().shadow_indexing_priority());
     auto parser = std::make_unique<storage::continuous_batch_parser>(

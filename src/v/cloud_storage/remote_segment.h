@@ -62,7 +62,7 @@ public:
     remote_segment(remote_segment&&) = delete;
     remote_segment& operator=(const remote_segment&) = delete;
     remote_segment& operator=(remote_segment&&) = delete;
-    ~remote_segment() = default;
+    ~remote_segment();
 
     const model::ntp& get_ntp() const;
 
@@ -93,6 +93,8 @@ public:
 
     retry_chain_node* get_retry_chain_node() { return &_rtc; }
 
+    const remote_segment_path& get_path() const { return _path; }
+
     bool download_in_progress() const noexcept { return !_wait_list.empty(); }
 
 private:
@@ -121,7 +123,7 @@ private:
     /// List of fibers that wait for the segment to be hydrated
     ss::expiring_fifo<ss::promise<ss::file>, expiry_handler> _wait_list;
 
-    ss::file _data_file;
+    std::optional<ss::file> _data_file;
 };
 
 class remote_segment_batch_consumer;
