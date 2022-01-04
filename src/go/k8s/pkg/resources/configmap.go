@@ -179,7 +179,7 @@ func (r *ConfigMapResource) createConfiguration(
 		cr.KafkaApi = append(cr.KafkaApi, config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
 				Address: "0.0.0.0",
-				Port:    calculateExternalPort(internalListener.Port),
+				Port:    calculateExternalPort(internalListener.Port, r.pandaCluster.ExternalListener().Port),
 			},
 			Name: ExternalListenerName,
 		})
@@ -364,9 +364,12 @@ func buildInType(value string) bool {
 }
 
 // calculateExternalPort can calculate external Kafka API port based on the internal Kafka API port
-func calculateExternalPort(kafkaInternalPort int) int {
+func calculateExternalPort(kafkaInternalPort, specifiedExternalPort int) int {
 	if kafkaInternalPort < 0 || kafkaInternalPort > 65535 {
 		return 0
+	}
+	if specifiedExternalPort != 0 {
+		return specifiedExternalPort
 	}
 	return kafkaInternalPort + 1
 }
@@ -436,7 +439,7 @@ func (r *ConfigMapResource) preparePandaproxy(cfgRpk *config.Config) {
 			config.NamedSocketAddress{
 				SocketAddress: config.SocketAddress{
 					Address: "0.0.0.0",
-					Port:    calculateExternalPort(internal.Port),
+					Port:    calculateExternalPort(internal.Port, 0),
 				},
 				Name: PandaproxyPortExternalName,
 			})
