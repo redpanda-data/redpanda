@@ -62,6 +62,29 @@ class RpkTool:
                 cmd += ["--topic-config", it]
         return self._run_topic(cmd)
 
+    def sasl_allow_principal(self, principal, operations, resource,
+                             resource_name, username, password, mechanism):
+        if resource == "topic":
+            resource = "--topic"
+        elif resource == "transactional-id":
+            resource = "--transactional-id"
+        else:
+            raise Exception(f"unknown resource: {resource}")
+
+        cmd = [
+            "acl", "create", "--allow-principal", principal, "--operation",
+            ",".join(operations), resource, resource_name, "--brokers",
+            self._redpanda.brokers(), "--user", username, "--password",
+            password, "--sasl-mechanism", mechanism
+        ]
+        return self._run(cmd)
+
+    def sasl_create_user(self, new_username, new_password, mechanism):
+        cmd = ["acl", "user", "create", new_username, "-p", new_password]
+        cmd += ["--api-urls", self._redpanda.admin_endpoints()]
+        cmd += ["--sasl-mechanism", mechanism]
+        return self._run(cmd)
+
     def delete_topic(self, topic):
         cmd = ["delete", topic]
         return self._run_topic(cmd)
@@ -219,6 +242,10 @@ class RpkTool:
             self._rpk_binary(), "group", "--brokers",
             self._redpanda.brokers()
         ] + cmd
+        return self._execute(cmd, stdin=stdin, timeout=timeout)
+
+    def _run(self, cmd, stdin=None, timeout=None):
+        cmd = [self._rpk_binary()] + cmd
         return self._execute(cmd, stdin=stdin, timeout=timeout)
 
     def cluster_info(self, timeout=None):

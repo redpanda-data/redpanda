@@ -472,14 +472,6 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
         }
     }
 
-    /*
-     * Authorization
-     *
-     * Note that in kafka authorization is performed based on
-     * transactional id, producer id, and idempotency. Redpanda does not
-     * yet support these features, so we reject all such requests as if
-     * authorization failed.
-     */
     if (request.has_transactional) {
         if (!ctx.are_transactions_enabled()) {
             return process_result_stages::single_stage(
@@ -500,14 +492,6 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
         // ProducerId authorization</kafka>
 
     } else if (request.has_idempotent) {
-        if (!ctx.authorized(
-              security::acl_operation::idempotent_write,
-              security::default_cluster_name)) {
-            return process_result_stages::single_stage(
-              ctx.respond(request.make_error_response(
-                error_code::cluster_authorization_failed)));
-        }
-
         if (!ctx.is_idempotence_enabled()) {
             return process_result_stages::single_stage(
               ctx.respond(request.make_error_response(

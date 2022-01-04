@@ -583,6 +583,18 @@ class RedpandaService(Service):
         cfg = self.read_configuration(node)
         return f"{node.account.hostname}:{one_or_many(cfg['redpanda']['kafka_api'])['port']}"
 
+    def admin_endpoint(self, node):
+        assert node in self._started
+        return f"{node.account.hostname}:9644"
+
+    def admin_endpoints_list(self):
+        brokers = [self.admin_endpoint(n) for n in self._started]
+        random.shuffle(brokers)
+        return brokers
+
+    def admin_endpoints(self):
+        return ",".join(self.admin_endpoints_list())
+
     def brokers(self, limit=None):
         return ",".join(self.brokers_list(limit))
 
