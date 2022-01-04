@@ -321,7 +321,12 @@ ss::future<config_manager::preload_result> config_manager::preload() {
         preload_local(key, value, std::ref(result));
 
         // Store raw values in the result
-        result.raw_values[key] = YAML::Dump(value);
+
+        if (value.IsScalar()) {
+            result.raw_values[key] = value.Scalar();
+        } else {
+            result.raw_values[key] = YAML::Dump(value);
+        }
 
         // Broadcast value to all shards
         co_await ss::smp::invoke_on_all(
