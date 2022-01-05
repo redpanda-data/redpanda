@@ -26,7 +26,7 @@ scalaVersion := "2.13.7"
 
 libraryDependencies ++= List(
    "com.github.javafaker" % "javafaker" % "1.0.2",
-   "com.fasterxml.jackson.core" % "jackson-databind" % "2.13.0",
+   "com.fasterxml.jackson.core" % "jackson-databind" % "2.13.1",
    "org.apache.kafka" % "kafka-clients" % "3.0.0",
    "org.apache.kafka" % "kafka-streams" % "3.0.0"
 )
@@ -83,7 +83,7 @@ Replace the comment `// 1. Application properties` with the following code:
 ```scala
 private final val props = new Properties
 props.put("bootstrap.servers", brokers)
-props.put("application.id", "redpanda-example")
+props.put("application.id", "redpanda-examples")
 ```
 
 Here we have the Properties for our KStreams Application, the brokers is a comma-separated String with the members of our cluster.
