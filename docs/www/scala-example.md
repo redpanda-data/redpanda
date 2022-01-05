@@ -106,7 +106,7 @@ scalaVersion := "2.13.7"
 
 libraryDependencies ++= List(
    "com.github.javafaker" % "javafaker" % "1.0.2",
-   "com.fasterxml.jackson.core" % "jackson-databind" % "2.13.0",
+   "com.fasterxml.jackson.core" % "jackson-databind" % "2.13.1",
    "org.apache.kafka" % "kafka-clients" % "3.0.0"
 )
 ```
