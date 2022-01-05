@@ -88,7 +88,7 @@ libraryDependencies ++= List(
   "com.github.javafaker" % "javafaker" % "1.0.2",
   "org.slf4j" % "slf4j-api" % "1.7.32",
   "org.slf4j" % "slf4j-log4j12" % "1.7.32",
-  "com.fasterxml.jackson.core" % "jackson-databind" % "2.13.0",
+  "com.fasterxml.jackson.core" % "jackson-databind" % "2.13.1",
   "io.confluent" % "kafka-protobuf-serializer" % "7.0.0",
   "org.apache.kafka" % "kafka-clients" % "3.0.0",
   "org.apache.kafka" % "kafka-streams" % "3.0.0"
@@ -151,8 +151,8 @@ package io.vectorized.withprotobuf
 import io.confluent.kafka.serializers.protobuf.{KafkaProtobufDeserializer, KafkaProtobufDeserializerConfig}
 import io.vectorized.{Constants, Person}
 import io.vectorized.Person.PersonMessage
-import org.apache.kafka.clients.consumer._
-import org.apache.kafka.clients.producer._
+import org.apache.kafka.clients.consumer.{ConsumerConfig, KafkaConsumer}
+import org.apache.kafka.clients.producer.{KafkaProducer, ProducerConfig}
 import org.apache.kafka.common.serialization.{StringDeserializer, StringSerializer}
 
 import java.time.{Duration, LocalDate, Period, ZoneId}
