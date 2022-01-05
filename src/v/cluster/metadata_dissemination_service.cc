@@ -65,7 +65,6 @@ metadata_dissemination_service::metadata_dissemination_service(
         (void)ss::with_gate(
           _bg, [this] { return dispatch_disseminate_leadership(); });
     });
-    _dispatch_timer.arm(_dissemination_interval);
 
     for (auto& seed : config::node().seed_servers()) {
         _seed_servers.push_back(seed.addr);
@@ -136,6 +135,7 @@ ss::future<> metadata_dissemination_service::start() {
           return update_metadata_with_retries(std::move(addresses));
       });
 
+    _dispatch_timer.arm(_dissemination_interval);
     return ss::make_ready_future<>();
 }
 
