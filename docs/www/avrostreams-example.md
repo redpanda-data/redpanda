@@ -1,24 +1,24 @@
 ---
-title: Running a KafkaStreams App with Schema Registry in Red Panda in 15 min (or less)
+title: Running a KStreams App with Schema Registry in Redpanda in 15 min (or less)
 order: 3
 ---
 
-# Running a KafkaStreams App with Schema Registry in Red Panda in 15 min (or less)
+# Running a KStreams App with Schema Registry in Redpanda in 15 min (or less)
 
-This tutorial shows in 15 minutes or less how you can build a Kafka Streams Application with Schema Registry and run it in Red Panda.   
+This tutorial shows in 15 minutes or less how you can build a KStreams Application with Schema Registry and run it in Redpanda.   
 
 ## Get your cluster ready
 
-In order to understand this tutorial you must have already completed the previous one, [Running a Schema Registry App in Red Panda in 15 min](/docs/squemaRegistry-example) 
+In order to understand this tutorial you must have already completed the previous one, [Running a Schema Registry App in Redpanda in 15 min](/docs/squemaRegistry-example) 
 
-This tutorial assumes that you already have a Red Panda cluster with three machines up and running in your development environment.
+This tutorial assumes that you already have a Redpanda cluster with three machines up and running in your development environment.
 
 ## Setting up the project 
 
 Now, modify the *build.sbt* file with this content:
 
 ```scala
-name := "kafkaexample"
+name := "redpanda-example"
 
 version := "0.1"
 
@@ -39,14 +39,14 @@ libraryDependencies ++= List(
 ```
 For this example, we are adding the `kafka-streams-avro-serde` library to the project. 
 
-## Reading from Red Panda
+## Reading from Redpanda
 
 Now that we have our project skeleton, remember that our event processor **reads** the events from a topic.
 
 The specification for our **Processing Engine**  is to create a pipeline application which:
-- Reads each message from a Kafka topic called *persons*
+- Reads each message from a Redpanda topic called *persons*
 - Calculates the age of each Person (each message), 
-- Writes the age in a Kafka topic called *ages*
+- Writes the age in a Redpanda topic called *ages*
 
 These steps are detailed in this diagram:
 
@@ -84,7 +84,7 @@ Replace the comment `// Our processor code here ...` with the following code:
 private final val brokers = "localhost:58383, localhost:58388, localhost:58389"
 private final val schemaRegistryUrl = "http://localhost:8081"
 ```
-Of course, here we put the `ipAddress:Port` where our Red Panda brokers are running.
+Of course, here we put the `ipAddress:Port` where our Redpanda brokers are running.
 Note how we added the SchemaRegistry URL, based on the Docker container we started previously.
 
 ##The Consumer code
@@ -94,10 +94,10 @@ Replace the comment `// 1. Application properties` with the following code:
 ```scala
 private final val props = new Properties
 props.put("bootstrap.servers", brokers)
-props.put("application.id", "kafka-example")
+props.put("application.id", "redpanda-example")
 ```
 
-Here we have the Properties for our Kafka Streams Application, the brokers is a comma-separated String with the members of our cluster.
+Here we have the Properties for our KStreams Application, the brokers is a comma-separated String with the members of our cluster.
 
 Replace the comment `// 2. process() method` with the following code:
 
@@ -130,7 +130,7 @@ Replace the comment `// 3. main() method` with the following code:
   def main(args: Array[String]): Unit = process()
 ```
 
-## Writting to Red Panda
+## Writting to Redpanda
 
 Replace the comment `// 1. The writter code goes here` with the following code:
 
@@ -158,29 +158,29 @@ Replace the comment  `// 2. Add the topology code here` with the following code:
 ```
 
 And this is where the processing is made. If you see, we don't use Scala futures, we don't use while(true) cycles.
-Here we start an elegant Kafka Streams Topology running a non-obstructive process or CPU-consuming loop with an infinite while. 
+Here we start an elegant KStreams Topology running a non-obstructive process or CPU-consuming loop with an infinite while. 
 
 ## Running our Processing Engine
 
-The `avro-persons` topic must be already created, if not, to create it in Red Panda run:
+The `avro-persons` topic must be already created, if not, to create it in Redpanda run:
 
 ```bash
 rpk topic create avro-persons --brokers 127.0.0.1:58383,127.0.0.1:58388,127.0.0.1:58389
 ```
 
-The `ages` topic must be already created, if not, to create it in Red Panda run:
+The `ages` topic must be already created, if not, to create it in Redpanda run:
 
 ```bash
 rpk topic create ages --brokers 127.0.0.1:58383,127.0.0.1:58388,127.0.0.1:58389
 ```
 
-To run a Red Panda console-consumer for the `avro-persons` topic:
+To run a Redpanda console-consumer for the `avro-persons` topic:
 
 ```bash
 rpk topic consume avro-persons --brokers 127.0.0.1:58383,127.0.0.1:58388,127.0.0.1:58389
 ```
 
-In a new terminal window, run a Red Panda console-consumer for the `ages` topic:
+In a new terminal window, run a Redpanda console-consumer for the `ages` topic:
 
 ```bash
 rpk topic consume ages --brokers 127.0.0.1:58383,127.0.0.1:58388,127.0.0.1:58389
@@ -232,13 +232,13 @@ The output for the command-line topic-consumer for topic `ages` should be simila
 
 ## Conclusions
 
-- In 15 minutes we have coded a full Kafka Streams processor with Schema Registry in Scala running on Red Panda.
-- As you can see, the migration of an actual KStreams application from Kafka to Red Panda is a really simple process.
-- Red Panda exposes the *SAME* Kafka API, there is no need to change the code of our existing Kafka applications.
-- Of course, all the source code of this tutorial is [here](https://github.com/vectorizedio/redpanda/tree/dev/docs)
+- In 15 minutes we have coded a full KStreams processor with Schema Registry in Scala running on Redpanda.
+- As you can see, the migration of an actual KStreams application from Kafka to Redpanda is a really simple process.
+- Redpanda exposes the *SAME* Kafka API, there is no need to change the code of our existing Kafka applications.
+- Of course, all the source code of this tutorial is [here](https://github.com/vectorizedio/redpanda-examples/tree/main/clients/scala)
 
 ## What's next
 
 Check the next part of the tutorial: 
 
- [Running a Protobuf App in Red Panda in 15 min (or less)](/docs/protobuf-example).
+ [Running a Protobuf App in Redpanda in 15 min (or less)](/docs/protobuf-example).
