@@ -152,7 +152,7 @@ public:
     remote_segment_batch_reader(const remote_segment_batch_reader&) = delete;
     remote_segment_batch_reader& operator=(const remote_segment_batch_reader&)
       = delete;
-    ~remote_segment_batch_reader() noexcept = default;
+    ~remote_segment_batch_reader() noexcept;
 
     ss::future<result<ss::circular_buffer<model::record_batch>>> read_some(
       model::timeout_clock::time_point, storage::offset_translator_state&);
@@ -182,19 +182,20 @@ private:
 
     ss::lw_shared_ptr<remote_segment> _seg;
     storage::log_reader_config _config;
-    std::unique_ptr<storage::continuous_batch_parser> _parser;
     ss::circular_buffer<model::record_batch> _ringbuf;
     std::optional<std::reference_wrapper<storage::offset_translator_state>>
       _cur_ot_state;
     size_t _total_size{0};
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
+    std::unique_ptr<storage::continuous_batch_parser> _parser;
     model::term_id _term;
     model::offset _initial_delta;
     model::offset _cur_rp_offset;
     model::offset _cur_delta;
     size_t _bytes_consumed{0};
     ss::gate _gate;
+    bool _stopped{false};
 };
 
 } // namespace cloud_storage
