@@ -56,6 +56,13 @@ def decode_topic_command(record):
         cmd['namespace'] = k_rdr.read_string()
         cmd['topic'] = k_rdr.read_string()
         cmd['update'] = read_incremental_properties_update(rdr)
+    elif cmd['type'] == 5:
+        cmd['type_string'] = 'create_partitions'
+        cmd['namespace'] = rdr.read_string()
+        cmd['topic'] = rdr.read_string()
+        cmd['new_total_partitions'] = rdr.read_int32()
+        cmd['custom_assignments'] = rdr.read_vector(lambda r: r.read_int32())
+        cmd['assignments'] = rdr.read_vector(read_partition_assignment)
 
     return cmd
 
