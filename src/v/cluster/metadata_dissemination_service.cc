@@ -10,6 +10,8 @@
 #include "cluster/metadata_dissemination_service.h"
 
 #include "cluster/cluster_utils.h"
+#include "cluster/health_monitor_frontend.h"
+#include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
@@ -50,13 +52,15 @@ metadata_dissemination_service::metadata_dissemination_service(
   ss::sharded<partition_leaders_table>& leaders,
   ss::sharded<members_table>& members,
   ss::sharded<topic_table>& topics,
-  ss::sharded<rpc::connection_cache>& clients)
+  ss::sharded<rpc::connection_cache>& clients,
+  ss::sharded<health_monitor_frontend>& health_monitor)
   : _raft_manager(raft_manager)
   , _partition_manager(partition_manager)
   , _leaders(leaders)
   , _members_table(members)
   , _topics(topics)
   , _clients(clients)
+  , _health_monitor(health_monitor)
   , _self(make_self_broker(config::node()))
   , _dissemination_interval(
       config::shard_local_cfg().metadata_dissemination_interval_ms)
@@ -314,15 +318,44 @@ void metadata_dissemination_service::cleanup_finished_updates() {
 }
 
 ss::future<> metadata_dissemination_service::dispatch_disseminate_leadership() {
-    collect_pending_updates();
-    return ss::parallel_for_each(
-             _pending_updates.begin(),
-             _pending_updates.end(),
-             [this](broker_updates_t::value_type& br_update) {
-                 return dispatch_one_update(br_update.first, br_update.second);
-             })
+    /**
+     * Use currently available health report snapshot to update leadership
+     * information. If snapshot would contain stale data they will be ignored by
+     * term check in partition leaders table
+     */
+    return _health_monitor.local()
+      .get_current_cluster_health_snapshot(cluster_report_filter{})
+      .then([this](cluster_health_report report) {
+          return update_leaders_with_health_report(std::move(report));
+      })
+      .then([this] {
+          collect_pending_updates();
+          return ss::parallel_for_each(
+            _pending_updates.begin(),
+            _pending_updates.end(),
+            [this](broker_updates_t::value_type& br_update) {
+                return dispatch_one_update(br_update.first, br_update.second);
+            });
+      })
       .then([this] { cleanup_finished_updates(); })
       .finally([this] { _dispatch_timer.arm(_dissemination_interval); });
+}
+
+ss::future<> metadata_dissemination_service::update_leaders_with_health_report(
+  cluster_health_report report) {
+    for (auto& node_report : report.node_reports) {
+        co_await _leaders.invoke_on_all(
+          [node_report](partition_leaders_table& leaders) {
+              for (auto& tp : node_report.topics) {
+                  for (auto& p : tp.partitions) {
+                      leaders.update_partition_leader(
+                        model::ntp(tp.tp_ns.ns, tp.tp_ns.tp, p.id),
+                        p.term,
+                        p.leader_id);
+                  }
+              }
+          });
+    }
 }
 
 ss::future<> metadata_dissemination_service::dispatch_one_update(
