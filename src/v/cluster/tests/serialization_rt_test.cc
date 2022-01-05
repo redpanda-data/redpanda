@@ -69,8 +69,8 @@ SEASTAR_THREAD_TEST_CASE(broker_metadata_rt_test) {
       "test",
       model::broker_properties{
         .cores = 8,
-        .available_memory = 1024,
-        .available_disk = static_cast<uint32_t>(10000000000),
+        .available_memory_gb = 1024,
+        .available_disk_gb = static_cast<uint32_t>(10000000000),
         .mount_paths = {"/", "/var/lib"},
         .etc_props = {{"max_segment_size", "1233451"}}});
     auto d = serialize_roundtrip_rpc(std::move(b));
@@ -81,9 +81,9 @@ SEASTAR_THREAD_TEST_CASE(broker_metadata_rt_test) {
     BOOST_REQUIRE_EQUAL(d.kafka_advertised_listeners()[0].address.port(), 9092);
     BOOST_REQUIRE_EQUAL(d.rpc_address().host(), "172.0.1.2");
     BOOST_REQUIRE_EQUAL(d.properties().cores, 8);
-    BOOST_REQUIRE_EQUAL(d.properties().available_memory, 1024);
+    BOOST_REQUIRE_EQUAL(d.properties().available_memory_gb, 1024);
     BOOST_REQUIRE_EQUAL(
-      d.properties().available_disk, static_cast<uint32_t>(10000000000));
+      d.properties().available_disk_gb, static_cast<uint32_t>(10000000000));
     BOOST_REQUIRE_EQUAL(
       d.properties().mount_paths, std::vector<ss::sstring>({"/", "/var/lib"}));
     BOOST_REQUIRE_EQUAL(d.properties().etc_props.size(), 1);
