@@ -242,6 +242,12 @@ class RedpandaService(Service):
 
         self.config_file_lock = threading.Lock()
 
+    def set_resource_settings(self, rs):
+        self._resource_settings = rs
+
+    def set_extra_rp_conf(self, conf):
+        self._extra_rp_conf = conf
+
     def sasl_enabled(self):
         return self._extra_rp_conf and self._extra_rp_conf.get(
             "enable_sasl", False)
