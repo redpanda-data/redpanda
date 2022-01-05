@@ -67,8 +67,8 @@ cat << EOF > mm2.properties
 clusters = redpanda1, redpanda2
 
 // Assign IP addresses to the cluster names
-redpanda1.bootstrap.server = <redpanda1_cluster_ip>:9092
-redpanda2.bootstrap.server = <redpanda2_cluster_ip>:9092
+redpanda1.bootstrap.servers = <redpanda1_cluster_ip>:9092
+redpanda2.bootstrap.servers = <redpanda2_cluster_ip>:9092
 
 // Set replication for all topics from Redpanda 1 to Redpanda 2
 redpanda1->redpanda2.enabled = true
