@@ -577,14 +577,18 @@ size_t remote_segment_batch_reader::produce(model::record_batch batch) {
 }
 
 ss::future<> remote_segment_batch_reader::stop() {
-    vlog(_ctxlog.debug, "remote_segment_batch_reader::close");
+    vlog(_ctxlog.debug, "remote_segment_batch_reader::stop");
     co_await _gate.close();
     if (_parser) {
-        vlog(
-          _ctxlog.debug, "remote_segment_batch_reader::close - parser-close");
+        vlog(_ctxlog.debug, "remote_segment_batch_reader::stop - parser-close");
         co_await _parser->close();
         _parser.reset();
     }
+    _stopped = true;
+}
+
+remote_segment_batch_reader::~remote_segment_batch_reader() noexcept {
+    vassert(_stopped, "Destroyed without stopping");
 }
 
 } // namespace cloud_storage
