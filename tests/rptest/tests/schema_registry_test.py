@@ -918,7 +918,7 @@ class SchemaRegistryTest(RedpandaTest):
 
         # Expose into StressTest
         logger = self.logger
-        python = "python3.8"
+        python = "python3"
         script_name = "schema_registry_test_helper.py"
 
         dir = os.path.dirname(os.path.realpath(__file__))
