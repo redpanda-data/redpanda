@@ -716,7 +716,8 @@ void application::wire_up_redpanda_services() {
       std::ref(controller->get_partition_leaders()),
       std::ref(controller->get_members_table()),
       std::ref(controller->get_topics_state()),
-      std::ref(_raft_connection_cache))
+      std::ref(_raft_connection_cache),
+      std::ref(controller->get_health_monitor()))
       .get();
 
     if (archival_storage_enabled()) {
