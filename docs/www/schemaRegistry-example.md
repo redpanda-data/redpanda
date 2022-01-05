@@ -1,17 +1,17 @@
 ---
-title: Running a Kafka Schema Registry App in Red Panda in 15 min (or less)
+title: Running a Schema Registry App in Redpanda in 15 min (or less)
 order: 2
 ---
 
-# Running a Schema Registry App in Red Panda in 15 min (or less)
+# Running a Schema Registry App in Redpanda in 15 min (or less)
 
-This tutorial shows in 15 minutes or less how you can build a Kafka Schema Registry Application and run it in Red Panda.   
+This tutorial shows in 15 minutes or less how you can build a Schema Registry Application and run it in Redpanda.   
 
 ## Get your cluster ready
 
-In order to understand this tutorial you must have already completed the previous ones, [Running a Scala Kafka App in Red Panda in 15 min](/docs/scala-example) 
+In order to understand this tutorial you must have already completed the previous ones, [How to connect a Scala App to Redpanda in 15 min](/docs/scala-example) 
 
-This tutorial assumes that you already have a Red Panda cluster with three machines up and running in your development environment.
+This tutorial assumes that you already have a Redpanda cluster with three machines up and running in your development environment.
 
 ## Setting up the project 
 
@@ -47,14 +47,14 @@ docker.vectorized.io/vectorized/redpanda start \
     --kafka-addr 0.0.0.0:9092 \
     --advertise-kafka-addr redpanda-sr:9092
 ```
-Now Red Panda Schema Registry is running in `http://localhost:8081/`
+Now Redpanda Schema Registry is running in `http://localhost:8081/`
 
 The endpoints documentation is in `http://localhost:8081/v1` 
 
 Now, modify the *build.sbt* file with this content:
 
 ```scala
-name := "kafka-example"
+name := "redpanda-example"
 
 version := "0.1"
 
@@ -73,14 +73,14 @@ libraryDependencies ++= List(
 ```
 For this example, we are adding the `avro-serializer` library to the project. 
 
-## Reading from Red Panda
+## Reading from Redpanda
 
 Now that we have our project skeleton, remember that our event processor **reads** the events from a topic.
 
 The specification for our **Processing Engine**  is to create a pipeline application which:
-- Reads each message from a Kafka topic called *persons*
+- Reads each message from a Redpanda topic called *persons*
 - Calculates the age of each Person (each message), 
-- Writes the age in a Kafka topic called *ages*
+- Writes the age in a Redpanda topic called *ages*
 
 These steps are detailed in this diagram:
 
@@ -122,7 +122,7 @@ private final val brokers = "localhost:58383, localhost:58388, localhost:58389"
 private final val schemaRegistryUrl = "http://localhost:8081"
 ```
 
-Of course, here we put the `ipAddress:Port` where our Red Panda brokers are running.
+Of course, here we put the `ipAddress:Port` where our Redpanda brokers are running.
 Note how we added the SchemaRegistry URL, based on the Docker container we started before.
 
 ##The Consumer code
@@ -176,7 +176,7 @@ Replace the comment `// 4. main() method` with the following code:
 ```
 Here we are saying to pool the topic `avro-persons` every second looking for new messages.
 
-## Writting to Red Panda
+## Writting to Redpanda
 
 Replace the comment `// 2. Producer properties` with the following code:
 
@@ -235,7 +235,7 @@ Replace the comment `// Our producer code here ...` with the following code:
 private final val brokers = "localhost:58383, localhost:58388, localhost:58389"
 private final val schemaRegistryUrl = "http://localhost:8081"
 ```
-As mentioned, here we put the `ipAddress:Port` pairs indicating where our Red Panda brokers are running.
+As mentioned, here we put the `ipAddress:Port` pairs indicating where our Redpanda brokers are running.
 Note how we added the SchemaRegistry URL, based on the Docker container we started before.
 
 Replace the comment `// 1. Producer properties` with the following code:
@@ -297,19 +297,19 @@ Here we are producing two records per second.
 
 ## Running our Processing Engine
 
-To create the `avro-persons` topic in Red Panda, run:
+To create the `avro-persons` topic in Redpanda, run:
 
 ```bash
 rpk topic create avro-persons --brokers 127.0.0.1:58383,127.0.0.1:58388,127.0.0.1:58389
 ```
 
-To run a Red Panda consumer for the `avro-persons` topic:
+To run a Redpanda consumer for the `avro-persons` topic:
 
 ```bash
 rpk topic consume avro-persons --brokers 127.0.0.1:58383,127.0.0.1:58388,127.0.0.1:58389
 ```
 
-In a new console window, run a Red Panda consumer for the `ages` topic:
+In a new console window, run a Redpanda consumer for the `ages` topic:
 
 ```bash
 rpk topic consume ages --brokers 127.0.0.1:58383,127.0.0.1:58388,127.0.0.1:58389
@@ -360,13 +360,13 @@ The output for the command-line topic-consumer for topic `ages` should be simila
 
 ## Conclusions
 
-- In 15 minutes we have coded a full Kafka processor in Scala and ran it on Red Panda.
-- As you can see, the migration of an actual Schema Registry application from Kafka to Red Panda is a really simple process.
-- Red Panda exposes the *SAME* Kafka API, there is no need to change the code of our existing Kafka applications.
+- In 15 minutes we have coded a full Redpanda processor in Scala and ran it on Redpanda.
+- As you can see, the migration of an actual Schema Registry application from Kafka to Redpanda is a really simple process.
+- Redpanda exposes the *SAME* Kafka API, there is no need to change the code of our existing Kafka applications.
 - Of course, all the source code of this tutorial is [here](https://github.com/vectorizedio/redpanda/tree/dev/docs)
 
 ## What's next
 
 Check the next part of the tutorial: 
 
- [Running a KafkaStreams App with Schema Registry in Red Panda in 15 min (or less)](/docs/avrostreams-example).
+ [Running a KStreams App with Schema Registry in Redpanda in 15 min (or less)](/docs/avrostreams-example).
