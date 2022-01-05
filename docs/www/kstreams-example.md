@@ -215,7 +215,7 @@ The output for the command-line topic-consumer for topic `ages` should be simila
 - In 15 minutes we have coded a full KStreams processor in Scala and connected it to Redpanda.
 - As you can see, the migration of an actual KStreams application from Kafka to Redpanda is a really simple process.
 - Redpanda exposes the *SAME* Kafka API, there is no need to change the code of our existing Kafka applications.
-- Of course, all the source code of this tutorial is [here](https://github.com/vectorizedio/redpanda/tree/dev/docs)
+- Of course, all the source code of this tutorial is [here](https://github.com/vectorizedio/redpanda-examples/tree/main/clients/scala)
 
 ## What's next
 
