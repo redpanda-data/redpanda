@@ -121,6 +121,18 @@ configuration::configuration()
       "Interval for which all coprocessor offsets are flushed to disk",
       {.visibility = visibility::tunable},
       300000ms) // five minutes
+  , topic_memory_per_partition(
+      *this,
+      "topic_memory_per_partition",
+      "Required memory per partition when creating topics",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1_MiB)
+  , topic_fds_per_partition(
+      *this,
+      "topic_fds_per_partition",
+      "Required file handles per partition when creating topics",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10)
   , seed_server_meta_topic_partitions(
       *this, "seed_server_meta_topic_partitions")
   , raft_heartbeat_interval_ms(

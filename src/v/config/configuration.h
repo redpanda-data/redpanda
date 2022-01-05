@@ -55,6 +55,10 @@ struct configuration final : public config_store {
     property<std::size_t> coproc_max_batch_size;
     property<std::chrono::milliseconds> coproc_offset_flush_interval_ms;
 
+    // Controller
+    property<std::optional<std::size_t>> topic_memory_per_partition;
+    property<std::optional<int32_t>> topic_fds_per_partition;
+
     // Raft
     deprecated_property seed_server_meta_topic_partitions;
     property<std::chrono::milliseconds> raft_heartbeat_interval_ms;
