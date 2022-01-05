@@ -64,14 +64,49 @@ resolvers += "maven" at "https://packages.confluent.io/maven/"
 
 libraryDependencies ++= List(
   "com.github.javafaker" % "javafaker" % "1.0.2",
-  "com.fasterxml.jackson.core" % "jackson-databind" % "2.13.0", 
-  "io.confluent" % "kafka-avro-serializer" % "5.0.0",
+  "com.fasterxml.jackson.core" % "jackson-databind" % "2.13.1", 
+  "io.confluent" % "kafka-avro-serializer" % "5.3.0",
   "io.confluent" % "kafka-streams-avro-serde" % "5.0.0",
   "org.apache.kafka" % "kafka-clients" % "3.0.0",
   "org.apache.kafka" % "kafka-streams" % "3.0.0"
 )
 ```
 For this example, we are adding the `avro-serializer` library to the project. 
+
+## Defining the Schema
+
+In the directory `src/resources` create the file `person.avsc` with the following content:
+
+```avro
+{
+  "type": "record",
+  "name": "Person",
+  "namespace": "io.vectorized.examples",
+  "fields": [
+    {
+      "name": "firstName",
+      "type": "string"
+    },
+    {
+      "name": "lastName",
+      "type": "string"
+    },
+    {
+      "name": "birthDate",
+      "type": "long"
+    },
+    {
+      "name": "city",
+      "type": "string"
+    },
+    {
+      "name": "ipAddress",
+      "type": "string"
+    }
+  ]
+}
+```
+This defines the Schema for the Avro message representing the `Person`
 
 ## Reading from Redpanda
 
