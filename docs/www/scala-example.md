@@ -1,21 +1,21 @@
 ---
-title: Running a Scala Kafka App in Red Panda in 15 min (or less)
+title: How to connect a Scala appplication to Redpanda in 15 min (or less)
 order: 0
 ---
 
-# Running a Scala Kafka App in Red Panda in 15 min (or less)
+# How to connect a Scala appplication to Redpanda in 15 min (or less)
 
 Redpanda is a modern [streaming platform](/blog/intelligent-data-api/) for mission critical workloads.
 With Redpanda you can get up and running with streaming quickly
 and be fully compatible with the [Kafka ecosystem](https://cwiki.apache.org/confluence/display/KAFKA/Ecosystem).
 
-This tutorial shows in 15 minutes or less how you can build a Scala Kafka Application and run it in Red Panda.   
+This tutorial demonstrates how to build a Scala application that streams messages to and from Redpanda 
 
 ## Get your cluster ready
 
-This tutorial assumes that you already have a Red Panda cluster with three machines up and running in your development environment.
+This tutorial assumes that you already have a Redpanda cluster with three machines up and running in your development environment.
 
-If you still don't know how to do it, check out these quick start guides that will show you the process:
+If you need some help, checkout these quick start guides:
 
 - Do you develop on a Mac? Access the [Mac OS Quick Start Guide](/docs/quick-start-macos).
 - Do you use Linux? Check the [Linux Quick Start Guide](/docs/quick-start-linux).
@@ -32,7 +32,9 @@ ID    HOST       PORT
 2     127.0.0.1  58389
 ```
 
-> **_Note:_** For this tutorial my brokers are running on those ports, obviously in your case they may be different.  
+> **_Note:_** For this tutorial the brokers are running on those ports, in your case they may be different because
+> when you run Redpanda with Docker, if you don't explicitly specify the ports on which your brokers will run, 
+> Redpanda will assign the ports automatically.   
 
 ## Event modeling
 
@@ -49,15 +51,16 @@ This is an example of *"Customer signs up in our page"* event in JSON format
 
 ```json
 {
-   "firstName":"Edward", 
-   "lastName":"Snowden", 
-   "birthDate":"1983-06-21T00:00:00",
-   "city":"Elizabeth City",
+   "firstName":"Raul", 
+   "lastName":"Strada", 
+   "birthDate":"1976-07-04T00:00:00",
+   "city":"Philadelphia",
    "ipAddress":"95.31.18.111"
 }
 ```
 
-Having modeled our event, we want to process it with Kafka, for this example we are going to calculate the age of the people.
+Having modeled our event, we want to process it with Redpanda using the existing Kafka API compatible Scala library, 
+for this example we are going to calculate the age of the people.
 
 ## Setting up the project 
 
@@ -74,12 +77,12 @@ In Linux we can install *sbt* with the *apt-get* command:
 To generate an empty project execute the folowing command: `sbt new scala/hello-world.g8`
 This pulls the ‘hello-world’ template from GitHub.
 
-When prompted a name for the application type: **kafka-example**. As expected, this will create a project called “kafka-example”.
+When prompted a name for the application type: **redpanda-example**. As expected, this will create a project called “redpanda-example”.
 
 The generated directory should be similar to:
 
 ```bash
-- kafka-example
+- redpanda-example
    - project    #sbt uses this to install and manage plugins and dependencies)
       - build.properties
    - src
@@ -89,12 +92,13 @@ The generated directory should be similar to:
    - build.sbt   # sbt's build definition file
 ```
 
-Delete the file `kafka-example/src/main/scala/Main.scala`
+The sbt tool creates some archives from a template, one is Main.scala.
+We can delete the file `redpanda-example/src/main/scala/Main.scala` because we will write our own application.
 
 Now, modify the *build.sbt* file with this content:
 
 ```scala
-name := "kafka-example"
+name := "redpanda-example"
 
 version := "0.1"
 
@@ -154,14 +158,14 @@ object Person {
 
 This is a simple Person class (also known as POJO or Bean) that contains our Customer's data to model.
 
-## Reading from Red Panda
+## Reading from Redpanda
 
 Now that we have our project skeleton, remember that our event processor **reads** the events from a topic.
 
 The specification for our **Processing Engine**  is to create a pipeline application which:
-- Reads each message from a Kafka topic called *persons*
+- Reads each message from a Redpanda topic called *persons*
 - Calculates the age of each Person (each message), 
-- Writes the age in a Kafka topic called *ages*
+- Writes the age in a Redpanda topic called *ages*
 
 These steps are detailed in this diagram:
 
@@ -198,8 +202,8 @@ Replace the comment `// Our processor code here ...` with the following code:
 
 `private final val brokers = "localhost:58383, localhost:58388, localhost:58389"`
 
-Of course, here we put the `ipAddress:Port` where our Red Panda brokers are running.
-In my case, I just asked Red Panda to produce a three broker cluster and it automatically assigned these port numbers.
+Of course, here we put the `ipAddress:Port` where our Redpanda brokers are running.
+In my case, I just asked Redpanda to produce a three broker cluster and it automatically assigned these port numbers.
 
 
 ##The Consumer code
@@ -247,7 +251,7 @@ Replace the comment `// 4. main() method` with the following code:
 
 Here we are saying to pool the topic `persons` every second looking for new messages.
 
-## Writting to Red Panda
+## Writting to Redpanda
 
 Replace the comment `// 2. Producer properties` with the following code:
 
@@ -300,7 +304,7 @@ Replace the comment `// Our producer code here ...` with the following code:
 
 `private final val brokers = "localhost:58383, localhost:58388, localhost:58389"`
 
-As mentioned, here we put the `ipAddress:Port` pairs indicating where our Red Panda brokers are running.
+As mentioned, here we put the `ipAddress:Port` pairs indicating where our Redpanda brokers are running.
 
 Replace the comment `// 1. Producer properties` with the following code:
 
@@ -337,7 +341,7 @@ Replace the comment `// 2. produce() method` with the following code:
 
 The ratePerSecond is Int that tells us how many records of type Person we are going to produce per second.
 
-Here we use Java Faker to produce fictitious data, it is a tool that generates Birth Dates and IP addresses, all valid but fictitious. 
+Here we use Java Faker to produce fictitious data, it is a tool that generates birthdates and IP addresses, all valid but fictitious. 
 It can be customized to produce data according to a region or language.
 
 Replace the `// 3. main() method` comment with the following code:
@@ -349,25 +353,25 @@ Here we are producing two records per second.
 
 ## Running our Processing Engine
 
-To create the `persons` topic in Red Panda, run:
+To create the `persons` topic in Redpanda, run:
 
 ```bash
 rpk topic create persons --brokers 127.0.0.1:58383,127.0.0.1:58388,127.0.0.1:58389
 ```
 
-To create the `ages` topic in Red Panda, run:
+To create the `ages` topic in Redpanda, run:
 
 ```bash
 rpk topic create ages --brokers 127.0.0.1:58383,127.0.0.1:58388,127.0.0.1:58389
 ```
 
-To run a Red Panda consumer for the `persons` topic:
+To run a Redpanda consumer for the `persons` topic:
 
 ```bash
 rpk topic consume persons --brokers 127.0.0.1:58383,127.0.0.1:58388,127.0.0.1:58389
 ```
 
-In a new console window, run a Red Panda consumer for the `ages` topic:
+In a new console window, run a Redpanda consumer for the `ages` topic:
 
 ```bash
 rpk topic consume ages --brokers 127.0.0.1:58383,127.0.0.1:58388,127.0.0.1:58389
@@ -417,13 +421,13 @@ The output for the command-line topic-consumer for topic `ages` should be simila
 
 ## Conclusions
 
-- In 15 minutes we have coded a full Kafka processor in Scala and ran it on Red Panda.
-- As you can see, the migration of an actual application from Kafka to Red Panda is a really simple process.
-- Red Panda exposes the *SAME* Kafka API, there is no need to change the code of our existing Kafka applications.
-- Of course, all the source code of this tutorial is [here](https://github.com/vectorizedio/redpanda/tree/dev/docs)
+- In 15 minutes we have coded a full Redpanda processor in Scala and ran it.
+- As you can see, the migration of an actual application from Kafka to Redpanda is a really simple process.
+- Redpanda exposes the *SAME* API as Kafka, there is no need to change the code of our existing Kafka applications.
+- Of course, all the source code of this tutorial is [here](https://github.com/vectorizedio/redpanda-examples/tree/main/clients/scala)
 
 ## What's next
 
 Check the next part of the tutorial: 
 
- [Running a KafkaStreams App in Red Panda in 15 min (or less)](/docs/kstreams-example).
+ [Running a KafkaStreams App in Redpanda in 15 min (or less)](/docs/kstreams-example).
