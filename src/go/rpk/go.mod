@@ -5,6 +5,7 @@ go 1.16
 require (
 	cloud.google.com/go v0.46.3
 	github.com/AlecAivazis/survey/v2 v2.3.2
+	github.com/BurntSushi/toml v0.3.1
 	github.com/Microsoft/go-winio v0.4.12 // indirect
 	github.com/avast/retry-go v2.6.0+incompatible
 	github.com/aws/aws-sdk-go v1.25.43
@@ -37,7 +38,7 @@ require (
 	github.com/olekukonko/tablewriter v0.0.1
 	github.com/opencontainers/go-digest v1.0.0-rc1 // indirect
 	github.com/opencontainers/image-spec v1.0.1
-	github.com/pierrec/lz4/v4 v4.1.11 // indirect
+	github.com/pierrec/lz4/v4 v4.1.12 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.9.1
@@ -49,12 +50,12 @@ require (
 	github.com/spf13/viper v1.7.0
 	github.com/stretchr/testify v1.7.0
 	github.com/tklauser/go-sysconf v0.1.0
-	github.com/twmb/franz-go v1.2.4
-	github.com/twmb/franz-go/pkg/kadm v0.0.0-20211116225244-e97ad6b8ef3e
-	github.com/twmb/franz-go/pkg/kmsg v0.0.0-20211116073102-087920707afe
+	github.com/twmb/franz-go v1.3.0
+	github.com/twmb/franz-go/pkg/kadm v0.0.0-20220106030238-d62f1bef74f9
+	github.com/twmb/franz-go/pkg/kmsg v0.0.0-20220106030238-d62f1bef74f9
 	github.com/twmb/tlscfg v1.2.0
 	github.com/twmb/types v1.1.6
-	golang.org/x/crypto v0.0.0-20210817164053-32db794688a5
+	golang.org/x/crypto v0.0.0-20211117183948-ae814b36b871
 	golang.org/x/mod v0.4.1 // indirect
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	golang.org/x/sys v0.0.0-20211101204403-39c9dd37992c
@@ -64,7 +65,7 @@ require (
 	google.golang.org/protobuf v1.25.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v2 v2.4.0
-	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
+	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 	gotest.tools/v3 v3.0.3 // indirect
 	mvdan.cc/sh/v3 v3.2.1
 )
