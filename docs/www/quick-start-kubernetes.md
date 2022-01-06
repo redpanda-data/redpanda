@@ -4,7 +4,7 @@ order: 0
 ---
 # Kubernetes Quick Start Guide
 
-Redpanda is a modern [streaming platform](/blog/intelligent-data-api/) for mission critical workloads.
+Redpanda is a modern [streaming platform](/blog/intelligent-data-api/) for mission-critical workloads.
 With Redpanda you can get up and running with streaming quickly
 and be fully compatible with the [Kafka ecosystem](https://cwiki.apache.org/confluence/display/KAFKA/Ecosystem).
 
@@ -52,12 +52,22 @@ You can either create a Kubernetes cluster on your local machine or on a cloud p
 
   <tab id="Kind">
 
-  [Kind](https://kind.sigs.k8s.io) is a tool that lets you create local Kubernetes clusters using Docker.
-    After you install Kind, set up a cluster with:
+  [Kind](https://kind.sigs.k8s.io) is a tool that lets you create local Kubernetes clusters using Docker. 
+    After you install Kind, verify that port 30001 is free on your machine before you set up a cluster or cluster creation will fail. Set up a cluster with:
 
   ```
-  kind create cluster
+  kind create cluster --config docs/kind-external.yaml
   ```
+
+  ```
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+    extraPortMappings:
+    - containerPort: 30001
+      hostPort: 30001
+```
 
   </tab>
 
@@ -233,38 +243,55 @@ Let's try setting up a Redpanda topic to handle a stream of events from a chat a
     ```
     kubectl apply \
     -n chat-with-me \
-    -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/one_node_cluster.yaml
+    -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/one_node_external.yaml
     ```
 
     You can see the resource configuration options in the [cluster_types file](https://github.com/vectorizedio/redpanda/blob/dev/src/go/k8s/apis/redpanda/v1alpha1/cluster_types.go).
 
-3. Use `rpk` to work with your Redpanda nodes, for example:
+## Check etc/hosts file
 
-    a. Check the status of the cluster:
+Verify that `0.local.rp` is mapped to `127.0.0.1` on your system. It will contain a line similar to this: 
 
-        kubectl -n chat-with-me run -ti --rm \
-        --restart=Never \
-        --image docker.vectorized.io/vectorized/redpanda:$VERSION \
-        -- rpk --brokers one-node-cluster-0.one-node-cluster.chat-with-me.svc.cluster.local:9092 \
-        cluster info
+```
+127.0.0.1 0.local.rp
+```
+
+## Do some streaming
+
+Here are some sample commands to produce and consume streams:
+
+1. Create a topic. We'll call it "twitch_chat":
+
+    ```bash
+    rpk topic create twitch_chat --brokers=0.local.rp:30001
+    ```
+
+1. Produce messages to the topic:
+
+    ```bash
+    rpk topic produce twitch_chat --brokers=0.local.rp:30001
+    ```
+
+    Type text into the topic and press Ctrl + D to separate between messages.
+
+    Press Ctrl + C to exit the produce command.
+
+1. Consume (or read) the messages in the topic:
+
+    ```bash
+    rpk topic consume twitch_chat --brokers=0.local.rp:30001
+    ```
     
-    b. Create a topic:
-
-        kubectl -n chat-with-me run -ti --rm \
-        --restart=Never \
-        --image docker.vectorized.io/vectorized/redpanda:$VERSION \
-        -- rpk --brokers one-node-cluster-0.one-node-cluster.chat-with-me.svc.cluster.local:9092 \
-        topic create chat-rooms -p 5
-
-    c. Show the list of topics:
-
-        kubectl -n chat-with-me run -ti --rm \
-        --restart=Never \
-        --image docker.vectorized.io/vectorized/redpanda:$VERSION \
-        -- rpk --brokers one-node-cluster-0.one-node-cluster.chat-with-me.svc.cluster.local:9092 \
-        topic list
-
-As you can see, the commands from the "rpk" pod created a 5-partition topic in for the chat rooms.
+    Each message is shown with its metadata, like this:
+    
+    ```bash
+    {
+    "message": "How do you stream with Redpanda?\n",
+    "partition": 0,
+    "offset": 1,
+    "timestamp": "2021-02-10T15:52:35.251+02:00"
+    }
+    ```
 
 ## Next steps
 
