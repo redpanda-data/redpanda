@@ -269,7 +269,7 @@ func seek(
 		if o, exists := commitTo.Lookup(c.Topic, c.Partition); exists {
 			s.Current = o.At
 		}
-		se := seekCommitErr{s, ""}
+		se := seekCommitErr{c.Topic, c.Partition, -1, -1, ""}
 		if c.Err != nil {
 			se.Error = c.Err.Error()
 		}
@@ -289,6 +289,9 @@ type seekCommit struct {
 }
 
 type seekCommitErr struct {
-	seekCommit
-	Error string
+	Topic     string
+	Partition int32
+	Prior     int64
+	Current   int64
+	Error     string
 }
