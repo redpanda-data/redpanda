@@ -23,9 +23,9 @@
 #include "raft/fwd.h"
 #include "random/generators.h"
 #include "rpc/connection_cache.h"
-#include "version.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -163,9 +163,7 @@ std::optional<node_health_report> health_monitor_backend::build_node_report(
     node_health_report report;
     report.id = id;
 
-    report.disk_space = it->second.disk_space;
-    report.redpanda_version = it->second.redpanda_version;
-    report.uptime = it->second.uptime;
+    report.local_state = _local_monitor.get_state_cached();
 
     if (f.include_partitions) {
         report.topics = filter_topic_status(it->second.topics, f.ntp_filters);
@@ -233,6 +231,8 @@ health_monitor_backend::refresh_cluster_health_cache(force_refresh force) {
           clusterlog.debug,
           "unable to refresh health metadata, no leader controller");
         // TODO: maybe we should try to ping other members in this case ?
+        // AF: Seems like we should have a higher-level API here for the
+        // controller, which helps us deal with quorum changes?
         co_return errc::no_leader_controller;
     }
 
@@ -384,20 +384,25 @@ health_monitor_backend::get_current_cluster_health_snapshot(
 }
 
 void health_monitor_backend::tick() {
+    (void)ss::with_gate(_gate, [this]() {
+        _local_monitor.update_state();
+        return tick_cluster_health();
+    });
+}
+
+ss::future<> health_monitor_backend::tick_cluster_health() {
     if (!_raft0->is_leader()) {
         vlog(clusterlog.trace, "skipping tick, not leader");
         _tick_timer.arm(tick_interval());
-        return;
+        co_return;
     }
 
-    (void)ss::with_gate(_gate, [this] {
-        // make sure that ticks will have fixed interval
-        auto next_tick = ss::lowres_clock::now() + tick_interval();
-        return collect_cluster_health().finally([this, next_tick] {
-            if (!_as.local().abort_requested()) {
-                _tick_timer.arm(next_tick);
-            }
-        });
+    // make sure that ticks will have fixed interval
+    auto next_tick = ss::lowres_clock::now() + tick_interval();
+    co_return co_await collect_cluster_health().finally([this, next_tick] {
+        if (!_as.local().abort_requested()) {
+            _tick_timer.arm(next_tick);
+        }
     });
 }
 
@@ -508,12 +513,7 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
     node_health_report ret;
     ret.id = _raft0->self().id();
 
-    ret.disk_space = get_disk_space();
-    ret.redpanda_version = cluster::application_version(
-      (std::string)redpanda_version());
-
-    ret.uptime = std::chrono::duration_cast<std::chrono::milliseconds>(
-      ss::engine().uptime());
+    ret.local_state = _local_monitor.get_state_cached();
 
     if (filter.include_partitions) {
         ret.topics = co_await collect_topic_status(
@@ -599,17 +599,6 @@ health_monitor_backend::collect_topic_status(partitions_filter filters) {
     }
 
     co_return topics;
-}
-
-std::vector<node_disk_space> health_monitor_backend::get_disk_space() {
-    auto space_info = std::filesystem::space(
-      config::node().data_directory().path);
-
-    return {node_disk_space{
-      .path = config::node().data_directory().as_sstring(),
-      .free = space_info.free,
-      .total = space_info.capacity,
-    }};
 }
 
 std::chrono::milliseconds health_monitor_backend::tick_interval() {

@@ -14,8 +14,8 @@
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "node/types.h"
 #include "reflection/adl.h"
-#include "utils/named_type.h"
 
 #include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
@@ -27,7 +27,6 @@ namespace cluster {
  */
 
 using alive = ss::bool_class<struct node_alive_tag>;
-using application_version = named_type<ss::sstring, struct version_number_tag>;
 /**
  * node state is determined from controller, and it doesn't require contacting
  * with the node directly
@@ -39,17 +38,6 @@ struct node_state {
     model::membership_state membership_state;
     alive is_alive;
     friend std::ostream& operator<<(std::ostream&, const node_state&);
-};
-
-struct node_disk_space {
-    static constexpr int8_t current_version = 0;
-
-    ss::sstring path;
-    uint64_t free;
-    uint64_t total;
-    friend std::ostream& operator<<(std::ostream&, const node_disk_space&);
-    friend bool operator==(const node_disk_space&, const node_disk_space&)
-      = default;
 };
 
 struct partition_status {
@@ -71,21 +59,13 @@ struct topic_status {
     friend std::ostream& operator<<(std::ostream&, const topic_status&);
     friend bool operator==(const topic_status&, const topic_status&) = default;
 };
-/**
- * Node health report is collected built based on node local state at given
- * instance of time
- */
+
 struct node_health_report {
     static constexpr int8_t current_version = 0;
 
     model::node_id id;
-    application_version redpanda_version;
-    std::chrono::milliseconds uptime;
-    // we store a vector to be ready to operate with multiple data
-    // directories
-    std::vector<node_disk_space> disk_space;
+    node::local_state local_state;
     std::vector<topic_status> topics;
-
     friend std::ostream& operator<<(std::ostream&, const node_health_report&);
 };
 
@@ -191,11 +171,6 @@ template<>
 struct adl<cluster::cluster_health_report> {
     void to(iobuf&, cluster::cluster_health_report&&);
     cluster::cluster_health_report from(iobuf_parser&);
-};
-template<>
-struct adl<cluster::node_disk_space> {
-    void to(iobuf&, cluster::node_disk_space&&);
-    cluster::node_disk_space from(iobuf_parser&);
 };
 
 template<>
