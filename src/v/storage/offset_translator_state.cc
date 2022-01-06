@@ -282,11 +282,13 @@ struct persisted_batch {
         serde::read_nested(in, b.length, bytes_left_limit);
     }
 
-    friend inline void write(iobuf& out, const persisted_batch& b) {
+    friend inline void write_special(iobuf& out, const persisted_batch& b) {
         serde::write(out, b.base_offset);
         serde::write(out, b.length);
     }
 };
+
+static_assert(serde::has_special_write_v<persisted_batch>);
 
 struct persisted_batches_map
   : serde::envelope<

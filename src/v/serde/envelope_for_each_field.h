@@ -31,13 +31,36 @@ struct has_serde_fields<
 template<typename T>
 inline constexpr auto const has_serde_fields_v = has_serde_fields<T>::value;
 
+template<typename... Ts, std::size_t... I>
+constexpr inline auto
+add_const_helper(std::tuple<Ts...>&& t, std::index_sequence<I...>) {
+    return std::make_tuple(std::cref(std::get<I>(t))...);
+}
+
+template<typename T>
+constexpr inline auto add_const(T&& t) {
+    return add_const_helper(
+      std::forward<T>(t),
+      std::make_index_sequence<std::tuple_size_v<std::decay_t<decltype(t)>>>());
+}
+
 } // namespace detail
 
 template<
   typename T,
   std::enable_if_t<detail::has_serde_fields_v<T>, void*> = nullptr>
 constexpr inline auto envelope_to_tuple(T&& t) {
-    return t.serde_fields();
+    if constexpr (
+      (std::is_reference_v<T> && std::is_const_v<std::remove_reference_t<T>>)
+      || (!std::is_reference_v<T> && std::is_const_v<T>)) {
+        return detail::add_const(
+          const_cast<std::add_lvalue_reference_t<
+            std::remove_const_t<std::remove_reference_t<T>>>>(t)
+            .serde_fields());
+    } else {
+        static_assert(!std::is_const_v<T>);
+        return t.serde_fields();
+    }
 }
 
 template<

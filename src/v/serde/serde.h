@@ -143,11 +143,34 @@ inline constexpr auto const is_serde_compatible_v
     || std::is_same_v<T, ss::sstring>
     || is_fragmented_vector_v<T>;
 
-template<typename T>
-void write(iobuf&, T);
+template<typename T, typename = void>
+struct has_special_write : std::false_type {};
 
 template<typename T>
-void write(iobuf& out, T t) {
+struct has_special_write<
+  T,
+  std::void_t<decltype(write_special(
+    std::declval<std::add_lvalue_reference_t<iobuf>>(),
+    std::declval<std::add_lvalue_reference_t<std::add_const_t<T>>>()))>>
+  : std::true_type {};
+
+template<typename T>
+inline constexpr auto const has_special_write_v = has_special_write<T>::value;
+
+template<typename T>
+void write_generic(iobuf&, T&&);
+
+template<typename T>
+void write(iobuf& out, T&& t) {
+    if constexpr (has_special_write<T>()) {
+        write_special(out, t);
+    } else {
+        write_generic(out, t);
+    }
+}
+
+template<typename T>
+void write_generic(iobuf& out, T&& t) {
     using Type = std::decay_t<T>;
     static_assert(has_serde_write<Type> || is_serde_compatible_v<Type>);
 
@@ -166,8 +189,9 @@ void write(iobuf& out, T t) {
         if constexpr (has_serde_write<Type>) {
             t.serde_write(out);
         } else {
-            envelope_for_each_field(
-              t, [&out](auto& f) { write(out, std::move(f)); });
+            envelope_for_each_field(t, [&out](auto&& f) {
+                write(out, std::forward<decltype(f)>(f));
+            });
         }
 
         auto const written_size = out.size_bytes() - size_before;
@@ -233,8 +257,8 @@ void write(iobuf& out, T t) {
               t.size()));
         }
         write(out, static_cast<serde_size_t>(t.size()));
-        for (auto& el : t) {
-            write(out, std::move(el));
+        for (auto&& el : t) {
+            write(out, std::forward<decltype(el)>(el));
         }
     } else if constexpr (reflection::is_named_type_v<Type>) {
         return write(out, static_cast<typename Type::type>(t));
@@ -263,8 +287,8 @@ void write(iobuf& out, T t) {
               t.size()));
         }
         write(out, static_cast<serde_size_t>(t.size()));
-        for (auto& el : t) {
-            write(out, std::move(el));
+        for (auto&& el : t) {
+            write(out, std::forward<decltype(el)>(el));
         }
     }
 }
@@ -551,7 +575,7 @@ inline version_t peek_version(iobuf_parser& in) {
 template<typename T>
 iobuf to_iobuf(T&& t) {
     iobuf b;
-    write(b, std::forward<T>(t));
+    write(b, std::forward<decltype(t)>(t));
     return b;
 }
 

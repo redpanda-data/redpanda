@@ -91,6 +91,37 @@ static_assert(!serde::inherits_from_envelope_v<test_msg1_new_manual>);
 static_assert(test_msg1::redpanda_serde_version == 4);
 static_assert(test_msg1::redpanda_serde_compat_version == 0);
 
+SEASTAR_THREAD_TEST_CASE(write_does_not_require_copy) {
+    struct no_copy_no_move
+      : serde::envelope<
+          no_copy_no_move,
+          serde::version<0>,
+          serde::compat_version<0>> {
+        no_copy_no_move() = default;
+        no_copy_no_move(no_copy_no_move const&) = delete;
+        no_copy_no_move(no_copy_no_move&&) = delete;
+        no_copy_no_move& operator=(no_copy_no_move const&) = delete;
+        no_copy_no_move& operator=(no_copy_no_move&&) = delete;
+        auto serde_fields() { return std::tie(i_); }
+        int i_;
+    };
+
+    // r-value
+    serde::to_iobuf(no_copy_no_move{});
+
+    // l-value
+    auto mv = no_copy_no_move{};
+    serde::to_iobuf(mv);
+
+    // l-value
+    auto const mv1 = no_copy_no_move{};
+    serde::to_iobuf(mv1);
+
+    // move doesn't do anything so still l-value
+    auto mv2 = no_copy_no_move{};
+    serde::to_iobuf(std::move(mv2));
+}
+
 SEASTAR_THREAD_TEST_CASE(incompatible_version_throws) {
     BOOST_CHECK_THROW(
       serde::from_iobuf<test_msg1_imcompatible>(serde::to_iobuf(test_msg1{})),
