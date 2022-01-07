@@ -511,6 +511,12 @@ configuration::configuration()
       "Length of time above which growth is reset",
       {.visibility = visibility::tunable},
       10'000ms)
+  , reclaim_batch_cache_min_free(
+      *this,
+      "reclaim_batch_cache_min_free",
+      "Free memory limit that will be kept by batch cache background reclaimer",
+      {.visibility = visibility::tunable},
+      64_MiB)
   , auto_create_topics_enabled(
       *this,
       "auto_create_topics_enabled",

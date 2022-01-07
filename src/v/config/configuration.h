@@ -128,6 +128,7 @@ struct configuration final : public config_store {
     property<size_t> reclaim_max_size;
     property<std::chrono::milliseconds> reclaim_growth_window;
     property<std::chrono::milliseconds> reclaim_stable_window;
+    property<size_t> reclaim_batch_cache_min_free;
     property<bool> auto_create_topics_enabled;
     property<bool> enable_pid_file;
     property<std::chrono::milliseconds> kvstore_flush_interval;
