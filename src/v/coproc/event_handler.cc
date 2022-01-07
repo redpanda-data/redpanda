@@ -10,15 +10,14 @@
 
 #include "coproc/event_handler.h"
 
+#include "coproc/script_dispatcher.h"
 #include "utils/gate_guard.h"
 #include "vlog.h"
 
 namespace coproc::wasm {
 
-async_event_handler::async_event_handler(
-  ss::abort_source& abort_source, ss::sharded<pacemaker>& pacemaker)
-  : _abort_source(abort_source)
-  , _dispatcher(pacemaker, _abort_source) {}
+async_event_handler::async_event_handler(script_dispatcher& dispatcher)
+  : _dispatcher(dispatcher) {}
 
 ss::future<> async_event_handler::start() { co_return; }
 
