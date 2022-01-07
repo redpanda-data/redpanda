@@ -143,8 +143,8 @@ class Repository {
       // Coprocessor return a Map with values
       for (const [key, value] of resultRecordBatch) {
         value.records = value.records.map((record) => {
-          record.length = calculateRecordLength(record);
           record.valueLen = record.value.length;
+          record.length = calculateRecordLength(record);
           return record;
         });
         value.header.sizeBytes = calculateRecordBatchSize(value.records);
