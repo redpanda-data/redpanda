@@ -19,6 +19,7 @@ import { PolicyInjection, RecordBatch } from "../../modules/public/Coprocessor";
 import sinon = require("sinon");
 import LogService from "../../modules/utilities/Logging";
 import { createSandbox, SinonSandbox } from "sinon";
+import { calculateRecordBatchSize } from "../../modules/public/Utils";
 
 let sinonInstance: SinonSandbox;
 
@@ -206,6 +207,9 @@ describe("Repository", function () {
     const { info } = createSinonInstances(sinonInstance);
     const repository = new Repository();
     const handleA = createHandle();
+    const reallyLongInput =
+      "aaaabbbbccccddddeeeeffffgggghhhhiiiijjjjkkkkllllmmmmnnnnooooppppqqqqrrrrssssttttuuuuvvvvwwwwxxxxyyyyzzzzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const reallyLongInputBuffer = Buffer.from(reallyLongInput);
     repository.add(handleA);
     const processBatchRequest: ProcessBatchRequestItem = {
       ntp: {
@@ -237,13 +241,13 @@ describe("Repository", function () {
             {
               length: 0,
               headers: [],
-              valueLen: 2,
               attributes: 0,
               keyLength: 0,
               key: Buffer.from(""),
               timestampDelta: BigInt(1),
               offsetDelta: 0,
-              value: Buffer.from("test"),
+              value: reallyLongInputBuffer,
+              valueLen: reallyLongInputBuffer.byteLength,
             },
           ],
         },
@@ -259,7 +263,6 @@ describe("Repository", function () {
               records: record.records.map((r) => ({
                 ...r,
                 value: Buffer.from("TEST"),
-                valueLen: 4,
               })),
             }),
           ],
@@ -285,6 +288,11 @@ describe("Repository", function () {
       const record = recordBatchResult[0].records[0];
       assert.strictEqual(recordBatchResult[0].header.sizeBytes, 72);
       assert.strictEqual(record.length, 10);
+      assert.strictEqual(
+        recordBatchResult[0].header.sizeBytes,
+        calculateRecordBatchSize(recordBatchResult[0].records)
+      );
+      assert.strictEqual(record.valueLen, 4);
       assert.deepStrictEqual(record.value, Buffer.from("TEST"));
       assert.strictEqual(info.called, true);
     });
