@@ -59,8 +59,9 @@ ss::future<> event_listener::stop() {
       });
 }
 
-event_listener::event_listener()
-  : _client(make_client()) {}
+event_listener::event_listener(ss::abort_source& as)
+  : _client(make_client())
+  , _abort_source(as) {}
 
 ss::future<> event_listener::start() {
     co_await ss::parallel_for_each(
@@ -97,8 +98,6 @@ void event_listener::register_handler(event_type type, event_handler* handler) {
       "Register new handler for wasm_event_type: {}",
       coproc_type_as_string_view(type));
 }
-
-ss::abort_source& event_listener::get_abort_source() { return _abort_source; }
 
 static ss::future<std::vector<model::record_batch>>
 decompress_wasm_events(model::record_batch_reader::data_t events) {

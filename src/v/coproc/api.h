@@ -15,8 +15,10 @@
 #include "coproc/fwd.h"
 #include "coproc/sys_refs.h"
 #include "utils/unresolved_address.h"
-namespace coproc {
 
+#include <seastar/core/abort_source.hh>
+
+namespace coproc {
 class api {
 public:
     api(
@@ -40,16 +42,17 @@ public:
 private:
     unresolved_address _engine_addr;
 
-    std::unique_ptr<wasm::event_listener> _listener; /// one instance
-    ss::sharded<pacemaker> _pacemaker;               /// one per core
+    ss::sharded<pacemaker> _pacemaker; /// one per core
     ss::sharded<cluster::non_replicable_topics_frontend>
       _mt_frontend; /// one instance
     ss::sharded<reconciliation_backend>
       _reconciliation_backend; /// one per core
 
     sys_refs _rs;
+    ss::abort_source _as;
 
-    // Event handlers
+    std::unique_ptr<wasm::script_dispatcher> _dispatcher;
+    std::unique_ptr<wasm::event_listener> _listener;
     std::unique_ptr<wasm::async_event_handler> _wasm_async_handler;
 };
 
