@@ -457,6 +457,8 @@ manager_config_from_global_config(scheduling_groups& sgs) {
         .stable_window = config::shard_local_cfg().reclaim_stable_window(),
         .min_size = config::shard_local_cfg().reclaim_min_size(),
         .max_size = config::shard_local_cfg().reclaim_max_size(),
+        .min_free_memory
+        = config::shard_local_cfg().reclaim_batch_cache_min_free(),
       },
       config::shard_local_cfg().readers_cache_eviction_timeout_ms(),
       sgs.compaction_sg());
