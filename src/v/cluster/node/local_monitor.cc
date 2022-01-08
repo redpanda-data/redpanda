@@ -31,10 +31,9 @@
 
 namespace cluster::node {
 
-// TODO make async
-void local_monitor::update_state() {
+ss::future<> local_monitor::update_state() {
     // XXX AJF review question: do we need an abort source here?
-    auto disks = get_disks();
+    auto disks = co_await get_disks();
     auto vers = application_version((std::string)redpanda_version());
     auto ts = model::timestamp::now();
     auto uptime = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -46,6 +45,7 @@ void local_monitor::update_state() {
       .timestamp = ts,
       .disks = disks,
     };
+    co_return;
 }
 
 local_state local_monitor::get_state_cached() const {
@@ -53,15 +53,15 @@ local_state local_monitor::get_state_cached() const {
     return _state;
 }
 
-// TODO make async
-std::vector<disk> local_monitor::get_disks() {
-    auto space_info = std::filesystem::space(
-      config::node().data_directory().path);
+ss::future<std::vector<disk>> local_monitor::get_disks() {
+    auto svfs = co_await ss::engine().statvfs(
+      config::node().data_directory().as_sstring());
 
-    return {disk{
+    co_return std::vector<disk>{disk{
       .path = config::node().data_directory().as_sstring(),
-      .free = space_info.free,
-      .total = space_info.capacity,
+      // f_bsize is a historical linux-ism, use f_frsize
+      .free = svfs.f_bfree * svfs.f_frsize,
+      .total = svfs.f_blocks * svfs.f_frsize,
     }};
 }
 

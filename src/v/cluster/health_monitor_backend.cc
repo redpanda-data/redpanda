@@ -25,6 +25,7 @@
 #include "rpc/connection_cache.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/reactor.hh>
@@ -384,9 +385,9 @@ health_monitor_backend::get_current_cluster_health_snapshot(
 }
 
 void health_monitor_backend::tick() {
-    (void)ss::with_gate(_gate, [this]() {
-        _local_monitor.update_state();
-        return tick_cluster_health();
+    (void)ss::with_gate(_gate, [this]() -> ss::future<> {
+        co_await _local_monitor.update_state();
+        co_return co_await tick_cluster_health();
     });
 }
 

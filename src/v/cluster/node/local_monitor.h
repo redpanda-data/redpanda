@@ -26,11 +26,11 @@ public:
     local_monitor& operator=(local_monitor const&) = default;
     local_monitor& operator=(local_monitor&&) = default;
 
-    void update_state();
+    ss::future<> update_state();
     local_state get_state_cached() const;
 
 private:
-    std::vector<disk> get_disks();
+    ss::future<std::vector<disk>> get_disks();
     local_state _state;
 };
 
