@@ -28,7 +28,7 @@ public:
     const local_state& get_state_cached();
 
 private:
-    static std::vector<disk> get_disks();
+    static ss::future<std::vector<disk>> get_disks();
     local_state _state;
 };
 
