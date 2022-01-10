@@ -81,6 +81,27 @@ class std_optional:
             return bool(self.ref['__value_'])
 
 
+class fragmented_vector:
+    def __init__(self, ref):
+        self.ref = ref
+
+        self.container_type = self.ref.type.strip_typedefs()
+        self.element_type = self.container_type.template_argument(0)
+        self.element_size_bytes = self.element_type.sizeof
+
+    def size_bytes_capacity(self):
+        return self.capacity() * self.element_size_bytes
+
+    def __len__(self):
+        return int(self.ref['_size'])
+
+    def capacity(self):
+        return int(self.ref['_capacity'])
+
+    def size_bytes(self):
+        return len(self) * self.element_size_bytes
+
+
 class std_vector:
     def __init__(self, ref):
         self.ref = ref
@@ -90,10 +111,24 @@ class std_vector:
         self.element_size_bytes = self.element_type.sizeof
 
         end_cap_type = self.ref["__end_cap_"].type.strip_typedefs()
+
         end_cap_type = end_cap_type.template_argument(0)
         end_cap_type_fmt = "std::__1::__compressed_pair_elem<{}, 0, false>"
-        self.end_cap_type = gdb.lookup_type(
-            end_cap_type_fmt.format(end_cap_type))
+        try:
+            self.end_cap_type = gdb.lookup_type(
+                end_cap_type_fmt.format(end_cap_type))
+        except:
+            # Try converting "struct foo *" into "foo*": sometimes GDB reports the type
+            # one way, but expects us to give it the other way
+            # For example:
+            #   std::__1::__compressed_pair_elem<seastar::shared_object*, 0, false>)
+            s = str(end_cap_type)
+            m = re.match("struct ([\w:]+) \*", s)
+            if m:
+                self.end_cap_type = gdb.lookup_type(
+                    end_cap_type_fmt.format(m.group(1) + "*"))
+            else:
+                raise
 
     def size_bytes(self):
         return len(self) * self.element_size_bytes
@@ -601,16 +636,16 @@ class span_checker(object):
 def find_storage_api(shard=None):
     if shard is None:
         shard = current_shard()
-    return gdb.parse_and_eval('::debug::app')['storage']['_instances'][
+    return gdb.parse_and_eval('debug::app')['storage']['_instances'][
         '__begin_'][shard]['service']['_p']
 
 
 class index_state:
     def __init__(self, ref):
         self.ref = ref
-        self.offset = std_vector(self.ref["relative_offset_index"])
-        self.time = std_vector(self.ref["relative_time_index"])
-        self.pos = std_vector(self.ref["position_index"])
+        self.offset = fragmented_vector(self.ref["relative_offset_index"])
+        self.time = fragmented_vector(self.ref["relative_time_index"])
+        self.pos = fragmented_vector(self.ref["position_index"])
 
     def size(self):
         return int(self.offset.size_bytes() + self.time.size_bytes() +
@@ -1731,7 +1766,8 @@ class redpanda_heapprof(gdb.Command):
                 n.count += count
                 bt = site['backtrace']['_main']
                 addresses = list(
-                    int(f['addr']) for f in static_vector(bt['_frames']))
+                    int(f['addr'])
+                    for f in seastar_static_vector(bt['_frames']))
                 addresses.pop(0)  # drop memory::get_backtrace()
                 if args.inverted:
                     seq = reversed(addresses)
@@ -1800,7 +1836,6 @@ class redpanda_heapprof(gdb.Command):
 
 redpanda()
 redpanda_memory()
-redpanda_rpc()
 redpanda_task_queues()
 redpanda_smp_queues()
 redpanda_small_objects()
