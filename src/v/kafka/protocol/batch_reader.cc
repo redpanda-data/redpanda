@@ -138,14 +138,21 @@ batch_reader::do_load_slice(model::timeout_clock::time_point tp) {
             } else {
                 _do_load_slice_failed = true;
                 batches.clear();
+
+                const auto msg = [&kba] {
+                    if (kba.v2_format) {
+                        if (kba.valid_crc) {
+                            return "empty batch";
+                        }
+                        return "invalid crc";
+                    }
+                    return "not v2_format";
+                }();
+
                 return ss::make_exception_future<>(exception(
                   kafka::error_code::corrupt_message,
                   fmt_with_ctx(
-                    fmt::format,
-                    "Invalid kafka record parsing: {}",
-                    !kba.v2_format   ? "not v2_format"
-                    : !kba.valid_crc ? "invalid crc"
-                                     : "empty batch")));
+                    fmt::format, "Invalid kafka record parsing: {}", msg)));
             }
         };
         return ss::do_until(resources_exceeded, consume_one).then([&batches]() {
