@@ -62,7 +62,7 @@ ss::future<response_ptr> end_txn_handler::handle(
               }
               end_txn_response response;
               response.data = data;
-              return ctx.respond(std::move(response));
+              return ctx.respond(response);
           });
     });
 }
