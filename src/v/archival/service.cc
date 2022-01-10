@@ -445,11 +445,11 @@ uint64_t scheduler_service_impl::estimate_backlog_size() {
 
 ss::future<> scheduler_service_impl::run_uploads() {
     gate_guard g(_gate);
-    try {
-        static constexpr ss::lowres_clock::duration initial_backoff = 100ms;
-        static constexpr ss::lowres_clock::duration max_backoff = 10s;
-        ss::lowres_clock::duration backoff = initial_backoff;
-        while (!_gate.is_closed()) {
+    static constexpr ss::lowres_clock::duration initial_backoff = 100ms;
+    static constexpr ss::lowres_clock::duration max_backoff = 10s;
+    ss::lowres_clock::duration backoff = initial_backoff;
+    while (!_as.abort_requested() && !_gate.is_closed()) {
+        try {
             int quota = _queue.size();
             std::vector<ss::future<ntp_archiver::batch_result>> flist;
 
@@ -513,21 +513,17 @@ ss::future<> scheduler_service_impl::run_uploads() {
                 }
                 continue;
             }
+        } catch (const ss::sleep_aborted&) {
+            vlog(_rtclog.debug, "Upload loop aborted");
+        } catch (const ss::gate_closed_exception&) {
+            vlog(_rtclog.debug, "Upload loop aborted (gate closed)");
+        } catch (const ss::abort_requested_exception&) {
+            vlog(_rtclog.debug, "Upload loop aborted (abort requested)");
+        } catch (...) {
+            vlog(
+              _rtclog.error, "Upload loop error: {}", std::current_exception());
         }
-    } catch (const ss::sleep_aborted&) {
-        vlog(_rtclog.debug, "Upload loop aborted");
-    } catch (const ss::gate_closed_exception&) {
-        vlog(_rtclog.debug, "Upload loop aborted (gate closed)");
-    } catch (const ss::abort_requested_exception&) {
-        vlog(_rtclog.debug, "Upload loop aborted (abort requested)");
-    } catch (...) {
-        vlog(_rtclog.error, "Upload loop error: {}", std::current_exception());
     }
-    // The loop can be stopped by gate or abort_source (if it was waiting inside
-    // sleep_abortable)
-    vassert(
-      _as.abort_requested() || _gate.is_closed(),
-      "Upload loop is not stopped properly");
 }
 
 } // namespace archival::internal
