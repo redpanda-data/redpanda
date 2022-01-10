@@ -25,8 +25,6 @@
 
 namespace cloud_storage {
 
-static constexpr size_t default_read_buffer_size = 128_KiB;
-static constexpr unsigned default_readahead = 10;
 static constexpr size_t default_write_buffer_size = 128_KiB;
 static constexpr unsigned default_writebehind = 10;
 
