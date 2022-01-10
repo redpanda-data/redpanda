@@ -593,6 +593,18 @@ configuration::configuration()
       {.example = "32768", .visibility = visibility::tunable},
       16_KiB,
       storage::internal::chunk_cache::validate_chunk_size)
+  , storage_read_buffer_size(
+      *this,
+      "storage_read_buffer_size",
+      "Size of each read buffer (one per in-flight read, per log segment)",
+      {.example = "31768", .visibility = visibility::tunable},
+      128_KiB)
+  , storage_read_readahead_count(
+      *this,
+      "storage_read_readahead_count",
+      "How many additional reads to issue ahead of current read location",
+      {.example = "1", .visibility = visibility::tunable},
+      10)
   , max_compacted_log_segment_size(
       *this,
       "max_compacted_log_segment_size",
