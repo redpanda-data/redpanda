@@ -272,7 +272,7 @@ class RpkTool:
 
         cmd = [
             self._rpk_binary(), 'cluster', 'info', '--brokers',
-            self._redpanda.brokers(1)
+            self._redpanda.brokers()
         ]
         output = self._execute(cmd, stdin=None, timeout=timeout)
         parsed = map(_parse_out, output.splitlines())
