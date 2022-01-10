@@ -166,6 +166,10 @@ public:
 
     bool is_update_in_progress(const model::ntp&) const;
 
+    bool has_updates_in_progress() const {
+        return !_update_in_progress.empty();
+    }
+
 private:
     struct waiter {
         explicit waiter(uint64_t id)
