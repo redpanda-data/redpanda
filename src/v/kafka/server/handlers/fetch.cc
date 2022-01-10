@@ -59,69 +59,6 @@ make_partition_response_error(model::partition_id p_id, error_code error) {
     };
 }
 
-int32_t
-control_record_size(int64_t ts_delta, int32_t offset_delta, const iobuf& key) {
-    static constexpr size_t zero_vint_size = vint::vint_size(0);
-    return sizeof(model::record_attributes::type) // attributes
-           + vint::vint_size(ts_delta)            // timestamp delta
-           + vint::vint_size(offset_delta)        // offset_delta
-           + vint::vint_size(key.size_bytes())    // key size
-           + key.size_bytes()                     // key payload
-           + zero_vint_size                       // value size
-           + zero_vint_size;                      // headers size
-}
-
-iobuf make_control_record_batch_key() {
-    iobuf b;
-    response_writer w(b);
-    /**
-     * control record batch schema:
-     *   [version, type]
-     */
-    w.write(model::current_control_record_version);
-    w.write(model::control_record_type::unknown);
-    return b;
-}
-
-/**
- * here we make sure that our internal control batches are correctly adapted
- * for Kafka clients
- */
-model::record_batch adapt_fetch_batch(model::record_batch&& batch) {
-    // pass through data batches
-    if (likely(batch.header().type == model::record_batch_type::raft_data)) {
-        return std::move(batch);
-    }
-    /**
-     * We set control type flag and remove payload from internal batch types
-     */
-    batch.header().attrs.set_control_type();
-    iobuf records;
-
-    batch.for_each_record([&records](model::record r) {
-        auto key = make_control_record_batch_key();
-        auto key_size = key.size_bytes();
-        auto r_size = control_record_size(
-          r.timestamp_delta(), r.offset_delta(), key);
-        model::append_record_to_buffer(
-          records,
-          model::record(
-            r_size,
-            r.attributes(),
-            r.timestamp_delta(),
-            r.offset_delta(),
-            key_size,
-            std::move(key),
-            0,
-            iobuf{},
-            std::vector<model::record_header>{}));
-    });
-    auto header = batch.header();
-    storage::internal::reset_size_checksum_metadata(header, records);
-    return model::record_batch(
-      header, std::move(records), model::record_batch::tag_ctor_ng{});
-}
-
 /**
  * Low-level handler for reading from an ntp. Runs on ntp's home core.
  */
