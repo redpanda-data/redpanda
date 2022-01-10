@@ -447,14 +447,23 @@ class RedpandaService(Service):
                     f"registered: peer {peer.name} admin API not yet available ({e})"
                 )
                 return False
+            found = None
+            for b in admin_brokers:
+                if b['node_id'] == idx:
+                    found = b
+                    break
 
-            found = idx in [b['node_id'] for b in admin_brokers]
             if not found:
                 self.logger.info(
                     f"registered: node {node.name} not yet found in peer {peer.name}'s broker list ({admin_brokers})"
                 )
                 return False
             else:
+                if not found['is_alive']:
+                    self.logger.info(
+                        f"registered: node {node.name} found in {peer.name}'s broker list ({admin_brokers}) but not yet marked as alive"
+                    )
+                    return False
                 self.logger.debug(
                     f"registered: node {node.name} now visible in peer {peer.name}'s broker list ({admin_brokers})"
                 )
