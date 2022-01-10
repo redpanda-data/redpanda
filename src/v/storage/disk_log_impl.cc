@@ -695,7 +695,12 @@ ss::future<> disk_log_impl::new_segment(
       o() >= 0 && t() >= 0, "offset:{} and term:{} must be initialized", o, t);
     return _manager
       .make_log_segment(
-        config(), o, t, pc, storage::default_segment_readahead_size)
+        config(),
+        o,
+        t,
+        pc,
+        storage::default_segment_readahead_size,
+        storage::default_segment_readahead_count)
       .then([this](ss::lw_shared_ptr<segment> handles) mutable {
           return remove_empty_segments().then(
             [this, h = std::move(handles)]() mutable {

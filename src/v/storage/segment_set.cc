@@ -358,7 +358,8 @@ static ss::future<segment_set::underlying_t> open_segments(
                          path,
                          sanitize_fileops,
                          cache_factory(),
-                         default_segment_readahead_size)
+                         default_segment_readahead_size,
+                         default_segment_readahead_count)
                   .then([&segs](ss::lw_shared_ptr<segment> p) {
                       segs.push_back(std::move(p));
                   });
