@@ -27,9 +27,11 @@ bash <(curl -s https://gist.githubusercontent.com/0x5d/56422a0c447e58d8ccbfa0ce1
 
 TLS encrypts network traffic between a client and a server, but does not protect against access to a server. With TLS alone (not mTLS), you need to use ACLs to gate access to your brokers.
 
-Mutual TLS, or 2-way TLS, is an authentication method in which both the server and the client verify each other's private keys. A thorough description of mTLS can be read [here](https://www.cloudflare.com/learning/access-management/what-is-mutual-tls/).
+mTLS, or 2-way TLS, is an authentication method in which the client and the server must both present certificates. This way both can decide whether the other party can be trusted by ensuring they are who they claim to be.
 
-If you're on Kubernetes, be sure to set up the [connectivity in the Kubernetes network](https://vectorized.io/docs/kubernetes-connectivity/).
+Cloudfare made a very good description of what mTLS is. If you want [you can check their website for more info on that](https://www.cloudflare.com/learning/access-management/what-is-mutual-tls/).
+
+If you're on Kubernetes, [we wrote a TLS guide exclusive for it](https://vectorized.io/docs/tls-kubernetes/).
 
 To enable TLS, set the `require_client_auth` field to `true` in the required listener's configuration. For example, to enable mTLS for the "external" API listener:
 
