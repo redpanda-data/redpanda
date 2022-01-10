@@ -316,8 +316,8 @@ void archiver_fixture::initialize_shard(
                        d.base_offset,
                        d.term,
                        ss::default_priority_class(),
-                       storage::default_segment_readahead_size,
-                       storage::default_segment_readahead_count)
+                       128_KiB,
+                       10)
                      .get0();
         vlog(fixt_log.trace, "write random batches to segment");
         auto layout = write_random_batches(
