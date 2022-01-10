@@ -34,9 +34,6 @@ struct segment_closed_exception final : std::exception {
     }
 };
 
-constexpr size_t default_segment_readahead_size = 128 * 1024;
-constexpr unsigned default_segment_readahead_count = 10;
-
 class segment {
 public:
     struct offset_tracker {
