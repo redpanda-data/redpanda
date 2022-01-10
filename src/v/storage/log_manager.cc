@@ -228,7 +228,9 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
                  _config.sanitize_fileops,
                  cfg.is_compacted(),
                  [this, cache_enabled] { return create_cache(cache_enabled); },
-                 _abort_source)
+                 _abort_source,
+                 config::shard_local_cfg().storage_read_buffer_size(),
+                 config::shard_local_cfg().storage_read_readahead_count())
           .then([this, cfg = std::move(cfg)](segment_set segments) mutable {
               auto l = storage::make_disk_backed_log(
                 std::move(cfg), *this, std::move(segments), _kvstore);
