@@ -236,7 +236,8 @@ class Admin:
     def transfer_leadership_to(self, *, namespace, topic, partition, target):
         """
         Looks up current ntp leader and transfer leadership to target node, 
-        this operations is NOP when current leader is the same as target. 
+        this operations is NOP when current leader is the same as target.
+        If user pass None for target this function will choose next replica for new leader.
         If leadership transfer was performed this function return True
         """
         target_id = self.redpanda.idx(target) if isinstance(
@@ -253,7 +254,8 @@ class Admin:
             return p
 
         def _has_leader():
-            return _get_details()['leader_id'] != -1
+            return self.get_partition_leader(
+                namespace=namespace, topic=topic, partition=partition) != -1
 
         wait_until(_has_leader,
                    timeout_sec=30,
@@ -261,9 +263,14 @@ class Admin:
                    err_msg="Failed to establish current leader")
 
         details = _get_details()
-        if details['leader_id'] == target_id:
-            return False
-        path = f"raft/{details['raft_group_id']}/transfer_leadership?target={target_id}"
+
+        if target_id is not None:
+            if details['leader_id'] == target_id:
+                return False
+            path = f"raft/{details['raft_group_id']}/transfer_leadership?target={target_id}"
+        else:
+            path = f"raft/{details['raft_group_id']}/transfer_leadership"
+
         leader = self.redpanda.get_node(details['leader_id'])
         ret = self._request('post', path=path, node=leader)
         return ret.status_code == 200
