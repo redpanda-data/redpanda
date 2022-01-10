@@ -56,11 +56,12 @@ model::record_batch_header kafka_batch_adapter::read_header(iobuf_parser& in) {
     // Note:
     //   if you change this, please remember to change batch_consumer.h
     int32_t size_bytes
-      = batch_length - internal::kafka_header_size
-        + model::packed_record_batch_header_size
-        // Kafka *does not* include the first 2 fields in the size calculation
-        // they build the types bottoms up, not top down
-        + sizeof(base_offset) + sizeof(batch_length);
+      = batch_length - static_cast<int32_t>(internal::kafka_header_size)
+        + static_cast<int32_t>(
+          model::packed_record_batch_header_size
+          // Kafka *does not* include the first 2 fields in the size calculation
+          // they build the types bottoms up, not top down
+          + sizeof(base_offset) + sizeof(batch_length));
 
     auto record_count = in.consume_be_type<int32_t>();
     auto header = model::record_batch_header{
