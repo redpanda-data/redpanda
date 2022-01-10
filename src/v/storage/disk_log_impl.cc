@@ -9,6 +9,7 @@
 
 #include "storage/disk_log_impl.h"
 
+#include "config/configuration.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
@@ -699,8 +700,8 @@ ss::future<> disk_log_impl::new_segment(
         o,
         t,
         pc,
-        storage::default_segment_readahead_size,
-        storage::default_segment_readahead_count)
+        config::shard_local_cfg().storage_read_buffer_size(),
+        config::shard_local_cfg().storage_read_readahead_count())
       .then([this](ss::lw_shared_ptr<segment> handles) mutable {
           return remove_empty_segments().then(
             [this, h = std::move(handles)]() mutable {

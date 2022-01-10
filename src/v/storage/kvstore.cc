@@ -256,8 +256,8 @@ ss::future<> kvstore::roll() {
                  model::term_id(0),
                  ss::default_priority_class(),
                  record_version_type::v1,
-                 default_segment_readahead_size,
-                 default_segment_readahead_count,
+                 config::shard_local_cfg().storage_read_buffer_size(),
+                 config::shard_local_cfg().storage_read_readahead_count(),
                  _conf.sanitize_fileops,
                  std::nullopt)
           .then([this](ss::lw_shared_ptr<segment> seg) {
@@ -297,8 +297,8 @@ ss::future<> kvstore::roll() {
                        model::term_id(0),
                        ss::default_priority_class(),
                        record_version_type::v1,
-                       default_segment_readahead_size,
-                       default_segment_readahead_count,
+                       config::shard_local_cfg().storage_read_buffer_size(),
+                       config::shard_local_cfg().storage_read_readahead_count(),
                        _conf.sanitize_fileops,
                        std::nullopt)
                 .then([this](ss::lw_shared_ptr<segment> seg) {
@@ -377,13 +377,16 @@ ss::future<> kvstore::recover() {
         load_snapshot_in_thread();
 
         auto dir = std::filesystem::path(_ntpc.work_directory());
-        auto segments = recover_segments(
-                          std::move(dir),
-                          debug_sanitize_files::yes,
-                          _ntpc.is_compacted(),
-                          [] { return std::nullopt; },
-                          _as)
-                          .get0();
+        auto segments
+          = recover_segments(
+              std::move(dir),
+              debug_sanitize_files::yes,
+              _ntpc.is_compacted(),
+              [] { return std::nullopt; },
+              _as,
+              config::shard_local_cfg().storage_read_buffer_size(),
+              config::shard_local_cfg().storage_read_readahead_count())
+              .get0();
 
         replay_segments_in_thread(std::move(segments));
     });
