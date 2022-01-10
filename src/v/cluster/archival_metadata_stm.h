@@ -34,7 +34,7 @@ public:
 
     /// Add the difference between manifests to the raft log, replicate it and
     /// wait until it is applied to the STM.
-    ss::future<bool>
+    ss::future<std::error_code>
     add_segments(const cloud_storage::manifest&, retry_chain_node&);
 
     /// A set of archived segments. NOTE: manifest can be out-of-date if this
@@ -46,7 +46,7 @@ public:
     ss::future<> stop() override;
 
 private:
-    ss::future<bool>
+    ss::future<std::error_code>
     do_add_segments(const cloud_storage::manifest&, retry_chain_node&);
 
     ss::future<> apply(model::record_batch batch) override;
