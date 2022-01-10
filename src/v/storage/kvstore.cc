@@ -257,6 +257,7 @@ ss::future<> kvstore::roll() {
                  ss::default_priority_class(),
                  record_version_type::v1,
                  default_segment_readahead_size,
+                 default_segment_readahead_count,
                  _conf.sanitize_fileops,
                  std::nullopt)
           .then([this](ss::lw_shared_ptr<segment> seg) {
@@ -297,6 +298,7 @@ ss::future<> kvstore::roll() {
                        ss::default_priority_class(),
                        record_version_type::v1,
                        default_segment_readahead_size,
+                       default_segment_readahead_count,
                        _conf.sanitize_fileops,
                        std::nullopt)
                 .then([this](ss::lw_shared_ptr<segment> seg) {

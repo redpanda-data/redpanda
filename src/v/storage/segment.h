@@ -35,6 +35,7 @@ struct segment_closed_exception final : std::exception {
 };
 
 constexpr size_t default_segment_readahead_size = 128 * 1024;
+constexpr unsigned default_segment_readahead_count = 10;
 
 class segment {
 public:
@@ -212,7 +213,8 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
   const std::filesystem::path& path,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
-  size_t buf_size);
+  size_t buf_size,
+  unsigned read_ahead);
 
 ss::future<ss::lw_shared_ptr<segment>> make_segment(
   const ntp_config& ntpc,
@@ -221,6 +223,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   ss::io_priority_class pc,
   record_version_type version,
   size_t buf_size,
+  unsigned read_ahead,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache);
 

@@ -32,7 +32,8 @@ public:
       ss::sstring filename,
       ss::file,
       size_t file_size,
-      size_t buffer_size) noexcept;
+      size_t buffer_size,
+      unsigned read_ahead) noexcept;
     ~segment_reader() noexcept = default;
     segment_reader(segment_reader&&) noexcept = default;
     segment_reader& operator=(segment_reader&&) noexcept = default;
@@ -72,6 +73,7 @@ private:
     ss::file _data_file;
     size_t _file_size{0};
     size_t _buffer_size{0};
+    unsigned _read_ahead{0};
 
     friend std::ostream& operator<<(std::ostream&, const segment_reader&);
 };

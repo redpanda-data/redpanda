@@ -195,6 +195,7 @@ public:
       model::term_id,
       ss::io_priority_class pc,
       size_t read_buffer_size,
+      unsigned read_ahead,
       record_version_type = record_version_type::v1);
 
     const log_config& config() const { return _config; }

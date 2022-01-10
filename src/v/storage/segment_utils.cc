@@ -424,7 +424,8 @@ ss::future<> do_swap_data_file_handles(
                   s->reader().filename(),
                   std::move(fd),
                   size,
-                  default_segment_readahead_size);
+                  default_segment_readahead_size,
+                  default_segment_readahead_count);
                 // update partition size probe
                 pb.delete_segment(*s.get());
                 std::swap(s->reader(), r);
@@ -620,7 +621,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
       path.string(),
       std::move(reader_fd),
       segment_size,
-      default_segment_readahead_size);
+      default_segment_readahead_size,
+      default_segment_readahead_count);
 
     // build an empty index for the segment
     auto index_name = path;

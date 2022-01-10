@@ -542,7 +542,8 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
   const std::filesystem::path& path,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
-  size_t buf_size) {
+  size_t buf_size,
+  unsigned read_ahead) {
     auto const meta = segment_path::parse_segment_filename(
       path.filename().string());
     if (!meta || meta->version != record_version_type::v1) {
@@ -570,10 +571,10 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
                 std::make_tuple(s.st_size, f));
           });
       })
-      .then([buf_size, path](std::tuple<uint64_t, ss::file> t) {
+      .then([buf_size, path, read_ahead](std::tuple<uint64_t, ss::file> t) {
           auto& [size, fd] = t;
           return std::make_unique<segment_reader>(
-            path.string(), std::move(fd), size, buf_size);
+            path.string(), std::move(fd), size, buf_size, read_ahead);
       })
       .then([batch_cache = std::move(batch_cache), meta, sanitize_fileops](
               std::unique_ptr<segment_reader> rdr) mutable {
@@ -626,13 +627,18 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   ss::io_priority_class pc,
   record_version_type version,
   size_t buf_size,
+  unsigned read_ahead,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache) {
     auto path = segment_path::make_segment_path(
       ntpc, base_offset, term, version);
     vlog(stlog.info, "Creating new segment {}", path.string());
     return open_segment(
-             path, sanitize_fileops, std::move(batch_cache), buf_size)
+             path,
+             sanitize_fileops,
+             std::move(batch_cache),
+             buf_size,
+             read_ahead)
       .then([path, &ntpc, sanitize_fileops, pc](
               ss::lw_shared_ptr<segment> seg) {
           return with_segment(

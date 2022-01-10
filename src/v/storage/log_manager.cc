@@ -155,9 +155,11 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
   model::term_id term,
   ss::io_priority_class pc,
   size_t read_buf_size,
+  unsigned read_ahead,
   record_version_type version) {
     return ss::with_gate(
-      _open_gate, [this, &ntp, base_offset, term, pc, version, read_buf_size] {
+      _open_gate,
+      [this, &ntp, base_offset, term, pc, version, read_buf_size, read_ahead] {
           return make_segment(
             ntp,
             base_offset,
@@ -165,6 +167,7 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
             pc,
             version,
             read_buf_size,
+            read_ahead,
             _config.sanitize_fileops,
             create_cache(ntp.cache_enabled()));
       });
