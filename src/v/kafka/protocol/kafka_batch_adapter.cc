@@ -94,13 +94,17 @@ model::record_batch_header kafka_batch_adapter::read_header(iobuf_parser& in) {
 void kafka_batch_adapter::verify_crc(int32_t expected_crc, iobuf_parser in) {
     auto crc = crc::crc32c();
 
-    // 1. move the cursor to correct endpoint
+    // move the cursor to correct offset where the data to be checksummed
+    // begins. That location skips the following 21 bytes:
+    //
     //   - 8 base offset
     //   - 4 batch length
     //   - 4 partition leader epoch
     //   - 1 magic
     //   - 4 exepcted crc
-    in.skip(21);
+    //
+    static constexpr size_t checksum_data_offset_start = 21;
+    in.skip(checksum_data_offset_start);
 
     // 2. consume & checksum the CRC
     in.consume(in.bytes_left(), [&crc](const char* src, size_t n) {
