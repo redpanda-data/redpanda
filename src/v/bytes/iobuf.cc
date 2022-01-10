@@ -135,9 +135,30 @@ iobuf iobuf_copy(iobuf::iterator_consumer& in, size_t len) {
     iobuf ret;
 
     int bytes_left = len;
+    size_t alloc_size = details::io_allocation_size::ss_next_allocation_size(
+      bytes_left);
+
     while (bytes_left) {
-        ss::temporary_buffer<char> buf(
+        alloc_size = std::min(
+          alloc_size,
           details::io_allocation_size::ss_next_allocation_size(bytes_left));
+
+        // Try and allocate a fragment, backing off our alloc size if we can't.
+        ss::temporary_buffer<char> buf;
+        while (buf.get() == nullptr) {
+            try {
+                buf = ss::temporary_buffer<char>(alloc_size);
+            } catch (std::bad_alloc const& e) {
+                if (alloc_size > 0x1000) {
+                    // We were asking for more than 4k and couldn't get it,
+                    // try asking for smaller fragments.
+                    alloc_size >>= 1;
+                } else {
+                    // We couldn't even get one 4k extent: give up.
+                    throw;
+                }
+            }
+        }
 
         size_t offset = 0;
         in.consume(buf.size(), [&buf, &offset](const char* src, size_t size) {
