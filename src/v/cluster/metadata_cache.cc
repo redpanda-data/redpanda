@@ -111,9 +111,9 @@ ss::future<std::vector<broker_ptr>> metadata_cache::all_alive_brokers() const {
 
     std::set<model::node_id> brokers_with_health;
     for (auto& st : res.value()) {
+        brokers_with_health.insert(st.id);
         if (st.is_alive) {
             auto broker = _members_table.local().get_broker(st.id);
-            brokers_with_health.insert(st.id);
             if (broker) {
                 brokers.push_back(std::move(*broker));
             }
