@@ -194,8 +194,8 @@ public:
       model::offset,
       model::term_id,
       ss::io_priority_class pc,
-      record_version_type = record_version_type::v1,
-      size_t buffer_size = default_segment_readahead_size);
+      size_t read_buffer_size,
+      record_version_type = record_version_type::v1);
 
     const log_config& config() const { return _config; }
 

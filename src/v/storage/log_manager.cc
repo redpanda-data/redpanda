@@ -144,22 +144,27 @@ ss::future<> log_manager::housekeeping() {
           }
       });
 }
+
+/**
+ *
+ * @param read_buf_size size of underlying ss::input_stream's buffer
+ */
 ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
   const ntp_config& ntp,
   model::offset base_offset,
   model::term_id term,
   ss::io_priority_class pc,
-  record_version_type version,
-  size_t buf_size) {
+  size_t read_buf_size,
+  record_version_type version) {
     return ss::with_gate(
-      _open_gate, [this, &ntp, base_offset, term, pc, version, buf_size] {
+      _open_gate, [this, &ntp, base_offset, term, pc, version, read_buf_size] {
           return make_segment(
             ntp,
             base_offset,
             term,
             pc,
             version,
-            buf_size,
+            read_buf_size,
             _config.sanitize_fileops,
             create_cache(ntp.cache_enabled()));
       });

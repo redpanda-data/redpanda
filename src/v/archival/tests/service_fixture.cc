@@ -315,7 +315,8 @@ void archiver_fixture::initialize_shard(
                        storage::ntp_config(d.ntp, data_dir.string()),
                        d.base_offset,
                        d.term,
-                       ss::default_priority_class())
+                       ss::default_priority_class(),
+                       storage::default_segment_readahead_size)
                      .get0();
         vlog(fixt_log.trace, "write random batches to segment");
         auto layout = write_random_batches(
