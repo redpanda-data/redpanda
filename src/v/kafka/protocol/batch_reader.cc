@@ -35,7 +35,8 @@ public:
 
     int32_t size_bytes() const { return _size_bytes; }
     int32_t record_bytes() const {
-        return _size_bytes - model::packed_record_batch_header_size;
+        return _size_bytes
+               - static_cast<int32_t>(model::packed_record_batch_header_size);
     }
     model::offset last_offset() const {
         return _base_offset + model::offset{_last_offset_delta};
