@@ -327,7 +327,30 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
   std::vector<ntp_fetch_config> ntp_fetch_configs,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
-    return ssx::parallel_transform(
+    size_t total_max_bytes = 0;
+    size_t total_max_bytes_strict = 0;
+    for (const auto& c : ntp_fetch_configs) {
+        total_max_bytes += c.cfg.max_bytes;
+        total_max_bytes_strict += c.cfg.strict_max_bytes;
+    }
+
+    auto max_bytes_per_fetch
+      = config::shard_local_cfg().kafka_max_bytes_per_fetch();
+    if (total_max_bytes > max_bytes_per_fetch) {
+        auto per_partition = max_bytes_per_fetch / ntp_fetch_configs.size();
+        vlog(
+          klog.info,
+          "Fetch requested very large response ({}), clamping each partition's "
+          "max_bytes to {} bytes",
+          total_max_bytes,
+          per_partition);
+
+        for (auto& c : ntp_fetch_configs) {
+            c.cfg.max_bytes = per_partition;
+        }
+    }
+
+    auto results = co_await ssx::parallel_transform(
       std::move(ntp_fetch_configs),
       [&mgr, &md_cache, deadline, foreign_read](
         const ntp_fetch_config& ntp_cfg) {
@@ -339,6 +362,17 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
                 return res;
             });
       });
+
+    size_t total_size = 0;
+    for (const auto& r : results) {
+        total_size += r.data_size_bytes();
+    }
+    vlog(
+      klog.debug,
+      "fetch_ntps_in_parallel: for {} partitions returning {} total bytes",
+      results.size(),
+      total_size);
+    co_return results;
 }
 
 /**

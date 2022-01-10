@@ -541,6 +541,13 @@ configuration::configuration()
       "Fail-safe maximum throttle delay on kafka requests",
       {.visibility = visibility::tunable},
       60'000ms)
+  , kafka_max_bytes_per_fetch(
+      *this,
+      "kafka_max_bytes_per_fetch",
+      "Limit fetch responses to this many bytes, even if total of partition "
+      "bytes limits is higher",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      64_MiB)
   , raft_io_timeout_ms(
       *this,
       "raft_io_timeout_ms",
@@ -593,6 +600,18 @@ configuration::configuration()
       {.example = "32768", .visibility = visibility::tunable},
       16_KiB,
       storage::internal::chunk_cache::validate_chunk_size)
+  , storage_read_buffer_size(
+      *this,
+      "storage_read_buffer_size",
+      "Size of each read buffer (one per in-flight read, per log segment)",
+      {.example = "31768", .visibility = visibility::tunable},
+      128_KiB)
+  , storage_read_readahead_count(
+      *this,
+      "storage_read_readahead_count",
+      "How many additional reads to issue ahead of current read location",
+      {.example = "1", .visibility = visibility::tunable},
+      10)
   , max_compacted_log_segment_size(
       *this,
       "max_compacted_log_segment_size",

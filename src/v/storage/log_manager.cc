@@ -144,22 +144,30 @@ ss::future<> log_manager::housekeeping() {
           }
       });
 }
+
+/**
+ *
+ * @param read_buf_size size of underlying ss::input_stream's buffer
+ */
 ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
   const ntp_config& ntp,
   model::offset base_offset,
   model::term_id term,
   ss::io_priority_class pc,
-  record_version_type version,
-  size_t buf_size) {
+  size_t read_buf_size,
+  unsigned read_ahead,
+  record_version_type version) {
     return ss::with_gate(
-      _open_gate, [this, &ntp, base_offset, term, pc, version, buf_size] {
+      _open_gate,
+      [this, &ntp, base_offset, term, pc, version, read_buf_size, read_ahead] {
           return make_segment(
             ntp,
             base_offset,
             term,
             pc,
             version,
-            buf_size,
+            read_buf_size,
+            read_ahead,
             _config.sanitize_fileops,
             create_cache(ntp.cache_enabled()));
       });
@@ -220,7 +228,9 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
                  _config.sanitize_fileops,
                  cfg.is_compacted(),
                  [this, cache_enabled] { return create_cache(cache_enabled); },
-                 _abort_source)
+                 _abort_source,
+                 config::shard_local_cfg().storage_read_buffer_size(),
+                 config::shard_local_cfg().storage_read_readahead_count())
           .then([this, cfg = std::move(cfg)](segment_set segments) mutable {
               auto l = storage::make_disk_backed_log(
                 std::move(cfg), *this, std::move(segments), _kvstore);

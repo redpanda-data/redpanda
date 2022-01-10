@@ -13,6 +13,7 @@
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/types.h"
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/parser.h"
@@ -141,8 +142,9 @@ remote_segment::data_stream(size_t pos, ss::io_priority_class io_priority) {
     ss::gate::holder g(_gate);
     co_await hydrate();
     ss::file_input_stream_options options{};
-    options.buffer_size = default_read_buffer_size;
-    options.read_ahead = default_readahead;
+    options.buffer_size = config::shard_local_cfg().storage_read_buffer_size();
+    options.read_ahead
+      = config::shard_local_cfg().storage_read_readahead_count();
     options.io_priority_class = io_priority;
     auto data_stream = ss::make_file_input_stream(
       _data_file, pos, std::move(options));
@@ -577,14 +579,18 @@ size_t remote_segment_batch_reader::produce(model::record_batch batch) {
 }
 
 ss::future<> remote_segment_batch_reader::stop() {
-    vlog(_ctxlog.debug, "remote_segment_batch_reader::close");
+    vlog(_ctxlog.debug, "remote_segment_batch_reader::stop");
     co_await _gate.close();
     if (_parser) {
-        vlog(
-          _ctxlog.debug, "remote_segment_batch_reader::close - parser-close");
+        vlog(_ctxlog.debug, "remote_segment_batch_reader::stop - parser-close");
         co_await _parser->close();
         _parser.reset();
     }
+    _stopped = true;
+}
+
+remote_segment_batch_reader::~remote_segment_batch_reader() noexcept {
+    vassert(_stopped, "Destroyed without stopping");
 }
 
 } // namespace cloud_storage
