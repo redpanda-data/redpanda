@@ -32,6 +32,7 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::topic_already_exists:
         return error_code::topic_already_exists;
     case cluster::errc::topic_not_exists:
+        return error_code::unknown_topic_or_partition;
     case cluster::errc::source_topic_still_in_use:
         return error_code::cluster_authorization_failed;
     case cluster::errc::timeout:
