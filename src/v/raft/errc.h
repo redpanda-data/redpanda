@@ -30,6 +30,7 @@ enum class errc : int16_t {
     configuration_change_in_progress,
     node_does_not_exists,
     leadership_transfer_in_progress,
+    transfer_to_current_leader,
     node_already_exists,
     invalid_configuration_update,
     not_voter,
@@ -72,6 +73,8 @@ struct errc_category final : public std::error_category {
             return "Node does not exists in configuration";
         case errc::leadership_transfer_in_progress:
             return "Node is currently transferring leadership";
+        case errc::transfer_to_current_leader:
+            return "Target for leadership transfer is current leader";
         case errc::node_already_exists:
             return "Node does already exists in configuration";
         case errc::invalid_configuration_update:
