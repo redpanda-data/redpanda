@@ -785,6 +785,7 @@ struct config_update_request final {
 
 struct config_update_reply {
     errc error;
+    cluster::config_version latest_version{config_version_unset};
 };
 
 } // namespace cluster

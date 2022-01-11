@@ -24,16 +24,21 @@ public:
     // on the same shard that should keep its version state up to date.
     static constexpr ss::shard_id version_shard = cluster::controller_stm_shard;
 
+    struct patch_result {
+        std::error_code errc;
+        config_version version;
+    };
+
     config_frontend(
       ss::sharded<controller_stm>&,
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_leaders_table>&,
       ss::sharded<ss::abort_source>&);
 
-    ss::future<std::error_code>
+    ss::future<patch_result>
       patch(config_update_request, model::timeout_clock::time_point);
 
-    ss::future<std::error_code>
+    ss::future<patch_result>
     do_patch(config_update_request&&, model::timeout_clock::time_point);
 
     ss::future<std::error_code>

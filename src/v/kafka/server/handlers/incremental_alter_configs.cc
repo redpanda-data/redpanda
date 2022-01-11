@@ -429,7 +429,8 @@ static ss::future<std::vector<resp_resource_t>> alter_broker_configuartion(
                         + config::shard_local_cfg()
                             .alter_topic_cfg_timeout_ms());
                 })
-              .then([resource](std::error_code ec) {
+              .then([resource](cluster::config_frontend::patch_result pr) {
+                  std::error_code& ec = pr.errc;
                   error_code kec = error_code::none;
 
                   std::string err_str;

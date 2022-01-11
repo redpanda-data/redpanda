@@ -33,11 +33,12 @@ ss::future<> config_frontend::stop() { return ss::now(); }
  * RPC wrapper on do_patch, to dispatch to the controller leader
  * if we aren't it.
  */
-ss::future<std::error_code> config_frontend::patch(
+ss::future<config_frontend::patch_result> config_frontend::patch(
   config_update_request update, model::timeout_clock::time_point timeout) {
     auto leader = _leaders.local().get_leader(model::controller_ntp);
     if (!leader) {
-        co_return errc::no_leader_controller;
+        co_return patch_result{
+          .errc = errc::no_leader_controller, .version = config_version_unset};
     }
     auto self = config::node().node_id();
     if (leader == self) {
@@ -55,9 +56,12 @@ ss::future<std::error_code> config_frontend::patch(
                              std::move(update), rpc::client_opts(timeout));
                        });
         if (res.has_error()) {
-            co_return res.error();
+            co_return patch_result{
+              .errc = res.error(), .version = config_version_unset};
         } else {
-            co_return res.value().data.error;
+            co_return patch_result{
+              .errc = res.value().data.error,
+              .version = res.value().data.latest_version};
         }
     }
 }
@@ -71,7 +75,7 @@ ss::future<std::error_code> config_frontend::patch(
  * Must be called on `version_shard` to enable serialized generation of
  * version numbers.
  */
-ss::future<std::error_code> config_frontend::do_patch(
+ss::future<config_frontend::patch_result> config_frontend::do_patch(
   config_update_request&& update, model::timeout_clock::time_point timeout) {
     vassert(
       ss::this_shard_id() == version_shard, "Must be called on version_shard");
@@ -79,7 +83,8 @@ ss::future<std::error_code> config_frontend::do_patch(
     if (_next_version == config_version_unset) {
         // Race with config_manager initialization which is responsible for
         // setting _next_version once loaded.
-        co_return errc::waiting_for_recovery;
+        co_return config_frontend::patch_result{
+          .errc = errc::waiting_for_recovery, .version = config_version_unset};
     }
 
     auto data = cluster_config_delta_cmd_data();
@@ -89,12 +94,16 @@ ss::future<std::error_code> config_frontend::do_patch(
 
     // Take _write_lock to serialize updates to _next_version
     co_return co_await _write_lock.with([this, data, timeout] {
-        auto cmd = cluster_config_delta_cmd(_next_version, data);
+        auto projected_version = _next_version;
+        auto cmd = cluster_config_delta_cmd(projected_version, data);
         vlog(
           clusterlog.trace,
           "patch: writing delta with version {}",
-          _next_version);
-        return replicate_and_wait(_stm, _as, std::move(cmd), timeout);
+          projected_version);
+        return replicate_and_wait(_stm, _as, std::move(cmd), timeout)
+          .then([projected_version](std::error_code errc) {
+              return patch_result{.errc = errc, .version = projected_version};
+          });
     });
 }
 
