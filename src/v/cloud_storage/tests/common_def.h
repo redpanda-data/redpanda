@@ -11,22 +11,6 @@
 #include <boost/test/tools/interface.hpp>
 
 namespace cloud_storage {
-static constexpr std::string_view manifest_payload = R"json({
-    "version": 1,
-    "namespace": "test-ns",
-    "topic": "test-topic",
-    "partition": 42,
-    "revision": 0,
-    "last_offset": 1004,
-    "segments": {
-        "1-2-v1.log": {
-            "is_compacted": false,
-            "size_bytes": 100,
-            "committed_offset": 2,
-            "base_offset": 1
-        }
-    }
-})json";
 static const auto manifest_namespace = model::ns("test-ns");    // NOLINT
 static const auto manifest_topic = model::topic("test-topic");  // NOLINT
 static const auto manifest_partition = model::partition_id(42); // NOLINT
@@ -35,21 +19,11 @@ static const auto manifest_ntp = model::ntp(                    // NOLINT
   manifest_topic,
   manifest_partition);
 static const auto manifest_revision = model::revision_id(0); // NOLINT
-static const ss::sstring manifest_url = ssx::sformat(        // NOLINT
+static const auto archiver_term = model::term_id{123};
+static const ss::sstring manifest_url = ssx::sformat( // NOLINT
   "20000000/meta/{}_{}/manifest.json",
   manifest_ntp.path(),
   manifest_revision());
-// NOLINTNEXTLINE
-static const ss::sstring segment_url
-  = "ce4fd1a3/test-ns/test-topic/42_0/1-2-v1.log";
-
-static const std::vector<s3_imposter_fixture::expectation>
-  default_expectations({
-    s3_imposter_fixture::expectation{
-      .url = "/" + manifest_url, .body = ss::sstring(manifest_payload)},
-    s3_imposter_fixture::expectation{
-      .url = "/" + segment_url, .body = "segment1"},
-  });
 
 inline iobuf iobuf_deep_copy(const iobuf& i) {
     iobuf res;

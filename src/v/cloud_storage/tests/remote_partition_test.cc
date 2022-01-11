@@ -193,14 +193,11 @@ make_imposter_expectations(
     std::vector<cloud_storage_fixture::expectation> results;
     model::offset delta{0};
     for (const auto& s : segments) {
-        // assume all segments has term=1
-        auto url = m.get_remote_segment_path(s.sname);
         auto body = s.bytes;
         if (truncate_segments) {
             body = s.bytes.substr(0, s.bytes.size() / 2);
         }
-        results.push_back(cloud_storage_fixture::expectation{
-          .url = "/" + url().string(), .body = body});
+
         cloud_storage::manifest::segment_meta meta{
           .is_compacted = false,
           .size_bytes = s.bytes.size(),
@@ -209,9 +206,15 @@ make_imposter_expectations(
           .base_timestamp = {},
           .max_timestamp = {},
           .delta_offset = model::offset(delta),
+          .ntp_revision = m.get_revision_id(),
         };
         m.add(s.sname, meta);
+
         delta = delta + model::offset(s.num_config_records);
+
+        auto url = m.generate_segment_path(s.sname, meta);
+        results.push_back(cloud_storage_fixture::expectation{
+          .url = "/" + url().string(), .body = body});
     }
     std::stringstream ostr;
     m.serialize(ostr);
@@ -316,7 +319,6 @@ static model::record_batch_header read_single_batch_from_remote_partition(
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::manifest>(
       manifest_ntp, manifest_revision);
-    offset_translator ot;
     storage::log_reader_config reader_config(
       target, target, ss::default_priority_class());
 
@@ -347,7 +349,6 @@ static std::vector<model::record_batch_header> scan_remote_partition(
     auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::manifest>(
       manifest_ntp, manifest_revision);
-    offset_translator ot;
     storage::log_reader_config reader_config(
       base, max, ss::default_priority_class());
 

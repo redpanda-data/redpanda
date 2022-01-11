@@ -20,6 +20,7 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "ssx/sformat.h"
+#include "storage/fs_utils.h"
 #include "storage/ntp_config.h"
 
 #include <seastar/core/coroutine.hh>
@@ -46,19 +47,6 @@ namespace cloud_storage {
 std::ostream& operator<<(std::ostream& s, const manifest_path_components& c) {
     fmt::print(
       s, "{{{}: {}-{}-{}-{}}}", c._origin, c._ns, c._topic, c._part, c._rev);
-    return s;
-}
-
-std::ostream& operator<<(std::ostream& s, const segment_path_components& c) {
-    fmt::print(
-      s,
-      "{{{}: {}-{}-{}-{}-{}}}",
-      c._origin,
-      c._ns,
-      c._topic,
-      c._part,
-      c._rev,
-      c._name);
     return s;
 }
 
@@ -131,119 +119,37 @@ get_manifest_path_components(const std::filesystem::path& path) {
     return std::nullopt;
 }
 
-/// Parse segment file name
-/// \return offset and success flag
-std::optional<model::offset>
-get_base_offset(const std::filesystem::path& path) {
-    auto stem = path.stem().string();
-    // parse offset component
-    auto ix_off = stem.find('-');
-    if (ix_off == std::string::npos) {
+std::optional<segment_name_components>
+parse_segment_name(const segment_name& name) {
+    auto parsed = storage::segment_path::parse_segment_filename(name);
+    if (!parsed) {
         return std::nullopt;
     }
-    int64_t off = 0;
-    auto eo = std::from_chars(stem.data(), stem.data() + ix_off, off);
-    if (eo.ec != std::errc()) {
-        return std::nullopt;
-    }
-    return model::offset(off);
-}
-
-/// Parse segment file name
-/// \return offset, term id, and success flag
-std::tuple<model::offset, model::term_id, bool>
-parse_segment_name(const std::filesystem::path& path) {
-    static constexpr auto bad_result = std::make_tuple(
-      model::offset(), model::term_id(), false);
-    auto stem = path.stem().string();
-    // parse offset component
-    auto ix_off = stem.find('-');
-    if (ix_off == std::string::npos) {
-        return bad_result;
-    }
-    int64_t off = 0;
-    auto eo = std::from_chars(stem.data(), stem.data() + ix_off, off);
-    if (eo.ec != std::errc()) {
-        return bad_result;
-    }
-    // parse term id
-    auto ix_term = stem.find('-', ix_off + 1);
-    if (ix_term == std::string::npos) {
-        return bad_result;
-    }
-    int64_t term = 0;
-    auto et = std::from_chars(
-      stem.data() + ix_off + 1, stem.data() + ix_term, term);
-    if (et.ec != std::errc()) {
-        return bad_result;
-    }
-    return std::make_tuple(model::offset(off), model::term_id(term), true);
-}
-
-std::optional<segment_path_components>
-get_segment_path_components(const std::filesystem::path& path) {
-    enum {
-        ix_prefix,
-        ix_namespace,
-        ix_topic,
-        ix_part_rev,
-        ix_segment_name,
-        total_components
+    return segment_name_components{
+      .base_offset = parsed->base_offset,
+      .term = parsed->term,
     };
-    segment_path_components res;
-    res._origin = path;
-    if (path.has_parent_path() == false) {
-        // Shortcut, we're dealing with the segment name from manifest
-        auto [off, term, ok] = parse_segment_name(path);
-        if (!ok) {
-            return std::nullopt;
-        }
-        res._name = segment_name(path.string());
-        res._base_offset = off;
-        res._term = term;
-        return res;
-    }
-    int ix = 0;
-    for (const auto& c : path) {
-        ss::sstring p = c.string();
-        switch (ix++) {
-        case ix_prefix:
-            break;
-        case ix_namespace:
-            res._ns = model::ns(std::move(p));
-            break;
-        case ix_topic:
-            res._topic = model::topic(std::move(p));
-            break;
-        case ix_part_rev:
-            if (!parse_partition_and_revision(p, res)) {
-                return std::nullopt;
-            }
-            break;
-        case ix_segment_name:
-            res._name = cloud_storage::segment_name(std::move(p));
-            break;
-        }
-    }
-    if (ix != total_components) {
-        return std::nullopt;
-    }
-    auto [off, term, ok] = parse_segment_name(path);
-    if (!ok) {
-        return std::nullopt;
-    }
-    res._base_offset = off;
-    res._term = term;
-    res._is_full = true;
-    return res;
 }
 
-std::ostream& operator<<(std::ostream& o, const manifest::key& key) {
-    fmt::print(
-      o,
-      "{{{}}}",
-      std::visit([](auto&& k) { return std::filesystem::path(k()); }, key));
-    return o;
+remote_segment_path generate_remote_segment_path(
+  const model::ntp& ntp,
+  model::revision_id rev_id,
+  const segment_name& name,
+  model::term_id archiver_term) {
+    vassert(
+      rev_id != model::revision_id(),
+      "ntp {}: ntp revision must be known for segment {}",
+      ntp,
+      name);
+
+    auto path = ssx::sformat("{}_{}/{}", ntp.path(), rev_id(), name());
+    uint32_t hash = xxhash_32(path.data(), path.size());
+    if (archiver_term != model::term_id{}) {
+        return remote_segment_path(
+          fmt::format("{:08x}/{}.{}", hash, path, archiver_term()));
+    } else {
+        return remote_segment_path(fmt::format("{:08x}/{}", hash, path));
+    }
 }
 
 manifest::manifest()
@@ -285,35 +191,17 @@ remote_manifest_path manifest::get_manifest_path() const {
     return generate_partition_manifest_path(_ntp, _rev);
 }
 
-remote_segment_path manifest::generate_remote_segment_path(
-  const model::ntp ntp, model::revision_id rev_id, const segment_name& name) {
-    auto path = ssx::sformat("{}_{}/{}", ntp.path(), rev_id(), name());
-    uint32_t hash = xxhash_32(path.data(), path.size());
-    return remote_segment_path(fmt::format("{:08x}/{}", hash, path));
-}
-
-remote_segment_path
-manifest::get_remote_segment_path(const segment_name& name) const {
-    return generate_remote_segment_path(_ntp, _rev, name);
-}
-
-remote_segment_path
-manifest::get_remote_segment_path(const manifest::key& key) const {
-    if (std::holds_alternative<remote_segment_path>(key)) {
-        // The 'name' contains full path instead of a log segment file name.
-        // For instance, '6fab5988/kafka/redpanda-test/5_6/80651-2-v1.log'
-        // instead of just '80651-2-v1.log'. This can happen if the manifest was
-        // generated during recovery process.
-        return std::get<remote_segment_path>(key);
-    }
-    return get_remote_segment_path(std::get<segment_name>(key));
-}
-
 const model::ntp& manifest::get_ntp() const { return _ntp; }
 
 const model::offset manifest::get_last_offset() const { return _last_offset; }
 
 model::revision_id manifest::get_revision_id() const { return _rev; }
+
+remote_segment_path manifest::generate_segment_path(
+  const segment_name& name, const segment_meta& meta) const {
+    return generate_remote_segment_path(
+      _ntp, meta.ntp_revision, name, meta.archiver_term);
+}
 
 manifest::const_iterator manifest::begin() const { return _segments.begin(); }
 
@@ -329,48 +217,22 @@ manifest::const_reverse_iterator manifest::rend() const {
 
 size_t manifest::size() const { return _segments.size(); }
 
-bool manifest::contains(const manifest::key& obj) const {
-    return _segments.contains(obj);
+bool manifest::contains(const segment_name& name) const {
+    return _segments.contains(name);
 }
 
-bool manifest::add(const segment_name& key, const segment_meta& meta) {
-    auto [it, ok] = _segments.insert(std::make_pair(key, meta));
-    _last_offset = std::max(meta.committed_offset, _last_offset);
-    return ok;
-}
-
-bool manifest::add(const remote_segment_path& key, const segment_meta& meta) {
-    auto res = get_segment_path_components(key());
-    if (
-      _ntp.ns == res->_ns && _ntp.tp.topic == res->_topic
-      && _ntp.tp.partition == res->_part && _rev == res->_rev) {
-        // discard the full remote path and save only segment_name
-        auto path = get_remote_segment_path(res->_name);
-        if (path == key) {
-            return add(res->_name, meta);
-        }
+bool manifest::add(const segment_name& name, const segment_meta& meta) {
+    auto [it, ok] = _segments.insert(std::make_pair(name, meta));
+    if (ok && it->second.ntp_revision == model::revision_id{}) {
+        it->second.ntp_revision = _rev;
     }
-    auto [it, ok] = _segments.insert(std::make_pair(key, meta));
     _last_offset = std::max(meta.committed_offset, _last_offset);
     return ok;
 }
 
-const manifest::segment_meta* manifest::get(const manifest::key& key) const {
-    auto it = _segments.find(key);
+const manifest::segment_meta* manifest::get(const segment_name& name) const {
+    auto it = _segments.find(name);
     if (it == _segments.end()) {
-        // Check if the remote_segment_path is equal to some segment_name
-        if (std::holds_alternative<remote_segment_path>(key)) {
-            const auto& path = std::get<remote_segment_path>(key);
-            auto res = get_segment_path_components(path);
-            if (
-              _ntp.ns == res->_ns && _ntp.tp.topic == res->_topic
-              && _ntp.tp.partition == res->_part && _rev == res->_rev) {
-                auto reconstructed = get_remote_segment_path(res->_name);
-                if (path == reconstructed) {
-                    return get(res->_name);
-                }
-            }
-        }
         return nullptr;
     }
     return &it->second;
@@ -412,15 +274,6 @@ ss::future<> manifest::update(ss::input_stream<char> is) {
     co_return;
 }
 
-static manifest::key string_to_key(const char* s) {
-    auto len = std::strlen(s);
-    auto c = std::count(s, s + len, '/');
-    if (c == 0) {
-        return segment_name(s);
-    }
-    return remote_segment_path(std::filesystem::path(s));
-}
-
 void manifest::update(const rapidjson::Document& m) {
     using namespace rapidjson;
     auto ver = model::partition_id(m["version"].GetInt());
@@ -437,7 +290,7 @@ void manifest::update(const rapidjson::Document& m) {
     if (m.HasMember("segments")) {
         const auto& s = m["segments"].GetObject();
         for (auto it = s.MemberBegin(); it != s.MemberEnd(); it++) {
-            auto name = string_to_key(it->name.GetString());
+            auto name = manifest::key{it->name.GetString()};
             auto coffs = it->value["committed_offset"].GetInt64();
             auto boffs = it->value["base_offset"].GetInt64();
             auto size_bytes = it->value["size_bytes"].GetInt64();
@@ -456,6 +309,16 @@ void manifest::update(const rapidjson::Document& m) {
                 delta_offset = model::offset(
                   it->value["delta_offset"].GetInt64());
             }
+            model::revision_id ntp_revision = _rev;
+            if (it->value.HasMember("ntp_revision")) {
+                ntp_revision = model::revision_id(
+                  it->value["ntp_revision"].GetInt64());
+            }
+            model::term_id archiver_term;
+            if (it->value.HasMember("archiver_term")) {
+                archiver_term = model::term_id(
+                  it->value["archiver_term"].GetInt64());
+            }
             segment_meta meta{
               .is_compacted = it->value["is_compacted"].GetBool(),
               .size_bytes = static_cast<size_t>(size_bytes),
@@ -464,6 +327,8 @@ void manifest::update(const rapidjson::Document& m) {
               .base_timestamp = base_timestamp,
               .max_timestamp = max_timestamp,
               .delta_offset = delta_offset,
+              .ntp_revision = ntp_revision,
+              .archiver_term = archiver_term,
             };
             tmp.insert(std::make_pair(name, meta));
         }
@@ -503,11 +368,7 @@ void manifest::serialize(std::ostream& out) const {
         w.Key("segments");
         w.StartObject();
         for (const auto& [sn, meta] : _segments) {
-            if (std::holds_alternative<segment_name>(sn)) {
-                w.Key(std::get<segment_name>(sn)().c_str());
-            } else {
-                w.Key(std::get<remote_segment_path>(sn)().c_str());
-            }
+            w.Key(sn());
             w.StartObject();
             w.Key("is_compacted");
             w.Bool(meta.is_compacted);
@@ -528,6 +389,19 @@ void manifest::serialize(std::ostream& out) const {
             if (meta.delta_offset != model::offset::min()) {
                 w.Key("delta_offset");
                 w.Int64(meta.delta_offset());
+            }
+            if (meta.ntp_revision != _rev) {
+                vassert(
+                  meta.ntp_revision != model::revision_id(),
+                  "ntp {}: missing ntp_revision for segment {} in the manifest",
+                  _ntp,
+                  sn);
+                w.Key("ntp_revision");
+                w.Int64(meta.ntp_revision());
+            }
+            if (meta.archiver_term != model::term_id::min()) {
+                w.Key("archiver_term");
+                w.Int64(meta.archiver_term());
             }
             w.EndObject();
         }

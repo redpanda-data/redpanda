@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cloud_storage/manifest.h"
+#include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
 #include "model/record.h"
@@ -112,20 +113,18 @@ private:
         size_t num_files;
     };
 
-    /// Download file to the target location
+    struct segment {
+        segment_name name;
+        manifest::segment_meta meta;
+    };
+
+    /// Download segment file to the target location
     ///
     /// The downloaded file will have a custom suffix
     /// which has to be changed. The downloaded file path
     /// is returned by the futue.
-    ss::future<> download_file(
-      const remote_segment_path& target,
-      const manifest& manifest,
-      const download_part& part);
-
-    struct segment {
-        remote_segment_path path;
-        manifest::segment_meta meta;
-    };
+    ss::future<>
+    download_segment_file(const segment& segm, const download_part& part);
 
     using offset_map_t = absl::btree_map<model::offset, segment>;
 

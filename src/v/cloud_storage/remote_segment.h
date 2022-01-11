@@ -55,7 +55,7 @@ public:
       cache& cache,
       s3::bucket_name bucket,
       const manifest& m,
-      manifest::key path,
+      const manifest::key& name,
       retry_chain_node& parent);
 
     remote_segment(const remote_segment&) = delete;
@@ -103,8 +103,14 @@ private:
     remote& _api;
     cache& _cache;
     s3::bucket_name _bucket;
-    const manifest& _manifest;
-    manifest::key _path;
+    const model::ntp& _ntp;
+    remote_segment_path _path;
+
+    model::term_id _term;
+    model::offset _base_rp_offset;
+    model::offset _base_offset_delta;
+    model::offset _max_rp_offset;
+
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
     /// Notifies the background hydration fiber
@@ -190,7 +196,6 @@ private:
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
     model::term_id _term;
-    model::offset _initial_delta;
     model::offset _cur_rp_offset;
     model::offset _cur_delta;
     size_t _bytes_consumed{0};

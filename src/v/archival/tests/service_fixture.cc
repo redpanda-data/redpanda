@@ -204,20 +204,10 @@ void s3_imposter_fixture::set_routes(
         s3_imposter_fixture& fixture;
     };
     auto hd = ss::make_shared<content_handler>(expectations, *this);
-    for (const auto& [path, _] : expectations) {
-        auto get_handler = new function_handler(
-          [hd](const_req req, reply& repl) { return hd->handle(req, repl); },
-          "txt");
-        auto put_handler = new function_handler(
-          [hd](const_req req, reply& repl) { return hd->handle(req, repl); },
-          "txt");
-        auto del_handler = new function_handler(
-          [hd](const_req req, reply& repl) { return hd->handle(req, repl); },
-          "txt");
-        r.add(operation_type::GET, url(path), get_handler);
-        r.add(operation_type::PUT, url(path), put_handler);
-        r.add(operation_type::DELETE, url(path), del_handler);
-    }
+    _handler = std::make_unique<function_handler>(
+      [hd](const_req req, reply& repl) { return hd->handle(req, repl); },
+      "txt");
+    r.add_default_handler(_handler.get());
 }
 
 // archiver service fixture
@@ -299,7 +289,8 @@ storage::api& archiver_fixture::get_local_storage_api() {
     return app.storage.local();
 }
 
-void archiver_fixture::init_storage_api_local(std::vector<segment_desc>& segm) {
+void archiver_fixture::init_storage_api_local(
+  const std::vector<segment_desc>& segm) {
     initialize_shard(get_local_storage_api(), segm);
 }
 
@@ -459,4 +450,20 @@ enable_cloud_storage_fixture::enable_cloud_storage_fixture() {
 
 enable_cloud_storage_fixture::~enable_cloud_storage_fixture() {
     config::shard_local_cfg().cloud_storage_enabled.set_value(false);
+}
+
+cloud_storage::manifest load_manifest(std::string_view v) {
+    cloud_storage::manifest m;
+    iobuf i;
+    i.append(v.data(), v.size());
+    auto s = make_iobuf_input_stream(std::move(i));
+    m.update(std::move(s)).get();
+    return std::move(m);
+}
+
+archival::remote_segment_path get_segment_path(
+  const cloud_storage::manifest& manifest, const archival::segment_name& name) {
+    auto meta = manifest.get(name);
+    BOOST_REQUIRE(meta);
+    return manifest.generate_segment_path(name, *meta);
 }

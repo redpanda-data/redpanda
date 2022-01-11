@@ -37,45 +37,6 @@ using namespace archival;
 
 inline ss::logger test_log("test"); // NOLINT
 
-static constexpr std::string_view manifest_payload = R"json({
-    "version": 1,
-    "namespace": "kafka",
-    "topic": "test-topic",
-    "partition": 42,
-    "revision": 0,
-    "last_offset": 1004,
-    "segments": {
-        "0-1-v1.log": {
-            "is_compacted": false,
-            "size_bytes": 100,
-            "committed_offset": 2,
-            "base_offset": 0
-        },
-        "1000-4-v1.log": {
-            "is_compacted": false,
-            "size_bytes": 200,
-            "committed_offset": 1004,
-            "base_offset": 3
-        }
-    }
-})json";
-static constexpr std::string_view manifest_with_deleted_segment = R"json({
-    "version": 1,
-    "namespace": "kafka",
-    "topic": "test-topic",
-    "partition": 42,
-    "revision": 0,
-    "last_offset": 4,
-    "segments": {
-        "1000-4-v1.log": {
-            "is_compacted": false,
-            "size_bytes": 200,
-            "committed_offset": 1004,
-            "base_offset": 3
-        }
-    }
-})json";
-
 static const auto manifest_namespace = model::ns("kafka");      // NOLINT
 static const auto manifest_topic = model::topic("test-topic");  // NOLINT
 static const auto manifest_partition = model::partition_id(42); // NOLINT
@@ -89,32 +50,8 @@ static const ss::sstring manifest_url = ssx::sformat(        // NOLINT
   manifest_ntp.path(),
   manifest_revision());
 
-// NOLINTNEXTLINE
-static const ss::sstring segment1_url
-  = "/3ed95428/kafka/test-topic/42_0/0-1-v1.log";
-// NOLINTNEXTLINE
-static const ss::sstring segment2_url
-  = "/0bbed744/kafka/test-topic/42_0/1000-4-v1.log";
-
-static const std::vector<s3_imposter_fixture::expectation>
-  default_expectations({
-    s3_imposter_fixture::expectation{
-      .url = manifest_url, .body = ss::sstring(manifest_payload)},
-    s3_imposter_fixture::expectation{.url = segment1_url, .body = "segment1"},
-    s3_imposter_fixture::expectation{.url = segment2_url, .body = "segment2"},
-  });
-
 static storage::ntp_config get_ntp_conf() {
     return storage::ntp_config(manifest_ntp, "base-dir");
-}
-
-static cloud_storage::manifest load_manifest(std::string_view v) {
-    cloud_storage::manifest m;
-    iobuf i;
-    i.append(v.data(), v.size());
-    auto s = make_iobuf_input_stream(std::move(i));
-    m.update(std::move(s)).get();
-    return std::move(m);
 }
 
 /// Compare two json objects logically by parsing them first and then going
@@ -163,60 +100,9 @@ void log_upload_candidate(const archival::upload_candidate& up) {
       up.source->offsets().dirty_offset);
 }
 
-FIXTURE_TEST(test_download_manifest, s3_imposter_fixture) { // NOLINT
-    set_expectations_and_listen(default_expectations);
-    auto [arch_conf, remote_conf] = get_configurations();
-    service_probe probe(service_metrics_disabled::yes);
-    cloud_storage::remote remote(
-      remote_conf.connection_limit, remote_conf.client_config);
-    archival::ntp_archiver archiver(
-      get_ntp_conf(), arch_conf, remote, nullptr, probe);
-    auto action = ss::defer([&archiver] { archiver.stop().get(); });
-    retry_chain_node fib;
-    auto res = archiver.download_manifest(fib).get0();
-    BOOST_REQUIRE(res == cloud_storage::download_result::success);
-    auto expected = load_manifest(manifest_payload);
-    BOOST_REQUIRE(expected == archiver.get_remote_manifest()); // NOLINT
-}
-
-FIXTURE_TEST(test_upload_manifest, s3_imposter_fixture) { // NOLINT
-    set_expectations_and_listen(default_expectations);
-    auto [arch_conf, remote_conf] = get_configurations();
-    service_probe probe(service_metrics_disabled::yes);
-    cloud_storage::remote remote(
-      remote_conf.connection_limit, remote_conf.client_config);
-    archival::ntp_archiver archiver(
-      get_ntp_conf(), arch_conf, remote, nullptr, probe);
-    auto action = ss::defer([&archiver] { archiver.stop().get(); });
-    auto pm = const_cast<cloud_storage::manifest*>( // NOLINT
-      &archiver.get_remote_manifest());
-    pm->add(
-      segment_name("0-1-v1.log"),
-      {
-        .is_compacted = false,
-        .size_bytes = 100, // NOLINT
-        .base_offset = model::offset(0),
-        .committed_offset = model::offset(2),
-      });
-    pm->add(
-      segment_name("1000-4-v1.log"),
-      {
-        .is_compacted = false,
-        .size_bytes = 200, // NOLINT
-        .base_offset = model::offset(3),
-        .committed_offset = model::offset(1004),
-      });
-    retry_chain_node fib;
-    auto res = archiver.upload_manifest(fib).get0();
-    BOOST_REQUIRE(res == cloud_storage::upload_result::success);
-    auto req = get_requests().front();
-    // NOLINTNEXTLINE
-    BOOST_REQUIRE(compare_json_objects(req.content, manifest_payload));
-}
-
 // NOLINTNEXTLINE
 FIXTURE_TEST(test_upload_segments, archiver_fixture) {
-    set_expectations_and_listen(default_expectations);
+    set_expectations_and_listen({});
     auto [arch_conf, remote_conf] = get_configurations();
     service_probe probe(service_metrics_disabled::yes);
     cloud_storage::remote remote(
@@ -254,31 +140,38 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
 
     for (auto [url, req] : get_targets()) {
-        vlog(test_log.error, "{}", url);
+        vlog(test_log.info, "{} {}", req._method, req._url);
     }
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
-    BOOST_REQUIRE(get_targets().count(manifest_url)); // NOLINT
+
+    cloud_storage::manifest manifest;
     {
+        BOOST_REQUIRE(get_targets().count(manifest_url)); // NOLINT
         auto it = get_targets().find(manifest_url);
         const auto& [url, req] = *it;
+        BOOST_REQUIRE_EQUAL(req._method, "PUT"); // NOLINT
         verify_manifest_content(req.content);
-        BOOST_REQUIRE(req._method == "PUT"); // NOLINT
+        manifest = load_manifest(req.content);
     }
-    BOOST_REQUIRE(get_targets().count(segment1_url)); // NOLINT
+
     {
-        auto it = get_targets().find(segment1_url);
+        segment_name segment1_name{"0-1-v1.log"};
+        auto segment1_url = get_segment_path(manifest, segment1_name);
+        auto it = get_targets().find("/" + segment1_url().string());
+        BOOST_REQUIRE(it != get_targets().end());
         const auto& [url, req] = *it;
-        auto name = url.substr(url.size() - std::strlen("#-#-v#.log"));
-        verify_segment(manifest_ntp, archival::segment_name(name), req.content);
-        BOOST_REQUIRE(req._method == "PUT"); // NOLINT
+        BOOST_REQUIRE_EQUAL(req._method, "PUT"); // NOLINT
+        verify_segment(manifest_ntp, segment1_name, req.content);
     }
-    BOOST_REQUIRE(get_targets().count(segment2_url)); // NOLINT
+
     {
-        auto it = get_targets().find(segment2_url);
+        segment_name segment2_name{"1000-4-v1.log"};
+        auto segment2_url = get_segment_path(manifest, segment2_name);
+        auto it = get_targets().find("/" + segment2_url().string());
+        BOOST_REQUIRE(it != get_targets().end());
         const auto& [url, req] = *it;
-        auto name = url.substr(url.size() - std::strlen("#-#-v#.log"));
-        verify_segment(manifest_ntp, archival::segment_name(name), req.content);
-        BOOST_REQUIRE(req._method == "PUT"); // NOLINT
+        BOOST_REQUIRE_EQUAL(req._method, "PUT"); // NOLINT
+        verify_segment(manifest_ntp, segment2_name, req.content);
     }
 
     BOOST_REQUIRE(part->archival_meta_stm());
@@ -472,9 +365,6 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     std::vector<s3_imposter_fixture::expectation> expectations({
       s3_imposter_fixture::expectation{
         .url = manifest_url, .body = ss::sstring(old_str.str())},
-      s3_imposter_fixture::expectation{.url = segment1_url, .body = "segment1"},
-      s3_imposter_fixture::expectation{.url = segment2_url, .body = "segment2"},
-      s3_imposter_fixture::expectation{.url = segment3_url, .body = "segment3"},
     });
 
     set_expectations_and_listen(expectations);
@@ -497,9 +387,11 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
 
     for (auto req : get_requests()) {
-        vlog(test_log.error, "{}", req._url);
+        vlog(test_log.info, "{} {}", req._method, req._url);
     }
     BOOST_REQUIRE_EQUAL(get_requests().size(), 4);
+
+    cloud_storage::manifest manifest;
     {
         auto [begin, end] = get_targets().equal_range(manifest_url);
         size_t len = std::distance(begin, end);
@@ -509,17 +401,16 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
             auto key = it->second._method;
             BOOST_REQUIRE(expected.contains(key));
             expected.erase(key);
+
+            if (key == "PUT") {
+                manifest = load_manifest(it->second.content);
+            }
         }
         BOOST_REQUIRE(expected.empty());
     }
-    {
-        auto [begin, end] = get_targets().equal_range(segment2_url);
-        size_t len = std::distance(begin, end);
-        BOOST_REQUIRE_EQUAL(len, 1);
-        BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
-    }
-    {
-        auto [begin, end] = get_targets().equal_range(segment1_url);
+    for (const segment_name& name : {s1name, s2name}) {
+        auto url = get_segment_path(manifest, name);
+        auto [begin, end] = get_targets().equal_range("/" + url().string());
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
         BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
@@ -666,38 +557,31 @@ static void test_partial_upload_impl(
       .is_compacted = false,
       .size_bytes = 1, // doesn't matter
       .base_offset = model::offset(0),
-      .committed_offset = last_uploaded_offset};
+      .committed_offset = last_uploaded_offset,
+      .ntp_revision = manifest.get_revision_id()};
 
     manifest.add(s1name, segment_meta);
 
     std::stringstream old_str;
     manifest.serialize(old_str);
 
-    // Generate segment urls
-    auto url1 = "/"
-                + manifest
-                    .get_remote_segment_path(segment_name(ssx::sformat(
-                      "{}-1-v1.log", last_uploaded_offset() + 1)))()
-                    .string();
-    auto url2 = "/"
-                + manifest
-                    .get_remote_segment_path(segment_name(ssx::sformat(
-                      "{}-1-v1.log", next_uploaded_offset() + 1)))()
-                    .string();
+    segment_name s2name{
+      ssx::sformat("{}-1-v1.log", last_uploaded_offset() + 1)};
+    segment_name s3name{
+      ssx::sformat("{}-1-v1.log", next_uploaded_offset() + 1)};
+
     vlog(
       test_log.debug,
-      "Expected segment upload urls {} and {}, last_uploaded_offset: {}, "
+      "Expected segment names {} and {}, last_uploaded_offset: {}, "
       "last_stable_offset: {}",
-      url1,
-      url2,
+      s2name,
+      s3name,
       last_uploaded_offset,
       lso);
 
     std::vector<s3_imposter_fixture::expectation> expectations({
       s3_imposter_fixture::expectation{
         .url = manifest_url, .body = ss::sstring(old_str.str())},
-      s3_imposter_fixture::expectation{.url = url1, .body = "segment1"},
-      s3_imposter_fixture::expectation{.url = url2, .body = "segment2"},
     });
 
     test.set_expectations_and_listen(expectations);
@@ -721,9 +605,10 @@ static void test_partial_upload_impl(
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
 
     for (auto req : test.get_requests()) {
-        vlog(test_log.error, "{}", req._url);
+        vlog(test_log.info, "{} {}", req._method, req._url);
     }
     BOOST_REQUIRE_EQUAL(test.get_requests().size(), 3);
+
     {
         auto [begin, end] = test.get_targets().equal_range(manifest_url);
         size_t len = std::distance(begin, end);
@@ -733,16 +618,24 @@ static void test_partial_upload_impl(
             auto key = it->second._method;
             BOOST_REQUIRE(expected.contains(key));
             expected.erase(key);
+
+            if (key == "PUT") {
+                manifest = load_manifest(it->second.content);
+            }
         }
         BOOST_REQUIRE(expected.empty());
     }
+
+    ss::sstring url2 = "/" + get_segment_path(manifest, s2name)().string();
+
     {
-        auto [begin, end] = test.get_targets().equal_range(url1);
+        auto [begin, end] = test.get_targets().equal_range(url2);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
         BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
 
-        // check that the uploaded log contains the right offsets
+        // check that the uploaded log contains the right
+        // offsets
         auto stats = calculate_segment_stats(begin->second);
 
         BOOST_REQUIRE_EQUAL(stats.min_offset, base_upl1);
@@ -769,17 +662,26 @@ static void test_partial_upload_impl(
             BOOST_REQUIRE(expected.contains(key));
             auto i = expected.find(key);
             expected.erase(i);
+
+            if (key == "PUT") {
+                auto new_manifest = load_manifest(it->second.content);
+                if (new_manifest.size() > manifest.size()) {
+                    manifest = new_manifest;
+                }
+            }
         }
         BOOST_REQUIRE(expected.empty());
     }
+
     {
-        auto [begin, end] = test.get_targets().equal_range(url1);
+        auto [begin, end] = test.get_targets().equal_range(url2);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
         BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
     }
     {
-        auto [begin, end] = test.get_targets().equal_range(url2);
+        ss::sstring url3 = "/" + get_segment_path(manifest, s3name)().string();
+        auto [begin, end] = test.get_targets().equal_range(url3);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
         BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT

@@ -77,64 +77,52 @@ remote_segment::remote_segment(
   cache& c,
   s3::bucket_name bucket,
   const manifest& m,
-  manifest::key path,
+  const manifest::key& name,
   retry_chain_node& parent)
   : _api(r)
   , _cache(c)
   , _bucket(std::move(bucket))
-  , _manifest(m)
-  , _path(std::move(path))
+  , _ntp(m.get_ntp())
   , _rtc(&parent)
   , _ctxlog(cst_log, _rtc, get_ntp().path())
   , _wait_list(expiry_handler_impl) {
+    auto meta = m.get(name);
+    vassert(meta, "Can't find segment metadata in manifest, name: {}", name);
+
+    _path = m.generate_segment_path(name, *meta);
+
+    auto parsed_name = parse_segment_name(name);
+    vassert(parsed_name, "Can't parse segment name, name: {}", name);
+    _term = parsed_name->term;
+
+    _base_rp_offset = meta->base_offset;
+    _max_rp_offset = meta->committed_offset;
+    _base_offset_delta = std::clamp(
+      meta->delta_offset, model::offset(0), model::offset::max());
+
     // run hydration loop in the background
     (void)run_hydrate_bg();
 }
 
-const model::ntp& remote_segment::get_ntp() const {
-    return _manifest.get_ntp();
-}
+const model::ntp& remote_segment::get_ntp() const { return _ntp; }
 
 const model::offset remote_segment::get_max_rp_offset() const {
-    const auto meta = _manifest.get(_path);
-    // The remote_segment is built based on manifest so we can
-    // expect the _path to be present in the manifest.
-    vassert(
-      meta, "Can't find segment metadata in manifest, segment path: {}", _path);
-    return meta->committed_offset;
+    return _max_rp_offset;
 }
 
 const model::offset remote_segment::get_base_offset_delta() const {
-    const auto meta = _manifest.get(_path);
-    vassert(
-      meta, "Can't find segment metadata in manifest, segment path: {}", _path);
-    return std::clamp(
-      meta->delta_offset, model::offset(0), model::offset::max());
+    return _base_offset_delta;
 }
 
 const model::offset remote_segment::get_base_rp_offset() const {
-    const auto meta = _manifest.get(_path);
-    vassert(
-      meta, "Can't find segment metadata in manifest, segment path: {}", _path);
-    return meta->base_offset;
+    return _base_rp_offset;
 }
 
 const model::offset remote_segment::get_base_kafka_offset() const {
-    const auto meta = _manifest.get(_path);
-    vassert(
-      meta, "Can't find segment metadata in manifest, segment path: {}", _path);
-    auto delta = std::clamp(
-      meta->delta_offset, model::offset(0), model::offset::max());
-    return meta->base_offset - delta;
+    return _base_rp_offset - _base_offset_delta;
 }
 
-const model::term_id remote_segment::get_term() const {
-    std::filesystem::path p = std::visit(
-      [](auto&& arg) { return std::filesystem::path(arg()); }, _path);
-    auto [_, term, success] = parse_segment_name(p);
-    vassert(success, "Can't parse segment name, name: {}", p);
-    return term;
-}
+const model::term_id remote_segment::get_term() const { return _term; }
 
 ss::future<> remote_segment::stop() {
     vlog(_ctxlog.debug, "remote segment stop");
@@ -165,7 +153,6 @@ remote_segment::data_stream(size_t pos, ss::io_priority_class io_priority) {
 
 ss::future<> remote_segment::run_hydrate_bg() {
     ss::gate::holder guard(_gate);
-    auto full_path = _manifest.get_remote_segment_path(_path);
     try {
         while (!_gate.is_closed()) {
             co_await _bg_cvar.wait(
@@ -174,7 +161,7 @@ ss::future<> remote_segment::run_hydrate_bg() {
               _ctxlog.debug,
               "Segment {} requested, {} consumers are awaiting, data file is "
               "{}",
-              full_path,
+              _path,
               _wait_list.size(),
               _data_file ? "available" : "not available");
             std::exception_ptr err;
@@ -183,14 +170,14 @@ ss::future<> remote_segment::run_hydrate_bg() {
                 // and retrieve the file out of it or hydrate.
                 // If _data_file is initialized we can use it safely since the
                 // cache can't delete it until we close it.
-                auto status = co_await _cache.is_cached(full_path);
+                auto status = co_await _cache.is_cached(_path);
                 switch (status) {
                 case cache_element_status::in_progress:
                     vassert(
                       false,
                       "Hydration of segment {} is already in progress, {} "
                       "waiters",
-                      full_path,
+                      _path,
                       _wait_list.size());
                 case cache_element_status::available:
                     vlog(
@@ -198,38 +185,37 @@ ss::future<> remote_segment::run_hydrate_bg() {
                       "Hydrated segment {} is already available, {} waiters "
                       "will "
                       "be invoked",
-                      full_path,
+                      _path,
                       _wait_list.size());
                     break;
                 case cache_element_status::not_available: {
-                    vlog(_ctxlog.info, "Hydrating segment {}", full_path);
+                    vlog(_ctxlog.info, "Hydrating segment {}", _path);
                     auto callback =
-                      [this, full_path](
+                      [this](
                         uint64_t size_bytes,
                         ss::input_stream<char> s) -> ss::future<uint64_t> {
-                        co_await _cache.put(full_path, s).finally([&s] {
-                            return s.close();
-                        });
+                        co_await _cache.put(_path, s).finally(
+                          [&s] { return s.close(); });
                         co_return size_bytes;
                     };
                     retry_chain_node local_rtc(
                       cache_hydration_timeout, cache_hydration_backoff, &_rtc);
                     auto res = co_await _api.download_segment(
-                      _bucket, _path, _manifest, callback, local_rtc);
+                      _bucket, _path, callback, local_rtc);
                     if (res != download_result::success) {
                         vlog(
                           _ctxlog.debug,
                           "Failed to hydrating a segment {}, {} waiter will be "
                           "invoked",
-                          full_path,
+                          _path,
                           _wait_list.size());
                         err = std::make_exception_ptr(
-                          download_exception(res, full_path));
+                          download_exception(res, _path));
                     }
                 } break;
                 }
                 if (!err) {
-                    auto maybe_file = co_await _cache.get(full_path);
+                    auto maybe_file = co_await _cache.get(_path);
                     if (!maybe_file) {
                         // We could got here because the cache check returned
                         // 'cache_element_status::available' but right after
@@ -244,7 +230,7 @@ ss::future<> remote_segment::run_hydrate_bg() {
                           _ctxlog.info,
                           "Segment {} was deleted from cache and need to be "
                           "re-hydrated, {} waiter are pending",
-                          full_path,
+                          _path,
                           _wait_list.size());
                         continue;
                     }
@@ -281,8 +267,7 @@ ss::future<> remote_segment::run_hydrate_bg() {
 
 ss::future<> remote_segment::hydrate() {
     return ss::with_gate(_gate, [this] {
-        auto full_path = _manifest.get_remote_segment_path(_path);
-        vlog(_ctxlog.debug, "segment {} hydration requested", full_path);
+        vlog(_ctxlog.debug, "segment {} hydration requested", _path);
         ss::promise<ss::file> p;
         auto fut = p.get_future();
         _wait_list.push_back(std::move(p), ss::lowres_clock::time_point::max());
@@ -525,9 +510,8 @@ remote_segment_batch_reader::remote_segment_batch_reader(
   , _config(config)
   , _rtc(_seg->get_retry_chain_node())
   , _ctxlog(cst_log, _rtc, _seg->get_ntp().path())
-  , _initial_delta(_seg->get_base_offset_delta())
   , _cur_rp_offset(_seg->get_base_rp_offset())
-  , _cur_delta(_initial_delta) {}
+  , _cur_delta(_seg->get_base_offset_delta()) {}
 
 ss::future<result<ss::circular_buffer<model::record_batch>>>
 remote_segment_batch_reader::read_some(

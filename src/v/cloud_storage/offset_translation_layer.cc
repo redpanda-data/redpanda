@@ -23,19 +23,12 @@
 
 namespace cloud_storage {
 
-void offset_translator::update(const manifest& m) { _manifest = std::cref(m); }
-
 ss::future<uint64_t> offset_translator::copy_stream(
-  remote_segment_path path,
   ss::input_stream<char> src,
   ss::output_stream<char> dst,
   retry_chain_node& fib) const {
     retry_chain_logger ctxlog(cst_log, fib);
-    auto smeta = _manifest->get().get(path);
-    auto removed = smeta->delta_offset;
-    vassert(
-      removed != model::offset::min(),
-      "Can't copy segment which isn't in the manifest");
+    auto removed = _initial_delta;
     auto pred = [&removed, &ctxlog](model::record_batch_header& hdr) {
         if (
           hdr.type == model::record_batch_type::raft_configuration
@@ -67,51 +60,27 @@ ss::future<uint64_t> offset_translator::copy_stream(
     co_return len.value();
 }
 
-remote_segment_path offset_translator::get_adjusted_segment_name(
-  const remote_segment_path& s, retry_chain_node& fib) const {
-    auto smeta = _manifest->get().get(s);
-    vassert(
-      smeta != nullptr,
-      "Can't adjust name of the segment which isn't in the manifest {}",
-      s);
-    auto res = get_adjusted_segment_name(s(), *smeta, fib);
-    return remote_segment_path(res.string());
-}
-
 segment_name offset_translator::get_adjusted_segment_name(
-  const segment_name& s, retry_chain_node& fib) const {
-    auto smeta = _manifest->get().get(s);
-    vassert(
-      smeta != nullptr,
-      "Can't adjust name of the segment which isn't in the manifest {}",
-      s);
-    auto res = get_adjusted_segment_name(
-      std::filesystem::path(s()), *smeta, fib);
-    return segment_name(res.string());
-}
-
-std::filesystem::path offset_translator::get_adjusted_segment_name(
-  std::filesystem::path path,
-  const manifest::segment_meta& smeta,
-  retry_chain_node& fib) const {
+  const segment_name& name, retry_chain_node& fib) const {
     retry_chain_logger ctxlog(cst_log, fib);
-    auto [base_offset, term_id, success] = parse_segment_name(path);
-    vassert(success, "Invalid path {}", path);
-    auto delta = smeta.delta_offset;
-    auto new_base = base_offset - delta;
-    auto new_fname = std::filesystem::path(
-      ssx::sformat("{}-{}-v1.log", new_base(), term_id()));
-    path.replace_filename(new_fname);
+    auto parsed_name = parse_segment_name(name);
+    vassert(parsed_name, "Can't parse segment name, name: {}", name);
+    auto base_offset = parsed_name->base_offset;
+    auto term_id = parsed_name->term;
+
+    auto new_base = base_offset - _initial_delta;
+    auto new_name = segment_name{
+      ssx::sformat("{}-{}-v1.log", new_base(), term_id())};
     vlog(
       ctxlog.debug,
-      "Segment path: {}, base-offset: {}, term-id: {}, "
-      "adjusted-base-offset: {}, adjuste-path: {}",
-      path,
+      "Segment name: {}, base-offset: {}, term-id: {}, "
+      "adjusted-base-offset: {}, adjusted-name: {}",
+      name,
       base_offset,
       term_id,
       new_base,
-      path);
-    return path;
+      new_name);
+    return new_name;
 }
 
 } // namespace cloud_storage
