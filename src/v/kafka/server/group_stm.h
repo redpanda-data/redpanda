@@ -121,7 +121,7 @@ public:
 
     void update_offset(
       model::topic_partition, model::offset, group_log_offset_metadata&&);
-    void remove_offset(model::topic_partition);
+    void remove_offset(const model::topic_partition&);
     void update_prepared(model::offset, group_log_prepared_tx);
     void commit(model::producer_identity);
     void abort(model::producer_identity, model::tx_seq);

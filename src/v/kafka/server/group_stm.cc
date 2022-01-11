@@ -9,7 +9,7 @@ void group_stm::overwrite_metadata(group_log_group_metadata&& metadata) {
     _is_loaded = true;
 }
 
-void group_stm::remove_offset(model::topic_partition key) {
+void group_stm::remove_offset(const model::topic_partition& key) {
     _offsets.erase(key);
 }
 
