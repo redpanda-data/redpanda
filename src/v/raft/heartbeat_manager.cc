@@ -121,8 +121,10 @@ static heartbeat_requests requests_for_range(
                   "{}",
                   rni,
                   ptr->group(),
-                  last_heartbeat.time_since_epoch().count(),
-                  last_sent_append_entries_req_timesptamp.time_since_epoch()
+                  std::chrono::milliseconds(last_heartbeat.time_since_epoch())
+                    .count(),
+                  std::chrono::milliseconds(
+                    last_sent_append_entries_req_timesptamp.time_since_epoch())
                     .count());
                 // we already sent heartbeat, skip it
                 return;

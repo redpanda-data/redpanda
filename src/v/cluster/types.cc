@@ -545,7 +545,7 @@ void adl<model::timeout_clock::duration>::to(iobuf& out, duration dur) {
     // This is a clang bug that cause ss::cpu_to_le to become ambiguous
     // because rep has type of long long
     // adl<rep>{}.to(out, dur.count());
-    adl<uint64_t>{}.to(out, dur.count());
+    adl<uint64_t>{}.to(out, std::chrono::milliseconds(dur).count());
 }
 
 model::timeout_clock::duration

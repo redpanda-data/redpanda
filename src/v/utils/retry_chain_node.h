@@ -146,6 +146,7 @@
 #include <fmt/format.h>
 #include <fmt/ostream.h>
 
+#include <chrono>
 #include <variant>
 
 /// Retry strategy
@@ -196,6 +197,9 @@ struct retry_permit {
 /// timeout value have to be smaller that the one of the parent node.
 class retry_chain_node {
 public:
+    using milliseconds_uint16_t
+      = std::chrono::duration<uint16_t, std::chrono::milliseconds::period>;
+
     /// Create a head of the chain without backoff
     retry_chain_node();
     /// Creates a head with the provided deadline and
@@ -328,8 +332,8 @@ private:
     uint16_t _num_children{0};
     /// Index of the next child node (used to generate ids)
     uint16_t _fanout_id{0};
-    /// Initial backoff value ms
-    uint16_t _backoff;
+    /// Initial backoff value
+    milliseconds_uint16_t _backoff;
     /// Deadline for retry attempts
     ss::lowres_clock::time_point _deadline;
     /// optional parent node or (if root) abort source for all fibers

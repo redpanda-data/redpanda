@@ -53,7 +53,9 @@ snapshot_manager::start_snapshot(ss::sstring target) {
     auto filename = fmt::format(
       "{}.partial.{}.{}",
       _partial_prefix,
-      ss::lowres_system_clock::now().time_since_epoch().count(),
+      std::chrono::milliseconds(
+        ss::lowres_system_clock::now().time_since_epoch())
+        .count(),
       random_generators::gen_alphanum_string(4));
 
     auto path = _dir / filename;

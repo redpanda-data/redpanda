@@ -18,6 +18,7 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/ragel.hh>
 
+#include <fmt/chrono.h>
 #include <fmt/format.h>
 
 #include <limits>
@@ -28,8 +29,6 @@ using namespace std::chrono_literals;
 /// Jitter
 thread_local static uint32_t fiber_count = 0;
 static constexpr size_t max_retry_chain_depth = 8;
-static constexpr uint16_t max_initial_backoff
-  = std::numeric_limits<uint16_t>::max();
 static constexpr uint16_t max_retry_count = std::numeric_limits<uint16_t>::max()
                                             - 1;
 
@@ -43,13 +42,13 @@ retry_chain_node::retry_chain_node(
   ss::lowres_clock::time_point deadline,
   ss::lowres_clock::duration backoff)
   : _id(fiber_count++) // generate new head id
-  , _backoff{static_cast<uint16_t>(backoff.count())}
+  , _backoff{backoff}
   , _deadline{deadline}
   , _parent() {
     vassert(
-      backoff.count() <= max_initial_backoff,
-      "Initial backoff {}ms is too large",
-      backoff.count());
+      backoff <= milliseconds_uint16_t::max(),
+      "Initial backoff {} is too large",
+      backoff);
 }
 
 retry_chain_node::retry_chain_node(
@@ -67,13 +66,13 @@ retry_chain_node::retry_chain_node(
   ss::lowres_clock::time_point deadline,
   ss::lowres_clock::duration backoff)
   : _id(fiber_count++) // generate new head id
-  , _backoff{static_cast<uint16_t>(backoff.count())}
+  , _backoff{backoff}
   , _deadline{deadline}
   , _parent(&as) {
     vassert(
-      backoff.count() <= max_initial_backoff,
-      "Initial backoff {}ms is too large",
-      backoff.count());
+      backoff <= milliseconds_uint16_t::max(),
+      "Initial backoff {} is too large",
+      backoff);
 }
 
 retry_chain_node::retry_chain_node(
@@ -95,13 +94,13 @@ retry_chain_node::retry_chain_node(retry_chain_node* parent)
 retry_chain_node::retry_chain_node(
   ss::lowres_clock::duration backoff, retry_chain_node* parent)
   : _id(parent->add_child())
-  , _backoff{static_cast<uint16_t>(backoff.count())}
+  , _backoff{backoff}
   , _deadline{parent->_deadline}
   , _parent{parent} {
     vassert(
-      backoff.count() <= max_initial_backoff,
-      "Initial backoff {}ms is too large",
-      backoff.count());
+      backoff <= milliseconds_uint16_t::max(),
+      "Initial backoff {} is too large",
+      backoff);
     auto len = get_len();
     vassert(
       len < max_retry_chain_depth, "Retry chain is too deep, {} >= 8", len);
@@ -112,13 +111,13 @@ retry_chain_node::retry_chain_node(
   ss::lowres_clock::duration backoff,
   retry_chain_node* parent)
   : _id(parent->add_child())
-  , _backoff{static_cast<uint16_t>(backoff.count())}
+  , _backoff{backoff}
   , _deadline{deadline}
   , _parent{parent} {
     vassert(
-      backoff.count() <= max_initial_backoff,
-      "Initial backoff {}ms is too large",
-      backoff.count());
+      backoff <= milliseconds_uint16_t::max(),
+      "Initial backoff {} is too large",
+      backoff);
 
     if (auto parent = get_parent();
         parent != nullptr
@@ -200,16 +199,14 @@ retry_permit retry_chain_node::retry(retry_strategy st) {
 }
 
 ss::lowres_clock::duration retry_chain_node::get_backoff() {
-    auto backoff = ss::lowres_clock::duration(_backoff * (1UL << _retry));
-    auto jitter = ss::lowres_clock::duration(
-      fast_prng_source() % backoff.count());
+    ss::lowres_clock::duration backoff(_backoff * (1UL << _retry));
+    ss::lowres_clock::duration jitter(fast_prng_source() % backoff.count());
     return backoff + jitter;
 }
 
 ss::lowres_clock::duration retry_chain_node::get_poll_interval() {
-    auto jitter = fast_prng_source() % _backoff;
-    return ss::lowres_clock::duration(
-      static_cast<ss::lowres_clock::duration::rep>(_backoff) + jitter);
+    ss::lowres_clock::duration jitter(fast_prng_source() % _backoff.count());
+    return _backoff + jitter;
 }
 
 ss::lowres_clock::duration retry_chain_node::get_timeout() {
@@ -253,7 +250,8 @@ void retry_chain_node::format(fmt::memory_buffer& str) const {
             time_budget = _deadline - now;
         }
         // [fiber42~0~4|2|100ms]
-        fmt::format_to(str, "|{}|{}ms", _retry, time_budget.count());
+        fmt::format_to(
+          str, "|{}|{}", _retry, std::chrono::milliseconds(time_budget));
     }
 }
 

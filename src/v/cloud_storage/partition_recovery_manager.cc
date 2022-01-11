@@ -385,7 +385,9 @@ partition_downloader::download_log_with_capped_time(
     vlog(
       _ctxlog.info,
       "Starting log download with time limit of {}s",
-      retention_time.count() / 1000);
+      std::chrono::duration_cast<std::chrono::milliseconds>(retention_time)
+          .count()
+        / 1000);
     gate_guard guard(_gate);
     auto time_threshold = model::to_timestamp(
       model::timestamp_clock::now() - retention_time);
