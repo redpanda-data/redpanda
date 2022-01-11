@@ -547,6 +547,13 @@ configuration::configuration()
       "Fail-safe maximum throttle delay on kafka requests",
       {.visibility = visibility::tunable},
       60'000ms)
+  , kafka_max_bytes_per_fetch(
+      *this,
+      "kafka_max_bytes_per_fetch",
+      "Limit fetch responses to this many bytes, even if total of partition "
+      "bytes limits is higher",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      64_MiB)
   , raft_io_timeout_ms(
       *this,
       "raft_io_timeout_ms",
