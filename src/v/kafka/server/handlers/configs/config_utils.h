@@ -184,7 +184,7 @@ ss::future<std::vector<R>> do_alter_topics_configuration(
 
 template<typename T, typename R>
 ss::future<std::vector<R>>
-do_alter_broker_configuartion(std::vector<T> resources) {
+unsupported_broker_configuration(std::vector<T> resources) {
     // for now we do not support altering any of brokers config, generate
     // errors
     std::vector<R> responses;

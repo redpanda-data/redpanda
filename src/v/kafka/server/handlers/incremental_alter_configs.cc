@@ -280,7 +280,7 @@ static ss::future<std::vector<resp_resource_t>> alter_topic_configuration(
 
 static ss::future<std::vector<resp_resource_t>>
 alter_broker_configuartion(std::vector<req_resource_t> resources) {
-    return do_alter_broker_configuartion<req_resource_t, resp_resource_t>(
+    return unsupported_broker_configuration<req_resource_t, resp_resource_t>(
       std::move(resources));
 }
 
