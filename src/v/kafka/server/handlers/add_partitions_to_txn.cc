@@ -78,7 +78,7 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
                             = error_code::unknown_server_error;
                           break;
                       }
-                      topic.results.push_back(std::move(partition));
+                      topic.results.push_back(partition);
                   }
                   data.results.push_back(std::move(topic));
               }
