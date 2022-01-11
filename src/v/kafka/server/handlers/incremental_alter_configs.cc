@@ -319,18 +319,11 @@ static ss::future<std::vector<resp_resource_t>> alter_broker_configuartion(
 
     // If central config is disabled, we cannot set broker properties
     if (!config::node().enable_central_config()) {
-        std::transform(
-          resources.begin(),
-          resources.end(),
-          std::back_inserter(responses),
-          [](req_resource_t& resource) {
-              return make_error_alter_config_resource_response<resp_resource_t>(
-                resource,
-                error_code::invalid_config,
-                fmt::format(
-                  "changing '{}' broker property isn't currently supported",
-                  resource.resource_name));
-          });
+        co_return co_await unsupported_broker_configuration<
+          req_resource_t,
+          resp_resource_t>(
+          std::move(resources),
+          "changing broker properties via this API is not enabled");
 
         co_return responses;
     }
