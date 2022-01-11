@@ -2635,7 +2635,7 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
     if (*target == _self.id()) {
         vlog(_ctxlog.warn, "Cannot transfer leadership to self");
         return seastar::make_ready_future<std::error_code>(
-          make_error_code(errc::not_leader));
+          make_error_code(errc::transfer_to_current_leader));
     }
 
     auto conf = _configuration_manager.get_latest();
