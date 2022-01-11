@@ -14,7 +14,7 @@ void group_stm::remove_offset(const model::topic_partition& key) {
 }
 
 void group_stm::update_offset(
-  model::topic_partition key,
+  const model::topic_partition& key,
   model::offset offset,
   group_log_offset_metadata&& meta) {
     _offsets[key] = logged_metadata{
