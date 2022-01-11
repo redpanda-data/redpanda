@@ -23,11 +23,13 @@ segment_reader::segment_reader(
   ss::sstring filename,
   ss::file data_file,
   size_t file_size,
-  size_t buffer_size) noexcept
+  size_t buffer_size,
+  unsigned read_ahead) noexcept
   : _filename(std::move(filename))
   , _data_file(std::move(data_file))
   , _file_size(file_size)
-  , _buffer_size(buffer_size) {}
+  , _buffer_size(buffer_size)
+  , _read_ahead(read_ahead) {}
 
 ss::input_stream<char>
 segment_reader::data_stream(size_t pos, const ss::io_priority_class& pc) {
@@ -39,7 +41,7 @@ segment_reader::data_stream(size_t pos, const ss::io_priority_class& pc) {
     ss::file_input_stream_options options;
     options.buffer_size = _buffer_size;
     options.io_priority_class = pc;
-    options.read_ahead = 10;
+    options.read_ahead = _read_ahead;
     return make_file_input_stream(
       _data_file, pos, _file_size - pos, std::move(options));
 }
@@ -61,7 +63,7 @@ ss::input_stream<char> segment_reader::data_stream(
     ss::file_input_stream_options options;
     options.buffer_size = _buffer_size;
     options.io_priority_class = pc;
-    options.read_ahead = 10;
+    options.read_ahead = _read_ahead;
     return make_file_input_stream(
       _data_file, pos_begin, pos_end - pos_begin, std::move(options));
 }

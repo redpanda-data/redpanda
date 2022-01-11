@@ -143,6 +143,8 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> segment_appender_flush_timeout_ms;
     property<std::chrono::milliseconds> fetch_session_eviction_timeout_ms;
     property<size_t> append_chunk_size;
+    property<size_t> storage_read_buffer_size;
+    property<int16_t> storage_read_readahead_count;
     property<size_t> max_compacted_log_segment_size;
     property<int16_t> id_allocator_log_capacity;
     property<int16_t> id_allocator_batch_size;
