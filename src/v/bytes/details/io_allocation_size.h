@@ -54,20 +54,27 @@ public:
         131072}};
     static size_t next_allocation_size(size_t data_size);
 
-    // if the size falls into the range of seastar's small allocator, allow a
-    // full allocation. otherwise, allocate on lower bound power of 2 size which
-    // aligns with a span bucket in seastar's large allocation pool.
+    // Pick next allocation size for when the total remaining data size is
+    // known, e.g. in an iobuf copy operation.
+    // - If the size falls into the range of seastar's small allocator, allow a
+    //   full allocation.
+    // - Otherwise, allocate on lower bound power of 2 size which aligns with a
+    //   span bucket in seastar's large allocation pool.
+    // - Clamp the resulting pow2 size to max_chunk_size
     static size_t ss_next_allocation_size(size_t size) {
         if (size <= ss_max_small_allocation) {
             return size;
         }
-        return static_cast<size_t>(1) << ss::log2floor(size);
+        return std::min(
+          static_cast<size_t>(1) << ss::log2floor(size), max_chunk_size);
     }
 };
 
-//   - try to not exceed max_chunk_size
-//   - must be enough for data_size
-//   - uses folly::vector of 1.5 growth without using double conversions
+// Pick next allocation size when the ultimate size of the buffer is
+// not known, e.g. for append/reserve operations on an iobuf.
+// - try to not exceed max_chunk_size
+// - must be enough for data_size
+// - uses folly::vector of 1.5 growth without using double conversions
 inline size_t io_allocation_size::next_allocation_size(size_t data_size) {
     // size_t next_size = ((_next_alloc_sz * 3) + 1) / 2;
     if (data_size > alloc_table.back()) {
