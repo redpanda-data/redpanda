@@ -721,6 +721,69 @@ ss::future<> rm_stm::stop() {
     return raft::state_machine::stop();
 }
 
+rm_stm::transaction_info::status_t
+rm_stm::get_tx_status(model::producer_identity pid) const {
+    if (_mem_state.preparing.contains(pid)) {
+        return transaction_info::status_t::preparing;
+    }
+
+    if (_log_state.prepared.contains(pid)) {
+        return transaction_info::status_t::prepared;
+    }
+
+    return transaction_info::status_t::ongoing;
+}
+
+std::optional<rm_stm::expiration_info>
+rm_stm::get_expiration_info(model::producer_identity pid) const {
+    auto it = _mem_state.expiration.find(pid);
+    if (it == _mem_state.expiration.end()) {
+        return std::nullopt;
+    }
+
+    return it->second;
+}
+
+ss::future<result<rm_stm::transaction_set>> rm_stm::get_transactions() {
+    if (!co_await sync(_sync_timeout)) {
+        co_return errc::not_leader;
+    }
+
+    transaction_set ans;
+
+    // When redpanda starts writing the first batch of a transaction it
+    // estimates its offset and only when the write passes it updates the offset
+    // to the exact value; so for a short period of time (while tx is in the
+    // initiating state) lso_bound is the offset of the last operation known at
+    // moment the transaction started and when the first tx batch is written
+    // it's updated to the first offset of the transaction
+    for (auto& [id, offset] : _mem_state.estimated) {
+        transaction_info tx_info;
+        tx_info.lso_bound = offset;
+        tx_info.status = rm_stm::transaction_info::status_t::initiating;
+        tx_info.info = get_expiration_info(id);
+        ans.emplace(id, tx_info);
+    }
+
+    for (auto& [id, offset] : _mem_state.tx_start) {
+        transaction_info tx_info;
+        tx_info.lso_bound = offset;
+        tx_info.status = get_tx_status(id);
+        tx_info.info = get_expiration_info(id);
+        ans.emplace(id, tx_info);
+    }
+
+    for (auto& [id, offset] : _log_state.ongoing_map) {
+        transaction_info tx_info;
+        tx_info.lso_bound = offset.first;
+        tx_info.status = get_tx_status(id);
+        tx_info.info = get_expiration_info(id);
+        ans.emplace(id, tx_info);
+    }
+
+    co_return ans;
+}
+
 bool rm_stm::check_seq(model::batch_identity bid) {
     auto& seq = _log_state.seq_table[bid.pid];
     auto last_write_timestamp = model::timestamp::now().value();

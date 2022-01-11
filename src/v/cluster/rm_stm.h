@@ -26,6 +26,7 @@
 #include "utils/expiring_promise.h"
 #include "utils/mutex.h"
 
+#include <absl/container/btree_map.h>
 #include <absl/container/btree_set.h>
 #include <absl/container/flat_hash_map.h>
 
@@ -177,6 +178,60 @@ public:
 
     void testing_only_enable_transactions() { _is_tx_enabled = true; }
 
+    struct expiration_info {
+        duration_type timeout;
+        time_point_type last_update;
+
+        time_point_type deadline() const { return last_update + timeout; }
+    };
+
+    struct transaction_info {
+        enum class status_t { ongoing, preparing, prepared, initiating };
+        status_t status;
+
+        model::offset lso_bound;
+        std::optional<expiration_info> info;
+
+        std::string_view get_status() const {
+            switch (status) {
+            case status_t::ongoing:
+                return "ongoing";
+            case status_t::prepared:
+                return "prepared";
+            case status_t::preparing:
+                return "preparing";
+            case status_t::initiating:
+                return "initiating";
+            }
+        }
+
+        bool is_expired() const {
+            return !info.has_value()
+                   || info.value().deadline() <= clock_type::now();
+        }
+
+        std::optional<duration_type> get_staleness() const {
+            if (is_expired()) {
+                return std::nullopt;
+            }
+
+            auto now = ss::lowres_clock::now();
+            return now - info->last_update;
+        }
+
+        std::optional<duration_type> get_timeout() const {
+            if (is_expired()) {
+                return std::nullopt;
+            }
+
+            return info->timeout;
+        }
+    };
+
+    using transaction_set
+      = absl::btree_map<model::producer_identity, rm_stm::transaction_info>;
+    ss::future<result<transaction_set>> get_transactions();
+
 protected:
     ss::future<> handle_eviction() override;
 
@@ -278,13 +333,6 @@ private:
         absl::flat_hash_map<model::producer_identity, seq_entry> seq_table;
     };
 
-    struct expiration_info {
-        duration_type timeout;
-        time_point_type last_update;
-
-        time_point_type deadline() const { return last_update + timeout; }
-    };
-
     struct mem_state {
         // once raft's term has passed mem_state::term we wipe mem_state
         // and wait until log_state catches up with current committed index.
@@ -332,6 +380,11 @@ private:
         }
         return lock_it->second;
     }
+
+    transaction_info::status_t
+    get_tx_status(model::producer_identity pid) const;
+    std::optional<expiration_info>
+    get_expiration_info(model::producer_identity pid) const;
 
     ss::basic_rwlock<> _state_lock;
     absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
