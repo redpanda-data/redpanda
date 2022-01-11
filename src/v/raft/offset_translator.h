@@ -96,6 +96,14 @@ public:
 
     ss::future<> remove_persistent_state();
 
+    /// Moves offset translator persistent state from source to target shard.
+    /// Note when move state on the source shard is deleted
+    static ss::future<> move_persistent_state(
+      raft::group_id,
+      ss::shard_id source_shard,
+      ss::shard_id target_shard,
+      ss::sharded<storage::api>&);
+
 private:
     bytes offsets_map_key() const;
     bytes highest_known_offset_key() const;
