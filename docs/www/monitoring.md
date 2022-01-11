@@ -58,7 +58,7 @@ rpk generate grafana-dashboard \
 ## Stats Reporting
 
 Redpanda ships with an additional `systemd` service which executes periodically
-and reports resource usage and configuration data to Vectorized's metrics API.
+and reports resource usage and configuration data to Redpanda's metrics API.
 It is enabled by default, and the data is anonymous. If you'd like us to be able
 to identify your cluster's data, so that we can monitor it and alert you of
 possible issues, please set the `organization` (your company's domain) and
