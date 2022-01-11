@@ -38,8 +38,9 @@ struct archival_metadata_stm::segment
   : public serde::
       envelope<segment, serde::version<0>, serde::compat_version<0>> {
     // ntp_revision is needed to reconstruct full remote path of
-    // the segment.
-    model::revision_id ntp_revision;
+    // the segment. Deprecated because ntp_revision is now part of
+    // segment_meta.
+    model::revision_id ntp_revision_deprecated;
     cloud_storage::segment_name name;
     cloud_storage::manifest::segment_meta meta;
 };
@@ -61,24 +62,15 @@ archival_metadata_stm::segments_from_manifest(
   const cloud_storage::manifest& manifest) {
     std::vector<segment> segments;
     segments.reserve(manifest.size());
-    for (const auto& [key, meta] : manifest) {
-        model::revision_id ntp_revision;
-        cloud_storage::segment_name segment_name;
-        ss::visit(
-          key,
-          [&](const cloud_storage::remote_segment_path& path) {
-              auto components = get_segment_path_components(path);
-              vassert(components, "can't parse remote segment path {}", path);
-              ntp_revision = components->_rev;
-              segment_name = components->_name;
-          },
-          [&](const cloud_storage::segment_name& name) {
-              ntp_revision = manifest.get_revision_id();
-              segment_name = name;
-          });
+    for (auto [name, meta] : manifest) {
+        if (meta.ntp_revision == model::revision_id{}) {
+            meta.ntp_revision = manifest.get_revision_id();
+        }
 
         segments.push_back(segment{
-          .ntp_revision = ntp_revision, .name = segment_name, .meta = meta});
+          .ntp_revision_deprecated = meta.ntp_revision,
+          .name = std::move(name),
+          .meta = meta});
     }
 
     std::sort(
@@ -288,19 +280,17 @@ model::offset archival_metadata_stm::max_collectible_offset() {
 }
 
 void archival_metadata_stm::apply_add_segment(const segment& segment) {
-    if (segment.ntp_revision == _manifest.get_revision_id()) {
-        _manifest.add(segment.name, segment.meta);
-    } else {
-        auto path = cloud_storage::manifest::generate_remote_segment_path(
-          _raft->ntp(), segment.ntp_revision, segment.name);
-        _manifest.add(path, segment.meta);
+    auto meta = segment.meta;
+    if (meta.ntp_revision == model::revision_id{}) {
+        // metadata serialized by old versions of redpanda doesn't have the
+        // ntp_revision field.
+        meta.ntp_revision = segment.ntp_revision_deprecated;
     }
+    _manifest.add(segment.name, segment.meta);
 
     // NOTE: here we don't take into account possibility of holes in the
     // remote offset range. Archival tries to upload segments in order, and
     // if for some reason is a hole, there are no mechanisms for correcting it.
-
-    const cloud_storage::manifest::segment_meta& meta = segment.meta;
 
     if (_start_offset == model::offset{} || meta.base_offset < _start_offset) {
         _start_offset = meta.base_offset;

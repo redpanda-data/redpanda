@@ -31,6 +31,7 @@ import json
 import traceback
 import uuid
 import sys
+import re
 
 NTP = namedtuple("NTP", ['ns', 'topic', 'partition', 'revision'])
 
@@ -782,6 +783,10 @@ class ArchivalTest(RedpandaTest):
         """Get MD5 checksums of log segments stored in S3 (minio). The paths are
         normalized (<namespace>/<topic>/<partition>_<rev>/...)."""
         def normalize(path):
+            # strip archiver term id from the segment path
+            match = re.search(r'.log(\.\d+)$', path)
+            if match:
+                path = path[:-len(match[1])]
             return path[9:]  # 8-character hash + /
 
         def included(path):

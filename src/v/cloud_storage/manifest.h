@@ -40,40 +40,26 @@ struct manifest_path_components {
     model::revision_id _rev;
 };
 
-/// Information contained inside the segment path
-///
-/// The struct can contain information obtained from the full
-/// S3 segment path. In this case it will have all fields properly
-/// set (_origin, _ns, _topic, _part, _rev). It can also be created using
-/// segment name only. In this case the _is_full field will be set
-/// to false and some fields wouldn't be set (_origin, _ns, _topic, _part,
-/// _rev).
-struct segment_path_components : manifest_path_components {
-    bool _is_full;
-    cloud_storage::segment_name _name;
-    model::offset _base_offset;
-    model::term_id _term;
-};
-
 std::ostream& operator<<(std::ostream& s, const manifest_path_components& c);
-
-std::ostream& operator<<(std::ostream& s, const segment_path_components& c);
 
 /// Parse partition manifest path and return components
 std::optional<manifest_path_components>
 get_manifest_path_components(const std::filesystem::path& path);
 
-/// Parse segment path and return components
-std::optional<segment_path_components>
-get_segment_path_components(const std::filesystem::path& path);
+struct segment_name_components {
+    model::offset base_offset;
+    model::term_id term;
+};
 
-/// Parse base offset from the segment path or segment name
-std::optional<model::offset> get_base_offset(const std::filesystem::path& path);
+std::optional<segment_name_components>
+parse_segment_name(const segment_name& name);
 
-/// Parse segment file name
-/// \return offset, term id, and success flag
-std::tuple<model::offset, model::term_id, bool>
-parse_segment_name(const std::filesystem::path& path);
+/// Segment file name in S3
+remote_segment_path generate_remote_segment_path(
+  const model::ntp&,
+  model::revision_id,
+  const segment_name&,
+  model::term_id archiver_term);
 
 struct serialized_json_stream {
     ss::input_stream<char> stream;
@@ -132,7 +118,7 @@ class manifest final : public base_manifest {
 public:
     struct segment_meta {
         using value_t = segment_meta;
-        static constexpr serde::version_t redpanda_serde_version = 0;
+        static constexpr serde::version_t redpanda_serde_version = 1;
         static constexpr serde::version_t redpanda_serde_compat_version = 0;
 
         bool is_compacted;
@@ -143,10 +129,13 @@ public:
         model::timestamp max_timestamp;
         model::offset delta_offset;
 
+        model::revision_id ntp_revision;
+        model::term_id archiver_term;
+
         auto operator<=>(const segment_meta&) const = default;
     };
 
-    using key = std::variant<segment_name, remote_segment_path>;
+    using key = segment_name;
     using value = segment_meta;
     using segment_map = std::map<key, value>;
     using const_iterator = segment_map::const_iterator;
@@ -161,12 +150,6 @@ public:
     /// Manifest object name in S3
     remote_manifest_path get_manifest_path() const override;
 
-    /// Segment file name in S3
-    static remote_segment_path generate_remote_segment_path(
-      const model::ntp, model::revision_id, const segment_name&);
-    remote_segment_path get_remote_segment_path(const segment_name& name) const;
-    remote_segment_path get_remote_segment_path(const key& name) const;
-
     /// Get NTP
     const model::ntp& get_ntp() const;
 
@@ -176,6 +159,9 @@ public:
     /// Get revision
     model::revision_id get_revision_id() const;
 
+    remote_segment_path
+    generate_segment_path(const segment_name&, const segment_meta&) const;
+
     /// Return iterator to the begining(end) of the segments list
     const_iterator begin() const;
     const_iterator end() const;
@@ -183,28 +169,14 @@ public:
     const_reverse_iterator rend() const;
     size_t size() const;
 
-    /// Check if the manifest contains particular path
-    ///
-    /// The manifest may contain two types of keys
-    /// 1. Segment names like `193984-4-v1.log`
-    /// 2. Full segment paths like
-    /// `f28dac93/kafka/mytopic/12_32/193984-4-v1.log`
-    /// This overloads handles the second case.
-    bool contains(const key& path) const;
+    /// Check if the manifest contains particular segment
+    bool contains(const segment_name& name) const;
 
     /// Add new segment to the manifest
-    bool add(const segment_name& key, const segment_meta& meta);
-
-    /// Add new segment to the manifest
-    bool add(const remote_segment_path& key, const segment_meta& meta);
+    bool add(const segment_name& name, const segment_meta& meta);
 
     /// Get segment if available or nullopt
-    ///
-    /// The manifest may contain two types of keys
-    /// 1. Segment names like `193984-4-v1.log`
-    /// 2. Full segment paths like
-    /// `f28dac93/kafka/mytopic/12_32/193984-4-v1.log`
-    const segment_meta* get(const key& path) const;
+    const segment_meta* get(const segment_name& name) const;
 
     /// Get insert iterator for segments set
     std::insert_iterator<segment_map> get_insert_iterator();
@@ -301,7 +273,5 @@ private:
     std::optional<cluster::topic_configuration> _topic_config;
     model::revision_id _rev;
 };
-
-std::ostream& operator<<(std::ostream& o, const manifest::key& k);
 
 } // namespace cloud_storage
