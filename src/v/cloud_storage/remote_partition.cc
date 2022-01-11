@@ -81,7 +81,33 @@ public:
         }
     }
 
-    ~partition_record_batch_reader_impl() override = default;
+    ~partition_record_batch_reader_impl() noexcept override {
+        if (_reader) {
+            // We must not destroy this reader: it is not safe to do so
+            // without calling stop() on it.  The remote_partition is
+            // responsible for cleaning up readers, including calling
+            // stop() on them in a background fiber so that we don't have to.
+            // (https://github.com/vectorizedio/redpanda/issues/3378)
+            vlog(
+              _ctxlog.debug,
+              "partition_record_batch_reader_impl::~ releasing reader on "
+              "destruction");
+
+            try {
+                _partition->return_reader(std::move(_reader), _it->second);
+            } catch (...) {
+                // Failure to return the reader causes the reader destructor
+                // to execute synchronously inside this function.  That might
+                // succeed, if the reader was already stopped, so give it
+                // a chance rather than asserting out here.
+                vlog(
+                  _ctxlog.error,
+                  "partition_record_batch_reader_impl::~ exception while "
+                  "releasing reader: {}",
+                  std::current_exception);
+            }
+        }
+    }
     partition_record_batch_reader_impl(
       partition_record_batch_reader_impl&& o) noexcept = delete;
     partition_record_batch_reader_impl&
