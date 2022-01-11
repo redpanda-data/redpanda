@@ -48,10 +48,11 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
             tx_request, config::shard_local_cfg().create_topic_timeout_ms())
           .then([&ctx](cluster::add_paritions_tx_reply tx_response) {
               add_partitions_to_txn_response_data data;
-              for (auto tx_topic : tx_response.results) {
+              for (auto& tx_topic : tx_response.results) {
                   add_partitions_to_txn_topic_result topic{
-                    .name = tx_topic.name};
-                  for (auto tx_partition : tx_topic.results) {
+                    .name = std::move(tx_topic.name),
+                  };
+                  for (const auto& tx_partition : tx_topic.results) {
                       add_partitions_to_txn_partition_result partition{
                         .partition_index = tx_partition.partition_index};
                       switch (tx_partition.error_code) {
