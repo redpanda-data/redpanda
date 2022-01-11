@@ -35,9 +35,11 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
           .producer_id = request.data.producer_id,
           .producer_epoch = request.data.producer_epoch};
         tx_request.topics.reserve(request.data.topics.size());
-        for (auto topic : request.data.topics) {
+        for (auto& topic : request.data.topics) {
             cluster::add_paritions_tx_request::topic tx_topic{
-              .name = topic.name, .partitions = topic.partitions};
+              .name = std::move(topic.name),
+              .partitions = std::move(topic.partitions),
+            };
             tx_request.topics.push_back(tx_topic);
         }
 
