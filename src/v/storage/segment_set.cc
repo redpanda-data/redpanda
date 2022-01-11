@@ -321,16 +321,27 @@ static ss::future<segment_set::underlying_t> open_segments(
   ss::sstring dir,
   debug_sanitize_files sanitize_fileops,
   std::function<std::optional<batch_cache_index>()> cache_factory,
-  ss::abort_source& as) {
+  ss::abort_source& as,
+  size_t buf_size,
+  unsigned read_ahead) {
     using segs_type = segment_set::underlying_t;
     return ss::do_with(
       segs_type{},
-      [&as, cache_factory, sanitize_fileops, dir = std::move(dir)](
-        segs_type& segs) {
+      [&as,
+       cache_factory,
+       sanitize_fileops,
+       dir = std::move(dir),
+       buf_size,
+       read_ahead](segs_type& segs) {
           auto f = directory_walker::walk(
             dir,
-            [&as, cache_factory, dir, sanitize_fileops, &segs](
-              ss::directory_entry seg) {
+            [&as,
+             cache_factory,
+             dir,
+             sanitize_fileops,
+             &segs,
+             buf_size,
+             read_ahead](ss::directory_entry seg) {
                 // abort if requested
                 if (as.abort_requested()) {
                     return ss::now();
@@ -354,7 +365,12 @@ static ss::future<segment_set::underlying_t> open_segments(
                     // not a reader filename
                     return ss::make_ready_future<>();
                 }
-                return open_segment(path, sanitize_fileops, cache_factory())
+                return open_segment(
+                         path,
+                         sanitize_fileops,
+                         cache_factory(),
+                         buf_size,
+                         read_ahead)
                   .then([&segs](ss::lw_shared_ptr<segment> p) {
                       segs.push_back(std::move(p));
                   });
@@ -375,11 +391,23 @@ ss::future<segment_set> recover_segments(
   debug_sanitize_files sanitize_fileops,
   bool is_compaction_enabled,
   std::function<std::optional<batch_cache_index>()> cache_factory,
-  ss::abort_source& as) {
+  ss::abort_source& as,
+  size_t read_buf_size,
+  unsigned read_readahead_count) {
     return ss::recursive_touch_directory(path.string())
-      .then([&as, cache_factory, sanitize_fileops, path = std::move(path)] {
+      .then([&as,
+             cache_factory,
+             sanitize_fileops,
+             path = std::move(path),
+             read_buf_size,
+             read_readahead_count] {
           return open_segments(
-            path.string(), sanitize_fileops, cache_factory, as);
+            path.string(),
+            sanitize_fileops,
+            cache_factory,
+            as,
+            read_buf_size,
+            read_readahead_count);
       })
       .then([&as, is_compaction_enabled](segment_set::underlying_t segs) {
           auto segments = segment_set(std::move(segs));

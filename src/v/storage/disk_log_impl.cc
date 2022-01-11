@@ -9,6 +9,7 @@
 
 #include "storage/disk_log_impl.h"
 
+#include "config/configuration.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
@@ -693,7 +694,14 @@ ss::future<> disk_log_impl::new_segment(
   model::offset o, model::term_id t, ss::io_priority_class pc) {
     vassert(
       o() >= 0 && t() >= 0, "offset:{} and term:{} must be initialized", o, t);
-    return _manager.make_log_segment(config(), o, t, pc)
+    return _manager
+      .make_log_segment(
+        config(),
+        o,
+        t,
+        pc,
+        config::shard_local_cfg().storage_read_buffer_size(),
+        config::shard_local_cfg().storage_read_readahead_count())
       .then([this](ss::lw_shared_ptr<segment> handles) mutable {
           return remove_empty_segments().then(
             [this, h = std::move(handles)]() mutable {
