@@ -87,7 +87,7 @@ void group_stm::commit(model::producer_identity pid) {
 void group_stm::abort(
   model::producer_identity pid, [[maybe_unused]] model::tx_seq tx_seq) {
     auto prepared_it = _prepared_txs.find(pid.get_id());
-    if (prepared_it == _prepared_txs.end()) {
+    if (prepared_it == _prepared_txs.end()) { // NOLINT(bugprone-branch-clone)
         return;
     } else if (prepared_it->second.pid.epoch != pid.epoch) {
         return;
