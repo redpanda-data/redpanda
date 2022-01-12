@@ -297,7 +297,6 @@ class GroupMetricsTest(RedpandaTest):
                     == new_leader_node.account.hostname
 
         leader_node = self.redpanda.nodes[get_group_leader() - 1]
-        check_metric_from_node(leader_node)
 
         # Check transfer leadership to another node
         for i in range(3):
