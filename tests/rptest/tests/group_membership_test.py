@@ -271,61 +271,92 @@ class GroupMetricsTest(RedpandaTest):
 
         admin = Admin(redpanda=self.redpanda)
 
-        def get_offset_with_node_from_metric(group):
-            metric = self.redpanda.metrics_sample("kafka_group_offset")
-            if metric is None:
-                return None
-            metric = metric.label_filter(dict(group=group))
-            return metric.samples
-
-        def get_group_leader():
+        def get_group_partition():
             return admin.get_partitions(namespace="kafka_internal",
                                         topic="group",
-                                        partition=0)['leader_id']
+                                        partition=0)
 
-        def check_metric_from_node(node):
-            metrics_offsets = get_offset_with_node_from_metric(group)
-            if metrics_offsets == None:
+        def get_group_leader():
+            return get_group_partition()['leader_id']
+
+        def metrics_from_single_node(node):
+            """
+            Check that metrics are produced only by the given node.
+            """
+            metrics = self.redpanda.metrics_sample("kafka_group_offset")
+            if not metrics:
+                self.logger.debug("No metrics found")
                 return False
+            metrics = metrics.label_filter(dict(group=group)).samples
+            for metric in metrics:
+                self.logger.debug(
+                    f"Retrieved metric from node={metric.node.account.hostname}: {metric}"
+                )
             return all([
                 metric.node.account.hostname == node.account.hostname
-                for metric in metrics_offsets
+                for metric in metrics
             ])
 
-        def transfer_completed(new_leader_node):
-            return self.redpanda.nodes[get_group_leader() - 1].account.hostname \
-                    == new_leader_node.account.hostname
+        def transfer_leadership(new_leader):
+            """
+            Request leadership transfer of the internal consumer group partition
+            and check that it completes successfully.
+            """
+            self.logger.debug(
+                f"Transferring leadership to {new_leader.account.hostname}")
+            admin.transfer_leadership_to(namespace="kafka_internal",
+                                         topic="group",
+                                         partition=0,
+                                         target=self.redpanda.idx(new_leader))
+            for _ in range(3):  # re-check a few times
+                leader = self.redpanda.get_node(get_group_leader())
+                if leader == new_leader:
+                    return True
+                time.sleep(1)
+            return False
 
-        leader_node = self.redpanda.nodes[get_group_leader() - 1]
+        def partition_ready():
+            """
+            All replicas present and known leader
+            """
+            partition = get_group_partition()
+            self.logger.debug(f"XXXXX: {partition}")
+            return len(
+                partition['replicas']) == 3 and partition['leader_id'] >= 0
 
-        # Check transfer leadership to another node
-        for i in range(3):
-            new_leader_node = random.choice(
-                list(filter(lambda x: x != leader_node, self.redpanda.nodes)))
+        def select_next_leader():
+            """
+            Select a leader different than the current leader
+            """
+            wait_until(partition_ready, timeout_sec=30, backoff_sec=5)
+            partition = get_group_partition()
+            replicas = partition['replicas']
+            assert len(replicas) == 3
+            leader = partition['leader_id']
+            assert leader >= 0
+            replicas = filter(lambda r: r["node_id"] != leader, replicas)
+            new_leader = random.choice(list(replicas))['node_id']
+            return self.redpanda.get_node(new_leader)
 
-            admin.transfer_leadership_to(
-                namespace="kafka_internal",
-                topic="group",
-                partition=0,
-                target=self.redpanda.idx(new_leader_node))
+        # repeat the following test a few times.
+        #
+        #  1. transfer leadership to a new node
+        #  2. check that new leader reports metrics
+        #  3. check that prev leader does not report
+        #
+        # note that here reporting does not mean that the node does not report
+        # any metrics but that it does not report metrics for consumer groups
+        # for which it is not leader.
+        for _ in range(4):
+            new_leader = select_next_leader()
 
-            wait_until(lambda: transfer_completed(new_leader_node) and
-                       check_metric_from_node(new_leader_node),
+            wait_until(lambda: transfer_leadership(new_leader),
                        timeout_sec=30,
                        backoff_sec=5)
 
-            leader_node = new_leader_node
-
-        # Check transfer leadership to same node
-        admin.transfer_leadership_to(namespace="kafka_internal",
-                                     topic="group",
-                                     partition=0,
-                                     target=self.redpanda.idx(leader_node))
-
-        wait_until(lambda: transfer_completed(leader_node) and
-                   check_metric_from_node(leader_node),
-                   timeout_sec=30,
-                   backoff_sec=5)
+            wait_until(lambda: metrics_from_single_node(new_leader),
+                       timeout_sec=30,
+                       backoff_sec=5)
 
         for host in producers + consumers:
             host.stop()
