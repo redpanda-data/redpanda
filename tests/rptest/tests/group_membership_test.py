@@ -246,7 +246,6 @@ class GroupMetricsTest(RedpandaTest):
 
     @cluster(num_nodes=7)
     def test_leadership_transfer(self):
-        rpk = RpkTool(self.redpanda)
         topics = list(filter(lambda x: x.partition_count > 1, self.topics))
         group = "g0"
 
