@@ -13,6 +13,7 @@
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/members_table.h"
+#include "cluster/node/local_monitor.h"
 #include "cluster/partition_manager.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
@@ -110,8 +111,6 @@ private:
     ss::future<std::vector<topic_status>>
       collect_topic_status(partitions_filter);
 
-    std::vector<node::disk> get_disk_space();
-
     void refresh_nodes_status();
 
     result<node_health_report>
@@ -142,5 +141,6 @@ private:
     ss::timer<ss::lowres_clock> _tick_timer;
     ss::gate _gate;
     mutex _refresh_mutex;
+    node::local_monitor _local_monitor;
 };
 } // namespace cluster

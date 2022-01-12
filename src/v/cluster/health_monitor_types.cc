@@ -13,7 +13,6 @@
 #include "cluster/errc.h"
 #include "cluster/node/types.h"
 #include "model/adl_serde.h"
-#include "utils/human.h"
 #include "utils/to_string.h"
 
 #include <fmt/ostream.h>

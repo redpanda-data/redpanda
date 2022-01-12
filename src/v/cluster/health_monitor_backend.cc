@@ -16,6 +16,7 @@
 #include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
+#include "cluster/node/local_monitor.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "model/fundamental.h"
@@ -163,10 +164,7 @@ std::optional<node_health_report> health_monitor_backend::build_node_report(
     node_health_report report;
     report.id = id;
 
-    report.local_state.disks = it->second.local_state.disks;
-    report.local_state.redpanda_version
-      = it->second.local_state.redpanda_version;
-    report.local_state.uptime = it->second.local_state.uptime;
+    report.local_state = it->second.local_state;
 
     if (f.include_partitions) {
         report.topics = filter_topic_status(it->second.topics, f.ntp_filters);
@@ -385,7 +383,10 @@ health_monitor_backend::get_current_cluster_health_snapshot(
 }
 
 void health_monitor_backend::tick() {
-    ssx::spawn_with_gate(_gate, [this] { return tick_cluster_health(); });
+    ssx::spawn_with_gate(_gate, [this]() -> ss::future<> {
+        co_await _local_monitor.update_state();
+        co_return co_await tick_cluster_health();
+    });
 }
 
 ss::future<> health_monitor_backend::tick_cluster_health() {
@@ -511,13 +512,8 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
     node_health_report ret;
     ret.id = _raft0->self().id();
 
-    ret.local_state.disks = get_disk_space();
-    ret.local_state.redpanda_version = cluster::node::application_version(
-      (std::string)redpanda_version());
-
-    ret.local_state.uptime
-      = std::chrono::duration_cast<std::chrono::milliseconds>(
-        ss::engine().uptime());
+    co_await _local_monitor.update_state();
+    ret.local_state = _local_monitor.get_state_cached();
 
     if (filter.include_partitions) {
         ret.topics = co_await collect_topic_status(
@@ -603,17 +599,6 @@ health_monitor_backend::collect_topic_status(partitions_filter filters) {
     }
 
     co_return topics;
-}
-
-std::vector<node::disk> health_monitor_backend::get_disk_space() {
-    auto space_info = std::filesystem::space(
-      config::node().data_directory().path);
-
-    return {node::disk{
-      .path = config::node().data_directory().as_sstring(),
-      .free = space_info.free,
-      .total = space_info.capacity,
-    }};
 }
 
 std::chrono::milliseconds health_monitor_backend::tick_interval() {
