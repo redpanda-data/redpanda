@@ -194,6 +194,18 @@ class Admin:
         path = f"partitions/{namespace}/{topic}/{partition}/transactions"
         return self._request('get', path, node=node).json()
 
+    def mark_transaction_expired(self,
+                                 topic,
+                                 partition,
+                                 pid,
+                                 namespace,
+                                 node=None):
+        """
+        Mark transaction expired for partition
+        """
+        path = f"partitions/{namespace}/{topic}/{partition}/mark_transaction_expired?id={pid['id']}&epoch={pid['epoch']}"
+        return self._request("post", path, node=node)
+
     def set_partition_replicas(self,
                                topic,
                                partition,
