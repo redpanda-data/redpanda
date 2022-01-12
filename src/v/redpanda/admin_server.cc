@@ -1184,7 +1184,7 @@ void admin_server::register_broker_routes() {
                       });
                     if (r_it != h_report.value().node_reports.end()) {
                         it->second.version = r_it->local_state.redpanda_version;
-                        for (auto& ds : r_it->local_state.disk_space) {
+                        for (auto& ds : r_it->local_state.disks) {
                             ss::httpd::broker_json::disk_space_info dsi;
                             dsi.path = ds.path;
                             dsi.free = ds.free;
@@ -1248,7 +1248,7 @@ void admin_server::register_broker_routes() {
                       });
                     if (r_it != h_report.value().node_reports.end()) {
                         b.version = r_it->local_state.redpanda_version;
-                        for (auto& ds : r_it->local_state.disk_space) {
+                        for (auto& ds : r_it->local_state.disks) {
                             ss::httpd::broker_json::disk_space_info dsi;
                             dsi.path = ds.path;
                             dsi.free = ds.free;

@@ -60,10 +60,10 @@ std::ostream& operator<<(std::ostream& o, const node_state& s) {
 std::ostream& operator<<(std::ostream& o, const node_health_report& r) {
     fmt::print(
       o,
-      "{{id: {}, disk_space: {}, topics: {}, redpanda_version: {}, uptime: "
+      "{{id: {}, disks: {}, topics: {}, redpanda_version: {}, uptime: "
       "{}}}",
       r.id,
-      r.local_state.disk_space,
+      r.local_state.disks,
       r.topics,
       r.local_state.redpanda_version,
       r.local_state.uptime);
@@ -87,7 +87,7 @@ std::ostream& operator<<(std::ostream& o, const local_state& s) {
       "{{redpanda_version: {}, uptime: {}, disks: {}}}",
       s.redpanda_version,
       s.uptime,
-      s.disk_space);
+      s.disks);
     return o;
 }
 
@@ -170,7 +170,7 @@ void adl<cluster::node::disk>::to(iobuf& out, cluster::node::disk&& s) {
 }
 
 cluster::node::disk adl<cluster::node::disk>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::node::disk>("cluster::node_disk_space", p);
+    read_and_assert_version<cluster::node::disk>("cluster::node::disks", p);
 
     auto path = adl<ss::sstring>{}.from(p);
     auto free = adl<uint64_t>{}.from(p);
@@ -252,7 +252,7 @@ void adl<cluster::node_health_report>::to(
       r.id,
       std::move(r.local_state.redpanda_version),
       r.local_state.uptime,
-      std::move(r.local_state.disk_space),
+      std::move(r.local_state.disks),
       std::move(r.topics));
 }
 
@@ -264,14 +264,14 @@ adl<cluster::node_health_report>::from(iobuf_parser& p) {
     auto id = adl<model::node_id>{}.from(p);
     auto redpanda_version = adl<cluster::application_version>{}.from(p);
     auto uptime = adl<std::chrono::milliseconds>{}.from(p);
-    auto disk_space = adl<std::vector<cluster::node::disk>>{}.from(p);
+    auto disks = adl<std::vector<cluster::node::disk>>{}.from(p);
     auto topics = adl<std::vector<cluster::topic_status>>{}.from(p);
 
     return cluster::node_health_report{
       .id = id,
       .local_state = { .redpanda_version = std::move(redpanda_version),
       .uptime = uptime,
-      .disk_space = std::move(disk_space),},
+      .disks = std::move(disks),},
       .topics = std::move(topics),
     };
 }

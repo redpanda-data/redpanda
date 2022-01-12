@@ -82,7 +82,7 @@ struct local_state {
     std::chrono::milliseconds uptime;
     // we store a vector to be ready to operate with multiple data
     // directories
-    std::vector<disk> disk_space;
+    std::vector<disk> disks;
 
     friend std::ostream& operator<<(std::ostream&, const local_state&);
 };

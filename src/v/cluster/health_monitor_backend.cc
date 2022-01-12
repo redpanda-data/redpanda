@@ -163,7 +163,7 @@ std::optional<node_health_report> health_monitor_backend::build_node_report(
     node_health_report report;
     report.id = id;
 
-    report.local_state.disk_space = it->second.local_state.disk_space;
+    report.local_state.disks = it->second.local_state.disks;
     report.local_state.redpanda_version
       = it->second.local_state.redpanda_version;
     report.local_state.uptime = it->second.local_state.uptime;
@@ -511,7 +511,7 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
     node_health_report ret;
     ret.id = _raft0->self().id();
 
-    ret.local_state.disk_space = get_disk_space();
+    ret.local_state.disks = get_disk_space();
     ret.local_state.redpanda_version = cluster::application_version(
       (std::string)redpanda_version());
 

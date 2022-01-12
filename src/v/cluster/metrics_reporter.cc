@@ -194,10 +194,10 @@ metrics_reporter::build_metrics_snapshot() {
         auto& metrics = it->second;
 
         metrics.version = report.local_state.redpanda_version;
-        metrics.disks.reserve(report.local_state.disk_space.size());
+        metrics.disks.reserve(report.local_state.disks.size());
         std::transform(
-          report.local_state.disk_space.begin(),
-          report.local_state.disk_space.end(),
+          report.local_state.disks.begin(),
+          report.local_state.disks.end(),
           std::back_inserter(metrics.disks),
           [](const cluster::node::disk& nds) {
               return node_disk_space{.free = nds.free, .total = nds.total};

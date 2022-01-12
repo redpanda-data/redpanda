@@ -54,8 +54,7 @@ void check_reports_the_same(
         BOOST_TEST_REQUIRE(
           lr.local_state.redpanda_version == rr.local_state.redpanda_version);
         BOOST_TEST_REQUIRE(lr.topics == rr.topics);
-        BOOST_TEST_REQUIRE(
-          lr.local_state.disk_space == rr.local_state.disk_space);
+        BOOST_TEST_REQUIRE(lr.local_state.disks == rr.local_state.disks);
     }
 }
 
@@ -97,7 +96,7 @@ FIXTURE_TEST(data_are_consistent_across_nodes, cluster_test_fixture) {
               if (res.value().node_reports.empty()) {
                   return false;
               }
-              if (res.value().node_reports[0].local_state.disk_space.empty()) {
+              if (res.value().node_reports[0].local_state.disks.empty()) {
                   return false;
               }
               return true;
@@ -189,7 +188,7 @@ FIXTURE_TEST(test_ntp_filter, cluster_test_fixture) {
               if (res.value().node_reports.empty()) {
                   return false;
               }
-              if (res.value().node_reports[0].local_state.disk_space.empty()) {
+              if (res.value().node_reports[0].local_state.disks.empty()) {
                   return false;
               }
               return true;
@@ -317,7 +316,7 @@ FIXTURE_TEST(test_alive_status, cluster_test_fixture) {
               if (res.value().node_reports.empty()) {
                   return false;
               }
-              if (res.value().node_reports[0].local_state.disk_space.empty()) {
+              if (res.value().node_reports[0].local_state.disks.empty()) {
                   return false;
               }
               return true;
