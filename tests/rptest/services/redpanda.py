@@ -467,6 +467,26 @@ class RedpandaService(Service):
         # Fall through: no problematic lines found
         return True
 
+    def lsof_node(self, node: ClusterNode):
+        """
+        Get the list of open files for a running node
+        :return: yields strings
+        """
+        first = True
+        for line in node.account.ssh_capture(
+                f"lsof -nP -p {self.redpanda_pid(node)}"):
+            if first:
+                # First line is a header, skip it
+                first = False
+                continue
+            try:
+                filename = line.split()[-1]
+            except IndexError:
+                # Malformed line
+                pass
+            else:
+                yield filename
+
     def start_node(self, node, override_cfg_params=None, timeout=None):
         """
         Start a single instance of redpanda. This function will not return until
