@@ -28,6 +28,7 @@
 #include "finjector/hbadger.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "model/record.h"
 #include "net/dns.h"
 #include "raft/types.h"
 #include "redpanda/admin/api-doc/broker.json.h"
@@ -61,6 +62,7 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
+#include <limits>
 #include <stdexcept>
 #include <system_error>
 #include <unordered_map>
@@ -407,6 +409,17 @@ ss::future<> admin_server::throw_on_error(
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected raft error: {}", ec.message()));
+        }
+    } else if (ec.category() == cluster::tx_error_category()) {
+        switch (cluster::tx_errc(ec.value())) {
+        case cluster::tx_errc::leader_not_found:
+            throw co_await redirect_to_leader(req, ntp);
+        case cluster::tx_errc::pid_not_found:
+            throw ss::httpd::bad_request_exception(
+              fmt_with_ctx(fmt::format, "Can not find pid for ntp:{}", ntp));
+        default:
+            throw ss::httpd::server_error_exception(
+              fmt::format("Unexpected tx_error error: {}", ec.message()));
         }
     } else {
         throw ss::httpd::server_error_exception(
@@ -1307,6 +1320,78 @@ void admin_server::register_partition_routes() {
                 }
 
                 co_return ss::json::json_return_type(ans);
+            });
+      });
+
+    /*
+     * Abort transaction for partition
+     */
+    ss::httpd::partition_json::mark_transaction_expired.set(
+      _server._routes,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          const model::ntp ntp = parse_ntp_from_request(req->param);
+
+          model::producer_identity pid;
+          auto node = req->get_query_param("id");
+          try {
+              pid.id = std::stoi(node);
+          } catch (...) {
+              throw ss::httpd::bad_param_exception(fmt_with_ctx(
+                fmt::format, "Transaction id must be an integer: {}", node));
+          }
+          node = req->get_query_param("epoch");
+          try {
+              int64_t epoch = std::stoi(node);
+              if (
+                epoch < std::numeric_limits<int16_t>::min()
+                || epoch > std::numeric_limits<int16_t>::max()) {
+                  throw ss::httpd::bad_param_exception(fmt_with_ctx(
+                    fmt::format, "Invalid transaction epoch {}", epoch));
+              }
+              pid.epoch = epoch;
+          } catch (...) {
+              throw ss::httpd::bad_param_exception(fmt_with_ctx(
+                fmt::format, "Transaction epoch must be an integer: {}", node));
+          }
+
+          vlog(logger.info, "Mark transaction expired for pid:{}", pid);
+
+          if (need_redirect_to_leader(ntp, _metadata_cache)) {
+              throw co_await redirect_to_leader(*req, ntp);
+          }
+
+          auto shard = _shard_table.local().shard_for(ntp);
+          // Strange situation, but need to check it
+          if (!shard) {
+              throw ss::httpd::server_error_exception(fmt_with_ctx(
+                fmt::format, "Can not find shard for partition {}", ntp.tp));
+          }
+
+          co_return co_await _partition_manager.invoke_on(
+            *shard,
+            [ntp = std::move(ntp), pid, req = std::move(req), this](
+              cluster::partition_manager& pm) mutable
+            -> ss::future<ss::json::json_return_type> {
+                auto partition = pm.get(ntp);
+                if (!partition) {
+                    throw ss::httpd::server_error_exception(fmt_with_ctx(
+                      fmt::format, "Can not find partition {}", partition));
+                }
+
+                auto rm_stm_ptr = partition->rm_stm();
+
+                if (!rm_stm_ptr) {
+                    throw ss::httpd::server_error_exception(fmt_with_ctx(
+                      fmt::format,
+                      "Can not get rm_stm for partition {}",
+                      partition));
+                }
+
+                auto res = co_await rm_stm_ptr->mark_expired(pid);
+                co_await throw_on_error(*req, res, ntp);
+
+                co_return ss::json::json_return_type(ss::json::json_void());
             });
       });
 
