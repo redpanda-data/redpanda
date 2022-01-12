@@ -57,6 +57,7 @@ RUN apt update && \
       libsasl2-dev \
       libssl-dev \
       net-tools \
+      lsof \
       pciutils \
       nodejs \
       npm \
