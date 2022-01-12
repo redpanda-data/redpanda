@@ -488,7 +488,20 @@ recovery_stm::dispatch_append_entries(append_entries_request&& r) {
 }
 
 bool recovery_stm::is_recovery_finished() {
-    if (_ptr->_bg.is_closed()) {
+    /**
+     * finish recovery loop when:
+     *
+     * preliminary checks:
+     *  1) consensus is shutting down
+     *  2) stop was requested
+     *  3) term changed
+     *  4) node is not longer a leader
+     *  5) follower was deleted
+     *
+     */
+    if (
+      _ptr->_as.abort_requested() || _ptr->_bg.is_closed() || _stop_requested
+      || _term != _ptr->term() || !_ptr->is_leader()) {
         return true;
     }
 
@@ -496,15 +509,11 @@ bool recovery_stm::is_recovery_finished() {
     if (!meta) {
         return true;
     }
-    auto lstats = _ptr->_log.offsets();
-    auto max_offset = lstats.dirty_offset();
-    vlog(
-      _ctxlog.trace,
-      "Recovery status - match idx: {}, max offset: {}",
-      meta.value()->match_index,
-      max_offset);
 
-    bool is_up_to_date = meta.value()->match_index == max_offset;
+    auto lstats = _ptr->_log.offsets();
+    auto log_end_offset = lstats.dirty_offset();
+
+    bool is_up_to_date = meta.value()->match_index == log_end_offset;
     bool quorum_writes = _ptr->_visibility_upper_bound_index
                          <= _ptr->_commit_index;
     /**
@@ -517,11 +526,7 @@ bool recovery_stm::is_recovery_finished() {
      * date and leadership transfer is up to date, the transfer is probably
      * waiting for us to complete, so we drop out.
      */
-    return (is_up_to_date
-            && (quorum_writes || _ptr->_transferring_leadership)) // caught up
-           || _stop_requested       // stop requested
-           || _term != _ptr->term() // term changed
-           || !_ptr->is_leader();   // no longer a leader
+    return (is_up_to_date && (quorum_writes || _ptr->_transferring_leadership));
 }
 
 ss::future<> recovery_stm::apply() {
