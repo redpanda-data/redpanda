@@ -16,7 +16,8 @@ class RpkProducer(BackgroundThreadService):
                  msg_size,
                  msg_count,
                  acks=None,
-                 printable=False):
+                 printable=False,
+                 quiet: bool = False):
         super(RpkProducer, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -25,17 +26,23 @@ class RpkProducer(BackgroundThreadService):
         self._acks = acks
         self._printable = printable
         self._stopping = Event()
+        self._quiet = quiet
 
     def _worker(self, _idx, node):
         rpk_binary = self._redpanda.find_binary("rpk")
         key_size = 16
         cmd = f"dd if=/dev/urandom bs={self._msg_size + key_size} count={self._msg_count}"
+
         if self._printable:
             cmd += ' | hexdump -e "1/1 \\"%02x\\""'
 
         cmd += f" | {rpk_binary} topic --brokers {self._redpanda.brokers()} produce --compression none {self._topic} -f '%V{{{self._msg_size}}}%K{{{key_size}}}%k%v'"
         if self._acks is not None:
             cmd += f" --acks {self._acks}"
+
+        if self._quiet:
+            # Suppress default "Produced to..." output lines by setting output template to empty string
+            cmd += " -o \"\""
 
         self._stopping.clear()
         try:
