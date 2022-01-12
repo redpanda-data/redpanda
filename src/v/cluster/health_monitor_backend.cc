@@ -512,7 +512,7 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
     ret.id = _raft0->self().id();
 
     ret.local_state.disks = get_disk_space();
-    ret.local_state.redpanda_version = cluster::application_version(
+    ret.local_state.redpanda_version = cluster::node::application_version(
       (std::string)redpanda_version());
 
     ret.local_state.uptime

@@ -9,6 +9,7 @@
 
 #include "cluster/health_monitor_types.h"
 #include "cluster/metadata_cache.h"
+#include "cluster/node/types.h"
 #include "cluster/shard_table.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tests/cluster_test_fixture.h"

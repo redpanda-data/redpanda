@@ -11,6 +11,7 @@
 #pragma once
 #include "bytes/iobuf_parser.h"
 #include "cluster/errc.h"
+#include "cluster/node/types.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -29,7 +30,6 @@ namespace cluster {
  */
 
 using alive = ss::bool_class<struct node_alive_tag>;
-using application_version = named_type<ss::sstring, struct version_number_tag>;
 /**
  * node state is determined from controller, and it doesn't require contacting
  * with the node directly
@@ -42,18 +42,6 @@ struct node_state {
     alive is_alive;
     friend std::ostream& operator<<(std::ostream&, const node_state&);
 };
-
-namespace node {
-struct disk {
-    static constexpr int8_t current_version = 0;
-
-    ss::sstring path;
-    uint64_t free;
-    uint64_t total;
-    friend std::ostream& operator<<(std::ostream&, const disk&);
-    friend bool operator==(const disk&, const disk&) = default;
-};
-} // namespace node
 
 struct partition_status {
     static constexpr int8_t current_version = 0;
@@ -74,19 +62,6 @@ struct topic_status {
     friend std::ostream& operator<<(std::ostream&, const topic_status&);
     friend bool operator==(const topic_status&, const topic_status&) = default;
 };
-
-namespace node {
-struct local_state {
-    static constexpr int8_t current_version = 0;
-    application_version redpanda_version;
-    std::chrono::milliseconds uptime;
-    // we store a vector to be ready to operate with multiple data
-    // directories
-    std::vector<disk> disks;
-
-    friend std::ostream& operator<<(std::ostream&, const local_state&);
-};
-} // namespace node
 
 /**
  * Node health report is collected built based on node local state at given

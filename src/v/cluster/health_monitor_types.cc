@@ -11,6 +11,7 @@
 #include "cluster/health_monitor_types.h"
 
 #include "cluster/errc.h"
+#include "cluster/node/types.h"
 #include "model/adl_serde.h"
 #include "utils/human.h"
 #include "utils/to_string.h"
@@ -79,28 +80,6 @@ std::ostream& operator<<(std::ostream& o, const cluster_health_report& r) {
       r.node_reports);
     return o;
 }
-
-namespace node {
-std::ostream& operator<<(std::ostream& o, const local_state& s) {
-    fmt::print(
-      o,
-      "{{redpanda_version: {}, uptime: {}, disks: {}}}",
-      s.redpanda_version,
-      s.uptime,
-      s.disks);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const disk& s) {
-    fmt::print(
-      o,
-      "{{path: {}, free: {}, total: {}}}",
-      s.path,
-      human::bytes(s.free),
-      human::bytes(s.total));
-    return o;
-}
-} // namespace node
 
 std::ostream& operator<<(std::ostream& o, const partition_status& pl) {
     fmt::print(
@@ -262,7 +241,7 @@ adl<cluster::node_health_report>::from(iobuf_parser& p) {
       "cluster::node_health_report", p);
 
     auto id = adl<model::node_id>{}.from(p);
-    auto redpanda_version = adl<cluster::application_version>{}.from(p);
+    auto redpanda_version = adl<cluster::node::application_version>{}.from(p);
     auto uptime = adl<std::chrono::milliseconds>{}.from(p);
     auto disks = adl<std::vector<cluster::node::disk>>{}.from(p);
     auto topics = adl<std::vector<cluster::topic_status>>{}.from(p);
