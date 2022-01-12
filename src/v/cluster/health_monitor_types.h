@@ -20,6 +20,8 @@
 #include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
 
+#include <chrono>
+
 namespace cluster {
 
 /**
@@ -71,6 +73,16 @@ struct topic_status {
     friend std::ostream& operator<<(std::ostream&, const topic_status&);
     friend bool operator==(const topic_status&, const topic_status&) = default;
 };
+
+struct node_local_state {
+    static constexpr int8_t current_version = 0;
+    application_version redpanda_version;
+    std::chrono::milliseconds uptime;
+    // we store a vector to be ready to operate with multiple data
+    // directories
+    std::vector<node_disk_space> disk_space;
+};
+
 /**
  * Node health report is collected built based on node local state at given
  * instance of time
@@ -79,11 +91,7 @@ struct node_health_report {
     static constexpr int8_t current_version = 0;
 
     model::node_id id;
-    application_version redpanda_version;
-    std::chrono::milliseconds uptime;
-    // we store a vector to be ready to operate with multiple data
-    // directories
-    std::vector<node_disk_space> disk_space;
+    node_local_state local_state;
     std::vector<topic_status> topics;
 
     friend std::ostream& operator<<(std::ostream&, const node_health_report&);

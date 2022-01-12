@@ -163,9 +163,10 @@ std::optional<node_health_report> health_monitor_backend::build_node_report(
     node_health_report report;
     report.id = id;
 
-    report.disk_space = it->second.disk_space;
-    report.redpanda_version = it->second.redpanda_version;
-    report.uptime = it->second.uptime;
+    report.local_state.disk_space = it->second.local_state.disk_space;
+    report.local_state.redpanda_version
+      = it->second.local_state.redpanda_version;
+    report.local_state.uptime = it->second.local_state.uptime;
 
     if (f.include_partitions) {
         report.topics = filter_topic_status(it->second.topics, f.ntp_filters);
@@ -510,12 +511,13 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
     node_health_report ret;
     ret.id = _raft0->self().id();
 
-    ret.disk_space = get_disk_space();
-    ret.redpanda_version = cluster::application_version(
+    ret.local_state.disk_space = get_disk_space();
+    ret.local_state.redpanda_version = cluster::application_version(
       (std::string)redpanda_version());
 
-    ret.uptime = std::chrono::duration_cast<std::chrono::milliseconds>(
-      ss::engine().uptime());
+    ret.local_state.uptime
+      = std::chrono::duration_cast<std::chrono::milliseconds>(
+        ss::engine().uptime());
 
     if (filter.include_partitions) {
         ret.topics = co_await collect_topic_status(

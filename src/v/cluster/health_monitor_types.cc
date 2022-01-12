@@ -63,10 +63,10 @@ std::ostream& operator<<(std::ostream& o, const node_health_report& r) {
       "{{id: {}, disk_space: {}, topics: {}, redpanda_version: {}, uptime: "
       "{}}}",
       r.id,
-      r.disk_space,
+      r.local_state.disk_space,
       r.topics,
-      r.redpanda_version,
-      r.uptime);
+      r.local_state.redpanda_version,
+      r.local_state.uptime);
     return o;
 }
 
@@ -240,9 +240,9 @@ void adl<cluster::node_health_report>::to(
       out,
       r.current_version,
       r.id,
-      std::move(r.redpanda_version),
-      r.uptime,
-      std::move(r.disk_space),
+      std::move(r.local_state.redpanda_version),
+      r.local_state.uptime,
+      std::move(r.local_state.disk_space),
       std::move(r.topics));
 }
 
@@ -259,9 +259,9 @@ adl<cluster::node_health_report>::from(iobuf_parser& p) {
 
     return cluster::node_health_report{
       .id = id,
-      .redpanda_version = std::move(redpanda_version),
+      .local_state = { .redpanda_version = std::move(redpanda_version),
       .uptime = uptime,
-      .disk_space = std::move(disk_space),
+      .disk_space = std::move(disk_space),},
       .topics = std::move(topics),
     };
 }

@@ -193,17 +193,17 @@ metrics_reporter::build_metrics_snapshot() {
         }
         auto& metrics = it->second;
 
-        metrics.version = report.redpanda_version;
-        metrics.disks.reserve(report.disk_space.size());
+        metrics.version = report.local_state.redpanda_version;
+        metrics.disks.reserve(report.local_state.disk_space.size());
         std::transform(
-          report.disk_space.begin(),
-          report.disk_space.end(),
+          report.local_state.disk_space.begin(),
+          report.local_state.disk_space.end(),
           std::back_inserter(metrics.disks),
           [](const cluster::node_disk_space& nds) {
               return node_disk_space{.free = nds.free, .total = nds.total};
           });
 
-        metrics.uptime_ms = report.uptime / 1ms;
+        metrics.uptime_ms = report.local_state.uptime / 1ms;
     }
     auto& topics = _topics.local().topics_map();
     snapshot.topic_count = 0;
