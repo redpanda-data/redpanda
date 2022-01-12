@@ -36,10 +36,12 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
+import java.util.stream.Collectors;
 import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
@@ -205,6 +207,17 @@ public class VerifiableConsumer
   @Override
   public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
     printJson(new PartitionsAssigned(partitions));
+    printJson(consumer.committed(new HashSet<>(partitions))
+                  .entrySet()
+                  .stream()
+                  .filter(e -> e.getValue() != null)
+                  .map(
+                      e
+                      -> new CommitData(
+                          e.getKey().topic(), e.getKey().partition(),
+                          e.getValue().offset()))
+                  .collect(Collectors.collectingAndThen(
+                      Collectors.toList(), OffsetsFetched::new)));
   }
 
   @Override
@@ -469,6 +482,22 @@ public class VerifiableConsumer
     @JsonProperty
     public boolean success() {
       return success;
+    }
+  }
+  private static class OffsetsFetched extends ConsumerEvent {
+
+    private final List<CommitData> offsets;
+
+    public OffsetsFetched(List<CommitData> offsets) { this.offsets = offsets; }
+
+    @Override
+    public String name() {
+      return "offsets_fetched";
+    }
+
+    @JsonProperty
+    public List<CommitData> offsets() {
+      return offsets;
     }
   }
 
