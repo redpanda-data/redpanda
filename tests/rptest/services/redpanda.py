@@ -170,6 +170,14 @@ class ResourceSettings:
 
         self._nfiles = nfiles
 
+    @property
+    def memory_mb(self):
+        return self._memory_mb
+
+    @property
+    def num_cpus(self):
+        return self._num_cpus
+
     def to_cli(self):
         """
         :return: 2 tuple of strings, first goes before the binary, second goes after it
