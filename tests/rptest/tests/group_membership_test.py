@@ -279,10 +279,10 @@ class GroupMetricsTest(RedpandaTest):
             metric = metric.label_filter(dict(group=group))
             return metric.samples
 
-        def get_group_leader():
+        def get_partition():
             return admin.get_partitions(namespace="kafka_internal",
                                         topic="group",
-                                        partition=0)['leader_id']
+                                        partition=0)
 
         def check_metric_from_node(node):
             metrics_offsets = get_offset_with_node_from_metric(group)
@@ -293,38 +293,42 @@ class GroupMetricsTest(RedpandaTest):
                 for metric in metrics_offsets
             ])
 
-        def transfer_completed(new_leader_node):
-            return self.redpanda.nodes[get_group_leader() - 1].account.hostname \
-                    == new_leader_node.account.hostname
+        def transfer_completed(new_leader):
+            return get_partition()["leader_id"] == new_leader
 
-        leader_node = self.redpanda.nodes[get_group_leader() - 1]
+        leader = get_partition()["leader_id"]
+        leader_node = self.redpanda.get_node(leader)
+
         check_metric_from_node(leader_node)
 
         # Check transfer leadership to another node
         for i in range(3):
-            new_leader_node = random.choice(
-                list(filter(lambda x: x != leader_node, self.redpanda.nodes)))
+            partition = get_partition()
+            new_leader = next(
+                filter(lambda r: r["node_id"] != partition["leader_id"], partition["replicas"]))["node_id"]
+            new_leader_node = self.redpanda.get_node(new_leader)
 
             admin.transfer_leadership_to(
                 namespace="kafka_internal",
                 topic="group",
                 partition=0,
-                target=self.redpanda.idx(new_leader_node))
+                target=new_leader)
 
-            wait_until(lambda: transfer_completed(new_leader_node) and
+            wait_until(lambda: transfer_completed(new_leader) and
                        check_metric_from_node(new_leader_node),
                        timeout_sec=30,
                        backoff_sec=5)
 
             leader_node = new_leader_node
+            leader = new_leader
 
         # Check transfer leadership to same node
         admin.transfer_leadership_to(namespace="kafka_internal",
                                      topic="group",
                                      partition=0,
-                                     target=self.redpanda.idx(leader_node))
+                                     target=leader)
 
-        wait_until(lambda: transfer_completed(leader_node) and
+        wait_until(lambda: transfer_completed(leader) and
                    check_metric_from_node(leader_node),
                    timeout_sec=30,
                    backoff_sec=5)
