@@ -43,16 +43,17 @@ struct node_state {
     friend std::ostream& operator<<(std::ostream&, const node_state&);
 };
 
-struct node_disk_space {
+namespace node {
+struct disk {
     static constexpr int8_t current_version = 0;
 
     ss::sstring path;
     uint64_t free;
     uint64_t total;
-    friend std::ostream& operator<<(std::ostream&, const node_disk_space&);
-    friend bool operator==(const node_disk_space&, const node_disk_space&)
-      = default;
+    friend std::ostream& operator<<(std::ostream&, const disk&);
+    friend bool operator==(const disk&, const disk&) = default;
 };
+} // namespace node
 
 struct partition_status {
     static constexpr int8_t current_version = 0;
@@ -74,14 +75,18 @@ struct topic_status {
     friend bool operator==(const topic_status&, const topic_status&) = default;
 };
 
-struct node_local_state {
+namespace node {
+struct local_state {
     static constexpr int8_t current_version = 0;
     application_version redpanda_version;
     std::chrono::milliseconds uptime;
     // we store a vector to be ready to operate with multiple data
     // directories
-    std::vector<node_disk_space> disk_space;
+    std::vector<disk> disk_space;
+
+    friend std::ostream& operator<<(std::ostream&, const local_state&);
 };
+} // namespace node
 
 /**
  * Node health report is collected built based on node local state at given
@@ -91,7 +96,7 @@ struct node_health_report {
     static constexpr int8_t current_version = 0;
 
     model::node_id id;
-    node_local_state local_state;
+    node::local_state local_state;
     std::vector<topic_status> topics;
 
     friend std::ostream& operator<<(std::ostream&, const node_health_report&);
@@ -200,10 +205,11 @@ struct adl<cluster::cluster_health_report> {
     void to(iobuf&, cluster::cluster_health_report&&);
     cluster::cluster_health_report from(iobuf_parser&);
 };
+
 template<>
-struct adl<cluster::node_disk_space> {
-    void to(iobuf&, cluster::node_disk_space&&);
-    cluster::node_disk_space from(iobuf_parser&);
+struct adl<cluster::node::disk> {
+    void to(iobuf&, cluster::node::disk&&);
+    cluster::node::disk from(iobuf_parser&);
 };
 
 template<>

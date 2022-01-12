@@ -605,11 +605,11 @@ health_monitor_backend::collect_topic_status(partitions_filter filters) {
     co_return topics;
 }
 
-std::vector<node_disk_space> health_monitor_backend::get_disk_space() {
+std::vector<node::disk> health_monitor_backend::get_disk_space() {
     auto space_info = std::filesystem::space(
       config::node().data_directory().path);
 
-    return {node_disk_space{
+    return {node::disk{
       .path = config::node().data_directory().as_sstring(),
       .free = space_info.free,
       .total = space_info.capacity,

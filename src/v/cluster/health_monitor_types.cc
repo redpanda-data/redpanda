@@ -80,7 +80,18 @@ std::ostream& operator<<(std::ostream& o, const cluster_health_report& r) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const node_disk_space& s) {
+namespace node {
+std::ostream& operator<<(std::ostream& o, const local_state& s) {
+    fmt::print(
+      o,
+      "{{redpanda_version: {}, uptime: {}, disks: {}}}",
+      s.redpanda_version,
+      s.uptime,
+      s.disk_space);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const disk& s) {
     fmt::print(
       o,
       "{{path: {}, free: {}, total: {}}}",
@@ -89,6 +100,7 @@ std::ostream& operator<<(std::ostream& o, const node_disk_space& s) {
       human::bytes(s.total));
     return o;
 }
+} // namespace node
 
 std::ostream& operator<<(std::ostream& o, const partition_status& pl) {
     fmt::print(
@@ -153,20 +165,18 @@ void read_and_assert_version(std::string_view type, iobuf_parser& parser) {
       T::current_version);
 }
 
-void adl<cluster::node_disk_space>::to(
-  iobuf& out, cluster::node_disk_space&& s) {
+void adl<cluster::node::disk>::to(iobuf& out, cluster::node::disk&& s) {
     serialize(out, s.current_version, s.path, s.free, s.total);
 }
 
-cluster::node_disk_space adl<cluster::node_disk_space>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::node_disk_space>(
-      "cluster::node_disk_space", p);
+cluster::node::disk adl<cluster::node::disk>::from(iobuf_parser& p) {
+    read_and_assert_version<cluster::node::disk>("cluster::node_disk_space", p);
 
     auto path = adl<ss::sstring>{}.from(p);
     auto free = adl<uint64_t>{}.from(p);
     auto total = adl<uint64_t>{}.from(p);
 
-    return cluster::node_disk_space{
+    return cluster::node::disk{
       .path = path,
       .free = free,
       .total = total,
@@ -254,7 +264,7 @@ adl<cluster::node_health_report>::from(iobuf_parser& p) {
     auto id = adl<model::node_id>{}.from(p);
     auto redpanda_version = adl<cluster::application_version>{}.from(p);
     auto uptime = adl<std::chrono::milliseconds>{}.from(p);
-    auto disk_space = adl<std::vector<cluster::node_disk_space>>{}.from(p);
+    auto disk_space = adl<std::vector<cluster::node::disk>>{}.from(p);
     auto topics = adl<std::vector<cluster::topic_status>>{}.from(p);
 
     return cluster::node_health_report{

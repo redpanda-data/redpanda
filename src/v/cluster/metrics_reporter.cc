@@ -199,7 +199,7 @@ metrics_reporter::build_metrics_snapshot() {
           report.local_state.disk_space.begin(),
           report.local_state.disk_space.end(),
           std::back_inserter(metrics.disks),
-          [](const cluster::node_disk_space& nds) {
+          [](const cluster::node::disk& nds) {
               return node_disk_space{.free = nds.free, .total = nds.total};
           });
 

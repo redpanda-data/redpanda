@@ -110,7 +110,7 @@ private:
     ss::future<std::vector<topic_status>>
       collect_topic_status(partitions_filter);
 
-    std::vector<node_disk_space> get_disk_space();
+    std::vector<node::disk> get_disk_space();
 
     void refresh_nodes_status();
 
