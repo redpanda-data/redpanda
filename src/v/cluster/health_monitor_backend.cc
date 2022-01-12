@@ -384,20 +384,22 @@ health_monitor_backend::get_current_cluster_health_snapshot(
 }
 
 void health_monitor_backend::tick() {
+    ssx::spawn_with_gate(_gate, [this] { return tick_cluster_health(); });
+}
+
+ss::future<> health_monitor_backend::tick_cluster_health() {
     if (!_raft0->is_leader()) {
         vlog(clusterlog.trace, "skipping tick, not leader");
         _tick_timer.arm(tick_interval());
-        return;
+        co_return;
     }
 
-    ssx::spawn_with_gate(_gate, [this] {
-        // make sure that ticks will have fixed interval
-        auto next_tick = ss::lowres_clock::now() + tick_interval();
-        return collect_cluster_health().finally([this, next_tick] {
-            if (!_as.local().abort_requested()) {
-                _tick_timer.arm(next_tick);
-            }
-        });
+    // make sure that ticks will have fixed interval
+    auto next_tick = ss::lowres_clock::now() + tick_interval();
+    co_await collect_cluster_health().finally([this, next_tick] {
+        if (!_as.local().abort_requested()) {
+            _tick_timer.arm(next_tick);
+        }
     });
 }
 

@@ -93,6 +93,7 @@ private:
       = absl::node_hash_map<model::node_id, reply_status>;
 
     void tick();
+    ss::future<> tick_cluster_health();
     ss::future<> collect_cluster_health();
     ss::future<result<node_health_report>>
       collect_remote_node_health(model::node_id);
