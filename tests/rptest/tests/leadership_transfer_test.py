@@ -103,6 +103,15 @@ class LeadershipTransferTest(RedpandaTest):
 
         return partition[0]
 
+    @cluster(num_nodes=3)
+    def test_self_transfer(self):
+        admin = Admin(self.redpanda)
+        for topic in self.topics:
+            for partition in range(topic.partition_count):
+                leader = admin.get_partitions(topic, partition)['leader_id']
+                admin.partition_transfer_leadership("kafka", topic, partition,
+                                                    leader)
+
 
 class AutomaticLeadershipBalancingTest(RedpandaTest):
     # number cores = 3 (default)
