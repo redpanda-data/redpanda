@@ -289,15 +289,21 @@ class RedpandaService(Service):
                  enable_pp=False,
                  enable_sr=False,
                  resource_settings=None,
-                 si_settings=None):
+                 si_settings=None,
+                 log_level: Optional[str] = None):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._enable_rp = enable_rp
         self._extra_rp_conf = extra_rp_conf or dict()
         self._enable_pp = enable_pp
         self._enable_sr = enable_sr
-        self._log_level = self._context.globals.get(self.LOG_LEVEL_KEY,
-                                                    self.DEFAULT_LOG_LEVEL)
+
+        if log_level is None:
+            self._log_level = self._context.globals.get(
+                self.LOG_LEVEL_KEY, self.DEFAULT_LOG_LEVEL)
+        else:
+            self._log_level = log_level
+
         self._admin = Admin(self)
         self._started = []
         self._security_config = dict()
