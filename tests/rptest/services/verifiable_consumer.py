@@ -299,10 +299,9 @@ class VerifiableConsumer(BackgroundThreadService):
                 self.global_committed[tp] = offset
 
     def start_cmd(self, node):
-        cmd = ""
-        cmd += "export LOG_DIR=%s;" % VerifiableConsumer.LOG_DIR
-        cmd += " export KAFKA_LOG4J_OPTS=\"-Dlog4j.configuration=file:%s\"; " % VerifiableConsumer.LOG4J_CONFIG
-        cmd += "/opt/kafka-2.7.0/bin/kafka-run-class.sh org.apache.kafka.tools.VerifiableConsumer"
+        cmd = "java -cp /tmp/java/e2e-verifiers/target/e2e-verifiers-1.0.jar"
+        cmd += " -Dlog4j.configuration=file:%s" % VerifiableConsumer.LOG4J_CONFIG
+        cmd += " org.apache.kafka.tools.VerifiableConsumer"
         if self.on_record_consumed:
             cmd += " --verbose"
 

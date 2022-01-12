@@ -101,6 +101,8 @@ RUN mvn clean package --batch-mode --file /tmp/java/kafka-verifier --define buil
     mvn clean package --batch-mode --file /tmp/java/compacted-log-verifier --define buildDir=/opt/compacted-log-verifier && \
     mvn clean package --batch-mode --file /tmp/java/tx-verifier --define buildDir=/opt/tx-verifier
 
+RUN mvn clean package --batch-mode --file /tmp/java/e2e-verifiers --define buildDir=/opt/e2e-verifiers
+
 # copy ssh keys
 COPY --chown=0:0 tests/docker/ssh /root/.ssh
 
