@@ -168,12 +168,12 @@ class GroupMetricsTest(RedpandaTest):
         assert metric_key in gr_2_metrics_offsets
         assert gr_2_metrics_offsets[metric_key] == 50
 
-        rpk.group_seek_to_group(group_1, group_2)
+        rpk.group_seek_to_group(group_1, group_2, [topic])
         gr_1_metrics_offsets = self._get_offset_from_metrics(group_1)
         assert metric_key in gr_1_metrics_offsets
         assert gr_1_metrics_offsets[metric_key] == 50
 
-        rpk.group_seek_to(group_2, "start")
+        rpk.group_seek_to(group_2, "start", [topic])
         gr_2_metrics_offsets = self._get_offset_from_metrics(group_2)
         assert metric_key in gr_2_metrics_offsets
         assert gr_2_metrics_offsets[metric_key] == 0

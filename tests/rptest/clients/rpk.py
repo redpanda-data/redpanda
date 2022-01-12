@@ -206,12 +206,16 @@ class RpkTool:
             cmd += ["-o", f"{n}"]
         return self._run_topic(cmd)
 
-    def group_seek_to(self, group, to):
+    def group_seek_to(self, group, to, topics=None):
         cmd = ["seek", group, "--to", to]
+        if not topics is None:
+            cmd += ["--topics", ",".join(topics)]
         self._run_group(cmd)
 
-    def group_seek_to_group(self, group, to_group):
+    def group_seek_to_group(self, group, to_group, topics=None):
         cmd = ["seek", group, "--to-group", to_group]
+        if not topics is None:
+            cmd += ["--topics", ",".join(topics)]
         self._run_group(cmd)
 
     def wasm_deploy(self, script, name, description):
