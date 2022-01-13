@@ -164,6 +164,8 @@ public:
 
     const underlying_t& topics_map() const { return _topics; }
 
+    const hierarchy_t& hierarchy_map() const { return _topics_hierarchy; }
+
     bool is_update_in_progress(const model::ntp&) const;
 
 private:
