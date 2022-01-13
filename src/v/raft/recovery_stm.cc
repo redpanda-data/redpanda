@@ -23,16 +23,22 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/semaphore.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/with_scheduling_group.hh>
 
 #include <chrono>
 #include <optional>
+#include <vector>
 
 namespace raft {
 using namespace std::chrono_literals;
 
 recovery_stm::recovery_stm(
-  consensus* p, vnode node_id, scheduling_config scheduling)
+  consensus* p,
+  vnode node_id,
+  scheduling_config scheduling,
+  recovery_memory_quota& quota)
   : _ptr(p)
   , _node_id(node_id)
   , _term(_ptr->term())
@@ -43,7 +49,8 @@ recovery_stm::recovery_stm(
         "[follower: {}] [group_id:{}, {}]",
         _node_id,
         _ptr->group(),
-        _ptr->ntp())) {}
+        _ptr->ntp()))
+  , _memory_quota(quota) {}
 
 ss::future<> recovery_stm::recover() {
     auto meta = get_follower_meta();
@@ -134,16 +141,19 @@ ss::future<> recovery_stm::do_recover(ss::io_priority_class iopc) {
           });
         co_return;
     }
-
+    // acquire read memory:
+    auto read_memory_units = co_await _memory_quota.acquire_read_memory();
     auto reader = co_await read_range_for_recovery(
-      follower_next_offset, iopc, is_learner);
+      follower_next_offset, iopc, is_learner, read_memory_units.count());
     // no batches for recovery, do nothing
     if (!reader) {
         co_return;
     }
 
     co_await replicate(
-      std::move(*reader), should_flush(follower_committed_match_index));
+      std::move(*reader),
+      should_flush(follower_committed_match_index),
+      std::move(read_memory_units));
 
     meta = get_follower_meta();
 }
@@ -188,16 +198,15 @@ recovery_stm::should_flush(model::offset follower_committed_match_index) const {
 
 ss::future<std::optional<model::record_batch_reader>>
 recovery_stm::read_range_for_recovery(
-  model::offset start_offset, ss::io_priority_class iopc, bool is_learner) {
+  model::offset start_offset,
+  ss::io_priority_class iopc,
+  bool is_learner,
+  size_t read_size) {
     storage::log_reader_config cfg(
       start_offset,
       model::offset::max(),
       1,
-      // 32KB is a modest estimate. It has good batching and it also prevents an
-      // OOM situation where we have a lot of raft groups recovering at the same
-      // time and all drawing from memory. If this setting proves difficult,
-      // we'll need to throttle with a core-local semaphore
-      32 * 1024,
+      read_size,
       iopc,
       std::nullopt,
       std::nullopt,
@@ -363,7 +372,8 @@ ss::future<> recovery_stm::install_snapshot() {
 
 ss::future<> recovery_stm::replicate(
   model::record_batch_reader&& reader,
-  append_entries_request::flush_after_append flush) {
+  append_entries_request::flush_after_append flush,
+  ss::semaphore_units<> mem_units) {
     // collect metadata for append entries request
     // last persisted offset is last_offset of batch before the first one in the
     // reader
@@ -411,7 +421,9 @@ ss::future<> recovery_stm::replicate(
     auto seq = _ptr->next_follower_sequence(_node_id);
     _ptr->update_suppress_heartbeats(_node_id, seq, heartbeats_suppressed::yes);
     auto lstats = _ptr->_log.offsets();
-    return dispatch_append_entries(std::move(r))
+    std::vector<ss::semaphore_units<>> units;
+    units.push_back(std::move(mem_units));
+    return dispatch_append_entries(std::move(r), std::move(units))
       .finally([this, seq] {
           _ptr->update_suppress_heartbeats(
             _node_id, seq, heartbeats_suppressed::no);
@@ -467,13 +479,16 @@ clock_type::time_point recovery_stm::append_entries_timeout() {
     return raft::clock_type::now() + _ptr->_recovery_append_timeout;
 }
 
-ss::future<result<append_entries_reply>>
-recovery_stm::dispatch_append_entries(append_entries_request&& r) {
+ss::future<result<append_entries_reply>> recovery_stm::dispatch_append_entries(
+  append_entries_request&& r, std::vector<ss::semaphore_units<>> units) {
     _ptr->_probe.recovery_append_request();
 
+    rpc::client_opts opts(append_entries_timeout());
+    opts.resource_units = ss::make_foreign(
+      ss::make_lw_shared<std::vector<ss::semaphore_units<>>>(std::move(units)));
+
     return _ptr->_client_protocol
-      .append_entries(
-        _node_id.id(), std::move(r), rpc::client_opts(append_entries_timeout()))
+      .append_entries(_node_id.id(), std::move(r), std::move(opts))
       .then([this](result<append_entries_reply> reply) {
           return _ptr->validate_reply_target_node(
             "append_entries_recovery", std::move(reply));

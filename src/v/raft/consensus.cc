@@ -475,7 +475,7 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
     ssx::background
       = ssx::spawn_with_gate_then(_bg, [this, node_id = idx.node_id] {
             auto recovery = std::make_unique<recovery_stm>(
-              this, node_id, _scheduling);
+              this, node_id, _scheduling, _recovery_mem_quota);
             auto ptr = recovery.get();
             return ptr->apply()
               .handle_exception([this, node_id](const std::exception_ptr& e) {
