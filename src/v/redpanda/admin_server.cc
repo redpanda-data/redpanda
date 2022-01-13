@@ -1067,6 +1067,46 @@ void admin_server::register_broker_routes() {
       });
 }
 
+// Helpers for partition routes
+namespace {
+
+model::ntp parse_ntp_from_request(ss::httpd::parameters& param) {
+    auto ns = model::ns(param["namespace"]);
+    auto topic = model::topic(param["topic"]);
+
+    model::partition_id partition;
+    try {
+        partition = model::partition_id(std::stoi(param["partition"]));
+    } catch (...) {
+        throw ss::httpd::bad_param_exception(fmt::format(
+          "Partition id must be an integer: {}", param["partition"]));
+    }
+
+    if (partition() < 0) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("Invalid partition id {}", partition));
+    }
+
+    return model::ntp(std::move(ns), std::move(topic), partition);
+}
+
+bool need_redirect_to_leader(
+  model::ntp ntp, ss::sharded<cluster::metadata_cache>& metadata_cache) {
+    auto leader_id_opt = metadata_cache.local().get_leader_id(ntp);
+    if (!leader_id_opt.has_value()) {
+        throw ss::httpd::base_exception(
+          fmt_with_ctx(
+            fmt::format,
+            "Partition {} does not have a leader, cannot redirect",
+            ntp),
+          ss::httpd::reply::status_type::service_unavailable);
+    }
+
+    return leader_id_opt.value() != config::node().node_id();
+}
+
+} // namespace
+
 void admin_server::register_partition_routes() {
     /*
      * Get a list of partition summaries.
@@ -1105,25 +1145,7 @@ void admin_server::register_partition_routes() {
      */
     ss::httpd::partition_json::get_partition.set(
       _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
-          auto ns = model::ns(req->param["namespace"]);
-          auto topic = model::topic(req->param["topic"]);
-
-          model::partition_id partition;
-          try {
-              partition = model::partition_id(
-                std::stoi(req->param["partition"]));
-          } catch (...) {
-              throw ss::httpd::bad_param_exception(fmt::format(
-                "Partition id must be an integer: {}",
-                req->param["partition"]));
-          }
-
-          if (partition() < 0) {
-              throw ss::httpd::bad_param_exception(
-                fmt::format("Invalid partition id {}", partition));
-          }
-
-          const model::ntp ntp(std::move(ns), std::move(topic), partition);
+          const model::ntp ntp = parse_ntp_from_request(req->param);
           const bool is_controller = ntp == model::controller_ntp;
 
           if (!is_controller && !_metadata_cache.local().contains(ntp)) {
@@ -1209,39 +1231,9 @@ void admin_server::register_partition_routes() {
       _server._routes,
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
-          auto ns = model::ns(req->param["namespace"]);
-          auto topic = model::topic(req->param["topic"]);
+          const model::ntp ntp = parse_ntp_from_request(req->param);
 
-          model::partition_id partition;
-          try {
-              partition = model::partition_id(
-                std::stoi(req->param["partition"]));
-          } catch (...) {
-              throw ss::httpd::bad_param_exception(fmt_with_ctx(
-                fmt::format,
-                "Partition id must be an integer: {}",
-                req->param["partition"]));
-          }
-
-          if (partition() < 0) {
-              throw ss::httpd::bad_param_exception(fmt_with_ctx(
-                fmt::format, "Invalid partition id {}", partition));
-          }
-
-          const model::ntp ntp(std::move(ns), std::move(topic), partition);
-
-          auto leader_id_opt = _metadata_cache.local().get_leader_id(ntp);
-          if (!leader_id_opt.has_value()) {
-              throw ss::httpd::base_exception(
-                fmt_with_ctx(
-                  fmt::format,
-                  "Partition {} does not have a leader, cannot redirect",
-                  ntp),
-                ss::httpd::reply::status_type::service_unavailable);
-          }
-
-          // Resend request to leader for current partition
-          if (leader_id_opt.value() != config::node().node_id()) {
+          if (need_redirect_to_leader(ntp, _metadata_cache)) {
               throw co_await redirect_to_leader(*req, ntp);
           }
 
@@ -1249,7 +1241,7 @@ void admin_server::register_partition_routes() {
           // Strange situation, but need to check it
           if (!shard) {
               throw ss::httpd::server_error_exception(fmt_with_ctx(
-                fmt::format, "Can not find shard for partition {}", partition));
+                fmt::format, "Can not find shard for partition {}", ntp.tp));
           }
 
           co_return co_await _partition_manager.invoke_on(
