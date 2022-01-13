@@ -123,6 +123,14 @@ func (r *StatefulSetResource) rollingUpdate(
 
 	for i := range podList.Items {
 		pod := podList.Items[i]
+		// we need to do this to enable 3-way merge. To evaluate which items
+		// should be deleted it needs to have the original last applied
+		// annotation in place. See TestPatchCalculation_PodRemoved for detailed
+		// explanation
+		err = patch.DefaultAnnotator.SetLastAppliedAnnotation(&pod)
+		if err != nil {
+			return fmt.Errorf("setting lastapplied annotation %w", err)
+		}
 
 		patchResult, err := patch.DefaultPatchMaker.Calculate(&pod, &artificialPod, opts...)
 		if err != nil {
