@@ -127,7 +127,8 @@ class GroupMetricsTest(RedpandaTest):
     def __init__(self, ctx, *args, **kwargs):
 
         # Require internal_kafka topic to have an increased replication factor
-        extra_rp_conf = dict(default_topic_replications=3, )
+        extra_rp_conf = dict(default_topic_replications=3,
+                             enable_leader_balancer=False)
         super(GroupMetricsTest, self).__init__(test_context=ctx,
                                                num_brokers=3,
                                                extra_rp_conf=extra_rp_conf)
