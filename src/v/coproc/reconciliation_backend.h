@@ -14,7 +14,6 @@
 #include "cluster/topic_table.h"
 #include "coproc/fwd.h"
 #include "storage/fwd.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
@@ -44,11 +43,12 @@ public:
 
 private:
     using update_t = cluster::topic_table::delta;
-    ss::future<std::error_code> process_update(update_t);
-    ss::future<std::vector<update_t>>
-      process_events_for_ntp(model::ntp, std::vector<update_t>);
+    using events_cache_t
+      = absl::node_hash_map<model::ntp, std::vector<update_t>>;
 
-    ss::future<> fetch_and_reconcile();
+    ss::future<> fetch_and_reconcile(events_cache_t);
+    ss::future<> process_updates(model::ntp, std::vector<update_t>);
+    ss::future<std::error_code> process_update(model::ntp, update_t);
 
     ss::future<>
     delete_non_replicable_partition(model::ntp ntp, model::revision_id rev);
@@ -57,22 +57,17 @@ private:
     ss::future<> add_to_shard_table(
       model::ntp ntp, ss::shard_id shard, model::revision_id revision);
 
-    template<typename Fn>
-    ss::future<> within_context(Fn&&);
+    void enqueue_events(std::vector<update_t>);
+    ss::future<> process_loop();
 
 private:
-    static constexpr auto retry_timeout_interval = std::chrono::milliseconds(
-      100);
-
     cluster::notification_id_type _id_cb;
     model::node_id _self;
     ss::sstring _data_directory;
-    absl::node_hash_map<model::ntp, std::vector<update_t>> _topic_deltas;
+    events_cache_t _topic_deltas;
 
-    mutex _mutex;
     ss::gate _gate;
     ss::abort_source _as;
-    ss::timer<model::timeout_clock> _retry_timer;
 
     ss::sharded<cluster::topic_table>& _topics;
     ss::sharded<cluster::shard_table>& _shard_table;

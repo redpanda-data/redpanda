@@ -22,6 +22,32 @@
 
 #include <seastar/core/coroutine.hh>
 
+namespace {
+
+using delta_op_type = cluster::topic_table_delta::op_type;
+bool is_non_replicable_event(delta_op_type t) {
+    return t == delta_op_type::add_non_replicable
+           || t == delta_op_type::del_non_replicable;
+}
+
+std::vector<model::ntp> get_materialized_ntps(
+  const cluster::topic_table& topics, const model::ntp& ntp) {
+    std::vector<model::ntp> ntps;
+    auto ps = topics.get_partition_assignment(ntp);
+    if (ps) {
+        auto found = topics.hierarchy_map().find(
+          model::topic_namespace_view{ntp});
+        if (found != topics.hierarchy_map().end()) {
+            for (const auto& c : found->second) {
+                ntps.emplace_back(c.ns, c.tp, ps->id);
+            }
+        }
+    }
+    return ntps;
+}
+
+} // namespace
+
 namespace coproc {
 
 reconciliation_backend::reconciliation_backend(
@@ -36,94 +62,112 @@ reconciliation_backend::reconciliation_backend(
   , _shard_table(shard_table)
   , _cluster_pm(cluster_pm)
   , _coproc_pm(coproc_pm)
-  , _pacemaker(pacemaker) {
-    _retry_timer.set_callback([this] {
-        (void)within_context([this]() { return fetch_and_reconcile(); });
-    });
-}
+  , _pacemaker(pacemaker) {}
 
-template<typename Fn>
-ss::future<> reconciliation_backend::within_context(Fn&& fn) {
-    try {
-        return ss::with_gate(
-          _gate, [this, fn = std::forward<Fn>(fn)]() mutable {
-              if (!_as.abort_requested()) {
-                  return _mutex.with(
-                    [fn = std::forward<Fn>(fn)]() mutable { return fn(); });
-              }
-              return ss::now();
-          });
-    } catch (const ss::gate_closed_exception& ex) {
-        vlog(coproclog.debug, "Timer fired during shutdown: {}", ex);
+void reconciliation_backend::enqueue_events(std::vector<update_t> deltas) {
+    for (auto& d : deltas) {
+        if (is_non_replicable_event(d.type)) {
+            _topic_deltas[d.ntp].push_back(std::move(d));
+        } else {
+            /// Obtain all child ntps from the source, and key
+            /// by materialized ntps, otherwise out of order
+            /// processing will occur
+            auto materialized_ntps = get_materialized_ntps(
+              _topics.local(), d.ntp);
+            for (auto& ntp : materialized_ntps) {
+                _topic_deltas[ntp].push_back(d);
+            }
+        }
     }
-    return ss::now();
 }
 
 ss::future<> reconciliation_backend::start() {
     _id_cb = _topics.local().register_delta_notification(
       [this](std::vector<update_t> deltas) {
-          return within_context([this, deltas = std::move(deltas)]() mutable {
-              for (auto& d : deltas) {
-                  auto ntp = d.ntp;
-                  _topic_deltas[ntp].push_back(std::move(d));
-              }
-              return fetch_and_reconcile();
-          });
+          if (!_gate.is_closed()) {
+              enqueue_events(std::move(deltas));
+          } else {
+              vlog(
+                coproclog.debug,
+                "Gate closed encountered while handling delta notification");
+          }
       });
+    if (!_gate.is_closed()) {
+        (void)ss::with_gate(_gate, [this] {
+            return ss::do_until(
+              [this] { return _as.abort_requested(); },
+              [this] { return fetch_and_reconcile(std::move(_topic_deltas)); });
+        });
+    } else {
+        vlog(
+          coproclog.debug,
+          "Gate closed encountered when attempting to start reconciliation "
+          "backend");
+    }
     return ss::now();
 }
 
 ss::future<> reconciliation_backend::stop() {
-    _retry_timer.cancel();
     _as.request_abort();
     _topics.local().unregister_delta_notification(_id_cb);
     return _gate.close();
 }
 
-ss::future<std::vector<reconciliation_backend::update_t>>
-reconciliation_backend::process_events_for_ntp(
+ss::future<> reconciliation_backend::process_updates(
   model::ntp ntp, std::vector<update_t> updates) {
-    std::vector<update_t> retries;
-    for (auto& d : updates) {
-        vlog(coproclog.trace, "executing ntp: {} op: {}", d.ntp, d);
-        auto err = co_await process_update(d);
-        vlog(coproclog.info, "partition operation {} result {}", d, err);
-        if (err == errc::partition_not_exists) {
-            /// In this case the source topic exists but its
-            /// associated partition doesn't, so try again
-            retries.push_back(std::move(d));
+    auto itr = updates.begin();
+    while (itr != updates.end()) {
+        vlog(coproclog.trace, "executing ntp: {} op: {}", ntp, *itr);
+        auto err = co_await process_update(ntp, *itr);
+        vlog(coproclog.info, "partition operation {} result {}", *itr, err);
+        /// This retry mechanism exists to replay events that must be
+        /// executed before progress can be made.
+        ///
+        /// An example is creating a materialized partition. This action
+        /// depends on the cluster::controller_backend having first
+        /// created the source partition. This is an event that MUST have
+        /// occurred first in absolute time otherwise an event to create a
+        /// materialized log with that source as a parent would never have
+        /// been fired.
+        if (err != errc::partition_not_exists) {
+            ++itr;
+        } else {
+            vlog(
+              coproclog.warn,
+              "Partition {} wasn't created after process_update call: {}",
+              ntp,
+              *itr);
+            try {
+                co_await ss::sleep_abortable(1s, _as);
+            } catch (const ss::sleep_aborted& e) {
+                vlog(coproclog.debug, "Aborted sleep due to shutdown");
+                break;
+            }
         }
     }
-    co_return retries;
 }
 
-ss::future<> reconciliation_backend::fetch_and_reconcile() {
-    using deltas_cache = decltype(_topic_deltas);
-    auto deltas = std::exchange(_topic_deltas, {});
-    deltas_cache retry_cache;
+ss::future<>
+reconciliation_backend::fetch_and_reconcile(events_cache_t deltas) {
+    if (deltas.empty()) {
+        /// Prevent spin looping when theres nothing to process
+        try {
+            co_await ss::sleep_abortable(1s, _as);
+        } catch (const ss::sleep_aborted&) {
+            vlog(coproclog.debug, "Aborted sleep due to shutdown");
+        }
+        co_return;
+    }
     co_await ss::parallel_for_each(
       deltas.begin(),
       deltas.end(),
-      [this, &retry_cache](deltas_cache::value_type& p) -> ss::future<> {
-          auto retries = co_await process_events_for_ntp(p.first, p.second);
-          if (!retries.empty()) {
-              retry_cache[p.first] = std::move(retries);
-          }
+      [this](events_cache_t::value_type& p) -> ss::future<> {
+          return process_updates(p.first, std::move(p.second));
       });
-    if (!retry_cache.empty()) {
-        vlog(
-          coproclog.warn,
-          "There were recoverable errors when processing events, retrying");
-        std::swap(_topic_deltas, retry_cache);
-        if (!_retry_timer.armed()) {
-            _retry_timer.arm(
-              model::timeout_clock::now() + retry_timeout_interval);
-        }
-    }
 }
 
 ss::future<std::error_code>
-reconciliation_backend::process_update(update_t delta) {
+reconciliation_backend::process_update(model::ntp, update_t delta) {
     using op_t = update_t::op_type;
     model::revision_id rev(delta.offset());
     switch (delta.type) {
