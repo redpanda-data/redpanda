@@ -233,7 +233,7 @@ ss::lw_shared_ptr<ntp_archiver> scheduler_service_impl::get_upload_candidate() {
 }
 
 ss::future<> scheduler_service_impl::upload_topic_manifest(
-  model::topic_namespace topic_ns, model::revision_id rev) {
+  model::topic_namespace topic_ns, model::initial_revision_id rev) {
     gate_guard gg(_gate);
     auto cfg = _topic_table.local().get_topic_cfg(topic_ns);
     if (!cfg) {
@@ -247,7 +247,7 @@ ss::future<> scheduler_service_impl::upload_topic_manifest(
               _topic_manifest_upload_timeout, _initial_backoff, &_rtcnode);
             retry_chain_logger ctxlog(archival_log, fib);
             vlog(ctxlog.info, "Uploading topic manifest {}", topic_ns);
-            cloud_storage::topic_manifest tm(*cfg, rev);
+            cloud_storage::topic_manifest tm(*cfg, model::revision_id(rev()));
             auto key = tm.get_manifest_path();
             vlog(ctxlog.debug, "Topic manifest object key is '{}'", key);
             auto res = co_await _remote.local().upload_manifest(

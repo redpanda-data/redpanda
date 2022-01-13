@@ -45,6 +45,12 @@ using namespace std::chrono_literals;
 /// The 'ntp_archiver' is responsible for manifest manitpulations and
 /// generation of per-ntp candidate set. The actual file uploads are
 /// handled by 'archiver_service'.
+///
+/// Note that archiver uses initial revision of the partition, not the
+/// current one. The revision of the partition can change when the partition
+/// is moved between the nodes. To make all object names stable inside
+/// the S3 bucket we're using initial revision. The revision that the
+/// topic was assigned when it was just created.
 class ntp_archiver {
 public:
     /// Iterator type used to retrieve candidates for upload
@@ -74,7 +80,7 @@ public:
     const model::ntp& get_ntp() const;
 
     /// Get revision id
-    model::revision_id get_revision_id() const;
+    model::initial_revision_id get_revision_id() const;
 
     /// Get timestamp
     const ss::lowres_clock::time_point get_last_upload_time() const;
@@ -163,7 +169,7 @@ private:
     service_probe& _svc_probe;
     ntp_level_probe _probe;
     model::ntp _ntp;
-    model::revision_id _rev;
+    model::initial_revision_id _rev;
     cloud_storage::remote& _remote;
     ss::lw_shared_ptr<cluster::partition> _partition;
     model::term_id _start_term;
