@@ -124,7 +124,7 @@ static ss::future<> do_write_materialized_partition(
 }
 
 static ss::future<ss::lw_shared_ptr<partition>>
-get_partition(partition_manager& pm, const model::ntp& ntp) {
+get_partition(partition_manager& pm, model::ntp ntp) {
     auto found = pm.get(ntp);
     if (found) {
         /// Log exists, do nothing and return it
@@ -133,8 +133,9 @@ get_partition(partition_manager& pm, const model::ntp& ntp) {
     /// In the case the storage::log has not been created, but the topic has.
     /// Retry again.
     co_await ss::sleep(100ms);
-    throw log_not_yet_created_exception(fmt::format(
-      "Materialized topic created but underlying log doesn't yet exist", ntp));
+    throw log_not_yet_created_exception(ssx::sformat(
+      "Materialized topic created but underlying log doesn't yet exist: {}",
+      ntp));
 }
 
 static ss::future<> maybe_make_materialized_log(
