@@ -182,12 +182,6 @@ struct adl<cluster::cluster_health_report> {
 };
 
 template<>
-struct adl<cluster::node::disk> {
-    void to(iobuf&, cluster::node::disk&&);
-    cluster::node::disk from(iobuf_parser&);
-};
-
-template<>
 struct adl<cluster::node_state> {
     void to(iobuf&, cluster::node_state&&);
     cluster::node_state from(iobuf_parser&);

@@ -41,3 +41,34 @@ std::ostream& operator<<(std::ostream& o, const local_state& s) {
 }
 
 } // namespace cluster::node
+
+namespace reflection {
+template<typename T>
+void read_and_assert_version(std::string_view type, iobuf_parser& parser) {
+    auto version = adl<int8_t>{}.from(parser);
+    vassert(
+      version <= T::current_version,
+      "unsupported version of {}, max_supported version: {}, read version: {}",
+      type,
+      version,
+      T::current_version);
+}
+
+void adl<cluster::node::disk>::to(iobuf& out, cluster::node::disk&& s) {
+    serialize(out, s.current_version, s.path, s.free, s.total);
+}
+
+cluster::node::disk adl<cluster::node::disk>::from(iobuf_parser& p) {
+    read_and_assert_version<cluster::node::disk>("cluster::node::disk", p);
+
+    auto path = adl<ss::sstring>{}.from(p);
+    auto free = adl<uint64_t>{}.from(p);
+    auto total = adl<uint64_t>{}.from(p);
+
+    return cluster::node::disk{
+      .path = path,
+      .free = free,
+      .total = total,
+    };
+}
+} // namespace reflection
