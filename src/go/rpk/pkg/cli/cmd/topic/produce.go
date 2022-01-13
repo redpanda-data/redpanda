@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/spf13/afero"
@@ -99,7 +100,6 @@ func NewProduceCommand(fs afero.Fs) *cobra.Command {
 			inf, err := kgo.NewRecordReader(os.Stdin, inFormat)
 			out.MaybeDie(err, "unable to parse input format: %v", err)
 			var outf *kgo.RecordFormatter
-			var outfBuf []byte
 			if outFormat != "" {
 				outf, err = kgo.NewRecordFormatter(outFormat)
 				out.MaybeDie(err, "unable to parse output success format: %v", err)
@@ -123,6 +123,23 @@ func NewProduceCommand(fs afero.Fs) *cobra.Command {
 			defer cl.Close()
 			defer cl.Flush(context.Background())
 
+			var wg sync.WaitGroup
+			results := make(chan *kgo.Record, 55)
+
+			// Output via a channel & goroutine, to avoid concurrent fibers
+			// competing for stdout and mixing their lines together
+			go func() {
+				var outfBuf []byte
+				for {
+					r := <-results
+					if outf != nil {
+						outfBuf = outf.AppendRecord(outfBuf[:0], r)
+						os.Stdout.Write(outfBuf)
+					}
+					wg.Done()
+				}
+			}()
+
 			for {
 				r := &kgo.Record{
 					Partition: partition,
@@ -135,19 +152,19 @@ func NewProduceCommand(fs afero.Fs) *cobra.Command {
 					if err != io.EOF {
 						fmt.Fprintf(os.Stderr, "record read error: %v\n", err)
 					}
-					return
+					break
 				}
 				if r.Topic == "" && defaultTopic == "" {
 					out.Die("topic to produce to is missing, check --help for produce syntax")
 				}
+				wg.Add(1)
 				cl.Produce(context.Background(), r, func(r *kgo.Record, err error) {
 					out.MaybeDie(err, "unable to produce record: %v", err)
-					if outf != nil {
-						outfBuf = outf.AppendRecord(outfBuf[:0], r)
-						os.Stdout.Write(outfBuf)
-					}
+					results <- r
 				})
 			}
+
+			wg.Wait()
 		},
 	}
 
