@@ -1,0 +1,7 @@
+apiVersion: apps/v1
+kind: Pod
+metadata:
+  name: update-cluster-0
+spec:
+  containers:
+    - name: redpanda

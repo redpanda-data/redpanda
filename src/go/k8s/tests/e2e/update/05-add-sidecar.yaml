@@ -1,0 +1,16 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: update-cluster
+spec:
+  configuration:
+    sidecars:
+      rpkStatus:
+        enabled: true
+        resources:
+          limits:
+            cpu: 200m
+            memory: 30M
+          requests:
+            cpu: 200m
+            memory: 30M
