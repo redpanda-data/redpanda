@@ -104,10 +104,11 @@ public:
       ss::shard_id target_shard,
       ss::sharded<storage::api>&);
 
-private:
+    /// Get offset translator storage::kvstore keys. Used only for testing
     bytes offsets_map_key() const;
     bytes highest_known_offset_key() const;
 
+private:
     ss::future<> do_checkpoint();
 
 private:
