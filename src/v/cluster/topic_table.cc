@@ -40,26 +40,33 @@ topic_table::transform_topics(Func&& f) const {
 topic_table::topic_metadata::topic_metadata(
   topic_configuration_assignment c, model::revision_id rid) noexcept
   : configuration(std::move(c))
-  , _id_or_topic(rid) {}
+  , _source_topic(std::nullopt)
+  , _revision(rid) {}
 
 topic_table::topic_metadata::topic_metadata(
-  topic_configuration_assignment c, model::topic st) noexcept
+  topic_configuration_assignment c,
+  model::revision_id rid,
+  model::topic st) noexcept
   : configuration(std::move(c))
-  , _id_or_topic(std::move(st)) {}
+  , _source_topic(st)
+  , _revision(rid) {}
 
 bool topic_table::topic_metadata::is_topic_replicable() const {
-    return std::holds_alternative<model::revision_id>(_id_or_topic);
+    return _source_topic.has_value() == false;
 }
+
 model::revision_id topic_table::topic_metadata::get_revision() const {
     vassert(
       is_topic_replicable(), "Query for revision_id on a non-replicable topic");
-    return std::get<model::revision_id>(_id_or_topic);
+    return _revision;
 }
+
 const model::topic& topic_table::topic_metadata::get_source_topic() const {
     vassert(
       !is_topic_replicable(), "Query for source_topic on a replicable topic");
-    return std::get<model::topic>(_id_or_topic);
+    return _source_topic.value();
 }
+
 const topic_configuration_assignment&
 topic_table::topic_metadata::get_configuration() const {
     vassert(
@@ -405,7 +412,8 @@ topic_table::apply(create_non_replicable_topic_cmd cmd, model::offset o) {
           "Duplicate non_replicable_topic detected when it shouldn't exist");
     }
     _topics.insert(
-      {new_non_rep_topic, topic_metadata(std::move(ca), source.tp)});
+      {new_non_rep_topic,
+       topic_metadata(std::move(ca), model::revision_id(o()), source.tp)});
     notify_waiters();
     co_return make_error_code(errc::success);
 }
@@ -542,6 +550,19 @@ topic_table::get_partition_assignment(const model::ntp& ntp) const {
 
 bool topic_table::is_update_in_progress(const model::ntp& ntp) const {
     return _update_in_progress.contains(ntp);
+}
+
+std::optional<model::initial_revision_id>
+topic_table::get_initial_revision(model::topic_namespace_view tp) const {
+    if (auto it = _topics.find(tp); it != _topics.end()) {
+        return model::initial_revision_id(it->second.get_revision()());
+    }
+    return std::nullopt;
+}
+
+std::optional<model::initial_revision_id>
+topic_table::get_initial_revision(const model::ntp& ntp) const {
+    return get_initial_revision(model::topic_namespace_view(ntp));
 }
 
 } // namespace cluster
