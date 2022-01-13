@@ -259,9 +259,9 @@ class VerifiableProducer(BackgroundThreadService):
                         self.clean_shutdown_nodes.add(node)
 
     def start_cmd(self, idx):
-        cmd = "export LOG_DIR=%s;" % VerifiableProducer.LOG_DIR
-        cmd += " export KAFKA_LOG4J_OPTS=\"-Dlog4j.configuration=file:%s\"; " % VerifiableProducer.LOG4J_CONFIG
-        cmd += "/opt/kafka-2.7.0/bin/kafka-run-class.sh org.apache.kafka.tools.VerifiableProducer"
+        cmd = "java -cp /tmp/java/e2e-verifiers/target/e2e-verifiers-1.0.jar"
+        cmd += " -Dlog4j.configuration=file:%s" % VerifiableProducer.LOG4J_CONFIG
+        cmd += " org.apache.kafka.tools.VerifiableProducer "
         cmd += " --topic %s --broker-list %s" % (self.topic,
                                                  self.redpanda.brokers())
         if self.max_messages > 0:

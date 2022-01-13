@@ -119,6 +119,19 @@ class ConsumerEventHandler(object):
             assignment.append(TopicPartition(topic, partition))
         self.assignment = assignment
 
+    def handle_offsets_fetched(self, event):
+        for committed_offset in event["offsets"]:
+
+            topic = committed_offset["topic"]
+            partition = committed_offset["partition"]
+            tp = TopicPartition(topic, partition)
+            offset = committed_offset["offset"]
+            assert tp in self.assignment, \
+                "Committed offsets for partition %s not assigned (current assignment: %s)" % \
+                (str(tp), str(self.assignment))
+
+            self.committed[tp] = offset
+
     def handle_kill_process(self, clean_shutdown):
         # if the shutdown was clean, then we expect the explicit
         # shutdown event from the consumer
@@ -258,6 +271,9 @@ class VerifiableConsumer(BackgroundThreadService):
                         handler.handle_partitions_revoked(event)
                     elif name == "partitions_assigned":
                         handler.handle_partitions_assigned(event)
+                    elif name == "offsets_fetched":
+                        handler.handle_offsets_fetched(event)
+                        self._update_global_committed_fetched(event)
                     else:
                         self.logger.debug("%s: ignoring unknown event: %s" %
                                           (str(node.account), event))
@@ -298,11 +314,19 @@ class VerifiableConsumer(BackgroundThreadService):
                     (offset, str(tp), self.global_position[tp])
                 self.global_committed[tp] = offset
 
+    def _update_global_committed_fetched(self, fetch_offsets_ev):
+        for offset in fetch_offsets_ev["offsets"]:
+            tp = TopicPartition(offset["topic"], offset["partition"])
+            offset = offset["offset"]
+            assert self.global_position[tp] >= offset, \
+                "Committed offset %d for partition %s is ahead of the current position %d" % \
+                (offset, str(tp), self.global_position[tp])
+            self.global_committed[tp] = offset
+
     def start_cmd(self, node):
-        cmd = ""
-        cmd += "export LOG_DIR=%s;" % VerifiableConsumer.LOG_DIR
-        cmd += " export KAFKA_LOG4J_OPTS=\"-Dlog4j.configuration=file:%s\"; " % VerifiableConsumer.LOG4J_CONFIG
-        cmd += "/opt/kafka-2.7.0/bin/kafka-run-class.sh org.apache.kafka.tools.VerifiableConsumer"
+        cmd = "java -cp /tmp/java/e2e-verifiers/target/e2e-verifiers-1.0.jar"
+        cmd += " -Dlog4j.configuration=file:%s" % VerifiableConsumer.LOG4J_CONFIG
+        cmd += " org.apache.kafka.tools.VerifiableConsumer"
         if self.on_record_consumed:
             cmd += " --verbose"
 
