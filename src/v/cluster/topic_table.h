@@ -12,9 +12,11 @@
 #pragma once
 
 #include "cluster/commands.h"
+#include "cluster/non_replicable_topics_frontend.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/limits.h"
+#include "model/metadata.h"
 #include "utils/expiring_promise.h"
 
 #include <absl/container/flat_hash_map.h>
@@ -35,11 +37,15 @@ namespace cluster {
 class topic_table {
 public:
     using delta = topic_table_delta;
+
     class topic_metadata {
     public:
         topic_metadata(
           topic_configuration_assignment, model::revision_id) noexcept;
-        topic_metadata(topic_configuration_assignment, model::topic) noexcept;
+        topic_metadata(
+          topic_configuration_assignment,
+          model::revision_id,
+          model::topic) noexcept;
 
         bool is_topic_replicable() const;
         model::revision_id get_revision() const;
@@ -49,7 +55,8 @@ public:
     private:
         friend class topic_table;
         topic_configuration_assignment configuration;
-        std::variant<model::revision_id, model::topic> _id_or_topic;
+        std::optional<model::topic> _source_topic;
+        model::revision_id _revision;
     };
     using underlying_t = absl::flat_hash_map<
       model::topic_namespace,
@@ -167,6 +174,14 @@ public:
     bool has_updates_in_progress() const {
         return !_update_in_progress.empty();
     }
+
+    ///\brief Returns initial revision id of the topic
+    std::optional<model::initial_revision_id>
+    get_initial_revision(model::topic_namespace_view tp) const;
+
+    ///\brief Returns initial revision id of the partition
+    std::optional<model::initial_revision_id>
+    get_initial_revision(const model::ntp& ntp) const;
 
 private:
     struct waiter {
