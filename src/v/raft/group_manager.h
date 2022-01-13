@@ -14,6 +14,7 @@
 #include "model/metadata.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/heartbeat_manager.h"
+#include "raft/recovery_memory_quota.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/types.h"
 #include "storage/fwd.h"
@@ -41,6 +42,7 @@ public:
       ss::scheduling_group raft_scheduling_group,
       std::chrono::milliseconds heartbeat_interval,
       std::chrono::milliseconds heartbeat_timeout,
+      recovery_memory_quota::config_provider_fn recovery_mem_cfg,
       ss::sharded<rpc::connection_cache>& clients,
       ss::sharded<storage::api>& storage,
       ss::sharded<recovery_throttle>&);
@@ -98,6 +100,7 @@ private:
     ss::metrics::metric_groups _metrics;
     storage::api& _storage;
     recovery_throttle& _recovery_throttle;
+    recovery_memory_quota _recovery_mem_quota;
 };
 
 } // namespace raft

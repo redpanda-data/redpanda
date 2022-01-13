@@ -66,7 +66,8 @@ consensus::consensus(
   consensus_client_protocol client,
   consensus::leader_cb_t cb,
   storage::api& storage,
-  std::optional<std::reference_wrapper<recovery_throttle>> recovery_throttle)
+  std::optional<std::reference_wrapper<recovery_throttle>> recovery_throttle,
+  recovery_memory_quota& recovery_mem_quota)
   : _self(nid, initial_cfg.revision_id())
   , _group(group)
   , _jit(std::move(jit))
@@ -95,6 +96,7 @@ consensus::consensus(
       config::shard_local_cfg().raft_heartbeat_disconnect_failures())
   , _storage(storage)
   , _recovery_throttle(recovery_throttle)
+  , _recovery_mem_quota(recovery_mem_quota)
   , _snapshot_mgr(
       std::filesystem::path(_log.config().work_directory()),
       storage::simple_snapshot_manager::default_snapshot_filename,
