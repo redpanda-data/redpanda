@@ -51,7 +51,7 @@ ntp_archiver::ntp_archiver(
   : _svc_probe(svc_probe)
   , _probe(conf.ntp_metrics_disabled, ntp.ntp())
   , _ntp(ntp.ntp())
-  , _rev(ntp.get_revision())
+  , _rev(ntp.get_initial_revision())
   , _remote(remote)
   , _partition(std::move(part))
   , _policy(
@@ -61,7 +61,7 @@ ntp_archiver::ntp_archiver(
       conf.time_limit,
       conf.upload_io_priority)
   , _bucket(conf.bucket_name)
-  , _manifest(_ntp, _rev)
+  , _manifest(_ntp, model::revision_id(_rev()))
   , _gate()
   , _initial_backoff(conf.initial_backoff)
   , _segment_upload_timeout(conf.segment_upload_timeout)
@@ -83,7 +83,9 @@ ss::future<> ntp_archiver::stop() {
 
 const model::ntp& ntp_archiver::get_ntp() const { return _ntp; }
 
-model::revision_id ntp_archiver::get_revision_id() const { return _rev; }
+model::initial_revision_id ntp_archiver::get_revision_id() const {
+    return _rev;
+}
 
 const ss::lowres_clock::time_point ntp_archiver::get_last_upload_time() const {
     return _last_upload_time;
@@ -144,7 +146,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
 
     auto path = cloud_storage::generate_remote_segment_path(
-      _ntp, _rev, candidate.exposed_name, _start_term);
+      _ntp, model::revision_id(_rev()), candidate.exposed_name, _start_term);
 
     vlog(ctxlog.debug, "Uploading segment {} to {}", candidate, path);
 
@@ -261,7 +263,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
         .base_timestamp = upload.base_timestamp,
         .max_timestamp = upload.max_timestamp,
         .delta_offset = delta,
-        .ntp_revision = _partition->get_revision_id(),
+        .ntp_revision = model::revision_id(_rev()),
         .archiver_term = _start_term,
       },
       .name = upload.exposed_name, .delta = offset - base,
