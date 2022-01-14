@@ -269,10 +269,8 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
     size_t total_max_bytes = 0;
-    size_t total_max_bytes_strict = 0;
     for (const auto& c : ntp_fetch_configs) {
         total_max_bytes += c.cfg.max_bytes;
-        total_max_bytes_strict += c.cfg.strict_max_bytes;
     }
 
     auto max_bytes_per_fetch
