@@ -180,8 +180,12 @@ class GroupMetricsTest(RedpandaTest):
         assert gr_2_metrics_offsets[metric_key] == 0
 
         self.redpanda.delete_topic(topic)
-        metrics_offsets = self._get_offset_from_metrics(group_1)
-        assert metrics_offsets is None
+
+        def metrics_gone():
+            metrics_offsets = self._get_offset_from_metrics(group_1)
+            return metrics_offsets is None
+
+        wait_until(metrics_gone, timeout_sec=30, backoff_sec=5)
 
     @cluster(num_nodes=3)
     def test_multiple_topics_and_partitions(self):
