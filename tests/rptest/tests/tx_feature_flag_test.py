@@ -35,7 +35,7 @@ class TxFeatureFlagTest(EndToEndTest):
         tx_topic = TopicSpec(name="tx-topic",
                              partition_count=1,
                              replication_factor=3)
-        self.redpanda.create_topic(tx_topic)
+        self.client().create_topic(tx_topic)
 
         # produce some messages to tx_topic
 
@@ -63,7 +63,7 @@ class TxFeatureFlagTest(EndToEndTest):
         tester = TopicSpec(name="tester",
                            partition_count=1,
                            replication_factor=3)
-        self.redpanda.create_topic(tester)
+        self.client().create_topic(tester)
         self.topic = tester
         self.start_producer(2, throughput=10000)
         self.start_consumer(1)

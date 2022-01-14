@@ -21,6 +21,7 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.kcl import KCL
 from rptest.clients.types import TopicSpec
+from rptest.clients.default import DefaultClient
 from rptest.services.admin import Admin
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.redpanda import RedpandaService
@@ -105,7 +106,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
             topics.append(spec)
 
         for spec in topics:
-            self.redpanda.create_topic(spec)
+            DefaultClient(self.redpanda).create_topic(spec)
 
         return topics
 
@@ -301,7 +302,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
 
         def create_topic(spec):
             try:
-                self.redpanda.create_topic(spec)
+                DefaultClient(self.redpanda).create_topic(spec)
             except Exception as e:
                 self.redpanda.logger.warn(
                     f"error creating topic {spec.name} - {e}")

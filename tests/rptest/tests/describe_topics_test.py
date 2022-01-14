@@ -29,7 +29,7 @@ class DescribeTopicsTest(RedpandaTest):
             for _ in range(num_topics)
         ]
 
-        self.redpanda.create_topic(topics)
+        self.client().create_topic(topics)
 
         def check():
             client = KafkaCliTools(self.redpanda)

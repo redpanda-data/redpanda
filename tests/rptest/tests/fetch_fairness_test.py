@@ -71,7 +71,7 @@ class FetchTest(RedpandaTest):
             topics = multiple_partitions(number_of_partitions)
 
         # create topics
-        self.redpanda.create_topic(specs=topics)
+        self.client().create_topic(specs=topics)
         self.redpanda.logger.info(f"topics: {topics}")
         rpk = RpkTool(self.redpanda)
 

@@ -13,6 +13,7 @@ import time
 
 from ducktape.mark.resource import cluster
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.default import DefaultClient
 from rptest.clients.types import TopicSpec
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.redpanda import RedpandaService
@@ -54,7 +55,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
                          partition_count=6,
                          replication_factor=3)
 
-        self.redpanda.create_topic(spec)
+        DefaultClient(self.redpanda).create_topic(spec)
         self.topic = spec.name
 
         self.start_producer(1, throughput=10000)
@@ -83,7 +84,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
                          partition_count=6,
                          replication_factor=3)
 
-        self.redpanda.create_topic(spec)
+        DefaultClient(self.redpanda).create_topic(spec)
         self.topic = spec.name
 
         self.start_producer(1, throughput=10000)

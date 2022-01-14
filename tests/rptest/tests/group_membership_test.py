@@ -241,7 +241,7 @@ class GroupMetricsTest(RedpandaTest):
         check_metric()
         metrics_offsets = self._get_offset_from_metrics(group)
         assert metrics_offsets is None
-        self.redpanda.create_topic(topic_spec)
+        self.client().create_topic(topic_spec)
         check_metric()
 
     @cluster(num_nodes=7)

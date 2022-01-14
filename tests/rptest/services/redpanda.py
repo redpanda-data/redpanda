@@ -750,14 +750,6 @@ class RedpandaService(Service):
 
         return [make_partition(p) for p in topic["partitions"]]
 
-    def create_topic(self, specs):
-        if isinstance(specs, TopicSpec):
-            specs = [specs]
-        client = self._client_type(self)
-        for spec in specs:
-            self.logger.info(f"Creating topic {spec}")
-            client.create_topic(spec)
-
     def delete_topic(self, name):
         client = self._client_type(self)
         self.logger.debug(f"Deleting topic {name}")

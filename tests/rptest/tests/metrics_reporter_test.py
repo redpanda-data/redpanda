@@ -15,6 +15,7 @@ from ducktape.mark.resource import cluster
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.default import DefaultClient
 from rptest.clients.types import TopicSpec
 
 from rptest.services.http_server import HttpServer
@@ -60,7 +61,7 @@ class MetricsReporterTest(Test):
         for _ in range(0, total_topics):
             partitions = random.randint(1, 8)
             total_partitions += partitions
-            self.redpanda.create_topic(
+            DefaultClient(self.redpanda).create_topic(
                 [TopicSpec(partition_count=partitions, replication_factor=3)])
 
         # create topics

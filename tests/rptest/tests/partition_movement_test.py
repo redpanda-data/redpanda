@@ -179,7 +179,7 @@ class PartitionMovementTest(EndToEndTest):
         topic = "topic-1"
         partition = 0
         spec = TopicSpec(name=topic, partition_count=1, replication_factor=3)
-        self.redpanda.create_topic(spec)
+        self.client().create_topic(spec)
         admin = Admin(self.redpanda)
 
         # choose a random topic-partition
@@ -240,7 +240,7 @@ class PartitionMovementTest(EndToEndTest):
                 topics.append(spec)
 
         for spec in topics:
-            self.redpanda.create_topic(spec)
+            self.client().create_topic(spec)
 
         for _ in range(25):
             self._move_and_verify()
@@ -264,7 +264,7 @@ class PartitionMovementTest(EndToEndTest):
 
         self.logger.info(f"Creating topics...")
         for spec in topics:
-            self.redpanda.create_topic(spec)
+            self.client().create_topic(spec)
 
         num_records = 1000
         produced = set(
@@ -331,7 +331,7 @@ class PartitionMovementTest(EndToEndTest):
         """
         self.start_redpanda(num_nodes=3)
         spec = TopicSpec(name="topic", partition_count=3, replication_factor=3)
-        self.redpanda.create_topic(spec)
+        self.client().create_topic(spec)
         self.topic = spec.name
         self.start_producer(1)
         self.start_consumer(1)
@@ -348,7 +348,7 @@ class PartitionMovementTest(EndToEndTest):
 
         self.start_redpanda(num_nodes=3)
         spec = TopicSpec(name="topic", partition_count=1, replication_factor=1)
-        self.redpanda.create_topic(spec)
+        self.client().create_topic(spec)
         topic = spec.name
         partition = 0
 
@@ -421,7 +421,7 @@ class PartitionMovementTest(EndToEndTest):
         # will take a while.
         name = f"movetest"
         spec = TopicSpec(name=name, partition_count=1, replication_factor=3)
-        self.redpanda.create_topic(spec)
+        self.client().create_topic(spec)
 
         # Wait for the partition to have a leader (`rpk produce` errors
         # out if it tries to write data before this)

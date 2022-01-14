@@ -36,7 +36,7 @@ class CreatePartitionsTest(RedpandaTest):
             f"Testing topic {topic.name} with partitions {topic.partition_count} replicas {topic.replication_factor} expected partitions {new_parts}"
         )
 
-        self.redpanda.create_topic(topic)
+        self.client().create_topic(topic)
 
         wait_until(
             lambda: self._partition_count(topic.name) == topic.partition_count,

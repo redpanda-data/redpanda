@@ -41,7 +41,7 @@ class NodesDecommissioningTest(EndToEndTest):
                 topics.append(spec)
 
         for spec in topics:
-            self.redpanda.create_topic(spec)
+            self.client().create_topic(spec)
             self.topic = spec.name
 
         self.start_producer(1)
@@ -79,7 +79,7 @@ class NodesDecommissioningTest(EndToEndTest):
                 topics.append(spec)
 
         for spec in topics:
-            self.redpanda.create_topic(spec)
+            self.client().create_topic(spec)
             self.topic = spec.name
 
         self.start_producer(1)

@@ -16,6 +16,7 @@ from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import RedpandaService
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.default import DefaultClient
 from rptest.clients.rpk import RpkTool
 from rptest.clients.kcl import KCL
 from rptest.util import (
@@ -55,7 +56,7 @@ class FetchAfterDeleteTest(Test):
         topic = TopicSpec(partition_count=1,
                           replication_factor=3,
                           cleanup_policy=TopicSpec.CLEANUP_DELETE)
-        self.redpanda.create_topic(topic)
+        DefaultClient(self.redpanda).create_topic(topic)
         self.topic = topic.name
 
         kafka_tools = KafkaCliTools(self.redpanda)

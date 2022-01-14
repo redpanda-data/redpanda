@@ -25,7 +25,7 @@ class SimpleEndToEndTest(EndToEndTest):
                             })
 
         spec = TopicSpec(name="topic", partition_count=1, replication_factor=1)
-        self.redpanda.create_topic(spec)
+        self.client().create_topic(spec)
         self.topic = spec.name
 
         self.start_producer(2, throughput=10000)
