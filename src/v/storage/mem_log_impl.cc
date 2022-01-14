@@ -306,7 +306,7 @@ struct mem_log_impl final : log::impl {
     }
 
     void set_collectible_offset(model::offset o) final {
-        _max_collectible_offset = o;
+        _max_collectible_offset = std::max(_max_collectible_offset, o);
     }
 
     ss::future<> update_configuration(ntp_config::default_overrides o) final {
