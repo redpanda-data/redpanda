@@ -48,6 +48,7 @@ enum class tx_errc {
     partition_not_found,
     stm_not_found,
     partition_not_exists,
+    pid_not_found,
     // when a request times out a client should not do any assumptions about its
     // effect. the request may time out before reaching the server, the request
     // may be successuly processed or may fail and the reply times out
@@ -86,6 +87,8 @@ struct tx_errc_category final : public std::error_category {
             return "Stm not found";
         case tx_errc::partition_not_exists:
             return "Partition not exists";
+        case tx_errc::pid_not_found:
+            return "Pid not found";
         case tx_errc::timeout:
             return "Timeout";
         case tx_errc::conflict:
