@@ -149,10 +149,6 @@ public:
     /// Checks if it has given partition
     bool contains(model::topic_namespace_view, model::partition_id) const;
 
-    /// Updates partition leader and notify waiters if needed
-    void update_partition_leader(
-      const model::ntp&, model::term_id, std::optional<model::node_id>);
-
     std::optional<partition_assignment>
     get_partition_assignment(const model::ntp&) const;
 
