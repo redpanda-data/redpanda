@@ -147,8 +147,7 @@ private:
     ss::future<checked<cluster::tm_transaction, tx_errc>> do_abort_tm_tx(
       ss::shared_ptr<cluster::tm_stm>,
       cluster::tm_transaction,
-      model::timeout_clock::duration,
-      ss::lw_shared_ptr<available_promise<tx_errc>>);
+      model::timeout_clock::duration);
     ss::future<checked<cluster::tm_transaction, tx_errc>> do_commit_tm_tx(
       ss::shared_ptr<cluster::tm_stm>,
       cluster::tm_transaction,

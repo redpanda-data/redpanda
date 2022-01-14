@@ -744,8 +744,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
         // already in a good state, we don't need to do nothing. even if
         // tx's etag is old it will be bumped by re_register_producer
     } else if (tx.status == tm_transaction::tx_status::ongoing) {
-        r = co_await do_abort_tm_tx(
-          stm, tx, timeout, ss::make_lw_shared<available_promise<tx_errc>>());
+        r = co_await do_abort_tm_tx(stm, tx, timeout);
     } else if (tx.status == tm_transaction::tx_status::preparing) {
         r = co_await do_commit_tm_tx(
           stm, tx, timeout, ss::make_lw_shared<available_promise<tx_errc>>());
@@ -1201,10 +1200,21 @@ tx_gateway_frontend::do_end_txn(
             co_return tx_errc::invalid_txn_state;
         }
     } else {
-        r = co_await do_abort_tm_tx(stm, tx, timeout, outcome);
+        try {
+            r = co_await do_abort_tm_tx(stm, tx, timeout);
+        } catch (...) {
+            outcome->set_value(tx_errc::unknown_server_error);
+            throw;
+        }
+        if (r.has_value()) {
+            outcome->set_value(tx_errc::none);
+        } else {
+            auto ret = r.error();
+            outcome->set_value(std::move(ret));
+        }
     }
     // starting from this point we don't need to set outcome on return because
-    // we shifted this responsibility to do_commit_tm_tx & do_abort_tm_tx
+    // we shifted this responsibility to do_commit_tm_tx
     if (!r.has_value()) {
         co_return r;
     }
@@ -1221,52 +1231,39 @@ ss::future<checked<cluster::tm_transaction, tx_errc>>
 tx_gateway_frontend::do_abort_tm_tx(
   ss::shared_ptr<cluster::tm_stm> stm,
   cluster::tm_transaction tx,
-  model::timeout_clock::duration timeout,
-  ss::lw_shared_ptr<available_promise<tx_errc>> outcome) {
-    try {
-        if (tx.status == tm_transaction::tx_status::ready) {
-            if (stm->is_actual_term(tx.etag)) {
-                // client should start a transaction before attempting to
-                // abort it. since tx has actual term we know for sure it
-                // wasn't start on a different leader
-                outcome->set_value(tx_errc::invalid_txn_state);
-                co_return tx_errc::invalid_txn_state;
-            }
-
-            // writing ready status to overwrite an ongoing transaction if
-            // it exists on an older leader
-            auto ready_tx = co_await stm->mark_tx_ready(tx.id);
-            if (!ready_tx.has_value()) {
-                outcome->set_value(tx_errc::invalid_txn_state);
-                co_return tx_errc::invalid_txn_state;
-            }
-            outcome->set_value(tx_errc::none);
-            co_return ready_tx.value();
-        } else if (
-          tx.status != tm_transaction::tx_status::ongoing
-          && tx.status != tm_transaction::tx_status::killed) {
-            outcome->set_value(tx_errc::invalid_txn_state);
+  model::timeout_clock::duration timeout) {
+    if (tx.status == tm_transaction::tx_status::ready) {
+        if (stm->is_actual_term(tx.etag)) {
+            // client should start a transaction before attempting to
+            // abort it. since tx has actual term we know for sure it
+            // wasn't start on a different leader
             co_return tx_errc::invalid_txn_state;
         }
 
-        if (tx.status == tm_transaction::tx_status::ongoing) {
-            auto changed_tx = co_await stm->try_change_status(
-              tx.id, cluster::tm_transaction::tx_status::aborting);
-            if (!changed_tx.has_value()) {
-                if (changed_tx.error() == tm_stm::op_status::not_leader) {
-                    outcome->set_value(tx_errc::not_coordinator);
-                    co_return tx_errc::not_coordinator;
-                }
-                outcome->set_value(tx_errc::unknown_server_error);
-                co_return tx_errc::unknown_server_error;
-            }
-            tx = changed_tx.value();
+        // writing ready status to overwrite an ongoing transaction if
+        // it exists on an older leader
+        auto ready_tx = co_await stm->mark_tx_ready(tx.id);
+        if (!ready_tx.has_value()) {
+            co_return tx_errc::invalid_txn_state;
         }
-    } catch (...) {
-        outcome->set_value(tx_errc::unknown_server_error);
-        throw;
+        co_return ready_tx.value();
+    } else if (
+      tx.status != tm_transaction::tx_status::ongoing
+      && tx.status != tm_transaction::tx_status::killed) {
+        co_return tx_errc::invalid_txn_state;
     }
-    outcome->set_value(tx_errc::none);
+
+    if (tx.status == tm_transaction::tx_status::ongoing) {
+        auto changed_tx = co_await stm->try_change_status(
+          tx.id, cluster::tm_transaction::tx_status::aborting);
+        if (!changed_tx.has_value()) {
+            if (changed_tx.error() == tm_stm::op_status::not_leader) {
+                co_return tx_errc::not_coordinator;
+            }
+            co_return tx_errc::unknown_server_error;
+        }
+        tx = changed_tx.value();
+    }
 
     std::vector<ss::future<abort_tx_reply>> pfs;
     for (auto rm : tx.partitions) {
@@ -1680,8 +1677,7 @@ ss::future<> tx_gateway_frontend::do_expire_old_tx(
     if (tx.status == tm_transaction::tx_status::ready) {
         // already in a good state, we don't need to do anything
     } else if (tx.status == tm_transaction::tx_status::ongoing) {
-        r = co_await do_abort_tm_tx(
-          stm, tx, timeout, ss::make_lw_shared<available_promise<tx_errc>>());
+        r = co_await do_abort_tm_tx(stm, tx, timeout);
     } else if (tx.status == tm_transaction::tx_status::preparing) {
         r = co_await do_commit_tm_tx(
           stm, tx, timeout, ss::make_lw_shared<available_promise<tx_errc>>());
