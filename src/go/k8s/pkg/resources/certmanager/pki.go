@@ -169,6 +169,7 @@ func (r *PkiReconciler) prepareAPI(
 		return []resources.Resource{}, nil
 	}
 
+	// TODO(#3550): Do not create rootIssuer if nodeSecretRef is passed and mTLS is disabled
 	toApplyRoot, rootIssuerRef := r.prepareRoot(rootCertSuffix)
 	toApply = append(toApply, toApplyRoot...)
 	nodeIssuerRef = rootIssuerRef
