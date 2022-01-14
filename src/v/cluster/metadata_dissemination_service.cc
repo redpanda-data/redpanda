@@ -37,6 +37,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/sleep.hh>
 
 #include <absl/container/flat_hash_set.h>
@@ -145,18 +146,24 @@ ss::future<> metadata_dissemination_service::start() {
 
 void metadata_dissemination_service::handle_leadership_notification(
   model::ntp ntp, model::term_id term, std::optional<model::node_id> lid) {
-    (void)ss::with_gate(_bg, [this, ntp = std::move(ntp), lid, term]() mutable {
-        // the lock sequences the updates from raft
-        return _lock.with([this, ntp = std::move(ntp), lid, term]() mutable {
-            return container().invoke_on(
-              0,
-              [ntp = std::move(ntp), lid, term](
-                metadata_dissemination_service& s) mutable {
-                  return s.apply_leadership_notification(
-                    std::move(ntp), term, lid);
-              });
-        });
-    });
+    try {
+        (void)ss::with_gate(
+          _bg, [this, ntp = std::move(ntp), lid, term]() mutable {
+              // the lock sequences the updates from raft
+              return _lock.with(
+                [this, ntp = std::move(ntp), lid, term]() mutable {
+                    return container().invoke_on(
+                      0,
+                      [ntp = std::move(ntp), lid, term](
+                        metadata_dissemination_service& s) mutable {
+                          return s.apply_leadership_notification(
+                            std::move(ntp), term, lid);
+                      });
+                });
+          });
+    } catch (const ss::gate_closed_exception&) {
+        // Should ignore this exception, because it signal about shutdown
+    }
 }
 
 ss::future<> metadata_dissemination_service::apply_leadership_notification(
