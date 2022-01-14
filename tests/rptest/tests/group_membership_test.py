@@ -127,7 +127,8 @@ class GroupMetricsTest(RedpandaTest):
     def __init__(self, ctx, *args, **kwargs):
 
         # Require internal_kafka topic to have an increased replication factor
-        extra_rp_conf = dict(default_topic_replications=3, )
+        extra_rp_conf = dict(default_topic_replications=3,
+                             enable_leader_balancer=False)
         super(GroupMetricsTest, self).__init__(test_context=ctx,
                                                num_brokers=3,
                                                extra_rp_conf=extra_rp_conf)
@@ -179,8 +180,12 @@ class GroupMetricsTest(RedpandaTest):
         assert gr_2_metrics_offsets[metric_key] == 0
 
         self.redpanda.delete_topic(topic)
-        metrics_offsets = self._get_offset_from_metrics(group_1)
-        assert metrics_offsets is None
+
+        def metrics_gone():
+            metrics_offsets = self._get_offset_from_metrics(group_1)
+            return metrics_offsets is None
+
+        wait_until(metrics_gone, timeout_sec=30, backoff_sec=5)
 
     @cluster(num_nodes=3)
     def test_multiple_topics_and_partitions(self):
