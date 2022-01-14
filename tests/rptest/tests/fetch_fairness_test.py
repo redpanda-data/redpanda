@@ -41,11 +41,10 @@ class FetchTest(RedpandaTest):
         returned in round robin fashion
         """
         def multiple_topics(count):
-            return list(
-                map(
-                    lambda i: TopicSpec(partition_count=1,
-                                        replication_factor=1), range(0,
-                                                                     count)))
+            return [
+                TopicSpec(partition_count=1, replication_factor=1)
+                for _ in range(count)
+            ]
 
         def multiple_partitions(count):
             return [TopicSpec(partition_count=count, replication_factor=1)]
