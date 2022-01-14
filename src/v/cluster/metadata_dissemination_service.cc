@@ -349,10 +349,18 @@ ss::future<> metadata_dissemination_service::update_leaders_with_health_report(
           [node_report](partition_leaders_table& leaders) {
               for (auto& tp : node_report.topics) {
                   for (auto& p : tp.partitions) {
-                      leaders.update_partition_leader(
-                        model::ntp(tp.tp_ns.ns, tp.tp_ns.tp, p.id),
-                        p.term,
-                        p.leader_id);
+                      // Nodes may report a null leader if they're out of
+                      // touch, even if the leader is actually still up.  Only
+                      // trust leadership updates from health reports if
+                      // they're non-null (non-null updates are safe to apply
+                      // in any order because update_partition leader will
+                      // ignore old terms)
+                      if (p.leader_id.has_value()) {
+                          leaders.update_partition_leader(
+                            model::ntp(tp.tp_ns.ns, tp.tp_ns.tp, p.id),
+                            p.term,
+                            p.leader_id);
+                      }
                   }
               }
           });
