@@ -211,8 +211,11 @@ ss::future<bool> persisted_stm::do_sync(
               ntp);
             co_return false;
         }
-        _insync_term = term;
-        co_return true;
+        if (_c->term() == term) {
+            _insync_term = term;
+            co_return true;
+        }
+        // we lost leadership during waiting
     }
 
     co_return false;

@@ -102,6 +102,10 @@ tm_stm::update_tx(tm_transaction tx, model::term_id term) {
           model::offset(r.value().last_offset()), _sync_timeout)) {
         co_return tm_stm::op_status::unknown;
     }
+    if (_c->term() != term) {
+        // we lost leadership during waiting
+        co_return tm_stm::op_status::unknown;
+    }
 
     auto ptx = _tx_table.find(tx.id);
     if (ptx == _tx_table.end()) {
@@ -257,6 +261,10 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
 
     if (!co_await wait_no_throw(
           model::offset(r.value().last_offset()), _sync_timeout)) {
+        co_return tm_stm::op_status::unknown;
+    }
+    if (_c->term() != _insync_term) {
+        // we lost leadership during waiting
         co_return tm_stm::op_status::unknown;
     }
 
