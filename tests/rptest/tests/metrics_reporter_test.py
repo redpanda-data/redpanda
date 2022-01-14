@@ -22,7 +22,7 @@ from rptest.services.redpanda import RedpandaService
 
 
 class MetricsReporterTest(Test):
-    def __init__(self, test_ctx, *args, **kwargs):
+    def __init__(self, test_ctx):
         self._ctx = test_ctx
         super(MetricsReporterTest, self).__init__(test_context=test_ctx)
 
