@@ -218,8 +218,12 @@ disk_log_impl::monitor_eviction(ss::abort_source& as) {
 
 void disk_log_impl::set_collectible_offset(model::offset o) {
     vlog(
-      gclog.debug, "[{}] setting max collectible offset {}", config().ntp(), o);
-    _max_collectible_offset = o;
+      gclog.debug,
+      "[{}] setting max collectible offset {}, prev offset {}",
+      config().ntp(),
+      o,
+      _max_collectible_offset);
+    _max_collectible_offset = std::max(_max_collectible_offset, o);
 }
 
 bool disk_log_impl::is_front_segment(const segment_set::type& ptr) const {
