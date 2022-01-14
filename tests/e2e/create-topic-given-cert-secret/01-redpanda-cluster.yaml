@@ -24,6 +24,13 @@ spec:
         nodeSecretRef:
           name: cluster-tls-node-certificate
           namespace: given-cert
+    schemaRegistry:
+      port: 8081
+      tls:
+        enabled: true
+        nodeSecretRef:
+          name: cluster-tls-node-certificate
+          namespace: given-cert
     adminApi:
     - port: 9644
     developerMode: true

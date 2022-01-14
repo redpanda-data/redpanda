@@ -50,8 +50,11 @@ metadata:
   namespace: cert-manager
 spec:
   dnsNames:
+    # Kakfa API
     - "*.cluster-tls-secret.given-cert-secret.svc.cluster.local"
+    # Schema registry API
+    - "cluster-tls-secret-cluster.given-cert-secret.svc.cluster.local"
   issuerRef:
     kind: Issuer
     name: cluster-tls-secret-root-issuer
-  secretName: cluster-tls-secret-node-certificate 
+  secretName: cluster-tls-secret-node-certificate
