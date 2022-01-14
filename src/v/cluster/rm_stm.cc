@@ -244,6 +244,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
     if (!co_await sync(_sync_timeout)) {
         co_return tx_errc::stale;
     }
+    auto synced_term = _insync_term;
 
     // checking / setting pid fencing
     auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
@@ -277,7 +278,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
           rm_stm::fence_control_record_version, pid);
         auto reader = model::make_memory_record_batch_reader(std::move(batch));
         auto r = co_await _c->replicate(
-          _insync_term,
+          synced_term,
           std::move(reader),
           raft::replicate_options(raft::consistency_level::quorum_ack));
         if (!r) {
@@ -317,7 +318,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
 
     track_tx(pid, transaction_timeout_ms);
 
-    co_return _mem_state.term;
+    co_return synced_term;
 }
 
 ss::future<tx_errc> rm_stm::prepare_tx(
@@ -346,6 +347,7 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
     if (!co_await sync(timeout)) {
         co_return tx_errc::stale;
     }
+    auto synced_term = _insync_term;
 
     auto prepared_it = _log_state.prepared.find(pid);
     if (prepared_it != _log_state.prepared.end()) {
@@ -372,13 +374,13 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
         co_return tx_errc::fenced;
     }
 
-    if (_mem_state.term != etag) {
+    if (synced_term != etag) {
         vlog(
           clusterlog.warn,
           "Can't prepare pid:{} - partition lost leadership current term: {} "
           "expected term: {}",
           pid,
-          _mem_state.term,
+          synced_term,
           etag);
         // current partition changed leadership since a transaction started
         // there is a chance that not all writes were replicated
@@ -457,6 +459,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
     if (!co_await sync(timeout)) {
         co_return tx_errc::stale;
     }
+    auto synced_term = _insync_term;
     // catching up with all previous end_tx operations (commit | abort)
     // to avoid writing the same commit | abort marker twice
     if (_mem_state.last_end_tx >= model::offset{0}) {
@@ -538,7 +541,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
       pid, model::control_record_type::tx_commit);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
     auto r = co_await _c->replicate(
-      _insync_term,
+      synced_term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
@@ -622,6 +625,7 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
     if (!co_await sync(timeout)) {
         co_return tx_errc::stale;
     }
+    auto synced_term = _insync_term;
     // catching up with all previous end_tx operations (commit | abort)
     // to avoid writing the same commit | abort marker twice
     if (_mem_state.last_end_tx >= model::offset{0}) {
@@ -664,7 +668,7 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
       pid, model::control_record_type::tx_abort);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
     auto r = co_await _c->replicate(
-      _insync_term,
+      synced_term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
@@ -855,6 +859,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
     if (!co_await sync(_sync_timeout)) {
         co_return errc::not_leader;
     }
+    auto synced_term = _insync_term;
 
     // fencing
     auto fence_it = _log_state.fence_pid_epoch.find(bid.pid.get_id());
@@ -922,7 +927,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
     }
 
     auto r = co_await _c->replicate(
-      _mem_state.term,
+      synced_term,
       std::move(br),
       raft::replicate_options(raft::consistency_level::leader_ack));
     if (!r) {
@@ -961,6 +966,7 @@ ss::future<result<raft::replicate_result>> rm_stm::replicate_seq(
     if (!co_await sync(_sync_timeout)) {
         co_return errc::not_leader;
     }
+    auto synced_term = _insync_term;
 
     auto cached_offset = known_seq(bid);
     if (cached_offset) {
@@ -983,7 +989,7 @@ ss::future<result<raft::replicate_result>> rm_stm::replicate_seq(
     if (!check_seq(bid)) {
         co_return errc::sequence_out_of_order;
     }
-    auto r = co_await _c->replicate(_insync_term, std::move(br), opts);
+    auto r = co_await _c->replicate(synced_term, std::move(br), opts);
     if (r) {
         set_seq(bid, r.value().last_offset);
     }
@@ -1179,6 +1185,7 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
     if (!co_await sync(_sync_timeout)) {
         co_return;
     }
+    auto synced_term = _insync_term;
 
     if (!is_known_session(pid)) {
         co_return;
@@ -1214,7 +1221,7 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                   std::move(batch));
                 co_await _c
                   ->replicate(
-                    _insync_term,
+                    synced_term,
                     std::move(reader),
                     raft::replicate_options(
                       raft::consistency_level::quorum_ack))
@@ -1226,7 +1233,7 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                   std::move(batch));
                 co_await _c
                   ->replicate(
-                    _insync_term,
+                    synced_term,
                     std::move(reader),
                     raft::replicate_options(
                       raft::consistency_level::quorum_ack))
