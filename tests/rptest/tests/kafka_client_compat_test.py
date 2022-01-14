@@ -15,7 +15,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
-class KafkaClientCompatTest(RedpandaTest):
+class KafkaCliClientCompatTest(RedpandaTest):
     @cluster(num_nodes=3)
     def test_create_topic(self):
         for client_factory in KafkaCliTools.instances():
