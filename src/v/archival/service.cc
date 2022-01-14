@@ -249,7 +249,7 @@ ss::future<> scheduler_service_impl::upload_topic_manifest(
               _topic_manifest_upload_timeout, _initial_backoff, &_rtcnode);
             retry_chain_logger ctxlog(archival_log, fib);
             vlog(ctxlog.info, "Uploading topic manifest {}", topic_ns);
-            cloud_storage::topic_manifest tm(*cfg, model::revision_id(rev()));
+            cloud_storage::topic_manifest tm(*cfg, rev);
             auto key = tm.get_manifest_path();
             vlog(ctxlog.debug, "Topic manifest object key is '{}'", key);
             auto res = co_await _remote.local().upload_manifest(

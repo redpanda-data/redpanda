@@ -62,7 +62,7 @@ FIXTURE_TEST(
     remote remote(s3_connection_limit(10), conf);
     manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("1-2-v1.log");
-    model::revision_id segment_ntp_revision{777};
+    model::initial_revision_id segment_ntp_revision{777};
     iobuf segment_bytes = generate_segment(model::offset(1), 20);
     uint64_t clen = segment_bytes.size_bytes();
     auto action = ss::defer([&remote] { remote.stop().get(); });
