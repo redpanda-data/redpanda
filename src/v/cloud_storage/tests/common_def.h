@@ -18,7 +18,7 @@ static const auto manifest_ntp = model::ntp(                    // NOLINT
   manifest_namespace,
   manifest_topic,
   manifest_partition);
-static const auto manifest_revision = model::revision_id(0); // NOLINT
+static const auto manifest_revision = model::initial_revision_id(0); // NOLINT
 static const auto archiver_term = model::term_id{123};
 static const ss::sstring manifest_url = ssx::sformat( // NOLINT
   "20000000/meta/{}_{}/manifest.json",

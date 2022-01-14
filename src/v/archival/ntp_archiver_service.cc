@@ -61,7 +61,7 @@ ntp_archiver::ntp_archiver(
       conf.time_limit,
       conf.upload_io_priority)
   , _bucket(conf.bucket_name)
-  , _manifest(_ntp, model::revision_id(_rev()))
+  , _manifest(_ntp, _rev)
   , _gate()
   , _initial_backoff(conf.initial_backoff)
   , _segment_upload_timeout(conf.segment_upload_timeout)
@@ -146,7 +146,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
 
     auto path = cloud_storage::generate_remote_segment_path(
-      _ntp, model::revision_id(_rev()), candidate.exposed_name, _start_term);
+      _ntp, _rev, candidate.exposed_name, _start_term);
 
     vlog(ctxlog.debug, "Uploading segment {} to {}", candidate, path);
 
@@ -263,7 +263,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
         .base_timestamp = upload.base_timestamp,
         .max_timestamp = upload.max_timestamp,
         .delta_offset = delta,
-        .ntp_revision = model::revision_id(_rev()),
+        .ntp_revision = _rev,
         .archiver_term = _start_term,
       },
       .name = upload.exposed_name, .delta = offset - base,

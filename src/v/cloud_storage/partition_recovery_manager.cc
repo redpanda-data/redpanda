@@ -249,7 +249,7 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
       retention);
     auto mat = co_await find_recovery_material(manifest_key);
     auto offset_map = co_await build_offset_map(mat);
-    manifest target(_ntpc.ntp(), _ntpc.get_revision());
+    manifest target(_ntpc.ntp(), _ntpc.get_initial_revision());
     for (const auto& kv : offset_map) {
         target.add(kv.second.name, kv.second.meta);
     }
@@ -314,8 +314,8 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
     // Upload topic manifest for re-created topic (here we don't prevent
     // other partitions of the same topic to read old topic manifest if the
     // revision is different).
-    if (mat.topic_manifest.get_revision() != _ntpc.get_revision()) {
-        mat.topic_manifest.set_revision(_ntpc.get_revision());
+    if (mat.topic_manifest.get_revision() != _ntpc.get_initial_revision()) {
+        mat.topic_manifest.set_revision(_ntpc.get_initial_revision());
         upl_result = co_await _remote->upload_manifest(
           _bucket, mat.topic_manifest, _rtcnode);
         if (upl_result != upload_result::success) {
@@ -435,7 +435,7 @@ partition_downloader::download_log_with_capped_time(
 ss::future<manifest>
 partition_downloader::download_manifest(const remote_manifest_path& key) {
     vlog(_ctxlog.info, "Downloading manifest {}", key);
-    manifest manifest(_ntpc.ntp(), _ntpc.get_revision());
+    manifest manifest(_ntpc.ntp(), _ntpc.get_initial_revision());
     auto result = co_await _remote->download_manifest(
       _bucket, key, manifest, _rtcnode);
     if (result != download_result::success) {
