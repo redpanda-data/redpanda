@@ -20,6 +20,13 @@ const (
 
 // SchemaRegistryAPINodeCert returns the namespaced name for the SchemaRegistry API certificate used by nodes
 func (r *PkiReconciler) SchemaRegistryAPINodeCert() types.NamespacedName {
+	schemaRegistryTLSListener := getTLSListener(schemaRegistryAPIListeners(r.pandaCluster))
+	if schemaRegistryTLSListener != nil && schemaRegistryTLSListener.GetTLS() != nil && schemaRegistryTLSListener.GetTLS().NodeSecretRef != nil {
+		return types.NamespacedName{
+			Name:      schemaRegistryTLSListener.GetTLS().NodeSecretRef.Name,
+			Namespace: r.pandaCluster.Namespace,
+		}
+	}
 	return types.NamespacedName{Name: r.pandaCluster.Name + "-" + schemaRegistryAPINodeCert, Namespace: r.pandaCluster.Namespace}
 }
 
