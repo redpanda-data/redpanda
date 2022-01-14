@@ -102,7 +102,26 @@ ntp_archiver::download_manifest(retry_chain_node& parent) {
     auto path = _manifest.get_manifest_path();
     auto key = cloud_storage::remote_manifest_path(
       std::filesystem::path(std::move(path)));
-    co_return co_await _remote.download_manifest(_bucket, key, _manifest, fib);
+    auto result = co_await _remote.download_manifest(
+      _bucket, key, _manifest, fib);
+
+    // It's OK if the manifest is not found for a newly created topic. The
+    // condition in if statement is not guaranteed to cover all cases for new
+    // topics, so false positives may happen for this warn.
+    if (
+      result == cloud_storage::download_result::notfound
+      && _partition->high_watermark() != model::offset(0)
+      && _partition->term() != model::term_id(1)) {
+        vlog(
+          ctxlog.warn,
+          "Manifest for {} not found in S3, partition high_watermark: {}, "
+          "partition term: {}",
+          _ntp,
+          _partition->high_watermark(),
+          _partition->term());
+    }
+
+    co_return result;
 }
 
 ss::future<cloud_storage::upload_result>

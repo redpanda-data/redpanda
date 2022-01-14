@@ -204,9 +204,21 @@ ss::future<download_result> remote::download_manifest(
             break;
         case error_outcome::fail:
             result = download_result::failed;
+            vlog(
+              ctxlog.warn,
+              "Failed downloading manifest from {} {}, manifest at {}",
+              bucket,
+              *result,
+              path);
             break;
         case error_outcome::notfound:
             result = download_result::notfound;
+            vlog(
+              ctxlog.debug,
+              "Manifest from {} {}, manifest at {} not found",
+              bucket,
+              *result,
+              path);
             break;
         }
     }
@@ -219,13 +231,6 @@ ss::future<download_result> remote::download_manifest(
           bucket,
           path);
         result = download_result::timedout;
-    } else {
-        vlog(
-          ctxlog.warn,
-          "Downloading manifest from {} {}, manifest at {} not available",
-          bucket,
-          *result,
-          path);
     }
     co_return *result;
 }
