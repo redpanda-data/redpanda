@@ -267,7 +267,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
     auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
     auto is_new_pid = fence_it == _log_state.fence_pid_epoch.end();
     if (is_new_pid || pid.get_epoch() > fence_it->second) {
-        if (!is_new_pid && pid.get_epoch() > fence_it->second) {
+        if (!is_new_pid) {
             auto old_pid = model::producer_identity{
               .id = pid.get_id(), .epoch = fence_it->second};
             // there is a fence, it might be that tm_stm failed, forget about
@@ -287,6 +287,11 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
                 co_return tx_errc::stale;
             }
             if (ar != tx_errc::none) {
+                co_return tx_errc::unknown_server_error;
+            }
+
+            if (is_known_session(old_pid)) {
+                // can't begin a transaction while previous tx is in progress
                 co_return tx_errc::unknown_server_error;
             }
         }
@@ -713,8 +718,10 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
         _mem_state.last_end_tx = r.value().last_offset;
     }
 
-    // don't need to wait for apply because tx is already aborted on the
-    // coordinator level - nothing can go wrong
+    if (!co_await wait_no_throw(r.value().last_offset, timeout)) {
+        co_return tx_errc::unknown_server_error;
+    }
+
     co_return tx_errc::none;
 }
 
