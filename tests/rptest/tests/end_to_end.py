@@ -24,6 +24,7 @@ from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 from rptest.services.redpanda import RedpandaService
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.default import DefaultClient
 from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
 
@@ -60,6 +61,7 @@ class EndToEndTest(Test):
         self.last_consumed_offsets = {}
         self.redpanda = None
         self.topic = None
+        self._client = None
 
     def start_redpanda(self, num_nodes=1, extra_rp_conf=None):
         if extra_rp_conf is not None:
@@ -72,6 +74,11 @@ class EndToEndTest(Test):
                                         KafkaCliTools,
                                         extra_rp_conf=self._extra_rp_conf)
         self.redpanda.start()
+        self._client = DefaultClient(self.redpanda)
+
+    def client(self):
+        assert self._client is not None
+        return self._client
 
     def start_consumer(self, num_nodes=1, group_id="test_group"):
         assert self.redpanda

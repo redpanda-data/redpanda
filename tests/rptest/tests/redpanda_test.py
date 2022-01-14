@@ -11,6 +11,7 @@ import os
 from ducktape.tests.test import Test
 from rptest.services.redpanda import RedpandaService
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.default import DefaultClient
 from rptest.util import Scale
 
 
@@ -40,6 +41,7 @@ class RedpandaTest(Test):
                                         enable_sr=enable_sr,
                                         topics=self.topics,
                                         num_cores=num_cores)
+        self._client = DefaultClient(self.redpanda)
 
     @property
     def topic(self):
@@ -52,3 +54,6 @@ class RedpandaTest(Test):
 
     def setUp(self):
         self.redpanda.start()
+
+    def client(self):
+        return self._client
