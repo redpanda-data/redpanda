@@ -9,7 +9,6 @@
 import random
 
 from ducktape.mark.resource import cluster
-from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 

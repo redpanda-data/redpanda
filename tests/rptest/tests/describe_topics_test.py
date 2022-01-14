@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 import random
 
-from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 from ducktape.mark.resource import cluster
 from rptest.tests.redpanda_test import RedpandaTest

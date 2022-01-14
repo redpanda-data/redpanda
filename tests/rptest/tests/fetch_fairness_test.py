@@ -8,25 +8,14 @@
 # by the Apache License, Version 2.0
 
 from collections import defaultdict
-import sys
-import time
-import re
-import random
 
 from ducktape.mark.resource import cluster
 from ducktape.mark import parametrize
-from ducktape.mark import ignore
-from ducktape.utils.util import wait_until
 
-from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kcl import KCL
-from rptest.clients.rpk import RpkTool, RpkException
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.rpk_producer import RpkProducer
-from rptest.services.kaf_producer import KafProducer
-from rptest.services.admin import Admin
 
 
 class FetchTest(RedpandaTest):

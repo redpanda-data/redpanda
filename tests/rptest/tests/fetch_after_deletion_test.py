@@ -14,11 +14,9 @@ import json
 
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import RedpandaService
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.default import DefaultClient
 from rptest.clients.rpk import RpkTool
-from rptest.clients.kcl import KCL
 from rptest.util import (
     Scale,
     produce_until_segments,

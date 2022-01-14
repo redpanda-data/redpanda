@@ -7,12 +7,10 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from os import error
 import random
 import threading
 import time
 import requests
-import urllib3
 
 from ducktape.mark import parametrize
 from ducktape.mark.resource import cluster

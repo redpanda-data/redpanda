@@ -1,11 +1,14 @@
-import random
-import time
+# Copyright 2022 Vectorized, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
 
 from ducktape.mark.resource import cluster
-from ducktape.utils.util import wait_until
-import requests
 from rptest.clients.kafka_cat import KafkaCat
-from rptest.clients.kcl import KCL
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
