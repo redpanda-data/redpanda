@@ -117,6 +117,7 @@ func (r *StatefulSetResource) rollingUpdate(
 	opts := []patch.CalculateOption{
 		patch.IgnoreStatusFields(),
 		ignoreKubernetesTokenVolumeMounts(),
+		patch.IgnoreVolumeClaimTemplateTypeMetaAndStatus(),
 		ignoreDefaultToleration(),
 		ignoreExistingVolumes(volumes),
 	}
@@ -127,6 +128,9 @@ func (r *StatefulSetResource) rollingUpdate(
 		// should be deleted it needs to have the original last applied
 		// annotation in place. See TestPatchCalculation_PodRemoved for detailed
 		// explanation
+		artificialPod.ObjectMeta = pod.ObjectMeta
+		artificialPod.TypeMeta = pod.TypeMeta
+		artificialPod.Annotations = template.Annotations
 		err = patch.DefaultAnnotator.SetLastAppliedAnnotation(&pod)
 		if err != nil {
 			return fmt.Errorf("setting lastapplied annotation %w", err)
