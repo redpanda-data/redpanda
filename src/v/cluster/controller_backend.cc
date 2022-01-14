@@ -967,7 +967,10 @@ ss::future<std::error_code> controller_backend::create_non_replicable_partition(
     vassert(
       !_storage.local().log_mgr().get(ntp),
       "Log exists for missing entry in topics_table");
-    auto ntp_cfg = cfg->make_ntp_config(_data_directory, ntp.tp.partition, rev);
+    // The initial revision id is not used by non-replicable partitions so it's
+    // safe to use invalid value here.
+    auto ntp_cfg = cfg->make_ntp_config(
+      _data_directory, ntp.tp.partition, rev, model::initial_revision_id{-1});
     co_await _storage.local().log_mgr().manage(std::move(ntp_cfg));
     co_await add_to_shard_table(std::move(ntp), ss::this_shard_id(), rev);
     co_return errc::success;
@@ -988,13 +991,20 @@ ss::future<std::error_code> controller_backend::create_partition(
     auto f = ss::now();
     // handle partially created topic
     auto partition = _partition_manager.local().get(ntp);
+    // initial revision of the partition on the moment when it was created
+    // the value is used by shadow indexing
+    auto initial_rev = _topics.local().get_initial_revision(ntp);
+    if (!initial_rev) {
+        return ss::make_ready_future<std::error_code>(errc::topic_not_exists);
+    }
     // no partition exists, create one
     if (likely(!partition)) {
         // we use offset as an rev as it is always increasing and it
         // increases while ntp is being created again
         f = _partition_manager.local()
               .manage(
-                cfg->make_ntp_config(_data_directory, ntp.tp.partition, rev),
+                cfg->make_ntp_config(
+                  _data_directory, ntp.tp.partition, rev, initial_rev.value()),
                 group_id,
                 std::move(members))
               .discard_result();

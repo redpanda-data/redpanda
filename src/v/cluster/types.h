@@ -408,7 +408,10 @@ struct topic_configuration {
       int16_t replication_factor);
 
     storage::ntp_config make_ntp_config(
-      const ss::sstring&, model::partition_id, model::revision_id) const;
+      const ss::sstring&,
+      model::partition_id,
+      model::revision_id,
+      model::initial_revision_id) const;
 
     bool is_internal() const {
         return tp_ns.ns == model::kafka_internal_namespace;
