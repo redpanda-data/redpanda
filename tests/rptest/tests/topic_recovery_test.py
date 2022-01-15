@@ -282,7 +282,7 @@ def _find_checksum_matches(baseline_per_host, restored_per_host,
 def _gen_manifest_path(ntp, rev):
     x = xxhash.xxh32()
     path = f"{ntp.ns}/{ntp.topic}/{ntp.partition}_{rev}"
-    x.update(path)
+    x.update(path.encode('ascii'))
     hash = x.hexdigest()[0] + '0000000'
     return f"{hash}/meta/{path}/manifest.json"
 
@@ -290,7 +290,7 @@ def _gen_manifest_path(ntp, rev):
 def _gen_segment_path(ntp, rev, name):
     x = xxhash.xxh32()
     path = f"{ntp.ns}/{ntp.topic}/{ntp.partition}_{rev}/{name}"
-    x.update(path)
+    x.update(path.encode('ascii'))
     hash = x.hexdigest()
     return f"{hash}/{path}"
 
