@@ -9,6 +9,7 @@
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from kafka import KafkaAdminClient
 
 
 class DefaultClient:
@@ -25,3 +26,28 @@ class DefaultClient:
     def delete_topic(self, name):
         client = KafkaCliTools(self._redpanda)
         client.delete_topic(name)
+
+    def describe_topics(self, topics=None):
+        """
+        Describe topics. Pass topics=None to describe all topics, or a pass a
+        list of topic names to restrict the call to a set of specific topics.
+
+        Sample return value:
+            [
+              {'error_code': 0,
+               'topic': 'topic-kabn',
+               'is_internal': False,
+               'partitions': [
+                 {'error_code': 0,
+                  'partition': 0,
+                  'leader': 1,
+                  'replicas': [1],
+                  'isr': [1],
+                  'offline_replicas': []}
+               }
+            ]
+        """
+        client = KafkaAdminClient(
+            bootstrap_servers=self._redpanda.brokers_list(),
+            **self._redpanda.security_config())
+        return client.describe_topics(topics)

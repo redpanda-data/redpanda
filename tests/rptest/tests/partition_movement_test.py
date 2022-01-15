@@ -125,7 +125,7 @@ class PartitionMovementTest(EndToEndTest):
         admin = Admin(self.redpanda)
 
         # choose a random topic-partition
-        metadata = self.redpanda.describe_topics()
+        metadata = self.client().describe_topics()
         topic, partition = self._random_partition(metadata)
         self.logger.info(f"selected topic-partition: {topic}-{partition}")
 
