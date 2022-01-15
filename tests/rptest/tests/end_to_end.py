@@ -71,7 +71,6 @@ class EndToEndTest(Test):
         assert self.redpanda is None
         self.redpanda = RedpandaService(self.test_context,
                                         num_nodes,
-                                        KafkaCliTools,
                                         extra_rp_conf=self._extra_rp_conf)
         self.redpanda.start()
         self._client = DefaultClient(self.redpanda)

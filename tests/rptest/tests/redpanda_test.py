@@ -35,7 +35,6 @@ class RedpandaTest(Test):
         self.scale = Scale(test_context)
         self.redpanda = RedpandaService(test_context,
                                         num_brokers,
-                                        KafkaCliTools,
                                         extra_rp_conf=extra_rp_conf,
                                         enable_pp=enable_pp,
                                         enable_sr=enable_sr,

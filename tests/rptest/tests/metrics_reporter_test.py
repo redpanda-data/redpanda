@@ -50,7 +50,6 @@ class MetricsReporterTest(Test):
         }
         self.redpanda = RedpandaService(self.test_context,
                                         3,
-                                        KafkaCliTools,
                                         extra_rp_conf=extra_conf)
 
         self.redpanda.start()

@@ -40,7 +40,6 @@ class FetchAfterDeleteTest(Test):
         segment_size = 1048576
         self.redpanda = RedpandaService(self.test_context,
                                         3,
-                                        KafkaCliTools,
                                         extra_rp_conf={
                                             "enable_transactions":
                                             transactions_enabled,

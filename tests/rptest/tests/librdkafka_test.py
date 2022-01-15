@@ -39,7 +39,6 @@ class LibrdkafkaTest(Test):
     def _start_redpanda(self, num_brokers):
         self._redpanda = RedpandaService(self._context,
                                          num_brokers,
-                                         KafkaCliTools,
                                          extra_rp_conf=self._extra_rp_conf)
         self._redpanda.start()
 

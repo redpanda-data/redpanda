@@ -62,7 +62,6 @@ class EndToEndShadowIndexingTest(EndToEndTest):
         self.redpanda = RedpandaService(
             context=test_context,
             num_brokers=3,
-            client_type=KafkaCliTools,
             extra_rp_conf=self._extra_rp_conf,
         )
 

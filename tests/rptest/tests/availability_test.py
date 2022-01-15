@@ -39,7 +39,6 @@ class AvailabilityTests(EndToEndFinjectorTest):
         self.redpanda = RedpandaService(
             self.test_context,
             3,
-            KafkaCliTools,
             extra_rp_conf={
                 "enable_auto_rebalance_on_node_add": True,
                 "group_topic_partitions": 1,
@@ -68,7 +67,6 @@ class AvailabilityTests(EndToEndFinjectorTest):
         self.redpanda = RedpandaService(
             self.test_context,
             3,
-            KafkaCliTools,
             extra_rp_conf={
                 "enable_auto_rebalance_on_node_add": True,
                 "group_topic_partitions": 1,

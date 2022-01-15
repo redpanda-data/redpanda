@@ -121,7 +121,6 @@ class NodeOperationFuzzyTest(EndToEndTest):
         self.redpanda = RedpandaService(
             self.test_context,
             5,
-            KafkaCliTools,
             extra_rp_conf={
                 "enable_auto_rebalance_on_node_add": True,
                 "group_topic_partitions": 3,

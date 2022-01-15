@@ -28,8 +28,6 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.storage import ClusterStorage, NodeStorage
 from rptest.services.admin import Admin
 from rptest.clients.python_librdkafka import PythonLibrdkafka
-from rptest.clients.types import TopicSpec
-from kafka import KafkaAdminClient
 
 Partition = collections.namedtuple('Partition',
                                    ['index', 'leader', 'replicas'])
@@ -102,7 +100,7 @@ class RedpandaService(Service):
     def __init__(self,
                  context,
                  num_brokers,
-                 client_type,
+                 *,
                  enable_rp=True,
                  extra_rp_conf=None,
                  enable_pp=False,
@@ -110,7 +108,6 @@ class RedpandaService(Service):
                  num_cores=3):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
-        self._client_type = client_type
         self._enable_rp = enable_rp
         self._extra_rp_conf = extra_rp_conf or dict()
         self._enable_pp = enable_pp
@@ -121,9 +118,6 @@ class RedpandaService(Service):
         self._admin = Admin(self)
         self._started = []
         self._security_config = dict()
-
-        # client is intiialized after service starts
-        self._client = None
 
         self.config_file_lock = threading.Lock()
 
@@ -196,8 +190,6 @@ class RedpandaService(Service):
                                          sasl_plain_password=password,
                                          request_timeout_ms=30000,
                                          api_version_auto_timeout_ms=3000)
-        self._client = KafkaAdminClient(bootstrap_servers=self.brokers_list(),
-                                        **self._security_config)
 
     def security_config(self):
         return self._security_config

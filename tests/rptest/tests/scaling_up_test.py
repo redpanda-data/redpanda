@@ -24,7 +24,7 @@ class ScalingUpTest(EndToEndTest):
     """
     @cluster(num_nodes=5)
     def test_adding_nodes_to_cluster(self):
-        self.redpanda = RedpandaService(self.test_context, 3, KafkaCliTools)
+        self.redpanda = RedpandaService(self.test_context, 3)
         # start single node cluster
         self.redpanda.start(nodes=[self.redpanda.nodes[0]])
         # create some topics
