@@ -135,7 +135,7 @@ class RpkTool:
         # message rather than sigkilling the remote process.
         out = self._run_topic(cmd, stdin=msg, timeout=timeout + 0.5)
 
-        offset = re.search("at offset (\d+)", out).group(1)
+        offset = re.search(r"at offset (\d+)", out).group(1)
         return int(offset)
 
     def describe_topic(self, topic):

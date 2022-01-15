@@ -410,7 +410,7 @@ class ClusterConfigTest(RedpandaTest):
             import_stdout = self.rpk.cluster_config_import(file.name, all)
 
         last_line = import_stdout.strip().split("\n")[-1]
-        m = re.match("^.+new config version (\d+).*$", last_line)
+        m = re.match(r"^.+new config version (\d+).*$", last_line)
 
         self.logger.debug(f"_import status: {last_line}")
 
@@ -535,7 +535,7 @@ class ClusterConfigTest(RedpandaTest):
 
         for i, l in enumerate(lines):
             m = re.match(
-                "^(\d+)\s+(\d+)\s+(true|false)\s+\[(.*)\]\s+\[(.*)\]$", l)
+                r"^(\d+)\s+(\d+)\s+(true|false)\s+\[(.*)\]\s+\[(.*)\]$", l)
             assert m is not None
             node_id, config_version, needs_restart, invalid, unknown = m.groups(
             )
