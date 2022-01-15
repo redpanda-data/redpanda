@@ -9,15 +9,9 @@
 
 from ducktape.mark.resource import cluster
 from rptest.clients.types import TopicSpec
-from rptest.clients.kafka_cat import KafkaCat
 from ducktape.utils.util import wait_until
 from rptest.services.admin import Admin
-
 import confluent_kafka as ck
-
-import random
-import time
-
 from rptest.tests.redpanda_test import RedpandaTest
 
 

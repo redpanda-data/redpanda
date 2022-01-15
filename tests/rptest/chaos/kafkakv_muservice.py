@@ -8,14 +8,10 @@
 # by the Apache License, Version 2.0
 
 import os
-import signal
 import sys
 import traceback
 
 from rptest.chaos.muservice import MuService
-
-from ducktape.cluster.remoteaccount import RemoteCommandError
-from ducktape.utils.util import wait_until
 
 
 class KafkaKVMuService(MuService):

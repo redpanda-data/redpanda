@@ -9,15 +9,12 @@
 
 import subprocess
 import os
-import time
 
 from ducktape.mark.resource import cluster
 from ducktape.mark import matrix, ignore
-from ducktape.utils.util import wait_until
 
 from ducktape.tests.test import Test
 from rptest.services.redpanda import RedpandaService
-from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
 class LibrdkafkaTest(Test):

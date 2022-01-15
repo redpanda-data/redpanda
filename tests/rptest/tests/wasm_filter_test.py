@@ -12,8 +12,7 @@ from ducktape.mark.resource import cluster
 from ducktape.mark import ignore
 from rptest.clients.types import TopicSpec
 from rptest.wasm.wasm_build_tool import WasmTemplateRepository
-from rptest.wasm.wasm_test import WasmTest, WasmScript, random_string
-from rptest.clients.rpk import RpkTool
+from rptest.wasm.wasm_test import WasmTest, WasmScript
 from rptest.wasm.topic import construct_materialized_topic
 from rptest.wasm.native_kafka_consumer import NativeKafkaConsumer
 from ducktape.utils.util import wait_until

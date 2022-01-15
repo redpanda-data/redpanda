@@ -23,7 +23,6 @@ from collections import namedtuple
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 from rptest.services.redpanda import RedpandaService
-from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.default import DefaultClient
 from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix

@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 from ducktape.mark.resource import cluster
-from ducktape.mark import matrix, ignore
+from ducktape.mark import ignore
 from rptest.clients.types import TopicSpec
 from rptest.wasm.topic import construct_materialized_topic, get_source_topic
 from rptest.wasm.topics_result_set import materialized_result_set_compare

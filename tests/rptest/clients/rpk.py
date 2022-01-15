@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 import subprocess
-import socket
 import re
 
 DEFAULT_TIMEOUT = 30

@@ -8,9 +8,6 @@
 
 from rptest.clients.kafka_cat import KafkaCat
 from ducktape.mark.resource import cluster
-from ducktape.mark import matrix, ignore
-from ducktape.utils.util import wait_until
-from ducktape.errors import DucktapeError
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.archival.s3_client import S3Client
 from rptest.services.redpanda import RedpandaService

@@ -9,7 +9,7 @@
 from rptest.tests.redpanda_test import RedpandaTest
 from ducktape.mark.resource import cluster
 from rptest.services.admin import Admin
-from rptest.clients.kafka_cli_tools import KafkaCliTools, AuthenticationError, ClusterAuthorizationError
+from rptest.clients.kafka_cli_tools import KafkaCliTools, ClusterAuthorizationError
 
 
 class AccessControlListTest(RedpandaTest):

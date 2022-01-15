@@ -7,7 +7,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 from confluent_kafka.admin import AdminClient, NewTopic
-from rptest.clients.types import TopicSpec
 
 
 class PythonLibrdkafka:

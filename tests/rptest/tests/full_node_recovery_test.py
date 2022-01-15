@@ -16,7 +16,6 @@ from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.kafka_cat import KafkaCat
-from rptest.services.admin import Admin
 
 
 class FullNodeRecoveryTest(EndToEndTest):

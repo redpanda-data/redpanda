@@ -16,7 +16,6 @@ from rptest.clients.rpk import RpkTool
 from rptest.services.rpk_consumer import RpkConsumer
 
 import time
-import threading
 import random
 
 

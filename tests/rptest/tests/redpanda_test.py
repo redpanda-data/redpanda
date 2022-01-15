@@ -6,8 +6,6 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import os
-
 from ducktape.tests.test import Test
 from rptest.services.redpanda import RedpandaService
 from rptest.clients.kafka_cli_tools import KafkaCliTools

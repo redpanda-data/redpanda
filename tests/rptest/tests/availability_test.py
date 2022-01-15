@@ -10,7 +10,6 @@
 import random
 
 from ducktape.mark.resource import cluster
-from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.default import DefaultClient
 from rptest.clients.types import TopicSpec
 from rptest.services.failure_injector import FailureSpec

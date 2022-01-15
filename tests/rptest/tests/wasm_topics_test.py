@@ -7,12 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import random
 from ducktape.mark.resource import cluster
-from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkTool
 from rptest.tests.wasm_identity_test import WasmIdentityTest
-from rptest.wasm.topics_result_set import materialized_result_set_compare
 
 
 class WasmCreateTopicsTest(WasmIdentityTest):

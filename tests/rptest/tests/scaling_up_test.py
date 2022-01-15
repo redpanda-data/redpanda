@@ -10,7 +10,6 @@
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
-from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
 from rptest.services.redpanda import RedpandaService

@@ -9,7 +9,6 @@
 
 import http.client
 import json
-import logging
 import uuid
 import requests
 from ducktape.mark.resource import cluster

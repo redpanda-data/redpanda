@@ -9,7 +9,6 @@
 
 from ducktape.mark.resource import cluster
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import RedpandaService
 from rptest.util import Scale

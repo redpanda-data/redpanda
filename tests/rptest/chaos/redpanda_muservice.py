@@ -11,14 +11,9 @@ import os
 import sys
 import traceback
 
-import yaml
-
 from rptest.chaos.muservice import MuService
 
-from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.util import wait_until
-
-from gobekli.logging import m
 
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.chaos.kafkakv_muservice import KafkaKVMuService
