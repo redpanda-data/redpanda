@@ -312,7 +312,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
 
         def delete_topic(name):
             try:
-                self.redpanda.delete_topic(name)
+                DefaultClient(self.redpanda).delete_topic(name)
             except Exception as e:
                 self.redpanda.logger.warn(f"error deleting topic {name} - {e}")
             try:

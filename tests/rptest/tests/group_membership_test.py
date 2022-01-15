@@ -178,7 +178,7 @@ class GroupMetricsTest(RedpandaTest):
         assert metric_key in gr_2_metrics_offsets
         assert gr_2_metrics_offsets[metric_key] == 0
 
-        self.redpanda.delete_topic(topic)
+        self.client().delete_topic(topic)
 
         def metrics_gone():
             metrics_offsets = self._get_offset_from_metrics(group_1)
@@ -235,7 +235,7 @@ class GroupMetricsTest(RedpandaTest):
             assert metric_key in metrics_offsets
             assert metrics_offsets[metric_key] == 50
 
-            self.redpanda.delete_topic(topic)
+            self.client().delete_topic(topic)
 
         check_metric()
         metrics_offsets = self._get_offset_from_metrics(group)

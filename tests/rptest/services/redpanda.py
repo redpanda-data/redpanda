@@ -750,10 +750,5 @@ class RedpandaService(Service):
 
         return [make_partition(p) for p in topic["partitions"]]
 
-    def delete_topic(self, name):
-        client = self._client_type(self)
-        self.logger.debug(f"Deleting topic {name}")
-        client.delete_topic(name)
-
     def cov_enabled(self):
         return self._context.globals.get(self.COV_KEY, self.DEFAULT_COV_OPT)

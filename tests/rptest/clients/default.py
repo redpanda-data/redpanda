@@ -21,3 +21,7 @@ class DefaultClient:
         client = KafkaCliTools(self._redpanda)
         for spec in specs:
             client.create_topic(spec)
+
+    def delete_topic(self, name):
+        client = KafkaCliTools(self._redpanda)
+        client.delete_topic(name)
