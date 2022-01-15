@@ -306,12 +306,6 @@ class ClusterConfigTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_valid_settings(self):
-        # TODO
-
-        pass
-
-    @cluster(num_nodes=3)
-    def test_valid_settings(self):
         """
         Bulk exercise of all config settings & the schema endpoint:
         - for all properties in the schema, set them with a valid non-default value
