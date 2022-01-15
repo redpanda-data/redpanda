@@ -124,7 +124,7 @@ class RetentionPolicyTest(RedpandaTest):
     @cluster(num_nodes=3)
     def test_timequery_after_segments_eviction(self):
         """
-        Test checking if the offset returned by time based index is 
+        Test checking if the offset returned by time based index is
         valid during applying log cleanup policy
         """
         segment_size = 1048576

@@ -751,7 +751,7 @@ class RevShiftCheck(FastCheck):
     It's same as fast check only it created additionall dummy topic before running
     topic recovery or before creating initial topic.
     It can test three different cases:
-    - new initial topic revision is equal to old topic revision (paths in the bucket 
+    - new initial topic revision is equal to old topic revision (paths in the bucket
       are the same in old and new clusters).
     - new initial revision is greater than the old one
     - new initial revision is less than the old one
@@ -945,10 +945,10 @@ class SizeBasedRetention(BaseCase):
 class TimeBasedRetention(BaseCase):
     """Check time-based restore process.
     The test runs as follows:
-    We generate 20MB of data (per partition). Than we're downloading the partition 
+    We generate 20MB of data (per partition). Than we're downloading the partition
     manifests and patch them. For every partition we're changing the max_timestamp
     of first 10MB of segments.
-    Then we're running the topic recovery with time-based retention policy and 
+    Then we're running the topic recovery with time-based retention policy and
     expect that only last 10MB will be downloaded.
     The test can be configured to shift 'max_timestamp' fields to the past or
     to remove them. The later case is needed to check the situation when we have
@@ -1087,7 +1087,7 @@ class MovedPartitionRestore(BaseCase):
     same as the topic has) and all revisions which are larger are also candidates.
 
     If data is moved the recovery algorithm should be able to find the parition
-    manifest anyway.    
+    manifest anyway.
     """
     def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger,
                  topics, move_data):
@@ -1197,7 +1197,7 @@ class CascadingRestore(BaseCase):
     might be different for different segments. Also, there could be more than
     one partition manifest that belong to the same topic in the bucket.
     To mitigate this recovery algorithm creates an aggregate partition manifest
-    that contains segment paths instead of names (e.g. 
+    that contains segment paths instead of names (e.g.
     b525cddd/kafka/panda-topic/0_9/4109-1-v1.log). When the new manifest is
     created the recovery uses it instead of the original manifests. When
     the topic is recovered this manifests is used by archival subsystem. It
@@ -1461,7 +1461,7 @@ class TopicRecoveryTest(RedpandaTest):
                         timeout=datetime.timedelta(minutes=1)):
         """This method waits until the topic is created.
         It uses rpk describe topic command. The topic is
-        considered to be recovered only if the leader is 
+        considered to be recovered only if the leader is
         elected.
         The method is time bound.
         """
@@ -1684,7 +1684,7 @@ class TopicRecoveryTest(RedpandaTest):
     @ignore  # https://github.com/vectorizedio/redpanda/issues/2569
     @cluster(num_nodes=3)
     def test_size_based_retention(self):
-        """Test topic recovery with size based retention policy. 
+        """Test topic recovery with size based retention policy.
         It's tests handling of the situation when only subset of the data needs to
         be recovered due to retention."""
         topics = [
@@ -1700,7 +1700,7 @@ class TopicRecoveryTest(RedpandaTest):
     @ignore  # https://github.com/vectorizedio/redpanda/issues/2569
     @cluster(num_nodes=3)
     def test_time_based_retention(self):
-        """Test topic recovery with time based retention policy. 
+        """Test topic recovery with time based retention policy.
         It's tests handling of the situation when only subset of the data needs to
         be recovered due to retention. This test uses manifests with max_timestamp
         set properly."""
@@ -1717,7 +1717,7 @@ class TopicRecoveryTest(RedpandaTest):
     @ignore  # https://github.com/vectorizedio/redpanda/issues/2569
     @cluster(num_nodes=3)
     def test_time_based_retention_with_legacy_manifest(self):
-        """Test topic recovery with time based retention policy. 
+        """Test topic recovery with time based retention policy.
         It's tests handling of the situation when only subset of the data needs to
         be recovered due to retention. This test uses manifests without max_timestamp
         field."""

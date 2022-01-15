@@ -16,7 +16,7 @@ class SimpleEndToEndTest(EndToEndTest):
     @cluster(num_nodes=6)
     def test_correctness_while_evicitng_log(self):
         '''
-        Validate that all the records will be delivered to consumers when there 
+        Validate that all the records will be delivered to consumers when there
         are multiple producers and log is evicted
         '''
         # use small segment size to enable log eviction
