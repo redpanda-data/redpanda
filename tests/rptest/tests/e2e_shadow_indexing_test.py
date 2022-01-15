@@ -75,7 +75,6 @@ class EndToEndShadowIndexingTest(EndToEndTest):
         )
 
     def setUp(self):
-        rpk = RpkTool(self.redpanda)
         self.s3_client.empty_bucket(self.s3_bucket_name)
         self.s3_client.create_bucket(self.s3_bucket_name)
         self.redpanda.start()
