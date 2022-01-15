@@ -501,13 +501,13 @@ class ClusterConfigTest(RedpandaTest):
         Test import/export of string fields, make sure they don't end
         up with extraneous quotes
         """
-        version_a, text = self._export_import_modify(
+        version_a, _ = self._export_import_modify(
             "cloud_storage_access_key:\n",
             "cloud_storage_access_key: foobar\n")
         self._wait_for_version_sync(version_a)
         self._check_value_everywhere("cloud_storage_access_key", "foobar")
 
-        version_b, text = self._export_import_modify(
+        version_b, _ = self._export_import_modify(
             "cloud_storage_access_key: foobar\n",
             "cloud_storage_access_key: \"foobaz\"")
         self._wait_for_version_sync(version_b)
@@ -537,8 +537,7 @@ class ClusterConfigTest(RedpandaTest):
             m = re.match(
                 r"^(\d+)\s+(\d+)\s+(true|false)\s+\[(.*)\]\s+\[(.*)\]$", l)
             assert m is not None
-            node_id, config_version, needs_restart, invalid, unknown = m.groups(
-            )
+            node_id, *_ = m.groups()
 
             node = self.redpanda.nodes[i]
             assert int(node_id) == self.redpanda.idx(node)
