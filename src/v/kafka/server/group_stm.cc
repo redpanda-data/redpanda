@@ -37,9 +37,10 @@ void group_stm::update_prepared(
     } else if (!inserted && prepared_it->second.pid.epoch < tx.pid.epoch) {
         vlog(
           cluster::txlog.warn,
-          "a logged tx {} overwrites prev logged tx {}",
+          "a logged tx {} overwrites prev logged tx {} offset: {}",
           val.pid,
-          prepared_it->second.pid);
+          prepared_it->second.pid,
+          offset);
         prepared_it->second.pid = tx.pid;
         prepared_it->second.offsets.clear();
     }
@@ -56,7 +57,7 @@ void group_stm::update_prepared(
     }
 }
 
-void group_stm::commit(model::producer_identity pid) {
+void group_stm::commit(model::offset offset, model::producer_identity pid) {
     auto prepared_it = _prepared_txs.find(pid.get_id());
     if (prepared_it == _prepared_txs.end()) {
         // missing prepare may happen when the consumer log gets truncated
@@ -65,9 +66,10 @@ void group_stm::commit(model::producer_identity pid) {
     } else if (prepared_it->second.pid.epoch != pid.epoch) {
         vlog(
           cluster::txlog.warn,
-          "a comitting tx {} doesn't match ongoing tx {}",
+          "a comitting tx {} doesn't match ongoing tx {} offset: {}",
           pid,
-          prepared_it->second.pid);
+          prepared_it->second.pid,
+          offset);
         return;
     }
 

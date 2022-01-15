@@ -123,7 +123,7 @@ public:
       model::topic_partition, model::offset, group_log_offset_metadata&&);
     void remove_offset(model::topic_partition);
     void update_prepared(model::offset, group_log_prepared_tx);
-    void commit(model::producer_identity);
+    void commit(model::offset, model::producer_identity);
     void abort(model::producer_identity, model::tx_seq);
     void try_set_fence(model::producer_id id, model::producer_epoch epoch) {
         auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);

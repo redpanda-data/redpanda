@@ -494,7 +494,7 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
           batch, group::commit_tx_record_version);
 
         auto [group_it, _] = st.groups.try_emplace(cmd.cmd.group_id);
-        group_it->second.commit(cmd.pid);
+        group_it->second.commit(batch.last_offset(), cmd.pid);
 
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
