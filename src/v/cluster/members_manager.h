@@ -109,7 +109,7 @@ private:
       do_dispatch_configuration_update(model::broker, model::broker);
 
     template<typename Cmd>
-    ss::future<std::error_code> dispatch_updates_to_cores(Cmd);
+    ss::future<std::error_code> dispatch_updates_to_cores(model::offset, Cmd);
 
     ss::future<std::error_code>
       apply_raft_configuration_batch(model::record_batch);

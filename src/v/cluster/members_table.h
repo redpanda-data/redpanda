@@ -37,13 +37,16 @@ public:
 
     bool contains(model::node_id) const;
 
-    void update_brokers(const std::vector<model::broker>&);
+    void update_brokers(model::offset, const std::vector<model::broker>&);
 
-    std::error_code apply(decommission_node_cmd);
-    std::error_code apply(recommission_node_cmd);
+    std::error_code apply(model::offset, decommission_node_cmd);
+    std::error_code apply(model::offset, recommission_node_cmd);
+
+    model::revision_id version() const { return _version; }
 
 private:
     using broker_cache_t = absl::flat_hash_map<model::node_id, broker_ptr>;
     broker_cache_t _brokers;
+    model::revision_id _version;
 };
 } // namespace cluster
