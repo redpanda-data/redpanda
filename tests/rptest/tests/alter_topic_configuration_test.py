@@ -76,7 +76,7 @@ class AlterTopicConfiguration(RedpandaTest):
         topic = self.topics[0].name
         kafka_tools = KafkaCliTools(self.redpanda)
         spec = kafka_tools.describe_topic(topic)
-        for i in range(0, 5):
+        for _ in range(0, 5):
             key = self.random_string(5)
             try:
                 kafka_tools.alter_topic_config(topic, {key: "123"})
