@@ -147,9 +147,10 @@ ss::future<> members_manager::handle_raft0_cfg_update(
           auto diff = calculate_brokers_diff(_members_table.local(), cfg);
           auto added_brokers = diff.additions;
           return _members_table
-            .invoke_on_all([cfg = std::move(cfg)](members_table& m) mutable {
-                m.update_brokers(cfg.brokers());
-            })
+            .invoke_on_all(
+              [cfg = std::move(cfg), update_offset](members_table& m) mutable {
+                  m.update_brokers(update_offset, cfg.brokers());
+              })
             .then([this, diff = std::move(diff)]() mutable {
                 // update internode connections
                 return update_connections(std::move(diff));
@@ -179,15 +180,17 @@ members_manager::apply_update(model::record_batch b) {
     if (b.header().type == model::record_batch_type::raft_configuration) {
         co_return co_await apply_raft_configuration_batch(std::move(b));
     }
+
+    auto update_offset = b.base_offset();
     // handle node managements command
     auto cmd = co_await cluster::deserialize(std::move(b), accepted_commands);
 
     co_return co_await ss::visit(
       cmd,
-      [this](decommission_node_cmd cmd) mutable {
+      [this, update_offset](decommission_node_cmd cmd) mutable {
           auto id = cmd.key;
-          return dispatch_updates_to_cores(cmd).then(
-            [this, id](std::error_code error) {
+          return dispatch_updates_to_cores(update_offset, cmd)
+            .then([this, id](std::error_code error) {
                 auto f = ss::now();
                 if (!error) {
                     _allocator.local().decommission_node(id);
@@ -197,10 +200,10 @@ members_manager::apply_update(model::record_batch b) {
                 return f.then([error] { return error; });
             });
       },
-      [this](recommission_node_cmd cmd) mutable {
+      [this, update_offset](recommission_node_cmd cmd) mutable {
           auto id = cmd.key;
-          return dispatch_updates_to_cores(cmd).then(
-            [this, id](std::error_code error) {
+          return dispatch_updates_to_cores(update_offset, cmd)
+            .then([this, id](std::error_code error) {
                 auto f = ss::now();
                 if (!error) {
                     _allocator.local().recommission_node(id);
@@ -258,10 +261,12 @@ members_manager::get_node_updates() {
 }
 
 template<typename Cmd>
-ss::future<std::error_code>
-members_manager::dispatch_updates_to_cores(Cmd cmd) {
+ss::future<std::error_code> members_manager::dispatch_updates_to_cores(
+  model::offset update_offset, Cmd cmd) {
     return _members_table
-      .map([cmd](members_table& mt) { return mt.apply(cmd); })
+      .map([cmd, update_offset](members_table& mt) {
+          return mt.apply(update_offset, cmd);
+      })
       .then([](std::vector<std::error_code> results) {
           auto sentinel = results.front();
           auto state_consistent = std::all_of(
