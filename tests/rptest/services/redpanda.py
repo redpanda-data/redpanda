@@ -122,6 +122,7 @@ class RedpandaService(Service):
         self._num_cores = num_cores
         self._admin = Admin(self)
         self._started = []
+        self._security_config = dict()
 
         # client is intiialized after service starts
         self._client = None
@@ -189,19 +190,21 @@ class RedpandaService(Service):
                 )
                 raise RuntimeError("Unexpected files in data directory")
 
-        security_settings = dict()
         if self.sasl_enabled():
             username, password, algorithm = self.SUPERUSER_CREDENTIALS
-            security_settings = dict(security_protocol='SASL_PLAINTEXT',
-                                     sasl_mechanism=algorithm,
-                                     sasl_plain_username=username,
-                                     sasl_plain_password=password,
-                                     request_timeout_ms=30000,
-                                     api_version_auto_timeout_ms=3000)
+            self._security_config = dict(security_protocol='SASL_PLAINTEXT',
+                                         sasl_mechanism=algorithm,
+                                         sasl_plain_username=username,
+                                         sasl_plain_password=password,
+                                         request_timeout_ms=30000,
+                                         api_version_auto_timeout_ms=3000)
         self._client = KafkaAdminClient(bootstrap_servers=self.brokers_list(),
-                                        **security_settings)
+                                        **self._security_config)
 
-        self._create_initial_topics(security_settings)
+        self._create_initial_topics(self._security_config)
+
+    def security_config(self):
+        return self._security_config
 
     def _create_initial_topics(self, security_settings):
         user = security_settings.get("sasl_plain_username")
