@@ -39,7 +39,6 @@ class RedpandaTest(Test):
                                         extra_rp_conf=extra_rp_conf,
                                         enable_pp=enable_pp,
                                         enable_sr=enable_sr,
-                                        topics=self.topics,
                                         num_cores=num_cores)
         self._client = DefaultClient(self.redpanda)
 
@@ -54,6 +53,16 @@ class RedpandaTest(Test):
 
     def setUp(self):
         self.redpanda.start()
+        self._create_initial_topics()
 
     def client(self):
         return self._client
+
+    def _create_initial_topics(self):
+        config = self.redpanda.security_config()
+        user = config.get("sasl_plain_username")
+        passwd = config.get("sasl_plain_password")
+        client = KafkaCliTools(self.redpanda, user=user, passwd=passwd)
+        for spec in self.topics:
+            self.logger.debug(f"Creating initial topic {spec}")
+            client.create_topic(spec)

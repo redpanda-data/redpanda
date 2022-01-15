@@ -107,7 +107,6 @@ class RedpandaService(Service):
                  extra_rp_conf=None,
                  enable_pp=False,
                  enable_sr=False,
-                 topics=None,
                  num_cores=3):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
@@ -118,7 +117,6 @@ class RedpandaService(Service):
         self._enable_sr = enable_sr
         self._log_level = self._context.globals.get(self.LOG_LEVEL_KEY,
                                                     self.DEFAULT_LOG_LEVEL)
-        self._topics = topics or ()
         self._num_cores = num_cores
         self._admin = Admin(self)
         self._started = []
@@ -201,19 +199,8 @@ class RedpandaService(Service):
         self._client = KafkaAdminClient(bootstrap_servers=self.brokers_list(),
                                         **self._security_config)
 
-        self._create_initial_topics(self._security_config)
-
     def security_config(self):
         return self._security_config
-
-    def _create_initial_topics(self, security_settings):
-        user = security_settings.get("sasl_plain_username")
-        passwd = security_settings.get("sasl_plain_password")
-
-        client = self._client_type(self, user=user, passwd=passwd)
-        for spec in self._topics:
-            self.logger.debug(f"Creating initial topic {spec}")
-            client.create_topic(spec)
 
     def start_redpanda(self, node):
         cmd = (

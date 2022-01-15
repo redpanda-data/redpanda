@@ -64,7 +64,6 @@ class EndToEndShadowIndexingTest(EndToEndTest):
             num_brokers=3,
             client_type=KafkaCliTools,
             extra_rp_conf=self._extra_rp_conf,
-            topics=EndToEndShadowIndexingTest.topics,
         )
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
@@ -81,6 +80,8 @@ class EndToEndShadowIndexingTest(EndToEndTest):
         self.s3_client.empty_bucket(self.s3_bucket_name)
         self.s3_client.create_bucket(self.s3_bucket_name)
         self.redpanda.start()
+        for topic in EndToEndShadowIndexingTest.topics:
+            self.kafka_tools.create_topic(topic)
 
     def tearDown(self):
         self.s3_client.empty_bucket(self.s3_bucket_name)
