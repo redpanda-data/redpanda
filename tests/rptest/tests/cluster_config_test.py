@@ -416,9 +416,8 @@ class ClusterConfigTest(RedpandaTest):
 
         if m is None and allow_noop:
             return None
-        elif m is None:
-            assert m is not None
 
+        assert m is not None, f"Config version not found: {last_line}"
         version = int(m.group(1))
         return version
 
