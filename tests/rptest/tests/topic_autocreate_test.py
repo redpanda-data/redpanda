@@ -37,7 +37,7 @@ class TopicAutocreateTest(RedpandaTest):
         try:
             # Use rpk rather than kafka CLI because rpk errors out promptly
             self.rpk.produce(auto_topic, "foo", "bar")
-        except Exception as e:
+        except Exception:
             # The write failed, and shouldn't have created a topic
             assert auto_topic not in self.kafka_tools.list_topics()
         else:

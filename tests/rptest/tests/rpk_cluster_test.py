@@ -106,7 +106,6 @@ class RpkClusterTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_get_config(self):
-        rpk_bin = self.redpanda.find_binary('rpk')
         node = self.redpanda.nodes[0]
 
         config_output = self._rpk.admin_config_print(node)

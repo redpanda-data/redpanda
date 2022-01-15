@@ -352,7 +352,7 @@ class ArchivalTest(RedpandaTest):
         # timeout but also on raft and current high_watermark. So we can
         # expect that the bucket won't have 9 segments with 1000 offsets.
         # The actual segments will be larger.
-        for i in range(0, 10):
+        for _ in range(0, 10):
             self.kafka_tools.produce(self.topic, 1000, 1024)
             time.sleep(1)
         time.sleep(5)
