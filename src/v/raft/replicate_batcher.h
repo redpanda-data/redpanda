@@ -36,6 +36,7 @@ public:
          * processing the request.
          */
         ss::semaphore_units<> units;
+        ss::lw_shared_ptr<leader_ack_result> leader_outcome;
     };
     using item_ptr = ss::lw_shared_ptr<item>;
     explicit replicate_batcher(consensus* ptr, size_t cache_size);
@@ -46,8 +47,10 @@ public:
     replicate_batcher& operator=(const replicate_batcher&) = delete;
     ~replicate_batcher() noexcept = default;
 
-    replicate_stages
-    replicate(std::optional<model::term_id>, model::record_batch_reader&&);
+    replicate_stages replicate(
+      std::optional<model::term_id>,
+      model::record_batch_reader&&,
+      ss::lw_shared_ptr<leader_ack_result>);
 
     ss::future<> flush(ss::semaphore_units<> u, bool const transfer_flush);
 
@@ -60,12 +63,15 @@ private:
       std::vector<ss::semaphore_units<>>,
       absl::flat_hash_map<vnode, follower_req_seq>);
 
-    ss::future<item_ptr>
-    do_cache(std::optional<model::term_id>, model::record_batch_reader&&);
+    ss::future<item_ptr> do_cache(
+      std::optional<model::term_id>,
+      model::record_batch_reader&&,
+      ss::lw_shared_ptr<leader_ack_result>);
     ss::future<replicate_batcher::item_ptr> do_cache_with_backpressure(
       std::optional<model::term_id>,
       ss::circular_buffer<model::record_batch>,
-      size_t);
+      size_t,
+      ss::lw_shared_ptr<leader_ack_result>);
 
     consensus* _ptr;
     ss::semaphore _max_batch_size_sem;

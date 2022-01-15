@@ -355,7 +355,8 @@ private:
     ss::future<result<replicate_result>> dispatch_replicate(
       append_entries_request,
       std::vector<ss::semaphore_units<>>,
-      absl::flat_hash_map<vnode, follower_req_seq>);
+      absl::flat_hash_map<vnode, follower_req_seq>,
+      ss::lw_shared_ptr<leader_ack_result>);
     /**
      * Hydrate the consensus state with the data from the snapshot
      */

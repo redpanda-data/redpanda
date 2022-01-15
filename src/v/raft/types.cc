@@ -94,6 +94,9 @@ std::ostream& operator<<(std::ostream& o, const consistency_level& l) {
     case consistency_level::no_ack:
         o << "consistency_level::no_ack";
         break;
+    case consistency_level::tx_ack:
+        o << "consistency_level::tx_ack";
+        break;
     default:
         o << "unknown consistency_level";
     }

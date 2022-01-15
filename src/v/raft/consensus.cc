@@ -652,11 +652,24 @@ replicate_stages consensus::do_replicate(
         return replicate_stages(errc::not_leader);
     }
 
+    if (opts.consistency == consistency_level::tx_ack) {
+        _probe.replicate_requests_ack_all();
+
+        auto leader_outcome = ss::make_lw_shared<leader_ack_result>();
+        auto stages = _batcher.replicate(
+          expected_term, std::move(rdr), leader_outcome);
+        return wrap_stages_with_gate(
+          _bg,
+          replicate_stages(
+            std::move(stages.request_enqueued),
+            leader_outcome->offset.get_future()));
+    }
+
     if (opts.consistency == consistency_level::quorum_ack) {
         _probe.replicate_requests_ack_all();
 
         return wrap_stages_with_gate(
-          _bg, _batcher.replicate(expected_term, std::move(rdr)));
+          _bg, _batcher.replicate(expected_term, std::move(rdr), nullptr));
     }
 
     if (opts.consistency == consistency_level::leader_ack) {
@@ -2006,7 +2019,7 @@ ss::future<std::error_code> consensus::replicate_configuration(
           std::vector<ss::semaphore_units<>> units;
           units.push_back(std::move(u));
           return dispatch_replicate(
-                   std::move(req), std::move(units), std::move(seqs))
+                   std::move(req), std::move(units), std::move(seqs), nullptr)
             .then([](result<replicate_result> res) {
                 if (res) {
                     return make_error_code(errc::success);
@@ -2019,9 +2032,10 @@ ss::future<std::error_code> consensus::replicate_configuration(
 ss::future<result<replicate_result>> consensus::dispatch_replicate(
   append_entries_request req,
   std::vector<ss::semaphore_units<>> u,
-  absl::flat_hash_map<vnode, follower_req_seq> seqs) {
+  absl::flat_hash_map<vnode, follower_req_seq> seqs,
+  ss::lw_shared_ptr<leader_ack_result> leader_outcome) {
     auto stm = ss::make_lw_shared<replicate_entries_stm>(
-      this, std::move(req), std::move(seqs));
+      this, std::move(req), std::move(seqs), leader_outcome);
 
     return stm->apply(std::move(u)).finally([this, stm] {
         auto f = stm->wait().finally([stm] {});

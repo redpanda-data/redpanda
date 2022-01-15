@@ -902,7 +902,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
     auto r = co_await _c->replicate(
       _mem_state.term,
       std::move(br),
-      raft::replicate_options(raft::consistency_level::leader_ack));
+      raft::replicate_options(raft::consistency_level::tx_ack));
     if (!r) {
         if (_mem_state.estimated.contains(bid.pid)) {
             // an error during replication, preventin tx from progress

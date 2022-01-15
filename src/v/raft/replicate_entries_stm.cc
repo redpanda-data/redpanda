@@ -232,10 +232,17 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
       .then([this, cfg = std::move(cfg)](
               result<storage::append_result> append_result) mutable {
           if (!append_result) {
+              if (_leader_outcome) {
+                  _leader_outcome->offset.set_value(errc::leader_append_failed);
+              }
               return ss::make_ready_future<result<storage::append_result>>(
                 append_result);
           }
           _dirty_offset = append_result.value().last_offset;
+          if (_leader_outcome) {
+              _leader_outcome->offset.set_value(
+                replicate_result{_dirty_offset});
+          }
           // store committed offset to check if it advanced
           _initial_committed_offset = _ptr->committed_offset();
           // dispatch requests to followers & leader flush
@@ -361,12 +368,14 @@ ss::future<> replicate_entries_stm::wait() { return _req_bg.close(); }
 replicate_entries_stm::replicate_entries_stm(
   consensus* p,
   append_entries_request r,
-  absl::flat_hash_map<vnode, follower_req_seq> seqs)
+  absl::flat_hash_map<vnode, follower_req_seq> seqs,
+  ss::lw_shared_ptr<leader_ack_result> leader_outcome)
   : _ptr(p)
   , _req(std::make_unique<append_entries_request>(std::move(r)))
   , _followers_seq(std::move(seqs))
   , _share_sem(1)
-  , _ctxlog(_ptr->_ctxlog) {}
+  , _ctxlog(_ptr->_ctxlog)
+  , _leader_outcome(leader_outcome) {}
 
 replicate_entries_stm::~replicate_entries_stm() {
     vassert(

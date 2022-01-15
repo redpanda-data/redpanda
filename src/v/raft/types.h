@@ -22,6 +22,7 @@
 #include "raft/fwd.h"
 #include "raft/group_configuration.h"
 #include "reflection/async_adl.h"
+#include "utils/available_promise.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/condition-variable.hh>
@@ -324,8 +325,12 @@ struct replicate_stages {
     // requested consistency level
     ss::future<result<replicate_result>> replicate_finished;
 };
+// leader_ack like replicate result calculated along the quorum_ack code path
+struct leader_ack_result {
+    available_promise<result<replicate_result>> offset;
+};
 
-enum class consistency_level { quorum_ack, leader_ack, no_ack };
+enum class consistency_level { quorum_ack, leader_ack, no_ack, tx_ack };
 
 struct replicate_options {
     explicit replicate_options(consistency_level l)

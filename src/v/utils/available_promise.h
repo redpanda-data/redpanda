@@ -20,8 +20,10 @@ public:
     ss::future<T> get_future() { return _promise.get_future(); }
 
     void set_value(T&& value) {
-        _available = true;
-        _promise.set_value(std::move(value));
+        if (likely(!_available)) {
+            _available = true;
+            _promise.set_value(std::move(value));
+        }
     }
 
     bool available() { return _available; }

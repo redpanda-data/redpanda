@@ -85,7 +85,8 @@ public:
     replicate_entries_stm(
       consensus*,
       append_entries_request,
-      absl::flat_hash_map<vnode, follower_req_seq>);
+      absl::flat_hash_map<vnode, follower_req_seq>,
+      ss::lw_shared_ptr<leader_ack_result>);
     ~replicate_entries_stm();
 
     /// caller have to pass semaphore units, the apply call will do the
@@ -121,6 +122,7 @@ private:
     model::offset _dirty_offset;
     model::offset _initial_committed_offset;
     ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> _units;
+    ss::lw_shared_ptr<leader_ack_result> _leader_outcome;
 };
 
 } // namespace raft

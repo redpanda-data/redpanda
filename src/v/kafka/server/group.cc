@@ -1761,6 +1761,7 @@ kafka::error_code map_store_offset_error_code(std::error_code ec) {
         case raft::errc::group_not_exists:
         case raft::errc::replicate_first_stage_exception:
         case raft::errc::transfer_to_current_leader:
+        case raft::errc::oplock_exception:
             return error_code::unknown_server_error;
         }
     }

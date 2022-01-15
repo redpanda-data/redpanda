@@ -38,19 +38,26 @@ replicate_batcher::replicate_batcher(consensus* ptr, size_t cache_size)
   , _max_batch_size(cache_size) {}
 
 replicate_stages replicate_batcher::replicate(
-  std::optional<model::term_id> expected_term, model::record_batch_reader&& r) {
+  std::optional<model::term_id> expected_term,
+  model::record_batch_reader&& r,
+  ss::lw_shared_ptr<leader_ack_result> leader_outcome) {
     ss::promise<> enqueued;
     auto enqueued_f = enqueued.get_future();
     try {
         gate_guard guard(_bg);
         auto f
-          = do_cache(expected_term, std::move(r))
+          = do_cache(expected_term, std::move(r), leader_outcome)
               .then_wrapped(
                 [this,
+                 leader_outcome,
                  enqueued = std::move(enqueued),
                  guard = std::move(guard)](ss::future<item_ptr> f) mutable {
                     if (f.failed()) {
                         enqueued.set_exception(f.get_exception());
+                        if (leader_outcome) {
+                            leader_outcome->offset.set_value(
+                              errc::replicate_batcher_cache_error);
+                        }
                         return ss::make_ready_future<result<replicate_result>>(
                           errc::replicate_batcher_cache_error);
                     }
@@ -79,6 +86,9 @@ replicate_stages replicate_batcher::replicate(
                 });
         return replicate_stages(std::move(enqueued_f), std::move(f));
     } catch (...) {
+        if (leader_outcome) {
+            leader_outcome->offset.set_value(errc::shutting_down);
+        }
         return replicate_stages(
           ss::current_exception_as_future<>(),
           ss::make_ready_future<result<replicate_result>>(errc::shutting_down));
@@ -92,6 +102,9 @@ ss::future<> replicate_batcher::stop() {
         return _lock.with([this] {
             for (auto& i : _item_cache) {
                 i->_promise.set_exception(ss::gate_closed_exception());
+                if (i->leader_outcome) {
+                    i->leader_outcome->offset.set_value(errc::shutting_down);
+                }
             }
             _item_cache.clear();
         });
@@ -99,10 +112,12 @@ ss::future<> replicate_batcher::stop() {
 }
 
 ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
-  std::optional<model::term_id> expected_term, model::record_batch_reader&& r) {
+  std::optional<model::term_id> expected_term,
+  model::record_batch_reader&& r,
+  ss::lw_shared_ptr<leader_ack_result> leader_outcome) {
     return model::consume_reader_to_memory(std::move(r), model::no_timeout)
-      .then([this,
-             expected_term](ss::circular_buffer<model::record_batch> batches) {
+      .then([this, leader_outcome, expected_term](
+              ss::circular_buffer<model::record_batch> batches) {
           ss::circular_buffer<model::record_batch> data;
           size_t bytes = std::accumulate(
             batches.cbegin(),
@@ -112,7 +127,7 @@ ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
                 return sum + b.size_bytes();
             });
           return do_cache_with_backpressure(
-            expected_term, std::move(batches), bytes);
+            expected_term, std::move(batches), bytes, leader_outcome);
       });
 }
 
@@ -120,7 +135,8 @@ ss::future<replicate_batcher::item_ptr>
 replicate_batcher::do_cache_with_backpressure(
   std::optional<model::term_id> expected_term,
   ss::circular_buffer<model::record_batch> batches,
-  size_t bytes) {
+  size_t bytes,
+  ss::lw_shared_ptr<leader_ack_result> leader_outcome) {
     /**
      * Produce a message larger than the internal raft batch accumulator
      * (default 1Mb) the semaphore can't be acquired. Closing
@@ -135,7 +151,7 @@ replicate_batcher::do_cache_with_backpressure(
      */
 
     return ss::get_units(_max_batch_size_sem, std::min(bytes, _max_batch_size))
-      .then([this, expected_term, batches = std::move(batches)](
+      .then([this, expected_term, leader_outcome, batches = std::move(batches)](
               ss::semaphore_units<> u) mutable {
           size_t record_count = 0;
           auto i = ss::make_lw_shared<item>();
@@ -150,6 +166,7 @@ replicate_batcher::do_cache_with_backpressure(
           i->expected_term = expected_term;
           i->record_count = record_count;
           i->units = std::move(u);
+          i->leader_outcome = leader_outcome;
           _item_cache.emplace_back(i);
           return i;
       });
@@ -174,6 +191,10 @@ replicate_batcher::flush(ss::semaphore_units<> u, bool const transfer_flush) {
                 if (f.failed()) {
                     for (auto& i : item_cache) {
                         i->_promise.set_exception(f.get_exception());
+                        if (i->leader_outcome) {
+                            i->leader_outcome->offset.set_value(
+                              errc::oplock_exception);
+                        }
                     }
                     return ss::now();
                 }
@@ -185,6 +206,10 @@ replicate_batcher::flush(ss::semaphore_units<> u, bool const transfer_flush) {
                       "Dropping flush, leadership transferring");
                     for (auto& n : item_cache) {
                         n->_promise.set_value(errc::not_leader);
+                        if (n->leader_outcome) {
+                            n->leader_outcome->offset.set_value(
+                              errc::not_leader);
+                        }
                     }
                     return ss::now();
                 }
@@ -200,6 +225,10 @@ replicate_batcher::flush(ss::semaphore_units<> u, bool const transfer_flush) {
                 if (!_ptr->is_leader()) {
                     for (auto& n : item_cache) {
                         n->_promise.set_value(errc::not_leader);
+                        if (n->leader_outcome) {
+                            n->leader_outcome->offset.set_value(
+                              errc::not_leader);
+                        }
                     }
                     return ss::make_ready_future<>();
                 }
@@ -221,6 +250,10 @@ replicate_batcher::flush(ss::semaphore_units<> u, bool const transfer_flush) {
                         notifications.push_back(std::move(n));
                     } else {
                         n->_promise.set_value(errc::not_leader);
+                        if (n->leader_outcome) {
+                            n->leader_outcome->offset.set_value(
+                              errc::not_leader);
+                        }
                     }
                 }
 
@@ -269,10 +302,33 @@ static void propagate_result(
 
 static void propagate_current_exception(
   std::vector<replicate_batcher::item_ptr>& notifications) {
-    // iterate backward to calculate last offsets
     auto e = std::current_exception();
     for (auto& n : notifications) {
         n->_promise.set_exception(e);
+    }
+}
+
+static void propagate_leader_result(
+  result<replicate_result> r,
+  std::vector<replicate_batcher::item_ptr>& notifications) {
+    if (r.has_value()) {
+        // iterate backward to calculate last offsets
+        auto last_offset = r.value().last_offset;
+        for (auto it = notifications.rbegin(); it != notifications.rend();
+             ++it) {
+            if ((*it)->leader_outcome) {
+                (*it)->leader_outcome->offset.set_value(
+                  replicate_result{last_offset});
+            }
+            last_offset = last_offset - model::offset((*it)->record_count);
+        }
+        return;
+    }
+    // propagate an error
+    for (auto& n : notifications) {
+        if (n->leader_outcome) {
+            n->leader_outcome->offset.set_value(r.error());
+        }
     }
 }
 
@@ -282,13 +338,26 @@ ss::future<> replicate_batcher::do_flush(
   std::vector<ss::semaphore_units<>> u,
   absl::flat_hash_map<vnode, follower_req_seq> seqs) {
     _ptr->_probe.replicate_batch_flushed();
-    try {
-        auto result = co_await _ptr->dispatch_replicate(
-          std::move(req), std::move(u), std::move(seqs));
 
-        propagate_result(result, notifications);
-    } catch (...) {
-        propagate_current_exception(notifications);
-    }
+    auto leader_outcome = ss::make_lw_shared<leader_ack_result>();
+    auto lo_f = leader_outcome->offset.get_future();
+    auto f = _ptr->dispatch_replicate(
+      std::move(req), std::move(u), std::move(seqs), leader_outcome);
+
+    return lo_f.then([notifications = std::move(notifications),
+                      f = std::move(f)](result<replicate_result> er) mutable {
+        propagate_leader_result(er, notifications);
+
+        return f.then_wrapped(
+          [notifications = std::move(notifications)](
+            ss::future<result<replicate_result>> result_f) mutable {
+              try {
+                  auto result = result_f.get();
+                  propagate_result(result, notifications);
+              } catch (...) {
+                  propagate_current_exception(notifications);
+              }
+          });
+    });
 }
 } // namespace raft
