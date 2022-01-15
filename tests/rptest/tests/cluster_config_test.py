@@ -454,6 +454,7 @@ class ClusterConfigTest(RedpandaTest):
         # RPK should give us a valid yaml document
         version_a, text = self._export_import_modify("kafka_qdc_enable: false",
                                                      "kafka_qdc_enable: true")
+        assert version_a is not None
         self._wait_for_version_sync(version_a)
 
         # Default should not have included tunables
@@ -465,6 +466,8 @@ class ClusterConfigTest(RedpandaTest):
         # Clear a setting, it should revert to its default
         version_b, text = self._export_import_modify("kafka_qdc_enable: true",
                                                      "")
+        assert version_b is not None
+
         assert version_b > version_a
         self._wait_for_version_sync(version_b)
         self._check_value_everywhere("kafka_qdc_enable", False)
@@ -478,6 +481,8 @@ class ClusterConfigTest(RedpandaTest):
             "kafka_qdc_depth_alpha: 0.8",
             "kafka_qdc_depth_alpha: 1.5",
             all=True)
+        assert version_c is not None
+
         assert version_c > version_b
         self._wait_for_version_sync(version_c)
         self._check_value_everywhere("kafka_qdc_depth_alpha", 1.5)
@@ -485,6 +490,8 @@ class ClusterConfigTest(RedpandaTest):
         # Check that clearing a tunable with --all works
         version_d, text = self._export_import_modify(
             "kafka_qdc_depth_alpha: 1.5", "", all=True)
+        assert version_d is not None
+
         assert version_d > version_c
         self._wait_for_version_sync(version_d)
         self._check_value_everywhere("kafka_qdc_depth_alpha", 0.8)
