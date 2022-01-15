@@ -297,7 +297,7 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
           if (!recs) {
               set_end_of_stream();
               vlog(
-                stlog.info,
+                stlog.trace,
                 "stopped reading stream: {}",
                 recs.error().message());
               return _iterator.close().then(
