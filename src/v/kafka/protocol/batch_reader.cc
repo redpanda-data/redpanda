@@ -35,7 +35,8 @@ public:
 
     int32_t size_bytes() const { return _size_bytes; }
     int32_t record_bytes() const {
-        return _size_bytes - model::packed_record_batch_header_size;
+        return _size_bytes
+               - static_cast<int32_t>(model::packed_record_batch_header_size);
     }
     model::offset last_offset() const {
         return _base_offset + model::offset{_last_offset_delta};
@@ -137,14 +138,21 @@ batch_reader::do_load_slice(model::timeout_clock::time_point tp) {
             } else {
                 _do_load_slice_failed = true;
                 batches.clear();
+
+                const auto msg = [&kba] {
+                    if (kba.v2_format) {
+                        if (kba.valid_crc) {
+                            return "empty batch";
+                        }
+                        return "invalid crc";
+                    }
+                    return "not v2_format";
+                }();
+
                 return ss::make_exception_future<>(exception(
                   kafka::error_code::corrupt_message,
                   fmt_with_ctx(
-                    fmt::format,
-                    "Invalid kafka record parsing: {}",
-                    !kba.v2_format   ? "not v2_format"
-                    : !kba.valid_crc ? "invalid crc"
-                                     : "empty batch")));
+                    fmt::format, "Invalid kafka record parsing: {}", msg)));
             }
         };
         return ss::do_until(resources_exceeded, consume_one).then([&batches]() {

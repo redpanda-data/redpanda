@@ -35,9 +35,11 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
           .producer_id = request.data.producer_id,
           .producer_epoch = request.data.producer_epoch};
         tx_request.topics.reserve(request.data.topics.size());
-        for (auto topic : request.data.topics) {
+        for (auto& topic : request.data.topics) {
             cluster::add_paritions_tx_request::topic tx_topic{
-              .name = topic.name, .partitions = topic.partitions};
+              .name = std::move(topic.name),
+              .partitions = std::move(topic.partitions),
+            };
             tx_request.topics.push_back(tx_topic);
         }
 
@@ -46,10 +48,11 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
             tx_request, config::shard_local_cfg().create_topic_timeout_ms())
           .then([&ctx](cluster::add_paritions_tx_reply tx_response) {
               add_partitions_to_txn_response_data data;
-              for (auto tx_topic : tx_response.results) {
+              for (auto& tx_topic : tx_response.results) {
                   add_partitions_to_txn_topic_result topic{
-                    .name = tx_topic.name};
-                  for (auto tx_partition : tx_topic.results) {
+                    .name = std::move(tx_topic.name),
+                  };
+                  for (const auto& tx_partition : tx_topic.results) {
                       add_partitions_to_txn_partition_result partition{
                         .partition_index = tx_partition.partition_index};
                       switch (tx_partition.error_code) {
@@ -75,7 +78,7 @@ ss::future<response_ptr> add_partitions_to_txn_handler::handle(
                             = error_code::unknown_server_error;
                           break;
                       }
-                      topic.results.push_back(std::move(partition));
+                      topic.results.push_back(partition);
                   }
                   data.results.push_back(std::move(topic));
               }

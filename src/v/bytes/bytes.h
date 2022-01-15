@@ -25,8 +25,9 @@
 using bytes = ss::basic_sstring<
   uint8_t,  // Must be different from char to not leak to std::string_view
   uint32_t, // size type - 4 bytes - 4GB max - don't use a size_t or any 64-bit
-  31,       // short string optimization size
-  false     // not null terminated
+  31, // NOLINT(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
+      // short string optimization size
+  false // not null terminated
   >;
 
 using bytes_view = std::basic_string_view<uint8_t>;
@@ -102,8 +103,8 @@ inline iobuf bytes_to_iobuf(const bytes& in) {
     return out;
 }
 
+// NOLINTNEXTLINE(cert-dcl58-cpp): hash<> specialization
 namespace std {
-
 template<>
 struct hash<bytes_view> {
     size_t operator()(bytes_view v) const {
@@ -112,10 +113,13 @@ struct hash<bytes_view> {
           {reinterpret_cast<const char*>(v.data()), v.size()});
     }
 };
-
-std::ostream& operator<<(std::ostream& os, const bytes_view& b);
-
 } // namespace std
+
+// FIXME: remove overload from std::
+// NOLINTNEXTLINE(cert-dcl58-cpp)
+namespace std {
+std::ostream& operator<<(std::ostream& os, const bytes_view& b);
+}
 
 inline size_t bytes_type_hash::operator()(const bytes_view& k) const {
     return absl::Hash<bytes_view>{}(k);
@@ -144,6 +148,7 @@ bytes_type_eq::operator()(const bytes& lhs, const iobuf& rhs) const {
     const size_t max = lhs.size();
     while (iobuf_it != iobuf_end && bytes_idx < max) {
         const char r_c = *iobuf_it;
+        // NOLINTNEXTLINE(bugprone-narrowing-conversions,cppcoreguidelines-narrowing-conversions)
         const char l_c = lhs[bytes_idx];
         if (l_c != r_c) {
             return false;

@@ -67,7 +67,7 @@ add_offsets_to_txn_handler::handle(request_context ctx, ss::smp_service_group) {
             }
             add_offsets_to_txn_response res;
             res.data = data;
-            return ctx.respond(std::move(res));
+            return ctx.respond(res);
         });
     });
 }

@@ -9,12 +9,12 @@ void group_stm::overwrite_metadata(group_log_group_metadata&& metadata) {
     _is_loaded = true;
 }
 
-void group_stm::remove_offset(model::topic_partition key) {
+void group_stm::remove_offset(const model::topic_partition& key) {
     _offsets.erase(key);
 }
 
 void group_stm::update_offset(
-  model::topic_partition key,
+  const model::topic_partition& key,
   model::offset offset,
   group_log_offset_metadata&& meta) {
     _offsets[key] = logged_metadata{
@@ -87,7 +87,7 @@ void group_stm::commit(model::producer_identity pid) {
 void group_stm::abort(
   model::producer_identity pid, [[maybe_unused]] model::tx_seq tx_seq) {
     auto prepared_it = _prepared_txs.find(pid.get_id());
-    if (prepared_it == _prepared_txs.end()) {
+    if (prepared_it == _prepared_txs.end()) { // NOLINT(bugprone-branch-clone)
         return;
     } else if (prepared_it->second.pid.epoch != pid.epoch) {
         return;

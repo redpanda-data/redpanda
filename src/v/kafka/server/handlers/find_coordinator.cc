@@ -60,7 +60,7 @@ handle_ntp(request_context& ctx, std::optional<model::ntp> ntp) {
       .get_leader(*ntp, timeout)
       .then(
         [&ctx](model::node_id leader) { return handle_leader(ctx, leader); })
-      .handle_exception([&ctx]([[maybe_unused]] std::exception_ptr e) {
+      .handle_exception([&ctx](const std::exception_ptr&) {
           return ctx.respond(
             find_coordinator_response(error_code::coordinator_not_available));
       });

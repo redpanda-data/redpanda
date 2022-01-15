@@ -72,7 +72,7 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                       break;
                   }
 
-                  return ctx.respond(std::move(reply));
+                  return ctx.respond(reply);
               });
         }
 
@@ -115,7 +115,7 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                   reply.data.error_code = error_code::broker_not_available;
               }
 
-              return ctx.respond(std::move(reply));
+              return ctx.respond(reply);
           });
     });
 }
