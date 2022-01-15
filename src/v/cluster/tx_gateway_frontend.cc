@@ -1196,6 +1196,23 @@ tx_gateway_frontend::do_end_txn(
     if (request.committed) {
         if (tx.status == tm_transaction::tx_status::ongoing) {
             r = co_await do_commit_tm_tx(stm, tx, timeout, outcome);
+        } else if (tx.status == tm_transaction::tx_status::prepared) {
+            tx_errc ec = tx_errc::unknown_server_error;
+            try {
+                ec = co_await recommit_tm_tx(tx, timeout);
+            } catch (...) {
+            }
+
+            tx_errc ret = ec;
+            if (ec != tx_errc::none) {
+                outcome->set_value(std::move(ret));
+                co_return ec;
+            }
+            outcome->set_value(std::move(ret));
+
+            r = tx;
+        } else if (tx.status == tm_transaction::tx_status::preparing) {
+            r = co_await do_commit_tm_tx(stm, tx, timeout, outcome);
         } else {
             outcome->set_value(tx_errc::invalid_txn_state);
             co_return tx_errc::invalid_txn_state;
@@ -1432,7 +1449,7 @@ ss::future<tx_errc> tx_gateway_frontend::recommit_tm_tx(
         ok = ok && (r.ec == tx_errc::none);
     }
     if (!ok) {
-        co_return tx_errc::invalid_txn_state;
+        co_return tx_errc::unknown_server_error;
     }
     co_return tx_errc::none;
 }
