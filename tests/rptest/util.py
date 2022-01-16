@@ -43,6 +43,44 @@ class Scale:
         return self._scale == Scale.RELEASE
 
 
+def wait_until_result(condition, *args, **kwargs):
+    """
+    a near drop-in replacement for ducktape's wait_util except that when
+    the condition passes a result from the condition is passed back to the
+    caller.
+
+    when a non-tuple is returned from the condition the behavior is the same as
+    wait_until and the final value will be returned to the caller.
+
+    when a tuple is returned the first element is used as the value of the
+    conditionl, and the remaining elements in the tuple are returned to the
+    caller. special cases for {1,2}-tuple are handled for convenience:
+
+       (cond,)          -> None
+       (cond,e1)        -> e1
+       (cond,e1,e2,...) -> (e1,e2,...)
+    """
+    res = None
+
+    def wrapped_condition():
+        nonlocal res
+        cond = condition()
+        if isinstance(cond, tuple):
+            head, *tail = cond
+            if len(tail) == 0:
+                res == None
+            elif len(tail) == 1:
+                res = tail[0]
+            else:
+                res = tail
+            return head
+        res = cond
+        return res
+
+    wait_until(wrapped_condition, *args, **kwargs)
+    return res
+
+
 def segments_count(redpanda, topic, partition_idx):
     storage = redpanda.storage()
     topic_partitions = storage.partitions("kafka", topic)
