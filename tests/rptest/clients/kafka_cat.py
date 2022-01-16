@@ -11,7 +11,7 @@ import subprocess
 import time
 import json
 
-from ducktape.utils.util import wait_until
+from rptest.util import wait_until_result
 
 
 class KafkaCat:
@@ -71,15 +71,13 @@ class KafkaCat:
         if not timeout_sec:
             return self._get_partition_leader(topic, partition)
 
-        leader = [None]
-
         def get_leader():
-            res = self._get_partition_leader(topic, partition)
-            leader[0] = res
-            return leader[0][0] is not None
+            leader = self._get_partition_leader(topic, partition)
+            return leader[0] is not None, leader
 
-        wait_until(get_leader, timeout_sec=timeout_sec, backoff_sec=2)
-        return leader[0]
+        return wait_until_result(get_leader,
+                                 timeout_sec=timeout_sec,
+                                 backoff_sec=2)
 
     def _get_partition_leader(self, topic, partition):
         topic_meta = None
