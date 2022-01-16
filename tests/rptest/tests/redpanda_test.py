@@ -20,7 +20,7 @@ class RedpandaTest(Test):
 
     # List of topics to be created automatically when the cluster starts. Each
     # topic is defined by an instance of a TopicSpec.
-    topics = ()
+    topics = []
 
     def __init__(self,
                  test_context,
