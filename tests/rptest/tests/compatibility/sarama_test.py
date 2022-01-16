@@ -11,7 +11,7 @@ import random
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
-from rptest.services.kaf_producer import KafProducer
+from rptest.services.rpk_producer import RpkProducer
 from rptest.services.compatibility.example_runner import ExampleRunner
 import rptest.services.compatibility.sarama_examples as SaramaExamples
 from rptest.tests.redpanda_test import RedpandaTest
@@ -91,7 +91,13 @@ class SaramaTest(RedpandaTest):
         example = ExampleRunner(self._ctx,
                                 sarama_example,
                                 timeout_sec=self._timeout)
-        producer = KafProducer(self._ctx, self.redpanda, self.topic, count)
+        producer = RpkProducer(self._ctx,
+                               self.redpanda,
+                               self.topic,
+                               4,
+                               count,
+                               acks=-1,
+                               printable=True)
 
         def until_partitions():
             storage = self.redpanda.storage()
