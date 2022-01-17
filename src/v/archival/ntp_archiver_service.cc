@@ -359,18 +359,18 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
               _manifest.get_manifest_path());
         }
 
-        // TODO: error handling
         if (_partition->archival_meta_stm()) {
             retry_chain_node rc_node(
               _manifest_upload_timeout, _initial_backoff, &parent);
-            auto result
-              = co_await _partition->archival_meta_stm()->add_segments(
-                _manifest, rc_node);
-            if (!result && result != cluster::errc::not_leader) {
+            auto error = co_await _partition->archival_meta_stm()->add_segments(
+              _manifest, rc_node);
+            if (
+              error != cluster::errc::success
+              && error != cluster::errc::not_leader) {
                 vlog(
                   ctxlog.warn,
                   "archival metadata STM update failed: {}",
-                  result);
+                  error);
             }
         }
 
