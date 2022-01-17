@@ -6,11 +6,10 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import os
-
 from ducktape.tests.test import Test
 from rptest.services.redpanda import RedpandaService
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.default import DefaultClient
 from rptest.util import Scale
 
 
@@ -34,12 +33,11 @@ class RedpandaTest(Test):
         self.scale = Scale(test_context)
         self.redpanda = RedpandaService(test_context,
                                         num_brokers,
-                                        KafkaCliTools,
                                         extra_rp_conf=extra_rp_conf,
                                         enable_pp=enable_pp,
                                         enable_sr=enable_sr,
-                                        topics=self.topics,
                                         num_cores=num_cores)
+        self._client = DefaultClient(self.redpanda)
 
     @property
     def topic(self):
@@ -52,3 +50,16 @@ class RedpandaTest(Test):
 
     def setUp(self):
         self.redpanda.start()
+        self._create_initial_topics()
+
+    def client(self):
+        return self._client
+
+    def _create_initial_topics(self):
+        config = self.redpanda.security_config()
+        user = config.get("sasl_plain_username")
+        passwd = config.get("sasl_plain_password")
+        client = KafkaCliTools(self.redpanda, user=user, passwd=passwd)
+        for spec in self.topics:
+            self.logger.debug(f"Creating initial topic {spec}")
+            client.create_topic(spec)

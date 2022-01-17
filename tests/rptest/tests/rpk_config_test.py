@@ -7,12 +7,10 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from ducktape.utils.util import wait_until
 from ducktape.mark.resource import cluster
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk_remote import RpkRemoteTool
-from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.redpanda import RedpandaService
 
 import yaml

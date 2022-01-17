@@ -18,7 +18,6 @@ from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kcl import KCL
-from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import RpkTool
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.rpk_producer import RpkProducer
@@ -179,7 +178,7 @@ class GroupMetricsTest(RedpandaTest):
         assert metric_key in gr_2_metrics_offsets
         assert gr_2_metrics_offsets[metric_key] == 0
 
-        self.redpanda.delete_topic(topic)
+        self.client().delete_topic(topic)
 
         def metrics_gone():
             metrics_offsets = self._get_offset_from_metrics(group_1)
@@ -236,12 +235,12 @@ class GroupMetricsTest(RedpandaTest):
             assert metric_key in metrics_offsets
             assert metrics_offsets[metric_key] == 50
 
-            self.redpanda.delete_topic(topic)
+            self.client().delete_topic(topic)
 
         check_metric()
         metrics_offsets = self._get_offset_from_metrics(group)
         assert metrics_offsets is None
-        self.redpanda.create_topic(topic_spec)
+        self.client().create_topic(topic_spec)
         check_metric()
 
     @cluster(num_nodes=7)

@@ -6,7 +6,6 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import random
 
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
@@ -16,7 +15,6 @@ from rptest.tests.redpanda_test import RedpandaTest
 from confluent_kafka.admin import NewTopic
 from confluent_kafka.error import KafkaException, KafkaError
 
-from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 

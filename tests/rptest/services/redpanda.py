@@ -28,8 +28,6 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.storage import ClusterStorage, NodeStorage
 from rptest.services.admin import Admin
 from rptest.clients.python_librdkafka import PythonLibrdkafka
-from rptest.clients.types import TopicSpec
-from kafka import KafkaAdminClient
 
 Partition = collections.namedtuple('Partition',
                                    ['index', 'leader', 'replicas'])
@@ -102,29 +100,24 @@ class RedpandaService(Service):
     def __init__(self,
                  context,
                  num_brokers,
-                 client_type,
+                 *,
                  enable_rp=True,
                  extra_rp_conf=None,
                  enable_pp=False,
                  enable_sr=False,
-                 topics=None,
                  num_cores=3):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
-        self._client_type = client_type
         self._enable_rp = enable_rp
         self._extra_rp_conf = extra_rp_conf or dict()
         self._enable_pp = enable_pp
         self._enable_sr = enable_sr
         self._log_level = self._context.globals.get(self.LOG_LEVEL_KEY,
                                                     self.DEFAULT_LOG_LEVEL)
-        self._topics = topics or ()
         self._num_cores = num_cores
         self._admin = Admin(self)
         self._started = []
-
-        # client is intiialized after service starts
-        self._client = None
+        self._security_config = dict()
 
         self.config_file_lock = threading.Lock()
 
@@ -189,28 +182,17 @@ class RedpandaService(Service):
                 )
                 raise RuntimeError("Unexpected files in data directory")
 
-        security_settings = dict()
         if self.sasl_enabled():
             username, password, algorithm = self.SUPERUSER_CREDENTIALS
-            security_settings = dict(security_protocol='SASL_PLAINTEXT',
-                                     sasl_mechanism=algorithm,
-                                     sasl_plain_username=username,
-                                     sasl_plain_password=password,
-                                     request_timeout_ms=30000,
-                                     api_version_auto_timeout_ms=3000)
-        self._client = KafkaAdminClient(bootstrap_servers=self.brokers_list(),
-                                        **security_settings)
+            self._security_config = dict(security_protocol='SASL_PLAINTEXT',
+                                         sasl_mechanism=algorithm,
+                                         sasl_plain_username=username,
+                                         sasl_plain_password=password,
+                                         request_timeout_ms=30000,
+                                         api_version_auto_timeout_ms=3000)
 
-        self._create_initial_topics(security_settings)
-
-    def _create_initial_topics(self, security_settings):
-        user = security_settings.get("sasl_plain_username")
-        passwd = security_settings.get("sasl_plain_password")
-
-        client = self._client_type(self, user=user, passwd=passwd)
-        for spec in self._topics:
-            self.logger.debug(f"Creating initial topic {spec}")
-            client.create_topic(spec)
+    def security_config(self):
+        return self._security_config
 
     def start_redpanda(self, node):
         cmd = (
@@ -711,28 +693,6 @@ class RedpandaService(Service):
                         counts[idx] += int(sample.value)
         return all(map(lambda count: count == 0, counts.values()))
 
-    def describe_topics(self, topics=None):
-        """
-        Describe topics. Pass topics=None to describe all topics, or a pass a
-        list of topic names to restrict the call to a set of specific topics.
-
-        Sample return value:
-            [
-              {'error_code': 0,
-               'topic': 'topic-kabn',
-               'is_internal': False,
-               'partitions': [
-                 {'error_code': 0,
-                  'partition': 0,
-                  'leader': 1,
-                  'replicas': [1],
-                  'isr': [1],
-                  'offline_replicas': []}
-               }
-            ]
-        """
-        return self._client.describe_topics(topics)
-
     def partitions(self, topic):
         """
         Return partition metadata for the topic.
@@ -749,19 +709,6 @@ class RedpandaService(Service):
             return Partition(index, leader, replicas)
 
         return [make_partition(p) for p in topic["partitions"]]
-
-    def create_topic(self, specs):
-        if isinstance(specs, TopicSpec):
-            specs = [specs]
-        client = self._client_type(self)
-        for spec in specs:
-            self.logger.info(f"Creating topic {spec}")
-            client.create_topic(spec)
-
-    def delete_topic(self, name):
-        client = self._client_type(self)
-        self.logger.debug(f"Deleting topic {name}")
-        client.delete_topic(name)
 
     def cov_enabled(self):
         return self._context.globals.get(self.COV_KEY, self.DEFAULT_COV_OPT)

@@ -9,7 +9,6 @@
 
 from ducktape.mark.resource import cluster
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import RedpandaService
 from rptest.util import Scale
@@ -62,9 +61,7 @@ class EndToEndShadowIndexingTest(EndToEndTest):
         self.redpanda = RedpandaService(
             context=test_context,
             num_brokers=3,
-            client_type=KafkaCliTools,
             extra_rp_conf=self._extra_rp_conf,
-            topics=EndToEndShadowIndexingTest.topics,
         )
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
@@ -77,10 +74,11 @@ class EndToEndShadowIndexingTest(EndToEndTest):
         )
 
     def setUp(self):
-        rpk = RpkTool(self.redpanda)
         self.s3_client.empty_bucket(self.s3_bucket_name)
         self.s3_client.create_bucket(self.s3_bucket_name)
         self.redpanda.start()
+        for topic in EndToEndShadowIndexingTest.topics:
+            self.kafka_tools.create_topic(topic)
 
     def tearDown(self):
         self.s3_client.empty_bucket(self.s3_bucket_name)

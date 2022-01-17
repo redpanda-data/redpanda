@@ -8,11 +8,9 @@
 # by the Apache License, Version 2.0
 
 from ducktape.mark.resource import cluster
-from ducktape.mark import ignore
 from ducktape.errors import DucktapeError
 
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 
 import subprocess

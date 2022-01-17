@@ -11,7 +11,6 @@ import time
 import random
 
 from kafka import KafkaConsumer
-from kafka.errors import OffsetOutOfRangeError
 from rptest.wasm.background_task import BackgroundTask
 from rptest.wasm.topics_result_set import TopicsResultSet
 

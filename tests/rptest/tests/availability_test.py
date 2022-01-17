@@ -7,18 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from datetime import datetime
 import random
-import time
 
 from ducktape.mark.resource import cluster
-from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.default import DefaultClient
 from rptest.clients.types import TopicSpec
-from rptest.services.failure_injector import FailureInjector, FailureSpec
+from rptest.services.failure_injector import FailureSpec
 from rptest.services.redpanda import RedpandaService
 from rptest.tests.e2e_finjector import EndToEndFinjectorTest
-from rptest.tests.end_to_end import EndToEndTest
-from rptest.util import Scale
 
 
 class AvailabilityTests(EndToEndFinjectorTest):
@@ -42,7 +38,6 @@ class AvailabilityTests(EndToEndFinjectorTest):
         self.redpanda = RedpandaService(
             self.test_context,
             3,
-            KafkaCliTools,
             extra_rp_conf={
                 "enable_auto_rebalance_on_node_add": True,
                 "group_topic_partitions": 1,
@@ -54,7 +49,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
                          partition_count=6,
                          replication_factor=3)
 
-        self.redpanda.create_topic(spec)
+        DefaultClient(self.redpanda).create_topic(spec)
         self.topic = spec.name
 
         self.start_producer(1, throughput=10000)
@@ -71,7 +66,6 @@ class AvailabilityTests(EndToEndFinjectorTest):
         self.redpanda = RedpandaService(
             self.test_context,
             3,
-            KafkaCliTools,
             extra_rp_conf={
                 "enable_auto_rebalance_on_node_add": True,
                 "group_topic_partitions": 1,
@@ -83,7 +77,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
                          partition_count=6,
                          replication_factor=3)
 
-        self.redpanda.create_topic(spec)
+        DefaultClient(self.redpanda).create_topic(spec)
         self.topic = spec.name
 
         self.start_producer(1, throughput=10000)

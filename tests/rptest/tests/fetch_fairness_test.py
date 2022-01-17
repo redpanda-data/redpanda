@@ -8,25 +8,14 @@
 # by the Apache License, Version 2.0
 
 from collections import defaultdict
-import sys
-import time
-import re
-import random
 
 from ducktape.mark.resource import cluster
 from ducktape.mark import parametrize
-from ducktape.mark import ignore
-from ducktape.utils.util import wait_until
 
-from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kcl import KCL
-from rptest.clients.rpk import RpkTool, RpkException
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.rpk_producer import RpkProducer
-from rptest.services.kaf_producer import KafProducer
-from rptest.services.admin import Admin
 
 
 class FetchTest(RedpandaTest):
@@ -52,11 +41,10 @@ class FetchTest(RedpandaTest):
         returned in round robin fashion
         """
         def multiple_topics(count):
-            return list(
-                map(
-                    lambda i: TopicSpec(partition_count=1,
-                                        replication_factor=1), range(0,
-                                                                     count)))
+            return [
+                TopicSpec(partition_count=1, replication_factor=1)
+                for _ in range(count)
+            ]
 
         def multiple_partitions(count):
             return [TopicSpec(partition_count=count, replication_factor=1)]
@@ -71,7 +59,7 @@ class FetchTest(RedpandaTest):
             topics = multiple_partitions(number_of_partitions)
 
         # create topics
-        self.redpanda.create_topic(specs=topics)
+        self.client().create_topic(specs=topics)
         self.redpanda.logger.info(f"topics: {topics}")
         rpk = RpkTool(self.redpanda)
 

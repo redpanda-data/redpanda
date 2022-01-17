@@ -12,7 +12,6 @@ from ducktape.utils.util import wait_until
 from ducktape.errors import DucktapeError
 
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.compacted_verifier import CompactedTopicVerifier
 from rptest.clients.rpk import RpkTool
 

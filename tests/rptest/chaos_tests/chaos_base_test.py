@@ -7,11 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import time
 import pathlib
-import os
 
-import traceback
 import sys
 
 sys.path.append("/opt/v/src/consistency-testing/gobekli")

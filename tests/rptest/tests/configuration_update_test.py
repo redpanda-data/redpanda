@@ -9,7 +9,6 @@
 
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
-from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.services.redpanda import RedpandaService
 

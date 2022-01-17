@@ -7,14 +7,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import defaultdict
 import json
 import random
 
 from ducktape.mark.resource import cluster
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
-from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.default import DefaultClient
 from rptest.clients.types import TopicSpec
 
 from rptest.services.http_server import HttpServer
@@ -22,7 +21,7 @@ from rptest.services.redpanda import RedpandaService
 
 
 class MetricsReporterTest(Test):
-    def __init__(self, test_ctx, *args, **kwargs):
+    def __init__(self, test_ctx):
         self._ctx = test_ctx
         super(MetricsReporterTest, self).__init__(test_context=test_ctx)
 
@@ -50,7 +49,6 @@ class MetricsReporterTest(Test):
         }
         self.redpanda = RedpandaService(self.test_context,
                                         3,
-                                        KafkaCliTools,
                                         extra_rp_conf=extra_conf)
 
         self.redpanda.start()
@@ -60,7 +58,7 @@ class MetricsReporterTest(Test):
         for _ in range(0, total_topics):
             partitions = random.randint(1, 8)
             total_partitions += partitions
-            self.redpanda.create_topic(
+            DefaultClient(self.redpanda).create_topic(
                 [TopicSpec(partition_count=partitions, replication_factor=3)])
 
         # create topics

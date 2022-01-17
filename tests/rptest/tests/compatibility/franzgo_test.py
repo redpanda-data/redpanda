@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 from ducktape.mark.resource import cluster
-from ducktape.utils.util import wait_until
 
 from rptest.services.compatibility.example_runner import ExampleRunner
 import rptest.services.compatibility.franzgo_examples as FranzGoExamples

@@ -7,13 +7,10 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import time
 import json
 import sys
-import uuid
 
 from gobekli.logging import m
-from rptest.chaos.kafkakv_muservice import KafkaKVMuService
 from rptest.chaos.mount_muservice import MountMuService
 import logging
 import traceback

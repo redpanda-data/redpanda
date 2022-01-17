@@ -7,20 +7,18 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from os import error
 import random
 import threading
 import time
 import requests
-import urllib3
 
 from ducktape.mark import parametrize
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
-from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.kcl import KCL
 from rptest.clients.types import TopicSpec
+from rptest.clients.default import DefaultClient
 from rptest.services.admin import Admin
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.redpanda import RedpandaService
@@ -105,7 +103,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
             topics.append(spec)
 
         for spec in topics:
-            self.redpanda.create_topic(spec)
+            DefaultClient(self.redpanda).create_topic(spec)
 
         return topics
 
@@ -122,7 +120,6 @@ class NodeOperationFuzzyTest(EndToEndTest):
         self.redpanda = RedpandaService(
             self.test_context,
             5,
-            KafkaCliTools,
             extra_rp_conf={
                 "enable_auto_rebalance_on_node_add": True,
                 "group_topic_partitions": 3,
@@ -301,7 +298,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
 
         def create_topic(spec):
             try:
-                self.redpanda.create_topic(spec)
+                DefaultClient(self.redpanda).create_topic(spec)
             except Exception as e:
                 self.redpanda.logger.warn(
                     f"error creating topic {spec.name} - {e}")
@@ -313,7 +310,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
 
         def delete_topic(name):
             try:
-                self.redpanda.delete_topic(name)
+                DefaultClient(self.redpanda).delete_topic(name)
             except Exception as e:
                 self.redpanda.logger.warn(f"error deleting topic {name} - {e}")
             try:

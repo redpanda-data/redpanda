@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 import random
 
-from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 from ducktape.mark.resource import cluster
 from rptest.tests.redpanda_test import RedpandaTest
@@ -29,7 +28,7 @@ class DescribeTopicsTest(RedpandaTest):
             for _ in range(num_topics)
         ]
 
-        self.redpanda.create_topic(topics)
+        self.client().create_topic(topics)
 
         def check():
             client = KafkaCliTools(self.redpanda)

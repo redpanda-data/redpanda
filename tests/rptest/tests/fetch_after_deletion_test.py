@@ -14,10 +14,9 @@ import json
 
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import RedpandaService
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.default import DefaultClient
 from rptest.clients.rpk import RpkTool
-from rptest.clients.kcl import KCL
 from rptest.util import (
     Scale,
     produce_until_segments,
@@ -41,7 +40,6 @@ class FetchAfterDeleteTest(Test):
         segment_size = 1048576
         self.redpanda = RedpandaService(self.test_context,
                                         3,
-                                        KafkaCliTools,
                                         extra_rp_conf={
                                             "enable_transactions":
                                             transactions_enabled,
@@ -55,7 +53,7 @@ class FetchAfterDeleteTest(Test):
         topic = TopicSpec(partition_count=1,
                           replication_factor=3,
                           cleanup_policy=TopicSpec.CLEANUP_DELETE)
-        self.redpanda.create_topic(topic)
+        DefaultClient(self.redpanda).create_topic(topic)
         self.topic = topic.name
 
         kafka_tools = KafkaCliTools(self.redpanda)

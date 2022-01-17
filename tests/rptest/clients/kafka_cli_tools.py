@@ -10,7 +10,6 @@
 import subprocess
 import tempfile
 from rptest.clients.types import TopicSpec
-from rptest.clients.kafka_client import KafkaClient
 
 
 class AuthenticationError(Exception):
@@ -29,7 +28,7 @@ class ClusterAuthorizationError(Exception):
         return repr(self.message)
 
 
-class KafkaCliTools(KafkaClient):
+class KafkaCliTools:
     """
     Wrapper around the Kafka admin command line tools.
     """

@@ -8,19 +8,13 @@
 # by the Apache License, Version 2.0
 
 import random
-import time
 
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
-from rptest.clients.kafka_cat import KafkaCat
-import requests
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
-from rptest.services.honey_badger import HoneyBadger
-from kafka import KafkaProducer
-from kafka import KafkaConsumer
 
 
 class NodesDecommissioningTest(EndToEndTest):
@@ -41,7 +35,7 @@ class NodesDecommissioningTest(EndToEndTest):
                 topics.append(spec)
 
         for spec in topics:
-            self.redpanda.create_topic(spec)
+            self.client().create_topic(spec)
             self.topic = spec.name
 
         self.start_producer(1)
@@ -79,7 +73,7 @@ class NodesDecommissioningTest(EndToEndTest):
                 topics.append(spec)
 
         for spec in topics:
-            self.redpanda.create_topic(spec)
+            self.client().create_topic(spec)
             self.topic = spec.name
 
         self.start_producer(1)

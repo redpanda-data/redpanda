@@ -9,15 +9,12 @@
 
 import subprocess
 import os
-import time
 
 from ducktape.mark.resource import cluster
 from ducktape.mark import matrix, ignore
-from ducktape.utils.util import wait_until
 
 from ducktape.tests.test import Test
 from rptest.services.redpanda import RedpandaService
-from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
 class LibrdkafkaTest(Test):
@@ -39,7 +36,6 @@ class LibrdkafkaTest(Test):
     def _start_redpanda(self, num_brokers):
         self._redpanda = RedpandaService(self._context,
                                          num_brokers,
-                                         KafkaCliTools,
                                          extra_rp_conf=self._extra_rp_conf)
         self._redpanda.start()
 
