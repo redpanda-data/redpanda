@@ -571,6 +571,7 @@ remote_segment_batch_reader::init_parser() {
 }
 
 size_t remote_segment_batch_reader::produce(model::record_batch batch) {
+    ss::gate::holder h(_gate);
     vlog(_ctxlog.debug, "remote_segment_batch_reader::produce");
     _total_size += batch.size_bytes();
     _ringbuf.push_back(std::move(batch));
