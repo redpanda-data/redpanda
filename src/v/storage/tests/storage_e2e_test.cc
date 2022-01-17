@@ -22,6 +22,7 @@
 #include "storage/tests/utils/disk_log_builder.h"
 #include "storage/tests/utils/random_batch.h"
 #include "storage/types.h"
+#include "test_utils/async.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/io_priority_class.hh>
@@ -2029,4 +2030,48 @@ FIXTURE_TEST(test_querying_term_last_offset, storage_test_fixture) {
       .get();
 
     BOOST_REQUIRE(!log.get_term_last_offset(model::term_id(0)).has_value());
+}
+
+FIXTURE_TEST(read_your_writes_with_cache, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    cfg.cache = storage::with_cache::yes;
+    storage::ntp_config::default_overrides overrides;
+    overrides.caching = storage::caching_policy::pending_writes;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp,
+                   mgr.config().base_dir,
+                   std::make_unique<storage::ntp_config::default_overrides>(
+                     overrides)))
+                 .get0();
+    // read whole log configuration
+    storage::log_reader_config reader_cfg(
+      model::offset(0),
+      model::model_limits<model::offset>::max(),
+      0,
+      std::numeric_limits<int64_t>::max(),
+      ss::default_priority_class(),
+      std::nullopt,
+      std::nullopt,
+      std::nullopt);
+
+    // append some batches
+    append_exactly(log, 50, 128).get0();
+
+    auto reader = log.make_reader(reader_cfg).get();
+    auto batches = copy_to_mem(reader).get();
+    BOOST_REQUIRE(!batches.empty());
+    BOOST_REQUIRE_EQUAL(
+      batches.back().last_offset(), log.offsets().dirty_offset);
+
+    // wait for all pending writes to finish
+    tests::cooperative_spin_wait_with_timeout(2s, [&mgr] {
+        return mgr.get_batch_cache().empty();
+    }).get();
 }
