@@ -24,6 +24,7 @@ RUN apt update && \
     apt install -y \
       bind9-utils \
       bind9-dnsutils \
+      bsdmainutils \
       build-essential \
       curl \
       default-jdk \
