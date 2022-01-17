@@ -370,6 +370,22 @@ void batch_cache_index::truncate(model::offset offset) {
     }
 }
 
+void batch_cache_index::prefix_truncate(model::offset offset) {
+    lock_guard lk(*this);
+    if (auto it = _index.lower_bound(offset); it != _index.end()) {
+        if (it == _index.begin()) {
+            return;
+        }
+
+        std::for_each(
+          _index.begin(), std::prev(it), [this](index_type::value_type& e) {
+              _cache->evict(std::move(e.second.range()));
+          });
+
+        _index.erase(_index.begin(), it);
+    }
+}
+
 void batch_cache::background_reclaimer::start() {
     ssx::spawn_with_gate(_gate, [this] {
         return ss::with_scheduling_group(

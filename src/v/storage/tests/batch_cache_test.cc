@@ -40,6 +40,16 @@ static model::record_batch make_random_batch(
     return std::move(b).build();
 }
 
+static model::record_batch
+make_batch_of_size(model::offset offset, size_t size) {
+    cluster::simple_batch_builder b(model::record_batch_type(1), offset);
+    iobuf value;
+    value.reserve(size);
+    b.add_kv(iobuf{}, std::move(value));
+
+    return std::move(b).build();
+}
+
 struct batch_cache_test_fixture {
     batch_cache_test_fixture()
       : cache(opts) {}
@@ -278,6 +288,55 @@ FIXTURE_TEST(index_truncate_hole_missing_prev, batch_cache_test_fixture) {
     BOOST_CHECK(!index.testing_exists_in_index(model::offset(11)));
     BOOST_CHECK(!index.get(model::offset(11)));
     BOOST_CHECK(!index.get(model::offset(41)));
+}
+
+FIXTURE_TEST(index_prefix_truncate, batch_cache_test_fixture) {
+    storage::batch_cache_index index(cache);
+
+    // use large batches so each batch resides in separate range
+    index.put(make_batch_of_size(model::offset(1), 24_KiB));
+    index.put(make_batch_of_size(model::offset(2), 24_KiB));
+    index.put(make_batch_of_size(model::offset(3), 24_KiB));
+    index.put(make_batch_of_size(model::offset(4), 24_KiB));
+    index.put(make_batch_of_size(model::offset(5), 24_KiB));
+
+    index.prefix_truncate(model::offset(3));
+    // all batches belong to the same range, all of them will be evicted
+    BOOST_CHECK(!index.get(model::offset(1)));
+    BOOST_CHECK(!index.get(model::offset(2)));
+    BOOST_CHECK(index.get(model::offset(3)));
+    BOOST_CHECK(index.get(model::offset(4)));
+    BOOST_CHECK(index.get(model::offset(5)));
+}
+
+FIXTURE_TEST(index_prefix_truncate_hole, batch_cache_test_fixture) {
+    storage::batch_cache_index index(cache);
+
+    // use large batches so each batch resides in separate range
+    index.put(make_batch_of_size(model::offset(1), 24_KiB));
+    index.put(make_batch_of_size(model::offset(2), 24_KiB));
+    index.put(make_batch_of_size(model::offset(3), 24_KiB));
+    index.put(make_batch_of_size(model::offset(10), 24_KiB));
+    index.put(make_batch_of_size(model::offset(12), 24_KiB));
+
+    index.prefix_truncate(model::offset(4));
+    // all batches belong to the same range, all of them will be evicted
+    BOOST_CHECK(!index.get(model::offset(1)));
+    BOOST_CHECK(!index.get(model::offset(2)));
+    BOOST_CHECK(!index.get(model::offset(3)));
+    BOOST_CHECK(index.get(model::offset(10)));
+    BOOST_CHECK(index.get(model::offset(12)));
+}
+
+FIXTURE_TEST(index_prefix_truncate_single, batch_cache_test_fixture) {
+    storage::batch_cache_index index(cache);
+
+    // use large batches so each batch resides in separate range
+    index.put(make_batch_of_size(model::offset(1), 24_KiB));
+
+    index.prefix_truncate(model::offset(1));
+    // all batches belong to the same range, all of them will be evicted
+    BOOST_CHECK(index.get(model::offset(1)));
 }
 
 FIXTURE_TEST(test_random_batch_sizes, batch_cache_test_fixture) {

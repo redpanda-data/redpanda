@@ -464,6 +464,11 @@ public:
      */
     void truncate(model::offset offset);
 
+    /**
+     * Removes all batches with offset smaller than requested
+     */
+    void prefix_truncate(model::offset offset);
+
     /*
      * Testing interface used to evict a batch from the cache identified by
      * the specified offset. The index range is not removed. The offset must
