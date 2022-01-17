@@ -16,6 +16,7 @@
 #include "model/timestamp.h"
 #include "reflection/adl.h"
 #include "security/acl.h"
+#include "storage/types.h"
 #include "tristate.h"
 #include "utils/to_string.h"
 
@@ -83,7 +84,8 @@ storage::ntp_config topic_configuration::make_ntp_config(
             .retention_time = properties.retention_duration,
             // we disable cache for internal topics as they are read only once
             // during bootstrap.
-            .cache_enabled = storage::with_cache(!is_internal()),
+            .caching = is_internal() ? storage::caching_policy::pending_writes
+                                     : storage::caching_policy::full,
             .recovery_enabled = storage::topic_recovery_enabled(
               properties.recovery ? *properties.recovery : false),
             .shadow_indexing_mode = properties.shadow_indexing
