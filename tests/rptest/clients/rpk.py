@@ -163,8 +163,8 @@ class RpkTool:
     def describe_topic_configs(self, topic):
         cmd = ['describe', topic, '-c']
         output = self._run_topic(cmd)
-        if "not found" in output:
-            return None
+        assert "not found" not in output, \
+                f"Cannot describe configs for unknown topic {topic}"
         lines = output.splitlines()
         res = {}
         for line in lines:
