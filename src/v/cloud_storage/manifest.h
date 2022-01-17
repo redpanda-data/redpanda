@@ -13,6 +13,7 @@
 #include "bytes/iobuf.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
+#include "json/document.h"
 #include "json/json.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -22,8 +23,6 @@
 #include "tristate.h"
 
 #include <seastar/util/bool_class.hh>
-
-#include <rapidjson/fwd.h>
 
 #include <compare>
 #include <iterator>
@@ -228,7 +227,7 @@ public:
 private:
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file
-    void update(const rapidjson::Document& m);
+    void update(const json::Document& m);
 
     model::ntp _ntp;
     model::initial_revision_id _rev;
@@ -281,7 +280,7 @@ public:
 private:
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file
-    void update(const rapidjson::Document& m);
+    void update(const json::Document& m);
 
     std::optional<cluster::topic_configuration> _topic_config;
     model::initial_revision_id _rev;
