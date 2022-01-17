@@ -224,6 +224,10 @@ public:
     absl::flat_hash_set<model::ntp> get_all_ntps() const;
 
     int64_t compaction_backlog() const;
+    /**
+     * Gives an access to batch cache held by log manager - used for testing
+     */
+    const batch_cache& get_batch_cache() const { return _batch_cache; }
 
 private:
     using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;
