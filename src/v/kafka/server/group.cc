@@ -1315,10 +1315,7 @@ void group::complete_offset_commit(
     if (p_it != _pending_offset_commits.end()) {
         // save the tp commit if it hasn't yet been seen, or we are completing
         // for an instance that is newer based on log offset
-        auto o_it = _offsets.find(tp);
-        if (o_it == _offsets.end() || o_it->second.log_offset < md.log_offset) {
-            _offsets[tp] = md;
-        }
+        try_upsert_offset(tp, md);
 
         // clear pending for this tp
         if (p_it->second.offset == md.offset) {
@@ -1424,10 +1421,7 @@ group::commit_tx(cluster::commit_group_tx_request r) {
     }
 
     for (const auto& [tp, md] : prepare_it->second.offsets) {
-        auto o_it = _offsets.find(tp);
-        if (o_it == _offsets.end() || o_it->second.log_offset < md.log_offset) {
-            _offsets[tp] = md;
-        }
+        try_upsert_offset(tp, md);
     }
 
     _prepared_txs.erase(prepare_it);
@@ -2013,8 +2007,8 @@ group::handle_offset_fetch(offset_fetch_request&& r) {
         for (const auto& e : _offsets) {
             offset_fetch_response_partition p = {
               .partition_index = e.first.partition,
-              .committed_offset = e.second.offset,
-              .metadata = e.second.metadata,
+              .committed_offset = e.second->metadata.offset,
+              .metadata = e.second->metadata.metadata,
               .error_code = error_code::none,
             };
             // BUG: support leader_epoch (KIP-320)
@@ -2171,7 +2165,7 @@ group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
         _pending_offset_commits.erase(tp);
         if (auto offset = _offsets.extract(tp); offset) {
             removed.emplace_back(
-              std::move(offset.key()), std::move(offset.mapped()));
+              std::move(offset.key()), std::move(offset.mapped()->metadata));
         }
     }
 

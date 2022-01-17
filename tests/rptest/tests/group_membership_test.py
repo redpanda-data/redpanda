@@ -9,6 +9,7 @@
 
 import time
 import requests
+import random
 
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
@@ -17,6 +18,10 @@ from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kcl import KCL
+from rptest.clients.kafka_cat import KafkaCat
+from rptest.clients.rpk import RpkTool
+from rptest.services.rpk_consumer import RpkConsumer
+from rptest.services.rpk_producer import RpkProducer
 
 
 class ListGroupsReplicationFactorTest(RedpandaTest):
@@ -113,3 +118,251 @@ class ListGroupsReplicationFactorTest(RedpandaTest):
                    10,
                    backoff_sec=2,
                    err_msg="found persistent duplicates in groups listing")
+
+
+class GroupMetricsTest(RedpandaTest):
+    topics = (TopicSpec(partition_count=1), TopicSpec(partition_count=3),
+              TopicSpec(partition_count=3))
+
+    def __init__(self, ctx, *args, **kwargs):
+
+        # Require internal_kafka topic to have an increased replication factor
+        extra_rp_conf = dict(default_topic_replications=3,
+                             enable_leader_balancer=False)
+        super(GroupMetricsTest, self).__init__(test_context=ctx,
+                                               num_brokers=3,
+                                               extra_rp_conf=extra_rp_conf)
+        self._ctx = ctx
+
+    def _get_offset_from_metrics(self, group):
+        metric = self.redpanda.metrics_sample("kafka_group_offset")
+        if metric is None:
+            return None
+        metric = metric.label_filter(dict(group=group))
+        res = {}
+        for sample in metric.samples:
+            res[(sample.labels['topic'],
+                 sample.labels['partition'])] = sample.value
+        return res
+
+    @cluster(num_nodes=3)
+    def test_check_value(self):
+        rpk = RpkTool(self.redpanda)
+        topic = next(filter(lambda x: x.partition_count == 1,
+                            self.topics)).name
+
+        for i in range(100):
+            payload = str(random.randint(0, 1000))
+            offset = rpk.produce(topic, "", payload, timeout=5)
+
+        group_1 = "g1"
+        metric_key = (topic, "0")
+        for i in range(10):
+            rpk.consume(topic, group=group_1, n=10)
+            metrics_offsets = self._get_offset_from_metrics(group_1)
+            assert metric_key in metrics_offsets
+            assert metrics_offsets[metric_key] == (i + 1) * 10
+
+        group_2 = "g2"
+        rpk.consume(topic, group=group_2, n=50)
+        gr_2_metrics_offsets = self._get_offset_from_metrics(group_2)
+        assert metric_key in gr_2_metrics_offsets
+        assert gr_2_metrics_offsets[metric_key] == 50
+
+        rpk.group_seek_to_group(group_1, group_2)
+        gr_1_metrics_offsets = self._get_offset_from_metrics(group_1)
+        assert metric_key in gr_1_metrics_offsets
+        assert gr_1_metrics_offsets[metric_key] == 50
+
+        rpk.group_seek_to(group_2, "start")
+        gr_2_metrics_offsets = self._get_offset_from_metrics(group_2)
+        assert metric_key in gr_2_metrics_offsets
+        assert gr_2_metrics_offsets[metric_key] == 0
+
+        self.redpanda.delete_topic(topic)
+
+        def metrics_gone():
+            metrics_offsets = self._get_offset_from_metrics(group_1)
+            return metrics_offsets is None
+
+        wait_until(metrics_gone, timeout_sec=30, backoff_sec=5)
+
+    @cluster(num_nodes=3)
+    def test_multiple_topics_and_partitions(self):
+        rpk = RpkTool(self.redpanda)
+        topics = self.topics
+        group = "g0"
+
+        for i in range(100):
+            payload = str(random.randint(0, 1000))
+            for topic_spec in topics:
+                for p in range(topic_spec.partition_count):
+                    rpk.produce(topic_spec.name,
+                                "",
+                                payload,
+                                partition=p,
+                                timeout=5)
+
+        for topic_spec in topics:
+            rpk.consume(topic_spec.name,
+                        group=group,
+                        n=100 * topic_spec.partition_count)
+
+        metrics_offsets = self._get_offset_from_metrics(group)
+
+        partitions_amount = sum(map(lambda x: x.partition_count, topics))
+        assert len(metrics_offsets) == partitions_amount
+        for topic_spec in topics:
+            for i in range(topic_spec.partition_count):
+                assert (topic_spec.name, str(i)) in metrics_offsets
+                assert metrics_offsets[(topic_spec.name, str(i))] == 100
+
+    @cluster(num_nodes=3)
+    def test_topic_recreation(self):
+        rpk = RpkTool(self.redpanda)
+        topic_spec = next(filter(lambda x: x.partition_count == 1,
+                                 self.topics))
+        topic = topic_spec.name
+        group = "g0"
+
+        def check_metric():
+            for i in range(100):
+                payload = str(random.randint(0, 1000))
+                offset = rpk.produce(topic, "", payload, timeout=5)
+
+            metric_key = (topic, "0")
+            rpk.consume(topic, group=group, n=50)
+            metrics_offsets = self._get_offset_from_metrics(group)
+            assert metric_key in metrics_offsets
+            assert metrics_offsets[metric_key] == 50
+
+            self.redpanda.delete_topic(topic)
+
+        check_metric()
+        metrics_offsets = self._get_offset_from_metrics(group)
+        assert metrics_offsets is None
+        self.redpanda.create_topic(topic_spec)
+        check_metric()
+
+    @cluster(num_nodes=7)
+    def test_leadership_transfer(self):
+        topics = list(filter(lambda x: x.partition_count > 1, self.topics))
+        group = "g0"
+
+        producers = []
+        for topic in topics:
+            producer = RpkProducer(self._ctx,
+                                   self.redpanda,
+                                   topic.name,
+                                   msg_size=5,
+                                   msg_count=1000)
+            producer.start()
+            producers.append(producer)
+
+        consumers = []
+        for topic in topics:
+            consumer = RpkConsumer(self._ctx,
+                                   self.redpanda,
+                                   topic.name,
+                                   group=group)
+            consumer.start()
+            consumers.append(consumer)
+
+        # Wait until cluster starts producing metrics
+        wait_until(
+            lambda: self.redpanda.metrics_sample("kafka_group_offset") != None,
+            timeout_sec=30,
+            backoff_sec=5)
+
+        admin = Admin(redpanda=self.redpanda)
+
+        def get_group_partition():
+            return admin.get_partitions(namespace="kafka_internal",
+                                        topic="group",
+                                        partition=0)
+
+        def get_group_leader():
+            return get_group_partition()['leader_id']
+
+        def metrics_from_single_node(node):
+            """
+            Check that metrics are produced only by the given node.
+            """
+            metrics = self.redpanda.metrics_sample("kafka_group_offset")
+            if not metrics:
+                self.logger.debug("No metrics found")
+                return False
+            metrics = metrics.label_filter(dict(group=group)).samples
+            for metric in metrics:
+                self.logger.debug(
+                    f"Retrieved metric from node={metric.node.account.hostname}: {metric}"
+                )
+            return all([
+                metric.node.account.hostname == node.account.hostname
+                for metric in metrics
+            ])
+
+        def transfer_leadership(new_leader):
+            """
+            Request leadership transfer of the internal consumer group partition
+            and check that it completes successfully.
+            """
+            self.logger.debug(
+                f"Transferring leadership to {new_leader.account.hostname}")
+            admin.transfer_leadership_to(namespace="kafka_internal",
+                                         topic="group",
+                                         partition=0,
+                                         target=self.redpanda.idx(new_leader))
+            for _ in range(3):  # re-check a few times
+                leader = self.redpanda.get_node(get_group_leader())
+                if leader == new_leader:
+                    return True
+                time.sleep(1)
+            return False
+
+        def partition_ready():
+            """
+            All replicas present and known leader
+            """
+            partition = get_group_partition()
+            self.logger.debug(f"XXXXX: {partition}")
+            return len(
+                partition['replicas']) == 3 and partition['leader_id'] >= 0
+
+        def select_next_leader():
+            """
+            Select a leader different than the current leader
+            """
+            wait_until(partition_ready, timeout_sec=30, backoff_sec=5)
+            partition = get_group_partition()
+            replicas = partition['replicas']
+            assert len(replicas) == 3
+            leader = partition['leader_id']
+            assert leader >= 0
+            replicas = filter(lambda r: r["node_id"] != leader, replicas)
+            new_leader = random.choice(list(replicas))['node_id']
+            return self.redpanda.get_node(new_leader)
+
+        # repeat the following test a few times.
+        #
+        #  1. transfer leadership to a new node
+        #  2. check that new leader reports metrics
+        #  3. check that prev leader does not report
+        #
+        # note that here reporting does not mean that the node does not report
+        # any metrics but that it does not report metrics for consumer groups
+        # for which it is not leader.
+        for _ in range(4):
+            new_leader = select_next_leader()
+
+            wait_until(lambda: transfer_leadership(new_leader),
+                       timeout_sec=30,
+                       backoff_sec=5)
+
+            wait_until(lambda: metrics_from_single_node(new_leader),
+                       timeout_sec=30,
+                       backoff_sec=5)
+
+        for host in producers + consumers:
+            host.stop()
+            host.free()
