@@ -13,7 +13,6 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -25,10 +24,12 @@ import (
 
 	"github.com/banzaicloud/k8s-objectmatcher/patch"
 	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
+	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -76,7 +77,7 @@ func (r *StatefulSetResource) runUpdate(
 		return err
 	}
 
-	if err = r.rollingUpdate(ctx, &modified.Spec.Template); err != nil {
+	if err = r.rollingUpdate(ctx); err != nil {
 		return err
 	}
 
@@ -88,51 +89,33 @@ func (r *StatefulSetResource) runUpdate(
 	return nil
 }
 
-func (r *StatefulSetResource) rollingUpdate(
-	ctx context.Context, template *corev1.PodTemplateSpec,
-) error {
-	var podList corev1.PodList
-	err := r.List(ctx, &podList, &k8sclient.ListOptions{
-		Namespace:     r.pandaCluster.Namespace,
-		LabelSelector: labels.ForCluster(r.pandaCluster).AsClientSelector(),
-	})
+// rollingUpdate implements custom rolling update strategy that is inspired by
+// the sts rolling update that takes into consideration pod and statefulset
+// revision. For more information see
+// https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/statefulset/stateful_set_control.go
+func (r *StatefulSetResource) rollingUpdate(ctx context.Context) error {
+	podList, err := getOrderedPods(ctx, r.pandaCluster, r)
 	if err != nil {
-		return fmt.Errorf("unable to list panda pods: %w", err)
+		return fmt.Errorf("error getting pods %w", err)
 	}
-
-	sort.Slice(podList.Items, func(i, j int) bool {
-		return podList.Items[i].Name < podList.Items[j].Name
-	})
-
-	var artificialPod corev1.Pod
-	artificialPod.Annotations = template.Annotations
-	artificialPod.Spec = template.Spec
-
-	volumes := make(map[string]interface{})
-	for i := range template.Spec.Volumes {
-		vol := template.Spec.Volumes[i]
-		volumes[vol.Name] = new(interface{})
+	sts, err := getSts(ctx, r.Key(), r)
+	if err != nil {
+		return fmt.Errorf("error getting sts %w", err)
 	}
-
-	opts := []patch.CalculateOption{
-		patch.IgnoreStatusFields(),
-		ignoreKubernetesTokenVolumeMounts(),
-		ignoreDefaultToleration(),
-		ignoreExistingVolumes(volumes),
-	}
+	// we cannot use CurrentRevision as this is never updated for OnDelete
+	// update strategy https://github.com/kubernetes/kubernetes/pull/106059
+	updateStsRevision := sts.Status.UpdateRevision
 
 	for i := range podList.Items {
 		pod := podList.Items[i]
 
-		patchResult, err := patch.DefaultPatchMaker.Calculate(&pod, &artificialPod, opts...)
-		if err != nil {
-			return err
-		}
-
-		if !patchResult.IsEmpty() {
-			r.logger.Info("Changes in Pod definition other than activeDeadlineSeconds, configurator and Redpanda container name. Deleting pod",
+		// check pod revision if differ delete pod
+		podRevision := getPodRevision(&pod)
+		if podRevision != updateStsRevision {
+			r.logger.Info("Pod revision and sts revision does not match. Deleting pod to allow recreating it",
 				"pod-name", pod.Name,
-				"patch", patchResult.Patch)
+				"pod-revision", podRevision,
+				"sts-revision", updateStsRevision)
 			if err = r.Delete(ctx, &pod); err != nil {
 				return fmt.Errorf("unable to remove Redpanda pod: %w", err)
 			}
@@ -160,6 +143,34 @@ func (r *StatefulSetResource) rollingUpdate(
 	}
 
 	return nil
+}
+
+func getOrderedPods(
+	ctx context.Context,
+	pandaCluster *redpandav1alpha1.Cluster,
+	client k8sclient.Client,
+) (*corev1.PodList, error) {
+	var podList corev1.PodList
+	err := client.List(ctx, &podList, &k8sclient.ListOptions{
+		Namespace:     pandaCluster.Namespace,
+		LabelSelector: labels.ForCluster(pandaCluster).AsClientSelector(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("unable to list panda pods: %w", err)
+	}
+
+	sort.Slice(podList.Items, func(i, j int) bool {
+		return podList.Items[i].Name < podList.Items[j].Name
+	})
+	return &podList, nil
+}
+
+func getSts(
+	ctx context.Context, key types.NamespacedName, client k8sclient.Client,
+) (*appsv1.StatefulSet, error) {
+	var sts appsv1.StatefulSet
+	err := client.Get(ctx, key, &sts)
+	return &sts, err
 }
 
 func (r *StatefulSetResource) updateStatefulSet(
@@ -218,148 +229,6 @@ func (r *StatefulSetResource) updateUpgradingStatus(
 	}
 
 	return nil
-}
-
-func ignoreExistingVolumes(
-	volumes map[string]interface{},
-) patch.CalculateOption {
-	return func(current, modified []byte) ([]byte, []byte, error) {
-		current, err := deleteExistingVolumes(current, volumes)
-		if err != nil {
-			return []byte{}, []byte{}, fmt.Errorf("could not delete configurator init container field from current byte sequence: %w", err)
-		}
-
-		modified, err = deleteExistingVolumes(modified, volumes)
-		if err != nil {
-			return []byte{}, []byte{}, fmt.Errorf("could not delete configurator init container field from modified byte sequence: %w", err)
-		}
-
-		return current, modified, nil
-	}
-}
-
-func deleteExistingVolumes(
-	obj []byte, volumes map[string]interface{},
-) ([]byte, error) {
-	var pod corev1.Pod
-	err := json.Unmarshal(obj, &pod)
-	if err != nil {
-		return nil, fmt.Errorf("could not unmarshal byte sequence: %w", err)
-	}
-
-	var newVolumes []corev1.Volume
-	for i := range pod.Spec.Volumes {
-		_, ok := volumes[pod.Spec.Volumes[i].Name]
-		if !ok {
-			newVolumes = append(newVolumes, pod.Spec.Volumes[i])
-		}
-	}
-	pod.Spec.Volumes = newVolumes
-
-	obj, err = json.Marshal(pod)
-	if err != nil {
-		return nil, fmt.Errorf("could not marshal byte sequence: %w", err)
-	}
-
-	return obj, nil
-}
-
-func ignoreDefaultToleration() patch.CalculateOption {
-	return func(current, modified []byte) ([]byte, []byte, error) {
-		current, err := deleteDefaultToleration(current)
-		if err != nil {
-			return []byte{}, []byte{}, fmt.Errorf("could not delete configurator init container field from current byte sequence: %w", err)
-		}
-
-		modified, err = deleteDefaultToleration(modified)
-		if err != nil {
-			return []byte{}, []byte{}, fmt.Errorf("could not delete configurator init container field from modified byte sequence: %w", err)
-		}
-
-		return current, modified, nil
-	}
-}
-
-func deleteDefaultToleration(obj []byte) ([]byte, error) {
-	var pod corev1.Pod
-	err := json.Unmarshal(obj, &pod)
-	if err != nil {
-		return nil, fmt.Errorf("could not unmarshal byte sequence: %w", err)
-	}
-
-	var newToleration []corev1.Toleration
-	tolerations := pod.Spec.Tolerations
-	for i := range tolerations {
-		switch tolerations[i].Key {
-		case "node.kubernetes.io/not-ready":
-		case "node.kubernetes.io/unreachable":
-			continue
-		default:
-			newToleration = append(newToleration, tolerations[i])
-		}
-	}
-	pod.Spec.Tolerations = newToleration
-
-	obj, err = json.Marshal(pod)
-	if err != nil {
-		return nil, fmt.Errorf("could not marshal byte sequence: %w", err)
-	}
-
-	return obj, nil
-}
-
-func ignoreKubernetesTokenVolumeMounts() patch.CalculateOption {
-	return func(current, modified []byte) ([]byte, []byte, error) {
-		current, err := deleteKubernetesTokenVolumeMounts(current)
-		if err != nil {
-			return []byte{}, []byte{}, fmt.Errorf("could not delete configurator init container field from current byte sequence: %w", err)
-		}
-
-		modified, err = deleteKubernetesTokenVolumeMounts(modified)
-		if err != nil {
-			return []byte{}, []byte{}, fmt.Errorf("could not delete configurator init container field from modified byte sequence: %w", err)
-		}
-
-		return current, modified, nil
-	}
-}
-
-func deleteKubernetesTokenVolumeMounts(obj []byte) ([]byte, error) {
-	var pod corev1.Pod
-	err := json.Unmarshal(obj, &pod)
-	if err != nil {
-		return nil, fmt.Errorf("could not unmarshal byte sequence: %w", err)
-	}
-
-	tokenVolumeName := fmt.Sprintf("%s-token-", pod.Name)
-	containers := pod.Spec.Containers
-	for i := range containers {
-		c := containers[i]
-		for j := range c.VolumeMounts {
-			vol := c.VolumeMounts[j]
-			if strings.HasPrefix(vol.Name, tokenVolumeName) {
-				c.VolumeMounts = append(c.VolumeMounts[:j], c.VolumeMounts[j+1:]...)
-			}
-		}
-	}
-
-	initContainers := pod.Spec.InitContainers
-	for i := range initContainers {
-		ic := initContainers[i]
-		for j := range ic.VolumeMounts {
-			vol := ic.VolumeMounts[j]
-			if strings.HasPrefix(vol.Name, tokenVolumeName) {
-				ic.VolumeMounts = append(ic.VolumeMounts[:j], ic.VolumeMounts[j+1:]...)
-			}
-		}
-	}
-
-	obj, err = json.Marshal(pod)
-	if err != nil {
-		return nil, fmt.Errorf("could not marshal byte sequence: %w", err)
-	}
-
-	return obj, nil
 }
 
 // Temporarily using the status/ready endpoint until we have a specific one for upgrading.
@@ -453,4 +322,14 @@ type RequeueAfterError struct {
 
 func (e *RequeueAfterError) Error() string {
 	return fmt.Sprintf("RequeueAfterError %s", e.Msg)
+}
+
+// getPodRevision gets the revision of Pod by inspecting the StatefulSetRevisionLabel. If pod has no revision the empty
+// string is returned.
+// see https://github.com/kubernetes/kubernetes/blob/b8af116327cd5d8e5411cbac04e7d4d11d22485d/pkg/controller/statefulset/stateful_set_utils.go#L420 for reference
+func getPodRevision(pod *corev1.Pod) string {
+	if pod.Labels == nil {
+		return ""
+	}
+	return pod.Labels[appsv1.StatefulSetRevisionLabel]
 }
