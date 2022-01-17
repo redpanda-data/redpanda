@@ -7,73 +7,69 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import defaultdict
 import json
 import random
 
 from ducktape.mark.resource import cluster
-from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
-from rptest.clients.kafka_cli_tools import KafkaCliTools
+
 from rptest.clients.types import TopicSpec
-
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.http_server import HttpServer
-from rptest.services.redpanda import RedpandaService
 
 
-class MetricsReporterTest(Test):
-    def __init__(self, test_ctx, *args, **kwargs):
+class MetricsReporterTest(RedpandaTest):
+    def __init__(self, test_ctx, num_brokers):
         self._ctx = test_ctx
-        super(MetricsReporterTest, self).__init__(test_context=test_ctx)
+        self.http = HttpServer(self._ctx)
+        super(MetricsReporterTest, self).__init__(
+            test_context=test_ctx,
+            num_brokers=num_brokers,
+            extra_rp_conf={
+                "health_monitor_tick_interval": 1000,
+                # report every two seconds
+                "metrics_reporter_tick_interval": 2000,
+                "metrics_reporter_report_interval": 1000,
+                "enable_metrics_reporter": True,
+                "metrics_reporter_url": f"{self.http.url}/metrics",
+            })
 
-    """
-    Validates key availability properties of the system using a single
-    partition.
-    """
-
-    @cluster(num_nodes=4)
-    def test_redpanda_metrics_reporting(self):
-        """
-        Testing if when fetching from single node all partitions are 
-        returned in round robin fashion
-        """
-        # setup http server
-        http = HttpServer(self._ctx)
-        http.start()
-        # report every two seconds
-        extra_conf = {
-            "health_monitor_tick_interval": 1000,
-            "metrics_reporter_tick_interval": 2000,
-            "metrics_reporter_report_interval": 1000,
-            "enable_metrics_reporter": True,
-            "metrics_reporter_url": f"{http.url}/metrics",
-        }
-        self.redpanda = RedpandaService(self.test_context,
-                                        3,
-                                        KafkaCliTools,
-                                        extra_rp_conf=extra_conf)
-
+    def setUp(self):
+        # Start HTTP server before redpanda
+        self.http.start()
         self.redpanda.start()
 
+    def _test_redpanda_metrics_reporting(self):
+        """
+        Test that redpanda nodes send well formed messages to the metrics endpoint
+        """
         total_topics = 5
         total_partitions = 0
         for _ in range(0, total_topics):
             partitions = random.randint(1, 8)
             total_partitions += partitions
-            self.redpanda.create_topic(
-                [TopicSpec(partition_count=partitions, replication_factor=3)])
+            self.redpanda.create_topic([
+                TopicSpec(partition_count=partitions,
+                          replication_factor=len(self.redpanda.nodes))
+            ])
 
         # create topics
         self.redpanda.logger.info(
             f"created {total_topics} topics with {total_partitions} partitions"
         )
 
-        def _has_request():
-            return len(http.requests) > 5
+        def _state_up_to_date():
+            if self.http.requests:
+                r = json.loads(self.http.requests[-1]['body'])
+                self.logger.info(f"Latest request: {r}")
+                return r['topic_count'] == total_topics
+            else:
+                self.logger.info("No requests yet")
+            return False
 
-        wait_until(_has_request, 20, backoff_sec=1)
-        http.stop()
-        metadata = [json.loads(r['body']) for r in http.requests]
+        wait_until(_state_up_to_date, 20, backoff_sec=1)
+        self.http.stop()
+        metadata = [json.loads(r['body']) for r in self.http.requests]
         for m in metadata:
             self.redpanda.logger.info(m)
 
@@ -89,7 +85,7 @@ class MetricsReporterTest(Test):
         assert last['partition_count'] == total_partitions
         nodes_meta = last['nodes']
 
-        assert len(last['nodes']) == 3
+        assert len(last['nodes']) == len(self.redpanda.nodes)
 
         assert all('node_id' in n for n in nodes_meta)
         assert all('cpu_count' in n for n in nodes_meta)
@@ -97,3 +93,45 @@ class MetricsReporterTest(Test):
         assert all('uptime_ms' in n for n in nodes_meta)
         assert all('is_alive' in n for n in nodes_meta)
         assert all('disks' in n for n in nodes_meta)
+
+        # Check cluster UUID and creation time survive a restart
+        for n in self.redpanda.nodes:
+            self.redpanda.stop_node(n)
+
+        pre_restart_requests = len(self.http.requests)
+
+        self.http.start()
+        for n in self.redpanda.nodes:
+            self.redpanda.start_node(n)
+
+        wait_until(lambda: len(self.http.requests) > pre_restart_requests,
+                   timeout_sec=20,
+                   backoff_sec=1)
+        assert_fields_are_the_same(metadata, 'cluster_uuid')
+        assert_fields_are_the_same(metadata, 'cluster_created_ts')
+
+
+class MultiNodeMetricsReporterTest(MetricsReporterTest):
+    """
+    Metrics reporting on a typical 3 node cluster
+    """
+    def __init__(self, test_ctx):
+        super().__init__(test_ctx, 3)
+
+    @cluster(num_nodes=4)
+    def test_redpanda_metrics_reporting(self):
+        self._test_redpanda_metrics_reporting()
+
+
+class SingleNodeMetricsReporterTest(MetricsReporterTest):
+    """
+    Metrics reporting on a single node cluster: verify that our cluster_uuid
+    generation works properly with fewer raft_configuration batches in the
+    controller log than a multi-node system has.
+    """
+    def __init__(self, test_ctx):
+        super().__init__(test_ctx, 1)
+
+    @cluster(num_nodes=2)
+    def test_redpanda_metrics_reporting(self):
+        self._test_redpanda_metrics_reporting()
