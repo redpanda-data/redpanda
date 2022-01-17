@@ -659,7 +659,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
       std::move(index),
       nullptr,
       std::nullopt,
-      std::nullopt);
+      std::nullopt,
+      storage::caching_policy::none);
 }
 
 ss::future<std::vector<compacted_index_reader>> make_indices_readers(

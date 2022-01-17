@@ -385,7 +385,8 @@ ss::future<> kvstore::recover() {
               [] { return std::nullopt; },
               _as,
               config::shard_local_cfg().storage_read_buffer_size(),
-              config::shard_local_cfg().storage_read_readahead_count())
+              config::shard_local_cfg().storage_read_readahead_count(),
+              caching_policy::none)
               .get0();
 
         replay_segments_in_thread(std::move(segments));

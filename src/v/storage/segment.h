@@ -69,7 +69,8 @@ public:
       segment_index,
       segment_appender_ptr,
       std::optional<compacted_index_writer>,
-      std::optional<batch_cache_index>) noexcept;
+      std::optional<batch_cache_index>,
+      caching_policy) noexcept;
     ~segment() noexcept = default;
     segment(segment&&) noexcept = default;
     // rwlock does not have move-assignment
@@ -128,6 +129,7 @@ public:
     std::optional<std::reference_wrapper<const batch_cache_index>>
     cache() const;
     bool has_cache() const;
+    caching_policy get_caching_policy() const;
     batch_cache_index::read_result cache_get(
       model::offset offset,
       model::offset max_offset,
@@ -148,6 +150,7 @@ public:
 private:
     void set_close();
     void cache_truncate(model::offset offset);
+    void cache_prefix_truncate(model::offset offset);
     void check_segment_not_closed(const char* msg);
     ss::future<> do_truncate(model::offset prev_last_offset, size_t physical);
     ss::future<> do_close();
@@ -183,6 +186,7 @@ private:
     segment_appender_ptr _appender;
     std::optional<compacted_index_writer> _compaction_index;
     std::optional<batch_cache_index> _cache;
+    caching_policy _caching_policy;
     ss::rwlock _destructive_ops;
     ss::gate _gate;
 
@@ -211,7 +215,8 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size,
-  unsigned read_ahead);
+  unsigned read_ahead,
+  caching_policy);
 
 ss::future<ss::lw_shared_ptr<segment>> make_segment(
   const ntp_config& ntpc,
@@ -318,7 +323,7 @@ inline batch_cache_index::read_result segment::cache_get(
     };
 }
 inline void segment::cache_put(const model::record_batch& batch) {
-    if (likely(bool(_cache))) {
+    if (likely(_cache && _caching_policy != caching_policy::none)) {
         _cache->put(batch);
     }
 }

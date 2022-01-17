@@ -63,7 +63,8 @@ struct context {
           std::move(indexer),
           std::move(appender),
           std::nullopt,
-          std::nullopt);
+          std::nullopt,
+          caching_policy::none);
         replayer_opt = log_replayer(*_seg);
     }
 

@@ -48,14 +48,16 @@ segment::segment(
   segment_index i,
   segment_appender_ptr a,
   std::optional<compacted_index_writer> ci,
-  std::optional<batch_cache_index> c) noexcept
+  std::optional<batch_cache_index> c,
+  caching_policy cp) noexcept
   : _appender_callbacks(this)
   , _tracker(tkr)
   , _reader(std::move(r))
   , _idx(std::move(i))
   , _appender(std::move(a))
   , _compaction_index(std::move(ci))
-  , _cache(std::move(c)) {
+  , _cache(std::move(c))
+  , _caching_policy(cp) {
     if (_appender) {
         _appender->set_callbacks(&_appender_callbacks);
     }
@@ -165,6 +167,8 @@ ss::future<> segment::do_release_appender(
             });
       });
 }
+
+caching_policy segment::get_caching_policy() const { return _caching_policy; }
 
 ss::future<> segment::release_appender(readers_cache* readers_cache) {
     vassert(_appender, "cannot release a null appender");
@@ -343,6 +347,13 @@ void segment::cache_truncate(model::offset offset) {
         _cache->truncate(offset);
     }
 }
+
+void segment::cache_prefix_truncate(model::offset offset) {
+    if (likely(bool(_cache))) {
+        _cache->prefix_truncate(offset);
+    }
+}
+
 ss::future<> segment::do_compaction_index_batch(const model::record_batch& b) {
     vassert(!b.compressed(), "wrong method. Call compact_index_batch. {}", b);
     auto& w = compaction_index();
@@ -481,6 +492,11 @@ void segment::advance_stable_offset(size_t offset) {
 
     _reader.set_file_size(it->first);
     _tracker.stable_offset = it->second;
+    // only caching pending writes, truncate cached batches at new stable
+    // offsets as they are no longer needed
+    if (_caching_policy == caching_policy::pending_writes) {
+        cache_prefix_truncate(it->second);
+    }
     _inflight.erase(_inflight.begin(), it);
 }
 
@@ -545,7 +561,8 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size,
-  unsigned read_ahead) {
+  unsigned read_ahead,
+  caching_policy cp) {
     auto const meta = segment_path::parse_segment_filename(
       path.filename().string());
     if (!meta || meta->version != record_version_type::v1) {
@@ -608,7 +625,8 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
       std::move(idx),
       nullptr,
       std::nullopt,
-      std::move(batch_cache));
+      std::move(batch_cache),
+      cp);
 }
 
 ss::future<ss::lw_shared_ptr<segment>> make_segment(
@@ -629,7 +647,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
              sanitize_fileops,
              std::move(batch_cache),
              buf_size,
-             read_ahead)
+             read_ahead,
+             ntpc.caching_policy())
       .then([path, &ntpc, sanitize_fileops, pc](
               ss::lw_shared_ptr<segment> seg) {
           return with_segment(
@@ -653,7 +672,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                           std::nullopt,
                           seg->has_cache()
                             ? std::optional(std::move(seg->cache()->get()))
-                            : std::nullopt));
+                            : std::nullopt,
+                          seg->get_caching_policy()));
                   });
             });
       })
@@ -679,7 +699,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                           std::move(compact),
                           seg->has_cache()
                             ? std::optional(std::move(seg->cache()->get()))
-                            : std::nullopt));
+                            : std::nullopt,
+                          seg->get_caching_policy()));
                   });
             });
       });

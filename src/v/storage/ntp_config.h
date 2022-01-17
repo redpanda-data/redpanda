@@ -13,6 +13,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "ssx/sformat.h"
+#include "storage/types.h"
 #include "tristate.h"
 
 #include <seastar/core/sstring.hh>
@@ -38,8 +39,8 @@ public:
         // will be disabled if there is no value set the default will be used
         tristate<size_t> retention_bytes{std::nullopt};
         tristate<std::chrono::milliseconds> retention_time{std::nullopt};
-        // if set, log will not use batch cache
-        with_cache cache_enabled = with_cache::yes;
+        // controls log caching policy
+        caching_policy caching = caching_policy::full;
         // if set the value will be used during parititon recovery
         topic_recovery_enabled recovery_enabled = topic_recovery_enabled::yes;
         // if set the value will control how data is uploaded and retrieved
@@ -133,7 +134,12 @@ public:
     }
 
     with_cache cache_enabled() const {
-        return with_cache(!has_overrides() || _overrides->cache_enabled);
+        return with_cache(
+          !has_overrides() || _overrides->caching != caching_policy::none);
+    }
+
+    caching_policy caching_policy() const {
+        return has_overrides() ? _overrides->caching : caching_policy::full;
     }
 
     void set_overrides(default_overrides o) {
