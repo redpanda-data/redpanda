@@ -30,7 +30,6 @@
 #include <ctll/fixed_string.hpp>
 #include <ctre/functions.hpp>
 #include <fmt/ostream.h>
-#include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>
 #include <rapidjson/ostreamwrapper.h>
 #include <rapidjson/rapidjson.h>
@@ -261,21 +260,19 @@ manifest manifest::difference(const manifest& remote_set) const {
 }
 
 ss::future<> manifest::update(ss::input_stream<char> is) {
-    using namespace rapidjson;
     iobuf result;
     auto os = make_iobuf_ref_output_stream(result);
     co_await ss::copy(is, os);
     iobuf_istreambuf ibuf(result);
     std::istream stream(&ibuf);
-    Document m;
-    IStreamWrapper wrapper(stream);
+    json::Document m;
+    rapidjson::IStreamWrapper wrapper(stream);
     m.ParseStream(wrapper);
     update(m);
     co_return;
 }
 
-void manifest::update(const rapidjson::Document& m) {
-    using namespace rapidjson;
+void manifest::update(const json::Document& m) {
     auto ver = model::partition_id(m["version"].GetInt());
     if (ver != static_cast<int>(manifest_version::v1)) {
         throw std::runtime_error("manifest version not supported");
@@ -348,9 +345,8 @@ serialized_json_stream manifest::serialize() const {
 }
 
 void manifest::serialize(std::ostream& out) const {
-    using namespace rapidjson;
-    OStreamWrapper wrapper(out);
-    Writer<OStreamWrapper> w(wrapper);
+    rapidjson::OStreamWrapper wrapper(out);
+    rapidjson::Writer<rapidjson::OStreamWrapper> w(wrapper);
     w.StartObject();
     w.Key("version");
     w.Int(static_cast<int>(manifest_version::v1));
@@ -428,21 +424,19 @@ topic_manifest::topic_manifest()
   : _topic_config(std::nullopt) {}
 
 ss::future<> topic_manifest::update(ss::input_stream<char> is) {
-    using namespace rapidjson;
     iobuf result;
     auto os = make_iobuf_ref_output_stream(result);
     co_await ss::copy(is, os);
     iobuf_istreambuf ibuf(result);
     std::istream stream(&ibuf);
-    Document m;
-    IStreamWrapper wrapper(stream);
+    json::Document m;
+    rapidjson::IStreamWrapper wrapper(stream);
     m.ParseStream(wrapper);
     update(m);
     co_return;
 }
 
-void topic_manifest::update(const rapidjson::Document& m) {
-    using namespace rapidjson;
+void topic_manifest::update(const json::Document& m) {
     auto ver = m["version"].GetInt();
     if (ver != static_cast<int>(topic_manifest_version::v1)) {
         throw std::runtime_error("topic manifest version not supported");
@@ -511,9 +505,8 @@ serialized_json_stream topic_manifest::serialize() const {
 }
 
 void topic_manifest::serialize(std::ostream& out) const {
-    using namespace rapidjson;
-    OStreamWrapper wrapper(out);
-    Writer<OStreamWrapper> w(wrapper);
+    rapidjson::OStreamWrapper wrapper(out);
+    rapidjson::Writer<rapidjson::OStreamWrapper> w(wrapper);
     w.StartObject();
     w.Key("version");
     w.Int(static_cast<int>(manifest_version::v1));
