@@ -39,7 +39,7 @@ class FranzGoVerifiableTest(RedpandaTest):
 
         self._producer = FranzGoVerifiableProducer(
             ctx, self.redpanda, self.topic, FranzGoVerifiableTest.MSG_SIZE,
-            10000000, self._node_for_franz_go)
+            1000000000, self._node_for_franz_go)
         self._seq_consumer = FranzGoVerifiableSeqConsumer(
             ctx, self.redpanda, self.topic, FranzGoVerifiableTest.MSG_SIZE,
             self._node_for_franz_go)
@@ -56,19 +56,35 @@ class FranzGoVerifiableTest(RedpandaTest):
         small_producer.wait()
 
     @cluster(num_nodes=4)
-    def test_simple(self):
+    def test_without_producer_in_background(self):
         # Need create json file for consumer at first
         self._create_json_file()
-
-        self._producer.start()
-
-        # Produce some data
-        time.sleep(60)
 
         self._seq_consumer.start()
         self._rand_consumer.start()
 
         for i in range(30):
             node_for_restart = random.randrange(len(self.redpanda_nodes))
-            self.redpanda.restart_nodes(self.redpanda_nodes[node_for_restart])
-            time.sleep(10)
+            self.redpanda.restart_nodes(self.redpanda_nodes[node_for_restart],
+                                        start_timeout=200)
+            time.sleep(30)
+
+    @cluster(num_nodes=4)
+    def test_with_all_type_of_loads(self):
+        # Need create json file for consumer at first
+        self._create_json_file()
+
+        self._producer.start()
+
+        # Produce some data
+        time.sleep(10)
+
+        self._seq_consumer.start()
+        self._rand_consumer.start()
+
+        for i in range(30):
+            node_for_restart = random.randrange(len(self.redpanda_nodes))
+            self.redpanda.restart_nodes(self.redpanda_nodes[node_for_restart],
+                                        start_timeout=200,
+                                        stop_timeout=200)
+            time.sleep(30)
