@@ -35,9 +35,10 @@ using server = ctx_server<service>;
 
 template<typename Handler>
 auto wrap(ss::gate& g, one_shot& os, Handler h) {
-    return [&g, &os, h{std::move(h)}](
+    return [&g, &os, _h{std::move(h)}](
              server::request_t rq,
              server::reply_t rp) -> ss::future<server::reply_t> {
+        auto h{_h};
         auto units = co_await os();
         auto guard = gate_guard(g);
         co_return co_await h(std::move(rq), std::move(rp));
