@@ -342,4 +342,19 @@ struct compaction_result {
     size_t size_after;
     friend std::ostream& operator<<(std::ostream&, const compaction_result&);
 };
+/**
+ * Enum class describing log desired caching policy. The caching policy controls
+ * that which of the batches written or read from a log are stored in the batch
+ * cache.
+ *
+ * full - all written and read batches are placed in the batch cache
+ * pending_writes - only pending inflight writes are stored in the batch cache
+ * none - ntp doesn't use batch cache at all
+ */
+enum class caching_policy : int8_t {
+    full,
+    pending_writes,
+    none,
+};
+
 } // namespace storage
