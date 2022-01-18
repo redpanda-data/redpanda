@@ -61,11 +61,11 @@ licenses           @senior7515 @dswang
 /src/v/reflection      @graphcareful        @benpope
 /src/v/resource_mgmt   @mmaslankaprv
 /src/v/rpc             @mmaslankaprv        @jcsp
-/src/v/s3              @lazin               @ivotron
+/src/v/s3              @lazin
 /src/v/security        @dotnwat
 /src/v/serde           @felixguendling      @benpope
 /src/v/ssx             @benpope
-/src/v/storage         @dotnwat             @ivotron        @lenaan      @vadimplh
+/src/v/storage         @dotnwat             @lenaan      @vadimplh
 /src/v/syschecks       @mmaslankaprv
 /src/v/test_utils      @graphcareful
 /src/v/utils           @benpope
