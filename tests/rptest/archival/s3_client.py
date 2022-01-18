@@ -246,6 +246,15 @@ class S3Client:
                                 ETag=resp['ETag'][1:-1],
                                 ContentLength=resp['ContentLength'])
 
+    def delete_bucket(self, name):
+        try:
+            self._cli.delete_bucket(Bucket=name)
+        except Exception:
+            self.logger.warn("Error deleting bucket, contents:")
+            for o in self.list_objects(name):
+                self.logger.warn(f"  {o.Key}")
+            raise
+
     def write_object_to_file(self, bucket, key, dest_path):
         """Get object and write it to file"""
         resp = self._get_object(bucket, key)
