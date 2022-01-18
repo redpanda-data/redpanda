@@ -91,6 +91,12 @@ process_result_stages
     return process_dispatch<Request>::process(std::move(ctx), g);
 }
 
+class kafka_authentication_exception : public std::runtime_error {
+public:
+    explicit kafka_authentication_exception(const std::string& m)
+      : std::runtime_error(m) {}
+};
+
 /*
  * process a handshake request. if it doesn't result in a sasl mechanism being
  * selected then client negotiation failed. otherwise, move to authentication.
@@ -139,8 +145,10 @@ handle_auth_initial(request_context&& ctx, ss::smp_service_group g) {
 
     default:
         return ss::make_exception_future<response_ptr>(
-          std::runtime_error(fmt::format(
-            "Unexpected request during authentication: {}", ctx.header().key)));
+          kafka_authentication_exception(fmt_with_ctx(
+            fmt::format,
+            "Unexpected request during authentication: {}",
+            ctx.header().key)));
     }
 }
 
@@ -153,7 +161,8 @@ handle_auth(request_context&& ctx, ss::smp_service_group g) {
     case security::sasl_server::sasl_state::handshake:
         if (unlikely(ctx.header().key != sasl_handshake_handler::api::key)) {
             return ss::make_exception_future<response_ptr>(
-              std::runtime_error(fmt::format(
+              kafka_authentication_exception(fmt_with_ctx(
+                fmt::format,
                 "Unexpected auth request {} expected handshake",
                 ctx.header().key)));
         }
@@ -162,7 +171,8 @@ handle_auth(request_context&& ctx, ss::smp_service_group g) {
     case security::sasl_server::sasl_state::authenticate: {
         if (unlikely(ctx.header().key != sasl_authenticate_handler::api::key)) {
             return ss::make_exception_future<response_ptr>(
-              std::runtime_error(fmt::format(
+              kafka_authentication_exception(fmt_with_ctx(
+                fmt::format,
                 "Unexpected auth request {} expected authenticate",
                 ctx.header().key)));
         }
@@ -191,13 +201,16 @@ handle_auth(request_context&& ctx, ss::smp_service_group g) {
      * moment it is either send a response or close the connection.
      */
     case security::sasl_server::sasl_state::failed:
-        return ss::make_exception_future<response_ptr>(std::runtime_error(
-          "Authentication failed. Shutting down connection"));
+        return ss::make_exception_future<response_ptr>(
+          kafka_authentication_exception(
+            "Authentication failed. Shutting down connection"));
 
     default:
         return ss::make_exception_future<response_ptr>(
-          std::runtime_error(fmt::format(
-            "Unexpected request during authentication: {}", ctx.header().key)));
+          kafka_authentication_exception(fmt_with_ctx(
+            fmt::format,
+            "Unexpected request during authentication: {}",
+            ctx.header().key)));
     }
 }
 
