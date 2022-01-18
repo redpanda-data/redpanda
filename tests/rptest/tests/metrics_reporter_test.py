@@ -49,7 +49,7 @@ class MetricsReporterTest(RedpandaTest):
         for _ in range(0, total_topics):
             partitions = random.randint(1, 8)
             total_partitions += partitions
-            DefaultClient(self.redpanda).create_topic(
+            self.client().create_topic(
                 [TopicSpec(partition_count=partitions, replication_factor=3)])
 
         # create topics
