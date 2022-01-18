@@ -2,7 +2,6 @@ import http.server
 import socketserver
 import json
 import signal
-import sys
 
 
 class PrintingHandler(http.server.BaseHTTPRequestHandler):
@@ -30,6 +29,7 @@ class PrintingHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-type", "application/json")
         self.end_headers()
+
         # print request content
         req = {}
         req['method'] = self.command
@@ -40,6 +40,10 @@ class PrintingHandler(http.server.BaseHTTPRequestHandler):
                 req['content_length']).decode('ascii')
 
         print(json.dumps(req), flush=True)
+
+
+class ReuseAddressTcpServer(socketserver.TCPServer):
+    allow_reuse_address = True
 
 
 def main():
@@ -55,7 +59,7 @@ def main():
 
     parser = generate_options()
     options, _ = parser.parse_known_args()
-    with socketserver.TCPServer(("", options.port), PrintingHandler) as httpd:
+    with ReuseAddressTcpServer(("", options.port), PrintingHandler) as httpd:
 
         def _stop(*args):
             httpd.server_close()
