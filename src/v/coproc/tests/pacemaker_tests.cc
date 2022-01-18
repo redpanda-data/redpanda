@@ -214,8 +214,12 @@ FIXTURE_TEST(test_copro_delete_topic, coproc_test_fixture) {
                .then([this, target] {
                    model::topic_namespace tp{target.ns, target.tp.topic};
                    info("Deleting topic: {} ", tp);
-                   return root_fixture()->delete_topic(tp).then(
-                     [this, tp] { info("Topic {} deleted", tp); });
+                   std::vector<model::topic_namespace> topics{tp};
+                   return root_fixture()
+                     ->app.controller->get_topics_frontend()
+                     .local()
+                     .delete_topics(std::move(topics), model::no_timeout)
+                     .then([this, tp](auto) { info("Topic {} deleted", tp); });
                });
 
     // Push some data across input topic....
@@ -230,7 +234,10 @@ FIXTURE_TEST(test_copro_delete_topic, coproc_test_fixture) {
     }
     ss::when_all_succeed(fs.begin(), fs.end()).get();
     info("All produced onto: {}", tbd);
-    f.get();
+    f.handle_exception(
+       [this](std::exception_ptr e) { info("Exception detected: {}", e); })
+      .get();
+    info("Background delete topic request resolved: {}", tbd);
 
     /// Wait until all processing has completed for all fibers, choosing a large
     /// timeout in the event a delete occurs between writes, it may take some
@@ -242,6 +249,7 @@ FIXTURE_TEST(test_copro_delete_topic, coproc_test_fixture) {
           true,
           std::logical_and<>());
     }).get();
+    info("All fibers have completed");
 
     auto in_storage = root_fixture()->app.storage.invoke_on(
       *shard,
