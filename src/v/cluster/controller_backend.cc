@@ -376,6 +376,13 @@ void controller_backend::start_topics_reconciliation_loop() {
           [this] {
               return fetch_deltas()
                 .then([this] { return reconcile_topics(); })
+                .handle_exception_type(
+                  [](const ss::abort_requested_exception&) {
+                      // Shutting down: don't log this exception as an error
+                      vlog(
+                        clusterlog.debug,
+                        "Abort requested while reconciling topics");
+                  })
                 .handle_exception([](const std::exception_ptr& e) {
                     vlog(
                       clusterlog.error,
@@ -478,10 +485,17 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
                 continue;
             }
             vlog(clusterlog.info, "partition operation {} finished", *it);
+        } catch (ss::gate_closed_exception const&) {
+            vlog(
+              clusterlog.debug,
+              "gate_closed-exception while executing partition operation: {}",
+              *it);
+            stop = true;
+            continue;
         } catch (...) {
             vlog(
               clusterlog.error,
-              "exception while executing partiton operation: {} - {}",
+              "exception while executing partition operation: {} - {}",
               *it,
               std::current_exception());
             stop = true;

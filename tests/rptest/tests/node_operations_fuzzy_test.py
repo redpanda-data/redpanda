@@ -13,7 +13,7 @@ import time
 import requests
 
 from ducktape.mark import parametrize
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kcl import KCL
@@ -21,7 +21,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
 from rptest.services.admin import Admin
 from rptest.services.failure_injector import FailureInjector, FailureSpec
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
 from rptest.tests.end_to_end import EndToEndTest
 
 DECOMMISSION = "decommission"
@@ -112,7 +112,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
     nodes
     """
 
-    @cluster(num_nodes=7)
+    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     @parametrize(enable_failures=True)
     @parametrize(enable_failures=False)
     def test_node_opeartions(self, enable_failures):

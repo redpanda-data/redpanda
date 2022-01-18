@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 from ducktape.mark import matrix
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
@@ -16,6 +16,12 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.admin import Admin
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+
+LOG_ALLOW_LIST = RESTART_LOG_ALLOW_LIST + [
+    # raft - [follower: {id: {1}, revision: {9}}] [group_id:1, {kafka/topic-xyeyqcbyxi/0}] - recovery_stm.cc:422 - recovery append entries error: rpc::errc::exponential_backoff
+    "raft - .*recovery append entries error"
+]
 
 
 class PrefixTruncateRecoveryTest(RedpandaTest):
@@ -83,7 +89,7 @@ class PrefixTruncateRecoveryTest(RedpandaTest):
         self.kafka_tools.produce(self.topic, 1024, 1024, acks=acks)
         return False
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=LOG_ALLOW_LIST)
     @matrix(acks=[-1, 1], start_empty=[True, False])
     def test_prefix_truncate_recovery(self, acks, start_empty):
         # cover boundary conditions of partition being empty/non-empty

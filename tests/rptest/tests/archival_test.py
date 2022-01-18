@@ -7,7 +7,7 @@
 # https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
 
 from rptest.clients.kafka_cat import KafkaCat
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.archival.s3_client import S3Client
 from rptest.services.redpanda import RedpandaService
@@ -31,6 +31,15 @@ import sys
 import re
 
 NTP = namedtuple("NTP", ['ns', 'topic', 'partition', 'revision'])
+
+# Log errors expected when connectivity between redpanda and the S3
+# backend is disrupted
+CONNECTION_ERROR_LOGS = [
+    "archival - .*Failed to create archivers",
+
+    # e.g. archival - [fiber1] - service.cc:484 - Failed to upload 3 segments out of 4
+    r"archival - .*Failed to upload \d+ segments"
+]
 
 
 class ValidationError(Exception):
@@ -216,7 +225,7 @@ class ArchivalTest(RedpandaTest):
         self.kafka_tools.produce(self.topic, 10000, 1024)
         validate(self._quick_verify, self.logger, 90)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
     def test_isolate(self):
         """Verify that our isolate/rejoin facilities actually work"""
         with firewall_blocked(self.redpanda.nodes, self._get_s3_endpoint_ip()):
@@ -236,7 +245,7 @@ class ArchivalTest(RedpandaTest):
                 assert topic_manifest_id == keys[0], \
                     f"Bucket should be empty or contain only {topic_manifest_id}, but contains {keys[0]}"
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
     def test_reconnect(self):
         """Disconnect redpanda from S3, write data, connect redpanda to S3
         and check that the data is uploaded"""
@@ -248,7 +257,7 @@ class ArchivalTest(RedpandaTest):
             # will even try to upload new segments
         validate(self._quick_verify, self.logger, 90)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
     def test_one_node_reconnect(self):
         """Disconnect one redpanda node from S3, write data, connect redpanda to S3
         and check that the data is uploaded"""
@@ -262,7 +271,7 @@ class ArchivalTest(RedpandaTest):
             # will even try to upload new segments
         validate(self._quick_verify, self.logger, 90)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
     def test_connection_drop(self):
         """Disconnect redpanda from S3 during the active upload, restore connection
         and check that everything is uploaded"""
@@ -274,7 +283,7 @@ class ArchivalTest(RedpandaTest):
             # will even try to upload new segments
         validate(self._quick_verify, self.logger, 90)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
     def test_connection_flicker(self):
         """Disconnect redpanda from S3 during the active upload for short period of time
         during upload and check that everything is uploaded"""
@@ -400,7 +409,7 @@ class ArchivalTest(RedpandaTest):
 
         validate(check_upload, self.logger, 90)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
     def test_retention_archival_coordination(self):
         """
         Test that only archived segments can be evicted and that eviction

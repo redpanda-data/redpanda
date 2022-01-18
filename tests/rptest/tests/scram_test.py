@@ -10,7 +10,7 @@ import random
 import string
 import requests
 import time
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec

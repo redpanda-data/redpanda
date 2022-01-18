@@ -12,7 +12,6 @@ import time
 import re
 import random
 
-from ducktape.mark.resource import cluster
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
@@ -24,8 +23,16 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.kaf_producer import KafProducer
 from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 
 ELECTION_TIMEOUT = 10
+
+# Logs that may appear when a node is network-isolated
+ISOLATION_LOG_ALLOW_LIST = [
+    # rpc - server.cc:91 - vectorized internal rpc protocol - Error[shutting down] remote address: 10.89.0.16:60960 - std::__1::system_error (error system:32, sendmsg: Broken pipe)
+    "rpc - .*Broken pipe",
+]
 
 
 class MetricCheckFailed(Exception):
@@ -475,7 +482,7 @@ class RaftAvailabilityTest(RedpandaTest):
         producer.wait()
         producer.free()
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_follower_isolation(self):
         """
         Simplest HA test.  Stop the leader for our partition.  Validate that

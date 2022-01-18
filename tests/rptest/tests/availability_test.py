@@ -9,11 +9,11 @@
 
 import random
 
-from ducktape.mark.resource import cluster
 from rptest.clients.default import DefaultClient
+from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.services.failure_injector import FailureSpec
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
 from rptest.tests.e2e_finjector import EndToEndFinjectorTest
 
 
@@ -33,7 +33,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
                             producer_timeout_sec=producer_timeout_sec,
                             consumer_timeout_sec=consumer_timeout_sec)
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_availability_when_one_node_failed(self):
         self.redpanda = RedpandaService(
             self.test_context,
@@ -60,7 +60,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
 
         self.validate_records()
 
-    @cluster(num_nodes=5)
+    @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_recovery_after_catastrophic_failure(self):
 
         self.redpanda = RedpandaService(

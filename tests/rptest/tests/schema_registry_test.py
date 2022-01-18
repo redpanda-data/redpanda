@@ -15,7 +15,7 @@ import time
 import random
 import os
 
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from ducktape.services.background_thread import BackgroundThreadService
 
 from rptest.clients.types import TopicSpec

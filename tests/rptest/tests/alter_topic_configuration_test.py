@@ -10,7 +10,7 @@
 import random
 import string
 
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from ducktape.mark import parametrize
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool

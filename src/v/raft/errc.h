@@ -89,7 +89,7 @@ struct errc_category final : public std::error_category {
         case errc::replicate_batcher_cache_error:
             return "unable to append batch to replicate batcher cache";
         case errc::group_not_exists:
-            return "raft group does not exists on target broker";
+            return "raft group does not exist on target broker";
         case errc::replicate_first_stage_exception:
             return "unable to finish replicate since exception was thrown in "
                    "first phase";
