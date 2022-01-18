@@ -20,11 +20,6 @@ from rptest.services.franz_go_verifiable_services import FranzGoVerifiableProduc
 
 
 class FranzGoVerifiableTest(RedpandaTest):
-    """
-    Start a kaf-based producer and consumer, then wait until the consumer has
-    observed a certain number of produced records.
-    """
-
     MSG_SIZE = 120000
 
     topics = (TopicSpec(partition_count=100, replication_factor=3), )
