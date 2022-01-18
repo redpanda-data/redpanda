@@ -396,6 +396,7 @@ ss::future<> admin_server::throw_on_error(
               id));
         case cluster::errc::update_in_progress:
         case cluster::errc::waiting_for_recovery:
+        case cluster::errc::no_leader_controller:
             throw ss::httpd::base_exception(
               fmt::format("Not ready ({})", ec.message()),
               ss::httpd::reply::status_type::service_unavailable);
