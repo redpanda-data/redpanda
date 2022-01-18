@@ -44,7 +44,7 @@ class HttpServer(BackgroundThreadService):
         node.account.ssh(f"mkdir -p {HttpServer.LOG_DIR}", allow_fail=False)
 
         cmd = f"python3 {HttpServer.SCRIPT} --port {self.port}"
-        cmd += f" | tee {HttpServer.STDOUT_CAPTURE} &"
+        cmd += f" | tee -a {HttpServer.STDOUT_CAPTURE} &"
 
         self.logger.debug(f"Starting HTTP server {self.url}")
         for line in node.account.ssh_capture(cmd):

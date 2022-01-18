@@ -12,12 +12,11 @@ import random
 
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
+
 from rptest.clients.default import DefaultClient
 from rptest.clients.types import TopicSpec
-
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.http_server import HttpServer
-from rptest.services.redpanda import RedpandaService
 
 
 class MetricsReporterTest(RedpandaTest):
@@ -35,21 +34,16 @@ class MetricsReporterTest(RedpandaTest):
                 "metrics_reporter_url": f"{self.http.url}/metrics",
             })
 
-    """
-    Validates key availability properties of the system using a single
-    partition.
-    """
+    def setUp(self):
+        # Start HTTP server before redpanda
+        self.http.start()
+        self.redpanda.start()
 
     @cluster(num_nodes=4)
     def test_redpanda_metrics_reporting(self):
         """
-        Testing if when fetching from single node all partitions are 
-        returned in round robin fashion
+        Test that redpanda nodes send well formed messages to the metrics endpoint
         """
-        # setup http server
-        self.http.start()
-        self.redpanda.start()
-
         total_topics = 5
         total_partitions = 0
         for _ in range(0, total_topics):
@@ -95,3 +89,19 @@ class MetricsReporterTest(RedpandaTest):
         assert all('uptime_ms' in n for n in nodes_meta)
         assert all('is_alive' in n for n in nodes_meta)
         assert all('disks' in n for n in nodes_meta)
+
+        # Check cluster UUID and creation time survive a restart
+        for n in self.redpanda.nodes:
+            self.redpanda.stop_node(n)
+
+        pre_restart_requests = len(self.http.requests)
+
+        self.http.start()
+        for n in self.redpanda.nodes:
+            self.redpanda.start_node(n)
+
+        wait_until(lambda: len(self.http.requests) > pre_restart_requests,
+                   timeout_sec=20,
+                   backoff_sec=1)
+        assert_fields_are_the_same(metadata, 'cluster_uuid')
+        assert_fields_are_the_same(metadata, 'cluster_created_ts')
