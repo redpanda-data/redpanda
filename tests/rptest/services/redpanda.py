@@ -49,7 +49,8 @@ DEFAULT_LOG_ALLOW_LIST = [
 
 # Log errors that are expected in tests that restart nodes mid-test
 RESTART_LOG_ALLOW_LIST = [
-    re.compile("(raft|rpc) - .*(disconnected_endpoint)"),
+    re.compile(
+        "(raft|rpc) - .*(disconnected_endpoint|Connection reset by peer)"),
     re.compile(
         "raft - .*recovery append entries error.*client_request_timeout"),
 ]
