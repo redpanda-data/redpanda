@@ -166,8 +166,6 @@ formatting is not particularly nice.
 The ascii art string literal is annotated with a compiler directive to
 indicate that this string is rarely used and can be stored in a location
 optimized for such data.
-
-Signed-off-by: Noah Watkins <noah@vectorized.io>
 ```
 
 The format of the subject is `area[/detail]: short description` and the entire
