@@ -218,6 +218,13 @@ class SchemaRegistryTest(RedpandaTest):
                              f"subjects/{subject}/versions/{version}",
                              headers=headers)
 
+    def _get_subjects_subject_versions_version_referenced_by(
+            self, subject, version, headers=HTTP_GET_HEADERS):
+        return self._request(
+            "GET",
+            f"subjects/{subject}/versions/{version}/referencedBy",
+            headers=headers)
+
     def _get_subjects_subject_versions(self,
                                        subject,
                                        deleted=False,
@@ -1000,3 +1007,9 @@ class SchemaRegistryTest(RedpandaTest):
         self.logger.info(result_raw)
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.text.strip() == simple_proto_def.strip()
+
+        result_raw = self._get_subjects_subject_versions_version_referenced_by(
+            "simple", 1)
+        self.logger.info(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json() == [2]
