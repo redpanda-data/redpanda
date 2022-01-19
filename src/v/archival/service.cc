@@ -191,19 +191,17 @@ scheduler_service_impl::scheduler_service_impl(
 
 void scheduler_service_impl::rearm_timer() {
     ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
-        return ss::with_scheduling_group(_upload_sg, [this] {
-            return reconcile_archivers()
-              .finally([this] {
-                  if (_gate.is_closed()) {
-                      return;
-                  }
-                  _timer.rearm(_jitter());
-              });
-        });
-    })
-      .handle_exception([this](std::exception_ptr e) {
+                          return ss::with_scheduling_group(_upload_sg, [this] {
+                              return reconcile_archivers().finally([this] {
+                                  if (_gate.is_closed()) {
+                                      return;
+                                  }
+                                  _timer.rearm(_jitter());
+                              });
+                          });
+                      }).handle_exception([this](std::exception_ptr e) {
         vlog(_rtclog.info, "Error in timer callback: {}", e);
-      });
+    });
 }
 ss::future<> scheduler_service_impl::start() {
     _timer.set_callback([this] { rearm_timer(); });
