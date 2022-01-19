@@ -13,6 +13,7 @@
 #include "config/node_config.h"
 #include "model/metadata.h"
 #include "storage/chunk_cache.h"
+#include "storage/segment_appender.h"
 #include "units.h"
 
 #include <cstdint>
@@ -618,6 +619,15 @@ configuration::configuration()
       "How many additional reads to issue ahead of current read location",
       {.example = "1", .visibility = visibility::tunable},
       10)
+  , segment_fallocation_step(
+      *this,
+      "segment_fallocation_step",
+      "Size for segments fallocation",
+      {.needs_restart = needs_restart::no,
+       .example = "32768",
+       .visibility = visibility::tunable},
+      32_MiB,
+      storage::segment_appender::validate_fallocation_step)
   , max_compacted_log_segment_size(
       *this,
       "max_compacted_log_segment_size",

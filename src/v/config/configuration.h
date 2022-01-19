@@ -146,6 +146,7 @@ struct configuration final : public config_store {
     property<size_t> append_chunk_size;
     property<size_t> storage_read_buffer_size;
     property<int16_t> storage_read_readahead_count;
+    property<size_t> segment_fallocation_step;
     property<size_t> max_compacted_log_segment_size;
     property<int16_t> id_allocator_log_capacity;
     property<int16_t> id_allocator_batch_size;

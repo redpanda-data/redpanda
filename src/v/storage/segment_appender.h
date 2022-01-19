@@ -35,21 +35,21 @@ class segment_appender {
 public:
     using chunk = segment_appender_chunk;
 
+    static constexpr const size_t fallocation_alignment = 4_KiB;
     static constexpr const size_t write_behind_memory = 1_MiB;
-    static constexpr const size_t fallocation_step = 32_MiB;
 
     struct options {
-        options(ss::io_priority_class p, size_t chunks_no)
-          : options(p, chunks_no, fallocation_step) {}
-
-        options(ss::io_priority_class p, size_t chunks_no, size_t step)
+        options(
+          ss::io_priority_class p,
+          size_t chunks_no,
+          config::binding<size_t> falloc_step)
           : priority(p)
           , number_of_chunks(chunks_no)
-          , falloc_step(step) {}
+          , falloc_step(falloc_step) {}
 
         ss::io_priority_class priority;
         size_t number_of_chunks;
-        size_t falloc_step{fallocation_step};
+        config::binding<size_t> falloc_step;
     };
 
     segment_appender(ss::file f, options opts);
@@ -76,6 +76,20 @@ public:
     };
 
     void set_callbacks(callbacks* callbacks) { _callbacks = callbacks; }
+
+    /** Validator for fallocation step configuration setting */
+    static std::optional<ss::sstring>
+    validate_fallocation_step(const size_t& value) {
+        if (value % segment_appender::fallocation_alignment != 0) {
+            return "Fallocation step must be multiple of 4096";
+        } else if (value < segment_appender::fallocation_alignment) {
+            return "Fallocation step must be at least 4 KiB (4096)";
+        } else if (value > 1_GiB) {
+            return "Fallocation step can't be larger than 1 GiB (1073741824)";
+        } else {
+            return std::nullopt;
+        }
+    }
 
 private:
     void dispatch_background_head_write();

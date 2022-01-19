@@ -23,7 +23,7 @@
 
 using namespace storage; // NOLINT
 
-SEASTAR_THREAD_TEST_CASE(test_can_append_multiple_flushes) {
+static void run_test_can_append_multiple_flushes(size_t fallocate_size) {
     std::cout.setf(std::ios::unitbuf);
     auto f = ss::open_file_dma(
                "test.segment_appender_random.log",
@@ -31,7 +31,11 @@ SEASTAR_THREAD_TEST_CASE(test_can_append_multiple_flushes) {
                  | ss::open_flags::truncate)
                .get0();
     auto appender = segment_appender(
-      f, segment_appender::options(ss::default_priority_class(), 1));
+      f,
+      segment_appender::options(
+        ss::default_priority_class(),
+        1,
+        config::mock_binding(std::move(fallocate_size))));
 
     iobuf expected;
     ss::sstring data = "123456789\n";
@@ -59,14 +63,23 @@ SEASTAR_THREAD_TEST_CASE(test_can_append_multiple_flushes) {
     appender.close().get();
 }
 
-SEASTAR_THREAD_TEST_CASE(test_can_append_mixed) {
+SEASTAR_THREAD_TEST_CASE(test_can_append_multiple_flushes) {
+    run_test_can_append_multiple_flushes(16_KiB);
+    run_test_can_append_multiple_flushes(32_MiB);
+}
+
+static void run_test_can_append_mixed(size_t fallocate_size) {
     auto f = ss::open_file_dma(
                "test_log_segment_mixed.log",
                ss::open_flags::create | ss::open_flags::rw
                  | ss::open_flags::truncate)
                .get0();
     auto appender = segment_appender(
-      f, segment_appender::options(ss::default_priority_class(), 1));
+      f,
+      segment_appender::options(
+        ss::default_priority_class(),
+        1,
+        config::mock_binding(std::move(fallocate_size))));
     auto alignment = f.disk_write_dma_alignment();
     for (size_t i = 0, acc = 0; i < 100; ++i) {
         iobuf original;
@@ -120,14 +133,23 @@ SEASTAR_THREAD_TEST_CASE(test_can_append_mixed) {
     appender.close().get();
 }
 
-SEASTAR_THREAD_TEST_CASE(test_can_append_10MB) {
+SEASTAR_THREAD_TEST_CASE(test_can_append_mixed) {
+    run_test_can_append_mixed(16_KiB);
+    run_test_can_append_mixed(32_MiB);
+}
+
+static void run_test_can_append_10MB(size_t fallocate_size) {
     auto f = ss::open_file_dma(
                "test_segment_appender.log",
                ss::open_flags::create | ss::open_flags::rw
                  | ss::open_flags::truncate)
                .get0();
     auto appender = segment_appender(
-      f, segment_appender::options(ss::default_priority_class(), 1));
+      f,
+      segment_appender::options(
+        ss::default_priority_class(),
+        1,
+        config::mock_binding(std::move(fallocate_size))));
 
     for (size_t i = 0; i < 10; ++i) {
         iobuf original;
@@ -149,15 +171,25 @@ SEASTAR_THREAD_TEST_CASE(test_can_append_10MB) {
     }
     appender.close().get();
 }
-SEASTAR_THREAD_TEST_CASE(
-  test_can_append_10MB_sequential_write_sequential_read) {
+
+SEASTAR_THREAD_TEST_CASE(test_can_append_10MB) {
+    run_test_can_append_10MB(16_KiB);
+    run_test_can_append_10MB(32_MiB);
+}
+
+static void run_test_can_append_10MB_sequential_write_sequential_read(
+  size_t fallocate_size) {
     auto f = ss::open_file_dma(
                "test_segment_appender_sequential.log",
                ss::open_flags::create | ss::open_flags::rw
                  | ss::open_flags::truncate)
                .get0();
     auto appender = segment_appender(
-      f, segment_appender::options(ss::default_priority_class(), 1));
+      f,
+      segment_appender::options(
+        ss::default_priority_class(),
+        1,
+        config::mock_binding(std::move(fallocate_size))));
 
     // write sequential. then read all
     iobuf original;
@@ -179,14 +211,25 @@ SEASTAR_THREAD_TEST_CASE(
     }
     appender.close().get();
 }
-SEASTAR_THREAD_TEST_CASE(test_can_append_little_data) {
+
+SEASTAR_THREAD_TEST_CASE(
+  test_can_append_10MB_sequential_write_sequential_read) {
+    run_test_can_append_10MB_sequential_write_sequential_read(16_KiB);
+    run_test_can_append_10MB_sequential_write_sequential_read(32_MiB);
+}
+
+static void run_test_can_append_little_data(size_t fallocate_size) {
     auto f = ss::open_file_dma(
                "test_segment_appender_little.log",
                ss::open_flags::create | ss::open_flags::rw
                  | ss::open_flags::truncate)
                .get0();
     auto appender = segment_appender(
-      f, segment_appender::options(ss::default_priority_class(), 1));
+      f,
+      segment_appender::options(
+        ss::default_priority_class(),
+        1,
+        config::mock_binding(std::move(fallocate_size))));
     auto alignment = f.disk_write_dma_alignment();
     // at least 1 page and some 20 bytes to test boundary conditions
     const auto data = random_generators::gen_alphanum_string(alignment + 20);
@@ -216,4 +259,52 @@ SEASTAR_THREAD_TEST_CASE(test_can_append_little_data) {
     }
     BOOST_REQUIRE_EQUAL(appender.file_byte_offset(), data.size());
     appender.close().get();
+}
+
+SEASTAR_THREAD_TEST_CASE(test_can_append_little_data) {
+    run_test_can_append_little_data(16_KiB);
+    run_test_can_append_little_data(32_MiB);
+}
+
+static void run_test_fallocate_size(size_t fallocate_size) {
+    auto f = ss::open_file_dma(
+               "test_segment_appender.log",
+               ss::open_flags::create | ss::open_flags::rw
+                 | ss::open_flags::truncate)
+               .get0();
+    auto appender = segment_appender(
+      f,
+      segment_appender::options(
+        ss::default_priority_class(),
+        1,
+        config::mock_binding(std::move(fallocate_size))));
+
+    for (size_t i = 0; i < 10; ++i) {
+        iobuf original;
+        constexpr size_t message_size = 123;
+        constexpr size_t messages_amount = 100;
+        constexpr size_t one_meg = message_size * messages_amount;
+        {
+            const auto data = random_generators::gen_alphanum_string(
+              message_size);
+            for (size_t i = 0; i < messages_amount; ++i) {
+                original.append(data.data(), data.size());
+            }
+        }
+        BOOST_CHECK_EQUAL(one_meg, original.size_bytes());
+        appender.append(original).get();
+        appender.flush().get();
+
+        auto in = make_file_input_stream(f, i * one_meg);
+        iobuf result = read_iobuf_exactly(in, one_meg).get0();
+        BOOST_CHECK_EQUAL(original, result);
+        in.close().get();
+    }
+    appender.close().get();
+}
+
+SEASTAR_THREAD_TEST_CASE(test_fallocate_size) {
+    for (const size_t fallocate_size : {4096ul, 16_KiB, 32_MiB}) {
+        run_test_fallocate_size(fallocate_size);
+    }
 }
