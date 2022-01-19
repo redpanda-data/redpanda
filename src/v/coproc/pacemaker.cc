@@ -49,7 +49,7 @@ rpc::backoff_policy wasm_transport_backoff() {
 }
 
 void pacemaker::save_routes() {
-    (void)ss::with_gate(_gate, [this] {
+    ssx::spawn_with_gate(_gate, [this] {
         all_routes routes;
         routes.reserve(_scripts.size());
         for (auto& [id, script] : _scripts) {
@@ -154,7 +154,7 @@ std::vector<errc> pacemaker::add_source(
     const auto [_, success] = _scripts.emplace(id, std::move(script_ctx));
     vassert(success, "Double coproc insert detected");
     vlog(coproclog.debug, "Adding source with id: {}", id);
-    (void)ss::with_gate(_gate, [this, id] {
+    ssx::spawn_with_gate(_gate, [this, id] {
         fire_updates(id, errc::success);
         auto found = _scripts.find(id);
         if (found == _scripts.end()) {
