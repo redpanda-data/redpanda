@@ -86,10 +86,11 @@ public:
     static constexpr const int8_t snapshot_version = 1;
     explicit persisted_stm(ss::sstring, ss::logger&, raft::consensus*);
 
-    ss::future<> make_snapshot() final;
+    void make_snapshot_in_background() final;
     ss::future<> ensure_snapshot_exists(model::offset) final;
     model::offset max_collectible_offset() override;
 
+    ss::future<> make_snapshot();
     /*
      * Usually start() acts as a barrier and we don't call any methods on the
      * object before start returns control flow.
