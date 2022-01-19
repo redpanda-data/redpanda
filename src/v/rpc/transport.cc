@@ -14,6 +14,7 @@
 #include "rpc/parse_utils.h"
 #include "rpc/response_handler.h"
 #include "rpc/types.h"
+#include "ssx/future-util.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -85,7 +86,7 @@ transport::connect(rpc::clock_type::time_point connection_timeout) {
         _last_seq = sequence_t{0};
         _seq = sequence_t{0};
         // background
-        (void)ss::with_gate(_dispatch_gate, [this] {
+        ssx::spawn_with_gate(_dispatch_gate, [this] {
             return do_reads().then_wrapped([this](ss::future<> f) {
                 _probe.connection_closed();
                 fail_outstanding_futures();
@@ -179,7 +180,7 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
 }
 
 void transport::dispatch_send() {
-    (void)ss::with_gate(_dispatch_gate, [this]() mutable {
+    ssx::background = ssx::spawn_with_gate_then(_dispatch_gate, [this]() mutable {
         return ss::do_until(
           [this] {
               return _requests_queue.empty()
