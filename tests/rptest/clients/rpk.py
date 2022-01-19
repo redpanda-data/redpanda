@@ -135,8 +135,9 @@ class RpkTool:
         # message rather than sigkilling the remote process.
         out = self._run_topic(cmd, stdin=msg, timeout=timeout + 0.5)
 
-        offset = re.search("at offset (\d+)", out).group(1)
-        return int(offset)
+        m = re.search(r"at offset (\d+)", out)
+        assert m, f"Reported offset not found in: {out}"
+        return int(m.group(1))
 
     def describe_topic(self, topic):
         cmd = ['describe', topic, '-p']
@@ -163,8 +164,8 @@ class RpkTool:
     def describe_topic_configs(self, topic):
         cmd = ['describe', topic, '-c']
         output = self._run_topic(cmd)
-        if "not found" in output:
-            return None
+        assert "not found" not in output, \
+                f"Cannot describe configs for unknown topic {topic}"
         lines = output.splitlines()
         res = {}
         for line in lines:

@@ -38,7 +38,7 @@ class MetadataTest(RedpandaTest):
     def test_metadata_request_does_not_contain_failed_node(
             self, failure, node):
         """
-        Check if broker list returned from metadata request does not contain node 
+        Check if broker list returned from metadata request does not contain node
         which is not alive
         """
         # validate initial conditions

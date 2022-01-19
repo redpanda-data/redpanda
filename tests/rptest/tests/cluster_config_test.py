@@ -306,12 +306,6 @@ class ClusterConfigTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_valid_settings(self):
-        # TODO
-
-        pass
-
-    @cluster(num_nodes=3)
-    def test_valid_settings(self):
         """
         Bulk exercise of all config settings & the schema endpoint:
         - for all properties in the schema, set them with a valid non-default value
@@ -416,15 +410,14 @@ class ClusterConfigTest(RedpandaTest):
             import_stdout = self.rpk.cluster_config_import(file.name, all)
 
         last_line = import_stdout.strip().split("\n")[-1]
-        m = re.match("^.+new config version (\d+).*$", last_line)
+        m = re.match(r"^.+new config version (\d+).*$", last_line)
 
         self.logger.debug(f"_import status: {last_line}")
 
         if m is None and allow_noop:
             return None
-        elif m is None:
-            assert m is not None
 
+        assert m is not None, f"Config version not found: {last_line}"
         version = int(m.group(1))
         return version
 
@@ -461,6 +454,7 @@ class ClusterConfigTest(RedpandaTest):
         # RPK should give us a valid yaml document
         version_a, text = self._export_import_modify("kafka_qdc_enable: false",
                                                      "kafka_qdc_enable: true")
+        assert version_a is not None
         self._wait_for_version_sync(version_a)
 
         # Default should not have included tunables
@@ -472,6 +466,8 @@ class ClusterConfigTest(RedpandaTest):
         # Clear a setting, it should revert to its default
         version_b, text = self._export_import_modify("kafka_qdc_enable: true",
                                                      "")
+        assert version_b is not None
+
         assert version_b > version_a
         self._wait_for_version_sync(version_b)
         self._check_value_everywhere("kafka_qdc_enable", False)
@@ -485,6 +481,8 @@ class ClusterConfigTest(RedpandaTest):
             "kafka_qdc_depth_alpha: 0.8",
             "kafka_qdc_depth_alpha: 1.5",
             all=True)
+        assert version_c is not None
+
         assert version_c > version_b
         self._wait_for_version_sync(version_c)
         self._check_value_everywhere("kafka_qdc_depth_alpha", 1.5)
@@ -492,6 +490,8 @@ class ClusterConfigTest(RedpandaTest):
         # Check that clearing a tunable with --all works
         version_d, text = self._export_import_modify(
             "kafka_qdc_depth_alpha: 1.5", "", all=True)
+        assert version_d is not None
+
         assert version_d > version_c
         self._wait_for_version_sync(version_d)
         self._check_value_everywhere("kafka_qdc_depth_alpha", 0.8)
@@ -507,13 +507,13 @@ class ClusterConfigTest(RedpandaTest):
         Test import/export of string fields, make sure they don't end
         up with extraneous quotes
         """
-        version_a, text = self._export_import_modify(
+        version_a, _ = self._export_import_modify(
             "cloud_storage_access_key:\n",
             "cloud_storage_access_key: foobar\n")
         self._wait_for_version_sync(version_a)
         self._check_value_everywhere("cloud_storage_access_key", "foobar")
 
-        version_b, text = self._export_import_modify(
+        version_b, _ = self._export_import_modify(
             "cloud_storage_access_key: foobar\n",
             "cloud_storage_access_key: \"foobaz\"")
         self._wait_for_version_sync(version_b)
@@ -541,10 +541,9 @@ class ClusterConfigTest(RedpandaTest):
 
         for i, l in enumerate(lines):
             m = re.match(
-                "^(\d+)\s+(\d+)\s+(true|false)\s+\[(.*)\]\s+\[(.*)\]$", l)
+                r"^(\d+)\s+(\d+)\s+(true|false)\s+\[(.*)\]\s+\[(.*)\]$", l)
             assert m is not None
-            node_id, config_version, needs_restart, invalid, unknown = m.groups(
-            )
+            node_id, *_ = m.groups()
 
             node = self.redpanda.nodes[i]
             assert int(node_id) == self.redpanda.idx(node)

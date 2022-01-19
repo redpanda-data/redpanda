@@ -15,7 +15,7 @@ from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
-
+from rptest.util import wait_until_result
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
@@ -85,24 +85,18 @@ class LeadershipTransferTest(RedpandaTest):
                    err_msg="Transfer did not complete")
 
     def _get_partition(self, kc):
-        partition = [None]
-
         def get_partition():
             meta = kc.metadata()
             topics = meta["topics"]
             assert len(topics) == 1
             assert topics[0]["topic"] == self.topic
-            partition[0] = random.choice(topics[0]["partitions"])
-            if partition[0]["leader"] > 0:
-                return True
-            return False
+            partition = random.choice(topics[0]["partitions"])
+            return partition["leader"] > 0, partition
 
-        wait_until(lambda: get_partition(),
-                   timeout_sec=30,
-                   backoff_sec=2,
-                   err_msg="No partition with leader available")
-
-        return partition[0]
+        return wait_until_result(get_partition,
+                                 timeout_sec=30,
+                                 backoff_sec=2,
+                                 err_msg="No partition with leader available")
 
     @cluster(num_nodes=3)
     def test_self_transfer(self):

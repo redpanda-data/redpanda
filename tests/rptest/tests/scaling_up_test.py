@@ -18,7 +18,7 @@ from rptest.tests.end_to_end import EndToEndTest
 
 class ScalingUpTest(EndToEndTest):
     """
-    Adding nodes to the cluster should result in partition reallocations to new 
+    Adding nodes to the cluster should result in partition reallocations to new
     nodes
     """
     @cluster(num_nodes=5)
