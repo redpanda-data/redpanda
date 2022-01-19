@@ -174,6 +174,7 @@ public:
     }
     /**
      * Controlls the max offset that may be evicted by log retention policy
+     * This offset is non-decreasing.
      */
     void set_collectible_offset(model::offset o) {
         return _impl->set_collectible_offset(o);

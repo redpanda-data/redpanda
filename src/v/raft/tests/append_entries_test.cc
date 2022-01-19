@@ -595,9 +595,7 @@ FIXTURE_TEST(test_snapshot_recovery, raft_test_fixture) {
     for (auto& [_, member] : gr.get_members()) {
         member.consensus
           ->write_snapshot(raft::write_snapshot_cfg(
-            get_leader_raft(gr)->committed_offset(),
-            iobuf{},
-            raft::write_snapshot_cfg::should_prefix_truncate::yes))
+            get_leader_raft(gr)->committed_offset(), iobuf{}))
           .get0();
     }
     gr.enable_node(disabled_id);
@@ -648,9 +646,7 @@ FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
     for (auto& [_, member] : gr.get_members()) {
         member.consensus
           ->write_snapshot(raft::write_snapshot_cfg(
-            get_leader_raft(gr)->committed_offset(),
-            iobuf{},
-            raft::write_snapshot_cfg::should_prefix_truncate::yes))
+            get_leader_raft(gr)->committed_offset(), iobuf{}))
           .get0();
     }
     gr.enable_node(disabled_id);

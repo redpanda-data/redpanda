@@ -23,6 +23,7 @@
 #include "storage/segment_reader.h"
 #include "storage/types.h"
 #include "utils/moving_average.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -112,6 +113,10 @@ private:
 
     model::offset read_start_offset() const;
 
+    // Postcondition: _start_offset is at least o and stays >= o in the future.
+    // Returns if the update actually took place.
+    ss::future<bool> update_start_offset(model::offset o);
+
     ss::future<> do_compact(compaction_config);
     ss::future<compaction_result> compact_adjacent_segments(
       std::pair<segment_set::iterator, segment_set::iterator>,
@@ -162,6 +167,9 @@ private:
     segment_set _segs;
     kvstore& _kvstore;
     model::offset _start_offset;
+    // Used to serialize updates to _start_offset. See the update_start_offset
+    // method.
+    mutex _start_offset_lock;
     lock_manager _lock_mngr;
     storage::probe _probe;
     failure_probes _failure_probes;
