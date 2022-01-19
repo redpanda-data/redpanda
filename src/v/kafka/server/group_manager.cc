@@ -195,15 +195,19 @@ void group_manager::handle_topic_delta(
         return;
     }
 
-    ssx::background = ssx::spawn_with_gate_then(_gate, [this, tps = std::move(tps)]() mutable {
-        return ss::do_with(
-          std::move(tps),
-          [this](const std::vector<model::topic_partition>& tps) {
-              return cleanup_removed_topic_partitions(tps);
+    ssx::background
+      = ssx::spawn_with_gate_then(
+          _gate,
+          [this, tps = std::move(tps)]() mutable {
+              return ss::do_with(
+                std::move(tps),
+                [this](const std::vector<model::topic_partition>& tps) {
+                    return cleanup_removed_topic_partitions(tps);
+                });
+          })
+          .handle_exception([](std::exception_ptr e) {
+              vlog(klog.warn, "Topic clean-up encountered error: {}", e);
           });
-    }).handle_exception([](std::exception_ptr e) {
-        vlog(klog.warn, "Topic clean-up encountered error: {}", e);
-    });
 }
 
 void group_manager::handle_leader_change(
