@@ -155,7 +155,7 @@ tr:nth-child(even) {
 
         html_template += f"""
   <tr>
-    <td><a href="{duck_test}/index.html">{test_signature}</a></td>
+    <td><a href="{duck_test}/">{test_signature}</a></td>
     <td>{f_cov}</td>
     <td>{l_cov}</td>
     <td>{r_cov}</td>
