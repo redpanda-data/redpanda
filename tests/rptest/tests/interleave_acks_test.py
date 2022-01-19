@@ -12,7 +12,7 @@ import time
 import re
 import random
 
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
