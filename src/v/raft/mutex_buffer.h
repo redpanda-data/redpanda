@@ -86,18 +86,14 @@ CONCEPT(requires requires(Func f, Request req) {
 })
 // clang-format on
 void mutex_buffer<Request, Response>::start(Func&& f) {
-    (void)ss::with_gate(_gate, [this, f = std::forward<Func>(f)]() mutable {
+    ssx::spawn_with_gate(_gate, [this, f = std::forward<Func>(f)]() mutable {
         return ss::do_until(
           [this] { return _gate.is_closed(); },
           [this, f = std::forward<Func>(f)]() mutable {
               return _enequeued.wait([this] { return !_requests.empty(); })
                 .then([this, f = std::forward<Func>(f)]() mutable {
                     return flush(std::forward<Func>(f));
-                })
-                .handle_exception_type(
-                  [](const ss::broken_condition_variable&) {
-                      // ignore exception, we are about to stop
-                  });
+                });
           });
     });
 }

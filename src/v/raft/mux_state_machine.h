@@ -288,7 +288,7 @@ ss::future<> mux_state_machine<T...>::apply(model::record_batch b) {
                 if (
                   _persist_last_applied
                   && last_offset > _c->read_last_applied()) {
-                    (void)ss::with_gate(_gate, [this, last_offset] {
+                    ssx::spawn_with_gate(_gate, [this, last_offset] {
                         return _c->write_last_applied(last_offset);
                     });
                 }

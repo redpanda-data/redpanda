@@ -61,16 +61,12 @@ ss::future<> append_entries_buffer::stop() {
 }
 
 void append_entries_buffer::start() {
-    (void)ss::with_gate(_gate, [this] {
+    ssx::spawn_with_gate(_gate, [this] {
         return ss::do_until(
           [this] { return _gate.is_closed(); },
           [this] {
               return _enqueued.wait([this] { return !_requests.empty(); })
-                .then([this] { return flush(); })
-                .handle_exception_type(
-                  [](const ss::broken_condition_variable&) {
-                      // ignore exception, we are about to stop
-                  });
+                .then([this] { return flush(); });
           });
     });
 }

@@ -14,7 +14,7 @@
 namespace raft {
 
 ss::future<> event_manager::start() {
-    (void)ss::with_gate(_gate, [this] {
+    ssx::spawn_with_gate(_gate, [this] {
         return ss::do_until(
           [this] { return _gate.is_closed(); },
           [this] {

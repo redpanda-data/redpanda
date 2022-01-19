@@ -34,7 +34,7 @@ ss::future<> log_eviction_stm::start() {
 ss::future<> log_eviction_stm::stop() { return _gate.close(); }
 
 void log_eviction_stm::monitor_log_eviction() {
-    (void)ss::with_gate(_gate, [this] {
+    ssx::spawn_with_gate(_gate, [this] {
         return ss::do_until(
           [this] { return _gate.is_closed(); },
           [this] {
