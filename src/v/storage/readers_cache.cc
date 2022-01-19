@@ -279,10 +279,9 @@ readers_cache::dispose_entries(intrusive_list<entry, &entry::_hook> entries) {
 
 void readers_cache::dispose_in_background(
   intrusive_list<entry, &entry::_hook> entries) {
-        ssx::spawn_with_gate(
-          _gate, [this, entries = std::move(entries)]() mutable {
-              return dispose_entries(std::move(entries));
-          });
+    ssx::spawn_with_gate(_gate, [this, entries = std::move(entries)]() mutable {
+        return dispose_entries(std::move(entries));
+    });
 }
 
 void readers_cache::dispose_in_background(entry* e) {

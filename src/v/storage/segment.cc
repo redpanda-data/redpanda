@@ -11,6 +11,7 @@
 
 #include "compression/compression.h"
 #include "config/configuration.h"
+#include "ssx/future-util.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/fs_utils.h"
 #include "storage/fwd.h"
@@ -22,7 +23,6 @@
 #include "storage/segment_utils.h"
 #include "storage/types.h"
 #include "storage/version.h"
-#include "ssx/future-util.h"
 #include "utils/file_sanitizer.h"
 #include "vassert.h"
 #include "vlog.h"

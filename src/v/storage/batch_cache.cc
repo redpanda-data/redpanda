@@ -11,9 +11,9 @@
 
 #include "bytes/iobuf_parser.h"
 #include "model/adl_serde.h"
+#include "ssx/future-util.h"
 #include "utils/gate_guard.h"
 #include "utils/to_string.h"
-#include "ssx/future-util.h"
 #include "vassert.h"
 
 #include <seastar/core/coroutine.hh>

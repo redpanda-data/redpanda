@@ -10,8 +10,8 @@
 
 #include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
-#include "ssx/sformat.h"
 #include "ssx/future-util.h"
+#include "ssx/sformat.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>

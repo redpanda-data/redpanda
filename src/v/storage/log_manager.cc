@@ -14,6 +14,7 @@
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "resource_mgmt/io_priority.h"
+#include "ssx/future-util.h"
 #include "storage/batch_cache.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/fs_utils.h"
@@ -29,7 +30,6 @@
 #include "utils/directory_walker.h"
 #include "utils/file_sanitizer.h"
 #include "vlog.h"
-#include "ssx/future-util.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/file.hh>
@@ -62,16 +62,17 @@ log_manager::log_manager(log_config config, kvstore& kvstore) noexcept
 }
 void log_manager::trigger_housekeeping() {
     ssx::background = ssx::spawn_with_gate_then(_open_gate, [this] {
-        auto next_housekeeping = _jitter();
-        return housekeeping().finally([this, next_housekeeping] {
-            // all of these *MUST* be in the finally
-            if (_open_gate.is_closed()) {
-                return;
-            }
+                          auto next_housekeeping = _jitter();
+                          return housekeeping().finally(
+                            [this, next_housekeeping] {
+                                // all of these *MUST* be in the finally
+                                if (_open_gate.is_closed()) {
+                                    return;
+                                }
 
-            _compaction_timer.rearm(next_housekeeping);
-        });
-    }).handle_exception([](std::exception_ptr e) {
+                                _compaction_timer.rearm(next_housekeeping);
+                            });
+                      }).handle_exception([](std::exception_ptr e) {
         vlog(stlog.info, "Error processing housekeeping(): {}", e);
     });
 }
