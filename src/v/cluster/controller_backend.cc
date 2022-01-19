@@ -370,7 +370,7 @@ ss::future<> controller_backend::fetch_deltas() {
 }
 
 void controller_backend::start_topics_reconciliation_loop() {
-    (void)ss::with_gate(_gate, [this] {
+    ssx::spawn_with_gate(_gate, [this] {
         return ss::do_until(
           [this] { return _as.local().abort_requested(); },
           [this] {
@@ -394,7 +394,7 @@ void controller_backend::start_topics_reconciliation_loop() {
 }
 
 void controller_backend::housekeeping() {
-    (void)ss::with_gate(_gate, [this] {
+    ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
         auto f = ss::now();
         if (!_topic_deltas.empty() && _topics_sem.available_units() > 0) {
             f = reconcile_topics();

@@ -426,12 +426,12 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
         // so can't be comitted and it's save to aborted
         co_return try_abort_reply{.aborted = true, .ec = tx_errc::none};
     } else if (tx.status == tm_transaction::tx_status::preparing) {
-        (void)ss::with_gate(_gate, [this, stm, tx, timeout] {
-            return with(
-              stm, tx.id, "try_abort:commit", [this, stm, tx, timeout]() {
-                  return do_commit_tm_tx(
-                    stm, tx.id, tx.pid, tx.tx_seq, timeout);
-              });
+        ssx::spawn_with_gate(_gate, [this, stm, tx, timeout] {
+          return with(
+            stm, tx.id, "try_abort:commit", [this, stm, tx, timeout]() {
+                return do_commit_tm_tx(
+                  stm, tx.id, tx.pid, tx.tx_seq, timeout);
+            }).discard_result();
         });
         co_return try_abort_reply{.ec = tx_errc::none};
     } else if (tx.status == tm_transaction::tx_status::ongoing) {
@@ -1110,7 +1110,7 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
           // cleaning up and before returing the actual control flow
           auto decided = outcome->get_future();
 
-          (void)ss::with_gate(
+          ssx::spawn_with_gate(
             self._gate,
             [request = std::move(request),
              &self,
@@ -1144,7 +1144,7 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
                                      });
                                })
                         .finally([u = std::move(unit)] {});
-                  });
+                  }).discard_result();
             });
 
           return decided.then(
@@ -1554,7 +1554,7 @@ tx_gateway_frontend::get_ongoing_tx(
             // So marking it as ready. We use previous term because aborting a
             // tx in current ready state with current term means we abort a tx
             // which wasn't started and it leads to an error.
-            (void)co_await stm->mark_tx_ready(tx.id, tx.etag);
+            std::ignore = co_await stm->mark_tx_ready(tx.id, tx.etag);
             co_return tx_errc::invalid_txn_state;
         }
     }
@@ -1609,7 +1609,7 @@ ss::future<bool> tx_gateway_frontend::try_create_tx_topic() {
 }
 
 void tx_gateway_frontend::expire_old_txs() {
-    (void)ss::with_gate(_gate, [this] {
+    ssx::spawn_with_gate(_gate, [this] {
         auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
 
         if (shard == std::nullopt) {

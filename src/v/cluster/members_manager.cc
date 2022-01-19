@@ -84,13 +84,8 @@ ss::future<> members_manager::start() {
     }
 
     if (is_already_member()) {
-        (void)ss::try_with_gate(_gate, [this] {
+        ssx::spawn_with_gate(_gate, [this] {
             return maybe_update_current_node_configuration();
-        }).handle_exception_type([](const ss::gate_closed_exception& e) {
-            vlog(
-              clusterlog.debug,
-              "unable to update node configuration, gate closed - {}",
-              e);
         });
     } else {
         join_raft0();
@@ -347,7 +342,7 @@ ss::future<result<join_reply>> members_manager::dispatch_join_to_remote(
 }
 
 void members_manager::join_raft0() {
-    (void)ss::with_gate(_gate, [this] {
+    ssx::spawn_with_gate(_gate, [this] {
         vlog(clusterlog.debug, "Trying to join the cluster");
         return ss::repeat([this] {
                    return dispatch_join_to_seed_server(
@@ -373,12 +368,6 @@ void members_manager::join_raft0() {
                   return maybe_update_current_node_configuration();
               }
               return ss::now();
-          })
-          .handle_exception_type([](const ss::gate_closed_exception& e) {
-              vlog(
-                clusterlog.debug,
-                "unable to update node configuration, gate closed - {}",
-                e);
           });
     });
 }

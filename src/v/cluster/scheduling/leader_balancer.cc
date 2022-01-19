@@ -162,7 +162,7 @@ void leader_balancer::trigger_balance() {
         return;
     }
 
-    (void)ss::try_with_gate(_gate, [this] {
+    ssx::spawn_with_gate(_gate, [this] {
         return ss::repeat([this] {
                    if (_as.local().abort_requested()) {
                        return ss::make_ready_future<ss::stop_iteration>(
@@ -183,7 +183,7 @@ void leader_balancer::trigger_balance() {
               _timer.cancel();
               _timer.arm(_idle_timeout());
           });
-    }).handle_exception_type([](const ss::gate_closed_exception&) {});
+    });
 }
 
 ss::future<ss::stop_iteration> leader_balancer::balance() {

@@ -191,7 +191,7 @@ health_monitor_backend::abortable_refresh_request::abortable_refresh_request(
 ss::future<std::error_code>
 health_monitor_backend::abortable_refresh_request::abortable_await(
   ss::future<std::error_code> f) {
-    (void)std::move(f).then_wrapped(
+    ssx::background = std::move(f).then_wrapped(
       [self = shared_from_this()](ss::future<std::error_code> f) {
           if (self->finished) {
               return;
@@ -390,7 +390,7 @@ void health_monitor_backend::tick() {
         return;
     }
 
-    (void)ss::with_gate(_gate, [this] {
+    ssx::spawn_with_gate(_gate, [this] {
         // make sure that ticks will have fixed interval
         auto next_tick = ss::lowres_clock::now() + tick_interval();
         return collect_cluster_health().finally([this, next_tick] {

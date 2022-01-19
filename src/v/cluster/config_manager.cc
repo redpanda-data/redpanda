@@ -79,7 +79,7 @@ config_manager::config_manager(
  */
 void config_manager::start_bootstrap() {
     // Detach fiber
-    (void)ss::try_with_gate(
+    ssx::background = ssx::spawn_with_gate_then(
       _gate,
       [this] {
           return ss::do_until(
@@ -114,8 +114,6 @@ void config_manager::start_bootstrap() {
                 }
             });
       })
-      .handle_exception_type([](ss::sleep_aborted const&) {})
-      .handle_exception_type([](ss::gate_closed_exception const&) {})
       .handle_exception([](const std::exception_ptr&) {
           // Explicitly handle exception so that we do not risk an
           // 'ignored exceptional future' error.  The only exceptions
@@ -184,14 +182,13 @@ ss::future<> config_manager::start() {
     vlog(clusterlog.trace, "Starting reconcile_status...");
 
     // Detach fiber
-    (void)ss::try_with_gate(
+    ssx::background = ssx::spawn_with_gate_then(
       _gate,
       [this] {
           return ss::do_until(
             [this] { return _as.local().abort_requested(); },
             [this] { return reconcile_status(); });
       })
-      .handle_exception_type([](ss::gate_closed_exception const&) {})
       .handle_exception([](std::exception_ptr const& e) {
           vlog(clusterlog.warn, "Exception from reconcile_status: {}", e);
       });

@@ -171,7 +171,7 @@ health_manager::ensure_topic_replication(model::topic_namespace_view topic) {
 }
 
 void health_manager::tick() {
-    (void)ss::try_with_gate(
+    ssx::background = ssx::spawn_with_gate_then(
       _gate,
       [this]() -> ss::future<> {
           /*
@@ -207,7 +207,6 @@ void health_manager::tick() {
 
           _timer.arm(_tick_interval);
       })
-      .handle_exception_type([](const ss::gate_closed_exception&) {})
       .handle_exception([this](const std::exception_ptr& e) {
           vlog(clusterlog.info, "Health manager caught error {}", e);
           _timer.arm(_tick_interval * 2);

@@ -1087,7 +1087,7 @@ void rm_stm::track_tx(
 
 void rm_stm::abort_old_txes() {
     _is_autoabort_active = true;
-    (void)ss::with_gate(_gate, [this] {
+    ssx::spawn_with_gate(_gate, [this] {
         return _state_lock.hold_read_lock().then(
           [this](ss::basic_rwlock<>::holder unit) mutable {
               return do_abort_old_txes().finally([this, u = std::move(unit)] {
