@@ -27,7 +27,9 @@ from rptest.services.rpk_consumer import RpkConsumer
 # Errors we should tolerate when moving partitions around
 PARTITION_MOVEMENT_LOG_ERRORS = [
     # e.g.  raft - [follower: {id: {1}, revision: {10}}] [group_id:3, {kafka/topic/2}] - recovery_stm.cc:422 - recovery append entries error: raft group does not exists on target broker
-    "raft - .*raft group does not exist on target broker"
+    "raft - .*raft group does not exist on target broker",
+    # e.g.  raft - [group_id:3, {kafka/topic/2}] consensus.cc:2317 - unable to replicate updated configuration: raft::errc::replicated_entry_truncated
+    "raft - .*unable to replicate updated configuration: .*"
 ]
 
 
