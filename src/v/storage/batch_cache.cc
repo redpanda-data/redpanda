@@ -13,6 +13,7 @@
 #include "model/adl_serde.h"
 #include "utils/gate_guard.h"
 #include "utils/to_string.h"
+#include "ssx/future-util.h"
 #include "vassert.h"
 
 #include <seastar/core/coroutine.hh>
@@ -370,7 +371,7 @@ void batch_cache_index::truncate(model::offset offset) {
 }
 
 void batch_cache::background_reclaimer::start() {
-    (void)ss::with_gate(_gate, [this] {
+    ssx::spawn_with_gate(_gate, [this] {
         return ss::with_scheduling_group(
           _sg, [this] { return reclaim_loop(); });
     });

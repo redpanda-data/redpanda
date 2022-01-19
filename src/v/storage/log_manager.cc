@@ -29,6 +29,7 @@
 #include "utils/directory_walker.h"
 #include "utils/file_sanitizer.h"
 #include "vlog.h"
+#include "ssx/future-util.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/file.hh>
@@ -60,7 +61,7 @@ log_manager::log_manager(log_config config, kvstore& kvstore) noexcept
     _compaction_timer.rearm(_jitter());
 }
 void log_manager::trigger_housekeeping() {
-    (void)ss::with_gate(_open_gate, [this] {
+    ssx::background = ssx::spawn_with_gate_then(_open_gate, [this] {
         auto next_housekeeping = _jitter();
         return housekeeping().finally([this, next_housekeeping] {
             // all of these *MUST* be in the finally

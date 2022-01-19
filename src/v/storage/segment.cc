@@ -22,6 +22,7 @@
 #include "storage/segment_utils.h"
 #include "storage/types.h"
 #include "storage/version.h"
+#include "ssx/future-util.h"
 #include "utils/file_sanitizer.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -213,7 +214,7 @@ void segment::release_appender_in_background(readers_cache* readers_cache) {
                ? std::exchange(_cache, std::nullopt)
                : std::nullopt;
     auto i = std::exchange(_compaction_index, std::nullopt);
-    (void)ss::with_gate(
+    ssx::spawn_with_gate(
       _gate,
       [this,
        readers_cache,

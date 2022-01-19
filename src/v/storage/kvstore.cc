@@ -78,7 +78,7 @@ ss::future<> kvstore::start() {
           _started = true;
 
           // Flushing background fiber
-          (void)ss::with_gate(_gate, [this] {
+          ssx::spawn_with_gate(_gate, [this] {
               return ss::do_until(
                 [this] { return _gate.is_closed(); },
                 [this] {

@@ -11,6 +11,7 @@
 #include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/sformat.h"
+#include "ssx/future-util.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
@@ -67,7 +68,7 @@ ss::future<> backlog_controller::start() {
     _current_backlog = co_await _sampler->sample_backlog() / _norm;
     _prev_error = _setpoint - _current_backlog;
     _sampling_timer.set_callback([this] {
-        (void)ss::with_gate(_gate, [this] {
+        ssx::spawn_with_gate(_gate, [this] {
             return update().then([this] {
                 if (!_gate.is_closed()) {
                     _sampling_timer.arm(_sampling_interval);
