@@ -190,7 +190,7 @@ scheduler_service_impl::scheduler_service_impl(
   : scheduler_service_impl(config.local(), remote, api, pm, tt) {}
 
 void scheduler_service_impl::rearm_timer() {
-    (void)ss::with_gate(_gate, [this] {
+    ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
         return ss::with_scheduling_group(_upload_sg, [this] {
             return reconcile_archivers()
               .finally([this] {
@@ -198,12 +198,12 @@ void scheduler_service_impl::rearm_timer() {
                       return;
                   }
                   _timer.rearm(_jitter());
-              })
-              .handle_exception([this](std::exception_ptr e) {
-                  vlog(_rtclog.info, "Error in timer callback: {}", e);
               });
         });
-    });
+    })
+      .handle_exception([this](std::exception_ptr e) {
+        vlog(_rtclog.info, "Error in timer callback: {}", e);
+      });
 }
 ss::future<> scheduler_service_impl::start() {
     _timer.set_callback([this] { rearm_timer(); });
