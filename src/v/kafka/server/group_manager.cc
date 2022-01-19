@@ -195,7 +195,7 @@ void group_manager::handle_topic_delta(
         return;
     }
 
-    (void)ss::with_gate(_gate, [this, tps = std::move(tps)]() mutable {
+    ssx::background = ssx::spawn_with_gate_then(_gate, [this, tps = std::move(tps)]() mutable {
         return ss::do_with(
           std::move(tps),
           [this](const std::vector<model::topic_partition>& tps) {
