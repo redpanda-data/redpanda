@@ -123,6 +123,10 @@ ss::future<> persisted_stm::do_make_snapshot() {
     _last_snapshot_offset = std::max(_last_snapshot_offset, offset);
 }
 
+void persisted_stm::make_snapshot_in_background() {
+    (void)ss::with_gate(_gate, [this] { return make_snapshot(); });
+}
+
 ss::future<> persisted_stm::make_snapshot() {
     return _op_lock.with([this]() {
         auto f = wait_for_snapshot_hydrated();
