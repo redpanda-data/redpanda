@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/spf13/afero"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/net"
@@ -155,6 +156,67 @@ func (a *AdminAPI) sendOne(method, path string, body, into interface{}) error {
 		return err
 	}
 	return maybeUnmarshalRespInto(method, url, res, into)
+}
+
+// sendAll sends a request to all URLs in the admin client. The first successful
+// response will be unmarshaled into `into` if it is non-nil.
+//
+// As of v21.11.1, the Redpanda admin API redirects requests to the leader based
+// on certain assumptions about all nodes listening on the same admin port, and
+// that the admin API is available on the same IP address as the internal RPC
+// interface.
+// These limitations come from the fact that nodes don't currently share info
+// with each other about where they're actually listening for the admin API.
+
+// Unfortunately these assumptions do not match all environments in which
+// Redpanda is deployed, hence, we need to reintroduce the sendAll method and
+// broadcast on writes to the Admin API.
+func (a *AdminAPI) sendAll(method, path string, body, into interface{}) error {
+	var (
+		once   sync.Once
+		resURL string
+		res    *http.Response
+		grp    multierror.Group
+
+		// When one request is successful, we want to cancel all other
+		// outstanding requests. We do not cancel the successful
+		// request's context, because the context is used all the way
+		// through reading a response body.
+		cancels      []func()
+		cancelExcept = func(except int) {
+			for i, cancel := range cancels {
+				if i != except {
+					cancel()
+				}
+			}
+		}
+	)
+
+	for i, url := range a.urlsWithPath(path) {
+		ctx, cancel := context.WithCancel(context.Background())
+		myURL := url
+		except := i
+		cancels = append(cancels, cancel)
+		grp.Go(func() error {
+			myRes, err := a.sendAndReceive(ctx, method, myURL, body)
+			if err != nil {
+				return err
+			}
+			cancelExcept(except) // kill all other requests
+
+			// Only one request should be successful, but for
+			// paranoia, we guard keeping the first successful
+			// response.
+			once.Do(func() { resURL, res = myURL, myRes })
+			return nil
+		})
+	}
+
+	err := grp.Wait()
+	if res != nil {
+		return maybeUnmarshalRespInto(method, resURL, res, into)
+	}
+	return err
 }
 
 // Unmarshals a response body into `into`, if it is non-nil.
