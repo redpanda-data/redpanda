@@ -83,11 +83,21 @@ CHAOS_LOG_ALLOW_LIST = [
 
 
 class BadLogLines(Exception):
-    def __init__(self, nodes):
-        self.nodes = nodes
+    def __init__(self, node_to_lines):
+        self.node_to_lines = node_to_lines
 
     def __str__(self):
-        return f"<BadLogLines nodes={','.join([n.account.hostname for n in self.nodes])}>"
+        # Pick the first line from the first node as an example, and include it
+        # in the string output so that for single line failures, it isn't necessary
+        # for folks to search back in the log to find the culprit.
+        example_lines = next(iter(self.node_to_lines.items()))[1]
+        example = next(iter(example_lines))
+
+        summary = ','.join([
+            f'{i[0].account.hostname}({len(i[1])})'
+            for i in self.node_to_lines.items()
+        ])
+        return f"<BadLogLines nodes={summary} example=\"{example}\">"
 
     def __repr__(self):
         return self.__str__()
@@ -392,7 +402,7 @@ class RedpandaService(Service):
                     )
 
         if bad_lines:
-            raise BadLogLines(bad_lines.keys())
+            raise BadLogLines(bad_lines)
 
     def find_wasm_root(self):
         rp_install_path_root = self._context.globals.get(
