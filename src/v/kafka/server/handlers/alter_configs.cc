@@ -222,9 +222,13 @@ alter_topic_configuration(
 
 static ss::future<std::vector<alter_configs_resource_response>>
 alter_broker_configuartion(std::vector<alter_configs_resource> resources) {
-    return do_alter_broker_configuartion<
+    return unsupported_broker_configuration<
       alter_configs_resource,
-      alter_configs_resource_response>(std::move(resources));
+      alter_configs_resource_response>(
+      std::move(resources),
+      "changing broker properties isn't supported via this "
+      "API. Try using kafka incremental config API or "
+      "redpanda admin API.");
 }
 
 template<>

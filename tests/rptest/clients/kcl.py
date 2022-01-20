@@ -42,13 +42,53 @@ class KCL:
         cmd.append(topic)
         return self._cmd(cmd)
 
-    def _cmd(self, cmd, input=None):
+    def alter_broker_config(self, values, incremental, broker=None):
+        """
+        :param broker: node id.  Not supported in redpanda but used for testing error handling.
+        :param values: dict of property name to new value
+        :param incremental: if true, use incremental kafka APIs
+        :return:
+        """
+        cmd = ["admin", "configs", "alter", "-tb"]
+        if incremental:
+            cmd.append("-i")
+        for k, v in values.items():
+            cmd.extend(["-k", f"s:{k}={v}" if incremental else f"{k}={v}"])
+
+        if broker:
+            cmd.append(broker)
+
+        return self._cmd(cmd, attempts=1)
+
+    def delete_broker_config(self, keys, incremental):
+        """
+        :param keys: list of key names to clear
+        :param incremental: if true, use incremental kafka APIs
+        :return:
+        """
+        cmd = ["admin", "configs", "alter", "-tb"]
+        if incremental:
+            cmd.append("-i")
+        for k in keys:
+            cmd.extend(["-k", f"d:{k}" if incremental else k])
+
+        return self._cmd(cmd, attempts=1)
+
+    def _cmd(self, cmd, input=None, attempts=5):
+        """
+
+        :param attempts: how many times to try before giving up (1 for no retries)
+        :return: stdout string
+        """
         brokers = self._redpanda.brokers()
         cmd = ["kcl", "-X", f"seed_brokers={brokers}", "--no-config-file"
                ] + cmd
-        for retry in reversed(range(5)):
+        for retry in reversed(range(attempts)):
             try:
-                res = subprocess.check_output(cmd, text=True, input=input)
+                res = subprocess.check_output(cmd,
+                                              text=True,
+                                              input=input,
+                                              stderr=subprocess.STDOUT)
                 self._redpanda.logger.debug(res)
                 return res
             except subprocess.CalledProcessError as e:

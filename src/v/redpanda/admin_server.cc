@@ -396,6 +396,7 @@ ss::future<> admin_server::throw_on_error(
               id));
         case cluster::errc::update_in_progress:
         case cluster::errc::waiting_for_recovery:
+        case cluster::errc::no_leader_controller:
             throw ss::httpd::base_exception(
               fmt::format("Not ready ({})", ec.message()),
               ss::httpd::reply::status_type::service_unavailable);
@@ -672,7 +673,7 @@ void admin_server::register_cluster_config_routes() {
           auto doc = parse_json_body(*req);
           apply_validator(cluster_config_validator, doc);
 
-          cluster::config_update update;
+          cluster::config_update_request update;
 
           // Deserialize removes
           const auto& json_remove = doc["remove"];
@@ -743,20 +744,20 @@ void admin_server::register_cluster_config_routes() {
             update.upsert.size(),
             update.remove.size());
 
-          auto err = co_await _controller->get_config_frontend().invoke_on(
-            cluster::config_frontend::version_shard,
-            [update](cluster::config_frontend& fe) mutable
-            -> ss::future<std::error_code> {
-                return fe.patch(update, model::timeout_clock::now() + 5s);
-            });
+          auto patch_result
+            = co_await _controller->get_config_frontend().invoke_on(
+              cluster::config_frontend::version_shard,
+              [update = std::move(update)](cluster::config_frontend& fe) mutable
+              -> ss::future<cluster::config_frontend::patch_result> {
+                  return fe.patch(
+                    std::move(update), model::timeout_clock::now() + 5s);
+              });
 
-          co_await throw_on_error(*req, err, model::controller_ntp);
+          co_await throw_on_error(
+            *req, patch_result.errc, model::controller_ntp);
 
           ss::httpd::cluster_config_json::cluster_config_write_result result;
-          result.config_version
-            = co_await _controller->get_config_manager().invoke_on(
-              cluster::controller_stm_shard,
-              [](cluster::config_manager& mgr) { return mgr.get_version(); });
+          result.config_version = patch_result.version;
           co_return ss::json::json_return_type(std::move(result));
       });
 }

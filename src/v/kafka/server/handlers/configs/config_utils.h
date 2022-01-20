@@ -183,23 +183,17 @@ ss::future<std::vector<R>> do_alter_topics_configuration(
 }
 
 template<typename T, typename R>
-ss::future<std::vector<R>>
-do_alter_broker_configuartion(std::vector<T> resources) {
-    // for now we do not support altering any of brokers config, generate
-    // errors
+ss::future<std::vector<R>> unsupported_broker_configuration(
+  std::vector<T> resources, std::string_view const msg) {
     std::vector<R> responses;
     responses.reserve(resources.size());
     std::transform(
       resources.begin(),
       resources.end(),
       std::back_inserter(responses),
-      [](T& resource) {
+      [msg](T& resource) {
           return make_error_alter_config_resource_response<R>(
-            resource,
-            error_code::invalid_config,
-            fmt::format(
-              "changing '{}' broker property isn't currently supported",
-              resource.resource_name));
+            resource, error_code::invalid_config, ss::sstring(msg));
       });
 
     return ss::make_ready_future<std::vector<R>>(std::move(responses));

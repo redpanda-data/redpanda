@@ -135,7 +135,7 @@ void config_manager::start_bootstrap() {
  * since upgrading to a redpanda version with central config)
  */
 ss::future<> config_manager::do_bootstrap() {
-    config_update update;
+    config_update_request update;
 
     config::shard_local_cfg().for_each([&update](
                                          const config::base_property& p) {
@@ -155,7 +155,8 @@ ss::future<> config_manager::do_bootstrap() {
 
     try {
         co_await _frontend.local().patch(
-          update, model::timeout_clock::now() + bootstrap_write_timeout);
+          std::move(update),
+          model::timeout_clock::now() + bootstrap_write_timeout);
     } catch (...) {
         // On errors, just drop out: start_bootstrap will go around
         // its loop again.

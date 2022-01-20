@@ -778,6 +778,16 @@ struct create_non_replicable_topics_reply {
     std::vector<topic_result> results;
 };
 
+struct config_update_request final {
+    std::vector<std::pair<ss::sstring, ss::sstring>> upsert;
+    std::vector<ss::sstring> remove;
+};
+
+struct config_update_reply {
+    errc error;
+    cluster::config_version latest_version{config_version_unset};
+};
+
 } // namespace cluster
 namespace std {
 template<>
