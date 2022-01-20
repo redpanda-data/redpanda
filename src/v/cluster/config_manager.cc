@@ -246,7 +246,8 @@ static void preload_local(
             // but for strings it's not (the literal value in the cache is
             // "\"foo\"").
             auto decoded = YAML::Load(value.as<std::string>());
-            cfg.get(key).set_value(decoded);
+            auto& property = cfg.get(key);
+            property.set_value(decoded);
 
             // Because we are in preload, it doesn't matter if the property
             // requires restart.  We are setting it before anything else
@@ -257,7 +258,7 @@ static void preload_local(
                   clusterlog.trace,
                   "Loaded property {}={} from local cache",
                   key,
-                  YAML::Dump(decoded));
+                  property.format_raw(YAML::Dump(decoded)));
             }
         } catch (...) {
             if (result.has_value()) {
@@ -447,10 +448,18 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
             result.unknown.push_back(u.first);
             continue;
         }
+        auto& property = cfg.get(u.first);
         auto& val_yaml = u.second;
+
         try {
             auto val = YAML::Load(val_yaml);
-            auto& property = cfg.get(u.first);
+
+            vlog(
+              clusterlog.trace,
+              "apply: upsert {}={}",
+              u.first,
+              property.format_raw(val_yaml));
+
             bool changed = property.set_value(val);
             result.restart |= (property.needs_restart() && changed);
         } catch (YAML::ParserException) {
@@ -459,7 +468,7 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
                   clusterlog.warn,
                   "Invalid syntax in property {}: {}",
                   u.first,
-                  val_yaml);
+                  property.format_raw(val_yaml));
             }
             result.invalid.push_back(u.first);
             continue;
@@ -469,7 +478,7 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
                   clusterlog.warn,
                   "Invalid value for property {}: {}",
                   u.first,
-                  val_yaml);
+                  property.format_raw(val_yaml));
             }
             result.invalid.push_back(u.first);
             continue;
@@ -487,7 +496,7 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
                   clusterlog.warn,
                   "Unexpected error setting property {}={}: {}",
                   u.first,
-                  val_yaml,
+                  property.format_raw(val_yaml),
                   std::current_exception());
             }
             result.invalid.push_back(u.first);
@@ -496,6 +505,8 @@ apply_local(cluster_config_delta_cmd_data const& data, bool silent) {
     }
 
     for (const auto& r : data.remove) {
+        vlog(clusterlog.trace, "apply: remove {}", r);
+
         if (!cfg.contains(r)) {
             // Ignore: if we have never heard of the property, removing
             // its value is a no-op.
@@ -663,13 +674,6 @@ config_manager::apply_delta(cluster_config_delta_cmd&& cmd_in) {
       "apply_delta: {} upserts, {} removes",
       data.upsert.size(),
       data.remove.size());
-    for (const auto& u : data.upsert) {
-        vlog(clusterlog.trace, "apply_delta: upsert {}={}", u.first, u.second);
-    }
-
-    for (const auto& d : data.remove) {
-        vlog(clusterlog.trace, "apply_delta: delete {}", d);
-    }
 
     // Update shard-local copies of configuration.  Use our local shard's
     // apply to learn of any bad properties (all copies will have the same

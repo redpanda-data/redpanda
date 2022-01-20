@@ -630,6 +630,7 @@ void admin_server::register_cluster_config_routes() {
                 pm.visibility = ss::sstring(
                   config::to_string_view(p.get_visibility()));
                 pm.nullable = p.is_nullable();
+                pm.is_secret = p.is_secret();
 
                 if (p.is_array()) {
                     pm.type = "array";

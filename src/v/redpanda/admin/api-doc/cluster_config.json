@@ -147,6 +147,10 @@
           "type": "string",
           "description": "One of user|tunable|deprecated"
         },
+        "is_secret": {
+          "type": "boolean",
+          "description": "Whether this property is a secret (i.e. should not be logged)"
+        },
         "units": {
           "type": "string",
           "description": "If applicable, the units of the property (e.g. ms, bytes)",

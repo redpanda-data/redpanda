@@ -570,3 +570,40 @@ class ClusterConfigTest(RedpandaTest):
 
             node = self.redpanda.nodes[i]
             assert int(node_id) == self.redpanda.idx(node)
+
+    @cluster(num_nodes=3)
+    def test_secret_redaction(self):
+        def search_log(pattern):
+            for node in self.redpanda.nodes:
+                for line in node.account.ssh_capture(
+                        f"grep \"{pattern}\" {self.redpanda.STDOUT_STDERR_CAPTURE} || true"
+                ):
+                    # We got a match
+                    self.logger.debug(
+                        f"Found {pattern} on node {node.name}: {line}")
+                    return True
+
+            # Fall through, no matches
+            return False
+
+        def set_and_search(key, value, expect_log):
+            patch_result = self.admin.patch_cluster_config(upsert={key: value})
+            self._wait_for_version_sync(patch_result['config_version'])
+
+            # Check value was/was not printed to log while applying
+            assert search_log(value) is expect_log
+
+            # Check we do/don't print on next startup
+            self.redpanda.restart_nodes(self.redpanda.nodes)
+            assert search_log(value) is expect_log
+
+        secret_key = "cloud_storage_secret_key"
+        secret_value = "ThePandaFliesTonight"
+        set_and_search(secret_key, secret_value, False)
+
+        # To avoid false negatives in the test of a secret, go through the same procedure
+        # but on a non-secret property, thereby validating that our log scanning procedure
+        # would have detected the secret if it had been printed
+        unsecret_key = "cloud_storage_api_endpoint"
+        unsecret_value = "http://nowhere"
+        set_and_search(unsecret_key, unsecret_value, True)

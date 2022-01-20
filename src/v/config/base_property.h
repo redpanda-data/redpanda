@@ -24,9 +24,13 @@
 
 namespace config {
 
+// String to use when logging the value of a secret property
+static constexpr std::string_view secret_placeholder = "[secret]";
+
 class config_store;
 using required = ss::bool_class<struct required_tag>;
 using needs_restart = ss::bool_class<struct needs_restart_tag>;
+using is_secret = ss::bool_class<struct is_secret_tag>;
 
 enum class visibility {
     // Tunables can be set by the user, but they control implementation
@@ -50,6 +54,7 @@ public:
         needs_restart needs_restart{needs_restart::yes};
         std::optional<ss::sstring> example{std::nullopt};
         visibility visibility{visibility::user};
+        is_secret secret{is_secret::no};
     };
 
     base_property(
@@ -64,6 +69,7 @@ public:
     const required is_required() const { return _meta.required; }
     bool needs_restart() const { return bool(_meta.needs_restart); }
     visibility get_visibility() const { return _meta.visibility; }
+    bool is_secret() const { return bool(_meta.secret); }
 
     // this serializes the property value. a full configuration serialization is
     // performed in config_store::to_json where the json object key is taken
@@ -76,6 +82,23 @@ public:
     virtual void set_value(std::any) = 0;
     virtual void reset() = 0;
     virtual bool is_default() const = 0;
+
+    /**
+     * Helper for logging string-ized values of a property, e.g.
+     * while processing an API request or loading from file, before
+     * the property itself is initialized.
+     *
+     * Use this to ensure that any logged values are properly
+     * redacted if secret.
+     */
+    template<typename U>
+    std::string_view format_raw(U const& in) {
+        if (is_secret() && !in.empty()) {
+            return secret_placeholder;
+        } else {
+            return in;
+        }
+    }
 
     virtual std::string_view type_name() const = 0;
     virtual std::optional<std::string_view> units_name() const = 0;
