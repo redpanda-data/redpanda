@@ -340,6 +340,41 @@ class PartitionMovementTest(EndToEndTest):
             self._move_and_verify()
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
 
+    @cluster(num_nodes=5)
+    def test_bootstrapping_after_move(self):
+        """
+        Move partitions with active consumer / producer
+        """
+        self.start_redpanda(num_nodes=3)
+        spec = TopicSpec(name="topic", partition_count=3, replication_factor=3)
+        self.redpanda.create_topic(spec)
+        self.topic = spec.name
+        self.start_producer(1)
+        self.start_consumer(1)
+        self.await_startup()
+        # execute single move
+        self._move_and_verify()
+        self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
+
+        # snapshot offsets
+        rpk = RpkTool(self.redpanda)
+        partitions = rpk.describe_topic(spec.name)
+        offset_map = {}
+        for p in partitions:
+            offset_map[p.id] = p.high_watermark
+
+        # restart all the nodes
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        def offsets_are_recovered():
+
+            return all([
+                offset_map[p.id] == p.high_watermark
+                for p in rpk.describe_topic(spec.name)
+            ])
+
+        wait_until(offsets_are_recovered, 30, 2)
+
     @cluster(num_nodes=3)
     def test_invalid_destination(self):
         """
