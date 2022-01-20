@@ -131,6 +131,15 @@ var rng = func() func(int) int {
 	}
 }()
 
+// GetLeaderID returns the broker ID of the leader of the Admin API
+func (a *AdminAPI) GetLeaderID() (*int, error) {
+	pa, err := a.GetPartition("redpanda", "controller", 0)
+	if err != nil {
+		return nil, err
+	}
+	return &pa.LeaderID, nil
+}
+
 // sendAny sends a single request to one of the client's urls and unmarshals
 // the body into into, which is expected to be a pointer to a struct.
 func (a *AdminAPI) sendAny(method, path string, body, into interface{}) error {
