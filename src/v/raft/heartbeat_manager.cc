@@ -301,7 +301,9 @@ void heartbeat_manager::process_reply(
         auto it = _consensus_groups.find(m.group);
         if (it == _consensus_groups.end()) {
             vlog(
-              hbeatlog.error, "Could not find consensus for group:{}", m.group);
+              hbeatlog.debug,
+              "Could not find consensus for group:{} (shutting down?)",
+              m.group);
             continue;
         }
         vlog(hbeatlog.trace, "Heartbeat reply from node: {} - {}", n, m);
