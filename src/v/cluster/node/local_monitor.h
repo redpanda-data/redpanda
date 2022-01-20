@@ -11,6 +11,8 @@
 #pragma once
 #include "cluster/node/types.h"
 
+#include <seastar/core/sstring.hh>
+
 // Local node state monitoring is kept separate in case we want to access it
 // pre-quorum formation in the future, etc.
 namespace cluster::node {
@@ -27,9 +29,14 @@ public:
     ss::future<> update_state();
     const local_state& get_state_cached() const;
 
+    void set_path_for_test(const ss::sstring& path);
+
 private:
-    static ss::future<std::vector<disk>> get_disks();
+    ss::future<std::vector<disk>> get_disks();
     local_state _state;
+
+    // Injection points for unit tests
+    ss::sstring _path_for_test;
 };
 
 } // namespace cluster::node
