@@ -229,9 +229,12 @@ void group_manager::handle_leader_change(
                 it->second->loading = true;
             }
             return ss::with_semaphore(
-              it->second->sem, 1, [this, term, p = it->second, leader] {
-                  return handle_partition_leader_change(term, p, leader);
-              });
+                     it->second->sem,
+                     1,
+                     [this, term, p = it->second, leader] {
+                         return handle_partition_leader_change(term, p, leader);
+                     })
+              .finally([p = it->second] {});
         }
         return ss::make_ready_future<>();
     });
@@ -296,8 +299,8 @@ ss::future<> group_manager::handle_partition_leader_change(
      * is rarely contended we take a writer lock only when leadership
      * changes (infrequent event)
      */
-    return p->catchup_lock.hold_write_lock().then(
-      [this, term, timeout, p](ss::basic_rwlock<>::holder unit) {
+    return p->catchup_lock.hold_write_lock()
+      .then([this, term, timeout, p](ss::basic_rwlock<>::holder unit) {
           return inject_noop(p->partition, timeout)
             .then([this, term, timeout, p] {
                 /*
@@ -334,7 +337,8 @@ ss::future<> group_manager::handle_partition_leader_change(
                   });
             })
             .finally([unit = std::move(unit)] {});
-      });
+      })
+      .finally([p] {});
 }
 
 /*
