@@ -246,6 +246,31 @@ SEASTAR_THREAD_TEST_CASE(vector_test) {
     BOOST_CHECK((m == std::vector{1, 2, 3}));
 }
 
+SEASTAR_THREAD_TEST_CASE(iobuf_vector_test) {
+    constexpr auto const s1 = std::string_view{"Hello"};
+    constexpr auto const s2 = std::string_view{"World"};
+    constexpr auto const s3 = std::string_view{"C++"};
+
+    iobuf b1, b2, b3;
+    b1.append(s1.data(), s1.length());
+    b2.append(s2.data(), s2.length());
+    b3.append(s3.data(), s3.length());
+
+    auto iobufs = std::vector<iobuf>{};
+    iobufs.emplace_back(std::move(b1));
+    iobufs.emplace_back(std::move(b2));
+    iobufs.emplace_back(std::move(b3));
+
+    auto b = iobuf();
+    serde::write(b, iobufs);
+
+    auto in = iobuf_parser{std::move(b)};
+    auto const read = serde::read<std::vector<iobuf>>(in);
+    BOOST_CHECK(read.at(0).size_bytes() == s1.length());
+    BOOST_CHECK(read.at(1).size_bytes() == s2.length());
+    BOOST_CHECK(read.at(2).size_bytes() == s3.length());
+}
+
 // struct with differing sizes:
 // vector length may take different size (vint)
 // vector data may have different size (_ints.size() * sizeof(int))
