@@ -31,6 +31,9 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/net"
 )
 
+// ErrNoAdminAPILeader happen when there's no leader for the Admin API
+var ErrNoAdminAPILeader = fmt.Errorf("no Admin API leader found")
+
 // AdminAPI is a client to interact with Redpanda's admin server.
 type AdminAPI struct {
 	urls   []string
@@ -131,6 +134,18 @@ var rng = func() func(int) int {
 		return rng.Intn(n)
 	}
 }()
+
+// GetLeaderID returns the broker ID of the leader of the Admin API
+func (a *AdminAPI) GetLeaderID() (*int, error) {
+	pa, err := a.GetPartition("redpanda", "controller", 0)
+	if pa.LeaderID == -1 {
+		return nil, ErrNoAdminAPILeader
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &pa.LeaderID, nil
+}
 
 // sendAny sends a single request to one of the client's urls and unmarshals
 // the body into into, which is expected to be a pointer to a struct.
