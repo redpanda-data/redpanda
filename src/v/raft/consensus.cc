@@ -464,18 +464,20 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
     }
     idx.is_recovering = true;
     // background
-    ssx::background = ssx::spawn_with_gate_then(_bg, [this, node_id = idx.node_id] {
-        auto recovery = std::make_unique<recovery_stm>(
-          this, node_id, _scheduling);
-        auto ptr = recovery.get();
-        return ptr->apply()
-          .handle_exception([this, node_id](const std::exception_ptr& e) {
-              vlog(_ctxlog.warn, "Node {} recovery failed - {}", node_id, e);
-          })
-          .finally([r = std::move(recovery)] {});
-    }).handle_exception([this](const std::exception_ptr& e) {
-        vlog(_ctxlog.warn, "Recovery error - {}", e);
-    });
+    ssx::background
+      = ssx::spawn_with_gate_then(_bg, [this, node_id = idx.node_id] {
+            auto recovery = std::make_unique<recovery_stm>(
+              this, node_id, _scheduling);
+            auto ptr = recovery.get();
+            return ptr->apply()
+              .handle_exception([this, node_id](const std::exception_ptr& e) {
+                  vlog(
+                    _ctxlog.warn, "Node {} recovery failed - {}", node_id, e);
+              })
+              .finally([r = std::move(recovery)] {});
+        }).handle_exception([this](const std::exception_ptr& e) {
+            vlog(_ctxlog.warn, "Recovery error - {}", e);
+        });
 }
 
 ss::future<result<model::offset>> consensus::linearizable_barrier() {
@@ -831,45 +833,47 @@ void consensus::dispatch_vote(bool leadership_transfer) {
         return;
     }
     // background, acquire lock, transition state
-    ssx::background = ssx::spawn_with_gate_then(_bg, [this, leadership_transfer] {
-        return dispatch_prevote(leadership_transfer)
-          .then([this, leadership_transfer](bool ready) mutable {
-              if (!ready) {
-                  return ss::make_ready_future<>();
-              }
-              auto vstm = std::make_unique<vote_stm>(this);
-              auto p = vstm.get();
+    ssx::background
+      = ssx::spawn_with_gate_then(_bg, [this, leadership_transfer] {
+            return dispatch_prevote(leadership_transfer)
+              .then([this, leadership_transfer](bool ready) mutable {
+                  if (!ready) {
+                      return ss::make_ready_future<>();
+                  }
+                  auto vstm = std::make_unique<vote_stm>(this);
+                  auto p = vstm.get();
 
-              // CRITICAL: vote performs locking on behalf of consensus
-              return p->vote(leadership_transfer)
-                .then_wrapped([this, p, vstm = std::move(vstm)](
-                                ss::future<> vote_f) mutable {
-                    try {
-                        vote_f.get();
-                    } catch (...) {
-                        vlog(
-                          _ctxlog.warn,
-                          "Error returned from voting process {}",
-                          std::current_exception());
-                    }
-                    auto f = p->wait().finally([vstm = std::move(vstm)] {});
-                    // make sure we wait for all futures when gate is closed
-                    if (_bg.is_closed()) {
-                        return f;
-                    }
-                    // background
-                    ssx::spawn_with_gate(
-                      _bg,
-                      [vstm = std::move(vstm), f = std::move(f)]() mutable {
-                          return std::move(f);
-                      });
+                  // CRITICAL: vote performs locking on behalf of consensus
+                  return p->vote(leadership_transfer)
+                    .then_wrapped([this, p, vstm = std::move(vstm)](
+                                    ss::future<> vote_f) mutable {
+                        try {
+                            vote_f.get();
+                        } catch (...) {
+                            vlog(
+                              _ctxlog.warn,
+                              "Error returned from voting process {}",
+                              std::current_exception());
+                        }
+                        auto f = p->wait().finally([vstm = std::move(vstm)] {});
+                        // make sure we wait for all futures when gate is closed
+                        if (_bg.is_closed()) {
+                            return f;
+                        }
+                        // background
+                        ssx::spawn_with_gate(
+                          _bg,
+                          [vstm = std::move(vstm), f = std::move(f)]() mutable {
+                              return std::move(f);
+                          });
 
-                    return ss::make_ready_future<>();
-                });
-          }).finally([this] { arm_vote_timeout(); });})
-          .handle_exception([this](const std::exception_ptr& e) {
-              vlog(_ctxlog.warn, "Exception thrown while voting - {}", e);
-          });
+                        return ss::make_ready_future<>();
+                    });
+              })
+              .finally([this] { arm_vote_timeout(); });
+        }).handle_exception([this](const std::exception_ptr& e) {
+            vlog(_ctxlog.warn, "Exception thrown while voting - {}", e);
+        });
 }
 
 void consensus::arm_vote_timeout() {
@@ -2246,16 +2250,18 @@ ss::future<> consensus::refresh_commit_index() {
 
 void consensus::maybe_update_leader_commit_idx() {
     ssx::background = ssx::spawn_with_gate_then(_bg, [this] {
-        return _op_lock.get_units().then(
-          [this](ss::semaphore_units<> u) mutable {
-              // do not update committed index if not the leader, this check has
-              // to be done under the semaphore
-              if (!is_leader()) {
-                  return ss::now();
-              }
-              return do_maybe_update_leader_commit_idx(std::move(u));
-          });
-    }).handle_exception([this](const std::exception_ptr& e) {
+                          return _op_lock.get_units().then(
+                            [this](ss::semaphore_units<> u) mutable {
+                                // do not update committed index if not the
+                                // leader, this check has to be done under the
+                                // semaphore
+                                if (!is_leader()) {
+                                    return ss::now();
+                                }
+                                return do_maybe_update_leader_commit_idx(
+                                  std::move(u));
+                            });
+                      }).handle_exception([this](const std::exception_ptr& e) {
         vlog(_ctxlog.warn, "Error updating leader commit index", e);
     });
 }
