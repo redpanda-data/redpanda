@@ -85,28 +85,8 @@ class PartitionMovementMixin():
                 result.append(dict(node_id=node_id, core=partition["core"]))
         return result
 
-    def _move_and_verify(self):
+    def _wait_post_move(self, topic, partition, assignments):
         admin = Admin(self.redpanda)
-
-        # choose a random topic-partition
-        metadata = self.client().describe_topics()
-        topic, partition = self._random_partition(metadata)
-        self.logger.info(f"selected topic-partition: {topic}-{partition}")
-
-        # get the partition's replica set, including core assignments. the kafka
-        # api doesn't expose core information, so we use the redpanda admin api.
-        assignments = self._get_assignments(admin, topic, partition)
-        self.logger.info(f"assignments for {topic}-{partition}: {assignments}")
-
-        # build new replica set by replacing a random assignment
-        selected, replacements = self._choose_replacement(admin, assignments)
-        self.logger.info(
-            f"replacement for {topic}-{partition}:{len(selected)}: {selected} -> {replacements}"
-        )
-        self.logger.info(
-            f"new assignments for {topic}-{partition}: {assignments}")
-
-        r = admin.set_partition_replicas(topic, partition, assignments)
 
         def status_done():
             info = admin.get_partitions(topic, partition)
@@ -125,3 +105,33 @@ class PartitionMovementMixin():
             return self._equal_assignments(info, assignments)
 
         wait_until(derived_done, timeout_sec=90, backoff_sec=2)
+
+    def _do_move_and_verify(self, topic, partition):
+        admin = Admin(self.redpanda)
+
+        # get the partition's replica set, including core assignments. the kafka
+        # api doesn't expose core information, so we use the redpanda admin api.
+        assignments = self._get_assignments(admin, topic, partition)
+        self.logger.info(f"assignments for {topic}-{partition}: {assignments}")
+
+        # build new replica set by replacing a random assignment
+        selected, replacements = self._choose_replacement(admin, assignments)
+        self.logger.info(
+            f"replacement for {topic}-{partition}:{len(selected)}: {selected} -> {replacements}"
+        )
+        self.logger.info(
+            f"new assignments for {topic}-{partition}: {assignments}")
+
+        r = admin.set_partition_replicas(topic, partition, assignments)
+
+        self._wait_post_move(topic, partition, assignments)
+
+        return (topic, partition, assignments)
+
+    def _move_and_verify(self):
+        # choose a random topic-partition
+        metadata = self.client().describe_topics()
+        topic, partition = self._random_partition(metadata)
+        self.logger.info(f"selected topic-partition: {topic}-{partition}")
+
+        self._do_move_and_verify(topic, partition)
