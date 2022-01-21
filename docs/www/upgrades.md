@@ -65,7 +65,7 @@ Before starting the upgrade, you might want to backup Redpanda's configuration f
 docker cp <containerId>:/etc/redpanda/redpanda.yaml <preferred location>
 ```
 
-Let's make sure that there is no redpanda container up and running:
+Let's make sure that there is no Redpanda container up and running:
 
 ```bash
 docker ps
