@@ -349,19 +349,89 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
             leader_id_opt.value()),
           ss::httpd::reply::status_type::service_unavailable);
     }
+    auto leader = leader_opt.value();
 
-    // FIXME: We assume that our peers are listening on the same admin port as
-    // we are.
-    auto port = config::node_config().admin()[0].address.port();
+    // Heuristic for finding peer's admin API interface that is accessible
+    // from the client that sent this request:
+    // - if the host in the Host header matches one of our advertised kafka
+    //   addresses, then assume that the peer's advertised kafka address
+    //   with the same index will also be their public admin API address.
+    // - Assume that the peer is listening on the same port that the client
+    //   used to make this request (i.e. the port in Host)
+    //
+    // This will work reliably if all node configs have symmetric kafka listener
+    // sections (i.e. all specify the same number of listeners in the same
+    // order, for example all nodes have an internal and an external listener in
+    // that order), and the hostname used for connecting to the admin API
+    // matches one of the hostnames used for a kafka listener.
+    //
+    // The generic fallback if the heuristic fails is to use the peer's
+    // internal RPC address.  This works if the user is e.g. connecting
+    // by IP address to a k8s cluster's internal pod IP.
 
-    // FIXME: We assume that our peer is listening on the same network interface
-    // as they use for RPCs.
+    auto host_hdr = req.get_header("host");
+
+    std::string port;        // String like :123, or blank for default port
+    std::string target_host; // Guessed admin API hostname of peer
+
+    if (host_hdr.empty()) {
+        vlog(
+          logger.debug,
+          "redirect: Missing Host header, falling back to internal RPC "
+          "address");
+
+        // Misbehaving client.  Guess peer address.
+        port = fmt::format(
+          ":{}", config::node_config().admin()[0].address.port());
+
+    } else {
+        // Assumption: the peer will be listening on the same port that this
+        // request was sent to: parse the port out of the Host header
+        auto colon = host_hdr.find(":");
+        if (colon == std::string::npos) {
+            // Admin is being served on a standard port, leave port string blank
+        } else {
+            port = host_hdr.substr(colon);
+        }
+
+        auto req_hostname = host_hdr.substr(0, colon);
+
+        // See if this hostname is one of our kafka advertised addresses
+        auto kafka_endpoints = config::node().advertised_kafka_api();
+        auto match_i = std::find_if(
+          kafka_endpoints.begin(),
+          kafka_endpoints.end(),
+          [req_hostname](model::broker_endpoint const& be) {
+              return be.address.host() == req_hostname;
+          });
+        if (match_i != kafka_endpoints.end()) {
+            auto listener_idx = size_t(
+              std::distance(kafka_endpoints.begin(), match_i));
+
+            auto leader_advertised_addrs = leader->kafka_advertised_listeners();
+            if (leader_advertised_addrs.size() < listener_idx + 1) {
+                vlog(
+                  logger.debug,
+                  "redirect: leader has no advertised address at matching "
+                  "index for {}, "
+                  "falling back to internal RPC address",
+                  req_hostname);
+                target_host = leader->rpc_address().host();
+            } else {
+                target_host
+                  = leader_advertised_addrs[listener_idx].address.host();
+            }
+        } else {
+            vlog(
+              logger.debug,
+              "redirect: {} did not match any kafka listeners, redirecting to "
+              "peer's internal RPC address",
+              req_hostname);
+        }
+    }
+
     auto url = fmt::format(
-      "{}://{}:{}{}",
-      req.get_protocol_name(),
-      leader_opt.value()->rpc_address().host(),
-      port,
-      req._url);
+      "{}://{}{}{}", req.get_protocol_name(), target_host, port, req._url);
 
     vlog(
       logger.info, "Redirecting admin API call to {} leader at {}", ntp, url);
