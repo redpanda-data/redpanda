@@ -24,7 +24,7 @@ v21.11.2 (rev f58e69b)
 ```
 
 # Kubernetes
-As the YAML files are the base for Kubernetes setup, ideally the change of the configuration is easiest and fastest way to change image version. If the upgrade is for the latest version, use the version as shown below:
+As YAML files are the base for Kubernetes setup, ideally to change the configuration the easiest way to change achieve this is to change the image version. Remember to change the `version` tag  for the latest version. For example, let's use `version 21.11.2`: 
 ```yaml
 ...
 spec:
