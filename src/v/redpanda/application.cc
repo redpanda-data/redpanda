@@ -706,6 +706,13 @@ void application::wire_up_redpanda_services() {
           .get();
     });
     _deferred.emplace_back([this] {
+        // Prior to shutting down partition manager (which clears out all the
+        // raft `consensus` instances), stop processing heartbeats.  Otherwise
+        // we are receiving heartbeats that we can't match up to raft groups.
+        raft_group_manager.invoke_on_all(&raft::group_manager::stop_heartbeats)
+          .get();
+    });
+    _deferred.emplace_back([this] {
         cp_partition_manager
           .invoke_on_all(&coproc::partition_manager::stop_partitions)
           .get();

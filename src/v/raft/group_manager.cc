@@ -42,14 +42,22 @@ group_manager::group_manager(
 ss::future<> group_manager::start() { return _heartbeats.start(); }
 
 ss::future<> group_manager::stop() {
-    return _gate.close()
-      .then([this] { return _heartbeats.stop(); })
-      .then([this] {
-          return ss::parallel_for_each(
-            _groups,
-            [](ss::lw_shared_ptr<consensus> raft) { return raft->stop(); });
-      });
+    auto f = _gate.close();
+    if (!_heartbeats.is_stopped()) {
+        // In normal redpanda process shutdown, heartbeats would
+        // have been stopped earlier.  Do it here if that didn't happen,
+        // e.g. in a unit test.
+        f = f.then([this] { return _heartbeats.stop(); });
+    }
+
+    return f.then([this] {
+        return ss::parallel_for_each(
+          _groups,
+          [](ss::lw_shared_ptr<consensus> raft) { return raft->stop(); });
+    });
 }
+
+ss::future<> group_manager::stop_heartbeats() { return _heartbeats.stop(); }
 
 ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
   raft::group_id id, std::vector<model::broker> nodes, storage::log log) {
