@@ -15,16 +15,19 @@ from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
-from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
+from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, RESTART_LOG_ALLOW_LIST
 
 
 class NodesDecommissioningTest(EndToEndTest):
     """
     Basic nodes decommissioning test.
     """
-    @cluster(num_nodes=6)
+    @cluster(
+        num_nodes=6,
+        # A decom can look like a restart in terms of logs from peers dropping
+        # connections with it
+        log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_decommissioning_working_node(self):
-
         self.start_redpanda(num_nodes=4)
         topics = []
         for partition_count in range(1, 5):
