@@ -33,10 +33,9 @@ def flat_map(fn, ll):
 class WasmTest(RedpandaTest):
     def __init__(self, test_context, extra_rp_conf=dict(), num_brokers=3):
         def enable_wasm_options():
-            return dict(
-                developer_mode=True,
-                enable_coproc=True,
-            )
+            return dict(developer_mode=True,
+                        enable_coproc=True,
+                        auto_create_topics_enabled=False)
 
         wasm_opts = enable_wasm_options()
         wasm_opts.update(extra_rp_conf)
