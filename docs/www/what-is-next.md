@@ -8,7 +8,7 @@ Now that Redpanda is properly running in your environment, there is a lot of fea
 
 Create an application to interact with the cluster might help to understand how Redpanda works, for that our [NodeJS with Redpanda](./guide-nodejs.md) is the first step to interact with the topics.
 
-Applying new features like [authorization and authentication](./acls.md) or [TLS encryption for Kubernetes](./tls-kubernetes.md) can help you for future requirements. And it is important that changes to configuration files, not only from Redpanda, but also for Kubernetes and Docker requires restart of the cluster.
+It's recommended to add an additional layer of security to your environment. Applying features like [authorization and authentication](./acls.md) or [TLS encryption for Kubernetes](./tls-kubernetes.md) is highly recommended, specially in a production environment. It is important to note that changes to configuration files, not only from a local machine, but also for Kubernetes and Docker requires restart of the cluster.
 
 For Kubernetes, it is necessary to apply the changes from the updated yaml file, for that use the command below:
 ```bash
