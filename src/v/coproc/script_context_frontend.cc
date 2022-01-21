@@ -64,12 +64,23 @@ storage::log_reader_config get_reader(
         /// script_context_backend.cc
         end = *(++offsets.begin()) - model::offset{1};
     }
+    if (start > end) {
+        vlog(
+          coproclog.warn,
+          "Start {} detected greater then end {} for ntp: {}",
+          start,
+          end,
+          rctx.input->ntp());
+        /// It is possible for start to be greater then end in the event input
+        /// logs haven't yet been hydrated. In this case, perform no read by
+        /// setting start to end
+        start = end;
+    }
     /// The 'high watermark' of the current read. All output topics have
     /// processed all inputs below this value. When the offsets map for all
     /// outputs has values equivlent to this, it means all outputs are up to
     /// date and a new 'high watermark' can be promoted due to read progressing
     /// forward.
-    vassert(start <= end, "Offset logic error start: {} end: {}", start, end);
     rctx.last_acked = start;
     return storage::log_reader_config(
       start,
