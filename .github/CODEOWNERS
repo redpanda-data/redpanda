@@ -2,8 +2,8 @@
 # docs, prose, legal
 #
 licenses           @senior7515 @dswang
-*.md               @bmansheim
-/docs              @bmansheim
+*.md               @coral-waters
+/docs              @coral-waters
 /CONTRIBUTING.md   @dotnwat
 
 #
