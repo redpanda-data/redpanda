@@ -130,7 +130,7 @@ If the installation was executed from a binary file, download the preferred vers
  
 
 # Windows
-On Windows it is only possible to run Redpanda on Docker. Therefore, the [Docker guide](#docker) is applicable for Windows OS.
+On Windows it is only possible to run Redpanda on Docker. Therefore, the [Docker guide](#docker) is applicable for it.
 
 # Post-upgrade actions
 Once the upgrade is done, you need to make sure that cluster is healthy.
