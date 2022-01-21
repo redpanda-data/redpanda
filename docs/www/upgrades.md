@@ -57,7 +57,7 @@ Initially it is important to check which image version that is running on your d
 docker images
 ```
 
-After running the commanda you should be able to see the list of all images, including Redpanda's one. Now it is time to check which version on the [release notes](https://github.com/vectorizedio/redpanda/releases) page.
+After running the command you should be able to see the list of all images, including Redpanda's one. Now it is time to check which version on the [release notes](https://github.com/vectorizedio/redpanda/releases) page.
 
 Before start the upgrade, you might want to copy the configuration file from Redpanda that is currently running, in order to avoid setup from scratch.
 
