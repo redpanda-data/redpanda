@@ -37,7 +37,7 @@ public:
     // offset already exists
     virtual ss::future<> ensure_snapshot_exists(model::offset) = 0;
     // hints stm_manager that now it's a good time to make a snapshot
-    virtual ss::future<> make_snapshot() = 0;
+    virtual void make_snapshot_in_background() = 0;
     // lets the stm control snapshotting and log eviction by limiting
     // log eviction attempts to offsets not greater than this.
     virtual model::offset max_collectible_offset() = 0;
@@ -82,12 +82,10 @@ public:
         return f;
     }
 
-    ss::future<> make_snapshot() {
-        auto f = ss::now();
-        for (auto stm : _stms) {
-            f = f.then([stm]() { return stm->make_snapshot(); });
+    void make_snapshot_in_background() {
+        for (auto& stm : _stms) {
+            stm->make_snapshot_in_background();
         }
-        return f;
     }
 
     model::offset max_collectible_offset() {
