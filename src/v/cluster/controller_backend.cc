@@ -394,21 +394,22 @@ void controller_backend::start_topics_reconciliation_loop() {
 }
 
 void controller_backend::housekeeping() {
-    ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
-        auto f = ss::now();
-        if (!_topic_deltas.empty() && _topics_sem.available_units() > 0) {
-            f = reconcile_topics();
-        }
-        return f.finally([this] {
-            if (!_gate.is_closed()) {
-                _housekeeping_timer.arm(_housekeeping_timer_interval);
+    ssx::background
+      = ssx::spawn_with_gate_then(_gate, [this] {
+            auto f = ss::now();
+            if (!_topic_deltas.empty() && _topics_sem.available_units() > 0) {
+                f = reconcile_topics();
             }
+            return f.finally([this] {
+                if (!_gate.is_closed()) {
+                    _housekeeping_timer.arm(_housekeeping_timer_interval);
+                }
+            });
+        }).handle_exception([](const std::exception_ptr& e) {
+            // we ignore the exception as controller backend will retry in next
+            // loop
+            vlog(clusterlog.warn, "error during reconciliation - {}", e);
         });
-    }).handle_exception([](const std::exception_ptr& e) {
-        // we ignore the exception as controller backend will retry in next
-        // loop
-        vlog(clusterlog.warn, "error during reconciliation - {}", e);
-    });
 }
 
 ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {

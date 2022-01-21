@@ -427,11 +427,15 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
         co_return try_abort_reply{.aborted = true, .ec = tx_errc::none};
     } else if (tx.status == tm_transaction::tx_status::preparing) {
         ssx::spawn_with_gate(_gate, [this, stm, tx, timeout] {
-          return with(
-            stm, tx.id, "try_abort:commit", [this, stm, tx, timeout]() {
-                return do_commit_tm_tx(
-                  stm, tx.id, tx.pid, tx.tx_seq, timeout);
-            }).discard_result();
+            return with(
+                     stm,
+                     tx.id,
+                     "try_abort:commit",
+                     [this, stm, tx, timeout]() {
+                         return do_commit_tm_tx(
+                           stm, tx.id, tx.pid, tx.tx_seq, timeout);
+                     })
+              .discard_result();
         });
         co_return try_abort_reply{.ec = tx_errc::none};
     } else if (tx.status == tm_transaction::tx_status::ongoing) {
@@ -1117,9 +1121,12 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
              stm,
              timeout,
              outcome]() mutable {
-                return stm->read_lock().then(
-                  [request = std::move(request), &self, stm, timeout, outcome](
-                    ss::basic_rwlock<>::holder unit) mutable {
+                return stm->read_lock()
+                  .then([request = std::move(request),
+                         &self,
+                         stm,
+                         timeout,
+                         outcome](ss::basic_rwlock<>::holder unit) mutable {
                       auto tx_id = request.transactional_id;
                       return with(
                                stm,
@@ -1144,7 +1151,8 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
                                      });
                                })
                         .finally([u = std::move(unit)] {});
-                  }).discard_result();
+                  })
+                  .discard_result();
             });
 
           return decided.then(

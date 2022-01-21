@@ -118,12 +118,12 @@ void members_backend::handle_single_update(
 
 void members_backend::start_reconciliation_loop() {
     ssx::background = ssx::spawn_with_gate_then(_bg, [this] {
-        return reconcile().finally([this] {
-            if (!_as.local().abort_requested()) {
-                _retry_timer.arm(_retry_timeout);
-            }
-        });
-    }).handle_exception([](const std::exception_ptr& e) {
+                          return reconcile().finally([this] {
+                              if (!_as.local().abort_requested()) {
+                                  _retry_timer.arm(_retry_timeout);
+                              }
+                          });
+                      }).handle_exception([](const std::exception_ptr& e) {
         // just log an exception, will retry
         vlog(
           clusterlog.trace,

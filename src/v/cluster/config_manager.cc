@@ -79,50 +79,49 @@ config_manager::config_manager(
  */
 void config_manager::start_bootstrap() {
     // Detach fiber
-    ssx::background = ssx::spawn_with_gate_then(
-      _gate,
-      [this] {
-          return ss::do_until(
-            [this] {
-                return _as.local().abort_requested() || _bootstrap_complete;
-            },
-            [this]() -> ss::future<> {
-                if (_seen_version != config_version_unset) {
-                    vlog(
-                      clusterlog.info,
-                      "Bootstrap complete (version {})",
-                      _seen_version);
-                    _bootstrap_complete = true;
-                    co_return;
-                } else {
-                    auto leader = co_await _leaders.local().wait_for_leader(
-                      model::controller_ntp,
-                      model::timeout_clock::now() + bootstrap_retry,
-                      _as.local());
-                    if (leader == _self) {
-                        // We are the leader.  Proceed to bootstrap cluster
-                        // configuration from our local configuration.
-                        co_await do_bootstrap();
-                        vlog(clusterlog.info, "Completed bootstrap as leader");
-                    } else {
-                        // Someone else got leadership.  Maybe they
-                        // successfully bootstrap config, maybe they don't.
-                        // Wait a short time before checking again.
-                        co_await ss::sleep_abortable(
-                          bootstrap_retry, _as.local());
-                    }
-                }
-            });
-      })
-      .handle_exception([](const std::exception_ptr&) {
-          // Explicitly handle exception so that we do not risk an
-          // 'ignored exceptional future' error.  The only exceptions
-          // we expect here are things like sleep_aborted during shutdown.
-          vlog(
-            clusterlog.warn,
-            "Exception during bootstrap: {}",
-            std::current_exception());
-      });
+    ssx::background
+      = ssx::spawn_with_gate_then(_gate, [this] {
+            return ss::do_until(
+              [this] {
+                  return _as.local().abort_requested() || _bootstrap_complete;
+              },
+              [this]() -> ss::future<> {
+                  if (_seen_version != config_version_unset) {
+                      vlog(
+                        clusterlog.info,
+                        "Bootstrap complete (version {})",
+                        _seen_version);
+                      _bootstrap_complete = true;
+                      co_return;
+                  } else {
+                      auto leader = co_await _leaders.local().wait_for_leader(
+                        model::controller_ntp,
+                        model::timeout_clock::now() + bootstrap_retry,
+                        _as.local());
+                      if (leader == _self) {
+                          // We are the leader.  Proceed to bootstrap cluster
+                          // configuration from our local configuration.
+                          co_await do_bootstrap();
+                          vlog(
+                            clusterlog.info, "Completed bootstrap as leader");
+                      } else {
+                          // Someone else got leadership.  Maybe they
+                          // successfully bootstrap config, maybe they don't.
+                          // Wait a short time before checking again.
+                          co_await ss::sleep_abortable(
+                            bootstrap_retry, _as.local());
+                      }
+                  }
+              });
+        }).handle_exception([](const std::exception_ptr&) {
+            // Explicitly handle exception so that we do not risk an
+            // 'ignored exceptional future' error.  The only exceptions
+            // we expect here are things like sleep_aborted during shutdown.
+            vlog(
+              clusterlog.warn,
+              "Exception during bootstrap: {}",
+              std::current_exception());
+        });
 }
 
 /**
@@ -182,16 +181,13 @@ ss::future<> config_manager::start() {
     vlog(clusterlog.trace, "Starting reconcile_status...");
 
     // Detach fiber
-    ssx::background = ssx::spawn_with_gate_then(
-      _gate,
-      [this] {
-          return ss::do_until(
-            [this] { return _as.local().abort_requested(); },
-            [this] { return reconcile_status(); });
-      })
-      .handle_exception([](std::exception_ptr const& e) {
-          vlog(clusterlog.warn, "Exception from reconcile_status: {}", e);
-      });
+    ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
+                          return ss::do_until(
+                            [this] { return _as.local().abort_requested(); },
+                            [this] { return reconcile_status(); });
+                      }).handle_exception([](std::exception_ptr const& e) {
+        vlog(clusterlog.warn, "Exception from reconcile_status: {}", e);
+    });
 
     return ss::now();
 }

@@ -84,9 +84,8 @@ ss::future<> members_manager::start() {
     }
 
     if (is_already_member()) {
-        ssx::spawn_with_gate(_gate, [this] {
-            return maybe_update_current_node_configuration();
-        });
+        ssx::spawn_with_gate(
+          _gate, [this] { return maybe_update_current_node_configuration(); });
     } else {
         join_raft0();
     }
