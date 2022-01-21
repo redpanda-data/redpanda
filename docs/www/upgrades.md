@@ -101,7 +101,7 @@ docker restart <container_name>
 Now you have the desired version of Redpanda running.
 
 # Linux
-For Linux distributions, the process is really simplified but it changes depending on the distribution:
+For Linux distributions, the process is simple but it changes according to the distribution:
 - On Fedora/RedHat systems:
     Execute the following commands on terminal:
     ```bash
