@@ -155,3 +155,55 @@ class TxAdminTest(RedpandaTest):
                     assert (self.extract_pid(tx) in expected_pids)
                     assert (tx['status'] == 'ongoing')
                     assert (tx['timeout_ms'] == -1)
+
+    @cluster(num_nodes=3)
+    def test_mark_transaction_expired(self):
+        producer1 = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': '0',
+        })
+        producer2 = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': '1',
+        })
+        producer1.init_transactions()
+        producer2.init_transactions()
+        producer1.begin_transaction()
+        producer2.begin_transaction()
+
+        for topic in self.topics:
+            for partition in range(topic.partition_count):
+                producer1.produce(topic.name, '0', '0', partition)
+                producer2.produce(topic.name, '0', '1', partition)
+
+        producer1.flush()
+        producer2.flush()
+
+        expected_pids = None
+
+        txs_info = self.admin.get_transactions(topic.name, partition, "kafka")
+
+        expected_pids = set(
+            map(self.extract_pid, txs_info['active_transactions']))
+        assert (len(expected_pids) == 2)
+
+        abort_tx = list(expected_pids)[0]
+        expected_pids.discard(abort_tx)
+
+        for topic in self.topics:
+            for partition in range(topic.partition_count):
+                self.admin.mark_transaction_expired(topic.name, partition, {
+                    "id": abort_tx[0],
+                    "epoch": abort_tx[1]
+                }, "kafka")
+
+                txs_info = self.admin.get_transactions(topic.name, partition,
+                                                       "kafka")
+                assert ('expired_transactions' not in txs_info)
+
+                assert (len(expected_pids) == len(
+                    txs_info['active_transactions']))
+                for tx in txs_info['active_transactions']:
+                    assert (self.extract_pid(tx) in expected_pids)
+                    assert (tx['status'] == 'ongoing')
+                    assert (tx['timeout_ms'] == 60000)

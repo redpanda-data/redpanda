@@ -169,6 +169,52 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/partitions/{namespace}/{topic}/{partition}/mark_transaction_expired",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Mark transaction expired for partition",
+                    "type": "void",
+                    "nickname": "mark_transaction_expired",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "id",
+                            "in": "query",
+                            "required": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "epoch",
+                            "in": "query",
+                            "required": true,
+                            "type": "integer"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {

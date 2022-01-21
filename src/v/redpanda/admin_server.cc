@@ -28,6 +28,7 @@
 #include "finjector/hbadger.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "model/record.h"
 #include "net/dns.h"
 #include "raft/types.h"
 #include "redpanda/admin/api-doc/broker.json.h"
@@ -61,6 +62,7 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
+#include <limits>
 #include <stdexcept>
 #include <system_error>
 #include <unordered_map>
@@ -426,6 +428,17 @@ ss::future<> admin_server::throw_on_error(
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected raft error: {}", ec.message()));
+        }
+    } else if (ec.category() == cluster::tx_error_category()) {
+        switch (cluster::tx_errc(ec.value())) {
+        case cluster::tx_errc::leader_not_found:
+            throw co_await redirect_to_leader(req, ntp);
+        case cluster::tx_errc::pid_not_found:
+            throw ss::httpd::bad_request_exception(
+              fmt_with_ctx(fmt::format, "Can not find pid for ntp:{}", ntp));
+        default:
+            throw ss::httpd::server_error_exception(
+              fmt::format("Unexpected tx_error error: {}", ec.message()));
         }
     } else {
         throw ss::httpd::server_error_exception(
@@ -1131,6 +1144,46 @@ void admin_server::register_broker_routes() {
       });
 }
 
+// Helpers for partition routes
+namespace {
+
+model::ntp parse_ntp_from_request(ss::httpd::parameters& param) {
+    auto ns = model::ns(param["namespace"]);
+    auto topic = model::topic(param["topic"]);
+
+    model::partition_id partition;
+    try {
+        partition = model::partition_id(std::stoi(param["partition"]));
+    } catch (...) {
+        throw ss::httpd::bad_param_exception(fmt::format(
+          "Partition id must be an integer: {}", param["partition"]));
+    }
+
+    if (partition() < 0) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("Invalid partition id {}", partition));
+    }
+
+    return model::ntp(std::move(ns), std::move(topic), partition);
+}
+
+bool need_redirect_to_leader(
+  model::ntp ntp, ss::sharded<cluster::metadata_cache>& metadata_cache) {
+    auto leader_id_opt = metadata_cache.local().get_leader_id(ntp);
+    if (!leader_id_opt.has_value()) {
+        throw ss::httpd::base_exception(
+          fmt_with_ctx(
+            fmt::format,
+            "Partition {} does not have a leader, cannot redirect",
+            ntp),
+          ss::httpd::reply::status_type::service_unavailable);
+    }
+
+    return leader_id_opt.value() != config::node().node_id();
+}
+
+} // namespace
+
 void admin_server::register_partition_routes() {
     /*
      * Get a list of partition summaries.
@@ -1178,25 +1231,7 @@ void admin_server::register_partition_routes() {
      */
     ss::httpd::partition_json::get_partition.set(
       _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
-          auto ns = model::ns(req->param["namespace"]);
-          auto topic = model::topic(req->param["topic"]);
-
-          model::partition_id partition;
-          try {
-              partition = model::partition_id(
-                std::stoi(req->param["partition"]));
-          } catch (...) {
-              throw ss::httpd::bad_param_exception(fmt::format(
-                "Partition id must be an integer: {}",
-                req->param["partition"]));
-          }
-
-          if (partition() < 0) {
-              throw ss::httpd::bad_param_exception(
-                fmt::format("Invalid partition id {}", partition));
-          }
-
-          const model::ntp ntp(std::move(ns), std::move(topic), partition);
+          const model::ntp ntp = parse_ntp_from_request(req->param);
           const bool is_controller = ntp == model::controller_ntp;
 
           if (!is_controller && !_metadata_cache.local().contains(ntp)) {
@@ -1282,39 +1317,9 @@ void admin_server::register_partition_routes() {
       _server._routes,
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
-          auto ns = model::ns(req->param["namespace"]);
-          auto topic = model::topic(req->param["topic"]);
+          const model::ntp ntp = parse_ntp_from_request(req->param);
 
-          model::partition_id partition;
-          try {
-              partition = model::partition_id(
-                std::stoi(req->param["partition"]));
-          } catch (...) {
-              throw ss::httpd::bad_param_exception(fmt_with_ctx(
-                fmt::format,
-                "Partition id must be an integer: {}",
-                req->param["partition"]));
-          }
-
-          if (partition() < 0) {
-              throw ss::httpd::bad_param_exception(fmt_with_ctx(
-                fmt::format, "Invalid partition id {}", partition));
-          }
-
-          const model::ntp ntp(std::move(ns), std::move(topic), partition);
-
-          auto leader_id_opt = _metadata_cache.local().get_leader_id(ntp);
-          if (!leader_id_opt.has_value()) {
-              throw ss::httpd::base_exception(
-                fmt_with_ctx(
-                  fmt::format,
-                  "Partition {} does not have a leader, cannot redirect",
-                  ntp),
-                ss::httpd::reply::status_type::service_unavailable);
-          }
-
-          // Resend request to leader for current partition
-          if (leader_id_opt.value() != config::node().node_id()) {
+          if (need_redirect_to_leader(ntp, _metadata_cache)) {
               throw co_await redirect_to_leader(*req, ntp);
           }
 
@@ -1322,7 +1327,7 @@ void admin_server::register_partition_routes() {
           // Strange situation, but need to check it
           if (!shard) {
               throw ss::httpd::server_error_exception(fmt_with_ctx(
-                fmt::format, "Can not find shard for partition {}", partition));
+                fmt::format, "Can not find shard for partition {}", ntp.tp));
           }
 
           co_return co_await _partition_manager.invoke_on(
@@ -1388,6 +1393,78 @@ void admin_server::register_partition_routes() {
                 }
 
                 co_return ss::json::json_return_type(ans);
+            });
+      });
+
+    /*
+     * Abort transaction for partition
+     */
+    ss::httpd::partition_json::mark_transaction_expired.set(
+      _server._routes,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          const model::ntp ntp = parse_ntp_from_request(req->param);
+
+          model::producer_identity pid;
+          auto node = req->get_query_param("id");
+          try {
+              pid.id = std::stoi(node);
+          } catch (...) {
+              throw ss::httpd::bad_param_exception(fmt_with_ctx(
+                fmt::format, "Transaction id must be an integer: {}", node));
+          }
+          node = req->get_query_param("epoch");
+          try {
+              int64_t epoch = std::stoi(node);
+              if (
+                epoch < std::numeric_limits<int16_t>::min()
+                || epoch > std::numeric_limits<int16_t>::max()) {
+                  throw ss::httpd::bad_param_exception(fmt_with_ctx(
+                    fmt::format, "Invalid transaction epoch {}", epoch));
+              }
+              pid.epoch = epoch;
+          } catch (...) {
+              throw ss::httpd::bad_param_exception(fmt_with_ctx(
+                fmt::format, "Transaction epoch must be an integer: {}", node));
+          }
+
+          vlog(logger.info, "Mark transaction expired for pid:{}", pid);
+
+          if (need_redirect_to_leader(ntp, _metadata_cache)) {
+              throw co_await redirect_to_leader(*req, ntp);
+          }
+
+          auto shard = _shard_table.local().shard_for(ntp);
+          // Strange situation, but need to check it
+          if (!shard) {
+              throw ss::httpd::server_error_exception(fmt_with_ctx(
+                fmt::format, "Can not find shard for partition {}", ntp.tp));
+          }
+
+          co_return co_await _partition_manager.invoke_on(
+            *shard,
+            [ntp = std::move(ntp), pid, req = std::move(req), this](
+              cluster::partition_manager& pm) mutable
+            -> ss::future<ss::json::json_return_type> {
+                auto partition = pm.get(ntp);
+                if (!partition) {
+                    throw ss::httpd::server_error_exception(fmt_with_ctx(
+                      fmt::format, "Can not find partition {}", partition));
+                }
+
+                auto rm_stm_ptr = partition->rm_stm();
+
+                if (!rm_stm_ptr) {
+                    throw ss::httpd::server_error_exception(fmt_with_ctx(
+                      fmt::format,
+                      "Can not get rm_stm for partition {}",
+                      partition));
+                }
+
+                auto res = co_await rm_stm_ptr->mark_expired(pid);
+                co_await throw_on_error(*req, res, ntp);
+
+                co_return ss::json::json_return_type(ss::json::json_void());
             });
       });
 

@@ -30,6 +30,8 @@
 #include <absl/container/btree_set.h>
 #include <absl/container/flat_hash_map.h>
 
+#include <system_error>
+
 namespace cluster {
 
 /**
@@ -232,6 +234,8 @@ public:
       = absl::btree_map<model::producer_identity, rm_stm::transaction_info>;
     ss::future<result<transaction_set>> get_transactions();
 
+    ss::future<std::error_code> mark_expired(model::producer_identity pid);
+
 protected:
     ss::future<> handle_eviction() override;
 
@@ -277,6 +281,8 @@ private:
     ss::future<> try_abort_old_tx(model::producer_identity);
     ss::future<> do_try_abort_old_tx(model::producer_identity);
     void try_arm(time_point_type);
+
+    ss::future<std::error_code> do_mark_expired(model::producer_identity pid);
 
     bool is_known_session(model::producer_identity pid) const {
         auto is_known = false;

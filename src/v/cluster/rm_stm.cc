@@ -784,6 +784,28 @@ ss::future<result<rm_stm::transaction_set>> rm_stm::get_transactions() {
     co_return ans;
 }
 
+ss::future<std::error_code> rm_stm::mark_expired(model::producer_identity pid) {
+    return get_tx_lock(pid.get_id())->with([this, pid]() {
+        return do_mark_expired(pid);
+    });
+}
+
+ss::future<std::error_code>
+rm_stm::do_mark_expired(model::producer_identity pid) {
+    if (!co_await sync(_sync_timeout)) {
+        co_return std::error_code(tx_errc::leader_not_found);
+    }
+    if (!is_known_session(pid)) {
+        co_return std::error_code(tx_errc::pid_not_found);
+    }
+
+    // We should delete information about expiration for pid, because inside
+    // try_abort_old_tx it checks is tx expired or not.
+    _mem_state.expiration.erase(pid);
+    co_await do_try_abort_old_tx(pid);
+    co_return std::error_code(tx_errc::none);
+}
+
 bool rm_stm::check_seq(model::batch_identity bid) {
     auto& seq = _log_state.seq_table[bid.pid];
     auto last_write_timestamp = model::timestamp::now().value();
