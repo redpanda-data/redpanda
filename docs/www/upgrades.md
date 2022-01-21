@@ -146,5 +146,5 @@ It is also important to keep a closer monitoring, which can be done by following
 
 # Downgrade
 If for any reason you have faced issues during the upgrade, like breaking changes, restoring to the previous version will guarantee that your downtime won't be affected more than expected.
-Make sure of [checking current version](#checking-current-version) before start the upgrade, and replace the configuration depending on the environment that Redpanda is running, with the desired 
+Make sure to check what is your [current version](#checking-current-version) before starting the upgrade, and replace the configuration according to your running environment.
 All upgrade topics above are intended to upgrade to the latest version, some are explicity written, others simply ask to update, so be aware of these changes during the downgrade.
