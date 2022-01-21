@@ -85,7 +85,7 @@ Remove current images:
 docker rmi <image_id>
 ```
 
-Next step is to pull the desired Redpanda's version, or if the preferred one is the latest one you can set 'latest' in 'version' tag:
+Next step is to pull the desired Redpanda's version, or you can simply set 'latest' in the 'version' tag:
 ```bash
 docker pull docker.vectorized.io/vectorized/redpanda:<version>
 ```
