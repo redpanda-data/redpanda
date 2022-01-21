@@ -11,6 +11,7 @@
 
 #include "cluster/node/local_monitor.h"
 
+#include "cluster/logger.h"
 #include "cluster/node/types.h"
 #include "config/node_config.h"
 #include "version.h"
@@ -21,6 +22,8 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sstring.hh>
 
+#include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <seastarx.h>
 
@@ -37,6 +40,7 @@ ss::future<> local_monitor::update_state() {
       .uptime = uptime,
       .disks = disks,
     };
+    update_alert_state();
     co_return;
 }
 
@@ -73,4 +77,25 @@ ss::future<struct statvfs> local_monitor::get_statvfs(const ss::sstring& path) {
         co_return co_await ss::engine().statvfs(path);
     }
 }
+
+void local_monitor::update_alert_state() {
+    _state.storage_space_alert = 0;
+    for (const auto& d : _state.disks) {
+        vassert(d.total != 0.0, "Total disk space cannot be zero.");
+        double min_space = double(d.total) * alert_min_free_space_percent;
+        min_space = std::min(min_space, alert_min_free_space_bytes);
+        clusterlog.debug(
+          "{}: min by % {}, min bytes {}, disk.free {} -> alert {}",
+          __func__,
+          double(d.total) * alert_min_free_space_percent,
+          alert_min_free_space_bytes,
+          d.free,
+          double(d.free) <= min_space);
+
+        if (double(d.free) <= min_space) {
+            _state.storage_space_alert = 1;
+        }
+    }
+}
+
 } // namespace cluster::node

@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "cluster/node/types.h"
+#include "units.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -31,6 +32,10 @@ public:
     ss::future<> update_state();
     const local_state& get_state_cached() const;
 
+    // Visible for test...
+    static constexpr double alert_min_free_space_percent = 0.05;
+    static constexpr double alert_min_free_space_bytes = 1_GiB;
+
     void set_path_for_test(const ss::sstring& path);
     void
       set_statvfs_for_test(std::function<struct statvfs(const ss::sstring&)>);
@@ -38,6 +43,8 @@ public:
 private:
     ss::future<std::vector<disk>> get_disks();
     ss::future<struct statvfs> get_statvfs(const ss::sstring&);
+    void update_alert_state();
+
     local_state _state;
 
     // Injection points for unit tests

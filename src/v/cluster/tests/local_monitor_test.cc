@@ -63,7 +63,7 @@ cluster::node::local_state local_monitor_fixture::update_state() {
 }
 
 struct statvfs local_monitor_fixture::make_statvfs(
-  unsigned long blk_free, unsigned long blk_total, unsigned long blk_size) {
+  size_t blk_free, size_t blk_total, size_t blk_size) {
     struct statvfs s = {
       .f_frsize = blk_size, .f_blocks = blk_total, .f_bfree = blk_free};
     return s;
@@ -84,4 +84,50 @@ FIXTURE_TEST(local_monitor_inject_statvfs, local_monitor_fixture) {
     BOOST_TEST_REQUIRE(ls.disks.size() == 1);
     BOOST_TEST_REQUIRE(ls.disks[0].total == total * block_size);
     BOOST_TEST_REQUIRE(ls.disks[0].free == free * block_size);
+}
+
+FIXTURE_TEST(local_monitor_alert_on_space_percent, local_monitor_fixture) {
+    // Minimum by %: 200 * 4k block = 800KiB total * 0.05 -> 40 KiB
+    // Minimum by bytes:                                      1 GiB
+    static constexpr auto total = 200UL, free = 0UL, block_size = 4096UL;
+    size_t min_free_percent_blocks
+      = total * cluster::node::local_monitor::alert_min_free_space_percent;
+    struct statvfs stats = make_statvfs(free, total, block_size);
+    auto lamb = [&](const ss::sstring&) { return stats; };
+    _local_monitor.set_statvfs_for_test(lamb);
+
+    // One block over the threshold should not alert
+    stats.f_bfree = min_free_percent_blocks + 1;
+    auto ls = update_state();
+    BOOST_TEST_REQUIRE(ls.storage_space_alert == 0);
+
+    // One block under the free threshold should alert
+    stats.f_bfree = min_free_percent_blocks - 1;
+    ls = update_state();
+    BOOST_TEST_REQUIRE(ls.storage_space_alert != 0);
+}
+
+FIXTURE_TEST(local_monitor_alert_on_space_bytes, local_monitor_fixture) {
+    // Minimum by %: 30 GiB total * 0.05 => 1.5 GiB
+    // Minimum by bytes:                    1   GiB
+    static constexpr auto total = 30 * 1024 * 1024 * 1024UL,
+                          block_size = 1024UL;
+    static constexpr auto min_bytes_in_blocks
+      = cluster::node::local_monitor::alert_min_free_space_bytes / block_size;
+    logger.debug(
+      "{}: bytes free threshold -> {} blocks", __func__, min_bytes_in_blocks);
+
+    // Minimum bytes + one block -> No alert
+    struct statvfs stats = make_statvfs(
+      min_bytes_in_blocks + 1, total, block_size);
+    auto lamb = [&](const ss::sstring&) { return stats; };
+    _local_monitor.set_statvfs_for_test(lamb);
+
+    auto ls = update_state();
+    BOOST_TEST_REQUIRE(ls.storage_space_alert == 0);
+
+    // Min bytes threshold minus a blocks -> Alert
+    stats.f_bfree = min_bytes_in_blocks - 1;
+    ls = update_state();
+    BOOST_TEST_REQUIRE(ls.storage_space_alert != 0);
 }
