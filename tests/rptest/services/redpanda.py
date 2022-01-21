@@ -139,6 +139,9 @@ class RedpandaService(Service):
     COV_KEY = "enable_cov"
     DEFAULT_COV_OPT = False
 
+    # Where we put a compressed binary if saving it after failure
+    EXECUTABLE_SAVE_PATH = "/tmp/redpanda.tar.gz"
+
     logs = {
         "redpanda_start_stdout_stderr": {
             "path": STDOUT_STDERR_CAPTURE,
@@ -151,6 +154,10 @@ class RedpandaService(Service):
         "code_coverage_profraw_file": {
             "path": COVERAGE_PROFRAW_CAPTURE,
             "collect_default": True
+        },
+        "executable": {
+            "path": EXECUTABLE_SAVE_PATH,
+            "collect_default": False
         }
     }
 
@@ -391,6 +398,13 @@ class RedpandaService(Service):
                         f"[{test_name}] Unexpected log line on {node.account.hostname}: {line}"
                     )
 
+        for node, lines in bad_lines.items():
+            # LeakSanitizer type errors may include raw backtraces that the devloper
+            # needs the binary to decode + investigate
+            if any(['Sanitizer' in l for l in lines]):
+                self.save_executable()
+                break
+
         if bad_lines:
             raise BadLogLines(bad_lines.keys())
 
@@ -403,6 +417,15 @@ class RedpandaService(Service):
         rp_install_path_root = self._context.globals.get(
             "rp_install_path_root", None)
         return f"{rp_install_path_root}/bin/{name}"
+
+    def find_raw_binary(self, name):
+        """
+        Like `find_binary`, but find the underlying executable rather tha
+        a shell wrapper.
+        """
+        rp_install_path_root = self._context.globals.get(
+            "rp_install_path_root", None)
+        return f"{rp_install_path_root}/libexec/{name}"
 
     def stop_node(self, node):
         pids = self.pids(node)
@@ -430,6 +453,9 @@ class RedpandaService(Service):
                         f"{RedpandaService.PERSISTENT_ROOT}/data/*")
         if node.account.exists(RedpandaService.CONFIG_FILE):
             node.account.remove(f"{RedpandaService.CONFIG_FILE}")
+        if not preserve_logs and node.account.exists(
+                self.EXECUTABLE_SAVE_PATH):
+            node.account.remove(self.EXECUTABLE_SAVE_PATH)
 
     def remove_local_data(self, node):
         node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/data/*")
@@ -817,3 +843,38 @@ class RedpandaService(Service):
 
     def cov_enabled(self):
         return self._context.globals.get(self.COV_KEY, self.DEFAULT_COV_OPT)
+
+    def save_executable(self):
+        """
+        For the currently executing test, enable preserving the redpanda
+        executable as if it were a log.  This is expensive in storage space:
+        only do it if you catch an error that you think the binary will
+        be needed to make sense of, like a LeakSanitizer error.
+
+        This function does nothing in non-CI environments: in local development
+        environments, the developer already has the binary.
+        """
+
+        if os.environ.get('CI', None) == 'false':
+            # We are on a developer workstation
+            self.logger.info("Skipping saving executable, not in CI")
+            return
+
+        self.logger.info(
+            f"Saving executable as {os.path.basename(self.EXECUTABLE_SAVE_PATH)}"
+        )
+
+        # Any node will do, they all run the same binary.  May cease to be true
+        # for future mixed-version rolling upgrade testing.
+        node = self.nodes[0]
+        binary = self.find_raw_binary('redpanda')
+        save_to = self.EXECUTABLE_SAVE_PATH
+        try:
+            node.account.ssh(f"cd /tmp ; gzip -c {binary} > {save_to}")
+        except Exception as e:
+            # Don't obstruct remaining test teardown when trying to save binary during failure
+            # handling: eat the exception and log it.
+            self.logger.exception(
+                f"Error while compressing binary {binary} to {save_to}")
+        else:
+            self._context.log_collect['executable', self] = True
