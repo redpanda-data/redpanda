@@ -134,7 +134,7 @@ On Windows it is only possible to run Redpanda on Docker. Therefore, the [Docker
 
 # Post-upgrade actions
 Once the upgrade is done, you need to make sure that cluster is healthy.
-In order to check if the cluster is properly running, use command :
+In order to check if the cluster is properly running, use this command :
 ```bash
 rpk cluster info
 ```
