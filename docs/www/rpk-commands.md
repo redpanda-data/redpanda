@@ -529,7 +529,7 @@ Usage:
 </td>
 <td><strong> Description</strong>
 </td>
-</tr><tr><td>-h, --help</td><td>-</td><td>           help for start</td></tr><tr><td>-n, --nodes</td><td>-</td><td> uint     The number of nodes to start (default 1)</td></tr><tr><td>--retries</td><td>-</td><td> uint   The amount of times to check for the cluster before considering it unstable and exiting. (default 10)</td></tr><tr><td>-v, --verbose</td><td>-</td><td>   Enable verbose logging (default: false).</td></tr></tbody></table>
+</tr><tr><td>-h, --help</td><td>-</td><td>           help for start</td></tr><tr><td>-n, --nodes</td><td>uint</td><td>      The number of nodes to start (default 1)</td></tr><tr><td>--retries</td><td>uint</td><td>    The amount of times to check for the cluster before considering it unstable and exiting. (default 10)</td></tr><tr><td>-v, --verbose</td><td>-</td><td>   Enable verbose logging (default: false).</td></tr></tbody></table>
 
 ## rpk container stop
 
@@ -713,13 +713,37 @@ Usage:
 <table>
 <tbody>
 <tr>
-<td><strong> Value</strong>
-</td>
-<td><strong> Type</strong>
-</td>
-<td><strong> Description</strong>
-</td>
-</tr><tr><td>--config</td><td>string</td><td>         The path to the redpanda config file</td></tr><tr><td>-h, --help</td><td>-</td><td>                 help for prometheus-config</td></tr><tr><td>--node-addrs</td><td>strings</td><td>    </td></tr><tr><td>-delimited</td><td>-</td><td> list of the addresses (|host:port|) of all the redpanda nodes</td></tr><tr><td>--seed-addr</td><td>string</td><td>      The URL of a redpanda node with which to discover the rest</td></tr><tr><td>-v, --verbose</td><td>-</td><td>   Enable verbose logging (default: false).</td></tr></tbody></table>
+<td><strong> Value</strong></td>
+<td><strong> Type</strong></td>
+<td><strong> Description</strong></td>
+</tr>
+<tr>
+<td>--config</td>
+<td>string</td>
+<td>The path to the redpanda config file</td>
+</tr>
+<tr>
+<td>-h, --help</td>
+<td>-</td>
+<td>help for prometheus-config</td>
+</tr>
+<tr>
+<td>--node-addrs</td>
+<td>strings</td>
+<td>A comma-delimited list of the addresses (|host|:|port|) of all the redpanda nodes in a cluster. The port must be the one configured for the nodes' admin API (9644 by default)</td>
+</tr>
+<tr>
+<td>--seed-addr</td>
+<td>string</td>
+<td>The URL of a redpanda node with which to discover the rest</td>
+</tr>
+<tr>
+<td>-v, --verbose</td>
+<td>-</td>
+<td>Enable verbose logging (default: false).</td>
+</tr>
+</tbody>
+</table>
 
 ## rpk generate shell-completion
 
