@@ -50,7 +50,7 @@ kubectl describe pod <pod_name>
 ```
 
 # Docker
-As docker relies on images, the upgrade relies on changing the current image to a new one.
+As docker relies on images, the upgrade relies on replacing the current image to a new one.
 Initially it is important to check which image version that is running on your docker, and for that on a terminal or CMD execute the following command:
 
 ```bash
