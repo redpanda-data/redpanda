@@ -10,13 +10,14 @@
 
 #pragma once
 
+#include "coproc/fwd.h"
 #include "coproc/logger.h"
-#include "coproc/script_dispatcher.h"
 #include "coproc/wasm_event.h"
 #include "seastarx.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/gate.hh>
 
 #include <absl/container/btree_map.h>
 #include <absl/container/btree_set.h>
@@ -64,8 +65,7 @@ public:
 
 class async_event_handler final : public event_handler {
 public:
-    explicit async_event_handler(
-      ss::abort_source& abort_source, ss::sharded<pacemaker>& pacemaker);
+    explicit async_event_handler(script_dispatcher&);
 
     ss::future<> start() override;
     ss::future<> stop() override;
@@ -77,16 +77,10 @@ public:
     process(absl::btree_map<script_id, parsed_event> wsas) override;
 
 private:
-    /// Set of known script ids to be active
-    absl::btree_set<script_id> _active_ids;
-
-    /// Pass it tot script_dispatcher
-    ss::abort_source& _abort_source;
-
     ss::gate _gate;
 
     /// Used to make requests to the wasm engine
-    script_dispatcher _dispatcher;
+    script_dispatcher& _dispatcher;
 };
 
 class data_policy_event_handler final : public event_handler {

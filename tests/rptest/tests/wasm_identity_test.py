@@ -13,7 +13,8 @@ from rptest.clients.types import TopicSpec
 from rptest.wasm.topic import construct_materialized_topic, get_source_topic
 from rptest.wasm.topics_result_set import materialized_result_set_compare
 from rptest.wasm.wasm_build_tool import WasmTemplateRepository
-from rptest.wasm.wasm_test import WasmScript, WasmTest
+from rptest.wasm.wasm_test import WasmTest
+from rptest.wasm.wasm_script import WasmScript
 from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
 
 

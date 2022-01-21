@@ -77,6 +77,7 @@ ss::future<> partition_manager::remove(const model::ntp& ntp) {
           ntp));
     }
 
+    vlog(coproclog.info, "Removing materialized log: {}", ntp);
     auto partition = found->second;
     _ntp_table.erase(found);
     _unmanage_watchers.notify(ntp, ntp.tp.partition);

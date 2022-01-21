@@ -149,8 +149,11 @@ ss::future<bool> script_dispatcher::script_exists(script_id id) {
 }
 
 script_dispatcher::script_dispatcher(
-  ss::sharded<pacemaker>& p, ss::abort_source& as)
+  ss::sharded<pacemaker>& p,
+  ss::sharded<script_database>& sdb,
+  ss::abort_source& as) noexcept
   : _pacemaker(p)
+  , _sdb(sdb)
   , _abort_source(as)
   , _transport(_pacemaker.local().resources().transport) {}
 
@@ -162,18 +165,22 @@ script_dispatcher::add_sources(
     });
 }
 
-ss::future<result<std::vector<script_id>>>
+ss::future<std::error_code>
 script_dispatcher::enable_coprocessors(enable_copros_request req) {
     auto client = co_await get_client();
     if (!client) {
         co_return rpc::make_error_code(rpc::errc::disconnected_endpoint);
+    }
+    absl::flat_hash_map<script_id, iobuf> cached_srcs;
+    for (auto& req : req.inputs) {
+        const auto size = req.source_code.size_bytes();
+        cached_srcs.emplace(req.id, req.source_code.share(0, size));
     }
     auto reply = co_await client->enable_coprocessors(
       std::move(req), rpc::client_opts(model::no_timeout));
     if (!reply) {
         co_return reply.error();
     }
-    std::vector<script_id> added;
     std::vector<script_id> deregisters;
     for (enable_copros_reply::data& r : reply.value().data.acks) {
         /// 1. Only continue on success
@@ -207,7 +214,7 @@ script_dispatcher::enable_coprocessors(enable_copros_request req) {
 
         /// 4. Register the scripts with the pacemaker
         auto itopics = enrich_topics(std::move(r.script_meta.input_topics));
-        auto results = co_await add_sources(id, std::move(itopics));
+        auto results = co_await add_sources(id, itopics);
 
         /// 5. If there was a failure, we must deregisetr the coprocessor.
         /// There are only 2 possibilities for this scenario:
@@ -221,7 +228,14 @@ script_dispatcher::enable_coprocessors(enable_copros_request req) {
         } else {
             vlog(
               coproclog.info, "Successfully registered script with id: {}", id);
-            added.push_back(id);
+            auto found = cached_srcs.find(id);
+            vassert(found != cached_srcs.end(), "State inconsistency detected");
+            co_await _sdb.invoke_on(
+              script_database_main_shard,
+              [id, src = std::move(found->second), itopics](
+                script_database& sdb) mutable {
+                  return sdb.add_script(id, std::move(src), std::move(itopics));
+              });
         }
     }
     /// This can be removed once we complete the feature to have copros that
@@ -239,7 +253,7 @@ script_dispatcher::enable_coprocessors(enable_copros_request req) {
             co_return rpc::make_error_code(rpc::errc::disconnected_endpoint);
         }
     }
-    co_return added;
+    co_return rpc::make_error_code(rpc::errc::success);
 }
 
 ss::future<std::vector<coproc::errc>>
@@ -247,7 +261,7 @@ script_dispatcher::remove_sources(script_id id) {
     return _pacemaker.map([id](pacemaker& p) { return p.remove_source(id); });
 }
 
-ss::future<result<std::vector<script_id>>>
+ss::future<std::error_code>
 script_dispatcher::disable_coprocessors(disable_copros_request req) {
     auto client = co_await get_client();
     if (!client) {
@@ -258,7 +272,6 @@ script_dispatcher::disable_coprocessors(disable_copros_request req) {
     if (!reply) {
         co_return reply.error();
     }
-    std::vector<script_id> removed;
     for (const auto& [id, code] : reply.value().data.acks) {
         if (code == disable_response_code::script_id_does_not_exist) {
             vassert(
@@ -272,9 +285,11 @@ script_dispatcher::disable_coprocessors(disable_copros_request req) {
           final_code == disable_response_code::success,
           "Redpanda failed to internally deregister a script");
         vlog(coproclog.info, "Successfully deregistered script: {}", id);
-        removed.push_back(id);
+        co_await _sdb.invoke_on(
+          script_database_main_shard,
+          [id = id](script_database& sdb) { sdb.remove_script(id); });
     }
-    co_return removed;
+    co_return rpc::make_error_code(rpc::errc::success);
 }
 
 ss::future<> script_dispatcher::remove_all_sources() {
@@ -319,11 +334,13 @@ ss::future<std::error_code> script_dispatcher::disable_all_coprocessors() {
       cnt.n_internal_error,
       cnt.n_script_dnes);
     co_await remove_all_sources();
+    co_await _sdb.invoke_on(
+      script_database_main_shard, [](script_database& sdb) { sdb.clear(); });
     co_return rpc::make_error_code(rpc::errc::success);
 }
 
 ss::future<result<rpc::client_context<state_size_t>>>
-script_dispatcher::heartbeat(int8_t connect_attempts) {
+script_dispatcher::do_heartbeat(int8_t connect_attempts) {
     if (connect_attempts <= 0) {
         co_return result<rpc::client_context<state_size_t>>(
           rpc::errc::disconnected_endpoint);
@@ -341,11 +358,29 @@ script_dispatcher::heartbeat(int8_t connect_attempts) {
             /// The expected 1s timeout didn't occur
             co_await ss::sleep(1s);
         }
-        co_return co_await heartbeat(connect_attempts - 1);
+        co_return co_await do_heartbeat(connect_attempts - 1);
     }
     supervisor_client_protocol client(*transport.value());
     co_return co_await client.heartbeat(
       empty_request(), rpc::client_opts(timeout));
+}
+
+ss::future<result<bool>> script_dispatcher::heartbeat(int8_t connect_attempts) {
+    auto heartbeat = co_await do_heartbeat(connect_attempts);
+    if (heartbeat.has_error()) {
+        co_return result<bool>(heartbeat.error());
+    }
+    auto size = co_await _sdb.invoke_on(
+      script_database_main_shard,
+      [](script_database& sdb) { return sdb.size(); });
+    if (heartbeat.value().data() == static_cast<long>(size)) {
+        co_return true;
+    }
+    /// There is a discrepency between the number of registered coprocs
+    /// according to redpanda and according to the wasm engine.
+    /// Reconcile all state from offset 0.
+    co_await disable_all_coprocessors();
+    co_return false;
 }
 
 ss::future<std::optional<coproc::supervisor_client_protocol>>

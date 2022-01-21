@@ -57,6 +57,15 @@ public:
         _unmanage_watchers.unregister_notify(id);
     }
 
+    /*
+     * read-only interface to partitions.
+     *
+     * note that users of this interface must take care not to hold iterators
+     * across scheduling events as the underlying table may be modified and
+     * invalidate iterators.
+     */
+    const ntp_table_container& partitions() const { return _ntp_table; }
+
 private:
     ss::future<> do_shutdown(ss::lw_shared_ptr<partition>);
 

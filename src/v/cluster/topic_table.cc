@@ -161,16 +161,24 @@ topic_table::apply(create_partition_cmd cmd, model::offset offset) {
 ss::future<std::error_code>
 topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
     auto tp = _topics.find(model::topic_namespace_view(cmd.key));
-    if (tp == _topics.end() || !tp->second.is_topic_replicable()) {
+    if (tp == _topics.end()) {
         return ss::make_ready_future<std::error_code>(errc::topic_not_exists);
     }
+    if (!tp->second.is_topic_replicable()) {
+        return ss::make_ready_future<std::error_code>(
+          errc::topic_operation_error);
+    }
+    auto find_partition = [](
+                            std::vector<partition_assignment>& assignments,
+                            model::partition_id p_id) {
+        return std::find_if(
+          assignments.begin(),
+          assignments.end(),
+          [p_id](const partition_assignment& p_as) { return p_id == p_as.id; });
+    };
 
-    auto current_assignment_it = std::find_if(
-      tp->second.configuration.assignments.begin(),
-      tp->second.configuration.assignments.end(),
-      [p_id = cmd.key.tp.partition](partition_assignment& p_as) {
-          return p_id == p_as.id;
-      });
+    auto current_assignment_it = find_partition(
+      tp->second.configuration.assignments, cmd.key.tp.partition);
 
     if (current_assignment_it == tp->second.configuration.assignments.end()) {
         return ss::make_ready_future<std::error_code>(
@@ -193,6 +201,39 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
     // replace partition replica set
     current_assignment_it->replicas = cmd.value;
 
+    /// Update all non_replicable topics to have the same 'in-progress' state
+    auto found = _topics_hierarchy.find(model::topic_namespace_view(cmd.key));
+    if (found != _topics_hierarchy.end()) {
+        for (const auto& cs : found->second) {
+            /// Insert non-replicable topic into the 'update_in_progress' set
+            auto [_, success] = _update_in_progress.insert(
+              model::ntp(cs.ns, cs.tp, current_assignment_it->id));
+            vassert(
+              success,
+              "non_replicable topic {}-{} already in _update_in_progress set",
+              cs.tp,
+              current_assignment_it->id);
+            /// For each child topic of the to-be-moved source, update its new
+            /// replica assignment to reflect the change
+            auto sfound = _topics.find(cs);
+            vassert(
+              sfound != _topics.end(),
+              "Non replicable topic must exist: {}",
+              cs);
+            auto assignment_it = find_partition(
+              sfound->second.configuration.assignments,
+              current_assignment_it->id);
+            vassert(
+              assignment_it != sfound->second.configuration.assignments.end(),
+              "Non replicable partition doesn't exist: {}-{}",
+              cs,
+              current_assignment_it->id);
+            /// The new assignments of the non_replicable topic/partition must
+            /// match the source topic
+            assignment_it->replicas = cmd.value;
+        }
+    }
+
     // calculate deleta for backend
     model::ntp ntp(tp->first.ns, tp->first.tp, current_assignment_it->id);
     _pending_deltas.emplace_back(
@@ -210,8 +251,12 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
 ss::future<std::error_code>
 topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
     auto tp = _topics.find(model::topic_namespace_view(cmd.key));
-    if (tp == _topics.end() || !tp->second.is_topic_replicable()) {
+    if (tp == _topics.end()) {
         return ss::make_ready_future<std::error_code>(errc::topic_not_exists);
+    }
+    if (!tp->second.is_topic_replicable()) {
+        return ss::make_ready_future<std::error_code>(
+          errc::topic_operation_error);
     }
 
     // calculate deleta for backend
@@ -239,6 +284,22 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
       .id = current_assignment_it->id,
       .replicas = std::move(cmd.value),
     };
+
+    /// Remove child non_replicable topics out of the 'update_in_progress' set
+    auto found = _topics_hierarchy.find(model::topic_namespace_view(cmd.key));
+    if (found != _topics_hierarchy.end()) {
+        for (const auto& cs : found->second) {
+            bool erased = _update_in_progress.erase(
+                            model::ntp(cs.ns, cs.tp, cmd.key.tp.partition))
+                          > 0;
+            if (!erased) {
+                vlog(
+                  clusterlog.error,
+                  "non_replicable_topic expected to exist in "
+                  "update_in_progress set");
+            }
+        }
+    }
 
     // notify backend about finished update
     _pending_deltas.emplace_back(
@@ -524,7 +585,7 @@ bool topic_table::contains(
 std::optional<cluster::partition_assignment>
 topic_table::get_partition_assignment(const model::ntp& ntp) const {
     auto it = _topics.find(model::topic_namespace_view(ntp));
-    if (it == _topics.end() || !it->second.is_topic_replicable()) {
+    if (it == _topics.end()) {
         return {};
     }
 

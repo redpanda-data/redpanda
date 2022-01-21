@@ -19,6 +19,7 @@ rp_test(
   SOURCES
     ${fixture_srcs}
     retry_logic_tests.cc
+    partition_movement_tests.cc
     topic_ingestion_policy_tests.cc
     failure_recovery_tests.cc
     pacemaker_tests.cc
