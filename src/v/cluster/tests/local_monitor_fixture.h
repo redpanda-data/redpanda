@@ -28,4 +28,6 @@ struct local_monitor_fixture {
     cluster::node::local_monitor _local_monitor;
 
     cluster::node::local_state update_state();
+    static struct statvfs make_statvfs(
+      unsigned long blk_free, unsigned long blk_total, unsigned long blk_size);
 };

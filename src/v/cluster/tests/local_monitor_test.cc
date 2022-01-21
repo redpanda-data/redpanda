@@ -62,7 +62,26 @@ cluster::node::local_state local_monitor_fixture::update_state() {
     return _local_monitor.get_state_cached();
 }
 
+struct statvfs local_monitor_fixture::make_statvfs(
+  unsigned long blk_free, unsigned long blk_total, unsigned long blk_size) {
+    struct statvfs s = {
+      .f_frsize = blk_size, .f_blocks = blk_total, .f_bfree = blk_free};
+    return s;
+}
+
 FIXTURE_TEST(local_state_has_single_disk, local_monitor_fixture) {
     auto ls = update_state();
     BOOST_TEST_REQUIRE(ls.disks.size() == 1);
+}
+
+FIXTURE_TEST(local_monitor_inject_statvfs, local_monitor_fixture) {
+    static constexpr auto free = 100UL, total = 200UL, block_size = 4096UL;
+    struct statvfs stats = make_statvfs(free, total, block_size);
+    auto lamb = [&](const ss::sstring& _ignore) { return stats; };
+    _local_monitor.set_statvfs_for_test(lamb);
+
+    auto ls = update_state();
+    BOOST_TEST_REQUIRE(ls.disks.size() == 1);
+    BOOST_TEST_REQUIRE(ls.disks[0].total == total * block_size);
+    BOOST_TEST_REQUIRE(ls.disks[0].free == free * block_size);
 }

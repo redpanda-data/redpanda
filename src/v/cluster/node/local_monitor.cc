@@ -46,12 +46,17 @@ void local_monitor::set_path_for_test(const ss::sstring& path) {
     _path_for_test = path;
 }
 
+void local_monitor::set_statvfs_for_test(
+  std::function<struct statvfs(const ss::sstring&)> func) {
+    _statvfs_for_test = std::move(func);
+}
+
 ss::future<std::vector<disk>> local_monitor::get_disks() {
     auto path = _path_for_test.empty()
                   ? config::node().data_directory().as_sstring()
                   : _path_for_test;
 
-    auto svfs = co_await ss::engine().statvfs(path);
+    auto svfs = co_await get_statvfs(path);
 
     co_return std::vector<disk>{disk{
       .path = config::node().data_directory().as_sstring(),
@@ -61,4 +66,11 @@ ss::future<std::vector<disk>> local_monitor::get_disks() {
     }};
 }
 
+ss::future<struct statvfs> local_monitor::get_statvfs(const ss::sstring& path) {
+    if (_statvfs_for_test) {
+        co_return _statvfs_for_test.value()(path);
+    } else {
+        co_return co_await ss::engine().statvfs(path);
+    }
+}
 } // namespace cluster::node
