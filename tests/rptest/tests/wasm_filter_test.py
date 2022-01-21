@@ -9,7 +9,6 @@
 
 from kafka import TopicPartition
 from rptest.services.cluster import cluster
-from ducktape.mark import ignore
 from rptest.clients.types import TopicSpec
 from rptest.wasm.wasm_build_tool import WasmTemplateRepository
 from rptest.wasm.wasm_test import WasmTest
@@ -43,7 +42,6 @@ class WasmFilterTest(WasmTest):
                                            str(j), [],
                                            partition=i)
 
-    @ignore  # https://github.com/vectorizedio/redpanda/issues/2514
     @cluster(num_nodes=3)
     def verify_filter_test(self):
         # 1. Fill source topics with test data
