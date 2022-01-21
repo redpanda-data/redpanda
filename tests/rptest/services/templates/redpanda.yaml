@@ -20,13 +20,20 @@ redpanda:
     address: "{{node.account.hostname}}"
     port: 33145
   kafka_api:
-    - address: "{{node.account.hostname}}"
+    - name: dnslistener
+      address: "{{node.account.hostname}}"
       port: 9092
+    - name: iplistener
+      address: "{{node_ip}}"
+      port: {{kafka_alternate_port}}
   admin:
     - address: 127.0.0.1
       port: 9644
     - address: "{{node.account.hostname}}"
       port: 9644
+    - name: iplistener
+      address: "{{node_ip}}"
+      port: {{admin_alternate_port}}
 
   # for librdkafka
   auto_create_topics_enabled: true
