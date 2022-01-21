@@ -59,7 +59,7 @@ docker images
 
 After running the command you should be able to see the list of all images, including Redpanda's one. Now it is time to check which version on the [release notes](https://github.com/vectorizedio/redpanda/releases) page.
 
-Before start the upgrade, you might want to copy the configuration file from Redpanda that is currently running, in order to avoid setup from scratch.
+Before starting the upgrade, you might want to backup Redpanda's configuration file that is currently running, in order to avoid any losses.
 
 ```bash
 docker cp <containerId>:/etc/redpanda/redpanda.yaml <preferred location>
