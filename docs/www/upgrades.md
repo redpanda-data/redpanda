@@ -8,7 +8,7 @@ order: 0
 As part of Redpanda's evolution, new versions are released over time in order to deliver new features and improvements.
 Due to that it's always important to keep Redpanda up to date. This guide describes how to perform the upgrade depending on the environment that Redpanda is running.
 
-** It's always important to read the [release notes](https://github.com/vectorizedio/redpanda/releases) before upgrading to a different versions in order to prevent breaking changes **
+** It's always important to read the [release notes](https://github.com/vectorizedio/redpanda/releases) before upgrading to different versions in order to anticipate and deal with any breaking changes. **
 
 # Checking current version
 
