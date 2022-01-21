@@ -14,6 +14,7 @@
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "resource_mgmt/io_priority.h"
+#include "ssx/future-util.h"
 #include "storage/batch_cache.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/fs_utils.h"
@@ -60,17 +61,18 @@ log_manager::log_manager(log_config config, kvstore& kvstore) noexcept
     _compaction_timer.rearm(_jitter());
 }
 void log_manager::trigger_housekeeping() {
-    (void)ss::with_gate(_open_gate, [this] {
-        auto next_housekeeping = _jitter();
-        return housekeeping().finally([this, next_housekeeping] {
-            // all of these *MUST* be in the finally
-            if (_open_gate.is_closed()) {
-                return;
-            }
+    ssx::background = ssx::spawn_with_gate_then(_open_gate, [this] {
+                          auto next_housekeeping = _jitter();
+                          return housekeeping().finally(
+                            [this, next_housekeeping] {
+                                // all of these *MUST* be in the finally
+                                if (_open_gate.is_closed()) {
+                                    return;
+                                }
 
-            _compaction_timer.rearm(next_housekeeping);
-        });
-    }).handle_exception([](std::exception_ptr e) {
+                                _compaction_timer.rearm(next_housekeeping);
+                            });
+                      }).handle_exception([](std::exception_ptr e) {
         vlog(stlog.info, "Error processing housekeeping(): {}", e);
     });
 }

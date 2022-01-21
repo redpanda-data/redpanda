@@ -122,7 +122,7 @@ ss::future<> metrics_reporter::stop() {
 }
 
 void metrics_reporter::report_metrics() {
-    (void)ss::with_gate(_gate, [this] {
+    ssx::spawn_with_gate(_gate, [this] {
         return do_report_metrics().finally([this] {
             if (!_gate.is_closed()) {
                 _tick_timer.arm(

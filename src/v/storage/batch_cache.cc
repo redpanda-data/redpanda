@@ -11,6 +11,7 @@
 
 #include "bytes/iobuf_parser.h"
 #include "model/adl_serde.h"
+#include "ssx/future-util.h"
 #include "utils/gate_guard.h"
 #include "utils/to_string.h"
 #include "vassert.h"
@@ -370,7 +371,7 @@ void batch_cache_index::truncate(model::offset offset) {
 }
 
 void batch_cache::background_reclaimer::start() {
-    (void)ss::with_gate(_gate, [this] {
+    ssx::spawn_with_gate(_gate, [this] {
         return ss::with_scheduling_group(
           _sg, [this] { return reclaim_loop(); });
     });

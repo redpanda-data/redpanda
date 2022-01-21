@@ -71,7 +71,7 @@ ss::future<> event_listener::start() {
           return type_and_handler.second->start();
       });
 
-    (void)ss::with_gate(_gate, [this] {
+    ssx::spawn_with_gate(_gate, [this] {
         return ss::do_until(
           [this] { return _abort_source.abort_requested(); },
           [this] {

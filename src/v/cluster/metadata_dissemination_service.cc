@@ -67,7 +67,7 @@ metadata_dissemination_service::metadata_dissemination_service(
       config::shard_local_cfg().metadata_dissemination_interval_ms)
   , _rpc_tls_config(config::node().rpc_server_tls()) {
     _dispatch_timer.set_callback([this] {
-        (void)ss::with_gate(
+        ssx::spawn_with_gate(
           _bg, [this] { return dispatch_disseminate_leadership(); });
     });
 
@@ -135,7 +135,7 @@ ss::future<> metadata_dissemination_service::start() {
       all_broker_addresses.begin(),
       all_broker_addresses.end());
 
-    (void)ss::with_gate(
+    ssx::spawn_with_gate(
       _bg, [this, addresses = std::move(addresses)]() mutable {
           return update_metadata_with_retries(std::move(addresses));
       });
@@ -146,24 +146,19 @@ ss::future<> metadata_dissemination_service::start() {
 
 void metadata_dissemination_service::handle_leadership_notification(
   model::ntp ntp, model::term_id term, std::optional<model::node_id> lid) {
-    try {
-        (void)ss::with_gate(
-          _bg, [this, ntp = std::move(ntp), lid, term]() mutable {
-              // the lock sequences the updates from raft
-              return _lock.with(
-                [this, ntp = std::move(ntp), lid, term]() mutable {
-                    return container().invoke_on(
-                      0,
-                      [ntp = std::move(ntp), lid, term](
-                        metadata_dissemination_service& s) mutable {
-                          return s.apply_leadership_notification(
-                            std::move(ntp), term, lid);
-                      });
+    ssx::spawn_with_gate(
+      _bg, [this, ntp = std::move(ntp), lid, term]() mutable {
+          // the lock sequences the updates from raft
+          return _lock.with([this, ntp = std::move(ntp), lid, term]() mutable {
+              return container().invoke_on(
+                0,
+                [ntp = std::move(ntp), lid, term](
+                  metadata_dissemination_service& s) mutable {
+                    return s.apply_leadership_notification(
+                      std::move(ntp), term, lid);
                 });
           });
-    } catch (const ss::gate_closed_exception&) {
-        // Should ignore this exception, because it signal about shutdown
-    }
+      });
 }
 
 ss::future<> metadata_dissemination_service::apply_leadership_notification(

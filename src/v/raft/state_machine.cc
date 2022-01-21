@@ -27,7 +27,7 @@ state_machine::state_machine(
 
 ss::future<> state_machine::start() {
     vlog(_log.info, "Starting state machine for ntp={}", _raft->ntp());
-    (void)ss::with_gate(_gate, [this] {
+    ssx::spawn_with_gate(_gate, [this] {
         return ss::do_until(
           [this] { return _gate.is_closed(); }, [this] { return apply(); });
     });

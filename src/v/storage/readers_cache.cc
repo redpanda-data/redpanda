@@ -11,6 +11,7 @@
 #include "storage/readers_cache.h"
 
 #include "model/fundamental.h"
+#include "ssx/future-util.h"
 #include "storage/types.h"
 #include "utils/gate_guard.h"
 #include "utils/mutex.h"
@@ -32,7 +33,7 @@ readers_cache::readers_cache(
     _probe.setup_metrics(_ntp);
     // setup eviction timer
     _eviction_timer.set_callback([this] {
-        (void)ss::with_gate(_gate, [this] {
+        ssx::spawn_with_gate(_gate, [this] {
             return maybe_evict().finally([this] {
                 if (!_gate.is_closed()) {
                     _eviction_timer.arm(_eviction_timeout);
@@ -278,19 +279,26 @@ readers_cache::dispose_entries(intrusive_list<entry, &entry::_hook> entries) {
 
 void readers_cache::dispose_in_background(
   intrusive_list<entry, &entry::_hook> entries) {
-    try {
-        (void)ss::with_gate(
-          _gate, [this, entries = std::move(entries)]() mutable {
-              return dispose_entries(std::move(entries));
-          });
-    } catch (const ss::gate_closed_exception& e) {
-        vlog(stlog.debug, "gate closed while disposing reader");
-    }
+    ssx::spawn_with_gate(_gate, [this, entries = std::move(entries)]() mutable {
+        return dispose_entries(std::move(entries));
+    });
 }
 
 void readers_cache::dispose_in_background(entry* e) {
-    try {
-        (void)ss::with_gate(_gate, [this, e] {
+    if (_gate.is_closed()) {
+        /**
+         * since gate is closed and we failed to call finally on the reader we
+         * add it back to _readers list, it will be gracefully closed in
+         * `readers_cache::close`.
+         * NOTE:
+         * _readers intrusive list is supposed to keep resusable readers but
+         * when gate closed exception is thrwon we are certain that no more
+         * oprations will be executed on the cache so we can reuse the _readers
+         * list to gracefully shutdown readers.
+         */
+        _readers.push_back(*e);
+    } else {
+        ssx::spawn_with_gate(_gate, [this, e] {
             return e->reader->finally().finally([this, e] {
                 vlog(
                   stlog.trace,
@@ -303,19 +311,6 @@ void readers_cache::dispose_in_background(entry* e) {
                 delete e; // NOLINT
             });
         });
-    } catch (const ss::gate_closed_exception& ex) {
-        vlog(stlog.debug, "gate closed while disposing reader");
-        /**
-         * since gate is closed and we failed to call finally on the reader we
-         * add it back to _readers list, it will be gracefully closed in
-         * `readers_cache::close`.
-         * NOTE:
-         * _readers intrusive list is supposed to keep resusable readers but
-         * when gate closed exception is thrwon we are certain that no more
-         * oprations will be executed on the cache so we can reuse the _readers
-         * list to gracefully shutdown readers.
-         */
-        _readers.push_back(*e);
     }
 }
 

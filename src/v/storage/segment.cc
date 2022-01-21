@@ -11,6 +11,7 @@
 
 #include "compression/compression.h"
 #include "config/configuration.h"
+#include "ssx/future-util.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/fs_utils.h"
 #include "storage/fwd.h"
@@ -213,7 +214,7 @@ void segment::release_appender_in_background(readers_cache* readers_cache) {
                ? std::exchange(_cache, std::nullopt)
                : std::nullopt;
     auto i = std::exchange(_compaction_index, std::nullopt);
-    (void)ss::with_gate(
+    ssx::spawn_with_gate(
       _gate,
       [this,
        readers_cache,

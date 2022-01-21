@@ -13,8 +13,12 @@
 #include "utils/concepts-enabled.h"
 #include "utils/functional.h"
 
+#include <seastar/core/abort_source.hh>
+#include <seastar/core/condition-variable.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/gate.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/core/when_all.hh>
 
 #include <algorithm>
@@ -256,6 +260,57 @@ inline auto parallel_transform(Rng rng, Func func) {
             std::make_move_iterator(rng.end()),
             std::move(func));
       });
+}
+
+/// \brief Helper for explicitly ignoring a future's result, for use when
+/// backgrounding a task.
+///
+/// For example:
+///   ssx::background = ssx::spawn_with_gate_then...
+///
+/// This replaces use of (void) when spawning background fibers, and makes it
+/// easier to search for places we start background work.
+namespace detail {
+struct background_t {
+    template<typename T>
+    constexpr void operator=(T&&) const noexcept {}
+};
+} // namespace detail
+inline constexpr detail::background_t background;
+
+/// \brief Create a future holding a gate, handling common shutdown exception
+/// types.  Returns the resulting future, onto which further exception handling
+/// may be chained.
+///
+/// \param g Gate to enter, passed through to ss::try_with_gate
+/// \param func Function to invoke, passed through to ss::try_with_gate
+///
+/// This is an alternative to spawn_with_gate for when the caller wants to
+/// do extra exception handling, such as ignoring+logging all exceptions in
+/// places where success is optional.  The caller will never see
+/// gate_closed_exception or abort_requested_exception, avoiding log
+/// noise on shutdown if the caller is logging exceptions.
+template<typename Func>
+inline auto spawn_with_gate_then(seastar::gate& g, Func&& func) noexcept {
+    return seastar::try_with_gate(g, std::forward<Func>(func))
+      .handle_exception_type([](const seastar::abort_requested_exception&) {})
+      .handle_exception_type([](const seastar::gate_closed_exception&) {})
+      .handle_exception_type([](const seastar::broken_semaphore&) {})
+      .handle_exception_type([](const seastar::broken_condition_variable&) {});
+}
+
+/// \brief Detach a fiber holding a gate, with exception handling to ignore
+/// any shutdown exceptions.
+///
+/// \param g Gate to enter, passed through to ss::try_with_gate
+/// \param func Function to invoke, passed through to ss::try_with_gate
+///
+/// This is a common pattern in redpanda: we might spawn off a fiber to handle
+/// a request within a gate, but process shutdown might happen at any time,
+/// resulting in gate_closed and/or abort_requested_exception.
+template<typename Func>
+inline void spawn_with_gate(seastar::gate& g, Func&& func) noexcept {
+    background = spawn_with_gate_then(g, std::forward<Func>(func));
 }
 
 } // namespace ssx

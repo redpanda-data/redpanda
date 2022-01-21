@@ -171,47 +171,45 @@ health_manager::ensure_topic_replication(model::topic_namespace_view topic) {
 }
 
 void health_manager::tick() {
-    (void)ss::try_with_gate(
-      _gate,
-      [this]() -> ss::future<> {
-          /*
-           * only active on the controller leader
-           */
-          auto cluster_leader = _leaders.local().get_leader(
-            model::controller_ntp);
-          if (cluster_leader != _self) {
-              vlog(clusterlog.trace, "Health: skipping tick as non-leader");
-              co_return;
-          }
+    ssx::background
+      = ssx::spawn_with_gate_then(_gate, [this]() -> ss::future<> {
+            /*
+             * only active on the controller leader
+             */
+            auto cluster_leader = _leaders.local().get_leader(
+              model::controller_ntp);
+            if (cluster_leader != _self) {
+                vlog(clusterlog.trace, "Health: skipping tick as non-leader");
+                co_return;
+            }
 
-          // Only ensure replication if we have a big enough cluster, to avoid
-          // spamming log with replication complaints on single node cluster
-          if (_members.local().all_brokers().size() >= 3) {
-              /*
-               * we try to be conservative here. if something goes wrong we'll
-               * back off and wait before trying to fix replication for any
-               * other internal topics.
-               */
-              auto ok = co_await ensure_topic_replication(
-                model::kafka_group_nt);
+            // Only ensure replication if we have a big enough cluster, to avoid
+            // spamming log with replication complaints on single node cluster
+            if (_members.local().all_brokers().size() >= 3) {
+                /*
+                 * we try to be conservative here. if something goes wrong we'll
+                 * back off and wait before trying to fix replication for any
+                 * other internal topics.
+                 */
+                auto ok = co_await ensure_topic_replication(
+                  model::kafka_group_nt);
 
-              if (ok) {
-                  ok = co_await ensure_topic_replication(
-                    model::id_allocator_nt);
-              }
+                if (ok) {
+                    ok = co_await ensure_topic_replication(
+                      model::id_allocator_nt);
+                }
 
-              if (ok) {
-                  ok = co_await ensure_topic_replication(model::tx_manager_nt);
-              }
-          }
+                if (ok) {
+                    ok = co_await ensure_topic_replication(
+                      model::tx_manager_nt);
+                }
+            }
 
-          _timer.arm(_tick_interval);
-      })
-      .handle_exception_type([](const ss::gate_closed_exception&) {})
-      .handle_exception([this](const std::exception_ptr& e) {
-          vlog(clusterlog.info, "Health manager caught error {}", e);
-          _timer.arm(_tick_interval * 2);
-      });
+            _timer.arm(_tick_interval);
+        }).handle_exception([this](const std::exception_ptr& e) {
+            vlog(clusterlog.info, "Health manager caught error {}", e);
+            _timer.arm(_tick_interval * 2);
+        });
 }
 
 } // namespace cluster

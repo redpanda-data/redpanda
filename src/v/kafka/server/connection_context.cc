@@ -291,25 +291,34 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                     /**
                      * second stage processed in background.
                      */
-                    (void)ss::try_with_gate(
-                      _rs.conn_gate(),
-                      [this, f = std::move(f), seq, correlation]() mutable {
-                          return f.then(
-                            [this, seq, correlation](response_ptr r) mutable {
-                                r->set_correlation(correlation);
-                                _responses.insert({seq, std::move(r)});
-                                return process_next_response();
-                            });
-                      })
-                      .handle_exception([self](std::exception_ptr e) {
-                          vlog(
-                            klog.info,
-                            "Detected error processing request: {}",
-                            e);
-                          self->_rs.probe().service_error();
-                          self->_rs.conn->shutdown_input();
-                      })
-                      .finally([s = std::move(s), self] {});
+                    ssx::background
+                      = ssx::spawn_with_gate_then(
+                          _rs.conn_gate(),
+                          [this, f = std::move(f), seq, correlation]() mutable {
+                              return f.then([this, seq, correlation](
+                                              response_ptr r) mutable {
+                                  r->set_correlation(correlation);
+                                  _responses.insert({seq, std::move(r)});
+                                  return process_next_response();
+                              });
+                          })
+                          .handle_exception([self](std::exception_ptr e) {
+                              // ssx::spawn_with_gate already caught
+                              // shutdown-like exceptions, so we should only be
+                              // taking this path for real errors.  That also
+                              // means that on shutdown we don't bother to call
+                              // shutdown_input on the connection, so rely
+                              // on any future reader to check the abort
+                              // source before considering reading the
+                              // connection.
+                              vlog(
+                                klog.info,
+                                "Detected error processing request: {}",
+                                e);
+                              self->_rs.probe().service_error();
+                              self->_rs.conn->shutdown_input();
+                          })
+                          .finally([s = std::move(s), self] {});
                     return d;
                 })
                 .handle_exception([self](std::exception_ptr e) {

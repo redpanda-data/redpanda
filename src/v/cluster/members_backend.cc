@@ -59,7 +59,7 @@ ss::future<> members_backend::stop() {
 }
 
 void members_backend::start() {
-    (void)ss::with_gate(_bg, [this] {
+    ssx::spawn_with_gate(_bg, [this] {
         return ss::do_until(
           [this] { return _as.local().abort_requested(); },
           [this] { return handle_updates(); });
@@ -117,13 +117,13 @@ void members_backend::handle_single_update(
 }
 
 void members_backend::start_reconciliation_loop() {
-    (void)ss::with_gate(_bg, [this] {
-        return reconcile().finally([this] {
-            if (!_as.local().abort_requested()) {
-                _retry_timer.arm(_retry_timeout);
-            }
-        });
-    }).handle_exception([](const std::exception_ptr& e) {
+    ssx::background = ssx::spawn_with_gate_then(_bg, [this] {
+                          return reconcile().finally([this] {
+                              if (!_as.local().abort_requested()) {
+                                  _retry_timer.arm(_retry_timeout);
+                              }
+                          });
+                      }).handle_exception([](const std::exception_ptr& e) {
         // just log an exception, will retry
         vlog(
           clusterlog.trace,

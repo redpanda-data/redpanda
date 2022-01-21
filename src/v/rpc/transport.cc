@@ -14,6 +14,7 @@
 #include "rpc/parse_utils.h"
 #include "rpc/response_handler.h"
 #include "rpc/types.h"
+#include "ssx/future-util.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -85,7 +86,7 @@ transport::connect(rpc::clock_type::time_point connection_timeout) {
         _last_seq = sequence_t{0};
         _seq = sequence_t{0};
         // background
-        (void)ss::with_gate(_dispatch_gate, [this] {
+        ssx::spawn_with_gate(_dispatch_gate, [this] {
             return do_reads().then_wrapped([this](ss::future<> f) {
                 _probe.connection_closed();
                 fail_outstanding_futures();
@@ -179,31 +180,32 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
 }
 
 void transport::dispatch_send() {
-    (void)ss::with_gate(_dispatch_gate, [this]() mutable {
-        return ss::do_until(
-          [this] {
-              return _requests_queue.empty()
-                     || _requests_queue.begin()->first
-                          > (_last_seq + sequence_t(1));
-          },
-          [this] {
-              auto it = _requests_queue.begin();
-              _last_seq = it->first;
-              auto buffer = std::move(it->second->buffer).get();
-              auto units = std::move(it->second->resource_units);
-              auto v = std::move(*buffer).as_scattered();
-              auto msg_size = v.size();
-              _requests_queue.erase(it->first);
-              return _out.write(std::move(v))
-                .finally([this, msg_size, units = std::move(units)] {
-                    _probe.add_bytes_sent(msg_size);
-                });
-          });
-    }).handle_exception([this](std::exception_ptr e) {
-        vlog(rpclog.info, "Error dispatching socket write:{}", e);
-        _probe.request_error();
-        fail_outstanding_futures();
-    });
+    ssx::background
+      = ssx::spawn_with_gate_then(_dispatch_gate, [this]() mutable {
+            return ss::do_until(
+              [this] {
+                  return _requests_queue.empty()
+                         || _requests_queue.begin()->first
+                              > (_last_seq + sequence_t(1));
+              },
+              [this] {
+                  auto it = _requests_queue.begin();
+                  _last_seq = it->first;
+                  auto buffer = std::move(it->second->buffer).get();
+                  auto units = std::move(it->second->resource_units);
+                  auto v = std::move(*buffer).as_scattered();
+                  auto msg_size = v.size();
+                  _requests_queue.erase(it->first);
+                  return _out.write(std::move(v))
+                    .finally([this, msg_size, units = std::move(units)] {
+                        _probe.add_bytes_sent(msg_size);
+                    });
+              });
+        }).handle_exception([this](std::exception_ptr e) {
+            vlog(rpclog.info, "Error dispatching socket write:{}", e);
+            _probe.request_error();
+            fail_outstanding_futures();
+        });
 }
 
 ss::future<> transport::do_reads() {
