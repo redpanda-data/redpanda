@@ -160,7 +160,7 @@ public:
     model::initial_revision_id get_revision_id() const;
 
     remote_segment_path
-    generate_segment_path(const segment_name&, const segment_meta&) const;
+    generate_segment_path(const key&, const segment_meta&) const;
 
     /// Return iterator to the begining(end) of the segments list
     const_iterator begin() const;
@@ -170,13 +170,13 @@ public:
     size_t size() const;
 
     /// Check if the manifest contains particular segment
-    bool contains(const segment_name& name) const;
+    bool contains(const key& key) const;
 
     /// Add new segment to the manifest
-    bool add(const segment_name& name, const segment_meta& meta);
+    bool add(const key& name, const segment_meta& meta);
 
     /// Get segment if available or nullopt
-    const segment_meta* get(const segment_name& name) const;
+    const segment_meta* get(const key& name) const;
 
     /// Get insert iterator for segments set
     std::insert_iterator<segment_map> get_insert_iterator();
@@ -208,7 +208,7 @@ public:
     ///
     /// \param name is a segment name
     /// \return true on success, false on failure (no such segment)
-    bool delete_permanently(const segment_name& name);
+    bool delete_permanently(const key& name);
 
     manifest_type get_manifest_type() const override {
         return manifest_type::partition;

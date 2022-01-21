@@ -198,9 +198,9 @@ const model::offset manifest::get_last_offset() const { return _last_offset; }
 model::initial_revision_id manifest::get_revision_id() const { return _rev; }
 
 remote_segment_path manifest::generate_segment_path(
-  const segment_name& name, const segment_meta& meta) const {
+  const manifest::key& key, const segment_meta& meta) const {
     return generate_remote_segment_path(
-      _ntp, meta.ntp_revision, name, meta.archiver_term);
+      _ntp, meta.ntp_revision, key, meta.archiver_term);
 }
 
 manifest::const_iterator manifest::begin() const { return _segments.begin(); }
@@ -217,12 +217,12 @@ manifest::const_reverse_iterator manifest::rend() const {
 
 size_t manifest::size() const { return _segments.size(); }
 
-bool manifest::contains(const segment_name& name) const {
-    return _segments.contains(name);
+bool manifest::contains(const manifest::key& key) const {
+    return _segments.contains(key);
 }
 
-bool manifest::add(const segment_name& name, const segment_meta& meta) {
-    auto [it, ok] = _segments.insert(std::make_pair(name, meta));
+bool manifest::add(const manifest::key& key, const segment_meta& meta) {
+    auto [it, ok] = _segments.insert(std::make_pair(key, meta));
     if (ok && it->second.ntp_revision == model::initial_revision_id{}) {
         it->second.ntp_revision = _rev;
     }
@@ -230,8 +230,8 @@ bool manifest::add(const segment_name& name, const segment_meta& meta) {
     return ok;
 }
 
-const manifest::segment_meta* manifest::get(const segment_name& name) const {
-    auto it = _segments.find(name);
+const manifest::segment_meta* manifest::get(const manifest::key& key) const {
+    auto it = _segments.find(key);
     if (it == _segments.end()) {
         return nullptr;
     }
@@ -410,8 +410,8 @@ void manifest::serialize(std::ostream& out) const {
     w.EndObject();
 }
 
-bool manifest::delete_permanently(const segment_name& name) {
-    auto it = _segments.find(name);
+bool manifest::delete_permanently(const manifest::key& key) {
+    auto it = _segments.find(key);
     if (it != _segments.end()) {
         _segments.erase(it);
         return true;
