@@ -40,7 +40,7 @@ spec:
   version: "v21.11.2"
 ...
 ```
-After the file is saved, run apply the changes with the command:
+After you save the file, apply the changes with the command:
 ```bash
 kubectl apply -f <file_path/file_name>
 ```
