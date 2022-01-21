@@ -126,7 +126,7 @@ For MacOS, if Redpanda's installation was performed through brew, the upgrade ca
 ```bash
 brew install vectorizedio/tap/redpanda
 ```
-If the installing was executed from a binary file, download the preferred version from the [rpk archive](https://github.com/vectorizedio/redpanda/releases), and overwrite the current rpk file in the installed location.
+If the installation was executed from a binary file, download the preferred version from the [release list](https://github.com/vectorizedio/redpanda/releases), and overwrite the current rpk file in the installed location.
  
 
 # Windows
