@@ -62,7 +62,7 @@ public:
     const std::vector<model::topic>& topics() const { return _topics; }
     const assignment_t& assignment() const { return _assignment; }
 
-    ss::future<> join();
+    ss::future<> initialize();
     ss::future<leave_group_response> leave();
     ss::future<> subscribe(std::vector<model::topic> topics);
     ss::future<offset_fetch_response>
@@ -82,6 +82,7 @@ private:
 
     void on_leader_join(const join_group_response& res);
 
+    ss::future<> join();
     ss::future<> sync();
 
     ss::future<std::vector<metadata_response::topic>>

@@ -127,6 +127,8 @@ ss::future<> consumer::stop() {
       .finally([me{shared_from_this()}] {});
 }
 
+ss::future<> consumer::initialize() { return join(); }
+
 ss::future<> consumer::join() {
     _timer.cancel();
     auto req_builder = [me{shared_from_this()}]() {
@@ -458,7 +460,7 @@ ss::future<shared_consumer_t> make_consumer(
       std::move(coordinator),
       std::move(group_id),
       std::move(name));
-    return c->join().then([c]() mutable { return std::move(c); });
+    return c->initialize().then([c]() mutable { return std::move(c); });
 }
 
 } // namespace kafka::client
