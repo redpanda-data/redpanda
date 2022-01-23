@@ -102,8 +102,9 @@ ss::future<> client::stop() noexcept {
     co_await _gate.close();
     co_await catch_and_log([this]() { return _producer.stop(); });
     for (auto& [id, group] : _consumers) {
-        for (auto& consumer : group) {
-            co_await catch_and_log([consumer]() { return consumer->leave(); });
+        while (!group.empty()) {
+            auto c = *group.begin();
+            co_await catch_and_log([c]() { return c->leave(); });
         }
     }
     co_await catch_and_log([this]() { return _brokers.stop(); });
