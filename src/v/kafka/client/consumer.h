@@ -118,7 +118,7 @@ private:
     shared_broker_t _coordinator;
     ss::abort_source _as;
     ss::gate _gate{};
-    ss::timer<> _timer;
+    ss::timer<> _heartbeat_timer;
 
     kafka::group_id _group_id;
     generation_id _generation_id{no_generation};

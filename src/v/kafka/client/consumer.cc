@@ -101,7 +101,7 @@ consumer::consumer(
 
 void consumer::start() {
     vlog(kclog.info, "Consumer: {}: start", *this);
-    _timer.set_callback([me{shared_from_this()}]() {
+    _heartbeat_timer.set_callback([me{shared_from_this()}]() {
         vlog(kclog.trace, "Consumer: {}: timer cb", *me);
         (void)me->heartbeat()
           .handle_exception_type([me](const consumer_error& e) {
@@ -115,12 +115,11 @@ void consumer::start() {
               vlog(kclog.trace, "Consumer: {}: heartbeat failed: {}", *me, e);
           });
     });
-    _timer.rearm_periodic(std::chrono::duration_cast<ss::timer<>::duration>(
-      _config.consumer_heartbeat_interval()));
+    _heartbeat_timer.rearm_periodic(_config.consumer_heartbeat_interval());
 }
 
 ss::future<> consumer::stop() {
-    { auto t = std::move(_timer); }
+    { auto t = std::move(_heartbeat_timer); }
     _as.request_abort();
     return _coordinator->stop()
       .then([this]() { return _gate.close(); })
@@ -130,7 +129,7 @@ ss::future<> consumer::stop() {
 ss::future<> consumer::initialize() { return join(); }
 
 ss::future<> consumer::join() {
-    _timer.cancel();
+    _heartbeat_timer.cancel();
     auto req_builder = [me{shared_from_this()}]() {
         const auto& cfg = me->_config;
         join_group_request req{};
