@@ -32,6 +32,7 @@ struct configuration final : public config::config_store {
     config::one_or_many_property<model::broker_endpoint>
       advertised_pandaproxy_api;
     config::property<ss::sstring> api_doc_dir;
+    config::property<std::chrono::milliseconds> consumer_instance_timeout;
 
     configuration();
     explicit configuration(const YAML::Node& cfg);
