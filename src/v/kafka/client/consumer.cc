@@ -84,6 +84,21 @@ reduce_fetch_response(fetch_response result, fetch_response val) {
 
 } // namespace detail
 
+consumer::consumer(
+  const configuration& config,
+  topic_cache& topic_cache,
+  brokers& brokers,
+  shared_broker_t coordinator,
+  kafka::group_id group_id,
+  kafka::member_id name)
+  : _config(config)
+  , _topic_cache(topic_cache)
+  , _brokers(brokers)
+  , _coordinator(std::move(coordinator))
+  , _group_id(std::move(group_id))
+  , _name(std::move(name))
+  , _topics() {}
+
 void consumer::start() {
     vlog(kclog.info, "Consumer: {}: start", *this);
     _timer.set_callback([me{shared_from_this()}]() {

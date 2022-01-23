@@ -39,20 +39,20 @@ class consumer final : public ss::enable_lw_shared_from_this<consumer> {
     using broker_reqs_t = absl::node_hash_map<shared_broker_t, fetch_request>;
 
 public:
+    /// \brief Construct a consumer
+    ///
+    /// \param coordinator - The coordinator broker for this group. There should
+    /// be no other owners, as it is used for the long-poll fetch.
+    ///
+    /// \param name - If this is unknowm_member_id, then the name is generated
+    /// by the broker.
     consumer(
       const configuration& config,
       topic_cache& topic_cache,
       brokers& brokers,
       shared_broker_t coordinator,
       group_id group_id,
-      member_id name)
-      : _config(config)
-      , _topic_cache(topic_cache)
-      , _brokers(brokers)
-      , _coordinator(std::move(coordinator))
-      , _group_id(std::move(group_id))
-      , _name(std::move(name))
-      , _topics() {}
+      member_id name);
 
     const kafka::group_id& group_id() const { return _group_id; }
     const kafka::member_id& member_id() const { return _member_id; }
