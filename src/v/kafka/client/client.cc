@@ -179,8 +179,16 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
             return _wait_or_start_update_metadata();
         }
         default:
-            // TODO(Ben): Maybe vassert
-            vlog(kclog.warn, "partition_error: ", ex);
+            vlog(kclog.warn, "partition_error: {}", ex);
+            return ss::make_exception_future(ex);
+        }
+    } catch (const topic_error& ex) {
+        switch (ex.error) {
+        case error_code::unknown_topic_or_partition:
+            vlog(kclog.debug, "topic_error: {}", ex);
+            return _wait_or_start_update_metadata();
+        default:
+            vlog(kclog.warn, "topic_error: {}", ex);
             return ss::make_exception_future(ex);
         }
     } catch (const ss::gate_closed_exception&) {
