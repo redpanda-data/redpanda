@@ -90,14 +90,20 @@ consumer::consumer(
   brokers& brokers,
   shared_broker_t coordinator,
   kafka::group_id group_id,
-  kafka::member_id name)
+  kafka::member_id name,
+  ss::noncopyable_function<void(const kafka::member_id&)> on_stopped)
   : _config(config)
   , _topic_cache(topic_cache)
   , _brokers(brokers)
   , _coordinator(std::move(coordinator))
+  , _inactive_timer([me{shared_from_this()}]() {
+      vlog(kclog.info, "Consumer: {}: inactive", *me);
+      return me->leave().discard_result().finally([me]() {});
+  })
   , _group_id(std::move(group_id))
   , _name(std::move(name))
-  , _topics() {}
+  , _topics()
+  , _on_stopped(std::move(on_stopped)) {}
 
 void consumer::start() {
     vlog(kclog.info, "Consumer: {}: start", *this);
@@ -119,14 +125,25 @@ void consumer::start() {
 }
 
 ss::future<> consumer::stop() {
-    { auto t = std::move(_heartbeat_timer); }
+    vlog(kclog.info, "Consumer: {}: stop", *this);
+    // Clear the timer callbacks as they may hold a shared_from_this().
+    _heartbeat_timer.cancel();
+    _heartbeat_timer.set_callback([]() {});
+    _inactive_timer.cancel();
+    _inactive_timer.set_callback([]() {});
+
     _as.request_abort();
+    _on_stopped(_name);
     return _coordinator->stop()
       .then([this]() { return _gate.close(); })
       .finally([me{shared_from_this()}] {});
 }
 
-ss::future<> consumer::initialize() { return join(); }
+ss::future<> consumer::initialize() {
+    vlog(kclog.info, "Consumer: {}: initialize", *this);
+    refresh_inactivity_timer();
+    return join();
+}
 
 ss::future<> consumer::join() {
     _heartbeat_timer.cancel();
@@ -184,6 +201,7 @@ ss::future<> consumer::join() {
 }
 
 ss::future<> consumer::subscribe(std::vector<model::topic> topics) {
+    refresh_inactivity_timer();
     _topics = std::move(topics);
     return join();
 }
@@ -325,6 +343,11 @@ ss::future<> consumer::heartbeat() {
     });
 }
 
+void consumer::refresh_inactivity_timer() {
+    _inactive_timer.rearm(
+      ss::timer<>::clock::now() + _config.consumer_session_timeout());
+}
+
 ss::future<describe_groups_response> consumer::describe_group() {
     auto req_builder = [this]() {
         return describe_groups_request{.data{.groups = {{_group_id}}}};
@@ -334,6 +357,7 @@ ss::future<describe_groups_response> consumer::describe_group() {
 
 ss::future<offset_fetch_response>
 consumer::offset_fetch(std::vector<offset_fetch_request_topic> topics) {
+    refresh_inactivity_timer();
     auto req_builder = [topics{std::move(topics)}, group_id{_group_id}] {
         return offset_fetch_request{
           .data{.group_id = group_id, .topics = topics}};
@@ -351,6 +375,7 @@ consumer::offset_fetch(std::vector<offset_fetch_request_topic> topics) {
 
 ss::future<offset_commit_response>
 consumer::offset_commit(std::vector<offset_commit_request_topic> topics) {
+    refresh_inactivity_timer();
     if (topics.empty()) { // commit all offsets
         for (const auto& s : _fetch_sessions) {
             auto res = s.second.make_offset_commit_request();
@@ -394,6 +419,7 @@ consumer::dispatch_fetch(broker_reqs_t::value_type br) {
 
 ss::future<fetch_response> consumer::fetch(
   std::chrono::milliseconds timeout, std::optional<int32_t> max_bytes) {
+    refresh_inactivity_timer();
     // Split requests by broker
     broker_reqs_t broker_reqs;
     for (auto const& [t, ps] : _assignment) {
@@ -451,14 +477,16 @@ ss::future<shared_consumer_t> make_consumer(
   brokers& brokers,
   shared_broker_t coordinator,
   group_id group_id,
-  member_id name) {
+  member_id name,
+  ss::noncopyable_function<void(const member_id&)> on_stopped) {
     auto c = ss::make_lw_shared<consumer>(
       config,
       topic_cache,
       brokers,
       std::move(coordinator),
       std::move(group_id),
-      std::move(name));
+      std::move(name),
+      std::move(on_stopped));
     return c->initialize().then([c]() mutable { return std::move(c); });
 }
 
