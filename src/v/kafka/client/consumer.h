@@ -46,13 +46,18 @@ public:
     ///
     /// \param name - If this is unknowm_member_id, then the name is generated
     /// by the broker.
+    ///
+    /// \param on_stopped - Called when a consumer is destroyed.
+    /// The consumer may become inactive of its own accord through a timeout.
+    /// This callback can be used as a notification system for cleanup.
     consumer(
       const configuration& config,
       topic_cache& topic_cache,
       brokers& brokers,
       shared_broker_t coordinator,
       group_id group_id,
-      member_id name);
+      member_id name,
+      ss::noncopyable_function<void(const member_id&)> on_stopped);
 
     const kafka::group_id& group_id() const { return _group_id; }
     const kafka::member_id& member_id() const { return _member_id; }
@@ -89,6 +94,7 @@ private:
     get_subscribed_topic_metadata();
 
     ss::future<> heartbeat();
+    void refresh_inactivity_timer();
 
     ss::future<describe_groups_response> describe_group();
 
@@ -119,6 +125,7 @@ private:
     ss::abort_source _as;
     ss::gate _gate{};
     ss::timer<> _heartbeat_timer;
+    ss::timer<> _inactive_timer;
 
     kafka::group_id _group_id;
     generation_id _generation_id{no_generation};
@@ -131,6 +138,7 @@ private:
     std::unique_ptr<assignment_plan> _plan{};
     assignment_t _assignment{};
     absl::node_hash_map<shared_broker_t, fetch_session> _fetch_sessions;
+    ss::noncopyable_function<void(const kafka::member_id&)> _on_stopped;
 
     friend std::ostream& operator<<(std::ostream& os, const consumer& c) {
         fmt::print(
@@ -151,7 +159,8 @@ ss::future<shared_consumer_t> make_consumer(
   brokers& brokers,
   shared_broker_t coordinator,
   group_id group_id,
-  member_id name);
+  member_id name,
+  ss::noncopyable_function<void(const member_id&)> _on_stopped);
 
 namespace detail {
 

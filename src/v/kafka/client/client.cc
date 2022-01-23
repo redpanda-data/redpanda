@@ -104,7 +104,11 @@ ss::future<> client::stop() noexcept {
     for (auto& [id, group] : _consumers) {
         while (!group.empty()) {
             auto c = *group.begin();
-            co_await catch_and_log([c]() { return c->leave(); });
+            co_await catch_and_log([c]() {
+                // The consumer is constructed with an on_stopped which erases
+                // istelf from the map after leave() completes.
+                return c->leave();
+            });
         }
     }
     co_await catch_and_log([this]() { return _brokers.stop(); });
@@ -352,13 +356,17 @@ client::create_consumer(const group_id& group_id, member_id name) {
             _config);
       })
       .then([this, group_id, name](shared_broker_t coordinator) mutable {
+          auto on_stopped = [this, group_id](const member_id& name) {
+              _consumers[group_id].erase(name);
+          };
           return make_consumer(
             _config,
             _topic_cache,
             _brokers,
             std::move(coordinator),
             std::move(group_id),
-            std::move(name));
+            std::move(name),
+            std::move(on_stopped));
       })
       .then([this, group_id](shared_consumer_t c) {
           auto name = c->name();
