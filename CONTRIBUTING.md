@@ -1,4 +1,4 @@
-# Contributing to Redpanda
+# Contributing to Redpanda:
 
 Welcome! This guide is intended to help developers that are new to the community
 navigate the process of making contributions to the Redpanda project. Please be
@@ -7,14 +7,14 @@ make this a welcoming community for all, and we're excited that you are here!
 
 The basics:
 
-* Use the [Issue Tracker](https://github.com/vectorizedio/redpanda/issues/) to
+ * Use the [Issue Tracker](https://github.com/vectorizedio/redpanda/issues/) to
   report bugs, crashes, performance issues, etc... Please include as much detail
   as possible.
   
-* [Discussions](https://github.com/vectorizedio/redpanda/discussions) is a great
+ * [Discussions](https://github.com/vectorizedio/redpanda/discussions) is a great
   venue to ask questions, start a design discussion, or post an RFC.
   
-* We ask that developers sign our [contributor license
+ * We ask that developers sign our [contributor license
   agreement](https://github.com/vectorizedio/redpanda/tree/dev/licenses). The
   process of signing the CLA is automated, and you'll be prompted instructions
   the first time you submit a pull request to the project.
@@ -27,7 +27,7 @@ After a pull request is opened it will be reviewed, and merged after
 passing continuous integration tests and being accepted by a project or
 sub-system maintainer.
 
-## Review process
+## Review process:
 
 In addition to the content of the changes being made, reviews will consider
 three additional properties:
@@ -41,7 +41,7 @@ project, and we've designed our review process and standards to reflect that.
 However, we're always trying to improve, and welcome any suggestions and
 feedback.
 
-## Formatting
+## Formatting:
 
 Located in the root of the Redpanda project are style property files for various
 languages used in the project (e.g.
@@ -58,7 +58,7 @@ reformatting, which makes reviewing changes difficult. In this case it would be
 appropriate to split the code change and formatting into separate commits. This is
 usually unnecessary.
 
-## Commit history
+## Commit history:
 
 The ordering and structure of commits in a pull request is very important. This
 is because the way in which a large change is broken down into individual
@@ -120,7 +120,7 @@ which will ensure a minimal change set for reviewers.  However, depending on the
 nature of pull request and feedback it may be useful to push extra commits and
 clean up the history as a last step.
 
-## Commit messages
+## Commit messages:
 
 In addition to code formatting and commit history discussed above, the commit
 messages themselves (both the format and content being communicated) are also
@@ -177,7 +177,7 @@ There is no restriction on the length of the body, but lines should
 wrap at 72 characters. The exception to this rule is text that should be
 formatted verbatim like log messages, stack traces, and redpanda ascii art.
 
-### Content
+### Content:
 
 While there is no algorithm for writing the perfect commit message, we've found
 that working towards the following three goals is often a positive signal that
@@ -192,7 +192,7 @@ one person isn't always optimal for another reader. So our suggestion is to
 error on the side of more detail, and not stress about making it perfect. Read
 on below if you are curious for more details about these bullet points.
 
-### Explanation and advice
+### Explanation and advice:
 
 When composing a commit message it is important to consider that the content
 serves two distinct goals: optimizing for reviewer time and precision, and
