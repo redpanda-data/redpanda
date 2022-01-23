@@ -393,6 +393,10 @@ pandaproxy:
       name: external
       port: 8083
 
+  # How long to wait for an idle consumer before removing it.
+  # Default: 60000
+  consumer_instance_timeout_ms: 60000
+
 # The REST API client
 pandaproxy_client:
   # List of address and port of the brokers
