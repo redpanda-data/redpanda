@@ -115,7 +115,7 @@ ss::future<> reconciliation_backend::start() {
           }
       });
     if (!_gate.is_closed()) {
-        (void)ss::with_gate(_gate, [this] {
+        ssx::spawn_with_gate(_gate, [this] {
             return ss::do_until(
               [this] { return _as.abort_requested(); },
               [this] { return fetch_and_reconcile(std::move(_topic_deltas)); });
