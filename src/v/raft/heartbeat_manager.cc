@@ -319,7 +319,7 @@ void heartbeat_manager::process_reply(
 }
 
 void heartbeat_manager::dispatch_heartbeats() {
-    (void)with_gate(_bghbeats, [this] {
+    ssx::background = ssx::spawn_with_gate_then(_bghbeats, [this] {
         return _lock.with([this] {
             return do_dispatch_heartbeats().finally([this] {
                 if (!_bghbeats.is_closed()) {
