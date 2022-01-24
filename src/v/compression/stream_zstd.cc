@@ -26,8 +26,12 @@
 
 namespace compression {
 [[gnu::cold]] static void throw_zstd_err(size_t rc) {
-    ss::throw_with_backtrace<std::runtime_error>(
-      fmt::format("ZSTD error:{}", ZSTD_getErrorName(rc)));
+    if (rc == ZSTD_error_memory_allocation) {
+        ss::throw_with_backtrace<std::bad_alloc>();
+    } else {
+        ss::throw_with_backtrace<std::runtime_error>(
+          fmt::format("ZSTD error:{}", ZSTD_getErrorName(rc)));
+    }
 }
 static void throw_if_error(size_t rc) {
     if (unlikely(ZSTD_isError(rc))) {
