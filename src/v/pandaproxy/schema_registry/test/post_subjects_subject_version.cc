@@ -120,3 +120,25 @@ FIXTURE_TEST(
           R"({"error_code":422,"message":")"));
     }
 }
+
+FIXTURE_TEST(
+  schema_registry_post_subjects_subject_version_many_proto,
+  pandaproxy_test_fixture) {
+    using namespace std::chrono_literals;
+
+    info("Connecting client");
+    auto client = make_schema_reg_client();
+
+    for (auto i = 0; i < 10; ++i) {
+        info("Post a schema as key (expect schema_id=1)");
+        auto res = post_schema(client, pps::subject{"test-key"}, R"(
+{
+  "schema": "syntax = \"proto3\"; message Simple { string i = 1; }",
+  "schemaType": "PROTOBUF"
+})");
+        BOOST_REQUIRE_EQUAL(res.body, R"({"id":1})");
+        BOOST_REQUIRE_EQUAL(
+          res.headers.at(boost::beast::http::field::content_type),
+          to_header_value(ppj::serialization_format::schema_registry_v1_json));
+    }
+}

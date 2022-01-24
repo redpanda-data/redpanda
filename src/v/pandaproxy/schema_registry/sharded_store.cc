@@ -98,12 +98,13 @@ ss::future<> sharded_store::validate_schema(canonical_schema schema) {
 
 ss::future<valid_schema>
 sharded_store::make_valid_schema(canonical_schema schema) {
+    // This method seems to confuse clang 12.0.1
+    // See #3596 for details, especially if modifying it.
     switch (schema.type()) {
     case schema_type::avro:
         co_return make_avro_schema_definition(schema.def().raw()()).value();
     case schema_type::protobuf:
-        co_return co_await make_protobuf_schema_definition(
-          *this, std::move(schema));
+        co_return co_await make_protobuf_schema_definition(*this, schema);
     case schema_type::json:
         throw as_exception(invalid_schema_type(schema.type()));
     }
