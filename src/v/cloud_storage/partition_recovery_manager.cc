@@ -230,7 +230,7 @@ partition_downloader::build_offset_map(const recovery_material& mat) {
             }
             offset_map.insert_or_assign(
               segm.second.base_offset,
-              segment{.name = segm.first, .meta = segm.second});
+              segment{.manifest_key = segm.first, .meta = segm.second});
         }
     }
     co_return std::move(offset_map);
@@ -251,7 +251,7 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
     auto offset_map = co_await build_offset_map(mat);
     manifest target(_ntpc.ntp(), _ntpc.get_initial_revision());
     for (const auto& kv : offset_map) {
-        target.add(kv.second.name, kv.second.meta);
+        target.add(kv.second.manifest_key, kv.second.meta);
     }
     if (cst_log.is_enabled(ss::log_level::debug)) {
         std::stringstream ostr;
@@ -347,13 +347,13 @@ partition_downloader::download_log_with_capped_size(
               _ctxlog.debug,
               "Max size {} reached, skipping {}",
               total_size,
-              it->second.name);
+              it->second.manifest_key);
             break;
         } else {
             vlog(
               _ctxlog.debug,
               "Found {}, total log size {}",
-              it->second.name,
+              it->second.manifest_key,
               total_size);
         }
         staged_downloads.push_front(it->second);
@@ -403,13 +403,13 @@ partition_downloader::download_log_with_capped_time(
               "Time threshold {} reached at {}, skipping {}",
               time_threshold,
               meta.max_timestamp,
-              it->second.name);
+              it->second.manifest_key);
             break;
         } else {
             vlog(
               _ctxlog.debug,
               "Found {}, max_timestamp {} is within the time threshold {}",
-              it->second.name,
+              it->second.manifest_key,
               meta.max_timestamp,
               time_threshold);
         }
@@ -498,8 +498,10 @@ open_output_file_stream(const std::filesystem::path& path) {
 
 ss::future<> partition_downloader::download_segment_file(
   const segment& segm, const download_part& part) {
+    auto name = generate_segment_name(
+      segm.manifest_key.base_offset, segm.manifest_key.term);
     auto remote_path = generate_remote_segment_path(
-      _ntpc.ntp(), segm.meta.ntp_revision, segm.name, segm.meta.archiver_term);
+      _ntpc.ntp(), segm.meta.ntp_revision, name, segm.meta.archiver_term);
 
     vlog(
       _ctxlog.info,
@@ -510,8 +512,8 @@ ss::future<> partition_downloader::download_segment_file(
     offset_translator otl{segm.meta.delta_offset};
 
     auto localpath = part.part_prefix
-                     / std::string{
-                       otl.get_adjusted_segment_name(segm.name, _rtcnode)()};
+                     / std::string{otl.get_adjusted_segment_name(
+                       segm.manifest_key, _rtcnode)()};
 
     if (co_await ss::file_exists(localpath.string())) {
         // we don't need to re-download file if it's already on disk

@@ -13,6 +13,7 @@
 #include "archival/types.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
+#include "cloud_storage/manifest.h"
 #include "cluster/members_table.h"
 #include "random/generators.h"
 #include "s3/client.h"
@@ -467,5 +468,7 @@ archival::remote_segment_path get_segment_path(
   const cloud_storage::manifest& manifest, const archival::segment_name& name) {
     auto meta = manifest.get(name);
     BOOST_REQUIRE(meta);
-    return manifest.generate_segment_path(name, *meta);
+    auto key = cloud_storage::parse_segment_name(name);
+    BOOST_REQUIRE(key);
+    return manifest.generate_segment_path(*key, *meta);
 }

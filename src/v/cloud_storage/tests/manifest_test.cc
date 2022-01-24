@@ -134,7 +134,9 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
          model::timestamp(1234567890)}},
     };
     for (const auto& actual : m) {
-        auto it = expected.find(actual.first());
+        auto sn = generate_segment_name(
+          actual.first.base_offset, actual.first.term);
+        auto it = expected.find(sn());
         BOOST_REQUIRE(it != expected.end());
         BOOST_REQUIRE_EQUAL(it->second.base_offset, actual.second.base_offset);
         BOOST_REQUIRE_EQUAL(
@@ -193,11 +195,13 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_difference) {
         auto c = a.difference(b);
         BOOST_REQUIRE(c.size() == 1);
         auto res = *c.begin();
-        BOOST_REQUIRE(res.first == segment_name("3-3-v1.log"));
+        auto expected = manifest::key{
+          .base_offset = model::offset(3), .term = model::term_id(3)};
+        BOOST_REQUIRE(res.first == expected);
     }
     // check that set difference is not symmetrical
     b.add(segment_name("3-3-v1.log"), {});
-    b.add(segment_name("4-4-v2.log"), {});
+    b.add(segment_name("4-4-v1.log"), {});
     {
         auto c = a.difference(b);
         BOOST_REQUIRE(c.size() == 0);

@@ -92,7 +92,8 @@ remote_segment::remote_segment(
 
     _path = m.generate_segment_path(name, *meta);
 
-    auto parsed_name = parse_segment_name(name);
+    auto parsed_name = parse_segment_name(
+      generate_segment_name(name.base_offset, name.term));
     vassert(parsed_name, "Can't parse segment name, name: {}", name);
     _term = parsed_name->term;
 

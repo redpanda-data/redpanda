@@ -61,21 +61,19 @@ ss::future<uint64_t> offset_translator::copy_stream(
 }
 
 segment_name offset_translator::get_adjusted_segment_name(
-  const segment_name& name, retry_chain_node& fib) const {
+  const manifest::key& key, retry_chain_node& fib) const {
     retry_chain_logger ctxlog(cst_log, fib);
-    auto parsed_name = parse_segment_name(name);
-    vassert(parsed_name, "Can't parse segment name, name: {}", name);
-    auto base_offset = parsed_name->base_offset;
-    auto term_id = parsed_name->term;
-
+    auto base_offset = key.base_offset;
+    auto term_id = key.term;
     auto new_base = base_offset - _initial_delta;
     auto new_name = segment_name{
       ssx::sformat("{}-{}-v1.log", new_base(), term_id())};
     vlog(
       ctxlog.debug,
-      "Segment name: {}, base-offset: {}, term-id: {}, "
+      "Segment: {}-{}-v1.log, base-offset: {}, term-id: {}, "
       "adjusted-base-offset: {}, adjusted-name: {}",
-      name,
+      key.base_offset,
+      key.term,
       base_offset,
       term_id,
       new_base,

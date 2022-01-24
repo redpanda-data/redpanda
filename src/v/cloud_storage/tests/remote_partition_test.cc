@@ -211,8 +211,8 @@ make_imposter_expectations(
         m.add(s.sname, meta);
 
         delta = delta + model::offset(s.num_config_records);
-
-        auto url = m.generate_segment_path(s.sname, meta);
+        auto res = parse_segment_name(s.sname);
+        auto url = m.generate_segment_path(*res, meta);
         results.push_back(cloud_storage_fixture::expectation{
           .url = "/" + url().string(), .body = body});
     }
