@@ -152,8 +152,8 @@ func NewProduceCommand(fs afero.Fs) *cobra.Command {
 	}
 
 	// The following flags require parsing before we initialize our client.
-	cmd.Flags().StringVarP(&compression, "compression", "z", "snappy", "compression to use for producing batches (none, gzip, snapy, lz4, zstd)")
-	cmd.Flags().IntVar(&acks, "acks", -1, "number of acks required for producing (-1=all, 0=none, 1=leader)")
+	cmd.Flags().StringVarP(&compression, "compression", "z", "snappy", "Compression to use for producing batches (none, gzip, snapy, lz4, zstd)")
+	cmd.Flags().IntVar(&acks, "acks", -1, "Number of acks required for producing (-1=all, 0=none, 1=leader)")
 	cmd.Flags().DurationVar(&timeout, "delivery-timeout", 0, "per-record delivery timeout, if non-zero, min 1s")
 	cmd.Flags().Int32VarP(&partition, "partition", "p", -1, "partition to directly produce to, if non-negative (also allows %p parsing to set partitions)")
 
@@ -165,8 +165,8 @@ func NewProduceCommand(fs afero.Fs) *cobra.Command {
 		"Produced to partition %p at offset %o with timestamp %d.\n",
 		"what to write to stdout when a record is successfully produced",
 	)
-	cmd.Flags().StringArrayVarP(&recHeaders, "header", "H", nil, "headers in format key:value to add to each record (repeatable)")
-	cmd.Flags().StringVarP(&key, "key", "k", "", "a fixed key to use for each record (parsed input keys take precedence)")
+	cmd.Flags().StringArrayVarP(&recHeaders, "header", "H", nil, "Headers in format key:value to add to each record (repeatable)")
+	cmd.Flags().StringVarP(&key, "key", "k", "", "A fixed key to use for each record (parsed input keys take precedence)")
 
 	// Deprecated
 	cmd.Flags().IntVarP(new(int), "num", "n", 1, "")

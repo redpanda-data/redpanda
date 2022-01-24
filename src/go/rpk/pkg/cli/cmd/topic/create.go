@@ -97,9 +97,9 @@ the cleanup.policy=compact config option set.
 			}
 		},
 	}
-	cmd.Flags().StringArrayVarP(&configKVs, "topic-config", "c", nil, "key=value config parameters (repeatable; e.g. -c cleanup.policy=compact)")
-	cmd.Flags().Int32VarP(&partitions, "partitions", "p", 1, "number of partitions to create per topic")
-	cmd.Flags().Int16VarP(&replicas, "replicas", "r", -1, "replication factor; if -1, this will be the broker's default.replication.factor")
+	cmd.Flags().StringArrayVarP(&configKVs, "topic-config", "c", nil, "key=value; Config parameters (repeatable; e.g. -c cleanup.policy=compact)")
+	cmd.Flags().Int32VarP(&partitions, "partitions", "p", 1, "Number of partitions to create per topic")
+	cmd.Flags().Int16VarP(&replicas, "replicas", "r", -1, "Replication factor; if -1, this will be the broker's default.replication.factor")
 	cmd.Flags().BoolVarP(&dry, "dry", "d", false, "dry run: validate the topic creation request; do not create topics")
 
 	// Sept 2021

@@ -117,11 +117,11 @@ Seek group G to the beginning of a topic it was not previously consuming:
 		},
 	}
 
-	cmd.Flags().StringVar(&to, "to", "", "where to seek (start, end, unix second|millisecond|nanosecond)")
-	cmd.Flags().StringVar(&toGroup, "to-group", "", "seek to the commits of another group")
-	cmd.Flags().StringVar(&toFile, "to-file", "", "seek to offsets as specified in the file")
-	cmd.Flags().StringArrayVar(&topics, "topics", nil, "only seek these topics, if any are specified")
-	cmd.Flags().BoolVar(&allowNewTopics, "allow-new-topics", false, "allow seeking to new topics not currently consumed (implied with --to-group or --to-file)")
+	cmd.Flags().StringVar(&to, "to", "", "Where to seek (start, end, unix second | millisecond | nanosecond)")
+	cmd.Flags().StringVar(&toGroup, "to-group", "", "Seek to the commits of another group")
+	cmd.Flags().StringVar(&toFile, "to-file", "", "Seek to offsets as specified in the file")
+	cmd.Flags().StringArrayVar(&topics, "topics", nil, "Only seek these topics, if any are specified")
+	cmd.Flags().BoolVar(&allowNewTopics, "allow-new-topics", false, "Allow seeking to new topics not currently consumed (implied with --to-group or --to-file)")
 
 	return cmd
 }

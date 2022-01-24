@@ -127,10 +127,10 @@ valid, but does not apply it.
 		},
 	}
 
-	cmd.Flags().StringArrayVarP(&sets, "set", "s", nil, "key=value pair to set (repeatable)")
-	cmd.Flags().StringArrayVarP(&deletions, "delete", "d", nil, "key to delete (repeatable)")
-	cmd.Flags().StringArrayVar(&appends, "append", nil, "key=value; value to append to a list-of-values key (repeatable)")
-	cmd.Flags().StringArrayVar(&subtracts, "subtract", nil, "key=value; value to remove from list-of-values key (repeatable)")
+	cmd.Flags().StringArrayVarP(&sets, "set", "s", nil, "key=value; Pair to set (repeatable)")
+	cmd.Flags().StringArrayVarP(&deletions, "delete", "d", nil, "Key to delete (repeatable)")
+	cmd.Flags().StringArrayVar(&appends, "append", nil, "key=value; Value to append to a list-of-values key (repeatable)")
+	cmd.Flags().StringArrayVar(&subtracts, "subtract", nil, "key=value; Value to remove from list-of-values key (repeatable)")
 
 	cmd.Flags().BoolVar(&dry, "dry", false, "dry run: validate the alter request, but do not apply")
 

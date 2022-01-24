@@ -85,10 +85,7 @@ especify an arbitrary config file.`,
 		&nodeAddrs,
 		"node-addrs",
 		[]string{},
-		fmt.Sprintf(`
-A comma-delimited list of the addresses (<host:port>) of all the redpanda nodes
-in a cluster. The port must be the one configured for the nodes' admin API
-(%d by default)`,
+		fmt.Sprintf(`A comma-delimited list of the addresses (<host>:<port>) of all the redpanda nodes in a cluster. The port must be the one configured for the nodes' admin API (%d by default)`,
 			config.DefaultAdminPort,
 		))
 	command.Flags().StringVar(

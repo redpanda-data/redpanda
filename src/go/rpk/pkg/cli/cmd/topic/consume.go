@@ -113,21 +113,21 @@ func NewConsumeCommand(fs afero.Fs) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&offset, "offset", "o", "start", "offset to consume from / to (start, end, 47, +2, -3)")
-	cmd.Flags().Int32SliceVarP(&c.partitions, "partitions", "p", nil, "comma delimited list of specific partitions to consume")
-	cmd.Flags().BoolVarP(&c.regex, "regex", "r", false, "parse topics as regex; consume any topic that matches any expression")
+	cmd.Flags().StringVarP(&offset, "offset", "o", "start", "Offset to consume from / to (start, end, 47, +2, -3)")
+	cmd.Flags().Int32SliceVarP(&c.partitions, "partitions", "p", nil, "Comma delimited list of specific partitions to consume")
+	cmd.Flags().BoolVarP(&c.regex, "regex", "r", false, "Parse topics as regex; consume any topic that matches any expression")
 
 	cmd.Flags().StringVarP(&c.group, "group", "g", "", "group to use for consuming (incompatible with -p)")
-	cmd.Flags().StringVarP(&c.balancer, "balancer", "b", "cooperative-sticky", "group balancer to use if group consuming (range, roundrobin, sticky, cooperative-sticky)")
+	cmd.Flags().StringVarP(&c.balancer, "balancer", "b", "cooperative-sticky", "Group balancer to use if group consuming (range, roundrobin, sticky, cooperative-sticky)")
 
-	cmd.Flags().Int32Var(&c.fetchMaxBytes, "fetch-max-bytes", 1<<20, "maximum amount of bytes per fetch request per broker")
-	cmd.Flags().DurationVar(&c.fetchMaxWait, "fetch-max-wait", 5*time.Second, "maximum amount of time to wait when fetching from a broker before the broker replies")
-	cmd.Flags().BoolVar(&c.readCommitted, "read-committed", false, "opt in to reading only committed offsets")
+	cmd.Flags().Int32Var(&c.fetchMaxBytes, "fetch-max-bytes", 1<<20, "Maximum amount of bytes per fetch request per broker")
+	cmd.Flags().DurationVar(&c.fetchMaxWait, "fetch-max-wait", 5*time.Second, "Maximum amount of time to wait when fetching from a broker before the broker replies")
+	cmd.Flags().BoolVar(&c.readCommitted, "read-committed", false, "Opt in to reading only committed offsets")
 
-	cmd.Flags().StringVarP(&format, "format", "f", "json", "output format (see --help for details)")
-	cmd.Flags().IntVarP(&c.num, "num", "n", 0, "quit after consuming this number of records (0 is unbounded)")
-	cmd.Flags().BoolVar(&c.pretty, "pretty-print", true, "pretty print each record over multiple lines (for -f json)")
-	cmd.Flags().BoolVar(&c.metaOnly, "meta-only", false, "print all record info except the record value (for -f json)")
+	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format (see --help for details)")
+	cmd.Flags().IntVarP(&c.num, "num", "n", 0, "Quit after consuming this number of records (0 is unbounded)")
+	cmd.Flags().BoolVar(&c.pretty, "pretty-print", true, "Pretty print each record over multiple lines (for -f json)")
+	cmd.Flags().BoolVar(&c.metaOnly, "meta-only", false, "Print all record info except the record value (for -f json)")
 
 	// Deprecated.
 	cmd.Flags().BoolVar(new(bool), "commit", false, "")
