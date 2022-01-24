@@ -254,13 +254,20 @@ create_consumer(server::request_t rq, server::reply_t rp) {
           parse::error_code::invalid_param, "auto.commit must be false");
     }
 
+    auto group_shard{consumer_shard(group_id)};
     auto handler =
-      [group_id,
-       res_fmt,
-       req_data{std::move(req_data)},
-       rq{std::move(rq)},
-       rp{std::move(rp)}](
+      [_group_id{std::move(group_id)},
+       _res_fmt{res_fmt},
+       _req_data{std::move(req_data)},
+       _rq{std::move(rq)},
+       _rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+        auto group_id{std::move(_group_id)};
+        auto res_fmt{_res_fmt};
+        auto req_data{std::move(_req_data)};
+        auto rq{std::move(_rq)};
+        auto rp{std::move(_rp)};
+
         vlog(
           plog.debug,
           "create_consumer: group_id: {}, name: {}, min_bytes: {}, timeout: "
@@ -283,7 +290,7 @@ create_consumer(server::request_t rq, server::reply_t rp) {
     };
 
     co_return co_await rq.service().client().invoke_on(
-      consumer_shard(group_id), rq.context().smp_sg, std::move(handler));
+      group_shard, rq.context().smp_sg, std::move(handler));
 }
 
 ss::future<server::reply_t>
@@ -298,9 +305,17 @@ remove_consumer(server::request_t rq, server::reply_t rp) {
     auto member_id = parse::request_param<kafka::member_id>(
       *rq.req, "instance");
 
+    auto group_shard{consumer_shard(group_id)};
     auto handler =
-      [group_id, member_id, rq{std::move(rq)}, rp{std::move(rp)}](
+      [_group_id{std::move(group_id)},
+       _member_id{std::move(member_id)},
+       _rq{std::move(rq)},
+       _rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+        auto group_id{std::move(_group_id)};
+        auto member_id{std::move(_member_id)};
+        auto rq{std::move(_rq)};
+        auto rp{std::move(_rp)};
         vlog(
           plog.debug,
           "remove_consumer: group_id: {}, member_id: {}",
@@ -313,7 +328,7 @@ remove_consumer(server::request_t rq, server::reply_t rp) {
     };
 
     co_return co_await rq.service().client().invoke_on(
-      consumer_shard(group_id), rq.context().smp_sg, std::move(handler));
+      group_shard, rq.context().smp_sg, std::move(handler));
 }
 
 ss::future<server::reply_t>
@@ -331,14 +346,21 @@ subscribe_consumer(server::request_t rq, server::reply_t rp) {
     auto req_data = ppj::rjson_parse(
       rq.req->content.data(), ppj::subscribe_consumer_request_handler());
 
+    auto group_shard{consumer_shard(group_id)};
     auto handler =
-      [group_id,
-       member_id,
-       res_fmt,
-       req_data{std::move(req_data)},
-       rq{std::move(rq)},
-       rp{std::move(rp)}](
+      [_group_id{std::move(group_id)},
+       _member_id{std::move(member_id)},
+       _res_fmt{res_fmt},
+       _req_data{std::move(req_data)},
+       _rq{std::move(rq)},
+       _rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+        auto group_id{std::move(_group_id)};
+        auto member_id{std::move(_member_id)};
+        auto res_fmt{_res_fmt};
+        auto req_data{std::move(_req_data)};
+        auto rq{std::move(_rq)};
+        auto rp{std::move(_rp)};
         vlog(
           plog.debug,
           "subscribe_consumer: group_id: {}, member_id: {}, topics: {}",
@@ -354,7 +376,7 @@ subscribe_consumer(server::request_t rq, server::reply_t rp) {
     };
 
     co_return co_await rq.service().client().invoke_on(
-      consumer_shard(group_id), rq.context().smp_sg, std::move(handler));
+      group_shard, rq.context().smp_sg, std::move(handler));
 }
 
 ss::future<server::reply_t>
@@ -374,15 +396,23 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
     auto max_bytes{
       parse::query_param<std::optional<int32_t>>(*rq.req, "max_bytes")};
 
+    auto group_shard{consumer_shard(group_id)};
     auto handler =
-      [group_id,
-       name,
-       timeout,
-       max_bytes,
-       res_fmt,
-       rq{std::move(rq)},
-       rp{std::move(rp)}](
+      [_group_id{std::move(group_id)},
+       _name{std::move(name)},
+       _timeout{timeout},
+       _max_bytes{max_bytes},
+       _res_fmt{res_fmt},
+       _rq{std::move(rq)},
+       _rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+        auto group_id{std::move(_group_id)};
+        auto name{std::move(_name)};
+        auto timeout{_timeout};
+        auto max_bytes{_max_bytes};
+        auto res_fmt{_res_fmt};
+        auto rq{std::move(_rq)};
+        auto rp{std::move(_rp)};
         vlog(
           plog.debug,
           "consumer_fetch: group_id: {}, name: {}, timeout: {}, max_bytes: {}",
@@ -406,7 +436,7 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
     };
 
     co_return co_await rq.service().client().invoke_on(
-      consumer_shard(group_id), rq.context().smp_sg, std::move(handler));
+      group_shard, rq.context().smp_sg, std::move(handler));
 }
 
 ss::future<server::reply_t>
@@ -422,14 +452,21 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp) {
     auto req_data = ppj::partitions_request_to_offset_request(ppj::rjson_parse(
       rq.req->content.data(), ppj::partitions_request_handler()));
 
+    auto group_shard{consumer_shard(group_id)};
     auto handler =
-      [group_id,
-       member_id,
-       req_data{std::move(req_data)},
-       res_fmt,
-       rq{std::move(rq)},
-       rp{std::move(rp)}](
+      [_group_id{std::move(group_id)},
+       _member_id{std::move(member_id)},
+       _res_fmt{res_fmt},
+       _req_data{std::move(req_data)},
+       _rq{std::move(rq)},
+       _rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+        auto group_id{std::move(_group_id)};
+        auto member_id{std::move(_member_id)};
+        auto res_fmt{_res_fmt};
+        auto req_data{std::move(_req_data)};
+        auto rq{std::move(_rq)};
+        auto rp{std::move(_rp)};
         vlog(
           plog.debug,
           "get_consumer_offsets: group_id: {}, member_id: {}, offsets: {}",
@@ -449,7 +486,7 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp) {
     };
 
     co_return co_await rq.service().client().invoke_on(
-      consumer_shard(group_id), rq.context().smp_sg, std::move(handler));
+      group_shard, rq.context().smp_sg, std::move(handler));
 }
 
 ss::future<server::reply_t>
@@ -470,13 +507,19 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
                           rq.req->content.data(),
                           ppj::partition_offsets_request_handler()));
 
+    auto group_shard{consumer_shard(group_id)};
     auto handler =
-      [group_id,
-       member_id,
-       req_data{std::move(req_data)},
-       rq{std::move(rq)},
-       rp{std::move(rp)}](
+      [_group_id{std::move(group_id)},
+       _member_id{std::move(member_id)},
+       _req_data{std::move(req_data)},
+       _rq{std::move(rq)},
+       _rp{std::move(rp)}](
         kafka::client::client& client) mutable -> ss::future<server::reply_t> {
+        auto group_id{std::move(_group_id)};
+        auto member_id{std::move(_member_id)};
+        auto req_data{std::move(_req_data)};
+        auto rq{std::move(_rq)};
+        auto rp{std::move(_rp)};
         vlog(
           plog.debug,
           "post_consumer_offsets: group_id: {}, member_id: {}, offsets: {}",
@@ -491,7 +534,7 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
     };
 
     co_return co_await rq.service().client().invoke_on(
-      consumer_shard(group_id), rq.context().smp_sg, std::move(handler));
+      group_shard, rq.context().smp_sg, std::move(handler));
 }
 
 } // namespace pandaproxy::rest
