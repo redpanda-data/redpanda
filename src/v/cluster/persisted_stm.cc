@@ -124,7 +124,7 @@ ss::future<> persisted_stm::do_make_snapshot() {
 }
 
 void persisted_stm::make_snapshot_in_background() {
-    (void)ss::with_gate(_gate, [this] { return make_snapshot(); });
+    ssx::spawn_with_gate(_gate, [this] { return make_snapshot(); });
 }
 
 ss::future<> persisted_stm::make_snapshot() {
