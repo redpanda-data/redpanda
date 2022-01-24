@@ -22,6 +22,7 @@
 #include "ssx/sformat.h"
 #include "storage/fs_utils.h"
 #include "storage/ntp_config.h"
+#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -152,6 +153,10 @@ remote_segment_path generate_remote_segment_path(
     }
 }
 
+segment_name generate_segment_name(model::offset o, model::term_id t) {
+    return segment_name(ssx::sformat("{}-{}-v1.log", o(), t()));
+}
+
 manifest::manifest()
   : _ntp()
   , _rev()
@@ -199,8 +204,9 @@ model::initial_revision_id manifest::get_revision_id() const { return _rev; }
 
 remote_segment_path manifest::generate_segment_path(
   const manifest::key& key, const segment_meta& meta) const {
+    auto name = generate_segment_name(key.base_offset, key.term);
     return generate_remote_segment_path(
-      _ntp, meta.ntp_revision, key, meta.archiver_term);
+      _ntp, meta.ntp_revision, name, meta.archiver_term);
 }
 
 manifest::const_iterator manifest::begin() const { return _segments.begin(); }
@@ -221,6 +227,16 @@ bool manifest::contains(const manifest::key& key) const {
     return _segments.contains(key);
 }
 
+bool manifest::contains(const segment_name& name) const {
+    auto maybe_key = parse_segment_name(name);
+    if (!maybe_key) {
+        throw std::runtime_error(
+          fmt_with_ctx(fmt::format, "can't parse segment name \"{}\"", name));
+    }
+    key key = {.base_offset = maybe_key->base_offset, .term = maybe_key->term};
+    return _segments.contains(key);
+}
+
 bool manifest::add(const manifest::key& key, const segment_meta& meta) {
     auto [it, ok] = _segments.insert(std::make_pair(key, meta));
     if (ok && it->second.ntp_revision == model::initial_revision_id{}) {
@@ -230,12 +246,32 @@ bool manifest::add(const manifest::key& key, const segment_meta& meta) {
     return ok;
 }
 
+bool manifest::add(const segment_name& name, const segment_meta& meta) {
+    auto maybe_key = parse_segment_name(name);
+    if (!maybe_key) {
+        throw std::runtime_error(
+          fmt_with_ctx(fmt::format, "can't parse segment name \"{}\"", name));
+    }
+    key key = {.base_offset = maybe_key->base_offset, .term = maybe_key->term};
+    return add(key, meta);
+}
+
 const manifest::segment_meta* manifest::get(const manifest::key& key) const {
     auto it = _segments.find(key);
     if (it == _segments.end()) {
         return nullptr;
     }
     return &it->second;
+}
+
+const manifest::segment_meta* manifest::get(const segment_name& name) const {
+    auto maybe_key = parse_segment_name(name);
+    if (!maybe_key) {
+        throw std::runtime_error(
+          fmt_with_ctx(fmt::format, "can't parse segment name \"{}\"", name));
+    }
+    key key = {.base_offset = maybe_key->base_offset, .term = maybe_key->term};
+    return get(key);
 }
 
 std::insert_iterator<manifest::segment_map> manifest::get_insert_iterator() {
@@ -290,7 +326,14 @@ void manifest::update(const rapidjson::Document& m) {
     if (m.HasMember("segments")) {
         const auto& s = m["segments"].GetObject();
         for (auto it = s.MemberBegin(); it != s.MemberEnd(); it++) {
-            auto name = manifest::key{it->name.GetString()};
+            auto name = segment_name{it->name.GetString()};
+            auto parsed_key = parse_segment_name(name);
+            if (!parsed_key) {
+                throw std::runtime_error(fmt_with_ctx(
+                  fmt::format, "can't parse segment name \"{}\"", name));
+            }
+            key key = {
+              .base_offset = parsed_key->base_offset, .term = parsed_key->term};
             auto coffs = it->value["committed_offset"].GetInt64();
             auto boffs = it->value["base_offset"].GetInt64();
             auto size_bytes = it->value["size_bytes"].GetInt64();
@@ -330,7 +373,7 @@ void manifest::update(const rapidjson::Document& m) {
               .ntp_revision = ntp_revision,
               .archiver_term = archiver_term,
             };
-            tmp.insert(std::make_pair(name, meta));
+            tmp.insert(std::make_pair(key, meta));
         }
     }
     std::swap(tmp, _segments);
@@ -367,7 +410,8 @@ void manifest::serialize(std::ostream& out) const {
     if (!_segments.empty()) {
         w.Key("segments");
         w.StartObject();
-        for (const auto& [sn, meta] : _segments) {
+        for (const auto& [key, meta] : _segments) {
+            auto sn = generate_segment_name(key.base_offset, key.term);
             w.Key(sn());
             w.StartObject();
             w.Key("is_compacted");
@@ -417,6 +461,11 @@ bool manifest::delete_permanently(const manifest::key& key) {
         return true;
     }
     return false;
+}
+
+std::ostream& operator<<(std::ostream& o, const manifest::key& k) {
+    o << generate_segment_name(k.base_offset, k.term);
+    return o;
 }
 
 topic_manifest::topic_manifest(
