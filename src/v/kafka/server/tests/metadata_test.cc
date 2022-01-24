@@ -69,6 +69,7 @@ static kafka::metadata_request no_topics() {
 
 // https://github.com/apache/kafka/blob/8968cdd/core/src/test/scala/unit/kafka/server/MetadataRequestTest.scala#L117
 FIXTURE_TEST(test_no_topics_request, redpanda_thread_fixture) {
+    wait_for_controller_leadership().get();
     // FIXME: Create some topics to make this test meaningfull
     auto req = no_topics();
 
@@ -82,6 +83,7 @@ FIXTURE_TEST(test_no_topics_request, redpanda_thread_fixture) {
 
 // https://github.com/apache/kafka/blob/8968cdd/core/src/test/scala/unit/kafka/server/MetadataRequestTest.scala#L52
 FIXTURE_TEST(cluster_id_with_req_v1, redpanda_thread_fixture) {
+    wait_for_controller_leadership().get();
     auto req = all_topics();
 
     auto client = make_kafka_client().get0();
@@ -96,6 +98,7 @@ FIXTURE_TEST(cluster_id_with_req_v1, redpanda_thread_fixture) {
 // https://app.asana.com/0/1149841353291489/1153248907521420
 FIXTURE_TEST_EXPECTED_FAILURES(
   cluster_id_is_valid, redpanda_thread_fixture, 1) {
+    wait_for_controller_leadership().get();
     auto req = all_topics();
 
     auto client = make_kafka_client().get0();
