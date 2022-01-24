@@ -89,16 +89,29 @@ static ss::future<read_result> read_from_partition(
 
     reader_config.strict_max_bytes = config.strict_max_bytes;
     auto rdr = co_await part.make_reader(reader_config);
-    auto result = co_await rdr.reader.consume(
-      kafka_batch_serializer(), deadline ? *deadline : model::no_timeout);
-    auto data = std::make_unique<iobuf>(std::move(result.data));
+    std::exception_ptr e;
+    std::unique_ptr<iobuf> data;
     std::vector<cluster::rm_stm::tx_range> aborted_transactions;
-    part.probe().add_records_fetched(result.record_count);
-    if (result.record_count > 0) {
-        // Reader should live at least until this point to hold on to the
-        // segment locks so that prefix truncation doesn't happen.
-        aborted_transactions = co_await part.aborted_transactions(
-          result.base_offset, result.last_offset, std::move(rdr.ot_state));
+    try {
+        auto result = co_await rdr.reader.consume(
+          kafka_batch_serializer(), deadline ? *deadline : model::no_timeout);
+        data = std::make_unique<iobuf>(std::move(result.data));
+        part.probe().add_records_fetched(result.record_count);
+        if (result.record_count > 0) {
+            // Reader should live at least until this point to hold on to the
+            // segment locks so that prefix truncation doesn't happen.
+            aborted_transactions = co_await part.aborted_transactions(
+              result.base_offset, result.last_offset, std::move(rdr.ot_state));
+        }
+
+    } catch (...) {
+        e = std::current_exception();
+    }
+
+    co_await std::move(rdr.reader).release()->finally();
+
+    if (e) {
+        std::rethrow_exception(e);
     }
 
     if (foreign_read) {
@@ -109,6 +122,7 @@ static ss::future<read_result> read_from_partition(
           lso,
           std::move(aborted_transactions));
     }
+
     co_return read_result(
       std::move(data), start_o, hw, lso, std::move(aborted_transactions));
 }
