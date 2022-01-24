@@ -12,6 +12,7 @@
 
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/logger.h"
+#include "cloud_storage/manifest.h"
 #include "cloud_storage/types.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
@@ -105,6 +106,29 @@ remote_segment::remote_segment(
     // run hydration loop in the background
     (void)run_hydrate_bg();
 }
+
+// Find manifest key in the manifest using base offset of the segment.
+// Invariant: 'o' is a valid base offset inside the manifest.
+static inline segment_name_components
+find_manifest_key(const manifest& m, model::offset o) {
+    auto it = m.find(o);
+    vassert(
+      it != m.end(),
+      "Can't find base offset {} in the manifest for ntp {}",
+      o,
+      m.get_ntp());
+    return it->first;
+}
+
+remote_segment::remote_segment(
+  remote& r,
+  cache& c,
+  s3::bucket_name bucket,
+  const manifest& m,
+  model::offset base_offset,
+  retry_chain_node& parent)
+  : remote_segment(
+    r, c, std::move(bucket), m, find_manifest_key(m, base_offset), parent) {}
 
 const model::ntp& remote_segment::get_ntp() const { return _ntp; }
 
