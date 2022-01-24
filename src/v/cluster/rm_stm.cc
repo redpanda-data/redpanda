@@ -218,6 +218,18 @@ rm_stm::rm_stm(
     auto_abort_timer.set_callback([this] { abort_old_txes(); });
 }
 
+bool rm_stm::check_tx_permitted() {
+    if (_c->log_config().is_compacted()) {
+        vlog(
+          clusterlog.error,
+          "Can't process a transactional request to {}. Compacted topic "
+          "doesn't support transactional processing.",
+          _c->ntp());
+        return false;
+    }
+    return true;
+}
+
 ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
@@ -237,6 +249,10 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   std::chrono::milliseconds transaction_timeout_ms) {
+    if (!check_tx_permitted()) {
+        co_return tx_errc::request_rejected;
+    }
+
     if (!_c->is_leader()) {
         co_return tx_errc::leader_not_found;
     }
@@ -343,6 +359,10 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
+    if (!check_tx_permitted()) {
+        co_return tx_errc::request_rejected;
+    }
+
     if (!co_await sync(timeout)) {
         co_return tx_errc::stale;
     }
@@ -452,6 +472,10 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
+    if (!check_tx_permitted()) {
+        co_return tx_errc::request_rejected;
+    }
+
     // doesn't make sense to fence off a commit because transaction
     // manager has already decided to commit and acked to a client
     if (!co_await sync(timeout)) {
@@ -617,6 +641,10 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
   model::producer_identity pid,
   std::optional<model::tx_seq> tx_seq,
   model::timeout_clock::duration timeout) {
+    if (!check_tx_permitted()) {
+        co_return tx_errc::request_rejected;
+    }
+
     // doesn't make sense to fence off an abort because transaction
     // manager has already decided to abort and acked to a client
     if (!co_await sync(timeout)) {
@@ -767,6 +795,10 @@ void rm_stm::set_seq(model::batch_identity bid, model::offset last_offset) {
 
 ss::future<result<raft::replicate_result>>
 rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
+    if (!check_tx_permitted()) {
+        co_return errc::generic_tx_error;
+    }
+
     if (!co_await sync(_sync_timeout)) {
         co_return errc::not_leader;
     }

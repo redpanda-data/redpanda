@@ -63,8 +63,7 @@ partition::partition(
                             && _raft->ntp().tp.topic
                                  == model::kafka_group_topic;
 
-        bool has_rm_stm = !_raft->log_config().is_compacted()
-                          && (_is_tx_enabled || _is_idempotence_enabled)
+        bool has_rm_stm = (_is_tx_enabled || _is_idempotence_enabled)
                           && model::controller_ntp != _raft->ntp()
                           && !is_group_ntp;
 
@@ -127,12 +126,6 @@ ss::shared_ptr<cluster::rm_stm> partition::rm_stm() {
               "Can't process transactional and idempotent requests to {}. The "
               "feature is disabled.",
               _raft->ntp());
-        } else if (_raft->log_config().is_compacted()) {
-            vlog(
-              clusterlog.error,
-              "Can't process transactional and idempotent requests to {}. "
-              "Compacted topics are not supported.",
-              _raft->ntp());
         } else {
             vlog(
               clusterlog.error,
@@ -158,15 +151,6 @@ raft::replicate_stages partition::replicate_in_stages(
             return raft::replicate_stages(raft::errc::timeout);
         }
 
-        if (_raft->log_config().is_compacted()) {
-            vlog(
-              clusterlog.error,
-              "Can't process a transactional request to {}. Compacted topic "
-              "doesn't support transactional processing.",
-              _raft->ntp());
-            return raft::replicate_stages(raft::errc::timeout);
-        }
-
         if (!_rm_stm) {
             vlog(
               clusterlog.error,
@@ -182,15 +166,6 @@ raft::replicate_stages partition::replicate_in_stages(
               clusterlog.error,
               "Can't process an idempotent request to {}. Idempotency isn't "
               "enabled.",
-              _raft->ntp());
-            return raft::replicate_stages(raft::errc::timeout);
-        }
-
-        if (_raft->log_config().is_compacted()) {
-            vlog(
-              clusterlog.error,
-              "Can't process an idempotent request to {}. Compacted topic "
-              "doesn't support idempotency.",
               _raft->ntp());
             return raft::replicate_stages(raft::errc::timeout);
         }
@@ -237,16 +212,6 @@ ss::future<result<raft::replicate_result>> partition::replicate(
               raft::errc::timeout);
         }
 
-        if (_raft->log_config().is_compacted()) {
-            vlog(
-              clusterlog.error,
-              "Can't process a transactional request to {}. Compacted topic "
-              "doesn't support transactional processing.",
-              _raft->ntp());
-            return ss::make_ready_future<result<raft::replicate_result>>(
-              raft::errc::timeout);
-        }
-
         if (!_rm_stm) {
             vlog(
               clusterlog.error,
@@ -263,16 +228,6 @@ ss::future<result<raft::replicate_result>> partition::replicate(
               clusterlog.error,
               "Can't process an idempotent request to {}. Idempotency isn't "
               "enabled.",
-              _raft->ntp());
-            return ss::make_ready_future<result<raft::replicate_result>>(
-              raft::errc::timeout);
-        }
-
-        if (_raft->log_config().is_compacted()) {
-            vlog(
-              clusterlog.error,
-              "Can't process an idempotent request to {}. Compacted topic "
-              "doesn't support idempotency.",
               _raft->ntp());
             return ss::make_ready_future<result<raft::replicate_result>>(
               raft::errc::timeout);
