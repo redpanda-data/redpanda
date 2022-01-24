@@ -472,6 +472,24 @@ class SchemaRegistryTest(RedpandaTest):
         # assert result["schema"] == json.dumps(schema_def)
 
     @cluster(num_nodes=3)
+    def test_post_subjects_subject_versions_version_many(self):
+        """
+        Verify posting a schema many times
+        """
+
+        topic = create_topic_names(1)[0]
+        subject = f"{topic}-key"
+        schema_1_data = json.dumps({"schema": schema1_def})
+
+        # Post the same schema many times.
+        for _ in range(20):
+            result_raw = self._post_subjects_subject_versions(
+                subject=subject, data=schema_1_data)
+            self.logger.debug(result_raw)
+            assert result_raw.status_code == requests.codes.ok
+            assert result_raw.json()["id"] == 1
+
+    @cluster(num_nodes=3)
     def test_post_subjects_subject(self):
         """
         Verify posting a schema
