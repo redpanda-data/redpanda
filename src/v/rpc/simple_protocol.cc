@@ -99,7 +99,8 @@ simple_protocol::dispatch_method_once(header h, net::server::resources rs) {
     auto fut = ctx->pr.get_future();
 
     // background!
-    (void)with_gate(rs.conn_gate(), [this, method_id, rs, ctx]() mutable {
+    ssx::background
+      = ssx::spawn_with_gate_then(rs.conn_gate(), [this, method_id, rs, ctx]() mutable {
         auto it = std::find_if(
           _services.begin(),
           _services.end(),
@@ -153,7 +154,10 @@ simple_protocol::dispatch_method_once(header h, net::server::resources rs) {
                     m->probes.latency_hist().record(std::move(l));
                 });
           });
+    }).handle_exception([](const std::exception_ptr& e) {
+        rpclog.error("Error dispatching: {}", e);
     });
+
     return fut;
 }
 } // namespace rpc
