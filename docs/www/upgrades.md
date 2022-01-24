@@ -91,7 +91,7 @@ docker pull docker.vectorized.io/vectorized/redpanda:<version>
 ```
 
 Once the image is downloaded, the steps described in the [docker getting started document](./quick-start-docker.md) can be followed to make Redpanda available once again.
-If previous configuration were saved, make sure to copy the redpanda.yaml file back to the /etc/redpanda container's folder and restart the cluster:
+If previous configuration were backed up, make sure to apply the `redpanda.yaml` file back to the configuration folder `/etc/redpanda` inside the container. After that, restart the cluster:
 ```bash
 docker cp <path_to_saved_yaml_file>/redpanda.yaml <container_id>:/etc/redpanda
 ...
