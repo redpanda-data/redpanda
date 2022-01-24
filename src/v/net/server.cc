@@ -13,6 +13,7 @@
 #include "likely.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "rpc/logger.h"
+#include "ssx/future-util.h"
 #include "ssx/sformat.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -67,7 +68,7 @@ void server::start() {
           std::make_unique<listener>(endpoint.name, std::move(ss)));
         listener& ref = *b;
         // background
-        (void)with_gate(_conn_gate, [this, &ref] { return accept(ref); });
+        ssx::spawn_with_gate(_conn_gate, [this, &ref] { return accept(ref); });
     }
 }
 
@@ -150,7 +151,7 @@ ss::future<> server::accept(listener& s) {
                         ss::gate_closed_exception());
                   });
               }
-              (void)with_gate(_conn_gate, [this, conn]() mutable {
+              ssx::spawn_with_gate(_conn_gate, [this, conn]() mutable {
                   return apply_proto(_proto.get(), resources(this, conn));
               });
               return ss::make_ready_future<ss::stop_iteration>(
