@@ -274,6 +274,7 @@ private:
     void compact_snapshot();
 
     ss::future<bool> sync(model::timeout_clock::duration);
+    bool check_tx_permitted();
 
     void track_tx(model::producer_identity, std::chrono::milliseconds);
     void abort_old_txes();
