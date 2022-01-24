@@ -102,8 +102,7 @@ sharded_store::make_valid_schema(canonical_schema schema) {
     case schema_type::avro:
         co_return make_avro_schema_definition(schema.def().raw()()).value();
     case schema_type::protobuf:
-        co_return co_await make_protobuf_schema_definition(
-          *this, std::move(schema));
+        co_return co_await make_protobuf_schema_definition(*this, schema);
     case schema_type::json:
         throw as_exception(invalid_schema_type(schema.type()));
     }
