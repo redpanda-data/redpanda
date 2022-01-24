@@ -50,11 +50,10 @@ public:
       schema_version version,
       is_deleted deleted);
 
-    ss::future<subject_schema> has_schema(const canonical_schema& schema);
+    ss::future<subject_schema> has_schema(canonical_schema schema);
 
     ///\brief Return a schema definition by id.
-    ss::future<canonical_schema_definition>
-    get_schema_definition(const schema_id& id);
+    ss::future<canonical_schema_definition> get_schema_definition(schema_id id);
 
     ///\brief Return a list of subject-versions for the shema id.
     ss::future<std::vector<subject_version>>
@@ -62,7 +61,7 @@ public:
 
     ///\brief Return a schema by subject and version (or latest).
     ss::future<subject_schema> get_subject_schema(
-      const subject& sub,
+      subject sub,
       std::optional<schema_version> version,
       include_deleted inc_dec);
 
@@ -71,52 +70,51 @@ public:
 
     ///\brief Return a list of versions and associated schema_id.
     ss::future<std::vector<schema_version>>
-    get_versions(const subject& sub, include_deleted inc_del);
+    get_versions(subject sub, include_deleted inc_del);
 
     ///\brief Return whether there are any references to a subject version.
-    ss::future<bool> is_referenced(const subject& sub, schema_version ver);
+    ss::future<bool> is_referenced(subject sub, schema_version ver);
 
     ///\brief Return the schema_ids that reference a subject version.
     ss::future<std::vector<schema_id>>
-    referenced_by(const subject& sub, std::optional<schema_version> ver);
+    referenced_by(subject sub, std::optional<schema_version> ver);
 
     ///\brief Delete a subject.
-    ss::future<std::vector<schema_version>> delete_subject(
-      seq_marker marker, const subject& sub, permanent_delete permanent);
+    ss::future<std::vector<schema_version>>
+    delete_subject(seq_marker marker, subject sub, permanent_delete permanent);
 
-    ss::future<is_deleted> is_subject_deleted(const subject& sub);
+    ss::future<is_deleted> is_subject_deleted(subject sub);
 
-    ss::future<is_deleted> is_subject_version_deleted(
-      const subject& sub, const schema_version version);
+    ss::future<is_deleted>
+    is_subject_version_deleted(subject sub, schema_version version);
+
+    ///\brief Get sequence number history (errors out if not soft-deleted)
+    ss::future<std::vector<seq_marker>> get_subject_written_at(subject sub);
 
     ///\brief Get sequence number history (errors out if not soft-deleted)
     ss::future<std::vector<seq_marker>>
-    get_subject_written_at(const subject& sub);
-
-    ///\brief Get sequence number history (errors out if not soft-deleted)
-    ss::future<std::vector<seq_marker>>
-    get_subject_version_written_at(const subject& sub, schema_version version);
+    get_subject_version_written_at(subject sub, schema_version version);
 
     ///\brief Delete a subject version
     ss::future<bool>
-    delete_subject_version(const subject& sub, schema_version version);
+    delete_subject_version(subject sub, schema_version version);
 
     ///\brief Get the global compatibility level.
     ss::future<compatibility_level> get_compatibility();
 
     ///\brief Get the compatibility level for a subject, or fallback to global.
     ss::future<compatibility_level>
-    get_compatibility(const subject& sub, default_to_global fallback);
+    get_compatibility(subject sub, default_to_global fallback);
 
     ///\brief Set the global compatibility level.
     ss::future<bool> set_compatibility(compatibility_level compatibility);
 
     ///\brief Set the compatibility level for a subject.
     ss::future<bool> set_compatibility(
-      seq_marker marker, const subject& sub, compatibility_level compatibility);
+      seq_marker marker, subject sub, compatibility_level compatibility);
 
     ///\brief Clear the compatibility level for a subject.
-    ss::future<bool> clear_compatibility(const subject& sub);
+    ss::future<bool> clear_compatibility(subject sub);
 
     ///\brief Check if the provided schema is compatible with the subject and
     /// version, according the the current compatibility.
@@ -124,7 +122,7 @@ public:
     /// If the compatibility level is transitive, then all versions are checked,
     /// otherwise checks are against the version provided and newer.
     ss::future<bool>
-    is_compatible(schema_version version, const canonical_schema& new_schema);
+    is_compatible(schema_version version, canonical_schema new_schema);
 
 private:
     ss::future<bool>
