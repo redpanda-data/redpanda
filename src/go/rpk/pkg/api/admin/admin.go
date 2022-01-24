@@ -26,18 +26,22 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/net"
 )
 
 // ErrNoAdminAPILeader happen when there's no leader for the Admin API
-var ErrNoAdminAPILeader = fmt.Errorf("no Admin API leader found")
+var ErrNoAdminAPILeader = errors.New("no Admin API leader found")
 
 // AdminAPI is a client to interact with Redpanda's admin server.
 type AdminAPI struct {
-	urls   []string
-	client *http.Client
+	urls                []string
+	brokerIdToUrlsMutex sync.Mutex
+	brokerIdToUrls      map[int]string
+	client              *http.Client
+	tlsConfig           *tls.Config
 }
 
 // NewClient returns an AdminAPI client that talks to each of the addresses in
@@ -83,13 +87,21 @@ func NewHostClient(
 }
 
 func NewAdminAPI(urls []string, tlsConfig *tls.Config) (*AdminAPI, error) {
+	return newAdminAPI(urls, tlsConfig, true)
+}
+
+func newAdminAPI(
+	urls []string, tlsConfig *tls.Config, tryToMapBrokerIDstoHosts bool,
+) (*AdminAPI, error) {
 	if len(urls) == 0 {
 		return nil, errors.New("at least one url is required for the admin api")
 	}
 
 	a := &AdminAPI{
-		urls:   make([]string, len(urls)),
-		client: &http.Client{Timeout: 10 * time.Second},
+		urls:           make([]string, len(urls)),
+		client:         &http.Client{Timeout: 10 * time.Second},
+		tlsConfig:      tlsConfig,
+		brokerIdToUrls: make(map[int]string),
 	}
 	if tlsConfig != nil {
 		a.client.Transport = &http.Transport{TLSClientConfig: tlsConfig}
@@ -113,7 +125,15 @@ func NewAdminAPI(urls []string, tlsConfig *tls.Config) (*AdminAPI, error) {
 		a.urls[i] = fmt.Sprintf("%s://%s", scheme, host)
 	}
 
+	if tryToMapBrokerIDstoHosts {
+		a.mapBrokerIDsToURLs()
+	}
+
 	return a, nil
+}
+
+func (a *AdminAPI) newAdminForSingleHost(host string) (*AdminAPI, error) {
+	return newAdminAPI([]string{host}, a.tlsConfig, false)
 }
 
 func (a *AdminAPI) urlsWithPath(path string) []string {
@@ -134,6 +154,22 @@ var rng = func() func(int) int {
 		return rng.Intn(n)
 	}
 }()
+
+func (a *AdminAPI) mapBrokerIDsToURLs() {
+	err := a.eachBroker(func(aa *AdminAPI) error {
+		nc, err := aa.GetNodeConfig()
+		if err != nil {
+			return err
+		}
+		a.brokerIdToUrlsMutex.Lock()
+		a.brokerIdToUrls[nc.NodeID] = aa.urls[0]
+		a.brokerIdToUrlsMutex.Unlock()
+		return nil
+	})
+	if err != nil {
+		log.Warn(fmt.Sprintf("failed to map brokerID to URL for 1 or more brokers: %v", err))
+	}
+}
 
 // GetLeaderID returns the broker ID of the leader of the Admin API
 func (a *AdminAPI) GetLeaderID() (*int, error) {
@@ -159,6 +195,51 @@ func (a *AdminAPI) sendAny(method, path string, body, into interface{}) error {
 	return maybeUnmarshalRespInto(method, url, res, into)
 }
 
+// sendToLeader sends a single request to the leader of the Admin API for Redpanda >= 21.11.1
+// otherwise, it broadcasts the request
+func (a *AdminAPI) sendToLeader(
+	method, path string, body, into interface{},
+) error {
+	// If there's only one broker, let's just send the request to it
+	if len(a.urls) == 1 {
+		return a.sendOne(method, path, body, into)
+	}
+	leaderID, err := a.GetLeaderID()
+	if err != nil {
+		return err
+	}
+	url, err := a.brokerIDToURL(*leaderID)
+	// if it's not possible to map the leaderID to a broker URL -> broadcast
+	if err != nil {
+		return a.sendAll(method, path, body, into)
+	}
+	aLeader, err := a.newAdminForSingleHost(url)
+	if err != nil {
+		return err
+	}
+	return aLeader.sendOne(method, path, body, into)
+}
+
+func (a *AdminAPI) brokerIDToURL(brokerID int) (string, error) {
+	if url, ok := a.getURLFromBrokerID(brokerID); ok {
+		return url, nil
+	} else {
+		// Try once to map again broker IDs to URLs
+		a.mapBrokerIDsToURLs()
+		if url, ok := a.getURLFromBrokerID(brokerID); ok {
+			return url, nil
+		}
+	}
+	return "", fmt.Errorf("failed to map brokerID %d to URL", brokerID)
+}
+
+func (a *AdminAPI) getURLFromBrokerID(brokerID int) (string, bool) {
+	a.brokerIdToUrlsMutex.Lock()
+	url, ok := a.brokerIdToUrls[brokerID]
+	a.brokerIdToUrlsMutex.Unlock()
+	return url, ok
+}
+
 // sendOne sends a request with sendAndReceive and unmarshals the body into
 // into, which is expected to be a pointer to a struct.
 func (a *AdminAPI) sendOne(method, path string, body, into interface{}) error {
@@ -182,7 +263,7 @@ func (a *AdminAPI) sendOne(method, path string, body, into interface{}) error {
 // interface.
 // These limitations come from the fact that nodes don't currently share info
 // with each other about where they're actually listening for the admin API.
-
+//
 // Unfortunately these assumptions do not match all environments in which
 // Redpanda is deployed, hence, we need to reintroduce the sendAll method and
 // broadcast on writes to the Admin API.
@@ -232,6 +313,23 @@ func (a *AdminAPI) sendAll(method, path string, body, into interface{}) error {
 		return maybeUnmarshalRespInto(method, resURL, res, into)
 	}
 	return err
+}
+
+// eachBroker creates a single host AdminAPI for each of the brokers and calls `fn`
+// for each of them in a go routine
+func (a *AdminAPI) eachBroker(fn func(aa *AdminAPI) error) error {
+	var grp multierror.Group
+	for _, url := range a.urls {
+		aURL := url
+		grp.Go(func() error {
+			aa, err := a.newAdminForSingleHost(aURL)
+			if err != nil {
+				return err
+			}
+			return fn(aa)
+		})
+	}
+	return grp.Wait().ErrorOrNil()
 }
 
 // Unmarshals a response body into `into`, if it is non-nil.

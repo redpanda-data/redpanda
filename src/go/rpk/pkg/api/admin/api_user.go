@@ -47,7 +47,7 @@ func (a *AdminAPI) CreateUser(username, password, mechanism string) error {
 		Password:  password,
 		Algorithm: mechanism,
 	}
-	return a.sendAll(http.MethodPost, usersEndpoint, u, nil)
+	return a.sendToLeader(http.MethodPost, usersEndpoint, u, nil)
 }
 
 // DeleteUser deletes the given username, if it exists.
@@ -56,7 +56,7 @@ func (a *AdminAPI) DeleteUser(username string) error {
 		return errors.New("invalid empty username")
 	}
 	path := usersEndpoint + "/" + url.PathEscape(username)
-	return a.sendAll(http.MethodDelete, path, nil, nil)
+	return a.sendToLeader(http.MethodDelete, path, nil, nil)
 }
 
 // ListUsers returns the current users.
