@@ -269,21 +269,112 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
       });
 }
 
+/**
+ * During configuration changes, it may not be possible to identify
+ * the correct listener on a broker based on our local listener's
+ * name alone (e.g. if the names of listeners differ between nodes'
+ * configuration.
+ *
+ * Attempt to guess the right listener on a peer by port, falling back to
+ * picking the first listener if that doesn't work.
+ *
+ * Assumption: that peer metadata contains at least one suitable address
+ * that is accessible to the client making this request.  A redpanda
+ * cluster for which this is not true is in an invalid configuration
+ * and cannot serve Kafka on any listener that does not have an equivalent
+ * listener on other nodes, because Kafka clients have to be able to
+ * connect to all brokers.
+ *
+ * @return pointer to the best guess at which listener on a peer should
+ *         be used in kafka metadata responses.
+ */
+static const model::broker_endpoint*
+guess_peer_listener(request_context& ctx, cluster::broker_ptr broker) {
+    // Peer has no listener with name matching the name of the
+    // listener serving this Kafka request.  This can happen during
+    // configuration changes
+    // (https://github.com/vectorizedio/redpanda/issues/3588)
+    //
+    // Use a fallback matching to find the best peer address we can.
+    vlog(
+      klog.warn,
+      "Broker {} has no listener named '{}', falling "
+      "back to guessing peer listener",
+      broker->id(),
+      ctx.listener());
+
+    // Look up port for the listener in use for this request
+    const auto& my_listeners = config::node().advertised_kafka_api();
+    int16_t my_port = 0;
+    for (const auto& l : my_listeners) {
+        if (l.name == ctx.listener()) {
+            my_port = l.address.port();
+
+            // Looking up the address for myself?  Take the whole
+            // listener.  This is the path where what's in node_config
+            // is not yet consistent with what's in members_table,
+            // because a node configuration update didn't propagate
+            // via raft0 yet
+            if (broker->id() == config::node().node_id()) {
+                return &l;
+            }
+        }
+    }
+
+    if (my_port == 0) {
+        // Should never happen: if we're listening with a given
+        // name, that name must have been in config.
+        vlog(
+          klog.error,
+          "Request on listener '{}' but not found in node_config",
+          ctx.listener());
+        return nullptr;
+    }
+
+    // Fallback 1: Try to match by port
+    for (const auto& listener : broker->kafka_advertised_listeners()) {
+        // filter broker listeners by active connection
+        if (listener.address.port() == my_port) {
+            return &listener;
+        }
+    }
+
+    // Fallback 2: no name or port match, return first listener from
+    // peer.
+    if (!broker->kafka_advertised_listeners().empty()) {
+        return &broker->kafka_advertised_listeners()[0];
+    } else {
+        // A broker with no kafka listeners, there is no way to
+        // include it in our response
+        return nullptr;
+    }
+}
+
 template<>
 ss::future<response_ptr> metadata_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     metadata_response reply;
     auto alive_brokers = co_await ctx.metadata_cache().all_alive_brokers();
     for (const auto& broker : alive_brokers) {
+        const model::broker_endpoint* peer_listener = nullptr;
         for (const auto& listener : broker->kafka_advertised_listeners()) {
             // filter broker listeners by active connection
             if (listener.name == ctx.listener()) {
-                reply.data.brokers.push_back(metadata_response::broker{
-                  .node_id = broker->id(),
-                  .host = listener.address.host(),
-                  .port = listener.address.port(),
-                  .rack = broker->rack()});
+                peer_listener = &listener;
+                break;
             }
+        }
+
+        if (peer_listener == nullptr) {
+            peer_listener = guess_peer_listener(ctx, broker);
+        }
+
+        if (peer_listener) {
+            reply.data.brokers.push_back(metadata_response::broker{
+              .node_id = broker->id(),
+              .host = peer_listener->address.host(),
+              .port = peer_listener->address.port(),
+              .rack = broker->rack()});
         }
     }
 
