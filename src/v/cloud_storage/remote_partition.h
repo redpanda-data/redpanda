@@ -97,16 +97,20 @@ private:
 
     /// State that have to be materialized before use
     struct offloaded_segment_state {
-        explicit offloaded_segment_state(manifest::key key);
+        explicit offloaded_segment_state(model::offset bo);
 
         std::unique_ptr<materialized_segment_state>
         materialize(remote_partition& p, model::offset offset_key);
 
         ss::future<> stop();
 
-        std::unique_ptr<offloaded_segment_state> offload(remote_partition*);
+        offloaded_segment_state offload(remote_partition*);
 
-        manifest::key manifest_key;
+        model::offset base_rp_offset;
+
+        offloaded_segment_state* operator->() { return this; }
+
+        const offloaded_segment_state* operator->() const { return this; }
     };
 
     /// State with materialized segment and cached reader
@@ -116,7 +120,7 @@ private:
     /// remote segment.
     struct materialized_segment_state {
         materialized_segment_state(
-          manifest::key mk, model::offset offk, remote_partition& p);
+          model::offset bo, model::offset offk, remote_partition& p);
 
         void return_reader(std::unique_ptr<remote_segment_batch_reader> reader);
 
@@ -127,11 +131,10 @@ private:
 
         ss::future<> stop();
 
-        std::unique_ptr<offloaded_segment_state>
-        offload(remote_partition* partition);
+        offloaded_segment_state offload(remote_partition* partition);
 
-        /// Key of the segment metatdata in the manifest
-        manifest::key manifest_key;
+        /// Base offsetof the segment
+        model::offset base_rp_offset;
         /// Key of the segment in _segments collection of the remote_partition
         model::offset offset_key;
         ss::lw_shared_ptr<remote_segment> segment;
@@ -143,11 +146,14 @@ private:
         intrusive_list_hook _hook;
     };
 
-    using offloaded_segment_ptr = std::unique_ptr<offloaded_segment_state>;
     using materialized_segment_ptr
       = std::unique_ptr<materialized_segment_state>;
     using segment_state
-      = std::variant<offloaded_segment_ptr, materialized_segment_ptr>;
+      = std::variant<offloaded_segment_state, materialized_segment_ptr>;
+
+    static_assert(
+      sizeof(segment_state) == sizeof(std::variant<size_t>),
+      "segment_state has unexpected size");
 
     /// Materialize segment if needed and create a reader
     ///

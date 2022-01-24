@@ -394,8 +394,9 @@ void remote_partition::gc_stale_materialized_segments(bool force_collection) {
             } else {
                 vlog(
                   _ctxlog.debug,
-                  "Materialized segment {} not stale: {} {} {} {} readers={}",
-                  st.manifest_key,
+                  "Materialized segment with base-offset {} is not stale: {} "
+                  "{} {} {} readers={}",
+                  st.base_rp_offset,
                   now - st.atime > stm_max_idle_time,
                   st.segment->download_in_progress(),
                   st.segment.owned(),
@@ -417,8 +418,8 @@ void remote_partition::gc_stale_materialized_segments(bool force_collection) {
         auto it = _segments.find(o);
         vassert(it != _segments.end(), "Can't find offset {}", o);
         auto tmp = std::visit(
-          [this](auto&& st) { return st->offload(this); }, _segments[o]);
-        _segments[o] = std::move(tmp);
+          [this](auto&& st) { return st->offload(this); }, it->second);
+        it->second = tmp;
     }
 }
 
@@ -485,13 +486,17 @@ void remote_partition::update_segments_incrementally() {
             // - we've already added the segment to the map
             // - the key that we've added previously doesn't have data batches
             //   in this case it can be safely replaced by the new one
-            auto prev_key = std::visit(
-              [](auto&& p) { return p->manifest_key; }, prev_it->second);
-            auto prev_meta = _manifest.get(prev_key);
-            vassert(prev_meta, "Can't find key in the manifest");
+            auto prev_off = std::visit(
+              [](auto&& p) { return p->base_rp_offset; }, prev_it->second);
+            auto manifest_it = _manifest.find(prev_off);
+            vassert(
+              manifest_it != _manifest.end(),
+              "Can't find key {} in the manifest. NTP: {}",
+              prev_off,
+              _manifest.get_ntp());
             if (
-              meta.second == *prev_meta
-              || prev_meta->base_offset > meta.second.base_offset) {
+              meta.second == manifest_it->second
+              || manifest_it->first.base_offset > meta.second.base_offset) {
                 // This path can be taken if we've already added the
                 // segment with data batches and the current segment
                 // that the loop is checking doesn't have any.
@@ -511,62 +516,48 @@ void remote_partition::update_segments_incrementally() {
               meta.second.base_offset,
               meta.second.committed_offset,
               meta.second.delta_offset,
-              prev_meta->base_offset,
-              prev_meta->committed_offset,
-              prev_meta->delta_offset);
+              manifest_it->first.base_offset,
+              manifest_it->second.committed_offset,
+              manifest_it->second.delta_offset);
 
             std::visit([this](auto&& p) { p->offload(this); }, prev_it->second);
         }
-        _segments[o] = std::make_unique<offloaded_segment_state>(meta.first);
+        _segments.insert_or_assign(
+          o, offloaded_segment_state(meta.first.base_offset));
     }
 }
 
 /// Materialize segment if needed and create a reader
 std::unique_ptr<remote_segment_batch_reader> remote_partition::borrow_reader(
   storage::log_reader_config config, model::offset key, segment_state& st) {
-    struct visit_materialize_make_reader {
-        segment_state& state;
-        remote_partition* part;
-        const storage::log_reader_config& config;
-        const model::offset offset_key;
-
-        std::unique_ptr<remote_segment_batch_reader>
-        operator()(offloaded_segment_ptr& st) {
-            auto tmp = st->materialize(*part, offset_key);
-            auto res = tmp->borrow_reader(config, part->_ctxlog);
-            state = std::move(tmp);
-            return res;
-        }
-        std::unique_ptr<remote_segment_batch_reader>
-        operator()(materialized_segment_ptr& st) {
-            return st->borrow_reader(config, part->_ctxlog);
-        }
-    };
-    if (std::holds_alternative<offloaded_segment_ptr>(st)) {
+    if (std::holds_alternative<offloaded_segment_state>(st)) {
         gc_stale_materialized_segments(true);
     }
-    return std::visit(
-      visit_materialize_make_reader{
-        .state = st, .part = this, .config = config, .offset_key = key},
-      st);
+    return ss::visit(
+      st,
+      [this, &config, offset_key = key, &st](
+        offloaded_segment_state& off_state) {
+          auto tmp = off_state->materialize(*this, offset_key);
+          auto res = tmp->borrow_reader(config, this->_ctxlog);
+          st = std::move(tmp);
+          return res;
+      },
+      [this, &config](materialized_segment_ptr& m_state) {
+          return m_state->borrow_reader(config, _ctxlog);
+      });
 }
 
 /// Return reader back to segment_state
 void remote_partition::return_reader(
   std::unique_ptr<remote_segment_batch_reader> reader, segment_state& st) {
-    struct visit_return_reader {
-        remote_partition* part;
-        std::unique_ptr<remote_segment_batch_reader> reader;
-
-        void operator()(offloaded_segment_ptr&) {
-            part->evict_reader(std::move(reader));
-        }
-        void operator()(materialized_segment_ptr& st) {
-            st->return_reader(std::move(reader));
-        }
-    };
-    std::visit(
-      visit_return_reader{.part = this, .reader = std::move(reader)}, st);
+    return ss::visit(
+      st,
+      [this, &reader](offloaded_segment_state&) {
+          evict_reader(std::move(reader));
+      },
+      [&reader](materialized_segment_ptr& m_state) {
+          m_state->return_reader(std::move(reader));
+      });
 }
 
 ss::future<storage::translating_reader> remote_partition::make_reader(
@@ -591,14 +582,14 @@ ss::future<storage::translating_reader> remote_partition::make_reader(
 }
 
 remote_partition::offloaded_segment_state::offloaded_segment_state(
-  manifest::key key)
-  : manifest_key(std::move(key)) {}
+  model::offset base_offset)
+  : base_rp_offset(base_offset) {}
 
 std::unique_ptr<remote_partition::materialized_segment_state>
 remote_partition::offloaded_segment_state::materialize(
   remote_partition& p, model::offset offset_key) {
     auto st = std::make_unique<materialized_segment_state>(
-      manifest_key, offset_key, p);
+      base_rp_offset, offset_key, p);
     return st;
 }
 
@@ -606,18 +597,17 @@ ss::future<> remote_partition::offloaded_segment_state::stop() {
     return ss::now();
 }
 
-std::unique_ptr<remote_partition::offloaded_segment_state>
+remote_partition::offloaded_segment_state
 remote_partition::offloaded_segment_state::offload(remote_partition*) {
-    auto st = std::make_unique<offloaded_segment_state>(manifest_key);
-    return st;
+    return offloaded_segment_state(base_rp_offset);
 }
 
 remote_partition::materialized_segment_state::materialized_segment_state(
-  manifest::key mk, model::offset off_key, remote_partition& p)
-  : manifest_key(std::move(mk))
+  model::offset base_offset, model::offset off_key, remote_partition& p)
+  : base_rp_offset(base_offset)
   , offset_key(off_key)
   , segment(ss::make_lw_shared<remote_segment>(
-      p._api, p._cache, p._bucket, p._manifest, manifest_key, p._rtc))
+      p._api, p._cache, p._bucket, p._manifest, base_offset, p._rtc))
   , atime(ss::lowres_clock::now()) {
     p._materialized.push_back(*this);
 }
@@ -658,7 +648,7 @@ ss::future<> remote_partition::materialized_segment_state::stop() {
     co_await segment->stop();
 }
 
-std::unique_ptr<remote_partition::offloaded_segment_state>
+remote_partition::offloaded_segment_state
 remote_partition::materialized_segment_state::offload(
   remote_partition* partition) {
     _hook.unlink();
@@ -666,8 +656,7 @@ remote_partition::materialized_segment_state::offload(
         partition->evict_reader(std::move(rs));
     }
     partition->evict_segment(std::move(segment));
-    auto st = std::make_unique<offloaded_segment_state>(manifest_key);
-    return st;
+    return offloaded_segment_state(base_rp_offset);
 }
 
 } // namespace cloud_storage
