@@ -24,7 +24,9 @@
 
 #include <cloud_storage/cache_service.h>
 
+#include <algorithm>
 #include <exception>
+#include <filesystem>
 #include <stdexcept>
 #include <string_view>
 
@@ -57,6 +59,45 @@ cache::cache(
   , _cnt(0)
   , _total_cleaned(0) {}
 
+ss::future<>
+cache::recursive_delete_empty_directory(const std::string_view& key) {
+    gate_guard guard{_gate};
+
+    std::filesystem::path normal_path
+      = std::filesystem::path(key).lexically_normal();
+    std::filesystem::path normal_cache_dir = _cache_dir.lexically_normal();
+
+    auto [p1, p2] = std::mismatch(
+      normal_cache_dir.begin(), normal_cache_dir.end(), normal_path.begin());
+    if (p1 != normal_cache_dir.end()) {
+        throw std::invalid_argument(fmt_with_ctx(
+          fmt::format,
+          "Tried to clean up {}, which is outside of cache_dir {}.",
+          normal_path.native(),
+          normal_cache_dir.native()));
+    }
+
+    while (normal_path != normal_cache_dir) {
+        try {
+            // ss::remove_file removes only empty directory
+            co_await ss::remove_file(normal_path.native());
+        } catch (std::filesystem::filesystem_error& e) {
+            if (e.code() == std::errc::directory_not_empty) {
+                // we stop when we find a non-empty directory
+                vlog(
+                  cst_log.debug,
+                  "Could not delete directory {}: {}.",
+                  normal_path,
+                  e.what());
+                co_return;
+            } else {
+                throw;
+            }
+        }
+        normal_path = normal_path.parent_path();
+    }
+}
+
 uint64_t cache::get_total_cleaned() { return _total_cleaned; }
 
 ss::future<> cache::clean_up_at_start() {
@@ -66,16 +107,11 @@ ss::future<> cache::clean_up_at_start() {
 
     for (auto& file_item : candidates_for_deletion) {
         auto filepath_to_remove = file_item.path;
-        vassert(
-          std::string_view(filepath_to_remove).starts_with(_cache_dir.native()),
-          "Tried to clean up {}, which is outside of cache_dir {}.",
-          filepath_to_remove,
-          _cache_dir.native());
 
         // delete only tmp files that are left from previous RedPanda run
         if (std::string_view(filepath_to_remove).ends_with(tmp_extension)) {
             try {
-                co_await ss::remove_file(filepath_to_remove);
+                co_await recursive_delete_empty_directory(filepath_to_remove);
                 _total_cleaned += file_item.size;
             } catch (std::exception& e) {
                 vlog(
@@ -107,18 +143,13 @@ ss::future<> cache::clean_up_cache() {
         while (i_to_delete < candidates_for_deletion.size()
                && deleted_size < size_to_delete) {
             auto filename_to_remove = candidates_for_deletion[i_to_delete].path;
-            vassert(
-              std::string_view(filename_to_remove)
-                .starts_with(_cache_dir.native()),
-              "Tried to clean up {}, which is outside of cache_dir {}.",
-              filename_to_remove,
-              _cache_dir.native());
 
             // skip tmp files since someone may be writing to it
             if (!std::string_view(filename_to_remove)
                    .ends_with(tmp_extension)) {
                 try {
-                    co_await ss::remove_file(filename_to_remove);
+                    co_await recursive_delete_empty_directory(
+                      filename_to_remove);
                     deleted_size += candidates_for_deletion[i_to_delete].size;
                 } catch (std::exception& e) {
                     vlog(
@@ -205,24 +236,43 @@ ss::future<> cache::put(
           tmp_extension));
     }
     auto dir_path = (_cache_dir / key).remove_filename();
-    co_await ss::recursive_touch_directory(dir_path.string());
 
-    // tmp file is used to protect against concurrent writes to the same file.
-    // One tmp file is written only once by one thread. tmp file should not be
-    // read directly. _cnt is an atomic counter that ensures the uniqueness of
-    // names for tmp files within one shard, while shard_id ensures uniqueness
-    // across multiple shards.
+    // tmp file is used to protect against concurrent writes to the same
+    // file. One tmp file is written only once by one thread. tmp file
+    // should not be read directly. _cnt is an atomic counter that
+    // ensures the uniqueness of names for tmp files within one shard,
+    // while shard_id ensures uniqueness across multiple shards.
     auto tmp_filename = std::filesystem::path(ss::format(
       "{}_{}_{}{}",
       filename.native(),
       ss::this_shard_id(),
       (++_cnt),
       tmp_extension));
-    auto flags = ss::open_flags::wo | ss::open_flags::create
-                 | ss::open_flags::exclusive;
 
-    auto tmp_cache_file = co_await ss::open_file_dma(
-      (dir_path / tmp_filename).native(), flags);
+    ss::file tmp_cache_file;
+    while (true) {
+        co_await ss::recursive_touch_directory(dir_path.string());
+        // recursive_delete_empty_directory may delete dir_path before we open
+        // file, in this case we recreate dir_path and try again
+        try {
+            auto flags = ss::open_flags::wo | ss::open_flags::create
+                         | ss::open_flags::exclusive;
+
+            tmp_cache_file = co_await ss::open_file_dma(
+              (dir_path / tmp_filename).native(), flags);
+            break;
+        } catch (std::filesystem::filesystem_error& e) {
+            if (e.code() == std::errc::no_such_file_or_directory) {
+                vlog(
+                  cst_log.debug,
+                  "Couldn't open {}, gonna retry",
+                  (dir_path / tmp_filename).native());
+            } else {
+                throw;
+            }
+        }
+    }
+
     ss::file_output_stream_options options{};
     options.buffer_size = write_buffer_size;
     options.write_behind = write_behind;
@@ -261,9 +311,14 @@ ss::future<> cache::invalidate(const std::filesystem::path& key) {
       "Trying to invalidate {} from archival cache.",
       key.native());
     try {
-        co_await ss::remove_file((_cache_dir / key).native());
+        co_await recursive_delete_empty_directory((_cache_dir / key).native());
     } catch (std::filesystem::filesystem_error& e) {
         if (e.code() == std::errc::no_such_file_or_directory) {
+            vlog(
+              cst_log.debug,
+              "Could not invalidate {} from archival cache: {}",
+              key.native(),
+              e.what());
             co_return;
         } else {
             throw;
