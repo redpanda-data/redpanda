@@ -39,6 +39,7 @@
 #include <fmt/ostream.h>
 
 #include <chrono>
+#include <cstdint>
 #include <string_view>
 
 namespace kafka {
@@ -166,13 +167,14 @@ static partition_produce_stages partition_append(
   model::batch_identity bid,
   model::record_batch_reader reader,
   int16_t acks,
-  int32_t num_records) {
+  int32_t num_records,
+  int64_t num_bytes) {
     auto stages = partition->replicate(
       bid, std::move(reader), acks_to_replicate_options(acks));
     return partition_produce_stages{
       .dispatched = std::move(stages.request_enqueued),
       .produced = stages.replicate_finished.then_wrapped(
-        [partition, id, num_records = num_records](
+        [partition, id, num_records = num_records, num_bytes](
           ss::future<result<raft::replicate_result>> f) {
             produce_response::partition p{.partition_index = id};
             try {
@@ -184,6 +186,7 @@ static partition_produce_stages partition_append(
                       r.value().last_offset - (num_records - 1));
                     p.error_code = error_code::none;
                     partition->probe().add_records_produced(num_records);
+                    partition->probe().add_bytes_produced(num_bytes);
                 } else {
                     p.error_code = map_produce_error_code(r.error());
                 }
@@ -238,7 +241,7 @@ static partition_produce_stages produce_topic_partition(
 
     const auto& hdr = batch.header();
     auto bid = model::batch_identity::from(hdr);
-
+    auto batch_size = batch.size_bytes();
     auto num_records = batch.record_count();
     auto reader = reader_from_lcore_batch(std::move(batch));
     auto start = std::chrono::steady_clock::now();
@@ -255,6 +258,7 @@ static partition_produce_stages produce_topic_partition(
              ntp = std::move(ntp),
              dispatch = std::move(dispatch),
              num_records,
+             batch_size,
              bid,
              acks = octx.request.data.acks,
              source_shard = ss::this_shard_id()](
@@ -291,7 +295,8 @@ static partition_produce_stages produce_topic_partition(
                   bid,
                   std::move(reader),
                   acks,
-                  num_records);
+                  num_records,
+                  batch_size);
                 return stages.dispatched
                   .then_wrapped([source_shard, dispatch = std::move(dispatch)](
                                   ss::future<> f) mutable {
