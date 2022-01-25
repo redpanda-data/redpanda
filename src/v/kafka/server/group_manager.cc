@@ -214,7 +214,7 @@ void group_manager::handle_leader_change(
   model::term_id term,
   ss::lw_shared_ptr<cluster::partition> part,
   std::optional<model::node_id> leader) {
-    (void)with_gate(_gate, [this, term, part = std::move(part), leader] {
+    ssx::spawn_with_gate(_gate, [this, term, part = std::move(part), leader] {
         if (auto it = _partitions.find(part->ntp()); it != _partitions.end()) {
             /*
              * In principle a race could occur by which a validate_group_status
