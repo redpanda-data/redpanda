@@ -13,6 +13,7 @@ from ducktape.utils.util import wait_until
 from ducktape.mark import matrix
 from rptest.clients.rpk import RpkTool
 from rptest.services.failure_injector import FailureInjector, FailureSpec
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.tests.redpanda_test import RedpandaTest
 
 
@@ -33,7 +34,7 @@ class MetadataTest(RedpandaTest):
         returned_node_ids = [n.id for n in nodes]
         assert sorted(all_ids) == sorted(returned_node_ids)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(failure=['isolate', 'stop'], node=['follower', 'controller'])
     def test_metadata_request_does_not_contain_failed_node(
             self, failure, node):
