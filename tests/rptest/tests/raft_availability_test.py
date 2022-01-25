@@ -223,7 +223,7 @@ class RaftAvailabilityTest(RedpandaTest):
         peer takes over as the new leader.
         """
         # Retry a couple of times to establish new leader in a single election.
-        # This is racy and flaky if we just run it once. Running it multiple times
+        # This is racy if we just run it once. Running it multiple times
         # gives us more confidence to actually detect a regression.
         # Ref: https://github.com/vectorizedio/redpanda/issues/2444
         retries = 4
@@ -283,7 +283,7 @@ class RaftAvailabilityTest(RedpandaTest):
         self.logger.info(f"Leadership moved to {new_leader}")
 
         self._expect_available()
-        time.sleep(0.1)
+        time.sleep(0.1) # take a little time for protocol and metrics progression
 
         observer_metrics.expect([
             # 'leadership changes' increments by 1 when observer sees an append_entries
