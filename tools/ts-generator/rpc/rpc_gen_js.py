@@ -296,6 +296,11 @@ export class {{service_name.title()}}Server {
     this.server.on('connection', (conn) => {
       const key = conn.remoteAddress + ':' + conn.remotePort;
       this.connections.set(key, conn);
+      conn.on("error", function(err) {
+        console.log("Connection error: ", err);
+        conn.destroy();
+        conn.emit("close", true);
+      })
       conn.on('close', () => {
         this.connections.delete(key);
       });
