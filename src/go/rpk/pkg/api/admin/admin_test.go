@@ -10,115 +10,208 @@
 package admin
 
 import (
-	"encoding/json"
-	"io/ioutil"
-	"math/rand"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestCreateUser(t *testing.T) {
-	username := "Joss"
-	password := "momorocks"
-	algorithm := ScramSha256
-	body := newUser{
-		User:      username,
-		Password:  password,
-		Algorithm: algorithm,
-	}
-	bs, err := json.Marshal(body)
-	require.NoError(t, err)
+type testCall struct {
+	brokerID int
+	req      *http.Request
+}
+type reqsTest struct {
+	// setup
+	name     string
+	nNodes   int
+	leaderID int
+	// action
+	action func(*testing.T, *AdminAPI) error
+	// assertions
+	all      []string
+	any      []string
+	leader   []string
+	none     []string
+	handlers map[string]http.HandlerFunc
+}
 
-	rand.Seed(time.Now().Unix())
-
-	nNodes := rand.Int31n(6) + 1
-	urls := []string{}
-
-	for i := 0; i < int(nNodes); i++ {
-		n := i
-		ts := httptest.NewServer(
-			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				b, err := ioutil.ReadAll(r.Body)
+func TestAdminAPI(t *testing.T) {
+	tests := []reqsTest{
+		{
+			name:     "delete user in 1 node cluster",
+			nNodes:   1,
+			leaderID: 0,
+			action:   func(t *testing.T, a *AdminAPI) error { return a.DeleteUser("Milo") },
+			all:      []string{"/v1/node_config"},
+			leader:   []string{"/v1/security/users/Milo"},
+			none:     []string{"/v1/partitions/redpanda/controller/0"},
+		},
+		{
+			name:     "delete user in 3 node cluster",
+			nNodes:   3,
+			leaderID: 1,
+			action:   func(t *testing.T, a *AdminAPI) error { return a.DeleteUser("Lola") },
+			all:      []string{"/v1/node_config"},
+			any:      []string{"/v1/partitions/redpanda/controller/0"},
+			leader:   []string{"/v1/security/users/Lola"},
+		},
+		{
+			name:     "create user in 3 node cluster",
+			nNodes:   3,
+			leaderID: 1,
+			action:   func(t *testing.T, a *AdminAPI) error { return a.CreateUser("Joss", "momorocks", ScramSha256) },
+			all:      []string{"/v1/node_config"},
+			any:      []string{"/v1/partitions/redpanda/controller/0"},
+			leader:   []string{"/v1/security/users"},
+		},
+		{
+			name:     "list users in 3 node cluster",
+			nNodes:   3,
+			leaderID: 1,
+			handlers: map[string]http.HandlerFunc{
+				"/v1/security/users": func(rw http.ResponseWriter, r *http.Request) {
+					rw.Write([]byte(`["Joss", "lola", "jeff", "tobias"]`))
+					rw.WriteHeader(http.StatusOK)
+				},
+			},
+			action: func(t *testing.T, a *AdminAPI) error {
+				users, err := a.ListUsers()
 				require.NoError(t, err)
-				require.Exactly(t, bs, b)
-				// Have only one server return OK, to simulate a single
-				// node being the leader and being able to respond.
-				if n == 0 {
-					w.WriteHeader(http.StatusOK)
-				} else {
-					w.WriteHeader(http.StatusInternalServerError)
-				}
-			}),
-		)
-		defer ts.Close()
-
-		urls = append(urls, ts.URL)
+				require.Len(t, users, 4)
+				return nil
+			},
+			all:  []string{"/v1/node_config"},
+			any:  []string{"/v1/security/users"},
+			none: []string{"/v1/partitions/redpanda/controller/0"},
+		},
 	}
 
-	adminClient, err := NewAdminAPI(urls, nil)
-	require.NoError(t, err)
-	err = adminClient.CreateUser(username, password, ScramSha256)
-	require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+
+			urls := []string{}
+			calls := []testCall{}
+			mutex := sync.Mutex{}
+
+			for i := 0; i < tt.nNodes; i += 1 {
+				ts := httptest.NewServer(handlerForNode(t, i, tt, &calls, &mutex))
+				defer ts.Close()
+				urls = append(urls, ts.URL)
+			}
+
+			adminClient, err := NewAdminAPI(urls, nil)
+			require.NoError(t, err)
+			err = tt.action(t, adminClient)
+			require.NoError(t, err)
+			for _, path := range tt.all {
+				checkCallToAllNodes(t, calls, path, tt.nNodes)
+			}
+			for _, path := range tt.any {
+				checkCallToAnyNode(t, calls, path, tt.nNodes)
+			}
+			for _, path := range tt.leader {
+				checkCallToLeader(t, calls, path, tt.nNodes, tt.leaderID)
+			}
+			for _, path := range tt.none {
+				checkCallNone(t, calls, path, tt.nNodes)
+			}
+		})
+	}
 }
 
-func TestDeleteUser(t *testing.T) {
-	username := "Lola"
+func handlerForNode(
+	t *testing.T, nodeID int, tt reqsTest, calls *[]testCall, mutex *sync.Mutex,
+) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		t.Logf("~~~ NodeID: %d, path: %s", nodeID, r.URL.Path)
+		mutex.Lock()
+		*calls = append(*calls, testCall{nodeID, r})
+		mutex.Unlock()
 
-	rand.Seed(time.Now().Unix())
-	nNodes := rand.Int31n(6) + 1
-	urls := []string{}
+		if h, ok := tt.handlers[r.URL.Path]; ok {
+			h(w, r)
+			return
+		}
 
-	for i := 0; i < int(nNodes); i++ {
-		n := i
-		ts := httptest.NewServer(
-			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				require.Exactly(t, "/v1/security/users/Lola", r.URL.Path)
-
-				// Have only one server return OK, to simulate a single
-				// node being the leader and being able to respond.
-				if n == 0 {
-					w.WriteHeader(http.StatusOK)
-				} else {
-					w.WriteHeader(http.StatusInternalServerError)
-				}
-			}),
-		)
-		defer ts.Close()
-
-		urls = append(urls, ts.URL)
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/v1/node_config"):
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(fmt.Sprintf(`{"node_id": %d}`, nodeID)))
+		case strings.HasPrefix(r.URL.Path, "/v1/partitions/redpanda/controller/0"):
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(fmt.Sprintf(`{"leader_id": %d}`, tt.leaderID)))
+		case strings.HasPrefix(r.URL.Path, "/v1/security/users"):
+			if nodeID == tt.leaderID {
+				w.WriteHeader(http.StatusOK)
+			} else {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		}
 	}
-
-	adminClient, err := NewAdminAPI(urls, nil)
-	require.NoError(t, err)
-	err = adminClient.DeleteUser(username)
-	require.NoError(t, err)
 }
 
-func TestListUsers(t *testing.T) {
-	rand.Seed(time.Now().Unix())
-	nNodes := rand.Int31n(6) + 1
-	urls := []string{}
-
-	for i := 0; i < int(nNodes); i++ {
-		ts := httptest.NewServer(
-			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Write([]byte(
-					`["Joss", "lola", "jeff", "tobias"]`,
-				))
-			}),
-		)
-		defer ts.Close()
-
-		urls = append(urls, ts.URL)
+func checkCallToAllNodes(
+	t *testing.T, calls []testCall, path string, nNodes int,
+) {
+	for i := 0; i < nNodes; i += 1 {
+		if len(callsForPathAndNodeID(calls, path, i)) == 0 {
+			require.Fail(t, fmt.Sprintf("path (%s) was expected to be called in all nodes but it wasn't called in node (%d)", path, i))
+			return
+		}
 	}
+}
+func checkCallToAnyNode(
+	t *testing.T, calls []testCall, path string, nNodes int,
+) {
+	for i := 0; i < nNodes; i += 1 {
+		if len(callsForPathAndNodeID(calls, path, i)) > 0 {
+			return
+		}
+	}
+	require.Fail(t, fmt.Sprintf("path (%s) was expected to be called in any node but it wasn't called", path))
+}
+func checkCallToLeader(
+	t *testing.T, calls []testCall, path string, nNodes, leaderID int,
+) {
+	if len(callsForPathAndNodeID(calls, path, leaderID)) == 0 {
+		require.Fail(t, fmt.Sprintf("path (%s) was expected to be called in the leader node but it wasn't", path))
+	}
+}
 
-	adminClient, err := NewAdminAPI(urls, nil)
-	require.NoError(t, err)
-	users, err := adminClient.ListUsers()
-	require.NoError(t, err)
-	require.Exactly(t, []string{"Joss", "lola", "jeff", "tobias"}, users)
+func checkCallNone(t *testing.T, calls []testCall, path string, nNodes int) {
+	for i := 0; i < nNodes; i += 1 {
+		if len(callsForPathAndNodeID(calls, path, i)) > 0 {
+			require.Fail(t, fmt.Sprintf("path (%s) was expected to not be called but it was called in node (%d)", path, i))
+		}
+	}
+}
+
+func callsForPathAndNodeID(
+	calls []testCall, path string, nodeID int,
+) []testCall {
+	return callsForPath(callsForNodeID(calls, nodeID), path)
+}
+
+func callsForPath(calls []testCall, path string) []testCall {
+	filtered := []testCall{}
+	for _, call := range calls {
+		if call.req.URL.Path == path {
+			filtered = append(filtered, call)
+		}
+	}
+	return filtered
+}
+
+func callsForNodeID(calls []testCall, nodeID int) []testCall {
+	filtered := []testCall{}
+	for _, call := range calls {
+		if call.brokerID == nodeID {
+			filtered = append(filtered, call)
+		}
+	}
+	return filtered
 }
