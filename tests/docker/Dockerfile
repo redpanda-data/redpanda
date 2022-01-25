@@ -79,15 +79,19 @@ RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFK
     make install && \
     ldconfig
 
-# Install dependencies for kafka clients such as sarama and franz-go
+# Install golang dependencies for kafka clients such as sarama
 RUN git -C /opt clone https://github.com/Shopify/sarama.git && \
     cd /opt/sarama/examples/interceptors && go mod tidy && go build && \
     cd /opt/sarama/examples/http_server && go mod tidy && go build && \
     cd /opt/sarama/examples/consumergroup && go mod tidy && go build && \
-    cd /opt/sarama/examples/sasl_scram_client && go mod tidy && go build && \
-    git -C /opt clone https://github.com/twmb/franz-go.git && cd /opt/franz-go && \
-    cd /opt/franz-go/examples/bench && go mod tidy && go build && \
-    git -C /opt clone --branch ducktape2 https://github.com/vectorizedio/kafka-streams-examples.git && \
+    cd /opt/sarama/examples/sasl_scram_client && go mod tidy && go build
+
+# Install franz-go
+RUN git -C /opt clone https://github.com/twmb/franz-go.git && cd /opt/franz-go && \
+    cd /opt/franz-go/examples/bench && go mod tidy && go build
+
+# Install kafka streams examples
+RUN git -C /opt clone --branch ducktape2 https://github.com/vectorizedio/kafka-streams-examples.git && \
     cd /opt/kafka-streams-examples && mvn -DskipTests=true clean package
 
 RUN go install github.com/twmb/kcl@latest && \
@@ -97,11 +101,11 @@ RUN go install github.com/twmb/kcl@latest && \
 EXPOSE 8080
 
 # copy source of test (java) programs
-COPY --chown=0:0 tests/java /tmp/java
-RUN mvn clean package --batch-mode --file /tmp/java/kafka-verifier --define buildDir=/opt/kafka-verifier/ && \
-    mvn clean package --batch-mode --file /tmp/java/compacted-log-verifier --define buildDir=/opt/compacted-log-verifier && \
-    mvn clean package --batch-mode --file /tmp/java/tx-verifier --define buildDir=/opt/tx-verifier
 
+COPY --chown=0:0 tests/java /tmp/java
+RUN mvn clean package --batch-mode --file /tmp/java/kafka-verifier --define buildDir=/opt/kafka-verifier/
+RUN mvn clean package --batch-mode --file /tmp/java/compacted-log-verifier --define buildDir=/opt/compacted-log-verifier
+RUN mvn clean package --batch-mode --file /tmp/java/tx-verifier --define buildDir=/opt/tx-verifier
 RUN mvn clean package --batch-mode --file /tmp/java/e2e-verifiers --define buildDir=/opt/e2e-verifiers
 
 # copy ssh keys
