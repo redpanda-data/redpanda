@@ -15,9 +15,7 @@ After you configure data archiving, your data is uploaded to cloud storage.
 In the event of a data center failure, data corruption, or cluster migration,
 your data is safe in the cloud for you to recover to your cluster.
 
-> **_Notes:_**
-> - Archiving to Amazon AWS S3 and Google Cloud Storage is tested and supported.
-> - The ability to rehydrate data to a cluster is in development, targeted for second half of 2021.
+> **_Note:_** Archiving to Amazon S3 and Google Cloud Storage is supported.
 
 ## How it works
 
