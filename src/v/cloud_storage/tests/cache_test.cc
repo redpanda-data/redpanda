@@ -17,6 +17,7 @@
 #include <seastar/core/fstream.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/util/file.hh>
 
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
@@ -152,4 +153,90 @@ FIXTURE_TEST(cannot_put_tmp_file, cache_test_fixture) {
     auto data_string1 = create_data_string('a', 1_KiB);
     BOOST_CHECK_THROW(
       put_into_cache(data_string1, TEMP_KEY), std::invalid_argument);
+}
+
+FIXTURE_TEST(invalidate_cleans_directory, cache_test_fixture) {
+    auto data_string1 = create_data_string('a', 1_MiB + 1_KiB);
+    const std::filesystem::path unique_prefix_key{
+      "unique_prefix/test_topic/test_cache_file.txt"};
+    put_into_cache(data_string1, unique_prefix_key);
+
+    cache_service.invalidate(unique_prefix_key).get();
+
+    BOOST_CHECK(
+      !ss::file_exists((CACHE_DIR / unique_prefix_key).native()).get());
+    BOOST_CHECK(
+      !ss::file_exists((CACHE_DIR / "unique_prefix/test_topic").native())
+         .get());
+    BOOST_CHECK(!ss::file_exists((CACHE_DIR / "unique_prefix").native()).get());
+    BOOST_CHECK(ss::file_exists(CACHE_DIR.native()).get());
+}
+
+FIXTURE_TEST(eviction_cleans_directory, cache_test_fixture) {
+    auto data_string1 = create_data_string('a', 1_MiB + 1_KiB);
+    const std::filesystem::path key1{"a/b/c/first_topic/file1.txt"};
+    // this file will be evicted
+    put_into_cache(data_string1, key1);
+
+    auto data_string2 = create_data_string('b', 1_MiB + 1_KiB);
+    ss::sleep(1s).get();
+    const std::filesystem::path key2{"a/b/c/second_topic/file2.txt"};
+    // this file will not be evicted
+    put_into_cache(data_string2, key2);
+
+    ss::sleep(ss::lowres_clock::duration(2s)).get();
+
+    BOOST_CHECK_EQUAL(1_MiB + 1_KiB, cache_service.get_total_cleaned());
+    BOOST_CHECK(!ss::file_exists((CACHE_DIR / key1).native()).get());
+    BOOST_CHECK(
+      !ss::file_exists((CACHE_DIR / "a/b/c/first_topic").native()).get());
+    BOOST_CHECK(ss::file_exists((CACHE_DIR / "a/b/c").native()).get());
+    BOOST_CHECK(ss::file_exists(CACHE_DIR.native()).get());
+}
+
+FIXTURE_TEST(invalidate_outside_cache_dir_throws, cache_test_fixture) {
+    // make sure the cache directory is empty to get reliable results
+    ss::recursive_touch_directory(CACHE_DIR.native()).get();
+    auto target_dir = ss::open_directory(CACHE_DIR.native()).get();
+    target_dir
+      .list_directory([this](const ss::directory_entry& entry) -> ss::future<> {
+          auto entry_path = std::filesystem::path(CACHE_DIR)
+                            / std::filesystem::path(entry.name);
+          return ss::recursive_remove_directory(entry_path.native());
+      })
+      .done()
+      .get();
+    target_dir.close().get();
+
+    auto key = std::filesystem::path("../outside_cache/file.txt");
+    auto data_string1 = create_data_string('a', 1_MiB + 1_KiB);
+    put_into_cache(data_string1, key);
+
+    BOOST_CHECK_THROW(
+      cache_service.invalidate(key).get(), std::invalid_argument);
+    BOOST_CHECK(ss::file_exists((CACHE_DIR / key).native()).get());
+}
+
+FIXTURE_TEST(invalidate_prefix_outside_cache_dir_throws, cache_test_fixture) {
+    // make sure the cache directory is empty to get reliable results
+    ss::recursive_touch_directory(CACHE_DIR.native()).get();
+    auto target_dir = ss::open_directory(CACHE_DIR.native()).get();
+    target_dir
+      .list_directory([this](const ss::directory_entry& entry) -> ss::future<> {
+          auto entry_path = std::filesystem::path(CACHE_DIR)
+                            / std::filesystem::path(entry.name);
+          return ss::recursive_remove_directory(entry_path.native());
+      })
+      .done()
+      .get();
+    target_dir.close().get();
+
+    // CACHE_DIR is "test_cache_dir"
+    auto key = std::filesystem::path("../test_cache_dir_bar/file.txt");
+    auto data_string1 = create_data_string('a', 1_MiB + 1_KiB);
+    put_into_cache(data_string1, key);
+
+    BOOST_CHECK_THROW(
+      cache_service.invalidate(key).get(), std::invalid_argument);
+    BOOST_CHECK(ss::file_exists((CACHE_DIR / key).native()).get());
 }
