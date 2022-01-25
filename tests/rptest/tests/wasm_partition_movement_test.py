@@ -189,8 +189,9 @@ class WasmPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
                             enable_idempotence=False,
                             consumer_timeout_sec=90)
 
-        # Wait for all output
-        self._await_consumer(self.consumer.total_consumed(), 90)
+        # Wait for all acked, output, significant because due to failure the number of
+        # actual produced records may be less than expected
+        self._await_consumer(len(self.producer.acked), 90)
 
         # GTE due to the fact that upon error, copro may re-processed already processed
         # data depending on when offsets were checkpointed
