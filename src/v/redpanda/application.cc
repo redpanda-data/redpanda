@@ -364,6 +364,10 @@ void application::hydrate_config(const po::variables_map& cfg) {
         } else {
             set_local_kafka_client_config(_proxy_client_config, config::node());
         }
+        // override pandaparoxy_client.consumer_session_timeout_ms with
+        // pandaproxy.consumer_instance_timeout_ms
+        _proxy_client_config->consumer_session_timeout.set_value(
+          _proxy_config->consumer_instance_timeout.value());
         _proxy_config->for_each(config_printer("pandaproxy"));
         _proxy_client_config->for_each(config_printer("pandaproxy_client"));
     }

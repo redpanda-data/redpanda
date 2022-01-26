@@ -102,8 +102,13 @@ ss::future<> client::stop() noexcept {
     co_await _gate.close();
     co_await catch_and_log([this]() { return _producer.stop(); });
     for (auto& [id, group] : _consumers) {
-        for (auto& consumer : group) {
-            co_await catch_and_log([consumer]() { return consumer->leave(); });
+        while (!group.empty()) {
+            auto c = *group.begin();
+            co_await catch_and_log([c]() {
+                // The consumer is constructed with an on_stopped which erases
+                // istelf from the map after leave() completes.
+                return c->leave();
+            });
         }
     }
     co_await catch_and_log([this]() { return _brokers.stop(); });
@@ -174,8 +179,16 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
             return _wait_or_start_update_metadata();
         }
         default:
-            // TODO(Ben): Maybe vassert
-            vlog(kclog.warn, "partition_error: ", ex);
+            vlog(kclog.warn, "partition_error: {}", ex);
+            return ss::make_exception_future(ex);
+        }
+    } catch (const topic_error& ex) {
+        switch (ex.error) {
+        case error_code::unknown_topic_or_partition:
+            vlog(kclog.debug, "topic_error: {}", ex);
+            return _wait_or_start_update_metadata();
+        default:
+            vlog(kclog.warn, "topic_error: {}", ex);
             return ss::make_exception_future(ex);
         }
     } catch (const ss::gate_closed_exception&) {
@@ -354,13 +367,17 @@ client::create_consumer(const group_id& group_id, member_id name) {
             _config);
       })
       .then([this, group_id, name](shared_broker_t coordinator) mutable {
+          auto on_stopped = [this, group_id](const member_id& name) {
+              _consumers[group_id].erase(name);
+          };
           return make_consumer(
             _config,
             _topic_cache,
             _brokers,
             std::move(coordinator),
             std::move(group_id),
-            std::move(name));
+            std::move(name),
+            std::move(on_stopped));
       })
       .then([this, group_id](shared_consumer_t c) {
           auto name = c->name();

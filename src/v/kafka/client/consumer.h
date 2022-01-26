@@ -39,20 +39,25 @@ class consumer final : public ss::enable_lw_shared_from_this<consumer> {
     using broker_reqs_t = absl::node_hash_map<shared_broker_t, fetch_request>;
 
 public:
+    /// \brief Construct a consumer
+    ///
+    /// \param coordinator - The coordinator broker for this group. There should
+    /// be no other owners, as it is used for the long-poll fetch.
+    ///
+    /// \param name - If this is unknowm_member_id, then the name is generated
+    /// by the broker.
+    ///
+    /// \param on_stopped - Called when a consumer is destroyed.
+    /// The consumer may become inactive of its own accord through a timeout.
+    /// This callback can be used as a notification system for cleanup.
     consumer(
       const configuration& config,
       topic_cache& topic_cache,
       brokers& brokers,
       shared_broker_t coordinator,
       group_id group_id,
-      member_id name)
-      : _config(config)
-      , _topic_cache(topic_cache)
-      , _brokers(brokers)
-      , _coordinator(std::move(coordinator))
-      , _group_id(std::move(group_id))
-      , _name(std::move(name))
-      , _topics() {}
+      member_id name,
+      ss::noncopyable_function<void(const member_id&)> on_stopped);
 
     const kafka::group_id& group_id() const { return _group_id; }
     const kafka::member_id& member_id() const { return _member_id; }
@@ -62,7 +67,7 @@ public:
     const std::vector<model::topic>& topics() const { return _topics; }
     const assignment_t& assignment() const { return _assignment; }
 
-    ss::future<> join();
+    ss::future<> initialize();
     ss::future<leave_group_response> leave();
     ss::future<> subscribe(std::vector<model::topic> topics);
     ss::future<offset_fetch_response>
@@ -82,12 +87,14 @@ private:
 
     void on_leader_join(const join_group_response& res);
 
+    ss::future<> join();
     ss::future<> sync();
 
     ss::future<std::vector<metadata_response::topic>>
     get_subscribed_topic_metadata();
 
     ss::future<> heartbeat();
+    void refresh_inactivity_timer();
 
     ss::future<describe_groups_response> describe_group();
 
@@ -117,7 +124,8 @@ private:
     shared_broker_t _coordinator;
     ss::abort_source _as;
     ss::gate _gate{};
-    ss::timer<> _timer;
+    ss::timer<> _heartbeat_timer;
+    ss::timer<> _inactive_timer;
 
     kafka::group_id _group_id;
     generation_id _generation_id{no_generation};
@@ -130,6 +138,7 @@ private:
     std::unique_ptr<assignment_plan> _plan{};
     assignment_t _assignment{};
     absl::node_hash_map<shared_broker_t, fetch_session> _fetch_sessions;
+    ss::noncopyable_function<void(const kafka::member_id&)> _on_stopped;
 
     friend std::ostream& operator<<(std::ostream& os, const consumer& c) {
         fmt::print(
@@ -150,7 +159,8 @@ ss::future<shared_consumer_t> make_consumer(
   brokers& brokers,
   shared_broker_t coordinator,
   group_id group_id,
-  member_id name);
+  member_id name,
+  ss::noncopyable_function<void(const member_id&)> _on_stopped);
 
 namespace detail {
 

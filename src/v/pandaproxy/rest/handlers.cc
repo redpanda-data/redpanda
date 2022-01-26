@@ -21,6 +21,7 @@
 #include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/requests/brokers.h"
 #include "pandaproxy/json/requests/create_consumer.h"
+#include "pandaproxy/json/requests/error_reply.h"
 #include "pandaproxy/json/requests/fetch.h"
 #include "pandaproxy/json/requests/offset_commit.h"
 #include "pandaproxy/json/requests/offset_fetch.h"
@@ -49,6 +50,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <system_error>
 
 namespace ppj = pandaproxy::json;
 
@@ -272,6 +274,15 @@ create_consumer(server::request_t rq, server::reply_t rp) {
           req_data.auto_offset_reset,
           req_data.auto_commit_enable);
 
+        try {
+            co_await client.get_consumer(group_id, req_data.name);
+            auto ec = make_error_condition(
+              reply_error_code::consumer_already_exists);
+            rp.rep = errored_body(ec, ec.message());
+            co_return std::move(rp);
+        } catch (const kafka::client::consumer_error& e) {
+            // Ignore - consumer doesn't exist
+        }
         auto name = co_await client.create_consumer(group_id, req_data.name);
         json::create_consumer_response res{
           .instance_id = name,
