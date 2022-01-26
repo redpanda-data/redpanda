@@ -72,7 +72,7 @@ def main():
                             type=str,
                             choices=[
                                 'controller', 'kvstore', 'kafka', 'group',
-                                'reset_controller'
+                                'reset_controller_last_applied'
                             ],
                             required=True,
                             help='opertion to execute')
@@ -104,7 +104,7 @@ def main():
         print_kafka(store, options.topic)
     elif options.type == "group":
         print_groups(store)
-    elif options.type == "reset_controller":
+    elif options.type == "reset_controller_last_applied":
         reset_last_append_kvstore(store)
 
 
