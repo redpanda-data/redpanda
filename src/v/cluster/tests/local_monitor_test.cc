@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "cluster/logger.h"
 #include "local_monitor_fixture.h"
 #include "redpanda/tests/fixture.h"
 #include "seastarx.h"
@@ -25,10 +26,10 @@
 #include <system_error>
 #include <vector>
 
-inline ss::logger logger(__FILE__); // NOLINT static may throw
+using namespace cluster;
 
 local_monitor_fixture::local_monitor_fixture() {
-    logger.info("{}: create", __func__);
+    clusterlog.info("{}: create", __func__);
     auto test_dir = "local_monitor_test."
                     + random_generators::gen_alphanum_string(4);
 
@@ -37,27 +38,27 @@ local_monitor_fixture::local_monitor_fixture() {
     std::error_code errc;
     std::filesystem::create_directory(_test_path, errc);
     if (errc) {
-        logger.warn(
+        clusterlog.warn(
           "{}: failed to create test dir {}: {}", __func__, _test_path, errc);
     } else {
-        logger.info("{}: created test dir {}", __func__, _test_path);
+        clusterlog.info("{}: created test dir {}", __func__, _test_path);
     }
     _local_monitor.set_path_for_test(_test_path.string());
     BOOST_ASSERT(ss::engine_is_ready());
 }
 
 local_monitor_fixture::~local_monitor_fixture() {
-    logger.info("{}: destroy", __func__);
+    clusterlog.info("{}: destroy", __func__);
     std::error_code err;
     std::filesystem::remove_all(std::filesystem::path(_test_path), err);
     if (err) {
-        logger.warn("Cleanup got error {} removing test dir.", err);
+        clusterlog.warn("Cleanup got error {} removing test dir.", err);
     }
 }
 
-cluster::node::local_state local_monitor_fixture::update_state() {
+node::local_state local_monitor_fixture::update_state() {
     _local_monitor.update_state()
-      .then([&]() { logger.info("Updated local state."); })
+      .then([&]() { clusterlog.info("Updated local state."); })
       .get();
     return _local_monitor.get_state_cached();
 }
@@ -91,7 +92,7 @@ FIXTURE_TEST(local_monitor_alert_on_space_percent, local_monitor_fixture) {
     // Minimum by bytes:                                      1 GiB
     static constexpr auto total = 200UL, free = 0UL, block_size = 4096UL;
     size_t min_free_percent_blocks
-      = total * cluster::node::local_monitor::alert_min_free_space_percent;
+      = total * node::local_monitor::alert_min_free_space_percent;
     struct statvfs stats = make_statvfs(free, total, block_size);
     auto lamb = [&](const ss::sstring&) { return stats; };
     _local_monitor.set_statvfs_for_test(lamb);
@@ -99,14 +100,12 @@ FIXTURE_TEST(local_monitor_alert_on_space_percent, local_monitor_fixture) {
     // One block over the threshold should not alert
     stats.f_bfree = min_free_percent_blocks + 1;
     auto ls = update_state();
-    BOOST_TEST_REQUIRE(
-      ls.storage_space_alert == cluster::node::disk_space_alert::ok);
+    BOOST_TEST_REQUIRE(ls.storage_space_alert == node::disk_space_alert::ok);
 
     // One block under the free threshold should alert
     stats.f_bfree = min_free_percent_blocks - 1;
     ls = update_state();
-    BOOST_TEST_REQUIRE(
-      ls.storage_space_alert != cluster::node::disk_space_alert::ok);
+    BOOST_TEST_REQUIRE(ls.storage_space_alert != node::disk_space_alert::ok);
 }
 
 FIXTURE_TEST(local_monitor_alert_on_space_bytes, local_monitor_fixture) {
@@ -115,8 +114,8 @@ FIXTURE_TEST(local_monitor_alert_on_space_bytes, local_monitor_fixture) {
     static constexpr auto total = 30 * 1024 * 1024 * 1024UL,
                           block_size = 1024UL;
     static constexpr auto min_bytes_in_blocks
-      = cluster::node::local_monitor::alert_min_free_space_bytes / block_size;
-    logger.debug(
+      = node::local_monitor::alert_min_free_space_bytes / block_size;
+    clusterlog.debug(
       "{}: bytes free threshold -> {} blocks", __func__, min_bytes_in_blocks);
 
     // Minimum bytes + one block -> No alert
@@ -126,12 +125,10 @@ FIXTURE_TEST(local_monitor_alert_on_space_bytes, local_monitor_fixture) {
     _local_monitor.set_statvfs_for_test(lamb);
 
     auto ls = update_state();
-    BOOST_TEST_REQUIRE(
-      ls.storage_space_alert == cluster::node::disk_space_alert::ok);
+    BOOST_TEST_REQUIRE(ls.storage_space_alert == node::disk_space_alert::ok);
 
     // Min bytes threshold minus a blocks -> Alert
     stats.f_bfree = min_bytes_in_blocks - 1;
     ls = update_state();
-    BOOST_TEST_REQUIRE(
-      ls.storage_space_alert != cluster::node::disk_space_alert::ok);
+    BOOST_TEST_REQUIRE(ls.storage_space_alert != node::disk_space_alert::ok);
 }
