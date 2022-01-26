@@ -17,10 +17,6 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/testfs"
 )
 
-func init() {
-	inTests = true
-}
-
 func TestGetWasmApiVersion(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -98,7 +94,7 @@ func TestWasmCommand(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			fs := testfs.FromMap(test.pre)
-			err := executeGenerate(fs, test.path)
+			err := executeGenerate(fs, test.path, true)
 			gotErr := err != nil
 			if gotErr != test.expErr {
 				t.Errorf("got err %v (%v) != exp err? %v", gotErr, err, test.expErr)

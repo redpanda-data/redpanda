@@ -227,7 +227,9 @@ class RpkTool:
         return self._execute(cmd)
 
     def wasm_gen(self, directory):
-        cmd = [self._rpk_binary(), 'wasm', 'generate', directory]
+        cmd = [
+            self._rpk_binary(), 'wasm', 'generate', '--skip-version', directory
+        ]
         return self._execute(cmd)
 
     def _run_topic(self, cmd, stdin=None, timeout=None):

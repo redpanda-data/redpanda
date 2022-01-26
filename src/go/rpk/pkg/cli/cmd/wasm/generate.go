@@ -27,7 +27,10 @@ import (
 )
 
 func NewGenerateCommand(fs afero.Fs) *cobra.Command {
-	return &cobra.Command{
+	var (
+		skipVersion bool
+	)
+	cmd := &cobra.Command{
 		Use:          "generate [PROJECT DIRECTORY]",
 		Short:        "Create an npm template project for inline WASM engine.",
 		SilenceUsage: true,
@@ -35,10 +38,12 @@ func NewGenerateCommand(fs afero.Fs) *cobra.Command {
 		Run: func(_ *cobra.Command, args []string) {
 			path, err := filepath.Abs(args[0])
 			out.MaybeDie(err, "unable to get absolute path for %q: %v", args[0], err)
-			err = executeGenerate(fs, path)
+			err = executeGenerate(fs, path, skipVersion)
 			out.MaybeDie(err, "unable to generate all manifest files: %v", err)
 		},
 	}
+	cmd.Flags().BoolVar(&skipVersion, "skip-version", false, "Omit version check from npm, use default instead")
+	return cmd
 }
 
 type genFile struct {
@@ -59,8 +64,6 @@ func generateManifest(version string) map[string][]genFile {
 }
 
 const defApiVersion = "21.8.2"
-
-var inTests bool
 
 func getWasmApiVersion(wasmApi string) string {
 	var result []map[string]interface{}
@@ -85,10 +88,6 @@ func getWasmApiVersion(wasmApi string) string {
 // Looks up the latest version of our client library using npm, defaulting
 // if anything fails.
 func latestClientApiVersion() string {
-	if inTests {
-		return defApiVersion
-	}
-
 	if _, err := exec.LookPath("npm"); err != nil {
 		fmt.Printf("npm not found, defaulting to client API verision %s.\n", defApiVersion)
 		return defApiVersion
@@ -106,9 +105,15 @@ func latestClientApiVersion() string {
 	return getWasmApiVersion(wasmApi)
 }
 
-func executeGenerate(fs afero.Fs, path string) error {
+func executeGenerate(fs afero.Fs, path string, skipVersion bool) error {
 	var preexisting []string
-	for dir, templates := range generateManifest(latestClientApiVersion()) {
+	var version string
+	if skipVersion {
+		version = defApiVersion
+	} else {
+		version = latestClientApiVersion()
+	}
+	for dir, templates := range generateManifest(version) {
 		for _, template := range templates {
 			file := filepath.Join(path, dir, template.name)
 			exist, err := afero.Exists(fs, path)
@@ -127,7 +132,7 @@ func executeGenerate(fs afero.Fs, path string) error {
 	if err := fs.MkdirAll(path, 0o755); err != nil {
 		return err
 	}
-	for dir, templates := range generateManifest(latestClientApiVersion()) {
+	for dir, templates := range generateManifest(version) {
 		dirPath := filepath.Join(path, dir)
 		if err := fs.MkdirAll(dirPath, 0o755); err != nil {
 			return err
