@@ -11,6 +11,7 @@
 
 #include "compression/compression.h"
 #include "model/record.h"
+#include "model/record_batch_types.h"
 #include "model/record_utils.h"
 #include "random/generators.h"
 #include "storage/index_state.h"
@@ -115,6 +116,14 @@ compacted_offset_list_reducer::operator()(compacted_index::entry&& e) {
 
 std::optional<model::record_batch>
 copy_data_segment_reducer::filter(model::record_batch&& batch) {
+    // do not compact raft configuration and archival metadata as they shift
+    // offset translation
+    if (
+      batch.header().type == model::record_batch_type::raft_configuration
+      || batch.header().type == model::record_batch_type::archival_metadata) {
+        return std::move(batch);
+    }
+
     // 1. compute which records to keep
     const auto base = batch.base_offset();
     std::vector<int32_t> offset_deltas;
