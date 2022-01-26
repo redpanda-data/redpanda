@@ -474,7 +474,6 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
     }
 
     auto preparing_it = _mem_state.preparing.find(pid);
-    auto prepare_it = _log_state.prepared.find(pid);
 
     if (preparing_it != _mem_state.preparing.end()) {
         if (preparing_it->second.tx_seq > tx_seq) {
@@ -505,6 +504,8 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         }
         vassert(false, "{}", msg);
     }
+
+    auto prepare_it = _log_state.prepared.find(pid);
 
     if (prepare_it == _log_state.prepared.end()) {
         vlog(
@@ -1193,6 +1194,13 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
         co_return;
     }
     auto synced_term = _insync_term;
+    // catching up with all previous end_tx operations (commit | abort)
+    // to avoid writing the same commit | abort marker twice
+    if (_mem_state.last_end_tx >= model::offset{0}) {
+        if (!co_await wait_no_throw(_mem_state.last_end_tx, _sync_timeout)) {
+            co_return;
+        }
+    }
 
     if (!is_known_session(pid)) {
         co_return;
@@ -1226,37 +1234,64 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                   pid, model::control_record_type::tx_commit);
                 auto reader = model::make_memory_record_batch_reader(
                   std::move(batch));
-                co_await _c
-                  ->replicate(
-                    synced_term,
-                    std::move(reader),
-                    raft::replicate_options(
-                      raft::consistency_level::quorum_ack))
-                  .discard_result();
+                auto cr = co_await _c->replicate(
+                  synced_term,
+                  std::move(reader),
+                  raft::replicate_options(raft::consistency_level::quorum_ack));
+                if (!cr) {
+                    vlog(
+                      clusterlog.error,
+                      "Error \"{}\" on replicating pid:{} autoabort/commit "
+                      "batch",
+                      cr.error(),
+                      pid);
+                    co_return;
+                }
+                if (_mem_state.last_end_tx < cr.value().last_offset) {
+                    _mem_state.last_end_tx = cr.value().last_offset;
+                }
             } else if (r.aborted) {
                 auto batch = make_tx_control_batch(
                   pid, model::control_record_type::tx_abort);
                 auto reader = model::make_memory_record_batch_reader(
                   std::move(batch));
-                co_await _c
-                  ->replicate(
-                    synced_term,
-                    std::move(reader),
-                    raft::replicate_options(
-                      raft::consistency_level::quorum_ack))
-                  .discard_result();
+                auto cr = co_await _c->replicate(
+                  synced_term,
+                  std::move(reader),
+                  raft::replicate_options(raft::consistency_level::quorum_ack));
+                if (!cr) {
+                    vlog(
+                      clusterlog.error,
+                      "Error \"{}\" on replicating pid:{} autoabort/abort "
+                      "batch",
+                      cr.error(),
+                      pid);
+                    co_return;
+                }
+                if (_mem_state.last_end_tx < cr.value().last_offset) {
+                    _mem_state.last_end_tx = cr.value().last_offset;
+                }
             }
         }
     } else {
         auto batch = make_tx_control_batch(
           pid, model::control_record_type::tx_abort);
         auto reader = model::make_memory_record_batch_reader(std::move(batch));
-        co_await _c
-          ->replicate(
-            _insync_term,
-            std::move(reader),
-            raft::replicate_options(raft::consistency_level::quorum_ack))
-          .discard_result();
+        auto cr = co_await _c->replicate(
+          _insync_term,
+          std::move(reader),
+          raft::replicate_options(raft::consistency_level::quorum_ack));
+        if (!cr) {
+            vlog(
+              clusterlog.error,
+              "Error \"{}\" on replicating pid:{} autoabort/abort batch",
+              cr.error(),
+              pid);
+            co_return;
+        }
+        if (_mem_state.last_end_tx < cr.value().last_offset) {
+            _mem_state.last_end_tx = cr.value().last_offset;
+        }
     }
 }
 
