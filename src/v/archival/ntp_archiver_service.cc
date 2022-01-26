@@ -51,7 +51,7 @@ ntp_archiver::ntp_archiver(
   : _svc_probe(svc_probe)
   , _probe(conf.ntp_metrics_disabled, ntp.ntp())
   , _ntp(ntp.ntp())
-  , _rev(ntp.get_revision())
+  , _rev(ntp.get_initial_revision())
   , _remote(remote)
   , _partition(std::move(part))
   , _policy(
@@ -83,7 +83,9 @@ ss::future<> ntp_archiver::stop() {
 
 const model::ntp& ntp_archiver::get_ntp() const { return _ntp; }
 
-model::revision_id ntp_archiver::get_revision_id() const { return _rev; }
+model::initial_revision_id ntp_archiver::get_revision_id() const {
+    return _rev;
+}
 
 const ss::lowres_clock::time_point ntp_archiver::get_last_upload_time() const {
     return _last_upload_time;
@@ -261,7 +263,7 @@ ss::future<ntp_archiver::scheduled_upload> ntp_archiver::schedule_single_upload(
         .base_timestamp = upload.base_timestamp,
         .max_timestamp = upload.max_timestamp,
         .delta_offset = delta,
-        .ntp_revision = _partition->get_revision_id(),
+        .ntp_revision = _rev,
         .archiver_term = _start_term,
       },
       .name = upload.exposed_name, .delta = offset - base,

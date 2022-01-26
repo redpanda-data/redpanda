@@ -75,10 +75,26 @@ public:
       , _overrides(std::move(overrides))
       , _revision_id(id) {}
 
+    ntp_config(
+      model::ntp n,
+      ss::sstring base_dir,
+      std::unique_ptr<default_overrides> overrides,
+      model::revision_id id,
+      model::initial_revision_id initial_id) noexcept
+      : _ntp(std::move(n))
+      , _base_dir(std::move(base_dir))
+      , _overrides(std::move(overrides))
+      , _revision_id(id)
+      , _initial_rev(initial_id) {}
+
     const model::ntp& ntp() const { return _ntp; }
     model::ntp& ntp() { return _ntp; }
 
     model::revision_id get_revision() const { return _revision_id; }
+
+    model::initial_revision_id get_initial_revision() const {
+        return _initial_rev;
+    }
 
     const ss::sstring& base_directory() const { return _base_dir; }
     ss::sstring& base_directory() { return _base_dir; }
@@ -148,6 +164,14 @@ private:
      * than once (i.e. created, deleted and then created again)
      */
     model::revision_id _revision_id{0};
+
+    /**
+     * A number indicating an initial revision of the NTP. The revision
+     * of the NTP might change when the partition is moved between the
+     * nodes. The initial revision is the revision_id that was assigned
+     * to the topic when it was created.
+     */
+    model::initial_revision_id _initial_rev{0};
 
     // in storage/types.cc
     friend std::ostream& operator<<(std::ostream&, const ntp_config&);

@@ -19,6 +19,7 @@
 #include "coproc/pacemaker.h"
 #include "coproc/partition_manager.h"
 #include "coproc/script_database.h"
+#include "model/metadata.h"
 #include "storage/api.h"
 
 #include <seastar/core/coroutine.hh>
@@ -362,8 +363,13 @@ reconciliation_backend::create_non_replicable_partition(
               ? errc::success
               : errc::partition_not_exists;
         }
+        // Non-replicated topics are not integrated with shadow indexing yet,
+        // so the initial_revision_id is set to invalid value.
         auto ntp_cfg = tt_md->second.get_configuration().cfg.make_ntp_config(
-          _data_directory, ntp.tp.partition, rev);
+          _data_directory,
+          ntp.tp.partition,
+          rev,
+          model::initial_revision_id{-1});
         co_await _coproc_pm.local().manage(std::move(ntp_cfg), src_partition);
     } else if (copro_partition->get_revision_id() < rev) {
         co_return errc::partition_already_exists;

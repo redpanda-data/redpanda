@@ -68,14 +68,27 @@ operator<<(std::ostream& o, const ntp_config::default_overrides& v) {
 }
 
 std::ostream& operator<<(std::ostream& o, const ntp_config& v) {
-    o << "{ntp:" << v.ntp() << ", base_dir:" << v.base_directory()
-      << ", overrides:";
     if (v.has_overrides()) {
-        o << v.get_overrides();
+        fmt::print(
+          o,
+          "{{ntp: {}, base_dir: {}, overrides: {}, revision: {}, "
+          "initial_revision: {}}}",
+          v.ntp(),
+          v.base_directory(),
+          v.get_overrides(),
+          v.get_revision(),
+          v.get_initial_revision());
     } else {
-        o << "nullptr";
+        fmt::print(
+          o,
+          "{{ntp: {}, base_dir: {}, overrides: nullptr, revision: {}, "
+          "initial_revision: {}}}",
+          v.ntp(),
+          v.base_directory(),
+          v.get_revision(),
+          v.get_initial_revision());
     }
-    return o << "}";
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const truncate_config& cfg) {

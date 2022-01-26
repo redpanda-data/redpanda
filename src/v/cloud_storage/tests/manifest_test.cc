@@ -80,7 +80,7 @@ inline ss::input_stream<char> make_manifest_stream(std::string_view json) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_manifest_path) {
-    manifest m(manifest_ntp, model::revision_id(0));
+    manifest m(manifest_ntp, model::initial_revision_id(0));
     auto path = m.get_manifest_path();
     BOOST_REQUIRE_EQUAL(
       path, "20000000/meta/test-ns/test-topic/42_0/manifest.json");
@@ -89,7 +89,7 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_path) {
 SEASTAR_THREAD_TEST_CASE(test_segment_path) {
     auto path = generate_remote_segment_path(
       manifest_ntp,
-      model::revision_id(0),
+      model::initial_revision_id(0),
       segment_name("22-11-v1.log"),
       model::term_id{123});
     // use pre-calculated murmur hash value from full ntp path + file name
@@ -148,7 +148,7 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_manifest_serialization) {
-    manifest m(manifest_ntp, model::revision_id(0));
+    manifest m(manifest_ntp, model::initial_revision_id(0));
     m.add(
       segment_name("10-1-v1.log"),
       {
@@ -157,7 +157,7 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_serialization) {
         .base_offset = model::offset(10),
         .committed_offset = model::offset(19),
         .max_timestamp = model::timestamp::missing(),
-        .ntp_revision = model::revision_id(0),
+        .ntp_revision = model::initial_revision_id(0),
       });
     m.add(
       segment_name("20-1-v1.log"),
@@ -167,7 +167,7 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_serialization) {
         .base_offset = model::offset(20),
         .committed_offset = model::offset(29),
         .max_timestamp = model::timestamp::missing(),
-        .ntp_revision = model::revision_id(3),
+        .ntp_revision = model::initial_revision_id(3),
       });
     auto [is, size] = m.serialize();
     iobuf buf;
@@ -182,11 +182,11 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_serialization) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_manifest_difference) {
-    manifest a(manifest_ntp, model::revision_id(0));
+    manifest a(manifest_ntp, model::initial_revision_id(0));
     a.add(segment_name("1-1-v1.log"), {});
     a.add(segment_name("2-2-v1.log"), {});
     a.add(segment_name("3-3-v1.log"), {});
-    manifest b(manifest_ntp, model::revision_id(0));
+    manifest b(manifest_ntp, model::initial_revision_id(0));
     b.add(segment_name("1-1-v1.log"), {});
     b.add(segment_name("2-2-v1.log"), {});
     {
@@ -316,12 +316,12 @@ SEASTAR_THREAD_TEST_CASE(test_segment_meta_serde_compat) {
       .base_timestamp = timestamp,
       .max_timestamp = timestamp,
       .delta_offset = model::offset{7},
-      .ntp_revision = model::revision_id{42},
+      .ntp_revision = model::initial_revision_id{42},
       .archiver_term = model::term_id{123},
     };
 
     cloud_storage::manifest::segment_meta meta_wo_new_fields = meta_new;
-    meta_wo_new_fields.ntp_revision = model::revision_id{};
+    meta_wo_new_fields.ntp_revision = model::initial_revision_id{};
     meta_wo_new_fields.archiver_term = model::term_id{};
 
     old::segment_meta_v0 meta_old{

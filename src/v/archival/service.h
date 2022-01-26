@@ -170,7 +170,7 @@ private:
     ss::future<> remove_archivers(std::vector<model::ntp> to_remove);
     ss::future<> create_archivers(std::vector<model::ntp> to_create);
     ss::future<> upload_topic_manifest(
-      model::topic_namespace topic_ns, model::revision_id rev);
+      model::topic_namespace topic_ns, model::initial_revision_id rev);
     /// Adds archiver to the reconciliation loop after fetching its manifest.
     ss::future<ss::stop_iteration>
     add_ntp_archiver(ss::lw_shared_ptr<ntp_archiver> archiver);

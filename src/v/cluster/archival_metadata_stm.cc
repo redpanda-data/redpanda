@@ -11,6 +11,7 @@
 
 #include "config/configuration.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "model/record_utils.h"
@@ -40,7 +41,7 @@ struct archival_metadata_stm::segment
     // ntp_revision is needed to reconstruct full remote path of
     // the segment. Deprecated because ntp_revision is now part of
     // segment_meta.
-    model::revision_id ntp_revision_deprecated;
+    model::initial_revision_id ntp_revision_deprecated;
     cloud_storage::segment_name name;
     cloud_storage::manifest::segment_meta meta;
 };
@@ -63,7 +64,7 @@ archival_metadata_stm::segments_from_manifest(
     std::vector<segment> segments;
     segments.reserve(manifest.size());
     for (auto [name, meta] : manifest) {
-        if (meta.ntp_revision == model::revision_id{}) {
+        if (meta.ntp_revision == model::initial_revision_id{}) {
             meta.ntp_revision = manifest.get_revision_id();
         }
 
@@ -85,7 +86,7 @@ archival_metadata_stm::archival_metadata_stm(
   raft::consensus* raft, cloud_storage::remote& remote, ss::logger& logger)
   : cluster::persisted_stm("archival_metadata.snapshot", logger, raft)
   , _logger(logger, ssx::sformat("ntp: {}", raft->ntp()))
-  , _manifest(raft->ntp(), raft->config().revision_id())
+  , _manifest(raft->ntp(), raft->log_config().get_initial_revision())
   , _cloud_storage_api(remote) {}
 
 // todo: return result
@@ -235,7 +236,7 @@ ss::future<> archival_metadata_stm::apply_snapshot(
     auto snap = serde::from_iobuf<snapshot>(std::move(data));
 
     _manifest = cloud_storage::manifest(
-      _raft->ntp(), _raft->config().revision_id());
+      _raft->ntp(), _raft->log_config().get_initial_revision());
     for (const auto& segment : snap.segments) {
         apply_add_segment(segment);
     }
@@ -281,7 +282,7 @@ model::offset archival_metadata_stm::max_collectible_offset() {
 
 void archival_metadata_stm::apply_add_segment(const segment& segment) {
     auto meta = segment.meta;
-    if (meta.ntp_revision == model::revision_id{}) {
+    if (meta.ntp_revision == model::initial_revision_id{}) {
         // metadata serialized by old versions of redpanda doesn't have the
         // ntp_revision field.
         meta.ntp_revision = segment.ntp_revision_deprecated;
