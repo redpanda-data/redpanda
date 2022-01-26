@@ -185,6 +185,8 @@ public:
     /// Get segment if available or nullopt
     const segment_meta* get(const key& key) const;
     const segment_meta* get(const segment_name& name) const;
+    /// Find element of the manifest by offset
+    const_iterator find(model::offset o) const;
 
     /// Get insert iterator for segments set
     std::insert_iterator<segment_map> get_insert_iterator();

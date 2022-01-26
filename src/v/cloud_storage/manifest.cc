@@ -269,6 +269,15 @@ const manifest::segment_meta* manifest::get(const segment_name& name) const {
     return get(key);
 }
 
+manifest::const_iterator manifest::find(model::offset o) const {
+    auto it = _segments.lower_bound(
+      {.base_offset = o, .term = model::term_id(0)});
+    if (it == _segments.end() || it->first.base_offset != o) {
+        return end();
+    }
+    return it;
+}
+
 std::insert_iterator<manifest::segment_map> manifest::get_insert_iterator() {
     return std::inserter(_segments, _segments.begin());
 }
