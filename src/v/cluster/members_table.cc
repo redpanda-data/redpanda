@@ -52,7 +52,9 @@ std::optional<broker_ptr> members_table::get_broker(model::node_id id) const {
 }
 
 void members_table::update_brokers(
-  const std::vector<model::broker>& new_brokers) {
+  model::offset version, const std::vector<model::broker>& new_brokers) {
+    _version = model::revision_id(version());
+
     for (auto& br : new_brokers) {
         /**
          * broker properties may be updated event if it is draining partitions,
@@ -83,7 +85,10 @@ void members_table::update_brokers(
         }
     }
 }
-std::error_code members_table::apply(decommission_node_cmd cmd) {
+std::error_code
+members_table::apply(model::offset version, decommission_node_cmd cmd) {
+    _version = model::revision_id(version());
+
     if (auto it = _brokers.find(cmd.key); it != _brokers.end()) {
         if (
           it->second->get_membership_state()
@@ -101,7 +106,10 @@ std::error_code members_table::apply(decommission_node_cmd cmd) {
     return errc::node_does_not_exists;
 }
 
-std::error_code members_table::apply(recommission_node_cmd cmd) {
+std::error_code
+members_table::apply(model::offset version, recommission_node_cmd cmd) {
+    _version = model::revision_id(version());
+
     if (auto it = _brokers.find(cmd.key); it != _brokers.end()) {
         if (
           it->second->get_membership_state()

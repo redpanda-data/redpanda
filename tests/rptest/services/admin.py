@@ -164,6 +164,12 @@ class Admin:
         """
         return self._request('get', "brokers", node=node).json()
 
+    def get_cluster_view(self, node):
+        """
+        Return cluster_view.
+        """
+        return self._request('get', "cluster_view", node=node).json()
+
     def decommission_broker(self, id, node=None):
         """
         Decommission broker
