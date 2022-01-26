@@ -65,11 +65,6 @@ class SaramaHttpServer(ExampleBase):
     def process_to_kill(self):
         return "http_server"
 
-    # What is the name of the node
-    # assigned to this example?
-    def node_name(self):
-        return self._node_name
-
     # Set the name of the node assigned to
     # this example.
     def set_node_name(self, node_name):

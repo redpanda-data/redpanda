@@ -25,7 +25,11 @@ class ExampleRunner(BackgroundThreadService):
 
         self._pid = None
 
+        self._node = None
+
     def _worker(self, idx, node):
+        self._node = node
+
         start_time = time.time()
 
         # Some examples require the hostname of the node
@@ -48,9 +52,10 @@ class ExampleRunner(BackgroundThreadService):
                 # store result in a boolean variable
                 self._example.condition(line)
 
-    # Returns the node name that the example is running on
-    def node_name(self):
-        return self._example.node_name()
+    @property
+    def node(self):
+        assert self._node is not None
+        return self._node
 
     def stop_node(self, node):
         try:
