@@ -7,6 +7,7 @@ from utils import Mapping
 from storage import Header, Record, Segment
 import collections
 import datetime
+import os
 
 logger = logging.getLogger('kvstore')
 
@@ -238,7 +239,6 @@ def decode_key(ks, key):
     return {'keyspace': ks, 'data': data}
 
 
-
 def decode_storage_value(type, v):
     rdr = Reader(BytesIO(v))
     ret = {}
@@ -312,15 +312,17 @@ class KvStore:
             self.kv[key] = entry['data']
 
     def decode(self):
-        snap = KvSnapshot(f"{self.ntp.path}/snapshot")
-        snap.decode()
-        logger.debug(f"snapshot last offset: {snap.last_offset}")
+        if os.path.exists(f"{self.ntp.path}/snapshot"):
+            snap = KvSnapshot(f"{self.ntp.path}/snapshot")
+            snap.decode()
+            logger.debug(f"snapshot last offset: {snap.last_offset}")
 
-        for r in snap.data_batch:
-            d = KvStoreRecordDecoder(r,
-                                     snap.data_batch.header,
-                                     value_is_optional_type=False)
-            self._apply(d.decode())
+            for r in snap.data_batch:
+                d = KvStoreRecordDecoder(r,
+                                         snap.data_batch.header,
+                                         value_is_optional_type=False)
+                self._apply(d.decode())
+
         for path in self.ntp.segments:
             s = Segment(path)
             for batch in s:
