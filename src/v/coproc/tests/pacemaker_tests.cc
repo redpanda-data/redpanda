@@ -87,8 +87,9 @@ FIXTURE_TEST(test_coproc_router_off_by_one, coproc_test_fixture) {
           .topics = {std::make_pair<>(
             src_topic, coproc::topic_ingestion_policy::stored)}}}})
       .get();
-    auto fn =
-      [this, input_ntp, output_ntp](model::offset start) -> ss::future<size_t> {
+    auto fn = [this, input_ntp, _output_ntp{output_ntp}](
+                model::offset start) -> ss::future<size_t> {
+        auto output_ntp{_output_ntp};
         co_await produce(input_ntp, make_random_batch(1));
         auto r = co_await consume(output_ntp, 1, start);
         co_return num_records(r);

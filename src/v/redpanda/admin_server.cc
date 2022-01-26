@@ -1402,9 +1402,11 @@ void admin_server::register_partition_routes() {
 
           co_return co_await _partition_manager.invoke_on(
             *shard,
-            [ntp = std::move(ntp), req = std::move(req), this](
+            [_ntp = std::move(ntp), _req = std::move(req), this](
               cluster::partition_manager& pm) mutable
             -> ss::future<ss::json::json_return_type> {
+                auto ntp = std::move(_ntp);
+                auto req = std::move(_req);
                 auto partition = pm.get(ntp);
                 if (!partition) {
                     throw ss::httpd::server_error_exception(fmt_with_ctx(
@@ -1513,9 +1515,11 @@ void admin_server::register_partition_routes() {
 
           co_return co_await _partition_manager.invoke_on(
             *shard,
-            [ntp = std::move(ntp), pid, req = std::move(req), this](
+            [_ntp = std::move(ntp), pid, _req = std::move(req), this](
               cluster::partition_manager& pm) mutable
             -> ss::future<ss::json::json_return_type> {
+                auto ntp = std::move(_ntp);
+                auto req = std::move(_req);
                 auto partition = pm.get(ntp);
                 if (!partition) {
                     throw ss::httpd::server_error_exception(fmt_with_ctx(

@@ -407,8 +407,9 @@ void test_client_pool(s3::client_pool_overdraft_policy policy) {
     std::vector<ss::future<>> fut;
     for (size_t i = 0; i < 20; i++) {
         auto f = pool->acquire().then(
-          [server = server](
+          [_server = server](
             s3::client_pool::client_lease lease) -> ss::future<> {
+              auto server = _server;
               auto& [client, _] = lease;
               iobuf payload;
               auto payload_stream = make_iobuf_ref_output_stream(payload);
@@ -449,8 +450,9 @@ SEASTAR_TEST_CASE(test_client_pool_reconnect) {
         std::vector<ss::future<bool>> fut;
         for (size_t i = 0; i < 20; i++) {
             auto f = pool->acquire().then(
-              [server = server](
+              [_server = server](
                 s3::client_pool::client_lease lease) -> ss::future<bool> {
+                  auto server = _server;
                   co_await ss::sleep(100ms);
                   auto& [client, _] = lease;
                   iobuf payload;

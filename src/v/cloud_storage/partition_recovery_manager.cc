@@ -533,9 +533,11 @@ ss::future<> partition_downloader::download_segment_file(
         co_await ss::remove_file(localpath.string());
     }
 
-    auto stream = [this, part, remote_path, localpath, otl](
+    auto stream = [this, part, remote_path, _localpath{localpath}, _otl{otl}](
                     uint64_t len,
                     ss::input_stream<char> in) -> ss::future<uint64_t> {
+        auto localpath{_localpath};
+        auto otl{_otl};
         vlog(
           _ctxlog.info,
           "Copying s3 path {} to local location {}",
