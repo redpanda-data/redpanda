@@ -310,6 +310,9 @@ class KvStore:
 
         if entry['data'] is not None:
             self.kv[key] = entry['data']
+        else:
+            if key in self.kv:
+                self.kv.pop(key)
 
     def decode(self):
         if os.path.exists(f"{self.ntp.path}/snapshot"):

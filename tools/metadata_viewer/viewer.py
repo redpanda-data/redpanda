@@ -6,7 +6,7 @@ from controller import ControllerLog
 from consumer_groups import GroupsLog
 
 from storage import Store
-from kvstore import KvStore
+from kvstore import KvStore, encode_raft_key
 from kafka import KafkaLog
 import logging
 import json
@@ -21,6 +21,14 @@ def print_kv_store(store):
             kv.decode()
             items = kv.items()
             logger.info(json.dumps(items, indent=2))
+
+
+def reset_last_append_kvstore(store):
+    for ntp in store.ntps:
+        if ntp.nspace == "redpanda" and ntp.topic == "kvstore" and ntp.partition == 0:
+            kv = KvStore(ntp)
+            kv.delete_key("consensus", encode_raft_key("last applied offset",
+                                                       0))
 
 
 def print_controller(store):
@@ -60,12 +68,14 @@ def main():
         parser.add_argument('--path',
                             type=str,
                             help='Path to the log desired to be analyzed')
-        parser.add_argument(
-            '--type',
-            type=str,
-            choices=['controller', 'kvstore', 'kafka', 'group'],
-            required=True,
-            help='opertion to execute')
+        parser.add_argument('--type',
+                            type=str,
+                            choices=[
+                                'controller', 'kvstore', 'kafka', 'group',
+                                'reset_controller'
+                            ],
+                            required=True,
+                            help='opertion to execute')
         parser.add_argument(
             '--topic',
             type=str,
@@ -94,6 +104,8 @@ def main():
         print_kafka(store, options.topic)
     elif options.type == "group":
         print_groups(store)
+    elif options.type == "reset_controller":
+        reset_last_append_kvstore(store)
 
 
 if __name__ == '__main__':
