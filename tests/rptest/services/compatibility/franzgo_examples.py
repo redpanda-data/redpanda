@@ -8,19 +8,18 @@
 # by the Apache License, Version 2.0
 
 import os
-from .example_base import ExampleBase
 
 # The franz-go root directory
 TESTS_DIR = os.path.join("/opt", "franz-go")
 
 
-class FranzGoBench(ExampleBase):
+class FranzGoBench:
     """
     The common items between helper classes
     for the franz-go bench example.
     """
     def __init__(self, redpanda, topic, max_records, enable_sasl):
-        super(FranzGoBench, self).__init__(redpanda)
+        self._redpanda = redpanda
 
         # The kafka topic
         self._topic = topic
@@ -32,13 +31,20 @@ class FranzGoBench(ExampleBase):
 
         self._enable_sasl = enable_sasl
 
-    # The internal condition to determine if the
-    # example is successful. Returns boolean.
-    def _condition(self, line):
+        # The internal condition is defined in the children.
+        self._condition_met = False
+
+    # Calls the internal condition and
+    # automatically stores the result
+    def condition(self, line):
         # Multiply by 1k because the number of recs
         # is formated as XXX.XXk records/s
         self._recs += float(line.split()[2][:-1]) * 1000
-        return self._recs >= self._max_records
+        self._condition_met = self._recs >= self._max_records
+
+    # Was the internal condition met?
+    def condition_met(self):
+        return self._condition_met
 
     # Return the process name to kill
     def process_to_kill(self):

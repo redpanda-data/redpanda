@@ -9,27 +9,35 @@
 
 import os
 import re
-from .example_base import ExampleBase
 
 # The kafka-streams root directory which is made in the
 # Dockerfile
 TESTS_DIR = os.path.join("/opt", "kafka-streams-examples")
 
 
-class KafkaStreams(ExampleBase):
+class KafkaStreams:
     def __init__(self, redpanda, is_driver, jar_args):
-        super(KafkaStreams, self).__init__(redpanda)
+        self._redpanda = redpanda
 
         self._jar_arg = jar_args[0] if is_driver else jar_args[1]
+
         self._is_driver = is_driver
 
-    # The internal condition to determine if the
-    # example is successful. Returns boolean.
-    def _condition(self, line):
+        # The result of the internal condiiton.
+        # The internal condition is defined in the children.
+        self._condition_met = False
+
+    # Calls the internal condition and
+    # automatically stores the result
+    def condition(self, line):
         if self._is_driver:
-            return self.driver_cond(line)
+            self._condition_met = self.driver_cond(line)
         else:
-            return "Example started." in line
+            self._condition_met = "Example started." in line
+
+    # Was the internal condition met?
+    def condition_met(self):
+        return self._condition_met
 
     # Return the command to call in the shell
     def cmd(self, host):
