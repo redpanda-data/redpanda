@@ -1229,8 +1229,32 @@ tx_gateway_frontend::do_end_txn(
         if (tx.status == tm_transaction::tx_status::ongoing) {
             r = co_await do_commit_tm_tx(term, stm, tx, timeout, outcome);
         } else {
-            outcome->set_value(tx_errc::invalid_txn_state);
-            co_return tx_errc::invalid_txn_state;
+            // Lets look when we may observe this situation:
+            //
+            //   1. a client commits a transaction
+            //   2. the transaction is committed
+            //   3. tx coordinator dies just before ack'ing a tx
+            //   4. the client retries the commit
+            //   5. the commit hits server & sees that the transaction may be
+            //   committed
+            //
+            // if we return invalid_txn_state the client interpreters it as a
+            // reject while the tx is committed. it seems that the server should
+            // roll the tx forward since commit is an idempotent op. but there
+            // is a problem with this solution too:
+            //
+            //   1. a client commits a transaction
+            //   2. the transaction is committed
+            //   3. the client initiates next transaction
+            //   4. tx cordinator reboots before the prepare phase
+            //   5. the client retries the commit, tx coordiantor sees prepared
+            //      state of the previous transaction
+            //   6. if we roll it forward the client will think that the current
+            //      transaciton is committed
+            //
+            // so we fail the request with unknow error and let user to recover
+            outcome->set_value(tx_errc::unknown_server_error);
+            co_return tx_errc::unknown_server_error;
         }
     } else {
         try {
