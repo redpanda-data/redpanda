@@ -412,6 +412,19 @@ std::vector<kafka::transactional_id> tm_stm::get_expired_txs() {
     return ids;
 }
 
+ss::future<tm_stm::get_txs_result> tm_stm::get_all_transactions() {
+    if (!_c->is_leader()) {
+        co_return tm_stm::op_status::not_leader;
+    }
+
+    auto is_ready = co_await sync(_sync_timeout);
+    if (!is_ready) {
+        co_return tm_stm::op_status::unknown;
+    }
+
+    co_return _tx_table;
+}
+
 ss::future<> tm_stm::expire_tx(kafka::transactional_id tx_id) {
     auto ptx = _tx_table.find(tx_id);
     if (ptx == _tx_table.end()) {
