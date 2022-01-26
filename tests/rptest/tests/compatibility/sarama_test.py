@@ -63,7 +63,7 @@ class SaramaTest(RedpandaTest):
 
         # Get the node the server is on and
         # a ducktape node
-        server_name = example.node_name()
+        server_name = example.node.name
         node = random.choice(self.redpanda.nodes)
 
         # Http get request using curl
