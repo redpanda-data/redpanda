@@ -8,6 +8,7 @@ import re
 import logging
 from io import BytesIO
 from reader import Reader
+from writer import Writer
 
 logger = logging.getLogger('rp')
 
@@ -104,6 +105,142 @@ class RecordIter:
                       headers)
 
 
+class WritableRecord:
+    def __init__(self, key, value, headers, offset_delta, ts_delta):
+        self.attrs = 0
+        self.key = key
+        self.value = value
+        self.headers = headers
+        self.offset_delta = offset_delta
+        self.ts_delta = ts_delta
+
+    def size(self):
+        # attributes
+        sz = 1
+        sz += Writer.vint_length(self.ts_delta)
+        sz += Writer.vint_length(self.offset_delta)
+        if self.key:
+            sz += Writer.vint_length(len(self.key))
+            sz += len(self.key)
+        else:
+            sz += Writer.vint_length(0)
+
+        if self.value:
+            sz += Writer.vint_length(len(self.value))
+            sz += len(self.value)
+        else:
+            sz += Writer.vint_length(0)
+
+        if self.headers:
+            sz += Writer.vint_length(len(self.headers))
+            for h in self.headers:
+                sz += Writer.vint_length(len(h.key))
+                sz += len(h.key)
+                sz += Writer.vint_length(len(h.value))
+                sz += len(h.value)
+        else:
+            sz += Writer.vint_length(0)
+
+        return sz
+
+    def write_into(self, stream):
+        w = Writer(stream)
+        w.write_vint(self.size())
+        w.write_int8(self.attrs)
+        w.write_vint(self.ts_delta)
+        w.write_vint(self.offset_delta)
+        if self.key:
+            w.write_vint(len(self.key))
+            w.write_bytes(self.key)
+        else:
+            w.write_vint(0)
+
+        if self.value:
+            w.write_vint(len(self.value))
+            w.write_bytes(self.value)
+        else:
+            w.write_vint(0)
+
+        w.write_vint(len(self.headers))
+        for h in self.headers:
+            if h.key:
+                w.write_vint(len(h.key))
+                w.write_bytes(h.key)
+            if h.value:
+                w.write_vint(len(h.value))
+                w.write_bytes(h.value)
+
+
+class WritableBatch:
+    def __init__(self,
+                 batch_type,
+                 base_offset,
+                 records,
+                 attrs,
+                 first_ts=0,
+                 producer_id=-1,
+                 producer_epoch=-1,
+                 base_seq=-1):
+        self.batch_type = batch_type
+        self.base_offset = base_offset
+        self.records = records
+        self.attrs = attrs
+        self.first_ts = first_ts
+        self.producer_id = producer_id
+        self.producer_epoch = producer_epoch
+        self.base_seq = base_seq
+
+    def build_header(self, records_buffer):
+
+        h = {}
+        h['batch_size'] = len(records_buffer) + HEADER_SIZE
+        h['base_offset'] = self.base_offset
+        h['type'] = self.batch_type
+        h['attrs'] = self.attrs
+        h['first_ts'] = self.first_ts
+        h['delta'] = self.records[-1].offset_delta
+        h['max_ts'] = self.records[-1].ts_delta + self.first_ts
+        h['producer_id'] = self.producer_id
+        h['producer_epoch'] = self.producer_epoch
+        h['base_seq'] = self.base_seq
+        h['record_count'] = len(self.records)
+        h['crc'] = self.crc(h, records_buffer)
+
+        h['header_crc'] = self.crc_header(h)
+        return h
+
+    def crc_header(self, header):
+        bytes = struct.pack("<" + HDR_FMT_RP_PREFIX_NO_CRC + HDR_FMT_CRC,
+                            header['batch_size'], header['base_offset'],
+                            header['type'], header['crc'], header['attrs'],
+                            header['delta'], header['first_ts'],
+                            header['max_ts'], header['producer_id'],
+                            header['producer_epoch'], header['base_seq'],
+                            header['record_count'])
+        return crc32c.crc32c(bytes)
+
+    def crc(self, header, records):
+        header_crc_bytes = struct.pack(">" + HDR_FMT_CRC, header['attrs'],
+                                       header['delta'], header['first_ts'],
+                                       header['max_ts'], header['producer_id'],
+                                       header['producer_epoch'],
+                                       header['base_seq'],
+                                       header['record_count'])
+        crc = crc32c.crc32c(header_crc_bytes)
+        return crc32c.crc32c(records, crc)
+
+    def encode(self):
+        records_stream = BytesIO(b"")
+        for r in self.records:
+            r.write_into(records_stream)
+        encoded_records = records_stream.getbuffer()
+        hdr = self.build_header(encoded_records)
+        out = BytesIO(b"")
+        out.write(struct.pack(HDR_FMT_RP, *Header(**hdr)))
+        out.write(encoded_records)
+        return out.getbuffer()
+
+
 class Batch:
     def __init__(self, index, header, records):
         self.index = index
@@ -166,6 +303,29 @@ class BatchIterator:
 class Segment:
     def __init__(self, path):
         self.path = path
+        m = SEGMENT_NAME_PATTERN.match(os.path.basename(self.path))
+        self.term = int(m['term'])
+        self.base_offset = int(m['base_offset'])
+
+    # we must consume a segment up to last valid batch to establish
+    # last valid offset redpanda might have been force stopped so
+    # there may be fallocated space at the end of segment file
+    def _last_valid_offset(self):
+        ret = 0
+        with open(self.path, 'rb') as f:
+            while True:
+                b = Batch.from_stream(f, 0)
+                if b:
+                    ret = f.tell()
+                else:
+                    return ret
+
+    def append(self, batch):
+
+        last_valid_offset = self._last_valid_offset()
+        with open(self.path, 'ab') as f:
+            f.truncate(last_valid_offset)
+            f.write(batch.encode())
 
     def __iter__(self):
         return BatchIterator(self.path)
