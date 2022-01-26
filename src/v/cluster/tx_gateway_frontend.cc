@@ -25,6 +25,7 @@
 #include "config/configuration.h"
 #include "errc.h"
 #include "types.h"
+#include "utils/gate_guard.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -1157,6 +1158,55 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
 
           return decided.then(
             [](tx_errc ec) { return end_tx_reply{.error_code = ec}; });
+      });
+}
+
+ss::future<tx_gateway_frontend::return_all_txs_res>
+tx_gateway_frontend::get_all_transactions() {
+    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+
+    if (shard == std::nullopt) {
+        vlog(txlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
+        co_return tx_errc::shard_not_found;
+    }
+
+    co_return co_await container().invoke_on(
+      *shard,
+      _ssg,
+      [](tx_gateway_frontend& self)
+        -> ss::future<tx_gateway_frontend::return_all_txs_res> {
+          auto partition = self._partition_manager.local().get(
+            model::tx_manager_ntp);
+          if (!partition) {
+              vlog(
+                txlog.warn,
+                "can't get partition by {} ntp",
+                model::tx_manager_ntp);
+              co_return tx_errc::invalid_txn_state;
+          }
+
+          auto stm = partition->tm_stm();
+
+          if (!stm) {
+              vlog(
+                txlog.warn,
+                "can't get tm stm of the {}' partition",
+                model::tx_manager_ntp);
+              co_return tx_errc::invalid_txn_state;
+          }
+
+          auto gate_lock = gate_guard(self._gate);
+          auto read_lock = co_await stm->read_lock();
+
+          auto res = co_await stm->get_all_transactions();
+          if (!res.has_value()) {
+              if (res.error() == tm_stm::op_status::not_leader) {
+                  co_return tx_errc::not_coordinator;
+              }
+              co_return tx_errc::unknown_server_error;
+          }
+
+          co_return res.value();
       });
 }
 

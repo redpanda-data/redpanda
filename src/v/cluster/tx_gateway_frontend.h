@@ -62,6 +62,11 @@ public:
     ss::future<end_tx_reply>
       end_txn(end_tx_request, model::timeout_clock::duration);
 
+    using return_all_txs_res = result<
+      absl::flat_hash_map<kafka::transactional_id, tm_transaction>,
+      tx_errc>;
+    ss::future<return_all_txs_res> get_all_transactions();
+
     ss::future<> stop();
 
 private:
