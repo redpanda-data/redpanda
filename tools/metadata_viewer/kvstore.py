@@ -4,10 +4,12 @@ import struct
 from model import *
 from reader import Reader
 from utils import Mapping
-from storage import Header, Record, Segment
+from storage import Header, Record, Segment, WritableBatch, WritableRecord
+from writer import Writer
 import collections
 import datetime
 import os
+import time
 
 logger = logging.getLogger('kvstore')
 
@@ -78,6 +80,10 @@ class SnapshotBatch:
             records.append(Record(sz, attr, ts, o_delta, key, v, []))
 
         return SnapshotBatch(header, records)
+
+
+def encode_ks(ks_str):
+    return ks_mapping.encode(ks_str)
 
 
 class KvStoreRecordDecoder:
@@ -195,6 +201,14 @@ def decode_raft_key(k):
     ret['name'] = decode_raft_meta_key(ret['type'])
     ret['group'] = rdr.read_int64()
     return ret
+
+
+def encode_raft_key(type_str, group):
+    w = Writer(BytesIO(b""))
+
+    w.write_int8(raft_key_type_mapping.encode(type_str))
+    w.write_int64(group)
+    return w.stream.getvalue()
 
 
 def decode_offset_translator_key(k):
@@ -333,7 +347,37 @@ class KvStore:
                     d = KvStoreRecordDecoder(r,
                                              batch.header,
                                              value_is_optional_type=True)
-                    self._apply(d.decode())
+                    decoded = d.decode()
+                    self._apply(decoded)
+
+    def delete_key(self, key_space, key_buffer):
+        path = self.ntp.segments[-1]
+        logger.info(f"found last kvstore segment: {path}")
+        segment = Segment(path)
+        last_batch = None
+        for b in segment:
+            last_batch = b
+        last_offset = 0
+        if last_batch:
+            last_offset = last_batch.header.base_offset + last_batch.header.delta
+        else:
+            last_offset = segment.base_offset
+        key_writer = Writer(BytesIO(b""))
+        key_writer.write_int8(encode_ks(key_space))
+        key_writer.write_bytes(key_buffer)
+        key = key_writer.stream.getvalue()
+        value_writer = Writer(BytesIO(b""))
+        value_writer.write_nullopt()
+
+        record = WritableRecord(key=key,
+                                value=value_writer.stream.getvalue(),
+                                headers=[],
+                                offset_delta=0,
+                                ts_delta=0)
+        logger.info(f"inserting reset batch at {last_offset + 1}")
+        tombstone_batch = WritableBatch(4, last_offset + 1, [record], 0,
+                                        round(time.time() * 1000))
+        segment.append(tombstone_batch)
 
     def items(self):
         ret = []
