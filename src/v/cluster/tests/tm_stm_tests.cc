@@ -47,6 +47,7 @@ FIXTURE_TEST(test_tm_stm_new_tx, mux_state_machine_fixture) {
     start_raft();
 
     cluster::tm_stm stm(tm_logger, _raft.get());
+    auto c = _raft.get();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -57,9 +58,10 @@ FIXTURE_TEST(test_tm_stm_new_tx, mux_state_machine_fixture) {
     auto tx_id = kafka::transactional_id("app-id-1");
     auto pid = model::producer_identity{.id = 1, .epoch = 0};
 
-    auto op_code
-      = stm.register_new_producer(tx_id, std::chrono::milliseconds(0), pid)
-          .get0();
+    auto op_code = stm
+                     .register_new_producer(
+                       c->term(), tx_id, std::chrono::milliseconds(0), pid)
+                     .get0();
     BOOST_REQUIRE_EQUAL(op_code, op_status::success);
     auto tx1 = expect_tx(stm.get_tx(tx_id));
     BOOST_REQUIRE_EQUAL(tx1.id, tx_id);
@@ -80,13 +82,13 @@ FIXTURE_TEST(test_tm_stm_new_tx, mux_state_machine_fixture) {
     BOOST_REQUIRE_EQUAL(tx2.status, tx_status::ongoing);
     BOOST_REQUIRE_GT(tx2.tx_seq, tx1.tx_seq);
     BOOST_REQUIRE_EQUAL(tx2.partitions.size(), 2);
-    auto tx3 = expect_tx(stm.mark_tx_preparing(tx_id).get());
+    auto tx3 = expect_tx(stm.mark_tx_preparing(c->term(), tx_id).get());
     BOOST_REQUIRE_EQUAL(tx3.id, tx_id);
     BOOST_REQUIRE_EQUAL(tx3.pid, pid);
     BOOST_REQUIRE_EQUAL(tx3.status, tx_status::preparing);
     BOOST_REQUIRE_EQUAL(tx3.tx_seq, tx2.tx_seq);
     BOOST_REQUIRE_EQUAL(tx3.partitions.size(), 2);
-    auto tx4 = expect_tx(stm.mark_tx_prepared(tx_id).get());
+    auto tx4 = expect_tx(stm.mark_tx_prepared(c->term(), tx_id).get());
     BOOST_REQUIRE_EQUAL(tx4.id, tx_id);
     BOOST_REQUIRE_EQUAL(tx4.pid, pid);
     BOOST_REQUIRE_EQUAL(tx4.status, tx_status::prepared);
@@ -104,6 +106,7 @@ FIXTURE_TEST(test_tm_stm_seq_tx, mux_state_machine_fixture) {
     start_raft();
 
     cluster::tm_stm stm(tm_logger, _raft.get());
+    auto c = _raft.get();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -114,12 +117,13 @@ FIXTURE_TEST(test_tm_stm_seq_tx, mux_state_machine_fixture) {
     auto tx_id = kafka::transactional_id("app-id-1");
     auto pid = model::producer_identity{.id = 1, .epoch = 0};
 
-    auto op_code
-      = stm.register_new_producer(tx_id, std::chrono::milliseconds(0), pid)
-          .get0();
+    auto op_code = stm
+                     .register_new_producer(
+                       c->term(), tx_id, std::chrono::milliseconds(0), pid)
+                     .get0();
     BOOST_REQUIRE_EQUAL(op_code, op_status::success);
     auto tx1 = expect_tx(stm.get_tx(tx_id));
-    auto tx2 = stm.reset_tx_ongoing(tx_id);
+    auto tx2 = stm.reset_tx_ongoing(tx_id, c->term());
     std::vector<tm_transaction::tx_partition> partitions = {
       tm_transaction::tx_partition{
         .ntp = model::ntp("kafka", "topic", 0), .etag = model::term_id(0)},
@@ -127,8 +131,8 @@ FIXTURE_TEST(test_tm_stm_seq_tx, mux_state_machine_fixture) {
         .ntp = model::ntp("kafka", "topic", 1), .etag = model::term_id(0)}};
     BOOST_REQUIRE(stm.add_partitions(tx_id, partitions));
     auto tx3 = expect_tx(stm.get_tx(tx_id));
-    auto tx4 = expect_tx(stm.mark_tx_preparing(tx_id).get());
-    auto tx5 = expect_tx(stm.mark_tx_prepared(tx_id).get());
+    auto tx4 = expect_tx(stm.mark_tx_preparing(c->term(), tx_id).get());
+    auto tx5 = expect_tx(stm.mark_tx_prepared(c->term(), tx_id).get());
     auto tx6 = expect_tx(stm.mark_tx_ongoing(tx_id));
     BOOST_REQUIRE_EQUAL(tx6.id, tx_id);
     BOOST_REQUIRE_EQUAL(tx6.pid, pid);
@@ -141,6 +145,7 @@ FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
     start_raft();
 
     cluster::tm_stm stm(tm_logger, _raft.get());
+    auto c = _raft.get();
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -151,9 +156,10 @@ FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
     auto tx_id = kafka::transactional_id("app-id-1");
     auto pid1 = model::producer_identity{.id = 1, .epoch = 0};
 
-    auto op_code
-      = stm.register_new_producer(tx_id, std::chrono::milliseconds(0), pid1)
-          .get0();
+    auto op_code = stm
+                     .register_new_producer(
+                       c->term(), tx_id, std::chrono::milliseconds(0), pid1)
+                     .get0();
     BOOST_REQUIRE(op_code == op_status::success);
     auto tx1 = expect_tx(stm.get_tx(tx_id));
     std::vector<tm_transaction::tx_partition> partitions = {
@@ -161,16 +167,17 @@ FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
         .ntp = model::ntp("kafka", "topic", 0), .etag = model::term_id(0)},
       tm_transaction::tx_partition{
         .ntp = model::ntp("kafka", "topic", 1), .etag = model::term_id(0)}};
-    auto tx2 = stm.reset_tx_ongoing(tx_id);
+    auto tx2 = stm.reset_tx_ongoing(tx_id, c->term());
     BOOST_REQUIRE(stm.add_partitions(tx_id, partitions));
     auto tx3 = expect_tx(stm.get_tx(tx_id));
-    auto tx4 = expect_tx(stm.mark_tx_preparing(tx_id).get());
-    auto tx5 = expect_tx(stm.mark_tx_prepared(tx_id).get());
+    auto tx4 = expect_tx(stm.mark_tx_preparing(c->term(), tx_id).get());
+    auto tx5 = expect_tx(stm.mark_tx_prepared(c->term(), tx_id).get());
     auto tx6 = expect_tx(stm.mark_tx_ongoing(tx_id));
 
     auto pid2 = model::producer_identity{.id = 1, .epoch = 1};
     op_code = stm
-                .re_register_producer(tx_id, std::chrono::milliseconds(0), pid2)
+                .re_register_producer(
+                  c->term(), tx_id, std::chrono::milliseconds(0), pid2)
                 .get0();
     BOOST_REQUIRE_EQUAL(op_code, op_status::success);
     auto tx7 = expect_tx(stm.get_tx(tx_id));
