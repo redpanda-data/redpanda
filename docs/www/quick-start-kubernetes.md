@@ -14,8 +14,14 @@ To get up and running you need to create a cluster and deploy the Redpanda opera
 - For production or benchmarking, set up a [production deployment](/docs/production-deployment).
 - You can also set up a [Kubernetes cluster with external access](/docs/kubernetes-external-connect).
 
-> **_Note_** - Run a container inside the Kubernetes cluster to communicate with the Redpanda cluster.
-> Currently, a load balancer is not automatically created during deployment by default.
+**_Note_** - Run a container inside the Kubernetes cluster to communicate with the Redpanda cluster.
+Currently, a load balancer is not automatically created during deployment by default.
+
+**_Note_** - In the steps below, the `.yaml` file that you use to install Redpanda sets `developerMode: true`. 
+If you you want to set `developerMode: false`, for optimal configuration we recommend that you run `rpk redpanda tune all` directly on the host before you create a Redpanda cluster.
+You can find more information about the command as well as tuning recommendations in the [Set Redpanda production mode](https://redpanda.com/docs/production-deployment/#Step-2-Set-Redpanda-production-mode) documentation. 
+If `rpk` is not available, verify that `fs.aio-max-nr` is set to `1048576` or greater. 
+You can set `fs.aio-max-nr` by running `sysctl -w fs.aio-max-nr=1048576`. 
 
 ## Prerequisites
 
