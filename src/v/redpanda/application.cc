@@ -581,7 +581,7 @@ void application::wire_up_redpanda_services() {
 
     // cluster
     syschecks::systemd_message("Adding raft client cache").get();
-    construct_service(_raft_connection_cache).get();
+    construct_service(_connection_cache).get();
     syschecks::systemd_message("Building shard-lookup tables").get();
     construct_service(shard_table).get();
 
@@ -608,7 +608,7 @@ void application::wire_up_redpanda_services() {
         _scheduling_groups.raft_sg(),
         config::shard_local_cfg().raft_heartbeat_interval_ms(),
         config::shard_local_cfg().raft_heartbeat_timeout_ms(),
-        std::ref(_raft_connection_cache),
+        std::ref(_connection_cache),
         std::ref(storage),
         std::ref(recovery_throttle))
       .get();
@@ -668,7 +668,7 @@ void application::wire_up_redpanda_services() {
     construct_single_service(
       controller,
       std::move(_config_preload),
-      _raft_connection_cache,
+      _connection_cache,
       partition_manager,
       shard_table,
       storage,
@@ -707,6 +707,13 @@ void application::wire_up_redpanda_services() {
           .get();
     });
     _deferred.emplace_back([this] {
+        // Prior to shutting down partition manager (which clears out all the
+        // raft `consensus` instances), stop processing heartbeats.  Otherwise
+        // we are receiving heartbeats that we can't match up to raft groups.
+        raft_group_manager.invoke_on_all(&raft::group_manager::stop_heartbeats)
+          .get();
+    });
+    _deferred.emplace_back([this] {
         cp_partition_manager
           .invoke_on_all(&coproc::partition_manager::stop_partitions)
           .get();
@@ -719,7 +726,7 @@ void application::wire_up_redpanda_services() {
       std::ref(controller->get_partition_leaders()),
       std::ref(controller->get_members_table()),
       std::ref(controller->get_topics_state()),
-      std::ref(_raft_connection_cache),
+      std::ref(_connection_cache),
       std::ref(controller->get_health_monitor()))
       .get();
 
@@ -868,7 +875,7 @@ void application::wire_up_redpanda_services() {
       std::ref(partition_manager),
       std::ref(shard_table),
       std::ref(metadata_cache),
-      std::ref(_raft_connection_cache),
+      std::ref(_connection_cache),
       std::ref(controller->get_partition_leaders()),
       std::ref(controller))
       .get();
@@ -878,7 +885,7 @@ void application::wire_up_redpanda_services() {
     construct_service(
       rm_group_frontend,
       std::ref(metadata_cache),
-      std::ref(_raft_connection_cache),
+      std::ref(_connection_cache),
       std::ref(controller->get_partition_leaders()),
       controller.get(),
       std::ref(coordinator_ntp_mapper),
@@ -896,7 +903,7 @@ void application::wire_up_redpanda_services() {
       std::ref(partition_manager),
       std::ref(shard_table),
       std::ref(metadata_cache),
-      std::ref(_raft_connection_cache),
+      std::ref(_connection_cache),
       std::ref(controller->get_partition_leaders()),
       controller.get())
       .get();
@@ -914,7 +921,7 @@ void application::wire_up_redpanda_services() {
       std::ref(partition_manager),
       std::ref(shard_table),
       std::ref(metadata_cache),
-      std::ref(_raft_connection_cache),
+      std::ref(_connection_cache),
       std::ref(controller->get_partition_leaders()),
       controller.get(),
       std::ref(id_allocator_frontend),

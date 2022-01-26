@@ -47,6 +47,7 @@ public:
 
     ss::future<> start();
     ss::future<> stop();
+    ss::future<> stop_heartbeats();
 
     ss::future<ss::lw_shared_ptr<raft::consensus>> create_group(
       raft::group_id id, std::vector<model::broker> nodes, storage::log log);

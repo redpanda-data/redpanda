@@ -134,6 +134,8 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
+    bool is_stopped() const { return _bghbeats.is_closed(); }
+
 private:
     void dispatch_heartbeats();
 

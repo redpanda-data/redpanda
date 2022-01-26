@@ -138,7 +138,7 @@ private:
     scheduling_groups _scheduling_groups;
     ss::logger _log;
 
-    ss::sharded<rpc::connection_cache> _raft_connection_cache;
+    ss::sharded<rpc::connection_cache> _connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<net::server> _rpc;
     ss::sharded<admin_server> _admin;
