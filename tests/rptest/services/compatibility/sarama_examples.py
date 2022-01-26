@@ -8,26 +8,30 @@
 # by the Apache License, Version 2.0
 
 import os
-from .example_base import ExampleBase
 
 # The Sarama root directory
 TESTS_DIR = os.path.join("/opt", "sarama")
 
 
-class SaramaInterceptors(ExampleBase):
+class SaramaInterceptors:
     """
     The helper class for Sarama's interceptors example
     """
     def __init__(self, redpanda, topic):
-        super(SaramaInterceptors, self).__init__(redpanda)
+        self._redpanda = redpanda
 
         # The kafka topic
         self._topic = topic
 
+        self._condition_met = False
+
     # The internal condition to determine if the
     # example is successful. Returns boolean.
-    def _condition(self, line):
-        return 'SpanContext' in line
+   def condition(self, line):
+        self._condition_met = 'SpanContext' in line
+
+    def condition_met(self):
+        return self._condition_met
 
     # Return the command to call in the shell
     def cmd(self, host):
@@ -40,17 +44,21 @@ class SaramaInterceptors(ExampleBase):
         return "interceptors"
 
 
-class SaramaHttpServer(ExampleBase):
+class SaramaHttpServer:
     """
     The helper class for Sarama's http server example
     """
     def __init__(self, redpanda):
-        super(SaramaHttpServer, self).__init__(redpanda)
+     self._redpanda = redpanda
 
-    # The internal condition to determine if the
-    # example is successful. Returns boolean.
-    def _condition(self, line):
-        return 'Listening for requests' in line
+        # The result of the internal condiiton.
+        self._condition_met = False
+
+    def condition(self, line):
+        self._condition_met = 'Listening for requests' in line
+
+    def condition_met(self):
+        return self._condition_met
 
     # Return the command to call in the shell
     def cmd(self, host):
@@ -63,23 +71,26 @@ class SaramaHttpServer(ExampleBase):
         return "http_server"
 
 
-class SaramaConsumerGroup(ExampleBase):
+class SaramaConsumerGroup:
     """
     The helper class for Sarama's consumergroup example
     """
     def __init__(self, redpanda, topic, count):
-        super(SaramaConsumerGroup, self).__init__(redpanda)
+        self._redpanda = redpanda
 
-        # The kafka topic
         self._topic = topic
-
+        
         self._count = count
 
-    # The internal condition to determine if the
-    # example is successful. Returns boolean.
-    def _condition(self, line):
+        # The result of the internal condiiton.
+        self._condition_met = False
+
+    def condition(self, line):
         self._count -= 'Message claimed:' in line
-        return self._count <= 0
+        self._condition_met = self._count <= 0
+
+    def condition_met(self):
+        return self._condition_met
 
     # Return the command to call in the shell
     def cmd(self, host):
@@ -94,7 +105,7 @@ class SaramaConsumerGroup(ExampleBase):
 
 # A factory method to produce the command to run
 # Sarama's SASL/SCRAM authentication example.
-# Here, we do not create a ExampleBase because
+# Here, we do not use a class because
 # the SASL/SCRAM example runs in the foreground.
 def sarama_sasl_scram(redpanda, topic):
     EXAMPLE_DIR = os.path.join(TESTS_DIR, "examples/sasl_scram_client")
