@@ -79,7 +79,7 @@ ss::future<struct statvfs> local_monitor::get_statvfs(const ss::sstring& path) {
 }
 
 void local_monitor::update_alert_state() {
-    _state.storage_space_alert = 0;
+    _state.storage_space_alert = disk_space_alert::ok;
     for (const auto& d : _state.disks) {
         vassert(d.total != 0.0, "Total disk space cannot be zero.");
         double min_space = double(d.total) * alert_min_free_space_percent;
@@ -93,7 +93,7 @@ void local_monitor::update_alert_state() {
           double(d.free) <= min_space);
 
         if (double(d.free) <= min_space) {
-            _state.storage_space_alert = 1;
+            _state.storage_space_alert = disk_space_alert::low_space;
         }
     }
 }

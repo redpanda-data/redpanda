@@ -99,12 +99,14 @@ FIXTURE_TEST(local_monitor_alert_on_space_percent, local_monitor_fixture) {
     // One block over the threshold should not alert
     stats.f_bfree = min_free_percent_blocks + 1;
     auto ls = update_state();
-    BOOST_TEST_REQUIRE(ls.storage_space_alert == 0);
+    BOOST_TEST_REQUIRE(
+      ls.storage_space_alert == cluster::node::disk_space_alert::ok);
 
     // One block under the free threshold should alert
     stats.f_bfree = min_free_percent_blocks - 1;
     ls = update_state();
-    BOOST_TEST_REQUIRE(ls.storage_space_alert != 0);
+    BOOST_TEST_REQUIRE(
+      ls.storage_space_alert != cluster::node::disk_space_alert::ok);
 }
 
 FIXTURE_TEST(local_monitor_alert_on_space_bytes, local_monitor_fixture) {
@@ -124,10 +126,12 @@ FIXTURE_TEST(local_monitor_alert_on_space_bytes, local_monitor_fixture) {
     _local_monitor.set_statvfs_for_test(lamb);
 
     auto ls = update_state();
-    BOOST_TEST_REQUIRE(ls.storage_space_alert == 0);
+    BOOST_TEST_REQUIRE(
+      ls.storage_space_alert == cluster::node::disk_space_alert::ok);
 
     // Min bytes threshold minus a blocks -> Alert
     stats.f_bfree = min_bytes_in_blocks - 1;
     ls = update_state();
-    BOOST_TEST_REQUIRE(ls.storage_space_alert != 0);
+    BOOST_TEST_REQUIRE(
+      ls.storage_space_alert != cluster::node::disk_space_alert::ok);
 }
