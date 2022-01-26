@@ -32,7 +32,7 @@ class KafkaStreams(ExampleBase):
             return "Example started." in line
 
     # Return the command to call in the shell
-    def cmd(self):
+    def cmd(self, host):
         cmd = f"java -cp {TESTS_DIR}/target/kafka-streams-examples-6.2.0-standalone.jar io.confluent.examples.streams."
         cmd = cmd + self._jar_arg
         return cmd
