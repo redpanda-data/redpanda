@@ -17,7 +17,29 @@ FROM ubuntu:impish-20211102
 ENV TZ="UTC" \
     DEBIAN_FRONTEND=noninteractive
 
-# - install openssh, jvm and kafka cli tools
+# Install dependencies of Java client builds.
+RUN apt update && \
+    apt install -y \
+      build-essential \
+      default-jdk \
+      git \
+      maven && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install kafka streams examples.  This is a very slow step (tens of minutes), doing
+# many maven dependency downloads without any parallelism.  To avoid re-running it
+# on unrelated changes in other steps, this step is as early on the Dockerfile as possible.
+RUN git -C /opt clone --branch ducktape2 https://github.com/vectorizedio/kafka-streams-examples.git && \
+    cd /opt/kafka-streams-examples && mvn -DskipTests=true clean package
+
+# Install our in-tree Java test clientst
+COPY --chown=0:0 tests/java /tmp/java
+RUN mvn clean package --batch-mode --file /tmp/java/kafka-verifier --define buildDir=/opt/kafka-verifier/
+RUN mvn clean package --batch-mode --file /tmp/java/compacted-log-verifier --define buildDir=/opt/compacted-log-verifier
+RUN mvn clean package --batch-mode --file /tmp/java/tx-verifier --define buildDir=/opt/tx-verifier
+RUN mvn clean package --batch-mode --file /tmp/java/e2e-verifiers --define buildDir=/opt/e2e-verifiers
+
+# - install distro-packaged depedencies
 # - allow user env variables in ssh sessions
 # - install dependencies of 'rpk debug' system scan
 RUN apt update && \
@@ -25,19 +47,15 @@ RUN apt update && \
       bind9-utils \
       bind9-dnsutils \
       bsdmainutils \
-      build-essential \
       curl \
-      default-jdk \
       dmidecode \
       cmake \
-      git \
       iproute2 \
       iptables \
       libatomic1 \
       libyajl-dev \
       libsasl2-dev \
       libssl-dev \
-      maven \
       pciutils \
       nodejs \
       npm \
@@ -90,27 +108,14 @@ RUN git -C /opt clone https://github.com/Shopify/sarama.git && \
 RUN git -C /opt clone https://github.com/twmb/franz-go.git && cd /opt/franz-go && \
     cd /opt/franz-go/examples/bench && go mod tidy && go build
 
-# Install kafka streams examples
-RUN git -C /opt clone --branch ducktape2 https://github.com/vectorizedio/kafka-streams-examples.git && \
-    cd /opt/kafka-streams-examples && mvn -DskipTests=true clean package
-
 RUN go install github.com/twmb/kcl@latest && \
     mv /root/go/bin/kcl /usr/local/bin/
 
 # Expose port 8080 for any http examples within clients
 EXPOSE 8080
 
-# copy source of test (java) programs
-
-COPY --chown=0:0 tests/java /tmp/java
-RUN mvn clean package --batch-mode --file /tmp/java/kafka-verifier --define buildDir=/opt/kafka-verifier/
-RUN mvn clean package --batch-mode --file /tmp/java/compacted-log-verifier --define buildDir=/opt/compacted-log-verifier
-RUN mvn clean package --batch-mode --file /tmp/java/tx-verifier --define buildDir=/opt/tx-verifier
-RUN mvn clean package --batch-mode --file /tmp/java/e2e-verifiers --define buildDir=/opt/e2e-verifiers
-
 # copy ssh keys
 COPY --chown=0:0 tests/docker/ssh /root/.ssh
-
 
 # install python dependencies and rptest package.
 # rptest package installed in editable mode so it can be overridden.
