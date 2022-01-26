@@ -3,11 +3,31 @@ import logging
 import struct
 from model import *
 from reader import Reader
+from utils import Mapping
 from storage import Header, Record, Segment
 import collections
 import datetime
 
 logger = logging.getLogger('kvstore')
+
+ks_mapping = Mapping(
+    'keyspace', {
+        0: "testing",
+        1: "consensus",
+        2: "storage",
+        3: "cluster",
+        4: "offset_translator"
+    })
+
+raft_key_type_mapping = Mapping(
+    "raft_key_type", {
+        0: "voted for",
+        1: "configuration map",
+        2: "last known config offset",
+        3: "last applied offset",
+        4: "local id",
+        5: "next cfg idx"
+    })
 
 
 class SnapshotBatch:
@@ -70,17 +90,7 @@ class KvStoreRecordDecoder:
         self.value_is_optional_type = value_is_optional_type
 
     def _decode_ks(self, ks):
-        if ks == 0:
-            return "testing"
-        elif ks == 1:
-            return "consensus"
-        elif ks == 2:
-            return "storage"
-        elif ks == 3:
-            return "cluster"
-        elif ks == 4:
-            return "offset_translator"
-        return "unknown"
+        return ks_mapping.decode(ks)
 
     def decode(self):
 
@@ -112,20 +122,8 @@ class KvStoreRecordDecoder:
         return ret
 
 
-def decode_raft_metadata_type(k):
-    if k == 0:
-        return "voted_for"
-    elif k == 1:
-        return "config_map"
-    elif k == 2:
-        return "config_latest_known_offset"
-    elif k == 3:
-        return "last_applied_offset"
-    elif k == 4:
-        return "unique_local_id"
-    elif k == 5:
-        return "config_next_cfg_idx"
-    return "unknown"
+def decode_raft_meta_key(k):
+    return raft_key_type_mapping.decode(k)
 
 
 SNAP_HDR_FMT = "<IIbi"
@@ -239,21 +237,6 @@ def decode_key(ks, key):
         data = key.hex()
     return {'keyspace': ks, 'data': data}
 
-
-def decode_raft_meta_key(type):
-    if type == 0:
-        return "voted for"
-    elif type == 1:
-        return "configuration map"
-    elif type == 2:
-        return "last known config offset"
-    elif type == 3:
-        return "last applied offset"
-    elif type == 4:
-        return "local id"
-    elif type == 5:
-        return "next cfg idx"
-    return "unknown"
 
 
 def decode_storage_value(type, v):
