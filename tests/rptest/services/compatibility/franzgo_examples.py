@@ -55,7 +55,7 @@ class FranzGoBenchProduce(FranzGoBench):
                                                   enable_sasl)
 
     # Return the command to call in the shell
-    def cmd(self):
+    def cmd(self, host):
         EXAMPLE_DIR = os.path.join(TESTS_DIR, "examples/bench")
         cmd = f"bench -brokers {self._redpanda.brokers()} -topic {self._topic} -record-bytes 1000"
 
@@ -78,7 +78,7 @@ class FranzGoBenchConsume(FranzGoBench):
         self._group = group
 
     # Return the command to call in the shell
-    def cmd(self):
+    def cmd(self, host):
         EXAMPLE_DIR = os.path.join(TESTS_DIR, "examples/bench")
         cmd = f"bench -brokers {self._redpanda.brokers()} -topic {self._topic} -record-bytes 1000 -consume"
 

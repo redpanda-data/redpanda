@@ -30,7 +30,7 @@ class SaramaInterceptors(ExampleBase):
         return 'SpanContext' in line
 
     # Return the command to call in the shell
-    def cmd(self):
+    def cmd(self, host):
         EXAMPLE_DIR = os.path.join(TESTS_DIR, "examples/interceptors")
         cmd = f"interceptors -brokers {self._redpanda.brokers()} -topic {self._topic}"
         return os.path.join(EXAMPLE_DIR, cmd)
@@ -47,28 +47,20 @@ class SaramaHttpServer(ExampleBase):
     def __init__(self, redpanda):
         super(SaramaHttpServer, self).__init__(redpanda)
 
-        # The name of the node assigned to this example
-        self._node_name = ""
-
     # The internal condition to determine if the
     # example is successful. Returns boolean.
     def _condition(self, line):
         return 'Listening for requests' in line
 
     # Return the command to call in the shell
-    def cmd(self):
+    def cmd(self, host):
         EXAMPLE_DIR = os.path.join(TESTS_DIR, "examples/http_server")
-        cmd = f"http_server -addr {self._node_name}:8080 -brokers {self._redpanda.brokers()}"
+        cmd = f"http_server -addr {host}:8080 -brokers {self._redpanda.brokers()}"
         return os.path.join(EXAMPLE_DIR, cmd)
 
     # Return the process name to kill
     def process_to_kill(self):
         return "http_server"
-
-    # Set the name of the node assigned to
-    # this example.
-    def set_node_name(self, node_name):
-        self._node_name = node_name
 
 
 class SaramaConsumerGroup(ExampleBase):
@@ -90,7 +82,7 @@ class SaramaConsumerGroup(ExampleBase):
         return self._count <= 0
 
     # Return the command to call in the shell
-    def cmd(self):
+    def cmd(self, host):
         EXAMPLE_DIR = os.path.join(TESTS_DIR, "examples/consumergroup")
         cmd = f"consumer -brokers=\"{self._redpanda.brokers()}\" -topics=\"{self._topic}\" -group=\"example\""
         return os.path.join(EXAMPLE_DIR, cmd)

@@ -32,11 +32,8 @@ class ExampleRunner(BackgroundThreadService):
 
         start_time = time.time()
 
-        # Some examples require the hostname of the node
-        self._example.set_node_name(node.name)
-
         # Run the example until the condition is met or timeout occurs
-        cmd = "echo $$ ; " + self._example.cmd()
+        cmd = "echo $$ ; " + self._example.cmd(node.name)
         output_iter = node.account.ssh_capture(cmd)
         while not self._example.condition_met(
         ) and time.time() < start_time + self._timeout:
