@@ -23,21 +23,13 @@ class KafkaStreams:
 
         self._is_driver = is_driver
 
-        # The result of the internal condiiton.
-        # The internal condition is defined in the children.
-        self._condition_met = False
-
     # Calls the internal condition and
     # automatically stores the result
     def condition(self, line):
         if self._is_driver:
-            self._condition_met = self.driver_cond(line)
+            return self.driver_cond(line)
         else:
-            self._condition_met = "Example started." in line
-
-    # Was the internal condition met?
-    def condition_met(self):
-        return self._condition_met
+            return "Example started." in line
 
     # Return the command to call in the shell
     def cmd(self, host):

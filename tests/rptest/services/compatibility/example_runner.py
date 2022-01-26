@@ -27,16 +27,20 @@ class ExampleRunner(BackgroundThreadService):
 
         self._node = None
 
+        self._stopped = False
+
     def _worker(self, idx, node):
         self._node = node
-
-        start_time = time.time()
 
         # Run the example until the condition is met or timeout occurs
         cmd = "echo $$ ; " + self._example.cmd(node.name)
         output_iter = node.account.ssh_capture(cmd)
-        while not self._example.condition_met(
-        ) and time.time() < start_time + self._timeout:
+
+        self._stopped = False
+
+        # Keep reading input until the example's condition
+        # is satisfied.
+        while not self._stopped:
             line = next(output_iter)
             line = line.strip()
             self.logger.debug(line)
@@ -45,9 +49,9 @@ class ExampleRunner(BackgroundThreadService):
             if not self._pid:
                 self._pid = line
             else:
-                # Call to example.condition will automatically
-                # store result in a boolean variable
-                self._example.condition(line)
+                self._stopped = self._example.condition(line)
+
+            time.sleep(0.1)
 
     @property
     def node(self):
@@ -55,6 +59,7 @@ class ExampleRunner(BackgroundThreadService):
         return self._node
 
     def stop_node(self, node):
+        self._stopped = True
         try:
             if self._pid:
                 node.account.signal(self._pid, 9, allow_fail=True)
