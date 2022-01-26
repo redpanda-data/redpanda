@@ -30,7 +30,8 @@ class RpkConsumer(BackgroundThreadService):
                  group='',
                  save_msgs=True,
                  fetch_max_bytes=None,
-                 num_msgs=None):
+                 num_msgs=None,
+                 formatter=''):
         super(RpkConsumer, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -48,6 +49,7 @@ class RpkConsumer(BackgroundThreadService):
         self._save_msgs = save_msgs
         self._fetch_max_bytes = fetch_max_bytes
         self._num_msgs = num_msgs
+        self._format = formatter
 
     def _worker(self, idx, node):
         retry_sec = 5
@@ -115,6 +117,9 @@ class RpkConsumer(BackgroundThreadService):
 
         if self._num_msgs is not None:
             cmd += f' -n {self._num_msgs}'
+
+        if self._format:
+            cmd += ' --format %s' % self._format
 
         for line in node.account.ssh_capture(cmd):
             if self._stopping.is_set():
