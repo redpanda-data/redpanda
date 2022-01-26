@@ -114,7 +114,7 @@ public:
     // mark_xxx: updates a transaction if the term matches etag
     // reset_xxx: updates a transaction and an etag
     checked<tm_transaction, tm_stm::op_status>
-      reset_tx_ongoing(kafka::transactional_id);
+      reset_tx_ongoing(kafka::transactional_id, model::term_id);
     bool add_partitions(
       kafka::transactional_id, std::vector<tm_transaction::tx_partition>);
     bool add_group(kafka::transactional_id, kafka::group_id, model::term_id);
@@ -129,31 +129,36 @@ public:
         return r;
     }
 
-    ss::future<bool> barrier();
+    ss::future<checked<model::term_id, tm_stm::op_status>> barrier();
+    ss::future<checked<model::term_id, tm_stm::op_status>>
+      sync(model::timeout_clock::duration);
+    ss::future<checked<model::term_id, tm_stm::op_status>> sync() {
+        return sync(_sync_timeout);
+    }
 
     ss::future<ss::basic_rwlock<>::holder> read_lock() {
         return _state_lock.hold_read_lock();
     }
 
     ss::future<checked<tm_transaction, tm_stm::op_status>>
-      get_actual_tx(kafka::transactional_id);
+      reset_tx_ready(model::term_id, kafka::transactional_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
-      reset_tx_ready(kafka::transactional_id);
+      reset_tx_ready(model::term_id, kafka::transactional_id, model::term_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
-      reset_tx_ready(kafka::transactional_id, model::term_id);
+      mark_tx_preparing(model::term_id, kafka::transactional_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
-      mark_tx_preparing(kafka::transactional_id);
+      mark_tx_aborting(model::term_id, kafka::transactional_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
-      mark_tx_aborting(kafka::transactional_id);
+      mark_tx_prepared(model::term_id, kafka::transactional_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
-      mark_tx_prepared(kafka::transactional_id);
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
-      mark_tx_killed(kafka::transactional_id);
+      mark_tx_killed(model::term_id, kafka::transactional_id);
     ss::future<tm_stm::op_status> re_register_producer(
+      model::term_id,
       kafka::transactional_id,
       std::chrono::milliseconds,
       model::producer_identity);
     ss::future<tm_stm::op_status> register_new_producer(
+      model::term_id,
       kafka::transactional_id,
       std::chrono::milliseconds,
       model::producer_identity);
@@ -179,7 +184,6 @@ protected:
 private:
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_snapshot() override;
-    ss::future<bool> sync(model::timeout_clock::duration);
 
     ss::basic_rwlock<> _state_lock;
     std::chrono::milliseconds _sync_timeout;
